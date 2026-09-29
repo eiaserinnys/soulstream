@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import {
   buildMorningRitualQueue,
   dispatchRitualAction,
@@ -34,7 +34,6 @@ describe("buildMorningRitualQueue", () => {
             task("task-carry", "계속할 업무", "open"),
             task("task-today", "이미 오늘로 온 업무", "open"),
             task("task-completed", "끝난 업무", "completed"),
-            task("task-cancelled", "취소한 업무", "cancelled"),
           ],
         },
         {
@@ -46,7 +45,7 @@ describe("buildMorningRitualQueue", () => {
           ],
         },
       ],
-      todayTaskPageIds: new Set(["task-today"]),
+      todayFolderPageIds: new Set(["task-today"]),
     });
 
     expect(queue.map((item) => item.id)).toEqual([
@@ -60,7 +59,7 @@ describe("buildMorningRitualQueue", () => {
   it("never includes needs-review sessions in the carryover ritual", () => {
     const queue = buildMorningRitualQueue({
       historicalDays: [],
-      todayTaskPageIds: new Set(),
+      todayFolderPageIds: new Set(),
     });
 
     expect(queue).toEqual([]);
@@ -72,26 +71,26 @@ describe("dispatchRitualAction", () => {
     const port = mockPort();
     const item = buildMorningRitualQueue({
       historicalDays: [{ date: "2026-07-13", pageId: "daily-yesterday", tasks: [task("task-1", "업무", "open")] }],
-      todayTaskPageIds: new Set(),
+      todayFolderPageIds: new Set(),
     })[0];
 
     await dispatchRitualAction(item, "today", port);
     expect(port.mountToday).toHaveBeenCalledWith({
-      taskPageId: "task-1",
-      taskTitle: "업무",
+      folderPageId: "task-1",
+      folderTitle: "업무",
     });
 
     await dispatchRitualAction(item, "remove", port);
     expect(port.removeFromDaily).toHaveBeenCalledWith({
       dailyPageId: "daily-yesterday",
-      taskPageId: "task-1",
-      taskTitle: "업무",
+      folderPageId: "task-1",
+      folderTitle: "업무",
     });
     expect(port.mountToday).toHaveBeenCalledTimes(1);
   });
 });
 
-function task(pageId: string, title: string, status: string): PlannerTask {
+function task(pageId: string, title: string, status: string): PlannerFolder {
   return {
     page: {
       id: pageId,
@@ -105,28 +104,12 @@ function task(pageId: string, title: string, status: string): PlannerTask {
     },
     blocks: [],
     stateVector: "",
-    taskId: `task-${pageId}`,
-    task: {
-      task: {
-        id: `task-${pageId}`,
-        board_item_id: `task:${pageId}`,
-        title,
-        status: status as "open" | "completed",
-        archived: false,
-        version: 7,
-        created_session_id: null,
-        created_event_id: null,
-        created_at: "2026-07-12T00:00:00Z",
-        updated_at: "2026-07-13T00:00:00Z",
-      },
-      sections: [],
-      items: [],
-    },
+    folderId: `task-${pageId}`,
     status: status === "completed" ? "completed" : "open",
     assignee: "로젤린",
     contextCount: 0,
     progress: null,
-    projectPageId: null,
+    parentFolderId: null,
     sessionIds: [],
     mountedDocuments: [],
   };

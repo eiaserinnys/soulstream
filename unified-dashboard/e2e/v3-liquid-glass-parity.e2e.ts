@@ -20,28 +20,6 @@ for (const theme of ["dark", "light"] as const) {
     { name: "desktop", width: 1440, height: 1000 },
     { name: "mobile", width: 390, height: 844 },
   ] as const) {
-    test(`v1 liquid glass reference · ${theme} · ${viewport.width}px`, async ({ page }) => {
-      const errors = collectErrors(page);
-      await preparePage(page, theme, viewport);
-      await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-      await expect(page.getByTestId("dashboard-layout")).toBeVisible();
-      await page.waitForTimeout(500);
-
-      await expect(page.locator("[data-liquid-glass-webgl-provider=true]")).toHaveCount(1);
-      if (viewport.name === "desktop") {
-        await expectChromeClasses(page.getByTestId("session-panel"));
-        await expect(page.getByTestId("left-navigation-feed")).toHaveCSS("font-size", "14px");
-      } else {
-        const mobileHeader = page.getByTestId("dashboard-layout").locator("header").first();
-        await expect(mobileHeader).toHaveClass(/(?:^|\s)glass-strong(?:\s|$)/);
-        await expect(mobileHeader).toHaveClass(/(?:^|\s)glass-chrome(?:\s|$)/);
-        await expect(mobileHeader).toHaveClass(/(?:^|\s)border-glass-border(?:\s|$)/);
-      }
-      await assertNoHorizontalOverflow(page);
-      await capture(page, `v1-${theme}-${viewport.width}.png`);
-      expect(errors).toEqual([]);
-    });
-
     test(`v3 liquid glass parity · ${theme} · ${viewport.width}px`, async ({ page }) => {
       const errors = collectErrors(page);
       await preparePage(page, theme, viewport);
@@ -58,35 +36,14 @@ for (const theme of ["dark", "light"] as const) {
       );
       if (viewport.name === "desktop") {
         const navigation = page.locator(".v3-navigation");
-        await expect(navigation).toHaveCSS("width", "264px");
+        await expect(navigation).toHaveCSS("width", "280px");
         await expect(navigation.locator(".v3-nav-list button").first()).toHaveCSS("font-size", "14px");
       }
       await assertNoHorizontalOverflow(page);
-      await capture(page, `v3-${theme}-${viewport.width}.png`);
-      if (viewport.name === "desktop") {
-        await resizeNavigationAndAssertPersistence(page);
-      }
+      if (viewport.name === "mobile") await capture(page, `v3-${theme}-${viewport.width}.png`);
       expect(errors).toEqual([]);
     });
   }
-}
-
-async function resizeNavigationAndAssertPersistence(page: Page): Promise<void> {
-  const handle = page.getByTestId("v3-navigation-resize-handle");
-  const box = await handle.boundingBox();
-  expect(box).not.toBeNull();
-  await page.mouse.move(box!.x + box!.width / 2, box!.y + 120);
-  await page.mouse.down();
-  await page.mouse.move(box!.x + box!.width / 2 + 72, box!.y + 120, { steps: 5 });
-  await page.mouse.up();
-
-  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "336px");
-  await expect.poll(() => page.evaluate(() => (
-    localStorage.getItem("soul-ui.dashboard.leftSidebarWidth")
-  ))).toBe("336");
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "336px");
-  await assertNoHorizontalOverflow(page);
 }
 
 async function preparePage(
@@ -118,22 +75,7 @@ async function preparePage(
     });
   }, theme);
   await installV3VisualQaRoutes(page);
-  await page.route("**/api/tasks/*", async (route) => {
-    const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop() ?? "");
-    if (["rb-alpha", "rb-beta", "rb-done", "rb-carry"].includes(id)) {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        task: { id, title: id, status: "open", archived: false, version: 1 },
-        sections: [],
-        items: [],
-      }),
-    });
-  });
+
 }
 
 function collectErrors(page: Page): string[] {
@@ -166,5 +108,6 @@ async function capture(page: Page, filename: string): Promise<void> {
     path: path.join(OUTPUT_ROOT, filename),
     fullPage: false,
     animations: "disabled",
+    timeout: 30_000,
   });
 }

@@ -101,7 +101,7 @@ async function verify(browser: Browser) {
     const transientBefore = projectRequests;
     await startProjectMutationObserver(page);
     transientProjectEmpty = true;
-    await emitTaskUpdated(page);
+    await emitFolderUpdated(page);
     await waitUntil(() => projectRequests >= transientBefore + 2, "빈 프로젝트 응답 재확인");
     await taskCard.waitFor({ state: "visible" });
     const transientMutations = await stopProjectMutationObserver(page);
@@ -336,11 +336,10 @@ async function emitSessionUpdated(page: Page, displayName: string) {
   });
 }
 
-async function emitTaskUpdated(page: Page) {
-  await dispatchSessionEvent(page, "task_updated", {
-    type: "task_updated",
-    taskId: "rb-alpha",
-    boardItemId: "task:rb-alpha",
+async function emitFolderUpdated(page: Page) {
+  await dispatchSessionEvent(page, "folder_updated", {
+    type: "folder_updated",
+    folderId: "rb-alpha",
   });
 }
 

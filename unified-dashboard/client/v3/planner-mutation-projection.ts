@@ -1,17 +1,16 @@
 import { retainEqualValue } from "@seosoyoung/soul-ui";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 
-export function replacePlannerTask(
-  tasks: PlannerTask[],
-  taskId: string,
-  update: (task: PlannerTask) => PlannerTask,
-): PlannerTask[] {
+export function replacePlannerFolder(
+  tasks: PlannerFolder[],
+  folderId: string,
+  update: (task: PlannerFolder) => PlannerFolder,
+): PlannerFolder[] {
   let found = false;
   let changed = false;
   const next = tasks.map((task) => {
-    if (task.page.id !== taskId) return task;
+    if (task.page.id !== folderId) return task;
     found = true;
     const updated = retainEqualValue(task, update(task));
     if (updated !== task) changed = true;
@@ -21,9 +20,9 @@ export function replacePlannerTask(
 }
 
 export function removePlannerSessions(
-  tasks: PlannerTask[],
+  tasks: PlannerFolder[],
   removedIds: ReadonlySet<string>,
-): PlannerTask[] {
+): PlannerFolder[] {
   if (removedIds.size === 0) return tasks;
   let changed = false;
   const next = tasks.map((task) => {
@@ -36,14 +35,14 @@ export function removePlannerSessions(
 }
 
 export function movePlannerSession(
-  tasks: PlannerTask[],
+  tasks: PlannerFolder[],
   sessionId: string,
-  targetTaskId: string,
-): PlannerTask[] {
+  targetFolderId: string,
+): PlannerFolder[] {
   let changed = false;
   const next = tasks.map((task) => {
     const withoutSession = task.sessionIds.filter((candidate) => candidate !== sessionId);
-    const sessionIds = task.page.id === targetTaskId
+    const sessionIds = task.page.id === targetFolderId
       ? [...withoutSession, sessionId]
       : withoutSession;
     if (sameIds(task.sessionIds, sessionIds)) return task;
@@ -53,36 +52,21 @@ export function movePlannerSession(
   return changed ? next : tasks;
 }
 
-export function movePlannerTaskProject(
-  tasks: PlannerTask[],
-  task: PlannerTask,
-  targetProjectPageId: string,
-  visibleProjectPageId: string,
-): PlannerTask[] {
-  if (visibleProjectPageId !== targetProjectPageId) {
+export function movePlannerFolderProject(
+  tasks: PlannerFolder[],
+  task: PlannerFolder,
+  targetFolderId: string | null,
+  visibleFolderId: string,
+): PlannerFolder[] {
+  if (visibleFolderId !== targetFolderId) {
     const next = tasks.filter((candidate) => candidate.page.id !== task.page.id);
     return next.length === tasks.length ? tasks : next;
   }
-  const projected = { ...task, projectPageId: targetProjectPageId };
+  const projected = { ...task, parentFolderId: targetFolderId };
   if (!tasks.some((candidate) => candidate.page.id === task.page.id)) {
     return [...tasks, projected];
   }
-  return replacePlannerTask(tasks, task.page.id, () => projected);
-}
-
-export function projectPagesForTasks(
-  projects: PageDto[],
-  tasks: readonly PlannerTask[],
-  targetProject: PageDto,
-): PageDto[] {
-  const referenced = new Set(tasks.flatMap((task) => (
-    task.projectPageId ? [task.projectPageId] : []
-  )));
-  const indexed = new Map([...projects, targetProject].map((project) => [project.id, project]));
-  return retainEqualValue(
-    projects,
-    [...indexed.values()].filter((project) => referenced.has(project.id)),
-  );
+  return replacePlannerFolder(tasks, task.page.id, () => projected);
 }
 
 function sameIds(first: readonly string[], second: readonly string[]): boolean {

@@ -56,11 +56,10 @@ for (const theme of ["dark", "light"] as const) {
     await page.waitForLoadState("networkidle");
     await capture(page, outputDir, "01-entry");
 
-    expect(apiRequests(requests, "/api/planner/starred-tasks")).toHaveLength(1);
+    expect(apiRequests(requests, "/api/planner/starred-folders")).toHaveLength(1);
     expect(requests.some((url) => /\/api\/pages\?.*limit=/.test(url))).toBe(false);
     expect(apiRequests(requests, "/api/nodes")).toHaveLength(0);
-    expect(requests.some((url) => /\/api\/sessions\?.*(?:limit=0|sessionScope=all)/.test(url))).toBe(false);
-    expect(apiRequests(requests, "/api/planner/tasks/task-alpha/runs")).toHaveLength(0);
+    expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(0);
 
     await page.getByTestId("v3-all-projects")
       .getByRole("button", { name: fixtureTitles.project, exact: true })
@@ -69,23 +68,22 @@ for (const theme of ["dark", "light"] as const) {
     await capture(page, outputDir, "02-project");
 
     await page.getByTestId("v3-task-task-alpha").click();
-    await expect(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 })).toBeVisible();
-    await expect(page.getByText("1/2회", { exact: true })).toBeVisible();
+    await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })).toBeVisible();
+    await expect(page.getByText("1회", { exact: true })).toBeVisible();
     await expect(page.getByTestId("v3-load-more-runs")).toBeVisible();
-    expect(apiRequests(requests, "/api/planner/tasks/task-alpha/runs")).toHaveLength(1);
+    expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(0);
     await capture(page, outputDir, "03-task-latest-run");
 
     await page.getByTestId("v3-load-more-runs").click();
     await expect(page.getByText("2회", { exact: true })).toBeVisible();
     await expect(page.getByTestId("v3-load-more-runs")).toBeHidden();
-    expect(apiRequests(requests, "/api/planner/tasks/task-alpha/runs")).toHaveLength(2);
+    expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(1);
     await capture(page, outputDir, "04-task-full-history");
 
-    await page.getByRole("button", { name: "← 오늘로" }).click();
+    await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
+    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await expect(page.getByText("오늘의 업무")).toBeVisible();
-    await page.getByTestId("v3-global-toolbar")
-      .getByRole("button", { name: "아침 정리", exact: true })
-      .click();
+    await page.getByRole("button", { name: "아침 정리", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
     await expect(page.locator(".v3-ritual-card")).toBeVisible();
     expect(apiRequests(requests, "/api/planner/daily-history")).toHaveLength(1);

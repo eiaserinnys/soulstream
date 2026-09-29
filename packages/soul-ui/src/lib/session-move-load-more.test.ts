@@ -4,8 +4,12 @@ import { shouldLoadMoreAfterSessionMove } from "./session-move-load-more";
 
 const CATALOG: CatalogState = {
   folders: [
-    { id: "visible-folder", name: "Visible", sortOrder: 0 },
+    { checklistEnabled: false, status: "open", version: 1, archived: false, id: "visible-folder", name: "Visible", sortOrder: 0 },
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "hidden-folder",
       name: "Hidden",
       sortOrder: 1,

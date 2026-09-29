@@ -1,6 +1,5 @@
 import type { BoardContainerRef, CatalogBoardItem, CatalogState } from "../shared/types";
 import { boardItemBelongsToContainer } from "./board-container-visibility";
-import { filterTaskBoardSpatialItems } from "./board-workspace-items";
 
 export function folderBoardContainer(folderId: string | null): BoardContainerRef | null {
   return folderId ? { kind: "folder", id: folderId } : null;
@@ -24,20 +23,8 @@ export function resolveEffectiveBoardCatalog(params: {
     hasYjsSynced,
     assetSignedUrls,
   } = params;
-  if (!catalog || !yjsBoardItemsForSelectedFolder || isYjsLoading || !hasYjsSynced) {
-    if (!catalog?.boardItems || !boardContainer || boardContainer.kind === "folder") return catalog;
-    return {
-      ...catalog,
-      boardItems: filterTaskBoardSpatialItems(
-        catalog.boardItems.filter((item) => boardItemBelongsToContainer(item, boardContainer)),
-      ),
-    };
-  }
-  const resolvedYjsBoardItems = (
-    boardContainer?.kind === "task"
-      ? filterTaskBoardSpatialItems(yjsBoardItemsForSelectedFolder)
-      : yjsBoardItemsForSelectedFolder
-  ).map((item) => {
+  if (!catalog || !yjsBoardItemsForSelectedFolder || isYjsLoading || !hasYjsSynced) return catalog;
+  const resolvedYjsBoardItems = yjsBoardItemsForSelectedFolder.map((item) => {
     if (item.itemType !== "asset") return item;
     const signedUrl = assetSignedUrls[item.id];
     if (!signedUrl) return item;
@@ -49,9 +36,6 @@ export function resolveEffectiveBoardCatalog(params: {
       },
     };
   });
-  if (boardContainer?.kind === "task") {
-    return { ...catalog, boardItems: resolvedYjsBoardItems };
-  }
   const otherFolderBoardItems = (catalog.boardItems ?? []).filter((item) =>
     boardContainer ? !boardItemBelongsToContainer(item, boardContainer) : item.folderId !== selectedFolderId
   );

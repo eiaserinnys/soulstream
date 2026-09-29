@@ -37,9 +37,9 @@ export async function loadMorningRitualData(input: {
       historicalDays: historicalPlanners.map((planner, index) => ({
         date: historicalDates[index]!,
         pageId: planner.daily.page.id,
-        tasks: planner.tasks,
+        tasks: planner.folders,
       })),
-      todayTaskPageIds: new Set(todayPlanner.tasks.map((task) => task.page.id)),
+      todayFolderPageIds: new Set(todayPlanner.folders.map((task) => task.page.id)),
     }),
   };
 }

@@ -9,7 +9,7 @@ import type { BoardContainerRef, CatalogBoardItem, CatalogState, SessionSummary 
 
 import {
   createFolder,
-  deleteFolderOptimistic,
+  archiveFolder,
   renameFolderOptimistic,
   updateFolderSettingsOptimistic,
 } from "client/lib/folder-operations";
@@ -17,7 +17,7 @@ import { deleteSessions } from "client/lib/delete-session";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOperation } from "client/lib/rename-session";
 import {
-  moveBoardItemToContainer,
+  moveBoardItemToFolder,
   uploadBoardAsset,
 } from "client/lib/board-workspace-operations";
 import { useContinueSession } from "client/hooks/useContinueSession";
@@ -27,7 +27,7 @@ interface BoardWorkspaceViewWrapperProps {
   boardContainerOverride?: BoardContainerRef | null;
   selectedFolderIdOverride?: string | null;
   sessions?: SessionSummary[];
-  taskMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
+  folderMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
   onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onOpenMarkdownDocument?: (documentId: string) => void;
@@ -43,7 +43,7 @@ export function BoardWorkspaceView({
   boardContainerOverride,
   selectedFolderIdOverride,
   sessions,
-  taskMoveTargets,
+  folderMoveTargets,
   onBoardItemMoved,
   onMarkdownDocumentDeleted,
   onOpenMarkdownDocument,
@@ -86,7 +86,7 @@ export function BoardWorkspaceView({
       boardContainerOverride={boardContainerOverride}
       selectedFolderIdOverride={selectedFolderIdOverride}
       sessions={sessions}
-      taskMoveTargets={taskMoveTargets}
+      folderMoveTargets={folderMoveTargets}
       onBoardItemMoved={onBoardItemMoved}
       onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
       onOpenMarkdownDocument={onOpenMarkdownDocument}
@@ -99,9 +99,9 @@ export function BoardWorkspaceView({
       getContinueSessionDisabledReason={getContinueSessionDisabledReason}
       onCreateFolder={createFolder}
       onRenameFolder={renameFolderOptimistic}
-      onDeleteFolder={deleteFolderOptimistic}
+      onDeleteFolder={archiveFolder}
       onUpdateFolderSettings={updateFolderSettingsOptimistic}
-      onMoveBoardItemToContainer={moveBoardItemToContainer}
+      onMoveBoardItemToFolder={moveBoardItemToFolder}
       onUploadBoardAsset={uploadBoardAsset}
       onLoadMore={onLoadMore}
       hasMore={hasMore}

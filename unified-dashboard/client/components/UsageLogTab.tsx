@@ -68,7 +68,6 @@ export function UsageLogTab() {
   const [error, setError] = useState<string | null>(null);
 
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
-  const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
 
   const range = useMemo(() => dayRange(date), [date]);
@@ -105,7 +104,6 @@ export function UsageLogTab() {
   const openTarget = (target: UiEventRef): void => {
     if (target === null) return;
     if (target.kind === "session") setActiveSession(target.id);
-    else if (target.kind === "task") openTaskBoard(target.id);
     else if (target.kind === "folder") selectFolder(target.id);
   };
 

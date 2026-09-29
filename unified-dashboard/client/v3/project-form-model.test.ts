@@ -48,8 +48,8 @@ describe("project form model", () => {
 
   it("requires confirmation only when a project owns visible contents", () => {
     const folders = [
-      { id: "root", name: "Root", sortOrder: 0, parentFolderId: null },
-      { id: "child", name: "Child", sortOrder: 0, parentFolderId: "root" },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "root", name: "Root", sortOrder: 0, parentFolderId: null },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "child", name: "Child", sortOrder: 0, parentFolderId: "root" },
     ];
     expect(projectHasContents("empty", { folders, sessions: {}, boardItems: [] })).toBe(false);
     expect(projectHasContents("root", { folders, sessions: {}, boardItems: [] })).toBe(true);

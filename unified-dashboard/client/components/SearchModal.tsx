@@ -250,7 +250,7 @@ function NavigationResultRow({
     >
       <div className="flex items-center gap-2">
         <span className={SEARCH_RESULT_KIND_BADGE_CLASS}>
-          {result.kind === "folder" ? "프로젝트" : "업무"}
+          폴더
         </span>
         <span className="text-sm text-foreground truncate">{result.title}</span>
       </div>
@@ -270,10 +270,7 @@ interface SearchModalProps {
     session?: SessionSummary,
     focusTarget?: ChatFocusTarget,
   ) => boolean | void | Promise<boolean | void>;
-  onOpenFolder: (result: Extract<SearchNavigationResult, { kind: "folder" }>) =>
-    void | Promise<void>;
-  onOpenTask: (result: Extract<SearchNavigationResult, { kind: "task" }>) =>
-    void | Promise<void>;
+  onOpenFolder: (result: SearchNavigationResult) => void | Promise<void>;
 }
 
 // === Main Component ===
@@ -284,7 +281,6 @@ export function SearchModal({
   sessions = [],
   onOpenSession,
   onOpenFolder,
-  onOpenTask,
 }: SearchModalProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
@@ -385,14 +381,11 @@ export function SearchModal({
   const handleNavigationClick = (result: SearchNavigationResult, rank: number) => {
     trackUiEvent("search_result_open", {
       flowId: currentSearchFlowId() ?? "unknown",
-      target: result.kind === "folder"
-        ? { kind: "folder", id: result.folder_id }
-        : { kind: "task", id: result.id },
+      target: { kind: "folder", id: result.folder_id },
       attrs: { rank, resultKind: result.kind },
     });
     markEntry("search");
-    if (result.kind === "folder") void onOpenFolder(result);
-    else void onOpenTask(result);
+    void onOpenFolder(result);
     onOpenChange(false);
   };
 

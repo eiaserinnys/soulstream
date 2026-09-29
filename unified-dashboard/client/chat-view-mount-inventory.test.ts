@@ -35,8 +35,8 @@ describe("ChatView product mount inventory", () => {
       .sort((a, b) => a.path.localeCompare(b.path));
 
     expect(actual).toEqual([
-      { path: "unified-dashboard/client/v3/TaskBoardWorkspace.tsx", count: 1 },
-      { path: "unified-dashboard/client/v3/TaskWorkspace.tsx", count: 2 },
+      { path: "unified-dashboard/client/v3/FolderBoardWorkspace.tsx", count: 1 },
+      { path: "unified-dashboard/client/v3/FolderWorkspace.tsx", count: 2 },
     ]);
     expect(actual.reduce((sum, entry) => sum + entry.count, 0)).toBe(3);
   });

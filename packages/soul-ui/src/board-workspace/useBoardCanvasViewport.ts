@@ -54,7 +54,7 @@ export function useBoardCanvasViewport({
   const initialViewportRef = useRef<{ zoom?: number; scrollLeft?: number; scrollTop?: number } | null>(
     viewportPersistenceKey
       ? (() => {
-          const snap = useDashboardStore.getState().taskBoardLayouts[viewportPersistenceKey];
+          const snap = useDashboardStore.getState().folderBoardLayouts[viewportPersistenceKey];
           return snap
             ? { zoom: snap.boardZoom, scrollLeft: snap.boardScrollLeft, scrollTop: snap.boardScrollTop }
             : null;
@@ -197,7 +197,7 @@ export function useBoardCanvasViewport({
     let timer = 0;
     const persist = () => {
       timer = 0;
-      useDashboardStore.getState().setTaskBoardLayout(viewportPersistenceKey, {
+      useDashboardStore.getState().setFolderBoardLayout(viewportPersistenceKey, {
         boardZoom: zoomRef.current,
         boardScrollLeft: Math.round(scroller.scrollLeft),
         boardScrollTop: Math.round(scroller.scrollTop),

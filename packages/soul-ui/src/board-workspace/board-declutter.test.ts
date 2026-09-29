@@ -11,9 +11,6 @@ import {
 import {
   BOARD_GRID_SIZE,
   BOARD_ASSET_TILE_HEIGHT,
-  BOARD_TASK_FIXED_CARD_RECT,
-  BOARD_TASK_TILE_HEIGHT,
-  BOARD_TASK_TILE_WIDTH,
   BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   getBoardItemHeight,
@@ -22,8 +19,6 @@ import {
   type FrameBoardWorkspaceItem,
   type SessionBoardWorkspaceItem,
 } from "./board-workspace-items";
-
-const TARGET_ASPECT_RATIO = 4 / 3;
 
 describe("declutterBoardItems", () => {
   it("returns no updates for empty and single-item boards", () => {
@@ -39,13 +34,12 @@ describe("declutterBoardItems", () => {
       "markdown",
       "session",
       "subfolder",
-      "task",
     ]);
   });
 
   it("clusters markdown, custom views, sessions, and other cards in that order", () => {
     const items: BoardWorkspaceItem[] = [
-      task("task", "2026-07-13T00:00:00.000Z"),
+      folder("task", 0),
       session("session-old", "2026-07-11T00:00:00.000Z"),
       markdown("markdown-old", "2026-07-10T00:00:00.000Z"),
       customView("custom-old", "2026-07-09T00:00:00.000Z"),
@@ -69,7 +63,7 @@ describe("declutterBoardItems", () => {
     expect(readingOrderPosition(positions.get("session-new")!, positions.get("session-old")!)).toBeLessThan(0);
   });
 
-  it("packs mixed card sizes without overlap near a 4:3 bounding box", () => {
+  it("packs mixed card sizes without overlap", () => {
     const items: BoardWorkspaceItem[] = [
       ...Array.from({ length: 4 }, (_, index) =>
         markdown(`markdown-${index}`, `2026-07-1${index}T00:00:00.000Z`)),
@@ -77,8 +71,6 @@ describe("declutterBoardItems", () => {
         customView(`custom-${index}`, `2026-07-1${index}T00:00:00.000Z`)),
       ...Array.from({ length: 4 }, (_, index) =>
         session(`session-${index}`, `2026-07-1${index}T00:00:00.000Z`)),
-      task("task-a", "2026-07-13T00:00:00.000Z"),
-      task("task-b", "2026-07-12T00:00:00.000Z"),
       folder("folder-a", 0),
       folder("folder-b", 1),
     ];
@@ -92,9 +84,6 @@ describe("declutterBoardItems", () => {
       }
     }
 
-    const bounds = unionBounds(rects);
-    const ratio = bounds.width / bounds.height;
-    expect(Math.abs(ratio - TARGET_ASPECT_RATIO)).toBeLessThan(0.2);
   });
 
   it("arranges asset and frame cards with every other catalog item type without overlap", () => {
@@ -104,7 +93,7 @@ describe("declutterBoardItems", () => {
       markdown("markdown", "2026-07-13T00:00:00.000Z"),
       asset("asset", "2026-07-13T00:00:00.000Z"),
       frame("frame", []),
-      task("task", "2026-07-13T00:00:00.000Z"),
+      folder("task", 0),
       customView("custom-view", "2026-07-13T00:00:00.000Z"),
     ];
     const positions = finalPositions(items);
@@ -114,22 +103,6 @@ describe("declutterBoardItems", () => {
       for (let right = left + 1; right < rects.length; right += 1) {
         expect(overlapsWithMargin(rects[left]!, rects[right]!)).toBe(false);
       }
-    }
-  });
-
-  it("packs cards below the fixed task checklist using its rendered size", () => {
-    const items: BoardWorkspaceItem[] = [
-      markdown("markdown", "2026-07-13T00:00:00.000Z"),
-      session("session", "2026-07-12T00:00:00.000Z"),
-    ];
-
-    const positions = finalPositions(
-      items,
-      declutterBoardItems(items, [BOARD_TASK_FIXED_CARD_RECT]),
-    );
-    for (const item of items) {
-      const rect = itemRect(item, positions.get(item.boardItemId)!);
-      expect(overlapsWithMargin(rect, BOARD_TASK_FIXED_CARD_RECT)).toBe(false);
     }
   });
 
@@ -166,7 +139,7 @@ function folder(id: string, order: number): BoardWorkspaceItem {
     type: "folder",
     id,
     boardItemId: id,
-    folder: {
+    folder: { checklistEnabled: false, status: "open", version: 1, archived: false,
       id,
       name: id,
       sortOrder: order,
@@ -241,21 +214,6 @@ function session(id: string, updatedAt: string): BoardWorkspaceItem {
     },
     x: 0,
     y: 0,
-  };
-}
-
-function task(id: string, updatedAt: string): BoardWorkspaceItem {
-  return {
-    type: "task",
-    id,
-    boardItemId: id,
-    taskId: id,
-    title: id,
-    updatedAt,
-    x: 0,
-    y: 0,
-    width: BOARD_TASK_TILE_WIDTH,
-    height: BOARD_TASK_TILE_HEIGHT,
   };
 }
 

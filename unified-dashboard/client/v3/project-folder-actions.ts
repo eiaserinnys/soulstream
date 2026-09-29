@@ -14,14 +14,14 @@ export async function renameProjectFolder(
   }
 }
 
-export async function deleteProjectFolder(
+export async function archiveProjectFolder(
   folder: CatalogFolder,
   remove: (folderId: string) => Promise<void>,
   readFolders: ReadFolders,
 ): Promise<void> {
   await remove(folder.id);
-  if (readFolders().some((candidate) => candidate.id === folder.id)) {
-    throw new Error("프로젝트 삭제가 서버에서 거절되었습니다");
+  if (!readFolders().find((candidate) => candidate.id === folder.id)?.archived) {
+    throw new Error("프로젝트 보관이 서버에서 거절되었습니다");
   }
 }
 

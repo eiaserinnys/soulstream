@@ -4,45 +4,39 @@ import type {
   PageDto,
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
-import type { TaskSnapshot } from "@seosoyoung/soul-ui/stores/task-store";
-import { fetchTaskSnapshot, type SessionSummary } from "@seosoyoung/soul-ui";
+import { type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
-  classifyMountedPage,
-  derivePlannerTaskStatus,
-  plannerProgress,
-  taskAssignee,
-  taskContextCount,
-  type PlannerTaskStatus,
+  derivePlannerFolderStatus,
+  folderContextCount,
+  type PlannerFolderStatus,
 } from "./planner-model";
-import { loadAllMountBacklinks } from "./page-backlinks";
 
-export interface PlannerTask {
+export interface PlannerFolder {
   page: PageDto;
   blocks: BlockDto[];
   stateVector: string;
-  taskId: string;
-  task: TaskSnapshot | null;
-  status: PlannerTaskStatus;
+  folderId: string;
+  status: PlannerFolderStatus;
   assignee: string;
   contextCount: number;
   progress: number | null;
-  projectPageId: string | null;
+  parentFolderId: string | null;
   sessionIds: string[];
-  mountedDocuments: MountedTaskDocument[];
+  mountedDocuments: MountedFolderDocument[];
 }
 
-export type StarredPlannerTask = PlannerTask | PageDto;
+export type StarredPlannerFolder = PlannerFolder | PageDto;
 
-export function isPlannerTask(value: StarredPlannerTask): value is PlannerTask {
+export function isPlannerFolder(value: StarredPlannerFolder): value is PlannerFolder {
   return "page" in value;
 }
 
-export function starredTaskPage(value: StarredPlannerTask): PageDto {
-  return isPlannerTask(value) ? value.page : value;
+export function starredFolderPage(value: StarredPlannerFolder): PageDto {
+  return isPlannerFolder(value) ? value.page : value;
 }
 
-export interface MountedTaskDocument {
+export interface MountedFolderDocument {
   blockId: string;
   page: PageDto;
 }
@@ -51,16 +45,20 @@ export interface DailyPlannerData {
   daily: PageReadResponse;
   projects: PageDto[];
   memoBlocks: BlockDto[];
-  tasks: PlannerTask[];
+  folders: PlannerFolder[];
   reviewSessionIds: string[];
 }
 
-export interface ProjectPlannerData {
+export interface FolderPlannerData {
+  folder: CatalogFolder;
   project: PageDto;
-  tasks: PlannerTask[];
+  blocks: BlockDto[];
+  items: Array<{ status: string }>;
+  subfolders: CatalogFolder[];
   documents: PageDto[];
-  nextTaskCursor: string | null;
+  nextSubfolderCursor: string | null;
   nextDocumentCursor: string | null;
+  sessions: PlannerPage<SessionSummary>;
 }
 
 export interface PlannerPage<T> {
@@ -68,15 +66,9 @@ export interface PlannerPage<T> {
   nextCursor: string | null;
 }
 
-export interface TaskRunHistoryPage {
-  sessionIds: string[];
-  nextCursor: string | null;
-  total: number;
-}
-
 export interface PlannerDataDependencies {
   fetchPlanner(path: string): Promise<unknown>;
-  saveStarredTaskOrder?(pageId: string, beforePageId: string | null): Promise<void>;
+  saveStarredFolderOrder?(pageId: string, beforePageId: string | null): Promise<void>;
 }
 
 export function createPlannerDataDependencies(
@@ -97,15 +89,15 @@ export function createPlannerDataDependencies(
       }
       return await response.json();
     },
-    saveStarredTaskOrder: async (pageId, beforePageId) => {
-      const response = await fetchImplementation("/api/planner/starred-tasks/order", {
+    saveStarredFolderOrder: async (pageId, beforePageId) => {
+      const response = await fetchImplementation("/api/planner/starred-folders/order", {
         method: "PATCH",
         credentials: "same-origin",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ page_id: pageId, before_page_id: beforePageId }),
+        body: JSON.stringify({ pageId, beforePageId }),
       });
       if (!response.ok) {
         const detail = await plannerResponseDetail(response);
@@ -158,42 +150,45 @@ export async function loadDailyPlanner(
   ) as PlannerTodayPayload;
   return {
     daily: payload.daily,
-    projects: payload.projects,
-    tasks: plannerTasks(payload.tasks),
-    memoBlocks: payload.memo_blocks,
-    reviewSessionIds: payload.review_session_ids,
+    projects: [],
+    folders: payload.folders.map(plannerFolder),
+    memoBlocks: payload.memoBlocks,
+    reviewSessionIds: payload.reviewSessionIds,
   };
 }
 
-export async function loadProjectPlanner(
+export async function loadFolderPlanner(
   _api: PageApiClient,
-  project: PageDto,
+  folderId: string,
+  _project: PageDto,
   dependencies: PlannerDataDependencies,
-): Promise<ProjectPlannerData> {
+): Promise<FolderPlannerData> {
   const payload = await dependencies.fetchPlanner(
-    `/api/planner/projects/${encodeURIComponent(project.id)}`,
-  ) as PlannerProjectPayload;
+    `/api/planner/folders/${encodeURIComponent(folderId)}`,
+  ) as PlannerFolderAggregate;
   return {
-    project: payload.project,
-    tasks: plannerTasks(payload.tasks.items),
+    folder: payload.folder,
+    project: payload.page,
+    blocks: payload.blocks,
+    items: payload.items,
+    subfolders: payload.subfolders.items,
     documents: payload.documents.items,
-    nextTaskCursor: payload.tasks.next_cursor,
-    nextDocumentCursor: payload.documents.next_cursor,
+    nextSubfolderCursor: payload.subfolders.nextCursor,
+    nextDocumentCursor: payload.documents.nextCursor,
+    sessions: payload.sessions,
   };
 }
 
-export async function loadStarredTasks(
+export async function loadStarredFolders(
   dependencies: PlannerDataDependencies,
   input: { cursor?: string },
-): Promise<PlannerPage<PlannerTask>> {
-  const query = pageQuery(input.cursor);
-  query.set("detail", "full");
+): Promise<PlannerPage<PlannerFolder>> {
   const payload = await dependencies.fetchPlanner(
-    `/api/planner/starred-tasks?${query.toString()}`,
-  ) as PageSlicePayload<PlannerTaskPayload>;
+    pagePath("/api/planner/starred-folders", input.cursor),
+  ) as FolderSlicePayload<PlannerFolderPayload>;
   return {
-    items: plannerTasks(payload.items),
-    nextCursor: payload.next_cursor,
+    items: payload.items.map(plannerFolder),
+    nextCursor: payload.nextCursor,
   };
 }
 
@@ -208,121 +203,78 @@ export async function loadDailyHistoryDates(
   return payload.dates;
 }
 
-export async function loadProjectTaskPage(
+export async function loadFolderDocumentPage(
   dependencies: PlannerDataDependencies,
-  projectPageId: string,
-  cursor: string | undefined,
-): Promise<PlannerPage<PlannerTask>> {
-  const payload = await dependencies.fetchPlanner(
-    pagePath(
-      `/api/planner/projects/${encodeURIComponent(projectPageId)}/tasks`,
-      cursor,
-    ),
-  ) as PageSlicePayload<PlannerTaskPayload>;
-  return {
-    items: plannerTasks(payload.items),
-    nextCursor: payload.next_cursor,
-  };
-}
-
-export async function loadProjectDocumentPage(
-  dependencies: PlannerDataDependencies,
-  projectPageId: string,
+  folderId: string,
   cursor: string | undefined,
 ): Promise<PlannerPage<PageDto>> {
   const payload = await dependencies.fetchPlanner(
     pagePath(
-      `/api/planner/projects/${encodeURIComponent(projectPageId)}/documents`,
+      `/api/planner/folders/${encodeURIComponent(folderId)}/documents`,
       cursor,
     ),
-  ) as PageSlicePayload<PageDto>;
-  return plannerPage(payload);
+  ) as FolderSlicePayload<PageDto>;
+  return { items: payload.items, nextCursor: payload.nextCursor };
 }
 
-export async function loadProjectLegacySessionPage(
+export async function loadFolderSubfolderPage(
   dependencies: PlannerDataDependencies,
-  projectPageId: string,
+  folderId: string,
+  cursor: string,
+): Promise<PlannerPage<CatalogFolder>> {
+  const payload = await dependencies.fetchPlanner(pagePath(
+    `/api/planner/folders/${encodeURIComponent(folderId)}/subfolders`, cursor,
+  )) as FolderSlicePayload<CatalogFolder>;
+  return { items: payload.items, nextCursor: payload.nextCursor };
+}
+
+export async function loadFolderSessionPage(
+  dependencies: PlannerDataDependencies,
+  folderId: string,
   cursor: string | undefined,
 ): Promise<PlannerPage<SessionSummary>> {
   const payload = await dependencies.fetchPlanner(
     pagePath(
-      `/api/planner/projects/${encodeURIComponent(projectPageId)}/legacy-sessions`,
+      `/api/planner/folders/${encodeURIComponent(folderId)}/sessions`,
       cursor,
     ),
-  ) as PageSlicePayload<SessionSummary>;
-  return plannerPage(payload);
+  ) as FolderSlicePayload<SessionSummary>;
+  return payload;
 }
 
-export async function loadTaskRunHistory(
-  dependencies: PlannerDataDependencies,
-  taskPageId: string,
-  cursor: string | undefined,
-): Promise<TaskRunHistoryPage> {
-  const payload = await dependencies.fetchPlanner(
-    pagePath(
-      `/api/planner/tasks/${encodeURIComponent(taskPageId)}/runs`,
-      cursor,
-    ),
-  ) as PageSlicePayload<{ agent_session_id: string }> & { total: number };
-  return {
-    sessionIds: payload.items.map((item) => item.agent_session_id),
-    nextCursor: payload.next_cursor,
-    total: payload.total,
+export async function loadStarredPlannerFolder(
+  api: PageApiClient,
+  task: StarredPlannerFolder,
+  folders: readonly CatalogFolder[],
+): Promise<PlannerFolder> {
+  if (isPlannerFolder(task)) return task;
+  const folder = folders.find((candidate) => candidate.projectPageId === task.id);
+  if (!folder) throw new Error("별표 폴더를 찾을 수 없습니다");
+  return loadPlannerFolder(api, folder.id);
+}
+
+export async function loadPlannerFolderById(
+  api: PageApiClient,
+  folderId: string,
+): Promise<PlannerFolder> {
+  const payload = await createPlannerDataDependencies().fetchPlanner(
+    `/api/planner/folders/${encodeURIComponent(folderId)}`,
+  ) as PlannerFolderAggregate;
+  return { ...plannerFolder({ folder: payload.folder, page: payload.page,
+    itemCounts: {}, itemTotal: payload.items.length,
+    completedItemCount: payload.items.filter((item) => item.status === "completed").length,
+    assignee: null }),
+    blocks: payload.blocks,
+    contextCount: folderContextCount(payload.blocks),
+    sessionIds: payload.sessions.items.map((session) => session.agentSessionId),
   };
 }
 
-export async function loadStarredPlannerTask(
-  api: PageApiClient,
-  task: StarredPlannerTask,
-): Promise<PlannerTask> {
-  return isPlannerTask(task) ? task : await loadPlannerTask(api, task.id);
-}
-
-export async function loadPlannerTaskByTaskId(
-  api: PageApiClient,
-  taskId: string,
-): Promise<PlannerTask> {
-  const task = await fetchTaskSnapshot(taskId);
-  const taskPageId = task?.task.task_page_id?.trim();
-  if (!task || !taskPageId) throw new Error("업무 페이지 식별자가 없습니다.");
-  return await loadPlannerTask(api, taskPageId, task);
-}
-
-export async function loadPlannerTask(
-  api: PageApiClient,
-  taskPageId: string,
-  prefetchedTask?: TaskSnapshot,
-): Promise<PlannerTask> {
-  const snapshot = await api.getPage(taskPageId);
-  const classification = classifyMountedPage(snapshot.blocks);
-  if (classification.kind !== "task") throw new Error("별표 페이지가 task 업무가 아닙니다");
-  const task = prefetchedTask ?? await fetchTaskSnapshot(classification.taskId);
-  const backlinks = await loadAllMountBacklinks(api, taskPageId);
-  const projectPageId = await firstProjectPageId(api, backlinks.map((item) => item.sourcePageId));
-  return {
-    page: snapshot.page,
-    blocks: snapshot.blocks,
-    stateVector: snapshot.state_vector,
-    taskId: classification.taskId,
-    task,
-    status: task ? derivePlannerTaskStatus(task) : "open",
-    assignee: taskAssignee(task),
-    contextCount: taskContextCount(snapshot.blocks),
-    progress: plannerProgress(task),
-    projectPageId,
-    sessionIds: [],
-    mountedDocuments: [],
-  };
-}
-
-async function firstProjectPageId(api: PageApiClient, sourcePageIds: readonly string[]): Promise<string | null> {
-  for (const pageId of [...new Set(sourcePageIds)]) {
-    const source = await api.getPage(pageId);
-    if (source.page.daily_date === null && classifyMountedPage(source.blocks).kind === "document") {
-      return source.page.id;
-    }
-  }
-  return null;
+export async function loadPlannerFolder(
+  _api: PageApiClient,
+  folderId: string,
+): Promise<PlannerFolder> {
+  return loadPlannerFolderById(_api, folderId);
 }
 
 function pageQuery(cursor: string | undefined): URLSearchParams {
@@ -336,114 +288,56 @@ function pagePath(path: string, cursor: string | undefined): string {
   return query ? `${path}?${query}` : path;
 }
 
-function plannerPage<T>(payload: PageSlicePayload<T>): PlannerPage<T> {
-  return { items: payload.items, nextCursor: payload.next_cursor };
+interface PlannerTodayPayload {
+  daily: PageReadResponse;
+  folders: PlannerFolderPayload[];
+  memoBlocks: BlockDto[];
+  reviewSessionIds: string[];
 }
 
-function plannerTask(payload: PlannerTaskPayload): PlannerTask {
-  const task = payload.task ? minimalTask(payload.task) : null;
-  return {
-    page: payload.page,
-    blocks: payload.blocks,
-    stateVector: "",
-    taskId: payload.task_id,
-    task,
-    status: plannerSummaryStatus(payload.task),
-    assignee: payload.task?.assignee ?? (payload.task ? "담당 미지정" : "담당 미확인"),
-    contextCount: taskContextCount(payload.blocks),
-    progress: plannerSummaryProgress(payload.task),
-    projectPageId: payload.project_page_id,
-    sessionIds: payload.sessions.map((session) => session.agent_session_id),
-    mountedDocuments: payload.mounted_documents.map((document) => ({
-      blockId: document.block_id,
-      page: document.page,
-    })),
-  };
-}
-
-function plannerTasks(payloads: readonly PlannerTaskPayload[]): PlannerTask[] {
-  const seenPageIds = new Set<string>();
-  return payloads.flatMap((payload) => {
-    if (seenPageIds.has(payload.page.id)) return [];
-    seenPageIds.add(payload.page.id);
-    return [plannerTask(payload)];
-  });
-}
-
-function plannerSummaryStatus(summary: PlannerTaskSummaryPayload | null): PlannerTaskStatus {
-  if (!summary) return "open";
-  if (summary.status === "completed") return "completed";
-  if ((summary.item_counts.review ?? 0) > 0) return "review";
-  if ((summary.item_counts.in_progress ?? 0) > 0) return "in_progress";
-  return "open";
-}
-
-function plannerSummaryProgress(summary: PlannerTaskSummaryPayload | null): number | null {
-  if (!summary || summary.item_total === 0) return null;
-  return Math.round((summary.completed_item_count / summary.item_total) * 100);
-}
-
-function minimalTask(summary: PlannerTaskSummaryPayload): TaskSnapshot {
-  return {
-    task: {
-      id: summary.id,
-      board_item_id: summary.board_item_id,
-      title: summary.title,
-      status: summary.status === "completed" ? "completed" : "open",
-      archived: summary.archived,
-      version: summary.version,
-      created_session_id: summary.created_session_id,
-      created_event_id: summary.created_event_id,
-      created_at: summary.created_at,
-      updated_at: summary.updated_at,
-    },
-    sections: [],
-    items: [],
-  };
-}
-
-interface PlannerTaskSummaryPayload {
-  id: string;
-  board_item_id: string;
-  title: string;
-  status: string;
-  archived: boolean;
-  version: number;
-  created_session_id: string | null;
-  created_event_id: number | null;
-  created_at: string;
-  updated_at: string;
-  item_counts: Record<string, number>;
-  item_total: number;
-  completed_item_count: number;
+interface PlannerFolderPayload {
+  folder: CatalogFolder;
+  page: PageDto;
+  itemCounts: Record<string, number>;
+  itemTotal: number;
+  completedItemCount: number;
   assignee: string | null;
 }
 
-interface PlannerTaskPayload {
+interface PlannerFolderAggregate {
+  folder: CatalogFolder;
   page: PageDto;
   blocks: BlockDto[];
-  task_id: string;
-  task: PlannerTaskSummaryPayload | null;
-  project_page_id: string | null;
-  sessions: Array<{ agent_session_id: string }>;
-  mounted_documents: Array<{ block_id: string; page: PageDto }>;
+  items: Array<{ status: string }>;
+  subfolders: FolderSlicePayload<CatalogFolder>;
+  documents: FolderSlicePayload<PageDto>;
+  sessions: FolderSlicePayload<SessionSummary>;
 }
 
-interface PlannerTodayPayload {
-  daily: PageReadResponse;
-  projects: PageDto[];
-  memo_blocks: BlockDto[];
-  tasks: PlannerTaskPayload[];
-  review_session_ids: string[];
-}
-
-interface PlannerProjectPayload {
-  project: PageDto;
-  tasks: PageSlicePayload<PlannerTaskPayload>;
-  documents: PageSlicePayload<PageDto>;
-}
-
-interface PageSlicePayload<T> {
+interface FolderSlicePayload<T> {
   items: T[];
-  next_cursor: string | null;
+  nextCursor: string | null;
+}
+
+function plannerFolder(payload: PlannerFolderPayload): PlannerFolder {
+  const { folder, page } = payload;
+  return {
+    page,
+    blocks: [],
+    stateVector: "",
+    folderId: folder.id,
+    status: derivePlannerFolderStatus({
+      folder,
+      items: Object.entries(payload.itemCounts).filter(([, count]) => count > 0)
+        .map(([status]) => ({ status })),
+    }),
+    assignee: payload.assignee ?? "담당 미지정",
+    contextCount: 0,
+    progress: payload.itemTotal > 0
+      ? Math.round(100 * payload.completedItemCount / payload.itemTotal)
+      : null,
+    parentFolderId: folder.parentFolderId ?? null,
+    sessionIds: [],
+    mountedDocuments: [],
+  };
 }

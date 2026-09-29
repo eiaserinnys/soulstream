@@ -27,7 +27,7 @@ export type UISlice = Pick<
     | "setActiveRightTab"
     | "setActiveBoardDocument"
     | "setActiveCustomView"
-    | "openTaskBoard"
+    | "openFolderWorkspace"
     | "setViewMode"
     | "setFeedScrollOffset"
     | "setActiveTab"
@@ -68,10 +68,10 @@ export const createUISlice: StateCreator<
   setActiveCustomView: (activeCustomViewId) =>
     set({ activeCustomViewId, activeBoardDocumentId: null, activeRightTab: "chat" }),
 
-  openTaskBoard: (taskId, parentFolderId = null) =>
+  openFolderWorkspace: (folderId) =>
     set({
-      activeBoardContainer: { kind: "task", id: taskId },
-      selectedFolderId: parentFolderId,
+      activeBoardContainer: { kind: "folder", id: folderId },
+      selectedFolderId: folderId,
       viewMode: "folder",
       leftNavigationMode: "folders",
       activeTab: "folder",

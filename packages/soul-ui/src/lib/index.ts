@@ -29,8 +29,8 @@ export type {
   BoardAssetCommitResponse,
   CreateMarkdownDocumentRequest,
   CreateMarkdownDocumentResponse,
-  MoveBoardItemToContainerInput,
-  MoveBoardItemToContainerResponse,
+  MoveBoardItemToFolderInput,
+  MoveBoardItemToFolderResponse,
   UploadBoardAssetInput,
 } from "./board-workspace-operations";
 export {

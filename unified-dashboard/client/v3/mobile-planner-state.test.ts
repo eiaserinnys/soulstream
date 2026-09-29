@@ -5,17 +5,17 @@ import {
   reduceMobilePlannerEscape,
   selectMobilePlannerTab,
   type MobilePlannerState,
-  type MobilePlannerTaskOption,
+  type MobilePlannerFolderOption,
 } from "./mobile-planner-state";
 
-const tasks: MobilePlannerTaskOption[] = [
+const tasks: MobilePlannerFolderOption[] = [
   {
-    taskId: "task-a",
+    folderId: "task-a",
     runIds: ["run-2", "delegate-2a", "run-1"],
     latestRunId: "run-2",
   },
   {
-    taskId: "task-b",
+    folderId: "task-b",
     runIds: [],
     latestRunId: null,
   },
@@ -24,11 +24,11 @@ const tasks: MobilePlannerTaskOption[] = [
 describe("mobile planner tab selection", () => {
   it("opens the project list without inventing a task workspace", () => {
     expect(selectMobilePlannerTab(state({
-      selectedTaskId: "task-a",
+      selectedFolderId: "task-a",
       selectedRunId: "run-2",
     }), "projects", tasks)).toEqual({
       activeTab: "projects",
-      selectedTaskId: "task-a",
+      selectedFolderId: "task-a",
       selectedRunId: "run-2",
       workspaceOpen: false,
       chatOpen: false,
@@ -38,7 +38,7 @@ describe("mobile planner tab selection", () => {
   it("selects the first task when the task tab opens without a current task", () => {
     expect(selectMobilePlannerTab(state(), "task", tasks)).toEqual({
       activeTab: "task",
-      selectedTaskId: "task-a",
+      selectedFolderId: "task-a",
       selectedRunId: null,
       workspaceOpen: true,
       chatOpen: false,
@@ -46,9 +46,9 @@ describe("mobile planner tab selection", () => {
   });
 
   it("selects the latest run when the chat tab opens without a run", () => {
-    expect(selectMobilePlannerTab(state({ selectedTaskId: "task-a" }), "chat", tasks)).toEqual({
+    expect(selectMobilePlannerTab(state({ selectedFolderId: "task-a" }), "chat", tasks)).toEqual({
       activeTab: "chat",
-      selectedTaskId: "task-a",
+      selectedFolderId: "task-a",
       selectedRunId: "run-2",
       workspaceOpen: true,
       chatOpen: true,
@@ -58,13 +58,13 @@ describe("mobile planner tab selection", () => {
   it("preserves the current task and run when returning to today", () => {
     expect(selectMobilePlannerTab(state({
       activeTab: "chat",
-      selectedTaskId: "task-a",
+      selectedFolderId: "task-a",
       selectedRunId: "delegate-2a",
       workspaceOpen: true,
       chatOpen: true,
     }), "today", tasks)).toEqual({
       activeTab: "today",
-      selectedTaskId: "task-a",
+      selectedFolderId: "task-a",
       selectedRunId: "delegate-2a",
       workspaceOpen: false,
       chatOpen: false,
@@ -74,13 +74,13 @@ describe("mobile planner tab selection", () => {
   it("moves Escape from mobile chat to the task tab without clearing selection", () => {
     expect(reduceMobilePlannerEscape(state({
       activeTab: "chat",
-      selectedTaskId: "task-a",
+      selectedFolderId: "task-a",
       selectedRunId: "run-2",
       workspaceOpen: true,
       chatOpen: true,
     }))).toEqual({
       activeTab: "task",
-      selectedTaskId: "task-a",
+      selectedFolderId: "task-a",
       selectedRunId: "run-2",
       workspaceOpen: true,
       chatOpen: false,
@@ -90,11 +90,11 @@ describe("mobile planner tab selection", () => {
   it("reveals a detail-required attention on the mobile chat surface without changing its run", () => {
     expect(revealAttentionDetail(state({
       activeTab: "today",
-      selectedTaskId: null,
+      selectedFolderId: null,
       selectedRunId: "standalone-run",
     }), true)).toEqual({
       activeTab: "chat",
-      selectedTaskId: null,
+      selectedFolderId: null,
       selectedRunId: "standalone-run",
       workspaceOpen: true,
       chatOpen: true,
@@ -105,7 +105,7 @@ describe("mobile planner tab selection", () => {
 function state(overrides: Partial<MobilePlannerState> = {}): MobilePlannerState {
   return {
     activeTab: "today",
-    selectedTaskId: null,
+    selectedFolderId: null,
     selectedRunId: null,
     workspaceOpen: false,
     chatOpen: false,

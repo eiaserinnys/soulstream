@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Button,
   DashboardDndProvider,
@@ -9,11 +9,12 @@ import {
   DialogHeader,
   DialogPopup,
   DialogTitle,
+  isSystemFolderId,
   readFolderTreeExpandedState,
-  reorderStarredTaskIds,
-  StarredTaskSortableContext,
+  reorderStarredFolderIds,
+  StarredFolderSortableContext,
   pointerFirstCollisionDetection,
-  useStarredTaskDragSurface,
+  useStarredFolderDragSurface,
   useGlassSurface,
   writeFolderTreeExpandedState,
   type CatalogFolder,
@@ -25,19 +26,19 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ProjectDialog, type ProjectDialogTarget } from "./ProjectDialog";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { saveProjectFormContext } from "./project-form-actions";
-import { setTaskStarred } from "./task-star-actions";
+import { setFolderStarred } from "./folder-star-actions";
 import {
-  clearTaskStarChange,
-  publishTaskStarChange,
-  taskStarredState,
-  useTaskStarChanges,
-} from "./task-star-store";
+  clearFolderStarChange,
+  publishFolderStarChange,
+  folderStarredState,
+  useFolderStarChanges,
+} from "./folder-star-store";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import {
   buildProjectContextMenuActions,
-  buildTaskContextMenuActions,
+  buildFolderContextMenuActions,
 } from "./context-menu-model";
-import { starredTaskPage, type StarredPlannerTask } from "./planner-data";
+import { starredFolderPage, type StarredPlannerFolder } from "./planner-data";
 import "./v3-project-star.css";
 
 export interface PlannerDateNavItem {
@@ -46,7 +47,7 @@ export interface PlannerDateNavItem {
 }
 
 type MenuState =
-  | { target: V3ContextMenuTarget; kind: "task"; task: StarredPlannerTask }
+  | { target: V3ContextMenuTarget; kind: "starred_folder"; task: StarredPlannerFolder }
   | { target: V3ContextMenuTarget; kind: "folder"; folder: CatalogFolder };
 
 export function V3Navigation({
@@ -55,64 +56,65 @@ export function V3Navigation({
   folders,
   catalogLoadError = null,
   selectedFolderId,
-  starredTasks,
-  starredTasksHasMore,
-  starredTasksLoading,
-  todayTaskIds,
-  completedTaskIds,
-  onLoadMoreStarredTasks,
-  onReorderStarredTasks,
+  starredFolders,
+  starredFoldersHasMore,
+  starredFoldersLoading,
+  todayFolderIds,
+  completedFolderIds,
+  onLoadMoreStarredFolders,
+  onReorderStarredFolders,
   onSelectDate,
   onSelectFolder,
-  onSelectTask,
-  onCompleteTask,
-  onToggleTaskToday,
-  onMoveTaskToProject,
+  onSelectStarredFolder,
+  onCompleteFolder,
+  onToggleFolderToday,
+  onMoveFolderToParent,
   onCreateProject,
   onRenameProject,
   onDeleteProject,
   onReorderProjects,
   projectHasContents,
-  onCreateTask,
+  onCreateFolder,
 }: {
   dates: readonly PlannerDateNavItem[];
   selectedDate: string;
   folders: readonly CatalogFolder[];
   catalogLoadError?: string | null;
   selectedFolderId: string | null;
-  starredTasks: readonly StarredPlannerTask[];
-  starredTasksHasMore: boolean;
-  starredTasksLoading: boolean;
-  todayTaskIds: ReadonlySet<string>;
-  completedTaskIds: ReadonlySet<string>;
-  onLoadMoreStarredTasks(): void;
-  onReorderStarredTasks(movedPageId: string, orderedPageIds: readonly string[]): Promise<void>;
+  starredFolders: readonly StarredPlannerFolder[];
+  starredFoldersHasMore: boolean;
+  starredFoldersLoading: boolean;
+  todayFolderIds: ReadonlySet<string>;
+  completedFolderIds: ReadonlySet<string>;
+  onLoadMoreStarredFolders(): void;
+  onReorderStarredFolders(movedPageId: string, orderedPageIds: readonly string[]): Promise<void>;
   onSelectDate(date: string): void;
   onSelectFolder(folder: CatalogFolder): void;
-  onSelectTask(task: StarredPlannerTask): void;
-  onCompleteTask(task: StarredPlannerTask): Promise<void>;
-  onToggleTaskToday(task: StarredPlannerTask): Promise<void>;
-  onMoveTaskToProject(task: StarredPlannerTask): void;
+  onSelectStarredFolder(folder: StarredPlannerFolder): void;
+  onCompleteFolder(task: StarredPlannerFolder): Promise<void>;
+  onToggleFolderToday(task: StarredPlannerFolder): Promise<void>;
+  onMoveFolderToParent(task: StarredPlannerFolder): void;
   onCreateProject(title: string, parentFolderId: string | null): Promise<CatalogFolder>;
   onRenameProject(folder: CatalogFolder, title: string): Promise<void>;
   onDeleteProject(folder: CatalogFolder): Promise<void>;
   onReorderProjects(items: CatalogFolderReorderItem[]): Promise<void>;
   projectHasContents(folderId: string): boolean;
-  onCreateTask(folderId: string): void;
+  onCreateFolder(folderId: string): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   const api = useMemo(() => createPageApiClient(), []);
-  const taskStarChanges = useTaskStarChanges();
+  const folderStarChanges = useFolderStarChanges();
+  const visibleFolders = useMemo(() => folders.filter((folder) => !folder.archived), [folders]);
   const [projectDialog, setProjectDialog] = useState<ProjectDialogTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CatalogFolder | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [pendingFolderId, setPendingFolderId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<MenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const starredTaskIds = useMemo(
-    () => starredTasks.map((task) => starredTaskPage(task).id),
-    [starredTasks],
+  const starredFolderIds = useMemo(
+    () => starredFolders.map((task) => starredFolderPage(task).id),
+    [starredFolders],
   );
 
   const storage = typeof window === "undefined" ? undefined : window.localStorage;
@@ -126,6 +128,21 @@ export function V3Navigation({
   const toggleProjectExpanded = useCallback((folderId: string) => {
     setProjectExpanded(folderId, !isProjectExpanded(folderId));
   }, [isProjectExpanded, setProjectExpanded]);
+  useEffect(() => {
+    if (!selectedFolderId) return;
+    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    const ancestors: string[] = [];
+    let parentId = byId.get(selectedFolderId)?.parentFolderId;
+    while (parentId && byId.has(parentId)) {
+      ancestors.push(parentId);
+      parentId = byId.get(parentId)?.parentFolderId;
+    }
+    if (ancestors.length === 0) return;
+    for (const folderId of ancestors) writeFolderTreeExpandedState(storage, folderId, true);
+    setExpandedFolders((current) => ancestors.every((folderId) => current[folderId] === true)
+      ? current
+      : Object.fromEntries([...Object.entries(current), ...ancestors.map((folderId) => [folderId, true])]));
+  }, [folders, selectedFolderId, storage]);
 
   const reorderProjects = useCallback(async (items: CatalogFolderReorderItem[]) => {
     const moved = items.find((item) => {
@@ -143,27 +160,55 @@ export function V3Navigation({
 
   const requestDeleteProject = useCallback((folder: CatalogFolder) => {
     if (projectHasContents(folder.id)) setDeleteTarget(folder);
-    else void onDeleteProject(folder).catch((cause) => setError(`프로젝트 삭제 실패 · ${errorText(cause)}`));
+    else void onDeleteProject(folder).catch((cause) => setError(`폴더 보관 실패 · ${errorText(cause)}`));
   }, [onDeleteProject, projectHasContents]);
 
-  const clearTaskStar = async (task: StarredPlannerTask) => {
-    const page = starredTaskPage(task);
-    if (pendingTaskId) return;
-    setPendingTaskId(page.id);
+  const clearFolderStar = async (task: StarredPlannerFolder) => {
+    const page = starredFolderPage(task);
+    if (pendingFolderId) return;
+    setPendingFolderId(page.id);
     setError(null);
-    const mutationId = publishTaskStarChange({
+    const mutationId = publishFolderStarChange({
       page: { ...page, metadata: { ...page.metadata, starred: false } },
       starred: false,
     });
     try {
-      await setTaskStarred(api, page.id, false);
+      await setFolderStarred(api, page.id, false);
+    } catch (cause) {
+      clearFolderStarChange(page.id, mutationId);
+      setError(`별표 변경 실패 · ${errorText(cause)}`);
+    } finally {
+      setPendingFolderId(null);
+    }
+  };
+  const toggleFolderStar = async (folder: CatalogFolder) => {
+    if (!folder.projectPageId || isSystemFolderId(folder.id) || pendingFolderId) return;
+    const starred = starredFolderIds.includes(folder.projectPageId);
+    setPendingFolderId(folder.projectPageId);
+    setError(null);
+    try {
+      const page = (await api.getPage(folder.projectPageId)).page;
+      const mutationId = publishFolderStarChange({ page: { ...page,
+        metadata: { ...page.metadata, starred: !starred } }, starred: !starred });
+      try { await setFolderStarred(api, page.id, !starred); }
+      catch (cause) { clearFolderStarChange(page.id, mutationId); throw cause; }
     } catch (cause) {
       setError(`별표 변경 실패 · ${errorText(cause)}`);
     } finally {
-      clearTaskStarChange(page.id, mutationId);
-      setPendingTaskId(null);
+      setPendingFolderId(null);
     }
   };
+  const toggleFolderToday = async (folder: CatalogFolder) => {
+    if (!folder.projectPageId || isSystemFolderId(folder.id)) return;
+    try {
+      await onToggleFolderToday((await api.getPage(folder.projectPageId)).page);
+    } catch (cause) {
+      setError(`오늘 목록 변경 실패 · ${errorText(cause)}`);
+    }
+  };
+  const starredContextFolder = contextMenu?.kind === "starred_folder"
+    ? folders.find((folder) => folder.projectPageId === starredFolderPage(contextMenu.task).id)
+    : null;
 
   return (
     <nav
@@ -191,37 +236,37 @@ export function V3Navigation({
       <h2>중요 작업</h2>
       <DashboardDndProvider
         collisionDetection={pointerFirstCollisionDetection}
-        onReorderStarredTasks={(movedPageId, orderedPageIds) => {
-          void onReorderStarredTasks(movedPageId, orderedPageIds);
+        onReorderStarredFolders={(movedPageId, orderedPageIds) => {
+          void onReorderStarredFolders(movedPageId, orderedPageIds);
         }}
       >
         <div className="v3-nav-list" data-testid="v3-starred-tasks">
-          <StarredTaskSortableContext ids={starredTaskIds}>
-            {starredTasks.map((task) => {
-              const page = starredTaskPage(task);
+          <StarredFolderSortableContext ids={starredFolderIds}>
+            {starredFolders.map((task) => {
+              const page = starredFolderPage(task);
               return (
-                <StarredTaskNavigationRow
+                <StarredFolderNavigationRow
                   key={page.id}
                   task={task}
-                  pageIds={starredTaskIds}
-                  onReorderByKeyboard={onReorderStarredTasks}
-                  disabled={starredTasksLoading || pendingTaskId === page.id}
-                  onSelect={() => onSelectTask(task)}
+                  pageIds={starredFolderIds}
+                  onReorderByKeyboard={onReorderStarredFolders}
+                  disabled={starredFoldersLoading || pendingFolderId === page.id}
+                  onSelect={() => onSelectStarredFolder(task)}
                   onContextMenu={(event) => {
                     event.preventDefault();
-                    setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "task", task });
+                    setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "starred_folder", task });
                   }}
                 />
               );
             })}
-          </StarredTaskSortableContext>
-          {starredTasks.length === 0 ? <p>{starredTasksLoading ? "업무를 불러오는 중…" : "별표 업무가 없습니다."}</p> : null}
-          {starredTasksHasMore ? (
+          </StarredFolderSortableContext>
+          {starredFolders.length === 0 ? <p>{starredFoldersLoading ? "업무를 불러오는 중…" : "별표 업무가 없습니다."}</p> : null}
+          {starredFoldersHasMore ? (
             <DashboardIconCap
               label="별표 업무 더 보기"
               data-testid="v3-load-more-starred-tasks"
-              disabled={starredTasksLoading}
-              onClick={onLoadMoreStarredTasks}
+              disabled={starredFoldersLoading}
+              onClick={onLoadMoreStarredFolders}
             >
               <ChevronsDown className="h-4 w-4" aria-hidden="true" />
             </DashboardIconCap>
@@ -232,7 +277,7 @@ export function V3Navigation({
       <h2>전체 프로젝트</h2>
       <div className="v3-nav-list" data-testid="v3-all-projects">
         <ProjectNavigationTree
-          folders={folders}
+          folders={visibleFolders}
           selectedFolderId={selectedFolderId}
           isExpanded={isProjectExpanded}
           onToggleExpanded={toggleProjectExpanded}
@@ -244,7 +289,7 @@ export function V3Navigation({
           onReorder={reorderProjects}
         />
         {catalogLoadError ? <p className="v3-project-star-error" role="alert">{catalogLoadError}</p> : null}
-        {!catalogLoadError && folders.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
+        {!catalogLoadError && visibleFolders.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
         <DashboardIconCap
           label="새 프로젝트"
           className="v3-new-project-trigger"
@@ -260,26 +305,32 @@ export function V3Navigation({
       <V3ContextMenu
         target={contextMenu?.target ?? null}
         onClose={() => setContextMenu(null)}
-        actions={contextMenu?.kind === "task" ? buildTaskContextMenuActions({
-          starred: taskStarredState(starredTaskPage(contextMenu.task).id, taskStarChanges, true),
-          completed: completedTaskIds.has(starredTaskPage(contextMenu.task).id),
-          inToday: todayTaskIds.has(starredTaskPage(contextMenu.task).id),
+        actions={contextMenu?.kind === "starred_folder" && starredContextFolder ? buildFolderContextMenuActions({
+          starred: folderStarredState(starredFolderPage(contextMenu.task).id, folderStarChanges, true),
+          completed: completedFolderIds.has(starredFolderPage(contextMenu.task).id),
+          inToday: todayFolderIds.has(starredFolderPage(contextMenu.task).id),
+          checklistEnabled: starredContextFolder.checklistEnabled,
         }, {
-          open: () => onSelectTask(contextMenu.task),
-          copyId: () => navigator.clipboard.writeText(starredTaskPage(contextMenu.task).id),
-          toggleStar: () => clearTaskStar(contextMenu.task),
-          moveToProject: () => onMoveTaskToProject(contextMenu.task),
-          complete: () => onCompleteTask(contextMenu.task),
-          toggleToday: () => onToggleTaskToday(contextMenu.task),
+          open: () => onSelectStarredFolder(contextMenu.task),
+          copyId: () => navigator.clipboard.writeText(starredContextFolder.id),
+          toggleStar: () => clearFolderStar(contextMenu.task),
+          moveToParent: () => onMoveFolderToParent(contextMenu.task),
+          complete: () => onCompleteFolder(contextMenu.task),
+          toggleToday: () => onToggleFolderToday(contextMenu.task),
         }) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({
           open: () => onSelectFolder(contextMenu.folder),
           copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
-          createTask: () => onCreateTask(contextMenu.folder.id),
+          createFolder: () => onCreateFolder(contextMenu.folder.id),
           createProject: () => setProjectDialog({ mode: "create", parentFolderId: null, parentName: null }),
           createChildProject: () => setProjectDialog({ mode: "create", parentFolderId: contextMenu.folder.id, parentName: contextMenu.folder.name }),
           edit: () => setProjectDialog({ mode: "edit", folder: contextMenu.folder }),
           remove: () => requestDeleteProject(contextMenu.folder),
-        }) : []}
+        }).concat(contextMenu.folder.projectPageId && !isSystemFolderId(contextMenu.folder.id) ? [
+          { label: starredFolderIds.includes(contextMenu.folder.projectPageId) ? "별표 해제" : "별표 추가",
+            onSelect: () => toggleFolderStar(contextMenu.folder) },
+          { label: todayFolderIds.has(contextMenu.folder.projectPageId) ? "오늘에서 제외" : "오늘에 추가",
+            onSelect: () => toggleFolderToday(contextMenu.folder) },
+        ] : []) : []}
       />
       <ProjectDialog
         target={projectDialog}
@@ -294,9 +345,9 @@ export function V3Navigation({
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <DialogPopup className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>프로젝트 삭제</DialogTitle>
+            <DialogTitle>폴더 보관</DialogTitle>
             <DialogDescription>
-              &lsquo;{deleteTarget?.name ?? ""}&rsquo; 프로젝트에는 내용이 있습니다. 프로젝트와 연결 페이지를 함께 보관 처리합니다.
+              &lsquo;{deleteTarget?.name ?? ""}&rsquo; 폴더를 보관합니다. 내용과 세션은 보존됩니다.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter variant="bare">
@@ -305,8 +356,8 @@ export function V3Navigation({
               if (!deleteTarget) return;
               const folder = deleteTarget;
               setDeleteTarget(null);
-              void onDeleteProject(folder).catch((cause) => setError(`프로젝트 삭제 실패 · ${errorText(cause)}`));
-            }}>삭제</Button>
+              void onDeleteProject(folder).catch((cause) => setError(`폴더 보관 실패 · ${errorText(cause)}`));
+            }}>보관</Button>
           </DialogFooter>
         </DialogPopup>
       </Dialog>
@@ -317,7 +368,7 @@ export function V3Navigation({
   );
 }
 
-function StarredTaskNavigationRow({
+function StarredFolderNavigationRow({
   task,
   pageIds,
   onReorderByKeyboard,
@@ -325,15 +376,15 @@ function StarredTaskNavigationRow({
   onSelect,
   onContextMenu,
 }: {
-  task: StarredPlannerTask;
+  task: StarredPlannerFolder;
   pageIds: string[];
   onReorderByKeyboard(movedPageId: string, orderedPageIds: readonly string[]): Promise<void>;
   disabled: boolean;
   onSelect(): void;
   onContextMenu(event: MouseEvent<HTMLButtonElement>): void;
 }) {
-  const page = starredTaskPage(task);
-  const drag = useStarredTaskDragSurface({ id: page.id, pageIds, disabled });
+  const page = starredFolderPage(task);
+  const drag = useStarredFolderDragSurface({ id: page.id, pageIds, disabled });
   const [keyboardAnnouncement, setKeyboardAnnouncement] = useState("");
   return (
     <div
@@ -368,7 +419,7 @@ function StarredTaskNavigationRow({
           if (currentIndex < 0 || !targetPageId) return;
           event.preventDefault();
           event.stopPropagation();
-          const orderedPageIds = reorderStarredTaskIds(pageIds, page.id, targetPageId);
+          const orderedPageIds = reorderStarredFolderIds(pageIds, page.id, targetPageId);
           if (!orderedPageIds) return;
           setKeyboardAnnouncement(`${page.title}, ${orderedPageIds.indexOf(page.id) + 1}번째로 이동합니다.`);
           void onReorderByKeyboard(page.id, orderedPageIds);

@@ -28,9 +28,9 @@ import {
   type SuccessionSessionOption,
 } from "./session-succession-model";
 import {
-  createTaskPageAnchor,
+  createFolderPageAnchor,
   type PageSessionDefaults,
-} from "./task-workspace-api";
+} from "./folder-workspace-page-api";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { buildSessionContextSelection } from "./session-context-items";
 import { useReasoningEffortSelection } from "../hooks/useReasoningEffortSelection";
@@ -47,9 +47,9 @@ export interface SuccessionDocumentOption {
 }
 
 export function SessionSuccessionModal({
-  taskTitle,
-  taskPageId,
-  taskId,
+  folderTitle,
+  folderPageId,
+  folderId,
   contextItems,
   documentOptions,
   contextPending,
@@ -59,9 +59,9 @@ export function SessionSuccessionModal({
   onClose,
   onCreated,
 }: {
-  taskTitle: string;
-  taskPageId: string;
-  taskId: string;
+  folderTitle: string;
+  folderPageId: string;
+  folderId: string;
   contextItems: readonly SuccessionContextItem[];
   documentOptions: readonly SuccessionDocumentOption[];
   contextPending: boolean;
@@ -121,7 +121,7 @@ export function SessionSuccessionModal({
   });
   const effortSelectId = useId();
   const presetHasDefaultEffort = Boolean(selectedModelPresetInfo?.default_effort);
-  const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
+  const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createFolderPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const uploadUrl = selectedNodeId
@@ -138,13 +138,13 @@ export function SessionSuccessionModal({
   } = useFileUpload({ uploadUrl, sessionId: pendingSessionId });
   const contextSelection = useMemo(() => buildSessionContextSelection({
     inheritCard,
-    taskPageId,
+    folderPageId,
     documentPageIds: documentOptions
       .filter((document) => selectedDocumentIds.has(document.pageId))
       .map((document) => document.pageId),
     atomNode: atomNodeId ? { nodeId: atomNodeId, title: atomNodeTitle } : null,
     guidance: "",
-  }), [atomNodeId, atomNodeTitle, documentOptions, inheritCard, selectedDocumentIds, taskPageId]);
+  }), [atomNodeId, atomNodeTitle, documentOptions, inheritCard, selectedDocumentIds, folderPageId]);
   const handleAssignmentError = useCallback((message: string) => {
     console.error("[v3/session-succession] 실행 대상 조회 실패", message);
     setError(message);
@@ -174,7 +174,7 @@ export function SessionSuccessionModal({
     setError(null);
     try {
       const pageAnchor = contextSelection.needsPageAnchor
-        ? preparedPageAnchor ?? await createTaskPageAnchor(api, taskPageId)
+        ? preparedPageAnchor ?? await createFolderPageAnchor(api, folderPageId)
         : null;
       if (pageAnchor && !preparedPageAnchor) setPreparedPageAnchor(pageAnchor);
       const succession = buildSuccessionCreateOptions({
@@ -196,7 +196,7 @@ export function SessionSuccessionModal({
         // Only ever the value this form actually offers. Sending an inherited
         // effort across a model change would 422 with no way to fix it here.
         ...(effort.submitValue ? { reasoningEffort: effort.submitValue } : {}),
-        container: { kind: "task", id: taskId },
+        folderId: folderId,
         contextItems: contextSelection.contextItems.length > 0
           ? contextSelection.contextItems
           : undefined,
@@ -210,7 +210,7 @@ export function SessionSuccessionModal({
         eventCount: 0,
         createdAt: now,
         updatedAt: now,
-        displayName: `${taskTitle} 세션`,
+        displayName: `${folderTitle} 세션`,
         nodeId: result.nodeId ?? selectedNodeId,
         agentId: selectedAgentId,
         agentName: selectedAgent?.name ?? selectedAgentId,

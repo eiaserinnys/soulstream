@@ -13,11 +13,11 @@ export {
 } from "./FolderDragSurface";
 export type { FolderDragData, FolderRootDropData } from "./folder-dnd";
 export {
-  StarredTaskSortableContext,
-  reorderStarredTaskIds,
-  useStarredTaskDragSurface,
-} from "./starred-task-dnd";
-export type { StarredTaskDragData } from "./starred-task-dnd";
+  StarredFolderSortableContext,
+  reorderStarredFolderIds,
+  useStarredFolderDragSurface,
+} from "./starred-folder-dnd";
+export type { StarredFolderDragData } from "./starred-folder-dnd";
 
 // === SSE Subscribe Utility ===
 export { createSSESubscribe } from "./sse-subscribe";

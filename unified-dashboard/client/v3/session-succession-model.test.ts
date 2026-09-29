@@ -6,7 +6,7 @@ import {
   buildSuccessionCreateOptions,
   resolveRunAssignmentDefaults,
 } from "./session-succession-model";
-import type { RunTreeNode } from "./task-workspace-model";
+import type { RunTreeNode } from "./folder-workspace-run-model";
 
 const pageAnchor = { pageId: "task-page", blockId: "anchor-block", expectedVersion: 8 };
 

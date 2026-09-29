@@ -16,7 +16,7 @@ export interface BoardYjsItemValue {
   x: number;
   y: number;
   membership_kind?: CatalogBoardItem["membershipKind"];
-  source_task_item_id?: string | null;
+  source_checklist_item_id?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -36,10 +36,8 @@ export function catalogBoardItemsFromYDoc(
     .map(([id, value]) => ({
       id,
       folderId,
-      containerKind: container.kind,
-      containerId: container.id,
       membershipKind: value.membership_kind ?? "primary",
-      sourceTaskItemId: value.source_task_item_id ?? null,
+      sourceChecklistItemId: value.source_checklist_item_id ?? null,
       itemType: value.item_type,
       itemId: value.item_id,
       x: value.x,
@@ -112,10 +110,8 @@ export function createMarkdownYjsDocument(
   const boardItem: CatalogBoardItem = {
     id: `markdown:${documentId}`,
     folderId,
-    containerKind: container.kind,
-    containerId: container.id,
     membershipKind: "primary",
-    sourceTaskItemId: null,
+    sourceChecklistItemId: null,
     itemType: "markdown",
     itemId: documentId,
     x: input.x,
@@ -194,8 +190,8 @@ function toYjsItemValue(item: CatalogBoardItem): BoardYjsItemValue {
     x: item.x,
     y: item.y,
     ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
-    ...(item.sourceTaskItemId !== undefined
-      ? { source_task_item_id: item.sourceTaskItemId }
+    ...(item.sourceChecklistItemId !== undefined
+      ? { source_checklist_item_id: item.sourceChecklistItemId }
       : {}),
     metadata: sanitizeBoardItemMetadata(item.metadata),
     ...(item.createdAt ? { created_at: item.createdAt } : {}),
@@ -240,15 +236,13 @@ function resolveFolderIdForContainer(
   container: BoardContainerRef,
   resolvedFolderId?: string | null,
 ): string {
-  if (container.kind === "folder") return container.id;
-  return resolvedFolderId || container.id;
+  void resolvedFolderId;
+  return container.id;
 }
 
 function boardItemBelongsToContainer(
   item: CatalogBoardItem,
   container: BoardContainerRef,
 ): boolean {
-  const itemContainerKind = item.containerKind ?? "folder";
-  const itemContainerId = item.containerId ?? item.folderId;
-  return itemContainerKind === container.kind && itemContainerId === container.id;
+  return item.folderId === container.id;
 }

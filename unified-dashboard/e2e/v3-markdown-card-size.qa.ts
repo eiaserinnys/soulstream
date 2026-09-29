@@ -70,18 +70,18 @@ async function verifyMarkdownSurfaces(browser: Browser) {
     await capture(page, "01-inline-document-code-blocks");
 
     await page.getByRole("button", { name: "업무 보드 열기" }).click();
-    const board = page.getByTestId("v3-task-board-pane");
-    const resources = page.getByTestId("v3-task-board-resources");
-    const canvas = page.getByTestId("v3-task-board-canvas");
+    const board = page.getByTestId("v3-folder-board-pane");
+    const resources = page.getByTestId("v3-folder-board-resources");
+    const canvas = page.getByTestId("v3-folder-board-canvas");
     await board.waitFor({ state: "visible" });
-    await page.getByTestId("v3-task-board-loading").waitFor({ state: "hidden" });
+    await page.getByTestId("v3-folder-board-loading").waitFor({ state: "hidden" });
     await canvas.getByTestId("board-declutter-button").click();
     await canvas.getByTestId("board-markdown-tile").click();
     await resources.getByRole("button", { name: "PR-O 결정 로그 편집기 열기" }).click();
 
-    const overlay = page.getByTestId("v3-task-board-document-overlay");
+    const overlay = page.getByTestId("v3-folder-board-document-overlay");
     await overlay.waitFor({ state: "visible" });
-    await overlay.getByTestId("v3-task-board-document-overlay-expand").click();
+    await overlay.getByTestId("v3-folder-board-document-overlay-expand").click();
     const readBody = overlay.getByTestId("markdown-read-body");
     await readBody.getByText("본문 문단 80", { exact: false }).waitFor({ state: "visible" });
     const resourceCodeMetrics = await measureDocumentCodeBlocks(resources);

@@ -28,9 +28,8 @@ describe("v3 live invalidation plane", () => {
       updated_at: "2026-07-15T00:00:00Z",
     });
     acceptV3SessionStreamEvent({
-      type: "task_updated",
-      taskId: "rb-a",
-      boardItemId: "task:rb-a",
+      type: "folder_updated",
+      folderId: "rb-a",
     });
     acceptV3SessionStreamEvent({
       type: "catalog_updated",
@@ -51,7 +50,7 @@ describe("v3 live invalidation plane", () => {
     const snapshot = getV3InvalidationSnapshot();
     expect(selectV3InvalidationKey(snapshot, ["session_updated"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["catalog"])).toBe(1);
-    expect(selectV3InvalidationKey(snapshot, ["task"])).toBe(1);
+    expect(selectV3InvalidationKey(snapshot, ["folder"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["custom_view"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["replay"])).toBe(1);
     expect(pageAListener).toHaveBeenCalledOnce();
@@ -101,9 +100,8 @@ describe("v3 live invalidation plane", () => {
     });
 
     acceptV3SessionStreamEvent({
-      type: "task_updated",
-      taskId: "rb-a",
-      boardItemId: "task:rb-a",
+      type: "folder_updated",
+      folderId: "rb-a",
     });
     expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
       daily: 2,

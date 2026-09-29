@@ -8,10 +8,6 @@ export async function resolveProjectPage(
 ): Promise<PageDto | null> {
   const pageId = folder.projectPageId;
   if (!pageId) return null;
-  if (pageId !== folder.id) {
-    const legacy = knownPages.find((page) => page.id === pageId);
-    return legacy ?? (await api.getPage(pageId)).page;
-  }
   return knownPages.find((page) => page.id === pageId)
     ?? (await api.getPage(pageId)).page;
 }

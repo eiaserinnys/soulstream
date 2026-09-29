@@ -12,12 +12,10 @@ export {
   getRootFolders,
 } from "./board-workspace-helpers";
 export {
-  BOARD_TASK_FIXED_CARD_RECT,
   BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
   computeBoardCanvasSize,
-  filterTaskBoardSpatialItems,
   findFirstOpenBoardPosition,
   formatBoardWorkspaceTime,
   getBoardItemHeight,
@@ -63,10 +61,3 @@ export type {
   BoardYjsRuntime,
   RemoteBoardSelection,
 } from "./board-yjs-client";
-export {
-  getFolderWorkspaceViewModeStorageKey,
-  readFolderWorkspaceViewMode,
-  writeFolderWorkspaceViewMode,
-  useFolderWorkspaceViewMode,
-} from "./folder-workspace-view-mode";
-export type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";

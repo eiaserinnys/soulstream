@@ -1,0 +1,699 @@
+// 500줄 예외: 보드 레이아웃·오버레이·세션 액션의 공존 계약을 소스 계약 테스트가 고정한다.
+// 이번 변경은 실행 이력 페이징 전달만 추가하며, 구조 분리는 별도 계약 마이그레이션이 필요하다.
+import { useCallback, useEffect, useMemo, useRef, useState, type AnimationEvent as ReactAnimationEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  ChatView,
+  DashboardIconCap,
+  DragHandle,
+  MarkdownDocumentPanel,
+  SessionContextMenu,
+  SessionModelPresetBadge,
+  SessionStoryDisclosure,
+  STATUS_CONFIG,
+  useDashboardStore,
+  useGlassSurface,
+  type CatalogBoardItem,
+  type CatalogFolder,
+  type SessionContextMenuState,
+  type SessionReviewAcknowledgeResult,
+  type SessionProviderConnectionStatus,
+  type SessionSummary,
+} from "@seosoyoung/soul-ui";
+import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
+import { createPageApiClient } from "@seosoyoung/soul-ui/page";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
+
+import type { MobilePlannerTab } from "./mobile-planner-state";
+import type { PlannerFolder } from "./planner-data";
+import { sessionPanelTitle } from "./v3-session-panel-model";
+import { buildRunTree, type RunSessionLoadState } from "./folder-workspace-run-model";
+import { buildSuccessionSessionOptions, latestFolderRun } from "./session-succession-model";
+import { SessionSuccessionModal } from "./SessionSuccessionModal";
+import { buildFolderSessionExtraActions } from "./context-menu-model";
+import { getRunSessionRenamePrefill } from "./FolderSessionHistory";
+import { FolderMoveDialog } from "./FolderMoveDialog";
+import type { FolderMoveTarget } from "./folder-move-targets";
+import { useFolderSessionContext } from "./use-folder-session-context";
+import type { PageSessionDefaults } from "./folder-workspace-page-api";
+import {
+  V3_NAVIGATION_DEFAULT_WIDTH_PX,
+  V3_PANEL_GAP_PX,
+  V3_SESSION_PANEL_DEFAULT_WIDTH_PX,
+} from "./v3-layout-metrics";
+import {
+  clampFolderChatWidth,
+  clampFolderResourceWidth,
+  initialFolderBoardResourceState,
+  openFolderWorkspaceResource,
+  reconcileFolderBoardResourceState,
+  type FolderBoardResourceSelection,
+} from "./folder-board-model";
+import { FolderBoardPane } from "./FolderBoardPane";
+import { FolderBoardResourcePane } from "./FolderBoardResourcePane";
+import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
+import { SessionStreamStatus } from "./SessionStreamStatus";
+
+const TASK_PANEL_KEYBOARD_STEP_PX = 24;
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+export function FolderBoardWorkspace({
+  task,
+  projectFolderId,
+  projectTitle,
+  sessions,
+  runSessionLoadStates,
+  runHistoryTotal,
+  runHistoryHasMore,
+  runHistoryLoading,
+  activeSession,
+  chatInputDisabled,
+  fileUploadUrl,
+  mobileMode,
+  mobileTab,
+  historyEnabled,
+  sessionStreamActive,
+  sessionConnectionStatus,
+  reconnectSession,
+  folderMoveTargets,
+  folders,
+  contextInvalidationKey,
+  markdownDocumentsRevision,
+  sessionDefaults,
+  onClose,
+  onMarkdownDocumentEditorClosed,
+  onOpenSession,
+  onLoadMoreRuns,
+  onRenameSession,
+  onDeleteSessions,
+  onMoveSession,
+  onAcknowledgedReview,
+}: {
+  task: PlannerFolder;
+  projectFolderId: string | null;
+  projectTitle: string;
+  sessions: readonly SessionSummary[];
+  runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
+  runHistoryTotal: number;
+  runHistoryHasMore: boolean;
+  runHistoryLoading: boolean;
+  activeSession: SessionSummary | undefined;
+  chatInputDisabled: boolean;
+  fileUploadUrl: string | undefined;
+  mobileMode: boolean;
+  mobileTab: MobilePlannerTab;
+  historyEnabled: boolean;
+  sessionStreamActive: boolean;
+  sessionConnectionStatus: SessionProviderConnectionStatus;
+  reconnectSession(): void;
+  folderMoveTargets: readonly PlannerFolder[];
+  folders: readonly CatalogFolder[];
+  contextInvalidationKey: number;
+  markdownDocumentsRevision: number;
+  sessionDefaults: PageSessionDefaults | null;
+  onClose(): void;
+  onMarkdownDocumentEditorClosed(): void;
+  onOpenSession(session: SessionSummary): void;
+  onLoadMoreRuns(): Promise<void>;
+  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
+  onDeleteSessions(sessionIds: string[]): Promise<void>;
+  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
+  onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
+}) {
+  // 🔴23: 이 task의 마지막 보드 레이아웃(dashboard-store persist)을 최초 1회만 읽어 복원 시드로 쓴다.
+  const layoutKey = task.page.id;
+  const initialLayoutRef = useRef(useDashboardStore.getState().folderBoardLayouts[layoutKey] ?? null);
+
+  const chatSurfaceRef = useRef<HTMLElement>(null);
+  const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: true });
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const resourceWidthRef = useRef<number>(
+    clampFolderResourceWidth(initialLayoutRef.current?.resourceWidth ?? V3_NAVIGATION_DEFAULT_WIDTH_PX),
+  );
+  const chatWidthRef = useRef<number>(
+    clampFolderChatWidth(initialLayoutRef.current?.chatWidth ?? V3_SESSION_PANEL_DEFAULT_WIDTH_PX),
+  );
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const overlayOffsetRef = useRef<number>(initialLayoutRef.current?.overlayOffsetX ?? 0);
+  const didRestoreRef = useRef(false);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [boardItems, setBoardItems] = useState<readonly CatalogBoardItem[]>([]);
+  const [resourceState, setResourceState] = useState(() => {
+    const snap = initialLayoutRef.current;
+    if (snap?.openedResources && snap.openedResources.length > 0) {
+      return {
+        openedResources: snap.openedResources.map((resource) => ({
+          kind: resource.kind,
+          resourceId: resource.resourceId,
+        })) as FolderBoardResourceSelection[],
+        activeTabId: snap.activeTabId ?? "checklist",
+      };
+    }
+    return initialFolderBoardResourceState();
+  });
+  const [overlayExpanded, setOverlayExpanded] = useState(false);
+  const [overlayClosing, setOverlayClosing] = useState(false);
+  const [activeFolderDocumentId, setActiveFolderDocumentId] = useState<string | null>(null);
+  const [pendingFolderDocumentEditId, setPendingFolderDocumentEditId] = useState<string | null>(null);
+  const [successionOpen, setSuccessionOpen] = useState(false);
+  // 🔴30: 세션 행 우클릭 컨텍스트 메뉴 상태. 업무 패널(FolderSessionHistory)과 동일한 공통
+  // SessionContextMenu·승계 모달·이동 다이얼로그를 재사용한다(테마·포털은 base-ui Menu가
+  // 이미 text-foreground를 상속하므로 🔴29 래퍼가 불필요하다).
+  const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
+  const [targetedSuccessionId, setTargetedSuccessionId] = useState<string | null>(null);
+  const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
+  const moveApi = useMemo(() => createPageApiClient(), []);
+  const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
+  const checklistEnabled = folders.find((folder) => folder.id === task.folderId)?.checklistEnabled === true;
+
+  // 새 세션 흐름은 업무 패널(FolderSessionHistory)과 동일한 컨텍스트 상속 경로·다이얼로그를
+  // 재사용한다(useFolderSessionContext + SessionSuccessionModal, container=task).
+  const sessionContext = useFolderSessionContext({
+    folderPageId: task.page.id,
+    projectFolderId,
+    folders,
+    contextInvalidationKey,
+    sessionDefaults,
+    contextBlocks: task.blocks,
+  });
+  const runTree = useMemo(
+    () => buildRunTree(task.sessionIds, sessions, runSessionLoadStates),
+    [task.sessionIds, sessions, runSessionLoadStates],
+  );
+  const predecessorOptions = useMemo(
+    () => buildSuccessionSessionOptions(runTree),
+    [runTree],
+  );
+  const currentSession = useMemo(
+    () => latestFolderRun(task.sessionIds, sessions),
+    [task.sessionIds, sessions],
+  );
+  // 🔴30: "이어서 새 세션" 대상은 우클릭한 세션이며, 없으면 최신 세션(현재 동작)으로 폴백한다.
+  const targetedSuccession = targetedSuccessionId
+    ? sessions.find((session) => session.agentSessionId === targetedSuccessionId) ?? null
+    : currentSession;
+  const documentOptions = useMemo(
+    () => boardItems
+      .filter((item) => item.itemType === "markdown")
+      .map((item) => {
+        const metadataTitle = item.metadata?.title;
+        return {
+          pageId: item.itemId,
+          title: typeof metadataTitle === "string" && metadataTitle.trim() ? metadataTitle.trim() : "문서",
+        };
+      }),
+    [boardItems],
+  );
+
+  // 🔴23: persist 시점에 최신 값을 읽기 위한 미러 ref. 매 렌더 동기화(값 비용 없음).
+  const resourceStateRef = useRef(resourceState);
+  resourceStateRef.current = resourceState;
+  const overlayExpandedRef = useRef(overlayExpanded);
+  overlayExpandedRef.current = overlayExpanded;
+
+  // 🔴23: 이 task의 보드 레이아웃을 디바운스 저장한다. 여러 소유자(폭·탭·오버레이)가
+  // 같은 키에 부분 병합 기록하므로 stable하게 유지한다(deps=layoutKey).
+  const schedulePersist = useCallback(() => {
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      const store = useDashboardStore.getState();
+      store.setFolderBoardLayout(layoutKey, {
+        resourceWidth: Math.round(resourceWidthRef.current),
+        chatWidth: Math.round(chatWidthRef.current),
+        activeTabId: resourceStateRef.current.activeTabId,
+        openedResources: resourceStateRef.current.openedResources.map((resource) => ({
+          kind: resource.kind,
+          resourceId: resource.resourceId,
+        })),
+        overlayExpanded: overlayExpandedRef.current,
+        overlayOffsetX: Math.round(overlayOffsetRef.current),
+        overlayOpen: activeFolderDocumentId != null,
+        overlayDocumentId: activeFolderDocumentId,
+        activeSessionKey: store.activeSessionKey,
+      });
+    }, 300);
+  }, [activeFolderDocumentId, layoutKey]);
+
+  // 좌측 자료 패널 폭은 기존 `--v3-navigation-width`, 오른쪽 채팅 폭은 기존
+  // `--v3-session-panel-width` 토큰(그리드 좌·우 컬럼)에 세션 로컬로 반영한다.
+  // contract test가 JSX inline style 리터럴을 금지하므로 ref의 setProperty로
+  // 적용한다. 두 폭은 서로 독립이며 그리드 중앙 1fr가 여백을 흡수한다.
+  const applyResourceWidth = useCallback((widthPx: number) => {
+    const clamped = clampFolderResourceWidth(widthPx);
+    resourceWidthRef.current = clamped;
+    workspaceRef.current?.style.setProperty("--v3-navigation-width", `${clamped}px`);
+    schedulePersist();
+  }, [schedulePersist]);
+
+  const applyChatWidth = useCallback((widthPx: number) => {
+    const clamped = clampFolderChatWidth(widthPx);
+    chatWidthRef.current = clamped;
+    workspaceRef.current?.style.setProperty("--v3-session-panel-width", `${clamped}px`);
+    schedulePersist();
+  }, [schedulePersist]);
+
+  useEffect(() => {
+    applyResourceWidth(resourceWidthRef.current);
+    applyChatWidth(chatWidthRef.current);
+  }, [applyChatWidth, applyResourceWidth]);
+
+  const resizeResources = useCallback((deltaPercent: number) => {
+    const deltaPx = (document.documentElement.clientWidth * deltaPercent) / 100;
+    applyResourceWidth(resourceWidthRef.current + deltaPx);
+  }, [applyResourceWidth]);
+
+  // 오른쪽 채팅은 왼쪽에 있으므로 핸들을 왼쪽으로 끌면(음의 deltaPx) 넓어진다.
+  // 기존 세션 패널 리사이즈(`current - deltaPx`)와 동일한 부호 규약을 따른다.
+  const resizeChat = useCallback((deltaPercent: number) => {
+    const deltaPx = (document.documentElement.clientWidth * deltaPercent) / 100;
+    applyChatWidth(chatWidthRef.current - deltaPx);
+  }, [applyChatWidth]);
+
+  const handleResourceResizeKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      applyResourceWidth(resourceWidthRef.current - TASK_PANEL_KEYBOARD_STEP_PX);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      applyResourceWidth(resourceWidthRef.current + TASK_PANEL_KEYBOARD_STEP_PX);
+    }
+  }, [applyResourceWidth]);
+
+  const handleChatResizeKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      applyChatWidth(chatWidthRef.current + TASK_PANEL_KEYBOARD_STEP_PX);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      applyChatWidth(chatWidthRef.current - TASK_PANEL_KEYBOARD_STEP_PX);
+    }
+  }, [applyChatWidth]);
+
+  // 오버레이를 닫으면 다음에 열 때 다시 기본 높이(40%)에서 시작한다. 문서가 바뀌면
+  // 진행 중인 닫힘 애니메이션도 취소한다(새 문서 열림이 닫힘보다 우선).
+  useEffect(() => {
+    if (!activeFolderDocumentId) setOverlayExpanded(false);
+    setOverlayClosing(false);
+  }, [activeFolderDocumentId]);
+
+  const handleRequestMarkdownEdit = useCallback((documentId: string) => {
+    setActiveFolderDocumentId(documentId);
+    setPendingFolderDocumentEditId(documentId);
+  }, []);
+  const openFolderMarkdownDocument = useCallback((documentId: string) => {
+    setPendingFolderDocumentEditId(null);
+    setActiveFolderDocumentId(documentId);
+  }, []);
+  const clearPendingFolderDocumentEdit = useCallback(() => {
+    setPendingFolderDocumentEditId(null);
+  }, []);
+  const closeFolderDocumentOverlay = useCallback(() => {
+    setPendingFolderDocumentEditId(null);
+    setActiveFolderDocumentId(null);
+    onMarkdownDocumentEditorClosed();
+  }, [onMarkdownDocumentEditorClosed]);
+
+  // 🔴13/14/15: 닫기(X)·중앙 보드 클릭은 🔴13 애니메이션을 태운다. reduced-motion이면
+  // 애니메이션 없이 즉시 닫는다. 닫힘 애니메이션 종료 시 실제로 오버레이를 해제한다.
+  const requestCloseOverlay = useCallback(() => {
+    if (prefersReducedMotion()) {
+      closeFolderDocumentOverlay();
+      return;
+    }
+    setOverlayClosing(true);
+  }, [closeFolderDocumentOverlay]);
+  const handleOverlayAnimationEnd = useCallback((event: ReactAnimationEvent<HTMLDivElement>) => {
+    // 자식 요소 애니메이션 버블은 무시하고 오버레이 자체의 닫힘 애니메이션에만 반응.
+    if (event.target !== event.currentTarget) return;
+    if (overlayClosing) closeFolderDocumentOverlay();
+  }, [closeFolderDocumentOverlay, overlayClosing]);
+
+  // 🔴20: 오버레이 바깥(보드 영역) 상호작용은 닫지 않고 기본 높이(40%)로 축소한다.
+  // 이미 40%면 그대로 유지(축소만, 닫힘 아님). 완전 닫기는 X 버튼(requestCloseOverlay)만.
+  const requestShrinkOverlay = useCallback(() => {
+    setOverlayExpanded(false);
+  }, []);
+
+  // 🔴22: 오버레이 가로 오프셋을 보드 영역(중앙 canvas) 안으로 clamp하여 CSS var로 반영.
+  // 오버레이 폭이 보드보다 넓으면(narrow desktop) maxOffset=0이라 이동하지 않아 채팅 열을 침범하지 않는다.
+  const applyOverlayOffset = useCallback((offsetPx: number) => {
+    const canvas = workspaceRef.current?.querySelector<HTMLElement>('[data-testid="v3-folder-board-canvas"]');
+    const overlay = overlayRef.current;
+    let clamped = offsetPx;
+    if (canvas && overlay) {
+      const maxOffset = Math.max(0, (canvas.clientWidth - overlay.offsetWidth) / 2);
+      clamped = Math.max(-maxOffset, Math.min(maxOffset, offsetPx));
+    }
+    overlayOffsetRef.current = clamped;
+    overlay?.style.setProperty("--v3-overlay-offset-x", `${clamped}px`);
+  }, []);
+
+  // 🔴22: 탑바(헤더) 드래그로 오버레이를 좌우로 옮긴다. 버튼 위 mousedown은 이동 시작 아님.
+  const handleOverlayHeaderMouseDown = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (!target || target.closest("button")) return;
+    event.preventDefault();
+    // 🔴27: 논리 위치와 시각(clamp) 위치의 패리티를 맞춘다. mousedown 시점의 startOffset+전체델타로
+    // 계산하면 clamp 한도 너머 입력이 "의도"로 계속 누적돼, 되돌릴 때 그만큼 되감아야 시각이 반응한다.
+    // 대신 매 mousemove에서 직전 clientX 대비 증분만 clamp된 현재 오프셋에 적용해 재기준화한다 →
+    // clamp 경계 밖으로 밀어도 오프셋은 한도에 머물고, 되돌리는 즉시 1:1로 움직인다.
+    let lastX = event.clientX;
+    const handleMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - lastX;
+      lastX = moveEvent.clientX;
+      applyOverlayOffset(overlayOffsetRef.current + deltaX);
+    };
+    const handleUp = () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+      schedulePersist();
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  }, [applyOverlayOffset, schedulePersist]);
+
+  // 🔴22/23: 오버레이가 열릴 때 저장된 가로 오프셋을 적용한다(마운트/문서 전환 시).
+  useEffect(() => {
+    if (activeFolderDocumentId) applyOverlayOffset(overlayOffsetRef.current);
+  }, [activeFolderDocumentId, applyOverlayOffset]);
+
+  // 🔴23: 오버레이 확장 상태·활성 문서·활성 세션·탭 변경을 저장한다.
+  useEffect(() => {
+    schedulePersist();
+  }, [schedulePersist, resourceState, overlayExpanded, activeFolderDocumentId, activeSessionKey]);
+
+  // 🔴23: 재진입 시 마지막 활성 채팅 세션과 편집 오버레이 문서를 복원한다. 대상이 아직
+  // 로딩 중이면 다음 렌더까지 대기하고, 목록이 로드됐는데도 없으면 삭제된 것으로 보고 건너뛴다.
+  useEffect(() => {
+    if (didRestoreRef.current) return;
+    const snap = initialLayoutRef.current;
+    if (!snap) { didRestoreRef.current = true; return; }
+    const wantSessionKey = snap.activeSessionKey ?? null;
+    const wantDocId = snap.overlayOpen ? (snap.overlayDocumentId ?? null) : null;
+    const restoredSession = wantSessionKey
+      ? sessions.find((candidate) => candidate.agentSessionId === wantSessionKey)
+      : undefined;
+    const docExists = wantDocId
+      ? boardItems.some((item) => item.itemType === "markdown" && item.itemId === wantDocId)
+      : false;
+    // 로딩 대기: 참조 대상이 안 보이는데 목록도 비어 있으면 아직 로딩 중일 수 있다.
+    if (wantSessionKey && !restoredSession && sessions.length === 0) return;
+    if (wantDocId && !docExists && boardItems.length === 0) return;
+    // 활성 세션 먼저(오버레이를 닫는 부작용 대비), 그다음 오버레이 문서를 마지막에 복원.
+    if (restoredSession) onOpenSession(restoredSession);
+    if (wantDocId && docExists) {
+      setActiveFolderDocumentId(wantDocId);
+      if (snap.overlayExpanded) setOverlayExpanded(true);
+    }
+    didRestoreRef.current = true;
+  }, [boardItems, sessions, onOpenSession]);
+
+  useEffect(() => () => {
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+  }, []);
+
+  const closeWorkspace = () => {
+    if (activeFolderDocumentId) closeFolderDocumentOverlay();
+    else setActiveFolderDocumentId(null);
+    onClose();
+  };
+  const openSession = (session: SessionSummary) => {
+    // 🔴26: 세션 선택은 편집 오버레이를 닫지 않는다. 부모 onOpenSession→setActiveSession의
+    // 전역 문서 선택을 바꾸는 부수효과가 task-local 문서에는 닿지 않는다. task-local 문서는
+    // 그대로 유지하고, 완전 닫기는 X 버튼만 허용한다.
+    const preservedDocumentId = activeFolderDocumentId;
+    onOpenSession(session);
+    if (preservedDocumentId) {
+      setActiveFolderDocumentId(preservedDocumentId);
+    }
+  };
+  // 🔴30: 세션 행 우클릭 → 공통 SessionContextMenu를 마우스 좌표에 띄운다(FolderSessionHistory와 동일).
+  const openSessionContextMenu = (session: SessionSummary, event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSessionContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.agentSessionId });
+  };
+  const handleBoardItemsChanged = useCallback((items: readonly CatalogBoardItem[]) => {
+    setBoardItems(items);
+    // 로딩 중(빈 배열)엔 reconcile을 건너뛰어 복원된 탭을 보존한다. 실제 항목이 도착하면
+    // 삭제된 자료 탭을 정리한다(🔴23 안전 폴백).
+    setResourceState((current) => (
+      items.length === 0 ? current : reconcileFolderBoardResourceState(current, items)
+    ));
+  }, []);
+  useEffect(() => {
+    if (!checklistEnabled && resourceState.activeTabId === "checklist") {
+      setResourceState((current) => ({ ...current, activeTabId: "sessions" }));
+    }
+  }, [checklistEnabled, resourceState.activeTabId]);
+  const openResource = useCallback((resource: FolderBoardResourceSelection) => {
+    setResourceState((current) => openFolderWorkspaceResource(current, resource));
+  }, []);
+
+  return (
+    <div
+      className="v3-workspace-scrim is-chat-open is-task-board"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) closeWorkspace(); }}
+    >
+      <div
+        ref={workspaceRef}
+        className="v3-workspace is-board-open v3-folder-board-workspace"
+        data-mobile-view={mobileMode ? mobileTab : undefined}
+      >
+        <section
+          className="v3-detail-pane v3-folder-board-resources border border-glass-border glass-strong glass-chrome lg-rim"
+          data-testid="v3-folder-board-resources"
+          aria-label="업무 자료"
+        >
+          <FolderBoardResourcePane
+            folderId={task.folderId}
+            folderTitle={task.page.title}
+            checklistEnabled={checklistEnabled}
+            sessionIds={task.sessionIds}
+            sessions={sessions}
+            runSessionLoadStates={runSessionLoadStates}
+            runHistoryTotal={runHistoryTotal}
+            runHistoryHasMore={runHistoryHasMore}
+            runHistoryLoading={runHistoryLoading}
+            activeSessionId={activeSessionKey}
+            boardItems={boardItems}
+            openedResources={resourceState.openedResources}
+            activeTabId={resourceState.activeTabId}
+            markdownDocumentsRevision={markdownDocumentsRevision}
+            onOpenSession={openSession}
+            onLoadMoreRuns={onLoadMoreRuns}
+            onOpenDocument={openFolderMarkdownDocument}
+            onActiveTabChange={(activeTabId) => {
+              setResourceState((current) => (
+                current.activeTabId === activeTabId
+                  ? current
+                  : { ...current, activeTabId }
+              ));
+            }}
+            onNewSession={() => { setTargetedSuccessionId(null); setSuccessionOpen(true); }}
+            onSessionContextMenu={openSessionContextMenu}
+          />
+        </section>
+
+        <div
+          className="v3-folder-board-resize v3-folder-board-resize--left"
+          data-testid="v3-folder-board-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="업무 자료 패널 크기 조절"
+          tabIndex={0}
+          onKeyDown={handleResourceResizeKeyDown}
+        >
+          <DragHandle onDrag={resizeResources} widthPx={V3_PANEL_GAP_PX} />
+        </div>
+
+        <main
+          className="v3-folder-board-canvas"
+          data-testid="v3-folder-board-canvas"
+          onMouseDownCapture={() => { if (activeFolderDocumentId) requestShrinkOverlay(); }}
+        >
+          <FolderBoardPane
+            folderId={task.folderId}
+            folderName={task.page.title}
+            sessions={sessions}
+            folderMoveTargets={folderMoveTargets}
+            viewportPersistenceKey={layoutKey}
+            onBoardItemsChanged={handleBoardItemsChanged}
+            onMarkdownDocumentDeleted={(documentId) => {
+              if (activeFolderDocumentId === documentId) setActiveFolderDocumentId(null);
+            }}
+            onOpenMarkdownDocument={(documentId) => {
+              openResource({ kind: "document", resourceId: documentId });
+            }}
+            onRequestMarkdownEdit={handleRequestMarkdownEdit}
+            onOpenCustomView={(customViewId) => {
+              openResource({ kind: "custom_view", resourceId: customViewId });
+            }}
+            onClose={closeWorkspace}
+          />
+        </main>
+
+        <div
+          className="v3-folder-board-resize v3-folder-board-resize--right"
+          data-testid="v3-folder-board-chat-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="채팅 패널 크기 조절"
+          tabIndex={0}
+          onKeyDown={handleChatResizeKeyDown}
+        >
+          <DragHandle onDrag={resizeChat} widthPx={V3_PANEL_GAP_PX} />
+        </div>
+
+        <section
+          ref={chatSurfaceRef}
+          className="v3-chat-pane v3-folder-board-chat border border-glass-border glass-strong glass-chrome lg-rim"
+          data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
+          data-testid="v3-folder-board-chat"
+          aria-label="세션 채팅"
+        >
+          <header className="v3-chat-header">
+            <div className="v3-chat-session-title">
+              <strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong>
+            </div>
+            <SessionModelPresetBadge session={activeSession} />
+            <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>
+              {activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}
+            </span>
+            {activeSession ? <SessionStreamStatus active={sessionStreamActive} status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
+            {activeSession ? (
+              <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
+            ) : null}
+          </header>
+          {activeSession ? (
+            <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} />
+          ) : null}
+          <div className="v3-chat-content">
+            {activeSession ? (
+              <ChatView
+                chatInputDisabled={chatInputDisabled}
+                fileUploadUrl={fileUploadUrl}
+                historyEnabled={historyEnabled}
+              />
+            ) : (
+              <div className="v3-chat-empty">
+                <span className="v3-emoji" aria-hidden="true">💬</span>
+                <strong>위임 관계에서 세션을 선택하세요.</strong>
+                <p>채팅은 보드와 문서 편집 중에도 이 자리에 유지됩니다.</p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {activeFolderDocumentId ? (
+          <LiquidGlassCard
+            ref={overlayRef}
+            webglSurface
+            cornerRadius={24}
+            className={`v3-folder-board-document-overlay${overlayExpanded ? " is-expanded" : ""}${overlayClosing ? " is-closing" : ""}`}
+            data-testid="v3-folder-board-document-overlay"
+            data-state={overlayClosing ? "closing" : "open"}
+            onAnimationEnd={handleOverlayAnimationEnd}
+          >
+            <header className="v3-chat-header" onMouseDown={handleOverlayHeaderMouseDown}>
+              <div>
+                <small>{projectTitle} › {task.page.title}</small>
+                <strong>마크다운 문서</strong>
+              </div>
+              <DashboardIconCap
+                label={overlayExpanded ? "문서 편집기 높이 축소" : "문서 편집기 높이 확장"}
+                aria-pressed={overlayExpanded}
+                data-testid="v3-folder-board-document-overlay-expand"
+                onClick={() => setOverlayExpanded((current) => !current)}
+              >
+                {overlayExpanded ? (
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                )}
+              </DashboardIconCap>
+              <DashboardIconCap
+                label="문서 편집기 닫기"
+                data-testid="v3-folder-board-document-overlay-close"
+                onClick={requestCloseOverlay}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </DashboardIconCap>
+            </header>
+            <div className="v3-board-document-content">
+              <MarkdownDocumentPanel
+                documentId={activeFolderDocumentId}
+                container={{ kind: "folder", id: task.folderId }}
+                pendingEditId={pendingFolderDocumentEditId}
+                onPendingEditConsumed={clearPendingFolderDocumentEdit}
+                onClose={closeFolderDocumentOverlay}
+                onDeleted={(boardItemId) => setBoardItems((current) => current.filter((item) => item.id !== boardItemId))}
+              />
+            </div>
+          </LiquidGlassCard>
+        ) : null}
+      </div>
+
+      {successionOpen ? (
+        <SessionSuccessionModal
+          folderTitle={task.page.title}
+          folderPageId={task.page.id}
+          folderId={task.folderId}
+          contextItems={sessionContext.contextItems}
+          documentOptions={documentOptions}
+          contextPending={sessionContext.contextPending}
+          predecessorOptions={predecessorOptions}
+          pageDefaults={sessionContext.effectiveSessionDefaults}
+          currentSession={targetedSuccession}
+          onClose={() => { setSuccessionOpen(false); setTargetedSuccessionId(null); }}
+          onCreated={(session) => {
+            setSuccessionOpen(false);
+            setTargetedSuccessionId(null);
+            openSession(session);
+          }}
+        />
+      ) : null}
+
+      {/* 🔴30: 세션 행 우클릭 메뉴 — 복사·이어서 새 세션·이름 변경·다른 업무로 이동·삭제.
+          업무 패널(FolderSessionHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다. */}
+      <SessionContextMenu
+        contextMenu={sessionContextMenu}
+        onClose={() => setSessionContextMenu(null)}
+        onRenameSession={onRenameSession}
+        onDeleteSessions={onDeleteSessions}
+        getSessionName={(sessionId) => getRunSessionRenamePrefill(sessions, sessionId)}
+        resolveSessionIds={(sessionId) => [sessionId]}
+        extraActions={buildFolderSessionExtraActions({
+          continueFromSession: () => {
+            if (!sessionContextMenu) return;
+            setTargetedSuccessionId(sessionContextMenu.sessionId);
+            setSessionContextMenu(null);
+            setSuccessionOpen(true);
+          },
+          moveToFolder: () => {
+            if (!sessionContextMenu) return;
+            setMoveSessionId(sessionContextMenu.sessionId);
+            setSessionContextMenu(null);
+          },
+        })}
+      />
+      <FolderMoveDialog
+        api={moveApi}
+        currentFolderId={task.folderId}
+        defaultTargets={folderMoveTargets}
+        open={moveSessionId !== null}
+        onClose={() => setMoveSessionId(null)}
+        onMove={async (target) => {
+          if (!moveSessionId) return;
+          await onMoveSession(moveSessionId, target);
+        }}
+      />
+    </div>
+  );
+}

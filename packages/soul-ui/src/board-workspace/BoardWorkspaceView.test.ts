@@ -10,13 +10,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { mergeCatalogSessionsDelta } from "../hooks/session-stream-helpers";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useTaskStore } from "../stores/task-store";
+import { useFolderChecklistStore } from "../stores/folder-checklist-store";
 import { BoardWorkspaceView } from "./BoardWorkspaceView";
 import { resolveEffectiveBoardCatalog } from "./board-catalog-resolution";
 
 const catalog: CatalogState = {
   folders: [
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "root",
       name: "Root folder with a very long name that must stay inside the tile",
       sortOrder: 0,
@@ -24,6 +28,10 @@ const catalog: CatalogState = {
       createdAt: "2026-06-01T00:00:00.000Z",
     },
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "child-folder",
       name: "Child folder with a very long name that should truncate",
       sortOrder: 1,
@@ -129,6 +137,10 @@ const relationSessions: SessionSummary[] = [
 const relationCatalog: CatalogState = {
   folders: [
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "root",
       name: "Root",
       sortOrder: 0,
@@ -136,6 +148,10 @@ const relationCatalog: CatalogState = {
       createdAt: "2026-06-01T00:00:00.000Z",
     },
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "other",
       name: "Other",
       sortOrder: 1,
@@ -254,93 +270,95 @@ function findButtonByText(scope: ParentNode, text: string): HTMLButtonElement | 
 }
 
 function seedTaskProjection(taskId = "rb-1") {
-  useTaskStore.setState({
+  useFolderChecklistStore.setState({
     byId: {
       [taskId]: {
         snapshot: {
-          task: {
+          folder: {
             id: taskId,
-            board_item_id: `task:${taskId}`,
-            folder_id: "root",
-            title: "Deploy Task",
+            parentFolderId: "root",
+            projectPageId: null,
+            checklistEnabled: true,
+            name: "Deploy Task",
             status: "open",
+            completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
             archived: false,
             version: 3,
-            created_session_id: null,
-            created_event_id: null,
-            created_at: "2026-07-06T00:00:00.000Z",
-            updated_at: "2026-07-06T00:00:00.000Z",
+            createdSessionId: null,
+            createdEventId: null,
+            createdAt: "2026-07-06T00:00:00.000Z",
+            updatedAt: "2026-07-06T00:00:00.000Z",
           },
           sections: [
             {
               id: "sec-1",
-              task_id: taskId,
-              position_key: "a",
+              folderId: taskId,
+              positionKey: "a",
               title: "Checklist",
               archived: false,
               version: 1,
-              created_session_id: null,
-              created_event_id: null,
-              updated_session_id: null,
-              updated_event_id: null,
-              created_at: "2026-07-06T00:00:00.000Z",
-              updated_at: "2026-07-06T00:00:00.000Z",
-              assignee_kind: null,
-              assignee_agent_id: null,
-              assignee_session_id: null,
-              assignee_user_id: null,
+              createdSessionId: null,
+              createdEventId: null,
+              updatedSessionId: null,
+              updatedEventId: null,
+              createdAt: "2026-07-06T00:00:00.000Z",
+              updatedAt: "2026-07-06T00:00:00.000Z",
+              assigneeKind: null,
+              assigneeAgentId: null,
+              assigneeSessionId: null,
+              assigneeUserId: null,
             },
           ],
           items: [
             {
               id: "item-1",
-              section_id: "sec-1",
-              position_key: "a",
+              sectionId: "sec-1",
+              positionKey: "a",
               title: "Done",
-              how_to: "",
+              howTo: "",
               status: "completed",
               archived: false,
               version: 1,
-              created_session_id: null,
-              created_event_id: null,
-              updated_session_id: null,
-              updated_event_id: null,
-              completed_kind: null,
-              completed_session_id: null,
-              completed_event_id: null,
-              completed_user_id: null,
-              completed_at: null,
-              created_at: "2026-07-06T00:00:00.000Z",
-              updated_at: "2026-07-06T00:00:00.000Z",
-              assignee_kind: null,
-              assignee_agent_id: null,
-              assignee_session_id: null,
-              assignee_user_id: null,
+              createdSessionId: null,
+              createdEventId: null,
+              updatedSessionId: null,
+              updatedEventId: null,
+              completedKind: null,
+              completedSessionId: null,
+              completedEventId: null,
+              completedUserId: null,
+              completedAt: null,
+              createdAt: "2026-07-06T00:00:00.000Z",
+              updatedAt: "2026-07-06T00:00:00.000Z",
+              assigneeKind: null,
+              assigneeAgentId: null,
+              assigneeSessionId: null,
+              assigneeUserId: null,
             },
             {
               id: "item-2",
-              section_id: "sec-1",
-              position_key: "b",
+              sectionId: "sec-1",
+              positionKey: "b",
               title: "Pending",
-              how_to: "",
+              howTo: "",
               status: "pending",
               archived: false,
               version: 1,
-              created_session_id: null,
-              created_event_id: null,
-              updated_session_id: null,
-              updated_event_id: null,
-              completed_kind: null,
-              completed_session_id: null,
-              completed_event_id: null,
-              completed_user_id: null,
-              completed_at: null,
-              created_at: "2026-07-06T00:00:00.000Z",
-              updated_at: "2026-07-06T00:00:00.000Z",
-              assignee_kind: null,
-              assignee_agent_id: null,
-              assignee_session_id: null,
-              assignee_user_id: null,
+              createdSessionId: null,
+              createdEventId: null,
+              updatedSessionId: null,
+              updatedEventId: null,
+              completedKind: null,
+              completedSessionId: null,
+              completedEventId: null,
+              completedUserId: null,
+              completedAt: null,
+              createdAt: "2026-07-06T00:00:00.000Z",
+              updatedAt: "2026-07-06T00:00:00.000Z",
+              assigneeKind: null,
+              assigneeAgentId: null,
+              assigneeSessionId: null,
+              assigneeUserId: null,
             },
           ],
         },
@@ -386,7 +404,7 @@ describe("BoardWorkspaceView", () => {
     container?.remove();
     root = undefined;
     container = undefined;
-    useTaskStore.getState().reset();
+    useFolderChecklistStore.getState().reset();
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
     vi.restoreAllMocks();
@@ -404,81 +422,6 @@ describe("BoardWorkspaceView", () => {
 
     expect(result).toBe(catalog);
     expect(result?.boardItems).toHaveLength(3);
-  });
-
-  it("scopes task boards to catalog items for that container before Yjs has synced", () => {
-    const result = resolveEffectiveBoardCatalog({
-      catalog: {
-        ...catalog,
-        boardItems: [
-          ...(catalog.boardItems ?? []),
-          {
-            id: "session:task-parent",
-            folderId: "root",
-            containerKind: "task",
-            containerId: "rb-1",
-            membershipKind: "primary",
-            itemType: "session",
-            itemId: "task-parent",
-            x: 0,
-            y: 0,
-          },
-          {
-            id: "markdown:task-note",
-            folderId: "root",
-            containerKind: "task",
-            containerId: "rb-1",
-            itemType: "markdown",
-            itemId: "task-note",
-            x: 280,
-            y: 0,
-          },
-        ],
-      },
-      selectedFolderId: "root",
-      boardContainer: { kind: "task", id: "rb-1" },
-      yjsBoardItemsForSelectedFolder: [],
-      isYjsLoading: true,
-      hasYjsSynced: false,
-      assetSignedUrls: {},
-    });
-
-    expect(result?.boardItems?.map((item) => item.id)).toEqual(["markdown:task-note"]);
-  });
-
-  it("keeps the task-board spatial policy after Yjs has synced", () => {
-    const result = resolveEffectiveBoardCatalog({
-      catalog,
-      selectedFolderId: "root",
-      boardContainer: { kind: "task", id: "rb-1" },
-      yjsBoardItemsForSelectedFolder: [
-        {
-          id: "session:task-parent",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          itemType: "session",
-          itemId: "task-parent",
-          x: 0,
-          y: 0,
-        },
-        {
-          id: "markdown:task-note",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          itemType: "markdown",
-          itemId: "task-note",
-          x: 280,
-          y: 0,
-        },
-      ],
-      isYjsLoading: false,
-      hasYjsSynced: true,
-      assetSignedUrls: {},
-    });
-
-    expect(result?.boardItems?.map((item) => item.id)).toEqual(["markdown:task-note"]);
   });
 
   it("uses Yjs board items after the document has synced", () => {
@@ -609,55 +552,6 @@ describe("BoardWorkspaceView", () => {
     expect(sessionTile?.style.top).toBe("50040px");
     expect(markdownTile?.style.left).toBe("50360px");
     expect(markdownTile?.style.top).toBe("50080px");
-  });
-
-  it("routes task-board resource clicks without opening the generic right-panel state", () => {
-    const onOpenMarkdownDocument = vi.fn();
-    const onOpenCustomView = vi.fn();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
-      id: "view-a",
-      boardItemId: "custom_view:view-a",
-      folderId: "root",
-      title: "Flux A",
-      html: "<main>Flux A</main>",
-      revision: 1,
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
-    ({ container, root } = renderBoard({
-      onOpenMarkdownDocument,
-      onOpenCustomView,
-    }, {
-      catalog: {
-        ...catalog,
-        boardItems: [
-          ...(catalog.boardItems ?? []),
-          {
-            id: "custom_view:view-a",
-            folderId: "root",
-            itemType: "custom_view",
-            itemId: "view-a",
-            x: 520,
-            y: 80,
-            metadata: { title: "Flux A", preview: "Flux preview", revision: 1 },
-          },
-        ],
-      },
-    }));
-
-    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
-    const customViewTile = container.querySelector<HTMLElement>('[data-testid="board-custom-view-tile"]');
-    expect(markdownTile).not.toBeNull();
-    expect(customViewTile).not.toBeNull();
-
-    flushSync(() => markdownTile!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    flushSync(() => customViewTile!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-
-    expect(onOpenMarkdownDocument).toHaveBeenCalledWith("doc-a");
-    expect(onOpenCustomView).toHaveBeenCalledWith("view-a");
-    expect(useDashboardStore.getState().activeBoardDocumentId).toBeNull();
-    expect(useDashboardStore.getState().activeCustomViewId).toBeNull();
   });
 
   it("keeps the existing generic document and custom-view panel behavior without overrides", () => {
@@ -791,197 +685,6 @@ describe("BoardWorkspaceView", () => {
     expect(status?.title).toContain("websocket is unavailable");
   });
 
-  it("renders task board status without duplicating the checklist on the canvas", () => {
-    useTaskStore.setState({
-      byId: {
-        "rb-1": {
-          snapshot: {
-            task: {
-              id: "rb-1",
-              board_item_id: "task:rb-1",
-              folder_id: "root",
-              title: "Deploy Task",
-              status: "open",
-              archived: false,
-              version: 3,
-              created_session_id: null,
-              created_event_id: null,
-              created_at: "2026-07-06T00:00:00.000Z",
-              updated_at: "2026-07-06T00:00:00.000Z",
-            },
-            sections: [
-              {
-                id: "sec-1",
-                task_id: "rb-1",
-                position_key: "a",
-                title: "Checklist",
-                archived: false,
-                version: 1,
-                created_session_id: null,
-                created_event_id: null,
-                updated_session_id: null,
-                updated_event_id: null,
-                created_at: "2026-07-06T00:00:00.000Z",
-                updated_at: "2026-07-06T00:00:00.000Z",
-                assignee_kind: null,
-                assignee_agent_id: null,
-                assignee_session_id: null,
-                assignee_user_id: null,
-              },
-            ],
-            items: [
-              {
-                id: "item-1",
-                section_id: "sec-1",
-                position_key: "a",
-                title: "Done",
-                how_to: "",
-                status: "completed",
-                archived: false,
-                version: 1,
-                created_session_id: null,
-                created_event_id: null,
-                updated_session_id: null,
-                updated_event_id: null,
-                completed_kind: null,
-                completed_session_id: null,
-                completed_event_id: null,
-                completed_user_id: null,
-                completed_at: null,
-                created_at: "2026-07-06T00:00:00.000Z",
-                updated_at: "2026-07-06T00:00:00.000Z",
-                assignee_kind: null,
-                assignee_agent_id: null,
-                assignee_session_id: null,
-                assignee_user_id: null,
-              },
-              {
-                id: "item-2",
-                section_id: "sec-1",
-                position_key: "b",
-                title: "Pending",
-                how_to: "",
-                status: "pending",
-                archived: false,
-                version: 1,
-                created_session_id: null,
-                created_event_id: null,
-                updated_session_id: null,
-                updated_event_id: null,
-                completed_kind: null,
-                completed_session_id: null,
-                completed_event_id: null,
-                completed_user_id: null,
-                completed_at: null,
-                created_at: "2026-07-06T00:00:00.000Z",
-                updated_at: "2026-07-06T00:00:00.000Z",
-                assignee_kind: null,
-                assignee_agent_id: null,
-                assignee_session_id: null,
-                assignee_user_id: null,
-              },
-            ],
-          },
-          status: "ready",
-          error: null,
-          isRefreshing: false,
-        },
-      },
-    });
-    ({ container, root } = renderBoard({}, {
-      catalog: {
-        ...catalog,
-        boardItems: [],
-      },
-      sessions: [],
-    }));
-
-    flushSync(() => {
-      useDashboardStore.getState().openTaskBoard("rb-1", "root");
-    });
-
-    expect(container.textContent).toContain("Deploy Task");
-    expect(container.textContent).toContain("업무 보드");
-    expect(container.textContent).toContain("1/2");
-    expect(container.querySelector('[data-testid="task-board-fixed-card"]')).toBeNull();
-    expect(container.querySelector('[data-testid="task-card"]')).toBeNull();
-    expect(container.textContent).toContain("아직 이 업무 보드에 배치된 항목이 없음");
-    expect(findButtonByText(container, "Folder")).toBeUndefined();
-    expect(findButtonByText(container, "New")).not.toBeUndefined();
-  });
-
-  it("declutters task board cards without reserving checklist space", () => {
-    seedTaskProjection();
-    const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
-    ({ container, root } = renderBoard({ onUpdateBoardItemPosition }, {
-      catalog: {
-        ...catalog,
-        boardItems: [
-          {
-            id: "markdown:task-doc",
-            folderId: "root",
-            containerKind: "task",
-            containerId: "rb-1",
-            itemType: "markdown",
-            itemId: "task-doc",
-            x: 0,
-            y: 0,
-            metadata: { title: "Task note" },
-          },
-        ],
-      },
-    }));
-
-    flushSync(() => {
-      useDashboardStore.getState().openTaskBoard("rb-1", "root");
-    });
-    expect(container.querySelector('[data-testid="task-board-fixed-card"]')).toBeNull();
-
-    const button = container.querySelector<HTMLButtonElement>('[data-testid="board-declutter-button"]');
-    expect(button?.disabled).toBe(true);
-
-    const byId = new Map(
-      (useDashboardStore.getState().catalog?.boardItems ?? []).map((item) => [item.id, item]),
-    );
-    expect(byId.get("markdown:task-doc")!.y).toBe(0);
-    expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
-  });
-
-  it("offers documents but not new sessions from a task board", () => {
-    seedTaskProjection();
-    ({ container, root } = renderBoard({}, {
-      catalog: { ...catalog, boardItems: [] },
-      sessions: [],
-    }));
-
-    flushSync(() => {
-      useDashboardStore.getState().openTaskBoard("rb-1", "root");
-    });
-
-    const newButton = findButtonByText(container, "New");
-    expect(newButton).not.toBeUndefined();
-    flushSync(() => {
-      newButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const sessionButton = findButtonByText(container, "Session");
-    expect(sessionButton).toBeUndefined();
-    expect(findButtonByText(container, "문서")).not.toBeUndefined();
-    expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(false);
-
-    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
-    flushSync(() => {
-      scroller!.dispatchEvent(new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        clientX: 50020,
-        clientY: 50040,
-      }));
-    });
-    // 🔴24: 컨텍스트 메뉴는 document.body로 포털된다.
-    expect(document.body.textContent).not.toContain("새 세션 시작");
-    expect(document.body.textContent).toContain("새 문서");
-  });
-
   it("routes markdown tile context-menu edit through the scoped edit callback", () => {
     const onRequestMarkdownEdit = vi.fn();
     ({ container, root } = renderBoard({ onRequestMarkdownEdit }));
@@ -1001,58 +704,6 @@ describe("BoardWorkspaceView", () => {
 
     expect(onRequestMarkdownEdit).toHaveBeenCalledWith("doc-a");
     expect(useDashboardStore.getState().activeBoardDocumentId).toBeNull();
-  });
-
-  it("uploads dropped files from a task board with the task container target", async () => {
-    seedTaskProjection();
-    const onUploadBoardAsset = vi.fn(async (input) => ({
-      asset: { id: "asset-task" },
-      boardItem: {
-        id: "asset:asset-task",
-        folderId: input.folderId,
-        containerKind: "task" as const,
-        containerId: "rb-1",
-        itemType: "asset" as const,
-        itemId: "asset-task",
-        x: input.x,
-        y: input.y,
-        metadata: {
-          assetId: "asset-task",
-          storageKey: "containers/task/rb-1/assets/asset-task/report.pdf",
-          originalName: input.file.name,
-          mimeType: input.file.type,
-          byteSize: input.file.size,
-          signedUrl: "https://r2.example/task-report.pdf",
-        },
-      },
-    }));
-    ({ container, root } = renderBoard({ onUploadBoardAsset }, {
-      catalog: { ...catalog, boardItems: [] },
-      sessions: [],
-    }));
-
-    flushSync(() => {
-      useDashboardStore.getState().openTaskBoard("rb-1", "root");
-    });
-    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
-    expect(scroller).not.toBeNull();
-    const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
-
-    dispatchFileDragEvent(scroller!, "drop", [file], {
-      clientX: 52000,
-      clientY: 52000,
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(onUploadBoardAsset).toHaveBeenCalledTimes(1);
-    expect(onUploadBoardAsset.mock.calls[0]?.[0]).toMatchObject({
-      folderId: "root",
-      container: { kind: "task", id: "rb-1" },
-      file,
-      x: 2000,
-      y: 2000,
-    });
   });
 
   it("keeps folder names, session titles, markdown previews, and agent profiles bounded inside tiles", () => {
@@ -1273,7 +924,7 @@ describe("BoardWorkspaceView", () => {
 
   it("upserts a missing session board item when dragging a fallback session tile", async () => {
     const fallbackCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "root",
         name: "김서하",
         sortOrder: 0,
@@ -1614,161 +1265,6 @@ describe("BoardWorkspaceView", () => {
     });
 
     expect(document.body.textContent).toContain("이 세션을 이어서 시작하기");
-  });
-
-  it("moves an existing markdown tile into a task board from the context menu", async () => {
-    seedTaskProjection("rb-1");
-    const onMoveBoardItemToContainer = vi.fn(async () => ({
-      ok: true as const,
-      boardItem: {
-        id: "markdown:doc-a",
-        folderId: "root",
-        containerKind: "task" as const,
-        containerId: "rb-1",
-        itemType: "markdown" as const,
-        itemId: "doc-a",
-        x: 360,
-        y: 80,
-        metadata: { title: "Design note" },
-      },
-    }));
-    ({ container, root } = renderBoard({ onMoveBoardItemToContainer }, {
-      catalog: {
-        ...catalog,
-        boardItems: [
-          ...(catalog.boardItems ?? []),
-          {
-            id: "task:rb-1",
-            folderId: "root",
-            containerKind: "folder",
-            containerId: "root",
-            itemType: "task",
-            itemId: "rb-1",
-            x: 680,
-            y: 80,
-            metadata: { title: "Deploy Task" },
-          },
-        ],
-      },
-    }));
-
-    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
-    expect(markdownTile).not.toBeNull();
-    flushSync(() => {
-      markdownTile!.dispatchEvent(new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        clientX: 50360,
-        clientY: 50080,
-      }));
-    });
-
-    const moveAction = findButtonByText(document.body, "업무 보드로 이동...");
-    expect(moveAction).not.toBeUndefined();
-    flushSync(() => {
-      moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await Promise.resolve();
-
-    const modal = document.body.querySelector<HTMLElement>("#board-task-move-target");
-    expect(modal).not.toBeNull();
-    const taskTarget = findButtonByText(modal!, "Deploy Task");
-    expect(taskTarget).not.toBeUndefined();
-    flushSync(() => {
-      taskTarget!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const submit = findButtonByText(document.body, "이동");
-    expect(submit).not.toBeUndefined();
-    flushSync(() => {
-      submit!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(onMoveBoardItemToContainer).toHaveBeenCalledWith(expect.objectContaining({
-      boardItemId: "markdown:doc-a",
-      container: { kind: "task", id: "rb-1" },
-      x: 360,
-      y: 80,
-    }));
-    expect(useDashboardStore.getState().catalog?.boardItems?.find((item) => item.id === "markdown:doc-a")).toMatchObject({
-      id: "markdown:doc-a",
-      folderId: "root",
-      containerKind: "task",
-      containerId: "rb-1",
-      itemType: "markdown",
-      itemId: "doc-a",
-    });
-  });
-
-  it("moves a task-board markdown tile to another task from the keyboard menu", async () => {
-    seedTaskProjection("rb-1");
-    const onMoveBoardItemToContainer = vi.fn(async () => ({
-      ok: true as const,
-      boardItem: {
-        id: "markdown:task-doc",
-        folderId: "root",
-        containerKind: "task" as const,
-        containerId: "rb-2",
-        itemType: "markdown" as const,
-        itemId: "task-doc",
-        x: 40,
-        y: 420,
-        metadata: { title: "Task note" },
-      },
-    }));
-    ({ container, root } = renderBoard({
-      onMoveBoardItemToContainer,
-      taskMoveTargets: [
-        { id: "rb-1", title: "Current task" },
-        { id: "rb-2", title: "Other task" },
-      ],
-    }, {
-      catalog: {
-        ...catalog,
-        boardItems: [{
-          id: "markdown:task-doc",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          itemType: "markdown",
-          itemId: "task-doc",
-          x: 40,
-          y: 420,
-          metadata: { title: "Task note" },
-        }],
-      },
-      sessions: [],
-    }));
-    flushSync(() => useDashboardStore.getState().openTaskBoard("rb-1", "root"));
-
-    const tile = container.querySelector<HTMLButtonElement>('[data-testid="board-markdown-tile"]');
-    expect(tile).not.toBeNull();
-    flushSync(() => tile!.dispatchEvent(new KeyboardEvent("keydown", {
-      bubbles: true,
-      cancelable: true,
-      key: "ContextMenu",
-    })));
-    const moveAction = findButtonByText(document.body, "다른 업무로 이동...");
-    expect(moveAction).not.toBeUndefined();
-    flushSync(() => moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-
-    const picker = document.body.querySelector<HTMLElement>("#board-task-move-target");
-    expect(picker?.textContent).toContain("Other task");
-    expect(picker?.textContent).not.toContain("Current task");
-    const target = findButtonByText(picker!, "Other task");
-    flushSync(() => target!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    const submit = findButtonByText(document.body, "이동");
-    flushSync(() => submit!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(onMoveBoardItemToContainer).toHaveBeenCalledWith(expect.objectContaining({
-      boardItemId: "markdown:task-doc",
-      container: { kind: "task", id: "rb-2" },
-    }));
-    expect(useDashboardStore.getState().catalog?.boardItems?.find((item) => item.id === "markdown:task-doc"))
-      .toMatchObject({ containerKind: "task", containerId: "rb-2", itemId: "task-doc" });
   });
 
   it("confirms markdown deletion by title and clears an open document", async () => {

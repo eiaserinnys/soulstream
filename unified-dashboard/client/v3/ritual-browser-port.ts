@@ -1,6 +1,6 @@
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
-import { setDailyTaskMembership } from "./daily-task-membership";
+import { setDailyFolderMembership } from "./daily-folder-membership";
 import type { RitualActionPort } from "./ritual-model";
 
 export class BrowserRitualActionPort implements RitualActionPort {
@@ -9,56 +9,56 @@ export class BrowserRitualActionPort implements RitualActionPort {
     private readonly api: PageApiClient,
   ) {}
 
-  async mountToday(input: { taskPageId: string; taskTitle: string }) {
-    await mountRitualTaskToday(
+  async mountToday(input: { folderPageId: string; folderTitle: string }) {
+    await mountRitualFolderToday(
       this.api,
       this.dailyPageId,
-      input.taskPageId,
-      input.taskTitle,
+      input.folderPageId,
+      input.folderTitle,
     );
   }
 
   async removeFromDaily(input: {
     dailyPageId: string;
-    taskPageId: string;
-    taskTitle: string;
+    folderPageId: string;
+    folderTitle: string;
   }) {
-    await removeRitualTaskFromDaily(
+    await removeRitualFolderFromDaily(
       this.api,
       input.dailyPageId,
-      input.taskPageId,
-      input.taskTitle,
+      input.folderPageId,
+      input.folderTitle,
     );
   }
 }
 
-export async function mountRitualTaskToday(
+export async function mountRitualFolderToday(
   api: PageApiClient,
   dailyPageId: string,
-  taskPageId: string,
-  taskTitle: string,
+  folderPageId: string,
+  folderTitle: string,
 ): Promise<void> {
-  await setDailyTaskMembership({
+  await setDailyFolderMembership({
     api,
     dailyPageId,
-    taskPage: { id: taskPageId, title: taskTitle },
+    folderPage: { id: folderPageId, title: folderTitle },
     present: true,
     idempotencyKey: () => ritualOperationId("daily-mount"),
     reason: "v3 morning ritual daily mount",
   });
 }
 
-export async function removeRitualTaskFromDaily(
+export async function removeRitualFolderFromDaily(
   api: PageApiClient,
   dailyPageId: string,
-  taskPageId: string,
-  taskTitle: string,
+  folderPageId: string,
+  folderTitle: string,
   idFactory: () => string = () => ritualOperationId("daily-unmount"),
 ): Promise<void> {
-  await setDailyTaskMembership({
+  await setDailyFolderMembership({
     api,
     dailyPageId,
-    taskPage: { id: taskPageId, title: taskTitle },
+    folderPage: { id: folderPageId, title: folderTitle },
     present: false,
     idempotencyKey: idFactory,
     reason: "v3 morning ritual daily unmount",

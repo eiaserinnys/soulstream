@@ -36,18 +36,18 @@ function walkTypescriptReactFiles(directory: string): string[] {
 describe("markdown surface mount inventory", () => {
   it("enumerates every shared MarkdownContent surface", () => {
     expect(inventoryMounts("MarkdownContent")).toEqual([
+      "packages/soul-ui/src/checklist/ChecklistItem.tsx",
       "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
-      "packages/soul-ui/src/task/TaskChecklistItem.tsx",
-      "unified-dashboard/client/v3/TaskBoardResourcePane.tsx",
-      "unified-dashboard/client/v3/TaskDescriptionPanel.tsx",
+      "unified-dashboard/client/v3/FolderBoardResourcePane.tsx",
+      "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
     ]);
   });
 
   it("enumerates every shared MarkdownDocumentPanel surface", () => {
     expect(inventoryMounts("MarkdownDocumentPanel")).toEqual([
-      "unified-dashboard/client/v3/TaskBoardWorkspace.tsx",
+      "unified-dashboard/client/v3/FolderBoardWorkspace.tsx",
       "unified-dashboard/client/v3/V3StandaloneDocumentInspector.tsx",
     ]);
   });
@@ -55,13 +55,13 @@ describe("markdown surface mount inventory", () => {
   it("makes document code expansion explicit without changing chat or compact feeds", () => {
     const documentSurfaces = [
       "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
-      "unified-dashboard/client/v3/TaskBoardResourcePane.tsx",
-      "unified-dashboard/client/v3/TaskDescriptionPanel.tsx",
+      "unified-dashboard/client/v3/FolderBoardResourcePane.tsx",
+      "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
     ];
     const boundedSurfaces = [
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
-      "packages/soul-ui/src/task/TaskChecklistItem.tsx",
+      "packages/soul-ui/src/checklist/ChecklistItem.tsx",
     ];
 
     for (const file of documentSurfaces) {
@@ -72,22 +72,22 @@ describe("markdown surface mount inventory", () => {
     }
   });
 
-  it("enumerates every TaskDescriptionPanel wrapper surface", () => {
+  it("enumerates every FolderDescriptionPanel wrapper surface", () => {
     const mounts = [
       "unified-dashboard/client/v3/DailyMemo.tsx",
+      "unified-dashboard/client/v3/FolderDetailPane.tsx",
+      "unified-dashboard/client/v3/FolderInlineBoard.tsx",
       "unified-dashboard/client/v3/ProjectContextEditor.tsx",
-      "unified-dashboard/client/v3/TaskDetailPane.tsx",
-      "unified-dashboard/client/v3/TaskInlineBoard.tsx",
     ];
-    expect(inventoryMounts("TaskDescriptionPanel")).toEqual(mounts);
+    expect(inventoryMounts("FolderDescriptionPanel")).toEqual(mounts);
     expect(Object.fromEntries(mounts.map((file) => [
       file,
-      countMounts("TaskDescriptionPanel", file),
+      countMounts("FolderDescriptionPanel", file),
     ]))).toEqual({
       "unified-dashboard/client/v3/DailyMemo.tsx": 1,
       "unified-dashboard/client/v3/ProjectContextEditor.tsx": 2,
-      "unified-dashboard/client/v3/TaskDetailPane.tsx": 1,
-      "unified-dashboard/client/v3/TaskInlineBoard.tsx": 1,
+      "unified-dashboard/client/v3/FolderDetailPane.tsx": 1,
+      "unified-dashboard/client/v3/FolderInlineBoard.tsx": 1,
     });
   });
 });

@@ -1,8 +1,7 @@
-import type { SessionSummary } from "@seosoyoung/soul-ui";
+import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
-import type { MobilePlannerTaskOption } from "./mobile-planner-state";
-import type { PlannerTask } from "./planner-data";
-import { buildRunTree, type RunTreeNode } from "./task-workspace-model";
+import type { MobilePlannerFolderOption } from "./mobile-planner-state";
+import { buildRunTree, type RunTreeNode } from "./folder-workspace-run-model";
 import type { PlannerDateNavItem } from "./V3Navigation";
 
 export function recentDates(today: string): PlannerDateNavItem[] {
@@ -58,20 +57,19 @@ export function reportV3WriteFailure({
   return message;
 }
 
-export function buildMobileTaskOptions(
-  tasks: readonly PlannerTask[],
+export function buildMobileFolderOptions(
+  folders: readonly CatalogFolder[],
   sessions: readonly SessionSummary[],
-): MobilePlannerTaskOption[] {
-  const seen = new Set<string>();
-  return tasks.flatMap((task) => {
-    if (seen.has(task.page.id)) return [];
-    seen.add(task.page.id);
-    const roots = buildRunTree(task.sessionIds, sessions);
-    return [{
-      taskId: task.page.id,
+): MobilePlannerFolderOption[] {
+  return folders.filter((folder) => !folder.archived).map((folder) => {
+    const sessionIds = sessions.filter((session) => session.folderId === folder.id)
+      .map((session) => session.agentSessionId);
+    const roots = buildRunTree(sessionIds, sessions);
+    return {
+      folderId: folder.id,
       runIds: roots.flatMap(flattenRunIds),
       latestRunId: roots[0]?.session.agentSessionId ?? null,
-    }];
+    };
   });
 }
 

@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  deleteProjectFolder,
+  archiveProjectFolder,
   renameProjectFolder,
   reorderProjectFolders,
 } from "./project-folder-actions";
 
-const folder = { id: "project-a", name: "Before", sortOrder: 0, parentFolderId: null };
+const folder = { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "project-a", name: "Before", sortOrder: 0, parentFolderId: null };
 
 describe("project folder optimistic result gate", () => {
   it("rejects a rename that the shared v1 operation rolled back", async () => {
@@ -14,9 +14,9 @@ describe("project folder optimistic result gate", () => {
       .rejects.toThrow("이름 변경");
   });
 
-  it("rejects a delete that the shared v1 operation rolled back", async () => {
-    await expect(deleteProjectFolder(folder, vi.fn(async () => undefined), () => [folder]))
-      .rejects.toThrow("삭제");
+  it("rejects an archive that the server did not apply", async () => {
+    await expect(archiveProjectFolder(folder, vi.fn(async () => undefined), () => [folder]))
+      .rejects.toThrow("보관");
   });
 
   it("accepts only the optimistic hierarchy and order that remain applied", async () => {

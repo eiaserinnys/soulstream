@@ -31,7 +31,7 @@ function makeHandlers(): SessionStreamHandlers & {
     onSessionDeleted: vi.fn(),
     onCatalogUpdated: vi.fn(),
     onMetadataUpdated: vi.fn(),
-    onTaskUpdated: vi.fn(),
+    onFolderUpdated: vi.fn(),
     onCustomViewUpdated: vi.fn(),
     onPageUpdated: vi.fn(),
     onStreamMeta: vi.fn(),
@@ -108,9 +108,8 @@ describe("dispatchSessionStreamEvent", () => {
         metadata: [],
       },
       {
-        type: "task_updated",
-        taskId: "rb-1",
-        boardItemId: "task:rb-1",
+        type: "folder_updated",
+        folderId: "rb-1",
       },
       {
         type: "custom_view_updated",
@@ -131,7 +130,7 @@ describe("dispatchSessionStreamEvent", () => {
     expect(handlers.__spies.onSessionDeleted).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onCatalogUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onMetadataUpdated).toHaveBeenCalledTimes(1);
-    expect(handlers.__spies.onTaskUpdated).toHaveBeenCalledTimes(1);
+    expect(handlers.__spies.onFolderUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onCustomViewUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onPageUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onEvent).toHaveBeenCalledTimes(events.length);
@@ -140,30 +139,6 @@ describe("dispatchSessionStreamEvent", () => {
     expect(handlers.__spies.onReplayGap).not.toHaveBeenCalled();
   });
 
-  it("runbook_updated 읽기 호환 이벤트를 canonical task_updated로 한 번만 전달", () => {
-    const handlers = makeHandlers();
-
-    dispatchSessionStreamEvent(
-      {
-        type: "runbook_updated",
-        runbookId: "rb-legacy",
-        boardItemId: "runbook:opaque-id",
-        lastEventId: "19",
-      },
-      handlers,
-    );
-
-    const canonical = {
-      type: "task_updated",
-      taskId: "rb-legacy",
-      boardItemId: "runbook:opaque-id",
-      lastEventId: "19",
-    };
-    expect(handlers.__spies.onTaskUpdated).toHaveBeenCalledOnce();
-    expect(handlers.__spies.onTaskUpdated).toHaveBeenCalledWith(canonical);
-    expect(handlers.__spies.onEvent).toHaveBeenCalledOnce();
-    expect(handlers.__spies.onEvent).toHaveBeenCalledWith(canonical);
-  });
 });
 
 describe("parseStreamMessage — SSE id 주입", () => {

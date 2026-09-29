@@ -1,7 +1,5 @@
 import { HttpResponseError } from "./http-response-error";
 
-export type RecurringJobContainer = { kind: "folder" | "task"; id: string };
-
 export type RecurringJob = {
   job_id: string;
   name: string;
@@ -13,8 +11,7 @@ export type RecurringJob = {
   node_id: string;
   agent_id: string;
   model_preset: string | null;
-  container: RecurringJobContainer;
-  folder_id: string;
+  folderId: string;
   enabled: boolean;
   archived_at: string | null;
   late_run_window_seconds: number;
@@ -49,8 +46,7 @@ export type RecurringJobWrite = {
   node_id: string;
   agent_id: string;
   model_preset: string | null;
-  container: RecurringJobContainer;
-  folder_id: string;
+  folderId: string;
   late_run_window_seconds?: number;
   enabled?: boolean;
 };

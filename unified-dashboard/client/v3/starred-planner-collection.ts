@@ -1,32 +1,32 @@
-import type { TaskStarChange } from "./task-star-store";
+import type { FolderStarChange } from "./folder-star-store";
 import {
-  isPlannerTask,
-  type StarredPlannerTask,
+  isPlannerFolder,
+  type StarredPlannerFolder,
 } from "./planner-data";
 
-export function mergeStarredPlannerTasks(
-  first: readonly StarredPlannerTask[],
-  second: readonly StarredPlannerTask[],
-): StarredPlannerTask[] {
-  return [...new Map([...first, ...second].map((task) => [taskPageId(task), task])).values()];
+export function mergeStarredPlannerFolders(
+  first: readonly StarredPlannerFolder[],
+  second: readonly StarredPlannerFolder[],
+): StarredPlannerFolder[] {
+  return [...new Map([...first, ...second].map((task) => [folderPageId(task), task])).values()];
 }
 
 export function isStarredPlannerPageCurrent(
-  current: { items: readonly StarredPlannerTask[]; nextCursor: string | null } | null,
+  current: { items: readonly StarredPlannerFolder[]; nextCursor: string | null } | null,
   expectedPageIds: readonly string[],
   expectedCursor: string,
 ): boolean {
   return current !== null
     && current.nextCursor === expectedCursor
     && current.items.length === expectedPageIds.length
-    && current.items.every((task, index) => taskPageId(task) === expectedPageIds[index]);
+    && current.items.every((task, index) => folderPageId(task) === expectedPageIds[index]);
 }
 
-export function applyStarredPlannerTaskChanges(
-  tasks: readonly StarredPlannerTask[],
-  changes: readonly TaskStarChange[],
-): StarredPlannerTask[] {
-  const byId = new Map(tasks.map((task) => [taskPageId(task), task]));
+export function applyStarredPlannerFolderChanges(
+  tasks: readonly StarredPlannerFolder[],
+  changes: readonly FolderStarChange[],
+): StarredPlannerFolder[] {
+  const byId = new Map(tasks.map((task) => [folderPageId(task), task]));
   for (const change of changes) {
     if (!change.starred) {
       byId.delete(change.page.id);
@@ -35,12 +35,12 @@ export function applyStarredPlannerTaskChanges(
     const current = byId.get(change.page.id);
     byId.set(
       change.page.id,
-      current && isPlannerTask(current) ? { ...current, page: change.page } : change.page,
+      current && isPlannerFolder(current) ? { ...current, page: change.page } : change.page,
     );
   }
   return [...byId.values()];
 }
 
-function taskPageId(task: StarredPlannerTask): string {
-  return isPlannerTask(task) ? task.page.id : task.id;
+function folderPageId(task: StarredPlannerFolder): string {
+  return isPlannerFolder(task) ? task.page.id : task.id;
 }

@@ -2,17 +2,13 @@ import { createBoardWorkspaceOperations } from "@seosoyoung/soul-ui";
 
 export const {
   updateBoardItemPosition,
-  moveBoardItemToContainer,
+  moveBoardItemToFolder,
   createMarkdownDocument,
   uploadBoardAsset,
 } = createBoardWorkspaceOperations({
   updateBoardItemPositionUrl: (id) => `/api/board-items/${encodeURIComponent(id)}/position`,
-  moveBoardItemToContainerUrl: (id) => `/api/board-items/${encodeURIComponent(id)}/container`,
+  moveBoardItemToFolderUrl: (id) => `/api/board-items/${encodeURIComponent(id)}/folder`,
   createMarkdownDocumentUrl: "/api/markdown-documents",
-  initBoardAssetUrl: (target) => target.container.kind === "folder"
-    ? `/api/board/${encodeURIComponent(target.folderId)}/assets/init`
-    : `/api/board-containers/${encodeURIComponent(target.container.kind)}/${encodeURIComponent(target.container.id)}/assets/init`,
-  commitBoardAssetUrl: (target, assetId) => target.container.kind === "folder"
-    ? `/api/board/${encodeURIComponent(target.folderId)}/assets/${encodeURIComponent(assetId)}/commit`
-    : `/api/board-containers/${encodeURIComponent(target.container.kind)}/${encodeURIComponent(target.container.id)}/assets/${encodeURIComponent(assetId)}/commit`,
+  initBoardAssetUrl: (folderId) => `/api/board/${encodeURIComponent(folderId)}/assets/init`,
+  commitBoardAssetUrl: (folderId, assetId) => `/api/board/${encodeURIComponent(folderId)}/assets/${encodeURIComponent(assetId)}/commit`,
 });

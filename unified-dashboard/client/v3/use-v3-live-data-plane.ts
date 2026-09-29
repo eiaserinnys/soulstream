@@ -8,7 +8,6 @@ import {
 } from "@seosoyoung/soul-ui";
 
 import { orchestratorSessionProvider } from "../providers";
-import { scopeCatalogUpdateToTaskBoardPreservingSessionList } from "./task-board-model";
 import {
   projectSessionListSnapshot,
   reconcileCanonicalReviewSessions,
@@ -94,10 +93,5 @@ export function useV3LiveDataPlane({
       if (nextCatalog !== state.catalog) state.setCatalog(nextCatalog);
     },
     onStreamReset: () => invalidateV3("replay"),
-    transformCatalogUpdate: (incoming, current) => {
-      const active = useDashboardStore.getState().activeBoardContainer;
-      if (!current || active?.kind !== "task") return undefined;
-      return scopeCatalogUpdateToTaskBoardPreservingSessionList(current, incoming, active.id);
-    },
   });
 }

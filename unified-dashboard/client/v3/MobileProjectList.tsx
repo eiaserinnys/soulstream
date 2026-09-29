@@ -10,7 +10,7 @@ export function MobileProjectList({
   folders: readonly CatalogFolder[];
   onSelect(folder: CatalogFolder): void;
 }) {
-  const projects = useMemo(() => flattenProjectFolders(folders), [folders]);
+  const projects = useMemo(() => flattenProjectFolders(folders.filter((folder) => !folder.archived)), [folders]);
 
   return (
     <section className="v3-mobile-projects border border-glass-border glass-strong glass-chrome lg-rim" aria-label="프로젝트 목록">

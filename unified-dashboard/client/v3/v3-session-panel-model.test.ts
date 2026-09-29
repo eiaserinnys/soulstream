@@ -87,81 +87,23 @@ describe("v3 session panel model", () => {
       .toBe("제목 없는 세션");
   });
 
-  it("resolves only the primary session board item and treats folder containers as standalone", () => {
+  it("opens the folder that owns the primary session board item", () => {
     const items: CatalogBoardItem[] = [
-      boardItem("reference", "task", "rb-reference"),
-      boardItem("primary", "task", "rb-task"),
+      boardItem("reference", "other-folder"),
+      boardItem("primary", "folder-a"),
     ];
-
     expect(sessionWorkspaceTargetFromBoardItems(items, "session-a"))
-      .toEqual({ kind: "task", taskId: "rb-task" });
-    expect(sessionWorkspaceTargetFromBoardItems([
-      boardItem("primary", "folder", "folder-a"),
-    ], "session-a")).toEqual({ kind: "standalone" });
+      .toEqual({ kind: "folder", folderId: "folder-a" });
     expect(sessionWorkspaceTargetFromBoardItems(items, "missing")).toBeNull();
   });
 
-  it("preserves legacy defaults for missing membership and container fields", () => {
-    const legacyTask = {
-      id: "legacy-task",
-      folderId: "folder-a",
-      containerKind: "task",
-      containerId: "rb-legacy",
-      itemType: "session",
-      itemId: "session-a",
-      x: 0,
-      y: 0,
-    } as CatalogBoardItem;
-    const legacyFolder = {
-      id: "legacy-folder",
-      folderId: "folder-a",
-      itemType: "session",
-      itemId: "session-a",
-      x: 0,
-      y: 0,
-    } as CatalogBoardItem;
-
-    expect(sessionWorkspaceTargetFromBoardItems([legacyTask], "session-a"))
-      .toEqual({ kind: "task", taskId: "rb-legacy" });
-    expect(sessionWorkspaceTargetFromBoardItems([legacyFolder], "session-a"))
-      .toEqual({ kind: "standalone" });
-  });
-
-  it("derives task and project affiliation from cached catalog board items only", () => {
-    const items = [
-      boardItem("primary", "task", "task-a"),
-      {
-        id: "task:task-a",
-        folderId: "project-folder",
-        containerKind: "folder",
-        containerId: "project-folder",
-        membershipKind: "primary",
-        itemType: "task",
-        itemId: "task-a",
-        x: 0,
-        y: 0,
-        metadata: { title: "PR-BY 세션 UX" },
-      } satisfies CatalogBoardItem,
-    ];
+  it("uses the owning folder name for session affiliation", () => {
     const folders: CatalogFolder[] = [
-      { id: "project-folder", name: "소울스트림", sortOrder: 0, projectPageId: "project-page" },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "folder-a", name: "소울스트림", sortOrder: 0 },
     ];
-
-    expect(sessionPanelAffiliation(items, folders, "session-a"))
-      .toBe("PR-BY 세션 UX · 소울스트림");
-    expect(sessionPanelAffiliation(items, [], "session-a")).toBe("PR-BY 세션 UX");
-  });
-
-  it("shows a cached folder name for v1 sessions and omits cache misses", () => {
-    const legacy = boardItem("primary", "folder", "legacy-folder");
-    const folders: CatalogFolder[] = [
-      { id: "legacy-folder", name: "기존 세션", sortOrder: 0, projectPageId: null },
-    ];
-
-    expect(sessionPanelAffiliation([legacy], folders, "session-a")).toBe("기존 세션");
+    expect(sessionPanelAffiliation([boardItem("primary", "folder-a")], folders, "session-a"))
+      .toBe("소울스트림");
     expect(sessionPanelAffiliation([], folders, "session-a")).toBeNull();
-    expect(sessionPanelAffiliation([boardItem("primary", "task", "task-missing")], folders, "session-a"))
-      .toBeNull();
   });
 });
 
@@ -176,14 +118,11 @@ function session(
 
 function boardItem(
   membershipKind: CatalogBoardItem["membershipKind"],
-  containerKind: NonNullable<CatalogBoardItem["containerKind"]>,
-  containerId: string,
+  folderId: string,
 ): CatalogBoardItem {
   return {
-    id: `${membershipKind}:${containerId}`,
-    folderId: "folder-a",
-    containerKind,
-    containerId,
+    id: `${membershipKind}:${folderId}`,
+    folderId,
     membershipKind,
     itemType: "session",
     itemId: "session-a",

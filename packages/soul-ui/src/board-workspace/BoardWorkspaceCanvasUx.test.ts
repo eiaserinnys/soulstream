@@ -14,6 +14,10 @@ import { BoardWorkspaceView } from "./BoardWorkspaceView";
 const catalog: CatalogState = {
   folders: [
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "root",
       name: "Root",
       sortOrder: 0,
@@ -21,6 +25,10 @@ const catalog: CatalogState = {
       createdAt: "2026-06-01T00:00:00.000Z",
     },
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "child-folder",
       name: "Child",
       sortOrder: 1,

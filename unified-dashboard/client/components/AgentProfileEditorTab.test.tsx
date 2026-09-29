@@ -540,7 +540,7 @@ describe("AgentProfileEditorTab", () => {
       url: "/api/nodes/node-a/agents/context-preview",
       body: {
         atom_contexts: profile.atom_contexts,
-        session: { source: "browser", container_kind: "task", agent: "seosoyoung" },
+        session: { source: "browser", agent: "seosoyoung" },
       },
     });
     const results = document.body.querySelector('[data-testid="context-preview-results"]');

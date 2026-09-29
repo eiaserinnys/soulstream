@@ -9,42 +9,40 @@ import {
   failPlannerLoad,
   loadConfirmedResult,
 } from "./planner-query-state";
-import type { TaskStarChange } from "./task-star-store";
+import type { FolderStarChange } from "./folder-star-store";
 import {
   loadDailyPlanner,
-  loadProjectDocumentPage,
-  loadStarredTasks,
-  loadProjectPlanner,
-  loadProjectTaskPage,
-  loadTaskRunHistory,
-  starredTaskPage,
+  loadFolderDocumentPage,
+  loadFolderSubfolderPage,
+  loadStarredFolders,
+  loadFolderPlanner,
+  starredFolderPage,
   type DailyPlannerData,
   type PlannerDataDependencies,
   type PlannerPage,
-  type PlannerTask,
-  type ProjectPlannerData,
-  type StarredPlannerTask,
+  type PlannerFolder,
+  type FolderPlannerData,
+  type StarredPlannerFolder,
 } from "./planner-data";
 import {
-  applyStarredPlannerTaskChanges,
+  applyStarredPlannerFolderChanges,
   isStarredPlannerPageCurrent,
-  mergeStarredPlannerTasks,
+  mergeStarredPlannerFolders,
 } from "./starred-planner-collection";
 import {
-  isStarredTaskRefreshCurrent,
-  isStarredTaskRequestCurrent,
-  isStarredTaskSnapshotCurrent,
-} from "./starred-task-order";
+  isStarredFolderRefreshCurrent,
+  isStarredFolderRequestCurrent,
+  isStarredFolderSnapshotCurrent,
+} from "./starred-folder-order";
 import {
   movePlannerSession,
   removePlannerSessions,
-  replacePlannerTask,
+  replacePlannerFolder,
 } from "./planner-mutation-projection";
 import { usePlannerProjectMoveProjection } from "./use-planner-project-move-projection";
-import { useStarredTaskReorder } from "./use-starred-task-reorder";
+import { useStarredFolderReorder } from "./use-starred-folder-reorder";
 import { useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 
-const EMPTY_SESSION_IDS: string[] = [];
 
 export function usePlannerCollections({
   api,
@@ -52,7 +50,8 @@ export function usePlannerCollections({
   selectedDate,
   today,
   selectedProject,
-  taskStarChanges,
+  selectedFolderId,
+  folderStarChanges,
   refreshKeys,
   notify,
 }: {
@@ -61,7 +60,8 @@ export function usePlannerCollections({
   selectedDate: string;
   today: string;
   selectedProject: PageDto | null;
-  taskStarChanges: readonly TaskStarChange[];
+  selectedFolderId: string | null;
+  folderStarChanges: readonly FolderStarChange[];
   refreshKeys: {
     daily: number;
     project: number;
@@ -70,35 +70,34 @@ export function usePlannerCollections({
   notify(message: string): void;
 }) {
   const [daily, setDaily] = useState<PlannerLoadState<DailyPlannerData>>({ status: "loading", data: null, message: null });
-  const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
-  const [starredTaskIndex, setStarredTaskIndex] = useState<PlannerLoadState<PlannerPage<StarredPlannerTask>>>({ status: "loading", data: null, message: null });
+  const [todayFolderIds, setTodayFolderIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [project, setProject] = useState<PlannerLoadState<FolderPlannerData>>({ status: "loading", data: null, message: null });
+  const [starredFolderIndex, setStarredFolderIndex] = useState<PlannerLoadState<PlannerPage<StarredPlannerFolder>>>({ status: "loading", data: null, message: null });
   const [starredLoadedRefreshKey, setStarredLoadedRefreshKey] = useState<number | null>(null);
-  const [starredTasksLoadingMore, setStarredTasksLoadingMore] = useState(false);
-  const [projectTasksLoadingMore, setProjectTasksLoadingMore] = useState(false);
+  const [starredFoldersLoadingMore, setStarredFoldersLoadingMore] = useState(false);
   const [projectDocumentsLoadingMore, setProjectDocumentsLoadingMore] = useState(false);
+  const [subfoldersLoadingMore, setSubfoldersLoadingMore] = useState(false);
   const [mutationRefresh, setMutationRefresh] = useState({ daily: 0, project: 0 });
   const dailyRef = useRef(daily);
   const projectRef = useRef(project);
-  const starredTaskIndexRef = useRef(starredTaskIndex);
+  const starredFolderIndexRef = useRef(starredFolderIndex);
   const starredRefreshKeyRef = useRef(refreshKeys.starred);
   const starredLoadedRefreshKeyRef = useRef<number | null>(null);
   const starredOrderRevisionRef = useRef(0);
   const stableProjectsRef = useRef<PageDto[]>([]);
-  const stableStarredTasksRef = useRef<StarredPlannerTask[]>([]);
+  const stableStarredFoldersRef = useRef<StarredPlannerFolder[]>([]);
   dailyRef.current = daily;
   projectRef.current = project;
-  starredTaskIndexRef.current = starredTaskIndex;
+  starredFolderIndexRef.current = starredFolderIndex;
   starredRefreshKeyRef.current = refreshKeys.starred;
 
   const dailyPageRefreshKey = useV3PageInvalidationKey([
     daily.data?.daily.page.id,
-    ...(daily.data?.tasks.map((task) => task.page.id) ?? []),
+    ...(daily.data?.folders.map((task) => task.page.id) ?? []),
   ]);
   const projectPageRefreshKey = useV3PageInvalidationKey([
     selectedProject?.id,
     project.data?.project.id,
-    ...(project.data?.tasks.map((task) => task.page.id) ?? []),
     ...(project.data?.documents.map((document) => document.id) ?? []),
   ]);
 
@@ -106,7 +105,7 @@ export function usePlannerCollections({
     let active = true;
     const refreshKey = refreshKeys.starred;
     const orderRevision = starredOrderRevisionRef.current;
-    const hadCurrentSnapshot = isStarredTaskSnapshotCurrent({
+    const hadCurrentSnapshot = isStarredFolderSnapshotCurrent({
       loadedRefreshKey: starredLoadedRefreshKeyRef.current,
       expectedRefreshKey: refreshKey,
       currentRefreshKey: starredRefreshKeyRef.current,
@@ -115,14 +114,14 @@ export function usePlannerCollections({
     });
     starredLoadedRefreshKeyRef.current = null;
     setStarredLoadedRefreshKey(null);
-    const previous = starredTaskIndexRef.current.data;
-    setStarredTaskIndex(beginPlannerLoad);
+    const previous = starredFolderIndexRef.current.data;
+    setStarredFolderIndex(beginPlannerLoad);
     void loadConfirmedResult({
       previous,
-      load: () => loadStarredTasks(dependencies, {}),
+      load: () => loadStarredFolders(dependencies, {}),
       clearsVisibleContent: (current, next) => current.items.length > 0 && next.items.length === 0,
     }).then((data) => {
-      if (active && isStarredTaskRequestCurrent({
+      if (active && isStarredFolderRequestCurrent({
         expectedRefreshKey: refreshKey,
         currentRefreshKey: starredRefreshKeyRef.current,
         expectedOrderRevision: orderRevision,
@@ -130,7 +129,7 @@ export function usePlannerCollections({
       })) {
         starredLoadedRefreshKeyRef.current = refreshKey;
         setStarredLoadedRefreshKey(refreshKey);
-        setStarredTaskIndex((current) => isStarredTaskRequestCurrent({
+        setStarredFolderIndex((current) => isStarredFolderRequestCurrent({
           expectedRefreshKey: refreshKey,
           currentRefreshKey: starredRefreshKeyRef.current,
           expectedOrderRevision: orderRevision,
@@ -138,13 +137,13 @@ export function usePlannerCollections({
         }) ? completePlannerLoad(current, data) : current);
       }
     }).catch((error: unknown) => {
-      if (active && isStarredTaskRequestCurrent({
+      if (active && isStarredFolderRequestCurrent({
         expectedRefreshKey: refreshKey,
         currentRefreshKey: starredRefreshKeyRef.current,
         expectedOrderRevision: orderRevision,
         currentOrderRevision: starredOrderRevisionRef.current,
       })) {
-        if (hadCurrentSnapshot || isStarredTaskSnapshotCurrent({
+        if (hadCurrentSnapshot || isStarredFolderSnapshotCurrent({
           loadedRefreshKey: starredLoadedRefreshKeyRef.current,
           expectedRefreshKey: refreshKey,
           currentRefreshKey: starredRefreshKeyRef.current,
@@ -153,7 +152,7 @@ export function usePlannerCollections({
         })) {
           starredLoadedRefreshKeyRef.current = refreshKey;
           setStarredLoadedRefreshKey(refreshKey);
-          setStarredTaskIndex((current) => current.data
+          setStarredFolderIndex((current) => current.data
             ? completePlannerLoad(current, current.data)
             : current);
           return;
@@ -161,7 +160,7 @@ export function usePlannerCollections({
         starredLoadedRefreshKeyRef.current = null;
         setStarredLoadedRefreshKey(null);
         const message = errorText(error);
-        setStarredTaskIndex((current) => {
+        setStarredFolderIndex((current) => {
           const failed = failPlannerLoad(current, message);
           return failed.data
             ? { ...failed, data: { ...failed.data, nextCursor: null } }
@@ -180,12 +179,12 @@ export function usePlannerCollections({
     void loadConfirmedResult({
       previous,
       load: () => loadDailyPlanner(api, selectedDate, dependencies),
-      clearsVisibleContent: (current, next) => current.tasks.length > 0 && next.tasks.length === 0,
+      clearsVisibleContent: (current, next) => current.folders.length > 0 && next.folders.length === 0,
     }).then((data) => {
       if (active) {
         setDaily((current) => completePlannerLoad(current, data));
         if (selectedDate === today) {
-          setTodayTaskIds((current) => retainEqualSet(current, new Set(data.tasks.map((task) => task.page.id))));
+          setTodayFolderIds((current) => retainEqualSet(current, new Set(data.folders.map((task) => task.page.id))));
         }
       }
     }).catch((error: unknown) => {
@@ -199,7 +198,7 @@ export function usePlannerCollections({
     let active = true;
     void loadDailyPlanner(api, today, dependencies).then((data) => {
       if (active) {
-        setTodayTaskIds((current) => retainEqualSet(current, new Set(data.tasks.map((task) => task.page.id))));
+        setTodayFolderIds((current) => retainEqualSet(current, new Set(data.folders.map((task) => task.page.id))));
       }
     }).catch(() => {
       // The selected planner remains usable; its own error surface handles load failures.
@@ -207,43 +206,43 @@ export function usePlannerCollections({
     return () => { active = false; };
   }, [api, dailyPageRefreshKey, dependencies, mutationRefresh.daily, refreshKeys.daily, selectedDate, today]);
 
-  const setTaskTodayPresence = useCallback((taskId: string, present: boolean) => {
-    setTodayTaskIds((current) => {
+  const setFolderTodayPresence = useCallback((folderId: string, present: boolean) => {
+    setTodayFolderIds((current) => {
       const next = new Set(current);
-      if (present) next.add(taskId);
-      else next.delete(taskId);
+      if (present) next.add(folderId);
+      else next.delete(folderId);
       return retainEqualSet(current, next);
     });
   }, []);
 
-  const addTaskToToday = useCallback((task: PlannerTask) => {
-    setTaskTodayPresence(task.page.id, true);
+  const addFolderToToday = useCallback((task: PlannerFolder) => {
+    setFolderTodayPresence(task.page.id, true);
     if (selectedDate !== today) return;
     setDaily((current) => {
-      if (!current.data || current.data.tasks.some((candidate) => candidate.page.id === task.page.id)) return current;
+      if (!current.data || current.data.folders.some((candidate) => candidate.page.id === task.page.id)) return current;
       return retainEqualValue(current, {
         ...current,
-        data: { ...current.data, tasks: [...current.data.tasks, task] },
+        data: { ...current.data, folders: [...current.data.folders, task] },
       });
     });
-  }, [selectedDate, setTaskTodayPresence, today]);
+  }, [selectedDate, setFolderTodayPresence, today]);
 
   const projects = useMemo(() => {
     const next = mergePages(daily.data?.projects ?? [], selectedProject ? [selectedProject] : []);
     stableProjectsRef.current = retainEqualValue(stableProjectsRef.current, next);
     return stableProjectsRef.current;
   }, [daily.data?.projects, selectedProject]);
-  const starredTasks = useMemo(() => {
-    const next = applyStarredPlannerTaskChanges(starredTaskIndex.data?.items ?? [], taskStarChanges);
-    stableStarredTasksRef.current = retainEqualValue(stableStarredTasksRef.current, next);
-    return stableStarredTasksRef.current;
-  }, [starredTaskIndex.data?.items, taskStarChanges]);
+  const starredFolders = useMemo(() => {
+    const next = applyStarredPlannerFolderChanges(starredFolderIndex.data?.items ?? [], folderStarChanges);
+    stableStarredFoldersRef.current = retainEqualValue(stableStarredFoldersRef.current, next);
+    return stableStarredFoldersRef.current;
+  }, [starredFolderIndex.data?.items, folderStarChanges]);
 
   useEffect(() => {
-    if (!selectedProject) return;
+    if (!selectedProject || !selectedFolderId) return;
     let active = true;
-    setProjectTasksLoadingMore(false);
     setProjectDocumentsLoadingMore(false);
+    setSubfoldersLoadingMore(false);
     const previous = projectRef.current.data?.project.id === selectedProject.id
       ? projectRef.current.data
       : null;
@@ -252,10 +251,9 @@ export function usePlannerCollections({
       : { status: "loading", data: null, message: null });
     void loadConfirmedResult({
       previous,
-      load: () => loadProjectPlanner(api, selectedProject, dependencies),
+      load: () => loadFolderPlanner(api, selectedFolderId, selectedProject, dependencies),
       clearsVisibleContent: (current, next) => (
-        current.tasks.length + current.documents.length > 0
-        && next.tasks.length + next.documents.length === 0
+        current.documents.length > 0 && next.documents.length === 0
       ),
     }).then((data) => {
       if (active) setProject((current) => completePlannerLoad(current, data));
@@ -263,49 +261,42 @@ export function usePlannerCollections({
       if (active) setProject((current) => failPlannerLoad(current, errorText(error)));
     });
     return () => { active = false; };
-  }, [api, dependencies, mutationRefresh.project, projectPageRefreshKey, refreshKeys.project, selectedProject]);
+  }, [api, dependencies, mutationRefresh.project, projectPageRefreshKey, refreshKeys.project, selectedFolderId, selectedProject]);
 
-  const updateLoadedTasks = useCallback((update: (tasks: PlannerTask[]) => PlannerTask[]) => {
+  const updateLoadedFolders = useCallback((update: (tasks: PlannerFolder[]) => PlannerFolder[]) => {
     setDaily((current) => {
       if (!current.data) return current;
-      const tasks = update(current.data.tasks);
-      return tasks === current.data.tasks
+      const folders = update(current.data.folders);
+      return folders === current.data.folders
         ? current
-        : retainEqualValue(current, { ...current, data: { ...current.data, tasks } });
-    });
-    setProject((current) => {
-      if (!current.data) return current;
-      const tasks = update(current.data.tasks);
-      return tasks === current.data.tasks
-        ? current
-        : retainEqualValue(current, { ...current, data: { ...current.data, tasks } });
+        : retainEqualValue(current, { ...current, data: { ...current.data, folders } });
     });
   }, []);
 
-  const patchTask = useCallback((taskId: string, update: (task: PlannerTask) => PlannerTask) => {
-    updateLoadedTasks((tasks) => replacePlannerTask(tasks, taskId, update));
-  }, [updateLoadedTasks]);
+  const patchFolder = useCallback((folderId: string, update: (task: PlannerFolder) => PlannerFolder) => {
+    updateLoadedFolders((tasks) => replacePlannerFolder(tasks, folderId, update));
+  }, [updateLoadedFolders]);
 
   const removeSessions = useCallback((sessionIds: readonly string[]) => {
     const removedIds = new Set(sessionIds);
-    updateLoadedTasks((tasks) => removePlannerSessions(tasks, removedIds));
-  }, [updateLoadedTasks]);
+    updateLoadedFolders((tasks) => removePlannerSessions(tasks, removedIds));
+  }, [updateLoadedFolders]);
 
-  const moveSession = useCallback((sessionId: string, targetTaskId: string) => {
-    updateLoadedTasks((tasks) => movePlannerSession(tasks, sessionId, targetTaskId));
-  }, [updateLoadedTasks]);
+  const moveSession = useCallback((sessionId: string, targetFolderId: string) => {
+    updateLoadedFolders((tasks) => movePlannerSession(tasks, sessionId, targetFolderId));
+  }, [updateLoadedFolders]);
 
-  const moveTaskProject = usePlannerProjectMoveProjection(setDaily, setProject);
-  const { starredTasksReordering, reorderStarredTasks } = useStarredTaskReorder({
+  const moveFolderParent = usePlannerProjectMoveProjection(setDaily);
+  const { starredFoldersReordering, reorderStarredFolders } = useStarredFolderReorder({
     dependencies,
     notify,
-    starredTaskIndexRef,
+    starredFolderIndexRef,
     starredLoadedRefreshKeyRef,
     starredOrderRevisionRef,
     setStarredLoadedRefreshKey,
     starredRefreshKeyRef,
-    stableStarredTasksRef,
-    setStarredTaskIndex,
+    stableStarredFoldersRef,
+    setStarredFolderIndex,
   });
 
   const refreshDaily = useCallback(() => {
@@ -316,39 +307,39 @@ export function usePlannerCollections({
     setMutationRefresh((current) => ({ ...current, project: current.project + 1 }));
   }, []);
 
-  const refreshTask = useCallback((taskId: string) => {
-    const inDaily = dailyRef.current.data?.tasks.some((task) => task.page.id === taskId) ?? false;
-    const inProject = projectRef.current.data?.tasks.some((task) => task.page.id === taskId) ?? false;
+  const refreshFolder = useCallback((folderId: string) => {
+    const inDaily = dailyRef.current.data?.folders.some((task) => task.page.id === folderId) ?? false;
+    const inProject = selectedProject?.id === folderId;
     if (!inDaily && !inProject) return;
     setMutationRefresh((current) => ({
       daily: inDaily ? current.daily + 1 : current.daily,
       project: inProject ? current.project + 1 : current.project,
     }));
-  }, []);
+  }, [selectedProject?.id]);
 
-  const loadMoreStarredTasks = useCallback(async () => {
-    const page = starredTaskIndex.data;
+  const loadMoreStarredFolders = useCallback(async () => {
+    const page = starredFolderIndex.data;
     const cursor = page?.nextCursor;
     if (
       !page
       || !cursor
-      || starredTasksLoadingMore
-      || !isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)
+      || starredFoldersLoadingMore
+      || !isStarredFolderRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)
     ) return;
-    const expectedPageIds = page.items.map((task) => starredTaskPage(task).id);
+    const expectedPageIds = page.items.map((task) => starredFolderPage(task).id);
     const refreshKey = starredRefreshKeyRef.current;
     const orderRevision = starredOrderRevisionRef.current;
-    setStarredTasksLoadingMore(true);
+    setStarredFoldersLoadingMore(true);
     try {
-      const next = await loadStarredTasks(dependencies, { cursor });
-      if (!isStarredTaskRequestCurrent({
+      const next = await loadStarredFolders(dependencies, { cursor });
+      if (!isStarredFolderRequestCurrent({
         expectedRefreshKey: refreshKey,
         currentRefreshKey: starredRefreshKeyRef.current,
         expectedOrderRevision: orderRevision,
         currentOrderRevision: starredOrderRevisionRef.current,
       })) return;
-      setStarredTaskIndex((current) => {
-        if (!isStarredTaskRequestCurrent({
+      setStarredFolderIndex((current) => {
+        if (!isStarredFolderRequestCurrent({
           expectedRefreshKey: refreshKey,
           currentRefreshKey: starredRefreshKeyRef.current,
           expectedOrderRevision: orderRevision,
@@ -359,43 +350,24 @@ export function usePlannerCollections({
           return current;
         }
         return completePlannerLoad(current, {
-          items: mergeStarredPlannerTasks(currentPage.items, next.items),
+          items: mergeStarredPlannerFolders(currentPage.items, next.items),
           nextCursor: next.nextCursor,
         });
       });
     } catch (error) {
       notify(`별표 업무 더 보기 실패 · ${errorText(error)}`);
     } finally {
-      setStarredTasksLoadingMore(false);
+      setStarredFoldersLoadingMore(false);
     }
-  }, [dependencies, notify, starredTaskIndex.data, starredTasksLoadingMore]);
-
-  const loadMoreProjectTasks = useCallback(async () => {
-    const data = project.data;
-    if (!data?.nextTaskCursor || projectTasksLoadingMore) return;
-    setProjectTasksLoadingMore(true);
-    try {
-      const next = await loadProjectTaskPage(dependencies, data.project.id, data.nextTaskCursor);
-      setProject((current) => current.data?.project.id === data.project.id
-        ? completePlannerLoad(current, {
-          ...current.data,
-          tasks: mergeTasks(current.data.tasks, next.items),
-          nextTaskCursor: next.nextCursor,
-        })
-        : current);
-    } catch (error) {
-      notify(`프로젝트 업무 더 보기 실패 · ${errorText(error)}`);
-    } finally {
-      setProjectTasksLoadingMore(false);
-    }
-  }, [dependencies, notify, project.data, projectTasksLoadingMore]);
+  }, [dependencies, notify, starredFolderIndex.data, starredFoldersLoadingMore]);
 
   const loadMoreProjectDocuments = useCallback(async () => {
     const data = project.data;
     if (!data?.nextDocumentCursor || projectDocumentsLoadingMore) return;
     setProjectDocumentsLoadingMore(true);
     try {
-      const next = await loadProjectDocumentPage(dependencies, data.project.id, data.nextDocumentCursor);
+      if (!selectedFolderId) return;
+      const next = await loadFolderDocumentPage(dependencies, selectedFolderId, data.nextDocumentCursor);
       setProject((current) => current.data?.project.id === data.project.id
         ? completePlannerLoad(current, {
           ...current.data,
@@ -408,173 +380,56 @@ export function usePlannerCollections({
     } finally {
       setProjectDocumentsLoadingMore(false);
     }
-  }, [dependencies, notify, project.data, projectDocumentsLoadingMore]);
+  }, [dependencies, notify, project.data, projectDocumentsLoadingMore, selectedFolderId]);
 
-  return {
-    daily,
-    todayTaskIds,
-    setTaskTodayPresence,
-    addTaskToToday,
-    project,
-    projects,
-    selectedProject,
-    starredTasks,
-    starredTasksHasMore: Boolean(starredTaskIndex.data?.nextCursor)
-      && isStarredTaskRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
-    starredTasksLoading: (starredTaskIndex.status === "loading" && !starredTaskIndex.data)
-      || !isStarredTaskRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
-    starredTasksLoadingMore,
-    starredTasksReordering,
-    projectTasksLoadingMore,
-    projectDocumentsLoadingMore,
-    loadMoreStarredTasks,
-    reorderStarredTasks,
-    loadMoreProjectTasks,
-    loadMoreProjectDocuments,
-    patchTask,
-    removeSessions,
-    moveSession,
-    moveTaskProject,
-    refreshDaily,
-    refreshProject,
-    refreshTask,
-  };
-}
-
-export function useTaskRunHistory({
-  dependencies,
-  task,
-  workspaceOpen,
-  refreshKey,
-  notify,
-}: {
-  dependencies: PlannerDataDependencies;
-  task: PlannerTask | null;
-  workspaceOpen: boolean;
-  refreshKey: number;
-  notify(message: string): void;
-}) {
-  const latestRunKey = task?.sessionIds.join("\0") ?? "";
-  const [state, setState] = useState<{
-    taskPageId: string;
-    sessionIds: string[];
-    nextCursor: string | null;
-    total: number;
-    loading: boolean;
-  } | null>(null);
-  const stateRef = useRef(state);
-  stateRef.current = state;
-
-  useEffect(() => {
-    if (!workspaceOpen || !task) {
-      setState(null);
-      return;
-    }
-    let active = true;
-    const taskPageId = task.page.id;
-    const initial = {
-      taskPageId,
-      sessionIds: [...task.sessionIds],
-      nextCursor: null,
-      total: task.sessionIds.length,
-      loading: true,
-    };
-    const previous = stateRef.current?.taskPageId === taskPageId
-      ? stateRef.current
-      : null;
-    setState((current) => current?.taskPageId === taskPageId
-      ? retainEqualValue(current, { ...current, loading: true })
-      : initial);
-    void loadConfirmedResult({
-      previous,
-      load: async () => {
-        const page = await loadTaskRunHistory(dependencies, taskPageId, undefined);
-        return {
-          taskPageId,
-          sessionIds: mergeIds(task.sessionIds, page.sessionIds),
-          nextCursor: page.nextCursor,
-          total: page.total,
-          loading: false,
-        };
-      },
-      clearsVisibleContent: (current, next) => (
-        current.sessionIds.length > 0 && next.sessionIds.length === 0
-      ),
-    }).then((next) => {
-      if (!active) return;
-      setState((current) => retainEqualValue(current ?? undefined, next));
-    }).catch((error: unknown) => {
-      if (!active) return;
-      setState((current) => current?.taskPageId === taskPageId
-        ? retainEqualValue(current, { ...current, loading: false })
-        : current);
-      notify(`세션 히스토리 조회 실패 · ${errorText(error)}`);
-    });
-    return () => { active = false; };
-  }, [dependencies, latestRunKey, notify, refreshKey, task?.page.id, workspaceOpen]);
-
-  const loadMore = useCallback(async () => {
-    if (!task || !state?.nextCursor || state.loading || state.taskPageId !== task.page.id) return;
-    const cursor = state.nextCursor;
-    setState((current) => current ? retainEqualValue(current, { ...current, loading: true }) : current);
+  const loadMoreSubfolders = useCallback(async () => {
+    const data = project.data;
+    if (!selectedFolderId || !data?.nextSubfolderCursor || subfoldersLoadingMore) return;
+    setSubfoldersLoadingMore(true);
     try {
-      const page = await loadTaskRunHistory(dependencies, task.page.id, cursor);
-      setState((current) => current?.taskPageId === task.page.id
-        ? retainEqualValue(current, {
-          ...current,
-          sessionIds: mergeIds(current.sessionIds, page.sessionIds),
-          nextCursor: page.nextCursor,
-          total: page.total,
-          loading: false,
+      const page = await loadFolderSubfolderPage(dependencies, selectedFolderId, data.nextSubfolderCursor);
+      setProject((current) => current.data?.project.id === data.project.id
+        ? completePlannerLoad(current, {
+          ...current.data,
+          subfolders: [...new Map([...current.data.subfolders, ...page.items].map((folder) => [folder.id, folder])).values()],
+          nextSubfolderCursor: page.nextCursor,
         })
         : current);
     } catch (error) {
-      setState((current) => current ? retainEqualValue(current, { ...current, loading: false }) : current);
-      notify(`이전 세션 더 보기 실패 · ${errorText(error)}`);
+      notify(`하위 폴더 더 보기 실패 · ${errorText(error)}`);
+    } finally {
+      setSubfoldersLoadingMore(false);
     }
-  }, [dependencies, notify, state, task]);
+  }, [dependencies, notify, project.data, selectedFolderId, subfoldersLoadingMore]);
 
-  const removeSessions = useCallback((sessionIds: readonly string[]) => {
-    if (sessionIds.length === 0) return;
-    const removed = new Set(sessionIds);
-    setState((current) => {
-      if (!current) return current;
-      const nextSessionIds = current.sessionIds.filter((sessionId) => !removed.has(sessionId));
-      if (nextSessionIds.length === current.sessionIds.length) return current;
-      return retainEqualValue(current, {
-        ...current,
-        sessionIds: nextSessionIds,
-        total: Math.max(0, current.total - (current.sessionIds.length - nextSessionIds.length)),
-      });
-    });
-  }, []);
-
-  const moveSession = useCallback((sessionId: string, targetTaskId: string) => {
-    setState((current) => {
-      if (!current) return current;
-      const withoutSession = current.sessionIds.filter((candidate) => candidate !== sessionId);
-      const sessionIds = current.taskPageId === targetTaskId
-        ? [...withoutSession, sessionId]
-        : withoutSession;
-      if (sessionIds.length === current.sessionIds.length
-        && sessionIds.every((value, index) => value === current.sessionIds[index])) return current;
-      return retainEqualValue(current, {
-        ...current,
-        sessionIds,
-        total: Math.max(sessionIds.length, current.total + (sessionIds.length - current.sessionIds.length)),
-      });
-    });
-  }, []);
-
-  const current = state?.taskPageId === task?.page.id ? state : null;
   return {
-    sessionIds: current?.sessionIds ?? task?.sessionIds ?? EMPTY_SESSION_IDS,
-    total: current?.total ?? task?.sessionIds.length ?? 0,
-    hasMore: Boolean(current?.nextCursor),
-    loading: current?.loading ?? false,
-    loadMore,
+    daily,
+    todayFolderIds,
+    setFolderTodayPresence,
+    addFolderToToday,
+    project,
+    projects,
+    selectedProject,
+    starredFolders,
+    starredFoldersHasMore: Boolean(starredFolderIndex.data?.nextCursor)
+      && isStarredFolderRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
+    starredFoldersLoading: (starredFolderIndex.status === "loading" && !starredFolderIndex.data)
+      || !isStarredFolderRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
+    starredFoldersLoadingMore,
+    starredFoldersReordering,
+    projectDocumentsLoadingMore,
+    subfoldersLoadingMore,
+    loadMoreStarredFolders,
+    reorderStarredFolders,
+    loadMoreProjectDocuments,
+    loadMoreSubfolders,
+    patchFolder,
     removeSessions,
     moveSession,
+    moveFolderParent,
+    refreshDaily,
+    refreshProject,
+    refreshFolder,
   };
 }
 
@@ -582,12 +437,8 @@ function mergePages(first: readonly PageDto[], second: readonly PageDto[]): Page
   return [...new Map([...first, ...second].map((page) => [page.id, page])).values()];
 }
 
-function mergeTasks(first: readonly PlannerTask[], second: readonly PlannerTask[]): PlannerTask[] {
+function mergeTasks(first: readonly PlannerFolder[], second: readonly PlannerFolder[]): PlannerFolder[] {
   return [...new Map([...first, ...second].map((task) => [task.page.id, task])).values()];
-}
-
-function mergeIds(first: readonly string[], second: readonly string[]): string[] {
-  return [...new Set([...first, ...second])];
 }
 
 function errorText(error: unknown): string {

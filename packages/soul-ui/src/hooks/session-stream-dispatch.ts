@@ -11,7 +11,7 @@ import type {
   MetadataUpdatedStreamEvent,
   PageUpdatedStreamEvent,
   ReplayGapStreamEvent,
-  TaskUpdatedStreamEvent,
+  FolderUpdatedStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionListStreamEvent,
@@ -29,7 +29,7 @@ export interface SessionStreamHandlers {
   onSessionDeleted?: (event: SessionDeletedStreamEvent) => void;
   onCatalogUpdated?: (event: CatalogUpdatedStreamEvent) => void;
   onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
-  onTaskUpdated?: (event: TaskUpdatedStreamEvent) => void;
+  onFolderUpdated?: (event: FolderUpdatedStreamEvent) => void;
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   onPageUpdated?: (event: PageUpdatedStreamEvent) => void;
   onStreamMeta?: (event: StreamMetaStreamEvent) => void;
@@ -62,20 +62,9 @@ export function dispatchSessionStreamEvent(
     case "metadata_updated":
       handlers.onMetadataUpdated?.(event);
       break;
-    case "task_updated":
-      handlers.onTaskUpdated?.(event);
+    case "folder_updated":
+      handlers.onFolderUpdated?.(event);
       break;
-    case "runbook_updated": {
-      const normalized: TaskUpdatedStreamEvent = {
-        type: "task_updated",
-        taskId: event.runbookId,
-        boardItemId: event.boardItemId,
-        lastEventId: event.lastEventId,
-      };
-      handlers.onTaskUpdated?.(normalized);
-      handlers.onEvent?.(normalized);
-      return;
-    }
     case "custom_view_updated":
       handlers.onCustomViewUpdated?.(event);
       break;

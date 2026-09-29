@@ -7,35 +7,18 @@ import type {
   SessionSummary,
 } from "@seosoyoung/soul-ui";
 import type {
-  TaskItemRow,
-  TaskSnapshot,
-} from "@seosoyoung/soul-ui/stores/task-store";
+  ChecklistItemRow,
+  FolderSnapshot,
+} from "@seosoyoung/soul-ui/stores/folder-checklist-store";
 
-export type PlannerTaskStatus = "open" | "in_progress" | "review" | "completed";
+export type PlannerFolderStatus = "open" | "in_progress" | "review" | "completed";
 
 const STATUS_PRESENTATION = {
   open: { icon: "○", label: "Open" },
   in_progress: { icon: "●", label: "진행" },
   review: { icon: "◆", label: "검수" },
   completed: { icon: "✓", label: "완료" },
-} as const satisfies Record<PlannerTaskStatus, { icon: string; label: string }>;
-
-export type MountedPageClassification =
-  | { kind: "task"; taskId: string }
-  | { kind: "document" };
-
-export function classifyMountedPage(
-  blocks: readonly Pick<BlockDto, "block_type" | "properties">[],
-): MountedPageClassification {
-  for (const block of blocks) {
-    if (block.block_type !== "task_ref") continue;
-    const properties = block.properties as Record<string, unknown>;
-    if (properties.primary !== true) continue;
-    const taskId = nonEmptyString(properties.taskId);
-    if (taskId) return { kind: "task", taskId };
-  }
-  return { kind: "document" };
-}
+} as const satisfies Record<PlannerFolderStatus, { icon: string; label: string }>;
 
 export function parseSingleMountTitle(
   block: Pick<BlockDto, "block_type" | "text">,
@@ -45,42 +28,39 @@ export function parseSingleMountTitle(
   return match ? nonEmptyString(match[1]) : null;
 }
 
-export function derivePlannerTaskStatus(snapshot: {
-  task: { status?: string | null };
+export function derivePlannerFolderStatus(snapshot: {
+  folder: { status: "open" | "completed" };
   items: readonly { status: string }[];
-}): PlannerTaskStatus {
-  const taskStatus = snapshot.task.status;
-  if (taskStatus === "completed") return "completed";
-  if (taskStatus === "review") return "review";
-  if (taskStatus === "in_progress") return "in_progress";
+}): PlannerFolderStatus {
+  if (snapshot.folder.status === "completed") return "completed";
   if (snapshot.items.some((item) => item.status === "review")) return "review";
   if (snapshot.items.some((item) => item.status === "in_progress")) return "in_progress";
   return "open";
 }
 
-export function plannerStatusPresentation(status: PlannerTaskStatus) {
+export function plannerStatusPresentation(status: PlannerFolderStatus) {
   return STATUS_PRESENTATION[status];
 }
 
-export function plannerProgress(snapshot: TaskSnapshot | null): number | null {
+export function plannerProgress(snapshot: FolderSnapshot | null): number | null {
   if (!snapshot || snapshot.items.length === 0) return null;
   const completed = snapshot.items.filter((item) => item.status === "completed").length;
   return Math.round((completed / snapshot.items.length) * 100);
 }
 
-export function taskContextCount(blocks: readonly BlockDto[]): number {
+export function folderContextCount(blocks: readonly BlockDto[]): number {
   return blocks.filter((block) => (
-    block.block_type !== "paragraph" && block.block_type !== "task_ref"
+    block.block_type !== "paragraph" && block.block_type !== "folder_ref"
   )).length;
 }
 
-export function taskAssignee(snapshot: TaskSnapshot | null): string {
+export function folderAssignee(snapshot: FolderSnapshot | null): string {
   if (!snapshot) return "담당 미확인";
   const item = preferredAssigneeItem(snapshot.items);
   if (!item) return "담당 미지정";
-  return item.assignee_agent_id
-    ?? item.assignee_user_id
-    ?? (item.assignee_session_id ? "세션 담당" : "담당 미지정");
+  return item.assigneeAgentId
+    ?? item.assigneeUserId
+    ?? (item.assigneeSessionId ? "세션 담당" : "담당 미지정");
 }
 
 export function latestRun(
@@ -102,7 +82,7 @@ export function resolveProjectFolderId(
   return folders.find((folder) => folder.projectPageId === page.id)?.id ?? null;
 }
 
-function preferredAssigneeItem(items: readonly TaskItemRow[]): TaskItemRow | null {
+function preferredAssigneeItem(items: readonly ChecklistItemRow[]): ChecklistItemRow | null {
   const active = items.find((item) => item.status === "in_progress")
     ?? items.find((item) => item.status === "review")
     ?? items.find((item) => item.status === "pending")

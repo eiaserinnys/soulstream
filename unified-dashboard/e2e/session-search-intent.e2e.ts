@@ -91,44 +91,20 @@ test("opens the exact session and event after auth, follows a clicked search res
     });
   });
   await page.route((url) => (
-    url.pathname === "/api/board-items" && url.searchParams.get("session_id") === sessionId
+    url.pathname === "/api/board-items" && url.searchParams.get("sessionId") === sessionId
   ), (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({
       boardItems: [{
         id: `session:${sessionId}`,
-        folderId: "folder-amber",
-        containerKind: "task",
-        containerId: "rb-alpha",
+        folderId: "rb-alpha",
         itemType: "session",
         itemId: sessionId,
         x: 24,
         y: 0,
         metadata: {},
       }],
-    }),
-  }));
-  await page.route("**/api/tasks/rb-alpha", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({
-      task: {
-        id: "rb-alpha",
-        task_page_id: "task-alpha",
-        board_item_id: "task:rb-alpha",
-        folder_id: "folder-amber",
-        title: "업무 카드 밀도와 계층 최종 QA",
-        status: "open",
-        archived: false,
-        version: 7,
-        created_session_id: "session-coordinator",
-        created_event_id: 1,
-        created_at: "2026-07-13T08:20:00.000Z",
-        updated_at: "2026-07-14T01:30:00.000Z",
-      },
-      sections: [],
-      items: [],
     }),
   }));
   page.on("request", (request) => {

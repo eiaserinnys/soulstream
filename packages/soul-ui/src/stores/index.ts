@@ -7,7 +7,7 @@ export {
   useDashboardStore,
   isSessionUnread,
 } from "./dashboard-store";
-export { useTaskStore } from "./task-store";
+export { useFolderChecklistStore } from "./folder-checklist-store";
 export { useCustomViewStore } from "./custom-view-store";
 export type {
   DashboardState,
@@ -29,4 +29,4 @@ export { placeInTree, handleTextStart } from "./tree-placer";
 export { shouldNotify } from "./session-updater";
 
 // === Task Reads ===
-export { fetchTaskSnapshot } from "./task-api";
+export { fetchFolderSnapshot } from "./folder-checklist-api";

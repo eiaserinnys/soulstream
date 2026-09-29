@@ -62,18 +62,18 @@ describe("navigation target", () => {
   const snapshot = (patch: State) => navigationSnapshot({ ...BASE, ...patch });
 
   it("prefers the session when a single update changes several fields", () => {
-    // openTaskBoard 류는 한 번의 set() 으로 여러 필드를 바꾼다.
+    // openFolderWorkspace 류는 한 번의 set() 으로 여러 필드를 바꾼다.
     expect(resolveNavigationTarget(
       snapshot({}),
       snapshot({ activeSessionKey: "s1", selectedFolderId: "f1", viewMode: "folder" }),
     )).toEqual({ kind: "session", id: "s1" });
   });
 
-  it("reports a task board as a task", () => {
+  it("reports a folder board as a folder", () => {
     expect(resolveNavigationTarget(
       snapshot({}),
-      snapshot({ activeBoardContainer: { kind: "task", id: "t1" }, viewMode: "folder" }),
-    )).toEqual({ kind: "task", id: "t1" });
+      snapshot({ activeBoardContainer: { kind: "folder", id: "f1" }, viewMode: "folder" }),
+    )).toEqual({ kind: "folder", id: "f1" });
   });
 
   it("reports an opened document", () => {
@@ -86,11 +86,11 @@ describe("navigation target", () => {
       .toEqual({ kind: "custom_view", id: "v1" });
   });
 
-  it("falls back to the folder and then to the view mode", () => {
+  it("tracks the selected folder and ignores disconnected view modes", () => {
     expect(resolveNavigationTarget(snapshot({}), snapshot({ selectedFolderId: "f1" })))
       .toEqual({ kind: "folder", id: "f1" });
-    expect(resolveNavigationTarget(snapshot({}), snapshot({ viewMode: "tasks" })))
-      .toEqual({ kind: "view", id: "tasks" });
+    expect(resolveNavigationTarget(snapshot({}), snapshot({ viewMode: "feed" })))
+      .toBeNull();
   });
 
   it("sees no navigation when nothing that defines the screen moved", () => {
@@ -252,13 +252,13 @@ describe("navigation subscription", () => {
     const before = events.length;
 
     store.set({
-      activeBoardContainer: { kind: "task", id: "t1" },
+      activeBoardContainer: { kind: "folder", id: "f1" },
       selectedFolderId: "f1",
       viewMode: "folder",
     });
 
     expect(events).toHaveLength(before + 1);
-    expect(events[before]?.draft?.target).toEqual({ kind: "task", id: "t1" });
+    expect(events[before]?.draft?.target).toEqual({ kind: "folder", id: "f1" });
   });
 
   it("stops listening once disposed", () => {

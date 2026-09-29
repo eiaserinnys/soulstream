@@ -58,7 +58,7 @@ describe("ProjectDialog shared form", () => {
 
     render({
       mode: "edit",
-      folder: { id: "existing", name: "기존 프로젝트", sortOrder: 0, projectPageId: "existing" },
+      folder: { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "existing", name: "기존 프로젝트", sortOrder: 0, projectPageId: "existing" },
     });
     await vi.waitFor(() => expect(document.body.textContent).not.toContain("불러오는 중"));
     expect(document.body.querySelectorAll('[data-testid="v3-project-dialog-form"]')).toHaveLength(1);
@@ -69,7 +69,7 @@ describe("ProjectDialog shared form", () => {
     vi.mocked(fetchProjectPageDetails).mockRejectedValueOnce(new Error("load failed"));
     render({
       mode: "edit",
-      folder: { id: "existing", name: "기존 프로젝트", sortOrder: 0, projectPageId: "existing" },
+      folder: { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "existing", name: "기존 프로젝트", sortOrder: 0, projectPageId: "existing" },
     });
     await vi.waitFor(() => expect(document.body.textContent).toContain("프로젝트 설정을 불러오지 못했습니다"));
     expect(document.body.querySelector('[data-testid="v3-project-dialog-form"]')).toBeNull();

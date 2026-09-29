@@ -147,7 +147,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         drafts: state.drafts,
         folderSortMode: state.folderSortMode,
         leftNavigationMode: state.leftNavigationMode,
-        taskBoardLayouts: state.taskBoardLayouts,
+        folderBoardLayouts: state.folderBoardLayouts,
       }),
     },
   ),

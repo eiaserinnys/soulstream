@@ -13,7 +13,6 @@ import { BoardAssetCard } from "../components/BoardAssetCard";
 import { STATUS_CONFIG } from "../components/SessionItem";
 import { cn } from "../lib/cn";
 import { CustomViewTileBody } from "../custom-view/CustomViewTileBody";
-import { TaskCard } from "../task/TaskCard";
 import type { SessionParentRef } from "./board-session-relations";
 import {
   formatBoardWorkspaceTime,
@@ -43,7 +42,6 @@ interface BoardWorkspaceTileProps {
     item: BoardWorkspaceItem,
   ) => void;
   onOpenFolder: (folderId: string) => void;
-  onOpenTaskBoard: (taskId: string) => void;
   onOpenMarkdown: (documentId: string) => void;
   onOpenCustomView: (customViewId: string) => void;
   onOpenSession: (session: SessionSummary) => void;
@@ -71,7 +69,6 @@ export function BoardWorkspaceTile({
   activeSessionKey,
   onTilePointerDown,
   onOpenFolder,
-  onOpenTaskBoard,
   onOpenMarkdown,
   onOpenCustomView,
   onOpenSession,
@@ -292,29 +289,6 @@ export function BoardWorkspaceTile({
             {item.childCount}
           </Badge>
         </div>
-      </div>
-    );
-  }
-
-  if (item.type === "task") {
-    return (
-      <div
-        key={item.id}
-        role="group"
-        tabIndex={0}
-        data-testid="board-task-tile"
-        data-board-tile="true"
-        className={cn(BOARD_TILE_CLASS, "h-[360px] w-[360px] p-0", selectionClassName, pulsingClassName)}
-        style={tileStyle}
-        onPointerDown={(event) => onTilePointerDown(event, item)}
-        onContextMenu={(event) => onTileContextMenu(event, item)}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <TaskCard
-          taskId={item.taskId}
-          fallbackTitle={item.title}
-          onOpenBoard={onOpenTaskBoard}
-        />
       </div>
     );
   }

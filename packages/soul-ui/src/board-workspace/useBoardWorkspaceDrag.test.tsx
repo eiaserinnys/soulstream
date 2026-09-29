@@ -14,7 +14,7 @@ const boardItem: BoardWorkspaceItem = {
   type: "folder",
   id: "folder-1",
   boardItemId: "subfolder:folder-1",
-  folder: {
+  folder: { checklistEnabled: false, status: "open", version: 1, archived: false,
     id: "folder-1",
     name: "Folder",
     sortOrder: 0,

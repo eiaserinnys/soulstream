@@ -6,7 +6,7 @@ describe("session context item selection", () => {
   it("keeps project inheritance out of the payload while including explicitly selected documents", () => {
     expect(buildSessionContextSelection({
       inheritCard: true,
-      taskPageId: "task-page",
+      folderPageId: "task-page",
       documentPageIds: ["doc-a", "task-page", "doc-b"],
       atomNode: null,
       guidance: "",
@@ -27,7 +27,7 @@ describe("session context item selection", () => {
   it("creates session-only document, atom, and guidance items without inheriting the card", () => {
     expect(buildSessionContextSelection({
       inheritCard: false,
-      taskPageId: "task-page",
+      folderPageId: "task-page",
       documentPageIds: ["doc-a"],
       atomNode: { nodeId: "atom-node", title: "소울스트림" },
       guidance: "  결과부터 간결하게 보고한다.  ",
@@ -58,7 +58,7 @@ describe("session context item selection", () => {
   it("labels the task page alone as card content", () => {
     expect(buildSessionContextSelection({
       inheritCard: true,
-      taskPageId: "task-page",
+      folderPageId: "task-page",
       documentPageIds: [],
       atomNode: null,
       guidance: "",
@@ -75,7 +75,7 @@ describe("session context item selection", () => {
   it("does not create empty context items or a page anchor", () => {
     expect(buildSessionContextSelection({
       inheritCard: false,
-      taskPageId: "task-page",
+      folderPageId: "task-page",
       documentPageIds: [],
       atomNode: null,
       guidance: "   ",
@@ -85,7 +85,7 @@ describe("session context item selection", () => {
   it("does not create a page anchor for atom and guidance alone", () => {
     const result = buildSessionContextSelection({
       inheritCard: false,
-      taskPageId: "task-page",
+      folderPageId: "task-page",
       documentPageIds: [],
       atomNode: { nodeId: "atom-node", title: "소울스트림" },
       guidance: "검증한다.",

@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import {
-  applyStarredPlannerTaskChanges,
+  applyStarredPlannerFolderChanges,
   isStarredPlannerPageCurrent,
-  mergeStarredPlannerTasks,
+  mergeStarredPlannerFolders,
 } from "./starred-planner-collection";
 
 describe("starred planner collection", () => {
@@ -14,14 +14,14 @@ describe("starred planner collection", () => {
     const full = plannerTask("task-a", "업무 A");
     const updatedPage = page("task-a", "업무 A 수정");
 
-    expect(mergeStarredPlannerTasks([full], [updatedPage])).toEqual([updatedPage]);
+    expect(mergeStarredPlannerFolders([full], [updatedPage])).toEqual([updatedPage]);
   });
 
   it("keeps full task data while applying a starred page update", () => {
     const full = plannerTask("task-a", "업무 A");
     const updatedPage = page("task-a", "업무 A 수정");
 
-    const result = applyStarredPlannerTaskChanges([full], [{ page: updatedPage, starred: true }]);
+    const result = applyStarredPlannerFolderChanges([full], [{ page: updatedPage, starred: true }]);
 
     expect(result).toEqual([{ ...full, page: updatedPage }]);
   });
@@ -29,8 +29,8 @@ describe("starred planner collection", () => {
   it("adds and removes fallback page entries", () => {
     const added = page("task-b", "업무 B");
 
-    expect(applyStarredPlannerTaskChanges([], [{ page: added, starred: true }])).toEqual([added]);
-    expect(applyStarredPlannerTaskChanges([added], [{ page: added, starred: false }])).toEqual([]);
+    expect(applyStarredPlannerFolderChanges([], [{ page: added, starred: true }])).toEqual([added]);
+    expect(applyStarredPlannerFolderChanges([added], [{ page: added, starred: false }])).toEqual([]);
   });
 
   it("rejects a load-more response after the first-page cursor or order changes", () => {
@@ -44,18 +44,17 @@ describe("starred planner collection", () => {
   });
 });
 
-function plannerTask(id: string, title: string): PlannerTask {
+function plannerTask(id: string, title: string): PlannerFolder {
   return {
     page: page(id, title),
     blocks: [],
     stateVector: "",
-    taskId: id,
-    task: null,
+    folderId: id,
     status: "open",
     assignee: "담당 미확인",
     contextCount: 0,
     progress: null,
-    projectPageId: null,
+    parentFolderId: null,
     sessionIds: [],
     mountedDocuments: [],
   };

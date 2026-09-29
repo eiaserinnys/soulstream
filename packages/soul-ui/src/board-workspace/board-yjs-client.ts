@@ -36,9 +36,7 @@ export {
 } from "./board-yjs-document";
 export type { BoardYjsItemValue } from "./board-yjs-document";
 
-export const BOARD_YJS_LEGACY_FOLDER_PREFIX = "board-folder:";
-export const BOARD_YJS_CONTAINER_PREFIX = "board:";
-export const BOARD_YJS_PREFIX = BOARD_YJS_LEGACY_FOLDER_PREFIX;
+export const BOARD_YJS_PREFIX = "board-folder:";
 export interface RemoteBoardSelection {
   clientId: number;
   itemId: string;
@@ -95,10 +93,7 @@ export function folderBoardContainer(folderId: string): BoardContainerRef {
 
 export function getBoardYjsDocumentName(containerInput: BoardContainerInput): string {
   const container = normalizeBoardContainer(containerInput);
-  if (container.kind === "folder") {
-    return `${BOARD_YJS_LEGACY_FOLDER_PREFIX}${container.id}`;
-  }
-  return `${BOARD_YJS_CONTAINER_PREFIX}${container.kind}:${container.id}`;
+  return `${BOARD_YJS_PREFIX}${container.id}`;
 }
 
 export function buildBoardYjsUrl(
@@ -107,10 +102,7 @@ export function buildBoardYjsUrl(
 ): string {
   const container = normalizeBoardContainer(containerInput);
   const protocol = locationLike.protocol === "https:" ? "wss:" : "ws:";
-  if (container.kind === "folder") {
-    return `${protocol}//${locationLike.host}/yjs/${encodeURIComponent(container.id)}`;
-  }
-  return `${protocol}//${locationLike.host}/yjs/${encodeURIComponent(container.kind)}/${encodeURIComponent(container.id)}`;
+  return `${protocol}//${locationLike.host}/yjs/${encodeURIComponent(container.id)}`;
 }
 
 export function isBoardYjsBrowserConnectionAvailable(locationLike: Location = window.location): boolean {
@@ -180,8 +172,6 @@ export function placeBoardSessionInYjs(
   runtime.upsertBoardItem({
     id: `session:${sessionId}`,
     folderId,
-    containerKind: "folder",
-    containerId: folderId,
     itemType: "session",
     itemId: sessionId,
     x: position.x,

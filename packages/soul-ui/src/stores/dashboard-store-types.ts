@@ -29,7 +29,7 @@ import type { ChatFocusTarget } from "../shared/search-focus";
 export interface NewSessionDefaults {
   folderId?: string | null;
   container?: BoardContainerRef | null;
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
   nodeId?: string;
   agentId?: string | null;
   modelPreset?: string | null;
@@ -63,9 +63,9 @@ export type FolderSortMode =
 
 // === Mobile Tab ===
 
-export type DashboardViewMode = "feed" | "folder" | "tasks";
+export type DashboardViewMode = "feed" | "folder";
 
-export type MobileTab = "feed" | "folder" | "tasks" | "chat" | "settings";
+export type MobileTab = "feed" | "folder" | "chat" | "settings";
 
 export interface HistoryCursorSnapshot {
   sessionId: string;
@@ -84,7 +84,7 @@ export type { ChatFontSize, LiquidGlassSettings, WallpaperMode, WallpaperSetting
 // === State Interface ===
 
 export interface DashboardState {
-  /** 뷰 모드 — URL 해시에서 파생. tasks는 업무 모아보기 */
+  /** 뷰 모드 — URL 해시에서 파생. */
   viewMode: DashboardViewMode;
 
   /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
@@ -215,15 +215,15 @@ export interface DashboardState {
   folderSortMode: FolderSortMode;
 
   /**
-   * 업무 보드 워크스페이스의 마지막 레이아웃 상태 (task page id를 키로 localStorage 영속).
+   * 폴더 보드 워크스페이스의 마지막 레이아웃 상태 (folder page id를 키로 localStorage 영속).
    * 좌·우 패널 폭, 열린 자료 탭, 보드 zoom/pan, 편집 오버레이 상태, 활성 채팅 세션을 담는다.
    * 재진입 시 근사 복원하며, 삭제된 문서/세션 참조는 소비 측에서 정리한다.
    */
-  taskBoardLayouts: Record<string, TaskBoardLayoutSnapshot>;
+  folderBoardLayouts: Record<string, FolderBoardLayoutSnapshot>;
 }
 
 /** 업무 보드 레이아웃 스냅샷 — 삭제 대상은 복원 시 안전 폴백한다. */
-export interface TaskBoardLayoutSnapshot {
+export interface FolderBoardLayoutSnapshot {
   /** 좌측 자료 패널 폭 (px) */
   resourceWidth?: number;
   /** 우측 채팅 패널 폭 (px) */
@@ -339,7 +339,7 @@ export interface DashboardActions {
   // 뷰 모드 (URL 동기화 전용)
   setViewMode: (mode: DashboardViewMode) => void;
   setFeedScrollOffset: (offset: number) => void;
-  openTaskBoard: (taskId: string, parentFolderId?: string | null) => void;
+  openFolderWorkspace: (folderId: string, parentFolderId?: string | null) => void;
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;
@@ -365,8 +365,8 @@ export interface DashboardActions {
   // 폴더 정렬 모드
   setFolderSortMode: (mode: FolderSortMode) => void;
 
-  // 업무 보드 레이아웃 (task page id 키, 부분 병합 저장)
-  setTaskBoardLayout: (taskPageId: string, patch: Partial<TaskBoardLayoutSnapshot>) => void;
+  // 폴더 보드 레이아웃 (folder page id 키, 부분 병합 저장)
+  setFolderBoardLayout: (folderPageId: string, patch: Partial<FolderBoardLayoutSnapshot>) => void;
 
   // 모바일 탭 전환
   setActiveTab: (tab: MobileTab) => void;

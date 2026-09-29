@@ -8,8 +8,8 @@ const PLANNER_CSS_PATH = fileURLToPath(new URL("./v3-planner.css", import.meta.u
 const PLANNER_MOBILE_CSS_PATH = fileURLToPath(new URL("./v3-planner-mobile.css", import.meta.url));
 const SESSION_PANEL_CSS_PATH = fileURLToPath(new URL("./v3-session-panel.css", import.meta.url));
 const RUN_HISTORY_CSS_PATH = fileURLToPath(new URL("./v3-run-history.css", import.meta.url));
-const WORKSPACE_CSS_PATH = fileURLToPath(new URL("./v3-task-workspace.css", import.meta.url));
-const BOARD_CSS_PATH = fileURLToPath(new URL("./v3-task-board.css", import.meta.url));
+const WORKSPACE_CSS_PATH = fileURLToPath(new URL("./v3-folder-workspace.css", import.meta.url));
+const BOARD_CSS_PATH = fileURLToPath(new URL("./v3-folder-board.css", import.meta.url));
 
 function ruleBody(css: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

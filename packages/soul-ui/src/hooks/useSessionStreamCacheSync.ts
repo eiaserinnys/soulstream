@@ -26,7 +26,7 @@ import type {
   PageUpdatedStreamEvent,
   CustomViewUpdatedStreamEvent,
   ReplayGapStreamEvent,
-  TaskUpdatedStreamEvent,
+  FolderUpdatedStreamEvent,
   SessionListStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
@@ -99,8 +99,8 @@ export interface UseSessionStreamCacheSyncOptions {
   onStreamMeta?: (event: StreamMetaStreamEvent) => boolean | void;
   /** replay_gap 수신 시 호출 (풀 refetch 트리거용). */
   onReplayGap?: (event: ReplayGapStreamEvent) => boolean | void;
-  /** task_updated 수신 시 호출 (업무 snapshot projection 갱신용). */
-  onTaskUpdated?: (event: TaskUpdatedStreamEvent) => void;
+  /** folder_updated 수신 시 호출 (폴더 snapshot projection 갱신용). */
+  onFolderUpdated?: (event: FolderUpdatedStreamEvent) => void;
   /** session_deleted 캐시 반영 뒤 detail cursor 같은 외부 projection을 회수한다. */
   onSessionDeleted?: (event: SessionDeletedStreamEvent) => void;
   /** custom_view_updated 수신 시 호출 (커스텀 뷰 projection 갱신용). */
@@ -130,7 +130,7 @@ export function useSessionStreamCacheSync(
     onEventIdAdvance,
     onStreamMeta: onStreamMetaOption,
     onReplayGap: onReplayGapOption,
-    onTaskUpdated: onTaskUpdatedOption,
+    onFolderUpdated: onFolderUpdatedOption,
     onSessionDeleted: onSessionDeletedOption,
     onCustomViewUpdated: onCustomViewUpdatedOption,
     onStreamEvent,
@@ -399,12 +399,12 @@ export function useSessionStreamCacheSync(
     [queryClient, onEventIdAdvance],
   );
 
-  const onTaskUpdated = useCallback(
-    (event: TaskUpdatedStreamEvent) => {
+  const onFolderUpdated = useCallback(
+    (event: FolderUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
-      onTaskUpdatedOption?.(event);
+      onFolderUpdatedOption?.(event);
     },
-    [onEventIdAdvance, onTaskUpdatedOption],
+    [onEventIdAdvance, onFolderUpdatedOption],
   );
 
   const onCustomViewUpdated = useCallback(
@@ -494,8 +494,8 @@ export function useSessionStreamCacheSync(
       case "metadata_updated":
         onMetadataUpdated(event);
         break;
-      case "task_updated":
-        onTaskUpdated(event);
+      case "folder_updated":
+        onFolderUpdated(event);
         break;
       case "custom_view_updated":
         onCustomViewUpdated(event);
@@ -503,7 +503,6 @@ export function useSessionStreamCacheSync(
       case "page_updated":
         onPageUpdated(event);
         break;
-      case "runbook_updated":
       case "stream_meta":
       case "replay_gap":
         break;
@@ -517,7 +516,7 @@ export function useSessionStreamCacheSync(
     onSessionDeleted,
     onSessionList,
     onSessionUpdated,
-    onTaskUpdated,
+    onFolderUpdated,
   ]);
 
   const runRecovery = useCallback(async (recovery: StreamRecovery) => {
@@ -699,7 +698,7 @@ export function useSessionStreamCacheSync(
     onSessionDeleted: routeDataEvent,
     onCatalogUpdated: routeDataEvent,
     onMetadataUpdated: routeDataEvent,
-    onTaskUpdated: routeDataEvent,
+    onFolderUpdated: routeDataEvent,
     onCustomViewUpdated: routeDataEvent,
     onPageUpdated: routeDataEvent,
     onStreamMeta,

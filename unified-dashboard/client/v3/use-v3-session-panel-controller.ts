@@ -7,9 +7,9 @@ import {
 } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
-import { loadPlannerTaskByTaskId, type PlannerTask } from "./planner-data";
-import type { TaskSectionFocusRequest } from "./TaskSectionNavigation";
-import { activateRunSession } from "./task-workspace-model";
+import { loadPlannerFolderById, type PlannerFolder } from "./planner-data";
+import type { FolderSectionFocusRequest } from "./FolderSectionNavigation";
+import { activateRunSession } from "./folder-workspace-run-model";
 import { errorText } from "./v3-dashboard-utils";
 import { sessionPanelGroups } from "./v3-session-panel-model";
 import {
@@ -20,28 +20,26 @@ import {
 import { orchestratorSessionProvider } from "../providers";
 import {
   resolveSessionForOpen,
-  resolveSessionTaskWorkspace,
+  resolveSessionFolderWorkspace,
   SessionWorkspaceResolutionError,
 } from "./v3-session-workspace";
 
 export function useV3SessionPanelController({
   api,
   catalog,
-  currentTasks,
+  currentFolderEntries,
   acknowledgedReviewIds,
-  setSelectedTaskId,
-  setSelectedTaskSnapshot,
-  setWorkspaceOpen,
+  onSelectFolder,
+  onClearFolder,
   setChatOpen,
   notify,
 }: {
   api: PageApiClient;
   catalog: CatalogState | null;
-  currentTasks: readonly PlannerTask[];
+  currentFolderEntries: readonly PlannerFolder[];
   acknowledgedReviewIds: ReadonlySet<string>;
-  setSelectedTaskId: Dispatch<SetStateAction<string | null>>;
-  setSelectedTaskSnapshot: Dispatch<SetStateAction<PlannerTask | null>>;
-  setWorkspaceOpen: Dispatch<SetStateAction<boolean>>;
+  onSelectFolder(task: PlannerFolder): Promise<void>;
+  onClearFolder(): void;
   setChatOpen: Dispatch<SetStateAction<boolean>>;
   notify(message: string): void;
 }) {
@@ -49,8 +47,8 @@ export function useV3SessionPanelController({
   const focusRequestSequence = useRef(0);
   const openRequestSequence = useRef(0);
   const [panelWidth, setPanelWidth] = useState(() => readV3SessionPanelWidth());
-  const [focusRequest, setFocusRequest] = useState<TaskSectionFocusRequest | null>(null);
-  const [workspaceTaskError, setWorkspaceTaskError] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState<FolderSectionFocusRequest | null>(null);
+  const [workspaceFolderError, setWorkspaceFolderError] = useState<string | null>(null);
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
@@ -82,19 +80,18 @@ export function useV3SessionPanelController({
     requestSequence: number,
   ): Promise<boolean> => {
     try {
-      const resolved = await resolveSessionTaskWorkspace({
+      const resolved = await resolveSessionFolderWorkspace({
         session,
         boardItems: catalog?.boardItems ?? [],
-        currentTasks,
-        loadTaskByTaskId: (taskId) => loadPlannerTaskByTaskId(api, taskId),
+        currentFolderEntries,
+        loadFolderById: (folderId) => loadPlannerFolderById(api, folderId),
       });
       if (requestSequence !== openRequestSequence.current) return false;
 
       activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
-      setWorkspaceTaskError(null);
+      setWorkspaceFolderError(null);
       if (resolved.task) {
-        setSelectedTaskId(resolved.task.page.id);
-        setSelectedTaskSnapshot(resolved.task);
+        await onSelectFolder(resolved.task);
         focusRequestSequence.current += 1;
         setFocusRequest({
           requestId: focusRequestSequence.current,
@@ -102,11 +99,9 @@ export function useV3SessionPanelController({
           sessionId: session.agentSessionId,
         });
       } else {
-        setSelectedTaskId(null);
-        setSelectedTaskSnapshot(null);
+        onClearFolder();
         setFocusRequest(null);
       }
-      setWorkspaceOpen(true);
       setChatOpen(true);
       return true;
     } catch (error) {
@@ -117,11 +112,11 @@ export function useV3SessionPanelController({
       const detail = error instanceof SessionWorkspaceResolutionError && error.cause
         ? errorText(error.cause)
         : errorText(error);
-      setWorkspaceTaskError(message);
+      setWorkspaceFolderError(message);
       notify(`세션의 업무 열기 실패 · ${message} · ${detail}`);
       return false;
     }
-  }, [api, catalog?.boardItems, currentTasks, notify, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen, setSelectedTaskId, setSelectedTaskSnapshot, setWorkspaceOpen]);
+  }, [api, catalog?.boardItems, currentFolderEntries, notify, onClearFolder, onSelectFolder, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen]);
 
   const openSession = useCallback(async (session: SessionSummary) => {
     const requestSequence = ++openRequestSequence.current;
@@ -163,7 +158,7 @@ export function useV3SessionPanelController({
     sessions,
     reviewSessions,
     focusRequest,
-    workspaceTaskError,
+    workspaceFolderError,
     resize,
     openSession,
     openSessionById,

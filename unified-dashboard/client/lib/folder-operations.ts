@@ -10,13 +10,13 @@ import { createFolderOperations, DEFAULT_FOLDER_ID } from "@seosoyoung/soul-ui";
 export const {
   createFolder,
   renameFolderOptimistic,
-  deleteFolderOptimistic,
+  archiveFolder,
   updateFolderSettingsOptimistic,
   reorderFoldersOptimistic,
 } = createFolderOperations({
   createUrl: "/api/folders",
   updateUrl: (id) => `/api/folders/${id}`,
-  deleteUrl: (id) => `/api/folders/${id}`,
+  archiveUrl: (id) => `/api/folders/${id}/archive`,
   reorderUrl: "/api/folders/reorder",
-  deleteFallbackFolderId: DEFAULT_FOLDER_ID,
+  archiveFallbackFolderId: DEFAULT_FOLDER_ID,
 });

@@ -13,7 +13,7 @@ function folder(
   parentFolderId: string | null = null,
   sortOrder = 0,
 ): CatalogFolder {
-  return { id, name, parentFolderId, sortOrder };
+  return { checklistEnabled: false, status: "open", version: 1, archived: false,  id, name, parentFolderId, sortOrder };
 }
 
 describe("getFolderNameSortKey", () => {

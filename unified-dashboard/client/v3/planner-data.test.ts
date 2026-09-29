@@ -1,414 +1,99 @@
 import { describe, expect, it, vi } from "vitest";
-
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import {
   createPlannerDataDependencies,
-  loadDailyHistoryDates,
   loadDailyPlanner,
-  loadProjectDocumentPage,
-  loadProjectLegacySessionPage,
-  loadPlannerTask,
-  loadPlannerTaskByTaskId,
-  loadStarredTasks,
-  loadStarredPlannerTask,
-  loadProjectPlanner,
-  loadProjectTaskPage,
-  loadTaskRunHistory,
-  type PlannerDataDependencies,
+  loadFolderSessionPage,
+  loadFolderSubfolderPage,
+  loadPlannerFolderById,
+  loadFolderDocumentPage,
+  loadFolderPlanner,
+  loadStarredFolders,
 } from "./planner-data";
 
-describe("planner BFF data", () => {
-  it("saves starred order with the shared page boundary API contract", async () => {
+const page = (id: string): PageDto => ({ id, title: id, metadata: {} }) as PageDto;
+const folder = (id: string) => ({
+  id, name: id, sortOrder: 0, parentFolderId: null, projectPageId: `${id}-page`,
+  checklistEnabled: false, status: "open" as const, archived: false, version: 1, settings: {},
+});
+const entry = (id: string) => ({ folder: folder(id), page: page(`${id}-page`),
+  itemCounts: {}, itemTotal: 0, completedItemCount: 0, assignee: null });
+const api = {} as PageApiClient;
+
+describe("unified folder planner API", () => {
+  it("uses the page ID to save starred folder order", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
+      status: 200, headers: { "Content-Type": "application/json" },
     }));
     const dependencies = createPlannerDataDependencies(fetcher as typeof fetch);
-
-    await dependencies.saveStarredTaskOrder?.("task-a", "task-b");
-
-    expect(fetcher).toHaveBeenCalledWith("/api/planner/starred-tasks/order", {
-      method: "PATCH",
-      credentials: "same-origin",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ page_id: "task-a", before_page_id: "task-b" }),
-    });
+    await dependencies.saveStarredFolderOrder?.("page-a", "page-b");
+    expect(fetcher).toHaveBeenCalledWith("/api/planner/starred-folders/order", expect.objectContaining({
+      method: "PATCH", body: JSON.stringify({ pageId: "page-a", beforePageId: "page-b" }),
+    }));
   });
 
-  it("loads today in one request without calling the page API fanout", async () => {
-    const api = pageApiThatMustStayIdle();
+  it("reads today as one folder list with no page fanout", async () => {
     const fetchPlanner = vi.fn(async () => ({
-      daily: { page: page("daily", "2026-07-14"), blocks: [], state_vector: "" },
-      projects: [page("project", "프로젝트")],
-      memo_blocks: [],
-      tasks: [taskPayload()],
-      review_session_ids: ["review-session"],
+      daily: { page: page("daily"), blocks: [], state_vector: "" },
+      folders: [entry("folder-a")], memoBlocks: [], reviewSessionIds: [],
     }));
-
-    await expect(loadDailyPlanner(api, "2026-07-14", { fetchPlanner }))
-      .resolves.toMatchObject({
-        daily: { page: { id: "daily" } },
-        projects: [{ id: "project" }],
-        reviewSessionIds: ["review-session"],
-        tasks: [{
-          page: { id: "task" },
-          taskId: "task",
-          status: "in_progress",
-          assignee: "roselin",
-          progress: 25,
-          sessionIds: ["session-a"],
-          projectPageId: "project",
-        }],
-      });
+    const result = await loadDailyPlanner(api, "2026-09-29", { fetchPlanner });
+    expect(result.folders).toMatchObject([{ folderId: "folder-a", page: { id: "folder-a-page" } }]);
     expect(fetchPlanner).toHaveBeenCalledOnce();
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/today?date=2026-07-14");
-    expectNoPageCalls(api);
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/today?date=2026-09-29");
   });
 
-  it("loads a 22-task project through one request", async () => {
-    const api = pageApiThatMustStayIdle();
-    const project = page("project/a", "프로젝트");
-    const tasks = Array.from({ length: 22 }, (_, index) => taskPayload(index));
+  it("reads the folder aggregate including each first cursor slice", async () => {
     const fetchPlanner = vi.fn(async () => ({
-      project,
-      tasks: { items: tasks, next_cursor: "task-next" },
-      documents: { items: [], next_cursor: "document-next" },
+      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], items: [],
+      subfolders: { items: [folder("child")], nextCursor: "sub-next" },
+      documents: { items: [page("document")], nextCursor: "doc-next" },
+      sessions: { items: [{ agentSessionId: "session-a" }], nextCursor: "session-next" },
     }));
-
-    const result = await loadProjectPlanner(api, project, { fetchPlanner });
-
-    expect(result.tasks).toHaveLength(22);
-    expect(result.nextTaskCursor).toBe("task-next");
-    expect(result.nextDocumentCursor).toBe("document-next");
-    expect(fetchPlanner).toHaveBeenCalledOnce();
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa");
-    expectNoPageCalls(api);
-  });
-
-  it("deduplicates daily and project task payloads by page id", async () => {
-    const api = pageApiThatMustStayIdle();
-    const duplicate = taskPayload();
-    const fetchPlanner = vi.fn(async (path: string) => path.startsWith("/api/planner/today")
-      ? {
-          daily: { page: page("daily", "2026-07-14"), blocks: [], state_vector: "" },
-          projects: [],
-          memo_blocks: [],
-          tasks: [duplicate, duplicate, duplicate, duplicate],
-          review_session_ids: [],
-        }
-      : {
-          project: page("project", "프로젝트"),
-          tasks: { items: [duplicate, duplicate], next_cursor: null },
-          documents: { items: [], next_cursor: null },
-        });
-
-    const daily = await loadDailyPlanner(api, "2026-07-14", { fetchPlanner });
-    const project = await loadProjectPlanner(
-      api,
-      page("project", "프로젝트"),
-      { fetchPlanner },
-    );
-
-    expect(daily.tasks.map((task) => task.page.id)).toEqual(["task"]);
-    expect(project.tasks.map((task) => task.page.id)).toEqual(["task"]);
-  });
-
-  it("loads bounded project, daily, task, document, legacy session, and run pages through dedicated planner routes", async () => {
-    const fetchPlanner = vi.fn(async (path: string) => {
-      if (path.startsWith("/api/planner/starred-tasks")) {
-        return { items: [taskPayload()], next_cursor: "task-next" };
-      }
-      if (path.startsWith("/api/planner/daily-history")) {
-        return { dates: ["2026-07-13", "2026-07-11"] };
-      }
-      if (path.includes("/tasks?")) {
-        return { items: [taskPayload()], next_cursor: "task-next" };
-      }
-      if (path.includes("/documents?")) {
-        return { items: [page("document", "문서")], next_cursor: null };
-      }
-      if (path.includes("/legacy-sessions?")) {
-        return {
-          items: [{ agentSessionId: "legacy-session", status: "completed", eventCount: 0 }],
-          next_cursor: "legacy-next",
-        };
-      }
-      return {
-        items: [{ agent_session_id: "session-a" }],
-        next_cursor: "run-next",
-        total: 61,
-      };
+    const result = await loadFolderPlanner(api, "folder-a", page("folder-a-page"), { fetchPlanner });
+    expect(result).toMatchObject({
+      subfolders: [{ id: "child" }], nextSubfolderCursor: "sub-next",
+      documents: [{ id: "document" }], nextDocumentCursor: "doc-next",
+      sessions: { items: [{ agentSessionId: "session-a" }], nextCursor: "session-next" },
     });
-    const dependencies = { fetchPlanner } satisfies PlannerDataDependencies;
-
-    await expect(loadStarredTasks(dependencies, { cursor: "cursor-a" }))
-      .resolves.toMatchObject({
-        items: [{ page: { id: "task" }, taskId: "task", status: "in_progress" }],
-        nextCursor: "task-next",
-      });
-    await expect(loadDailyHistoryDates(dependencies, "2026-07-14"))
-      .resolves.toEqual(["2026-07-13", "2026-07-11"]);
-    await expect(loadProjectTaskPage(dependencies, "project/a", "cursor-b"))
-      .resolves.toMatchObject({ items: [{ page: { id: "task" } }], nextCursor: "task-next" });
-    await expect(loadProjectDocumentPage(dependencies, "project/a", "cursor-c"))
-      .resolves.toMatchObject({ items: [{ id: "document" }], nextCursor: null });
-    await expect(loadProjectLegacySessionPage(dependencies, "project/a", "cursor-d"))
-      .resolves.toMatchObject({
-        items: [{ agentSessionId: "legacy-session" }],
-        nextCursor: "legacy-next",
-      });
-    await expect(loadTaskRunHistory(dependencies, "task/a", "cursor-e"))
-      .resolves.toEqual({ sessionIds: ["session-a"], nextCursor: "run-next", total: 61 });
-
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/starred-tasks?cursor=cursor-a&detail=full");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/daily-history?before=2026-07-14");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/tasks?cursor=cursor-b");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/documents?cursor=cursor-c");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/legacy-sessions?cursor=cursor-d");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/tasks/task%2Fa/runs?cursor=cursor-e");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/folders/folder-a");
   });
 
-  it("uses one authenticated JSON fetch in the production dependency", async () => {
-    const response = { daily: { page: { id: "daily" } } };
-    const fetchImplementation = vi.fn(async () => ({
-      ok: true,
-      json: async () => response,
-    })) as unknown as typeof globalThis.fetch;
-    const dependencies = createPlannerDataDependencies(fetchImplementation);
-
-    await expect(dependencies.fetchPlanner("/api/planner/today?date=2026-07-14"))
-      .resolves.toBe(response);
-    expect(fetchImplementation).toHaveBeenCalledWith(
-      "/api/planner/today?date=2026-07-14",
-      {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      },
-    );
+  it("uses one cursor route per folder collection", async () => {
+    const fetchPlanner = vi.fn(async (_path: string) => ({ items: [], nextCursor: "next" }));
+    const dependencies = { fetchPlanner };
+    await loadFolderSubfolderPage(dependencies, "folder/a", "child-cursor");
+    await loadFolderDocumentPage(dependencies, "folder/a", "doc-cursor");
+    await loadFolderSessionPage(dependencies, "folder/a", "session-cursor");
+    expect(fetchPlanner.mock.calls.map(([path]) => path)).toEqual([
+      "/api/planner/folders/folder%2Fa/subfolders?cursor=child-cursor",
+      "/api/planner/folders/folder%2Fa/documents?cursor=doc-cursor",
+      "/api/planner/folders/folder%2Fa/sessions?cursor=session-cursor",
+    ]);
   });
 
-  it("opens a full starred task without the legacy page and backlink fanout", async () => {
-    const fullTask = {
-      page: page("task", "업무"),
-      blocks: [],
-      stateVector: "",
-      taskId: "task",
-      task: null,
-      status: "open" as const,
-      assignee: "담당 미확인",
-      contextCount: 0,
-      progress: null,
-      projectPageId: null,
-      sessionIds: [],
-      mountedDocuments: [],
-    };
-    const api = pageApiThatMustStayIdle();
-
-    await expect(loadStarredPlannerTask(api, fullTask)).resolves.toBe(fullTask);
-    expectNoPageCalls(api);
-  });
-
-  it("preserves the server detail for the collapsed planner error disclosure", async () => {
-    const fetchImplementation = vi.fn(async () => new Response(
-      JSON.stringify({ detail: "PostgreSQL connection refused at internal-host:5432" }),
-      { status: 503, headers: { "Content-Type": "application/json" } },
-    ));
-    const dependencies = createPlannerDataDependencies(fetchImplementation);
-
-    await expect(dependencies.fetchPlanner("/api/planner/today?date=2026-07-14"))
-      .rejects.toThrow("PostgreSQL connection refused at internal-host:5432");
-  });
-
-  it("resolves a starred task project after paginating past daily mounts", async () => {
-    const taskPage = page("task-starred", "별표 업무");
-    const taskSnapshot = {
-      page: taskPage,
-      blocks: [{
-        id: "task-ref",
-        page_id: taskPage.id,
-        parent_id: null,
-        position_key: "A",
-        block_type: "task_ref",
-        text: "",
-        properties: { primary: true, taskId: "task-starred" },
-        collapsed: false,
-      }],
-      state_vector: "AA==",
-    };
-    const daily = { page: { ...page("daily", "오늘"), daily_date: "2026-07-17" }, blocks: [], state_vector: "AA==" };
-    const project = { page: page("project", "프로젝트"), blocks: [], state_vector: "AA==" };
-    const api = {
-      getPage: vi.fn(async (pageId: string) => (
-        pageId === taskPage.id ? taskSnapshot : pageId === daily.page.id ? daily : project
-      )),
-      getBacklinks: vi
-        .fn()
-        .mockResolvedValueOnce({
-          items: [{ sourcePageId: daily.page.id }],
-          nextCursor: "next-mounts",
-        })
-        .mockResolvedValueOnce({
-          items: [{ sourcePageId: project.page.id }],
-          nextCursor: null,
-        }),
-    } as unknown as PageApiClient;
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
-
+  it("opens a folder by its identity without reading an old task route", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], items: [],
+      subfolders: { items: [], nextCursor: null },
+      documents: { items: [], nextCursor: null },
+      sessions: { items: [], nextCursor: null },
+    }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetcher);
     try {
-      await expect(loadPlannerTask(api, taskPage.id)).resolves.toMatchObject({
-        projectPageId: project.page.id,
-      });
-      expect(api.getBacklinks).toHaveBeenNthCalledWith(2, taskPage.id, {
-        kinds: ["mount"],
-        limit: 50,
-        cursor: "next-mounts",
-      });
+      const result = await loadPlannerFolderById(api, "folder-a");
+      expect(result).toMatchObject({ folderId: "folder-a", page: { id: "folder-a-page" } });
+      expect(fetcher).toHaveBeenCalledWith("/api/planner/folders/folder-a", expect.any(Object));
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("resolves a task id to its distinct task page before loading the planner task", async () => {
-    const taskId = "task-id";
-    const taskPageId = "task-page-id";
-    const taskPage = page(taskPageId, "업무");
-    const api = {
-      getPage: vi.fn(async () => ({
-        page: taskPage,
-        blocks: [{
-          id: "task-ref",
-          page_id: taskPageId,
-          parent_id: null,
-          position_key: "A",
-          block_type: "task_ref",
-          text: "",
-          properties: { primary: true, taskId },
-          collapsed: false,
-        }],
-        state_vector: "AA==",
-      })),
-      getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
-    } as unknown as PageApiClient;
-    const fetchMock = vi.fn(async () => json({
-      task: {
-        id: taskId,
-        task_page_id: taskPageId,
-        board_item_id: `task:${taskId}`,
-        title: "업무",
-        archived: false,
-        version: 1,
-        created_session_id: null,
-        created_event_id: null,
-        created_at: "2026-07-24T00:00:00.000Z",
-        updated_at: "2026-07-24T00:00:00.000Z",
-      },
-      sections: [],
-      items: [],
-    }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    try {
-      await expect(loadPlannerTaskByTaskId(api, taskId)).resolves.toMatchObject({
-        page: { id: taskPageId },
-        taskId,
-      });
-      expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${taskId}`, expect.any(Object));
-      expect(api.getPage).toHaveBeenCalledWith(taskPageId);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("fails explicitly when a task has no task page identity", async () => {
-    const api = pageApiThatMustStayIdle();
-    vi.stubGlobal("fetch", vi.fn(async () => json({
-      task: {
-        id: "task-without-page",
-        task_page_id: null,
-        board_item_id: "task:task-without-page",
-        title: "업무",
-        archived: false,
-        version: 1,
-        created_session_id: null,
-        created_event_id: null,
-        created_at: "2026-07-24T00:00:00.000Z",
-        updated_at: "2026-07-24T00:00:00.000Z",
-      },
-      sections: [],
-      items: [],
-    })));
-
-    try {
-      await expect(loadPlannerTaskByTaskId(api, "task-without-page"))
-        .rejects.toThrow("업무 페이지 식별자가 없습니다.");
-      expectNoPageCalls(api);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+  it("loads starred folders from the new route", async () => {
+    const fetchPlanner = vi.fn(async () => ({ items: [entry("folder-a")], nextCursor: null }));
+    const result = await loadStarredFolders({ fetchPlanner }, {});
+    expect(result.items).toMatchObject([{ folderId: "folder-a" }]);
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/starred-folders");
   });
 });
-
-function pageApiThatMustStayIdle(): PageApiClient {
-  return {
-    getDailyPage: vi.fn(),
-    getPage: vi.fn(),
-    listPages: vi.fn(),
-    getBacklinks: vi.fn(),
-  } as unknown as PageApiClient;
-}
-
-function expectNoPageCalls(api: PageApiClient): void {
-  expect(api.getDailyPage).not.toHaveBeenCalled();
-  expect(api.getPage).not.toHaveBeenCalled();
-  expect(api.listPages).not.toHaveBeenCalled();
-  expect(api.getBacklinks).not.toHaveBeenCalled();
-}
-
-function taskPayload(index = 0) {
-  return {
-    page: page(`task${index || ""}`, `업무 ${index}`),
-    blocks: [],
-    task_id: "task",
-    task: {
-      id: "task",
-      board_item_id: "task:task",
-      title: "업무",
-      status: "open",
-      archived: false,
-      version: 2,
-      created_session_id: null,
-      created_event_id: null,
-      created_at: "2026-07-14T00:00:00.000Z",
-      updated_at: "2026-07-14T00:00:00.000Z",
-      item_counts: { pending: 3, in_progress: 1 },
-      item_total: 4,
-      completed_item_count: 1,
-      assignee: "roselin",
-    },
-    project_page_id: "project",
-    sessions: [{ agent_session_id: `session-${index || "a"}` }],
-    mounted_documents: [],
-  };
-}
-
-function page(id: string, title: string): PageDto {
-  return {
-    id,
-    title,
-    daily_date: null,
-    version: 1,
-    archived: false,
-    metadata: {},
-    created_at: "2026-07-14T00:00:00.000Z",
-    updated_at: "2026-07-14T00:00:00.000Z",
-  };
-}
-
-function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}

@@ -21,7 +21,7 @@ import { toastManager } from "../components/ui/toast";
 export interface FolderApiConfig {
   createUrl: string;
   updateUrl: (id: string) => string;
-  deleteUrl: (id: string) => string;
+  archiveUrl: (id: string) => string;
   /** 폴더 순서 재정렬 API URL */
   reorderUrl: string;
   /**
@@ -29,13 +29,13 @@ export interface FolderApiConfig {
    * - string: 해당 id의 폴더를 catalog에서 찾아 폴백
    * - undefined/null: 폴더 미선택(null) 유지
    */
-  deleteFallbackFolderId?: string | null;
+  archiveFallbackFolderId?: string | null;
 }
 
 export interface FolderOperations {
   createFolder: (name: string, parentFolderId?: string | null) => Promise<CatalogFolder | void>;
   renameFolderOptimistic: (folderId: string, name: string) => Promise<void>;
-  deleteFolderOptimistic: (folderId: string) => Promise<void>;
+  archiveFolder: (folderId: string) => Promise<void>;
   updateFolderSettingsOptimistic: (folderId: string, settings: FolderSettings) => Promise<void>;
   reorderFoldersOptimistic: (items: CatalogFolderReorderItem[]) => Promise<void>;
 }
@@ -69,7 +69,8 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
       });
       if (!res.ok) throw new Error(`Create folder failed: ${res.status}`);
 
-      const created: CatalogFolder = await res.json();
+      const result = await res.json() as { folder: CatalogFolder };
+      const created = result.folder;
       addFolder(created);
       return created;
     } catch (err) {
@@ -90,7 +91,8 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     if (isSystemFolderId(folderId)) return;
 
     const { updateFolderName, catalog } = useDashboardStore.getState();
-    const prevName = catalog?.folders.find((f) => f.id === folderId)?.name;
+    const folder = catalog?.folders.find((f) => f.id === folderId);
+    const prevName = folder?.name;
 
     updateFolderName(folderId, name);
 
@@ -98,7 +100,7 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
       const res = await fetch(config.updateUrl(folderId), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, idempotencyKey: operationId() }),
+        body: JSON.stringify({ name, expectedVersion: folder?.version, idempotencyKey: operationId() }),
       });
       if (!res.ok) throw new Error(`Rename folder failed: ${res.status}`);
     } catch (err) {
@@ -110,56 +112,28 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
   }
 
   /**
-   * 폴더 삭제 낙관적 업데이트.
-   *
-   * 로컬에서 즉시 삭제 → API → 실패 시 폴더 + 세션 배정 복원.
+   * 폴더를 보관한다. 서버가 내용과 세션 소속을 유지한다.
    */
-  async function deleteFolderOptimistic(folderId: string): Promise<void> {
+  async function archiveFolder(folderId: string): Promise<void> {
     if (isSystemFolderId(folderId)) return;
-
-    const { removeFolder, addFolder, moveSessionsToFolder, selectFolder, catalog, selectedFolderId } =
-      useDashboardStore.getState();
-
-    // 롤백용 스냅샷
+    const { catalog } = useDashboardStore.getState();
     const folder = catalog?.folders.find((f) => f.id === folderId);
-    const affectedSessionIds = catalog
-      ? Object.entries(catalog.sessions)
-          .filter(([, a]) => a.folderId === folderId)
-          .map(([id]) => id)
-      : [];
-    const prevSelectedFolderId = selectedFolderId;
-
-    // 삭제 대상이 현재 선택 폴더이면 폴백 폴더로 전환
-    if (selectedFolderId === folderId) {
-      let fallbackId: string | null = null;
-
-      if (config.deleteFallbackFolderId && config.deleteFallbackFolderId !== folderId) {
-        const fallbackFolder = catalog?.folders.find((f) => f.id === config.deleteFallbackFolderId);
-        fallbackId = fallbackFolder?.id ?? null;
-      }
-
-      selectFolder(fallbackId);
-    }
-
-    // 낙관적 삭제 (removeFolder가 세션의 folderId도 null로 변경)
-    removeFolder(folderId);
-
-    try {
-      const res = await fetch(config.deleteUrl(folderId), {
-        method: "DELETE",
-        headers: { "Idempotency-Key": operationId() },
-      });
-      if (!res.ok) throw new Error(`Delete folder failed: ${res.status}`);
-    } catch (err) {
-      // 롤백: 폴더 복원 + 세션 재배정 + 폴더 선택 복원
-      if (folder) {
-        addFolder(folder);
-        if (affectedSessionIds.length > 0) {
-          moveSessionsToFolder(affectedSessionIds, folderId);
-        }
-        selectFolder(prevSelectedFolderId);
-      }
-      console.error("Folder deletion failed, rolled back:", err);
+    if (!folder) throw new Error("보관할 폴더를 찾을 수 없습니다");
+    const res = await fetch(config.archiveUrl(folderId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedVersion: folder.version, idempotencyKey: operationId() }),
+    });
+    if (!res.ok) throw new Error(`Archive folder failed: ${res.status}`);
+    const result = await res.json() as { folder: CatalogFolder };
+    const state = useDashboardStore.getState();
+    if (state.catalog) state.setCatalog({
+      ...state.catalog,
+      folders: state.catalog.folders.map((candidate) => candidate.id === folderId ? result.folder : candidate),
+    });
+    if (state.selectedFolderId === folderId) {
+      const fallback = config.archiveFallbackFolderId;
+      state.selectFolder(fallback && fallback !== folderId ? fallback : null);
     }
   }
 
@@ -173,7 +147,8 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     settings: FolderSettings,
   ): Promise<void> {
     const { updateFolderSettings, catalog } = useDashboardStore.getState();
-    const prevSettings = catalog?.folders.find((f) => f.id === folderId)?.settings;
+    const folder = catalog?.folders.find((f) => f.id === folderId);
+    const prevSettings = folder?.settings;
 
     updateFolderSettings(folderId, settings);
 
@@ -181,7 +156,7 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
       const res = await fetch(config.updateUrl(folderId), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({ settings, expectedVersion: folder?.version, idempotencyKey: operationId() }),
       });
       if (!res.ok) throw new Error(`Update folder settings failed: ${res.status}`);
     } catch (err) {
@@ -225,7 +200,7 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     }
   }
 
-  return { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic, reorderFoldersOptimistic };
+  return { createFolder, renameFolderOptimistic, archiveFolder, updateFolderSettingsOptimistic, reorderFoldersOptimistic };
 }
 
 function operationId(): string {

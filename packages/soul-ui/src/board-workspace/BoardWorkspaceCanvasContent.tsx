@@ -2,10 +2,9 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MutableRefObje
 import { Loader2 } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
-import { TaskCard } from "../task/TaskCard";
 import { BoardWorkspaceTile } from "./BoardWorkspaceTile";
 import { BoardWorkspaceChildPortal } from "./BoardWorkspaceChildPortal";
-import { BOARD_CANVAS_ORIGIN_X, BOARD_CANVAS_ORIGIN_Y, BOARD_CANVAS_WIDTH, BOARD_TASK_FIXED_CARD_HEIGHT, BOARD_TASK_FIXED_CARD_WIDTH, snapBoardPosition, type BoardWorkspaceItem, type SessionBoardWorkspaceItem } from "./board-workspace-items";
+import { BOARD_CANVAS_ORIGIN_X, BOARD_CANVAS_ORIGIN_Y, BOARD_CANVAS_WIDTH, snapBoardPosition, type BoardWorkspaceItem, type SessionBoardWorkspaceItem } from "./board-workspace-items";
 import type { BoardRect } from "./board-selection";
 import type { DirectChildPortalItem, SessionParentRef } from "./board-session-relations";
 
@@ -31,7 +30,6 @@ interface BoardWorkspaceCanvasContentProps {
   onTileKeyboardContextMenu: (event: ReactKeyboardEvent<HTMLElement>, item: BoardWorkspaceItem) => void;
   shouldSuppressTileClick: () => boolean;
   onOpenFolder: (item: BoardWorkspaceItem, folderId: string) => void;
-  onOpenTaskBoard: (taskId: string) => void;
   onOpenMarkdown: (item: BoardWorkspaceItem, documentId: string) => void;
   onOpenCustomView: (item: BoardWorkspaceItem, customViewId: string) => void;
   onOpenSession: (session: SessionSummary, item?: BoardWorkspaceItem) => void;
@@ -40,10 +38,6 @@ interface BoardWorkspaceCanvasContentProps {
   onOpenChildRef: (child: DirectChildPortalItem) => void;
   onToggleFrameCollapsed: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
   emptyMessage?: string;
-  fixedTaskCard?: {
-    taskId: string;
-    fallbackTitle: string;
-  } | null;
 }
 
 export function BoardWorkspaceCanvasContent({
@@ -68,7 +62,6 @@ export function BoardWorkspaceCanvasContent({
   onTileKeyboardContextMenu,
   shouldSuppressTileClick,
   onOpenFolder,
-  onOpenTaskBoard,
   onOpenMarkdown,
   onOpenCustomView,
   onOpenSession,
@@ -77,7 +70,6 @@ export function BoardWorkspaceCanvasContent({
   onOpenChildRef,
   onToggleFrameCollapsed,
   emptyMessage = "No folders or sessions on this board",
-  fixedTaskCard = null,
 }: BoardWorkspaceCanvasContentProps) {
   return (
     <>
@@ -88,26 +80,9 @@ export function BoardWorkspaceCanvasContent({
         </div>
       )}
 
-      {boardItems.length === 0 && !fixedTaskCard && !isLoading && (
+      {boardItems.length === 0 && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
           {emptyMessage}
-        </div>
-      )}
-
-      {fixedTaskCard && (
-        <div
-          data-testid="task-board-fixed-card"
-          className="absolute z-[1]"
-          style={{
-            ...boardToCanvasStyle({ x: 0, y: 0 }),
-            width: BOARD_TASK_FIXED_CARD_WIDTH,
-            height: BOARD_TASK_FIXED_CARD_HEIGHT,
-          }}
-        >
-          <TaskCard
-            taskId={fixedTaskCard.taskId}
-            fallbackTitle={fixedTaskCard.fallbackTitle}
-          />
         </div>
       )}
 
@@ -129,7 +104,6 @@ export function BoardWorkspaceCanvasContent({
           onToggleFrameCollapsed={onToggleFrameCollapsed}
           shouldSuppressClick={shouldSuppressTileClick}
           onOpenFolder={(folderId) => onOpenFolder(item, folderId)}
-          onOpenTaskBoard={onOpenTaskBoard}
           onOpenMarkdown={(documentId) => onOpenMarkdown(item, documentId)}
           onOpenCustomView={(customViewId) => onOpenCustomView(item, customViewId)}
           onOpenSession={(session) => onOpenSession(session, item)}

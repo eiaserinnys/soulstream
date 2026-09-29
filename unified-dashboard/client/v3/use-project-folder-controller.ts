@@ -3,7 +3,6 @@ import type { CatalogFolder } from "@seosoyoung/soul-ui";
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import { createFolder } from "../lib/folder-operations";
-import { resolveProjectFolderId } from "./planner-model";
 import { resolveProjectPage } from "./project-page-actions";
 
 export type ProjectFolderResolution =
@@ -64,35 +63,10 @@ export function useProjectFolderController() {
     if (retryInput.current) await resolveFolder(retryInput.current);
   }, [resolveFolder]);
 
-  const openProjectPage = useCallback((
-    pageId: string,
-    knownPages: readonly PageDto[],
-    folders: readonly CatalogFolder[],
-  ) => {
-    const page = knownPages.find((candidate) => candidate.id === pageId);
-    if (!page) return;
-    requestGeneration.current += 1;
-    retryInput.current = null;
-    setResolution({
-      status: "ready",
-      folderId: resolveProjectFolderId(page, folders),
-      project: page,
-      message: null,
-    });
-  }, []);
-
   const clearProject = useCallback(() => {
     requestGeneration.current += 1;
     retryInput.current = null;
     setResolution({ status: "idle", folderId: null, project: null, message: null });
-  }, []);
-
-  const setSelectedFolderId = useCallback((folderId: string | null) => {
-    requestGeneration.current += 1;
-    retryInput.current = null;
-    setResolution(folderId
-      ? { status: "ready", folderId, project: null, message: null }
-      : { status: "idle", folderId: null, project: null, message: null });
   }, []);
 
   const patchProjectTitle = useCallback((folderId: string, title: string) => {
@@ -120,11 +94,9 @@ export function useProjectFolderController() {
     resolution,
     selectedFolderId: resolution.folderId,
     selectedProject: resolution.status === "ready" ? resolution.project : null,
-    setSelectedFolderId,
     patchProjectTitle,
     openFolder,
     retry,
-    openProjectPage,
     clearProject,
     createProject,
   };

@@ -20,7 +20,7 @@ export interface SessionPanelGroups {
 }
 
 export type SessionWorkspaceTarget =
-  | { kind: "task"; taskId: string }
+  | { kind: "folder"; folderId: string }
   | { kind: "standalone" };
 
 export function sessionPanelGroups(
@@ -62,11 +62,7 @@ export function sessionWorkspaceTargetFromBoardItems(
 ): SessionWorkspaceTarget | null {
   const primary = primarySessionBoardItem(boardItems, sessionId);
   if (!primary) return null;
-  const containerKind = primary.containerKind ?? "folder";
-  const containerId = primary.containerId ?? primary.folderId;
-  return containerKind === "task"
-    ? { kind: "task", taskId: containerId }
-    : { kind: "standalone" };
+  return { kind: "folder", folderId: primary.folderId };
 }
 
 export function sessionPanelAffiliation(
@@ -76,23 +72,7 @@ export function sessionPanelAffiliation(
 ): string | null {
   const primary = primarySessionBoardItem(boardItems, sessionId);
   if (!primary) return null;
-  const containerKind = primary.containerKind ?? "folder";
-  const containerId = primary.containerId ?? primary.folderId;
-  if (containerKind === "folder") {
-    return folders.find((folder) => folder.id === containerId)?.name.trim() || null;
-  }
-
-  const taskItem = boardItems.find((item) => (
-    item.itemType === "task"
-      && item.itemId === containerId
-      && (item.membershipKind ?? "primary") === "primary"
-  ));
-  const taskTitle = metadataTitle(taskItem);
-  if (!taskItem || !taskTitle) return null;
-  const projectName = folders.find((folder) => (
-    folder.id === taskItem.folderId && Boolean(folder.projectPageId)
-  ))?.name.trim();
-  return projectName ? `${taskTitle} · ${projectName}` : taskTitle;
+  return folders.find((folder) => folder.id === primary.folderId)?.name.trim() || null;
 }
 
 function primarySessionBoardItem(
@@ -104,11 +84,6 @@ function primarySessionBoardItem(
       && item.itemId === sessionId
       && (item.membershipKind ?? "primary") === "primary"
   ));
-}
-
-function metadataTitle(item: CatalogBoardItem | undefined): string | null {
-  const title = item?.metadata?.title;
-  return typeof title === "string" ? title.trim() || null : null;
 }
 
 function sessionTimestamp(session: SessionSummary): number {

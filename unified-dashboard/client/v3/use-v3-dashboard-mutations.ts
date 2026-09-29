@@ -1,15 +1,15 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { useDashboardStore, type CatalogState, type SessionReviewAcknowledgeResult } from "@seosoyoung/soul-ui";
-import type { InitialTaskContext, PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import type { InitialFolderContext, PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerLoadState } from "./PlannerViews";
 import type { BrowserPlannerMutationPort } from "./planner-browser-port";
-import type { DailyPlannerData, PlannerTask } from "./planner-data";
-import { taskContextCount } from "./planner-model";
+import type { DailyPlannerData, PlannerFolder } from "./planner-data";
+import { folderContextCount } from "./planner-model";
 import { resolveProjectPage } from "./project-page-actions";
-import { createPlannerTask, plannerTaskCreationErrorLabel } from "./planner-task-creation";
+import { createPlannerFolder, plannerFolderCreationErrorLabel } from "./planner-folder-creation";
 import type { RitualAction, RitualQueueItem } from "./ritual-model";
-import { saveTaskDescription } from "./task-workspace-api";
+import { saveFolderDescription } from "./folder-workspace-page-api";
 
 export function useV3DashboardMutations({
   api,
@@ -20,8 +20,8 @@ export function useV3DashboardMutations({
   today,
   daily,
   selectedProject,
-  selectedTask,
-  selectedTaskId,
+  selectedFolderEntry,
+  selectedPageId,
   setCreateOpen,
   setCreatePending,
   clearProject,
@@ -32,11 +32,11 @@ export function useV3DashboardMutations({
   setAcknowledgedReviewIds,
   notify,
   notifyWriteFailure,
-  patchPlannerTask,
-  addTaskToToday,
+  patchPlannerFolder,
+  addFolderToToday,
   refreshDaily,
   refreshProject,
-  refreshTask,
+  refreshFolder,
 }: {
   api: PageApiClient;
   mutationPort: BrowserPlannerMutationPort;
@@ -46,8 +46,8 @@ export function useV3DashboardMutations({
   today: string;
   daily: PlannerLoadState<DailyPlannerData>;
   selectedProject: PageDto | null;
-  selectedTask: PlannerTask | null;
-  selectedTaskId: string | null;
+  selectedFolderEntry: PlannerFolder | null;
+  selectedPageId: string | null;
   setCreateOpen: Dispatch<SetStateAction<boolean>>;
   setCreatePending: Dispatch<SetStateAction<boolean>>;
   clearProject(): void;
@@ -58,17 +58,17 @@ export function useV3DashboardMutations({
   setAcknowledgedReviewIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   notify(message: string): void;
   notifyWriteFailure(action: string, error: unknown): string;
-  patchPlannerTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
-  addTaskToToday(task: PlannerTask): void;
+  patchPlannerFolder(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
+  addFolderToToday(task: PlannerFolder): void;
   refreshDaily(): void;
   refreshProject(): void;
-  refreshTask(taskId: string): void;
+  refreshFolder(folderId: string): void;
 }) {
-  const createTask = useCallback(async (
+  const createFolder = useCallback(async (
     title: string,
     folderId: string,
     description: string,
-    initialContext?: InitialTaskContext,
+    initialContext?: InitialFolderContext,
   ): Promise<string | null> => {
     const folder = catalog?.folders.find((item) => item.id === folderId);
     if (!folder) {
@@ -87,7 +87,7 @@ export function useV3DashboardMutations({
       const dailyPage = selectedDate === today && daily.data
         ? daily.data.daily.page
         : (await api.getDailyPage(today)).page;
-      await createPlannerTask({
+      await createPlannerFolder({
         title,
         description,
         dailyPageId: dailyPage.id,
@@ -101,7 +101,7 @@ export function useV3DashboardMutations({
       notify(`새 업무 생성 · ${title}`);
       return null;
     } catch (error) {
-      return notifyWriteFailure(plannerTaskCreationErrorLabel(error), error);
+      return notifyWriteFailure(plannerFolderCreationErrorLabel(error), error);
     } finally {
       setCreatePending(false);
     }
@@ -134,16 +134,16 @@ export function useV3DashboardMutations({
   }, [mutationPort, newDocumentTitle, notify, notifyWriteFailure, refreshProject, selectedProject, setNewDocumentOpen, setNewDocumentTitle]);
 
   const saveDescription = useCallback(async (markdown: string) => {
-    if (!selectedTask) return;
+    if (!selectedFolderEntry) return;
     try {
-      await saveTaskDescription(api, selectedTask.page.id, markdown);
-      refreshTask(selectedTask.page.id);
+      await saveFolderDescription(api, selectedFolderEntry.page.id, markdown);
+      refreshFolder(selectedFolderEntry.page.id);
       notify("업무 설명 저장됨");
     } catch (error) {
       notifyWriteFailure("업무 설명 저장", error);
       throw error;
     }
-  }, [api, notify, notifyWriteFailure, refreshTask, selectedTask]);
+  }, [api, notify, notifyWriteFailure, refreshFolder, selectedFolderEntry]);
 
   const acknowledgeReview = useCallback((result: SessionReviewAcknowledgeResult) => {
     setAcknowledgedReviewIds((current) => new Set([...current, result.agentSessionId]));
@@ -154,26 +154,26 @@ export function useV3DashboardMutations({
     }
   }, [setAcknowledgedReviewIds]);
 
-  const applyTaskBlocks = useCallback((blocks: PlannerTask["blocks"]) => {
-    if (!selectedTaskId) return;
-    patchPlannerTask(selectedTaskId, (current) => ({
+  const applyFolderBlocks = useCallback((blocks: PlannerFolder["blocks"]) => {
+    if (!selectedPageId) return;
+    patchPlannerFolder(selectedPageId, (current) => ({
       ...current,
       blocks,
-      contextCount: taskContextCount(blocks),
+      contextCount: folderContextCount(blocks),
     }));
-  }, [patchPlannerTask, selectedTaskId]);
+  }, [patchPlannerFolder, selectedPageId]);
 
   const applyRitualAction = useCallback((item: RitualQueueItem, action: RitualAction) => {
-    if (action === "today") addTaskToToday(item.task);
-  }, [addTaskToToday]);
+    if (action === "today") addFolderToToday(item.task);
+  }, [addFolderToToday]);
 
   return {
-    createTask,
+    createFolder,
     saveMemo,
     createDocument,
     saveDescription,
     acknowledgeReview,
-    applyTaskBlocks,
+    applyFolderBlocks,
     applyRitualAction,
   };
 }
