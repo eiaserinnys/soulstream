@@ -1,14 +1,8 @@
-import type {
-  ChecklistItemStatus,
-  FolderOperationActorKind,
-  FolderOperationRow,
-  FolderSnapshot,
-} from "../db/session_db_types.js";
+import type { FolderOperationActorKind, FolderOperationRow, FolderSnapshot } from "../db/session_db_types.js";
 
 interface FolderMutationBase {
   operation: FolderOperationRow;
   idempotent: boolean;
-  handoff?: FolderHandoffEvent;
 }
 
 export interface FolderIdentityMutationResult extends FolderMutationBase {
@@ -27,18 +21,4 @@ export interface FolderActorParams {
   actorKind?: FolderOperationActorKind;
   actorSessionId: string | null;
   actorUserId?: string | null;
-}
-
-export interface FolderHandoffEvent {
-  folderId: string;
-  folderName: string;
-  itemId: string;
-  itemTitle: string;
-  status: Extract<ChecklistItemStatus, "completed" | "cancelled">;
-  operationId: string;
-  eventId: number;
-}
-
-export interface FolderHandoffNotifierPort {
-  notifyHumanHandoff(event: FolderHandoffEvent): void;
 }

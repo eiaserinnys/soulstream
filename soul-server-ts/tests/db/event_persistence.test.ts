@@ -596,7 +596,7 @@ describe("extractSearchableText", () => {
 
 describe("EventPersistence transient boundary", () => {
   it("§7의 wire-schema SSE 이벤트 전체를 persistence 분류와 대조한다", () => {
-    expect(SECTION_7_ALL_EVENT_TYPES).toHaveLength(64);
+    expect(SECTION_7_ALL_EVENT_TYPES).toHaveLength(63);
 
     const transientTypes = new Set<string>(SECTION_7_TRANSIENT_STREAMING_TYPES);
     for (const eventType of SECTION_7_ALL_EVENT_TYPES) {

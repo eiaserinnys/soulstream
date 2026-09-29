@@ -25,7 +25,6 @@ import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import { ModelCatalog, nodeEffortCapabilities } from "../model_catalog.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
-import { FolderHandoffNotifier } from "../folder/folder_handoff_notifier.js";
 import { FolderService } from "../folder/folder_service.js";
 import { FolderHostClient } from "../folder/folder_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
@@ -33,7 +32,6 @@ import { SessionLegacyProjection, SessionPageBindingService } from "../page/sess
 import { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import { buildServer } from "../server.js";
-import { sendMessageToSession } from "../task/session_message_sender.js";
 import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
 import { redeliverStoredDeliveryContent } from "../task/delivery_row_intervention.js";
 import { TransientEventLogAggregator } from "../task/transient_event_log_aggregator.js";
@@ -329,25 +327,6 @@ export async function composeWorkerRuntime(
     folderService,
     sessionMutations,
   );
-  const taskHandoffNotifier = new FolderHandoffNotifier(
-    folderService,
-    {
-      send: (message) =>
-        sendMessageToSession(
-          {
-            taskManager,
-            nodeId: env.SOULSTREAM_NODE_ID,
-            sessionLookup: db,
-            onResume: taskRuntime.onResume,
-            logger,
-            orch: orchProxyConfig,
-          },
-          message,
-        ),
-    },
-    logger,
-  );
-  folderService.setHandoffNotifier(taskHandoffNotifier);
   const customViewService = new CustomViewService(db, boardYjsService, broadcaster);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),

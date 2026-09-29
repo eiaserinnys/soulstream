@@ -148,8 +148,7 @@ describe("worker control-plane host clients", () => {
     now.mockRestore();
   });
 
-  it("serializes checklist provenance in snake_case and dispatches a returned handoff", async () => {
-    const notifyHumanHandoff = vi.fn();
+  it("serializes checklist mutation input and returns the host mutation result", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const request = JSON.parse(String(init?.body));
       expect(request).toMatchObject({
@@ -161,26 +160,16 @@ describe("worker control-plane host clients", () => {
         idempotency_key: "idem-1",
       });
       return new Response(JSON.stringify({
-        snapshot: { folder: { id: "folder-1" }, sections: [], items: [] },
+        folderId: "folder-1",
+        item: { id: "item-1", status: "completed" },
         operation: { id: "operation-1" },
-        eventId: 12,
-        handoff: {
-          folderId: "folder-1",
-          folderTitle: "Folder",
-          boardItemId: "folder:folder-1",
-          itemId: "item-1",
-          itemTitle: "Item",
-          status: "completed",
-          operationId: "operation-1",
-          eventId: 12,
-        },
+        idempotent: false,
       }), { status: 200, headers: { "content-type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
     const service = new FolderService({ orch, logger });
-    service.setHandoffNotifier({ notifyHumanHandoff });
 
-    await service.setChecklistItemStatus({
+    const result = await service.setChecklistItemStatus({
       actorSessionId: "session-1",
       folderId: "folder-1",
       itemId: "item-1",
@@ -191,7 +180,12 @@ describe("worker control-plane host clients", () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/set_checklist_item_status");
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeDefined();
-    expect(notifyHumanHandoff).toHaveBeenCalledOnce();
+    expect(result).toEqual({
+      folderId: "folder-1",
+      item: { id: "item-1", status: "completed" },
+      operation: { id: "operation-1" },
+      idempotent: false,
+    });
   });
 
   it("parses both orchestrator host error envelope shapes", async () => {

@@ -4,21 +4,16 @@ import type { FolderSnapshot, FolderStatus, ChecklistItemStatus } from "../db/se
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import { FolderVersionConflict, type ChecklistAssigneeInput } from "./folder_models.js";
-import type { FolderActorParams, FolderHandoffNotifierPort, FolderIdentityMutationResult, FolderMutationResult } from "./folder_service_models.js";
+import type { FolderActorParams, FolderIdentityMutationResult, FolderMutationResult } from "./folder_service_models.js";
 
 export type { FolderActorParams, FolderMutationResult } from "./folder_service_models.js";
 
 /** Worker facade for the single folder/checklist owner in orch. */
 export class FolderService {
-  private handoffNotifier?: FolderHandoffNotifierPort;
   private readonly transport: PersistenceHostTransport;
 
   constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {
     this.transport = new PersistenceHostTransport(config);
-  }
-
-  setHandoffNotifier(notifier: FolderHandoffNotifierPort): void {
-    this.handoffNotifier = notifier;
   }
 
   async getFolder(folderId: string, options: { view?: "full" | "outline"; itemId?: string } = {}): Promise<FolderSnapshot | null> {
@@ -40,10 +35,6 @@ export class FolderService {
 
   async listFolderOperations(folderId: string, limit?: number) {
     return await this.request("list_folder_operations", { folderId, limit });
-  }
-
-  async listAgentSubscriberSessionIds(folderId: string): Promise<string[]> {
-    return await this.request("list_agent_subscribers", { folderId });
   }
 
   async createFolder(params: FolderActorParams & {
@@ -117,15 +108,7 @@ export class FolderService {
 
   private async mutate<T extends FolderMutationResult>(operation: string, input: object): Promise<T> {
     const actor = input as { actorKind?: unknown };
-    const result = await this.request<T>(operation, { ...input, actorKind: actor.actorKind ?? "agent" });
-    if (result.handoff) {
-      try {
-        this.handoffNotifier?.notifyHumanHandoff(result.handoff);
-      } catch (error) {
-        this.config.logger.warn({ err: error, operation }, "folder handoff notifier failed");
-      }
-    }
-    return result;
+    return await this.request<T>(operation, { ...input, actorKind: actor.actorKind ?? "agent" });
   }
 
   private async request<T = unknown>(operation: string, input: object): Promise<T> {
