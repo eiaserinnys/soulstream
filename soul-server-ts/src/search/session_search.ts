@@ -33,6 +33,7 @@ export type SearchMatchSource =
 export interface SearchSessionEventsParams {
   query: string;
   sessionIds?: string[] | null;
+  excludeSessionIds?: string[] | null;
   eventTypes?: string[] | null;
   searchSessionId?: boolean;
   includeTurnSummaries?: boolean;
@@ -83,6 +84,7 @@ export async function searchSessionEvents(
   };
   const query = params.query;
   const limit = params.limit ?? 10;
+  const excludeSessionIds = new Set(params.excludeSessionIds ?? []);
   const types = resolveSearchEventTypes(
     params.eventTypes,
     params.includeTurnSummaries ?? false,
@@ -95,7 +97,7 @@ export async function searchSessionEvents(
     const results = await db.searchSessionHistory({
       query,
       sessionIds: params.sessionIds ?? null,
-      limit,
+      limit: excludeSessionIds.size > 0 ? limit + 20 : limit,
       eventTypes: types,
       searchSessionId: params.searchSessionId ?? false,
       includeHighlight: params.includeHighlight ?? false,
@@ -135,8 +137,11 @@ export async function searchSessionEvents(
     parentSignal?.removeEventListener("abort", onParentAbort);
   }
 
-  matches.sort((a, b) => b.score - a.score);
-  return matches.slice(0, limit).map((m) => ({
+  const filteredMatches = excludeSessionIds.size > 0
+    ? matches.filter((match) => !excludeSessionIds.has(match.session_id))
+    : matches;
+  filteredMatches.sort((a, b) => b.score - a.score);
+  return filteredMatches.slice(0, limit).map((m) => ({
     session_id: m.session_id,
     event_id: m.id,
     score: m.score,
