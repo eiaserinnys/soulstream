@@ -11,44 +11,44 @@ import { errorText } from "./v3-dashboard-utils";
 export function useFolderParentMoveController({
   api,
   folders,
-  moveTask,
+  moveFolder,
   notify,
 }: {
   api: PageApiClient;
   folders: readonly CatalogFolder[];
-  moveTask(task: PlannerFolder, target: FolderParentTarget): Promise<void>;
+  moveFolder(task: PlannerFolder, target: FolderParentTarget): Promise<void>;
   notify(message: string): void;
 }) {
-  const [task, setTask] = useState<PlannerFolder | null>(null);
+  const [task, setFolder] = useState<PlannerFolder | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const openTask = useCallback((next: PlannerFolder) => {
-    setTask(next);
+  const openFolder = useCallback((next: PlannerFolder) => {
+    setFolder(next);
     setError(null);
   }, []);
   const openPage = useCallback(async (task: StarredPlannerFolder) => {
     try {
-      openTask(await loadStarredPlannerFolder(api, task, folders));
+      openFolder(await loadStarredPlannerFolder(api, task, folders));
     } catch (cause) {
       notify(`업무 불러오기 실패 · ${errorText(cause)}`);
     }
-  }, [api, folders, notify, openTask]);
+  }, [api, folders, notify, openFolder]);
   const currentFolderId = task?.parentFolderId ?? null;
   const close = useCallback(() => {
-    if (!pending) setTask(null);
+    if (!pending) setFolder(null);
   }, [pending]);
   const move = useCallback((target: FolderParentTarget) => {
     if (!task || pending) return;
     setPending(true);
     setError(null);
-    void moveTask(task, target).then(() => {
-      setTask(null);
+    void moveFolder(task, target).then(() => {
+      setFolder(null);
     }).catch((cause: unknown) => {
       setError(`프로젝트 이동 실패 · ${errorText(cause)}`);
     }).finally(() => {
       setPending(false);
     });
-  }, [moveTask, pending, task]);
+  }, [moveFolder, pending, task]);
   const dialogProps: FolderParentMoveDialogProps = {
     task,
     currentFolderId,
@@ -58,5 +58,5 @@ export function useFolderParentMoveController({
     onMove: move,
     onClose: close,
   };
-  return { openTask, openPage, dialogProps };
+  return { openFolder, openPage, dialogProps };
 }

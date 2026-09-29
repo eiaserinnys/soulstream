@@ -44,6 +44,7 @@ export function FolderWorkspaceSections({
   onCreateDocument,
   onCompleteFolder,
   onToggleFolderToday,
+  onMoveFolderToParent,
   onBlocksChanged,
 }: {
   folder: CatalogFolder;
@@ -68,6 +69,7 @@ export function FolderWorkspaceSections({
   onCreateDocument(): void;
   onCompleteFolder(task: PlannerFolder): Promise<void>;
   onToggleFolderToday(task: PlannerFolder): Promise<void>;
+  onMoveFolderToParent(task: PlannerFolder): void;
   onBlocksChanged(blocks: PlannerFolder["blocks"]): void;
 }) {
   const api = useMemo(() => createPageApiClient(), []);
@@ -185,7 +187,7 @@ export function FolderWorkspaceSections({
               onOpen={() => onOpenFolder(child)}
               onComplete={() => onCompleteFolder(task)}
               onToggleToday={() => onToggleFolderToday(task)}
-              onMoveToProject={() => undefined}
+              onMoveToParent={() => onMoveFolderToParent(task)}
             />
           </div>)}
         </div>

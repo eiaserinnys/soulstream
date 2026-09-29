@@ -28,9 +28,9 @@ export function useFolderStar(page: PageDto) {
     try {
       await setFolderStarred(api, page.id, nextStarred);
     } catch (cause) {
+      clearFolderStarChange(page.id, mutationId);
       setError(cause instanceof Error && cause.message ? cause.message : String(cause));
     } finally {
-      clearFolderStarChange(page.id, mutationId);
       setPending(false);
     }
   };

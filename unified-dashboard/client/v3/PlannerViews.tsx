@@ -7,7 +7,7 @@ import type {
   DailyPlannerData,
   PlannerFolder,
 } from "./planner-data";
-import { visibleDailyTasks } from "./today-folder-state";
+import { visibleDailyFolders } from "./today-folder-state";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import type { SessionNodeConnectivity } from "./session-node-connectivity";
 
@@ -50,7 +50,7 @@ export function DailyPlannerView({
   onCreateFolder(): void;
 }) {
   const data = state.data;
-  const visibleTasks = visibleDailyTasks(data?.folders ?? [], isTodayView, todayFolderIds);
+  const visibleTasks = visibleDailyFolders(data?.folders ?? [], isTodayView, todayFolderIds);
   const visibleProjects = folders.filter((folder) => visibleTasks.some((task) => task.parentFolderId === folder.id));
   const visibleProjectIds = new Set(visibleProjects.map((folder) => folder.id));
   const groups = data ? [
@@ -98,13 +98,14 @@ export function DailyPlannerView({
               <PlannerFolderCard
                 key={task.page.id}
                 task={task}
+                folder={folders.find((folder) => folder.id === task.folderId)}
                 sessions={sessions}
                 nodeConnectivity={nodeConnectivity}
                 isInToday={todayFolderIds.has(task.page.id)}
                 onOpen={() => onOpenFolder(task)}
                 onComplete={() => onCompleteFolder(task)}
                 onToggleToday={() => onToggleFolderToday(task)}
-                onMoveToProject={() => onMoveFolderToParent(task)}
+                onMoveToParent={() => onMoveFolderToParent(task)}
               />
             ))}
           </div>

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   runOptimisticTodayMutation,
   todayPlannerMenuLabel,
-  visibleDailyTasks,
+  visibleDailyFolders,
 } from "./today-folder-state";
 
 describe("today task state", () => {
@@ -19,9 +19,9 @@ describe("today task state", () => {
       task("completed", "completed"),
     ];
 
-    expect(visibleDailyTasks(tasks, true, new Set(["open", "completed"])).map((item) => item.page.id))
+    expect(visibleDailyFolders(tasks, true, new Set(["open", "completed"])).map((item) => item.page.id))
       .toEqual(["open"]);
-    expect(visibleDailyTasks(tasks, false, new Set()).map((item) => item.page.id))
+    expect(visibleDailyFolders(tasks, false, new Set()).map((item) => item.page.id))
       .toEqual(["open", "removed", "completed"]);
   });
 

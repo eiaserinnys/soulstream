@@ -64,7 +64,7 @@ describe("PlannerFolderCard node connectivity", () => {
         onOpen={() => undefined}
         onComplete={async () => undefined}
         onToggleToday={async () => undefined}
-        onMoveToProject={() => undefined}
+        onMoveToParent={() => undefined}
       />,
     );
 
@@ -100,7 +100,7 @@ describe("PlannerFolderCard node connectivity", () => {
         onOpen={() => undefined}
         onComplete={async () => undefined}
         onToggleToday={async () => undefined}
-        onMoveToProject={() => undefined}
+        onMoveToParent={() => undefined}
       />,
     );
 
@@ -134,7 +134,7 @@ describe("PlannerFolderCard node connectivity", () => {
         onOpen={() => undefined}
         onComplete={async () => undefined}
         onToggleToday={async () => undefined}
-        onMoveToProject={() => undefined}
+        onMoveToParent={() => undefined}
       />,
     );
 
@@ -161,7 +161,7 @@ describe("PlannerFolderCard node connectivity", () => {
         onOpen={() => undefined}
         onComplete={async () => undefined}
         onToggleToday={async () => undefined}
-        onMoveToProject={() => undefined}
+        onMoveToParent={() => undefined}
       />,
     );
 

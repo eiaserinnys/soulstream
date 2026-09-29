@@ -503,6 +503,7 @@ export async function installV3VisualQaRoutes(
   pageInstance: Page,
   options: V3VisualQaRouteOptions = {},
 ): Promise<void> {
+  pageReads[pages.taskAlpha.id].page.metadata.starred = true;
   if (options.contextMenuParity) resetContextMenuParityState();
   pageReads[pages.taskBeta.id].blocks = pageReads[pages.taskBeta.id].blocks.filter((item) => item.id !== "beta-cj-atom");
   if (options.legacyAtomContext) {
@@ -676,7 +677,8 @@ export async function installV3VisualQaRoutes(
             ? (url.searchParams.get("cursor") ? null : "alpha-older")
             : offset + 20 < folderSessions.length ? String(offset + 20) : null };
         const subfolders = { items: unifiedFolders.filter((candidate) => candidate.parentFolderId === folderId), nextCursor: null };
-        const documents = { items: folderId === "folder-amber" ? [pages.document, pages.documentTwo] : [], nextCursor: null };
+        const documents = { items: folderId === "folder-amber" ? [pages.document, pages.documentTwo]
+          : folderId === "rb-alpha" ? [pages.document] : [], nextCursor: null };
         if (unifiedPlannerMatch[2] === "subfolders") return fulfillJson(route, subfolders);
         if (unifiedPlannerMatch[2] === "documents") return fulfillJson(route, documents);
         if (unifiedPlannerMatch[2] === "sessions") return fulfillJson(route, sessionSlice);

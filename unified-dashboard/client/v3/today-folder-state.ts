@@ -2,16 +2,16 @@ export function todayPlannerMenuLabel(isInToday: boolean): string {
   return isInToday ? "오늘 플래너에서 제거" : "오늘 플래너에 추가";
 }
 
-export function visibleDailyTasks<
-  Task extends { page: { id: string }; status: string },
+export function visibleDailyFolders<
+  Folder extends { page: { id: string }; status: string },
 >(
-  tasks: readonly Task[],
+  folders: readonly Folder[],
   isTodayView: boolean,
   todayFolderIds: ReadonlySet<string>,
-): Task[] {
-  if (!isTodayView) return [...tasks];
-  return tasks.filter((task) => (
-    task.status !== "completed" && todayFolderIds.has(task.page.id)
+): Folder[] {
+  if (!isTodayView) return [...folders];
+  return folders.filter((folder) => (
+    folder.status !== "completed" && todayFolderIds.has(folder.page.id)
   ));
 }
 

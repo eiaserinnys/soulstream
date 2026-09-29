@@ -6,7 +6,7 @@ import type { PlannerFolder } from "./planner-data";
 import { movePlannerSession, removePlannerSessions } from "./planner-mutation-projection";
 
 export function useV3MutationProjection({
-  patchLoadedTask,
+  patchLoadedFolder,
   removeLoadedSessions,
   moveLoadedSession,
   moveLoadedFolderParent,
@@ -14,7 +14,7 @@ export function useV3MutationProjection({
   moveRunHistorySession,
   setSelectedFolderSnapshot,
 }: {
-  patchLoadedTask(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
+  patchLoadedFolder(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
   removeLoadedSessions(sessionIds: readonly string[]): void;
   moveLoadedSession(sessionId: string, targetFolderId: string): void;
   moveLoadedFolderParent(task: PlannerFolder, targetFolderId: string | null): void;
@@ -23,11 +23,11 @@ export function useV3MutationProjection({
   setSelectedFolderSnapshot: Dispatch<SetStateAction<PlannerFolder | null>>;
 }) {
   const patchPlannerFolder = useCallback((folderId: string, update: (task: PlannerFolder) => PlannerFolder) => {
-    patchLoadedTask(folderId, update);
+    patchLoadedFolder(folderId, update);
     setSelectedFolderSnapshot((current) => current?.page.id === folderId
       ? retainEqualValue(current, update(current))
       : current);
-  }, [patchLoadedTask, setSelectedFolderSnapshot]);
+  }, [patchLoadedFolder, setSelectedFolderSnapshot]);
 
   const removeSessionsFromPlanner = useCallback((sessionIds: readonly string[]) => {
     removeLoadedSessions(sessionIds);

@@ -75,7 +75,7 @@ export function FolderSessionHistory({
   onSessionCreated(session: SessionSummary): void;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
+  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
 }) {
   const api = useMemo(() => createPageApiClient(), []);
   const treeRef = useRef<ReturnType<typeof buildRunTree>>([]);
@@ -183,7 +183,7 @@ export function FolderSessionHistory({
             setContextMenu(null);
             setSuccessionOpen(true);
           },
-          moveToTask: () => {
+          moveToFolder: () => {
             if (!contextMenu) return;
             setMoveSessionId(contextMenu.sessionId);
             setContextMenu(null);

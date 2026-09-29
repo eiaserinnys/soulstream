@@ -64,7 +64,7 @@ export function useV3DashboardMutations({
   refreshProject(): void;
   refreshFolder(folderId: string): void;
 }) {
-  const createTask = useCallback(async (
+  const createFolder = useCallback(async (
     title: string,
     folderId: string,
     description: string,
@@ -168,7 +168,7 @@ export function useV3DashboardMutations({
   }, [addFolderToToday]);
 
   return {
-    createTask,
+    createFolder,
     saveMemo,
     createDocument,
     saveDescription,

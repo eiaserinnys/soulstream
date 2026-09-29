@@ -30,7 +30,7 @@ export function PlannerFolderCard({
   onOpen,
   onComplete,
   onToggleToday,
-  onMoveToProject,
+  onMoveToParent,
 }: {
   task: PlannerFolder;
   folder?: CatalogFolder;
@@ -40,7 +40,7 @@ export function PlannerFolderCard({
   onOpen(): void;
   onComplete(): Promise<void>;
   onToggleToday(): Promise<void>;
-  onMoveToProject(): void;
+  onMoveToParent(): void;
 }) {
   const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
   const folderStar = useFolderStar(task.page);
@@ -130,21 +130,16 @@ export function PlannerFolderCard({
       <V3ContextMenu
         target={contextMenu}
         onClose={() => setContextMenu(null)}
-        actions={folder ? [
-          { label: "폴더 열기", onSelect: onOpen },
-          { label: "폴더 ID 복사", onSelect: () => navigator.clipboard.writeText(folder.id) },
-          { label: folderStar.starred ? "별표 해제" : "별표 추가", onSelect: folderStar.toggle, separatorBefore: true },
-          { label: isInToday ? "오늘에서 제외" : "오늘에 추가", onSelect: onToggleToday },
-          ...(folder.checklistEnabled ? [{ label: "완료 처리", onSelect: onComplete, disabled: task.status === "completed" }] : []),
-        ] : buildFolderContextMenuActions({
+        actions={buildFolderContextMenuActions({
           starred: folderStar.starred,
           completed: task.status === "completed",
           inToday: isInToday,
+          checklistEnabled: folder?.checklistEnabled ?? false,
         }, {
           open: onOpen,
-          copyId: () => navigator.clipboard.writeText(task.page.id),
+          copyId: () => navigator.clipboard.writeText(task.folderId),
           toggleStar: folderStar.toggle,
-          moveToProject: onMoveToProject,
+          moveToParent: onMoveToParent,
           complete: onComplete,
           toggleToday: onToggleToday,
         })}

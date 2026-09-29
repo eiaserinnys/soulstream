@@ -42,7 +42,7 @@ export function FolderDocumentContextMenu({
   const actions = useMemo(() => context ? buildDocumentContextMenuActions({
     open: () => onOpen(context.item),
     copyId: () => navigator.clipboard.writeText(context.item.itemId),
-    moveToTask: () => setMoveItem(context.item),
+    moveToFolder: () => setMoveItem(context.item),
     remove: () => {
       setDeleteError(null);
       setDeleteItem(context.item);

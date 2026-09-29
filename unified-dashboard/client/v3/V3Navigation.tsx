@@ -175,9 +175,9 @@ export function V3Navigation({
     try {
       await setFolderStarred(api, page.id, false);
     } catch (cause) {
+      clearFolderStarChange(page.id, mutationId);
       setError(`별표 변경 실패 · ${errorText(cause)}`);
     } finally {
-      clearFolderStarChange(page.id, mutationId);
       setPendingFolderId(null);
     }
   };
@@ -191,7 +191,7 @@ export function V3Navigation({
       const mutationId = publishFolderStarChange({ page: { ...page,
         metadata: { ...page.metadata, starred: !starred } }, starred: !starred });
       try { await setFolderStarred(api, page.id, !starred); }
-      finally { clearFolderStarChange(page.id, mutationId); }
+      catch (cause) { clearFolderStarChange(page.id, mutationId); throw cause; }
     } catch (cause) {
       setError(`별표 변경 실패 · ${errorText(cause)}`);
     } finally {
@@ -206,6 +206,9 @@ export function V3Navigation({
       setError(`오늘 목록 변경 실패 · ${errorText(cause)}`);
     }
   };
+  const starredContextFolder = contextMenu?.kind === "starred_folder"
+    ? folders.find((folder) => folder.projectPageId === starredFolderPage(contextMenu.task).id)
+    : null;
 
   return (
     <nav
@@ -302,26 +305,22 @@ export function V3Navigation({
       <V3ContextMenu
         target={contextMenu?.target ?? null}
         onClose={() => setContextMenu(null)}
-        actions={contextMenu?.kind === "starred_folder" && folders.some((folder) => folder.projectPageId === starredFolderPage(contextMenu.task).id && !folder.checklistEnabled) ? [
-          { label: "폴더 열기", onSelect: () => onSelectStarredFolder(contextMenu.task) },
-          { label: "폴더 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(starredFolderPage(contextMenu.task).id) },
-          { label: "별표 해제", onSelect: () => clearFolderStar(contextMenu.task), separatorBefore: true },
-          { label: todayFolderIds.has(starredFolderPage(contextMenu.task).id) ? "오늘에서 제외" : "오늘에 추가", onSelect: () => onToggleFolderToday(contextMenu.task) },
-        ] : contextMenu?.kind === "starred_folder" ? buildFolderContextMenuActions({
+        actions={contextMenu?.kind === "starred_folder" && starredContextFolder ? buildFolderContextMenuActions({
           starred: folderStarredState(starredFolderPage(contextMenu.task).id, folderStarChanges, true),
           completed: completedFolderIds.has(starredFolderPage(contextMenu.task).id),
           inToday: todayFolderIds.has(starredFolderPage(contextMenu.task).id),
+          checklistEnabled: starredContextFolder.checklistEnabled,
         }, {
           open: () => onSelectStarredFolder(contextMenu.task),
-          copyId: () => navigator.clipboard.writeText(starredFolderPage(contextMenu.task).id),
+          copyId: () => navigator.clipboard.writeText(starredContextFolder.id),
           toggleStar: () => clearFolderStar(contextMenu.task),
-          moveToProject: () => onMoveFolderToParent(contextMenu.task),
+          moveToParent: () => onMoveFolderToParent(contextMenu.task),
           complete: () => onCompleteFolder(contextMenu.task),
           toggleToday: () => onToggleFolderToday(contextMenu.task),
         }) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({
           open: () => onSelectFolder(contextMenu.folder),
           copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
-          createTask: () => onCreateFolder(contextMenu.folder.id),
+          createFolder: () => onCreateFolder(contextMenu.folder.id),
           createProject: () => setProjectDialog({ mode: "create", parentFolderId: null, parentName: null }),
           createChildProject: () => setProjectDialog({ mode: "create", parentFolderId: contextMenu.folder.id, parentName: contextMenu.folder.name }),
           edit: () => setProjectDialog({ mode: "edit", folder: contextMenu.folder }),

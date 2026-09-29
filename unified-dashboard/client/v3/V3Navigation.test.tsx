@@ -125,12 +125,12 @@ describe("V3Navigation frame contract", () => {
     expect(html).not.toContain("프로젝트가 없습니다.");
   });
 
-  it("opens the existing task context menu from the drag handle", () => {
+  it("opens the folder context menu from the drag handle", () => {
     flushSync(() => root.render(
       <V3Navigation
         dates={[]}
         selectedDate="2026-07-15"
-        folders={[]}
+        folders={[{ ...folder("folder-starred-a", "중요 작업 A"), projectPageId: "starred-a", checklistEnabled: true }]}
         selectedFolderId={null}
         starredFolders={[{
           id: "starred-a",
@@ -176,7 +176,7 @@ describe("V3Navigation frame contract", () => {
 
     expect(event.defaultPrevented).toBe(true);
     const contextMenu = container.querySelector('[data-testid="v3-context-menu"]')?.textContent ?? "";
-    for (const label of ["업무 열기", "별표 해제", "다른 프로젝트로 이동", "완료 처리"]) {
+    for (const label of ["폴더 열기", "별표 해제", "다른 폴더로 이동", "완료 처리"]) {
       expect(contextMenu).toContain(label);
     }
   });

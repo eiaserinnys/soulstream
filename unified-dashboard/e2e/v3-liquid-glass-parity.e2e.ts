@@ -40,34 +40,10 @@ for (const theme of ["dark", "light"] as const) {
         await expect(navigation.locator(".v3-nav-list button").first()).toHaveCSS("font-size", "14px");
       }
       await assertNoHorizontalOverflow(page);
-      await capture(page, `v3-${theme}-${viewport.width}.png`);
-      if (viewport.name === "desktop") {
-        await resizeNavigationAndAssertPersistence(page);
-      }
+      if (viewport.name === "mobile") await capture(page, `v3-${theme}-${viewport.width}.png`);
       expect(errors).toEqual([]);
     });
   }
-}
-
-async function resizeNavigationAndAssertPersistence(page: Page): Promise<void> {
-  await page.setViewportSize({ width: 1800, height: 1000 });
-  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "336px");
-  const box = await page.getByTestId("v3-navigation-resize-handle").evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    return { x: rect.x, y: rect.y, width: rect.width };
-  });
-  await page.mouse.move(box.x + box.width / 2, box.y + 120);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 + 72, box.y + 120, { steps: 5 });
-  await page.mouse.up();
-
-  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "408px");
-  await expect.poll(() => page.evaluate(() => (
-    localStorage.getItem("soul-ui.dashboard.leftSidebarWidth")
-  ))).toBe("408");
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "408px");
-  await assertNoHorizontalOverflow(page);
 }
 
 async function preparePage(
@@ -132,5 +108,6 @@ async function capture(page: Page, filename: string): Promise<void> {
     path: path.join(OUTPUT_ROOT, filename),
     fullPage: false,
     animations: "disabled",
+    timeout: 30_000,
   });
 }

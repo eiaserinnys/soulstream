@@ -121,7 +121,7 @@ export function FolderBoardWorkspace({
   onLoadMoreRuns(): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
+  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
   // 🔴23: 이 task의 마지막 보드 레이아웃(dashboard-store persist)을 최초 1회만 읽어 복원 시드로 쓴다.
@@ -676,7 +676,7 @@ export function FolderBoardWorkspace({
             setSessionContextMenu(null);
             setSuccessionOpen(true);
           },
-          moveToTask: () => {
+          moveToFolder: () => {
             if (!sessionContextMenu) return;
             setMoveSessionId(sessionContextMenu.sessionId);
             setSessionContextMenu(null);

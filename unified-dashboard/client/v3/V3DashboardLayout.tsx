@@ -152,7 +152,7 @@ function V3DashboardContent() {
     reorderStarredFolders,
     loadMoreProjectDocuments,
     loadMoreSubfolders,
-    patchFolder: patchLoadedTask,
+    patchFolder: patchLoadedFolder,
     removeSessions: removeLoadedSessions,
     moveSession: moveLoadedSession,
     moveFolderParent: moveLoadedFolderParent,
@@ -187,12 +187,12 @@ function V3DashboardContent() {
   const childFolders = useMemo(() => (catalog?.folders ?? []).filter(
     (folder) => !folder.archived && folder.parentFolderId === selectedFolderId,
   ), [catalog?.folders, selectedFolderId]);
-  const knownWorkspaceTask = currentFolderEntries.find((task) => task.folderId === selectedFolderId)
+  const knownWorkspaceFolder = currentFolderEntries.find((task) => task.folderId === selectedFolderId)
     ?? (selectedFolderSnapshot?.folderId === selectedFolderId ? selectedFolderSnapshot : null);
   const folderWorkspace = useFolderWorkspaceFolder({
     folder: selectedFolder,
     aggregate: folderAggregate,
-    knownFolder: knownWorkspaceTask,
+    knownFolder: knownWorkspaceFolder,
   });
   const selectedFolderEntry = folderWorkspace.folder;
   const selectFolder = useCallback(async (folder: typeof selectedFolder, task?: PlannerFolder) => {
@@ -262,7 +262,7 @@ function V3DashboardContent() {
   const removeRunHistorySessions = folderSessions.removeSessions;
   const moveRunHistorySession = folderSessions.moveSession;
   const { patchPlannerFolder, removeSessionsFromPlanner, moveSessionInPlanner, moveFolderParentInPlanner } = useV3MutationProjection({
-    patchLoadedTask, removeLoadedSessions, moveLoadedSession, moveLoadedFolderParent, removeRunHistorySessions, moveRunHistorySession, setSelectedFolderSnapshot,
+    patchLoadedFolder, removeLoadedSessions, moveLoadedSession, moveLoadedFolderParent, removeRunHistorySessions, moveRunHistorySession, setSelectedFolderSnapshot,
   });
   const plannerActions = useV3PlannerActions({
     api,
@@ -281,7 +281,7 @@ function V3DashboardContent() {
   const folderParentMove = useFolderParentMoveController({
     api,
     folders: catalog?.folders ?? [],
-    moveTask: plannerActions.moveFolderParent,
+    moveFolder: plannerActions.moveFolderParent,
     notify,
   });
   const projectNavigationMutations = useProjectNavigationMutations({
@@ -431,7 +431,7 @@ function V3DashboardContent() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeSessionKey, applyMobileState, chatOpen, clearProject, closeWorkspace, createOpen, mobileMode, mobileTab, newDocumentOpen, selectedDate, selectedFolderId, selectedProjectId, today, workspaceOpen]);
-  const openTask = (task: PlannerFolder) => {
+  const openFolder = (task: PlannerFolder) => {
     clearSessionPanelFocus();
     setActiveSessionSummary(null);
     setActiveSession(null);
@@ -460,7 +460,7 @@ function V3DashboardContent() {
     setDocumentInspectorOpen(true);
   }, [selectedFolderId]);
   const {
-    createTask,
+    createFolder,
     saveMemo,
     createDocument,
     saveDescription,
@@ -549,7 +549,7 @@ function V3DashboardContent() {
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
-            {createOpen ? <NewFolderForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={createTask} onCancel={() => setCreateOpen(false)} /> : null}
+            {createOpen ? <NewFolderForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={createFolder} onCancel={() => setCreateOpen(false)} /> : null}
             {selectedFolderId ? (!workspaceFolderEntry && !activeSession ? (
               <section className="v3-load-error" aria-busy={resolution.status === "loading"}>
                 <h1>{selectedFolderName}</h1>
@@ -558,7 +558,7 @@ function V3DashboardContent() {
                 ) : <p>불러오는 중…</p>}
               </section>
             ) : null) : (
-              <DailyPlannerView state={daily} folders={catalog?.folders ?? []} selectedDate={selectedDate} isTodayView={selectedDate === today} todayFolderIds={todayFolderIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(folderId) => { void selectFolder(catalog?.folders.find((folder) => folder.id === folderId) ?? null); }} onOpenFolder={openTask} onCompleteFolder={plannerActions.completeFolder} onToggleFolderToday={plannerActions.toggleFolderToday} onMoveFolderToParent={folderParentMove.openTask} onOpenRitual={() => setRitualOpen(true)} onCreateFolder={() => setCreateOpen(true)} />
+              <DailyPlannerView state={daily} folders={catalog?.folders ?? []} selectedDate={selectedDate} isTodayView={selectedDate === today} todayFolderIds={todayFolderIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(folderId) => { void selectFolder(catalog?.folders.find((folder) => folder.id === folderId) ?? null); }} onOpenFolder={openFolder} onCompleteFolder={plannerActions.completeFolder} onToggleFolderToday={plannerActions.toggleFolderToday} onMoveFolderToParent={folderParentMove.openFolder} onOpenRitual={() => setRitualOpen(true)} onCreateFolder={() => setCreateOpen(true)} />
             )}
           </div>
         </div>
@@ -593,6 +593,7 @@ function V3DashboardContent() {
             onCreateDocument={() => { void createDocument(); }}
             onCompleteFolder={plannerActions.completeFolder}
             onToggleFolderToday={plannerActions.toggleFolderToday}
+            onMoveFolderToParent={folderParentMove.openFolder}
             onBlocksChanged={applyFolderBlocks}
           /> : null}
           checklistEnabled={selectedFolder?.checklistEnabled ?? false}
