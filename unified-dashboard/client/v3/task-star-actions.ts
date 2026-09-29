@@ -12,8 +12,8 @@ export async function setFolderStarred(
   const updated = await api.setStarred(pageId, {
     starred,
     expectedVersion: current.page.version,
-    idempotencyKey: idFactory("task-star"),
-    reason: "v3 planner task star toggle",
+    idempotencyKey: idFactory("folder-star"),
+    reason: "v3 planner folder star toggle",
   });
   return updated.page;
 }

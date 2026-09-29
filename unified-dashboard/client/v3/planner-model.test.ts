@@ -9,8 +9,8 @@ import {
 describe("project folder bridge", () => {
   it("resolves only the explicit immutable project page binding", () => {
     const folders = [
-      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-explicit", name: "다른 프로젝트", sortOrder: 0, projectPageId: "page-explicit" },
-      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-soul", name: "✨ 소울스트림", sortOrder: 1, projectPageId: "page-soul" },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "folder-explicit", name: "다른 프로젝트", sortOrder: 0, projectPageId: "page-explicit" },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "folder-soul", name: "✨ 소울스트림", sortOrder: 1, projectPageId: "page-soul" },
     ];
     expect(resolveProjectFolderId({ id: "page-explicit" }, folders))
       .toBe("folder-explicit");

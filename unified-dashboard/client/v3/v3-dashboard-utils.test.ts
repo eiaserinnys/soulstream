@@ -62,7 +62,7 @@ describe("v3 dashboard utilities", () => {
 });
 
 function folder(id: string): CatalogFolder {
-  return { checklistEnabled: false, status: "open", version: 1, archived: false,  id, name: id, sortOrder: 0 };
+  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,  id, name: id, sortOrder: 0 };
 }
 
 function session(id: string, callerSessionId: string | undefined, createdAt: string, folderId: string): SessionSummary {

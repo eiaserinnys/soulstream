@@ -20,7 +20,7 @@ vi.mock("../lib/session-create", () => ({
 }));
 vi.mock("./task-workspace-api", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  createTaskPageAnchor: vi.fn().mockResolvedValue(null),
+  createFolderPageAnchor: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@seosoyoung/soul-ui/page", () => ({
   createPageApiClient: () => ({}),

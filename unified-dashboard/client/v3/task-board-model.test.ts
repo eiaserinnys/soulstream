@@ -12,7 +12,7 @@ import {
   extractTaskBoardSessionIds,
   initialTaskBoardResourceState,
   mergeTaskBoardSessions,
-  openTaskBoardResource,
+  openFolderWorkspaceResource,
   reconcileTaskBoardResourceState,
   clampTaskChatWidth,
   computeTabStripOverflow,
@@ -60,15 +60,15 @@ describe("task board bounded catalog", () => {
   });
 
   it("keeps multiple Flux tabs in open order without duplicating an existing resource", () => {
-    const first = openTaskBoardResource(initialTaskBoardResourceState(), {
+    const first = openFolderWorkspaceResource(initialTaskBoardResourceState(), {
       kind: "custom_view",
       resourceId: "view-a",
     });
-    const second = openTaskBoardResource(first, {
+    const second = openFolderWorkspaceResource(first, {
       kind: "custom_view",
       resourceId: "view-b",
     });
-    const reopened = openTaskBoardResource(second, {
+    const reopened = openFolderWorkspaceResource(second, {
       kind: "custom_view",
       resourceId: "view-a",
     });
@@ -81,7 +81,7 @@ describe("task board bounded catalog", () => {
   });
 
   it("removes deleted resources and returns an invalid active tab to the checklist", () => {
-    const openDocument = openTaskBoardResource(initialTaskBoardResourceState(), {
+    const openDocument = openFolderWorkspaceResource(initialTaskBoardResourceState(), {
       kind: "document",
       resourceId: "doc-a",
     });

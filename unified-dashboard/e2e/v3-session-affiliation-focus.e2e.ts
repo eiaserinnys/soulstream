@@ -121,10 +121,7 @@ async function assertFocusedSession(page: Page) {
 function cachedFolderBoardItems() {
   const sessionItem = (sessionId: string, y: number) => ({
     id: `session:${sessionId}`,
-    folderId: "folder-amber",
-    containerKind: "task",
-    containerId: "task-alpha",
-    membershipKind: "primary",
+    folderId: "rb-alpha",
     itemType: "session",
     itemId: sessionId,
     x: 24,
@@ -134,18 +131,6 @@ function cachedFolderBoardItems() {
     boardItems: [
       sessionItem("run-alpha-1", 0),
       sessionItem("run-alpha-2", 72),
-      {
-        id: "task:task-alpha",
-        folderId: "folder-amber",
-        containerKind: "folder",
-        containerId: "folder-amber",
-        membershipKind: "primary",
-        itemType: "task",
-        itemId: "task-alpha",
-        x: 24,
-        y: 144,
-        metadata: { title: fixtureTitles.primaryTask },
-      },
     ],
   };
 }

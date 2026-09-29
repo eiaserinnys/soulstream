@@ -6,7 +6,7 @@ import {
   reorderProjectFolders,
 } from "./project-folder-actions";
 
-const folder = { checklistEnabled: false, status: "open", version: 1, archived: false, id: "project-a", name: "Before", sortOrder: 0, parentFolderId: null };
+const folder = { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "project-a", name: "Before", sortOrder: 0, parentFolderId: null };
 
 describe("project folder optimistic result gate", () => {
   it("rejects a rename that the shared v1 operation rolled back", async () => {

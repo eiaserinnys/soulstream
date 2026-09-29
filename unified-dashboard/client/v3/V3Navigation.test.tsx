@@ -63,7 +63,7 @@ describe("V3Navigation frame contract", () => {
         onCompleteTask={vi.fn(async () => undefined)}
         onToggleTaskToday={vi.fn(async () => undefined)}
         onMoveTaskToProject={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open", version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
@@ -109,7 +109,7 @@ describe("V3Navigation frame contract", () => {
         onCompleteTask={vi.fn(async () => undefined)}
         onToggleTaskToday={vi.fn(async () => undefined)}
         onMoveTaskToProject={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open", version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
@@ -154,7 +154,7 @@ describe("V3Navigation frame contract", () => {
         onCompleteTask={vi.fn(async () => undefined)}
         onToggleTaskToday={vi.fn(async () => undefined)}
         onMoveTaskToProject={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open", version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
@@ -183,5 +183,5 @@ describe("V3Navigation frame contract", () => {
 });
 
 function folder(id: string, name: string): CatalogFolder {
-  return { checklistEnabled: false, status: "open", version: 1, archived: false,  id, name, parentFolderId: null, sortOrder: 0 };
+  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,  id, name, parentFolderId: null, sortOrder: 0 };
 }

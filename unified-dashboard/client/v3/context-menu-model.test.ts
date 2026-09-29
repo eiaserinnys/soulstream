@@ -71,7 +71,7 @@ describe("v3 context menu model", () => {
     expect(mounted[3]?.disabled).toBe(true);
   });
 
-  it("adds task-board move and destructive delete without duplicating the common actions", () => {
+  it("adds folder-board move and destructive delete without duplicating the common actions", () => {
     const menu = buildDocumentContextMenuActions({
       open: vi.fn(),
       copyId: vi.fn(),
@@ -82,7 +82,7 @@ describe("v3 context menu model", () => {
     expect(menu.map((action) => action.label)).toEqual([
       "문서 열기",
       "페이지 ID 복사",
-      "다른 업무로 이동",
+      "다른 폴더로 이동",
       "문서 삭제",
     ]);
     expect(menu[2]).toMatchObject({ separatorBefore: true });
@@ -90,7 +90,7 @@ describe("v3 context menu model", () => {
     expect(menu[3]).toMatchObject({ destructive: true });
   });
 
-  it("owns project and task-bound session extension ordering", () => {
+  it("owns folder session extension ordering", () => {
     expect(buildProjectContextMenuActions({
       open: vi.fn(),
       copyId: vi.fn(),
@@ -114,7 +114,7 @@ describe("v3 context menu model", () => {
       moveToTask: vi.fn(),
     }).map((action) => action.label)).toEqual([
       "＋ 이어서 새 세션 (승계)",
-      "다른 업무로 이동",
+      "다른 폴더로 이동",
     ]);
   });
 });

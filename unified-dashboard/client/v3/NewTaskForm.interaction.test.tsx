@@ -176,7 +176,7 @@ function deferred<T>() {
 }
 
 function folder() {
-  return { checklistEnabled: false, status: "open", version: 1, archived: false,
+  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,
     id: "folder-a",
     name: "프로젝트 A",
     parentFolderId: null,

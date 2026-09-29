@@ -99,7 +99,7 @@ describe("v3 session panel model", () => {
 
   it("uses the owning folder name for session affiliation", () => {
     const folders: CatalogFolder[] = [
-      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-a", name: "소울스트림", sortOrder: 0 },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "folder-a", name: "소울스트림", sortOrder: 0 },
     ];
     expect(sessionPanelAffiliation([boardItem("primary", "folder-a")], folders, "session-a"))
       .toBe("소울스트림");

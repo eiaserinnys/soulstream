@@ -38,5 +38,5 @@ describe("MobileProjectList", () => {
 });
 
 function folder(id: string, name: string, parentFolderId: string | null) {
-  return { checklistEnabled: false, status: "open", version: 1, archived: false,  id, name, parentFolderId, sortOrder: 0, projectPageId: `project-${id}` };
+  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,  id, name, parentFolderId, sortOrder: 0, projectPageId: `project-${id}` };
 }

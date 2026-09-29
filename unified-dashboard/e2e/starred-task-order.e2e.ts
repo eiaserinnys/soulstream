@@ -5,7 +5,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 test("drags a starred task and refreshes the order after a rejected save", async ({ page }, testInfo) => {
   const state = {
     pageIds: ["starred-a", "starred-b"],
-    saves: [] as Array<{ page_id: string; before_page_id: string | null }>,
+    saves: [] as Array<{ pageId: string; before_pageId: string | null }>,
     reads: 0,
     rejectNextSave: true,
   };
@@ -30,19 +30,19 @@ test("drags a starred task and refreshes the order after a rejected save", async
     });
   });
   await installV3VisualQaRoutes(page);
-  await page.route("**/api/planner/starred-tasks**", async (route) => {
+  await page.route("**/api/planner/starred-folders**", async (route) => {
     const request = route.request();
     if (request.method() === "PATCH") {
-      const body = request.postDataJSON() as { page_id: string; before_page_id: string | null };
+      const body = request.postDataJSON() as { pageId: string; before_pageId: string | null };
       state.saves.push(body);
       if (state.rejectNextSave) {
         state.rejectNextSave = false;
         await fulfillJson(route, {
-          detail: { error: { code: "PLANNER_STARRED_TASK_NOT_ACTIVE", message: "stale member" } },
+          detail: { error: { code: "PLANNER_STARRED_FOLDER_NOT_ACTIVE", message: "stale member" } },
         }, 409);
         return;
       }
-      state.pageIds = moveBefore(state.pageIds, body.page_id, body.before_page_id);
+      state.pageIds = moveBefore(state.pageIds, body.pageId, body.before_pageId);
       await fulfillJson(route, { ok: true });
       return;
     }
@@ -50,7 +50,7 @@ test("drags a starred task and refreshes the order after a rejected save", async
       state.reads += 1;
       await fulfillJson(route, {
         items: state.pageIds.map((pageId) => starredTask(pageId)),
-        next_cursor: null,
+        nextCursor: null,
       });
       return;
     }
@@ -65,7 +65,7 @@ test("drags a starred task and refreshes the order after a rejected save", async
   await dragRow(page.getByTestId("v3-starred-task-row-starred-a"), page.getByTestId("v3-starred-task-row-starred-b"));
   await expect.poll(() => state.saves.length).toBe(1);
   await expect.poll(() => state.reads).toBe(initialReads + 1);
-  expect(state.saves[0]).toEqual({ page_id: "starred-a", before_page_id: null });
+  expect(state.saves[0]).toEqual({ pageId: "starred-a", before_pageId: null });
   await expectStarredOrder(page, ["starred-a", "starred-b"]);
 
   await dragRow(page.getByTestId("v3-starred-task-row-starred-a"), page.getByTestId("v3-starred-task-row-starred-b"));
@@ -76,7 +76,7 @@ test("drags a starred task and refreshes the order after a rejected save", async
 });
 
 test("reorders a starred task with the keyboard", async ({ page }) => {
-  const state = { pageIds: ["starred-a", "starred-b"], saves: [] as Array<{ page_id: string; before_page_id: string | null }> };
+  const state = { pageIds: ["starred-a", "starred-b"], saves: [] as Array<{ pageId: string; before_pageId: string | null }> };
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => {
     localStorage.setItem("soul-dashboard-theme", "dark");
@@ -89,16 +89,16 @@ test("reorders a starred task with the keyboard", async ({ page }) => {
     Object.defineProperty(navigator.serviceWorker, "controller", { configurable: true, get: () => null });
   });
   await installV3VisualQaRoutes(page);
-  await page.route("**/api/planner/starred-tasks**", async (route) => {
+  await page.route("**/api/planner/starred-folders**", async (route) => {
     if (route.request().method() === "PATCH") {
-      const body = route.request().postDataJSON() as { page_id: string; before_page_id: string | null };
+      const body = route.request().postDataJSON() as { pageId: string; before_pageId: string | null };
       state.saves.push(body);
-      state.pageIds = moveBefore(state.pageIds, body.page_id, body.before_page_id);
+      state.pageIds = moveBefore(state.pageIds, body.pageId, body.before_pageId);
       await fulfillJson(route, { ok: true });
       return;
     }
     if (route.request().method() === "GET") {
-      await fulfillJson(route, { items: state.pageIds.map((pageId) => starredTask(pageId)), next_cursor: null });
+      await fulfillJson(route, { items: state.pageIds.map((pageId) => starredTask(pageId)), nextCursor: null });
       return;
     }
     await route.fallback();
@@ -112,14 +112,14 @@ test("reorders a starred task with the keyboard", async ({ page }) => {
   await keyboardHandle.press("ArrowUp");
 
   await expect.poll(() => state.saves.length).toBe(1);
-  expect(state.saves[0]).toEqual({ page_id: "starred-b", before_page_id: "starred-a" });
+  expect(state.saves[0]).toEqual({ pageId: "starred-b", before_pageId: "starred-a" });
   await expectStarredOrder(page, ["starred-b", "starred-a"]);
 });
 
 test("drops at the visible end before the first unloaded page", async ({ page }) => {
   const state = {
     pageIds: ["starred-a", "starred-b", "starred-c"],
-    saves: [] as Array<{ page_id: string; before_page_id: string | null }>,
+    saves: [] as Array<{ pageId: string; before_pageId: string | null }>,
     boundaryCursors: [] as string[],
   };
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -134,13 +134,13 @@ test("drops at the visible end before the first unloaded page", async ({ page })
     Object.defineProperty(navigator.serviceWorker, "controller", { configurable: true, get: () => null });
   });
   await installV3VisualQaRoutes(page);
-  await page.route("**/api/planner/starred-tasks**", async (route) => {
+  await page.route("**/api/planner/starred-folders**", async (route) => {
     const url = new URL(route.request().url());
     const cursor = url.searchParams.get("cursor");
     if (route.request().method() === "PATCH") {
-      const body = route.request().postDataJSON() as { page_id: string; before_page_id: string | null };
+      const body = route.request().postDataJSON() as { pageId: string; before_pageId: string | null };
       state.saves.push(body);
-      state.pageIds = moveBefore(state.pageIds, body.page_id, body.before_page_id);
+      state.pageIds = moveBefore(state.pageIds, body.pageId, body.before_pageId);
       await fulfillJson(route, { ok: true });
       return;
     }
@@ -149,13 +149,13 @@ test("drops at the visible end before the first unloaded page", async ({ page })
         state.boundaryCursors.push(cursor);
         await fulfillJson(route, {
           items: [starredTask("starred-c")],
-          next_cursor: null,
+          nextCursor: null,
         });
         return;
       }
       await fulfillJson(route, {
         items: state.pageIds.slice(0, 2).map((pageId) => starredTask(pageId)),
-        next_cursor: "opaque-boundary-cursor",
+        nextCursor: "opaque-boundary-cursor",
       });
       return;
     }
@@ -169,7 +169,7 @@ test("drops at the visible end before the first unloaded page", async ({ page })
 
   await expect.poll(() => state.saves.length).toBe(1);
   expect(state.boundaryCursors).toEqual(["opaque-boundary-cursor"]);
-  expect(state.saves[0]).toEqual({ page_id: "starred-a", before_page_id: "starred-c" });
+  expect(state.saves[0]).toEqual({ pageId: "starred-a", before_pageId: "starred-c" });
   await expectStarredOrder(page, ["starred-b", "starred-a"]);
 });
 
@@ -205,12 +205,13 @@ function starredTask(pageId: string) {
       created_at: "2026-07-15T00:00:00.000Z",
       updated_at: "2026-07-15T00:00:00.000Z",
     },
-    blocks: [],
-    task_id: `${pageId}-task`,
-    task: null,
-    project_page_id: null,
-    sessions: [],
-    mounted_documents: [],
+    folder: { id: `${pageId}-folder`, name: title, parentFolderId: null, sortOrder: 0,
+      projectPageId: pageId, checklistEnabled: true, status: "open", archived: false,
+      version: 1, settings: {} },
+    itemCounts: {},
+    itemTotal: 0,
+    completedItemCount: 0,
+    assignee: null,
   };
 }
 

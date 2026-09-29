@@ -13,9 +13,9 @@ export {
 } from "./FolderDragSurface";
 export type { FolderDragData, FolderRootDropData } from "./folder-dnd";
 export {
-  StarredTaskSortableContext,
+  StarredFolderSortableContext,
   reorderStarredFolderIds,
-  useStarredTaskDragSurface,
+  useStarredFolderDragSurface,
 } from "./starred-task-dnd";
 export type { StarredFolderDragData } from "./starred-task-dnd";
 

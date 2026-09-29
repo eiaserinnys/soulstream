@@ -49,7 +49,7 @@ export type NavigationTarget = { readonly kind: UiEventTargetKind; readonly id: 
 /**
  * 어느 화면으로 갔는지 하나만 고른다.
  *
- * `openTaskBoard` 처럼 한 번의 `set()` 이 여러 필드를 동시에 바꾸는 경우가 있어
+ * `openFolderWorkspace` 처럼 한 번의 `set()` 이 여러 필드를 동시에 바꾸는 경우가 있어
  * 바뀐 필드마다 이벤트를 내면 한 번의 이동이 여러 건으로 부풀어 오른다.
  * 가장 구체적인 대상 하나만 남긴다.
  */
@@ -65,10 +65,7 @@ export function resolveNavigationTarget(
     (next.activeBoardContainerId !== previous.activeBoardContainerId ||
       next.activeBoardContainerKind !== previous.activeBoardContainerKind)
   ) {
-    return {
-      kind: next.activeBoardContainerKind === "task" ? "task" : "folder",
-      id: next.activeBoardContainerId,
-    };
+    return { kind: "folder", id: next.activeBoardContainerId };
   }
   if (
     next.activeBoardDocumentId !== null &&
@@ -104,10 +101,7 @@ function underlyingTarget(snapshot: NavigationSnapshot): NavigationTarget | null
     return { kind: "session", id: snapshot.activeSessionKey };
   }
   if (snapshot.activeBoardContainerId !== null) {
-    return {
-      kind: snapshot.activeBoardContainerKind === "task" ? "task" : "folder",
-      id: snapshot.activeBoardContainerId,
-    };
+    return { kind: "folder", id: snapshot.activeBoardContainerId };
   }
   if (snapshot.selectedFolderId !== null) {
     return { kind: "folder", id: snapshot.selectedFolderId };

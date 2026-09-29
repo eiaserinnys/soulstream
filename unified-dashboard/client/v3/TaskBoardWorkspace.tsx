@@ -44,7 +44,7 @@ import {
   clampTaskChatWidth,
   clampTaskResourceWidth,
   initialTaskBoardResourceState,
-  openTaskBoardResource,
+  openFolderWorkspaceResource,
   reconcileTaskBoardResourceState,
   type TaskBoardResourceSelection,
 } from "./task-board-model";
@@ -126,7 +126,7 @@ export function TaskBoardWorkspace({
 }) {
   // 🔴23: 이 task의 마지막 보드 레이아웃(dashboard-store persist)을 최초 1회만 읽어 복원 시드로 쓴다.
   const layoutKey = task.page.id;
-  const initialLayoutRef = useRef(useDashboardStore.getState().taskBoardLayouts[layoutKey] ?? null);
+  const initialLayoutRef = useRef(useDashboardStore.getState().folderBoardLayouts[layoutKey] ?? null);
 
   const chatSurfaceRef = useRef<HTMLElement>(null);
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: true });
@@ -222,7 +222,7 @@ export function TaskBoardWorkspace({
     persistTimerRef.current = setTimeout(() => {
       persistTimerRef.current = null;
       const store = useDashboardStore.getState();
-      store.setTaskBoardLayout(layoutKey, {
+      store.setFolderBoardLayout(layoutKey, {
         resourceWidth: Math.round(resourceWidthRef.current),
         chatWidth: Math.round(chatWidthRef.current),
         activeTabId: resourceStateRef.current.activeTabId,
@@ -452,7 +452,7 @@ export function TaskBoardWorkspace({
     }
   }, [checklistEnabled, resourceState.activeTabId]);
   const openResource = useCallback((resource: TaskBoardResourceSelection) => {
-    setResourceState((current) => openTaskBoardResource(current, resource));
+    setResourceState((current) => openFolderWorkspaceResource(current, resource));
   }, []);
 
   return (

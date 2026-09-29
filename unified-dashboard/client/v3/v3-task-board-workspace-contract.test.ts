@@ -15,7 +15,7 @@ describe("task board r3 workspace contract", () => {
     expect(pane).toContain("selectedFolderIdOverride={folderId}");
     expect(pane).not.toContain("useDashboardStore");
     expect(pane).not.toContain("previousStoreRef");
-    expect(pane).not.toContain("openTaskBoard(");
+    expect(pane).not.toContain("openFolderWorkspace(");
     expect(pane).not.toContain("setCatalog(");
     expect(workspace).toContain("const [activeTaskDocumentId, setActiveTaskDocumentId]");
     expect(workspace).toContain("if (activeTaskDocumentId === documentId) setActiveTaskDocumentId(null)");
@@ -45,7 +45,7 @@ describe("task board r3 workspace contract", () => {
     const board = read("./TaskBoardPane.tsx");
     const resources = read("./TaskBoardResourcePane.tsx");
 
-    expect(workspace).toContain("openTaskBoardResource");
+    expect(workspace).toContain("openFolderWorkspaceResource");
     expect(workspace).toContain("onOpenMarkdownDocument=");
     expect(workspace).toContain("onOpenCustomView=");
     expect(board).toContain("onOpenMarkdownDocument={onOpenMarkdownDocument}");
@@ -211,8 +211,8 @@ describe("task board editor refine (🔴18~24) contract", () => {
 
     // task page id를 키로 기존 persist 슬라이스에 저장·복원한다.
     expect(workspace).toContain("const layoutKey = task.page.id");
-    expect(workspace).toContain("setTaskBoardLayout");
-    expect(workspace).toContain("taskBoardLayouts");
+    expect(workspace).toContain("setFolderBoardLayout");
+    expect(workspace).toContain("folderBoardLayouts");
     // 보드 zoom/pan은 viewportPersistenceKey로 위임한다.
     expect(workspace).toContain("viewportPersistenceKey={layoutKey}");
   });

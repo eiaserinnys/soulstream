@@ -43,5 +43,5 @@ describe("project folder tree", () => {
 });
 
 function folder(id: string, name: string, sortOrder: number, parentFolderId: string | null = null): CatalogFolder {
-  return { checklistEnabled: false, status: "open", version: 1, archived: false,  id, name, sortOrder, parentFolderId };
+  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,  id, name, sortOrder, parentFolderId };
 }

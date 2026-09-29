@@ -2002,7 +2002,7 @@ describe("dashboard-store", () => {
     it("폴더 보드를 열 때 선택과 렌더 대상이 같은 폴더를 가리킨다", () => {
       useDashboardStore.getState().selectFolder("folder-1");
 
-      useDashboardStore.getState().openTaskBoard("rb-1", "folder-1");
+      useDashboardStore.getState().openFolderWorkspace("rb-1", "folder-1");
 
       const state = useDashboardStore.getState();
       expect(state.selectedFolderId).toBe("rb-1");

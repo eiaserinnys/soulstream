@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import {
-  renameTaskTitle,
-  saveTaskSessionDefaults,
-  unmountTaskDocument,
+  renameFolderPageTitle,
+  saveFolderSessionDefaults,
+  unmountFolderDocument,
 } from "./task-workspace-api";
 
-describe("renameTaskTitle", () => {
+describe("renameFolderPageTitle", () => {
   it("renames the task through the page CAS contract used by the task identity service", async () => {
     const taskPage = page("task-a", "변경 전", 5);
     const renamedPage = page("task-a", "변경 후", 6);
@@ -25,14 +25,14 @@ describe("renameTaskTitle", () => {
       })),
     } as unknown as PageApiClient;
 
-    await expect(renameTaskTitle(api, taskPage.id, "  변경 후  ", () => "rename-1"))
+    await expect(renameFolderPageTitle(api, taskPage.id, "  변경 후  ", () => "rename-1"))
       .resolves.toEqual(renamedPage);
 
     expect(api.applyOperations).toHaveBeenCalledWith(taskPage.id, {
       expectedVersion: 5,
       expectedStateVector: new Uint8Array([1]),
       idempotencyKey: "rename-1",
-      reason: "v3 task identity title rename",
+      reason: "v3 folder page title rename",
       operations: [{ op: "rename_page", title: "변경 후" }],
     });
   });
@@ -43,14 +43,14 @@ describe("renameTaskTitle", () => {
       applyOperations: vi.fn(),
     } as unknown as PageApiClient;
 
-    await expect(renameTaskTitle(api, "task-a", "   ", () => "rename-1"))
+    await expect(renameFolderPageTitle(api, "task-a", "   ", () => "rename-1"))
       .rejects.toThrow("업무 제목을 입력해야 합니다");
     expect(api.getPage).not.toHaveBeenCalled();
     expect(api.applyOperations).not.toHaveBeenCalled();
   });
 });
 
-describe("saveTaskSessionDefaults", () => {
+describe("saveFolderSessionDefaults", () => {
   it("creates a direct session_defaults block through the existing page CAS surface", async () => {
     const taskPage = page("task-a", "업무 A", 5);
     const blocks = [block("paragraph", "paragraph")];
@@ -62,7 +62,7 @@ describe("saveTaskSessionDefaults", () => {
     })];
     const api = pageApi(taskPage, blocks, saved);
 
-    await expect(saveTaskSessionDefaults(api, taskPage.id, {
+    await expect(saveFolderSessionDefaults(api, taskPage.id, {
       blockId: null,
       agentId: " roselin_codex ",
       nodeId: " eiaserinnys ",
@@ -73,7 +73,7 @@ describe("saveTaskSessionDefaults", () => {
       expectedVersion: 5,
       expectedStateVector: new Uint8Array([1]),
       idempotencyKey: "session-defaults-save-1",
-      reason: "v3 task session defaults save",
+      reason: "v3 folder session defaults save",
       operations: [{
         op: "create_block",
         temp_id: "session-defaults-block-1",
@@ -101,7 +101,7 @@ describe("saveTaskSessionDefaults", () => {
     });
     const api = pageApi(taskPage, [defaults], [defaults]);
 
-    await saveTaskSessionDefaults(api, taskPage.id, {
+    await saveFolderSessionDefaults(api, taskPage.id, {
       blockId: defaults.id,
       agentId: "new-agent",
       nodeId: null,
@@ -125,7 +125,7 @@ describe("saveTaskSessionDefaults", () => {
     ).mock.calls[0]?.[1]?.operations?.[0]?.properties;
     expect(updateProperties).not.toHaveProperty("modelPreset");
 
-    await expect(saveTaskSessionDefaults(api, taskPage.id, {
+    await expect(saveFolderSessionDefaults(api, taskPage.id, {
       blockId: defaults.id,
       agentId: " ",
       nodeId: null,
@@ -134,7 +134,7 @@ describe("saveTaskSessionDefaults", () => {
   });
 });
 
-describe("unmountTaskDocument", () => {
+describe("unmountFolderDocument", () => {
   it("deletes the mounted document block through the page CAS contract", async () => {
     const taskPage = page("task-a", "업무 A", 5);
     const api = {
@@ -160,13 +160,13 @@ describe("unmountTaskDocument", () => {
       })),
     } as unknown as PageApiClient;
 
-    await unmountTaskDocument(api, taskPage.id, "mount-doc", () => "unmount-1");
+    await unmountFolderDocument(api, taskPage.id, "mount-doc", () => "unmount-1");
 
     expect(api.applyOperations).toHaveBeenCalledWith(taskPage.id, {
       expectedVersion: 5,
       expectedStateVector: new Uint8Array([1]),
       idempotencyKey: "unmount-1",
-      reason: "v3 task document unmount",
+      reason: "v3 folder document unmount",
       operations: [{ op: "delete_block_subtree", block_id: "mount-doc" }],
     });
   });

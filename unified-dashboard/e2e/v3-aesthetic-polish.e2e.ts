@@ -38,7 +38,7 @@ for (const theme of ["dark", "light"] as const) {
       await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible();
       await capture(page, theme, "02-project-view");
 
-      await page.getByRole("button", { name: "오늘로 돌아가기" }).click();
+      await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
       await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible();
       await page.getByTestId("v3-task-task-alpha")
         .evaluate((element: HTMLElement) => element.click());

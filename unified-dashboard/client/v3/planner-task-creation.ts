@@ -2,7 +2,7 @@ import type { InitialTaskContext } from "@seosoyoung/soul-ui/page";
 
 export type PlannerFolderCreationPhase =
   | "page"
-  | "task"
+  | "folder"
   | "reference";
 
 export interface PlannerFolderCreationInput {
@@ -14,7 +14,7 @@ export interface PlannerFolderCreationInput {
 }
 
 export interface PlannerFolderCreationPort {
-  /** Creates the execution and document aspects of one task identity. */
+  /** Creates the folder and its bound page. */
   createFolderIdentity(input: {
     title: string;
     description: string;
@@ -37,11 +37,11 @@ export class PlannerFolderCreationError extends Error {
 
 const CREATION_ERROR_LABEL: Record<PlannerFolderCreationPhase, string> = {
   page: "업무 페이지 생성",
-  task: "업무 생성",
+  folder: "업무 생성",
   reference: "업무 연결",
 };
 
-export function plannerTaskCreationErrorLabel(error: unknown): string {
+export function plannerFolderCreationErrorLabel(error: unknown): string {
   return error instanceof PlannerFolderCreationError
     ? CREATION_ERROR_LABEL[error.phase]
     : "새 업무 생성";
@@ -51,7 +51,7 @@ export async function createPlannerFolder(
   input: PlannerFolderCreationInput,
   port: PlannerFolderCreationPort,
 ): Promise<{ pageId: string; folderId: string }> {
-  const identity = await runPhase("task", () => port.createFolderIdentity({
+  const identity = await runPhase("folder", () => port.createFolderIdentity({
     title: input.title,
     description: input.description,
     folderId: input.folderId,

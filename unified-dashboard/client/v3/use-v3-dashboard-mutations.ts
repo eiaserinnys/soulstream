@@ -5,11 +5,11 @@ import type { InitialTaskContext, PageApiClient, PageDto } from "@seosoyoung/sou
 import type { PlannerLoadState } from "./PlannerViews";
 import type { BrowserPlannerMutationPort } from "./planner-browser-port";
 import type { DailyPlannerData, PlannerFolder } from "./planner-data";
-import { taskContextCount } from "./planner-model";
+import { folderContextCount } from "./planner-model";
 import { resolveProjectPage } from "./project-page-actions";
-import { createPlannerFolder, plannerTaskCreationErrorLabel } from "./planner-task-creation";
+import { createPlannerFolder, plannerFolderCreationErrorLabel } from "./planner-task-creation";
 import type { RitualAction, RitualQueueItem } from "./ritual-model";
-import { saveTaskDescription } from "./task-workspace-api";
+import { saveFolderDescription } from "./task-workspace-api";
 
 export function useV3DashboardMutations({
   api,
@@ -101,7 +101,7 @@ export function useV3DashboardMutations({
       notify(`새 업무 생성 · ${title}`);
       return null;
     } catch (error) {
-      return notifyWriteFailure(plannerTaskCreationErrorLabel(error), error);
+      return notifyWriteFailure(plannerFolderCreationErrorLabel(error), error);
     } finally {
       setCreatePending(false);
     }
@@ -136,7 +136,7 @@ export function useV3DashboardMutations({
   const saveDescription = useCallback(async (markdown: string) => {
     if (!selectedTask) return;
     try {
-      await saveTaskDescription(api, selectedTask.page.id, markdown);
+      await saveFolderDescription(api, selectedTask.page.id, markdown);
       refreshTask(selectedTask.page.id);
       notify("업무 설명 저장됨");
     } catch (error) {
@@ -159,7 +159,7 @@ export function useV3DashboardMutations({
     patchPlannerFolder(selectedPageId, (current) => ({
       ...current,
       blocks,
-      contextCount: taskContextCount(blocks),
+      contextCount: folderContextCount(blocks),
     }));
   }, [patchPlannerFolder, selectedPageId]);
 

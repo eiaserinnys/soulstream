@@ -260,7 +260,7 @@ const tasks: Record<string, Json> = {
 const sessions = [
   {
     agentSessionId: "run-alpha-1",
-    folderId: "folder-amber",
+    folderId: "rb-alpha",
     status: "completed",
     reviewState: "acknowledged",
     sessionType: "claude",
@@ -280,7 +280,7 @@ const sessions = [
   },
   {
     agentSessionId: "run-alpha-2",
-    folderId: "folder-amber",
+    folderId: "rb-alpha",
     status: "running",
     reviewState: "not_required",
     sessionType: "claude",
@@ -298,7 +298,7 @@ const sessions = [
   },
   {
     agentSessionId: "run-alpha-3",
-    folderId: "folder-amber",
+    folderId: "rb-alpha",
     status: "completed",
     reviewState: "not_required",
     sessionType: "claude",
@@ -315,7 +315,7 @@ const sessions = [
   },
   {
     agentSessionId: "run-alpha-child",
-    folderId: "folder-amber",
+    folderId: "rb-alpha",
     status: "completed",
     reviewState: "not_required",
     sessionType: "claude",
@@ -335,7 +335,7 @@ const sessions = [
   },
   {
     agentSessionId: "run-beta-1",
-    folderId: "folder-amber",
+    folderId: "rb-beta",
     status: "completed",
     reviewState: "not_required",
     sessionType: "claude",
@@ -411,39 +411,27 @@ const runSessions: Record<string, string[]> = {
   "rb-carry": [],
 };
 
-function taskSummary(id: string) {
-  const snapshot = tasks[id] as {
-    task: Record<string, unknown> & { status: string };
-    items: Array<{ status: string; assignee_agent_id: string | null }>;
-  };
-  const itemCounts = snapshot.items.reduce<Record<string, number>>((counts, item) => {
-    counts[item.status] = (counts[item.status] ?? 0) + 1;
-    return counts;
-  }, {});
+function fixtureFolder(id: string, folderPage: typeof pages.taskAlpha, parentFolderId: string | null, checklistEnabled: boolean) {
+  const snapshot = tasks[id] as ReturnType<typeof task> | undefined;
   return {
-    ...snapshot.task,
-    item_counts: itemCounts,
-    item_total: snapshot.items.length,
-    completed_item_count: itemCounts.completed ?? 0,
-    assignee: snapshot.items.find((item) => item.assignee_agent_id)?.assignee_agent_id ?? null,
+    id, name: folderPage.title, parentFolderId, sortOrder: 0, projectPageId: folderPage.id,
+    checklistEnabled, status: snapshot?.task.status ?? "open", archived: false,
+    version: snapshot?.task.version ?? 1, settings: {},
   };
 }
 
-function plannerTaskPayload(
-  taskPage: typeof pages.taskAlpha,
-  taskId: string,
-  sessionIds: readonly string[] = runSessions[taskId] ?? [],
-) {
+function plannerFolderPayload(folder: ReturnType<typeof fixtureFolder>, folderPage: typeof pages.taskAlpha) {
+  const snapshot = tasks[folder.id] as ReturnType<typeof task> | undefined;
+  const counts = (snapshot?.items ?? []).reduce<Record<string, number>>((result, item) => {
+    result[item.status] = (result[item.status] ?? 0) + 1;
+    return result;
+  }, {});
   return {
-    page: taskPage,
-    blocks: pageReads[taskPage.id].blocks,
-    task_id: taskId,
-    task: taskSummary(taskId),
-    project_page_id: pages.project.id,
-    sessions: sessionIds.slice(-1).map((agentSessionId) => ({ agent_session_id: agentSessionId })),
-    mounted_documents: taskPage.id === pages.taskAlpha.id
-      ? [{ block_id: "alpha-doc", page: pages.document }]
-      : [],
+    folder, page: folderPage,
+    itemCounts: counts,
+    itemTotal: snapshot?.items.length ?? 0,
+    completedItemCount: counts.completed ?? 0,
+    assignee: snapshot?.items.find((item) => item.assignee_agent_id)?.assignee_agent_id ?? null,
   };
 }
 
@@ -547,16 +535,22 @@ export async function installV3VisualQaRoutes(
     };
   });
   const unifiedFolders = [
-    { id: "folder-amber", name: pages.project.title, sortOrder: 0, parentFolderId: null,
-      projectPageId: pages.project.id, checklistEnabled: true, status: "open", archived: false,
-      version: 1, settings: {} },
-    { id: "folder-dashboard", name: pages.projectDashboard.title, sortOrder: 0, parentFolderId: "folder-amber",
-      projectPageId: pages.projectDashboard.id, checklistEnabled: false, status: "open", archived: false,
-      version: 1, settings: {} },
-    { id: "folder-ops", name: pages.projectOps.title, sortOrder: 1, parentFolderId: null,
-      projectPageId: pages.projectOps.id, checklistEnabled: false, status: "open", archived: false,
-      version: 1, settings: {} },
+    fixtureFolder("folder-amber", pages.project, null, true),
+    fixtureFolder("folder-dashboard", pages.projectDashboard, "folder-amber", false),
+    fixtureFolder("folder-ops", pages.projectOps, null, false),
+    fixtureFolder("rb-alpha", pages.taskAlpha, "folder-amber", true),
+    fixtureFolder("rb-beta", pages.taskBeta, "folder-amber", true),
+    fixtureFolder("rb-done", pages.taskDone, "folder-amber", true),
+    fixtureFolder("rb-carry", pages.carryover, "folder-amber", true),
+    ...(options.includeCreatedTaskWhen?.() === true
+      ? [fixtureFolder(pages.taskCreated.id, pages.taskCreated, "folder-amber", true)] : []),
   ];
+  const folderPageById = new Map([
+    ["folder-amber", pages.project], ["folder-dashboard", pages.projectDashboard],
+    ["folder-ops", pages.projectOps], ["rb-alpha", pages.taskAlpha],
+    ["rb-beta", pages.taskBeta], ["rb-done", pages.taskDone],
+    ["rb-carry", pages.carryover], [pages.taskCreated.id, pages.taskCreated],
+  ]);
   const unifiedSection = { id: "section-amber", folderId: "folder-amber", positionKey: "a",
     title: "진행", archived: false, version: 1, assigneeKind: null, assigneeAgentId: null,
     assigneeSessionId: null, assigneeUserId: null, createdSessionId: null, createdEventId: null,
@@ -613,35 +607,26 @@ export async function installV3VisualQaRoutes(
     if (path === "/api/config/settings" && request.method() === "GET") {
       return fulfillJson(route, { categories: [] });
     }
-    if (path === "/api/folders") return fulfillJson(route, {
-      folders: options.unifiedFolderView ? unifiedFolders : [
-        {
-          id: "folder-amber",
-          name: pages.project.title,
-          sortOrder: 0,
-          parentFolderId: null,
-          projectPageId: options.projectResolutionMode === "unlinked" ? null : pages.project.id,
-          ...(options.unifiedFolderView ? { checklistEnabled: true, status: "open" } : {}),
-        },
-        ...(options.contextChainPreview || options.unifiedFolderView ? [{
-          id: "folder-dashboard",
-          name: pages.projectDashboard.title,
-          sortOrder: 0,
-          parentFolderId: "folder-amber",
-          projectPageId: pages.projectDashboard.id,
-          ...(options.unifiedFolderView ? { checklistEnabled: false, status: "open" } : {}),
-        }] : []),
-        { id: "folder-ops", name: pages.projectOps.title, sortOrder: 1, parentFolderId: null, projectPageId: pages.projectOps.id, ...(options.unifiedFolderView ? { checklistEnabled: false, status: "open" } : {}) },
-      ],
-      sessions: {},
+    if (path === "/api/folders" && request.method() === "GET") return fulfillJson(route, {
+      folders: unifiedFolders.filter((folder) => !folder.archived), sessions: {},
     });
-    if (options.unifiedFolderView) {
+    if (path === "/api/folders" && request.method() === "POST") {
+      const payload = request.postDataJSON() as Record<string, unknown>;
+      options.onTaskCreate?.(payload);
+      const created = fixtureFolder("rb-cj-created", page("task-cj-created", String(payload.name ?? "새 업무")),
+        typeof payload.parentFolderId === "string" ? payload.parentFolderId : null, payload.checklistEnabled === true);
+      unifiedFolders.push(created);
+      return fulfillJson(route, { folder: created, created: true });
+    }
+    {
       const unifiedFolderMatch = /^\/api\/folders\/([^/]+)$/.exec(path);
       if (unifiedFolderMatch && request.method() === "GET") {
         const folder = unifiedFolders.find((candidate) => candidate.id === decodeURIComponent(unifiedFolderMatch[1]));
         if (!folder) return fulfillJson(route, { detail: "folder not found" }, 404);
-        return fulfillJson(route, { folder, sections: folder.checklistEnabled ? [unifiedSection] : [],
-          items: folder.checklistEnabled ? [unifiedItem] : [] });
+        const snapshot = tasks[folder.id] as ReturnType<typeof task> | undefined;
+        return fulfillJson(route, { folder, sections: snapshot ? [{ ...unifiedSection, folderId: folder.id }] : [unifiedSection],
+          items: snapshot ? snapshot.items.map((item) => ({ ...unifiedItem, id: item.id,
+            sectionId: "section-amber", title: item.title, status: item.status })) : [unifiedItem] });
       }
       const unifiedChildrenMatch = /^\/api\/folders\/([^/]+)\/children$/.exec(path);
       if (unifiedChildrenMatch && request.method() === "GET") {
@@ -650,37 +635,57 @@ export async function installV3VisualQaRoutes(
       }
       if (path === "/api/planner/today" && request.method() === "GET") {
         const daily = url.searchParams.get("date") === "2026-07-13" ? pageReads[pages.yesterday.id] : pageReads[pages.today.id];
-        return fulfillJson(route, { daily, folders: [unifiedFolders[0]].map((folder) => ({
-          folder, page: pages.project, itemCounts: { pending: 1 }, itemTotal: 1,
-          completedItemCount: 0, assignee: null })), memoBlocks: [], reviewSessionIds: [] });
+        const todayIds = url.searchParams.get("date") === "2026-07-13" ? ["rb-carry"] : ["rb-alpha", "rb-beta"];
+        return fulfillJson(route, { daily, folders: todayIds.map((id) => {
+          const folder = unifiedFolders.find((candidate) => candidate.id === id)!;
+          return plannerFolderPayload(folder, folderPageById.get(id)!);
+        }), memoBlocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
+        reviewSessionIds: qaSessions.filter((session) => session.reviewState === "needs_review")
+          .map((session) => session.agentSessionId) });
       }
       if (path === "/api/planner/starred-folders" && request.method() === "GET") {
-        return fulfillJson(route, { items: [{ folder: unifiedFolders[0], page: pages.project,
-          itemCounts: { pending: 1 }, itemTotal: 1, completedItemCount: 0, assignee: null }], nextCursor: null });
+        const alpha = unifiedFolders.find((candidate) => candidate.id === "rb-alpha")!;
+        return fulfillJson(route, { items: pages.taskAlpha.metadata.starred
+          ? [plannerFolderPayload(alpha, pages.taskAlpha)] : [], nextCursor: null });
       }
       const unifiedPlannerMatch = /^\/api\/planner\/folders\/([^/]+)(?:\/(subfolders|documents|sessions))?$/.exec(path);
       if (unifiedPlannerMatch && request.method() === "GET") {
         const folderId = decodeURIComponent(unifiedPlannerMatch[1]);
         const folder = unifiedFolders.find((candidate) => candidate.id === folderId);
         if (!folder) return fulfillJson(route, { detail: "folder not found" }, 404);
-        const folderPage = folderId === "folder-amber" ? pages.project
-          : folderId === "folder-dashboard" ? pages.projectDashboard : pages.projectOps;
+        if (unifiedPlannerMatch[2] === "sessions") {
+          runHistoryRequests += 1;
+          options.onRunHistoryRequest?.(runHistoryRequests);
+        } else {
+          plannerProjectRequests += 1;
+          options.onPlannerProjectRequest?.(plannerProjectRequests);
+        }
+        await delay(options.plannerDelayMs);
+        const folderPage = folderPageById.get(folderId)!;
         const offset = Number(url.searchParams.get("cursor") ?? "0");
         const folderSessions = folderId === "folder-amber"
           ? qaSessions.filter((session) => session.agentSessionId.startsWith("folder-history-")
             || session.agentSessionId === outsideTaskSession.agentSessionId)
-          : [];
-        const sessionSlice = { items: folderSessions.slice(offset, offset + 20).map((session) => ({ ...session, eventCount: 0 })),
-          nextCursor: offset + 20 < folderSessions.length ? String(offset + 20) : null };
+          : qaSessions.filter((session) => (runSessions[folderId] ?? []).includes(session.agentSessionId));
+        const alphaPaged = options.alphaRunHistoryPages && folderId === "rb-alpha";
+        const sessionPage = alphaPaged
+          ? (url.searchParams.get("cursor") ? folderSessions.slice(0, 1) : folderSessions.slice(1, 2))
+          : folderSessions.slice(offset, offset + 20);
+        const sessionSlice = { items: sessionPage.map((session) => ({ ...session, eventCount: 0 })),
+          nextCursor: alphaPaged
+            ? (url.searchParams.get("cursor") ? null : "alpha-older")
+            : offset + 20 < folderSessions.length ? String(offset + 20) : null };
         const subfolders = { items: unifiedFolders.filter((candidate) => candidate.parentFolderId === folderId), nextCursor: null };
         const documents = { items: folderId === "folder-amber" ? [pages.document, pages.documentTwo] : [], nextCursor: null };
         if (unifiedPlannerMatch[2] === "subfolders") return fulfillJson(route, subfolders);
         if (unifiedPlannerMatch[2] === "documents") return fulfillJson(route, documents);
         if (unifiedPlannerMatch[2] === "sessions") return fulfillJson(route, sessionSlice);
+        const snapshot = tasks[folderId] as ReturnType<typeof task> | undefined;
         return fulfillJson(route, { folder, page: folderPage,
           blocks: pageReads[folderPage.id]?.blocks ?? [],
-          sections: folder.checklistEnabled ? [unifiedSection] : [],
-          items: folder.checklistEnabled ? [unifiedItem] : [],
+          sections: snapshot ? [{ ...unifiedSection, folderId }] : [unifiedSection],
+          items: snapshot ? snapshot.items.map((item) => ({ ...unifiedItem, id: item.id,
+            sectionId: "section-amber", title: item.title, status: item.status })) : [unifiedItem],
           subfolders, documents, sessions: sessionSlice });
       }
     }
@@ -845,120 +850,8 @@ export async function installV3VisualQaRoutes(
       const selected = body.date === "2026-07-13" ? pages.yesterday : pages.today;
       return fulfillJson(route, { page: selected, created: false });
     }
-    if (path === "/api/tasks" && request.method() === "POST" && options.onTaskCreate) {
-      const payload = request.postDataJSON() as Record<string, unknown>;
-      options.onTaskCreate(payload);
-      return fulfillJson(route, {
-        task: { id: "rb-cj-created", board_item_id: "task:rb-cj-created", folder_id: payload.folder_id, title: payload.title, status: "open", version: 1 },
-        task_page: page("task-cj-created", String(payload.title ?? "새 업무")),
-        created: true,
-      });
-    }
-    if (path === "/api/planner/today" && request.method() === "GET") {
-      plannerTodayRequests += 1;
-      options.onPlannerTodayRequest?.(plannerTodayRequests);
-      await delay(options.plannerDelayMs);
-      const yesterday = url.searchParams.get("date") === "2026-07-13";
-      const daily = yesterday ? pageReads[pages.yesterday.id] : pageReads[pages.today.id];
-      return fulfillJson(route, {
-        daily,
-        projects: options.projectResolutionMode || options.emptyPlannerProjectsWhen?.() === true ? [] : [
-          pages.project,
-          ...(options.contextChainPreview ? [pages.projectDashboard] : []),
-          pages.projectOps,
-        ],
-        tasks: yesterday
-          ? [plannerTaskPayload(pages.carryover, "rb-carry")]
-          : [
-              ...(options.contextMenuParity && !hasDailyTaskMount(pages.taskAlpha.title)
-                ? []
-                : [{
-                    ...plannerTaskPayload(pages.taskAlpha, "rb-alpha", alphaRunIds()),
-                    ...(options.contextChainPreview
-                      ? { project_page_id: pages.projectDashboard.id }
-                      : {}),
-                  }]),
-              plannerTaskPayload(pages.taskBeta, "rb-beta"),
-              ...(options.includeCreatedTaskWhen?.() === true
-                ? [plannerTaskPayload(pages.taskCreated, pages.taskCreated.id)]
-                : []),
-            ],
-        memo_blocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
-        review_session_ids: yesterday ? [] : qaSessions
-          .filter((session) => session.reviewState === "needs_review")
-          .map((session) => session.agentSessionId),
-      });
-    }
-    if (path === "/api/planner/starred-tasks" && request.method() === "GET") {
-      return fulfillJson(route, {
-        items: [plannerTaskPayload(pages.taskAlpha, "rb-alpha", alphaRunIds())],
-        next_cursor: null,
-      });
-    }
     if (path === "/api/planner/daily-history" && request.method() === "GET") {
       return fulfillJson(route, { dates: ["2026-07-13"] });
-    }
-    const plannerTaskRunsMatch = /^\/api\/planner\/tasks\/([^/]+)\/runs$/.exec(path);
-    if (plannerTaskRunsMatch && request.method() === "GET") {
-      runHistoryRequests += 1;
-      options.onRunHistoryRequest?.(runHistoryRequests);
-      const taskPageId = decodeURIComponent(plannerTaskRunsMatch[1]);
-      if (options.alphaRunHistoryPages && taskPageId === pages.taskAlpha.id) {
-        const olderPage = url.searchParams.get("cursor") === "alpha-older";
-        return fulfillJson(route, {
-          items: [{ agent_session_id: olderPage ? "run-alpha-1" : "run-alpha-2" }],
-          next_cursor: olderPage ? null : "alpha-older",
-          total: 2,
-        });
-      }
-      const taskId = taskPageId === pages.taskAlpha.id
-        ? "rb-alpha"
-        : taskPageId === pages.taskBeta.id ? "rb-beta" : taskPageId === pages.taskDone.id ? "rb-done" : "rb-carry";
-      const baseIds = taskId === "rb-alpha" ? alphaRunIds() : (runSessions[taskId] ?? []);
-      const ids = [...new Set(options.successionPickerRuns && taskId === "rb-alpha"
-        ? [...baseIds, "run-alpha-3"]
-        : baseIds)].reverse();
-      return fulfillJson(route, {
-        items: ids.map((agentSessionId) => ({ agent_session_id: agentSessionId })),
-        next_cursor: null,
-        total: ids.length,
-      });
-    }
-    const plannerProjectMatch = /^\/api\/planner\/projects\/([^/]+)$/.exec(path);
-    if (plannerProjectMatch && request.method() === "GET") {
-      plannerProjectRequests += 1;
-      options.onPlannerProjectRequest?.(plannerProjectRequests);
-      await delay(options.plannerDelayMs);
-      const empty = options.emptyProjectPlannerWhen?.() === true;
-      return fulfillJson(route, {
-        project: pages.project,
-        tasks: {
-          items: empty ? [] : [
-            plannerTaskPayload(pages.taskAlpha, "rb-alpha", alphaRunIds()),
-            plannerTaskPayload(pages.taskBeta, "rb-beta"),
-            plannerTaskPayload(pages.taskDone, "rb-done"),
-            plannerTaskPayload(pages.carryover, "rb-carry"),
-          ],
-          next_cursor: null,
-        },
-        documents: { items: empty ? [] : [pages.document, pages.documentTwo], next_cursor: null },
-      });
-    }
-    const plannerLegacySessionsMatch = /^\/api\/planner\/projects\/([^/]+)\/legacy-sessions$/.exec(path);
-    if (plannerLegacySessionsMatch && request.method() === "GET") {
-      const projectPageId = decodeURIComponent(plannerLegacySessionsMatch[1]);
-      return fulfillJson(route, {
-        items: projectPageId === pages.project.id
-          ? [{ ...outsideTaskSession, eventCount: 0 }]
-          : [],
-        next_cursor: null,
-      });
-    }
-    const plannerProjectSliceMatch = /^\/api\/planner\/projects\/([^/]+)\/(tasks|documents)$/.exec(path);
-    if (plannerProjectSliceMatch && request.method() === "GET") {
-      return plannerProjectSliceMatch[2] === "tasks"
-        ? fulfillJson(route, { items: [], next_cursor: null })
-        : fulfillJson(route, { items: [], next_cursor: null });
     }
     if (path === "/api/pages" && request.method() === "GET") {
       const items = url.searchParams.get("starred") === "true"
@@ -1001,6 +894,16 @@ export async function installV3VisualQaRoutes(
           }
         : result;
       return fulfillJson(route, response);
+    }
+    const pageStarMatch = /^\/api\/pages\/([^/]+)\/starred$/.exec(path);
+    if (pageStarMatch && request.method() === "PATCH") {
+      const target = pageReads[decodeURIComponent(pageStarMatch[1])];
+      if (!target) return fulfillJson(route, { detail: "page not found" }, 404);
+      const payload = request.postDataJSON() as { starred: boolean };
+      target.page.metadata.starred = payload.starred;
+      target.page.version += 1;
+      return fulfillJson(route, { page: target.page, blocks: target.blocks,
+        operation: { id: `star-${target.page.id}-${target.page.version}` }, temp_id_mapping: {} });
     }
     const pageOperationsMatch = /^\/api\/pages\/([^/]+)\/operations$/.exec(path);
     if (pageOperationsMatch && request.method() === "POST") {
@@ -1170,20 +1073,23 @@ export async function installV3VisualQaRoutes(
         changed: true,
       });
     }
-    const taskStatusMatch = /^\/api\/tasks\/([^/]+)\/status$/.exec(path);
-    if (taskStatusMatch && request.method() === "POST") {
-      const snapshot = tasks[decodeURIComponent(taskStatusMatch[1])] as ReturnType<typeof task> | undefined;
-      if (!snapshot) return fulfillJson(route, { detail: "task not found" }, 404);
-      const payload = request.postDataJSON() as { status?: string };
-      snapshot.task.status = payload.status ?? snapshot.task.status;
-      snapshot.task.version += 1;
-      return fulfillJson(route, { ok: true, snapshot });
+    const folderStatusMatch = /^\/api\/folders\/([^/]+)\/status$/.exec(path);
+    if (folderStatusMatch && request.method() === "POST") {
+      const folder = unifiedFolders.find((candidate) => candidate.id === decodeURIComponent(folderStatusMatch[1]));
+      if (!folder) return fulfillJson(route, { detail: "folder not found" }, 404);
+      const payload = request.postDataJSON() as { status?: "open" | "completed" };
+      folder.status = payload.status ?? folder.status;
+      folder.version += 1;
+      return fulfillJson(route, { ok: true, snapshot: { folder, sections: [], items: [] } });
     }
-    const taskMatch = /^\/api\/tasks\/([^/]+)$/.exec(path);
-    if (taskMatch) {
-      await delay(options.plannerDelayMs);
-      const snapshot = tasks[decodeURIComponent(taskMatch[1])];
-      return snapshot ? fulfillJson(route, snapshot) : fulfillJson(route, { detail: "task not found" }, 404);
+    const checklistToggleMatch = /^\/api\/folders\/([^/]+)\/checklist-enabled$/.exec(path);
+    if (checklistToggleMatch && request.method() === "POST") {
+      const folder = unifiedFolders.find((candidate) => candidate.id === decodeURIComponent(checklistToggleMatch[1]));
+      if (!folder) return fulfillJson(route, { detail: "folder not found" }, 404);
+      const payload = request.postDataJSON() as { checklistEnabled?: boolean };
+      folder.checklistEnabled = payload.checklistEnabled === true;
+      folder.version += 1;
+      return fulfillJson(route, { ok: true, snapshot: { folder, sections: [], items: [] } });
     }
     if (path === "/api/board-items") {
       await delay(options.plannerDelayMs);

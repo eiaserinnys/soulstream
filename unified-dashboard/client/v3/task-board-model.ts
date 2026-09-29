@@ -41,7 +41,7 @@ export function taskBoardResourceTabId(resource: TaskBoardResourceSelection): st
     : `custom-view:${resource.resourceId}`;
 }
 
-export function openTaskBoardResource(
+export function openFolderWorkspaceResource(
   state: TaskBoardResourceState,
   resource: TaskBoardResourceSelection,
 ): TaskBoardResourceState {

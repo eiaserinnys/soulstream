@@ -82,15 +82,15 @@ test("PR-J/R: bounded planner reads, targeted run hydration, long-history sync, 
   ).toBe(true);
 
   const taskOpenReads = requestTimes(requests, [
-    "/api/planner/tasks/task-alpha/runs",
-    "/api/board-items?container_kind=task&container_id=rb-alpha",
+    "/api/planner/folders/rb-alpha",
+    "/api/board-items?folderId=rb-alpha",
   ]);
   expect(
     Math.max(...taskOpenReads) - Math.min(...taskOpenReads),
     "task detail lazy reads start together",
   ).toBeLessThan(150);
   expect(requests.some((mark) => mark.path.includes("/backlinks"))).toBe(false);
-  expect(requests.some((mark) => mark.path.startsWith("/api/tasks/"))).toBe(false);
+  expect(requests.some((mark) => mark.path.startsWith("/api/folders/") && mark.path !== "/api/folders/rb-alpha")).toBe(false);
   expect(requests.some((mark) => mark.path.includes("task-beta") && mark.path !== "/api/pages/task-beta")).toBe(false);
 
   await page.screenshot({
@@ -157,8 +157,8 @@ test("PR-J/R: bounded planner reads, targeted run hydration, long-history sync, 
       runSwitchCount: 3,
       taskOpenLazyReadSpreadMs: Math.max(...taskOpenReads) - Math.min(...taskOpenReads),
       unboundedPageRequestCount: requests.filter((mark) => mark.path === "/api/pages" && mark.query.includes("limit=")).length,
-      starredTaskIndexRequestCount: requests.filter((mark) => mark.path === "/api/planner/starred-tasks").length,
-      taskRunHistoryRequestCount: requests.filter((mark) => mark.path === "/api/planner/tasks/task-alpha/runs").length,
+      starredTaskIndexRequestCount: requests.filter((mark) => mark.path === "/api/planner/starred-folders").length,
+      taskRunHistoryRequestCount: requests.filter((mark) => mark.path === "/api/planner/folders/rb-alpha").length,
     },
     comparison: {
       basis: "bounded planner BFF and lazy task-detail request trace",

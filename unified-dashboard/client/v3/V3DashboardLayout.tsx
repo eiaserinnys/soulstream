@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type BoardContainerRef, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type BoardContainerRef, type SessionSummary } from "@seosoyoung/soul-ui";
 import { clampDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_NAVIGATION_DEFAULT_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX, readV3NavigationWidth } from "./v3-layout-metrics";
@@ -186,7 +186,7 @@ function V3DashboardContent() {
   );
   const selectedFolder = catalog?.folders.find((folder) => folder.id === selectedFolderId) ?? null;
   const childFolders = useMemo(() => (catalog?.folders ?? []).filter(
-    (folder) => folder.parentFolderId === selectedFolderId,
+    (folder) => !folder.archived && folder.parentFolderId === selectedFolderId,
   ), [catalog?.folders, selectedFolderId]);
   const knownWorkspaceTask = currentTasks.find((task) => task.folderId === selectedFolderId)
     ?? (selectedFolderSnapshot?.folderId === selectedFolderId ? selectedFolderSnapshot : null);
@@ -209,7 +209,11 @@ function V3DashboardContent() {
     currentTasks,
     acknowledgedReviewIds,
     onSelectTask: async (task) => {
-      await selectFolder(catalog?.folders.find((folder) => folder.id === task.folderId) ?? null, task);
+      const known = catalog?.folders.find((folder) => folder.id === task.folderId);
+      const snapshot = known ? null : await fetchFolderSnapshot(task.folderId);
+      const folder = known ?? (snapshot ? { ...snapshot.folder, sortOrder: 0 } : null);
+      if (!folder) throw new Error("세션의 폴더를 찾을 수 없습니다");
+      await selectFolder(folder, task);
     },
     onClearFolder: clearProject,
     setChatOpen,
@@ -643,7 +647,7 @@ function V3DashboardContent() {
           onCloseWorkspace={closeWorkspace}
           onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }}
           onOpenSession={openSession}
-          onRenameTaskTitle={(title) => workspaceTask ? plannerActions.renameTaskTitle(workspaceTask, title) : Promise.reject(new Error("연결된 업무가 없습니다"))}
+          onRenameTaskTitle={(title) => workspaceTask ? plannerActions.renameFolderPageTitle(workspaceTask, title) : Promise.reject(new Error("연결된 업무가 없습니다"))}
           onSaveDescription={saveDescription}
           onRenameSession={plannerActions.renameSession}
           onDeleteSessions={plannerActions.deleteSessions}

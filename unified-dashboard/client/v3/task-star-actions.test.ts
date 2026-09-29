@@ -24,7 +24,7 @@ describe("task star actions", () => {
       starred: true,
       expectedVersion: 7,
       idempotencyKey: "task-star-1",
-      reason: "v3 planner task star toggle",
+      reason: "v3 planner folder star toggle",
     });
   });
 });

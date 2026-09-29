@@ -19,13 +19,13 @@ export interface PageSessionDefaults {
   sourceBlockId: string;
 }
 
-export type TaskSessionDefaultsIdFactory = (prefix: string) => string;
+export type FolderSessionDefaultsIdFactory = (prefix: string) => string;
 
-export async function renameTaskTitle(
+export async function renameFolderPageTitle(
   api: PageApiClient,
   pageId: string,
   titleValue: string,
-  idFactory: () => string = () => `v3-task-title-${crypto.randomUUID()}`,
+  idFactory: () => string = () => `v3-folder-title-${crypto.randomUUID()}`,
 ): Promise<PageDto> {
   const title = titleValue.trim();
   if (!title) throw new Error("업무 제목을 입력해야 합니다");
@@ -35,7 +35,7 @@ export async function renameTaskTitle(
     expectedVersion: current.page.version,
     expectedStateVector: decodeBase64(current.state_vector),
     idempotencyKey: idFactory(),
-    reason: "v3 task identity title rename",
+    reason: "v3 folder page title rename",
     operations: [{ op: "rename_page", title }],
   });
   return result.page;
@@ -53,7 +53,7 @@ export async function fetchPageSessionDefaults(
   return await response.json() as PageSessionDefaults | null;
 }
 
-export async function saveTaskSessionDefaults(
+export async function saveFolderSessionDefaults(
   api: PageApiClient,
   pageId: string,
   input: {
@@ -62,7 +62,7 @@ export async function saveTaskSessionDefaults(
     nodeId: string | null;
     modelPreset: string | null;
   },
-  idFactory: TaskSessionDefaultsIdFactory = (prefix) => `${prefix}-${crypto.randomUUID()}`,
+  idFactory: FolderSessionDefaultsIdFactory = (prefix) => `${prefix}-${crypto.randomUUID()}`,
 ): Promise<{ blocks: Awaited<ReturnType<PageApiClient["getPage"]>>["blocks"] }> {
   const properties = {
     agentId: input.agentId?.trim() || null,
@@ -98,13 +98,13 @@ export async function saveTaskSessionDefaults(
     expectedVersion: current.page.version,
     expectedStateVector: decodeBase64(current.state_vector),
     idempotencyKey: idFactory("session-defaults-save"),
-    reason: "v3 task session defaults save",
+    reason: "v3 folder session defaults save",
     operations: [operation],
   });
   return { blocks: result.blocks };
 }
 
-export async function saveTaskDescription(
+export async function saveFolderDescription(
   api: PageApiClient,
   pageId: string,
   markdown: string,
@@ -122,12 +122,12 @@ export async function saveTaskDescription(
     expectedVersion: current.page.version,
     expectedStateVector: decodeBase64(current.state_vector),
     idempotencyKey: `v3-description-${crypto.randomUUID()}`,
-    reason: "v3 task description edit",
+    reason: "v3 folder description edit",
     operations: mutation.operations,
   });
 }
 
-export async function addTaskContextBlocks(
+export async function addFolderContextBlocks(
   api: PageApiClient,
   pageId: string,
   selections: readonly ContextPickerSelection[],
@@ -145,13 +145,13 @@ export async function addTaskContextBlocks(
     expectedVersion: current.page.version,
     expectedStateVector: decodeBase64(current.state_vector),
     idempotencyKey: `v3-context-apply-${crypto.randomUUID()}`,
-    reason: "v3 task context picker apply",
+    reason: "v3 folder context picker apply",
     operations,
   });
   return { blocks: result.blocks };
 }
 
-export async function createTaskPageAnchor(
+export async function createFolderPageAnchor(
   api: PageApiClient,
   pageId: string,
 ): Promise<SessionPageAnchor> {
@@ -217,7 +217,7 @@ export async function promoteMountedDocument(
   });
 }
 
-export async function unmountTaskDocument(
+export async function unmountFolderDocument(
   api: PageApiClient,
   taskPageId: string,
   mountBlockId: string,
@@ -231,7 +231,7 @@ export async function unmountTaskDocument(
     expectedVersion: current.page.version,
     expectedStateVector: decodeBase64(current.state_vector),
     idempotencyKey: idFactory(),
-    reason: "v3 task document unmount",
+    reason: "v3 folder document unmount",
     operations: [{ op: "delete_block_subtree", block_id: mountBlockId }],
   });
 }

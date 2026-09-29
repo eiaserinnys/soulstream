@@ -33,7 +33,6 @@ export function shouldLoadMoreAfterSessionMove({
   targetFolderId,
 }: SessionMoveLoadMoreState): boolean {
   if (sessionIds.length === 0) return false;
-  if (viewMode === "tasks") return false;
 
   if (!catalog) {
     if (viewMode === "folder") return targetFolderId !== selectedFolderId;

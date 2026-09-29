@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   PlannerFolderCreationError,
   createPlannerFolder,
-  plannerTaskCreationErrorLabel,
+  plannerFolderCreationErrorLabel,
   type PlannerFolderCreationPort,
 } from "./planner-task-creation";
 
@@ -59,13 +59,13 @@ describe("createPlannerFolder", () => {
     }, port).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(PlannerFolderCreationError);
-    expect(failure).toMatchObject({ phase: "task" });
+    expect(failure).toMatchObject({ phase: "folder" });
     expect(port.mountPage).not.toHaveBeenCalled();
   });
 
   it("owns the user-facing label for each creation phase", () => {
-    expect(plannerTaskCreationErrorLabel(new PlannerFolderCreationError("page", "offline")))
+    expect(plannerFolderCreationErrorLabel(new PlannerFolderCreationError("page", "offline")))
       .toBe("업무 페이지 생성");
-    expect(plannerTaskCreationErrorLabel(new Error("offline"))).toBe("새 업무 생성");
+    expect(plannerFolderCreationErrorLabel(new Error("offline"))).toBe("새 업무 생성");
   });
 });

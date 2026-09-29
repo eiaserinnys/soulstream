@@ -12,7 +12,7 @@ import {
   estimateContextPayload,
   type ContextPickerSelection,
 } from "./context-picker-model";
-import { addTaskContextBlocks } from "./task-workspace-api";
+import { addFolderContextBlocks } from "./task-workspace-api";
 import {
   SelectedAtomOption,
   withAtomOptions,
@@ -95,7 +95,7 @@ export function TaskContextPicker({
     setPending(true);
     setError(null);
     try {
-      const result = await addTaskContextBlocks(api, taskPageId, choices);
+      const result = await addFolderContextBlocks(api, taskPageId, choices);
       onBlocksChanged(result.blocks);
       onClose();
     } catch (caught) {

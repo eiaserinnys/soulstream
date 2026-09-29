@@ -201,7 +201,7 @@ function session(agentSessionId: string, status: "running" | "completed"): Sessi
 }
 
 const projectFolders: CatalogFolder[] = [
-  { checklistEnabled: false, status: "open", version: 1, archived: false, id: "project-folder", name: "소울스트림", sortOrder: 0, projectPageId: "project-page" },
+  { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "project-folder", name: "소울스트림", sortOrder: 0, projectPageId: "project-page" },
 ];
 
 function affiliationBoardItems(sessionId: string): CatalogBoardItem[] {

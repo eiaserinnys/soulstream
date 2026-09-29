@@ -19,7 +19,7 @@ import type { FolderMoveTarget } from "./task-move-targets";
 import { togglePlannerFolderToday } from "./task-card-actions";
 import { setFolderStatus } from "./folder-workspace-api";
 import { clearFolderStarChange, publishFolderStarChange } from "./task-star-store";
-import { renameTaskTitle as renameFolderIdentityTitle } from "./task-workspace-api";
+import { renameFolderPageTitle as renameFolderIdentityTitle } from "./task-workspace-api";
 import { runOptimisticTodayMutation } from "./today-task-state";
 import { errorText } from "./v3-dashboard-utils";
 import { plannerEntryForFolder } from "./folder-workspace-model";
@@ -139,7 +139,7 @@ export function useV3PlannerActions({
     }
   }, [notify, notifyWriteFailure, queryClient]);
 
-  const renameTaskTitle = useCallback(async (task: PlannerFolder, title: string) => {
+  const renameFolderPageTitle = useCallback(async (task: PlannerFolder, title: string) => {
     const mutationId = publishFolderStarChange({
       page: { ...task.page, title },
       starred: task.page.metadata.starred === true,
@@ -204,5 +204,5 @@ export function useV3PlannerActions({
     }
   }, [api, folders, moveTaskProjectInPlanner, notify, notifyWriteFailure, refreshTask]);
 
-  return { completeTask, toggleTaskToday, completeStarredFolder, toggleStarredFolderToday, renameTaskTitle, renameSession, deleteSessions, moveSession, moveTaskProject };
+  return { completeTask, toggleTaskToday, completeStarredFolder, toggleStarredFolderToday, renameFolderPageTitle, renameSession, deleteSessions, moveSession, moveTaskProject };
 }

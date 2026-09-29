@@ -48,7 +48,7 @@ export function plannerProgress(snapshot: FolderSnapshot | null): number | null 
   return Math.round((completed / snapshot.items.length) * 100);
 }
 
-export function taskContextCount(blocks: readonly BlockDto[]): number {
+export function folderContextCount(blocks: readonly BlockDto[]): number {
   return blocks.filter((block) => (
     block.block_type !== "paragraph" && block.block_type !== "folder_ref"
   )).length;

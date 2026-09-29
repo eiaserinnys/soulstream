@@ -118,22 +118,7 @@ async function preparePage(
     });
   }, theme);
   await installV3VisualQaRoutes(page);
-  await page.route("**/api/tasks/*", async (route) => {
-    const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop() ?? "");
-    if (["rb-alpha", "rb-beta", "rb-done", "rb-carry"].includes(id)) {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        task: { id, title: id, status: "open", archived: false, version: 1 },
-        sections: [],
-        items: [],
-      }),
-    });
-  });
+
 }
 
 function collectErrors(page: Page): string[] {

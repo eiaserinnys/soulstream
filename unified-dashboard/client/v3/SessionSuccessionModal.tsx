@@ -28,7 +28,7 @@ import {
   type SuccessionSessionOption,
 } from "./session-succession-model";
 import {
-  createTaskPageAnchor,
+  createFolderPageAnchor,
   type PageSessionDefaults,
 } from "./task-workspace-api";
 import { V3ErrorNotice } from "./V3ErrorNotice";
@@ -121,7 +121,7 @@ export function SessionSuccessionModal({
   });
   const effortSelectId = useId();
   const presetHasDefaultEffort = Boolean(selectedModelPresetInfo?.default_effort);
-  const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
+  const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createFolderPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const uploadUrl = selectedNodeId
@@ -174,7 +174,7 @@ export function SessionSuccessionModal({
     setError(null);
     try {
       const pageAnchor = contextSelection.needsPageAnchor
-        ? preparedPageAnchor ?? await createTaskPageAnchor(api, taskPageId)
+        ? preparedPageAnchor ?? await createFolderPageAnchor(api, taskPageId)
         : null;
       if (pageAnchor && !preparedPageAnchor) setPreparedPageAnchor(pageAnchor);
       const succession = buildSuccessionCreateOptions({

@@ -56,11 +56,10 @@ for (const theme of ["dark", "light"] as const) {
     await page.waitForLoadState("networkidle");
     await capture(page, outputDir, "01-entry");
 
-    expect(apiRequests(requests, "/api/planner/starred-tasks")).toHaveLength(1);
+    expect(apiRequests(requests, "/api/planner/starred-folders")).toHaveLength(1);
     expect(requests.some((url) => /\/api\/pages\?.*limit=/.test(url))).toBe(false);
     expect(apiRequests(requests, "/api/nodes")).toHaveLength(0);
-    expect(requests.some((url) => /\/api\/sessions\?.*(?:limit=0|sessionScope=all)/.test(url))).toBe(false);
-    expect(apiRequests(requests, "/api/planner/tasks/task-alpha/runs")).toHaveLength(0);
+    expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(0);
 
     await page.getByTestId("v3-all-projects")
       .getByRole("button", { name: fixtureTitles.project, exact: true })
@@ -72,13 +71,13 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 })).toBeVisible();
     await expect(page.getByText("1/2회", { exact: true })).toBeVisible();
     await expect(page.getByTestId("v3-load-more-runs")).toBeVisible();
-    expect(apiRequests(requests, "/api/planner/tasks/task-alpha/runs")).toHaveLength(1);
+    expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(0);
     await capture(page, outputDir, "03-task-latest-run");
 
     await page.getByTestId("v3-load-more-runs").click();
     await expect(page.getByText("2회", { exact: true })).toBeVisible();
     await expect(page.getByTestId("v3-load-more-runs")).toBeHidden();
-    expect(apiRequests(requests, "/api/planner/tasks/task-alpha/runs")).toHaveLength(2);
+    expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(1);
     await capture(page, outputDir, "04-task-full-history");
 
     await page.getByRole("button", { name: "← 오늘로" }).click();

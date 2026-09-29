@@ -48,10 +48,10 @@ describe("🔴29 portaled context menus inherit theme foreground", () => {
 describe("🔴23 task board layout persistence slice", () => {
   it("merges partial patches per task key and includes them in persist partialize", () => {
     const store = useDashboardStore.getState();
-    store.setTaskBoardLayout("task-refine-A", { resourceWidth: 300, chatWidth: 420 });
-    store.setTaskBoardLayout("task-refine-A", { overlayExpanded: true, overlayOffsetX: 24 });
+    store.setFolderBoardLayout("task-refine-A", { resourceWidth: 300, chatWidth: 420 });
+    store.setFolderBoardLayout("task-refine-A", { overlayExpanded: true, overlayOffsetX: 24 });
 
-    const layout = useDashboardStore.getState().taskBoardLayouts["task-refine-A"];
+    const layout = useDashboardStore.getState().folderBoardLayouts["task-refine-A"];
     expect(layout).toMatchObject({
       resourceWidth: 300,
       chatWidth: 420,
@@ -61,18 +61,18 @@ describe("🔴23 task board layout persistence slice", () => {
 
     const persisted = useDashboardStore.persist
       .getOptions()
-      .partialize?.(useDashboardStore.getState()) as { taskBoardLayouts?: Record<string, unknown> };
-    expect(persisted).toHaveProperty("taskBoardLayouts");
-    expect(persisted.taskBoardLayouts?.["task-refine-A"]).toMatchObject({ resourceWidth: 300 });
+      .partialize?.(useDashboardStore.getState()) as { folderBoardLayouts?: Record<string, unknown> };
+    expect(persisted).toHaveProperty("folderBoardLayouts");
+    expect(persisted.folderBoardLayouts?.["task-refine-A"]).toMatchObject({ resourceWidth: 300 });
   });
 
   it("is a no-op when the patch does not change existing values", () => {
     const store = useDashboardStore.getState();
-    store.setTaskBoardLayout("task-refine-B", { boardZoom: 1 });
-    const before = useDashboardStore.getState().taskBoardLayouts;
-    store.setTaskBoardLayout("task-refine-B", { boardZoom: 1 });
+    store.setFolderBoardLayout("task-refine-B", { boardZoom: 1 });
+    const before = useDashboardStore.getState().folderBoardLayouts;
+    store.setFolderBoardLayout("task-refine-B", { boardZoom: 1 });
     // 동일 값 patch는 새 객체를 만들지 않아야 한다(불필요 persist/리렌더 방지).
-    expect(useDashboardStore.getState().taskBoardLayouts).toBe(before);
+    expect(useDashboardStore.getState().folderBoardLayouts).toBe(before);
   });
 });
 

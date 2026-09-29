@@ -8,7 +8,7 @@ import { type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   derivePlannerFolderStatus,
-  taskContextCount,
+  folderContextCount,
   type PlannerFolderStatus,
 } from "./planner-model";
 
@@ -269,7 +269,7 @@ export async function loadPlannerFolderById(
     completedItemCount: payload.items.filter((item) => item.status === "completed").length,
     assignee: null }),
     blocks: payload.blocks,
-    contextCount: taskContextCount(payload.blocks),
+    contextCount: folderContextCount(payload.blocks),
     sessionIds: payload.sessions.items.map((session) => session.agentSessionId),
   };
 }

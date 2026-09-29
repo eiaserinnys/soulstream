@@ -1,7 +1,7 @@
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 
 import type { PlannerFolder, ProjectPlannerData } from "./planner-data";
-import { derivePlannerFolderStatus, taskContextCount } from "./planner-model";
+import { derivePlannerFolderStatus, folderContextCount } from "./planner-model";
 
 export function useFolderWorkspaceFolder({ folder, aggregate, knownFolder }: {
   folder: CatalogFolder | null;
@@ -20,7 +20,7 @@ export function useFolderWorkspaceFolder({ folder, aggregate, knownFolder }: {
         folderId: folder.id,
         status: derivePlannerFolderStatus({ folder: aggregate.folder, items: aggregate.items }),
         assignee: knownFolder?.assignee ?? "담당 미지정",
-        contextCount: taskContextCount(aggregate.blocks),
+        contextCount: folderContextCount(aggregate.blocks),
         progress: aggregate.items.length ? Math.round(100 * completed / aggregate.items.length) : null,
         parentFolderId: aggregate.folder.parentFolderId ?? null,
         sessionIds: aggregate.sessions.items.map((session) => session.agentSessionId),

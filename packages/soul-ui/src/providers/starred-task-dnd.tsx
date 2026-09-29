@@ -3,7 +3,7 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 
 export interface StarredFolderDragData {
-  type: "starred-task";
+  type: "starred-folder";
   pageIds: string[];
 }
 
@@ -18,7 +18,7 @@ export function reorderStarredFolderIds(
   return arrayMove([...pageIds], fromIndex, overIndex);
 }
 
-export function StarredTaskSortableContext({
+export function StarredFolderSortableContext({
   ids,
   children,
 }: {
@@ -32,7 +32,7 @@ export function StarredTaskSortableContext({
   );
 }
 
-export function useStarredTaskDragSurface({
+export function useStarredFolderDragSurface({
   id,
   pageIds,
   disabled = false,
@@ -41,7 +41,7 @@ export function useStarredTaskDragSurface({
   pageIds: string[];
   disabled?: boolean;
 }) {
-  const data: StarredFolderDragData = { type: "starred-task", pageIds };
+  const data: StarredFolderDragData = { type: "starred-folder", pageIds };
   const sortable = useSortable({ id, disabled, data });
 
   return {

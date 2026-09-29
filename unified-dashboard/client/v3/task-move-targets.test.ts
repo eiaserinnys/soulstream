@@ -30,9 +30,9 @@ describe("task move targets", () => {
       getPage: vi.fn(async (pageId: string) => snapshots.get(pageId)!),
     } as unknown as PageApiClient;
     const folders = [
-      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "rb-remote", name: "화면 밖 업무", projectPageId: "remote-task", sortOrder: 0 },
-      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "rb-current", name: "현재 업무", projectPageId: "current", sortOrder: 1 },
-      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-doc", name: "일반 문서", projectPageId: "document", sortOrder: 2 },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "rb-remote", name: "화면 밖 업무", projectPageId: "remote-task", sortOrder: 0 },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "rb-current", name: "현재 업무", projectPageId: "current", sortOrder: 1 },
+      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "folder-doc", name: "일반 문서", projectPageId: "document", sortOrder: 2 },
     ];
 
     await expect(searchFolderMoveTargets(api, "  화면 밖  ", "rb-current", folders))
