@@ -147,9 +147,9 @@ describe("folder and checklist MCP contract", () => {
   it("passes null to the host when listing root folders", async () => {
     const listChildFolders = vi.fn(async () => ({ items: [{ id: "folder-1" }], nextCursor: null }));
     const client = await clientFor(runtime({ listChildFolders }));
-    const result = await client.callTool({ name: "list_child_folders", arguments: {} });
+    const result = await client.callTool({ name: "list_child_folders", arguments: { cursor: "20" } });
     expect(result.isError).not.toBe(true);
-    expect(listChildFolders).toHaveBeenCalledWith(expect.objectContaining({ folderId: null }));
+    expect(listChildFolders).toHaveBeenCalledWith({ folderId: null, includeArchived: false, limit: 100, cursor: "20" });
   });
 
   it("moves board items and creates markdown with one folder_id", async () => {

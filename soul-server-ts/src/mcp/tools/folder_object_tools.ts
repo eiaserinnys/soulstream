@@ -36,10 +36,10 @@ export function registerFolderObjectTools(server: McpServer, runtime: McpRuntime
   })));
 
   server.registerTool("list_child_folders", {
-    description: "지정한 폴더의 모든 직접 자식 폴더를 조회한다. checklist_enabled와 status를 포함한다.",
-    inputSchema: { folder_id: z.string().nullable().optional(), include_archived: z.boolean().default(false), limit: z.number().int().min(1).max(500).default(100) },
-  }, async ({ folder_id, include_archived, limit }) => {
-    try { return jsonResult(await getFolderService(runtime).listChildFolders({ folderId: folder_id ?? null, includeArchived: include_archived, limit })); }
+    description: "직접 자식 폴더를 페이지 단위로 조회한다. folder_id=null이면 최상위 폴더를 조회한다.",
+    inputSchema: { folder_id: z.string().nullable().optional(), include_archived: z.boolean().default(false), limit: z.number().int().min(1).max(200).default(100), cursor: z.string().optional() },
+  }, async ({ folder_id, include_archived, limit, cursor }) => {
+    try { return jsonResult(await getFolderService(runtime).listChildFolders({ folderId: folder_id ?? null, includeArchived: include_archived, limit, ...(cursor !== undefined ? { cursor } : {}) })); }
     catch (err) { return errorResult(errorMessage(err)); }
   });
 
@@ -76,9 +76,9 @@ export function registerFolderObjectTools(server: McpServer, runtime: McpRuntime
 
   server.registerTool("list_folder_operations", {
     description: "폴더와 체크리스트의 감사 기록을 최신순으로 조회한다.",
-    inputSchema: { folder_id: z.string().min(1), limit: z.number().int().min(1).max(200).default(50) },
-  }, async ({ folder_id, limit }) => {
-    try { return jsonResult(await getFolderService(runtime).listFolderOperations(folder_id, limit)); }
+    inputSchema: { folder_id: z.string().min(1), limit: z.number().int().min(1).max(200).default(50), cursor: z.string().optional() },
+  }, async ({ folder_id, limit, cursor }) => {
+    try { return jsonResult(await getFolderService(runtime).listFolderOperations(folder_id, limit, cursor)); }
     catch (err) { return errorResult(errorMessage(err)); }
   });
 

@@ -25,7 +25,7 @@ export class FolderService {
     }
   }
 
-  async listChildFolders(params: { folderId: string | null; includeArchived?: boolean; limit?: number }) {
+  async listChildFolders(params: { folderId: string | null; includeArchived?: boolean; limit?: number; cursor?: string }) {
     return await this.request("list_child_folders", params);
   }
 
@@ -33,8 +33,8 @@ export class FolderService {
     return await this.request("list_my_turn_items", params);
   }
 
-  async listFolderOperations(folderId: string, limit?: number) {
-    return await this.request("list_folder_operations", { folderId, limit });
+  async listFolderOperations(folderId: string, limit?: number, cursor?: string) {
+    return await this.request("list_folder_operations", { folderId, limit, cursor });
   }
 
   async createFolder(params: FolderActorParams & {
