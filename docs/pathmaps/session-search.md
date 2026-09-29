@@ -14,4 +14,4 @@ The provider fuses the filtered A0 list and the top 100 filtered document candid
 
 Jev completes in one request unless the fixed payload limits require two concurrent batches. There are no retries. Missing key, malformed response, or request failure returns RRF order with null relevance and a partial semantic search status (`timeout` or `error`). The index reports its own partial source status if refresh or candidate filtering fails.
 
-The response retains `query_expansion: { status: "skipped", latency_ms: 0 }`; `original_body` and `semantic_body` remain deferred. `session_document` and `rerank` report the new stages. The dashboard displays the returned `best_match.match_source`; this PR does not change its interface.
+The response retains `query_expansion: { status: "skipped", latency_ms: 0 }`; `original_body` and `semantic_body` remain deferred. `session_document` and `rerank` report the new stages. The dashboard session row keeps its existing session label and excerpt; `best_match.match_source` is carried in the response but does not select a new UI label in this PR.
