@@ -2,6 +2,7 @@ export const BLOCKED_CHILD_PROCESS_API_KEYS = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "TURN_SUMMARY_OPENAI_KEY",
+  "TYPESAFE_API_KEY",
 ] as const;
 
 export type BlockedChildProcessApiKey =

@@ -67,6 +67,12 @@ export type CogitoSearchResponse = {
       metadata_prompt_tokens?: { status: "complete" | "partial" | "deferred"; reason?: "timeout" | "cancelled" | "error" };
       original_body: { status: "complete" | "partial" | "deferred"; reason?: "timeout" | "cancelled" | "error" };
       semantic_body: { status: "complete" | "partial" | "deferred"; reason?: "timeout" | "cancelled" | "error" };
+      session_document?: { status: "complete" | "partial"; reason?: "timeout" | "cancelled" | "error" };
+      rerank?: {
+        status: "complete" | "partial";
+        reason?: "timeout" | "error";
+        latency_ms: number;
+      };
     };
     query_expansion: {
       status: "expanded" | "skipped" | "partial";

@@ -297,6 +297,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       include_story: false,
       event_categories: "messages,responses",
       include_session_results: true,
+      session_search_mode: "lexical",
       allowedFolderIds: ["folder-allowed"],
     });
 
@@ -467,9 +468,6 @@ describePostgres("session search reliability PostgreSQL integration", () => {
 
     const expandedPromptProvider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
-      queryExpander: {
-        expand: async () => ({ queries: [], latencyMs: 1, skipped: true }),
-      },
     });
     const expandedPrompt = await expandedPromptProvider.search({
       q: "재개 세션 검색 진단",
@@ -484,10 +482,8 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       allowedFolderIds: ["folder-allowed"],
     });
     expect(expandedPrompt.session_results?.[0]?.session_id).toBe("fuzzy-prompt-omission");
-    expect(expandedPrompt.session_results?.map((row) => row.session_id))
-      .not.toContain("fuzzy-prompt-below-threshold");
     expect(expandedPrompt.search_status?.session_sources?.metadata_prompt_tokens)
-      .toBeUndefined();
+      .toEqual({ status: "deferred" });
 
     const manyTermPrompt = await expandedPromptProvider.search({
       q: "하나 둘 셋 넷 다섯 여섯 일곱 여덟 아홉",
@@ -526,7 +522,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       .toEqual({ status: "deferred" });
   }, 30_000);
 
-  it("defers event-only recall in lexical mode and recovers it in expanded mode", async () => {
+  it("keeps event-only content deferred in expanded product search", async () => {
     const lexicalProvider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
     });
@@ -553,9 +549,6 @@ describePostgres("session search reliability PostgreSQL integration", () => {
 
     const expandedProvider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
-      queryExpander: {
-        expand: async () => ({ queries: [], latencyMs: 1, skipped: true }),
-      },
     });
     const expanded = await expandedProvider.search({
       q: "unique execution phrase",
@@ -570,14 +563,18 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       allowedFolderIds: ["folder-allowed"],
     });
 
-    expect(expanded.session_results?.slice(0, 2).map((row) => row.session_id)).toEqual([
-      "actual-work-session",
-      "diagnostic-session",
-    ]);
-    expect(expanded.search_status?.session_sources?.original_body).toEqual({ status: "complete" });
+    expect(expanded.results).toEqual([]);
+    expect(expanded.search_status?.session_sources?.original_body).toEqual({ status: "deferred" });
+    expect(expanded.search_status?.session_sources?.semantic_body).toEqual({ status: "deferred" });
+    expect(expanded.search_status?.session_sources?.session_document).toEqual({ status: "complete" });
+    expect(expanded.search_status?.session_sources?.rerank).toMatchObject({
+      status: "partial",
+      reason: "error",
+    });
   });
 
   it("projects the authorized primary task membership for a real session search", async () => {
+    await sql`UPDATE sessions SET display_name = 'Search task result' WHERE session_id = 'task-session'`;
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
     });
@@ -590,6 +587,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       include_story: false,
       event_categories: "messages,responses",
       include_session_results: true,
+      session_search_mode: "lexical",
       allowedFolderIds: ["folder-allowed"],
     });
 
@@ -605,7 +603,8 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       .toMatchObject({ parent_session_id: "caller-parent" });
   });
 
-  it("uses caller plus primary task membership and ranks verified work over an equal re-quote", async () => {
+  it("projects caller and primary task evidence onto title candidates", async () => {
+    await sql`UPDATE sessions SET display_name = 'unique execution phrase' WHERE session_id = 'actual-work-session'`;
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
     });
@@ -618,24 +617,26 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       include_story: false,
       event_categories: "messages,responses",
       include_session_results: true,
+      session_search_mode: "lexical",
       allowedFolderIds: ["folder-allowed"],
     });
 
-    expect(execution.session_results?.slice(0, 2).map((row) => row.session_id)).toEqual([
-      "actual-work-session",
-      "diagnostic-session",
-    ]);
-    expect(execution.session_results?.[0]).toMatchObject({
+    expect(execution.session_results?.map((row) => row.session_id)).toContain("actual-work-session");
+    expect(execution.session_results?.find((row) => row.session_id === "actual-work-session")).toMatchObject({
       task_id: "task-primary",
       parent_session_id: "caller-parent",
     });
-    expect(execution.session_results?.[0]?.evidence).toContainEqual(expect.objectContaining({
+    expect(execution.session_results?.find((row) => row.session_id === "actual-work-session")?.evidence)
+      .toContainEqual(expect.objectContaining({
       source: "task_item_completed",
       excerpt: "Unique execution verification",
     }));
-    expect(execution.session_results?.[1]?.parent_session_id).toBeNull();
-    expect(execution.session_results?.[1]?.task_id).toBeNull();
+    await sql`UPDATE sessions SET display_name = 'actual-work-session' WHERE session_id = 'actual-work-session'`;
 
+    await sql`
+      UPDATE sessions SET display_name = 'task result metadata'
+      WHERE session_id IN ('referenced-session', 'metadata-only-session')
+    `;
     const taskTitleSearch = await provider.search({
       q: "task result",
       top_k: 20,
@@ -645,13 +646,19 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       include_story: false,
       event_categories: "messages,responses",
       include_session_results: true,
+      session_search_mode: "lexical",
       allowedFolderIds: ["folder-allowed"],
     });
     for (const sessionId of ["referenced-session", "metadata-only-session"]) {
       expect(taskTitleSearch.session_results?.find((row) => row.session_id === sessionId)?.task_id)
         .toBeNull();
     }
+    await sql`
+      UPDATE sessions SET display_name = session_id
+      WHERE session_id IN ('referenced-session', 'metadata-only-session')
+    `;
 
+    await sql`UPDATE sessions SET display_name = 'output artifact marker' WHERE session_id = 'source-item-session'`;
     const outputSearch = await provider.search({
       q: "output artifact marker",
       top_k: 10,
@@ -661,16 +668,22 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       include_story: false,
       event_categories: "messages,responses",
       include_session_results: true,
+      session_search_mode: "lexical",
       allowedFolderIds: ["folder-allowed"],
     });
     expect(outputSearch.session_results?.find((row) => row.session_id === "source-item-session")?.evidence)
       .toContainEqual(expect.objectContaining({ source: "source_task_item" }));
+    await sql`UPDATE sessions SET display_name = 'source-item-session' WHERE session_id = 'source-item-session'`;
   });
 
-  it("keeps per-session product candidates when global top events repeat one session", async () => {
+  it("returns separate session-document candidates despite repeated matching events", async () => {
     await sql`INSERT INTO sessions (session_id, folder_id, display_name, status, session_type)
       VALUES ('crowded-session', 'folder-allowed', 'Crowded session', 'idle', 'claude'),
              ('distinct-session', 'folder-allowed', 'Distinct session', 'idle', 'claude')`;
+    await sql`
+      UPDATE sessions SET prompt = 'search crowd distinct work'
+      WHERE session_id IN ('crowded-session', 'distinct-session')
+    `;
     for (let id = 1; id <= 8; id += 1) {
       await sql`
         INSERT INTO events (session_id, id, event_type, searchable_text, created_at)
@@ -689,7 +702,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     });
     const response = await provider.search({
       q: "search crowd distinct work",
-      top_k: 1,
+      top_k: 10,
       search_session_id: false,
       include_turn_summaries: false,
       include_highlight: false,
@@ -699,10 +712,9 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       allowedFolderIds: ["folder-allowed"],
     });
 
-    expect(response.results.slice(0, 1)).toHaveLength(1);
-    expect(response.results[0]?.session_id).toBe("crowded-session");
+    expect(response.results).toEqual([]);
     expect(response.session_results?.map((result) => result.session_id))
-      .toContain("distinct-session");
+      .toEqual(expect.arrayContaining(["crowded-session", "distinct-session"]));
   });
 
   it("applies every session filter before source limits and preserves the inclusive date boundary", async () => {

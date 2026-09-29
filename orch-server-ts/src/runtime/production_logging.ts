@@ -33,6 +33,8 @@ const REDACTED_LOG_PATHS = [
   "database_url",
   "TURN_SUMMARY_OPENAI_KEY",
   "turn_summary_openai_key",
+  "TYPESAFE_API_KEY",
+  "typesafe_api_key",
   "*.authorization",
   "*.cookie",
   "*.token",
@@ -44,6 +46,8 @@ const REDACTED_LOG_PATHS = [
   "*.database_url",
   "*.TURN_SUMMARY_OPENAI_KEY",
   "*.turn_summary_openai_key",
+  "*.TYPESAFE_API_KEY",
+  "*.typesafe_api_key",
 ] as const;
 
 const HTTP_REQUEST_RECEIVE_TIMEOUT_MS = 300_000;

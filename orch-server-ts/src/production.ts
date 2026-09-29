@@ -26,8 +26,6 @@ import {
 import { registerDashboardServing } from "./dashboard/dashboard_serving.js";
 import { CodexEphemeralExecutor } from "./llm/codex_ephemeral_executor.js";
 import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
-import { createSearchQueryExpander } from "./search/search_query_expander.js";
-import { createSearchQueryModelResolver } from "./search/search_query_model_resolver.js";
 import { InMemoryNodeRegistry, type NodeRegistryEvent } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
 import {
@@ -258,35 +256,15 @@ export async function createLiveProductionApplication(
   const plannerRepository = new PlannerRepository(sqlResolver);
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
   warnForPartialR2Config(config, context.warn);
-  const searchQueryModelResolver = createSearchQueryModelResolver({
-    catalogPath: config.model_catalog_path,
-    presetId: config.search_query_expansion_preset_id,
-    reasoningEffort: config.search_query_expansion_effort,
-    onConfigurationError: (error) => {
-      context.warn(`Search query expansion is in lexical-only mode: ${error.message}`);
-    },
-  });
-  const searchCodexPath = resolveCodexCliPath(
-    config.codex_cli_path,
-    process.env,
-  )?.path;
-  const searchQueryExpander = createSearchQueryExpander({
-    executor: new CodexEphemeralExecutor({
-      ...(searchCodexPath === undefined ? {} : { codexPath: searchCodexPath }),
-      processEnv: process.env,
-    }),
-    modelResolver: searchQueryModelResolver,
-    concurrencyLimit: 2,
-    onExpansionError: (error) => {
-      context.warn(`Search query expansion failed; returning lexical results: ${String(error)}`);
-    },
-  });
+  if (!config.typesafe_api_key) {
+    context.warn("TYPESAFE_API_KEY is not configured; expanded session search will return partial results.");
+  }
   const dbCatalogRepository = createLiveDbCatalogRepository({
     sqlResolver,
     searchDbConnectionFactory,
     configProvider,
     registry,
-    searchQueryExpander,
+    typesafeApiKey: config.typesafe_api_key,
     onSearchCancelError: reportSearchCancelError,
     boardAssetStorage,
     sessionDeletion: sessionDeletionService,
