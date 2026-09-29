@@ -23,46 +23,35 @@ describe("Board Y.Doc mutation gate", () => {
         name: "withDirectContainerConnection",
         expectedNames: ["board-folder:folder-a"],
         run: () => service.removeBoardItem(
-          { containerKind: "folder" as const, containerId: "folder-a" },
+          {  folderId: "folder-a" },
           "session:a",
         ),
       },
       {
-        name: "withTaskBoardApplication",
+        name: "folder identity",
         expectedNames: ["board-folder:folder-a"],
-        run: () => service.withTaskBoardApplication({
-          folderId: "folder-a",
-          boardItemId: "task:task-a",
-          taskId: "task-a",
-          title: "Task A",
-          archived: false,
-          x: 0,
-          y: 0,
+        run: () => service.withFolderBoardApplication({
+          folderId: "child", parentFolderId: "folder-a", previousParentFolderId: null,
+          title: "Child", archived: false,
         }, vi.fn()),
       },
       {
         name: "staged session board move",
-        expectedNames: ["board-folder:folder-a", "board:task:task-a"],
+        expectedNames: ["board-folder:folder-a", "board-folder:folder-b"],
         run: () => service.withSessionBoardMoveApplications({
           sessionId: "a",
           boardItems: [boardItem("session")],
           targetScope: {
-            folderId: "folder-a",
-            containerKind: "task",
-            containerId: "task-a",
-          },
+            folderId: "folder-b",
+            },
         }, vi.fn()),
       },
       {
-        name: "staged task board move",
-        expectedNames: ["board-folder:folder-a", "board:task:task-a"],
-        run: () => service.withTaskBoardMoveApplication({
-          boardItem: boardItem("task"),
-          targetScope: {
-            folderId: "folder-a",
-            containerKind: "task",
-            containerId: "task-a",
-          },
+        name: "folder identity move",
+        expectedNames: ["board-folder:folder-a", "board-folder:folder-b"],
+        run: () => service.withFolderBoardApplication({
+          folderId: "child", parentFolderId: "folder-b", previousParentFolderId: "folder-a",
+          title: "Child", archived: false,
         }, vi.fn()),
       },
     ];
@@ -77,14 +66,12 @@ describe("Board Y.Doc mutation gate", () => {
   });
 });
 
-function boardItem(itemType: "session" | "task"): CatalogBoardItemRow {
+function boardItem(itemType: "session" | "subfolder"): CatalogBoardItemRow {
   return {
     id: `${itemType}:a`,
     folderId: "folder-a",
-    containerKind: "folder",
-    containerId: "folder-a",
     membershipKind: "primary",
-    sourceTaskItemId: null,
+    sourceChecklistItemId: null,
     itemType,
     itemId: "a",
     x: 0,

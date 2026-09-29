@@ -8,7 +8,6 @@ import {
   type BoardYjsHostProxyRouteOptions,
 } from "./board_yjs_host_proxy.js";
 import type {
-  MarkdownDocumentContainerKind,
   MarkdownDocumentRecord,
 } from "./markdown_document_routes.js";
 
@@ -18,7 +17,6 @@ export async function createLocalMarkdownDocument(
   hostProxy: BoardYjsHostProxyRouteOptions,
   input: {
     folderId: string;
-    container: { kind: MarkdownDocumentContainerKind; id: string };
     title: string;
     body: string;
     x?: number;
@@ -28,10 +26,6 @@ export async function createLocalMarkdownDocument(
   try {
     const created = await resolveLocalBoardYjsService(app, hostProxy).createMarkdownDocument({
       folderId: input.folderId,
-      container: {
-        containerKind: input.container.kind,
-        containerId: input.container.id,
-      },
       title: input.title,
       body: input.body,
       ...(input.x !== undefined && input.y !== undefined ? { x: input.x, y: input.y } : {}),
@@ -88,25 +82,10 @@ export function documentFolderId(document: MarkdownDocumentRecord): string | nul
   return stringOrNull(document.folderId) ?? stringOrNull(document.folder_id);
 }
 
-export function publicMarkdownDocumentRecord(
-  document: MarkdownDocumentRecord,
-): MarkdownDocumentRecord {
-  const { containerKind: _containerKind, containerId: _containerId, ...record } = document;
-  return record;
-}
-
-function documentContainer(document: MarkdownDocumentRecord): {
-  containerKind: MarkdownDocumentContainerKind;
-  containerId: string;
-} {
-  const containerKind = document.containerKind;
-  const containerId = stringOrNull(document.containerId);
-  if ((containerKind === "folder" || containerKind === "task") && containerId !== null) {
-    return { containerKind, containerId };
-  }
+function documentContainer(document: MarkdownDocumentRecord): { folderId: string } {
   const folderId = documentFolderId(document);
-  if (folderId !== null) return { containerKind: "folder", containerId: folderId };
-  throw new Error("Markdown document board container not found");
+  if (folderId === null) throw new Error("Markdown document folder not found");
+  return { folderId };
 }
 
 function stringOrNull(value: unknown): string | null {

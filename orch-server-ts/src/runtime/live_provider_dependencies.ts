@@ -3,7 +3,6 @@ import type { CogitoSearchProvider } from "../cogito/cogito_routes.js";
 import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
 import type { BoardItemRouteProvider } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
-import type { TaskRouteProvider } from "../tasks/task_route_types.js";
 import type { SessionCatalogProvider } from "../session/session_catalog_routes.js";
 import type { SessionHistoryProvider } from "../session/session_history_service.js";
 import type { SessionSnapshotListResponse } from "../session/session_snapshot_service.js";
@@ -40,7 +39,6 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly boardAssetRouteProvider: BoardAssetRouteProvider;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
-  readonly taskRouteProvider: TaskRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly loadSessionSnapshot: (
     input?: { readonly access?: BoardAccess; readonly feedOnly?: boolean },

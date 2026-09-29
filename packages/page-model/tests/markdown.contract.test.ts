@@ -77,7 +77,7 @@ describe("page markdown contract", () => {
     const markdown = pageToMarkdown(
       { title: "계획" },
       [
-        block("task", null, "a", "task_ref", "", { taskId: "task-1", primary: true }),
+        block("task", null, "a", "folder_ref", "", { folderId: "task-1", primary: true }),
         block("body", "task", "a", "paragraph", "본문"),
       ],
       { includeBlockIds: true },

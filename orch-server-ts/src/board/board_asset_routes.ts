@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { normalizeBoardContainerKind } from "../board-yjs/board_container_kind_compat.js";
 import {
   isBoardFolderAllowed,
   normalizeBoardAccess,
@@ -26,13 +25,6 @@ export type BoardAssetCatalogSnapshot = {
 
 export type BoardAssetAccess = BoardAccess;
 
-export type BoardAssetContainerKind = "folder" | "task";
-
-export type BoardAssetContainerTarget = {
-  kind: BoardAssetContainerKind;
-  id: string;
-};
-
 export type BoardAssetCommitPart = {
   partNumber: number;
   etag: string;
@@ -43,8 +35,6 @@ export type BoardAssetInitInput = {
   name: string;
   mimeType: string;
   byteSize: number;
-  containerKind?: BoardAssetContainerKind;
-  containerId?: string;
 };
 
 export type BoardAssetCommitInput = {
@@ -56,8 +46,6 @@ export type BoardAssetCommitInput = {
   height?: number;
   durationSeconds?: number;
   parts: readonly BoardAssetCommitPart[];
-  containerKind?: BoardAssetContainerKind;
-  containerId?: string;
 };
 
 export type BoardAssetRouteProvider = {
@@ -100,24 +88,13 @@ type FolderAssetCommitParams = FolderAssetParams & {
   asset_id: string;
 };
 
-type ContainerAssetParams = {
-  container_kind: string;
-  container_id: string;
-};
-
-type ContainerAssetCommitParams = ContainerAssetParams & {
-  asset_id: string;
-};
-
 type Validation<T> =
   | { ok: true; value: T }
   | { ok: false; message: string; statusCode?: number };
 
 export const boardAssetRouteAuthRequirements = {
   "POST /api/board/:folder_id/assets/init": true,
-  "POST /api/board-containers/:container_kind/:container_id/assets/init": true,
   "POST /api/board/:folder_id/assets/:asset_id/commit": true,
-  "POST /api/board-containers/:container_kind/:container_id/assets/:asset_id/commit": true,
 } as const;
 
 export function registerBoardAssetRoutes(
@@ -140,38 +117,6 @@ export function registerBoardAssetRoutes(
           name: body.value.name,
           mimeType: body.value.mime,
           byteSize: body.value.size,
-        });
-        return reply.code(201).send(result);
-      } catch (error) {
-        return sendBoardAssetError(reply, error);
-      }
-    },
-  );
-
-  app.post<{ Params: ContainerAssetParams }>(
-    "/api/board-containers/:container_kind/:container_id/assets/init",
-    async (request, reply) => {
-      const container = parseContainerParams(containerAssetParams(request));
-      if (!container.ok) return validationError(reply, container);
-      const body = parseInitBody(request.body);
-      if (!body.ok) return validationError(reply, body);
-
-      const folderResult = await tryResolveBoardContainerFolderId(
-        options.provider,
-        container.value,
-      );
-      if (!folderResult.ok) return sendBoardAssetError(reply, folderResult.error);
-      const accessDenied = await ensureFolderAccess(options, request, folderResult.value);
-      if (accessDenied !== undefined) return accessDenied(reply);
-
-      try {
-        const result = await options.provider.initFileAsset({
-          folderId: folderResult.value,
-          name: body.value.name,
-          mimeType: body.value.mime,
-          byteSize: body.value.size,
-          containerKind: container.value.kind,
-          containerId: container.value.id,
         });
         return reply.code(201).send(result);
       } catch (error) {
@@ -203,37 +148,6 @@ export function registerBoardAssetRoutes(
     },
   );
 
-  app.post<{ Params: ContainerAssetCommitParams }>(
-    "/api/board-containers/:container_kind/:container_id/assets/:asset_id/commit",
-    async (request, reply) => {
-      const params = containerAssetCommitParams(request);
-      const container = parseContainerParams(params);
-      if (!container.ok) return validationError(reply, container);
-      const body = parseCommitBody(request.body);
-      if (!body.ok) return validationError(reply, body);
-
-      const folderResult = await tryResolveBoardContainerFolderId(
-        options.provider,
-        container.value,
-      );
-      if (!folderResult.ok) return sendBoardAssetError(reply, folderResult.error);
-      const accessDenied = await ensureFolderAccess(options, request, folderResult.value);
-      if (accessDenied !== undefined) return accessDenied(reply);
-
-      try {
-        const result = await options.provider.commitFileAsset({
-          folderId: folderResult.value,
-          assetId: params.asset_id,
-          ...body.value,
-          containerKind: container.value.kind,
-          containerId: container.value.id,
-        });
-        return reply.send(result);
-      } catch (error) {
-        return sendBoardAssetError(reply, error);
-      }
-    },
-  );
 }
 
 function parseInitBody(
@@ -320,51 +234,6 @@ async function ensureFolderAccess(
     return folderAccessDenied;
   }
   return undefined;
-}
-
-async function resolveBoardContainerFolderId(
-  provider: BoardAssetRouteProvider,
-  container: BoardAssetContainerTarget,
-): Promise<string> {
-  if (container.kind === "folder") return container.id;
-  const snapshot = await provider.getCatalogSnapshot();
-  const boardItems = Array.isArray(snapshot.boardItems) ? snapshot.boardItems : [];
-  for (const item of boardItems) {
-    if (item.itemType !== "task" || item.itemId !== container.id) continue;
-    if (typeof item.folderId === "string" && item.folderId.length > 0) {
-      return item.folderId;
-    }
-  }
-  throw new BoardAssetRouteError(
-    "TASK_BOARD_CONTAINER_NOT_FOUND",
-    "Task board container not found",
-    404,
-  );
-}
-
-async function tryResolveBoardContainerFolderId(
-  provider: BoardAssetRouteProvider,
-  container: BoardAssetContainerTarget,
-): Promise<{ ok: true; value: string } | { ok: false; error: unknown }> {
-  try {
-    return {
-      ok: true,
-      value: await resolveBoardContainerFolderId(provider, container),
-    };
-  } catch (error) {
-    return { ok: false, error };
-  }
-}
-
-function parseContainerParams(params: ContainerAssetParams): Validation<BoardAssetContainerTarget> {
-  const kind = normalizeBoardContainerKind(params.container_kind);
-  if (!kind) {
-    return { ok: false, message: "container_kind must be folder or task" };
-  }
-  if (params.container_id.length === 0) {
-    return { ok: false, message: "container_id must not be empty" };
-  }
-  return { ok: true, value: { kind, id: params.container_id } };
 }
 
 function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
@@ -459,10 +328,3 @@ function folderAssetCommitParams(request: FastifyRequest): FolderAssetCommitPara
   return request.params as FolderAssetCommitParams;
 }
 
-function containerAssetParams(request: FastifyRequest): ContainerAssetParams {
-  return request.params as ContainerAssetParams;
-}
-
-function containerAssetCommitParams(request: FastifyRequest): ContainerAssetCommitParams {
-  return request.params as ContainerAssetCommitParams;
-}

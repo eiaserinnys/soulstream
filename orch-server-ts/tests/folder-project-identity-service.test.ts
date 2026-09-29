@@ -15,6 +15,7 @@ describe("FolderProjectIdentityService", () => {
     const onPageUpdated = vi.fn();
     const service = new FolderProjectIdentityService({
       repository,
+      withBoardApplication: async (_input, persist) => persist([]),
       createId: () => identityId,
       createOperationId: () => "operation-af",
       hydratePage: vi.fn(),
@@ -38,7 +39,7 @@ describe("FolderProjectIdentityService", () => {
     expect(input?.pageApplication.replica.page).toMatchObject({
       id: identityId,
       title: "새 프로젝트",
-      metadata: { projectIdentity: true, folderId: identityId },
+      metadata: {},
     });
     expect(onPageUpdated).toHaveBeenCalledOnce();
     expect(onPageUpdated).toHaveBeenCalledWith({ pageId: identityId, version: 1 });
@@ -57,11 +58,13 @@ describe("FolderProjectIdentityService", () => {
       parentFolderId: null,
       archived: false,
       pageVersion: 1,
+      checklistEnabled: false, status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
     });
     vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
     const onPageUpdated = vi.fn();
     const service = new FolderProjectIdentityService({
       repository,
+      withBoardApplication: async (_input, persist) => persist([]),
       createOperationId: () => "operation-af",
       hydratePage: vi.fn(),
       onPageUpdated,
@@ -69,6 +72,7 @@ describe("FolderProjectIdentityService", () => {
 
     await service.mutateFromFolder({
       folderId: identityId,
+      expectedVersion: 1,
       update: {
         name: "바뀐 이름",
         sortOrder: 3,
@@ -93,7 +97,7 @@ describe("FolderProjectIdentityService", () => {
     expect(onPageUpdated).toHaveBeenCalledWith({ pageId: identityId, version: 2 });
   });
 
-  it("forwards the targeted archive catalog delta to the commit observer", async () => {
+  it("broadcasts a folder header refresh after archive", async () => {
     const repository = createRepository();
     vi.mocked(repository.findByFolderId).mockResolvedValue({
       id: identityId,
@@ -106,14 +110,9 @@ describe("FolderProjectIdentityService", () => {
       parentFolderId: null,
       archived: false,
       pageVersion: 1,
+      checklistEnabled: false, status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
     });
     vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
-    const catalogDelta = {
-      sessionsDelta: {
-        "session-a": { folderId: null, displayName: "세션 A" },
-      },
-      deletedBoardItemIds: ["session:session-a"],
-    };
     vi.mocked(repository.mutate).mockResolvedValueOnce({
       ...mutationResult({
         id: identityId,
@@ -121,11 +120,11 @@ describe("FolderProjectIdentityService", () => {
         name: "프로젝트",
         version: 2,
       }),
-      catalogDelta,
     });
     const onCommitted = vi.fn();
     const service = new FolderProjectIdentityService({
       repository,
+      withBoardApplication: async (_input, persist) => persist([]),
       createOperationId: () => "operation-af",
       hydratePage: vi.fn(),
       onCommitted,
@@ -133,48 +132,16 @@ describe("FolderProjectIdentityService", () => {
 
     await service.mutateFromFolder({
       folderId: identityId,
+      expectedVersion: 1,
       archived: true,
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "archive-af",
     });
 
     expect(onCommitted).toHaveBeenCalledOnce();
-    expect(onCommitted).toHaveBeenCalledWith(catalogDelta);
+    expect(onCommitted).toHaveBeenCalledWith();
   });
 
-  it("notifies for both legacy project page commit paths", async () => {
-    const repository = createRepository();
-    vi.mocked(repository.listLegacyFolders).mockResolvedValue([{
-      folderId: identityId,
-      name: "레거시 프로젝트",
-      sortOrder: 0,
-      settings: {},
-      parentFolderId: null,
-    }]);
-    vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
-    const onPageUpdated = vi.fn();
-    const service = new FolderProjectIdentityService({
-      repository,
-      createOperationId: () => "operation-af",
-      hydratePage: vi.fn(),
-      onPageUpdated,
-    });
-
-    await service.backfillLegacyFolder({
-      folderId: identityId,
-      existingPageId: identityId,
-      actor: { actorKind: "system" },
-      idempotencyKey: "bind-backfill-af",
-    });
-    await service.backfillLegacyFolder({
-      folderId: identityId,
-      actor: { actorKind: "system" },
-      idempotencyKey: "create-backfill-af",
-    });
-
-    expect(onPageUpdated).toHaveBeenNthCalledWith(1, { pageId: identityId, version: 2 });
-    expect(onPageUpdated).toHaveBeenNthCalledWith(2, { pageId: identityId, version: 1 });
-  });
 
   it("does not notify for an idempotent folder-originated retry", async () => {
     const repository = createRepository();
@@ -186,12 +153,14 @@ describe("FolderProjectIdentityService", () => {
     const onPageUpdated = vi.fn();
     const service = new FolderProjectIdentityService({
       repository,
+      withBoardApplication: async (_input, persist) => persist([]),
       hydratePage: vi.fn(),
       onPageUpdated,
     });
 
     await service.mutateFromFolder({
       folderId: identityId,
+      expectedVersion: 1,
       update: { name: "이미 바뀐 프로젝트" },
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "update-af-retry",
@@ -215,7 +184,7 @@ describe("FolderProjectIdentityService", () => {
     );
     const hydratePage = vi.fn();
     const onPageUpdated = vi.fn();
-    const service = new FolderProjectIdentityService({ repository, hydratePage, onPageUpdated });
+    const service = new FolderProjectIdentityService({ repository, hydratePage, onPageUpdated, withBoardApplication: async (_input, persist) => persist([]) });
 
     await expect(service.mutateFromPage({
       pageId: identityId,
@@ -234,38 +203,7 @@ describe("FolderProjectIdentityService", () => {
     expect(onPageUpdated).not.toHaveBeenCalled();
   });
 
-  it("returns the stored backfill outcome before listing legacy folders on retry", async () => {
-    const repository = createRepository();
-    const committed = mutationResult({
-      id: identityId,
-      pageId: identityId,
-      name: "기존 프로젝트",
-      idempotent: true,
-      operation: { payload_json: { created_page: true } },
-    });
-    vi.mocked(repository.findMutationByIdempotencyKey).mockResolvedValue(committed);
-    const onPageUpdated = vi.fn();
-    const service = new FolderProjectIdentityService({
-      repository,
-      hydratePage: vi.fn(),
-      onPageUpdated,
-    });
 
-    await expect(service.backfillLegacyFolder({
-      folderId: identityId,
-      actor: { actorKind: "system" },
-      idempotencyKey: "retry-backfill-af",
-    })).resolves.toMatchObject({
-      folderId: identityId,
-      pageId: identityId,
-      createdPage: true,
-      idempotent: true,
-    });
-
-    expect(repository.listLegacyFolders).not.toHaveBeenCalled();
-    expect(repository.createLegacyPageAndBind).not.toHaveBeenCalled();
-    expect(onPageUpdated).not.toHaveBeenCalled();
-  });
 });
 
 function createRepository(): FolderProjectIdentityRepository {
@@ -288,32 +226,7 @@ function createRepository(): FolderProjectIdentityRepository {
     findByFolderId: vi.fn(async () => null),
     findByPageId: vi.fn(async () => null),
     readPageSnapshot: vi.fn(async () => null),
-    listLegacyFolders: vi.fn(async () => []),
-    bindLegacyPage: vi.fn(async (input) => ({
-      folderId: input.folder.folderId,
-      pageId: input.pageId,
-      createdPage: false,
-      operation: { id: "folder-operation" },
-      pageCommit: mutationResult({
-        id: input.folder.folderId,
-        pageId: input.pageId,
-        name: input.folder.name,
-        version: 2,
-      }).pageCommit,
-      idempotent: false,
-    })),
-    createLegacyPageAndBind: vi.fn(async (input) => ({
-      folderId: input.folder.folderId,
-      pageId: input.pageId,
-      createdPage: true,
-      operation: { id: "folder-operation" },
-      pageCommit: mutationResult({
-        id: input.folder.folderId,
-        pageId: input.pageId,
-        name: input.folder.name,
-      }).pageCommit,
-      idempotent: false,
-    })),
+
   };
 }
 
@@ -335,6 +248,7 @@ function mutationResult(input: {
       settings: {},
       parentFolderId: null,
       projectPageId: input.pageId,
+      archived: false, checklistEnabled: false, status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
     },
     operation: input.operation ?? { id: "folder-operation" },
     pageCommit: {

@@ -32,12 +32,8 @@ const EXECUTOR = fileURLToPath(new URL(
   "../../../packages/db-schema/scripts/release-executor.mjs",
   import.meta.url,
 ));
-const TSX = fileURLToPath(new URL(
-  "../../../orch-server-ts/node_modules/tsx/dist/cli.mjs",
-  import.meta.url,
-));
-const BOARD_WRITER = fileURLToPath(new URL(
-  "../../../orch-server-ts/scripts/migrate-board-yjs-runbook-residue.ts",
+const FOLDER_WRITER = fileURLToPath(new URL(
+  "../../../orch-server-ts/scripts/apply-folder-storage.mjs",
   import.meta.url,
 ));
 const directories: string[] = [];
@@ -58,7 +54,7 @@ function environment(backupDirectory: string, requestId = "request-1") {
   return {
     HANIEL_BACKUP_DIR: backupDirectory,
     HANIEL_DATABASE_OPERATION: "fresh_install",
-    HANIEL_DATABASE_REQUIRED_SUBPHASES: '["board_yjs_runbook_residue"]',
+    HANIEL_DATABASE_REQUIRED_SUBPHASES: '["folder_storage_documents"]',
     HANIEL_DATABASE_AFFECTED_SERVICES: '["soulstream-orch-server"]',
     HANIEL_DEPLOY_REPO: "soulstream",
     HANIEL_DEPLOYMENT_JOURNAL: join(backupDirectory, "haniel-deployment.json"),
@@ -353,14 +349,14 @@ describe.sequential("database release cross-process and subphase boundaries", ()
       import { writeFileSync } from "node:fs";
       import { assertDatabaseReleaseSubphaseGate } from ${JSON.stringify(EXECUTOR_MODULE)};
       await assertDatabaseReleaseSubphaseGate({
-        env: process.env, subphase: "board_yjs_runbook_residue"
+        env: process.env, subphase: "folder_storage_documents"
       });
       writeFileSync(${JSON.stringify(marker)}, "entered");
       process.stdout.write("child-json-one\\nchild-json-two\\n");
     `;
     const report = await runDatabaseRelease("run-subphase", {
       env,
-      subphase: "board_yjs_runbook_residue",
+      subphase: "folder_storage_documents",
       childCommand: [process.execPath, "--input-type=module", "-e", child],
     });
     expect(readFileSync(marker, "utf8")).toBe("entered");
@@ -369,7 +365,7 @@ describe.sequential("database release cross-process and subphase boundaries", ()
     const runner = vi.fn();
     await expect(runDatabaseRelease("run-subphase", {
       env,
-      subphase: "board_yjs_runbook_residue",
+      subphase: "folder_storage_documents",
       subphaseRun: runner,
     })).resolves.toMatchObject({ status: "applied" });
     expect(runner).not.toHaveBeenCalled();
@@ -401,20 +397,20 @@ describe.sequential("database release cross-process and subphase boundaries", ()
     await releaseDatabaseReleaseLease(lease);
   });
 
-  it("keeps an actual crashed board child incomplete and permits a gated retry", async () => {
+  it("keeps an actual crashed document child incomplete and permits a gated retry", async () => {
     const backupDirectory = directory("release-subphase-crash-");
     const env = await prepareSqlAppliedRelease(backupDirectory);
     const failedChild = `
       import { assertDatabaseReleaseSubphaseGate } from ${JSON.stringify(EXECUTOR_MODULE)};
       await assertDatabaseReleaseSubphaseGate({
-        env: process.env, subphase: "board_yjs_runbook_residue"
+        env: process.env, subphase: "folder_storage_documents"
       });
-      process.stderr.write("board mutation crashed");
+      process.stderr.write("document mutation crashed");
       process.exit(17);
     `;
     await expect(runDatabaseRelease("run-subphase", {
       env,
-      subphase: "board_yjs_runbook_residue",
+      subphase: "folder_storage_documents",
       childCommand: [process.execPath, "--input-type=module", "-e", failedChild],
     })).rejects.toThrow("SUBPHASE_FAILED");
     expect(await readDatabaseReleaseJournal(databaseReleaseJournalPath(env))).toMatchObject({
@@ -423,46 +419,42 @@ describe.sequential("database release cross-process and subphase boundaries", ()
       completed_subphases: [],
     });
 
-    const marker = join(backupDirectory, "retried-board-child.txt");
+    const marker = join(backupDirectory, "retried-document-child.txt");
     const retryChild = `
       import { writeFileSync } from "node:fs";
       import { assertDatabaseReleaseSubphaseGate } from ${JSON.stringify(EXECUTOR_MODULE)};
       await assertDatabaseReleaseSubphaseGate({
-        env: process.env, subphase: "board_yjs_runbook_residue"
+        env: process.env, subphase: "folder_storage_documents"
       });
       writeFileSync(${JSON.stringify(marker)}, "completed");
     `;
     await expect(runDatabaseRelease("run-subphase", {
       env,
-      subphase: "board_yjs_runbook_residue",
+      subphase: "folder_storage_documents",
       childCommand: [process.execPath, "--input-type=module", "-e", retryChild],
     })).resolves.toMatchObject({ status: "applied" });
     expect(readFileSync(marker, "utf8")).toBe("completed");
   });
 
-  it("does not complete the journal when the actual board child rejects a non-central apply", async () => {
-    const backupDirectory = directory("release-subphase-non-central-");
+  it("does not complete the journal when the actual document child has no database credentials", async () => {
+    const backupDirectory = directory("release-subphase-missing-database-");
     const prepared = await prepareSqlAppliedRelease(backupDirectory);
     const env = {
       ...prepared,
       PATH: process.env.PATH ?? "",
       HOME: process.env.HOME ?? "",
       HANIEL_SERVICE_CWD: backupDirectory,
-      SOULSTREAM_NODE_ID: "not-the-central-node",
     };
 
     await expect(runDatabaseRelease("run-subphase", {
       env,
-      subphase: "board_yjs_runbook_residue",
+      subphase: "folder_storage_documents",
       childCommand: [
         process.execPath,
-        TSX,
-        BOARD_WRITER,
-        "--apply",
-        "--quiesced",
-        "--orch-health-url=http://127.0.0.1:9/api/health",
+        FOLDER_WRITER,
+        "--documents",
       ],
-    })).rejects.toThrow("SUBPHASE_FAILED");
+    })).rejects.toThrow(/SUBPHASE_FAILED:[\s\S]*DATABASE_URL.*required/);
     expect(await readDatabaseReleaseJournal(databaseReleaseJournalPath(env))).toMatchObject({
       status: "subphase_started",
       completed_subphases: [],
@@ -471,15 +463,17 @@ describe.sequential("database release cross-process and subphase boundaries", ()
   });
 
   it("emits one executor JSON result while suppressing child stdout", async () => {
-    const source = readFileSync(EXECUTOR, "utf8");
-    expect(source).toContain("run-subphase");
-    expect(source).toContain("childCommand");
-    const boardWrapper = readFileSync(fileURLToPath(new URL(
-      "../../../orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts",
-      import.meta.url,
-    )), "utf8");
-    expect(boardWrapper).toContain('encoding: "utf8"');
-    expect(boardWrapper).not.toContain('stdio: "inherit"');
+    const backupDirectory = directory("release-single-result-");
+    const env = await prepareSqlAppliedRelease(backupDirectory);
+    const result = spawnSync(process.execPath, [EXECUTOR,
+      "run-subphase", "--subphase", "folder_storage_documents", "--",
+      process.execPath, "-e", "console.log('child noise'); console.log('more noise')",
+    ], { encoding: "utf8", env, timeout: 10_000 });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout.trim().split("\n")).toHaveLength(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, status: "applied" });
+    expect(result.stdout).not.toContain("noise");
   });
 });
 

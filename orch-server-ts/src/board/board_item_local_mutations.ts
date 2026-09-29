@@ -1,12 +1,11 @@
 import type { FastifyInstance } from "fastify";
 
-import { normalizeBoardContainerKind } from "../board-yjs/board_container_kind_compat.js";
 import type { BoardItemType, CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
 import { resolveLocalBoardYjsService, type BoardYjsHostProxyRouteOptions } from "./board_yjs_host_proxy.js";
-import type { BoardContainerTarget, BoardItemRecord } from "./board_item_routes.js";
+import type { BoardItemRecord } from "./board_item_routes.js";
 
 const boardItemTypes = new Set<BoardItemType>([
-  "session", "markdown", "subfolder", "asset", "frame", "task", "custom_view",
+  "session", "markdown", "subfolder", "asset", "frame", "custom_view",
 ]);
 
 export async function updateLocalBoardItemPosition(
@@ -20,8 +19,7 @@ export async function updateLocalBoardItemPosition(
   const catalogItem = catalogBoardItem(item);
   await resolveLocalBoardYjsService(app, hostProxy).updateBoardItemPosition(
     {
-      containerKind: catalogItem.containerKind ?? "folder",
-      containerId: catalogItem.containerId ?? catalogItem.folderId,
+      folderId: catalogItem.folderId,
     },
     boardItemId,
     x,
@@ -33,7 +31,6 @@ export async function moveLocalBoardItem(
   app: FastifyInstance,
   hostProxy: BoardYjsHostProxyRouteOptions,
   item: BoardItemRecord,
-  target: BoardContainerTarget,
   targetFolderId: string,
   position: { x: number; y: number } | undefined,
   idempotencyKey: string,
@@ -42,8 +39,6 @@ export async function moveLocalBoardItem(
     boardItem: catalogBoardItem(item),
     targetScope: {
       folderId: targetFolderId,
-      containerKind: target.kind,
-      containerId: target.id,
     },
     ...(position ? { position } : {}),
     idempotencyKey,
@@ -69,10 +64,8 @@ function catalogBoardItem(item: BoardItemRecord): CatalogBoardItemRow {
   return {
     id: item.id,
     folderId,
-    containerKind: normalizeBoardContainerKind(item.containerKind) ?? "folder",
-    containerId: stringOrNull(item.containerId) ?? folderId,
     membershipKind: item.membershipKind === "reference" ? "reference" : "primary",
-    sourceTaskItemId: stringOrNull(item.sourceTaskItemId),
+    sourceChecklistItemId: stringOrNull(item.sourceChecklistItemId),
     itemType,
     itemId,
     x,

@@ -53,14 +53,14 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     const rows = await sql<Row[]>`
       INSERT INTO recurring_jobs (
         job_id, owner_email, execution_caller, name, prompt, schedule_expressions,
-        schedule_kind, run_at, timezone, node_id, agent_id, model_preset, container_kind, container_id,
+        schedule_kind, run_at, timezone, node_id, agent_id, model_preset,
         folder_id, enabled, archived_at, late_run_window_seconds, next_run_at,
         version, created_idempotency_key, created_by, updated_by, created_at, updated_at
       ) VALUES (
         ${input.jobId}, ${input.ownerEmail}, ${sql.json(input.executionCaller)},
         ${input.name}, ${input.prompt}, ${sql.json(input.scheduleExpressions)},
         ${input.scheduleKind}, ${input.runAt}, ${input.timezone}, ${input.nodeId}, ${input.agentId}, ${input.modelPreset},
-        ${input.container.kind}, ${input.container.id}, ${input.folderId}, ${input.enabled},
+        ${input.folderId}, ${input.enabled},
         ${input.archivedAt}, ${input.lateRunWindowSeconds}, ${input.nextRunAt},
         ${input.version}, ${input.createdIdempotencyKey}, ${input.createdBy}, ${input.updatedBy},
         ${input.createdAt}, ${input.updatedAt}
@@ -94,8 +94,7 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
           schedule_expressions = ${sql.json(input.scheduleExpressions)},
           run_at = ${input.runAt},
           timezone = ${input.timezone}, node_id = ${input.nodeId}, agent_id = ${input.agentId},
-          model_preset = ${input.modelPreset}, container_kind = ${input.container.kind},
-          container_id = ${input.container.id}, folder_id = ${input.folderId}, enabled = ${input.enabled},
+          model_preset = ${input.modelPreset}, folder_id = ${input.folderId}, enabled = ${input.enabled},
           late_run_window_seconds = ${input.lateRunWindowSeconds}, next_run_at = ${input.nextRunAt},
           version = version + 1, updated_by = ${input.updatedBy}, updated_at = ${input.updatedAt}
       WHERE job_id = ${input.jobId} AND owner_email = ${input.ownerEmail}
@@ -453,7 +452,6 @@ function jobFromRow(row: Row): RecurringJob {
     nodeId: stringValue(row.node_id),
     agentId: stringValue(row.agent_id),
     modelPreset: nullableString(row.model_preset),
-    container: { kind: containerKind(row.container_kind), id: stringValue(row.container_id) },
     folderId: stringValue(row.folder_id),
     enabled: Boolean(row.enabled),
     archivedAt: timestampOrNull(row.archived_at),
@@ -493,6 +491,5 @@ function stringArray(value: unknown): string[] { if (!Array.isArray(value) || va
 function positiveInteger(value: unknown): number { const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error("invalid recurring integer"); return parsed; }
 function timestamp(value: unknown): string { const date = value instanceof Date ? value : new Date(String(value)); if (!Number.isFinite(date.getTime())) throw new Error("invalid recurring timestamp"); return date.toISOString(); }
 function timestampOrNull(value: unknown): string | null { return value === null || value === undefined ? null : timestamp(value); }
-function containerKind(value: unknown): "folder" | "task" { if (value === "folder" || value === "task") return value; throw new Error("invalid recurring container"); }
 
 class ReservationCollision extends Error {}

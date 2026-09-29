@@ -1,3 +1,5 @@
+import type { InitialFolderContext } from "@soulstream/page-model";
+import { initialFolderOperations } from "./folder_initial_context.js";
 import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 
@@ -16,7 +18,6 @@ import type {
   FolderProjectIdentityRepository,
   FolderProjectIdentityServiceConfig,
   FolderProjectUpdate,
-  LegacyFolderBackfillResult,
 } from "./folder_project_identity_contracts.js";
 
 export type {
@@ -26,8 +27,6 @@ export type {
   FolderProjectIdentityServiceConfig,
   FolderProjectRecord,
   FolderProjectUpdate,
-  LegacyFolderBackfillResult,
-  LegacyProjectFolder,
 } from "./folder_project_identity_contracts.js";
 
 export class FolderProjectIdentityService {
@@ -45,11 +44,15 @@ export class FolderProjectIdentityService {
     sortOrder?: number;
     settings?: Record<string, unknown>;
     parentFolderId?: string | null;
+    checklistEnabled?: boolean;
+    description?: string;
+    initialContext?: InitialFolderContext;
     actor: PageMutationActor;
     idempotencyKey: string;
   }): Promise<FolderProjectIdentityMutationResult> {
+    const request = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
     const idempotent = await this.config.repository.findMutationByIdempotencyKey(
-      input.idempotencyKey,
+      input.idempotencyKey, request,
     );
     if (idempotent) {
       await this.config.hydratePage(idempotent.pageId);
@@ -63,38 +66,50 @@ export class FolderProjectIdentityService {
         id,
         title: name,
         dailyDate: null,
-        metadata: { projectIdentity: true, folderId: id },
+        metadata: {},
       },
       actor: input.actor,
-      idempotencyKey: pageKey("create_folder_project", input.actor, input.idempotencyKey),
-      reason: "create folder project identity",
+      idempotencyKey: pageKey("create_folder", input.actor, input.idempotencyKey),
+      reason: "create folder identity",
+      ...(input.checklistEnabled || input.description || input.initialContext ? {
+        initialCommand: { type: "batch_operations" as const,
+          operations: initialFolderOperations(name, input.description ?? "", id, randomUUID, input.initialContext) },
+      } : {}),
     });
-    const result = await this.config.repository.create({
+    const persist = (boardApplications: import("../board-yjs/board_yjs_types.js").BoardYjsDocumentApplication[]) => this.config.repository.create({
+      boardApplications,
       id,
       pageId: id,
       name,
       sortOrder: input.sortOrder ?? 0,
       settings: input.settings ?? {},
       parentFolderId: input.parentFolderId ?? null,
+      checklistEnabled: input.checklistEnabled ?? false,
       actor: input.actor,
       idempotencyKey: input.idempotencyKey,
+      request,
       operationId: this.createOperationId(),
       pageOperationId: this.createOperationId(),
       pageApplication,
     });
+    const result = await this.config.withBoardApplication({ folderId: id,
+      parentFolderId: input.parentFolderId ?? null, previousParentFolderId: null,
+      title: name, archived: false }, persist);
     return await this.hydrate(result);
   }
 
   async mutateFromFolder(input: {
     folderId: string;
+    expectedVersion: number;
     update?: FolderProjectUpdate;
     archived?: boolean;
     actor: PageMutationActor;
     idempotencyKey: string;
     reason?: string | null;
   }): Promise<FolderProjectIdentityMutationResult> {
+    const request = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
     const idempotent = await this.config.repository.findMutationByIdempotencyKey(
-      input.idempotencyKey,
+      input.idempotencyKey, request,
     );
     if (idempotent) {
       await this.config.hydratePage(idempotent.pageId);
@@ -112,35 +127,40 @@ export class FolderProjectIdentityService {
     if (input.archived !== undefined) {
       operations.push({ op: "set_page_archived", archived });
     }
-    if (operations.length === 0) {
-      throw new Error("folder project identity mutation has no page change");
-    }
+    // Folder-only metadata mutations still pass through the same identity transaction.
+    if (operations.length === 0) operations.push({ op: "rename_page", title });
     const pageApplication = await this.pageMutation(binding, {
       pageId: binding.pageId,
       expectedVersion: binding.pageVersion,
       command: { type: "batch_operations", operations },
       actor: input.actor,
-      idempotencyKey: pageKey("mutate_folder_project", input.actor, input.idempotencyKey),
+      idempotencyKey: pageKey("update_folder", input.actor, input.idempotencyKey),
       reason: input.reason,
     });
-    const result = await this.config.repository.mutate({
+    const parentFolderId = Object.hasOwn(update, "parentFolderId") ? update.parentFolderId ?? null : binding.parentFolderId;
+    const result = await this.config.withBoardApplication({ folderId: binding.folderId, parentFolderId,
+      previousParentFolderId: binding.parentFolderId, title, archived }, async (boardApplications) => this.config.repository.mutate({
+      boardApplications,
       binding,
+      expectedVersion: input.expectedVersion,
       title,
       archived,
       update,
       actor: input.actor,
       idempotencyKey: input.idempotencyKey,
+      request,
       operationId: this.createOperationId(),
       pageOperationId: this.createOperationId(),
       pageApplication,
-    });
+    }));
     return await this.hydrate(result);
   }
 
   async mutateFromPage(input: PageMutationInput): Promise<PageServiceMutationResult | null> {
     if (!isIdentityCommand(input.command)) return null;
+    const request = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
     const idempotent = await this.config.repository.findMutationByIdempotencyKey(
-      input.idempotencyKey,
+      input.idempotencyKey, request,
     );
     if (idempotent) return await this.pageResultFromIdentityMutation(idempotent);
     const binding = await this.config.repository.findByPageId(input.pageId);
@@ -148,104 +168,28 @@ export class FolderProjectIdentityService {
     const pageApplication = await this.pageMutation(binding, input);
     const title = pageApplication.replica.page.title;
     const archived = pageApplication.replica.page.archived;
-    const result = await this.config.repository.mutate({
+    const result = await this.config.withBoardApplication({ folderId: binding.folderId,
+      parentFolderId: binding.parentFolderId, previousParentFolderId: binding.parentFolderId, title, archived },
+      async (boardApplications) => this.config.repository.mutate({ boardApplications,
       binding,
+      expectedVersion: binding.version,
       title,
       archived,
       update: title === binding.name ? {} : { name: title },
       actor: input.actor,
       idempotencyKey: input.idempotencyKey,
+      request,
       operationId: this.createOperationId(),
       pageOperationId: this.createOperationId(),
       pageApplication,
-    });
+    }));
     await this.config.hydratePage(result.pageId);
-    if (!result.idempotent) await this.config.onCommitted?.(result.catalogDelta);
+    if (!result.idempotent) await this.config.onCommitted?.();
     return toMutationResult(
       pageApplication.replica,
       pageApplication.tempIdMapping,
       result.pageCommit,
     );
-  }
-
-  async backfillLegacyFolder(input: {
-    folderId: string;
-    existingPageId?: string;
-    actor: PageMutationActor;
-    idempotencyKey: string;
-  }): Promise<LegacyFolderBackfillResult> {
-    const idempotent = await this.config.repository.findMutationByIdempotencyKey(
-      input.idempotencyKey,
-    );
-    if (idempotent) {
-      const payload = recordValue(idempotent.operation.payload_json);
-      await this.config.hydratePage(idempotent.pageId);
-      return {
-        folderId: idempotent.id,
-        pageId: idempotent.pageId,
-        createdPage: payload.created_page === true,
-        operation: idempotent.operation,
-        pageCommit: idempotent.pageCommit,
-        idempotent: true,
-      };
-    }
-    const folders = await this.config.repository.listLegacyFolders();
-    const folder = folders.find((candidate) => candidate.folderId === input.folderId);
-    if (!folder) throw new Error(`legacy folder not found: ${input.folderId}`);
-    if (input.existingPageId) {
-      const document = await loadDocument(
-        input.existingPageId,
-        this.config.repository.readPageSnapshot.bind(this.config.repository),
-      );
-      const replica = readPageYDocReplica(input.existingPageId, document);
-      if (replica.page.dailyDate) throw new Error("daily page cannot be a project identity");
-      const pageApplication = this.mutationCore.mutate(document, {
-        pageId: input.existingPageId,
-        expectedVersion: replica.page.mutationVersion,
-        command: { type: "rename_page", title: folder.name },
-        actor: input.actor,
-        idempotencyKey: pageKey("bind_folder_project", input.actor, input.idempotencyKey),
-        reason: "bind legacy folder project page; folder title wins",
-      });
-      const result = await this.config.repository.bindLegacyPage({
-        folder,
-        pageId: input.existingPageId,
-        actor: input.actor,
-        idempotencyKey: input.idempotencyKey,
-        operationId: this.createOperationId(),
-        pageOperationId: this.createOperationId(),
-        pageApplication,
-      });
-      await this.config.hydratePage(result.pageId);
-      this.notifyPageUpdate(result);
-      if (!result.idempotent) await this.config.onCommitted?.();
-      return result;
-    }
-    assertUuid(folder.folderId);
-    const pageApplication = this.mutationCore.createPage({
-      page: {
-        id: folder.folderId,
-        title: folder.name,
-        dailyDate: null,
-        metadata: { projectIdentity: true, folderId: folder.folderId, legacy: true },
-      },
-      actor: input.actor,
-      idempotencyKey: pageKey("backfill_folder_project", input.actor, input.idempotencyKey),
-      reason: "create missing legacy folder project page",
-    });
-    const result = await this.config.repository.createLegacyPageAndBind({
-      folder,
-      pageId: folder.folderId,
-      actor: input.actor,
-      idempotencyKey: input.idempotencyKey,
-      operationId: this.createOperationId(),
-      pageOperationId: this.createOperationId(),
-      pageApplication,
-    });
-    await this.config.hydratePage(result.pageId);
-    this.notifyPageUpdate(result);
-    if (!result.idempotent) await this.config.onCommitted?.();
-    return result;
   }
 
   private async requireFolderBinding(folderId: string): Promise<FolderProjectBinding> {
@@ -262,20 +206,22 @@ export class FolderProjectIdentityService {
       binding.pageId,
       this.config.repository.readPageSnapshot.bind(this.config.repository),
     );
-    return this.mutationCore.mutate(document, input);
+    try { return this.mutationCore.mutate(document, input); } finally { document.destroy(); }
   }
 
   private async hydrate(
     result: FolderProjectIdentityMutationResult,
   ): Promise<FolderProjectIdentityMutationResult> {
     await this.config.hydratePage(result.pageId);
+    for (const update of result.parentPageUpdates ?? []) await this.config.hydratePage(update.pageId);
+    notifyPageUpdates((result.parentPageUpdates ?? []).map(update => ({ page: { id: update.pageId, version: update.version } })), this.config.onPageUpdated);
     this.notifyPageUpdate(result);
-    if (!result.idempotent) await this.config.onCommitted?.(result.catalogDelta);
+    if (!result.idempotent) await this.config.onCommitted?.();
     return result;
   }
 
   private notifyPageUpdate(
-    result: FolderProjectIdentityMutationResult | LegacyFolderBackfillResult,
+    result: FolderProjectIdentityMutationResult,
   ): void {
     notifyPageUpdates([result], this.config.onPageUpdated);
   }

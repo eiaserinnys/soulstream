@@ -14,9 +14,8 @@ describe("orch board Yjs persistence", () => {
   it("returns the winning snapshot when two connections bootstrap the same missing document", async () => {
     const scope = {
       folderId: "folder-race",
-      containerKind: "folder" as const,
-      containerId: "folder-race",
-    };
+
+      };
     let storedSnapshot: Uint8Array | null = null;
     let storedRevision: number | null = null;
     let initialReads = 0;
@@ -33,7 +32,7 @@ describe("orch board Yjs persistence", () => {
           ? { snapshot: storedSnapshot, revision: storedRevision }
           : null;
       }),
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue(scope),
+      resolveBoardYjsFolderScope: vi.fn().mockResolvedValue(scope),
       loadBoardYjsSeed: vi.fn()
         .mockResolvedValueOnce({
           boardItems: [{
@@ -89,12 +88,11 @@ describe("orch board Yjs persistence", () => {
   it("seeds and projects a missing snapshot in one CAS write", async () => {
     const scope = {
       folderId: "folder-1",
-      containerKind: "folder" as const,
-      containerId: "folder-1",
-    };
+
+      };
     const repository = {
       loadBoardYjsSnapshot: vi.fn().mockResolvedValue(null),
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue(scope),
+      resolveBoardYjsFolderScope: vi.fn().mockResolvedValue(scope),
       loadBoardYjsSeed: vi.fn().mockResolvedValue({
         boardItems: [{
           id: "session:s1",
@@ -138,9 +136,8 @@ describe("orch board Yjs persistence", () => {
   it("store derives the replica from the supplied Y.Doc state", async () => {
     const scope = {
       folderId: "folder-1",
-      containerKind: "folder" as const,
-      containerId: "folder-1",
-    };
+
+      };
     const state = createBoardYDocSnapshot({
       ...scope,
       boardItems: [{
@@ -162,7 +159,7 @@ describe("orch board Yjs persistence", () => {
         _documentName: string,
         snapshot: Uint8Array,
       ) => ({ snapshot, revision: 1 })),
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue(scope),
+      resolveBoardYjsFolderScope: vi.fn().mockResolvedValue(scope),
     } as unknown as BoardYjsPersistenceRepository;
     const persistence = createBoardYjsPersistence(repository);
 
@@ -188,9 +185,8 @@ describe("orch board Yjs persistence", () => {
   it("merges the winning CRDT snapshot before retrying a conflicted store", async () => {
     const scope = {
       folderId: "folder-merge",
-      containerKind: "folder" as const,
-      containerId: "folder-merge",
-    };
+
+      };
     const localSnapshot = createBoardYDocSnapshot({
       ...scope,
       boardItems: [{
@@ -227,7 +223,7 @@ describe("orch board Yjs persistence", () => {
     };
     const repository = {
       loadBoardYjsSnapshot: vi.fn(async () => current),
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue(scope),
+      resolveBoardYjsFolderScope: vi.fn().mockResolvedValue(scope),
       storeBoardYjsSnapshot: vi.fn(async (
         _documentName: string,
         snapshot: Uint8Array,

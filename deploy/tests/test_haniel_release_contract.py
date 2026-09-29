@@ -41,10 +41,7 @@ CENTRAL_DATABASE_CONTRACT_PATH = (
 STANDALONE_DATABASE_CONTRACT_PATH = (
     REPOSITORY_ROOT / "deploy" / "database-release-standalone.json"
 )
-DEPLOY_COMMAND = (
-    "node orch-server-ts/node_modules/tsx/dist/cli.mjs "
-    "orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts"
-)
+DEPLOY_COMMAND = "node orch-server-ts/scripts/apply-folder-storage.mjs"
 WRITER_SOURCES_PATH = (
     REPOSITORY_ROOT / "deploy" / "database-release-writer-sources.json"
 )
@@ -170,7 +167,7 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
         self.assertEqual(actual_affected, ["soulstream-orch-server"])
         self.assertEqual(projected_affected, actual_affected)
 
-    def test_actual_manifests_scope_board_ydoc_migration_to_the_central_manifest(
+    def test_actual_manifests_scope_folder_documents_to_the_central_manifest(
         self,
     ) -> None:
         central = ReleaseManifest.load(MANIFEST_PATH)
@@ -179,20 +176,19 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
 
         self.assertEqual(
             central.migration.apply.command,
-            f"{DEPLOY_COMMAND} --migrate",
+            DEPLOY_COMMAND,
         )
         self.assertEqual(central.migration.apply.name, "apply-central-database-release")
-        central_verify = [
-            command
-            for command in central.post_start_verify
-            if command.name == "verify-board-yjs-runbook-residue"
-        ]
-        self.assertEqual(len(central_verify), 1)
-        self.assertEqual(central_verify[0].command, f"{DEPLOY_COMMAND} --verify")
+        self.assertEqual(
+            [command.name for command in central.post_start_verify],
+            ["verify-migration-ledger", "verify-release-health"],
+        )
+        contract = json.loads(CENTRAL_DATABASE_CONTRACT_PATH.read_text(encoding="utf8"))
+        self.assertEqual(contract["required_subphases"], ["folder_storage_documents"])
         for manifest in (worker, standalone):
-            self.assertNotIn(
-                "verify-board-yjs-runbook-residue",
-                {command.name for command in manifest.post_start_verify},
+            self.assertTrue(
+                manifest.migration is None
+                or manifest.migration.apply.command != DEPLOY_COMMAND
             )
 
     def test_actual_manifest_commands_do_not_use_bare_pnpm_or_tsx(self) -> None:

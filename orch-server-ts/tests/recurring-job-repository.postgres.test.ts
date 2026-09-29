@@ -67,6 +67,7 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
       SELECT schedule_kind, run_at FROM recurring_jobs WHERE job_id = 'legacy-recurring-job'
     `;
     expect(migratedRows).toEqual([{ schedule_kind: "recurring", run_at: null }]);
+    await harness.sql`ALTER TABLE recurring_jobs DROP COLUMN container_kind, DROP COLUMN container_id`;
     repository = new SqlRecurringJobRepository(
       createLiveDbSqlResolver({ sql: harness.liveSql }),
     );
@@ -343,7 +344,7 @@ function job(overrides: Partial<RecurringJob> = {}): RecurringJob {
     nodeId: "node-a",
     agentId: "roselin",
     modelPreset: null,
-    container: { kind: "folder", id: "folder-a" },
+
     folderId: "folder-a",
     enabled: true,
     archivedAt: null,
@@ -375,7 +376,7 @@ function run(overrides: Partial<RecurringJobRun> = {}): RecurringJobRun {
       nodeId: "node-a",
       agentId: "roselin",
       modelPreset: null,
-      container: { kind: "folder", id: "folder-a" },
+
       folderId: "folder-a",
       executionCaller: { source: "agent" },
       lateRunWindowSeconds: 1800,

@@ -49,17 +49,19 @@ describe("v3 project model local-stack PostgreSQL round-trip", () => {
       idempotencyKey: "create_page:pr-t:task",
       initialCommand: {
         type: "batch_operations",
-        operations: [block("task", "task_ref", "", { primary: true, taskId: "rb-pr-t" })],
+        operations: [block("task", "folder_ref", "", { primary: true, folderId: "rb-pr-t" })],
       },
     });
 
+    await harness.sql`INSERT INTO folders (id, name, project_page_id)
+      VALUES ('folder-pr-t', 'Project', 'project-pr-t'), ('rb-pr-t', '별표할 폴더', 'task-pr-t')`;
     app = Fastify({ logger: false });
     const resolveUser = async () => ({ email: "pr-t@example.com" });
     registerPageBrowserRoutes(app, { service, reads: repository, resolveUser });
     const plannerRepository = new PlannerRepository(resolver);
     registerPlannerRoutes(app, {
       provider: plannerRepository,
-      starredTaskOrder: plannerRepository,
+      starredFolderOrder: plannerRepository,
       onPageUpdated: () => undefined,
       dailyPages: service,
       resolveUser,
@@ -111,8 +113,8 @@ describe("v3 project model local-stack PostgreSQL round-trip", () => {
       expect.objectContaining({ id: atomId, properties: expect.objectContaining({ nodeId: "new-node", depth: 5, titlesOnly: true }) }),
       expect.objectContaining({ id: defaultsId, properties: expect.objectContaining({ agentId: "roselin_codex", nodeId: "eiaserinnys" }) }),
     ]));
-    const starred = await json(`${baseUrl}/api/planner/starred-tasks?limit=50`);
-    expect(starred.items.map((page: { id: string }) => page.id)).toEqual(["task-pr-t"]);
+    const starred = await json(`${baseUrl}/api/planner/starred-folders?limit=50`);
+    expect(starred.items.map((item: { page: { id: string } }) => item.page.id)).toEqual(["task-pr-t"]);
 
     const [databaseState] = await harness.sql<[{ task_starred: boolean; context_blocks: number }]>`
       SELECT

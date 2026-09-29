@@ -14,6 +14,8 @@ import {
   type TestDatabaseLease,
 } from "./database_test_harness.js";
 
+import { restorePreFolderSchema } from "./pre_folder_schema_fixture.js";
+
 import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 const SCRIPT_PATH = fileURLToPath(new URL("../../scripts/apply-schema.mjs", import.meta.url));
@@ -323,10 +325,8 @@ describe("apply-schema.mjs", () => {
       `).rejects.toMatchObject({ code: "23514" });
 
       await sql.unsafe(`
-        ALTER TABLE tasks DROP CONSTRAINT tasks_task_page_id_fkey;
         ALTER TABLE folders DROP CONSTRAINT folders_project_page_id_fkey;
-        DROP TABLE checklist_task_projection_outbox;
-        DROP TABLE IF EXISTS planner_starred_task_order;
+        DROP TABLE IF EXISTS planner_starred_page_order;
         DROP TABLE block_links;
         DROP TABLE block_operations;
         DROP TABLE blocks;
@@ -521,7 +521,7 @@ describe("apply-schema.mjs", () => {
         }]);
 
         const first = await runMigrationAsync(cwd, "apply", gatedEnvironment);
-        expect(first.status).toBe(0);
+        expect(first.status, first.stderr || first.stdout).toBe(0);
         expectNoSecretLeak(first);
 
         const promoted = await sql<Array<{
@@ -861,8 +861,7 @@ describe("apply-schema.mjs", () => {
     ]);
     expect(manifest.environment_service).toBe("soulstream-orch-server");
     expect(manifest.migration.apply.command).toBe(
-      "node orch-server-ts/node_modules/tsx/dist/cli.mjs "
-      + "orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --migrate",
+      "node orch-server-ts/scripts/apply-folder-storage.mjs",
     );
     expect(fixture.services["soulstream-soul-server-ts"].after).toEqual([
       "soulstream-orch-server",
@@ -965,6 +964,7 @@ async function runMigrationAsync(
 async function resetToPreRuntimeMigrationState(
   sql: ReturnType<typeof postgres>,
 ): Promise<void> {
+  await restorePreFolderSchema(sql);
   await sql`
     DELETE FROM schema_migrations
     WHERE ordinal >= 46

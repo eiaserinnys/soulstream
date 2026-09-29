@@ -13,6 +13,8 @@ import {
   type TestDatabaseLease,
 } from "./database_test_harness.js";
 
+import { restorePreFolderSchema } from "./pre_folder_schema_fixture.js";
+
 import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 
@@ -83,7 +85,8 @@ describe.sequential("versioned migration runner", () => {
       expect(coveringIndex[0].reloptions)
         .toContain("autovacuum_vacuum_insert_scale_factor=0.05");
 
-      await seedCurrentTask(sql);
+      await restorePreFolderSchema(sql);
+      await seedHistoricalFolder(sql);
       await sql`DROP INDEX public.idx_events_event_type_cover`;
       await sql`DROP TABLE schema_migrations`;
 
@@ -145,7 +148,7 @@ describe.sequential("versioned migration runner", () => {
           (SELECT COUNT(*)::int FROM schema_migrations
             WHERE migration_id = '104_events_event_type_covering_index.sql')
             AS event_type_index_migration_count,
-          (SELECT COUNT(*)::int FROM task_operations WHERE id = 'operation-sentinel')
+          (SELECT COUNT(*)::int FROM folder_operations WHERE id = 'operation-sentinel')
             AS operation_count,
           (SELECT COUNT(DISTINCT applied_kind)::int FROM schema_migrations)
             AS applied_kind_count,
@@ -200,7 +203,7 @@ describe.sequential("versioned migration runner", () => {
   });
 });
 
-async function seedCurrentTask(sql: ReturnType<typeof postgres>) {
+async function seedHistoricalFolder(sql: ReturnType<typeof postgres>) {
   await sql`
     INSERT INTO folders (id, name, sort_order)
     VALUES ('folder-sentinel', 'Sentinel', 0)
@@ -213,9 +216,10 @@ async function seedCurrentTask(sql: ReturnType<typeof postgres>) {
       'task', 'task-sentinel'
     )
   `;
+  await sql`INSERT INTO pages (id, title) VALUES ('page-sentinel', 'Sentinel task')`;
   await sql`
-    INSERT INTO tasks (id, board_item_id, title)
-    VALUES ('task-sentinel', 'task:sentinel', 'Sentinel task')
+    INSERT INTO tasks (id, board_item_id, title, task_page_id)
+    VALUES ('task-sentinel', 'task:sentinel', 'Sentinel task', 'page-sentinel')
   `;
   await sql`
     INSERT INTO task_operations (

@@ -1,531 +1,102 @@
-import { describe, expect, it, vi } from "vitest";
+import Fastify from "fastify";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { registerFolderRoutes, type FolderRouteOptions } from "../src/folders/folder_routes.js";
+import type { ChecklistControlPlaneService } from "../src/checklist/checklist_control_plane_service.js";
+import type { FolderControlPlaneService } from "../src/folders/folder_control_plane_service.js";
 
-import type { FolderProjectIdentityService } from "../src/folders/folder_project_identity_service.js";
-
-import {
-  FolderRouteError,
-  createApp,
-  folderRouteAuthRequirements,
-  loadContractFixtures,
-  parseOrchServerConfig,
-  type FolderAccessProvider,
-  type FolderRecord,
-  type FolderRouteProvider,
-  type SessionAssignmentRecord,
-} from "../src/index.js";
-
-const config = parseOrchServerConfig({
-  environment: "test",
-  databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
-  authBearerToken: "test-token",
-});
-
-type ProviderCall =
-  | ["access"]
-  | ["listFolders"]
-  | ["listSessionAssignments"]
-  | ["create", string, number, unknown]
-  | ["update", string, unknown]
-  | ["delete", string]
-  | ["reorder", unknown];
-
-const folders: FolderRecord[] = [
-  { id: "folder-a", name: "Alpha", sortOrder: 1, parentFolderId: null },
-  { id: "folder-a-child", name: "Child", sortOrder: 2, parentFolderId: "folder-a" },
-  { id: "folder-b", name: "Beta", sortOrder: 3, parentFolderId: null },
-  { id: "claude", name: "Claude", sortOrder: 4, parentFolderId: null },
-  { id: "llm", name: "LLM", sortOrder: 5, parentFolderId: null },
-];
-
-const assignments: Record<string, SessionAssignmentRecord> = {
-  "sess-a": { folderId: "folder-a", displayName: "Alpha session" },
-  "sess-child": { folderId: "folder-a-child", displayName: "Child session" },
-  "sess-b": { folderId: "folder-b", displayName: "Beta session" },
-  "sess-none": { folderId: null, displayName: "Unfiled session" },
-};
-
-function createHarness(overrides: Partial<FolderRouteProvider> = {}) {
-  const calls: ProviderCall[] = [];
-  const provider: FolderRouteProvider = {
-    async listFolders() {
-      calls.push(["listFolders"]);
-      return folders;
-    },
-    async listSessionAssignments() {
-      calls.push(["listSessionAssignments"]);
-      return assignments;
-    },
-    async createFolder(name, sortOrder, options) {
-      calls.push(["create", name, sortOrder, options]);
-      return { id: "created", name, sortOrder, parentFolderId: options.parentFolderId };
-    },
-    async updateFolder(folderId, update) {
-      calls.push(["update", folderId, update]);
-    },
-    async deleteFolder(folderId) {
-      calls.push(["delete", folderId]);
-    },
-    async reorderFolders(items) {
-      calls.push(["reorder", items]);
-    },
-    ...overrides,
-  };
-  return { provider, calls };
+const row = { id: "f", name: "기존 폴더", parent_folder_id: null, project_page_id: "p", sort_order: 0,
+  settings: {}, archived: false, checklist_enabled: false, status: "open", version: 3,
+  created_session_id: null, created_event_id: null, created_at: new Date("2026-09-30Z"), updated_at: new Date("2026-09-30Z") };
+const section = { id: "s", folder_id: "f", title: "섹션" };
+const item = { id: "i", section_id: "s", title: "항목", how_to: "절차" };
+const apps: ReturnType<typeof Fastify>[] = [];
+afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())); });
+function setup({ user = "user@example.com", restricted = false } = {}) {
+  const snapshot = { folder: row, sections: [section], items: [item] };
+  const getFolder = vi.fn(async () => snapshot);
+  const listFolders = vi.fn(async () => [row]);
+  const mutate = vi.fn(async () => ({ snapshot, operation: { folder_id: "f", target_kind: "folder", target_id: "f" }, idempotent: false }));
+  const checklist = { getFolder, listFolders, listOperations: vi.fn(async () => []),
+    setFolderStatus: mutate, setFolderChecklistEnabled: mutate,
+    setItemStatus: mutate, createSection: mutate, createItem: mutate, patchSection: mutate, patchItem: mutate,
+    moveSection: mutate, moveItem: mutate, setSectionAssignee: mutate, setItemAssignee: mutate } as unknown as ChecklistControlPlaneService;
+  const identity = { create: vi.fn(async () => ({ folder: { id: "f", name: "새 폴더", checklistEnabled: false }, operation: { id: "op" }, idempotent: false })),
+    mutateFromFolder: vi.fn(async () => ({ folder: { id: "f", archived: true }, operation: { id: "op" }, idempotent: false })) };
+  const app = Fastify(); apps.push(app);
+  registerFolderRoutes(app, {
+    provider: { listFolders: () => [{ id: "f" }, { id: "other" }], listSessionAssignments: () => ({ a: { folderId: "f" }, b: { folderId: "other" } }) },
+    accessProvider: { resolveAccess: () => ({ restricted, allowedFolderIds: ["f"] }) },
+    resolveDashboardUserId: () => user || null, projectIdentityService: identity as unknown as FolderRouteOptions["projectIdentityService"],
+    checklistServiceProvider: async () => checklist, controlPlaneServiceProvider: async () => ({} as FolderControlPlaneService),
+    authBearerToken: "test-token", environment: "production",
+  });
+  return { app, identity, getFolder, listFolders, mutate };
 }
 
-function createAccessProvider(
-  access: { restricted: boolean; allowedFolderIds?: string[] },
-  calls: ProviderCall[],
-): FolderAccessProvider {
-  return {
-    async resolveAccess() {
-      calls.push(["access"]);
-      return access;
-    },
-  };
-}
-
-function createAppWithFolders(
-  access: { restricted: boolean; allowedFolderIds?: string[] },
-  overrides: Partial<FolderRouteProvider> = {},
-) {
-  const harness = createHarness(overrides);
-  const accessProvider = createAccessProvider(access, harness.calls);
-  const app = createApp({
-    config,
-    folderRoutes: { provider: harness.provider, accessProvider },
-  });
-  return { app, calls: harness.calls };
-}
-
-describe("folder route harness", () => {
-  const fixtures = loadContractFixtures();
-
-  it("keeps folder routes disabled on the default app", async () => {
-    const app = createApp({ config });
-
-    for (const [method, url, payload] of [
-      ["GET", "/api/folders", undefined],
-      ["POST", "/api/folders", { name: "New" }],
-      ["PUT", "/api/folders/folder-a", { name: "Rename" }],
-      ["DELETE", "/api/folders/folder-a", undefined],
-      ["PATCH", "/api/folders/reorder", [{ id: "folder-a", sortOrder: 2 }]],
-    ] as const) {
-      expect(await app.inject({ method, url, payload })).toMatchObject({
-        statusCode: 404,
-      });
-    }
-
-    await app.close();
-  });
-
-  it("registers Python auth contract rows for route inventory order 64-68", () => {
-    expect(folderRouteAuthRequirements).toEqual({
-      "GET /api/folders": true,
-      "POST /api/folders": true,
-      "PUT /api/folders/:folder_id": true,
-      "DELETE /api/folders/:folder_id": true,
-      "PATCH /api/folders/reorder": true,
-    });
-
-    const routeRows = fixtures.routeInventory.routes
-      .filter((route) =>
-        [
-          "list_folders",
-          "create_folder",
-          "update_folder",
-          "delete_folder",
-          "reorder_folders",
-        ].includes(route.name),
-      )
-      .map((route) => [route.order, route.methods[0], route.path, route.authRequired]);
-
-    expect(routeRows).toEqual([
-      [64, "GET", "/api/folders", true],
-      [65, "POST", "/api/folders", true],
-      [66, "PUT", "/api/folders/{folder_id}", true],
-      [67, "DELETE", "/api/folders/{folder_id}", true],
-      [68, "PATCH", "/api/folders/reorder", true],
-    ]);
-  });
-
-  it("lists unrestricted folders with every session title projection", async () => {
-    const { app, calls } = createAppWithFolders({ restricted: false });
-
-    const response = await app.inject({ method: "GET", url: "/api/folders" });
-
+describe("unified folder HTTP and host contracts", () => {
+  it("reads stored checklist content even when its display is disabled", async () => {
+    const { app } = setup();
+    const response = await app.inject("/api/folders/f");
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      folders,
-      sessions: assignments,
-      access: { restricted: false, allowedFolderIds: [] },
-    });
-    expect(calls).toEqual([["access"], ["listFolders"], ["listSessionAssignments"]]);
-
-    await app.close();
+    expect(response.json()).toMatchObject({ folder: { checklistEnabled: false, createdSessionId: null }, sections: [{ folderId: "f" }], items: [{ howTo: "절차" }] });
+    const outline = await app.inject("/api/folders/f?view=outline&itemId=i");
+    expect(outline.json().items[0]).not.toHaveProperty("howTo");
   });
-
-  it("lists restricted folders with descendant visibility and filtered assignments", async () => {
-    const { app, calls } = createAppWithFolders({
-      restricted: true,
-      allowedFolderIds: ["folder-a"],
-    });
-
-    const response = await app.inject({ method: "GET", url: "/api/folders" });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      folders: [folders[0], folders[1]],
-      sessions: {
-        "sess-a": assignments["sess-a"],
-        "sess-child": assignments["sess-child"],
-      },
-      access: { restricted: true, allowedFolderIds: ["folder-a"] },
-    });
-    expect(calls).toEqual([
-      ["access"],
-      ["listFolders"],
-      ["listSessionAssignments"],
-    ]);
-
-    await app.close();
-  });
-
-  it("creates folders with Python defaults after parent access check", async () => {
-    const { app, calls } = createAppWithFolders({
-      restricted: true,
-      allowedFolderIds: ["folder-a"],
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/folders",
-      payload: { name: "New child", parentFolderId: "folder-a-child" },
-    });
-
+  it("creates through the identity owner and returns the agreed mutation envelope", async () => {
+    const { app, identity } = setup();
+    const response = await app.inject({ method: "POST", url: "/api/folders", payload: { name: "새 폴더", idempotencyKey: "new" } });
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual({
-      id: "created",
-      name: "New child",
-      sortOrder: 0,
-      parentFolderId: "folder-a-child",
-    });
-    expect(calls).toEqual([
-      ["access"],
-      ["listFolders"],
-      ["create", "New child", 0, { parentFolderId: "folder-a-child" }],
-    ]);
-
-    await app.close();
+    expect(response.json()).toEqual({ folder: { id: "f", name: "새 폴더", checklistEnabled: false }, operation: { id: "op" }, idempotent: false });
+    expect(identity.create).toHaveBeenCalledWith(expect.objectContaining({ checklistEnabled: false, actor: { actorKind: "user", actorSessionId: null, actorUserId: "user@example.com" } }));
   });
-
-  it("routes browser create, compound rename, and delete through one project identity service", async () => {
-    const harness = createHarness();
-    const create = vi.fn(async () => ({
-      folder: {
-        id: "00000000-0000-4000-8000-0000000000af",
-        name: "Project",
-        sortOrder: 0,
-        settings: {},
-        parentFolderId: null,
-        projectPageId: "00000000-0000-4000-8000-0000000000af",
-      },
-    }));
-    const mutateFromFolder = vi.fn(async () => ({}));
-    const projectIdentityService = {
-      create,
-      mutateFromFolder,
-      backfillLegacyFolder: vi.fn(),
-    } as unknown as Pick<
-      FolderProjectIdentityService,
-      "create" | "mutateFromFolder" | "backfillLegacyFolder"
-    >;
-    const app = createApp({
-      config,
-      folderRoutes: {
-        provider: harness.provider,
-        accessProvider: createAccessProvider({ restricted: false }, harness.calls),
-        resolveDashboardUserId: () => "user@example.com",
-        projectIdentityService,
-      },
-    });
-
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/folders",
-      payload: { name: "Project", idempotencyKey: "browser:create:af" },
-    });
-    const updated = await app.inject({
-      method: "PUT",
-      url: "/api/folders/folder-a",
-      payload: {
-        name: "Renamed",
-        settings: { color: "red" },
-        parentFolderId: null,
-        idempotencyKey: "browser:update:af",
-      },
-    });
-    const deleted = await app.inject({
-      method: "DELETE",
-      url: "/api/folders/folder-a",
-      headers: { "idempotency-key": "browser:delete:af" },
-    });
-
-    expect(created.statusCode).toBe(201);
-    expect(created.json()).toMatchObject({
-      id: "00000000-0000-4000-8000-0000000000af",
-      projectPageId: "00000000-0000-4000-8000-0000000000af",
-    });
-    expect(updated.statusCode).toBe(200);
-    expect(deleted.statusCode).toBe(200);
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      actor: { actorKind: "user", actorUserId: "user@example.com" },
-      idempotencyKey: "browser:create:af",
-    }));
-    expect(mutateFromFolder).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      update: { name: "Renamed", settings: { color: "red" }, parentFolderId: null },
-      idempotencyKey: "browser:update:af",
-    }));
-    expect(mutateFromFolder).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      archived: true,
-      idempotencyKey: "browser:delete:af",
-    }));
-    expect(harness.calls.filter(([kind]) => ["create", "update", "delete"].includes(kind)))
-      .toEqual([]);
-
-    await app.close();
+  it.each(["status", "checklist-enabled"])("writes %s without a creating session or board tile", async action => {
+    const { app, mutate } = setup();
+    const response = await app.inject({ method: "POST", url: `/api/folders/f/${action}`, payload: {
+      expectedVersion: 3, idempotencyKey: action, ...(action === "status" ? { status: "completed" } : { checklistEnabled: true }),
+    } });
+    expect(response.statusCode).toBe(200); expect(mutate).toHaveBeenCalledOnce();
+    expect(response.json()).toHaveProperty("folder.checklistEnabled", false);
   });
-
-  it("accepts the soul MCP host create payload only with the service bearer", async () => {
-    const harness = createHarness();
-    const create = vi.fn(async () => ({
-      folder: {
-        id: "00000000-0000-4000-8000-0000000000af",
-        name: "MCP Project",
-        sortOrder: 0,
-        settings: {},
-        parentFolderId: null,
-        projectPageId: "00000000-0000-4000-8000-0000000000af",
-      },
-    }));
-    const projectIdentityService = {
-      create,
-      mutateFromFolder: vi.fn(),
-      backfillLegacyFolder: vi.fn(),
-    } as unknown as Pick<
-      FolderProjectIdentityService,
-      "create" | "mutateFromFolder" | "backfillLegacyFolder"
-    >;
-    const app = createApp({
-      config,
-      folderRoutes: {
-        provider: harness.provider,
-        accessProvider: createAccessProvider({ restricted: false }, harness.calls),
-        projectIdentityService,
-        authBearerToken: "test-token",
-      },
-    });
-    const payload = {
-      name: "MCP Project",
-      sort_order: 0,
-      parent_folder_id: null,
-      actor_kind: "system",
-      idempotency_key: "mcp:create:folder-af",
-    };
-
-    expect((await app.inject({
-      method: "POST",
-      url: "/api/folder-project-identities/host/create",
-      payload,
-    })).statusCode).toBe(401);
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/folder-project-identities/host/create",
-      headers: { authorization: "Bearer test-token" },
-      payload,
-    });
-
+  it("archives with CAS and no destructive delete endpoint", async () => {
+    const { app, identity } = setup();
+    const result = await app.inject({ method: "POST", url: "/api/folders/f/archive", payload: { expectedVersion: 3, idempotencyKey: "archive" } });
+    expect(result.statusCode).toBe(200);
+    expect(identity.mutateFromFolder).toHaveBeenCalledWith(expect.objectContaining({ folderId: "f", archived: true, expectedVersion: 3 }));
+    expect((await app.inject({ method: "DELETE", url: "/api/folders/f" })).statusCode).toBe(404);
+  });
+  it("checks login, folder access, system protection and checklist membership", async () => {
+    const { app } = setup({ restricted: true });
+    expect((await app.inject("/api/folders/other")).statusCode).toBe(403);
+    expect((await app.inject("/api/folders")).json().sessions).toEqual({ a: { folderId: "f" } });
+    const payload = { expectedVersion: 3, idempotencyKey: "status", status: "completed" };
+    expect((await app.inject({ method: "POST", url: "/api/folders/f/checklist/items/wrong/status", payload })).statusCode).toBe(404);
+    const loggedOut = setup({ user: "" });
+    expect((await loggedOut.app.inject({ method: "POST", url: "/api/folders/f/status", payload })).statusCode).toBe(401);
+    const unrestricted = setup();
+    expect((await unrestricted.app.inject({ method: "POST", url: "/api/folders/claude/status", payload })).statusCode).toBe(403);
+  });
+  it("returns version conflicts and rejects old fields at the boundary", async () => {
+    const { app, mutate } = setup();
+    mutate.mockRejectedValueOnce(Object.assign(new Error("stale"), { statusCode: 409, code: "FOLDER_VERSION_CONFLICT" }));
+    const payload = { expectedVersion: 3, idempotencyKey: "status", status: "completed" };
+    expect((await app.inject({ method: "POST", url: "/api/folders/f/status", payload })).json()).toMatchObject({ detail: { error: { code: "FOLDER_VERSION_CONFLICT" } } });
+    expect((await app.inject({ method: "POST", url: "/api/folders", payload: { name: "x", idempotencyKey: "x", container: { kind: "task", id: "f" } } })).statusCode).toBe(422);
+    expect((await app.inject("/api/tasks/f")).statusCode).toBe(404);
+  });
+  it("uses one bearer-protected host operation for root and child lists", async () => {
+    const { app, listFolders } = setup();
+    const call = (folder_id: string | null, token = "test-token") => app.inject({ method: "POST", url: "/api/folders/host/list_child_folders", headers: { authorization: `Bearer ${token}` }, payload: { folder_id } });
+    expect((await call(null, "bad")).statusCode).toBe(401);
+    expect((await call(null)).statusCode).toBe(200);
+    expect(listFolders).toHaveBeenLastCalledWith({ folderId: null, includeArchived: false, limit: 51, offset: 0 });
+    expect((await call("f")).json()).toMatchObject({ items: [{ id: "f", checklistEnabled: false }], nextCursor: null });
+    expect(listFolders).toHaveBeenLastCalledWith({ folderId: "f", includeArchived: false, limit: 51, offset: 0 });
+  });
+  it("keeps host responses camelCase and mutation results free of a snapshot wrapper", async () => {
+    const { app } = setup();
+    const response = await app.inject({ method: "POST", url: "/api/folders/host/set_folder_status", headers: { authorization: "Bearer test-token" }, payload: { folder_id: "f", actor_kind: "user", actor_user_id: "u", expected_version: 3, idempotency_key: "host", status: "completed" } });
     expect(response.statusCode).toBe(200);
-    expect(response.json().folder).toMatchObject({
-      id: "00000000-0000-4000-8000-0000000000af",
-      projectPageId: "00000000-0000-4000-8000-0000000000af",
-    });
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      actor: { actorKind: "system" },
-      idempotencyKey: "mcp:create:folder-af",
-    }));
-
-    await app.close();
-  });
-
-  it("passes only supplied update fields and treats parentFolderId null as supplied", async () => {
-    const { app, calls } = createAppWithFolders({ restricted: false });
-
-    await app.inject({
-      method: "PUT",
-      url: "/api/folders/folder-a",
-      payload: { settings: { color: "red" } },
-    });
-    await app.inject({
-      method: "PUT",
-      url: "/api/folders/folder-a",
-      payload: { parentFolderId: null },
-    });
-
-    expect(calls).toEqual([
-      ["access"],
-      ["listFolders"],
-      ["update", "folder-a", { settings: { color: "red" } }],
-      ["access"],
-      ["listFolders"],
-      ["update", "folder-a", { parentFolderId: null }],
-    ]);
-
-    await app.close();
-  });
-
-  it("blocks disallowed restricted folders before mutation", async () => {
-    const { app, calls } = createAppWithFolders({
-      restricted: true,
-      allowedFolderIds: ["folder-a"],
-    });
-
-    const update = await app.inject({
-      method: "PUT",
-      url: "/api/folders/folder-b",
-      payload: { name: "Blocked" },
-    });
-    const create = await app.inject({
-      method: "POST",
-      url: "/api/folders",
-      payload: { name: "Blocked", parentFolderId: null },
-    });
-
-    expect(update.statusCode).toBe(403);
-    expect(create.statusCode).toBe(403);
-    expect(update.json()).toEqual({ detail: "Folder access denied" });
-    expect(create.json()).toEqual({ detail: "Folder access denied" });
-    expect(calls).toEqual([
-      ["access"],
-      ["listFolders"],
-      ["access"],
-      ["listFolders"],
-    ]);
-
-    await app.close();
-  });
-
-  it("allows system folder settings updates but blocks rename, move, delete, and reorder", async () => {
-    const { app, calls } = createAppWithFolders({ restricted: false });
-
-    const settings = await app.inject({
-      method: "PUT",
-      url: "/api/folders/claude",
-      payload: { settings: { hidden: true } },
-    });
-    const rename = await app.inject({
-      method: "PUT",
-      url: "/api/folders/claude",
-      payload: { name: "Claude 2" },
-    });
-    const move = await app.inject({
-      method: "PUT",
-      url: "/api/folders/claude",
-      payload: { parentFolderId: null },
-    });
-    const deletion = await app.inject({
-      method: "DELETE",
-      url: "/api/folders/llm",
-    });
-    const reorder = await app.inject({
-      method: "PATCH",
-      url: "/api/folders/reorder",
-      payload: [{ id: "claude", sortOrder: 10 }],
-    });
-
-    expect(settings.statusCode).toBe(200);
-    expect(settings.json()).toEqual({ success: true });
-    expect(rename.statusCode).toBe(400);
-    expect(rename.json()).toEqual({
-      detail: "System folder 'claude' cannot be renamed.",
-    });
-    expect(move.statusCode).toBe(400);
-    expect(move.json()).toEqual({
-      detail: "System folder 'claude' cannot be moved.",
-    });
-    expect(deletion.statusCode).toBe(400);
-    expect(deletion.json()).toEqual({
-      detail: "System folder 'llm' cannot be deleted.",
-    });
-    expect(reorder.statusCode).toBe(400);
-    expect(reorder.json()).toEqual({
-      detail: "System folder 'claude' cannot be moved or reordered.",
-    });
-    expect(calls).toEqual([
-      ["access"],
-      ["listFolders"],
-      ["update", "claude", { settings: { hidden: true } }],
-      ["access"],
-      ["listFolders"],
-      ["access"],
-      ["listFolders"],
-      ["access"],
-      ["listFolders"],
-      ["access"],
-      ["listFolders"],
-    ]);
-
-    await app.close();
-  });
-
-  it("keeps reorder static route from being consumed as a folder_id route", async () => {
-    const { app, calls } = createAppWithFolders({ restricted: false });
-
-    const response = await app.inject({
-      method: "PATCH",
-      url: "/api/folders/reorder",
-      payload: [
-        { id: "folder-a", sortOrder: 2 },
-        { id: "folder-b", sortOrder: 1, parentFolderId: null },
-      ],
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ success: true });
-    expect(calls).toEqual([
-      ["access"],
-      ["listFolders"],
-      [
-        "reorder",
-        [
-          { id: "folder-a", sortOrder: 2 },
-          { id: "folder-b", sortOrder: 1, parentFolderId: null },
-        ],
-      ],
-    ]);
-
-    await app.close();
-  });
-
-  it("maps provider validation errors to a predictable detail envelope", async () => {
-    const { app } = createAppWithFolders(
-      { restricted: false },
-      {
-        async createFolder() {
-          throw new FolderRouteError("FOLDER_EXISTS", "Folder already exists", 400);
-        },
-      },
-    );
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/folders",
-      payload: { name: "Duplicate" },
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({ detail: "Folder already exists" });
-
-    await app.close();
+    expect(response.json()).toMatchObject({ folder: { id: "f", checklistEnabled: false }, operation: { folderId: "f" }, idempotent: false });
+    expect(response.json()).not.toHaveProperty("snapshot");
   });
 });

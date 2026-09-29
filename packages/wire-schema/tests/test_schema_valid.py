@@ -127,9 +127,8 @@ def test_shared_contract_inventories_match_generated_types() -> None:
         "x-soulstream-session-timeline-event-types": "SESSION_TIMELINE_EVENT_TYPES",
         "x-soulstream-session-statuses": "SESSION_STATUSES",
         "x-soulstream-caller-info-sources": "CALLER_INFO_SOURCES",
-        "x-soulstream-task-item-statuses": "TASK_ITEM_STATUSES",
+        "x-soulstream-checklist-item-statuses": "CHECKLIST_ITEM_STATUSES",
         "x-soulstream-board-item-types": "BOARD_ITEM_TYPES",
-        "x-soulstream-board-container-kinds": "BOARD_CONTAINER_KINDS",
     }
 
     for schema_key, generated_name in shared_inventories.items():
@@ -376,8 +375,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventClaudeRuntimeModeState",
         "SSEEventClaudeRuntimeScheduleUpdated",
         "SSEEventClaudeRuntimeScheduleDeleted",
-        "SSEEventTaskUpdated",
-        "SSEEventRunbookUpdatedLegacy",
+        "SSEEventFolderUpdated",
         "SSEEventCustomViewUpdated",
         "SSEEventContextUsage",
         "SSEEventContextManifest",
@@ -389,8 +387,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTurnSummary",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 62, (
-        "SSE event $defs 62종 (canonical 61종 + production-gated runbook_updated 읽기 호환)."
+    assert len(sse_types) == 61, (
+        "SSE event $defs 61종."
     )
 
     expected = wire_types | sse_types
@@ -418,7 +416,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 64
+    assert len(sse_event_types) == 63
     assert persistence_only_event_types == {"metadata"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
@@ -719,8 +717,7 @@ def test_known_sse_event_types_completeness() -> None:
         "claude_runtime_mode_state",
         "claude_runtime_schedule_updated",
         "claude_runtime_schedule_deleted",
-        "task_updated",
-        "runbook_updated",
+        "folder_updated",
         "custom_view_updated",
         "context_usage",
         "context_manifest",

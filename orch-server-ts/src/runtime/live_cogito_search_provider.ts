@@ -397,34 +397,13 @@ export function createLiveCogitoSearchProvider(
               f.id,
               f.name AS title,
               f.id AS folder_id,
-              f.project_page_id,
-              NULL::text AS board_item_id,
-              NULL::text AS task_page_id
+              f.project_page_id
             FROM folders f
             WHERE f.archived = FALSE
               AND f.project_page_id IS NOT NULL
               AND (${allowedFolderIds}::text[] IS NULL
                 OR f.id = ANY(${allowedFolderIds}::text[]))
               AND f.name ILIKE ${`%${params.q}%`}
-            UNION ALL
-            SELECT
-              'task'::text AS kind,
-              t.id,
-              t.title,
-              bi.folder_id,
-              f.project_page_id,
-              t.board_item_id,
-              t.task_page_id
-            FROM tasks t
-            JOIN board_items bi ON bi.id = t.board_item_id
-            JOIN folders f ON f.id = bi.folder_id
-            WHERE t.archived = FALSE
-              AND f.archived = FALSE
-              AND t.task_page_id IS NOT NULL
-              AND f.project_page_id IS NOT NULL
-              AND (${allowedFolderIds}::text[] IS NULL
-                OR f.id = ANY(${allowedFolderIds}::text[]))
-              AND t.title ILIKE ${`%${params.q}%`}
           ) navigation
           ORDER BY title ASC, id ASC
           LIMIT ${Math.min(500, candidateLimit)}

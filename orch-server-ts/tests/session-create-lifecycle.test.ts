@@ -13,6 +13,8 @@ import {
 describe("session create lifecycle", () => {
   it.each([
     { kind: "runbook", id: "task-a" },
+    { kind: "folder", id: "folder-a" },
+    { kind: "task", id: "task-a" },
     { kind: "task" },
     { kind: "task", id: "" },
     { kind: "task", id: "   " },
@@ -31,30 +33,23 @@ describe("session create lifecycle", () => {
       body: { prompt: "hello", container },
     })).rejects.toMatchObject({ statusCode: 422, code: "INVALID_REQUEST" });
     expect(access.resolveAccess).not.toHaveBeenCalled();
-    expect(boardItems.resolveBoardContainerFolderId).not.toHaveBeenCalled();
   });
 
-  it.each([
-    [{ kind: "folder", id: " folder-a " }, { kind: "folder", id: "folder-a" }],
-    [{ kind: "task", id: " task-a " }, { kind: "task", id: "task-a" }],
-  ])("normalizes valid container %j", async (container, expected) => {
+  it("accepts the canonical folderId field", async () => {
     const lifecycle = createSessionCreateLifecycle({
       resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
       boardItems: boardItemProvider(),
       access: accessProvider({ restricted: false, allowedFolderIds: [] }),
     });
-
-    await expect(lifecycle.prepare({ request: request(), body: { prompt: "hello", container } }))
-      .resolves.toMatchObject({ payload: { container: expected } });
+    await expect(lifecycle.prepare({ request: request(), body: { prompt: "hello", folderId: "folder-a" } }))
+      .resolves.toMatchObject({ payload: { folderId: "folder-a" } });
   });
 
-  it("inherits a source session primary task container and removes sourceSessionId", async () => {
+  it("inherits a source session folder and removes sourceSessionId", async () => {
     const boardItems = boardItemProvider({
       boardItems: [{
         id: "session:source",
         folderId: "folder-a",
-        containerKind: "task",
-        containerId: "task-a",
         membershipKind: "primary",
         itemType: "session",
         itemId: "source",
@@ -77,7 +72,6 @@ describe("session create lifecycle", () => {
 
     expect(prepared.payload).toMatchObject({
       folderId: "folder-a",
-      container: { kind: "task", id: "task-a" },
       caller_info: { source: "browser" },
     });
     expect(prepared.payload).not.toHaveProperty("sourceSessionId");
@@ -141,14 +135,7 @@ function boardItemProvider(input: {
   return {
     listFolders: vi.fn(async () => folders),
     listBoardItems: vi.fn(async () => boardItems),
-    resolveBoardContainerFolderId: vi.fn(async (container) => {
-      if (container.kind === "folder") return container.id;
-      const task = boardItems.find((item) =>
-        item.itemType === "task" && item.itemId === container.id
-      );
-      if (typeof task?.folderId !== "string") throw new Error("missing task");
-      return task.folderId;
-    }),
+
     getCatalogSnapshot: vi.fn(async () => ({ folders, boardItems })),
   };
 }

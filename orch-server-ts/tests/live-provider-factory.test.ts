@@ -181,9 +181,6 @@ describe("live provider factory boundary", () => {
     await expect(
       bundle.folderRoutes.resolveDashboardUserId?.(routeIdentityRequest),
     ).resolves.toBe("push@example.com");
-    await expect(
-      bundle.taskRoutes.resolveDashboardUserId?.(routeIdentityRequest),
-    ).resolves.toBe("push@example.com");
     expect(bundle.userBackgroundRoutes.repository).toBe(
       dependencies.dbCatalogRepository.userPreferencesRepository,
     );
@@ -231,7 +228,6 @@ describe("live provider factory boundary", () => {
     );
     expect(bundle.boardItemRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.boardItemRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.markdownDocumentRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.markdownDocumentRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
-    expect(bundle.taskRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.taskRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.sessionCatalogRoutes.provider).not.toBe(
       dependencies.dbCatalogRepository.sessionCatalogProvider,
     );
@@ -293,28 +289,6 @@ describe("live provider factory boundary", () => {
       path: "/api/config/settings",
       headers: { cookie: "sid=abc" },
       body: { changes: { KEY: "value" } },
-    });
-    const taskPayload = {
-      status: "completed",
-      expectedVersion: 4,
-      idempotencyKey: "idem-task",
-    };
-    await expect(
-      bundle.taskRoutes.httpClient({
-        method: "POST",
-        url: "http://ignored.example.test/legacy-python-proxy",
-        upstreamPath: "/api/tasks/rb%2F1/status",
-        headers: { cookie: "sid=task", authorization: "Bearer task" },
-        body: taskPayload,
-        target: { nodeId: "node-task", host: "ignored", port: 4105 },
-      }),
-    ).resolves.toMatchObject({ statusCode: 200 });
-    expect(dependencies.nodeHttpClient.requestNode).toHaveBeenCalledWith({
-      nodeId: "node-task",
-      method: "POST",
-      path: "/api/tasks/rb%2F1/status",
-      headers: { cookie: "sid=task", authorization: "Bearer task" },
-      body: taskPayload,
     });
     await expect(
       bundle.nodeClaudeAuthRoutes.profileHttpClient({
@@ -612,10 +586,7 @@ function createLiveDependencies(): LiveProviderDependencies {
             sessionId,
             { folderId: "folder-a" },
           ]))),
-        deleteFolderWithCatalogDelta: vi.fn(async () => ({
-          sessionsDelta: {},
-          deletedBoardItemIds: [],
-        })),
+
         listBoardItemIdsForSessionDeletion: vi.fn(async () => []),
       } as never,
       folderCountsProvider: {} as never,
@@ -625,7 +596,7 @@ function createLiveDependencies(): LiveProviderDependencies {
         initFileAsset: vi.fn(async () => ({ assetId: "asset-live" })),
         commitFileAsset: vi.fn(async () => ({ asset: {}, boardItem: {} })),
       },
-      boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never, taskRouteProvider: {} as never,
+      boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never,
       sessionCatalogProvider: {
         renameSession: vi.fn(async () => undefined),
         moveSessionsToFolder: vi.fn(async () => ({ count: 0 })),

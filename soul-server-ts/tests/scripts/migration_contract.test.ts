@@ -157,10 +157,10 @@ describe("versioned migration contract", () => {
     expect(centralContract).toEqual({
       schema_version: "soulstream.database-release-manifest.v2",
       affected_services: ["soulstream-orch-server", "soulstream-soul-server-ts"],
-      required_subphases: ["board_yjs_runbook_residue"],
+      required_subphases: ["folder_storage_documents"],
     });
     expect(standalone.post_start_verify).toEqual(
-      cluster.post_start_verify.slice(0, -1).map((command: { name: string }) => (
+      cluster.post_start_verify.map((command: { name: string }) => (
         command.name === "verify-release-health"
           ? { ...command, command: "node soul-server-ts/scripts/verify-release-health.mjs --scope standalone" }
           : command.name === "verify-migration-ledger"
@@ -173,12 +173,8 @@ describe("versioned migration contract", () => {
           : command
       )),
     );
-    expect(cluster.post_start_verify.at(-1)).toEqual({
-      name: "verify-board-yjs-runbook-residue",
-      command: "node orch-server-ts/node_modules/tsx/dist/cli.mjs "
-        + "orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --verify",
-      timeout_seconds: 300,
-    });
+    expect(cluster.post_start_verify.map((command: { name: string }) => command.name))
+      .toEqual(["verify-migration-ledger", "verify-release-health"]);
   });
   it("loads release settings from the declared Haniel service cwd", () => {
     expect(deploymentEnvironmentPath(
@@ -284,7 +280,7 @@ describe("versioned migration contract", () => {
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migrations.at(-1)?.id).toBe("107_context_bundles.sql");
+    expect(migrations.at(-1)?.id).toBe("108_unify_folders.sql");
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS schedule_kind TEXT NOT NULL DEFAULT 'recurring'");
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS run_at TIMESTAMPTZ");
     expect(migration?.sql).toContain("DROP CONSTRAINT IF EXISTS recurring_jobs_schedule_array");
@@ -357,12 +353,8 @@ describe("versioned migration contract", () => {
       "FOREIGN KEY (source_task_item_id) REFERENCES task_items(id) ON DELETE SET NULL",
     );
     expect(migration?.sql).not.toMatch(/SIMILAR TO|source_task_item_id\s*~/);
-    expect(schema).toContain(
-      "DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey",
-    );
-    expect(schema).toContain(
-      "ADD CONSTRAINT session_page_bindings_source_task_item_id_fkey",
-    );
+    expect(schema).toContain("FOREIGN KEY (source_checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL");
+    expect(schema).not.toContain("source_task_item_id");
   });
 
   it("requires canonical board-card removal before a session row can be deleted", async () => {
@@ -384,7 +376,7 @@ describe("versioned migration contract", () => {
       (item) => item.id === "086_delivery_attempt_terminology.sql",
     );
 
-    expect(plan.state).toBe("current");
+    expect(plan.state).toBe("pre_folder_unification");
     expect(currentBaselineIndex).toBeGreaterThanOrEqual(0);
     expect(plan.bootstrap).toHaveLength(currentBaselineIndex + 1);
     expect(plan.pending.map((item) => item.id)).toEqual(
@@ -399,7 +391,7 @@ describe("versioned migration contract", () => {
       (item) => item.id === "042_runbook_to_task.sql",
     );
 
-    expect(plan.state).toBe("current");
+    expect(plan.state).toBe("pre_folder_unification");
     expect(plan.bootstrap).toHaveLength(taskBaselineIndex + 1);
     expect(plan.pending.map((item) => item.id)).toEqual(
       migrations.slice(taskBaselineIndex + 1).map((item) => item.id),

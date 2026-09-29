@@ -1,0 +1,186 @@
+export interface InitialFolderAtomReference {
+  instance: "atom" | "atom-nl";
+  nodeId: string;
+  nodeTitle: string;
+  depth: number;
+  titlesOnly: boolean;
+  limit?: number;
+  mode?: "full" | "index" | "titles";
+}
+
+export interface InitialFolderSessionDefaults {
+  agentId: string;
+  nodeId: string;
+  modelPreset?: string;
+}
+
+export interface InitialFolderContext {
+  guidance: string;
+  atomReferences: InitialFolderAtomReference[];
+  sessionDefaults?: InitialFolderSessionDefaults;
+}
+
+export interface InitialFolderContextWire {
+  guidance?: string;
+  atom_references?: Array<{
+    instance: "atom" | "atom-nl";
+    node_id: string;
+    node_title: string;
+    depth: number;
+    titles_only: boolean;
+    limit?: number;
+    mode?: "full" | "index" | "titles";
+  }>;
+  session_defaults?: {
+    agent_id: string;
+    node_id: string;
+    model_preset?: string;
+  };
+}
+
+export type InitialFolderContextParseResult =
+  | { ok: true; value: InitialFolderContext | undefined }
+  | { ok: false; error: string };
+
+export function parseInitialFolderContextWire(value: unknown): InitialFolderContextParseResult {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (!isRecord(value)) return { ok: false, error: "initial_context must be an object" };
+  if (value.guidance !== undefined && typeof value.guidance !== "string") {
+    return { ok: false, error: "initial_context.guidance must be a string" };
+  }
+  if (value.atom_references !== undefined && !Array.isArray(value.atom_references)) {
+    return { ok: false, error: "initial_context.atom_references must be an array" };
+  }
+  let sessionDefaults: InitialFolderSessionDefaults | undefined;
+  if (value.session_defaults !== undefined) {
+    if (!isRecord(value.session_defaults)) {
+      return { ok: false, error: "initial_context.session_defaults must be an object" };
+    }
+    const agentId = trimmedString(value.session_defaults.agent_id);
+    const nodeId = trimmedString(value.session_defaults.node_id);
+    const modelPreset = trimmedString(value.session_defaults.model_preset);
+    if (!agentId) {
+      return { ok: false, error: "initial_context.session_defaults.agent_id must be a non-empty string" };
+    }
+    if (!nodeId) {
+      return { ok: false, error: "initial_context.session_defaults.node_id must be a non-empty string" };
+    }
+    if (value.session_defaults.model_preset !== undefined && !modelPreset) {
+      return {
+        ok: false,
+        error: "initial_context.session_defaults.model_preset must be a non-empty string",
+      };
+    }
+    sessionDefaults = {
+      agentId,
+      nodeId,
+      ...(modelPreset ? { modelPreset } : {}),
+    };
+  }
+
+  const atomReferences: InitialFolderAtomReference[] = [];
+  for (const [index, candidate] of (value.atom_references ?? []).entries()) {
+    if (!isRecord(candidate)) {
+      return { ok: false, error: `initial_context.atom_references[${index}] must be an object` };
+    }
+    if (candidate.instance !== "atom" && candidate.instance !== "atom-nl") {
+      return { ok: false, error: `initial_context.atom_references[${index}].instance invalid` };
+    }
+    const nodeId = trimmedString(candidate.node_id);
+    const nodeTitle = trimmedString(candidate.node_title);
+    if (!nodeId) {
+      return { ok: false, error: `initial_context.atom_references[${index}].node_id must be a non-empty string` };
+    }
+    if (!nodeTitle) {
+      return { ok: false, error: `initial_context.atom_references[${index}].node_title must be a non-empty string` };
+    }
+    if (!Number.isInteger(candidate.depth) || Number(candidate.depth) < 1 || Number(candidate.depth) > 5) {
+      return { ok: false, error: `initial_context.atom_references[${index}].depth must be an integer from 1 to 5` };
+    }
+    if (typeof candidate.titles_only !== "boolean") {
+      return { ok: false, error: `initial_context.atom_references[${index}].titles_only must be a boolean` };
+    }
+    if (candidate.limit !== undefined && (!Number.isInteger(candidate.limit) || Number(candidate.limit) < 1)) {
+      return { ok: false, error: `initial_context.atom_references[${index}].limit must be a positive integer` };
+    }
+    if (candidate.mode !== undefined && !isAtomContextMode(candidate.mode)) {
+      return { ok: false, error: `initial_context.atom_references[${index}].mode invalid` };
+    }
+    atomReferences.push({
+      instance: candidate.instance,
+      nodeId,
+      nodeTitle,
+      depth: candidate.depth as number,
+      titlesOnly: candidate.titles_only,
+      ...(candidate.limit !== undefined ? { limit: candidate.limit as number } : {}),
+      ...(candidate.mode !== undefined ? { mode: candidate.mode } : {}),
+    });
+  }
+
+  const guidance = typeof value.guidance === "string" ? value.guidance.trim() : "";
+  if (!guidance && atomReferences.length === 0 && !sessionDefaults) {
+    return { ok: true, value: undefined };
+  }
+  return {
+    ok: true,
+    value: {
+      guidance,
+      atomReferences,
+      ...(sessionDefaults ? { sessionDefaults } : {}),
+    },
+  };
+}
+
+export function serializeInitialFolderContext(
+  context: InitialFolderContext | undefined,
+): InitialFolderContextWire | undefined {
+  if (!context) return undefined;
+  const guidance = context.guidance.trim();
+  const atomReferences = context.atomReferences.map((reference) => ({
+    instance: reference.instance,
+    node_id: reference.nodeId.trim(),
+    node_title: reference.nodeTitle.trim(),
+    depth: reference.depth,
+    titles_only: reference.titlesOnly,
+    ...(reference.limit !== undefined ? { limit: reference.limit } : {}),
+    ...(reference.mode !== undefined ? { mode: reference.mode } : {}),
+  }));
+  const sessionDefaults = context.sessionDefaults
+    ? {
+        agent_id: requireTrimmedString(context.sessionDefaults.agentId, "sessionDefaults.agentId"),
+        node_id: requireTrimmedString(context.sessionDefaults.nodeId, "sessionDefaults.nodeId"),
+        ...(context.sessionDefaults.modelPreset
+          ? {
+              model_preset: requireTrimmedString(
+                context.sessionDefaults.modelPreset,
+                "sessionDefaults.modelPreset",
+              ),
+            }
+          : {}),
+      }
+    : undefined;
+  if (!guidance && atomReferences.length === 0 && !sessionDefaults) return undefined;
+  return {
+    ...(guidance ? { guidance } : {}),
+    atom_references: atomReferences,
+    ...(sessionDefaults ? { session_defaults: sessionDefaults } : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAtomContextMode(value: unknown): value is "full" | "index" | "titles" {
+  return value === "full" || value === "index" || value === "titles";
+}
+
+function trimmedString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function requireTrimmedString(value: string, key: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`${key} must be a non-empty string`);
+  return trimmed;
+}

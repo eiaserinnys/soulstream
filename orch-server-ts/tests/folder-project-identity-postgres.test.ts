@@ -34,6 +34,7 @@ describe("Folder project identity PostgreSQL transaction", () => {
     });
     await service.mutateFromFolder({
       folderId: id,
+      expectedVersion: 1,
       update: { name: "폴더에서 바꾼 프로젝트" },
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "folder-project:rename:folder",
@@ -51,28 +52,21 @@ describe("Folder project identity PostgreSQL transaction", () => {
     `;
     await harness.sql`
       INSERT INTO board_items (
-        id, folder_id, container_kind, container_id, item_type, item_id, x, y
+        id, folder_id, item_type, item_id, x, y
       )
       VALUES (
-        'session:archive-session', ${id}, 'folder', ${id},
+        'session:archive-session', ${id},
         'session', 'archive-session', 0, 0
       )
     `;
     const archiveResult = await service.mutateFromFolder({
       folderId: id,
+      expectedVersion: 3,
       archived: true,
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "folder-project:archive:folder",
     });
-    expect(archiveResult.catalogDelta).toEqual({
-      sessionsDelta: {
-        "archive-session": {
-          folderId: null,
-          displayName: "아카이브 세션",
-        },
-      },
-      deletedBoardItemIds: ["session:archive-session"],
-    });
+    expect(archiveResult.folder.archived).toBe(true);
     await service.mutateFromPage({
       pageId: id,
       expectedVersion: 4,
@@ -105,10 +99,10 @@ describe("Folder project identity PostgreSQL transaction", () => {
     }]);
     await expect(harness.sql`
       SELECT folder_id FROM sessions WHERE session_id = 'archive-session'
-    `).resolves.toEqual([{ folder_id: null }]);
+    `).resolves.toEqual([{ folder_id: id }]);
     await expect(harness.sql`
       SELECT id FROM board_items WHERE id = 'session:archive-session'
-    `).resolves.toEqual([]);
+    `).resolves.toEqual([{ id: "session:archive-session" }]);
   });
 
   it("rolls back folder, page, Y.Doc, and operation when provenance insert fails", async () => {
@@ -131,10 +125,32 @@ describe("Folder project identity PostgreSQL transaction", () => {
         (SELECT COUNT(*)::int FROM folders WHERE id = ${id}) AS folders,
         (SELECT COUNT(*)::int FROM pages WHERE id = ${id}) AS pages,
         (SELECT COUNT(*)::int FROM board_yjs_documents WHERE name = ${`page:${id}`}) AS documents,
-        (SELECT COUNT(*)::int FROM folder_project_operations
+        (SELECT COUNT(*)::int FROM folder_operations
           WHERE folder_id = ${id}) AS operations
     `;
     expect(rows[0]).toEqual({ folders: 0, pages: 0, documents: 0, operations: 0 });
+  });
+
+  it("keeps child mounts in the actual parent on create, move, archive and root promotion", async () => {
+    const actor = { actorKind: "user" as const, actorUserId: "user@example.com" };
+    const first = await createService(crypto.randomUUID(), []).create({ name: "첫 부모", actor, idempotencyKey: "mount:first" });
+    const second = await createService(crypto.randomUUID(), []).create({ name: "둘째 부모", actor, idempotencyKey: "mount:second" });
+    const service = createService(crypto.randomUUID(), []);
+    const child = await service.create({ name: "이동 자식", parentFolderId: first.id, actor, idempotencyKey: "mount:child" });
+    const parents = async () => (await harness.sql<Array<{page_id: string}>>`
+      SELECT b.page_id FROM block_links l JOIN blocks b ON b.id = l.source_block_id
+      WHERE l.link_kind = 'mount' AND l.target_page_id = ${child.pageId} ORDER BY b.page_id
+    `).map(row => row.page_id);
+    expect(await parents()).toEqual([first.pageId]);
+    const move = { folderId: child.id, expectedVersion: 1, update: { parentFolderId: second.id }, actor, idempotencyKey: "mount:move" };
+    await service.mutateFromFolder(move);
+    expect(await parents()).toEqual([second.pageId]);
+    await service.mutateFromFolder(move);
+    expect(await parents()).toEqual([second.pageId]);
+    await service.mutateFromFolder({ folderId: child.id, expectedVersion: 2, archived: true, actor, idempotencyKey: "mount:archive" });
+    expect(await parents()).toEqual([second.pageId]);
+    await service.mutateFromFolder({ folderId: child.id, expectedVersion: 3, archived: false, update: { parentFolderId: null }, actor, idempotencyKey: "mount:root" });
+    expect(await parents()).toEqual([]);
   });
 
   function createService(id: string, operationIds: string[]) {
@@ -144,6 +160,7 @@ describe("Folder project identity PostgreSQL transaction", () => {
       ),
       createId: () => id,
       createOperationId: () => operationIds.shift() ?? crypto.randomUUID(),
+      withBoardApplication: async (_input, persist) => persist([]),
       hydratePage: async () => undefined,
     });
   }

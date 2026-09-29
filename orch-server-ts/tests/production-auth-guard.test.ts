@@ -104,7 +104,7 @@ describe("production auth guard", () => {
       method: "GET",
       routeUrl: "/yjs/:containerKind/:containerId",
       websocket: true,
-    })).toBe(false);
+    })).toBeUndefined();
     for (const [method, routeUrl] of [
       ["GET", "/api/pages"],
       ["POST", "/api/pages/daily"],

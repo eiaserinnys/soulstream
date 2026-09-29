@@ -155,6 +155,8 @@ export function classifySchemaState(shape) {
   ) {
     return "empty";
   }
+  if (table(shape.folders) && table(shape.checklistSections) && table(shape.checklistItems)
+    && table(shape.folderOperations) && !shape.tasks && !shape.runbooks) return "current";
   if (
     table(shape.tasks)
     && table(shape.taskSections)
@@ -166,7 +168,7 @@ export function classifySchemaState(shape) {
     && shape.taskItemsHasSection
     && !shape.taskItemsHasParent
   ) {
-    return "current";
+    return "pre_folder_unification";
   }
   if (
     !shape.tasks
@@ -195,12 +197,12 @@ export function classifySchemaState(shape) {
 export function buildMigrationPlan(migrations, ledger, shape) {
   const state = classifySchemaState(shape);
   const pendingFromLedger = validateLedger(migrations, ledger);
-  const taskBaselineCount = migrations.findIndex(
+  const legacyBaselineCount = migrations.findIndex(
     (item) => item.id === "042_runbook_to_task.sql",
   ) + 1;
-  if (taskBaselineCount === 0) throw new Error("current schema bootstrap boundary missing");
+  if (legacyBaselineCount === 0) throw new Error("current schema bootstrap boundary missing");
   if (ledger.length > 0) {
-    if (ledger.length < taskBaselineCount) {
+    if (ledger.length < legacyBaselineCount) {
       throw new Error("partial pre-baseline migration ledger is not a supported state");
     }
     if (pendingFromLedger.length === 0 && state !== "current") {
@@ -211,6 +213,9 @@ export function buildMigrationPlan(migrations, ledger, shape) {
 
   let bootstrapCount = 0;
   if (state === "current") {
+    bootstrapCount = migrations.findIndex((item) => item.id === "108_unify_folders.sql") + 1;
+  }
+  if (state === "pre_folder_unification") {
     if (shape.deliveryAttemptTerminologyCurrent) {
       bootstrapCount = migrations.findIndex(
         (item) => item.id === "086_delivery_attempt_terminology.sql",
@@ -219,7 +224,7 @@ export function buildMigrationPlan(migrations, ledger, shape) {
         throw new Error("delivery attempt terminology bootstrap boundary missing");
       }
     } else {
-      bootstrapCount = taskBaselineCount;
+      bootstrapCount = legacyBaselineCount;
     }
   }
   if (state === "legacy_pre_041") {

@@ -88,10 +88,7 @@ export interface PageYjsServiceConfig {
   auth?: BoardYjsAuthConfig;
   logger?: FastifyBaseLogger;
   onPageUpdated?: PageUpdatedObserver;
-  mutateTaskIdentity?: (
-    input: PageMutationInput,
-  ) => Promise<PageServiceMutationResult | null>;
-  mutateProjectIdentity?: (
+  mutateFolderIdentity?: (
     input: PageMutationInput,
   ) => Promise<PageServiceMutationResult | null>;
 }
@@ -214,15 +211,10 @@ export class PageYjsService {
   }
 
   async mutatePage(input: PageMutationInput): Promise<PageServiceMutationResult> {
-    const taskIdentityResult = await this.config.mutateTaskIdentity?.(input);
-    if (taskIdentityResult) {
-      notifyPageUpdates([taskIdentityResult], this.config.onPageUpdated, this.config.logger);
-      return taskIdentityResult;
-    }
-    const projectIdentityResult = await this.config.mutateProjectIdentity?.(input);
-    if (projectIdentityResult) {
-      notifyPageUpdates([projectIdentityResult], this.config.onPageUpdated, this.config.logger);
-      return projectIdentityResult;
+    const folderIdentityResult = await this.config.mutateFolderIdentity?.(input);
+    if (folderIdentityResult) {
+      notifyPageUpdates([folderIdentityResult], this.config.onPageUpdated, this.config.logger);
+      return folderIdentityResult;
     }
     return await this.mutex.runExclusive(input.pageId, async () => {
       const idempotent = await this.resolveIdempotent(input.idempotencyKey);

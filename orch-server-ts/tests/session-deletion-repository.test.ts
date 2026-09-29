@@ -15,27 +15,21 @@ describe("SessionDeletionRepository", () => {
   it("enumerates projection and cache-only memberships before canonical sync and session_delete", async () => {
     const { sql, calls } = createMockSql((call) => {
       if (call.query.includes("FROM board_items") && call.query.includes("item_type = 'session'")) {
-        return [boardItemRow("session:session-a", "folder", "folder-1", "primary")];
+        return [boardItemRow("session:session-a", "folder-1", "primary")];
       }
       if (call.query.includes("FROM board_yjs_catalog_cache")) {
         return [{
           folder_id: "folder-1",
-          container_kind: "folder",
-          container_id: "folder-1",
           board_items: [cachedBoardItem(
             "session:session-a",
-            "folder",
             "folder-1",
             "primary",
           )],
         }, {
-          folder_id: "folder-1",
-          container_kind: "task",
-          container_id: "task-1",
+          folder_id: "folder-2",
           board_items: JSON.stringify([cachedBoardItem(
             "session-reference:session-a",
-            "task",
-            "task-1",
+            "folder-2",
             "reference",
           )]),
         }];
@@ -58,9 +52,7 @@ describe("SessionDeletionRepository", () => {
         documentName: "board-folder:folder-1",
         scope: {
           folderId: "folder-1",
-          containerKind: "folder",
-          containerId: "folder-1",
-        },
+          },
         snapshot: Y.encodeStateAsUpdate(new Y.Doc()),
         replica: { boardItems: [], markdownDocuments: [] },
       }],
@@ -93,17 +85,16 @@ describe("SessionDeletionRepository", () => {
 
 function cachedBoardItem(
   id: string,
-  containerKind: "folder" | "task",
-  containerId: string,
+  folderId: string,
   membershipKind: "primary" | "reference",
 ) {
   return {
     id,
-    folderId: "folder-1",
-    containerKind,
-    containerId,
+
+
+    folderId,
     membershipKind,
-    sourceTaskItemId: null,
+    sourceChecklistItemId: null,
     itemType: "session",
     itemId: "session-a",
     x: 0,
@@ -114,17 +105,14 @@ function cachedBoardItem(
 
 function boardItemRow(
   id: string,
-  containerKind: "folder" | "task",
-  containerId: string,
+  folderId: string,
   membershipKind: "primary" | "reference",
 ) {
   return {
     id,
-    folder_id: "folder-1",
-    container_kind: containerKind,
-    container_id: containerId,
+    folder_id: folderId,
     membership_kind: membershipKind,
-    source_task_item_id: null,
+    source_checklist_item_id: null,
     item_type: "session" as const,
     item_id: "session-a",
     x: 0,

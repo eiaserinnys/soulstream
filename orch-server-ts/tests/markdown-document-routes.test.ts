@@ -79,10 +79,8 @@ describe("markdown document and custom view route harness", () => {
       payload: { container: { kind: "session", id: "s1" }, title: "Note" },
     });
 
-    expect(missing.statusCode).toBe(400);
-    expect(missing.json()).toEqual({ detail: "folderId or container is required" });
-    expect(invalid.statusCode).toBe(400);
-    expect(invalid.json()).toEqual({ detail: "invalid board container" });
+    expect(missing.statusCode).toBe(422);
+    expect(invalid.statusCode).toBe(422);
     expect(calls).toEqual([]);
     expect(service.createMarkdownDocument).not.toHaveBeenCalled();
 
@@ -117,7 +115,6 @@ describe("markdown document and custom view route harness", () => {
     expect(service.createMarkdownDocument).toHaveBeenCalledWith(
       expect.objectContaining({
         folderId: "folder-a-child",
-        container: { containerKind: "folder", containerId: "folder-a-child" },
         title: "Note",
         body: "Body",
         x: 12,
@@ -128,89 +125,15 @@ describe("markdown document and custom view route harness", () => {
     await app.close();
   });
 
-  it("preserves body container while folderId wins access and payload folderId", async () => {
-    const { app, calls, service } = createAppWithMarkdownDocuments({
-      restricted: true,
-      allowedFolderIds: ["folder-a"],
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/markdown-documents",
-      payload: {
-        folderId: "folder-a-child",
-        container: { kind: "task", id: "task-1" },
-        title: "Task note",
-        x: 12,
-      },
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(calls).toEqual([["listFolders"], ["access"]]);
-    expect(service.createMarkdownDocument).toHaveBeenCalledWith(
-      expect.objectContaining({
-        folderId: "folder-a-child",
-        container: { containerKind: "task", containerId: "task-1" },
-        title: "Task note",
-        body: "",
-      }),
-    );
-
-    await app.close();
-  });
-
-  it("resolves task container folder when create omits folderId", async () => {
-    const { app, calls, service } = createAppWithMarkdownDocuments({
-      restricted: true,
-      allowedFolderIds: ["folder-a"],
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/markdown-documents",
-      payload: {
-        container: { kind: "task", id: "task-1" },
-        title: "Task note",
-      },
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(calls).toEqual([
-      ["resolveContainer", { kind: "task", id: "task-1" }],
-      ["listFolders"],
-      ["access"],
-    ]);
-    expect(service.createMarkdownDocument).toHaveBeenCalledWith(
-      expect.objectContaining({
-        folderId: "folder-a",
-        container: { containerKind: "task", containerId: "task-1" },
-      }),
-    );
-
-    await app.close();
-  });
-
-  it("returns container not found before host proxy when task source is missing", async () => {
-    const { app, calls, service } = createAppWithMarkdownDocuments({
-      restricted: false,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/markdown-documents",
-      payload: {
-        container: { kind: "task", id: "missing" },
-        title: "Task note",
-      },
-    });
-
-    expect(response.statusCode).toBe(404);
-    expect(response.json()).toEqual({ detail: "Task board container not found" });
-    expect(calls).toEqual([
-      ["resolveContainer", { kind: "task", id: "missing" }],
-    ]);
+  it.each([
+    { container: { kind: "task", id: "task-1" }, title: "Note" },
+    { folderId: "folder-a", container: { kind: "folder", id: "folder-a" }, title: "Note" },
+  ])("rejects retired container input: %j", async (payload) => {
+    const { app, calls, service } = createAppWithMarkdownDocuments({ restricted: false });
+    const response = await app.inject({ method: "POST", url: "/api/markdown-documents", payload });
+    expect(response.statusCode).toBe(422);
+    expect(calls).toEqual([]);
     expect(service.createMarkdownDocument).not.toHaveBeenCalled();
-
     await app.close();
   });
 
@@ -340,7 +263,7 @@ describe("markdown document and custom view route harness", () => {
       ["access"],
     ]);
     expect(service.updateMarkdownDocument).toHaveBeenCalledWith(
-      { containerKind: "task", containerId: "task-1" },
+      { folderId: "folder-a-child" },
       "doc/one",
       { expectedVersion: 7, title: "New" },
     );
@@ -372,13 +295,13 @@ describe("markdown document and custom view route harness", () => {
     expect(update.statusCode).toBe(200);
     expect(update.json()).toMatchObject({ title: "New", body: "After", version: 8 });
     expect(updateMarkdownDocument).toHaveBeenCalledWith(
-      { containerKind: "task", containerId: "task-1" },
+      { folderId: "folder-a-child" },
       "doc/one",
       { expectedVersion: 7, title: "New", body: "After" },
     );
     expect(remove.statusCode).toBe(204);
     expect(deleteMarkdownDocument).toHaveBeenCalledWith(
-      { containerKind: "task", containerId: "task-1" },
+      { folderId: "folder-a-child" },
       "doc/one",
     );
     await app.close();

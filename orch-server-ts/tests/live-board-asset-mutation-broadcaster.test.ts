@@ -31,16 +31,9 @@ describe("live board asset mutation broadcaster", () => {
         "sess-1": { folderId: "folder-a" },
       })),
       listSessionAssignmentsByIds: vi.fn(async () => ({})),
-      deleteFolderWithCatalogDelta: vi.fn(async () => ({
-        sessionsDelta: {},
-        deletedBoardItemIds: [],
-      })),
+
       listBoardItemIdsForSessionDeletion: vi.fn(async () => []),
       findSessionFolderId: vi.fn(async () => "folder-a"),
-      createFolder: vi.fn(),
-      updateFolder: vi.fn(),
-      deleteFolder: vi.fn(),
-      reorderFolders: vi.fn(),
       getFolderCounts: vi.fn(async () => new Map()),
     } satisfies LiveFolderProvider;
     const broadcaster = { append: vi.fn() };

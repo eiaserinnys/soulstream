@@ -130,7 +130,7 @@ describe("live DB board asset route provider", () => {
         return [
           fileAssetRow({
             id: "asset-multi",
-            storage_key: "containers/task/rb-1/assets/asset-multi/clip.mov",
+            storage_key: "folders/rb-1/assets/asset-multi/clip.mov",
             original_name: "clip.mov",
             mime_type: "video/quicktime",
             byte_size: String(5 * 1024 * 1024 + 1),
@@ -147,16 +147,16 @@ describe("live DB board asset route provider", () => {
 
     await expect(
       provider.initFileAsset({
-        folderId: "folder-a",
-        containerKind: "task",
-        containerId: "rb-1",
+
+
+        folderId: "rb-1",
         name: "clip.mov",
         mimeType: "video/quicktime",
         byteSize: 5 * 1024 * 1024 + 1,
       }),
     ).resolves.toMatchObject({
       assetId: "asset-multi",
-      storageKey: "containers/task/rb-1/assets/asset-multi/clip.mov",
+      storageKey: "folders/rb-1/assets/asset-multi/clip.mov",
       uploadMode: "multipart",
       uploadId: "upload-1",
       partSize: 5 * 1024 * 1024,
@@ -166,7 +166,7 @@ describe("live DB board asset route provider", () => {
       ],
     });
     expect(storage.createMultipartUpload).toHaveBeenCalledWith({
-      storageKey: "containers/task/rb-1/assets/asset-multi/clip.mov",
+      storageKey: "folders/rb-1/assets/asset-multi/clip.mov",
       mimeType: "video/quicktime",
       byteSize: 5 * 1024 * 1024 + 1,
       partSize: 5 * 1024 * 1024,
@@ -302,8 +302,6 @@ describe("live DB board asset route provider", () => {
     expect(harness.calls.find((call) => call.text.includes("INSERT INTO board_items"))?.values).toEqual([
       "asset:asset-1",
       "folder-a",
-      "folder",
-      "folder-a",
       "asset-1",
       40,
       80,
@@ -337,23 +335,15 @@ function createProvider(
       listFolders: async () => [serializeFolderRow(folderRow())],
       listSessionAssignments: async () => ({}),
       listSessionAssignmentsByIds: async () => ({}),
-      deleteFolderWithCatalogDelta: async () => ({
-        sessionsDelta: {},
-        deletedBoardItemIds: [],
-      }),
+
       listBoardItemIdsForSessionDeletion: async () => [],
       findSessionFolderId: async () => undefined,
-      createFolder: async () => ({}),
-      updateFolder: async () => undefined,
-      deleteFolder: async () => undefined,
-      reorderFolders: async () => undefined,
       getFolderCounts: async () => new Map(),
     },
     boardItemProvider: {
       listFolders: async () => [serializeFolderRow(folderRow())],
       listBoardItems: async () => [],
-      resolveBoardContainerFolderId: async (container) =>
-        container.kind === "folder" ? container.id : "folder-a",
+
       getCatalogSnapshot: async () => ({
         folders: [serializeFolderRow(folderRow())],
         boardItems: [serializeBoardItemRow(boardItemRow())],
@@ -424,7 +414,7 @@ function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, u
     container_kind: "folder",
     container_id: "folder-a",
     membership_kind: "primary",
-    source_task_item_id: null,
+    source_checklist_item_id: null,
     item_type: "task",
     item_id: "rb-1",
     x: 20,
@@ -469,11 +459,11 @@ function serializeFolderRow(row: Record<string, unknown>) {
 function serializeBoardItemRow(row: Record<string, unknown>) {
   return {
     id: String(row.id),
-    folderId: String(row.folder_id),
-    containerKind: String(row.container_kind ?? "folder"),
-    containerId: String(row.container_id ?? row.folder_id),
+
+
+    folderId: String(row.container_id ?? row.folder_id),
     membershipKind: String(row.membership_kind ?? "primary"),
-    sourceTaskItemId: row.source_task_item_id as string | null,
+    sourceChecklistItemId: row.source_checklist_item_id as string | null,
     itemType: String(row.item_type),
     itemId: String(row.item_id),
     x: Number(row.x ?? 0),

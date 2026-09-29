@@ -4,7 +4,7 @@ export const PAGE_BLOCK_TYPES = [
   "atom_ref",
   "guidance",
   "session_defaults",
-  "task_ref",
+  "folder_ref",
   "checklist",
   "custom_view",
   "image",
@@ -44,8 +44,8 @@ export interface SessionDefaultsBlockProperties {
   [key: string]: unknown;
 }
 
-export interface TaskRefBlockProperties {
-  taskId: string;
+export interface FolderRefBlockProperties {
+  folderId: string;
   primary: boolean;
   [key: string]: unknown;
 }
@@ -55,19 +55,19 @@ export interface LegacyChecklistBlockProperties {
   [key: string]: unknown;
 }
 
-export interface ChecklistTaskReference {
-  taskId: string;
+export interface ChecklistItemReference {
+  folderId: string;
   itemId: string;
   [key: string]: unknown;
 }
 
-export interface ChecklistTaskBlockProperties extends ChecklistTaskReference {
+export interface LinkedChecklistBlockProperties extends ChecklistItemReference {
   checked: boolean;
 }
 
 export type ChecklistBlockProperties =
   | LegacyChecklistBlockProperties
-  | ChecklistTaskBlockProperties;
+  | LinkedChecklistBlockProperties;
 
 export interface CustomViewBlockProperties {
   customViewId: string;
@@ -86,7 +86,7 @@ export interface PageBlockPropertiesByType {
   atom_ref: AtomRefBlockProperties;
   guidance: GuidanceBlockProperties;
   session_defaults: SessionDefaultsBlockProperties;
-  task_ref: TaskRefBlockProperties;
+  folder_ref: FolderRefBlockProperties;
   checklist: ChecklistBlockProperties;
   custom_view: CustomViewBlockProperties;
   image: ImageBlockProperties;

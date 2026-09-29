@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { normalizeBoardContainerKind } from "../board-yjs/board_container_kind_compat.js";
+import { z } from "zod";
 import {
   sendBoardYjsHostProxyError,
   type BoardYjsHostProxyRouteOptions,
@@ -28,17 +28,7 @@ export type BoardItemAccess = {
   allowedFolderIds?: readonly string[];
 };
 
-export type BoardContainerKind = "folder" | "task";
-
-export type BoardContainerTarget = {
-  kind: BoardContainerKind;
-  id: string;
-};
-
-export type BoardItemListQuery =
-  | { folderId: string }
-  | { container: BoardContainerTarget }
-  | { sessionId: string };
+export type BoardItemListQuery = { folderId: string } | { sessionId: string };
 
 export type BoardItemCatalogSnapshot = {
   folders: readonly BoardItemFolderRecord[];
@@ -52,9 +42,6 @@ export type BoardItemRouteProvider = {
   listBoardItems: (
     query: BoardItemListQuery,
   ) => Promise<readonly BoardItemRecord[]> | readonly BoardItemRecord[];
-  resolveBoardContainerFolderId: (
-    container: BoardContainerTarget,
-  ) => Promise<string> | string;
   getCatalogSnapshot: () =>
     | Promise<BoardItemCatalogSnapshot>
     | BoardItemCatalogSnapshot;
@@ -93,7 +80,7 @@ type Validation<T> =
 export const boardItemRouteAuthRequirements = {
   "GET /api/board-items": true,
   "PATCH /api/board-items/:board_item_id/position": true,
-  "PATCH /api/board-items/:board_item_id/container": true,
+  "PATCH /api/board-items/:board_item_id/folder": true,
 } as const;
 
 export function registerBoardItemRoutes(
@@ -115,20 +102,8 @@ export function registerBoardItemRoutes(
       }
       return reply.send({ boardItems });
     }
-    const inheritedFolderIdResult =
-      "folderId" in query.value
-        ? { ok: true as const, value: query.value.folderId }
-        : await tryResolveBoardContainerFolderId(
-            options.provider,
-            query.value.container,
-          );
-    if (!inheritedFolderIdResult.ok) {
-      return sendBoardItemRouteError(reply, inheritedFolderIdResult.error, 400);
-    }
     const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
-    if (!isFolderAllowed(access, folders, inheritedFolderIdResult.value)) {
-      return folderAccessDenied(reply);
-    }
+    if (!isFolderAllowed(access, folders, query.value.folderId)) return folderAccessDenied(reply);
     const boardItems = await options.provider.listBoardItems(query.value);
     return reply.send({ boardItems });
   });
@@ -165,9 +140,9 @@ export function registerBoardItemRoutes(
   );
 
   app.patch<{ Params: BoardItemParams }>(
-    "/api/board-items/:board_item_id/container",
+    "/api/board-items/:board_item_id/folder",
     async (request, reply) => {
-      const body = parseContainerMoveBody(request.body);
+      const body = parseFolderMoveBody(request.body);
       if (!body.ok) return validationError(reply, body);
 
       const boardItemId = boardItemParams(request).board_item_id;
@@ -179,17 +154,7 @@ export function registerBoardItemRoutes(
         return folderAccessDenied(reply);
       }
 
-      const targetFolderId = await tryResolveBoardContainerFolderId(
-        options.provider,
-        body.value.container,
-      );
-      if (!targetFolderId.ok) {
-        return sendBoardItemRouteError(reply, targetFolderId.error, 400);
-      }
-      if (!isFolderAllowed(access, snapshot.folders, targetFolderId.value)) {
-        return folderAccessDenied(reply);
-      }
-
+      if (!isFolderAllowed(access, snapshot.folders, body.value.folderId)) return folderAccessDenied(reply);
       try {
         const position = body.value.x !== undefined && body.value.y !== undefined
           ? { x: body.value.x, y: body.value.y }
@@ -198,8 +163,7 @@ export function registerBoardItemRoutes(
           app,
           options.hostProxy,
           boardItem,
-          body.value.container,
-          targetFolderId.value,
+          body.value.folderId,
           position,
           body.value.idempotencyKey,
         );
@@ -212,35 +176,11 @@ export function registerBoardItemRoutes(
 }
 
 function parseListQuery(query: unknown): Validation<BoardItemListQuery> {
-  const values =
-    query !== null && typeof query === "object"
-      ? (query as Record<string, unknown>)
-      : {};
-  const folderId = optionalQueryString(values, "folder_id");
-  const containerKind = optionalQueryString(values, "container_kind");
-  const containerId = optionalQueryString(values, "container_id");
-  const sessionId = optionalQueryString(values, "session_id");
-
-  const shapes = Number(folderId !== undefined)
-    + Number(containerKind !== undefined || containerId !== undefined)
-    + Number(sessionId !== undefined);
-  if (shapes > 1) {
-    return {
-      ok: false,
-      message: "folder_id, session_id, and container_kind/container_id are mutually exclusive",
-    };
-  }
-  if (folderId !== undefined) return { ok: true, value: { folderId } };
-  if (sessionId !== undefined) return { ok: true, value: { sessionId } };
-  if (containerKind === undefined || containerId === undefined) {
-    return {
-      ok: false,
-      message: "folder_id, session_id, or container_kind/container_id is required",
-    };
-  }
-  const kind = parseContainerKind(containerKind);
-  if (!kind.ok) return kind;
-  return { ok: true, value: { container: { kind: kind.value, id: containerId } } };
+  const parsed = z.union([
+    z.object({ folderId: z.string().min(1) }).strict(),
+    z.object({ sessionId: z.string().min(1) }).strict(),
+  ]).safeParse(query);
+  return parsed.success ? { ok: true, value: parsed.data } : { ok: false, message: parsed.error.message, statusCode: 422 };
 }
 
 function parsePositionBody(body: unknown): Validation<{ x: number; y: number }> {
@@ -253,108 +193,11 @@ function parsePositionBody(body: unknown): Validation<{ x: number; y: number }> 
   return { ok: true, value: { x: x.value, y: y.value } };
 }
 
-function parseContainerMoveBody(
-  body: unknown,
-): Validation<{
-  container: BoardContainerTarget;
-  idempotencyKey: string;
-  x?: number;
-  y?: number;
-}> {
-  const object = parseObjectBody(body);
-  if (!object.ok) return object;
-
-  const container = parseContainerBody(object.value.container);
-  if (!container.ok) return container;
-
-  const idempotencyKey = idempotencyKeyValue(object.value);
-  if (!idempotencyKey.ok) return idempotencyKey;
-
-  const hasX = object.value.x !== undefined && object.value.x !== null;
-  const hasY = object.value.y !== undefined && object.value.y !== null;
-  if (hasX !== hasY) {
-    return {
-      ok: false,
-      message: "x and y must be supplied together",
-      statusCode: 422,
-    };
-  }
-
-  const value: {
-    container: BoardContainerTarget;
-    idempotencyKey: string;
-    x?: number;
-    y?: number;
-  } = {
-    container: container.value,
-    idempotencyKey: idempotencyKey.value,
-  };
-  if (hasX && hasY) {
-    const x = requiredFiniteNumber(object.value, "x");
-    if (!x.ok) return x;
-    const y = requiredFiniteNumber(object.value, "y");
-    if (!y.ok) return y;
-    value.x = x.value;
-    value.y = y.value;
-  }
-
-  return { ok: true, value };
-}
-
-function parseContainerBody(value: unknown): Validation<BoardContainerTarget> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return { ok: false, message: "container must be a JSON object" };
-  }
-  const container = value as Record<string, unknown>;
-  const kindRaw = requiredString(container, "kind");
-  if (!kindRaw.ok) return kindRaw;
-  const kind = parseContainerKind(kindRaw.value);
-  if (!kind.ok) return kind;
-  const id = requiredString(container, "id");
-  if (!id.ok) return id;
-  if (id.value.length === 0) return { ok: false, message: "id must not be empty" };
-  return { ok: true, value: { kind: kind.value, id: id.value } };
-}
-
-function idempotencyKeyValue(
-  body: Record<string, unknown>,
-): Validation<string> {
-  const raw = hasOwn(body, "idempotencyKey")
-    ? body.idempotencyKey
-    : body.idempotency_key;
-  if (typeof raw === "string") return { ok: true, value: raw };
-  return { ok: false, message: "idempotencyKey must be a string" };
-}
-
-async function resolveBoardContainerFolderId(
-  provider: BoardItemRouteProvider,
-  container: BoardContainerTarget,
-): Promise<string> {
-  if (container.kind === "folder") return container.id;
-  try {
-    return await provider.resolveBoardContainerFolderId(container);
-  } catch (error) {
-    if (error instanceof BoardItemRouteError) throw error;
-    throw new BoardItemRouteError(
-      "BOARD_CONTAINER_NOT_FOUND",
-      error instanceof Error ? error.message : String(error),
-      404,
-    );
-  }
-}
-
-async function tryResolveBoardContainerFolderId(
-  provider: BoardItemRouteProvider,
-  container: BoardContainerTarget,
-): Promise<{ ok: true; value: string } | { ok: false; error: unknown }> {
-  try {
-    return {
-      ok: true,
-      value: await resolveBoardContainerFolderId(provider, container),
-    };
-  } catch (error) {
-    return { ok: false, error };
-  }
+function parseFolderMoveBody(body: unknown): Validation<{ folderId: string; idempotencyKey: string; x?: number; y?: number }> {
+  const parsed = z.object({ folderId: z.string().min(1), idempotencyKey: z.string().min(1),
+    x: z.number().finite().optional(), y: z.number().finite().optional(),
+  }).strict().refine(value => (value.x === undefined) === (value.y === undefined), "x and y must be supplied together").safeParse(body);
+  return parsed.success ? { ok: true, value: parsed.data } : { ok: false, message: parsed.error.message, statusCode: 422 };
 }
 
 function normalizeAccess(access: BoardItemAccess): Required<BoardItemAccess> {
@@ -413,12 +256,6 @@ function optionalQueryString(
 ): string | undefined {
   const value = query[key];
   return typeof value === "string" ? value : undefined;
-}
-
-function parseContainerKind(value: string): Validation<BoardContainerKind> {
-  const normalized = normalizeBoardContainerKind(value);
-  if (normalized) return { ok: true, value: normalized };
-  return { ok: false, message: "container_kind must be folder or task" };
 }
 
 function requiredString(

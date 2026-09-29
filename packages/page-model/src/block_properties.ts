@@ -1,6 +1,6 @@
 import type {
-  ChecklistTaskBlockProperties,
-  ChecklistTaskReference,
+  LinkedChecklistBlockProperties,
+  ChecklistItemReference,
 } from "./types.js";
 
 /** Canonical runtime contract for properties crossing a Page Y.Doc write boundary. */
@@ -40,16 +40,16 @@ export function validatePageBlockProperties(
     return requiredFields(["enabled", "boolean"], ["scope", "string"]);
   }
   if (type === "session_defaults") return required("scope", "string");
-  if (type === "task_ref") {
-    return requiredFields(["taskId", "string"], ["primary", "boolean"]);
+  if (type === "folder_ref") {
+    return requiredFields(["folderId", "string"], ["primary", "boolean"]);
   }
   if (type === "checklist") {
     const checkedError = required("checked", "boolean");
     if (checkedError) return checkedError;
-    const hasTaskId = value.taskId !== undefined;
+    const hasFolderId = value.folderId !== undefined;
     const hasItemId = value.itemId !== undefined;
-    if (hasTaskId || hasItemId) {
-      return requiredFields(["taskId", "string"], ["itemId", "string"]);
+    if (hasFolderId || hasItemId) {
+      return requiredFields(["folderId", "string"], ["itemId", "string"]);
     }
     return null;
   }
@@ -60,14 +60,14 @@ export function validatePageBlockProperties(
   return null;
 }
 
-/** Exact reachable properties for a Task-backed checklist block. */
-export function checklistTaskBlockProperties(
-  reference: ChecklistTaskReference,
+/** Exact reachable properties for a Folder-backed checklist block. */
+export function checklistFolderBlockProperties(
+  reference: ChecklistItemReference,
   checked: boolean,
-): ChecklistTaskBlockProperties {
+): LinkedChecklistBlockProperties {
   return {
     checked,
-    taskId: reference.taskId,
+    folderId: reference.folderId,
     itemId: reference.itemId,
   };
 }

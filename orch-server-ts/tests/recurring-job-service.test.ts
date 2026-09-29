@@ -370,7 +370,7 @@ describe("RecurringJobService", () => {
       validateTarget: createRecurringJobTargetValidator({
         registry,
         modelPresetAvailability: { requireAvailable: vi.fn() },
-        listFolders: async () => [{ id: "folder-a" }],
+        listFolders: async () => [{ id: "folder-a", archived: false }],
         findUserByEmail: async () => ({
           email: actor.ownerEmail,
           isAdmin: false,
@@ -581,7 +581,7 @@ describe("RecurringJobService", () => {
     expect(createRecurringSession).not.toHaveBeenCalled();
   });
 
-  it("revalidates a task target immediately before dispatch", async () => {
+  it("revalidates a folder target immediately before dispatch", async () => {
     const repository = memoryRepository();
     const registry = new InMemoryNodeRegistry();
     registry.registerNode({
@@ -590,7 +590,7 @@ describe("RecurringJobService", () => {
       agents: [{ id: "roselin", backend: "codex" }],
       supported_backends: ["codex"],
     });
-    let taskArchived = false;
+    let folderArchived = false;
     const createRecurringSession = vi.fn(async () => ({
       state: "running" as const,
       resolvedModelPreset: null,
@@ -607,24 +607,20 @@ describe("RecurringJobService", () => {
       validateTarget: createRecurringJobTargetValidator({
         registry,
         modelPresetAvailability: { requireAvailable: vi.fn() },
-        listFolders: async () => [{ id: "folder-a" }],
+        listFolders: async () => [{ id: "folder-a", archived: folderArchived }],
         findUserByEmail: async () => ({
           email: actor.ownerEmail,
           isAdmin: false,
           allowedFolderIds: ["folder-a"],
         }),
-        getTaskSnapshot: async () => ({
-          task: { folder_id: "folder-a", archived: taskArchived },
-        }),
       }),
     });
     const job = await service.create(actor, {
       ...createInput(),
-      container: { kind: "task", id: "task-a" },
     });
-    taskArchived = true;
+    folderArchived = true;
 
-    const run = await service.runManual(actor, job.jobId, "manual-archived-task");
+    const run = await service.runManual(actor, job.jobId, "manual-archived-folder");
 
     expect(run).toMatchObject({
       state: "error",
@@ -715,7 +711,7 @@ describe("RecurringJobService", () => {
     });
 
     const job = await service.create(actor, createInput());
-    await service.update(actor, job.jobId, { expectedVersion: job.version, folderId: "folder-b", container: { kind: "folder", id: "folder-b" } });
+    await service.update(actor, job.jobId, { expectedVersion: job.version, folderId: "folder-b" });
 
     expect(validateTarget).toHaveBeenNthCalledWith(1, {
       actor,

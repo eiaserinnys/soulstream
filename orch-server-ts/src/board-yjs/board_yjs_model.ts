@@ -4,14 +4,13 @@ import {
   BOARD_ITEMS_MAP,
   MARKDOWN_BODIES_MAP,
   boardYjsFolderScope,
-  normalizeLegacyBoardYjsItemValue,
 } from "./board_yjs_document.js";
 import {
   MarkdownDocumentVersionConflictError,
   normalizeMarkdownVersion,
 } from "./markdown_document_version.js";
 import type {
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsItemValue,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
@@ -21,7 +20,7 @@ import type {
 export * from "./board_yjs_document.js";
 export type * from "./board_yjs_types.js";
 
-type BoardYjsScopeInput = string | BoardYjsContainerScope;
+type BoardYjsScopeInput = string | BoardYjsFolderScope;
 
 export function applyBoardYjsPosition(
   doc: Y.Doc,
@@ -65,10 +64,8 @@ export function createMarkdownYjsDocument(
   const boardItem: CatalogBoardItemRow = {
     id: `markdown:${input.documentId}`,
     folderId: scope.folderId,
-    containerKind: scope.containerKind,
-    containerId: scope.containerId,
     membershipKind: "primary",
-    sourceTaskItemId: null,
+    sourceChecklistItemId: null,
     itemType: "markdown",
     itemId: input.documentId,
     x: input.x,
@@ -95,7 +92,7 @@ export function updateMarkdownYjsDocument(
   const boardItemId = `markdown:${documentId}`;
   const stored = boardItems.get(boardItemId);
   if (!stored) return null;
-  const current = normalizeLegacyBoardYjsItemValue(stored);
+  const current = stored;
   const metadata = current.metadata && typeof current.metadata === "object" ? current.metadata : {};
   const currentVersion = normalizeMarkdownVersion(metadata.version);
   if (currentVersion !== fields.expectedVersion) {
@@ -132,12 +129,12 @@ export function deleteMarkdownYjsDocument(doc: Y.Doc, documentId: string): void 
   doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP).delete(documentId);
 }
 
-export function upsertTaskYjsBoardItem(
+export function upsertFolderYjsBoardItem(
   doc: Y.Doc,
   input: {
     folderId: string;
     boardItemId: string;
-    taskId: string;
+    childFolderId: string;
     title: string;
     x: number;
     y: number;
@@ -147,12 +144,10 @@ export function upsertTaskYjsBoardItem(
   const boardItem: CatalogBoardItemRow = {
     id: input.boardItemId,
     folderId: input.folderId,
-    containerKind: "folder",
-    containerId: input.folderId,
     membershipKind: "primary",
-    sourceTaskItemId: null,
-    itemType: "task",
-    itemId: input.taskId,
+    sourceChecklistItemId: null,
+    itemType: "subfolder",
+    itemId: input.childFolderId,
     x: input.x,
     y: input.y,
     metadata: { ...(input.metadata ?? {}), title: input.title },
@@ -179,10 +174,8 @@ export function upsertCustomViewYjsBoardItem(
   const boardItem: CatalogBoardItemRow = {
     id: input.boardItemId,
     folderId: scope.folderId,
-    containerKind: scope.containerKind,
-    containerId: scope.containerId,
     membershipKind: "primary",
-    sourceTaskItemId: null,
+    sourceChecklistItemId: null,
     itemType: "custom_view",
     itemId: input.customViewId,
     x: input.x,
@@ -205,13 +198,13 @@ export function deleteBoardYjsItem(doc: Y.Doc, boardItemId: string): void {
 export function readMovableBoardYjsItem(
   doc: Y.Doc,
   boardItemId: string,
-  targetScope: BoardYjsContainerScope,
+  targetScope: BoardYjsFolderScope,
   position?: { x: number; y: number },
 ): MovedBoardYjsItem | null {
   const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   const stored = boardItems.get(boardItemId);
   if (!stored) return null;
-  const current = normalizeLegacyBoardYjsItemValue(stored);
+  const current = stored;
   const now = new Date().toISOString();
   const value: BoardYjsItemValue = {
     ...current,
@@ -227,10 +220,8 @@ export function readMovableBoardYjsItem(
     boardItem: {
       id: boardItemId,
       folderId: targetScope.folderId,
-      containerKind: targetScope.containerKind,
-      containerId: targetScope.containerId,
       membershipKind: value.membership_kind ?? "primary",
-      sourceTaskItemId: value.source_task_item_id ?? null,
+      sourceChecklistItemId: value.source_checklist_item_id ?? null,
       itemType: value.item_type,
       itemId: value.item_id,
       x: value.x,
@@ -266,8 +257,8 @@ export function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItemRow): 
     x: boardItem.x,
     y: boardItem.y,
     ...(boardItem.membershipKind ? { membership_kind: boardItem.membershipKind } : {}),
-    ...(boardItem.sourceTaskItemId !== undefined
-      ? { source_task_item_id: boardItem.sourceTaskItemId }
+    ...(boardItem.sourceChecklistItemId !== undefined
+      ? { source_checklist_item_id: boardItem.sourceChecklistItemId }
       : {}),
     metadata: boardItem.metadata ?? {},
     ...(boardItem.createdAt ? { created_at: boardItem.createdAt } : {}),

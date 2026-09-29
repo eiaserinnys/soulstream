@@ -16,7 +16,7 @@ import {
   type CustomViewWithBoardItem,
   type PatchCustomViewRecordInput,
 } from "./board_projection_types.js";
-import type { BoardYjsContainerRef } from "./board_yjs_types.js";
+import type { BoardYjsFolderScope } from "./board_yjs_types.js";
 
 export class CustomViewProjectionRepository {
   private readonly sqlResolver: BoardYjsSqlResolver;
@@ -45,10 +45,10 @@ export class CustomViewProjectionRepository {
         cv.updated_at AS cv_updated_at,
         bi.id AS bi_id,
         bi.folder_id AS bi_folder_id,
-        bi.container_kind AS bi_container_kind,
-        bi.container_id AS bi_container_id,
+
+
         bi.membership_kind AS bi_membership_kind,
-        bi.source_task_item_id AS bi_source_task_item_id,
+        bi.source_checklist_item_id AS bi_source_checklist_item_id,
         bi.item_type AS bi_item_type,
         bi.item_id AS bi_item_id,
         bi.x AS bi_x,
@@ -65,7 +65,7 @@ export class CustomViewProjectionRepository {
   }
 
   async listCustomViews(params: {
-    container: BoardYjsContainerRef;
+    folderId: string;
     includeArchived?: boolean;
     limit?: number;
   }): Promise<CustomViewWithBoardItem[]> {
@@ -89,10 +89,10 @@ export class CustomViewProjectionRepository {
         cv.updated_at AS cv_updated_at,
         bi.id AS bi_id,
         bi.folder_id AS bi_folder_id,
-        bi.container_kind AS bi_container_kind,
-        bi.container_id AS bi_container_id,
+
+
         bi.membership_kind AS bi_membership_kind,
-        bi.source_task_item_id AS bi_source_task_item_id,
+        bi.source_checklist_item_id AS bi_source_checklist_item_id,
         bi.item_type AS bi_item_type,
         bi.item_id AS bi_item_id,
         bi.x AS bi_x,
@@ -102,8 +102,7 @@ export class CustomViewProjectionRepository {
         bi.updated_at AS bi_updated_at
       FROM board_custom_views cv
       JOIN board_items bi ON bi.id = cv.board_item_id
-      WHERE bi.container_kind = ${params.container.containerKind}
-        AND bi.container_id = ${params.container.containerId}
+      WHERE bi.folder_id = ${params.folderId}
         AND (${params.includeArchived ?? false} OR cv.archived = FALSE)
       ORDER BY bi.y ASC, bi.x ASC, cv.updated_at DESC, cv.id ASC
       LIMIT ${limit}

@@ -35,52 +35,28 @@ describe("recurring job target validator", () => {
     });
   });
 
-  it("checks task ownership against the selected accessible folder", async () => {
-    const validator = createRecurringJobTargetValidator({
-      registry: registry(),
-      modelPresetAvailability: { requireAvailable: vi.fn() },
-      listFolders: async () => [{ id: "allowed-folder" }],
-      findUserByEmail: async () => ({
-        email: "member@example.com",
-        isAdmin: true,
-        allowedFolderIds: [],
-      }),
-      getTaskSnapshot: async () => ({ task: { folder_id: "other-folder" } }),
-    });
-
-    await expect(validator({
-      actor,
-      target: {
-        ...target("allowed-folder"),
-        container: { kind: "task", id: "task-a" },
-      },
-    })).rejects.toMatchObject({ code: "VALIDATION" });
-  });
-
   it("rejects a deleted, archived, or newly inaccessible task target", async () => {
-    let task: Record<string, unknown> | null = { folder_id: "allowed-folder", archived: false };
+    let folder: { id: string; archived: boolean } | null = { id: "allowed-folder", archived: false };
     let allowed = true;
     const validator = createRecurringJobTargetValidator({
       registry: registry(),
       modelPresetAvailability: { requireAvailable: vi.fn() },
-      listFolders: async () => [{ id: "allowed-folder" }],
+      listFolders: async () => folder ? [folder] : [],
       findUserByEmail: async () => ({
         email: "member@example.com",
         isAdmin: false,
         allowedFolderIds: allowed ? ["allowed-folder"] : ["other-folder"],
       }),
-      getTaskSnapshot: async () => task ? { task } : null,
     });
     const taskTarget = {
       ...target("allowed-folder"),
-      container: { kind: "task" as const, id: "task-a" },
     };
 
-    task = null;
+    folder = null;
     await expect(validator({ actor, target: taskTarget })).rejects.toMatchObject({ code: "NOT_FOUND" });
-    task = { folder_id: "allowed-folder", archived: true };
+    folder = { id: "allowed-folder", archived: true };
     await expect(validator({ actor, target: taskTarget })).rejects.toMatchObject({ code: "ARCHIVED" });
-    task = { folder_id: "allowed-folder", archived: false };
+    folder = { id: "allowed-folder", archived: false };
     allowed = false;
     await expect(validator({ actor, target: taskTarget })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });

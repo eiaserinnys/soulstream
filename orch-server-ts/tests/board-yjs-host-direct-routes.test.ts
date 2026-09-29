@@ -1,15 +1,12 @@
-import { readFile } from "node:fs/promises";
 
 import Fastify, { type FastifyBaseLogger } from "fastify";
-import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
 import { CustomViewRevisionConflictError } from
   "../src/board-yjs/board_projection_types.js";
 import type {
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsReplica,
   BoardYjsSeed,
 } from "../src/board-yjs/board_yjs_types.js";
@@ -20,7 +17,6 @@ import {
   registerBoardYjsHostProxyRoutes,
 } from "../src/index.js";
 
-type ActualClient = Record<string, (...args: unknown[]) => Promise<unknown>>;
 
 const fixture = loadContractFixtures().boardYjsHostProxy;
 
@@ -49,66 +45,18 @@ describe("orch-local Board Yjs host operation routes", () => {
     expect(service.close).toHaveBeenCalledTimes(1);
   });
 
-  it("replays all actual BoardYjsHostClient requests and preserves the internal route wire", async () => {
-    const service = createServiceDouble();
+  it("accepts every canonical host operation fixture", async () => {
+    // P2 owns the worker client; this server contract sends the shared wire fixtures directly.
     const app = Fastify({ logger: false });
-    registerBoardYjsHostProxyRoutes(app, {
-      authBearerToken: "test-token",
-      service,
-    });
-    const requests = new Map<string, { headers: Record<string, string>; body: unknown }>();
-    const wireResponses = new Map<string, { statusCode: number; body: unknown }>();
-    vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => {
-      const parsed = new URL(String(url));
-      const operation = parsed.pathname.split("/").at(-1) ?? "";
-      const body = JSON.parse(String(init?.body ?? "{}")) as unknown;
-      const headers = init?.headers as Record<string, string> ?? {};
-      requests.set(operation, { headers, body });
-      const response = await app.inject({
-        method: "POST",
-        url: parsed.pathname,
-        headers,
-        payload: JSON.stringify(body),
-      });
-      const responseBody = response.body ? response.json() as unknown : undefined;
-      wireResponses.set(operation, { statusCode: response.statusCode, body: responseBody });
-      const responseHeaders = Object.fromEntries(
-        Object.entries(response.headers)
-          .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-      );
-      return new Response(response.body, {
-        status: response.statusCode,
-        headers: responseHeaders,
-      });
-    });
-
+    registerBoardYjsHostProxyRoutes(app, { authBearerToken: "test-token", service: createServiceDouble() });
     try {
-      const Client = await loadActualBoardYjsHostClient();
-      const client = new Client({
-        orch: {
-          baseUrl: "http://orch.local",
-          headers: { authorization: "Bearer test-token" },
-        },
-        logger: silentLogger(),
-      });
-
       for (const item of fixture.directOperations) {
-        await invokeActualClient(client, item.operation, item.body);
-        expect(requests.get(item.operation)).toEqual({
-          headers: {
-            authorization: "Bearer test-token",
-            "content-type": "application/json",
-          },
-          body: item.body,
-        });
-        expect(wireResponses.get(item.operation)).toEqual({
-          statusCode: 200,
-          body: responseForOperation(item.operation),
-        });
+        const response = await app.inject({ method: "POST", url: `/api/board-yjs/host/${item.operation}`,
+          headers: { authorization: "Bearer test-token" }, payload: item.body });
+        expect(response.statusCode, item.operation).toBe(200);
+        expect(response.json()).toEqual(responseForOperation(item.operation));
       }
-    } finally {
-      await app.close();
-    }
+    } finally { await app.close(); }
   });
 
   it("requires the service bearer in orch mode and never accepts a dashboard cookie", async () => {
@@ -137,7 +85,7 @@ describe("orch-local Board Yjs host operation routes", () => {
 
   it("dispatches projection reads through the authenticated local host allowlist", async () => {
     const projectionHost = {
-      listContainerItems: vi.fn(async () => ({
+      listFolderItems: vi.fn(async () => ({
         items: [],
         total: 0,
         counts: {
@@ -146,7 +94,6 @@ describe("orch-local Board Yjs host operation routes", () => {
           subfolder: 0,
           asset: 0,
           frame: 0,
-          task: 0,
           custom_view: 0,
         },
         scan: null,
@@ -159,7 +106,7 @@ describe("orch-local Board Yjs host operation routes", () => {
       projectionHost: projectionHost as never,
     });
     const payload = {
-      container: { containerKind: "task", containerId: "task-1" },
+      folderId: "task-1",
       query: null,
       includeArchived: false,
       itemTypes: null,
@@ -169,13 +116,13 @@ describe("orch-local Board Yjs host operation routes", () => {
     try {
       const response = await app.inject({
         method: "POST",
-        url: "/api/board-yjs/host/list-container-items",
+        url: "/api/board-yjs/host/list-folder-items",
         headers: { authorization: "Bearer test-token" },
         payload,
       });
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({ items: [], total: 0 });
-      expect(projectionHost.listContainerItems).toHaveBeenCalledWith(payload);
+      expect(projectionHost.listFolderItems).toHaveBeenCalledWith(payload);
     } finally {
       await app.close();
     }
@@ -313,80 +260,6 @@ describe("orch-local Board Yjs host operation routes", () => {
   });
 });
 
-async function loadActualBoardYjsHostClient(): Promise<new (config: unknown) => ActualClient> {
-  const sourceUrl = new URL(
-    "../../soul-server-ts/src/collaboration/board_yjs_host_client.ts",
-    import.meta.url,
-  );
-  const contractUrl = new URL(
-    "../../soul-server-ts/src/custom_view/custom_view_contract.ts",
-    import.meta.url,
-  );
-  const transportUrl = new URL(
-    "../../soul-server-ts/src/control_plane/persistence_host_transport.ts",
-    import.meta.url,
-  );
-  const contractSource = await readFile(contractUrl, "utf8");
-  const contractOutput = ts.transpileModule(contractSource, {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const contractModuleUrl =
-    `data:text/javascript;base64,${Buffer.from(contractOutput).toString("base64")}`;
-  const transportSource = await readFile(transportUrl, "utf8");
-  const transportOutput = ts.transpileModule(transportSource, {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const transportModuleUrl =
-    `data:text/javascript;base64,${Buffer.from(transportOutput).toString("base64")}`;
-  const source = await readFile(sourceUrl, "utf8");
-  const output = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText.replace(
-    "../custom_view/custom_view_contract.js",
-    contractModuleUrl,
-  ).replace(
-    "../control_plane/persistence_host_transport.js",
-    transportModuleUrl,
-  );
-  const moduleUrl = `data:text/javascript;base64,${Buffer.from(output).toString("base64")}`;
-  const loaded = await import(moduleUrl) as { BoardYjsHostClient: new (config: unknown) => ActualClient };
-  return loaded.BoardYjsHostClient;
-}
-
-async function invokeActualClient(
-  client: ActualClient,
-  operation: string,
-  body: Record<string, unknown>,
-): Promise<unknown> {
-  switch (operation) {
-    case "move-session-to-folder":
-      return await client.moveSessionToFolder?.(body.sessionId, body.folderId);
-    case "remove-task-board-item":
-      return await client.removeTaskBoardItem?.(body.folderId, body.boardItemId);
-    case "remove-board-item":
-      return await client.removeBoardItem?.(body.container, body.boardItemId);
-    case "update-board-item-position":
-      return await client.updateBoardItemPosition?.(
-        body.container,
-        body.boardItemId,
-        body.x,
-        body.y,
-      );
-    case "update-markdown-document":
-      return await client.updateMarkdownDocument?.(
-        body.container,
-        body.documentId,
-        body.fields,
-      );
-    case "delete-markdown-document":
-      return await client.deleteMarkdownDocument?.(body.container, body.documentId);
-    default: {
-      const method = operation.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
-      return await client[method]?.(body);
-    }
-  }
-}
-
 function responseForOperation(operation: string): unknown {
   if ([
     "remove-task-board-item",
@@ -403,12 +276,10 @@ function createServiceDouble() {
     createMarkdownDocument: result("create-markdown-document"),
     upsertSessionBoardItem: result("upsert-session-board-item"),
     moveSessionToFolder: result("move-session-to-folder"),
-    upsertTaskBoardItem: result("upsert-task-board-item"),
     upsertCustomViewBoardItem: result("upsert-custom-view-board-item"),
-    removeTaskBoardItem: result("remove-task-board-item"),
     removeBoardItem: result("remove-board-item"),
     updateBoardItemPosition: result("update-board-item-position"),
-    moveBoardItemToContainer: result("move-board-item-to-container"),
+    moveBoardItemToContainer: result("move-board-item-to-folder"),
     updateMarkdownDocument: result("update-markdown-document"),
     deleteMarkdownDocument: result("delete-markdown-document"),
     handleConnection: vi.fn(),
@@ -444,17 +315,16 @@ class CapturingBoardYjsRepository {
   async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
     return this.snapshots.get(documentName) ?? null;
   }
-  async resolveBoardYjsContainerScope(
-    container: BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope> {
+  async resolveBoardYjsFolderScope(
+    container: BoardYjsFolderScope,
+  ): Promise<BoardYjsFolderScope> {
     return {
-      folderId: container.containerKind === "folder" ? container.containerId : "folder-1",
       ...container,
     };
   }
   async backfillTaskBoardItemsIntoSnapshot(
     _documentName: string,
-    _container: BoardYjsContainerScope,
+    _container: BoardYjsFolderScope,
     snapshot: { snapshot: Uint8Array; revision: number },
   ) {
     return snapshot;

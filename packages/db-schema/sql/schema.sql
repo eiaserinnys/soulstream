@@ -52,120 +52,6 @@ CREATE TABLE IF NOT EXISTS context_bundles (
 CREATE INDEX IF NOT EXISTS idx_agent_profiles_updated_at
     ON agent_profiles(updated_at DESC, agent_id ASC);
 
--- 042_runbook_to_task.sql mirror: this must run before any canonical Task DDL.
--- A legacy runbooks table plus task_items means v1 Task Tree still occupies the
--- namespace, so 041 must be applied by a human before this schema is deployed.
-DO $$
-DECLARE
-    legacy_kind "char";
-    task_items_kind "char";
-BEGIN
-    SELECT relkind INTO legacy_kind FROM pg_class WHERE oid = to_regclass('runbooks');
-    SELECT relkind INTO task_items_kind FROM pg_class WHERE oid = to_regclass('task_items');
-
-    IF legacy_kind IN ('r', 'p') AND task_items_kind IN ('r', 'p') THEN
-        RAISE EXCEPTION '041_retire_task_tree.sql must run before 042_runbook_to_task.sql';
-    END IF;
-
-    IF legacy_kind IN ('r', 'p') THEN
-        IF EXISTS (
-            SELECT 1 FROM pg_class WHERE oid = to_regclass('tasks') AND relkind IN ('r', 'p')
-        ) THEN
-            RAISE EXCEPTION 'cannot rename runbooks: tasks table already exists';
-        END IF;
-        ALTER TABLE runbooks RENAME TO tasks;
-    END IF;
-
-    IF EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('runbook_sections') AND relkind IN ('r', 'p')) THEN
-        ALTER TABLE runbook_sections RENAME TO task_sections;
-    END IF;
-    IF EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('runbook_items') AND relkind IN ('r', 'p')) THEN
-        ALTER TABLE runbook_items RENAME TO task_items;
-    END IF;
-    IF EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('runbook_operations') AND relkind IN ('r', 'p')) THEN
-        ALTER TABLE runbook_operations RENAME TO task_operations;
-    END IF;
-    IF EXISTS (
-        SELECT 1 FROM pg_class
-        WHERE oid = to_regclass('checklist_runbook_projection_outbox') AND relkind IN ('r', 'p')
-    ) THEN
-        ALTER TABLE checklist_runbook_projection_outbox RENAME TO checklist_task_projection_outbox;
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = current_schema() AND table_name = 'task_sections' AND column_name = 'runbook_id'
-    ) THEN
-        ALTER TABLE task_sections RENAME COLUMN runbook_id TO task_id;
-    END IF;
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = current_schema() AND table_name = 'task_operations' AND column_name = 'runbook_id'
-    ) THEN
-        ALTER TABLE task_operations RENAME COLUMN runbook_id TO task_id;
-    END IF;
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = current_schema() AND table_name = 'board_items' AND column_name = 'source_runbook_item_id'
-    ) THEN
-        ALTER TABLE board_items RENAME COLUMN source_runbook_item_id TO source_task_item_id;
-    END IF;
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = current_schema() AND table_name = 'session_page_bindings' AND column_name = 'source_runbook_item_id'
-    ) THEN
-        ALTER TABLE session_page_bindings RENAME COLUMN source_runbook_item_id TO source_task_item_id;
-    END IF;
-
-    IF to_regclass('board_items') IS NOT NULL THEN
-        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_item_type_check;
-        UPDATE board_items SET item_type = 'task' WHERE item_type = 'runbook';
-        IF EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema = current_schema() AND table_name = 'board_items'
-              AND column_name = 'container_kind'
-        ) THEN
-            ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
-            UPDATE board_items SET container_kind = 'task' WHERE container_kind = 'runbook';
-        END IF;
-    END IF;
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = current_schema() AND table_name = 'board_yjs_catalog_cache'
-          AND column_name = 'container_kind'
-    ) THEN
-        ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_container_kind_check;
-        UPDATE board_yjs_catalog_cache SET container_kind = 'task' WHERE container_kind = 'runbook';
-    END IF;
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = current_schema() AND table_name = 'session_page_bindings'
-          AND column_name = 'legacy_container_kind'
-    ) THEN
-        ALTER TABLE session_page_bindings DROP CONSTRAINT IF EXISTS session_page_bindings_container_kind_check;
-        UPDATE session_page_bindings SET legacy_container_kind = 'task' WHERE legacy_container_kind = 'runbook';
-    END IF;
-    IF to_regclass('task_operations') IS NOT NULL THEN
-        ALTER TABLE task_operations DROP CONSTRAINT IF EXISTS runbook_operations_target_kind_check;
-        ALTER TABLE task_operations DROP CONSTRAINT IF EXISTS task_operations_target_kind_check;
-        UPDATE task_operations
-        SET target_kind = CASE WHEN target_kind = 'runbook' THEN 'task' ELSE target_kind END,
-            operation_type = replace(operation_type, 'runbook', 'task')
-        WHERE target_kind = 'runbook' OR operation_type LIKE '%runbook%';
-    END IF;
-    -- Do not mirror 042's blocks rewrite here. Page/block canonical state lives
-    -- in Y.Doc; direct SQL changes only the relational projection and is reverted
-    -- when the live document is loaded. Use the page mutation API instead.
-    IF to_regclass('folders') IS NOT NULL THEN
-        UPDATE folders SET name = '📋 업무' WHERE name = '📒 런북';
-    END IF;
-END;
-$$;
-
--- ============================================================
--- 1. 테이블
--- ============================================================
-
 CREATE TABLE IF NOT EXISTS folders (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -173,6 +59,17 @@ CREATE TABLE IF NOT EXISTS folders (
     parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
     project_page_id TEXT,
     archived    BOOLEAN NOT NULL DEFAULT FALSE,
+    checklist_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','completed')),
+    version INTEGER NOT NULL DEFAULT 1,
+    created_session_id TEXT,
+    created_event_id INTEGER,
+    completed_kind TEXT CHECK (completed_kind IN ('agent','user','llm')),
+    completed_session_id TEXT,
+    completed_event_id INTEGER,
+    completed_user_id TEXT,
+    completed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -728,74 +625,19 @@ CREATE TABLE IF NOT EXISTS file_assets (
 );
 
 CREATE TABLE IF NOT EXISTS board_items (
-    id                     TEXT PRIMARY KEY,
-    folder_id              TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    container_kind         TEXT NOT NULL DEFAULT 'folder',
-    container_id           TEXT NOT NULL,
-    membership_kind        TEXT NOT NULL DEFAULT 'primary',
-    source_task_item_id TEXT,
-    item_type              TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'task', 'custom_view')),
-    item_id                TEXT NOT NULL,
-    x                      DOUBLE PRECISION NOT NULL DEFAULT 0,
-    y                      DOUBLE PRECISION NOT NULL DEFAULT 0,
-    metadata               JSONB NOT NULL DEFAULT '{}',
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT board_items_container_kind_check
-        CHECK (container_kind IN ('folder','task')),
-    CONSTRAINT board_items_membership_kind_check
-        CHECK (membership_kind IN ('primary','reference')),
-    CONSTRAINT uq_board_items_container_item
-        UNIQUE (container_kind, container_id, item_id)
+    id TEXT PRIMARY KEY,
+    folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    membership_kind TEXT NOT NULL DEFAULT 'primary' CHECK (membership_kind IN ('primary','reference')),
+    source_checklist_item_id TEXT,
+    item_type TEXT NOT NULL CHECK (item_type IN ('session','markdown','subfolder','asset','frame','custom_view')),
+    item_id TEXT NOT NULL,
+    x DOUBLE PRECISION NOT NULL DEFAULT 0,
+    y DOUBLE PRECISION NOT NULL DEFAULT 0,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_board_items_folder_item UNIQUE (folder_id, item_id)
 );
-
-ALTER TABLE board_items ADD COLUMN IF NOT EXISTS container_kind TEXT NOT NULL DEFAULT 'folder';
-ALTER TABLE board_items ADD COLUMN IF NOT EXISTS container_id TEXT;
-ALTER TABLE board_items ADD COLUMN IF NOT EXISTS membership_kind TEXT NOT NULL DEFAULT 'primary';
-ALTER TABLE board_items ADD COLUMN IF NOT EXISTS source_task_item_id TEXT;
-ALTER TABLE board_items ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
-ALTER TABLE board_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-UPDATE board_items SET container_kind = 'folder' WHERE container_kind IS NULL;
-UPDATE board_items SET container_id = folder_id WHERE container_id IS NULL;
-UPDATE board_items SET membership_kind = 'primary' WHERE membership_kind IS NULL;
-ALTER TABLE board_items ALTER COLUMN container_kind SET NOT NULL;
-ALTER TABLE board_items ALTER COLUMN container_id SET NOT NULL;
-ALTER TABLE board_items ALTER COLUMN membership_kind SET NOT NULL;
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_item_type_check;
-ALTER TABLE board_items ADD CONSTRAINT board_items_item_type_check
-    CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'task', 'custom_view'));
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
-ALTER TABLE board_items ADD CONSTRAINT board_items_container_kind_check
-    CHECK (container_kind IN ('folder','task'));
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_membership_kind_check;
-ALTER TABLE board_items ADD CONSTRAINT board_items_membership_kind_check
-    CHECK (membership_kind IN ('primary','reference'));
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_folder_id_item_id_key;
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS uq_board_items_container_item;
-ALTER TABLE board_items ADD CONSTRAINT uq_board_items_container_item
-    UNIQUE (container_kind, container_id, item_id);
-
-CREATE OR REPLACE FUNCTION board_items_fill_container_defaults()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-    IF NEW.container_id IS NULL THEN
-        NEW.container_kind := 'folder';
-        NEW.container_id := NEW.folder_id;
-    END IF;
-    IF NEW.container_kind IS NULL THEN
-        NEW.container_kind := 'folder';
-    END IF;
-    IF NEW.membership_kind IS NULL THEN
-        NEW.membership_kind := 'primary';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_board_items_fill_container_defaults ON board_items;
-CREATE TRIGGER trg_board_items_fill_container_defaults
-    BEFORE INSERT ON board_items
-    FOR EACH ROW EXECUTE FUNCTION board_items_fill_container_defaults();
 
 CREATE TABLE IF NOT EXISTS board_yjs_documents (
     name        TEXT PRIMARY KEY,
@@ -827,65 +669,17 @@ CREATE TRIGGER trg_board_yjs_documents_advance_revision
 
 CREATE TABLE IF NOT EXISTS board_yjs_updates (
     id             BIGSERIAL PRIMARY KEY,
-    document_name  TEXT NOT NULL REFERENCES board_yjs_documents(name) ON DELETE CASCADE,
+    document_name  TEXT NOT NULL REFERENCES board_yjs_documents(name) ON DELETE CASCADE ON UPDATE CASCADE,
     update         BYTEA NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS board_yjs_catalog_cache (
-    folder_id           TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    container_kind      TEXT NOT NULL DEFAULT 'folder',
-    container_id        TEXT NOT NULL,
-    board_items         JSONB NOT NULL DEFAULT '[]'::jsonb,
-    markdown_documents  JSONB NOT NULL DEFAULT '[]'::jsonb,
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT board_yjs_catalog_cache_container_kind_check
-        CHECK (container_kind IN ('folder','task')),
-    CONSTRAINT board_yjs_catalog_cache_pkey
-        PRIMARY KEY (container_kind, container_id)
+    folder_id TEXT PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+    board_items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    markdown_documents JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-ALTER TABLE board_yjs_catalog_cache ADD COLUMN IF NOT EXISTS container_kind TEXT;
-ALTER TABLE board_yjs_catalog_cache ADD COLUMN IF NOT EXISTS container_id TEXT;
-UPDATE board_yjs_catalog_cache SET container_kind = 'folder' WHERE container_kind IS NULL;
-UPDATE board_yjs_catalog_cache SET container_id = folder_id WHERE container_id IS NULL;
-ALTER TABLE board_yjs_catalog_cache ALTER COLUMN folder_id SET NOT NULL;
-ALTER TABLE board_yjs_catalog_cache ALTER COLUMN container_kind SET NOT NULL;
-ALTER TABLE board_yjs_catalog_cache ALTER COLUMN container_id SET NOT NULL;
-ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_container_kind_check;
-ALTER TABLE board_yjs_catalog_cache ADD CONSTRAINT board_yjs_catalog_cache_container_kind_check
-    CHECK (container_kind IN ('folder','task'));
-ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_pkey;
-ALTER TABLE board_yjs_catalog_cache ADD CONSTRAINT board_yjs_catalog_cache_pkey
-    PRIMARY KEY (container_kind, container_id);
-
-UPDATE board_yjs_catalog_cache cache
-SET board_items = normalized.board_items
-FROM (
-    SELECT source.container_kind,
-           source.container_id,
-           jsonb_agg(
-             (entry.value - 'sourceRunbookItemId' - 'runbookId')
-             || CASE WHEN entry.value ? 'sourceRunbookItemId'
-                  THEN jsonb_build_object('sourceTaskItemId', entry.value -> 'sourceRunbookItemId')
-                  ELSE '{}'::jsonb END
-             || CASE WHEN entry.value ? 'runbookId'
-                  THEN jsonb_build_object('taskId', entry.value -> 'runbookId')
-                  ELSE '{}'::jsonb END
-             || CASE WHEN entry.value ->> 'itemType' = 'runbook'
-                  THEN jsonb_build_object('itemType', 'task')
-                  ELSE '{}'::jsonb END
-             || CASE WHEN entry.value ->> 'containerKind' = 'runbook'
-                  THEN jsonb_build_object('containerKind', 'task')
-                  ELSE '{}'::jsonb END
-             ORDER BY entry.ordinality
-           ) AS board_items
-    FROM board_yjs_catalog_cache source
-    CROSS JOIN LATERAL jsonb_array_elements(source.board_items)
-      WITH ORDINALITY AS entry(value, ordinality)
-    GROUP BY source.container_kind, source.container_id
-) normalized
-WHERE cache.container_kind = normalized.container_kind
-  AND cache.container_id = normalized.container_id;
 
 CREATE OR REPLACE FUNCTION board_delete_markdown_refs()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -1179,7 +973,7 @@ CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_due
 CREATE INDEX IF NOT EXISTS idx_soulstream_node_heartbeats_seen
     ON soulstream_node_heartbeats (last_seen_at);
 CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x);
-CREATE INDEX IF NOT EXISTS idx_board_items_container ON board_items (container_kind, container_id, y, x);
+CREATE INDEX IF NOT EXISTS idx_board_items_folder_position ON board_items (folder_id, y, x);
 CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_board_items_primary_membership
     ON board_items (item_type, item_id)
@@ -2008,11 +1802,11 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'status' THEN
         IF jsonb_typeof(p_filters->'status') = 'array' THEN
-            q := q || ' AND status IN (' ||
+            q := q || ' AND s.status IN (' ||
                 (SELECT string_agg(quote_literal(elem), ', ')
                  FROM jsonb_array_elements_text(p_filters->'status') AS elem) || ')';
         ELSE
-            q := q || ' AND status = ' || quote_literal(p_filters->>'status');
+            q := q || ' AND s.status = ' || quote_literal(p_filters->>'status');
         END IF;
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'feed_only' AND (p_filters->>'feed_only')::boolean THEN
@@ -2097,11 +1891,11 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'status' THEN
         IF jsonb_typeof(p_filters->'status') = 'array' THEN
-            q := q || ' AND status IN (' ||
+            q := q || ' AND s.status IN (' ||
                 (SELECT string_agg(quote_literal(elem), ', ')
                  FROM jsonb_array_elements_text(p_filters->'status') AS elem) || ')';
         ELSE
-            q := q || ' AND status = ' || quote_literal(p_filters->>'status');
+            q := q || ' AND s.status = ' || quote_literal(p_filters->>'status');
         END IF;
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'feed_only' AND (p_filters->>'feed_only')::boolean THEN
@@ -3234,32 +3028,26 @@ $$;
 -- 29b. board_seed_items
 DROP FUNCTION IF EXISTS board_seed_items();
 DROP FUNCTION IF EXISTS board_seed_items(TEXT, TEXT);
-CREATE OR REPLACE FUNCTION board_seed_items(p_container_kind TEXT, p_container_id TEXT)
+CREATE OR REPLACE FUNCTION board_seed_items(p_folder_id TEXT)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
-    IF p_container_kind IS NULL OR p_container_kind NOT IN ('folder', 'task') THEN
-        RAISE EXCEPTION 'unsupported board container kind: %', p_container_kind;
-    END IF;
-    IF NULLIF(BTRIM(p_container_id), '') IS NULL THEN
+    IF NULLIF(BTRIM(p_folder_id), '') IS NULL THEN
         RAISE EXCEPTION 'board container id must not be empty';
     END IF;
 
     PERFORM pg_advisory_xact_lock(hashtext('soulstream:board_items')::bigint);
 
-    -- 세션 타일 reconcile: folder 컨테이너 타일만 폴더 불일치로 삭제한다.
-    -- task 컨테이너 타일은 Y.Doc이 생명주기를 소유하므로 세션 자체가
-    -- 사라진 경우(고아)에만 정리한다.
+    -- Reconcile primary membership against the folder owner.
     DELETE FROM board_items bi
     WHERE bi.item_type = 'session'
-      AND bi.container_kind = p_container_kind
-      AND bi.container_id = p_container_id
+      AND bi.folder_id = p_folder_id
       AND (
           NOT EXISTS (
               SELECT 1 FROM sessions s
               WHERE s.session_id = bi.item_id
           )
           OR (
-              bi.container_kind = 'folder'
+              bi.membership_kind = 'primary'
               AND NOT EXISTS (
                   SELECT 1 FROM sessions s
                   WHERE s.session_id = bi.item_id
@@ -3269,9 +3057,8 @@ BEGIN
       );
 
     DELETE FROM board_items bi
-    WHERE bi.item_type = 'subfolder'
-      AND bi.container_kind = p_container_kind
-      AND bi.container_id = p_container_id
+    WHERE bi.item_type = 'subfolder' AND bi.membership_kind = 'primary'
+      AND bi.folder_id = p_folder_id
       AND NOT EXISTS (
           SELECT 1 FROM folders f
           WHERE f.id = bi.item_id
@@ -3280,8 +3067,7 @@ BEGIN
 
     DELETE FROM board_items bi
     WHERE bi.item_type = 'markdown'
-      AND bi.container_kind = p_container_kind
-      AND bi.container_id = p_container_id
+      AND bi.folder_id = p_folder_id
       AND NOT EXISTS (
           SELECT 1 FROM markdown_documents d
           WHERE d.id = bi.item_id
@@ -3289,8 +3075,7 @@ BEGIN
 
     DELETE FROM board_items bi
     WHERE bi.item_type = 'asset'
-      AND bi.container_kind = p_container_kind
-      AND bi.container_id = p_container_id
+      AND bi.folder_id = p_folder_id
       AND NOT EXISTS (
           SELECT 1 FROM file_assets fa
           WHERE fa.id = bi.item_id
@@ -3298,8 +3083,7 @@ BEGIN
 
     DELETE FROM board_items bi
     WHERE bi.item_type = 'custom_view'
-      AND bi.container_kind = p_container_kind
-      AND bi.container_id = p_container_id
+      AND bi.folder_id = p_folder_id
       AND NOT EXISTS (
           SELECT 1 FROM board_custom_views cv
           WHERE cv.id = bi.item_id
@@ -3323,8 +3107,7 @@ BEGIN
             ) AS activity_at,
             s.session_id AS tie_breaker
         FROM sessions s
-        WHERE p_container_kind = 'folder'
-          AND s.folder_id = p_container_id
+        WHERE s.folder_id = p_folder_id
           AND NOT EXISTS (
               SELECT 1 FROM board_items existing_primary
               WHERE existing_primary.item_type = 'session'
@@ -3340,8 +3123,7 @@ BEGIN
             COALESCE(f.created_at, NOW()) AS activity_at,
             f.name AS tie_breaker
         FROM folders f
-        WHERE p_container_kind = 'folder'
-          AND f.parent_folder_id = p_container_id
+        WHERE f.parent_folder_id = p_folder_id AND f.archived = FALSE
     ),
     numbered AS (
         SELECT
@@ -3355,8 +3137,6 @@ BEGIN
     INSERT INTO board_items (
         id,
         folder_id,
-        container_kind,
-        container_id,
         membership_kind,
         item_type,
         item_id,
@@ -3366,8 +3146,6 @@ BEGIN
     )
     SELECT
         board_item_id,
-        folder_id,
-        'folder'::TEXT,
         folder_id,
         'primary'::TEXT,
         item_type,
@@ -3388,10 +3166,8 @@ CREATE OR REPLACE FUNCTION board_item_get_all()
 RETURNS TABLE(
     id TEXT,
     folder_id TEXT,
-    container_kind TEXT,
-    container_id TEXT,
     membership_kind TEXT,
-    source_task_item_id TEXT,
+    source_checklist_item_id TEXT,
     item_type TEXT,
     item_id TEXT,
     x DOUBLE PRECISION,
@@ -3403,10 +3179,8 @@ RETURNS TABLE(
     SELECT
         bi.id,
         bi.folder_id,
-        bi.container_kind,
-        bi.container_id,
         bi.membership_kind,
-        bi.source_task_item_id,
+        bi.source_checklist_item_id,
         bi.item_type,
         bi.item_id,
         bi.x,
@@ -3452,53 +3226,7 @@ RETURNS TABLE(
     ORDER BY bi.folder_id, bi.y, bi.x, bi.created_at;
 $$;
 
-INSERT INTO board_yjs_catalog_cache (
-    folder_id, container_kind, container_id, board_items, markdown_documents, updated_at
-)
-SELECT
-    bi.folder_id,
-    bi.container_kind,
-    bi.container_id,
-    jsonb_agg(
-        jsonb_build_object(
-            'id', bi.id,
-            'folderId', bi.folder_id,
-            'containerKind', bi.container_kind,
-            'containerId', bi.container_id,
-            'membershipKind', bi.membership_kind,
-            'sourceTaskItemId', bi.source_task_item_id,
-            'itemType', bi.item_type,
-            'itemId', bi.item_id,
-            'x', bi.x,
-            'y', bi.y,
-            'metadata', COALESCE(bi.metadata, '{}'::jsonb),
-            'createdAt', bi.created_at,
-            'updatedAt', bi.updated_at
-        )
-        ORDER BY bi.y, bi.x, bi.created_at
-    ),
-    COALESCE((
-        SELECT jsonb_agg(
-            jsonb_build_object(
-                'id', md.id,
-                'title', md.title,
-                'body', md.body,
-                'version', md.version,
-                'createdAt', md.created_at,
-                'updatedAt', md.updated_at
-            )
-            ORDER BY md.created_at, md.id
-        )
-        FROM board_items mbi
-        JOIN markdown_documents md ON md.id = mbi.item_id
-        WHERE mbi.container_kind = bi.container_kind
-          AND mbi.container_id = bi.container_id
-          AND mbi.item_type = 'markdown'
-    ), '[]'::jsonb),
-    NOW()
-FROM board_item_get_all() bi
-GROUP BY bi.folder_id, bi.container_kind, bi.container_id
-ON CONFLICT (container_kind, container_id) DO NOTHING;
+
 
 CREATE OR REPLACE FUNCTION claude_transcript_append(
     p_project_key TEXT,
@@ -3665,66 +3393,9 @@ ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_mime TEXT;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- Tasks: collaborative checklist state and append-only provenance.
-CREATE TABLE IF NOT EXISTS tasks (
+CREATE TABLE IF NOT EXISTS checklist_sections (
     id                 TEXT PRIMARY KEY,
-    board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE, -- 자기 자신의 item_type='task' board_item 1:1
-    title              TEXT NOT NULL DEFAULT '',
-    status             TEXT NOT NULL DEFAULT 'open',
-    archived           BOOLEAN NOT NULL DEFAULT FALSE,
-    version            INTEGER NOT NULL DEFAULT 1,
-    created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    created_event_id   INTEGER,
-    completed_kind     TEXT,
-    completed_session_id TEXT,
-    completed_event_id INTEGER,
-    completed_user_id  TEXT,
-    completed_at       TIMESTAMPTZ,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT tasks_status_check
-        CHECK (status IN ('open','completed')),
-    CONSTRAINT tasks_completed_kind_check
-        CHECK (completed_kind IN ('agent','user','llm')),
-    FOREIGN KEY (created_session_id, created_event_id)
-        REFERENCES events(session_id, id) ON DELETE SET NULL,
-    CONSTRAINT tasks_completed_session_id_fkey
-        FOREIGN KEY (completed_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL,
-    CONSTRAINT tasks_completed_event_fkey
-        FOREIGN KEY (completed_session_id, completed_event_id)
-        REFERENCES events(session_id, id) ON DELETE SET NULL
-);
-
-ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_session_id_completed_event_id_fkey;
-
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_kind TEXT;
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_session_id TEXT;
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_event_id INTEGER;
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_user_id TEXT;
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
-
-ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
-ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
-    CHECK (status IN ('open','completed'));
-
-ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_kind_check;
-ALTER TABLE tasks ADD CONSTRAINT tasks_completed_kind_check
-    CHECK (completed_kind IN ('agent','user','llm'));
-
-ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_session_id_fkey;
-ALTER TABLE tasks ADD CONSTRAINT tasks_completed_session_id_fkey
-    FOREIGN KEY (completed_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
-
-ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_event_fkey;
-ALTER TABLE tasks ADD CONSTRAINT tasks_completed_event_fkey
-    FOREIGN KEY (completed_session_id, completed_event_id)
-    REFERENCES events(session_id, id) ON DELETE SET NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_board_item ON tasks(board_item_id);
-
-CREATE TABLE IF NOT EXISTS task_sections (
-    id                 TEXT PRIMARY KEY,
-    task_id         TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    folder_id         TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
     position_key       TEXT NOT NULL,
     title              TEXT NOT NULL,
     assignee_kind      TEXT CHECK (assignee_kind IN ('agent','human','session')),
@@ -3745,12 +3416,12 @@ CREATE TABLE IF NOT EXISTS task_sections (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_sections_task
-    ON task_sections(task_id, position_key);
+CREATE INDEX IF NOT EXISTS idx_checklist_sections_folder
+    ON checklist_sections(folder_id, position_key);
 
-CREATE TABLE IF NOT EXISTS task_items (
+CREATE TABLE IF NOT EXISTS checklist_items (
     id                   TEXT PRIMARY KEY,
-    section_id           TEXT NOT NULL REFERENCES task_sections(id) ON DELETE CASCADE,
+    section_id           TEXT NOT NULL REFERENCES checklist_sections(id) ON DELETE CASCADE,
     position_key         TEXT NOT NULL,
     title                TEXT NOT NULL,
     how_to               TEXT NOT NULL DEFAULT '',
@@ -3781,30 +3452,29 @@ CREATE TABLE IF NOT EXISTS task_items (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_items_section
-    ON task_items(section_id, position_key);
+CREATE INDEX IF NOT EXISTS idx_checklist_items_section
+    ON checklist_items(section_id, position_key);
 
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey;
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_task_item_id_fkey;
-ALTER TABLE board_items ADD CONSTRAINT board_items_source_task_item_id_fkey
-    FOREIGN KEY (source_task_item_id) REFERENCES task_items(id) ON DELETE SET NULL;
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_checklist_item_id_fkey;
+ALTER TABLE board_items ADD CONSTRAINT board_items_source_checklist_item_id_fkey
+    FOREIGN KEY (source_checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL;
 
-ALTER TABLE task_items DROP CONSTRAINT IF EXISTS task_items_status_check;
-ALTER TABLE task_items ADD CONSTRAINT task_items_status_check
+ALTER TABLE checklist_items DROP CONSTRAINT IF EXISTS checklist_items_status_check;
+ALTER TABLE checklist_items ADD CONSTRAINT checklist_items_status_check
     CHECK (status IN ('pending','in_progress','review','completed','cancelled'));
 
 -- "내 차례"는 review이거나, 유효 담당(항목 own, 없으면 섹션 상속)이 human이고 미완·미취소.
 -- 상속 케이스는 부분 인덱스로 못 잡으므로 조회 시 항목⨝섹션으로 해석한다.
-CREATE INDEX IF NOT EXISTS idx_task_items_human_self
-    ON task_items(section_id)
+CREATE INDEX IF NOT EXISTS idx_checklist_items_human_self
+    ON checklist_items(section_id)
     WHERE assignee_kind = 'human'
       AND status NOT IN ('completed','cancelled')
       AND archived = FALSE;
 
-CREATE TABLE IF NOT EXISTS task_operations (
+CREATE TABLE IF NOT EXISTS folder_operations (
     id               TEXT PRIMARY KEY,
-    task_id       TEXT REFERENCES tasks(id) ON DELETE CASCADE,
-    target_kind      TEXT NOT NULL CHECK (target_kind IN ('task','section','item')),
+    folder_id       TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
+    target_kind      TEXT NOT NULL CHECK (target_kind IN ('folder','section','item')),
     target_id        TEXT NOT NULL,
     operation_type   TEXT NOT NULL,
     actor_kind       TEXT NOT NULL DEFAULT 'agent' CHECK (actor_kind IN ('agent','user','system','llm')),
@@ -3819,12 +3489,12 @@ CREATE TABLE IF NOT EXISTS task_operations (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_task_ops_idem
-    ON task_operations(idempotency_key)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_folder_ops_idem
+    ON folder_operations(idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_task_ops_target
-    ON task_operations(target_kind, target_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_folder_ops_target
+    ON folder_operations(target_kind, target_id, created_at);
 
 -- Pages and blocks: Y.Doc-backed page replicas, mutation provenance, and backlinks.
 CREATE TABLE IF NOT EXISTS pages (
@@ -3886,32 +3556,6 @@ ALTER TABLE folders ADD CONSTRAINT folders_project_page_id_fkey
     FOREIGN KEY (project_page_id) REFERENCES pages(id) ON DELETE RESTRICT;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_folders_project_page_id
     ON folders(project_page_id) WHERE project_page_id IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS folder_project_operations (
-    id               TEXT PRIMARY KEY,
-    folder_id        TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
-    operation_type   TEXT NOT NULL,
-    actor_kind       TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system','llm')),
-    actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    actor_user_id    TEXT,
-    idempotency_key  TEXT NOT NULL,
-    payload_json     JSONB NOT NULL DEFAULT '{}'::JSONB,
-    reason           TEXT,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_folder_project_ops_idem
-    ON folder_project_operations(idempotency_key);
-CREATE INDEX IF NOT EXISTS idx_folder_project_ops_folder
-    ON folder_project_operations(folder_id, created_at);
-
--- One task identity has a task execution aspect and a page document aspect.
--- New rows use task_page_id = id; legacy rows remain NULL until canonical Y.Doc backfill.
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_page_id TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_task_page_id
-    ON tasks(task_page_id) WHERE task_page_id IS NOT NULL;
-ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_task_page_id_fkey;
-ALTER TABLE tasks ADD CONSTRAINT tasks_task_page_id_fkey
-    FOREIGN KEY (task_page_id) REFERENCES pages(id) ON DELETE RESTRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pages_title_key ON pages(title_key);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pages_daily_date
@@ -4003,7 +3647,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_blocks_primary_session_ref
     WHERE block_type = 'session_ref'
       AND properties ->> 'primary' = 'true';
 
-CREATE OR REPLACE FUNCTION planner_starred_task_identity_trim(identity_value TEXT)
+CREATE OR REPLACE FUNCTION planner_starred_page_identity_trim(identity_value TEXT)
 RETURNS TEXT
 LANGUAGE sql
 IMMUTABLE
@@ -4019,128 +3663,20 @@ AS $$
     ), '')
 $$;
 
-CREATE TABLE IF NOT EXISTS planner_starred_task_order (
+CREATE TABLE IF NOT EXISTS planner_starred_page_order (
     page_id  TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
     position BIGINT NOT NULL CHECK (position >= 0)
 );
 
-CREATE INDEX IF NOT EXISTS idx_planner_starred_task_order_position
-    ON planner_starred_task_order(position, page_id);
+CREATE INDEX IF NOT EXISTS idx_planner_starred_page_order_position
+    ON planner_starred_page_order(position, page_id);
 
-INSERT INTO planner_starred_task_order (page_id, position)
-SELECT eligible.page_id,
-       row_number() OVER (ORDER BY eligible.updated_at DESC, eligible.page_id DESC) - 1
-FROM (
-    SELECT page.id AS page_id, page.updated_at
-    FROM pages page
-    WHERE page.archived = FALSE
-      AND page.daily_date IS NULL
-      AND page.metadata->'starred' = 'true'::jsonb
-      AND EXISTS (
-        SELECT 1
-        FROM blocks block
-        WHERE block.page_id = page.id
-          AND block.block_type IN ('task_ref', 'runbook_ref')
-          AND block.properties->'primary' = 'true'::jsonb
-          AND jsonb_typeof(CASE block.block_type
-            WHEN 'task_ref' THEN block.properties->'taskId'
-            WHEN 'runbook_ref' THEN block.properties->'runbookId'
-          END) = 'string'
-          AND planner_starred_task_identity_trim(CASE block.block_type
-            WHEN 'task_ref' THEN block.properties->>'taskId'
-            WHEN 'runbook_ref' THEN block.properties->>'runbookId'
-          END) IS NOT NULL
-      )
-) eligible
+INSERT INTO planner_starred_page_order (page_id, position)
+SELECT page.id, row_number() OVER (ORDER BY page.updated_at DESC, page.id DESC) - 1
+FROM pages page JOIN folders folder ON folder.project_page_id = page.id
+WHERE page.archived = FALSE AND folder.archived = FALSE
+  AND folder.id NOT IN ('claude','llm') AND page.metadata->'starred' = 'true'::jsonb
 ON CONFLICT (page_id) DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS checklist_task_projection_outbox (
-    block_id           TEXT PRIMARY KEY,
-    page_id            TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
-    source_hash        TEXT NOT NULL,
-    processed_hash     TEXT,
-    actor_kind         TEXT NOT NULL DEFAULT 'system',
-    actor_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    actor_user_id      TEXT,
-    routing_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    attempts           INTEGER NOT NULL DEFAULT 0,
-    last_error         TEXT,
-    next_retry_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    lease_owner_node_id TEXT,
-    lease_expires_at   TIMESTAMPTZ,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS page_id TEXT;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS source_hash TEXT;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS processed_hash TEXT;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS actor_kind TEXT NOT NULL DEFAULT 'system';
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS actor_session_id TEXT;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS actor_user_id TEXT;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS routing_session_id TEXT;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS last_error TEXT;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS lease_owner_node_id TEXT;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ;
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-
-ALTER TABLE checklist_task_projection_outbox ALTER COLUMN page_id SET NOT NULL;
-ALTER TABLE checklist_task_projection_outbox ALTER COLUMN source_hash SET NOT NULL;
-ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_page_id_fkey;
-ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_page_id_fkey
-    FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE;
-ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_actor_session_id_fkey;
-ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_actor_session_id_fkey
-    FOREIGN KEY (actor_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
-ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_routing_session_id_fkey;
-ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_routing_session_id_fkey
-    FOREIGN KEY (routing_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
-ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_actor_kind_check;
-ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_actor_kind_check
-    CHECK (actor_kind IN ('agent','user','system','llm'));
-ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_actor_shape_check;
-ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_actor_shape_check
-    CHECK (
-      (actor_kind = 'agent' AND actor_session_id IS NOT NULL AND actor_user_id IS NULL)
-      OR (actor_kind = 'user' AND actor_user_id IS NOT NULL)
-      OR (actor_kind = 'system' AND actor_user_id IS NULL)
-      OR (actor_kind = 'llm' AND actor_session_id IS NULL AND actor_user_id IS NULL)
-    );
-ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_attempts_check;
-ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_attempts_check
-    CHECK (attempts >= 0);
-
-CREATE INDEX IF NOT EXISTS idx_checklist_task_projection_due
-    ON checklist_task_projection_outbox(next_retry_at, updated_at, block_id)
-    WHERE processed_hash IS DISTINCT FROM source_hash;
-
-INSERT INTO checklist_task_projection_outbox (
-  block_id, page_id, source_hash, actor_kind, actor_session_id
-)
-SELECT
-  block.id,
-  block.page_id,
-  'reconcile:' || md5(
-    block.block_type || E'\x1f' || block.text_plain || E'\x1f' || block.properties::text
-  ),
-  CASE
-    WHEN COALESCE(
-      block.updated_session_id, page.updated_session_id,
-      block.created_session_id, page.created_session_id
-    ) IS NULL THEN 'system'
-    ELSE 'agent'
-  END,
-  COALESCE(
-    block.updated_session_id, page.updated_session_id,
-    block.created_session_id, page.created_session_id
-  )
-FROM blocks block
-JOIN pages page ON page.id = block.page_id
-WHERE block.block_type = 'checklist'
-ON CONFLICT (block_id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS session_page_bindings (
     session_id             TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
@@ -4151,9 +3687,7 @@ CREATE TABLE IF NOT EXISTS session_page_bindings (
     daily_date             DATE NOT NULL,
     session_type           TEXT NOT NULL,
     legacy_folder_id       TEXT,
-    legacy_container_kind  TEXT,
-    legacy_container_id    TEXT,
-    source_task_item_id TEXT,
+    source_checklist_item_id TEXT,
     page_state             TEXT NOT NULL DEFAULT 'pending'
                            CHECK (page_state IN ('pending','bound','manual_repair')),
     legacy_state           TEXT NOT NULL DEFAULT 'pending'
@@ -4167,21 +3701,14 @@ CREATE TABLE IF NOT EXISTS session_page_bindings (
       (target_page_id IS NULL AND target_block_id IS NULL AND target_expected_version IS NULL)
       OR (target_page_id IS NOT NULL AND target_block_id IS NOT NULL
           AND target_expected_version IS NOT NULL AND target_expected_version > 0)
-    ),
-    CONSTRAINT session_page_bindings_container_shape CHECK (
-      (legacy_container_kind IS NULL AND legacy_container_id IS NULL)
-      OR (legacy_container_kind IS NOT NULL AND legacy_container_id IS NOT NULL)
-    ),
-    CONSTRAINT session_page_bindings_container_kind_check CHECK (
-      legacy_container_kind IS NULL OR legacy_container_kind IN ('folder','task')
     )
 );
 
 ALTER TABLE session_page_bindings
-    DROP CONSTRAINT IF EXISTS session_page_bindings_source_task_item_id_fkey;
+    DROP CONSTRAINT IF EXISTS session_page_bindings_source_checklist_item_id_fkey;
 ALTER TABLE session_page_bindings
-    ADD CONSTRAINT session_page_bindings_source_task_item_id_fkey
-    FOREIGN KEY (source_task_item_id) REFERENCES task_items(id) ON DELETE SET NULL;
+    ADD CONSTRAINT session_page_bindings_source_checklist_item_id_fkey
+    FOREIGN KEY (source_checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_session_page_bindings_due
     ON session_page_bindings(node_id, next_retry_at, created_at)
@@ -4340,120 +3867,6 @@ CREATE INDEX IF NOT EXISTS idx_block_links_target_block
 
 -- Production-gated read compatibility; docs/task-read-compatibility.md is the
 -- removal contract. UNION ALL keeps every view read-only.
-CREATE OR REPLACE VIEW runbooks AS
-SELECT id, board_item_id, title, status, archived, version,
-       created_session_id, created_event_id, completed_kind,
-       completed_session_id, completed_event_id, completed_user_id,
-       completed_at, created_at, updated_at, task_page_id
-FROM tasks
-UNION ALL
-SELECT id, board_item_id, title, status, archived, version,
-       created_session_id, created_event_id, completed_kind,
-       completed_session_id, completed_event_id, completed_user_id,
-       completed_at, created_at, updated_at, task_page_id
-FROM tasks WHERE FALSE;
-
-CREATE OR REPLACE VIEW runbook_sections AS
-SELECT id, task_id AS runbook_id, position_key, title, assignee_kind,
-       assignee_agent_id, assignee_session_id, assignee_user_id, archived,
-       version, created_session_id, created_event_id, updated_session_id,
-       updated_event_id, created_at, updated_at
-FROM task_sections
-UNION ALL
-SELECT id, task_id, position_key, title, assignee_kind,
-       assignee_agent_id, assignee_session_id, assignee_user_id, archived,
-       version, created_session_id, created_event_id, updated_session_id,
-       updated_event_id, created_at, updated_at
-FROM task_sections WHERE FALSE;
-
-CREATE OR REPLACE VIEW runbook_items AS
-SELECT id, section_id, position_key, title, how_to, assignee_kind,
-       assignee_agent_id, assignee_session_id, assignee_user_id, status,
-       archived, version, created_session_id, created_event_id,
-       updated_session_id, updated_event_id, completed_kind,
-       completed_session_id, completed_event_id, completed_user_id,
-       completed_at, created_at, updated_at
-FROM task_items
-UNION ALL
-SELECT id, section_id, position_key, title, how_to, assignee_kind,
-       assignee_agent_id, assignee_session_id, assignee_user_id, status,
-       archived, version, created_session_id, created_event_id,
-       updated_session_id, updated_event_id, completed_kind,
-       completed_session_id, completed_event_id, completed_user_id,
-       completed_at, created_at, updated_at
-FROM task_items WHERE FALSE;
-
-CREATE OR REPLACE VIEW runbook_operations AS
-SELECT id, task_id AS runbook_id,
-       CASE WHEN target_kind = 'task' THEN 'runbook' ELSE target_kind END AS target_kind,
-       target_id, replace(operation_type, 'task', 'runbook') AS operation_type,
-       actor_kind, actor_session_id, actor_event_id, actor_user_id,
-       idempotency_key, payload_json, reason, created_at
-FROM task_operations
-UNION ALL
-SELECT id, task_id,
-       CASE WHEN target_kind = 'task' THEN 'runbook' ELSE target_kind END,
-       target_id, replace(operation_type, 'task', 'runbook'), actor_kind,
-       actor_session_id, actor_event_id, actor_user_id, idempotency_key,
-       payload_json, reason, created_at
-FROM task_operations WHERE FALSE;
-
--- Sweep pre-llm CHECK constraints that survived under their original names.
---
--- 042 renamed runbook_* tables to task_*, but PostgreSQL keeps constraint names
--- across a rename, so a database bootstrapped before 042 still carries
--- runbooks_completed_kind_check, runbook_items_completed_kind_check,
--- runbook_operations_actor_kind_check and checklist_runbook_projection_outbox_*.
--- The name-keyed ALTER statements above are no-ops for those, and PostgreSQL
--- ANDs CHECK constraints together — one survivor keeps rejecting 'llm' even
--- though every llm-aware constraint was installed.
---
--- Unlike migration 049 this file has no verification block, so a survivor here
--- would fail silently and only surface as a rejected write at runtime. Runs
--- last so it only ever removes constraints the statements above did not
--- replace; anything already mentioning 'llm' is left alone.
-DO $$
-DECLARE
-    target RECORD;
-    legacy RECORD;
-BEGIN
-    FOR target IN
-        SELECT *
-        FROM (
-            VALUES
-              ('tasks', 'completed_kind'),
-              ('task_items', 'completed_kind'),
-              ('task_operations', 'actor_kind'),
-              ('folder_project_operations', 'actor_kind'),
-              ('checklist_task_projection_outbox', 'actor_kind'),
-              ('block_operations', 'actor_kind'),
-              ('board_custom_views', 'created_actor_kind'),
-              ('board_custom_views', 'updated_actor_kind')
-        ) AS targets(table_name, column_name)
-    LOOP
-        FOR legacy IN
-            SELECT constraint_row.conname
-            FROM pg_constraint constraint_row
-            WHERE constraint_row.conrelid = to_regclass(target.table_name)
-              AND constraint_row.contype = 'c'
-              AND pg_get_constraintdef(constraint_row.oid) LIKE
-                  '%' || target.column_name || '%'
-              AND pg_get_constraintdef(constraint_row.oid) NOT LIKE '%''llm''%'
-              AND (
-                  target.table_name = 'checklist_task_projection_outbox'
-                  OR pg_get_constraintdef(constraint_row.oid) LIKE '%ANY (ARRAY%'
-              )
-        LOOP
-            EXECUTE format(
-                'ALTER TABLE %I DROP CONSTRAINT %I',
-                target.table_name,
-                legacy.conname
-            );
-        END LOOP;
-    END LOOP;
-END;
-$$;
-
 CREATE TABLE IF NOT EXISTS node_release_activation_receipts (
     activation_generation        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     node_id                      TEXT NOT NULL,
@@ -4532,7 +3945,7 @@ VALUES (
 )
 ON CONFLICT (setting_key) DO NOTHING;
 -- Centrally owned node-local Git worktrees. Kept at the end of the canonical
--- schema because owner_task_id references tasks, which is declared later than
+-- schema because owner_folder_id references folders, which is declared later than
 -- sessions in this file.
 CREATE TABLE IF NOT EXISTS worktrees (
     id                         TEXT PRIMARY KEY,
@@ -4541,7 +3954,7 @@ CREATE TABLE IF NOT EXISTS worktrees (
     canonical_path             TEXT NOT NULL,
     branch                     TEXT NOT NULL,
     created_from_sha           TEXT NOT NULL,
-    owner_task_id              TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+    owner_folder_id              TEXT REFERENCES folders(id) ON DELETE SET NULL,
     -- Immutable attribution, intentionally not an FK: deleting the creating
     -- session must not make a node-local worktree undeletable.
     created_by_session_id      TEXT NOT NULL,
@@ -4692,8 +4105,6 @@ CREATE TABLE IF NOT EXISTS recurring_jobs (
     node_id                     TEXT NOT NULL,
     agent_id                    TEXT NOT NULL,
     model_preset                TEXT,
-    container_kind              TEXT NOT NULL,
-    container_id                TEXT NOT NULL,
     folder_id                   TEXT NOT NULL,
     enabled                     BOOLEAN NOT NULL DEFAULT TRUE,
     archived_at                 TIMESTAMPTZ,
@@ -4721,8 +4132,6 @@ CREATE TABLE IF NOT EXISTS recurring_jobs (
     CONSTRAINT recurring_jobs_model_preset_nonempty CHECK (
         model_preset IS NULL OR length(btrim(model_preset)) > 0
     ),
-    CONSTRAINT recurring_jobs_container_kind CHECK (container_kind IN ('folder', 'task')),
-    CONSTRAINT recurring_jobs_container_id_nonempty CHECK (length(btrim(container_id)) > 0),
     CONSTRAINT recurring_jobs_folder_id_nonempty CHECK (length(btrim(folder_id)) > 0),
     CONSTRAINT recurring_jobs_late_window_positive CHECK (late_run_window_seconds > 0),
     CONSTRAINT recurring_jobs_version_positive CHECK (version > 0),
@@ -4787,3 +4196,12 @@ CREATE INDEX IF NOT EXISTS idx_recurring_job_runs_job_created
     ON recurring_job_runs(job_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_recurring_job_runs_session
     ON recurring_job_runs(session_id);
+
+ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_created_session_id_fkey;
+ALTER TABLE folders ADD CONSTRAINT folders_created_session_id_fkey FOREIGN KEY (created_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
+ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_created_event_fkey;
+ALTER TABLE folders ADD CONSTRAINT folders_created_event_fkey FOREIGN KEY (created_session_id, created_event_id) REFERENCES events(session_id,id) ON DELETE SET NULL;
+ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_completed_session_id_fkey;
+ALTER TABLE folders ADD CONSTRAINT folders_completed_session_id_fkey FOREIGN KEY (completed_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
+ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_completed_event_fkey;
+ALTER TABLE folders ADD CONSTRAINT folders_completed_event_fkey FOREIGN KEY (completed_session_id, completed_event_id) REFERENCES events(session_id,id) ON DELETE SET NULL;

@@ -35,43 +35,7 @@ export function createLiveBoardItemRouteProvider(
         `;
         return rows.flatMap(serializeBoardItemRow);
       }
-      const rows = await sql`
-        SELECT board_items
-        FROM board_yjs_catalog_cache
-        WHERE container_kind = ${query.container.kind}
-          AND container_id = ${query.container.id}
-        ORDER BY container_id
-      `;
-      return rows.flatMap((row) => decodeBoardItems(row.board_items));
-    },
-    async resolveBoardContainerFolderId(container) {
-      if (container.kind === "folder") return container.id;
-      const sql = await sqlResolver.resolveSql();
-      const rows = await sql`
-        SELECT folder_id
-        FROM board_yjs_catalog_cache
-        WHERE container_kind = 'task'
-          AND container_id = ${container.id}
-        LIMIT 1
-      `;
-      const folderId = stringValue(rows[0]?.folder_id);
-      if (folderId !== null) return folderId;
-      const identityRows = await sql`
-        SELECT board_item.folder_id
-        FROM tasks task
-        JOIN board_items board_item
-          ON board_item.id = task.board_item_id
-        WHERE task.id = ${container.id}
-          AND task.archived = FALSE
-        LIMIT 1
-      `;
-      const identityFolderId = stringValue(identityRows[0]?.folder_id);
-      if (identityFolderId !== null) return identityFolderId;
-      throw new BoardItemRouteError(
-        "BOARD_CONTAINER_NOT_FOUND",
-        "Task board container not found",
-        404,
-      );
+      return [];
     },
     async getCatalogSnapshot() {
       return {
@@ -103,12 +67,10 @@ function serializeBoardItemRow(row: Record<string, unknown>): BoardItemRecord[] 
   const record: BoardItemRecord = {
     id,
     folderId,
-    containerKind: stringValue(row.container_kind ?? row.containerKind) ?? "folder",
-    containerId: stringValue(row.container_id ?? row.containerId) ?? folderId,
     membershipKind:
       stringValue(row.membership_kind ?? row.membershipKind) ?? "primary",
-    sourceTaskItemId: stringValue(
-      row.source_task_item_id ?? row.sourceTaskItemId,
+    sourceChecklistItemId: stringValue(
+      row.source_checklist_item_id ?? row.sourceChecklistItemId,
     ),
     itemType,
     itemId,

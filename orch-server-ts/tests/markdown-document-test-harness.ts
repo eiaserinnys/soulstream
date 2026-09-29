@@ -26,8 +26,6 @@ const documents = new Map<string, MarkdownDocumentRecord>([
   ["doc/one", {
     id: "doc/one",
     folderId: "folder-a-child",
-    containerKind: "task",
-    containerId: "task-1",
     title: "Doc",
     body: "Before",
     version: 7,
@@ -54,17 +52,7 @@ function createHarness(overrides: Partial<MarkdownDocumentRouteProvider> = {}) {
       calls.push(["listFolders"]);
       return folders;
     },
-    async resolveBoardContainerFolderId(container) {
-      calls.push(["resolveContainer", container]);
-      if (container.kind === "task" && container.id === "task-1") {
-        return "folder-a";
-      }
-      throw new MarkdownDocumentRouteError(
-        "BOARD_CONTAINER_NOT_FOUND",
-        "Task board container not found",
-        404,
-      );
-    },
+
     async getMarkdownDocument(documentId) {
       calls.push(["getDocument", documentId]);
       return documents.get(documentId) ?? null;
@@ -104,8 +92,6 @@ export function createAppWithMarkdownDocuments(
       document: {
         id: "doc-1",
         folderId: input.folderId,
-        containerKind: input.container.containerKind,
-        containerId: input.container.containerId,
         title: input.title,
         body: input.body,
         version: 1,

@@ -17,13 +17,6 @@ export function normalizedModelPreset(value: string | null): string | null {
   return requiredText(value, "model_preset");
 }
 
-export function normalizedContainer(value: RecurringJob["container"]): RecurringJob["container"] {
-  if (!value || (value.kind !== "folder" && value.kind !== "task")) {
-    throw validation("container.kind is invalid");
-  }
-  return { kind: value.kind, id: requiredText(value.id, "container.id") };
-}
-
 export function validation(message: string): RecurringJobError {
   return new RecurringJobError("VALIDATION", message, 422);
 }

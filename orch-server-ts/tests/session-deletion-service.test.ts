@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { assertBoardItemProjectionParity } from
   "../src/board-yjs/board_yjs_projection_verification.js";
 import type {
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsReplica,
   CatalogBoardItemRow,
 } from "../src/board-yjs/board_yjs_types.js";
@@ -16,20 +16,16 @@ describe("SessionDeletionService", () => {
   it("removes every projected session card from canonical replicas before deleting the session", async () => {
     const events: string[] = [];
     const boardItems = [
-      sessionBoardItem("session:session-a", "folder", "folder-1"),
-      sessionBoardItem("session-reference:session-a", "task", "task-1", "reference"),
+      sessionBoardItem("session:session-a", "folder-1"),
+      sessionBoardItem("session-reference:session-a", "folder-2", "reference"),
     ];
     const applications = [
       boardApplication({
         folderId: "folder-1",
-        containerKind: "folder",
-        containerId: "folder-1",
-      }),
+        }),
       boardApplication({
         folderId: "folder-1",
-        containerKind: "task",
-        containerId: "task-1",
-      }),
+        }),
     ];
     const deleteSession = vi.fn(async (input: {
       sessionId: string;
@@ -102,15 +98,14 @@ describe("SessionDeletionService", () => {
 
 function sessionBoardItem(
   id: string,
-  containerKind: "folder" | "task",
-  containerId: string,
+  folderId: string,
   membershipKind: "primary" | "reference" = "primary",
 ): CatalogBoardItemRow {
   return {
     id,
-    folderId: "folder-1",
-    containerKind,
-    containerId,
+
+
+    folderId,
     membershipKind,
     itemType: "session",
     itemId: "session-a",
@@ -121,11 +116,11 @@ function sessionBoardItem(
 }
 
 function boardApplication(
-  scope: BoardYjsContainerScope,
+  scope: BoardYjsFolderScope,
 ): SessionDeletionBoardApplication {
   const replica: BoardYjsReplica = { boardItems: [], markdownDocuments: [] };
   return {
-    documentName: `board-${scope.containerKind}:${scope.containerId}`,
+    documentName: `board-folder:${scope.folderId}`,
     scope,
     snapshot: new Uint8Array(),
     replica,

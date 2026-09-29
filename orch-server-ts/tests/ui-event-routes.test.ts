@@ -364,7 +364,7 @@ describe("ui event read api", () => {
     await app.inject({
       method: "GET",
       url: "/api/ui-events?from=2026-09-20T00:00:00Z&to=2026-09-22T00:00:00Z"
-        + "&installId=install-a&clientKind=soul-app&targetKind=task&targetId=task-9",
+        + "&installId=install-a&clientKind=soul-app&targetKind=folder&targetId=folder-9",
     });
 
     expect(repository.queries[0]).toMatchObject({
@@ -372,8 +372,8 @@ describe("ui event read api", () => {
       to: "2026-09-22T00:00:00Z",
       installId: "install-a",
       clientKind: "soul-app",
-      targetKind: "task",
-      targetId: "task-9",
+      targetKind: "folder",
+      targetId: "folder-9",
     });
     await app.close();
   });

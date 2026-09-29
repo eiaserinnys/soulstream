@@ -54,10 +54,10 @@ describe("CustomViewProjectionRepository PostgreSQL integration", () => {
     `;
     await harness.sql`
       INSERT INTO board_items (
-        id, folder_id, container_kind, container_id, membership_kind,
+        id, folder_id, membership_kind,
         item_type, item_id, x, y, metadata
       ) VALUES (
-        'custom_view:cv-1', 'folder-1', 'task', 'task-1', 'primary',
+        'custom_view:cv-1', 'folder-1', 'primary',
         'custom_view', 'cv-1', 10, 20, '{}'::jsonb
       )
     `;

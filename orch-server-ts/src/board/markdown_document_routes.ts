@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
@@ -12,7 +13,6 @@ import {
   createLocalMarkdownDocument,
   deleteLocalMarkdownDocument,
   documentFolderId,
-  publicMarkdownDocumentRecord,
   updateLocalMarkdownDocument,
 } from "./markdown_document_local_mutations.js";
 
@@ -26,8 +26,6 @@ export type MarkdownDocumentRecord = {
   id?: string;
   folderId?: string | null;
   folder_id?: string | null;
-  containerKind?: MarkdownDocumentContainerKind | null;
-  containerId?: string | null;
   [key: string]: unknown;
 };
 
@@ -39,20 +37,10 @@ export type CustomViewRecord = {
 
 export type MarkdownDocumentAccess = BoardAccess;
 
-export type MarkdownDocumentContainerKind = "folder" | "task";
-
-export type MarkdownDocumentContainerTarget = {
-  kind: MarkdownDocumentContainerKind;
-  id: string;
-};
-
 export type MarkdownDocumentRouteProvider = {
   listFolders: () =>
     | Promise<readonly MarkdownDocumentFolderRecord[]>
     | readonly MarkdownDocumentFolderRecord[];
-  resolveBoardContainerFolderId: (
-    container: MarkdownDocumentContainerTarget,
-  ) => Promise<string> | string;
   getMarkdownDocument: (
     documentId: string,
   ) => Promise<MarkdownDocumentRecord | undefined | null> | MarkdownDocumentRecord | undefined | null;
@@ -113,31 +101,20 @@ export function registerMarkdownDocumentRoutes(
     const body = parseCreateBody(request.body);
     if (!body.ok) return validationError(reply, body);
 
-    const containerResult = await tryResolveCreateContainer(
-      options.provider,
-      body.value.folderId,
-      body.value.container,
-    );
-    if (!containerResult.ok) {
-      return sendMarkdownDocumentRouteError(reply, containerResult.error, 400);
-    }
-
     const folders = await options.provider.listFolders();
     const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
-    if (!isBoardFolderAllowed(access, folders, containerResult.value.folderId)) {
+    if (!isBoardFolderAllowed(access, folders, body.value.folderId)) {
       return folderAccessDenied(reply);
     }
 
     const payload: {
       folderId: string;
-      container: MarkdownDocumentContainerTarget;
       title: string;
       body: string;
       x?: number;
       y?: number;
     } = {
-      folderId: containerResult.value.folderId,
-      container: containerResult.value.container,
+      folderId: body.value.folderId,
       title: body.value.title,
       body: body.value.body,
     };
@@ -162,7 +139,7 @@ export function registerMarkdownDocumentRoutes(
       if (!isBoardFolderAllowed(access, folders, documentFolderId(document))) {
         return folderAccessDenied(reply);
       }
-      return reply.send(publicMarkdownDocumentRecord(document));
+      return reply.send(document);
     },
   );
 
@@ -236,49 +213,11 @@ export function registerMarkdownDocumentRoutes(
   );
 }
 
-function parseCreateBody(body: unknown): Validation<{
-  folderId?: string;
-  container?: MarkdownDocumentContainerTarget;
-  title: string;
-  body: string;
-  x?: number;
-  y?: number;
-}> {
-  const object = parseObjectBody(body);
-  if (!object.ok) return object;
-  const title = requiredString(object.value, "title");
-  if (!title.ok) return title;
-
-  const folderId = optionalBodyString(object.value, "folderId");
-  const container =
-    object.value.container === undefined || object.value.container === null
-      ? { ok: true as const, value: undefined }
-      : parseContainerBody(object.value.container);
-  if (!container.ok) return container;
-
-  const value: {
-    folderId?: string;
-    container?: MarkdownDocumentContainerTarget;
-    title: string;
-    body: string;
-    x?: number;
-    y?: number;
-  } = {
-    title: title.value,
-    body: optionalBodyString(object.value, "body") ?? "",
-  };
-  if (folderId !== undefined) value.folderId = folderId;
-  if (container.value !== undefined) value.container = container.value;
-
-  const x = optionalFiniteNumber(object.value, "x");
-  if (!x.ok) return x;
-  const y = optionalFiniteNumber(object.value, "y");
-  if (!y.ok) return y;
-  if (x.value !== undefined && y.value !== undefined) {
-    value.x = x.value;
-    value.y = y.value;
-  }
-  return { ok: true, value };
+function parseCreateBody(body: unknown): Validation<{ folderId: string; title: string; body: string; x?: number; y?: number }> {
+  const parsed = z.object({ folderId: z.string().min(1), title: z.string(), body: z.string().default(""),
+    x: z.number().finite().optional(), y: z.number().finite().optional(),
+  }).strict().refine(value => (value.x === undefined) === (value.y === undefined), "x and y must be supplied together").safeParse(body);
+  return parsed.success ? { ok: true, value: parsed.data } : { ok: false, message: parsed.error.message, statusCode: 422 };
 }
 
 function parseUpdateBody(
@@ -309,82 +248,6 @@ function parseUpdateBody(
     return { ok: false, message: "No fields to update" };
   }
   return { ok: true, value: payload };
-}
-
-async function resolveCreateContainer(
-  provider: MarkdownDocumentRouteProvider,
-  folderId: string | undefined,
-  container: MarkdownDocumentContainerTarget | undefined,
-): Promise<{ folderId: string; container: MarkdownDocumentContainerTarget }> {
-  if (container === undefined) {
-    if (folderId === undefined || folderId.length === 0) {
-      throw new MarkdownDocumentRouteError(
-        "MARKDOWN_DOCUMENT_CONTAINER_REQUIRED",
-        "folderId or container is required",
-        400,
-      );
-    }
-    return { folderId, container: { kind: "folder", id: folderId } };
-  }
-  const resolvedFolderId =
-    folderId !== undefined && folderId.length > 0
-      ? folderId
-      : await resolveBoardContainerFolderId(provider, container);
-  return { folderId: resolvedFolderId, container };
-}
-
-async function resolveBoardContainerFolderId(
-  provider: MarkdownDocumentRouteProvider,
-  container: MarkdownDocumentContainerTarget,
-): Promise<string> {
-  if (container.kind === "folder") return container.id;
-  try {
-    return await provider.resolveBoardContainerFolderId(container);
-  } catch (error) {
-    if (error instanceof MarkdownDocumentRouteError) throw error;
-    throw new MarkdownDocumentRouteError(
-      "BOARD_CONTAINER_NOT_FOUND",
-      error instanceof Error ? error.message : String(error),
-      404,
-    );
-  }
-}
-
-async function tryResolveCreateContainer(
-  provider: MarkdownDocumentRouteProvider,
-  folderId: string | undefined,
-  container: MarkdownDocumentContainerTarget | undefined,
-): Promise<
-  | { ok: true; value: { folderId: string; container: MarkdownDocumentContainerTarget } }
-  | { ok: false; error: unknown }
-> {
-  try {
-    return {
-      ok: true,
-      value: await resolveCreateContainer(provider, folderId, container),
-    };
-  } catch (error) {
-    return { ok: false, error };
-  }
-}
-
-function parseContainerBody(
-  value: unknown,
-): Validation<MarkdownDocumentContainerTarget> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return { ok: false, message: "invalid board container" };
-  }
-  const container = value as Record<string, unknown>;
-  const kindValue = container.kind;
-  const idValue = container.id;
-  if (
-    (kindValue !== "folder" && kindValue !== "task") ||
-    typeof idValue !== "string" ||
-    idValue.length === 0
-  ) {
-    return { ok: false, message: "invalid board container" };
-  }
-  return { ok: true, value: { kind: kindValue, id: idValue } };
 }
 
 function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {

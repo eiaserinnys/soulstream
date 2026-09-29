@@ -5,8 +5,6 @@ import type { CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
 
 interface BoardYjsCatalogCacheDbRow extends Record<string, unknown> {
   folder_id: string;
-  container_kind: "folder" | "task";
-  container_id: string;
   board_items: unknown;
 }
 
@@ -25,13 +23,13 @@ export async function listSessionBoardItems(
     SELECT *
     FROM board_items
     WHERE item_type = 'session' AND item_id = ${sessionId}
-    ORDER BY container_kind, container_id, id
+    ORDER BY folder_id, id
   `;
   const cacheRows = await sql<readonly BoardYjsCatalogCacheDbRow[]>`
-    SELECT folder_id, container_kind, container_id, board_items
+    SELECT folder_id, board_items
     FROM board_yjs_catalog_cache
     WHERE board_items::text LIKE ${`%${sessionId}%`}
-    ORDER BY container_kind, container_id
+    ORDER BY folder_id
   `;
   const boardItems = new Map<string, CatalogBoardItemRow>();
   for (const row of projectionRows) {
@@ -61,10 +59,8 @@ function cachedSessionBoardItems(
     return [{
       id,
       folderId: cacheRow.folder_id,
-      containerKind: cacheRow.container_kind,
-      containerId: cacheRow.container_id,
       membershipKind: membershipKind === "reference" ? "reference" : "primary",
-      sourceTaskItemId: stringValue(value.sourceTaskItemId ?? value.source_task_item_id),
+      sourceChecklistItemId: stringValue(value.sourceChecklistItemId ?? value.source_checklist_item_id),
       itemType: "session" as const,
       itemId: sessionId,
       x: numberValue(value.x),
@@ -91,7 +87,7 @@ function decodeCachedBoardItems(value: unknown): Record<string, unknown>[] {
 }
 
 function boardItemKey(boardItem: CatalogBoardItemRow): string {
-  return `${boardItem.containerKind ?? "folder"}:${boardItem.containerId ?? boardItem.folderId}:${boardItem.id}`;
+  return `${boardItem.folderId}:${boardItem.id}`;
 }
 
 function stringValue(value: unknown): string | null {

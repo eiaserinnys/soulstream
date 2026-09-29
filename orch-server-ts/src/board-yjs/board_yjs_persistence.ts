@@ -21,51 +21,24 @@ import {
   type BoardYjsSnapshotRecord,
 } from "./board_yjs_snapshot_store.js";
 import type {
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsReplica,
   BoardYjsSeed,
 } from "./board_yjs_types.js";
 
 export interface BoardYjsPersistenceRepository {
   loadBoardYjsSnapshot(documentName: string): Promise<BoardYjsSnapshotRecord | null>;
-  resolveBoardYjsContainerScope(
-    container: BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope | null>;
-  backfillTaskBoardItemsIntoSnapshot(
-    documentName: string,
-    container: BoardYjsContainerScope,
-    snapshot: BoardYjsSnapshotRecord,
-  ): Promise<BoardYjsSnapshotRecord>;
-  loadBoardYjsSeed(container: BoardYjsContainerScope): Promise<BoardYjsSeed>;
+  resolveBoardYjsFolderScope(
+    container: BoardYjsFolderScope,
+  ): Promise<BoardYjsFolderScope | null>;
+  loadBoardYjsSeed(container: BoardYjsFolderScope): Promise<BoardYjsSeed>;
   storeBoardYjsSnapshot(
     documentName: string,
     snapshot: Uint8Array,
     expectedRevision: number | null,
     projection?: BoardYjsSnapshotProjection,
   ): Promise<BoardYjsSnapshotRecord | null>;
-  invalidateBoardYjsCatalogCache?(container: BoardYjsContainerScope): void;
-  loadRawBoardYjsDocument?(documentName: string): Promise<BoardYjsRawDocument | null>;
-  commitBoardYjsRunbookMigration?(input: BoardYjsRunbookMigrationCommit): Promise<void>;
-  runBoardYjsRunbookMigrationTransaction?<T>(
-    operation: (repository: BoardYjsPersistenceRepository) => Promise<T>,
-  ): Promise<T>;
-}
-
-export interface BoardYjsRawDocument {
-  snapshot: Uint8Array;
-  revision: string;
-}
-
-export interface BoardYjsRunbookMigrationCommit {
-  sourceDocumentName: string;
-  canonicalDocumentName: string;
-  expectedSourceRevision: string;
-  expectedCanonicalRevision: string | null;
-  canonicalSnapshot: Uint8Array;
-  scope: BoardYjsContainerScope;
-  replica: BoardYjsReplica;
-  preserveCanonical: boolean;
+  invalidateBoardYjsCatalogCache?(container: BoardYjsFolderScope): void;
 }
 
 export interface BoardYjsPersistence {
@@ -82,15 +55,9 @@ export function createBoardYjsPersistence(
         const snapshot = await repository.loadBoardYjsSnapshot(payload.documentName);
         const container = parseBoardYjsDocumentName(payload.documentName);
         if (!container) return snapshot?.snapshot ?? null;
-        const scope = await repository.resolveBoardYjsContainerScope(container);
+        const scope = await repository.resolveBoardYjsFolderScope(container);
         if (!scope) return snapshot?.snapshot ?? null;
-        if (snapshot) {
-          return (await repository.backfillTaskBoardItemsIntoSnapshot(
-            payload.documentName,
-            scope,
-            snapshot,
-          )).snapshot;
-        }
+        if (snapshot) return snapshot.snapshot;
         const seed = await repository.loadBoardYjsSeed(scope);
         const encoded = createBoardYDocSnapshot({
           ...scope,
@@ -116,7 +83,7 @@ export function createBoardYjsPersistence(
       store: async (payload: storePayload) => {
         const container = parseBoardYjsDocumentName(payload.documentName);
         const scope = container
-          ? await repository.resolveBoardYjsContainerScope(container)
+          ? await repository.resolveBoardYjsFolderScope(container)
           : null;
         const stored = await mergeAndStoreBoardYjsSnapshot(
           repository,
@@ -132,7 +99,7 @@ export function createBoardYjsPersistence(
       async onChange(payload: onChangePayload) {
         const container = parseBoardYjsDocumentName(payload.documentName);
         if (!container) return;
-        const scope = await repository.resolveBoardYjsContainerScope(container);
+        const scope = await repository.resolveBoardYjsFolderScope(container);
         if (!scope) return;
         const snapshot = Y.encodeStateAsUpdate(payload.document);
         const stored = await mergeAndStoreBoardYjsSnapshot(
@@ -152,7 +119,7 @@ async function mergeAndStoreBoardYjsSnapshot(
   repository: BoardYjsPersistenceRepository,
   documentName: string,
   candidateSnapshot: Uint8Array,
-  scope: BoardYjsContainerScope | null,
+  scope: BoardYjsFolderScope | null,
 ): Promise<BoardYjsSnapshotRecord> {
   for (let attempt = 1; attempt <= BOARD_YJS_SNAPSHOT_CAS_MAX_ATTEMPTS; attempt += 1) {
     const current = await repository.loadBoardYjsSnapshot(documentName);
@@ -179,7 +146,7 @@ async function mergeAndStoreBoardYjsSnapshot(
 }
 
 function snapshotReplica(
-  scope: BoardYjsContainerScope,
+  scope: BoardYjsFolderScope,
   snapshot: Uint8Array,
 ): BoardYjsReplica {
   const doc = new Y.Doc();

@@ -549,7 +549,7 @@ describe("node agent/profile route harness", () => {
       ],
       session: {
         source: "browser",
-        container_kind: "task",
+        folder_id: "folder-a",
         agent: "seosoyoung",
       },
     };

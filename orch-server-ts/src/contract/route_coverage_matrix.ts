@@ -17,7 +17,6 @@ import { nodeSnapshotRouteAuthRequirements } from "../node/node_snapshot_routes.
 import { nodeWsRouteAuthRequirements } from "../node/ws_route.js";
 import { publicStatusRouteAuthRequirements } from "../public/public_status_routes.js";
 import { pushRouteAuthRequirements } from "../push/push_routes.js";
-import { taskRouteAuthRequirements } from "../tasks/task_route_types.js";
 import { sessionActionCommandRouteAuthRequirements } from "../session/session_action_command_routes.js";
 import { sessionBackgroundScheduleRouteAuthRequirements } from "../session/session_background_schedule_routes.js";
 import { sessionResumeAfterLimitRouteAuthRequirements } from "../session/session_resume_after_limit_routes.js";
@@ -64,7 +63,6 @@ export const routeCoverageOwners = [
   { owner: "node.ws", authRequirements: nodeWsRouteAuthRequirements },
   { owner: "public.status", authRequirements: publicStatusRouteAuthRequirements },
   { owner: "push", authRequirements: pushRouteAuthRequirements },
-  { owner: "tasks", authRequirements: taskRouteAuthRequirements },
   { owner: "session.actions", authRequirements: sessionActionCommandRouteAuthRequirements },
   {
     owner: "session.background-schedule",
@@ -92,7 +90,6 @@ export const routeCoverageOwners = [
 export const tsOnlyRouteKeys = [
   "WEBSOCKET /ws/node/control",
   "WEBSOCKET /yjs/{folderId}",
-  "WEBSOCKET /yjs/{containerKind}/{containerId}",
   "GET /api/nodes/{node_id}/model-presets",
   "POST /api/nodes/{node_id}/worktrees/list",
   "POST /api/nodes/{node_id}/worktrees/create",
@@ -119,5 +116,5 @@ export const tsOnlyRouteKeys = [
   "POST /api/recurring-jobs/{job_id}/run",
   "POST /api/recurring-jobs/{job_id}/archive",
   "GET /api/recurring-jobs/{job_id}/runs",
-  "PATCH /api/planner/starred-tasks/order",
+  "PATCH /api/planner/starred-folders/order",
 ] as const;

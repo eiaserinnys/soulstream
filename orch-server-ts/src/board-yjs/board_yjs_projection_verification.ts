@@ -100,10 +100,8 @@ function normalizeItems(items: readonly CatalogBoardItemRow[]): NormalizedBoardI
   const normalized = items.map((item) => ({
     id: item.id,
     folderId: item.folderId,
-    containerKind: item.containerKind ?? "folder",
-    containerId: item.containerId ?? item.folderId,
     membershipKind: item.membershipKind ?? "primary",
-    sourceTaskItemId: item.sourceTaskItemId ?? null,
+    sourceChecklistItemId: item.sourceChecklistItemId ?? null,
     itemType: item.itemType,
     itemId: item.itemId,
     x: Number(item.x),
@@ -161,10 +159,8 @@ function sortValue(value: unknown): unknown {
 interface NormalizedBoardItem {
   id: string;
   folderId: string;
-  containerKind: string;
-  containerId: string;
   membershipKind: string;
-  sourceTaskItemId: string | null;
+  sourceChecklistItemId: string | null;
   itemType: string;
   itemId: string;
   x: number;

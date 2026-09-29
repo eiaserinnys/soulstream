@@ -68,10 +68,10 @@ describe("orch-server-ts contract fixture reader", () => {
       oneHostStatus: 200,
     });
     expect(fixtures.boardYjsHostProxy.proxy.forwardedHeaders).toContain("authorization");
-    expect(fixtures.boardYjsHostProxy.directOperations).toHaveLength(11);
+    expect(fixtures.boardYjsHostProxy.directOperations).toHaveLength(9);
     expect(new Set(
       fixtures.boardYjsHostProxy.directOperations.map((item) => item.operation),
-    ).size).toBe(11);
+    ).size).toBe(9);
     expect(fixtures.boardYjsHostProxy.negativeAssertions).toContain(
       "catalog_service.create_markdown_document is not called for markdown write routes",
     );
@@ -88,7 +88,7 @@ describe("orch-server-ts contract fixture reader", () => {
     expect(functions.get("event_append")?.args).toContain(
       "p_dedupe_key TEXT DEFAULT NULL",
     );
-    expect(functions.get("board_item_get_all")?.returns).toContain("container_kind TEXT");
+    expect(functions.get("board_item_get_all")?.returns).not.toContain("container_kind TEXT");
     expect([...functions.keys()].filter((name) => name.startsWith("supervisor_"))).toEqual([]);
   });
 

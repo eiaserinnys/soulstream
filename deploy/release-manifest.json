@@ -24,7 +24,7 @@
     },
     "apply": {
       "name": "apply-central-database-release",
-      "command": "node orch-server-ts/node_modules/tsx/dist/cli.mjs orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --migrate",
+      "command": "node orch-server-ts/scripts/apply-folder-storage.mjs",
       "timeout_seconds": 300
     }
   },
@@ -37,11 +37,6 @@
     {
       "name": "verify-release-health",
       "command": "node soul-server-ts/scripts/verify-release-health.mjs --scope cluster",
-      "timeout_seconds": 300
-    },
-    {
-      "name": "verify-board-yjs-runbook-residue",
-      "command": "node orch-server-ts/node_modules/tsx/dist/cli.mjs orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --verify",
       "timeout_seconds": 300
     }
   ],

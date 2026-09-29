@@ -34,17 +34,16 @@ describe("route coverage completeness gate", () => {
     "POST /api/pages/{pageId}/operations",
     "PATCH /api/pages/{pageId}/starred",
     "GET /api/planner/today",
-    "GET /api/planner/starred-tasks",
-    "PATCH /api/planner/starred-tasks/order",
+    "GET /api/planner/starred-folders",
+    "PATCH /api/planner/starred-folders/order",
     "GET /api/planner/daily-history",
-    "GET /api/planner/projects/{pageId}",
-    "GET /api/planner/projects/{pageId}/tasks",
-    "GET /api/planner/projects/{pageId}/documents",
-    "GET /api/planner/projects/{pageId}/legacy-sessions",
-    "GET /api/planner/tasks/{pageId}/runs",
+    "GET /api/planner/folders/{folder_id}",
+    "GET /api/planner/folders/{folder_id}/subfolders",
+    "GET /api/planner/folders/{folder_id}/documents",
+    "GET /api/planner/folders/{folder_id}/sessions",
   ];
   const reviewRouteKey = "POST /api/sessions/{session_id}/review/acknowledge";
-  const taskCreateRouteKey = "POST /api/tasks";
+  const folderCreateRouteKey = "POST /api/folders";
 
   it("covers every Python fixture route with opt-in TS registration and auth metadata", async () => {
     const registeredRouteKeys = await collectRegisteredRouteKeys(registry);
@@ -68,10 +67,10 @@ describe("route coverage completeness gate", () => {
     });
     expect(registeredRouteKeys).toHaveLength(registry.entries.length + tsOnlyRouteKeys.length);
     expect(registry.entries.map((entry) => entry.key)).toEqual(
-      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, taskCreateRouteKey]),
+      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, folderCreateRouteKey]),
     );
     expect(registeredRouteKeys).toEqual(
-      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, taskCreateRouteKey]),
+      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, folderCreateRouteKey]),
     );
   });
 
@@ -190,9 +189,9 @@ function createAllOptInRouteApp() {
       },
       plannerReads: {
         getToday: async () => null,
-        getProject: async () => null,
+        getFolder: async () => null,
       },
-      starredTaskOrder: { moveStarredTask: async () => ({ pageVersion: 1, changed: false }) },
+      starredFolderOrder: { moveStarredFolder: async () => ({ pageVersion: 1, changed: false }) },
       onPageUpdated: () => undefined,
       createService: () => ({
         handleConnection: () => undefined,
@@ -208,7 +207,6 @@ function createAllOptInRouteApp() {
       service: inert,
       resolveActor: async () => null,
     },
-    taskRoutes: inert,
     sessionActionCommandRoutes: inert,
     sessionBackgroundScheduleRoutes: inert,
     sessionResumeAfterLimitRoutes: inert,

@@ -4,7 +4,7 @@ import type {
   MarkdownDocumentRow,
 } from "./board_yjs_types.js";
 import type {
-  ContainerItemRecord,
+  FolderItemRecord,
   CustomViewRow,
   CustomViewWithBoardItem,
 } from "./board_projection_types.js";
@@ -12,10 +12,8 @@ import type {
 export interface BoardItemDbRow extends Record<string, unknown> {
   id: string;
   folder_id: string;
-  container_kind?: "folder" | "task" | null;
-  container_id?: string | null;
   membership_kind?: "primary" | "reference" | null;
-  source_task_item_id?: string | null;
+  source_checklist_item_id?: string | null;
   item_type: BoardItemType;
   item_id: string;
   x: string | number;
@@ -68,10 +66,8 @@ export interface CustomViewJoinRow extends Record<string, unknown> {
   cv_updated_at: Date | string | null;
   bi_id: string;
   bi_folder_id: string;
-  bi_container_kind: "folder" | "task" | null;
-  bi_container_id: string | null;
   bi_membership_kind: "primary" | "reference" | null;
-  bi_source_task_item_id: string | null;
+  bi_source_checklist_item_id: string | null;
   bi_item_type: "custom_view";
   bi_item_id: string;
   bi_x: string | number;
@@ -84,10 +80,8 @@ export interface CustomViewJoinRow extends Record<string, unknown> {
 export interface ContainerItemDbRow extends Record<string, unknown> {
   bi_id: string | null;
   bi_folder_id?: string;
-  bi_container_kind?: "folder" | "task";
-  bi_container_id?: string;
   bi_membership_kind?: "primary" | "reference";
-  bi_source_task_item_id?: string | null;
+  bi_source_checklist_item_id?: string | null;
   bi_item_type?: BoardItemType;
   bi_item_id?: string;
   bi_x?: string | number;
@@ -114,9 +108,6 @@ export interface ContainerItemDbRow extends Record<string, unknown> {
   markdown_title?: string | null;
   markdown_body?: string | null;
   markdown_updated_at?: Date | string | null;
-  task_id?: string | null;
-  task_title?: string | null;
-  task_updated_at?: Date | string | null;
   custom_view_id?: string | null;
   custom_view_title?: string | null;
   custom_view_updated_at?: Date | string | null;
@@ -131,7 +122,6 @@ export interface ContainerItemDbRow extends Record<string, unknown> {
   subfolder_count?: string | number;
   asset_count?: string | number;
   frame_count?: string | number;
-  task_count?: string | number;
   custom_view_count?: string | number;
   scanned_items?: string | number | null;
   search_truncated?: boolean | null;
@@ -141,10 +131,8 @@ export function toCatalogBoardItemRow(row: BoardItemDbRow): CatalogBoardItemRow 
   return {
     id: row.id,
     folderId: row.folder_id,
-    containerKind: row.container_kind ?? "folder",
-    containerId: row.container_id ?? row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceTaskItemId: row.source_task_item_id ?? null,
+    sourceChecklistItemId: row.source_checklist_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),
@@ -209,10 +197,8 @@ export function normalizeCustomViewJoin(row: CustomViewJoinRow): CustomViewWithB
     boardItem: toCatalogBoardItemRow({
       id: row.bi_id,
       folder_id: row.bi_folder_id,
-      container_kind: row.bi_container_kind,
-      container_id: row.bi_container_id,
       membership_kind: row.bi_membership_kind,
-      source_task_item_id: row.bi_source_task_item_id,
+      source_checklist_item_id: row.bi_source_checklist_item_id,
       item_type: row.bi_item_type,
       item_id: row.bi_item_id,
       x: row.bi_x,
@@ -224,14 +210,12 @@ export function normalizeCustomViewJoin(row: CustomViewJoinRow): CustomViewWithB
   };
 }
 
-export function toContainerItemRecord(row: ContainerItemDbRow): ContainerItemRecord {
+export function toFolderItemRecord(row: ContainerItemDbRow): FolderItemRecord {
   const boardItem = toCatalogBoardItemRow({
     id: row.bi_id!,
     folder_id: row.bi_folder_id!,
-    container_kind: row.bi_container_kind,
-    container_id: row.bi_container_id,
     membership_kind: row.bi_membership_kind,
-    source_task_item_id: row.bi_source_task_item_id,
+    source_checklist_item_id: row.bi_source_checklist_item_id,
     item_type: row.bi_item_type!,
     item_id: row.bi_item_id!,
     x: row.bi_x!,
@@ -240,7 +224,7 @@ export function toContainerItemRecord(row: ContainerItemDbRow): ContainerItemRec
     created_at: row.bi_created_at ?? null,
     updated_at: row.bi_updated_at ?? null,
   });
-  const result: ContainerItemRecord = { boardItem, archived: Boolean(row.item_archived) };
+  const result: FolderItemRecord = { boardItem, archived: Boolean(row.item_archived) };
   if (boardItem.itemType === "session" && row.session_created_at && row.session_updated_at) {
     result.session = {
       agentSessionId: boardItem.itemId,
@@ -268,9 +252,7 @@ export function toContainerItemRecord(row: ContainerItemDbRow): ContainerItemRec
       updatedAt: toIsoString(row.markdown_updated_at) ?? null,
     };
   }
-  if (boardItem.itemType === "task" && row.task_id) {
-    result.task = titleRecord(row.task_id, row.task_title, row.task_updated_at);
-  }
+
   if (boardItem.itemType === "custom_view" && row.custom_view_id) {
     result.customView = titleRecord(
       row.custom_view_id,

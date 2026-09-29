@@ -28,7 +28,6 @@ import type { PublicStatusRouteOptions } from "../public/public_status_routes.js
 import type { PushRouteOptions } from "../push/push_routes.js";
 import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
-import type { TaskRouteOptions } from "../tasks/task_route_types.js";
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
 import type { UiEventRepository, UiEventRouteOptions }
   from "../ui-events/ui_event_routes.js";
@@ -48,10 +47,6 @@ import {
   createLiveNodeAgentProfileRouteProviders,
 } from "./live_node_agent_profile_route_provider.js";
 import {
-  createLiveTaskRouteProviders,
-  type LiveTaskRouteProviderBundle,
-} from "./live_task_route_provider.js";
-import {
   createLiveSystemConfigRouteProviders,
   type LiveSystemConfigRouteProviderBundle,
 } from "./live_system_config_route_provider.js";
@@ -67,7 +62,6 @@ import {
 import {
   createSessionStreamEventFilter,
 } from "../session/session_stream_event_filter.js";
-import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
 import { withSessionCatalogMutationBroadcasts } from "./live_session_catalog_mutation_broadcaster.js";
 import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_broadcaster.js";
 import {
@@ -160,9 +154,6 @@ export type LiveOrchestratorProviderBundle = {
   readonly agentProfileRoutes: AgentProfileRouteOptions;
   readonly contextBundleRoutes: ContextBundleRouteOptions;
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
-  readonly taskRoutes:
-    & LiveTaskRouteProviderBundle["taskRoutes"]
-    & Pick<TaskRouteOptions, "accessProvider" | "resolveDashboardUserId">;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly usageSummaryRoutes: UsageSummaryRouteOptions;
   readonly uiEventRoutes: UiEventRouteOptions;
@@ -198,11 +189,6 @@ export function createLiveOrchestratorProviderBundle(
     registry: options.runtimeServices.registry,
     nodeHttpClient: options.dependencies.nodeHttpClient,
     portraitAssets: options.dependencies.systemPortraitAssets,
-  });
-  const taskProviders = createLiveTaskRouteProviders({
-    nodeHttpClient: options.dependencies.nodeHttpClient,
-    provider: options.dependencies.dbCatalogRepository.taskRouteProvider,
-    broadcaster: options.runtimeServices.sessionBroadcaster,
   });
   const configProviders = createLiveConfigRouteProviders(
     options.dependencies.configProvider,
@@ -309,10 +295,7 @@ export function createLiveOrchestratorProviderBundle(
       userPayloadExtra: dashboardAccessProvider.userPayloadExtra,
     },
     folderRoutes: {
-      provider: withFolderMutationBroadcasts(
-        options.dependencies.dbCatalogRepository.folderRouteProvider,
-        options.runtimeServices.sessionBroadcaster,
-      ),
+      provider: options.dependencies.dbCatalogRepository.folderRouteProvider,
       accessProvider: dashboardAccessProvider,
       resolveDashboardUserId: authenticatedUserResolvers.resolveEmail,
     },
@@ -417,11 +400,6 @@ export function createLiveOrchestratorProviderBundle(
       modelPresetProvider: modelPresetAvailability,
     },
     nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,
-    taskRoutes: {
-      ...taskProviders.taskRoutes,
-      accessProvider: dashboardAccessProvider,
-      resolveDashboardUserId: authenticatedUserResolvers.resolveEmail,
-    },
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     usageSummaryRoutes: options.usageSummaryRoutes,
     uiEventRoutes: {

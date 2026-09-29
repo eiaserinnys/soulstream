@@ -87,8 +87,8 @@ describe("route registry", () => {
         dynamicPath: "/api/sessions/{session_id}/events",
       },
       {
-        staticPath: "/api/tasks/my-turn",
-        dynamicPath: "/api/tasks/{task_id}",
+        staticPath: "/api/folders/reorder",
+        dynamicPath: "/api/folders/{folder_id}",
       },
       {
         staticPath: "/api/pages/daily",
@@ -99,16 +99,16 @@ describe("route registry", () => {
     const brokenFixture: RouteInventoryFixture = {
       ...fixtures.routeInventory,
       routes: fixtures.routeInventory.routes.map((route) => {
-        if (route.path === "/api/tasks/my-turn") return { ...route, order: 80 };
-        if (route.path === "/api/tasks/{task_id}") return { ...route, order: 76 };
+        if (route.path === "/api/folders/reorder") return { ...route, order: 80 };
+        if (route.path === "/api/folders/{folder_id}") return { ...route, order: 76 };
         return route;
       }),
     };
     const brokenPriority = validateStaticBeforeDynamicPriority(buildRouteRegistry(brokenFixture));
     expect(brokenPriority.valid).toBe(false);
     expect(brokenPriority.violations).toContainEqual({
-      staticPath: "/api/tasks/my-turn",
-      dynamicPath: "/api/tasks/{task_id}",
+      staticPath: "/api/folders/reorder",
+      dynamicPath: "/api/folders/{folder_id}",
       staticOrder: 80,
       dynamicOrder: 76,
     });
@@ -135,7 +135,7 @@ describe("route registry", () => {
       ["POST", "/api/board-yjs/host/{operation}", "board_yjs_proxy"],
       ["POST", "/api/page-yjs/host/{operation}", "page_yjs"],
       ["WEBSOCKET", "/yjs/page/{pageId}", "page_yjs"],
-      ["GET", "/api/tasks/{task_id}", "task"],
+      ["GET", "/api/folders/{folder_id}", "folder"],
       ["GET", "/api/admin/users", "admin_or_user"],
       ["GET", "/api/sessions/{session_id}/messages", "session"],
     ] as const;
@@ -160,14 +160,13 @@ describe("route registry", () => {
       ["POST", "/api/pages/{pageId}/operations"],
       ["PATCH", "/api/pages/{pageId}/starred"],
       ["GET", "/api/planner/today"],
-      ["GET", "/api/planner/starred-tasks"],
-      ["PATCH", "/api/planner/starred-tasks/order"],
+      ["GET", "/api/planner/starred-folders"],
+      ["PATCH", "/api/planner/starred-folders/order"],
       ["GET", "/api/planner/daily-history"],
-      ["GET", "/api/planner/projects/{pageId}"],
-      ["GET", "/api/planner/projects/{pageId}/tasks"],
-      ["GET", "/api/planner/projects/{pageId}/documents"],
-      ["GET", "/api/planner/projects/{pageId}/legacy-sessions"],
-      ["GET", "/api/planner/tasks/{pageId}/runs"],
+      ["GET", "/api/planner/folders/{folder_id}"],
+      ["GET", "/api/planner/folders/{folder_id}/subfolders"],
+      ["GET", "/api/planner/folders/{folder_id}/documents"],
+      ["GET", "/api/planner/folders/{folder_id}/sessions"],
     ] as const;
 
     for (const [method, path] of browserRoutes) {

@@ -60,15 +60,9 @@ describe("Board Y.Doc quiesced apply preflight", () => {
     })).rejects.toThrow("could not prove");
   });
 
-  it("keeps apply offline instead of routing through the live host API", async () => {
-    const source = await readFile(
-      new URL("../scripts/migrate-board-yjs-runbook-residue.ts", import.meta.url),
-      "utf8",
-    );
-    expect(source).toContain("executeQuiescedBoardYjsRunbookMigration");
-    expect(source).not.toContain("/api/board-yjs/host/migrate-runbook-residue");
-    expect(source).not.toContain("AUTH_BEARER_TOKEN");
-    expect(source.indexOf("await assertBoardYjsQuiescedApplyPreflight"))
-      .toBeLessThan(source.indexOf('requiredEnv("DATABASE_URL")'));
+  it("runs the one-time converter in schema pre-start before orch starts", async () => {
+    const source = await readFile(new URL("../scripts/apply-folder-storage.mjs", import.meta.url), "utf8");
+    expect(source).toContain("folder_storage_migration_cli");
+    expect(source).not.toContain("/api/board-yjs/host/");
   });
 });

@@ -13,25 +13,24 @@ import {
 } from "./planner_contract.js";
 import { PlannerCursorError } from "./planner_repository_reads.js";
 import {
-  PlannerStarredTaskMembershipConflictError,
-  type PlannerStarredTaskOrderWriter,
-} from "./planner_starred_task_order.js";
+  PlannerStarredFolderMembershipConflictError,
+  type PlannerStarredFolderOrderWriter,
+} from "./planner_starred_page_order.js";
 
 export const plannerRouteAuthRequirements = {
   "GET /api/planner/today": true,
-  "GET /api/planner/starred-tasks": true,
-  "PATCH /api/planner/starred-tasks/order": true,
+  "GET /api/planner/starred-folders": true,
+  "PATCH /api/planner/starred-folders/order": true,
   "GET /api/planner/daily-history": true,
-  "GET /api/planner/projects/{pageId}": true,
-  "GET /api/planner/projects/{pageId}/tasks": true,
-  "GET /api/planner/projects/{pageId}/documents": true,
-  "GET /api/planner/projects/{pageId}/legacy-sessions": true,
-  "GET /api/planner/tasks/{pageId}/runs": true,
+  "GET /api/planner/folders/{folder_id}": true,
+  "GET /api/planner/folders/{folder_id}/subfolders": true,
+  "GET /api/planner/folders/{folder_id}/documents": true,
+  "GET /api/planner/folders/{folder_id}/sessions": true,
 } as const;
 
 export interface PlannerRouteOptions {
   provider: PlannerReadProvider;
-  starredTaskOrder: PlannerStarredTaskOrderWriter;
+  starredFolderOrder: PlannerStarredFolderOrderWriter;
   onPageUpdated: PageUpdatedObserver;
   dailyPages: Pick<PageYjsService, "getDailyPage">;
   resolveUser: (request: FastifyRequest) => Promise<PageBrowserUser | null>;
@@ -40,28 +39,20 @@ export interface PlannerRouteOptions {
 const id = z.string().trim().min(1);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const todayQuery = z.object({ date });
-const starredTasksQuery = z.object({
+const starredFoldersQuery = z.object({
   cursor: id.optional(),
-  limit: pageLimit(PLANNER_READ_PAGE_LIMITS.starredTasks),
-  detail: z.enum(["full"]).optional(),
+  limit: pageLimit(PLANNER_READ_PAGE_LIMITS.starredFolders),
 });
-const starredTaskOrderBody = z.object({
-  page_id: id,
-  before_page_id: id.nullable(),
+const starredFolderOrderBody = z.object({
+  pageId: id,
+  beforePageId: id.nullable(),
 }).strict();
 const dailyHistoryQuery = z.object({
   before: date,
   limit: pageLimit(PLANNER_READ_PAGE_LIMITS.dailyHistory),
 });
-const projectQuery = z.object({
-  limit: pageLimit(PLANNER_READ_PAGE_LIMITS.project),
-});
-const projectTasksQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.projectTasks);
-const projectDocumentsQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.projectDocuments);
-const projectLegacySessionsQuery = cursorPageQuery(
-  PLANNER_READ_PAGE_LIMITS.projectLegacySessions,
-);
-const taskRunsQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.taskRuns);
+const folderQuery = z.object({ limit: pageLimit(PLANNER_READ_PAGE_LIMITS.folder) });
+const folderSliceQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.folder);
 
 export function registerPlannerRoutes(
   app: FastifyInstance,
@@ -89,46 +80,46 @@ export function registerPlannerRoutes(
     }
   });
 
-  app.get("/api/planner/starred-tasks", async (request, reply) => {
+  app.get("/api/planner/starred-folders", async (request, reply) => {
     if (!await options.resolveUser(request)) return unauthorized(reply);
-    const parsed = starredTasksQuery.safeParse(request.query);
+    const parsed = starredFoldersQuery.safeParse(request.query);
     if (!parsed.success) return invalid(reply, parsed.error.message);
     try {
-      return reply.send(await options.provider.getStarredTasks(parsed.data));
+      return reply.send(await options.provider.getStarredFolders(parsed.data));
     } catch (error) {
-      return failed(request, reply, error, "starred-tasks");
+      return failed(request, reply, error, "starred-folders");
     }
   });
 
-  app.patch<{ Body: { page_id: string; before_page_id: string | null } }>(
-    "/api/planner/starred-tasks/order",
+  app.patch<{ Body: { pageId: string; beforePageId: string | null } }>(
+    "/api/planner/starred-folders/order",
     async (request, reply) => {
       if (!await options.resolveUser(request)) return unauthorized(reply);
-      const parsed = starredTaskOrderBody.safeParse(request.body);
+      const parsed = starredFolderOrderBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({
-        detail: { error: { code: "INVALID_PLANNER_STARRED_TASK_ORDER", message: parsed.error.message } },
+        detail: { error: { code: "INVALID_PLANNER_STARRED_FOLDER_ORDER", message: parsed.error.message } },
       });
-      if (parsed.data.page_id === parsed.data.before_page_id) return reply.code(400).send({
-        detail: { error: { code: "INVALID_PLANNER_STARRED_TASK_ORDER", message: "source and target must differ" } },
+      if (parsed.data.pageId === parsed.data.beforePageId) return reply.code(400).send({
+        detail: { error: { code: "INVALID_PLANNER_STARRED_FOLDER_ORDER", message: "source and target must differ" } },
       });
       try {
-        const result = await options.starredTaskOrder.moveStarredTask({
-          pageId: parsed.data.page_id,
-          beforePageId: parsed.data.before_page_id,
+        const result = await options.starredFolderOrder.moveStarredFolder({
+          pageId: parsed.data.pageId,
+          beforePageId: parsed.data.beforePageId,
         });
         notifyPageUpdates(
-          [{ page: { id: parsed.data.page_id, version: result.pageVersion } }],
+          [{ page: { id: parsed.data.pageId, version: result.pageVersion } }],
           options.onPageUpdated,
           request.log,
         );
         return reply.send({ ok: true });
       } catch (error) {
-        if (error instanceof PlannerStarredTaskMembershipConflictError) {
+        if (error instanceof PlannerStarredFolderMembershipConflictError) {
           return reply.code(409).send({
             detail: { error: { code: error.code, message: error.message } },
           });
         }
-        request.log.error({ err: error, operation: "starred-task-order" }, "planner mutation failed");
+        request.log.error({ err: error, operation: "starred-folder-order" }, "planner mutation failed");
         return reply.code(500).send({
           code: "PLANNER_MUTATION_FAILED",
           detail: error instanceof Error ? error.message : String(error),
@@ -148,93 +139,29 @@ export function registerPlannerRoutes(
     }
   });
 
-  app.get<{ Params: { pageId: string }; Querystring: { limit?: string } }>(
-    "/api/planner/projects/:pageId",
-    async (request, reply) => {
+  app.get<{ Params: { folder_id: string } }>("/api/planner/folders/:folder_id", async (request, reply) => {
+    if (!await options.resolveUser(request)) return unauthorized(reply);
+    const query = folderQuery.safeParse(request.query);
+    if (!query.success) return invalid(reply, query.error.message);
+    try {
+      const result = await options.provider.getFolder(request.params.folder_id, query.data);
+      return result ? reply.send(result) : notFound(reply, "folder not found");
+    } catch (error) { return failed(request, reply, error, "folder"); }
+  });
+  for (const kind of ["subfolders", "documents", "sessions"] as const) {
+    app.get<{ Params: { folder_id: string } }>(`/api/planner/folders/:folder_id/${kind}`, async (request, reply) => {
       if (!await options.resolveUser(request)) return unauthorized(reply);
-      const parsed = id.safeParse(request.params.pageId);
-      if (!parsed.success) return invalid(reply, parsed.error.message);
-      const query = projectQuery.safeParse(request.query);
+      const query = folderSliceQuery.safeParse(request.query);
       if (!query.success) return invalid(reply, query.error.message);
       try {
-        const planner = await options.provider.getProject(parsed.data, query.data);
-        return planner
-          ? reply.send(planner)
-          : notFound(reply, `project page not found: ${parsed.data}`);
-      } catch (error) {
-        return failed(request, reply, error, "project");
-      }
-    },
-  );
-
-  registerProjectSliceRoute(app, options, "tasks");
-  registerProjectSliceRoute(app, options, "documents");
-
-  app.get<{
-    Params: { pageId: string };
-    Querystring: { cursor?: string; limit?: string };
-  }>("/api/planner/projects/:pageId/legacy-sessions", async (request, reply) => {
-    if (!await options.resolveUser(request)) return unauthorized(reply);
-    const pageId = id.safeParse(request.params.pageId);
-    if (!pageId.success) return invalid(reply, pageId.error.message);
-    const query = projectLegacySessionsQuery.safeParse(request.query);
-    if (!query.success) return invalid(reply, query.error.message);
-    try {
-      return reply.send(
-        await options.provider.getProjectLegacySessions(pageId.data, query.data),
-      );
-    } catch (error) {
-      return failed(request, reply, error, "project-legacy-sessions");
-    }
-  });
-
-  app.get<{
-    Params: { pageId: string };
-    Querystring: { cursor?: string; limit?: string };
-  }>("/api/planner/tasks/:pageId/runs", async (request, reply) => {
-    if (!await options.resolveUser(request)) return unauthorized(reply);
-    const pageId = id.safeParse(request.params.pageId);
-    if (!pageId.success) return invalid(reply, pageId.error.message);
-    const query = taskRunsQuery.safeParse(request.query);
-    if (!query.success) return invalid(reply, query.error.message);
-    try {
-      const page = await options.provider.getTaskRuns(pageId.data, query.data);
-      return page
-        ? reply.send(page)
-        : notFound(reply, `task page not found: ${pageId.data}`);
-    } catch (error) {
-      return failed(request, reply, error, "task-runs");
-    }
-  });
-}
-
-function registerProjectSliceRoute(
-  app: FastifyInstance,
-  options: PlannerRouteOptions,
-  kind: "tasks" | "documents",
-): void {
-  app.get<{
-    Params: { pageId: string };
-    Querystring: { cursor?: string; limit?: string };
-  }>(`/api/planner/projects/:pageId/${kind}`, async (request, reply) => {
-    if (!await options.resolveUser(request)) return unauthorized(reply);
-    const pageId = id.safeParse(request.params.pageId);
-    if (!pageId.success) return invalid(reply, pageId.error.message);
-    const query = (
-      kind === "tasks" ? projectTasksQuery : projectDocumentsQuery
-    ).safeParse(request.query);
-    if (!query.success) return invalid(reply, query.error.message);
-    try {
-      const page = kind === "tasks"
-        ? await options.provider.getProjectTasks(pageId.data, query.data)
-        : await options.provider.getProjectDocuments(pageId.data, query.data);
-      return page
-        ? reply.send(page)
-        : notFound(reply, `project page not found: ${pageId.data}`);
-    } catch (error) {
-      return failed(request, reply, error, `project-${kind}`);
-    }
-  });
+        const folderId = request.params.folder_id;
+        const result = kind === "subfolders" ? await options.provider.getSubfolders(folderId, query.data)
+          : kind === "documents" ? await options.provider.getDocuments(folderId, query.data)
+          : await options.provider.getSessions(folderId, query.data);
+        return reply.send(result);
+      } catch (error) { return failed(request, reply, error, kind); }
+    });
+  }
 }
 
 function pageLimit(limits: { default: number; max: number }) {
@@ -249,15 +176,15 @@ function cursorPageQuery(limits: { default: number; max: number }) {
 }
 
 function unauthorized(reply: FastifyReply): FastifyReply {
-  return reply.code(401).send({ detail: "Not authenticated" });
+  return reply.code(401).send({ detail: { error: { code: "UNAUTHORIZED", message: "Not authenticated" } } });
 }
 
 function invalid(reply: FastifyReply, detail: string): FastifyReply {
-  return reply.code(422).send({ detail });
+  return reply.code(422).send({ detail: { error: { code: "INVALID_PLANNER_REQUEST", message: detail } } });
 }
 
 function notFound(reply: FastifyReply, detail: string): FastifyReply {
-  return reply.code(404).send({ code: "PLANNER_PAGE_NOT_FOUND", detail });
+  return reply.code(404).send({ detail: { error: { code: "FOLDER_NOT_FOUND", message: detail } } });
 }
 
 function failed(

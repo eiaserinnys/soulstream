@@ -1,25 +1,25 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  checklistTaskBlockProperties,
+  checklistFolderBlockProperties,
   validatePageBlockProperties,
 } from "../src/index.js";
 
 describe("page block property contract", () => {
   it("builds a bound checklist accepted by the canonical runtime validator", () => {
-    const properties = checklistTaskBlockProperties(
-      { taskId: "task-1", itemId: "item-1" },
+    const properties = checklistFolderBlockProperties(
+      { folderId: "task-1", itemId: "item-1" },
       true,
     );
 
     expect(properties).toEqual({
       checked: true,
-      taskId: "task-1",
+      folderId: "task-1",
       itemId: "item-1",
     });
     expect(validatePageBlockProperties("checklist", properties)).toBeNull();
     expect(validatePageBlockProperties("checklist", {
-      taskId: "task-1",
+      folderId: "task-1",
       itemId: "item-1",
     })).toBe("checklist.checked must be a boolean");
   });
@@ -40,8 +40,8 @@ describe("page block property contract", () => {
     expect(validatePageBlockProperties("session_defaults", {
       scope: "folder:folder-1",
     })).toBeNull();
-    expect(validatePageBlockProperties("task_ref", {
-      taskId: "task-1",
+    expect(validatePageBlockProperties("folder_ref", {
+      folderId: "task-1",
       primary: true,
     })).toBeNull();
     expect(validatePageBlockProperties("custom_view", {
@@ -54,7 +54,7 @@ describe("page block property contract", () => {
 
     expect(validatePageBlockProperties("session_defaults", {}))
       .toBe("session_defaults.scope must be a string");
-    expect(validatePageBlockProperties("task_ref", { taskId: "task-1" }))
-      .toBe("task_ref.primary must be a boolean");
+    expect(validatePageBlockProperties("folder_ref", { folderId: "task-1" }))
+      .toBe("folder_ref.primary must be a boolean");
   });
 });

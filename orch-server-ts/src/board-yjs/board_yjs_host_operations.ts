@@ -12,10 +12,8 @@ import {
   CustomViewRevisionConflictError,
   type BoardProjectionHost,
 } from "./board_projection_types.js";
-import {
-  boardContainerKindInputSchema,
-  boardItemTypeInputSchema,
-} from "./board_container_kind_compat.js";
+import { BOARD_ITEM_TYPES } from "@soulstream/wire-schema";
+const boardItemTypeInputSchema = z.enum(BOARD_ITEM_TYPES);
 
 export interface BoardYjsHostOperationOptions {
   service: BoardYjsService;
@@ -24,48 +22,34 @@ export interface BoardYjsHostOperationOptions {
   environment?: string;
 }
 
-const containerSchema = z.object({
-  containerKind: boardContainerKindInputSchema,
-  containerId: z.string().min(1),
-});
 
 const scopeSchema = z.object({
   folderId: z.string().min(1),
-  containerKind: boardContainerKindInputSchema,
-  containerId: z.string().min(1),
 });
 
 const rawBoardItemSchema = z.object({
   id: z.string().min(1),
   folderId: z.string().min(1),
-  containerKind: boardContainerKindInputSchema.nullable().optional(),
-  containerId: z.string().nullable().optional(),
   membershipKind: z.enum(["primary", "reference"]).nullable().optional(),
-  sourceTaskItemId: z.string().nullable().optional(),
-  sourceRunbookItemId: z.string().nullable().optional(),
+  sourceChecklistItemId: z.string().nullable().optional(),
   itemType: boardItemTypeInputSchema,
   itemId: z.string().min(1),
   x: z.number(),
   y: z.number(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-}).passthrough();
+}).strict();
 
 const boardItemSchema = rawBoardItemSchema.transform((item) => {
   const {
-    containerKind,
-    containerId,
     membershipKind,
-    sourceTaskItemId,
-    sourceRunbookItemId,
+    sourceChecklistItemId,
     metadata,
     ...rest
   } = item;
   return {
     ...rest,
-    ...(containerKind ? { containerKind } : {}),
-    ...(containerId ? { containerId } : {}),
     ...(membershipKind ? { membershipKind } : {}),
-    sourceTaskItemId: sourceTaskItemId ?? sourceRunbookItemId ?? null,
+    sourceChecklistItemId: sourceChecklistItemId ?? null,
     metadata: metadata ?? {},
   };
 });
@@ -73,7 +57,6 @@ const boardItemSchema = rawBoardItemSchema.transform((item) => {
 const schemas = {
   "create-markdown-document": z.object({
     folderId: z.string().min(1),
-    container: containerSchema.optional(),
     title: z.string(),
     body: z.string(),
     x: z.number(),
@@ -82,28 +65,17 @@ const schemas = {
   }),
   "upsert-session-board-item": z.object({
     folderId: z.string().min(1),
-    container: containerSchema,
     sessionId: z.string().min(1),
     x: z.number(),
     y: z.number(),
-    sourceTaskItemId: z.string().nullable().optional(),
+    sourceChecklistItemId: z.string().nullable().optional(),
   }),
   "move-session-to-folder": z.object({
     sessionId: z.string().min(1),
     folderId: z.string().min(1).nullable(),
   }),
-  "upsert-task-board-item": z.object({
-    folderId: z.string().min(1),
-    boardItemId: z.string().min(1),
-    taskId: z.string().min(1),
-    title: z.string(),
-    x: z.number(),
-    y: z.number(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-  }),
   "upsert-custom-view-board-item": z.object({
     folderId: z.string().min(1),
-    container: containerSchema,
     boardItemId: z.string().min(1),
     customViewId: z.string().min(1),
     title: z.string(),
@@ -113,28 +85,24 @@ const schemas = {
     y: z.number(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   }),
-  "remove-task-board-item": z.object({
+  "remove-board-item": z.object({
     folderId: z.string().min(1),
     boardItemId: z.string().min(1),
   }),
-  "remove-board-item": z.object({
-    container: containerSchema,
-    boardItemId: z.string().min(1),
-  }),
   "update-board-item-position": z.object({
-    container: containerSchema,
+    folderId: z.string().min(1),
     boardItemId: z.string().min(1),
     x: z.number(),
     y: z.number(),
   }),
-  "move-board-item-to-container": z.object({
+  "move-board-item-to-folder": z.object({
     boardItem: boardItemSchema,
-    targetScope: scopeSchema,
+    folderId: z.string().min(1),
     position: z.object({ x: z.number(), y: z.number() }).optional(),
     idempotencyKey: z.string().min(1).optional(),
   }),
   "update-markdown-document": z.object({
-    container: containerSchema,
+    folderId: z.string().min(1),
     documentId: z.string().min(1),
     fields: z.object({
       title: z.string().optional(),
@@ -143,7 +111,7 @@ const schemas = {
     }),
   }),
   "delete-markdown-document": z.object({
-    container: containerSchema,
+    folderId: z.string().min(1),
     documentId: z.string().min(1),
   }),
 } as const;
@@ -256,49 +224,39 @@ async function dispatchBoardYjsHostOperation(
       const value = input as z.infer<typeof schemas["move-session-to-folder"]>;
       return await service.moveSessionToFolder(value.sessionId, value.folderId);
     }
-    case "upsert-task-board-item":
-      return await service.upsertTaskBoardItem(
-        input as z.infer<typeof schemas["upsert-task-board-item"]>,
-      );
     case "upsert-custom-view-board-item":
       return await service.upsertCustomViewBoardItem(
         input as z.infer<typeof schemas["upsert-custom-view-board-item"]>,
       );
-    case "remove-task-board-item": {
-      const value = input as z.infer<typeof schemas["remove-task-board-item"]>;
-      await service.removeTaskBoardItem(value.folderId, value.boardItemId);
-      return { ok: true };
-    }
     case "remove-board-item": {
       const value = input as z.infer<typeof schemas["remove-board-item"]>;
-      await service.removeBoardItem(value.container, value.boardItemId);
+      await service.removeBoardItem({ folderId: value.folderId }, value.boardItemId);
       return { ok: true };
     }
     case "update-board-item-position": {
       const value = input as z.infer<typeof schemas["update-board-item-position"]>;
       await service.updateBoardItemPosition(
-        value.container,
+        { folderId: value.folderId },
         value.boardItemId,
         value.x,
         value.y,
       );
       return { ok: true };
     }
-    case "move-board-item-to-container":
-      return await service.moveBoardItemToContainer(
-        input as z.infer<typeof schemas["move-board-item-to-container"]>,
-      );
+    case "move-board-item-to-folder":
+      { const value = input as z.infer<typeof schemas["move-board-item-to-folder"]>;
+        return await service.moveBoardItemToContainer({ ...value, targetScope: { folderId: value.folderId } }); }
     case "update-markdown-document": {
       const value = input as z.infer<typeof schemas["update-markdown-document"]>;
       return await service.updateMarkdownDocument(
-        value.container,
+        { folderId: value.folderId },
         value.documentId,
         value.fields,
       );
     }
     case "delete-markdown-document": {
       const value = input as z.infer<typeof schemas["delete-markdown-document"]>;
-      await service.deleteMarkdownDocument(value.container, value.documentId);
+      await service.deleteMarkdownDocument({ folderId: value.folderId }, value.documentId);
       return { ok: true };
     }
     default:

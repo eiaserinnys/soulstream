@@ -8,7 +8,6 @@ import {
 import {
   assertRecurringJobActor,
   compileSchedule,
-  normalizedContainer,
   normalizedModelPreset,
   onceTimezone,
   parseRunAt,
@@ -436,7 +435,7 @@ export class RecurringJobService {
         modelPreset: input.modelPreset === undefined
           ? current.modelPreset
           : normalizedModelPreset(input.modelPreset),
-        container: input.container === undefined ? current.container : normalizedContainer(input.container),
+
         folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
         lateRunWindowSeconds: positiveLateRunWindowSeconds(
           input.lateRunWindowSeconds === undefined ? current.lateRunWindowSeconds : input.lateRunWindowSeconds,

@@ -1,3 +1,10 @@
+import { z } from "zod";
+import type { ChecklistControlPlaneService } from "../checklist/checklist_control_plane_service.js";
+import type { FolderActorParams } from "../checklist/control_plane/checklist_types.js";
+import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
+import { executeFolderOperation, folderOperationSchemas, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
+import { serializeChecklistRow, serializeFolder } from "./folder_contracts.js";
+import { folderOperationError } from "./folder_workspace_routes.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
@@ -5,6 +12,8 @@ import type { FolderControlPlaneService } from "./folder_control_plane_service.j
 
 export interface FolderControlPlaneHostRouteOptions {
   serviceProvider: () => Promise<FolderControlPlaneService>;
+  checklistServiceProvider?: () => Promise<ChecklistControlPlaneService>;
+  identity?: Pick<FolderProjectIdentityService, "create" | "mutateFromFolder">;
   authBearerToken: string;
   environment?: string;
 }
@@ -16,7 +25,8 @@ const operations = new Set([
   "get_all",
   "get_catalog",
   "get_session_assignments",
-  "update",
+  "list_child_folders", "list_folder_operations", "list_my_turn_items", "list_agent_subscribers",
+  ...Object.keys(folderOperationSchemas),
 ]);
 
 const updateColumns = new Set(["name", "sort_order", "settings", "parent_folder_id"]);
@@ -44,16 +54,12 @@ export function registerFolderControlPlaneHostRoute(
       }
       try {
         const service = await options.serviceProvider();
-        const result = await dispatch(service, operation, body);
+        const result = ["assign_session", "get_default", "get_all", "get_catalog", "get_session_assignments"].includes(operation)
+          ? await dispatch(service, operation, body)
+          : await dispatchWorkspace(options, operation, body);
         return reply.send(result ?? null);
       } catch (error) {
-        request.log.error({ err: error }, "Folder control-plane host operation failed");
-        return errorReply(
-          reply,
-          errorStatus(error),
-          errorStatus(error) === 422 ? "INVALID_FOLDER_REQUEST" : "FOLDER_OPERATION_FAILED",
-          error instanceof Error ? error.message : "Folder control-plane host operation failed",
-        );
+        return folderOperationError(reply, error);
       }
     },
   );
@@ -68,30 +74,53 @@ async function dispatch(
     case "assign_session":
       return await service.assignSessionToFolder(requiredString(body, "session_id"), nullableString(body, "folder_id"));
     case "get_default": return await service.getDefaultFolder(requiredString(body, "name"));
-    case "get_folder": return await service.getFolderById(requiredString(body, "folder_id"));
     case "get_all": return await service.getAllFolders();
     case "get_catalog": return await service.getCatalog();
     case "get_session_assignments":
       return await service.getSessionAssignmentsByIds(stringArray(body, "session_ids"));
-    case "update":
-      validateUpdate(body);
-      return await service.updateFolder(
-        requiredString(body, "folder_id"),
-        stringArray(body, "columns") as Array<"name" | "sort_order" | "settings" | "parent_folder_id">,
-        nullableStringArray(body, "values"),
-      );
     default: throw statusError(404, `unknown operation: ${operation}`);
   }
 }
 
-function validateUpdate(body: Record<string, unknown>): void {
-  const columns = stringArray(body, "columns");
-  const values = nullableStringArray(body, "values");
-  if (columns.length !== values.length) {
-    throw statusError(422, "columns and values must have the same length");
+async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, operation: string, body: Record<string, unknown>) {
+  if (!options.checklistServiceProvider) throw new Error("Checklist service is not configured");
+  const service = await options.checklistServiceProvider();
+  if (operation === "get_folder") return await readFolderSnapshot(service, requiredString(body, "folder_id"), body.item_id as string | undefined, body.view as string | undefined);
+  if (operation === "list_child_folders" || operation === "list_folder_operations") {
+    const limit = z.number().int().min(1).max(200).parse(body.limit ?? 50);
+    const offset = z.coerce.number().int().nonnegative().parse(body.cursor ?? 0);
+    const folderId = operation === "list_child_folders" ? nullableString(body, "folder_id") : requiredString(body, "folder_id");
+    const rows = operation === "list_child_folders"
+      ? await service.listFolders({ folderId, includeArchived: body.include_archived === true, limit: limit + 1, offset })
+      : await service.listOperations(folderId!, limit + 1, offset);
+    return { items: rows.slice(0, limit).map(serializeChecklistRow), nextCursor: rows.length > limit ? String(offset + limit) : null };
   }
-  const unknown = columns.find((column) => !updateColumns.has(column));
-  if (unknown !== undefined) throw statusError(422, `unsupported folder column: ${unknown}`);
+  if (operation === "list_agent_subscribers") return await service.listAgentSubscriberSessionIds(requiredString(body, "folder_id"));
+  if (operation === "list_my_turn_items") return (await service.listMyTurnItems({ userId: body.user_id as string | undefined, limit: body.limit as number | undefined })).map(serializeChecklistRow);
+  if (!options.identity) throw new Error("Folder identity is not configured");
+  const kind = requiredString(body, "actor_kind");
+  if (!["agent", "user", "system", "llm"].includes(kind)) throw statusError(422, "Invalid actor_kind");
+  const actor: FolderActorParams = {
+    actorKind: kind as FolderActorParams["actorKind"],
+    actorSessionId: typeof body.actor_session_id === "string" ? body.actor_session_id : null,
+    actorUserId: typeof body.actor_user_id === "string" ? body.actor_user_id : null,
+  };
+  if (kind === "agent" && !actor.actorSessionId) throw statusError(422, "actor_session_id is required");
+  if (kind === "user" && !actor.actorUserId) throw statusError(422, "actor_user_id is required");
+  const { folder_id, section_id, item_id, actor_kind, actor_session_id, actor_event_id, actor_user_id, ...payload } = body;
+  if (operation === "create_folder" && folder_id !== undefined) throw statusError(422, "create_folder does not accept folder_id");
+  const input = camelize(operation === "move_checklist_item" ? { ...payload, section_id } : payload);
+  return await executeFolderOperation({ identity: options.identity, checklist: service }, operation as FolderOperation, input, {
+    folderId: folder_id as string | undefined, sectionId: section_id as string | undefined, itemId: item_id as string | undefined,
+  }, actor);
+}
+
+function camelize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(camelize);
+  const object = record(value);
+  return object ? Object.fromEntries(Object.entries(object).map(([key, child]) => [
+    key.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase()), key === "settings" ? child : camelize(child),
+  ])) : value;
 }
 
 function record(value: unknown): Record<string, unknown> | null {

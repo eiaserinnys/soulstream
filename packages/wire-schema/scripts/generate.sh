@@ -115,9 +115,8 @@ if (!Array.isArray(callerInfoSourceSchema)
 }
 const sharedStringSets = [
   ["x-soulstream-session-statuses", "session statuses"],
-  ["x-soulstream-task-item-statuses", "task item statuses"],
+  ["x-soulstream-checklist-item-statuses", "checklist item statuses"],
   ["x-soulstream-board-item-types", "board item types"],
-  ["x-soulstream-board-container-kinds", "board container kinds"],
 ];
 for (const [key, label] of sharedStringSets) {
   const values = schema[key];
@@ -171,14 +170,11 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 ${generatedStringArray("CALLER_INFO_SOURCES", callerInfoSources)}
 
-${generatedStringArray("TASK_ITEM_STATUSES", schema["x-soulstream-task-item-statuses"])}
-export type TaskItemStatus = (typeof TASK_ITEM_STATUSES)[number];
+${generatedStringArray("CHECKLIST_ITEM_STATUSES", schema["x-soulstream-checklist-item-statuses"])}
+export type ChecklistItemStatus = (typeof CHECKLIST_ITEM_STATUSES)[number];
 
 ${generatedStringArray("BOARD_ITEM_TYPES", schema["x-soulstream-board-item-types"])}
 export type BoardItemType = (typeof BOARD_ITEM_TYPES)[number];
-
-${generatedStringArray("BOARD_CONTAINER_KINDS", schema["x-soulstream-board-container-kinds"])}
-export type BoardContainerKind = (typeof BOARD_CONTAINER_KINDS)[number];
 
 ${generatedStringArray("CONTROL_COMMAND_TYPES", controlCommandTypes)}
 export type ControlCommandType = (typeof CONTROL_COMMAND_TYPES)[number];

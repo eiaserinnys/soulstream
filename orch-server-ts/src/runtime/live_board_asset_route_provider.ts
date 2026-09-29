@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import {
   BoardAssetRouteError,
   type BoardAssetCommitInput,
-  type BoardAssetContainerKind,
   type BoardAssetInitInput,
   type BoardAssetRouteProvider,
 } from "../board/board_asset_routes.js";
@@ -69,11 +68,8 @@ export function createLiveBoardAssetRouteProvider(
       await assertDailyQuota(sql, input.byteSize);
 
       const assetId = assetIdGenerator();
-      const containerId = input.containerId ?? input.folderId;
       const storageKey = assetStorageKey(
         input.folderId,
-        input.containerKind ?? "folder",
-        containerId,
         assetId,
         safeStorageName(input.name),
       );
@@ -268,23 +264,19 @@ async function commitAssetTransaction(
       RETURNING file_assets.*
     `;
     const asset = requireFileAsset(assetRows[0], input.assetId);
-    const containerKind = input.containerKind ?? "folder";
-    const containerId = input.containerId ?? input.folderId;
     const metadata = assetMetadata(asset);
     const itemRows = await tx`
       INSERT INTO board_items (
-        id, folder_id, container_kind, container_id, membership_kind,
+        id, folder_id, membership_kind,
         item_type, item_id, x, y, metadata
       )
       VALUES (
-        ${`asset:${input.assetId}`}, ${input.folderId}, ${containerKind}, ${containerId},
+        ${`asset:${input.assetId}`}, ${input.folderId},
         'primary', 'asset', ${input.assetId}, ${snap(input.x)}, ${snap(input.y)},
         ${JSON.stringify(metadata)}::jsonb
       )
       ON CONFLICT (id) DO UPDATE
       SET folder_id = EXCLUDED.folder_id,
-          container_kind = EXCLUDED.container_kind,
-          container_id = EXCLUDED.container_id,
           membership_kind = EXCLUDED.membership_kind,
           x = EXCLUDED.x,
           y = EXCLUDED.y,
@@ -357,15 +349,10 @@ function safeStorageName(name: string): string {
 
 function assetStorageKey(
   folderId: string,
-  containerKind: BoardAssetContainerKind,
-  containerId: string,
   assetId: string,
   safeName: string,
 ): string {
-  if (containerKind === "folder" && containerId === folderId) {
-    return `folders/${folderId}/assets/${assetId}/${safeName}`;
-  }
-  return `containers/${containerKind}/${containerId}/assets/${assetId}/${safeName}`;
+  return `folders/${folderId}/assets/${assetId}/${safeName}`;
 }
 
 function snap(value: number): number {
@@ -430,12 +417,10 @@ function requireBoardItem(row: Record<string, unknown> | undefined): BoardItemRe
   const item: BoardItemRecord = {
     id,
     folderId,
-    containerKind: stringValue(row?.container_kind ?? row?.containerKind) ?? "folder",
-    containerId: stringValue(row?.container_id ?? row?.containerId) ?? folderId,
     membershipKind:
       stringValue(row?.membership_kind ?? row?.membershipKind) ?? "primary",
-    sourceTaskItemId: stringOrNull(
-      row?.source_task_item_id ?? row?.sourceTaskItemId,
+    sourceChecklistItemId: stringOrNull(
+      row?.source_checklist_item_id ?? row?.sourceChecklistItemId,
     ),
     itemType,
     itemId,

@@ -1,3 +1,5 @@
+import type { ChecklistControlPlaneService } from "../checklist/checklist_control_plane_service.js";
+import { registerFolderWorkspaceRoutes, folderWorkspaceRouteAuthRequirements, dashboardFolderActor, folderOperationError } from "./folder_workspace_routes.js";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -12,7 +14,6 @@ import {
   type FolderRecord,
   type SessionAssignmentRecord,
 } from "./folder_route_access.js";
-import { registerFolderProjectIdentityHostRoute } from "./folder_project_identity_host_route.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 import type { FolderControlPlaneService } from "./folder_control_plane_service.js";
 import { registerFolderControlPlaneHostRoute } from "./folder_control_plane_host_route.js";
@@ -41,14 +42,7 @@ export type FolderRouteProvider = {
   listSessionAssignments: () =>
     | Promise<Record<string, SessionAssignmentRecord>>
     | Record<string, SessionAssignmentRecord>;
-  createFolder: (
-    name: string,
-    sortOrder: number,
-    options: FolderCreateOptions,
-  ) => Promise<unknown> | unknown;
-  updateFolder: (folderId: string, update: FolderUpdateInput) => Promise<void> | void;
-  deleteFolder: (folderId: string) => Promise<void> | void;
-  reorderFolders: (items: FolderReorderInput[]) => Promise<void> | void;
+
 };
 
 export type FolderAccessProvider = {
@@ -63,10 +57,11 @@ export type FolderRouteOptions = {
   ) => Promise<string | null> | string | null;
   projectIdentityService?: Pick<
     FolderProjectIdentityService,
-    "create" | "mutateFromFolder" | "backfillLegacyFolder"
+    "create" | "mutateFromFolder"
   >;
   authBearerToken?: string;
   environment?: string;
+  checklistServiceProvider?: () => Promise<ChecklistControlPlaneService>;
   controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
 };
 
@@ -94,9 +89,7 @@ const SYSTEM_FOLDER_IDS = new Set(["claude", "llm"]);
 
 export const folderRouteAuthRequirements = {
   "GET /api/folders": true,
-  "POST /api/folders": true,
-  "PUT /api/folders/:folder_id": true,
-  "DELETE /api/folders/:folder_id": true,
+  ...folderWorkspaceRouteAuthRequirements,
   "PATCH /api/folders/reorder": true,
 } as const;
 
@@ -104,16 +97,12 @@ export function registerFolderRoutes(
   app: FastifyInstance,
   options: FolderRouteOptions,
 ): void {
-  if (options.projectIdentityService) {
-    registerFolderProjectIdentityHostRoute(app, {
-      service: options.projectIdentityService,
-      authBearerToken: options.authBearerToken ?? "",
-      environment: options.environment,
-    });
-  }
+  registerFolderWorkspaceRoutes(app, options);
   if (options.controlPlaneServiceProvider) {
     registerFolderControlPlaneHostRoute(app, {
       serviceProvider: options.controlPlaneServiceProvider,
+      checklistServiceProvider: options.checklistServiceProvider,
+      identity: options.projectIdentityService,
       authBearerToken: options.authBearerToken ?? "",
       environment: options.environment,
     });
@@ -128,42 +117,6 @@ export function registerFolderRoutes(
       sessions: filterSessionAssignments(access, folders, assignments),
       access: accessPayload(access),
     });
-  });
-
-  app.post("/api/folders", async (request, reply) => {
-    const body = parseObjectBody(request.body);
-    if (!body.ok) return badRequest(reply, body.message);
-
-    const name = requiredString(body.value, "name");
-    if (!name.ok) return badRequest(reply, name.message);
-    const sortOrder = optionalInteger(body.value, "sortOrder", 0);
-    if (!sortOrder.ok) return badRequest(reply, sortOrder.message);
-    const parentFolderId = optionalStringOrNull(body.value, "parentFolderId");
-    if (!parentFolderId.ok) return badRequest(reply, parentFolderId.message);
-    const idempotencyKey = optionalStringOrNull(body.value, "idempotencyKey");
-    if (!idempotencyKey.ok) return badRequest(reply, idempotencyKey.message);
-
-    const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
-    const folders = [...(await options.provider.listFolders())];
-    const parentId = parentFolderId.value ?? null;
-    if (!isFolderAllowed(access, folders, parentId)) return folderAccessDenied(reply);
-
-    try {
-      const folder = options.projectIdentityService
-        ? (await options.projectIdentityService.create({
-            name: name.value,
-            sortOrder: sortOrder.value,
-            parentFolderId: parentId,
-            actor: await dashboardActor(request, options),
-            idempotencyKey: idempotencyKey.value ?? randomUUID(),
-          })).folder
-        : await options.provider.createFolder(name.value, sortOrder.value, {
-            parentFolderId: parentId,
-          });
-      return reply.code(201).send(folder);
-    } catch (error) {
-      return sendProviderError(reply, error, 400);
-    }
   });
 
   app.patch("/api/folders/reorder", async (request, reply) => {
@@ -185,82 +138,23 @@ export function registerFolderRoutes(
     }
 
     try {
-      await options.provider.reorderFolders(items.value);
+      if (!options.projectIdentityService || !options.checklistServiceProvider) throw new Error("Folder services are not configured");
+      const actor = await dashboardFolderActor(request, options);
+      const checklist = await options.checklistServiceProvider();
+      for (const item of items.value) {
+        const snapshot = await checklist.getFolder(item.id);
+        if (!snapshot) return reply.code(404).send({ detail: { error: { code: "FOLDER_NOT_FOUND", message: item.id } } });
+        const { id, ...update } = item;
+        await options.projectIdentityService.mutateFromFolder({ folderId: id, update,
+          expectedVersion: snapshot.folder.version, idempotencyKey: randomUUID(),
+          actor: { actorKind: "user", actorUserId: actor.actorUserId! } });
+      }
       return reply.send({ success: true });
     } catch (error) {
-      return sendProviderError(reply, error, 400);
+      return folderOperationError(reply, error);
     }
   });
 
-  app.put<{ Params: FolderParams }>(
-    "/api/folders/:folder_id",
-    async (request, reply) => {
-      const body = parseObjectBody(request.body);
-      if (!body.ok) return badRequest(reply, body.message);
-
-      const update = parseUpdateBody(body.value);
-      if (!update.ok) return badRequest(reply, update.message);
-
-      const folderId = folderParams(request).folder_id;
-      const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
-      const folders = [...(await options.provider.listFolders())];
-      if (!isFolderAllowed(access, folders, folderId)) return folderAccessDenied(reply);
-
-      const systemGuard = systemUpdateGuard(folderId, update.value);
-      if (systemGuard !== null) return badRequest(reply, systemGuard);
-      if (
-        hasOwn(update.value, "parentFolderId") &&
-        !isFolderAllowed(access, folders, update.value.parentFolderId ?? null)
-      ) {
-        return folderAccessDenied(reply);
-      }
-
-      try {
-        if (options.projectIdentityService && typeof update.value.name === "string") {
-          await options.projectIdentityService.mutateFromFolder({
-            folderId,
-            update: update.value,
-            actor: await dashboardActor(request, options),
-            idempotencyKey: requestIdempotencyKey(request, body.value),
-          });
-        } else {
-          await options.provider.updateFolder(folderId, update.value);
-        }
-        return reply.send({ success: true });
-      } catch (error) {
-        return sendProviderError(reply, error, 400);
-      }
-    },
-  );
-
-  app.delete<{ Params: FolderParams }>(
-    "/api/folders/:folder_id",
-    async (request, reply) => {
-      const folderId = folderParams(request).folder_id;
-      const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
-      const folders = [...(await options.provider.listFolders())];
-      if (!isFolderAllowed(access, folders, folderId)) return folderAccessDenied(reply);
-
-      const systemGuard = rejectSystemFolderMutation(folderId, "deleted");
-      if (systemGuard !== null) return badRequest(reply, systemGuard);
-
-      try {
-        if (options.projectIdentityService) {
-          await options.projectIdentityService.mutateFromFolder({
-            folderId,
-            archived: true,
-            actor: await dashboardActor(request, options),
-            idempotencyKey: requestIdempotencyKey(request, {}),
-          });
-        } else {
-          await options.provider.deleteFolder(folderId);
-        }
-        return reply.send({ success: true });
-      } catch (error) {
-        return sendProviderError(reply, error, 400);
-      }
-    },
-  );
 }
 
 async function dashboardActor(

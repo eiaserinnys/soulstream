@@ -21,7 +21,6 @@ export function jobForRun(job: RecurringJob, run: RecurringJobRun): RecurringJob
     nodeId: snapshotText(snapshot, "nodeId"),
     agentId: snapshotText(snapshot, "agentId"),
     modelPreset: snapshotNullableText(snapshot, "modelPreset"),
-    container: snapshotContainer(snapshot.container),
     folderId: snapshotText(snapshot, "folderId"),
     executionCaller: snapshotRecord(snapshot.executionCaller, "executionCaller"),
     lateRunWindowSeconds: snapshotPositiveInteger(snapshot.lateRunWindowSeconds, "lateRunWindowSeconds"),
@@ -55,17 +54,6 @@ function snapshotStrings(
     throw new Error(`Recurring run snapshot is missing ${key}.`);
   }
   return [...value] as string[];
-}
-
-function snapshotContainer(value: unknown): RecurringJob["container"] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Recurring run snapshot is missing container.");
-  }
-  const candidate = value as Record<string, unknown>;
-  if ((candidate.kind !== "folder" && candidate.kind !== "task") || typeof candidate.id !== "string" || !candidate.id.trim()) {
-    throw new Error("Recurring run snapshot has an invalid container.");
-  }
-  return { kind: candidate.kind, id: candidate.id };
 }
 
 function snapshotRecord(value: unknown, key: string): Record<string, unknown> {

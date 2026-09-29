@@ -34,6 +34,10 @@ export async function inspectSchemaShape(sql) {
     sql`
       SELECT
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('sessions')) AS sessions,
+        (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('folders')) AS folders,
+        (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('checklist_sections')) AS checklist_sections,
+        (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('checklist_items')) AS checklist_items,
+        (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('folder_operations')) AS folder_operations,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('tasks')) AS tasks,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('task_sections'))
           AS task_sections,
@@ -92,6 +96,10 @@ export async function inspectSchemaShape(sql) {
   ];
   return {
     sessions: relations[0]?.sessions ?? null,
+    folders: relations[0]?.folders ?? null,
+    checklistSections: relations[0]?.checklist_sections ?? null,
+    checklistItems: relations[0]?.checklist_items ?? null,
+    folderOperations: relations[0]?.folder_operations ?? null,
     tasks: relations[0]?.tasks ?? null,
     taskSections: relations[0]?.task_sections ?? null,
     runbooks: relations[0]?.runbooks ?? null,
