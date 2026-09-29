@@ -122,7 +122,11 @@ export function ContextBundleEditor({ bundles, onBundlesChanged }: {
   };
 
   return (
-    <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded border border-border">
+    <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded border border-border">
+      <header className="col-span-2 border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold">컨텍스트 번들</h2>
+        <p className="mt-1 text-xs text-muted-foreground">여러 프로필이 함께 쓰는 atom 컨텍스트 묶음입니다. 여기서 번들을 만들고 고치면, 각 프로필의 「컨텍스트 번들」 절에서 참조합니다. 참조 중인 번들은 삭제할 수 없습니다.</p>
+      </header>
       <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2">
         <Button type="button" size="sm" variant="outline" className="mb-2 w-full" onClick={startBundle}>
           새 번들
