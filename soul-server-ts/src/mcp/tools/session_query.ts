@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
+import { applyToolContentPolicy } from "./session_query_content_policy.js";
 import { searchSessionEvents } from "../../search/session_search.js";
 import { buildSessionTurnExcerpt } from "../../context/session_turn_summary.js";
 import {
@@ -24,6 +25,7 @@ import { SessionQueryConsumptionBoundary } from
   "./session_query_consumption_boundary.js";
 import { registerSessionTurnSummaryTool } from
   "./session_turn_summary_tool.js";
+import { registerSearchSessionsTool } from "./search_sessions.js";
 
 const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 const TOOL_TRUNCATE_DEFAULT = 500;
@@ -321,7 +323,8 @@ export function registerSessionQueryTools(
     {
       description:
         "이벤트 텍스트 검색 (BM25, Python SessionSearchEngine 정합). "
-        + '툴 사용 기록은 event_types: ["tool_start","tool_result"]를 명시해 검색한다.',
+        + '툴 사용 기록은 event_types: ["tool_start","tool_result"]를 명시해 검색한다. '
+        + "세션 단위로 찾을 때는 search_sessions를 먼저 쓴다.",
       inputSchema: {
         query: z.string().min(1),
         session_ids: z.array(z.string()).optional(),
@@ -393,6 +396,8 @@ export function registerSessionQueryTools(
       }
     },
   );
+
+  registerSearchSessionsTool(server, runtime);
 
   server.registerTool(
     "get_session_summary",
@@ -476,31 +481,4 @@ async function buildSearchObservations(
 function serializeDate(d: Date | null | undefined): string | null {
   if (!d) return null;
   return d.toISOString();
-}
-
-function applyToolContentPolicy(
-  ev: { id: number; event_type: string; payload: Record<string, unknown>; created_at: Date },
-  policy: "truncate" | "full" | "omit",
-  truncateChars: number,
-): Record<string, unknown> {
-  const isToolEvent =
-    ev.event_type === "tool_use" || ev.event_type === "tool_result";
-  let payload: Record<string, unknown> | string = ev.payload;
-  if (isToolEvent) {
-    if (policy === "omit") {
-      payload = "(omitted)";
-    } else if (policy === "truncate") {
-      const text = JSON.stringify(ev.payload);
-      payload =
-        text.length > truncateChars
-          ? `${text.slice(0, truncateChars)}…(truncated)`
-          : text;
-    }
-  }
-  return {
-    id: ev.id,
-    event_type: ev.event_type,
-    event: payload,
-    created_at: ev.created_at instanceof Date ? ev.created_at.toISOString() : ev.created_at,
-  };
 }

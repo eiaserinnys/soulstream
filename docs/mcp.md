@@ -106,7 +106,8 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | `get_session_turn_summaries(session_id, mode, ...)` | Stored turn-summary count, single index, or chronological range |
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
-| `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 session search with actual turn count and saved summary/story/highlight presence metadata |
+| `search_sessions(query, top_k=10, folder_id)` | Search past sessions by meaning, ranked by relevance; use `search_session_history` for exact event text |
+| `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 event search with actual turn count and saved summary/story/highlight presence metadata; use `search_sessions` first for session-level search |
 
 ### Session management
 
@@ -167,6 +168,6 @@ server key.
 One endpoint is also available outside of MCP:
 
 ```
-GET  /cogito/search?q=<query>&top_k=10   — tsvector session history search
+GET  /cogito/search?q=<query>&top_k=10   — 세션 검색: lexical은 제목 검색, expanded는 제목 검색과 세션 문서 bigram 후보를 Jev로 재판정
 GET  /cogito/briefs                      — aggregate connected TS node reflect_brief snapshots
 ```
