@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { FolderSnapshot } from "../../src/db/session_db.js";
-import { resolveSourceChecklistItemProvenance } from "../../src/task/source_task_item_provenance.js";
+import { resolveSourceChecklistItemProvenance } from "../../src/task/source_checklist_item_provenance.js";
 
 function snapshotWithItems(...ids: string[]): FolderSnapshot {
   return {

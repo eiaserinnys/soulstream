@@ -21,7 +21,7 @@ import type {
   SessionDB,
 } from "../db/session_db.js";
 import { assertMutableFolder } from "../system_folders.js";
-import type { FolderService } from "../work-task/task_service.js";
+import type { FolderService } from "../folder/folder_service.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import {
@@ -42,7 +42,7 @@ import {
   type FolderBrowseItem,
   type FolderSessionItem,
   createFolderBrowseStore,
-} from "./container_browse_service.js";
+} from "./folder_browse_service.js";
 
 function renameSessionIdempotencyKey(
   sessionId: string,

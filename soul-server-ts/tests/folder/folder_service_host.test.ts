@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FolderService } from "../../src/work-task/task_service.js";
+import { FolderService } from "../../src/folder/folder_service.js";
 
 const logger = { warn: vi.fn(), info: vi.fn() } as never;
 

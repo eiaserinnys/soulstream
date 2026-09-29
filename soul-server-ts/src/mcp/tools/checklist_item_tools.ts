@@ -15,7 +15,7 @@ import {
   mutationToolDescription,
   optionalReasonSchema,
   checklistItemStatusSchema,
-} from "./task_shared.js";
+} from "./folder_tool_shared.js";
 
 export function registerChecklistItemTools(
   server: McpServer,

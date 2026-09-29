@@ -16,7 +16,7 @@ import { registerMultiNodeTools } from "./tools/multi_node.js";
 import { registerPageTools } from "./tools/page.js";
 import { registerRecurringJobTools } from "./tools/recurring_jobs.js";
 import { registerReflectTools } from "./tools/reflect.js";
-import { registerFolderTools } from "./tools/task.js";
+import { registerFolderTools } from "./tools/folder.js";
 import { registerSessionMgmtTools } from "./tools/session_mgmt.js";
 import { registerSessionQueryTools } from "./tools/session_query.js";
 import { registerSkillsTools } from "./tools/skills.js";

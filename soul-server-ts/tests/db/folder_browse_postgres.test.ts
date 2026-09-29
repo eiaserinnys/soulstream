@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ContainerBrowseService,
   createContainerBrowseStore,
-} from "../../src/catalog/container_browse_service.js";
+} from "../../src/catalog/folder_browse_service.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";

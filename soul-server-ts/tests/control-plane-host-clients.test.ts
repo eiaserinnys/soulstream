@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FolderHostClient } from "../src/folder/folder_host_client.js";
 import { ScheduleHostClient } from "../src/schedule/schedule_host_client.js";
-import { FolderVersionConflict } from "../src/work-task/task_models.js";
-import { FolderService } from "../src/work-task/task_service.js";
+import { FolderVersionConflict } from "../src/folder/folder_models.js";
+import { FolderService } from "../src/folder/folder_service.js";
 import {
   ClaudeRuntimeHostClient,
   PersistenceHostTransport,

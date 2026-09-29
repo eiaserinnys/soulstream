@@ -52,7 +52,7 @@ import {
   fetchBoardWorkspaceContextItem,
   fetchRunningSessionsContextItem,
 } from "./session_context_items.js";
-import type { PrimarySessionFolderContext } from "./session_container_context.js";
+import type { PrimarySessionFolderContext } from "./session_folder_context.js";
 import {
   NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
   type PageContextResolver,

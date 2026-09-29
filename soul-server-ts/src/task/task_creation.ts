@@ -31,7 +31,7 @@ import {
 import { initialSessionReview } from "./session_review.js";
 import {
   sessionBoardItemPosition,
-} from "./task_session_position.js";
+} from "./session_board_position.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
 import type { AgentProfile } from "../agent_registry.js";
 import { toStoredReasoningEffort } from "./session_effort_storage.js";

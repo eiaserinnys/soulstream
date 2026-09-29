@@ -9,7 +9,7 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildInternalMcpServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
-import type { FolderService } from "../../src/work-task/task_service.js";
+import type { FolderService } from "../../src/folder/folder_service.js";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildInternalMcpServer>>[] = [];

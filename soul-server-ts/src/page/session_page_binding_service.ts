@@ -12,7 +12,7 @@ import {
 } from "../task/task_creation_hook.js";
 import {
   sessionBoardItemPosition,
-} from "../task/task_session_position.js";
+} from "../task/session_board_position.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
 import { decideSessionPageEnrollment } from "./session_page_enrollment_policy.js";
 import {

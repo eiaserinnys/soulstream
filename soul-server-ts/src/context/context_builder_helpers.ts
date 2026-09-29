@@ -19,8 +19,8 @@ import {
 } from "./compiler/index.js";
 import type { PreparedContext } from "./context_builder.js";
 import { formatContextItems, type ContextItem } from "./prompt_assembler.js";
-import type { PrimarySessionFolderContext } from "./session_container_context.js";
-import { resolvePrimarySessionFolderContext } from "./session_container_context.js";
+import type { PrimarySessionFolderContext } from "./session_folder_context.js";
+import { resolvePrimarySessionFolderContext } from "./session_folder_context.js";
 
 export interface FolderChainEntry {
   id: string;

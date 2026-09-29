@@ -13,7 +13,7 @@ import type { CustomViewService } from "../custom_view/custom_view_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { PageYjsHostClient } from "../page/page_host_client.js";
-import type { FolderService } from "../work-task/task_service.js";
+import type { FolderService } from "../folder/folder_service.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type {
   StartExecutionCallback,

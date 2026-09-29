@@ -4,7 +4,7 @@ import {
   CONTAINER_SEARCH_SCAN_LIMIT,
   ContainerBrowseService,
   type ContainerBrowseStore,
-} from "../../src/catalog/container_browse_service.js";
+} from "../../src/catalog/folder_browse_service.js";
 import type {
   CatalogBoardItemRow,
   ContainerItemRecord,

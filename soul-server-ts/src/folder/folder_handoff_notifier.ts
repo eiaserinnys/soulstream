@@ -5,7 +5,7 @@ import type {
   SendMessageToSessionResult,
 } from "../task/session_message_sender.js";
 import { buildDeterministicDeliveryIdentity } from "../task/delivery_identity.js";
-import type { FolderHandoffEvent, FolderHandoffNotifierPort } from "./task_service_models.js";
+import type { FolderHandoffEvent, FolderHandoffNotifierPort } from "./folder_service_models.js";
 
 export interface FolderHandoffSubscriberQuery {
   listAgentSubscriberSessionIds(folderId: string): Promise<string[]>;

@@ -13,7 +13,7 @@ import {
   mutation,
   mutationToolDescription,
   optionalReasonSchema,
-} from "./task_shared.js";
+} from "./folder_tool_shared.js";
 
 export function registerChecklistSectionTools(
   server: McpServer,

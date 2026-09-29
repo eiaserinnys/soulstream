@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import type { ChecklistAssigneeInput } from "../../work-task/task_models.js";
-import type { FolderService } from "../../work-task/task_service.js";
+import type { ChecklistAssigneeInput } from "../../folder/folder_models.js";
+import type { FolderService } from "../../folder/folder_service.js";
 import { errorResultFromError, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import {
@@ -9,7 +9,7 @@ import {
   requireMcpMutationActor,
   type McpMutationActor,
 } from "./caller_session.js";
-import type { FolderMutationResult } from "../../work-task/task_service_models.js";
+import type { FolderMutationResult } from "../../folder/folder_service_models.js";
 
 export const checklistItemStatusSchema = z.enum(["pending", "in_progress", "review", "completed", "cancelled"]);
 export const folderStatusSchema = z.enum(["open", "completed"]);

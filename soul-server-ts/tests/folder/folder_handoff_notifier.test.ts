@@ -4,8 +4,8 @@ import { buildDeterministicDeliveryIdentity } from "../../src/task/delivery_iden
 import {
   FolderHandoffNotifier,
   type FolderHandoffSubscriberQuery,
-} from "../../src/work-task/task_handoff_notifier.js";
-import type { FolderHandoffEvent } from "../../src/work-task/task_service_models.js";
+} from "../../src/folder/folder_handoff_notifier.js";
+import type { FolderHandoffEvent } from "../../src/folder/folder_service_models.js";
 
 function createSilentLogger() {
   return {

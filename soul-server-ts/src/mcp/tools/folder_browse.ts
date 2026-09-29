@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { FOLDER_SEARCH_SCAN_LIMIT, type FolderBrowseItem } from "../../catalog/container_browse_service.js";
+import { FOLDER_SEARCH_SCAN_LIMIT, type FolderBrowseItem } from "../../catalog/folder_browse_service.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 

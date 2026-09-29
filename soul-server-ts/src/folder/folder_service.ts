@@ -3,10 +3,10 @@ import type { Logger } from "pino";
 import type { FolderSnapshot, FolderStatus, TaskItemStatus } from "../db/session_db_types.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
-import { FolderVersionConflict, type ChecklistAssigneeInput } from "./task_models.js";
-import type { FolderActorParams, FolderHandoffNotifierPort, FolderIdentityMutationResult, FolderMutationResult } from "./task_service_models.js";
+import { FolderVersionConflict, type ChecklistAssigneeInput } from "./folder_models.js";
+import type { FolderActorParams, FolderHandoffNotifierPort, FolderIdentityMutationResult, FolderMutationResult } from "./folder_service_models.js";
 
-export type { FolderActorParams, FolderMutationResult } from "./task_service_models.js";
+export type { FolderActorParams, FolderMutationResult } from "./folder_service_models.js";
 
 /** Worker facade for the single folder/checklist owner in orch. */
 export class FolderService {

@@ -57,7 +57,7 @@ import {
   resolveEffortPreset,
   resolveReasoningEffortForCreate,
 } from "./task_reasoning_effort.js";
-import { resolveSourceChecklistItemProvenance } from "./source_task_item_provenance.js";
+import { resolveSourceChecklistItemProvenance } from "./source_checklist_item_provenance.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
 export type {

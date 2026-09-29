@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
-import { registerFolderSearchTools, serializeFolderItem } from "./container_browse.js";
+import { registerFolderSearchTools, serializeFolderItem } from "./folder_browse.js";
 
 export function registerCatalogTools(
   server: McpServer,

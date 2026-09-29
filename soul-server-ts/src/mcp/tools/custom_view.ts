@@ -15,7 +15,7 @@ import {
   expectedVersionSchema,
   idempotencyKeySchema,
   mutationToolDescription,
-} from "./task_shared.js";
+} from "./folder_tool_shared.js";
 
 export function registerCustomViewTools(
   server: McpServer,

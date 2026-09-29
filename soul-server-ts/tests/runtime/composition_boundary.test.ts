@@ -278,7 +278,7 @@ describe("worker composition boundary", () => {
       "page/checklist_task_projection_repository.ts",
       "page/checklist_task_reconciler.ts",
       "runtime/checklist_task_composition.ts",
-      "work-task/task_service.ts",
+      "folder/folder_service.ts",
       "task/task_creation.ts",
       "task/task_creation_hook.ts",
       "engine/claude_sdk_client.ts",
