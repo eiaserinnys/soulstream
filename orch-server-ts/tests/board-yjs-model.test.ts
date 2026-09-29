@@ -4,24 +4,19 @@ import * as Y from "yjs";
 import {
   createBoardYDocSnapshot,
   getBoardYjsContainerDocumentName,
-  getFormalBoardYjsDocumentName,
   normalizeBoardYjsDocumentName,
   parseBoardYjsDocumentName,
   readBoardYDocReplica,
 } from "../src/board-yjs/board_yjs_model.js";
 
 describe("orch board Yjs model", () => {
-  it("keeps legacy folder names and canonical container names round-trippable", () => {
-    const folder = {  folderId: "folder-1" };
-    const task = {  folderId: "rb-1" };
-
-    expect(getBoardYjsContainerDocumentName(folder)).toBe("board-folder:folder-1");
-    expect(getFormalBoardYjsDocumentName(folder)).toBe("board:folder:folder-1");
-    expect(normalizeBoardYjsDocumentName("board:folder:folder-1"))
-      .toBe("board-folder:folder-1");
-    expect(parseBoardYjsDocumentName("board-folder:folder-1")).toEqual(folder);
-    expect(parseBoardYjsDocumentName("board-folder:rb-1")).toEqual(task);
-    expect(getBoardYjsContainerDocumentName(task)).toBe("board-folder:rb-1");
+  it("accepts only canonical folder document names", () => {
+    const scope = { folderId: "folder-1" };
+    expect(getBoardYjsContainerDocumentName(scope)).toBe("board-folder:folder-1");
+    expect(parseBoardYjsDocumentName("board-folder:folder-1")).toEqual(scope);
+    for (const name of ["board:folder:folder-1", "board:task:folder-1", "board:runbook:folder-1"]) {
+      expect(parseBoardYjsDocumentName(name)).toBeNull();
+    }
   });
 
   it("derives the same ordered board_items replica from one Y.Doc state", () => {

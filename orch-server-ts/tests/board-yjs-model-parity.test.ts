@@ -4,7 +4,6 @@ import * as Y from "yjs";
 import {
   applyBoardYjsPosition,
   createBoardYDocSnapshot,
-  getFormalBoardYjsDocumentName,
   createMarkdownYjsDocument,
   deleteMarkdownYjsDocument,
   deleteMovedBoardYjsItem,
@@ -381,76 +380,9 @@ describe("board_yjs_model", () => {
   });
 
   it("document name은 folder id와 양방향 매핑", () => {
-    const name = getBoardYjsDocumentName("folder-1");
-    expect(name).toBe("board-folder:folder-1");
-    expect(getFolderIdFromBoardYjsDocumentName(name)).toBe("folder-1");
-    expect(getFormalBoardYjsDocumentName({
-      })).toBe("board:folder:folder-1");
-    expect(normalizeBoardYjsDocumentName("board:folder:folder-1")).toBe(name);
-    expect(parseBoardYjsDocumentName("board-folder:rb-1")).toEqual({
-      });
-    expect(parseBoardYjsDocumentName("board:runbook:rb-1")).toEqual({
-      });
-    expect(normalizeBoardYjsDocumentName("board:runbook:rb-1"))
-      .toBe("board-folder:rb-1");
+    expect(getFolderIdFromBoardYjsDocumentName(getBoardYjsDocumentName("folder-1"))).toBe("folder-1");
+    expect(parseBoardYjsDocumentName("board-folder:folder-1")).toEqual({ folderId: "folder-1" });
+    expect(parseBoardYjsDocumentName("board:runbook:folder-1")).toBeNull();
     expect(getFolderIdFromBoardYjsDocumentName("/yjs/folder-1")).toBeNull();
-  });
-
-  it("legacy binary board item is normalized only at the read boundary", () => {
-    const doc = new Y.Doc();
-    doc.getMap("boardItems").set("runbook:rb-1", {
-      item_type: "runbook",
-      item_id: "rb-1",
-      source_runbook_item_id: "item-1",
-      x: 10,
-      y: 20,
-    });
-    expect(readBoardYDocReplica({
-      folderId: "folder-1",
-      }, doc).boardItems[0]).toMatchObject({
-      id: "runbook:rb-1",
-      itemType: "subfolder",
-      sourceChecklistItemId: "item-1",
-      });
-  });
-
-  it("task 컨테이너 snapshot은 같은 folderId 안에서도 task membership만 seed한다", () => {
-    const snapshot = createBoardYDocSnapshot({
-      folderId: "folder-1",
-      boardItems: [
-        {
-          id: "task-child",
-          folderId: "folder-1",
-          itemType: "markdown",
-          itemId: "doc-1",
-          x: 0,
-          y: 0,
-          metadata: { title: "Child" },
-        },
-        {
-          id: "folder-tile",
-          folderId: "folder-1",
-          itemType: "subfolder",
-          itemId: "rb-1",
-          x: 100,
-          y: 0,
-          metadata: { title: "Parent" },
-        },
-      ],
-      markdownDocuments: [{ id: "doc-1", title: "Child", body: "body", version: 1 }],
-    });
-    const doc = new Y.Doc();
-    Y.applyUpdate(doc, snapshot);
-
-    const replica = readBoardYDocReplica({
-      folderId: "folder-1",
-      }, doc);
-
-    expect(replica.boardItems).toEqual([
-      expect.objectContaining({
-        id: "task-child",
-        folderId: "folder-1",
-        }),
-    ]);
   });
 });

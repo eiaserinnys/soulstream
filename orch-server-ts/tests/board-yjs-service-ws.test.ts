@@ -342,7 +342,6 @@ class MemoryBoardYjsRepository {
     container: BoardYjsFolderScope,
   ): Promise<BoardYjsFolderScope> {
     return {
-      folderId: container.containerKind === "folder" ? container.folderId : "folder-1",
       ...container,
     };
   }

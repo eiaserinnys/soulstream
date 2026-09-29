@@ -28,37 +28,30 @@ describe("Board Y.Doc mutation gate", () => {
         ),
       },
       {
-        name: "withTaskBoardApplication",
+        name: "folder identity",
         expectedNames: ["board-folder:folder-a"],
-        run: () => service.withTaskBoardApplication({
-          folderId: "folder-a",
-          boardItemId: "task:task-a",
-          taskId: "task-a",
-          title: "Task A",
-          archived: false,
-          x: 0,
-          y: 0,
+        run: () => service.withFolderBoardApplication({
+          folderId: "child", parentFolderId: "folder-a", previousParentFolderId: null,
+          title: "Child", archived: false,
         }, vi.fn()),
       },
       {
         name: "staged session board move",
-        expectedNames: ["board-folder:folder-a", "board-folder:task-a"],
+        expectedNames: ["board-folder:folder-a", "board-folder:folder-b"],
         run: () => service.withSessionBoardMoveApplications({
           sessionId: "a",
           boardItems: [boardItem("session")],
           targetScope: {
-            folderId: "folder-a",
+            folderId: "folder-b",
             },
         }, vi.fn()),
       },
       {
-        name: "staged task board move",
-        expectedNames: ["board-folder:folder-a", "board-folder:task-a"],
-        run: () => service.withTaskBoardMoveApplication({
-          boardItem: boardItem("task"),
-          targetScope: {
-            folderId: "folder-a",
-            },
+        name: "folder identity move",
+        expectedNames: ["board-folder:folder-a", "board-folder:folder-b"],
+        run: () => service.withFolderBoardApplication({
+          folderId: "child", parentFolderId: "folder-b", previousParentFolderId: "folder-a",
+          title: "Child", archived: false,
         }, vi.fn()),
       },
     ];
@@ -73,7 +66,7 @@ describe("Board Y.Doc mutation gate", () => {
   });
 });
 
-function boardItem(itemType: "session" | "task"): CatalogBoardItemRow {
+function boardItem(itemType: "session" | "subfolder"): CatalogBoardItemRow {
   return {
     id: `${itemType}:a`,
     folderId: "folder-a",

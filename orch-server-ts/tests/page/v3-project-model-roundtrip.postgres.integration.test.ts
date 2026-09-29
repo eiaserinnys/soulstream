@@ -59,7 +59,7 @@ describe("v3 project model local-stack PostgreSQL round-trip", () => {
     const plannerRepository = new PlannerRepository(resolver);
     registerPlannerRoutes(app, {
       provider: plannerRepository,
-      starredTaskOrder: plannerRepository,
+      starredFolderOrder: plannerRepository,
       onPageUpdated: () => undefined,
       dailyPages: service,
       resolveUser,

@@ -13,7 +13,6 @@ import {
   type FolderRouteProvider,
   type LiveConfigProviderBoundary,
   type MarkdownDocumentRouteProvider,
-  type TaskRouteProvider,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -81,12 +80,12 @@ describe("live dashboard access provider route wiring", () => {
 
     expect((await app.inject({
       method: "GET",
-      url: "/api/board-items?folder_id=folder-a-child",
+      url: "/api/board-items?folderId=folder-a-child",
       headers,
     })).statusCode).toBe(200);
     expect((await app.inject({
       method: "GET",
-      url: "/api/board-items?folder_id=folder-b",
+      url: "/api/board-items?folderId=folder-b",
       headers,
     })).statusCode).toBe(403);
 
@@ -103,12 +102,12 @@ describe("live dashboard access provider route wiring", () => {
 
     expect((await app.inject({
       method: "GET",
-      url: "/api/tasks/rb-child",
+      url: "/api/folders/folder-a-child",
       headers,
     })).statusCode).toBe(200);
     expect((await app.inject({
       method: "GET",
-      url: "/api/tasks/rb-b",
+      url: "/api/folders/folder-b",
       headers,
     })).statusCode).toBe(403);
 
@@ -181,7 +180,7 @@ function createRouteApp() {
       resolveTokenAccess: vi.fn(async () => ({ ok: true as const })),
       userPayloadExtra: accessProvider.userPayloadExtra,
     },
-    folderRoutes: { provider: createFolderProvider(), accessProvider },
+    folderRoutes: { provider: createFolderProvider(), accessProvider, checklistServiceProvider: async () => ({ getFolder: async (id: string) => ({ folder: { id }, sections: [], items: [] }) } as never) },
     boardItemRoutes: {
       provider: createBoardItemProvider(),
       accessProvider,
@@ -192,11 +191,7 @@ function createRouteApp() {
       accessProvider,
       hostProxy,
     },
-    taskRoutes: {
-      provider: createTaskProvider(),
-      accessProvider,
-      httpClient: vi.fn(async () => ({ statusCode: 200 })),
-    },
+
   });
   return { app };
 }
@@ -210,10 +205,6 @@ function createFolderProvider(): FolderRouteProvider {
       "sess-b": { folderId: "folder-b" },
       "sess-none": { folderId: null },
     })),
-    createFolder: vi.fn(),
-    updateFolder: vi.fn(),
-    deleteFolder: vi.fn(),
-    reorderFolders: vi.fn(),
   };
 }
 
@@ -242,18 +233,6 @@ function createMarkdownProvider(): MarkdownDocumentRouteProvider {
   };
 }
 
-function createTaskProvider(): TaskRouteProvider {
-  return {
-    listFolders: vi.fn(async () => folders),
-    getTaskSnapshot: vi.fn(async (taskId) => {
-      if (taskId === "rb-child") {
-        return { task: { id: "rb-child", folder_id: "folder-a-child" } };
-      }
-      if (taskId === "rb-b") return { task: { id: "rb-b", folder_id: "folder-b" } };
-      return null;
-    }),
-  };
-}
 
 function createUserRepository(): DashboardUserRepository {
   const users = new Map<string, DashboardUserRecord>([
