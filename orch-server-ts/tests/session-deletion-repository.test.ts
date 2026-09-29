@@ -15,7 +15,7 @@ describe("SessionDeletionRepository", () => {
   it("enumerates projection and cache-only memberships before canonical sync and session_delete", async () => {
     const { sql, calls } = createMockSql((call) => {
       if (call.query.includes("FROM board_items") && call.query.includes("item_type = 'session'")) {
-        return [boardItemRow("session:session-a", "folder", "folder-1", "primary")];
+        return [boardItemRow("session:session-a", "folder-1", "primary")];
       }
       if (call.query.includes("FROM board_yjs_catalog_cache")) {
         return [{
@@ -24,7 +24,6 @@ describe("SessionDeletionRepository", () => {
           container_id: "folder-1",
           board_items: [cachedBoardItem(
             "session:session-a",
-            "folder",
             "folder-1",
             "primary",
           )],
@@ -34,7 +33,6 @@ describe("SessionDeletionRepository", () => {
           container_id: "task-1",
           board_items: JSON.stringify([cachedBoardItem(
             "session-reference:session-a",
-            "task",
             "task-1",
             "reference",
           )]),
@@ -91,7 +89,7 @@ describe("SessionDeletionRepository", () => {
 
 function cachedBoardItem(
   id: string,
-  containerKind: "folder" | "task",
+  folderId: string,
   membershipKind: "primary" | "reference",
 ) {
   return {
@@ -111,14 +109,12 @@ function cachedBoardItem(
 
 function boardItemRow(
   id: string,
-  containerKind: "folder" | "task",
+  folderId: string,
   membershipKind: "primary" | "reference",
 ) {
   return {
     id,
-    folder_id: "folder-1",
-    container_kind: containerKind,
-    container_id: containerId,
+    folder_id: folderId,
     membership_kind: membershipKind,
     source_checklist_item_id: null,
     item_type: "session" as const,

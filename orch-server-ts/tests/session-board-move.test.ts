@@ -13,7 +13,7 @@ describe("SessionBoardMoveService", () => {
     const sourceItems = [
       sessionItem("folder-old-a"),
       sessionItem("folder-old-b"),
-      sessionItem("task-reference", "task", "reference", "session-reference:session-a"),
+      sessionItem("folder-reference", "reference", "session-reference:session-a"),
     ];
     const applications = [
       application("folder-old-a", []),
@@ -190,7 +190,7 @@ function deferred<T>() {
 }
 
 function sessionItem(
-  containerKind: "folder" | "task" = "folder",
+  folderId: string,
   membershipKind: "primary" | "reference" = "primary",
   id = "session:session-a",
 ): CatalogBoardItemRow {
@@ -210,10 +210,11 @@ function sessionItem(
 }
 
 function application(
+  folderId: string,
   boardItems: CatalogBoardItemRow[],
 ): BoardYjsDocumentApplication {
   return {
-    documentName: `board-folder:${containerId}`,
+    documentName: `board-folder:${folderId}`,
     scope: {  folderId },
     snapshot: new Uint8Array(),
     replica: { boardItems, markdownDocuments: [] },

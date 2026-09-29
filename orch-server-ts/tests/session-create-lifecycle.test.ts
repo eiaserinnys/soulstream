@@ -31,7 +31,6 @@ describe("session create lifecycle", () => {
       body: { prompt: "hello", container },
     })).rejects.toMatchObject({ statusCode: 422, code: "INVALID_REQUEST" });
     expect(access.resolveAccess).not.toHaveBeenCalled();
-    expect(boardItems.resolveBoardContainerFolderId).not.toHaveBeenCalled();
   });
 
   it.each([

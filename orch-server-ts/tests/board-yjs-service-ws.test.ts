@@ -89,8 +89,7 @@ describe("orch BoardYjsService", () => {
     const service = createService(repository);
     try {
       const boardItem = await service.upsertSessionBoardItem({
-        folderId: "folder-1",
-        container: { folderId: "task-1" },
+        folderId: "task-1",
         sessionId: "session-delete",
         x: 10,
         y: 20,
@@ -143,7 +142,6 @@ describe("orch BoardYjsService", () => {
     try {
       const oldA = await service.upsertSessionBoardItem({
         folderId: "folder-old-a",
-        container: { folderId: "folder-old-a" },
         sessionId: "session-move",
         x: 10,
         y: 20,

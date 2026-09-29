@@ -370,7 +370,7 @@ describe("RecurringJobService", () => {
       validateTarget: createRecurringJobTargetValidator({
         registry,
         modelPresetAvailability: { requireAvailable: vi.fn() },
-        listFolders: async () => [{ id: "folder-a", archived: taskArchived }],
+        listFolders: async () => [{ id: "folder-a", archived: false }],
         findUserByEmail: async () => ({
           email: actor.ownerEmail,
           isAdmin: false,
@@ -607,7 +607,7 @@ describe("RecurringJobService", () => {
       validateTarget: createRecurringJobTargetValidator({
         registry,
         modelPresetAvailability: { requireAvailable: vi.fn() },
-        listFolders: async () => [{ id: "folder-a", archived: taskArchived }],
+        listFolders: async () => [{ id: "folder-a", archived: false }],
         findUserByEmail: async () => ({
           email: actor.ownerEmail,
           isAdmin: false,

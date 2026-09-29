@@ -16,8 +16,8 @@ describe("SessionDeletionService", () => {
   it("removes every projected session card from canonical replicas before deleting the session", async () => {
     const events: string[] = [];
     const boardItems = [
-      sessionBoardItem("session:session-a", "folder", "folder-1"),
-      sessionBoardItem("session-reference:session-a", "task", "task-1", "reference"),
+      sessionBoardItem("session:session-a", "folder-1"),
+      sessionBoardItem("session-reference:session-a", "folder-2", "reference"),
     ];
     const applications = [
       boardApplication({
@@ -98,7 +98,7 @@ describe("SessionDeletionService", () => {
 
 function sessionBoardItem(
   id: string,
-  containerKind: "folder" | "task",
+  folderId: string,
   membershipKind: "primary" | "reference" = "primary",
 ): CatalogBoardItemRow {
   return {
@@ -120,7 +120,7 @@ function boardApplication(
 ): SessionDeletionBoardApplication {
   const replica: BoardYjsReplica = { boardItems: [], markdownDocuments: [] };
   return {
-    documentName: `board-${scope.containerKind}:${scope.folderId}`,
+    documentName: `board-folder:${scope.folderId}`,
     scope,
     snapshot: new Uint8Array(),
     replica,

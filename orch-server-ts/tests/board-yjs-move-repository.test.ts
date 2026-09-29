@@ -22,8 +22,8 @@ describe("BoardYjsMoveRepository", () => {
     await repository.commitSessionMove({
       sessionId: "session-a",
       folderId: "folder-target",
-      boardApplications: ["folder-source", "folder-target"].map((containerId) => ({
-        documentName: `board-folder:${containerId}`,
+      boardApplications: ["folder-source", "folder-target"].map((folderId) => ({
+        documentName: `board-folder:${folderId}`,
         scope: {   folderId },
         snapshot: Y.encodeStateAsUpdate(new Y.Doc()),
         replica: { boardItems: [], markdownDocuments: [] },

@@ -51,11 +51,11 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
     `;
     await harness.sql`
       INSERT INTO board_items (
-        id, folder_id, container_kind, container_id, membership_kind,
+        id, folder_id, membership_kind,
         item_type, item_id, x, y, metadata
       )
       VALUES (
-        'session:stale-b', 'seed-folder-b', 'folder', 'seed-folder-b', 'primary',
+        'session:stale-b', 'seed-folder-b', 'primary',
         'session', 'stale-b', 17, 29, '{"sentinel":true}'::jsonb
       )
     `;
@@ -138,12 +138,11 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
     );
     await harness.sql`
       INSERT INTO board_items (
-        id, folder_id, container_kind, container_id, membership_kind,
+        id, folder_id, membership_kind,
         item_type, item_id, x, y, metadata
       )
       VALUES (
-        ${otherItem.id}, ${otherItem.folderId}, ${otherItem.containerKind},
-        ${otherItem.folderId}, ${otherItem.membershipKind}, ${otherItem.itemType},
+        ${otherItem.id}, ${otherItem.folderId}, ${otherItem.membershipKind}, ${otherItem.itemType},
         ${otherItem.itemId}, ${otherItem.x}, ${otherItem.y},
         ${harness.sql.json(otherItem.metadata)}::jsonb
       )
@@ -178,7 +177,6 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
     try {
       await service.upsertSessionBoardItem({
         folderId: targetScope.folderId,
-        container: targetScope,
         sessionId: "instant-session-a",
         sourceChecklistItemId: null,
         x: 0,
@@ -286,12 +284,13 @@ function createSilentLogger() {
 
 async function readContainerRows(
   harness: FullSchemaPostgresHarness,
-  ): Promise<Array<Record<string, unknown>>> {
+  folderId: string,
+): Promise<Array<Record<string, unknown>>> {
   return await harness.sql<Array<Record<string, unknown>>>`
-    SELECT id, folder_id, container_kind, container_id, membership_kind,
+    SELECT id, folder_id, membership_kind,
       item_type, item_id, x, y, metadata
     FROM board_items
-    WHERE container_kind = 'folder' AND container_id = ${containerId}
+    WHERE folder_id = ${folderId}
     ORDER BY id
   `;
 }

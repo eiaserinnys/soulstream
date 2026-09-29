@@ -451,9 +451,8 @@ class MemoryBoardRepository {
     return this.snapshots.get(documentName) ?? null;
   }
 
-  async resolveBoardYjsFolderScope(container: { containerKind: "folder" | "task"; containerId: string }) {
+  async resolveBoardYjsFolderScope(container: { folderId: string }) {
     return {
-      folderId: container.containerKind === "folder" ? container.containerId : "folder-1",
       ...container,
     };
   }

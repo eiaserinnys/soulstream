@@ -46,15 +46,12 @@ try {
     createId: () => ids.shift() ?? crypto.randomUUID(),
     createOperationId: operationIdFactory(),
     hydratePage: async () => undefined,
+    withBoardApplication: async (_folderId, prepare) => await prepare([]),
   });
   registerFolderRoutes(app, {
     provider: {
       listFolders: async () => await listFolders(),
       listSessionAssignments: () => ({}),
-      createFolder: () => { throw new Error("legacy create fallback called"); },
-      updateFolder: () => { throw new Error("legacy update fallback called"); },
-      deleteFolder: () => { throw new Error("legacy delete fallback called"); },
-      reorderFolders: () => undefined,
     },
     accessProvider: { resolveAccess: () => ({ restricted: false }) },
     resolveDashboardUserId: () => "local@example.com",

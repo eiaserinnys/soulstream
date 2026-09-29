@@ -102,10 +102,6 @@ function createFolderProvider(): LiveFolderProvider {
 
     listBoardItemIdsForSessionDeletion: vi.fn(async () => ["session:sess-a"]),
     findSessionFolderId: vi.fn(async () => "folder-a"),
-    createFolder: vi.fn(async () => undefined),
-    updateFolder: vi.fn(async () => undefined),
-    deleteFolder: vi.fn(async () => undefined),
-    reorderFolders: vi.fn(async () => undefined),
     getFolderCounts: vi.fn(async () => new Map()),
   };
 }

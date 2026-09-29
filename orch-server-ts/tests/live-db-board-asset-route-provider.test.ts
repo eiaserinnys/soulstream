@@ -340,10 +340,6 @@ function createProvider(
 
       listBoardItemIdsForSessionDeletion: async () => [],
       findSessionFolderId: async () => undefined,
-      createFolder: async () => ({}),
-      updateFolder: async () => undefined,
-      deleteFolder: async () => undefined,
-      reorderFolders: async () => undefined,
       getFolderCounts: async () => new Map(),
     },
     boardItemProvider: {
