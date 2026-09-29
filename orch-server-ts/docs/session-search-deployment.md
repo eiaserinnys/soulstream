@@ -10,9 +10,9 @@ The request payload uses `jev-latest` at `https://api.typesafe.ai/v1/systemone`.
 
 ## Index lifecycle
 
-The first expanded search builds the document index in Orch memory from non-LLM sessions and waits for it before returning. Each expanded search refreshes sessions changed since the overlapping timestamp watermark, updated digest highlights, and new turn-summary events. It also reads the `(session_id, display_name)` roster to detect renames and deleted sessions. The index is not persisted and has no timer or database schema.
+The first expanded search builds the document index in Orch memory from non-LLM sessions using three flat reads: sessions, digests, and turn-summary events. It stores only each title, a whitespace-free `Uint32Array` of document code points, its bigram length, and the compact C3 card. It does not retain full request, summary, or document text.
 
-The bigram BM25 implementation follows the Python experiment reference: Python whitespace normalization, adjacent Unicode code-point bigrams, `k1 = 1.5`, and `b = 0.75`. The index returns its top 300 candidates; request filters reduce those to at most 100, then RRF keeps at most 50 candidates for Jev.
+Each expanded request refreshes only changed documents. A small changed-ID query checks new sessions, updated digests, and distinct sessions with new turn-summary events; a full `(session_id, display_name)` roster comparison detects renames and deletions. There is no inverted index, timer, persistence, or database schema. BM25 scans the stored code-point arrays once per request and uses a first-codepoint bitmap to skip irrelevant positions. It follows the Python experiment reference: Python whitespace normalization, adjacent Unicode code-point bigrams, `k1 = 1.5`, and `b = 0.75`. It selects the top 300 from the score array without copying documents; request filters reduce those to at most 100, then RRF keeps at most 50 candidates for Jev.
 
 ## Release checks
 

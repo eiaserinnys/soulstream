@@ -66,10 +66,7 @@ describe("live Cogito search provider", () => {
           task_title: null,
         }];
       }
-      if (text.includes("SELECT session_id, display_name")) {
-        return [{ session_id: "session-a", display_name: "cold title" }];
-      }
-      if (text.includes("left(session.prompt, 2000)")) {
+      if (text.includes("FROM sessions") && text.includes("left(prompt, 2000)")) {
         return [{
           session_id: "session-a",
           display_name: "cold title",

@@ -1,7 +1,10 @@
 import type { CogitoSearchParams } from "../cogito/cogito_routes.js";
 import {
+  chooseSessionSummary,
   SessionDocumentSearchIndex,
   type SessionDocumentRecord,
+  type SessionDocumentRosterRow,
+  type SessionSummaryEvent,
 } from "../search/session_document_search_index.js";
 import type { SessionBackendCatalogEntry } from "./live_session_serialization.js";
 import {
@@ -14,12 +17,13 @@ import type {
 } from "./live_db_sql.js";
 
 type ActiveQuery = { current?: LiveSearchPendingQuery<readonly Record<string, unknown>[]> };
-type SessionRosterRow = { readonly session_id: string; readonly display_name: string | null };
+type SessionSourceRow = Omit<SessionDocumentRecord, "summary">;
+type SessionDigestRow = { readonly session_id: string; readonly highlight: string | null };
+type SessionSummarySourceRow = SessionSummaryEvent & { readonly session_id: string };
 
 export class LiveSessionDocumentSearch {
   readonly index = new SessionDocumentSearchIndex();
   private initialized = false;
-  private roster = new Map<string, string | null>();
   private watermarkMs = 0;
   private refreshPromise: Promise<number> | undefined;
 
@@ -42,61 +46,119 @@ export class LiveSessionDocumentSearch {
   }): Promise<number> {
     const startedAt = Date.now();
     assertSearchMayContinue(input.signal, input.deadlineAt);
+    if (!this.initialized) {
+      const sessions = await runSearchQuery(input.activeQuery, () => input.sql`
+        SELECT
+          session_id,
+          display_name,
+          left(prompt, 2000) AS prompt,
+          created_at,
+          agent_id
+        FROM sessions
+        WHERE COALESCE(session_type, '') <> 'llm'
+      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionSourceRow[];
+      const digests = await runSearchQuery(input.activeQuery, () => input.sql`
+        SELECT session_id, left(highlight, 1500) AS highlight
+        FROM session_digests
+      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionDigestRow[];
+      const events = await runSearchQuery(input.activeQuery, () => input.sql`
+        SELECT
+          session_id,
+          id AS event_id,
+          left(payload->>'content', 1500) AS content
+        FROM events
+        WHERE event_type = 'turn_summary'
+        ORDER BY session_id, id
+      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionSummarySourceRow[];
+      this.index.initialize(assembleSessionDocumentRecords(sessions, digests, events));
+      this.initialized = true;
+      this.watermarkMs = startedAt;
+      return Math.max(0, Date.now() - startedAt);
+    }
+
     const roster = await runSearchQuery(input.activeQuery, () => input.sql`
       SELECT session_id, display_name
       FROM sessions
       WHERE COALESCE(session_type, '') <> 'llm'
-    `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionRosterRow[];
-    const changedNames = roster
-      .filter((row) => !this.initialized || this.roster.get(row.session_id) !== row.display_name)
-      .map((row) => row.session_id);
-    const overlap = this.initialized ? new Date(this.watermarkMs - 5_000).toISOString() : null;
-    const records = await runSearchQuery(input.activeQuery, () => input.sql`
-      SELECT
-        session.session_id,
-        session.display_name,
-        left(session.prompt, 2000) AS prompt,
-        session.created_at,
-        session.agent_id,
-        CASE
-          WHEN digest.highlight IS NOT NULL THEN left(digest.highlight, 1500)
-          ELSE summaries.content
-        END AS summary
-      FROM sessions session
-      LEFT JOIN session_digests digest ON digest.session_id = session.session_id
-      LEFT JOIN LATERAL (
-        SELECT left(
-          string_agg(left(event.payload->>'content', 1500), ' / ' ORDER BY event.id)
-            FILTER (WHERE COALESCE(event.payload->>'content', '') <> ''),
-          1500
-        ) AS content
-        FROM events event
-        WHERE event.session_id = session.session_id
-          AND event.event_type = 'turn_summary'
-          AND digest.highlight IS NULL
-      ) summaries ON TRUE
-      WHERE COALESCE(session.session_type, '') <> 'llm'
-        AND (
-          ${!this.initialized}::boolean
-          OR session.session_id = ANY(${changedNames}::text[])
-          OR session.created_at >= ${overlap}::timestamptz
-          OR digest.updated_at >= ${overlap}::timestamptz
-          OR EXISTS (
-            SELECT 1 FROM events changed_event
-            WHERE changed_event.session_id = session.session_id
-              AND changed_event.event_type = 'turn_summary'
-              AND changed_event.created_at >= ${overlap}::timestamptz
-          )
-        )
-    `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionDocumentRecord[];
+    `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionDocumentRosterRow[];
+    const { refreshSessionIds, deletedSessionIds } = this.index.findRosterChanges(roster);
+    const overlap = new Date(this.watermarkMs - 5_000).toISOString();
+    const timestampChanges = await runSearchQuery(input.activeQuery, () => input.sql`
+      SELECT session_id
+      FROM sessions
+      WHERE COALESCE(session_type, '') <> 'llm'
+        AND created_at >= ${overlap}::timestamptz
+      UNION
+      SELECT session_id
+      FROM session_digests
+      WHERE updated_at >= ${overlap}::timestamptz
+      UNION
+      SELECT DISTINCT session_id
+      FROM events
+      WHERE event_type = 'turn_summary'
+        AND created_at >= ${overlap}::timestamptz
+    `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly { readonly session_id: string }[];
+    const liveSessionIds = new Set(roster.map((row) => row.session_id));
+    const refreshIds = [...new Set([
+      ...refreshSessionIds,
+      ...timestampChanges.map((row) => row.session_id),
+    ])].filter((sessionId) => liveSessionIds.has(sessionId)).sort();
 
-    if (this.initialized) this.index.applyRefresh(records, roster);
-    else this.index.initialize(records);
-    this.roster = new Map(roster.map((row) => [row.session_id, row.display_name]));
-    this.initialized = true;
+    if (refreshIds.length > 0) {
+      const sessions = await runSearchQuery(input.activeQuery, () => input.sql`
+        SELECT
+          session_id,
+          display_name,
+          left(prompt, 2000) AS prompt,
+          created_at,
+          agent_id
+        FROM sessions
+        WHERE session_id = ANY(${refreshIds}::text[])
+          AND COALESCE(session_type, '') <> 'llm'
+      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionSourceRow[];
+      const digests = await runSearchQuery(input.activeQuery, () => input.sql`
+        SELECT session_id, left(highlight, 1500) AS highlight
+        FROM session_digests
+        WHERE session_id = ANY(${refreshIds}::text[])
+      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionDigestRow[];
+      const events = await runSearchQuery(input.activeQuery, () => input.sql`
+        SELECT
+          session_id,
+          id AS event_id,
+          left(payload->>'content', 1500) AS content
+        FROM events
+        WHERE session_id = ANY(${refreshIds}::text[])
+          AND event_type = 'turn_summary'
+        ORDER BY session_id, id
+      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionSummarySourceRow[];
+      this.index.applyRefresh(
+        assembleSessionDocumentRecords(sessions, digests, events),
+        deletedSessionIds,
+      );
+    } else {
+      this.index.applyRefresh([], deletedSessionIds);
+    }
     this.watermarkMs = startedAt;
     return Math.max(0, Date.now() - startedAt);
   }
+}
+
+function assembleSessionDocumentRecords(
+  sessions: readonly SessionSourceRow[],
+  digests: readonly SessionDigestRow[],
+  events: readonly SessionSummarySourceRow[],
+): SessionDocumentRecord[] {
+  const highlights = new Map(digests.map((row) => [row.session_id, row.highlight]));
+  const summaries = new Map<string, SessionSummaryEvent[]>();
+  for (const event of events) {
+    const sessionEvents = summaries.get(event.session_id) ?? [];
+    sessionEvents.push({ event_id: event.event_id, content: event.content });
+    summaries.set(event.session_id, sessionEvents);
+  }
+  return sessions.map((session) => ({
+    ...session,
+    summary: chooseSessionSummary(highlights.get(session.session_id) ?? null, summaries.get(session.session_id) ?? []),
+  }));
 }
 
 export type SessionDocumentCandidateRow = Record<string, unknown> & { readonly session_id: string };

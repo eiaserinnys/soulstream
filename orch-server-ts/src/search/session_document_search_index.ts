@@ -25,15 +25,22 @@ export type SessionDocumentCard = {
 };
 
 export type SessionDocument = {
-  readonly session_id: string;
   readonly title: string | null;
-  readonly request: string | null;
-  readonly summary: string | null;
-  readonly text: string;
+  readonly codePoints: Uint32Array;
+  readonly bigramLength: number;
   readonly card: SessionDocumentCard;
 };
 
-export type SessionDocumentHit = SessionDocument & { readonly score: number };
+export type SessionDocumentRosterRow = {
+  readonly session_id: string;
+  readonly display_name: string | null;
+};
+
+export type SessionDocumentHit = {
+  readonly session_id: string;
+  readonly document: SessionDocument;
+  readonly score: number;
+};
 
 export function bigramTermFrequencies(text: string): Map<string, number> {
   return new Map([...bigramCodePointFrequencies(text)].map(([term, frequency]) => [
@@ -87,7 +94,7 @@ export function assembleSessionDocument(row: SessionDocumentRecord): SessionDocu
   const summary = row.summary;
   const [requestText, requestCard] = clipPair(request, 1_500, 300);
   const [summaryText, summaryCard] = clipPair(summary, 1_500, 300);
-  const text = [title ?? "", requestText, summaryText].join(" ");
+  const codePoints = documentCodePoints([title ?? "", requestText ?? "", summaryText ?? ""]);
   const card: SessionDocumentCard = compactCard({
     title: title ?? undefined,
     request: requestCard,
@@ -95,46 +102,48 @@ export function assembleSessionDocument(row: SessionDocumentRecord): SessionDocu
     date: sessionDate(row.created_at),
     agent: row.agent_id ?? undefined,
   });
-  return { session_id: row.session_id, title, request, summary, text, card };
+  return { title, codePoints, bigramLength: Math.max(0, codePoints.length - 1), card };
 }
 
 export class SessionDocumentSearchIndex {
   private readonly documents = new Map<string, SessionDocument>();
-  private postings = new Map<number, { readonly ids: Int32Array; readonly frequencies: Uint32Array }>();
-  private lengths = new Float64Array();
-  private averageLength = 0;
-  private dirty = true;
+  private totalBigramLength = 0;
 
   initialize(records: readonly SessionDocumentRecord[]): void {
     this.documents.clear();
-    for (const record of records) this.documents.set(record.session_id, assembleSessionDocument(record));
-    this.dirty = true;
-    this.rebuild();
+    this.totalBigramLength = 0;
+    for (const record of records) this.replace(record);
   }
 
   applyRefresh(
     records: readonly SessionDocumentRecord[],
-    roster: readonly { readonly session_id: string; readonly display_name: string | null }[],
+    deletedSessionIds: readonly string[],
   ): void {
-    const liveIds = new Set(roster.map((row) => row.session_id));
-    for (const sessionId of this.documents.keys()) {
-      if (!liveIds.has(sessionId)) {
-        this.documents.delete(sessionId);
-        this.dirty = true;
-      }
-    }
-    for (const record of records) {
-      if (!liveIds.has(record.session_id)) continue;
-      this.documents.set(record.session_id, assembleSessionDocument(record));
-      this.dirty = true;
-    }
-    const rosterNames = new Map(roster.map((row) => [row.session_id, row.display_name]));
+    for (const sessionId of deletedSessionIds) this.remove(sessionId);
+    for (const record of records) this.replace(record);
+  }
+
+  findRosterChanges(roster: readonly SessionDocumentRosterRow[]): {
+    readonly refreshSessionIds: string[];
+    readonly deletedSessionIds: string[];
+  } {
+    const names = new Map(roster.map(({ session_id, display_name }) => [session_id, display_name]));
+    const refreshSessionIds = new Set<string>();
+    const deletedSessionIds: string[] = [];
     for (const [sessionId, document] of this.documents) {
-      if (document.title !== cleanTitle(rosterNames.get(sessionId) ?? null)) {
-        this.documents.delete(sessionId);
-        this.dirty = true;
+      if (!names.has(sessionId)) {
+        deletedSessionIds.push(sessionId);
+      } else if (document.title !== cleanTitle(names.get(sessionId) ?? null)) {
+        refreshSessionIds.add(sessionId);
       }
     }
+    for (const row of roster) {
+      if (!this.documents.has(row.session_id)) refreshSessionIds.add(row.session_id);
+    }
+    return {
+      refreshSessionIds: [...refreshSessionIds].sort(),
+      deletedSessionIds: deletedSessionIds.sort(),
+    };
   }
 
   has(sessionId: string): boolean {
@@ -150,61 +159,184 @@ export class SessionDocumentSearchIndex {
   }
 
   search(query: string, limit: number): SessionDocumentHit[] {
-    this.rebuild();
+    const sessionIds = [...this.documents.keys()];
     const queryTerms = [...bigramCodePointFrequencies(query).keys()].sort(compareBigramTerms);
-    const scores = new Float64Array(this.documents.size);
-    if (this.averageLength > 0) {
-      for (const term of queryTerms) {
-        const posting = this.postings.get(term);
-        if (!posting) continue;
-        const df = posting.ids.length;
-        const idf = Math.log(1 + (this.documents.size - df + 0.5) / (df + 0.5));
-        for (let index = 0; index < posting.ids.length; index += 1) {
-          const ordinal = posting.ids[index]!;
-          const frequency = posting.frequencies[index]!;
+    const termIndexes = new Map(queryTerms.map((term, index) => [term, index]));
+    const firstCharacters = new Uint8Array(Math.ceil(CODE_POINT_RADIX / 8));
+    for (const term of queryTerms) {
+      const first = Math.floor(term / CODE_POINT_RADIX);
+      const byteIndex = first >>> 3;
+      firstCharacters[byteIndex] = firstCharacters[byteIndex]! | (1 << (first & 7));
+    }
+
+    const documentFrequencies = new Uint32Array(queryTerms.length);
+    const termCounts = new Uint32Array(queryTerms.length);
+    const seenAtDocument = new Uint32Array(queryTerms.length);
+    const touchedTerms: number[] = [];
+    const postings = new SparseTermFrequencyBuffer();
+    const offsets = new Uint32Array(sessionIds.length + 1);
+
+    for (let ordinal = 0; ordinal < sessionIds.length; ordinal += 1) {
+      const document = this.documents.get(sessionIds[ordinal]!)!;
+      const generation = ordinal + 1;
+      touchedTerms.length = 0;
+      const codePoints = document.codePoints;
+      for (let position = 1; position < codePoints.length; position += 1) {
+        const first = codePoints[position - 1]!;
+        if ((firstCharacters[first >>> 3]! & (1 << (first & 7))) === 0) continue;
+        const termIndex = termIndexes.get(first * CODE_POINT_RADIX + codePoints[position]!);
+        if (termIndex === undefined) continue;
+        if (seenAtDocument[termIndex] !== generation) {
+          seenAtDocument[termIndex] = generation;
+          termCounts[termIndex] = 0;
+          touchedTerms.push(termIndex);
+        }
+        termCounts[termIndex] = termCounts[termIndex]! + 1;
+      }
+      touchedTerms.sort((left, right) => left - right);
+      for (const termIndex of touchedTerms) {
+        documentFrequencies[termIndex] = documentFrequencies[termIndex]! + 1;
+        postings.append(termIndex, termCounts[termIndex]!);
+      }
+      offsets[ordinal + 1] = postings.length;
+    }
+
+    const scores = new Float64Array(sessionIds.length);
+    const averageLength = sessionIds.length ? this.totalBigramLength / sessionIds.length : 0;
+    if (averageLength > 0) {
+      for (let ordinal = 0; ordinal < sessionIds.length; ordinal += 1) {
+        const document = this.documents.get(sessionIds[ordinal]!)!;
+        const length = document.bigramLength;
+        for (let posting = offsets[ordinal]!; posting < offsets[ordinal + 1]!; posting += 1) {
+          const termIndex = postings.termIndexAt(posting);
+          const frequency = postings.frequencyAt(posting);
+          const documentFrequency = documentFrequencies[termIndex]!;
+          const idf = Math.log(1 + (
+            sessionIds.length - documentFrequency + 0.5
+          ) / (documentFrequency + 0.5));
           const denominator = frequency + BM25_K1 * (
-            1 - BM25_B + BM25_B * this.lengths[ordinal]! / this.averageLength
+            1 - BM25_B + BM25_B * length / averageLength
           );
           scores[ordinal] = scores[ordinal]! + idf * frequency * (BM25_K1 + 1) / denominator;
         }
       }
     }
-    return [...this.documents.entries()]
-      .map(([sessionId, document], ordinal) => ({ ...document, score: scores[ordinal] ?? 0, session_id: sessionId }))
-      .sort((left, right) => right.score - left.score
-        || (left.session_id < right.session_id ? -1 : left.session_id > right.session_id ? 1 : 0))
-      .slice(0, limit);
+
+    const selected = topKOrdinals(sessionIds, scores, limit);
+    return selected.map((ordinal) => ({
+      session_id: sessionIds[ordinal]!,
+      document: this.documents.get(sessionIds[ordinal]!)!,
+      score: scores[ordinal]!,
+    }));
   }
 
-  private rebuild(): void {
-    if (!this.dirty) return;
-    const entries = [...this.documents.entries()];
-    this.lengths = new Float64Array(entries.length);
-    const mutable = new Map<number, { ids: number[]; frequencies: number[] }>();
-    let totalLength = 0;
-    for (const [ordinal, [, document]] of entries.entries()) {
-      const terms = bigramCodePointFrequencies(document.text);
-      let length = 0;
-      for (const [term, frequency] of terms) {
-        length += frequency;
-        let posting = mutable.get(term);
-        if (!posting) {
-          posting = { ids: [], frequencies: [] };
-          mutable.set(term, posting);
-        }
-        posting.ids.push(ordinal);
-        posting.frequencies.push(frequency);
-      }
-      this.lengths[ordinal] = length;
-      totalLength += length;
-    }
-    this.postings = new Map([...mutable.entries()].map(([term, posting]) => [term, {
-      ids: Int32Array.from(posting.ids),
-      frequencies: Uint32Array.from(posting.frequencies),
-    }]));
-    this.averageLength = entries.length ? totalLength / entries.length : 0;
-    this.dirty = false;
+  private replace(record: SessionDocumentRecord): void {
+    this.remove(record.session_id);
+    const document = assembleSessionDocument(record);
+    this.documents.set(record.session_id, document);
+    this.totalBigramLength += document.bigramLength;
   }
+
+  private remove(sessionId: string): void {
+    const document = this.documents.get(sessionId);
+    if (!document) return;
+    this.totalBigramLength -= document.bigramLength;
+    this.documents.delete(sessionId);
+  }
+}
+
+class SparseTermFrequencyBuffer {
+  private values = new Uint32Array(1_024);
+  private used = 0;
+
+  get length(): number {
+    return this.used / 2;
+  }
+
+  append(termIndex: number, frequency: number): void {
+    if (this.used + 2 > this.values.length) {
+      const expanded = new Uint32Array(this.values.length * 2);
+      expanded.set(this.values);
+      this.values = expanded;
+    }
+    this.values[this.used] = termIndex;
+    this.values[this.used + 1] = frequency;
+    this.used += 2;
+  }
+
+  termIndexAt(index: number): number {
+    return this.values[index * 2]!;
+  }
+
+  frequencyAt(index: number): number {
+    return this.values[index * 2 + 1]!;
+  }
+}
+
+function topKOrdinals(sessionIds: readonly string[], scores: Float64Array, limit: number): number[] {
+  const capacity = Math.min(sessionIds.length, Math.max(0, limit));
+  if (capacity === 0) return [];
+  const heap = new Int32Array(capacity);
+  let heapLength = 0;
+  for (let ordinal = 0; ordinal < sessionIds.length; ordinal += 1) {
+    if (heapLength < capacity) {
+      heap[heapLength] = ordinal;
+      siftUp(heap, heapLength, sessionIds, scores);
+      heapLength += 1;
+    } else if (isWorse(heap[0]!, ordinal, sessionIds, scores)) {
+      heap[0] = ordinal;
+      siftDown(heap, heapLength, 0, sessionIds, scores);
+    }
+  }
+  return [...heap.slice(0, heapLength)].sort((left, right) =>
+    scores[right]! - scores[left]!
+      || (sessionIds[left]! < sessionIds[right]! ? -1 : sessionIds[left]! > sessionIds[right]! ? 1 : 0));
+}
+
+function siftUp(heap: Int32Array, index: number, ids: readonly string[], scores: Float64Array): void {
+  let child = index;
+  while (child > 0) {
+    const parent = Math.floor((child - 1) / 2);
+    if (!isWorse(heap[child]!, heap[parent]!, ids, scores)) return;
+    [heap[child], heap[parent]] = [heap[parent]!, heap[child]!];
+    child = parent;
+  }
+}
+
+function siftDown(heap: Int32Array, length: number, index: number, ids: readonly string[], scores: Float64Array): void {
+  let parent = index;
+  while (true) {
+    const left = parent * 2 + 1;
+    const right = left + 1;
+    let worse = parent;
+    if (left < length && isWorse(heap[left]!, heap[worse]!, ids, scores)) worse = left;
+    if (right < length && isWorse(heap[right]!, heap[worse]!, ids, scores)) worse = right;
+    if (worse === parent) return;
+    [heap[parent], heap[worse]] = [heap[worse]!, heap[parent]!];
+    parent = worse;
+  }
+}
+
+function isWorse(left: number, right: number, ids: readonly string[], scores: Float64Array): boolean {
+  return scores[left]! < scores[right]!
+    || (scores[left] === scores[right] && ids[left]! > ids[right]!);
+}
+
+function documentCodePoints(parts: readonly string[]): Uint32Array {
+  let length = 0;
+  for (const part of parts) {
+    for (const character of part) if (!PYTHON_WHITESPACE.test(character)) length += 1;
+  }
+  const codePoints = new Uint32Array(length);
+  let index = 0;
+  for (const part of parts) {
+    for (const character of part) {
+      if (PYTHON_WHITESPACE.test(character)) continue;
+      codePoints[index] = character.codePointAt(0)!;
+      index += 1;
+    }
+  }
+  return codePoints;
 }
 
 function cleanTitle(value: string | null): string | null {

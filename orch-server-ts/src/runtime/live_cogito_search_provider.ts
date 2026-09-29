@@ -299,7 +299,10 @@ export function createLiveCogitoSearchProvider(
               const rankedDocuments = documentRows.flatMap((row) => {
                 const document = documentById.get(row.session_id);
                 if (!document) return [];
-                const excerptSource = document.summary || document.request || document.title || "";
+                const excerptSource = document.document.card.summary
+                  || document.document.card.request
+                  || document.document.card.title
+                  || "";
                 const excerpt = Array.from(excerptSource).slice(0, 160).join("");
                 const projected = projectSessionSearchResults([{
                   ...row,
