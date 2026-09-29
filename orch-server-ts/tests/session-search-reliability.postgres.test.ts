@@ -297,6 +297,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       include_story: false,
       event_categories: "messages,responses",
       include_session_results: true,
+      session_search_mode: "lexical",
       allowedFolderIds: ["folder-allowed"],
     });
 
@@ -482,7 +483,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     });
     expect(expandedPrompt.session_results?.[0]?.session_id).toBe("fuzzy-prompt-omission");
     expect(expandedPrompt.search_status?.session_sources?.metadata_prompt_tokens)
-      .toBeUndefined();
+      .toEqual({ status: "deferred" });
 
     const manyTermPrompt = await expandedPromptProvider.search({
       q: "하나 둘 셋 넷 다섯 여섯 일곱 여덟 아홉",
