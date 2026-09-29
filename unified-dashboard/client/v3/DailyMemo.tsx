@@ -1,7 +1,7 @@
 import type { BlockDto } from "@seosoyoung/soul-ui/page";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 
-import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
+import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 
 export function DailyMemo({
   blocks,
@@ -18,7 +18,7 @@ export function DailyMemo({
       className="v3-daily-memo rounded-[18px] border border-white/8 shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]"
     >
       {editable.map((block, index) => (
-        <TaskDescriptionPanel
+        <FolderDescriptionPanel
           key={block?.id ?? "empty-memo"}
           markdown={block?.text ?? ""}
           ariaLabel={index === 0 ? "오늘 메모" : `오늘 메모 ${index + 1}`}

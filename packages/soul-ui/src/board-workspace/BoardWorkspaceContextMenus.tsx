@@ -52,7 +52,7 @@ interface BoardWorkspaceContextMenusProps {
   folders: CatalogFolder[];
   boardContainer: BoardContainerRef | null;
   resolvedBoardFolderId: string | null;
-  taskMoveTargets: FolderMoveTarget[];
+  folderMoveTargets: FolderMoveTarget[];
   activeBoardDocumentId: string | null;
   boardYjsRuntime: BoardYjsRuntime | null;
   canCreateBoardItems?: boolean;
@@ -89,7 +89,7 @@ export function BoardWorkspaceContextMenus({
   folders,
   boardContainer,
   resolvedBoardFolderId,
-  taskMoveTargets,
+  folderMoveTargets,
   activeBoardDocumentId,
   boardYjsRuntime,
   canCreateBoardItems = true,
@@ -129,12 +129,12 @@ export function BoardWorkspaceContextMenus({
   const [deleteMarkdownError, setDeleteMarkdownError] = useState("");
   const [renameFrameTarget, setRenameFrameTarget] = useState<Extract<BoardWorkspaceItem, { type: "frame" }> | null>(null);
   const [renameFrameInput, setRenameFrameInput] = useState("");
-  const [moveTaskTarget, setMoveTaskTarget] = useState<{
+  const [moveFolderTarget, setMoveFolderTarget] = useState<{
     item: MovableBoardWorkspaceItem;
-    selectedTaskId: string;
+    selectedFolderId: string;
   } | null>(null);
   const [moveTaskError, setMoveTaskError] = useState("");
-  const [moveTaskPending, setMoveTaskPending] = useState(false);
+  const [moveFolderPending, setMoveFolderPending] = useState(false);
 
   const folderContextTarget: FolderContextMenuTarget | null =
     cardContextMenu?.item.type === "folder"
@@ -190,7 +190,7 @@ export function BoardWorkspaceContextMenus({
     removeBoardItem(item.boardItemId);
     if (activeBoardDocumentId === item.customViewId) setActiveBoardDocument(null);
   };
-  const availableFolderMoveTargets = taskMoveTargets.filter((target) => target.id !== boardContainer?.id);
+  const availableFolderMoveTargets = folderMoveTargets.filter((target) => target.id !== boardContainer?.id);
 
   const moveSessionActions: SessionContextMenuExtraAction[] =
     movableContextMenu?.item.type === "session" && canMoveBoardItem
@@ -204,9 +204,9 @@ export function BoardWorkspaceContextMenus({
     if (!onMoveBoardItemToFolder || !boardContainer || !resolvedBoardFolderId) return;
     onCloseCardContextMenu();
     setMoveTaskError("");
-    setMoveTaskTarget({
+    setMoveFolderTarget({
       item,
-      selectedTaskId: availableFolderMoveTargets[0]?.id ?? "",
+      selectedFolderId: availableFolderMoveTargets[0]?.id ?? "",
     });
   }
 
@@ -214,12 +214,12 @@ export function BoardWorkspaceContextMenus({
     item: MovableBoardWorkspaceItem,
     target: BoardContainerRef,
   ) {
-    if (!onMoveBoardItemToFolder || moveTaskPending) return;
-    setMoveTaskPending(true);
+    if (!onMoveBoardItemToFolder || moveFolderPending) return;
+    setMoveFolderPending(true);
     try {
       setMoveTaskError("");
       await onMoveBoardItemToFolder(item, target);
-      setMoveTaskTarget(null);
+      setMoveFolderTarget(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setMoveTaskError(message);
@@ -230,7 +230,7 @@ export function BoardWorkspaceContextMenus({
       });
       console.error("Board item container move failed:", err);
     } finally {
-      setMoveTaskPending(false);
+      setMoveFolderPending(false);
     }
   }
 
@@ -713,20 +713,20 @@ export function BoardWorkspaceContextMenus({
         </div>
       )}
       <Dialog
-        open={moveTaskTarget !== null}
+        open={moveFolderTarget !== null}
         onOpenChange={(open) => {
-          if (!open && !moveTaskPending) setMoveTaskTarget(null);
+          if (!open && !moveFolderPending) setMoveFolderTarget(null);
         }}
       >
         <DialogPopup className="max-w-sm">
-          {moveTaskTarget ? (
+          {moveFolderTarget ? (
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (!moveTaskTarget.selectedTaskId) return;
-              void handleMoveBoardItem(moveTaskTarget.item, {
+              if (!moveFolderTarget.selectedFolderId) return;
+              void handleMoveBoardItem(moveFolderTarget.item, {
                 kind: "folder",
-                id: moveTaskTarget.selectedTaskId,
+                id: moveFolderTarget.selectedFolderId,
               });
             }}
           >
@@ -738,15 +738,15 @@ export function BoardWorkspaceContextMenus({
                     <button
                       key={target.id}
                       type="button"
-                      disabled={moveTaskPending}
+                      disabled={moveFolderPending}
                       className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                        moveTaskTarget.selectedTaskId === target.id
+                        moveFolderTarget.selectedFolderId === target.id
                           ? "bg-primary text-primary-foreground"
                           : "hover:bg-accent"
                       }`}
                       onClick={() =>
-                        setMoveTaskTarget((current) =>
-                          current ? { ...current, selectedTaskId: target.id } : current
+                        setMoveFolderTarget((current) =>
+                          current ? { ...current, selectedFolderId: target.id } : current
                         )
                       }
                     >
@@ -762,11 +762,11 @@ export function BoardWorkspaceContextMenus({
               {moveTaskError ? <p className="mt-3 text-xs text-destructive" role="alert">{moveTaskError}</p> : null}
             </DialogPanel>
             <DialogFooter variant="bare">
-              <Button type="button" variant="outline" disabled={moveTaskPending} onClick={() => setMoveTaskTarget(null)}>
+              <Button type="button" variant="outline" disabled={moveFolderPending} onClick={() => setMoveFolderTarget(null)}>
                 취소
               </Button>
-              <Button type="submit" disabled={!moveTaskTarget.selectedTaskId || moveTaskPending}>
-                {moveTaskPending ? "이동 중…" : "이동"}
+              <Button type="submit" disabled={!moveFolderTarget.selectedFolderId || moveFolderPending}>
+                {moveFolderPending ? "이동 중…" : "이동"}
               </Button>
             </DialogFooter>
           </form>

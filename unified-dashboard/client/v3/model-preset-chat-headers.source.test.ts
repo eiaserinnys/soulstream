@@ -7,8 +7,8 @@ function source(relativePath: string): string {
 
 describe("v3 model preset chat header coverage", () => {
   it("renders the shared server-label badge in every v3 chat header", () => {
-    const taskWorkspace = source("./TaskWorkspace.tsx");
-    const taskBoardWorkspace = source("./TaskBoardWorkspace.tsx");
+    const taskWorkspace = source("./FolderWorkspace.tsx");
+    const taskBoardWorkspace = source("./FolderBoardWorkspace.tsx");
 
     expect(taskWorkspace.match(/<SessionModelPresetBadge session=\{activeSession\} \/>/g))
       .toHaveLength(2);

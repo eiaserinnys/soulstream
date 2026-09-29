@@ -8,7 +8,7 @@ function readSource(relativePath: string): string {
 }
 
 function expectV3HeaderLift(): void {
-  const stylesheet = readSource("../../../../unified-dashboard/client/v3/v3-task-workspace.css");
+  const stylesheet = readSource("../../../../unified-dashboard/client/v3/v3-folder-workspace.css");
   expect(stylesheet).toMatch(
     /\.v3-chat-pane\s*>\s*\.v3-chat-header\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*2;/s,
   );
@@ -56,14 +56,14 @@ function sessionStoryMounts(): string[] {
 describe("SessionStoryDisclosure stacking contract", () => {
   it("enumerates every production mount surface", () => {
     expect(sessionStoryMounts()).toEqual([
-      "unified-dashboard/client/v3/TaskBoardWorkspace.tsx",
-      "unified-dashboard/client/v3/TaskWorkspace.tsx",
-      "unified-dashboard/client/v3/TaskWorkspace.tsx",
+      "unified-dashboard/client/v3/FolderBoardWorkspace.tsx",
+      "unified-dashboard/client/v3/FolderWorkspace.tsx",
+      "unified-dashboard/client/v3/FolderWorkspace.tsx",
     ]);
   });
 
-  it("lifts the standalone TaskWorkspace chat header above its review banner and message list", () => {
-    const source = readSource("../../../../unified-dashboard/client/v3/TaskWorkspace.tsx");
+  it("lifts the standalone FolderWorkspace chat header above its review banner and message list", () => {
+    const source = readSource("../../../../unified-dashboard/client/v3/FolderWorkspace.tsx");
     const header = chatHeaders(source).find((candidate) => candidate.includes('label="채팅 닫기"'));
 
     expect(header).toContain("<SessionStoryDisclosure");
@@ -71,15 +71,15 @@ describe("SessionStoryDisclosure stacking contract", () => {
   });
 
   it("lifts the task inspector chat header above its review banner and message list", () => {
-    const source = readSource("../../../../unified-dashboard/client/v3/TaskWorkspace.tsx");
+    const source = readSource("../../../../unified-dashboard/client/v3/FolderWorkspace.tsx");
     const header = chatHeaders(source).find((candidate) => !candidate.includes('label="채팅 닫기"'));
 
     expect(header).toContain("<SessionStoryDisclosure");
     expectV3HeaderLift();
   });
 
-  it("lifts the TaskBoardWorkspace chat header above its review banner and message list", () => {
-    const source = readSource("../../../../unified-dashboard/client/v3/TaskBoardWorkspace.tsx");
+  it("lifts the FolderBoardWorkspace chat header above its review banner and message list", () => {
+    const source = readSource("../../../../unified-dashboard/client/v3/FolderBoardWorkspace.tsx");
     const header = chatHeaders(source).find((candidate) => candidate.includes("<SessionStoryDisclosure"));
 
     expect(header).toContain("<SessionStoryDisclosure");

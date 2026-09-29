@@ -1,4 +1,4 @@
-import { todayPlannerMenuLabel } from "./today-task-state";
+import { todayPlannerMenuLabel } from "./today-folder-state";
 
 export interface V3ContextMenuAction {
   label: string;
@@ -15,7 +15,7 @@ export interface V3SessionContextMenuExtraAction {
   className?: string;
 }
 
-export function buildTaskContextMenuActions(
+export function buildFolderContextMenuActions(
   state: { starred: boolean; completed: boolean; inToday: boolean },
   actions: {
     open(): void | Promise<void>;
@@ -120,7 +120,7 @@ export function buildDocumentContextMenuActions(actions: {
   return menu;
 }
 
-export function buildTaskSessionExtraActions(actions: {
+export function buildFolderSessionExtraActions(actions: {
   continueFromSession(): void | Promise<void>;
   moveToTask(): void | Promise<void>;
 }): V3SessionContextMenuExtraAction[] {

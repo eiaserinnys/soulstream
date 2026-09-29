@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 import {
   AUTH_EXPIRED_MESSAGE,
-  buildMobileTaskOptions,
+  buildMobileFolderOptions,
   dateKey,
   errorText,
   reportV3WriteFailure,
@@ -18,7 +18,7 @@ describe("v3 dashboard utilities", () => {
       session("run-child", "run-1", "2026-07-14T01:00:00.000Z", "folder-1"),
     ];
 
-    expect(buildMobileTaskOptions(folders, sessions)).toEqual([{
+    expect(buildMobileFolderOptions(folders, sessions)).toEqual([{
       folderId: "folder-1",
       runIds: ["run-1", "run-child"],
       latestRunId: "run-1",

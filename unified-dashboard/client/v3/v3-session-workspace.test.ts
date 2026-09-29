@@ -3,7 +3,7 @@ import type { CatalogBoardItem, SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   resolveSessionForOpen,
-  resolveSessionTaskWorkspace,
+  resolveSessionFolderWorkspace,
   resolveSessionWorkspace,
   SessionWorkspaceResolutionError,
 } from "./v3-session-workspace";
@@ -130,45 +130,45 @@ describe("resolveSessionWorkspace", () => {
   });
 });
 
-describe("resolveSessionTaskWorkspace", () => {
+describe("resolveSessionFolderWorkspace", () => {
   it("target-loads a task outside daily and loaded project pages by its task id", async () => {
     const target = plannerTask("task-outside-page", "task-outside", "in_progress");
-    const loadTaskByFolderId = vi.fn(async () => target);
-    const result = await resolveSessionTaskWorkspace({
+    const loadFolderById = vi.fn(async () => target);
+    const result = await resolveSessionFolderWorkspace({
       session: session("session-a", null),
       boardItems: [],
       currentFolderEntries: [],
-      loadTaskByFolderId,
+      loadFolderById,
       fetchImplementation: vi.fn(async () => json({
         boardItems: [boardItem("session-a", "task-outside")],
       })) as typeof globalThis.fetch,
     });
 
     expect(result.task).toBe(target);
-    expect(loadTaskByFolderId).toHaveBeenCalledWith("task-outside");
+    expect(loadFolderById).toHaveBeenCalledWith("task-outside");
   });
 
   it("reuses a completed owning task even when it is absent from daily membership", async () => {
     const completed = plannerTask("task-complete-page", "task-complete", "completed");
-    const loadTaskByFolderId = vi.fn();
-    const result = await resolveSessionTaskWorkspace({
+    const loadFolderById = vi.fn();
+    const result = await resolveSessionFolderWorkspace({
       session: session("session-a", null),
       boardItems: [boardItem("session-a", "task-complete")],
       currentFolderEntries: [completed],
-      loadTaskByFolderId,
+      loadFolderById,
     });
 
     expect(result.task).toBe(completed);
-    expect(loadTaskByFolderId).not.toHaveBeenCalled();
+    expect(loadFolderById).not.toHaveBeenCalled();
   });
 
   it("keeps membership lookup failures distinct from owning-task load failures", async () => {
-    const loadTaskByFolderId = vi.fn();
-    const promise = resolveSessionTaskWorkspace({
+    const loadFolderById = vi.fn();
+    const promise = resolveSessionFolderWorkspace({
       session: session("session-a", null),
       boardItems: [],
       currentFolderEntries: [],
-      loadTaskByFolderId,
+      loadFolderById,
       fetchImplementation: vi.fn(async () => new Response("unavailable", {
         status: 503,
       })) as typeof globalThis.fetch,
@@ -178,18 +178,18 @@ describe("resolveSessionTaskWorkspace", () => {
       phase: "membership",
       message: "세션의 소속 업무를 확인하지 못했습니다.",
     });
-    expect(loadTaskByFolderId).not.toHaveBeenCalled();
+    expect(loadFolderById).not.toHaveBeenCalled();
   });
 
   it("distinguishes an owning-task load failure from a truly unassigned session", async () => {
     const lookup = vi.fn(async () => json({
       boardItems: [boardItem("session-a", "task-missing")],
     })) as typeof globalThis.fetch;
-    const promise = resolveSessionTaskWorkspace({
+    const promise = resolveSessionFolderWorkspace({
       session: session("session-a", null),
       boardItems: [],
       currentFolderEntries: [],
-      loadTaskByFolderId: async () => { throw new Error("Not Found"); },
+      loadFolderById: async () => { throw new Error("Not Found"); },
       fetchImplementation: lookup,
     });
     await expect(promise).rejects.toBeInstanceOf(SessionWorkspaceResolutionError);
@@ -198,11 +198,11 @@ describe("resolveSessionTaskWorkspace", () => {
       message: "소속 업무를 불러오지 못했습니다.",
     });
 
-    await expect(resolveSessionTaskWorkspace({
+    await expect(resolveSessionFolderWorkspace({
       session: session("session-unassigned", null),
       boardItems: [],
       currentFolderEntries: [],
-      loadTaskByFolderId: vi.fn(),
+      loadFolderById: vi.fn(),
       fetchImplementation: vi.fn(async () => json({ boardItems: [] })) as typeof globalThis.fetch,
     })).resolves.toMatchObject({ task: null, workspace: { target: { kind: "standalone" } } });
   });

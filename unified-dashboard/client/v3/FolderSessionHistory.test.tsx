@@ -1,0 +1,116 @@
+/**
+ * @vitest-environment jsdom
+ */
+
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+
+import type { SessionSummary } from "@seosoyoung/soul-ui";
+
+import {
+  getRunSessionRenamePrefill,
+  loadMoreRunsPreservingScroll,
+  FolderSessionHistory,
+} from "./FolderSessionHistory";
+
+describe("FolderSessionHistory", () => {
+  it("uses only displayName for rename prefill and never falls back to the prompt", () => {
+    const promptOnly = {
+      agentSessionId: "prompt-only",
+      prompt: "전체 사용자 프롬프트",
+    } as SessionSummary;
+
+    expect(getRunSessionRenamePrefill([promptOnly], "prompt-only")).toBe("");
+    expect(getRunSessionRenamePrefill([
+      { ...promptOnly, displayName: "표시 이름" },
+    ], "prompt-only")).toBe("표시 이름");
+  });
+
+  it("renders rich catalog data, a loading skeleton, and a run-number failure fallback", () => {
+    const richSession: SessionSummary = {
+      agentSessionId: "catalog-hit",
+      status: "running",
+      eventCount: 42,
+      displayName: "라이브 코디네이터 세션",
+      agentId: "roselin_codex",
+      agentName: "로젤린",
+      nodeId: "eiaserinnys",
+      lastMessage: {
+        type: "assistant_message",
+        preview: "마지막 메시지 한 줄",
+        timestamp: new Date().toISOString(),
+      },
+      createdAt: "2026-07-14T00:00:00Z",
+    };
+    const html = renderToStaticMarkup(
+      <FolderSessionHistory
+        folderTitle="PR-J"
+        folderPageId="page-pr-j"
+        folderId="rb-pr-j"
+        contextItems={[]}
+        documentOptions={[]}
+        contextPending={false}
+        sessionDefaults={null}
+        sessionIds={["catalog-hit", "loading-miss", "failed-miss"]}
+        sessions={[richSession]}
+        moveTargets={[]}
+        runHistoryTotal={61}
+        runHistoryHasMore
+        runHistoryLoading={false}
+        activeSessionId="catalog-hit"
+        onLoadMoreRuns={vi.fn()}
+        runSessionLoadStates={new Map([
+          ["catalog-hit", "ready"],
+          ["loading-miss", "loading"],
+          ["failed-miss", "failed"],
+        ])}
+        onOpenSession={vi.fn()}
+        onSessionCreated={vi.fn()}
+        onRenameSession={vi.fn()}
+        onDeleteSessions={vi.fn()}
+        onMoveSession={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("라이브 코디네이터 세션");
+    expect(html).toMatch(/v3-run-row[^\"]*is-active/);
+    expect(html).toContain("로젤린");
+    expect(html).toContain("eiaserinnys");
+    expect(html).toContain("마지막 메시지 한 줄");
+    expect(html).toContain("세션 #1");
+    expect(html).toContain("aria-busy=\"true\"");
+    expect(html).toContain("세션 #3");
+    expect(html).toContain("조회 실패");
+    expect(html).not.toContain(">재개<");
+    expect(html).not.toContain("aria-label=\"라이브 코디네이터 세션 요약\"");
+    expect(html).not.toContain("v3-run-summary");
+    expect(html).toContain('aria-label="새 세션"');
+    expect(html).toContain('title="새 세션"');
+    expect(html).toContain('aria-label="이전 세션 더 보기"');
+    expect(html).toContain('class="v3-run-load-more"');
+    expect(html).toContain("3/61회");
+    expect(html).not.toContain(">이전 세션 더 보기<");
+    expect(html).not.toContain("▶ 새 세션");
+  });
+
+  it("waits for the next run page and restores the owning detail scroller", async () => {
+    const scroller = document.createElement("div");
+    scroller.className = "v3-detail-scroll";
+    const button = document.createElement("button");
+    scroller.appendChild(button);
+    scroller.scrollTop = 420;
+    const loadMore = vi.fn(async () => {
+      scroller.scrollTop = 0;
+    });
+    const scheduleFrame = vi.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+
+    await loadMoreRunsPreservingScroll(button, loadMore, scheduleFrame);
+
+    expect(loadMore).toHaveBeenCalledOnce();
+    expect(scheduleFrame).toHaveBeenCalledOnce();
+    expect(scroller.scrollTop).toBe(420);
+  });
+});

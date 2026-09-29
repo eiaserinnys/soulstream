@@ -70,17 +70,17 @@ export async function resolveSessionWorkspace({
   };
 }
 
-export async function resolveSessionTaskWorkspace({
+export async function resolveSessionFolderWorkspace({
   session,
   boardItems,
   currentFolderEntries,
-  loadTaskByFolderId,
+  loadFolderById,
   fetchImplementation = globalThis.fetch,
 }: {
   session: SessionSummary;
   boardItems: readonly CatalogBoardItem[];
   currentFolderEntries: readonly PlannerFolder[];
-  loadTaskByFolderId(folderId: string): Promise<PlannerFolder>;
+  loadFolderById(folderId: string): Promise<PlannerFolder>;
   fetchImplementation?: typeof globalThis.fetch;
 }): Promise<{ workspace: ResolvedSessionWorkspace; task: PlannerFolder | null }> {
   let workspace: ResolvedSessionWorkspace;
@@ -98,7 +98,7 @@ export async function resolveSessionTaskWorkspace({
   const cached = currentFolderEntries.find((task) => task.folderId === folderId);
   if (cached) return { workspace, task: cached };
   try {
-    return { workspace, task: await loadTaskByFolderId(folderId) };
+    return { workspace, task: await loadFolderById(folderId) };
   } catch (error) {
     throw new SessionWorkspaceResolutionError(
       "folder",

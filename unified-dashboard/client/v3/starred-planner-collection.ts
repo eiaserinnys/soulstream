@@ -1,4 +1,4 @@
-import type { FolderStarChange } from "./task-star-store";
+import type { FolderStarChange } from "./folder-star-store";
 import {
   isPlannerFolder,
   type StarredPlannerFolder,
@@ -8,7 +8,7 @@ export function mergeStarredPlannerFolders(
   first: readonly StarredPlannerFolder[],
   second: readonly StarredPlannerFolder[],
 ): StarredPlannerFolder[] {
-  return [...new Map([...first, ...second].map((task) => [taskPageId(task), task])).values()];
+  return [...new Map([...first, ...second].map((task) => [folderPageId(task), task])).values()];
 }
 
 export function isStarredPlannerPageCurrent(
@@ -19,14 +19,14 @@ export function isStarredPlannerPageCurrent(
   return current !== null
     && current.nextCursor === expectedCursor
     && current.items.length === expectedPageIds.length
-    && current.items.every((task, index) => taskPageId(task) === expectedPageIds[index]);
+    && current.items.every((task, index) => folderPageId(task) === expectedPageIds[index]);
 }
 
 export function applyStarredPlannerFolderChanges(
   tasks: readonly StarredPlannerFolder[],
   changes: readonly FolderStarChange[],
 ): StarredPlannerFolder[] {
-  const byId = new Map(tasks.map((task) => [taskPageId(task), task]));
+  const byId = new Map(tasks.map((task) => [folderPageId(task), task]));
   for (const change of changes) {
     if (!change.starred) {
       byId.delete(change.page.id);
@@ -41,6 +41,6 @@ export function applyStarredPlannerFolderChanges(
   return [...byId.values()];
 }
 
-function taskPageId(task: StarredPlannerFolder): string {
+function folderPageId(task: StarredPlannerFolder): string {
   return isPlannerFolder(task) ? task.page.id : task.id;
 }

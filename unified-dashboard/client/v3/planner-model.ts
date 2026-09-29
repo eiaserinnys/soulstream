@@ -54,7 +54,7 @@ export function folderContextCount(blocks: readonly BlockDto[]): number {
   )).length;
 }
 
-export function taskAssignee(snapshot: FolderSnapshot | null): string {
+export function folderAssignee(snapshot: FolderSnapshot | null): string {
   if (!snapshot) return "담당 미확인";
   const item = preferredAssigneeItem(snapshot.items);
   if (!item) return "담당 미지정";

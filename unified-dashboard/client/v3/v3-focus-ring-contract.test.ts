@@ -16,7 +16,7 @@ describe("v3 rounded focus ring contract", () => {
     const planner = css("./v3-planner.css");
     const context = css("./v3-context-succession.css");
     const runHistory = css("./v3-run-history.css");
-    const workspace = css("./v3-task-workspace.css");
+    const workspace = css("./v3-folder-workspace.css");
 
     expect(`${planner}\n${context}\n${workspace}`).not.toMatch(/outline:\s*2px/);
     expect(planner).toMatch(/\.v3-task-card:focus-visible\s*{[^}]*box-shadow:/s);

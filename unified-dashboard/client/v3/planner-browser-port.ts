@@ -1,14 +1,14 @@
 import type {
   BlockDto,
-  InitialTaskContext,
+  InitialFolderContext,
   PageApiClient,
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
-import { serializeInitialTaskContext } from "@seosoyoung/soul-ui/page";
+import { serializeInitialFolderContext } from "@seosoyoung/soul-ui/page";
 
 import { HttpResponseError } from "../lib/http-response-error";
 import { parseSingleMountTitle } from "./planner-model";
-import type { PlannerFolderCreationPort } from "./planner-task-creation";
+import type { PlannerFolderCreationPort } from "./planner-folder-creation";
 
 export class BrowserPlannerMutationPort implements PlannerFolderCreationPort {
   constructor(
@@ -26,9 +26,9 @@ export class BrowserPlannerMutationPort implements PlannerFolderCreationPort {
     title: string;
     description: string;
     folderId: string;
-    initialContext?: InitialTaskContext;
+    initialContext?: InitialFolderContext;
   }) {
-    const initialContext = serializeInitialTaskContext(input.initialContext);
+    const initialContext = serializeInitialFolderContext(input.initialContext);
     const response = await this.fetchImplementation("/api/folders", {
       method: "POST",
       credentials: "same-origin",

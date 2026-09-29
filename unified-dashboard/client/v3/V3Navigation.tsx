@@ -26,17 +26,17 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ProjectDialog, type ProjectDialogTarget } from "./ProjectDialog";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { saveProjectFormContext } from "./project-form-actions";
-import { setFolderStarred } from "./task-star-actions";
+import { setFolderStarred } from "./folder-star-actions";
 import {
   clearFolderStarChange,
   publishFolderStarChange,
   folderStarredState,
   useFolderStarChanges,
-} from "./task-star-store";
+} from "./folder-star-store";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import {
   buildProjectContextMenuActions,
-  buildTaskContextMenuActions,
+  buildFolderContextMenuActions,
 } from "./context-menu-model";
 import { starredFolderPage, type StarredPlannerFolder } from "./planner-data";
 import "./v3-project-star.css";
@@ -307,7 +307,7 @@ export function V3Navigation({
           { label: "폴더 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(starredFolderPage(contextMenu.task).id) },
           { label: "별표 해제", onSelect: () => clearFolderStar(contextMenu.task), separatorBefore: true },
           { label: todayFolderIds.has(starredFolderPage(contextMenu.task).id) ? "오늘에서 제외" : "오늘에 추가", onSelect: () => onToggleFolderToday(contextMenu.task) },
-        ] : contextMenu?.kind === "starred_folder" ? buildTaskContextMenuActions({
+        ] : contextMenu?.kind === "starred_folder" ? buildFolderContextMenuActions({
           starred: folderStarredState(starredFolderPage(contextMenu.task).id, folderStarChanges, true),
           completed: completedFolderIds.has(starredFolderPage(contextMenu.task).id),
           inToday: todayFolderIds.has(starredFolderPage(contextMenu.task).id),

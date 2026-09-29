@@ -15,12 +15,12 @@ import {
   runOptimisticFolderMove,
   type FolderParentTarget,
 } from "./folder-parent-move";
-import type { FolderMoveTarget } from "./task-move-targets";
-import { togglePlannerFolderToday } from "./task-card-actions";
+import type { FolderMoveTarget } from "./folder-move-targets";
+import { togglePlannerFolderToday } from "./folder-card-actions";
 import { setFolderStatus } from "./folder-workspace-api";
-import { clearFolderStarChange, publishFolderStarChange } from "./task-star-store";
-import { renameFolderPageTitle as renameFolderIdentityTitle } from "./task-workspace-api";
-import { runOptimisticTodayMutation } from "./today-task-state";
+import { clearFolderStarChange, publishFolderStarChange } from "./folder-star-store";
+import { renameFolderPageTitle as renameFolderIdentityTitle } from "./folder-workspace-page-api";
+import { runOptimisticTodayMutation } from "./today-folder-state";
 import { errorText } from "./v3-dashboard-utils";
 import { plannerEntryForFolder } from "./folder-workspace-model";
 

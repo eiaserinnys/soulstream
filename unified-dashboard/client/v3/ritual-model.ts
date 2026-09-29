@@ -8,7 +8,7 @@ export interface HistoricalRitualDay {
   tasks: readonly PlannerFolder[];
 }
 
-export interface RitualTaskItem {
+export interface RitualFolderItem {
   kind: "task";
   id: string;
   title: string;
@@ -19,21 +19,21 @@ export interface RitualTaskItem {
   task: PlannerFolder;
 }
 
-export type RitualQueueItem = RitualTaskItem;
+export type RitualQueueItem = RitualFolderItem;
 export type RitualAction = "today" | "remove";
 
 export interface RitualActionPort {
-  mountToday(input: { taskPageId: string; taskTitle: string }): Promise<void>;
+  mountToday(input: { folderPageId: string; folderTitle: string }): Promise<void>;
   removeFromDaily(input: {
     dailyPageId: string;
-    taskPageId: string;
-    taskTitle: string;
+    folderPageId: string;
+    folderTitle: string;
   }): Promise<void>;
 }
 
 export interface BuildMorningRitualQueueInput {
   historicalDays: readonly HistoricalRitualDay[];
-  todayTaskPageIds: ReadonlySet<string>;
+  todayFolderPageIds: ReadonlySet<string>;
 }
 
 export function selectHistoricalDailyDates(
@@ -50,17 +50,17 @@ export function selectHistoricalDailyDates(
 export function buildMorningRitualQueue(
   input: BuildMorningRitualQueueInput,
 ): RitualQueueItem[] {
-  const seenTaskPageIds = new Set<string>();
-  const taskItems: RitualTaskItem[] = [];
+  const seenFolderPageIds = new Set<string>();
+  const folderItems: RitualFolderItem[] = [];
   const orderedDays = [...input.historicalDays]
     .sort((left, right) => right.date.localeCompare(left.date));
 
   for (const day of orderedDays) {
     for (const task of day.tasks) {
-      if (seenTaskPageIds.has(task.page.id)) continue;
-      seenTaskPageIds.add(task.page.id);
-      if (input.todayTaskPageIds.has(task.page.id) || isTerminalTask(task)) continue;
-      taskItems.push({
+      if (seenFolderPageIds.has(task.page.id)) continue;
+      seenFolderPageIds.add(task.page.id);
+      if (input.todayFolderPageIds.has(task.page.id) || isTerminalTask(task)) continue;
+      folderItems.push({
         kind: "task",
         id: `task:${task.page.id}`,
         title: task.page.title,
@@ -73,7 +73,7 @@ export function buildMorningRitualQueue(
     }
   }
 
-  return taskItems;
+  return folderItems;
 }
 
 export async function dispatchRitualAction(
@@ -83,16 +83,16 @@ export async function dispatchRitualAction(
 ): Promise<void> {
   if (action === "today") {
     await port.mountToday({
-      taskPageId: item.task.page.id,
-      taskTitle: item.task.page.title,
+      folderPageId: item.task.page.id,
+      folderTitle: item.task.page.title,
     });
     return;
   }
   if (action === "remove") {
     await port.removeFromDaily({
       dailyPageId: item.sourcePageId,
-      taskPageId: item.task.page.id,
-      taskTitle: item.task.page.title,
+      folderPageId: item.task.page.id,
+      folderTitle: item.task.page.title,
     });
     return;
   }
@@ -100,8 +100,8 @@ export async function dispatchRitualAction(
 }
 
 function isTerminalTask(task: PlannerFolder): boolean {
-  const taskStatus = task.status;
-  return taskStatus === "completed";
+  const folderStatus = task.status;
+  return folderStatus === "completed";
 }
 
 function displayDate(date: string): string {

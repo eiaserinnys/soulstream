@@ -1,7 +1,7 @@
 import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { MobilePlannerFolderOption } from "./mobile-planner-state";
-import { buildRunTree, type RunTreeNode } from "./task-workspace-model";
+import { buildRunTree, type RunTreeNode } from "./folder-workspace-run-model";
 import type { PlannerDateNavItem } from "./V3Navigation";
 
 export function recentDates(today: string): PlannerDateNavItem[] {
@@ -57,7 +57,7 @@ export function reportV3WriteFailure({
   return message;
 }
 
-export function buildMobileTaskOptions(
+export function buildMobileFolderOptions(
   folders: readonly CatalogFolder[],
   sessions: readonly SessionSummary[],
 ): MobilePlannerFolderOption[] {

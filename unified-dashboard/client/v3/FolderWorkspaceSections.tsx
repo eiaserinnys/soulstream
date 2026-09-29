@@ -9,7 +9,7 @@ import {
 import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 import { ChevronsDown, FilePlus2 } from "lucide-react";
 
-import { PlannerTaskCard } from "./PlannerTaskCard";
+import { PlannerFolderCard } from "./PlannerFolderCard";
 import { ProjectContextEditor } from "./ProjectContextEditor";
 import { fetchProjectPageDetails, type ProjectPageSnapshot } from "./project-page-details";
 import { loadConfirmedResult } from "./planner-query-state";
@@ -176,7 +176,7 @@ export function FolderWorkspaceSections({
         <div className="v3-section-head"><h2>하위 폴더</h2><span>{children.length}개</span></div>
         <div className="v3-task-list">
           {childTasks.map(({ folder: child, task }) => <div key={child.id} data-testid={`v3-child-folder-${child.id}`}>
-            <PlannerTaskCard
+            <PlannerFolderCard
               task={task}
               folder={child}
               sessions={sessions}

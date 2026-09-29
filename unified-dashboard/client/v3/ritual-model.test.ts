@@ -45,7 +45,7 @@ describe("buildMorningRitualQueue", () => {
           ],
         },
       ],
-      todayTaskPageIds: new Set(["task-today"]),
+      todayFolderPageIds: new Set(["task-today"]),
     });
 
     expect(queue.map((item) => item.id)).toEqual([
@@ -59,7 +59,7 @@ describe("buildMorningRitualQueue", () => {
   it("never includes needs-review sessions in the carryover ritual", () => {
     const queue = buildMorningRitualQueue({
       historicalDays: [],
-      todayTaskPageIds: new Set(),
+      todayFolderPageIds: new Set(),
     });
 
     expect(queue).toEqual([]);
@@ -71,20 +71,20 @@ describe("dispatchRitualAction", () => {
     const port = mockPort();
     const item = buildMorningRitualQueue({
       historicalDays: [{ date: "2026-07-13", pageId: "daily-yesterday", tasks: [task("task-1", "업무", "open")] }],
-      todayTaskPageIds: new Set(),
+      todayFolderPageIds: new Set(),
     })[0];
 
     await dispatchRitualAction(item, "today", port);
     expect(port.mountToday).toHaveBeenCalledWith({
-      taskPageId: "task-1",
-      taskTitle: "업무",
+      folderPageId: "task-1",
+      folderTitle: "업무",
     });
 
     await dispatchRitualAction(item, "remove", port);
     expect(port.removeFromDaily).toHaveBeenCalledWith({
       dailyPageId: "daily-yesterday",
-      taskPageId: "task-1",
-      taskTitle: "업무",
+      folderPageId: "task-1",
+      folderTitle: "업무",
     });
     expect(port.mountToday).toHaveBeenCalledTimes(1);
   });

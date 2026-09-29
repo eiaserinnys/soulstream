@@ -8,8 +8,8 @@ import {
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { loadPlannerFolderById, type PlannerFolder } from "./planner-data";
-import type { TaskSectionFocusRequest } from "./TaskSectionNavigation";
-import { activateRunSession } from "./task-workspace-model";
+import type { FolderSectionFocusRequest } from "./FolderSectionNavigation";
+import { activateRunSession } from "./folder-workspace-run-model";
 import { errorText } from "./v3-dashboard-utils";
 import { sessionPanelGroups } from "./v3-session-panel-model";
 import {
@@ -20,7 +20,7 @@ import {
 import { orchestratorSessionProvider } from "../providers";
 import {
   resolveSessionForOpen,
-  resolveSessionTaskWorkspace,
+  resolveSessionFolderWorkspace,
   SessionWorkspaceResolutionError,
 } from "./v3-session-workspace";
 
@@ -47,8 +47,8 @@ export function useV3SessionPanelController({
   const focusRequestSequence = useRef(0);
   const openRequestSequence = useRef(0);
   const [panelWidth, setPanelWidth] = useState(() => readV3SessionPanelWidth());
-  const [focusRequest, setFocusRequest] = useState<TaskSectionFocusRequest | null>(null);
-  const [workspaceFolderError, setWorkspaceTaskError] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState<FolderSectionFocusRequest | null>(null);
+  const [workspaceFolderError, setWorkspaceFolderError] = useState<string | null>(null);
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
@@ -80,16 +80,16 @@ export function useV3SessionPanelController({
     requestSequence: number,
   ): Promise<boolean> => {
     try {
-      const resolved = await resolveSessionTaskWorkspace({
+      const resolved = await resolveSessionFolderWorkspace({
         session,
         boardItems: catalog?.boardItems ?? [],
         currentFolderEntries,
-        loadTaskByFolderId: (folderId) => loadPlannerFolderById(api, folderId),
+        loadFolderById: (folderId) => loadPlannerFolderById(api, folderId),
       });
       if (requestSequence !== openRequestSequence.current) return false;
 
       activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
-      setWorkspaceTaskError(null);
+      setWorkspaceFolderError(null);
       if (resolved.task) {
         await onSelectFolder(resolved.task);
         focusRequestSequence.current += 1;
@@ -112,7 +112,7 @@ export function useV3SessionPanelController({
       const detail = error instanceof SessionWorkspaceResolutionError && error.cause
         ? errorText(error.cause)
         : errorText(error);
-      setWorkspaceTaskError(message);
+      setWorkspaceFolderError(message);
       notify(`세션의 업무 열기 실패 · ${message} · ${detail}`);
       return false;
     }

@@ -34,9 +34,9 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
 
   await page.getByTestId("v3-task-task-alpha").click();
   await page.getByRole("button", { name: "업무 보드 열기" }).click();
-  const resources = page.getByTestId("v3-task-board-resources");
-  const canvas = page.getByTestId("v3-task-board-canvas");
-  const chat = page.getByTestId("v3-task-board-chat");
+  const resources = page.getByTestId("v3-folder-board-resources");
+  const canvas = page.getByTestId("v3-folder-board-canvas");
+  const chat = page.getByTestId("v3-folder-board-chat");
   await expect(resources).toBeVisible();
   await expect(canvas).toBeVisible();
   await expect(chat).toBeVisible();
@@ -54,7 +54,7 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
     }))
   ));
   expect(leftEdgeStack[0], JSON.stringify(leftEdgeStack)).toMatchObject({
-    testId: "v3-task-board-resources",
+    testId: "v3-folder-board-resources",
   });
 
   const wideRegions = await regionBounds(resources, canvas, chat);
@@ -78,14 +78,14 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   await canvas.getByTestId("board-markdown-tile").click();
   const documentTab = resources.getByRole("tab", { name: "PR-O 결정 로그" });
   await expect(documentTab).toHaveAttribute("aria-selected", "true");
-  const documentReader = resources.locator(".v3-task-board-document-reader");
+  const documentReader = resources.locator(".v3-folder-board-document-reader");
   await expect(documentReader).toContainText("마크다운 본문은 행을 연 뒤에만 불러옵니다.");
   await expect(fluxTab).toHaveCount(1);
-  await expect(page.getByTestId("v3-task-board-document-overlay")).toHaveCount(0);
+  await expect(page.getByTestId("v3-folder-board-document-overlay")).toHaveCount(0);
   await expect(chat).toContainText("시각 QA 순회");
 
   await resources.getByRole("button", { name: "PR-O 결정 로그 편집기 열기" }).click();
-  const overlay = page.getByTestId("v3-task-board-document-overlay");
+  const overlay = page.getByTestId("v3-folder-board-document-overlay");
   await expect(overlay).toBeVisible();
   await expect(overlay.getByTestId("markdown-read-body")).toBeVisible();
   const titleInput = overlay.getByRole("textbox", { name: "Document title" });
@@ -107,7 +107,7 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   expect(wideOverlay.x + wideOverlay.width).toBeLessThanOrEqual(wideRegions.chat.x);
   await captureEvidence(page, "wide");
 
-  await overlay.getByTestId("v3-task-board-document-overlay-close").click();
+  await overlay.getByTestId("v3-folder-board-document-overlay-close").click();
   await expect(overlay).toBeHidden();
   await resources.getByRole("button", { name: "PR-O 결정 로그 · r3 편집기 열기" }).click();
   await expect(overlay).toBeVisible();
@@ -126,7 +126,7 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   expect(narrowOverlay.x + narrowOverlay.width).toBeLessThanOrEqual(narrowRegions.chat.x);
   await captureEvidence(page, "narrow");
 
-  await overlay.getByTestId("v3-task-board-document-overlay-close").click();
+  await overlay.getByTestId("v3-folder-board-document-overlay-close").click();
   await expect(overlay).toBeHidden();
   await expect(canvas).toBeVisible();
 });

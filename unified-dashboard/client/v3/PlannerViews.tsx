@@ -2,12 +2,12 @@ import { DashboardIconCap, type CatalogFolder, type SessionSummary } from "@seos
 import { Plus, Sun } from "lucide-react";
 
 import { DailyMemo } from "./DailyMemo";
-import { PlannerTaskCard } from "./PlannerTaskCard";
+import { PlannerFolderCard } from "./PlannerFolderCard";
 import type {
   DailyPlannerData,
   PlannerFolder,
 } from "./planner-data";
-import { visibleDailyTasks } from "./today-task-state";
+import { visibleDailyTasks } from "./today-folder-state";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import type { SessionNodeConnectivity } from "./session-node-connectivity";
 
@@ -95,7 +95,7 @@ export function DailyPlannerView({
           </div>
           <div className="v3-task-list">
             {group.tasks.map((task) => (
-              <PlannerTaskCard
+              <PlannerFolderCard
                 key={task.page.id}
                 task={task}
                 sessions={sessions}

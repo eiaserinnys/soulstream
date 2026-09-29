@@ -33,7 +33,7 @@ import type {
   ProjectPageSnapshot,
   ProjectSessionDefault,
 } from "./project-page-details";
-import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
+import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 
 type EditorState =
   | { kind: "atom"; blockId: string | null; instance: "atom" | "atom-nl"; nodeId: string; nodeTitle: string; depth: number; titlesOnly: boolean; limit: number | null; mode?: "full" | "index" | "titles" }
@@ -192,7 +192,7 @@ export function ProjectContextEditor({
 
       <div className="v3-project-guidance-list">
         {snapshot.guidance.map((guidance) => (
-          <TaskDescriptionPanel
+          <FolderDescriptionPanel
             key={guidance.blockId}
             markdown={guidance.text}
             ariaLabel="프로젝트 guidance"
@@ -203,7 +203,7 @@ export function ProjectContextEditor({
           />
         ))}
         {addingGuidance ? (
-          <TaskDescriptionPanel
+          <FolderDescriptionPanel
             markdown=""
             ariaLabel="새 프로젝트 guidance"
             emptyText="프로젝트 guidance를 작성하세요."

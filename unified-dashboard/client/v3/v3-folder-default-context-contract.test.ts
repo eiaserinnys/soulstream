@@ -1,0 +1,49 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { describe, expect, it } from "vitest";
+
+const read = (name: string) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
+
+describe("PR-CD task default and context contract", () => {
+  it("keeps one context editor in information and removes the duplicate session label", () => {
+    const detail = read("./FolderDetailPane.tsx");
+    const sections = read("./FolderWorkspaceSections.tsx");
+    const editor = read("./ProjectContextEditor.tsx");
+    const information = detail.indexOf('data-task-section="information"');
+    const checklist = detail.indexOf('data-task-section="checklist"');
+
+    expect(sections).toContain("<ProjectContextEditor");
+    expect(editor).toContain("ProjectSessionDefaultsFields");
+    expect(detail).not.toContain("effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ?");
+    expect(detail).not.toContain("기본값:");
+    expect(information).toBeGreaterThan(-1);
+    expect(detail.indexOf("{folderSections}")).toBeGreaterThan(information);
+    expect(detail.indexOf("{folderSections}")).toBeLessThan(checklist);
+  });
+
+  it("uses concise preview copy and right-aligns inheritance sources", () => {
+    const form = read("./NewFolderForm.tsx");
+    const css = read("./v3-planner-surfaces.css");
+
+    expect(form).toContain("컨텍스트 · {projectName}");
+    expect(form).toContain("<strong>atom</strong>");
+    expect(form).toContain("<strong>기본 담당</strong>");
+    expect(form).not.toContain("컨텍스트 미리보기");
+    expect(form).not.toContain("지식 없음");
+    expect(form).not.toContain("실행 기본값");
+    expect(css).toMatch(/\.v3-project-guidance\s*>\s*small[^}]*text-align:\s*right/s);
+    expect(css).toMatch(/\.v3-project-context-sourced\s*>\s*small[^}]*margin-left:\s*auto/s);
+  });
+
+  it("projects returned task blocks without reloading the daily or project planner", () => {
+    const mutations = read("./use-v3-dashboard-mutations.ts");
+    const applyFolderBlocks = mutations.slice(
+      mutations.indexOf("const applyFolderBlocks"),
+      mutations.indexOf("const applyRitualAction"),
+    );
+
+    expect(applyFolderBlocks).toContain("patchPlannerFolder");
+    expect(applyFolderBlocks).not.toContain("refreshFolder");
+  });
+});

@@ -14,17 +14,17 @@ export type {
   BrowserBacklinkPageDto,
   BrowserPageSearchDto,
   BrowserPageSearchItemDto,
-  InitialTaskContext,
-  InitialTaskAtomReference,
-  InitialTaskContextWire,
+  InitialFolderContext,
+  InitialFolderAtomReference,
+  InitialFolderContextWire,
   PageDto,
   PageLinkKind,
   PageListDto,
 } from "@soulstream/page-model";
 
 export {
-  parseInitialTaskContextWire,
-  serializeInitialTaskContext,
+  parseInitialFolderContextWire,
+  serializeInitialFolderContext,
 } from "@soulstream/page-model";
 
 export class PageApiError extends Error {

@@ -19,17 +19,17 @@ describe("v3 icon action cap contract", () => {
   });
 
   it.each([
-    ["../../../packages/soul-ui/src/task/TaskCard.tsx", ["업무 보드 열기"]],
-    ["../../../packages/soul-ui/src/task/TaskCompletionAction.tsx", ["actionLabel"]],
-    ["./PlannerTaskCard.tsx", ["별표"]],
-    ["./TaskDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "업무 보드 열기"]],
-    ["./TaskTodayToggle.tsx", ["todayPlannerMenuLabel"]],
-    ["./TaskDescriptionPanel.tsx", ["편집"]],
-    ["./TaskInlineBoard.tsx", ["마크다운 추가", "펼치기", "이름 수정"]],
-    ["./TaskRunHistory.tsx", ["새 세션", "이전 세션 더 보기"]],
-    ["./TaskBoardPane.tsx", ["업무 상세로 돌아가기", "업무 보드 닫기"]],
-    ["./TaskWorkspace.tsx", ["업무 창 닫기", "채팅 닫기"]],
-    ["./TaskBoardWorkspace.tsx", ["문서 편집기 높이 축소"]],
+    ["../../../packages/soul-ui/src/checklist/FolderChecklistCard.tsx", ["업무 보드 열기"]],
+    ["../../../packages/soul-ui/src/checklist/FolderCompletionAction.tsx", ["actionLabel"]],
+    ["./PlannerFolderCard.tsx", ["별표"]],
+    ["./FolderDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "업무 보드 열기"]],
+    ["./FolderTodayToggle.tsx", ["todayPlannerMenuLabel"]],
+    ["./FolderDescriptionPanel.tsx", ["편집"]],
+    ["./FolderInlineBoard.tsx", ["마크다운 추가", "펼치기", "이름 수정"]],
+    ["./FolderSessionHistory.tsx", ["새 세션", "이전 세션 더 보기"]],
+    ["./FolderBoardPane.tsx", ["업무 상세로 돌아가기", "업무 보드 닫기"]],
+    ["./FolderWorkspace.tsx", ["업무 창 닫기", "채팅 닫기"]],
+    ["./FolderBoardWorkspace.tsx", ["문서 편집기 높이 축소"]],
     ["./PlannerViews.tsx", ["아침 정리", "새 업무"]],
     ["./FolderWorkspaceSections.tsx", ["새 문서", "이전 문서 더 보기"]],
     ["./V3Navigation.tsx", ["별표 업무 더 보기", "새 프로젝트"]],
@@ -48,13 +48,13 @@ describe("v3 icon action cap contract", () => {
   });
 
   it("keeps star and today controls as pressed-state toggles", () => {
-    expect(read("./PlannerTaskCard.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{folderStar\.starred\}/);
-    expect(read("./TaskTodayToggle.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{inToday\}/);
+    expect(read("./PlannerFolderCard.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{folderStar\.starred\}/);
+    expect(read("./FolderTodayToggle.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{inToday\}/);
   });
 
   it("leaves the planner return action as the only visible close affordance in task detail", () => {
-    const detail = read("./TaskDetailPane.tsx");
-    const workspace = read("./TaskWorkspace.tsx");
+    const detail = read("./FolderDetailPane.tsx");
+    const workspace = read("./FolderWorkspace.tsx");
     const layout = read("./V3DashboardLayout.tsx");
 
     expect(detail).toContain('parentFolder ? "상위 폴더로 이동" : "오늘 플래너로 돌아가기"');

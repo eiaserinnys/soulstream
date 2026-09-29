@@ -16,8 +16,8 @@ export {
   StarredFolderSortableContext,
   reorderStarredFolderIds,
   useStarredFolderDragSurface,
-} from "./starred-task-dnd";
-export type { StarredFolderDragData } from "./starred-task-dnd";
+} from "./starred-folder-dnd";
+export type { StarredFolderDragData } from "./starred-folder-dnd";
 
 // === SSE Subscribe Utility ===
 export { createSSESubscribe } from "./sse-subscribe";

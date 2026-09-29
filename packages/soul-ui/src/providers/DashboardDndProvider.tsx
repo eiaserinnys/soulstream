@@ -31,7 +31,7 @@ import {
   type FolderDragData,
   type FolderRootDropData,
 } from "./folder-dnd";
-import { reorderStarredFolderIds, type StarredFolderDragData } from "./starred-task-dnd";
+import { reorderStarredFolderIds, type StarredFolderDragData } from "./starred-folder-dnd";
 
 export interface DashboardDndProviderProps {
   /** 세션을 다른 폴더로 이동하는 콜백 */

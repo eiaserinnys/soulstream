@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { removeRitualTaskFromDaily } from "./ritual-browser-port";
+import { removeRitualFolderFromDaily } from "./ritual-browser-port";
 
-describe("removeRitualTaskFromDaily", () => {
+describe("removeRitualFolderFromDaily", () => {
   it("deletes only the matching daily mount through the page CAS contract", async () => {
     const applyOperations = vi.fn(async () => ({ temp_id_mapping: {} }));
     const api = {
@@ -32,7 +32,7 @@ describe("removeRitualTaskFromDaily", () => {
       applyOperations,
     };
 
-    await removeRitualTaskFromDaily(
+    await removeRitualFolderFromDaily(
       api as never,
       "daily-yesterday",
       "task-page",
@@ -61,7 +61,7 @@ describe("removeRitualTaskFromDaily", () => {
       applyOperations,
     };
 
-    await removeRitualTaskFromDaily(
+    await removeRitualFolderFromDaily(
       api as never,
       "daily-yesterday",
       "task-page",

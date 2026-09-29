@@ -7,11 +7,11 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const outputRoot = path.resolve(
-  process.env.PR_BD_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-task-board-declutter"),
+  process.env.PR_BD_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-folder-board-declutter"),
 );
 
 const result = await runPlaywrightLifecycle({
-  lockName: "pr-bd-v3-task-board-declutter",
+  lockName: "pr-bd-v3-folder-board-declutter",
   timeoutMs: 180_000,
 }, async ({ browser }) => ({
   dark: await verifyTheme(browser, "dark"),
@@ -49,17 +49,17 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: "업무 보드 열기" }).click();
 
-    const board = page.getByTestId("v3-task-board-pane");
-    const resources = page.getByTestId("v3-task-board-resources");
-    const canvas = page.getByTestId("v3-task-board-canvas");
-    const chat = page.getByTestId("v3-task-board-chat");
+    const board = page.getByTestId("v3-folder-board-pane");
+    const resources = page.getByTestId("v3-folder-board-resources");
+    const canvas = page.getByTestId("v3-folder-board-canvas");
+    const chat = page.getByTestId("v3-folder-board-chat");
     const tiles = page.locator('[data-board-tile="true"]');
     await board.waitFor({ state: "visible" });
     await resources.waitFor({ state: "visible" });
     await canvas.waitFor({ state: "visible" });
     await chat.waitFor({ state: "visible" });
     await capture(page, theme, "00-board-open");
-    await page.getByTestId("v3-task-board-loading").waitFor({ state: "hidden" });
+    await page.getByTestId("v3-folder-board-loading").waitFor({ state: "hidden" });
     const boardItemCount = Number(await board.getAttribute("data-board-item-count") ?? "0");
     assert(boardItemCount >= 5, `혼합 보드 응답이 ${boardItemCount}개뿐입니다: ${await board.innerText()}`);
     await page.waitForFunction(() => document.querySelectorAll('[data-board-tile="true"]').length >= 3);
@@ -102,7 +102,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     await resources.getByRole("tab", { name: "PR-O 결정 로그" }).click();
     await resources.getByRole("button", { name: "PR-O 결정 로그 편집기 열기" }).click();
-    const overlay = page.getByTestId("v3-task-board-document-overlay");
+    const overlay = page.getByTestId("v3-folder-board-document-overlay");
     await overlay.waitFor({ state: "visible" });
     const wide = await measureLayout(page);
     assert(wide.overlay !== null, "넓은 화면 문서 오버레이가 없습니다.");
@@ -158,12 +158,12 @@ async function measureLayout(page: Page) {
         const bounds = card.getBoundingClientRect();
         return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
       });
-    const overlayElement = document.querySelector<HTMLElement>('[data-testid="v3-task-board-document-overlay"]');
+    const overlayElement = document.querySelector<HTMLElement>('[data-testid="v3-folder-board-document-overlay"]');
     const overlayBounds = overlayElement?.getBoundingClientRect();
     return {
-      resources: rect('[data-testid="v3-task-board-resources"]'),
-      canvas: rect('[data-testid="v3-task-board-canvas"]'),
-      chat: rect('[data-testid="v3-task-board-chat"]'),
+      resources: rect('[data-testid="v3-folder-board-resources"]'),
+      canvas: rect('[data-testid="v3-folder-board-canvas"]'),
+      chat: rect('[data-testid="v3-folder-board-chat"]'),
       overlay: overlayBounds ? {
         left: overlayBounds.left,
         right: overlayBounds.right,

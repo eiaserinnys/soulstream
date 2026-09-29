@@ -25,7 +25,7 @@ export interface BoardWorkspaceViewProps {
   boardContainerOverride?: BoardContainerRef | null;
   selectedFolderIdOverride?: string | null;
   sessions?: SessionSummary[];
-  taskMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
+  folderMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;

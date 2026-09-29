@@ -7,12 +7,12 @@ const SOUL_UI_COMPONENTS_DIRECTORY = new URL("../../../packages/soul-ui/src/comp
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 const expectedV3DialogConsumers = [
-  "NewTaskForm.tsx",
+  "NewFolderForm.tsx",
   "ProjectDialog.tsx",
   "RitualModal.tsx",
   "SessionSuccessionModal.tsx",
-  "TaskMoveDialog.tsx",
-  "TaskProjectMoveDialog.tsx",
+  "FolderMoveDialog.tsx",
+  "FolderParentMoveDialog.tsx",
   "V3ContextMenu.tsx",
   "V3Navigation.tsx",
 ] as const;

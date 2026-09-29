@@ -4,12 +4,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const USER_COPY_FILES = [
-  "./PlannerTaskCard.tsx",
+  "./PlannerFolderCard.tsx",
   "./RichSessionRow.tsx",
   "./SessionSuccessionModal.tsx",
-  "./TaskContextPicker.tsx",
-  "./TaskRunHistory.tsx",
-  "./TaskWorkspace.tsx",
+  "./FolderContextPicker.tsx",
+  "./FolderSessionHistory.tsx",
+  "./FolderWorkspace.tsx",
   "./use-v3-planner-actions.ts",
   "./use-v3-planner-reads.ts",
 ];
@@ -25,7 +25,7 @@ describe("v3 session language", () => {
 
   it("keeps shared context and per-session context on their canonical surfaces", () => {
     const picker = readFileSync(
-      fileURLToPath(new URL("./TaskContextPicker.tsx", import.meta.url)),
+      fileURLToPath(new URL("./FolderContextPicker.tsx", import.meta.url)),
       "utf8",
     );
     const succession = readFileSync(

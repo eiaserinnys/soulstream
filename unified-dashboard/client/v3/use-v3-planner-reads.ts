@@ -9,7 +9,7 @@ import {
   failPlannerLoad,
   loadConfirmedResult,
 } from "./planner-query-state";
-import type { FolderStarChange } from "./task-star-store";
+import type { FolderStarChange } from "./folder-star-store";
 import {
   loadDailyPlanner,
   loadFolderDocumentPage,
@@ -33,14 +33,14 @@ import {
   isStarredFolderRefreshCurrent,
   isStarredFolderRequestCurrent,
   isStarredFolderSnapshotCurrent,
-} from "./starred-task-order";
+} from "./starred-folder-order";
 import {
   movePlannerSession,
   removePlannerSessions,
   replacePlannerFolder,
 } from "./planner-mutation-projection";
 import { usePlannerProjectMoveProjection } from "./use-planner-project-move-projection";
-import { useStarredFolderReorder } from "./use-starred-task-reorder";
+import { useStarredFolderReorder } from "./use-starred-folder-reorder";
 import { useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 
 

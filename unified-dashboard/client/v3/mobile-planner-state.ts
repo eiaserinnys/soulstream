@@ -49,8 +49,8 @@ export function selectMobilePlannerTab(
     };
   }
 
-  const taskChanged = selectedFolderEntry.folderId !== state.selectedFolderId;
-  const selectedRunId = taskChanged || !selectedFolderEntry.runIds.includes(state.selectedRunId ?? "")
+  const folderChanged = selectedFolderEntry.folderId !== state.selectedFolderId;
+  const selectedRunId = folderChanged || !selectedFolderEntry.runIds.includes(state.selectedRunId ?? "")
     ? null
     : state.selectedRunId;
   return {

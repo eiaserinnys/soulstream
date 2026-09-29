@@ -1,15 +1,15 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { useDashboardStore, type CatalogState, type SessionReviewAcknowledgeResult } from "@seosoyoung/soul-ui";
-import type { InitialTaskContext, PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import type { InitialFolderContext, PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerLoadState } from "./PlannerViews";
 import type { BrowserPlannerMutationPort } from "./planner-browser-port";
 import type { DailyPlannerData, PlannerFolder } from "./planner-data";
 import { folderContextCount } from "./planner-model";
 import { resolveProjectPage } from "./project-page-actions";
-import { createPlannerFolder, plannerFolderCreationErrorLabel } from "./planner-task-creation";
+import { createPlannerFolder, plannerFolderCreationErrorLabel } from "./planner-folder-creation";
 import type { RitualAction, RitualQueueItem } from "./ritual-model";
-import { saveFolderDescription } from "./task-workspace-api";
+import { saveFolderDescription } from "./folder-workspace-page-api";
 
 export function useV3DashboardMutations({
   api,
@@ -68,7 +68,7 @@ export function useV3DashboardMutations({
     title: string,
     folderId: string,
     description: string,
-    initialContext?: InitialTaskContext,
+    initialContext?: InitialFolderContext,
   ): Promise<string | null> => {
     const folder = catalog?.folders.find((item) => item.id === folderId);
     if (!folder) {
@@ -154,7 +154,7 @@ export function useV3DashboardMutations({
     }
   }, [setAcknowledgedReviewIds]);
 
-  const applyTaskBlocks = useCallback((blocks: PlannerFolder["blocks"]) => {
+  const applyFolderBlocks = useCallback((blocks: PlannerFolder["blocks"]) => {
     if (!selectedPageId) return;
     patchPlannerFolder(selectedPageId, (current) => ({
       ...current,
@@ -173,7 +173,7 @@ export function useV3DashboardMutations({
     createDocument,
     saveDescription,
     acknowledgeReview,
-    applyTaskBlocks,
+    applyFolderBlocks,
     applyRitualAction,
   };
 }

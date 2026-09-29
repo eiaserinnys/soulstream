@@ -21,9 +21,9 @@ describe("PR-CB visual contracts", () => {
   });
 
   it("shares the panel title resolver in chat headers without session breadcrumbs", () => {
-    const workspace = read("./TaskWorkspace.tsx");
-    const boardWorkspace = read("./TaskBoardWorkspace.tsx");
-    const css = read("./v3-task-workspace.css");
+    const workspace = read("./FolderWorkspace.tsx");
+    const boardWorkspace = read("./FolderBoardWorkspace.tsx");
+    const css = read("./v3-folder-workspace.css");
 
     expect(workspace).toContain('import { sessionPanelTitle } from "./v3-session-panel-model";');
     expect(workspace).not.toContain("function runLabel(");

@@ -39,7 +39,7 @@ export async function loadMorningRitualData(input: {
         pageId: planner.daily.page.id,
         tasks: planner.folders,
       })),
-      todayTaskPageIds: new Set(todayPlanner.folders.map((task) => task.page.id)),
+      todayFolderPageIds: new Set(todayPlanner.folders.map((task) => task.page.id)),
     }),
   };
 }

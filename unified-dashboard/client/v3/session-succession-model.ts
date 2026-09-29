@@ -1,8 +1,8 @@
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
 import { singleLinePreview } from "./session-preview";
-import type { RunTreeNode } from "./task-workspace-model";
-import type { PageSessionDefaults } from "./task-workspace-api";
+import type { RunTreeNode } from "./folder-workspace-run-model";
+import type { PageSessionDefaults } from "./folder-workspace-page-api";
 
 const SUCCESSION_SESSION_LABEL_LENGTH = 80;
 
@@ -64,7 +64,7 @@ export function resolveRunAssignmentDefaults({
   return { agentId, nodeId, modelPreset, reasoningEffort, source };
 }
 
-export function latestTaskRun(
+export function latestFolderRun(
   sessionIds: readonly string[],
   sessions: readonly SessionSummary[],
 ): SessionSummary | null {

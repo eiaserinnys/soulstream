@@ -9,7 +9,7 @@ export function useV3MutationProjection({
   patchLoadedTask,
   removeLoadedSessions,
   moveLoadedSession,
-  moveLoadedTaskProject,
+  moveLoadedFolderParent,
   removeRunHistorySessions,
   moveRunHistorySession,
   setSelectedFolderSnapshot,
@@ -17,7 +17,7 @@ export function useV3MutationProjection({
   patchLoadedTask(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
   removeLoadedSessions(sessionIds: readonly string[]): void;
   moveLoadedSession(sessionId: string, targetFolderId: string): void;
-  moveLoadedTaskProject(task: PlannerFolder, targetFolderId: string | null): void;
+  moveLoadedFolderParent(task: PlannerFolder, targetFolderId: string | null): void;
   removeRunHistorySessions(sessionIds: readonly string[]): void;
   moveRunHistorySession(sessionId: string, targetFolderId: string): void;
   setSelectedFolderSnapshot: Dispatch<SetStateAction<PlannerFolder | null>>;
@@ -47,11 +47,11 @@ export function useV3MutationProjection({
   }, [moveLoadedSession, moveRunHistorySession, setSelectedFolderSnapshot]);
 
   const moveFolderParentInPlanner = useCallback((task: PlannerFolder, targetFolderId: string | null) => {
-    moveLoadedTaskProject(task, targetFolderId);
+    moveLoadedFolderParent(task, targetFolderId);
     setSelectedFolderSnapshot((current) => current?.page.id === task.page.id
       ? retainEqualValue(current, { ...current, parentFolderId: targetFolderId })
       : current);
-  }, [moveLoadedTaskProject, setSelectedFolderSnapshot]);
+  }, [moveLoadedFolderParent, setSelectedFolderSnapshot]);
 
   return { patchPlannerFolder, removeSessionsFromPlanner, moveSessionInPlanner, moveFolderParentInPlanner };
 }

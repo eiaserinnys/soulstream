@@ -6,7 +6,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 describe("v3 aesthetic policy", () => {
   it("uses the shared liquid glass card for session and inline board cards", () => {
     const sessions = read("./RichSessionRow.tsx");
-    const board = read("./TaskInlineBoard.tsx");
+    const board = read("./FolderInlineBoard.tsx");
 
     expect(sessions).toContain("LiquidGlassCard");
     expect(sessions).toContain("webglSurface");
@@ -16,8 +16,8 @@ describe("v3 aesthetic policy", () => {
   });
 
   it("keeps information unified and separates task sections with spacing", () => {
-    const detail = read("./TaskDetailPane.tsx");
-    const css = read("./v3-task-workspace.css");
+    const detail = read("./FolderDetailPane.tsx");
+    const css = read("./v3-folder-workspace.css");
     const sectionRule = css.match(/\.v3-detail-section\s*\{[^}]*\}/s)?.[0] ?? "";
 
     expect(detail).toContain("<h3>정보</h3>");

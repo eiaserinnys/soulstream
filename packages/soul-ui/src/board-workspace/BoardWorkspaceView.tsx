@@ -220,7 +220,7 @@ export function BoardWorkspaceView({
   boardContainerOverride,
   selectedFolderIdOverride,
   sessions = EMPTY_SESSIONS,
-  taskMoveTargets: providedFolderMoveTargets,
+  folderMoveTargets: providedFolderMoveTargets,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -409,7 +409,7 @@ export function BoardWorkspaceView({
       .map((folder) => ({ id: folder.id, title: folder.name }))
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [effectiveCatalog, resolvedBoardFolderId]);
-  const taskMoveTargets = useMemo(
+  const folderMoveTargets = useMemo(
     () => providedFolderMoveTargets ? [...providedFolderMoveTargets] : catalogFolderMoveTargets,
     [catalogFolderMoveTargets, providedFolderMoveTargets],
   );
@@ -1001,7 +1001,7 @@ export function BoardWorkspaceView({
             folders={folders}
             boardContainer={boardContainer}
             resolvedBoardFolderId={resolvedBoardFolderId}
-            taskMoveTargets={taskMoveTargets}
+            folderMoveTargets={folderMoveTargets}
             activeBoardDocumentId={activeBoardDocumentId}
             boardYjsRuntime={boardSync.runtime}
             canCreateBoardItems={canCreateBoardItems}

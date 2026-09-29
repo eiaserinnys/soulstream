@@ -13,16 +13,16 @@ describe("agent/node/model assignment mount inventory", () => {
       .sort();
 
     expect(mounts).toEqual([
-      "NewTaskForm.tsx",
+      "FolderDefaultAssignment.tsx",
+      "NewFolderForm.tsx",
       "ProjectContextFormFields.tsx",
       "SessionSuccessionModal.tsx",
-      "TaskDefaultAssignment.tsx",
     ]);
   });
 
   it("applies the compact row only to the two requested task surfaces", () => {
-    expect(read("NewTaskForm.tsx")).toContain('layout="compact-row"');
-    expect(read("TaskDefaultAssignment.tsx")).toContain('layout="compact-row"');
+    expect(read("NewFolderForm.tsx")).toContain('layout="compact-row"');
+    expect(read("FolderDefaultAssignment.tsx")).toContain('layout="compact-row"');
     expect(read("SessionSuccessionModal.tsx")).not.toContain('layout="compact-row"');
     expect(read("ProjectContextFormFields.tsx")).not.toContain('layout="compact-row"');
   });

@@ -3,20 +3,20 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildDocumentContextMenuActions,
   buildProjectContextMenuActions,
-  buildTaskContextMenuActions,
-  buildTaskSessionExtraActions,
+  buildFolderContextMenuActions,
+  buildFolderSessionExtraActions,
 } from "./context-menu-model";
 
 describe("v3 context menu model", () => {
   it("keeps the task action set identical across planner and starred surfaces", () => {
     const actions = taskActions();
 
-    const planner = buildTaskContextMenuActions({
+    const planner = buildFolderContextMenuActions({
       starred: true,
       completed: false,
       inToday: true,
     }, actions);
-    const starredNavigation = buildTaskContextMenuActions({
+    const starredNavigation = buildFolderContextMenuActions({
       starred: true,
       completed: false,
       inToday: true,
@@ -35,7 +35,7 @@ describe("v3 context menu model", () => {
   });
 
   it("derives task state labels and completion availability in one place", () => {
-    const menu = buildTaskContextMenuActions({
+    const menu = buildFolderContextMenuActions({
       starred: false,
       completed: true,
       inToday: false,
@@ -109,7 +109,7 @@ describe("v3 context menu model", () => {
       "폴더 보관",
     ]);
 
-    expect(buildTaskSessionExtraActions({
+    expect(buildFolderSessionExtraActions({
       continueFromSession: vi.fn(),
       moveToTask: vi.fn(),
     }).map((action) => action.label)).toEqual([

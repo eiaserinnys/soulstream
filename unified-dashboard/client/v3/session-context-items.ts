@@ -14,23 +14,23 @@ interface SessionContextItem {
 
 export function buildSessionContextSelection({
   inheritCard,
-  taskPageId,
+  folderPageId,
   documentPageIds,
   atomNode,
   guidance,
 }: {
   inheritCard: boolean;
-  taskPageId: string;
+  folderPageId: string;
   documentPageIds: readonly string[];
   atomNode: SessionAtomNode | null;
   guidance: string;
 }): { needsPageAnchor: boolean; contextItems: SessionContextItem[] } {
-  const normalizedTaskPageId = taskPageId.trim();
+  const normalizedFolderPageId = folderPageId.trim();
   const pageIds = uniquePageIds([
-    ...(inheritCard ? [normalizedTaskPageId] : []),
+    ...(inheritCard ? [normalizedFolderPageId] : []),
     ...documentPageIds,
   ]);
-  const hasAdditionalDocument = pageIds.some((pageId) => pageId !== normalizedTaskPageId);
+  const hasAdditionalDocument = pageIds.some((pageId) => pageId !== normalizedFolderPageId);
   const contextItems: SessionContextItem[] = [];
   if (pageIds.length > 0) {
     contextItems.push({

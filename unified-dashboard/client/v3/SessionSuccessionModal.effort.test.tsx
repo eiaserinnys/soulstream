@@ -18,7 +18,7 @@ const createDashboardSession = vi.fn();
 vi.mock("../lib/session-create", () => ({
   createDashboardSession: (input: unknown) => createDashboardSession(input),
 }));
-vi.mock("./task-workspace-api", async (importOriginal) => ({
+vi.mock("./folder-workspace-page-api", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   createFolderPageAnchor: vi.fn().mockResolvedValue(null),
 }));
@@ -110,8 +110,8 @@ function mountWithSession(session: Record<string, unknown> | null, presetId = "c
       QueryClientProvider,
       { client },
       createElement(SessionSuccessionModal, {
-        taskTitle: "업무",
-        taskPageId: "page-1",
+        folderTitle: "업무",
+        folderPageId: "page-1",
         folderId: "task-1",
         contextItems: [],
         documentOptions: [],
@@ -143,8 +143,8 @@ function mount() {
       QueryClientProvider,
       { client },
       createElement(SessionSuccessionModal, {
-        taskTitle: "업무",
-        taskPageId: "page-1",
+        folderTitle: "업무",
+        folderPageId: "page-1",
         folderId: "task-1",
         contextItems: [],
         documentOptions: [],

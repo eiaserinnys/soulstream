@@ -27,7 +27,7 @@ interface BoardWorkspaceViewWrapperProps {
   boardContainerOverride?: BoardContainerRef | null;
   selectedFolderIdOverride?: string | null;
   sessions?: SessionSummary[];
-  taskMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
+  folderMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
   onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onOpenMarkdownDocument?: (documentId: string) => void;
@@ -43,7 +43,7 @@ export function BoardWorkspaceView({
   boardContainerOverride,
   selectedFolderIdOverride,
   sessions,
-  taskMoveTargets,
+  folderMoveTargets,
   onBoardItemMoved,
   onMarkdownDocumentDeleted,
   onOpenMarkdownDocument,
@@ -86,7 +86,7 @@ export function BoardWorkspaceView({
       boardContainerOverride={boardContainerOverride}
       selectedFolderIdOverride={selectedFolderIdOverride}
       sessions={sessions}
-      taskMoveTargets={taskMoveTargets}
+      folderMoveTargets={folderMoveTargets}
       onBoardItemMoved={onBoardItemMoved}
       onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
       onOpenMarkdownDocument={onOpenMarkdownDocument}
