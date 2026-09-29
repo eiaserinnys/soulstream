@@ -289,6 +289,7 @@ export class TaskCreation {
   ): void {
     const sessionId = task.agentSessionId;
     const pending = this.runDeferredEffects(task, params, sessionType, creationHook);
+    task.creationEffects = pending;
     this.deferredEffects.set(sessionId, pending);
     const forget = () => {
       if (this.deferredEffects.get(sessionId) === pending) {
