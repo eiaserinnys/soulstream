@@ -71,6 +71,7 @@ describe("live Cogito search provider", () => {
           session_id: "session-a",
           display_name: "cold title",
           prompt: "",
+          last_assistant_text: null,
           created_at: "2026-09-23T00:00:00.000Z",
           agent_id: "agent-a",
           summary: null,
@@ -134,6 +135,7 @@ describe("live Cogito search provider", () => {
           session_id: "session-a",
           display_name: "cold title",
           prompt: "",
+          last_assistant_text: null,
           created_at: "2026-09-23T00:00:00.000Z",
           agent_id: "agent-a",
         }];
@@ -192,6 +194,7 @@ describe("live Cogito search provider", () => {
           session_id: "session-a",
           display_name: "세션 검색 작업",
           prompt: request,
+          last_assistant_text: null,
           created_at: "2026-09-23T00:00:00.000Z",
           agent_id: "agent-a",
         }];
