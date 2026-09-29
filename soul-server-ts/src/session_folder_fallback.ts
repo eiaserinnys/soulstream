@@ -3,7 +3,7 @@ import type { BoardYjsContainerRef, SessionDB } from "./db/session_db.js";
 export interface SessionFolderFallbackDeps {
   db: Pick<
     SessionDB,
-    "getSession" | "getBoardItems" | "resolveBoardYjsContainerScope"
+    "getSession" | "getPrimarySessionBoardItem" | "resolveBoardYjsContainerScope"
   >;
   logger: {
     warn(obj: unknown, msg: string): void;
@@ -113,12 +113,13 @@ async function getCallerSessionPrimaryContainer(
   callerSessionId: string,
 ): Promise<BoardYjsContainerRef | null> {
   try {
-    const item = (await deps.db.getBoardItems()).find((candidate) =>
-      candidate.itemType === "session" &&
-      candidate.itemId === callerSessionId &&
-      (candidate.membershipKind ?? "primary") === "primary"
-    );
-    if (!item) return null;
+    const item = await deps.db.getPrimarySessionBoardItem(callerSessionId);
+    if (
+      !item ||
+      item.itemType !== "session" ||
+      item.itemId !== callerSessionId ||
+      (item.membershipKind ?? "primary") !== "primary"
+    ) return null;
     return {
       containerKind: item.containerKind ?? "folder",
       containerId: item.containerId ?? item.folderId,
