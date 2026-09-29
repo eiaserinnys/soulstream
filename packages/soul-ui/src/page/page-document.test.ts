@@ -57,20 +57,20 @@ describe("page document projection", () => {
     expect(doc.getMap(BLOCKS_MAP).size).toBe(0);
   });
 
-  it("reads Task-backed checklists through the canonical property contract", () => {
+  it("reads folder-backed checklists through the canonical property contract", () => {
     const valid = pageDoc();
     addBlock(valid, {
       id: "checklist-valid",
       positionKey: "a",
       text: "Ship it",
       type: "checklist",
-      properties: { checked: true, taskId: "task-1", itemId: "item-1" },
+      properties: { checked: true, folderId: "folder-1", itemId: "item-1" },
     });
 
     expect(createPageDocumentProjection(valid, "page-1").getSnapshot().blocks[0])
       .toMatchObject({
         type: "checklist",
-        properties: { checked: true, taskId: "task-1", itemId: "item-1" },
+        properties: { checked: true, folderId: "folder-1", itemId: "item-1" },
       });
 
     const invalid = pageDoc();
@@ -79,7 +79,7 @@ describe("page document projection", () => {
       positionKey: "a",
       text: "Ship it",
       type: "checklist",
-      properties: { taskId: "task-1", itemId: "item-1" },
+      properties: { folderId: "folder-1", itemId: "item-1" },
     });
     expect(() => createPageDocumentProjection(invalid, "page-1")).toThrow(
       "checklist.checked must be a boolean",

@@ -15,16 +15,8 @@ const MIGRATE = fileURLToPath(new URL(
   "../../../packages/db-schema/scripts/migrate.mjs",
   import.meta.url,
 ));
-const BOARD_WRITER = fileURLToPath(new URL(
-  "../../../orch-server-ts/scripts/migrate-board-yjs-runbook-residue.ts",
-  import.meta.url,
-));
-const BOARD_DEPLOY = fileURLToPath(new URL(
-  "../../../orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts",
-  import.meta.url,
-));
-const TSX = fileURLToPath(new URL(
-  "../../../orch-server-ts/node_modules/tsx/dist/cli.mjs",
+const FOLDER_WRITER = fileURLToPath(new URL(
+  "../../../orch-server-ts/scripts/apply-folder-storage.mjs",
   import.meta.url,
 ));
 const CENTRAL_MANIFEST = fileURLToPath(new URL(
@@ -256,123 +248,69 @@ describe("database release CLI and direct writer boundaries", () => {
     },
   );
 
-  it("requires the direct board writer to enter through a journal subphase gate", () => {
-    const source = readFileSync(BOARD_WRITER, "utf8");
+  it("requires the document writer to enter through the existing subphase gate", () => {
+    const source = readFileSync(FOLDER_WRITER, "utf8");
     expect(source).toContain("assertDatabaseReleaseSubphaseGate");
-    expect(source).toContain("board_yjs_runbook_residue");
+    expect(source).toContain("folder_storage_documents");
   });
 
-  it("fails direct board apply at the journal gate without a central node check", () => {
-    const directory = tempDirectory("release-board-direct-");
-    const result = spawnSync(process.execPath, [
-      TSX,
-      BOARD_WRITER,
-      "--apply",
-      "--quiesced",
-      "--orch-health-url=http://127.0.0.1:9/api/health",
-    ], {
+  it("fails direct document conversion with one JSON error before loading the converter", () => {
+    const directory = tempDirectory("release-folder-direct-");
+    const result = spawnSync(process.execPath, [FOLDER_WRITER, "--documents"], {
       encoding: "utf8",
-      env: {
-        PATH: process.env.PATH ?? "",
-        HOME: process.env.HOME ?? "",
-        HANIEL_SERVICE_CWD: directory,
-        HANIEL_BACKUP_DIR: directory,
-        SOULSTREAM_NODE_ID: "not-the-central-node",
-      },
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "",
+        HANIEL_SERVICE_CWD: directory, HANIEL_BACKUP_DIR: directory },
       timeout: 10_000,
     });
-
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
     const lines = result.stderr.trim().split("\n");
     expect(lines).toHaveLength(1);
     const failure = JSON.parse(lines[0]);
-    expect(failure).toMatchObject({
-      ok: false,
-      error: { code: "DATABASE_RELEASE_FAILED" },
-    });
+    expect(failure).toMatchObject({ ok: false, error: { code: "DATABASE_RELEASE_FAILED" } });
     expect(failure.error.message).toContain("database-release.json");
-    expect(result.stderr).not.toContain("not-the-central-node");
+    expect(result.stderr).not.toContain("ERR_MODULE_NOT_FOUND");
     expect(result.stderr).not.toContain("DATABASE_URL is required");
   });
 
-  it("redacts and bounds a failed board deployment result and audit record", () => {
-    const directory = tempDirectory("release-board-audit-");
-    const secret = "board-audit-secret-value";
+  it("redacts and bounds an actual folder deployment failure", () => {
+    const directory = tempDirectory("release-folder-error-");
+    const secret = "folder-release-secret-value";
     writeFileSync(join(directory, ".env.soul-server-ts"), "\n", "utf8");
-    const result = spawnSync(process.execPath, [TSX, BOARD_DEPLOY, "--verify"], {
+    const result = spawnSync(process.execPath, [FOLDER_WRITER], {
       encoding: "utf8",
-      env: {
-        PATH: process.env.PATH ?? "",
-        HOME: process.env.HOME ?? "",
-        HANIEL_SERVICE_CWD: directory,
-        HANIEL_BACKUP_DIR: directory,
-        HANIEL_RELEASE_ID: `AUTH=${secret}`,
-        HANIEL_TARGET_HEAD: `postgresql://user:${secret}@localhost/release_test`,
-        AUTH_TOKEN: secret,
-        SOULSTREAM_NODE_ID: "not-the-central-node",
-      },
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "",
+        HANIEL_SERVICE_CWD: directory, HANIEL_BACKUP_DIR: directory,
+        HANIEL_RELEASE_ID: `AUTH=${secret}`, AUTH_TOKEN: secret },
       timeout: 10_000,
     });
-    expect(result.status, result.stderr).toBe(1);
-    const stdoutLines = result.stdout.trim().split("\n");
-    expect(stdoutLines).toHaveLength(1);
-    expect(() => JSON.parse(stdoutLines[0])).not.toThrow();
-    expect(Buffer.byteLength(stdoutLines[0], "utf8")).toBeLessThanOrEqual(32_768);
-    const output = JSON.parse(stdoutLines[0]) as Record<string, unknown>;
-    expect(output).toMatchObject({
-      schema_version: "soulstream.database-release.v1",
-      event: "board_yjs_runbook_migration",
-      status: "failed",
-      mode: "verify",
-      nodeId: "not-the-central-node",
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    const lines = result.stderr.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(Buffer.byteLength(lines[0], "utf8")).toBeLessThanOrEqual(32_768);
+    expect(JSON.parse(lines[0])).toMatchObject({
+      schema_version: "soulstream.database-release.v1", ok: false, phase: "apply",
+      error: { message: expect.stringContaining("DATABASE_URL is required") },
     });
-    const audit = readFileSync(
-      join(directory, "board-yjs-runbook-migration.jsonl"),
-      "utf8",
-    ).trim();
-    expect(() => JSON.parse(audit)).not.toThrow();
-    expect(Buffer.byteLength(audit, "utf8")).toBeLessThanOrEqual(32_768);
-    expect(JSON.parse(audit)).toEqual(output);
-    expect(`${result.stdout}\n${audit}`).not.toContain(secret);
-    expect(`${result.stdout}\n${audit}`).not.toContain(`user:${secret}@`);
+    expect(result.stderr).not.toContain(secret);
   });
 
-  it("preserves a board deployment child diagnostic in the failed audit", () => {
-    const directory = tempDirectory("release-board-child-error-");
-    writeFileSync(join(directory, ".env.soul-server-ts"), "\n", "utf8");
-    const result = spawnSync(process.execPath, [TSX, BOARD_DEPLOY, "--verify"], {
+  it("rejects a mismatched release identity before opening the database", () => {
+    const directory = tempDirectory("release-folder-identity-");
+    const result = spawnSync(process.execPath, [FOLDER_WRITER], {
       encoding: "utf8",
-      env: {
-        PATH: process.env.PATH ?? "",
-        HOME: process.env.HOME ?? "",
-        HANIEL_SERVICE_CWD: directory,
-        HANIEL_BACKUP_DIR: directory,
-        SOULSTREAM_NODE_ID: "eiaserinnys",
-      },
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "",
+        HANIEL_SERVICE_CWD: directory, HANIEL_MANIFEST_DIGEST: "0".repeat(64) },
       timeout: 10_000,
     });
-
     expect(result.status).toBe(1);
-    expect(result.stderr).toBe("");
-    const stdoutLines = result.stdout.trim().split("\n");
-    expect(stdoutLines).toHaveLength(1);
-    expect(Buffer.byteLength(stdoutLines[0], "utf8")).toBeLessThanOrEqual(32_768);
-    const output = JSON.parse(stdoutLines[0]) as Record<string, unknown>;
-    expect(output).toMatchObject({
-      schema_version: "soulstream.database-release.v1",
-      event: "board_yjs_runbook_migration",
-      status: "failed",
-      mode: "verify",
-      nodeId: "eiaserinnys",
+    expect(result.stdout).toBe("");
+    const lines = result.stderr.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({
+      ok: false, error: { code: "JOURNAL_GATE_FAILED" },
     });
-    expect(output.error).toContain("deployment child command exited with 1");
-    expect(output.error).toContain("DATABASE_URL is required");
-
-    const audit = readFileSync(
-      join(directory, "board-yjs-runbook-migration.jsonl"),
-      "utf8",
-    ).trim();
-    expect(JSON.parse(audit)).toEqual(output);
+    expect(result.stderr).not.toContain("DATABASE_URL is required");
   });
 });

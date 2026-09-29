@@ -138,7 +138,7 @@ describe("database release executor", () => {
     const files = {
       applySchema: readFileSync(new URL("../../scripts/apply-schema.mjs", import.meta.url), "utf8"),
       boardWrapper: readFileSync(new URL(
-        "../../../orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts",
+        "../../../orch-server-ts/scripts/apply-folder-storage.mjs",
         import.meta.url,
       ), "utf8"),
       migrate: readFileSync(new URL(
