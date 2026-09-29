@@ -14,11 +14,11 @@ export function sessionBoardItemPosition(
   const existing = boardItems.find((item) =>
     item.id === `session:${sessionId}`
     || (item.itemType === "session" && item.itemId === sessionId));
-  return existing ? [existing.x, existing.y] : nextTaskSessionPosition(boardItems);
+  return existing ? [existing.x, existing.y] : nextSessionBoardPosition(boardItems);
 }
 
-/** Existing task placement policy shared by initial projection and durable replay. */
-export function nextTaskSessionPosition(
+/** Session card placement policy shared by initial projection and durable replay. */
+export function nextSessionBoardPosition(
   boardItems: readonly PositionedBoardItem[],
 ): [number, number] {
   const occupied = new Set(boardItems.map((item) => `${item.x}:${item.y}`));
