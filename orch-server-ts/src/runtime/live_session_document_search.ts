@@ -17,9 +17,7 @@ import type {
 } from "./live_db_sql.js";
 
 type ActiveQuery = { current?: LiveSearchPendingQuery<readonly Record<string, unknown>[]> };
-type SessionSourceRow = Omit<SessionDocumentRecord, "summary"> & {
-  readonly last_assistant_text: string | null;
-};
+type SessionSourceRow = Omit<SessionDocumentRecord, "summary">;
 type SessionDigestRow = { readonly session_id: string; readonly highlight: string | null };
 type SessionSummarySourceRow = SessionSummaryEvent & { readonly session_id: string };
 
@@ -54,7 +52,7 @@ export class LiveSessionDocumentSearch {
           session_id,
           display_name,
           left(prompt, 2000) AS prompt,
-          left(last_assistant_text, 1500) AS last_assistant_text,
+          left(last_assistant_text, 400) AS last_assistant_text,
           created_at,
           agent_id
         FROM sessions
@@ -118,7 +116,7 @@ export class LiveSessionDocumentSearch {
           session_id,
           display_name,
           left(prompt, 2000) AS prompt,
-          left(last_assistant_text, 1500) AS last_assistant_text,
+          left(last_assistant_text, 400) AS last_assistant_text,
           created_at,
           agent_id
         FROM sessions
@@ -169,7 +167,7 @@ function assembleSessionDocumentRecords(
       highlights.get(session.session_id) ?? null,
       summaries.get(session.session_id) ?? [],
     );
-    return { ...session, summary: summary ?? session.last_assistant_text };
+    return { ...session, summary };
   });
 }
 

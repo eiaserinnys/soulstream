@@ -283,7 +283,10 @@ export function createLiveCogitoSearchProvider(
               );
               expandedSessionResults = orderSessionSearchResults(titleOnlyPool, null)
                 .slice(0, params.top_k)
-                .map(withSessionCardExcerpt);
+                .map((candidate) => withSessionCardExcerpt(
+                  candidate,
+                  documentSearch.index.get(candidate.session_id)?.answerPreview ?? null,
+                ));
               const documentHits = documentSearch.index.search(params.q, 300);
               const documentById = new Map(documentHits.map((hit) => [hit.session_id, hit]));
               const documentQueryStartedAt = Date.now();
@@ -357,7 +360,10 @@ export function createLiveCogitoSearchProvider(
               }
               expandedSessionResults = orderSessionSearchResults(pool, rerank.scores)
                 .slice(0, params.top_k)
-                .map(withSessionCardExcerpt);
+                .map((candidate) => withSessionCardExcerpt(
+                  candidate,
+                  documentSearch.index.get(candidate.session_id)?.answerPreview ?? null,
+                ));
             } catch (error) {
               const reason = sourceFailureReason(error, signal, deadlineAt, deadlineExpired);
               documentSource = { status: "partial", reason };

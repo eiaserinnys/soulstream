@@ -107,7 +107,7 @@ describe("live Cogito search provider", () => {
     });
   });
 
-  it("uses the session card summary for a title-only expanded result", async () => {
+  it("uses the last-answer preview for a title-only expanded result", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("WITH requested AS")) {
         throw Object.assign(new Error("statement timeout"), { code: "57014" });
@@ -135,13 +135,13 @@ describe("live Cogito search provider", () => {
           session_id: "session-a",
           display_name: "cold title",
           prompt: "",
-          last_assistant_text: null,
+          last_assistant_text: "완료 보고: PR #1045",
           created_at: "2026-09-23T00:00:00.000Z",
           agent_id: "agent-a",
         }];
       }
       if (text.includes("left(highlight, 1500) AS highlight")) {
-        return [{ session_id: "session-a", highlight: "실제 작업 요약" }];
+        return [{ session_id: "session-a", highlight: null }];
       }
       return [];
     });
@@ -162,13 +162,13 @@ describe("live Cogito search provider", () => {
 
     expect(response.session_results).toMatchObject([{
       session_id: "session-a",
-      excerpt: "실제 작업 요약",
-      best_match: { match_source: "title", excerpt: "실제 작업 요약" },
+      excerpt: "완료 보고: PR #1045",
+      best_match: { match_source: "title", excerpt: "완료 보고: PR #1045" },
       evidence: [{ source: "title", excerpt: "delegation prompt header" }],
     }]);
   });
 
-  it("uses the cleaned card request when an expanded result has no summary", async () => {
+  it("uses the last-answer preview ahead of the card request when no summary exists", async () => {
     const request = "첫 요청: 세션 검색 결과의 날짜와 요약 발췌를 고쳐줘";
     const harness = createSqlHarness((text) => {
       if (text.includes("'session_metadata'::text AS event_type")) {
@@ -194,7 +194,7 @@ describe("live Cogito search provider", () => {
           session_id: "session-a",
           display_name: "세션 검색 작업",
           prompt: request,
-          last_assistant_text: null,
+          last_assistant_text: "  완료   보고 😀 ",
           created_at: "2026-09-23T00:00:00.000Z",
           agent_id: "agent-a",
         }];
@@ -244,8 +244,8 @@ describe("live Cogito search provider", () => {
 
     expect(response.session_results).toMatchObject([{
       session_id: "session-a",
-      excerpt: request,
-      best_match: { excerpt: request },
+      excerpt: "완료 보고 😀",
+      best_match: { excerpt: "완료 보고 😀" },
     }]);
   });
 
