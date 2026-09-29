@@ -126,15 +126,12 @@ describe("session document search index", () => {
     expect(statementTimeouts.every((timeoutMs) => timeoutMs > 3_000)).toBe(true);
   });
 
-  it("builds cold documents from flat session, digest, and summary event sets", async () => {
+  it("uses the last assistant answer when cold sessions have no summary", async () => {
     const { sql, calls } = createRefreshSql((text) => {
       if (text.includes("FROM sessions") && text.includes("left(prompt")) {
-        return [record("a", "제목", "요청", null)];
+        return [record("a", "제목", "요청", null, "완료 보고: PR #1045")];
       }
       if (text.includes("FROM session_digests")) return [];
-      if (text.includes("FROM events")) {
-        return [{ session_id: "a", event_id: 7, content: "요약" }];
-      }
       return [];
     });
     const search = new LiveSessionDocumentSearch();
@@ -152,8 +149,33 @@ describe("session document search index", () => {
       expect.stringContaining("FROM session_digests"),
       expect.stringContaining("FROM events"),
     ]));
+    expect(calls.find((call) => call.text.includes("FROM sessions"))?.text)
+      .toContain("left(last_assistant_text, 1500)");
     expect(calls.every((call) => !/\bLATERAL\b|\bEXISTS\s*\(/i.test(call.text))).toBe(true);
-    expect(search.index.get("a")?.card.summary).toBe("요약");
+    expect(search.index.get("a")?.card.summary).toBe("완료 보고: PR #1045");
+    expect(search.index.search("완료 보고", 10).map((hit) => hit.session_id)).toContain("a");
+  });
+
+  it("keeps a digest highlight ahead of the last assistant answer", async () => {
+    const { sql } = createRefreshSql((text) => {
+      if (text.includes("FROM sessions") && text.includes("left(prompt")) {
+        return [record("a", "제목", "요청", null, "마지막 답변")];
+      }
+      if (text.includes("FROM session_digests")) {
+        return [{ session_id: "a", highlight: "하이라이트 요약" }];
+      }
+      return [];
+    });
+    const search = new LiveSessionDocumentSearch();
+
+    await search.refresh({
+      sql,
+      activeQuery: {},
+      deadlineAt: Date.now() + 10_000,
+      signal: new AbortController().signal,
+    });
+
+    expect(search.index.get("a")?.card.summary).toBe("하이라이트 요약");
   });
 
   it("refreshes only new, renamed, and timestamp-changed sessions", async () => {
@@ -162,13 +184,18 @@ describe("session document search index", () => {
         (value): value is readonly string[] => Array.isArray(value),
       );
       if (text.includes("UNION")) {
-        return [{ session_id: "b" }, { session_id: "d" }];
+        const changed = [{ session_id: "b" }, { session_id: "d" }];
+        if (/FROM sessions\s+WHERE[\s\S]*updated_at\s*>=/i.test(text)) {
+          changed.push({ session_id: "e" });
+        }
+        return changed;
       }
       if (text.includes("FROM sessions") && text.includes("left(prompt") && text.includes("ANY(")) {
         return [
           record("a", "새 이름", "요청 A", "요약 A 갱신"),
           record("b", "제목 B", "요청 B", null),
           record("d", "신규 D", "요청 D", null),
+          record("e", "제목 E", "요청 E", null, "최신 완료 보고"),
         ];
       }
       if (text.includes("FROM sessions") && text.includes("left(prompt")) {
@@ -176,6 +203,7 @@ describe("session document search index", () => {
           record("a", "이전 이름", "요청 A", null),
           record("b", "제목 B", "요청 B", null),
           record("c", "삭제 C", "요청 C", null),
+          record("e", "제목 E", "요청 E", null, "이전 완료 보고"),
         ];
       }
       if (text.includes("SELECT session_id, display_name") && text.includes("FROM sessions")) {
@@ -183,6 +211,7 @@ describe("session document search index", () => {
           { session_id: "a", display_name: "새 이름" },
           { session_id: "b", display_name: "제목 B" },
           { session_id: "d", display_name: "신규 D" },
+          { session_id: "e", display_name: "제목 E" },
         ];
       }
       if (text.includes("FROM session_digests")) {
@@ -213,16 +242,19 @@ describe("session document search index", () => {
     const changedIdQuery = calls.find((call) => call.text.includes("UNION"));
     expect(changedIdQuery?.text).toContain("created_at");
     expect(changedIdQuery?.text).toContain("updated_at");
+    expect(changedIdQuery?.text).toMatch(/FROM sessions\s+WHERE[\s\S]*updated_at\s*>=/i);
     expect(changedIdQuery?.text).toMatch(/SELECT DISTINCT\s+session_id\s+FROM events/i);
     expect(changedIdQuery?.text).not.toMatch(/\bEXISTS\s*\(|\bLATERAL\b/i);
 
     const changedSessionQuery = calls.find((call) =>
       call.text.includes("FROM sessions") && call.text.includes("left(prompt") && call.text.includes("ANY("));
-    expect(changedSessionQuery?.values).toContainEqual(["a", "b", "d"]);
+    expect(changedSessionQuery?.values).toContainEqual(["a", "b", "d", "e"]);
+    expect(changedSessionQuery?.text).toContain("left(last_assistant_text, 1500)");
     expect(search.index.get("a")?.title).toBe("새 이름");
     expect(search.index.get("b")?.card.summary).toBe("digest B 갱신");
     expect(search.index.get("c")).toBeUndefined();
     expect(search.index.get("d")?.card.request).toBe("요청 D");
+    expect(search.index.get("e")?.card.summary).toBe("최신 완료 보고");
   });
 });
 
@@ -231,11 +263,13 @@ function record(
   display_name: string,
   prompt: string,
   summary: string | null,
+  last_assistant_text: string | null = null,
 ) {
   return {
     session_id,
     display_name,
     prompt,
+    last_assistant_text,
     summary,
     created_at: "2026-09-29T00:00:00.000Z",
     agent_id: "roselin",
