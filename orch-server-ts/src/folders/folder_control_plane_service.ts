@@ -32,7 +32,8 @@ export class FolderControlPlaneService {
 
   async getFolderById(folderId: string): Promise<FolderRow | null> {
     const rows = await this.sql<readonly FolderDbRow[]>`
-      SELECT *
+      SELECT id, name, sort_order, settings, parent_folder_id, project_page_id,
+             archived, checklist_enabled, status, version, created_at
       FROM folders
       WHERE id = ${folderId}
     `;

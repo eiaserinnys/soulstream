@@ -16,6 +16,58 @@ describePostgres("049 external LLM actor migration PostgreSQL", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
+    // Migration 049 ran before folder unification. Recreate only its removed
+    // input tables and board columns inside this disposable test schema.
+    await harness.sql.unsafe(`
+      ALTER TABLE board_items
+        ADD COLUMN container_kind TEXT NOT NULL DEFAULT 'folder',
+        ADD COLUMN container_id TEXT;
+      ALTER TABLE board_items DROP CONSTRAINT board_items_item_type_check;
+      ALTER TABLE board_items ADD CONSTRAINT board_items_item_type_check
+        CHECK (item_type IN ('session','markdown','subfolder','asset','frame','custom_view','task'));
+
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        board_item_id TEXT REFERENCES board_items(id),
+        title TEXT,
+        status TEXT,
+        completed_kind TEXT CONSTRAINT tasks_completed_kind_check
+          CHECK (completed_kind IN ('agent','user'))
+      );
+      CREATE TABLE task_items (
+        id TEXT PRIMARY KEY,
+        completed_kind TEXT CONSTRAINT task_items_completed_kind_check
+          CHECK (completed_kind IN ('agent','user'))
+      );
+      CREATE TABLE task_operations (
+        id TEXT PRIMARY KEY,
+        target_kind TEXT,
+        target_id TEXT,
+        operation_type TEXT,
+        actor_kind TEXT CONSTRAINT task_operations_actor_kind_check
+          CHECK (actor_kind IN ('agent','user','system')),
+        actor_session_id TEXT,
+        actor_user_id TEXT
+      );
+      CREATE TABLE folder_project_operations (
+        id TEXT PRIMARY KEY,
+        actor_kind TEXT CONSTRAINT folder_project_operations_actor_kind_check
+          CHECK (actor_kind IN ('agent','user','system'))
+      );
+      CREATE TABLE checklist_task_projection_outbox (
+        id TEXT PRIMARY KEY,
+        actor_kind TEXT CONSTRAINT checklist_task_projection_outbox_actor_kind_check
+          CHECK (actor_kind IN ('agent','user','system')),
+        actor_session_id TEXT,
+        actor_user_id TEXT,
+        CONSTRAINT checklist_task_projection_outbox_actor_shape_check
+          CHECK (
+            (actor_kind = 'agent' AND actor_session_id IS NOT NULL AND actor_user_id IS NULL)
+            OR (actor_kind = 'user' AND actor_user_id IS NOT NULL)
+            OR (actor_kind = 'system' AND actor_user_id IS NULL)
+          )
+      );
+    `);
   }, 120_000);
 
   afterAll(async () => {
@@ -98,6 +150,10 @@ describePostgres("049 external LLM actor migration PostgreSQL", () => {
         DROP COLUMN created_actor_kind,
         DROP COLUMN updated_actor_kind
     `);
+    await expect(harness.sql`
+      INSERT INTO task_operations (id, actor_kind)
+      VALUES ('op-before-llm-migration', 'llm')
+    `).rejects.toThrow();
     const migrationSql = readFileSync(
       fileURLToPath(
         new URL(
