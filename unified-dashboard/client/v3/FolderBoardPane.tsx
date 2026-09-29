@@ -119,15 +119,15 @@ export function FolderBoardPane({
 
   useEffect(() => {
     const controller = new AbortController();
-    const sameTask = loadedFolderIdRef.current === folderId;
-    if (!sameTask) setBoardItems(null);
+    const sameFolder = loadedFolderIdRef.current === folderId;
+    if (!sameFolder) setBoardItems(null);
     const load = () => fetchFolderBoardContainerItems(
       folderId,
       globalThis.fetch.bind(globalThis),
       controller.signal,
     );
     void loadConfirmedResult({
-      previous: sameTask ? boardItemsRef.current : null,
+      previous: sameFolder ? boardItemsRef.current : null,
       load,
       clearsVisibleContent: (current, result) => current.length > 0 && result.length === 0,
     }).then((next) => {

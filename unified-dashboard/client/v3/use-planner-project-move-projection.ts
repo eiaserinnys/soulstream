@@ -9,10 +9,10 @@ export function usePlannerProjectMoveProjection(
   setDaily: Dispatch<SetStateAction<PlannerLoadState<DailyPlannerData>>>,
 ) {
   return useCallback((task: PlannerFolder, targetFolderId: string | null) => {
-    const projectedTask = { ...task, parentFolderId: targetFolderId };
+    const projectedFolder = { ...task, parentFolderId: targetFolderId };
     setDaily((current) => {
       if (!current.data) return current;
-      const folders = replacePlannerFolder(current.data.folders, task.page.id, () => projectedTask);
+      const folders = replacePlannerFolder(current.data.folders, task.page.id, () => projectedFolder);
       if (folders === current.data.folders) return current;
       return retainEqualValue(current, {
         ...current,

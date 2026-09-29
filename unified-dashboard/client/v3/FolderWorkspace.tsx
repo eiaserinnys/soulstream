@@ -121,7 +121,7 @@ export function FolderWorkspace({
   onSaveDescription(markdown: string): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
+  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
   onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {

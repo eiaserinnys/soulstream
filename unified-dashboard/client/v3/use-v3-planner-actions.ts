@@ -168,15 +168,15 @@ export function useV3PlannerActions({
     }
   }, [notify, notifyWriteFailure, removeSessionsFromPlanner]);
 
-  const moveSession = useCallback(async (sessionId: string, targetTask: FolderMoveTarget) => {
+  const moveSession = useCallback(async (sessionId: string, targetFolder: FolderMoveTarget) => {
     try {
       await moveBoardItemToFolder({
         boardItemId: `session:${sessionId}`,
-        folderId: targetTask.folderId,
+        folderId: targetFolder.folderId,
         idempotencyKey: `v3-run-move-${crypto.randomUUID()}`,
       });
-      moveSessionInPlanner(sessionId, targetTask.page.id);
-      notify(`세션 이동 · ${targetTask.page.title}`);
+      moveSessionInPlanner(sessionId, targetFolder.page.id);
+      notify(`세션 이동 · ${targetFolder.page.title}`);
     } catch (error) {
       notifyWriteFailure("세션 이동", error);
       throw error;

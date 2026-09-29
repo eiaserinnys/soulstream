@@ -81,9 +81,9 @@ describe("planner mutation projection", () => {
       .toBe(unrelatedTasks);
 
     const alreadyInTarget = task("target", ["session-moving"]);
-    const targetTasks = [alreadyInTarget];
-    expect(movePlannerSession(targetTasks, "session-moving", "target"))
-      .toBe(targetTasks);
+    const targetFolders = [alreadyInTarget];
+    expect(movePlannerSession(targetFolders, "session-moving", "target"))
+      .toBe(targetFolders);
   });
 
   it("projects a project move into the visible source or target without broad replacement", () => {

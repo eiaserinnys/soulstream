@@ -105,9 +105,9 @@ export function FolderInlineBoard({
 
   useEffect(() => {
     const controller = new AbortController();
-    const sameTask = loadedFolderIdRef.current === folderId;
-    const previous = sameTask ? itemsRef.current : null;
-    if (!sameTask) {
+    const sameFolder = loadedFolderIdRef.current === folderId;
+    const previous = sameFolder ? itemsRef.current : null;
+    if (!sameFolder) {
       setItems([]);
       setStatus("loading");
     }
@@ -219,7 +219,7 @@ export function FolderInlineBoard({
     }
   };
 
-  const moveMarkdownToTask = async (item: CatalogBoardItem, target: FolderMoveTarget) => {
+  const moveMarkdownToFolder = async (item: CatalogBoardItem, target: FolderMoveTarget) => {
     const result = await moveBoardItemToFolder({
       boardItemId: item.id,
       folderId: target.folderId,
@@ -377,7 +377,7 @@ export function FolderInlineBoard({
         context={documentContext}
         onClose={() => setDocumentContext(null)}
         onOpen={(item) => setExpandedId(item.id)}
-        onMove={moveMarkdownToTask}
+        onMove={moveMarkdownToFolder}
         onDelete={deleteMarkdown}
       />
     </section>

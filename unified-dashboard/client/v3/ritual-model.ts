@@ -59,7 +59,7 @@ export function buildMorningRitualQueue(
     for (const task of day.tasks) {
       if (seenFolderPageIds.has(task.page.id)) continue;
       seenFolderPageIds.add(task.page.id);
-      if (input.todayFolderPageIds.has(task.page.id) || isTerminalTask(task)) continue;
+      if (input.todayFolderPageIds.has(task.page.id) || isTerminalFolder(task)) continue;
       folderItems.push({
         kind: "task",
         id: `task:${task.page.id}`,
@@ -99,7 +99,7 @@ export async function dispatchRitualAction(
   throw new Error("미완 업무에서 사용할 수 없는 아침 정리 동작입니다");
 }
 
-function isTerminalTask(task: PlannerFolder): boolean {
+function isTerminalFolder(task: PlannerFolder): boolean {
   const folderStatus = task.status;
   return folderStatus === "completed";
 }

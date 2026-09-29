@@ -96,7 +96,7 @@ export function FolderDetailPane({
   onSaveDescription(markdown: string): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
+  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
   onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
