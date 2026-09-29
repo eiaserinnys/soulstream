@@ -28,7 +28,7 @@ describe("PR-CB visual contracts", () => {
     expect(workspace).toContain('import { sessionPanelTitle } from "./v3-session-panel-model";');
     expect(workspace).not.toContain("function runLabel(");
     expect(`${workspace}\n${boardWorkspace}`.match(/sessionPanelTitle\(activeSession\)/g)).toHaveLength(3);
-    expect(workspace.match(/\{projectTitle\} › \{visibleTitle\}/g)).toHaveLength(1);
+    expect(workspace).not.toContain("{projectTitle} › {visibleTitle}");
     expect(boardWorkspace).toContain("{projectTitle} › {task.page.title}");
     expect(css).toMatch(/\.v3-chat-session-title\s*\{[\s\S]*align-items:\s*center;[\s\S]*font-size:\s*var\(--font-size-base\);/);
   });
