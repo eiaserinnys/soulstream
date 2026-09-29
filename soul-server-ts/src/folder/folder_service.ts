@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { FolderSnapshot, FolderStatus, TaskItemStatus } from "../db/session_db_types.js";
+import type { FolderSnapshot, FolderStatus, ChecklistItemStatus } from "../db/session_db_types.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import { FolderVersionConflict, type ChecklistAssigneeInput } from "./folder_models.js";
@@ -111,7 +111,7 @@ export class FolderService {
     return await this.mutate("move_checklist_item", params);
   }
 
-  async setChecklistItemStatus(params: FolderActorParams & { folderId: string; itemId: string; expectedVersion: number; status: TaskItemStatus; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
+  async setChecklistItemStatus(params: FolderActorParams & { folderId: string; itemId: string; expectedVersion: number; status: ChecklistItemStatus; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
     return await this.mutate("set_checklist_item_status", params);
   }
 

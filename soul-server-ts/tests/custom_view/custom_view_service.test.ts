@@ -24,10 +24,8 @@ const customView: CustomViewRow = {
 const boardItem: CatalogBoardItemRow = {
   id: "custom_view:cv-1",
   folderId: "folder-1",
-  containerKind: "task",
-  containerId: "rb-1",
   membershipKind: "primary",
-  sourceTaskItemId: null,
+  sourceChecklistItemId: null,
   itemType: "custom_view",
   itemId: "cv-1",
   x: 120,
@@ -63,17 +61,12 @@ describe("CustomViewService", () => {
         };
       }),
       removeBoardItem: vi.fn(async () => undefined),
-      resolveBoardYjsContainerScope: vi.fn(async () => ({
-        folderId: "folder-1",
-        containerKind: "task" as const,
-        containerId: "rb-1",
-      })),
     };
     const emitCatalogUpdated = vi.fn(async () => undefined);
     const emitCustomViewUpdated = vi.fn(async () => undefined);
     const service = new CustomViewService(
       {
-        getAllFolders: vi.fn(async () => []),
+        getAllFolders: vi.fn(async () => [{ id: "folder-1" }]),
       },
       boardYjs as never,
       {
@@ -85,7 +78,7 @@ describe("CustomViewService", () => {
     const result = await service.createCustomView({
       actorKind: "agent",
       actorSessionId: "sess-actor",
-      container: { containerKind: "task", containerId: "rb-1" },
+      folderId: "folder-1",
       title: "Progress panel",
       html: "<section></section>",
       x: 120,
@@ -102,7 +95,7 @@ describe("CustomViewService", () => {
       }),
     );
     expect(emitCatalogUpdated).toHaveBeenCalledWith(
-      [],
+      [expect.objectContaining({ id: "folder-1" })],
       {},
       {
         [result.boardItem.id]: result.boardItem,
@@ -127,11 +120,6 @@ describe("CustomViewService", () => {
       }),
       upsertCustomViewBoardItem: vi.fn(async () => boardItem),
       removeBoardItem: vi.fn(async () => undefined),
-      resolveBoardYjsContainerScope: vi.fn(async () => ({
-        folderId: "folder-1",
-        containerKind: "task" as const,
-        containerId: "rb-1",
-      })),
     };
     const service = new CustomViewService(
       {
@@ -174,17 +162,12 @@ describe("CustomViewService", () => {
       createCustomViewRecord,
       upsertCustomViewBoardItem: vi.fn(async () => boardItem),
       removeBoardItem: vi.fn(async () => undefined),
-      resolveBoardYjsContainerScope: vi.fn(async () => ({
-        folderId: "folder-1",
-        containerKind: "task" as const,
-        containerId: "rb-1",
-      })),
     };
     const emitCatalogUpdated = vi.fn(async () => undefined);
     const emitCustomViewUpdated = vi.fn(async () => undefined);
     const service = new CustomViewService(
       {
-        getAllFolders: vi.fn(async () => []),
+        getAllFolders: vi.fn(async () => [{ id: "folder-1" }]),
       },
       boardYjs as never,
       { emitCatalogUpdated, emitCustomViewUpdated },
@@ -193,7 +176,7 @@ describe("CustomViewService", () => {
     const result = await service.createCustomView({
       actorKind: "llm",
       actorSessionId: null,
-      container: { containerKind: "task", containerId: "rb-1" },
+      folderId: "folder-1",
       title: "LLM panel",
       html: "<section></section>",
       idempotencyKey: "idem-llm-custom-view",

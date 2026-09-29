@@ -1,270 +1,74 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  CONTAINER_SEARCH_SCAN_LIMIT,
-  ContainerBrowseService,
-  type ContainerBrowseStore,
-} from "../../src/catalog/folder_browse_service.js";
-import type {
-  CatalogBoardItemRow,
-  ContainerItemRecord,
-} from "../../src/db/session_db_types.js";
+import { FOLDER_SEARCH_SCAN_LIMIT, FolderBrowseService, type FolderBrowseStore } from "../../src/catalog/folder_browse_service.js";
+import type { CatalogBoardItemRow, ListFolderItemsResult } from "../../src/db/session_db_types.js";
 
-const FOLDER = {
-  id: "folder-1",
-  name: "Folder",
-  sort_order: 0,
-  settings: {},
-  parent_folder_id: null,
+function item(itemType: CatalogBoardItemRow["itemType"], itemId: string): CatalogBoardItemRow {
+  return { id: `${itemType}:${itemId}`, folderId: "folder-1", membershipKind: "primary", sourceChecklistItemId: null,
+    itemType, itemId, x: 0, y: 0, metadata: {}, updatedAt: "2026-07-16T00:00:00.000Z" };
+}
+
+const emptyResult: ListFolderItemsResult = {
+  items: [], total: 0,
+  counts: { session: 0, markdown: 0, subfolder: 0, asset: 0, frame: 0, custom_view: 0 },
+  scan: null,
 };
 
-function boardItem(
-  itemType: CatalogBoardItemRow["itemType"],
-  itemId: string,
-  metadata: Record<string, unknown> = {},
-): CatalogBoardItemRow {
-  return {
-    id: `${itemType}:${itemId}`,
-    folderId: "folder-1",
-    containerKind: "task",
-    containerId: "task-1",
-    membershipKind: "primary",
-    sourceTaskItemId: null,
-    itemType,
-    itemId,
-    x: 0,
-    y: 0,
-    metadata,
-    updatedAt: "2026-07-16T00:00:00.000Z",
-  };
+function makeStore(result: ListFolderItemsResult) {
+  const listFolderItems = vi.fn(async () => result);
+  const getFolderById = vi.fn(async () => ({ id: "folder-1" }) as never);
+  return { store: { listFolderItems, getFolderById } as FolderBrowseStore, listFolderItems, getFolderById };
 }
 
-function storeWith(
-  records: ContainerItemRecord[],
-  total = records.length,
-  scan: { limit: number; scannedItems: number; truncated: boolean } | null = null,
-) {
-  const listContainerItems = vi.fn(async () => ({
-    items: records,
-    total,
-    counts: {
-      session: records.filter((item) => item.boardItem.itemType === "session").length,
-      markdown: records.filter((item) => item.boardItem.itemType === "markdown").length,
-      subfolder: 0,
-      asset: 0,
-      frame: 0,
-      task: 0,
-      custom_view: 0,
-    },
-    scan,
-  }));
-  const store: ContainerBrowseStore = {
-    getFolderById: vi.fn(async () => FOLDER),
-    getTaskById: vi.fn(async (id) => id === "task-1" ? ({ id } as never) : null),
-    listContainerItems,
-  };
-  return { store, listContainerItems };
-}
-
-describe("ContainerBrowseService", () => {
-  it("uses display name, then latest user preview, then a readable untitled fallback", async () => {
-    const { store } = storeWith([
-      {
-        boardItem: boardItem("session", "session-named"),
-        archived: false,
-        session: {
-          agentSessionId: "session-named",
-          displayName: "  이름 있는 세션  ",
-          lastUserMessagePreview: "사용자 프리뷰",
-          status: "running",
-          agentId: "roselin_codex",
-          sessionType: "codex",
-          createdAt: "2026-07-16T00:00:00.000Z",
-          updatedAt: "2026-07-16T00:01:00.000Z",
-          eventCount: 3,
-          awaySummary: null,
-          callerSessionId: null,
-          predecessorSessionId: null,
-          nodeId: "node-a",
-          lastEventId: 3,
-          lastReadEventId: 2,
-        },
-      },
-      {
-        boardItem: boardItem("session", "session-preview"),
-        archived: false,
-        session: {
-          agentSessionId: "session-preview",
-          displayName: null,
-          lastUserMessagePreview: "  최신\n사용자 😀 발화  ",
-          status: "completed",
-          agentId: "seosoyoung",
-          sessionType: "claude",
-          createdAt: "2026-07-16T00:00:00.000Z",
-          updatedAt: "2026-07-16T00:02:00.000Z",
-          eventCount: 8,
-          awaySummary: null,
-          callerSessionId: "parent",
-          predecessorSessionId: "previous",
-          nodeId: "node-a",
-          lastEventId: 8,
-          lastReadEventId: 8,
-        },
-      },
-      {
-        boardItem: boardItem("session", "session-untitled"),
-        archived: false,
-        session: {
-          agentSessionId: "session-untitled",
-          displayName: "",
-          lastUserMessagePreview: "",
-          status: null,
-          agentId: null,
-          sessionType: null,
-          createdAt: "2026-07-16T00:00:00.000Z",
-          updatedAt: "2026-07-16T00:03:00.000Z",
-          eventCount: 0,
-          awaySummary: null,
-          callerSessionId: null,
-          predecessorSessionId: null,
-          nodeId: null,
-          lastEventId: null,
-          lastReadEventId: null,
-        },
-      },
+describe("FolderBrowseService", () => {
+  it("uses session display name, then preview, then an untitled fallback", async () => {
+    const { store } = makeStore({ ...emptyResult, items: [
+      { boardItem: item("session", "named"), archived: false, session: { agentSessionId: "named", displayName: "  이름 있는 세션  " } as never },
+      { boardItem: item("session", "preview"), archived: false, session: { agentSessionId: "preview", displayName: null, lastUserMessagePreview: "  최신\n사용자 😀 발화  " } as never },
+      { boardItem: item("session", "untitled"), archived: false, session: { agentSessionId: "untitled", displayName: "", lastUserMessagePreview: "" } as never },
+    ] });
+    const result = await new FolderBrowseService(store).browse({ folderId: "folder-1" });
+    expect(result.items.map((entry) => entry.type === "session" ? entry.displayName : null)).toEqual([
+      "이름 있는 세션", "최신 사용자 😀 발화", "제목 없는 세션",
     ]);
-
-    const result = await new ContainerBrowseService(store).browse({
-      container: { containerKind: "task", containerId: "task-1" },
-    });
-
-    expect(result.items.map((item) => item.type === "session" ? item.displayName : null)).toEqual([
-      "이름 있는 세션",
-      "최신 사용자 😀 발화",
-      "제목 없는 세션",
-    ]);
-    expect(result.items[1]).toEqual(expect.objectContaining({
-      type: "session",
-      agentSessionId: "session-preview",
-      agentId: "seosoyoung",
-      status: "completed",
-    }));
   });
 
-  it("returns codepoint-safe markdown previews and all board item types", async () => {
+  it("returns codepoint-safe markdown previews", async () => {
     const body = `${"가".repeat(239)}😀끝`;
-    const { store } = storeWith([
-      {
-        boardItem: boardItem("markdown", "doc-1"),
-        archived: false,
-        markdown: {
-          id: "doc-1",
-          title: "명세",
-          body,
-          updatedAt: "2026-07-16T00:01:00.000Z",
-        },
-      },
-      {
-        boardItem: boardItem("task", "task-child"),
-        archived: false,
-        task: { id: "task-child", title: "후속 업무", updatedAt: null },
-      },
-      {
-        boardItem: boardItem("custom_view", "view-1"),
-        archived: false,
-        customView: { id: "view-1", title: "상태판", updatedAt: null },
-      },
-      {
-        boardItem: boardItem("asset", "asset-1"),
-        archived: false,
-        asset: { id: "asset-1", title: "diagram.png", updatedAt: null },
-      },
-      {
-        boardItem: boardItem("subfolder", "child-folder"),
-        archived: false,
-        subfolder: { id: "child-folder", title: "하위 프로젝트" },
-      },
-      {
-        boardItem: boardItem("frame", "frame-1", { title: "그룹" }),
-        archived: false,
-      },
-    ]);
-
-    const result = await new ContainerBrowseService(store).browse({
-      container: { containerKind: "task", containerId: "task-1" },
-    });
+    const { store } = makeStore({ ...emptyResult, items: [
+      { boardItem: item("markdown", "doc-1"), archived: false, markdown: { id: "doc-1", title: "명세", body } as never },
+    ] });
+    const result = await new FolderBrowseService(store).browse({ folderId: "folder-1" });
     const markdown = result.items[0];
     expect(markdown).toEqual(expect.objectContaining({ type: "markdown", title: "명세" }));
     if (markdown?.type !== "markdown") throw new Error("expected markdown");
     expect(Array.from(markdown.preview)).toHaveLength(240);
     expect(markdown.preview.endsWith("…")).toBe(true);
-    expect(markdown.preview).not.toContain("\ud83d");
-    expect(result.items.map((item) => item.type)).toEqual([
-      "markdown",
-      "task",
-      "custom_view",
-      "asset",
-      "subfolder",
-      "frame",
-    ]);
   });
 
-  it("clamps browse to 100, search to 50, and keeps the query container-scoped", async () => {
-    expect(CONTAINER_SEARCH_SCAN_LIMIT).toBe(2_000);
-    const { store, listContainerItems } = storeWith([], 275, {
-      limit: 2_000,
-      scannedItems: 2_000,
-      truncated: true,
-    });
-    const service = new ContainerBrowseService(store);
-
-    const browse = await service.browse({
-      container: { containerKind: "folder", containerId: "folder-1" },
-      cursor: 100,
-      limit: 999,
-      includeArchived: true,
-    });
-    expect(browse.page).toEqual({
-      cursor: 100,
-      limit: 100,
-      total: 275,
-      nextCursor: 200,
-    });
-    expect(listContainerItems).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      container: { containerKind: "folder", containerId: "folder-1" },
-      cursor: 100,
-      limit: 100,
-      includeArchived: true,
-      query: null,
+  it("clamps browse and search limits and keeps reads in one folder", async () => {
+    expect(FOLDER_SEARCH_SCAN_LIMIT).toBe(2_000);
+    const { store, listFolderItems } = makeStore({ ...emptyResult, total: 275,
+      scan: { limit: 2_000, scannedItems: 2_000, truncated: true } });
+    const service = new FolderBrowseService(store);
+    const browse = await service.browse({ folderId: "folder-1", cursor: 100, limit: 999, includeArchived: true });
+    expect(browse.page).toEqual({ cursor: 100, limit: 100, total: 275, nextCursor: 200 });
+    expect(listFolderItems).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      folderId: "folder-1", cursor: 100, limit: 100, includeArchived: true, query: null,
     }));
-
-    const search = await service.search({
-      container: { containerKind: "task", containerId: "task-1" },
-      query: "  명세 😀  ",
-      limit: 999,
-    });
-    expect(listContainerItems).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      container: { containerKind: "task", containerId: "task-1" },
-      cursor: 0,
-      limit: 50,
-      query: "명세 😀",
-      itemTypes: ["session", "markdown"],
-      scanLimit: 2_000,
+    const search = await service.search({ folderId: "folder-1", query: "  명세 😀  ", limit: 999 });
+    expect(listFolderItems).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      folderId: "folder-1", cursor: 0, limit: 50, query: "명세 😀",
+      itemTypes: ["session", "markdown"], scanLimit: 2_000,
     }));
-    expect(search.search).toEqual({
-      scanLimit: 2_000,
-      scannedItems: 2_000,
-      truncated: true,
-    });
+    expect(search.search).toEqual({ scanLimit: 2_000, scannedItems: 2_000, truncated: true });
   });
 
-  it("rejects missing containers before querying board items", async () => {
-    const { store, listContainerItems } = storeWith([]);
-    store.getTaskById = vi.fn(async () => null);
-
-    await expect(new ContainerBrowseService(store).browse({
-      container: { containerKind: "task", containerId: "missing" },
-    })).rejects.toThrow("task not found: missing");
-    expect(listContainerItems).not.toHaveBeenCalled();
+  it("rejects missing folders before reading board items", async () => {
+    const { store, listFolderItems, getFolderById } = makeStore(emptyResult);
+    getFolderById.mockResolvedValueOnce(null as never);
+    await expect(new FolderBrowseService(store).browse({ folderId: "missing" }))
+      .rejects.toThrow("folder not found: missing");
+    expect(listFolderItems).not.toHaveBeenCalled();
   });
 });

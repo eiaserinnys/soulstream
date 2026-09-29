@@ -25,7 +25,7 @@ const DIRECT_EVENT_APPEND_INVENTORY = {};
 
 const WIRE_EVENT_ENVELOPE_INVENTORY = {
   "task/task_engine_event_publisher.ts": 1,
-  "upstream/session_broadcaster.ts": 3,
+  "upstream/session_broadcaster.ts": 2,
 };
 
 const FORBIDDEN_SESSION_MUTATION_PROCEDURES = [

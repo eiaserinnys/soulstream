@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { TaskItemStatus } from "../../db/session_db_types.js";
+import type { ChecklistItemStatus } from "../../db/session_db_types.js";
 import type { McpRuntime } from "../runtime.js";
 
 import {
@@ -25,7 +25,7 @@ export function registerChecklistItemTools(
     "create_checklist_item",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템을 생성한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 항목을 생성한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),
@@ -62,7 +62,7 @@ export function registerChecklistItemTools(
     "update_checklist_item",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 제목 또는 본문을 수정한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 항목 제목 또는 본문을 수정한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),
@@ -97,7 +97,7 @@ export function registerChecklistItemTools(
     "set_checklist_item_assignee",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 담당자를 설정하거나 해제한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 항목 담당자를 설정하거나 해제한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),
@@ -130,20 +130,20 @@ export function registerChecklistItemTools(
     name: "archive_checklist_item",
     archived: true,
     description:
-      "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템을 archived 처리한다.",
+      "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 항목을 archived 처리한다.",
   });
   registerItemArchiveTool(server, runtime, {
     name: "unarchive_checklist_item",
     archived: false,
     description:
-      "현재 MCP caller session을 actor_kind='agent'로 하여 archived 업무 아이템을 복구한다.",
+      "현재 MCP caller session을 actor_kind='agent'로 하여 archived 체크리스트 항목을 복구한다.",
   });
 
   server.registerTool(
     "move_checklist_item",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템을 다른 위치나 섹션으로 이동한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 항목을 다른 위치나 섹션으로 이동한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),
@@ -180,7 +180,7 @@ export function registerChecklistItemTools(
     "set_checklist_item_status",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 상태를 설정한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 항목 상태를 설정한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),
@@ -201,7 +201,7 @@ export function registerChecklistItemTools(
             ...actor,
             folderId: input.folder_id,
             itemId: input.item_id,
-            status: input.status as TaskItemStatus,
+            status: input.status as ChecklistItemStatus,
             expectedVersion: input.expected_version,
             reason: input.reason,
             idempotencyKey: input.idempotency_key,

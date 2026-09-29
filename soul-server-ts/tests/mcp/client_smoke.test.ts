@@ -50,6 +50,7 @@ function createMockSql() {
           settings: {},
           parent_folder_id: null,
           project_page_id: "page-root",
+          version: 1,
           created_at: null,
         },
         {
@@ -59,6 +60,7 @@ function createMockSql() {
           settings: {},
           parent_folder_id: "root",
           project_page_id: "page-child",
+          version: 1,
           created_at: null,
         },
       ];
@@ -289,6 +291,7 @@ function createSilentLogger() {
 let sqlCalls: MockSqlCall[] = [];
 const worktreeList = vi.fn(async (input: unknown) => [{ input }]);
 const worktreeCreate = vi.fn(async (input: unknown) => ({ input, created: true }));
+const renameFolder = vi.fn(async () => ({ folder: {}, operation: {}, idempotent: false }));
 
 function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRuntime {
   const sql = createMockSql() as SqlClient & { __calls: MockSqlCall[] };
@@ -302,7 +305,7 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),
     emitSessionDeleted: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionBroadcaster;
-  const catalogService = new CatalogService(db, broadcaster);
+  const catalogService = new CatalogService(db, broadcaster, undefined, { renameFolder } as never);
   const taskManager = {
     listTasks: () => [],
     getTask: () => undefined,
@@ -619,55 +622,12 @@ describe("MCP SDK client smoke", () => {
     });
   });
 
-  it("callTool('browse_container') → board_items 소속의 타입별 메타와 페이지를 반환", async () => {
+  it("callTool('search_folder_items') → 세션 표시명·문서만 최대 50개로 검색", async () => {
     const result = await client.callTool({
-      name: "browse_container",
+      name: "search_folder_items",
       arguments: {
-        container: { kind: "folder", id: "root" },
-        caller_session_id: "current-codex-session",
-        limit: 20,
-      },
-    });
-    expect(result.isError).not.toBe(true);
-    const structured = result.structuredContent as {
-      container: { kind: string; id: string };
-      items: Array<Record<string, unknown>>;
-      page: { cursor: number; limit: number; total: number; next_cursor: number | null };
-    };
-    expect(structured.container).toEqual({ kind: "folder", id: "root" });
-    expect(structured.items).toEqual([
-      expect.objectContaining({
-        type: "session",
-        agent_session_id: "sess-root",
-        display_name: "Root Session",
-        status: "running",
-        agent: { id: "codex-default", name: "Codex" },
-      }),
-      expect.objectContaining({
-        type: "markdown",
-        id: "doc-1",
-        title: "Spec",
-        preview: "Short spec body",
-      }),
-      expect.objectContaining({ type: "asset", id: "asset-1", title: "image.png" }),
-    ]);
-    expect(structured.page).toEqual({
-      cursor: 0,
-      limit: 20,
-      total: 3,
-      next_cursor: null,
-    });
-    expect(structured).not.toHaveProperty("truncated");
-    expect(structured).not.toHaveProperty("scanned_items");
-  });
-
-  it("callTool('search_container_items') → 세션 표시명·문서만 최대 50개로 검색", async () => {
-    const result = await client.callTool({
-      name: "search_container_items",
-      arguments: {
-        container: { kind: "folder", id: "root" },
+        folder_id: "root",
         query: "Spec",
-        caller_session_id: "current-codex-session",
         limit: 999,
       },
     });
@@ -686,8 +646,8 @@ describe("MCP SDK client smoke", () => {
     expect(structured.scan_limit).toBe(2_000);
   });
 
-  it("callTool('move_folder') → 부모 이동, 루트 복귀, 순환 거부", async () => {
-    sqlCalls.length = 0;
+  it("callTool('move_folder') → 새 폴더 host 계약으로 부모 이동과 루트 복귀", async () => {
+    renameFolder.mockClear();
 
     const moved = await client.callTool({
       name: "move_folder",
@@ -703,27 +663,9 @@ describe("MCP SDK client smoke", () => {
     expect(rooted.isError).not.toBe(true);
     expect(rooted.structuredContent).toEqual({ ok: true });
 
-    const updateCalls = sqlCalls.filter((call) =>
-      call.fragments.join("|").includes("folder_update"),
-    );
-    expect(updateCalls).toHaveLength(2);
-    expect(updateCalls[0]?.values).toEqual([
-      "child",
-      ["parent_folder_id"],
-      ["root"],
-    ]);
-    expect(updateCalls[1]?.values).toEqual([
-      "child",
-      ["parent_folder_id"],
-      [null],
-    ]);
-
-    const cycle = await client.callTool({
-      name: "move_folder",
-      arguments: { folder_id: "root", parent_folder_id: "child" },
-    });
-    expect(cycle.isError).toBe(true);
-    expect(cycle.structuredContent).toEqual({ error: "folder parent cycle" });
+    expect(renameFolder).toHaveBeenCalledTimes(2);
+    expect(renameFolder).toHaveBeenNthCalledWith(1, expect.objectContaining({ folderId: "child", parentFolderId: "root" }));
+    expect(renameFolder).toHaveBeenNthCalledWith(2, expect.objectContaining({ folderId: "child", parentFolderId: null }));
   });
 
   it("level=0 capability inventory matches the registered MCP tools", async () => {

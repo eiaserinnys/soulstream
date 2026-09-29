@@ -23,7 +23,7 @@ export function registerChecklistSectionTools(
     "create_checklist_section",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션을 생성한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 섹션을 생성한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),
@@ -56,7 +56,7 @@ export function registerChecklistSectionTools(
     "update_checklist_section",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 제목을 수정한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 섹션 제목을 수정한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),
@@ -89,7 +89,7 @@ export function registerChecklistSectionTools(
     "set_checklist_section_assignee",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 담당자를 설정하거나 해제한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 섹션 담당자를 설정하거나 해제한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),
@@ -122,20 +122,20 @@ export function registerChecklistSectionTools(
     name: "archive_checklist_section",
     archived: true,
     description:
-      "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션을 archived 처리한다.",
+      "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 섹션을 archived 처리한다.",
   });
   registerSectionArchiveTool(server, runtime, {
     name: "unarchive_checklist_section",
     archived: false,
     description:
-      "현재 MCP caller session을 actor_kind='agent'로 하여 archived 업무 섹션을 복구한다.",
+      "현재 MCP caller session을 actor_kind='agent'로 하여 archived 체크리스트 섹션을 복구한다.",
   });
 
   server.registerTool(
     "move_checklist_section",
     {
       description: mutationToolDescription(
-        "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 position_key를 재계산한다.",
+        "현재 MCP caller session을 actor_kind='agent'로 하여 체크리스트 섹션 position_key를 재계산한다.",
       ),
       inputSchema: {
         folder_id: z.string().min(1),

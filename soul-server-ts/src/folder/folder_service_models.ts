@@ -1,5 +1,5 @@
 import type {
-  TaskItemStatus,
+  ChecklistItemStatus,
   FolderOperationActorKind,
   FolderOperationRow,
   FolderSnapshot,
@@ -34,7 +34,7 @@ export interface FolderHandoffEvent {
   folderName: string;
   itemId: string;
   itemTitle: string;
-  status: Extract<TaskItemStatus, "completed" | "cancelled">;
+  status: Extract<ChecklistItemStatus, "completed" | "cancelled">;
   operationId: string;
   eventId: number;
 }

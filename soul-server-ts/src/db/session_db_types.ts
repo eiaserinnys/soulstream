@@ -1,12 +1,12 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
   BoardItemType,
-  TaskItemStatus,
+  ChecklistItemStatus,
 } from "@soulstream/wire-schema";
 
 export type {
   BoardItemType,
-  TaskItemStatus,
+  ChecklistItemStatus,
 } from "@soulstream/wire-schema";
 
 import type {
@@ -503,7 +503,7 @@ export interface ChecklistItemRow extends ChecklistAssigneeFields {
   position_key: string;
   title: string;
   how_to: string;
-  status: TaskItemStatus;
+  status: ChecklistItemStatus;
   archived: boolean;
   version: number;
   created_session_id: string | null;
@@ -589,7 +589,7 @@ export interface ChecklistMyTurnItemRow {
   item_id: string;
   item_title: string;
   how_to: string;
-  status: TaskItemStatus;
+  status: ChecklistItemStatus;
   item_version: number;
   effective_assignee_kind: ChecklistAssigneeKind | null;
   effective_assignee_agent_id: string | null;

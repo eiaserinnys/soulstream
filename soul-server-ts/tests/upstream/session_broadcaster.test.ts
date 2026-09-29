@@ -249,25 +249,6 @@ describe("emitEventEnvelope", () => {
   });
 });
 
-describe("emitTaskUpdated", () => {
-  it("SessionEventEnvelope로 task_updated payload를 운반한다", async () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
-
-    await b.emitTaskUpdated("sess-1", "rb-1", "board-1");
-
-    expect(send).toHaveBeenCalledWith({
-      type: "event",
-      agentSessionId: "sess-1",
-      event: {
-        type: "task_updated",
-        taskId: "rb-1",
-        boardItemId: "board-1",
-      },
-    });
-  });
-});
-
 describe("SessionBroadcaster.emitCatalogUpdated (B-5)", () => {
   it("always emits both delta keys, including folder-only changes", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
