@@ -12,6 +12,10 @@ import { FolderSettingsDialog } from "./FolderSettingsDialog";
 
 const folders: CatalogFolder[] = [
   {
+    checklistEnabled: false,
+    status: "open",
+    version: 1,
+    archived: false,
     id: "root",
     name: "Root",
     sortOrder: 0,
@@ -19,6 +23,10 @@ const folders: CatalogFolder[] = [
     settings: { folderPrompt: "Root prompt" },
   },
   {
+    checklistEnabled: false,
+    status: "open",
+    version: 1,
+    archived: false,
     id: "parent",
     name: "Parent",
     sortOrder: 1,
@@ -26,6 +34,10 @@ const folders: CatalogFolder[] = [
     settings: { folderPrompt: "" },
   },
   {
+    checklistEnabled: false,
+    status: "open",
+    version: 1,
+    archived: false,
     id: "child",
     name: "Child",
     sortOrder: 2,

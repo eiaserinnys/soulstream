@@ -151,7 +151,7 @@ export function applyUpdate(
     case "claude_runtime_mode_state":
     case "claude_runtime_schedule_updated":
     case "claude_runtime_schedule_deleted":
-    case "task_updated":
+    case "folder_updated":
     case "custom_view_updated":
       return false;
 

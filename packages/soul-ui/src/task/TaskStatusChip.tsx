@@ -8,9 +8,9 @@ import {
 } from "lucide-react";
 
 import { cn } from "../lib/cn";
-import type { TaskItemStatus } from "../stores/task-store";
+import type { ChecklistItemStatus } from "../stores/folder-checklist-store";
 
-const statusConfig: Record<TaskItemStatus, {
+const statusConfig: Record<ChecklistItemStatus, {
   label: string;
   icon: LucideIcon;
   className: string;
@@ -46,7 +46,7 @@ export function TaskStatusChip({
   status,
   className,
 }: {
-  status: TaskItemStatus;
+  status: ChecklistItemStatus;
   className?: string;
 }) {
   const config = statusConfig[status];

@@ -50,9 +50,8 @@ describe("TaskBoardPane catalog ownership", () => {
     useDashboardStore.getState().setCatalog(catalog("running"));
     flushSync(() => root.render(
       <TaskBoardPane
-        taskId="task-a"
-        projectFolderId="project-a"
-        projectTitle="Project A"
+        folderId="task-a"
+        folderName="Project A"
         sessions={[]}
         taskMoveTargets={[]}
         onBoardItemsChanged={() => undefined}
@@ -74,7 +73,7 @@ describe("TaskBoardPane catalog ownership", () => {
 
 function catalog(status: SessionSummary["status"]): CatalogState {
   return {
-    folders: [{ id: "project-a", name: "Project A", sortOrder: 0, projectPageId: null }],
+    folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "project-a", name: "Project A", sortOrder: 0, projectPageId: null }],
     sessions: {},
     boardItems: [],
     sessionList: [{

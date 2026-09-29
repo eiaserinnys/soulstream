@@ -73,9 +73,9 @@ describe("V3SessionPanel", () => {
     expect(runningRow?.textContent).toContain("로젤린");
     expect(runningRow?.textContent).toContain("eiaserinnys");
     expect(runningRow?.textContent).toContain("마지막 진행 메시지");
-    expect(runningRow?.textContent).toContain("PR-BY 업무 · 소울스트림");
+    expect(runningRow?.textContent).toContain("소울스트림");
     expect(runningRow?.querySelector(".v3-run-affiliation")?.getAttribute("title"))
-      .toBe("PR-BY 업무 · 소울스트림");
+      .toBe("소울스트림");
     expect(runningRow?.textContent).toContain("실행 중");
     expect(runningRow?.querySelector('[data-testid="profile-avatar"]')).not.toBeNull();
     expect(runningRow?.querySelector(".v3-run-trailing time")?.textContent).toMatch(/전$/);
@@ -201,33 +201,17 @@ function session(agentSessionId: string, status: "running" | "completed"): Sessi
 }
 
 const projectFolders: CatalogFolder[] = [
-  { id: "project-folder", name: "소울스트림", sortOrder: 0, projectPageId: "project-page" },
+  { checklistEnabled: false, status: "open", version: 1, archived: false, id: "project-folder", name: "소울스트림", sortOrder: 0, projectPageId: "project-page" },
 ];
 
 function affiliationBoardItems(sessionId: string): CatalogBoardItem[] {
-  return [
-    {
-      id: `session:${sessionId}`,
-      folderId: "project-folder",
-      containerKind: "task",
-      containerId: "task-a",
-      membershipKind: "primary",
-      itemType: "session",
-      itemId: sessionId,
-      x: 0,
-      y: 0,
-    },
-    {
-      id: "task:task-a",
-      folderId: "project-folder",
-      containerKind: "folder",
-      containerId: "project-folder",
-      membershipKind: "primary",
-      itemType: "task",
-      itemId: "task-a",
-      x: 0,
-      y: 0,
-      metadata: { title: "PR-BY 업무" },
-    },
-  ];
+  return [{
+    id: `session:${sessionId}`,
+    folderId: "project-folder",
+    membershipKind: "primary",
+    itemType: "session",
+    itemId: sessionId,
+    x: 0,
+    y: 0,
+  }];
 }

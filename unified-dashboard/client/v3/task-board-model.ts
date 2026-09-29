@@ -1,6 +1,5 @@
 import {
   retainEqualValue,
-  filterTaskBoardSpatialItems,
   type CatalogBoardItem,
   type CatalogState,
   type SessionSummary,
@@ -10,8 +9,8 @@ interface BuildTaskBoardCatalogOptions {
   currentCatalog: CatalogState | null;
   boardItems: readonly CatalogBoardItem[];
   sessions: readonly SessionSummary[];
-  projectFolderId: string | null;
-  projectTitle: string;
+  folderId: string;
+  folderName: string;
 }
 
 export type TaskBoardResourceTab =
@@ -62,9 +61,10 @@ export function openTaskBoardResource(
 export function buildTaskBoardResourceTabs(
   boardItems: readonly CatalogBoardItem[],
   openedResources: readonly TaskBoardResourceSelection[] = [],
+  checklistEnabled = true,
 ): TaskBoardResourceTab[] {
   const tabs: TaskBoardResourceTab[] = [
-    { id: "checklist", kind: "checklist", title: "체크리스트" },
+    ...(checklistEnabled ? [{ id: "checklist" as const, kind: "checklist" as const, title: "체크리스트" }] : []),
     { id: "sessions", kind: "sessions", title: "세션" },
   ];
   const seenTabIds = new Set<string>();
@@ -141,55 +141,18 @@ export function mergeTaskBoardSessions(
 export function buildTaskBoardCatalog({
   currentCatalog,
   boardItems,
-  projectFolderId,
-  projectTitle,
+  folderId,
+  folderName,
 }: BuildTaskBoardCatalogOptions): CatalogState {
   return {
-    folders: projectFolderId
-      ? [{ id: projectFolderId, name: projectTitle, sortOrder: 0 }]
-      : [],
+    folders: [currentCatalog?.folders.find((folder) => folder.id === folderId) ?? {
+      id: folderId, name: folderName, sortOrder: 0,
+      checklistEnabled: true, status: "open", version: 1, archived: false,
+    }],
     sessions: {},
-    boardItems: retainEqualValue(
-      currentCatalog?.boardItems,
-      filterTaskBoardSpatialItems(boardItems),
-    ),
+    boardItems: retainEqualValue(currentCatalog?.boardItems, [...boardItems]),
     sessionList: [],
   };
-}
-
-export function scopeCatalogUpdateToTaskBoard(
-  currentCatalog: CatalogState,
-  incomingCatalog: CatalogState,
-  taskId: string,
-): CatalogState {
-  const taskBoardItems = incomingCatalog.boardItems === undefined
-    ? currentCatalog.boardItems ?? []
-    : incomingCatalog.boardItems.filter((item) => (
-      item.containerKind === "task" && item.containerId === taskId
-    ));
-
-  return {
-    ...currentCatalog,
-    sessions: {},
-    boardItems: filterTaskBoardSpatialItems(taskBoardItems),
-    sessionList: [],
-  };
-}
-
-export function scopeCatalogUpdateToTaskBoardPreservingSessionList(
-  currentCatalog: CatalogState,
-  incomingCatalog: CatalogState,
-  taskId: string,
-): CatalogState {
-  const scoped = scopeCatalogUpdateToTaskBoard(
-    currentCatalog,
-    incomingCatalog,
-    taskId,
-  );
-  const sessionList = incomingCatalog.sessionList === undefined
-    ? currentCatalog.sessionList
-    : retainEqualValue(currentCatalog.sessionList, incomingCatalog.sessionList);
-  return sessionList === undefined ? scoped : { ...scoped, sessionList };
 }
 
 export const TASK_RESOURCE_MIN_WIDTH_PX = 240;

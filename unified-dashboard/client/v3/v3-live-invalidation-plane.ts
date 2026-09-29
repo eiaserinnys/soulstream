@@ -7,7 +7,7 @@ export type V3InvalidationSource =
   | "session_deleted"
   | "metadata_updated"
   | "catalog"
-  | "task"
+  | "folder"
   | "custom_view"
   | "starred_page"
   | "replay";
@@ -23,7 +23,7 @@ const SOURCE_NAMES: readonly V3InvalidationSource[] = [
   "session_deleted",
   "metadata_updated",
   "catalog",
-  "task",
+  "folder",
   "custom_view",
   "starred_page",
   "replay",
@@ -59,8 +59,8 @@ export function acceptV3SessionStreamEvent(event: SessionStreamEvent): void {
     case "catalog_updated":
       invalidateV3("catalog");
       break;
-    case "task_updated":
-      invalidateV3("task");
+    case "folder_updated":
+      invalidateV3("folder");
       break;
     case "custom_view_updated":
       invalidateV3("custom_view");
@@ -92,7 +92,7 @@ export function selectV3PlannerInvalidationKeys(
   const pageCollections = selectV3InvalidationKey(current, [
     "session_created",
     "session_deleted",
-    "task",
+    "folder",
     "replay",
   ]);
   return {

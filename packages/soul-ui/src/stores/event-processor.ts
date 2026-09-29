@@ -127,9 +127,9 @@ export function processEventSingle(
     return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
 
-  // subtree_update / task_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
+  // subtree_update / folder_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
   // 보드 live 갱신은 session stream projection stores가 처리한다.
-  if (event.type === "subtree_update" || event.type === "task_updated" || event.type === "custom_view_updated") {
+  if (event.type === "subtree_update" || event.type === "folder_updated" || event.type === "custom_view_updated") {
     return {
       root,
       updated: false,
@@ -279,8 +279,8 @@ export function processEventsBatch(
 
     if (!acceptLiveTextEvent(event, eventId, ctx)) continue;
 
-    // subtree_update / task_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
-    if (event.type === "subtree_update" || event.type === "task_updated" || event.type === "custom_view_updated") {
+    // subtree_update / folder_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
+    if (event.type === "subtree_update" || event.type === "folder_updated" || event.type === "custom_view_updated") {
       continue;
     }
 

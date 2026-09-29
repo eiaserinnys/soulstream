@@ -26,13 +26,12 @@ import {
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { useV3InvalidationKey, useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 import { loadConfirmedResult } from "./planner-query-state";
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import "./v3-task-board.css";
 
 export function TaskBoardPane({
-  taskId,
-  projectFolderId,
-  projectTitle,
+  folderId,
+  folderName,
   sessions,
   taskMoveTargets,
   viewportPersistenceKey,
@@ -43,11 +42,10 @@ export function TaskBoardPane({
   onOpenCustomView,
   onClose,
 }: {
-  taskId: string;
-  projectFolderId: string | null;
-  projectTitle: string;
+  folderId: string;
+  folderName: string;
   sessions: readonly SessionSummary[];
-  taskMoveTargets: readonly PlannerTask[];
+  taskMoveTargets: readonly PlannerFolder[];
   viewportPersistenceKey?: string;
   onBoardItemsChanged(items: readonly CatalogBoardItem[]): void;
   onMarkdownDocumentDeleted(documentId: string, boardItemId: string): void;
@@ -59,14 +57,14 @@ export function TaskBoardPane({
   const [boardItems, setBoardItems] = useState<CatalogBoardItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const boardItemsRef = useRef(boardItems);
-  const loadedTaskIdRef = useRef<string | null>(null);
+  const loadedFolderIdRef = useRef<string | null>(null);
   boardItemsRef.current = boardItems;
   const sessionIds = useMemo(
     () => extractTaskBoardSessionIds(boardItems ?? []),
     [boardItems],
   );
   const invalidationKey = useV3InvalidationKey([
-    "catalog", "task", "replay",
+    "catalog", "folder", "replay",
   ]);
   const pageInvalidationKey = useV3PageInvalidationKey(
     (boardItems ?? [])
@@ -92,9 +90,9 @@ export function TaskBoardPane({
     currentCatalog: null,
     boardItems: boardItems ?? [],
     sessions: displaySessions,
-    projectFolderId,
-    projectTitle,
-  }), [boardItems, displaySessions, projectFolderId, projectTitle]);
+    folderId: folderId,
+    folderName,
+  }), [boardItems, displaySessions, folderId, folderName]);
 
   const removeSourceBoardItem = useCallback((boardItemId: string, movedItem?: CatalogBoardItem) => {
     setBoardItems((current) => current === null ? current : [
@@ -107,24 +105,24 @@ export function TaskBoardPane({
     try {
       const next = await loadConfirmedResult({
         previous: boardItemsRef.current,
-        load: () => fetchTaskBoardContainerItems(taskId),
+        load: () => fetchTaskBoardContainerItems(folderId),
         clearsVisibleContent: (current, result) => current.length > 0 && result.length === 0,
       });
-      loadedTaskIdRef.current = taskId;
+      loadedFolderIdRef.current = folderId;
       setBoardItems((current) => retainEqualValue(current ?? undefined, next));
       setLoadError(null);
     } catch (error) {
       console.error("[v3/task-board] 보드 항목 재조회 실패", error);
       setLoadError(errorText(error));
     }
-  }, [taskId]);
+  }, [folderId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    const sameTask = loadedTaskIdRef.current === taskId;
+    const sameTask = loadedFolderIdRef.current === folderId;
     if (!sameTask) setBoardItems(null);
     const load = () => fetchTaskBoardContainerItems(
-      taskId,
+      folderId,
       globalThis.fetch.bind(globalThis),
       controller.signal,
     );
@@ -133,7 +131,7 @@ export function TaskBoardPane({
       load,
       clearsVisibleContent: (current, result) => current.length > 0 && result.length === 0,
     }).then((next) => {
-      loadedTaskIdRef.current = taskId;
+      loadedFolderIdRef.current = folderId;
       setBoardItems((current) => retainEqualValue(current ?? undefined, next));
       setLoadError(null);
     }).catch((error: unknown) => {
@@ -142,7 +140,7 @@ export function TaskBoardPane({
       setLoadError(errorText(error));
     });
     return () => controller.abort();
-  }, [invalidationKey, pageInvalidationKey, taskId]);
+  }, [invalidationKey, pageInvalidationKey, folderId]);
 
   useEffect(() => {
     onBoardItemsChanged(boardItems ?? []);
@@ -178,13 +176,13 @@ export function TaskBoardPane({
         ) : (
           <BoardWorkspaceView
             catalogOverride={scopedCatalog}
-            boardContainerOverride={{ kind: "task", id: taskId }}
-            selectedFolderIdOverride={projectFolderId}
+            boardContainerOverride={{ kind: "folder", id: folderId }}
+            selectedFolderIdOverride={folderId}
             sessions={displaySessions}
             viewportPersistenceKey={viewportPersistenceKey}
             taskMoveTargets={taskMoveTargets
-              .filter((target) => target.taskId !== taskId)
-              .map((target) => ({ id: target.taskId, title: target.page.title }))}
+              .filter((target) => target.folderId !== folderId)
+              .map((target) => ({ id: target.folderId, title: target.page.title }))}
             onBoardItemMoved={(item) => removeSourceBoardItem(item.id, item)}
             onMarkdownDocumentDeleted={(documentId, boardItemId) => {
               removeSourceBoardItem(boardItemId);

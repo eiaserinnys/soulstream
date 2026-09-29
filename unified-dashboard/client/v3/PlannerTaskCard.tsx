@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
-import { DashboardIconCap, type SessionSummary } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 import { Star } from "lucide-react";
 
@@ -7,14 +7,14 @@ import {
   latestRun,
   plannerStatusPresentation,
 } from "./planner-model";
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import { buildTaskContextMenuActions } from "./context-menu-model";
 import {
   singleLinePreview,
   TASK_TITLE_PREVIEW_LENGTH,
 } from "./session-preview";
-import { useTaskStar } from "./use-task-star";
+import { useFolderStar } from "./use-task-star";
 import {
   sessionPresentationStatus,
   type SessionNodeConnectivity,
@@ -23,6 +23,7 @@ import "./v3-content-boundary.css";
 
 export function PlannerTaskCard({
   task,
+  folder,
   sessions,
   nodeConnectivity,
   isInToday,
@@ -31,7 +32,8 @@ export function PlannerTaskCard({
   onToggleToday,
   onMoveToProject,
 }: {
-  task: PlannerTask;
+  task: PlannerFolder;
+  folder?: CatalogFolder;
   sessions: readonly SessionSummary[];
   nodeConnectivity: SessionNodeConnectivity;
   isInToday: boolean;
@@ -41,7 +43,7 @@ export function PlannerTaskCard({
   onMoveToProject(): void;
 }) {
   const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
-  const taskStar = useTaskStar(task.page);
+  const folderStar = useFolderStar(task.page);
   const status = plannerStatusPresentation(task.status);
   const run = latestRun(task.sessionIds, sessions);
   const runStatus = run ? sessionPresentationStatus(run.session, nodeConnectivity) : null;
@@ -72,11 +74,11 @@ export function PlannerTaskCard({
       data-testid={`v3-task-${task.page.id}`}
     >
       <div className="v3-task-main">
-        <div className="v3-task-kicker">
+        {folder?.checklistEnabled === false ? null : <div className="v3-task-kicker">
           <span className={`v3-status-chip v3-status-chip--${task.status}`}>
             <span aria-hidden="true">{status.icon}</span> {status.label}
           </span>
-        </div>
+        </div>}
         <h3
           className="v3-text-clamp-2"
           aria-label={task.page.title}
@@ -100,7 +102,7 @@ export function PlannerTaskCard({
             {runStatus === "running" ? <i aria-label="실행 중" /> : null}
           </span>
         ) : null}
-        {task.progress === null ? null : (
+        {folder?.checklistEnabled === false || task.progress === null ? null : (
           <span
             className="v3-progress"
             data-complete={task.progress === 100 ? "true" : "false"}
@@ -117,25 +119,31 @@ export function PlannerTaskCard({
       <div className="v3-task-star-slot">
         <DashboardIconCap
           className="v3-task-star-toggle"
-          label={`${task.page.title} ${taskStar.starred ? "별표 해제" : "별표 추가"}`}
-          aria-pressed={taskStar.starred}
-          disabled={taskStar.pending}
-          onClick={(event) => { event.stopPropagation(); void taskStar.toggle(); }}
+          label={`${task.page.title} ${folderStar.starred ? "별표 해제" : "별표 추가"}`}
+          aria-pressed={folderStar.starred}
+          disabled={folderStar.pending}
+          onClick={(event) => { event.stopPropagation(); void folderStar.toggle(); }}
         >
-          <Star className="h-4 w-4" fill={taskStar.starred ? "currentColor" : "none"} aria-hidden="true" />
+          <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
         </DashboardIconCap>
       </div>
       <V3ContextMenu
         target={contextMenu}
         onClose={() => setContextMenu(null)}
-        actions={buildTaskContextMenuActions({
-          starred: taskStar.starred,
+        actions={folder ? [
+          { label: "폴더 열기", onSelect: onOpen },
+          { label: "폴더 ID 복사", onSelect: () => navigator.clipboard.writeText(folder.id) },
+          { label: folderStar.starred ? "별표 해제" : "별표 추가", onSelect: folderStar.toggle, separatorBefore: true },
+          { label: isInToday ? "오늘에서 제외" : "오늘에 추가", onSelect: onToggleToday },
+          ...(folder.checklistEnabled ? [{ label: "완료 처리", onSelect: onComplete, disabled: task.status === "completed" }] : []),
+        ] : buildTaskContextMenuActions({
+          starred: folderStar.starred,
           completed: task.status === "completed",
           inToday: isInToday,
         }, {
           open: onOpen,
           copyId: () => navigator.clipboard.writeText(task.page.id),
-          toggleStar: taskStar.toggle,
+          toggleStar: folderStar.toggle,
           moveToProject: onMoveToProject,
           complete: onComplete,
           toggleToday: onToggleToday,

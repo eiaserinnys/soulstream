@@ -4,10 +4,10 @@ import type { InitialTaskContext, PageApiClient, PageDto } from "@seosoyoung/sou
 
 import type { PlannerLoadState } from "./PlannerViews";
 import type { BrowserPlannerMutationPort } from "./planner-browser-port";
-import type { DailyPlannerData, PlannerTask } from "./planner-data";
+import type { DailyPlannerData, PlannerFolder } from "./planner-data";
 import { taskContextCount } from "./planner-model";
 import { resolveProjectPage } from "./project-page-actions";
-import { createPlannerTask, plannerTaskCreationErrorLabel } from "./planner-task-creation";
+import { createPlannerFolder, plannerTaskCreationErrorLabel } from "./planner-task-creation";
 import type { RitualAction, RitualQueueItem } from "./ritual-model";
 import { saveTaskDescription } from "./task-workspace-api";
 
@@ -21,7 +21,7 @@ export function useV3DashboardMutations({
   daily,
   selectedProject,
   selectedTask,
-  selectedTaskId,
+  selectedPageId,
   setCreateOpen,
   setCreatePending,
   clearProject,
@@ -32,7 +32,7 @@ export function useV3DashboardMutations({
   setAcknowledgedReviewIds,
   notify,
   notifyWriteFailure,
-  patchPlannerTask,
+  patchPlannerFolder,
   addTaskToToday,
   refreshDaily,
   refreshProject,
@@ -46,8 +46,8 @@ export function useV3DashboardMutations({
   today: string;
   daily: PlannerLoadState<DailyPlannerData>;
   selectedProject: PageDto | null;
-  selectedTask: PlannerTask | null;
-  selectedTaskId: string | null;
+  selectedTask: PlannerFolder | null;
+  selectedPageId: string | null;
   setCreateOpen: Dispatch<SetStateAction<boolean>>;
   setCreatePending: Dispatch<SetStateAction<boolean>>;
   clearProject(): void;
@@ -58,11 +58,11 @@ export function useV3DashboardMutations({
   setAcknowledgedReviewIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   notify(message: string): void;
   notifyWriteFailure(action: string, error: unknown): string;
-  patchPlannerTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
-  addTaskToToday(task: PlannerTask): void;
+  patchPlannerFolder(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
+  addTaskToToday(task: PlannerFolder): void;
   refreshDaily(): void;
   refreshProject(): void;
-  refreshTask(taskId: string): void;
+  refreshTask(folderId: string): void;
 }) {
   const createTask = useCallback(async (
     title: string,
@@ -87,7 +87,7 @@ export function useV3DashboardMutations({
       const dailyPage = selectedDate === today && daily.data
         ? daily.data.daily.page
         : (await api.getDailyPage(today)).page;
-      await createPlannerTask({
+      await createPlannerFolder({
         title,
         description,
         dailyPageId: dailyPage.id,
@@ -154,14 +154,14 @@ export function useV3DashboardMutations({
     }
   }, [setAcknowledgedReviewIds]);
 
-  const applyTaskBlocks = useCallback((blocks: PlannerTask["blocks"]) => {
-    if (!selectedTaskId) return;
-    patchPlannerTask(selectedTaskId, (current) => ({
+  const applyTaskBlocks = useCallback((blocks: PlannerFolder["blocks"]) => {
+    if (!selectedPageId) return;
+    patchPlannerFolder(selectedPageId, (current) => ({
       ...current,
       blocks,
       contextCount: taskContextCount(blocks),
     }));
-  }, [patchPlannerTask, selectedTaskId]);
+  }, [patchPlannerFolder, selectedPageId]);
 
   const applyRitualAction = useCallback((item: RitualQueueItem, action: RitualAction) => {
     if (action === "today") addTaskToToday(item.task);

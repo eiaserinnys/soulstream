@@ -693,16 +693,9 @@ export interface ClaudeRuntimeScheduleDeletedEvent {
   timestamp: number;
 }
 
-export interface TaskUpdatedEvent {
-  type: "task_updated";
-  taskId: string;
-  boardItemId: string;
-}
-
-export interface LegacyRunbookUpdatedEvent {
-  type: "runbook_updated";
-  runbookId: string;
-  boardItemId: string;
+export interface FolderUpdatedEvent {
+  type: "folder_updated";
+  folderId: string;
 }
 
 export interface CustomViewUpdatedEvent {
@@ -858,8 +851,7 @@ export type SoulSSEEvent =
   | ClaudeRuntimeModeStateEvent
   | ClaudeRuntimeScheduleUpdatedEvent
   | ClaudeRuntimeScheduleDeletedEvent
-  | TaskUpdatedEvent
-  | LegacyRunbookUpdatedEvent
+  | FolderUpdatedEvent
   | CustomViewUpdatedEvent
   | ReconnectEvent
   | InputRequestEvent

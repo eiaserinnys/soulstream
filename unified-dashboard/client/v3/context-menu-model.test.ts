@@ -106,7 +106,7 @@ describe("v3 context menu model", () => {
       "새 프로젝트",
       "하위 프로젝트 만들기",
       "프로젝트 설정",
-      "프로젝트 삭제",
+      "폴더 보관",
     ]);
 
     expect(buildTaskSessionExtraActions({

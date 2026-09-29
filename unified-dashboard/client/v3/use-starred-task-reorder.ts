@@ -8,68 +8,68 @@ import {
 import type { PlannerLoadState } from "./PlannerViews";
 import { completePlannerLoad } from "./planner-query-state";
 import {
-  loadStarredTasks,
-  starredTaskPage,
+  loadStarredFolders,
+  starredFolderPage,
   type PlannerDataDependencies,
   type PlannerPage,
-  type StarredPlannerTask,
+  type StarredPlannerFolder,
 } from "./planner-data";
 import {
-  disableStarredTaskPaginationAfterRefreshFailure,
-  isStarredTaskBoundaryCurrent,
-  isStarredTaskRequestCurrent,
-  isStarredTaskRefreshCurrent,
-  isStarredTaskSnapshotCurrent,
-  reconcileStarredTaskOrderReloadFailure,
-  resolveStarredTaskBeforePageId,
-  saveStarredTaskOrderAndReload,
+  disableStarredFolderPaginationAfterRefreshFailure,
+  isStarredFolderBoundaryCurrent,
+  isStarredFolderRequestCurrent,
+  isStarredFolderRefreshCurrent,
+  isStarredFolderSnapshotCurrent,
+  reconcileStarredFolderOrderReloadFailure,
+  resolveStarredFolderBeforePageId,
+  saveStarredFolderOrderAndReload,
 } from "./starred-task-order";
 
-type StarredTaskIndex = PlannerLoadState<PlannerPage<StarredPlannerTask>>;
+type StarredFolderIndex = PlannerLoadState<PlannerPage<StarredPlannerFolder>>;
 
 interface CurrentRef<T> {
   current: T;
 }
 
-export function useStarredTaskReorder({
+export function useStarredFolderReorder({
   dependencies,
   notify,
-  starredTaskIndexRef,
+  starredFolderIndexRef,
   starredLoadedRefreshKeyRef,
   starredOrderRevisionRef,
   setStarredLoadedRefreshKey,
   starredRefreshKeyRef,
-  stableStarredTasksRef,
-  setStarredTaskIndex,
+  stableStarredFoldersRef,
+  setStarredFolderIndex,
 }: {
   dependencies: PlannerDataDependencies;
   notify(message: string): void;
-  starredTaskIndexRef: CurrentRef<StarredTaskIndex>;
+  starredFolderIndexRef: CurrentRef<StarredFolderIndex>;
   starredLoadedRefreshKeyRef: CurrentRef<number | null>;
   starredOrderRevisionRef: CurrentRef<number>;
   setStarredLoadedRefreshKey: Dispatch<SetStateAction<number | null>>;
   starredRefreshKeyRef: CurrentRef<number>;
-  stableStarredTasksRef: CurrentRef<StarredPlannerTask[]>;
-  setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
+  stableStarredFoldersRef: CurrentRef<StarredPlannerFolder[]>;
+  setStarredFolderIndex: Dispatch<SetStateAction<StarredFolderIndex>>;
 }) {
-  const [starredTasksReordering, setStarredTasksReordering] = useState(false);
+  const [starredFoldersReordering, setStarredFoldersReordering] = useState(false);
 
-  const reorderStarredTasks = useCallback(async (
+  const reorderStarredFolders = useCallback(async (
     movedPageId: string,
     orderedPageIds: readonly string[],
   ) => {
-    if (!isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)) {
+    if (!isStarredFolderRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)) {
       notify("별표 업무 목록을 새로고침하는 중이라 순서 변경을 잠시 기다려 주세요.");
       return;
     }
-    const original = starredTaskIndexRef.current;
+    const original = starredFolderIndexRef.current;
     const data = original.data;
     const refreshKey = starredRefreshKeyRef.current;
     const orderRevision = starredOrderRevisionRef.current;
-    const visibleTasks = stableStarredTasksRef.current;
-    const visibleIds = visibleTasks.map((task) => starredTaskPage(task).id);
-    const baseIds = data?.items.map((task) => starredTaskPage(task).id) ?? [];
-    const saveOrder = dependencies.saveStarredTaskOrder;
+    const visibleTasks = stableStarredFoldersRef.current;
+    const visibleIds = visibleTasks.map((task) => starredFolderPage(task).id);
+    const baseIds = data?.items.map((task) => starredFolderPage(task).id) ?? [];
+    const saveOrder = dependencies.saveStarredFolderOrder;
     if (
       !data
       || !saveOrder
@@ -84,29 +84,29 @@ export function useStarredTaskReorder({
         starredOrderRevisionRef,
         setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
-        setStarredTaskIndex,
+        setStarredFolderIndex,
       });
       notify("별표 목록이 갱신 중이라 순서를 바꾸지 못했습니다. 목록을 새로 불러왔습니다.");
       return;
     }
     if (samePageIds(visibleIds, orderedPageIds)) return;
 
-    const tasksById = new Map(visibleTasks.map((task) => [starredTaskPage(task).id, task]));
+    const tasksById = new Map(visibleTasks.map((task) => [starredFolderPage(task).id, task]));
     const reorderedTasks = orderedPageIds.map((pageId) => tasksById.get(pageId)!);
-    setStarredTasksReordering(true);
+    setStarredFoldersReordering(true);
 
     let beforePageId: string | null;
     try {
-      beforePageId = await resolveStarredTaskBeforePageId({
+      beforePageId = await resolveStarredFolderBeforePageId({
         orderedPageIds,
         movedPageId,
         nextCursor: data.nextCursor,
         fetchBoundaryPage: async (cursor) => {
-          const next = await loadStarredTasks(dependencies, { cursor });
-          const latestData = starredTaskIndexRef.current.data;
+          const next = await loadStarredFolders(dependencies, { cursor });
+          const latestData = starredFolderIndexRef.current.data;
           if (
             !latestData
-            || !isStarredTaskBoundaryCurrent({
+            || !isStarredFolderBoundaryCurrent({
               expectedRefreshKey: refreshKey,
               currentRefreshKey: starredRefreshKeyRef.current,
               expectedOrderRevision: orderRevision,
@@ -114,11 +114,11 @@ export function useStarredTaskReorder({
               expectedCursor: data.nextCursor,
               currentCursor: latestData.nextCursor,
               expectedPageIds: visibleIds,
-              currentPageIds: latestData.items.map((task) => starredTaskPage(task).id),
+              currentPageIds: latestData.items.map((task) => starredFolderPage(task).id),
             })
           ) throw new Error("별표 목록 경계가 변경되었습니다.");
           return {
-            pageIds: next.items.map((task) => starredTaskPage(task).id),
+            pageIds: next.items.map((task) => starredFolderPage(task).id),
             nextCursor: next.nextCursor,
           };
         },
@@ -130,17 +130,17 @@ export function useStarredTaskReorder({
         starredOrderRevisionRef,
         setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
-        setStarredTaskIndex,
+        setStarredFolderIndex,
       });
       notify(`별표 목록의 다음 페이지를 확인하지 못해 순서를 취소했습니다 · ${errorText(error)}`);
-      setStarredTasksReordering(false);
+      setStarredFoldersReordering(false);
       return;
     }
 
-    const latestData = starredTaskIndexRef.current.data;
+    const latestData = starredFolderIndexRef.current.data;
     if (
       !latestData
-      || !isStarredTaskBoundaryCurrent({
+      || !isStarredFolderBoundaryCurrent({
         expectedRefreshKey: refreshKey,
         currentRefreshKey: starredRefreshKeyRef.current,
         expectedOrderRevision: orderRevision,
@@ -148,7 +148,7 @@ export function useStarredTaskReorder({
         expectedCursor: data.nextCursor,
         currentCursor: latestData.nextCursor,
         expectedPageIds: visibleIds,
-        currentPageIds: latestData.items.map((task) => starredTaskPage(task).id),
+        currentPageIds: latestData.items.map((task) => starredFolderPage(task).id),
       })
     ) {
       await reloadFirstStarredPageIfCurrent({
@@ -157,20 +157,20 @@ export function useStarredTaskReorder({
         starredOrderRevisionRef,
         setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
-        setStarredTaskIndex,
+        setStarredFolderIndex,
       });
       notify("별표 목록이 이동 중 갱신되어 순서를 취소했습니다. 목록을 다시 불러왔습니다.");
-      setStarredTasksReordering(false);
+      setStarredFoldersReordering(false);
       return;
     }
 
-    setStarredTaskIndex((current) => current.data
+    setStarredFolderIndex((current) => current.data
       ? { ...current, data: { ...current.data, items: reorderedTasks } }
       : current);
 
     let reloadRefreshKey: number | null = null;
     let reloadOrderRevision: number | null = null;
-    const result = await saveStarredTaskOrderAndReload({
+    const result = await saveStarredFolderOrderAndReload({
       save: async () => {
         starredOrderRevisionRef.current += 1;
         starredLoadedRefreshKeyRef.current = null;
@@ -186,11 +186,11 @@ export function useStarredTaskReorder({
       reload: async () => {
         reloadRefreshKey = starredRefreshKeyRef.current;
         reloadOrderRevision = starredOrderRevisionRef.current;
-        return await loadStarredTasks(dependencies, {});
+        return await loadStarredFolders(dependencies, {});
       },
       isReloadCurrent: () => reloadRefreshKey !== null
         && reloadOrderRevision !== null
-        && isStarredTaskRequestCurrent({
+        && isStarredFolderRequestCurrent({
           expectedRefreshKey: reloadRefreshKey,
           currentRefreshKey: starredRefreshKeyRef.current,
           expectedOrderRevision: reloadOrderRevision,
@@ -204,7 +204,7 @@ export function useStarredTaskReorder({
         starredOrderRevisionRef,
         setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
-        setStarredTaskIndex,
+        setStarredFolderIndex,
       })
       : null;
     const reloadedPage = result.reloaded;
@@ -214,7 +214,7 @@ export function useStarredTaskReorder({
       reloadedPage
       && completedRefreshKey !== null
       && completedOrderRevision !== null
-      && isStarredTaskRequestCurrent({
+      && isStarredFolderRequestCurrent({
         expectedRefreshKey: completedRefreshKey,
         currentRefreshKey: starredRefreshKeyRef.current,
         expectedOrderRevision: completedOrderRevision,
@@ -223,7 +223,7 @@ export function useStarredTaskReorder({
     ) {
       starredLoadedRefreshKeyRef.current = completedRefreshKey;
       setStarredLoadedRefreshKey(completedRefreshKey);
-      setStarredTaskIndex((current) => isStarredTaskRequestCurrent({
+      setStarredFolderIndex((current) => isStarredFolderRequestCurrent({
         expectedRefreshKey: completedRefreshKey,
         currentRefreshKey: starredRefreshKeyRef.current,
         expectedOrderRevision: completedOrderRevision,
@@ -234,8 +234,8 @@ export function useStarredTaskReorder({
       !result.reloaded
       && (result.reloadSuperseded || (!result.saved && result.reloadError && reloadRecovery !== "loaded"))
     ) {
-      setStarredTaskIndex((current) => {
-        const recoveredPage = reconcileStarredTaskOrderReloadFailure({
+      setStarredFolderIndex((current) => {
+        const recoveredPage = reconcileStarredFolderOrderReloadFailure({
           currentPage: current.data,
           originalPage: original.data,
           saved: result.saved,
@@ -252,10 +252,10 @@ export function useStarredTaskReorder({
     } else if (result.reloadError && reloadRecovery === "failed") {
       notify(`별표 순서는 저장됐지만 목록을 새로 불러오지 못했습니다 · ${errorText(result.reloadError)}`);
     }
-    setStarredTasksReordering(false);
-  }, [dependencies, notify, setStarredTaskIndex, setStarredLoadedRefreshKey, stableStarredTasksRef, starredLoadedRefreshKeyRef, starredOrderRevisionRef, starredRefreshKeyRef, starredTaskIndexRef]);
+    setStarredFoldersReordering(false);
+  }, [dependencies, notify, setStarredFolderIndex, setStarredLoadedRefreshKey, stableStarredFoldersRef, starredLoadedRefreshKeyRef, starredOrderRevisionRef, starredRefreshKeyRef, starredFolderIndexRef]);
 
-  return { starredTasksReordering, reorderStarredTasks };
+  return { starredFoldersReordering, reorderStarredFolders };
 }
 
 function samePageIds(first: readonly string[], second: readonly string[]): boolean {
@@ -269,18 +269,18 @@ async function reloadFirstStarredPageIfCurrent({
   starredOrderRevisionRef,
   setStarredLoadedRefreshKey,
   starredRefreshKeyRef,
-  setStarredTaskIndex,
+  setStarredFolderIndex,
 }: {
   dependencies: PlannerDataDependencies;
   starredLoadedRefreshKeyRef: CurrentRef<number | null>;
   starredOrderRevisionRef: CurrentRef<number>;
   setStarredLoadedRefreshKey: Dispatch<SetStateAction<number | null>>;
   starredRefreshKeyRef: CurrentRef<number>;
-  setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
+  setStarredFolderIndex: Dispatch<SetStateAction<StarredFolderIndex>>;
 }): Promise<"loaded" | "superseded" | "failed"> {
   const refreshKey = starredRefreshKeyRef.current;
   const orderRevision = starredOrderRevisionRef.current;
-  const hadCurrentSnapshot = isStarredTaskSnapshotCurrent({
+  const hadCurrentSnapshot = isStarredFolderSnapshotCurrent({
     loadedRefreshKey: starredLoadedRefreshKeyRef.current,
     expectedRefreshKey: refreshKey,
     currentRefreshKey: starredRefreshKeyRef.current,
@@ -290,8 +290,8 @@ async function reloadFirstStarredPageIfCurrent({
   starredLoadedRefreshKeyRef.current = null;
   setStarredLoadedRefreshKey(null);
   try {
-    const fresh = await loadStarredTasks(dependencies, {});
-    if (!isStarredTaskRequestCurrent({
+    const fresh = await loadStarredFolders(dependencies, {});
+    if (!isStarredFolderRequestCurrent({
       expectedRefreshKey: refreshKey,
       currentRefreshKey: starredRefreshKeyRef.current,
       expectedOrderRevision: orderRevision,
@@ -299,7 +299,7 @@ async function reloadFirstStarredPageIfCurrent({
     })) return "superseded";
     starredLoadedRefreshKeyRef.current = refreshKey;
     setStarredLoadedRefreshKey(refreshKey);
-    setStarredTaskIndex((current) => isStarredTaskRequestCurrent({
+    setStarredFolderIndex((current) => isStarredFolderRequestCurrent({
       expectedRefreshKey: refreshKey,
       currentRefreshKey: starredRefreshKeyRef.current,
       expectedOrderRevision: orderRevision,
@@ -309,13 +309,13 @@ async function reloadFirstStarredPageIfCurrent({
       : current);
     return "loaded";
   } catch {
-    if (!isStarredTaskRequestCurrent({
+    if (!isStarredFolderRequestCurrent({
       expectedRefreshKey: refreshKey,
       currentRefreshKey: starredRefreshKeyRef.current,
       expectedOrderRevision: orderRevision,
       currentOrderRevision: starredOrderRevisionRef.current,
     })) return "superseded";
-    if (hadCurrentSnapshot || isStarredTaskSnapshotCurrent({
+    if (hadCurrentSnapshot || isStarredFolderSnapshotCurrent({
       loadedRefreshKey: starredLoadedRefreshKeyRef.current,
       expectedRefreshKey: refreshKey,
       currentRefreshKey: starredRefreshKeyRef.current,
@@ -324,17 +324,17 @@ async function reloadFirstStarredPageIfCurrent({
     })) {
       starredLoadedRefreshKeyRef.current = refreshKey;
       setStarredLoadedRefreshKey(refreshKey);
-      setStarredTaskIndex((current) => current.data
+      setStarredFolderIndex((current) => current.data
         ? completePlannerLoad(current, current.data)
         : current);
       return "loaded";
     }
     starredLoadedRefreshKeyRef.current = null;
     setStarredLoadedRefreshKey(null);
-    setStarredTaskIndex((current) => current.data
+    setStarredFolderIndex((current) => current.data
       ? {
         ...current,
-        data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
+        data: disableStarredFolderPaginationAfterRefreshFailure(current.data),
       }
       : current);
     return "failed";

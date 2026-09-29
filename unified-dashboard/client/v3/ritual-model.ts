@@ -1,11 +1,11 @@
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 
 export interface HistoricalRitualDay {
   date: string;
   pageId: string;
-  tasks: readonly PlannerTask[];
+  tasks: readonly PlannerFolder[];
 }
 
 export interface RitualTaskItem {
@@ -16,7 +16,7 @@ export interface RitualTaskItem {
   agentLabel: string;
   sourceDate: string;
   sourcePageId: string;
-  task: PlannerTask;
+  task: PlannerFolder;
 }
 
 export type RitualQueueItem = RitualTaskItem;
@@ -99,11 +99,9 @@ export async function dispatchRitualAction(
   throw new Error("미완 업무에서 사용할 수 없는 아침 정리 동작입니다");
 }
 
-function isTerminalTask(task: PlannerTask): boolean {
-  const taskStatus = task.task?.task.status as string | null | undefined;
-  return taskStatus === "completed"
-    || taskStatus === "cancelled"
-    || task.status === "completed";
+function isTerminalTask(task: PlannerFolder): boolean {
+  const taskStatus = task.status;
+  return taskStatus === "completed";
 }
 
 function displayDate(date: string): string {

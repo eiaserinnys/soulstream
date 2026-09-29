@@ -125,17 +125,7 @@ export function setBoardItemsForContainerInCatalog(
   container: BoardContainerRef,
   boardItems: CatalogBoardItem[],
 ): CatalogState {
-  if (container.kind === "folder") {
-    return setBoardItemsForFolderScopeInCatalog(catalog, container.id, boardItems);
-  }
-  const current = catalog.boardItems ?? [];
-  const otherContainers = current.filter((item) => !boardItemBelongsToContainer(item, container));
-  const normalizedBoardItems = boardItems.map((item) => ({
-    ...item,
-    containerKind: item.containerKind ?? container.kind,
-    containerId: item.containerId ?? container.id,
-  }));
-  return { ...catalog, boardItems: [...otherContainers, ...normalizedBoardItems] };
+  return setBoardItemsForFolderScopeInCatalog(catalog, container.id, boardItems);
 }
 
 function setBoardItemsForFolderScopeInCatalog(
@@ -145,11 +135,7 @@ function setBoardItemsForFolderScopeInCatalog(
 ): CatalogState {
   const current = catalog.boardItems ?? [];
   const otherFolders = current.filter((item) => item.folderId !== folderId);
-  const normalizedBoardItems = boardItems.map((item) => ({
-    ...item,
-    containerKind: item.containerKind ?? "folder",
-    containerId: item.containerId ?? item.folderId,
-  }));
+  const normalizedBoardItems = boardItems.map((item) => ({ ...item, folderId }));
   return { ...catalog, boardItems: [...otherFolders, ...normalizedBoardItems] };
 }
 
@@ -197,13 +183,4 @@ export function reorderFoldersInCatalog(
       };
     }),
   };
-}
-
-function boardItemBelongsToContainer(
-  item: CatalogBoardItem,
-  container: BoardContainerRef,
-): boolean {
-  const itemContainerKind = item.containerKind ?? "folder";
-  const itemContainerId = item.containerId ?? item.folderId;
-  return itemContainerKind === container.kind && itemContainerId === container.id;
 }

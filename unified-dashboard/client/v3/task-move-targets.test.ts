@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { PageApiClient, PageReadResponse } from "@seosoyoung/soul-ui/page";
 
 import {
-  defaultTaskMoveTargets,
-  searchTaskMoveTargets,
-  type TaskMoveTarget,
+  defaultFolderMoveTargets,
+  searchFolderMoveTargets,
+  type FolderMoveTarget,
 } from "./task-move-targets";
 
 describe("task move targets", () => {
@@ -12,48 +12,47 @@ describe("task move targets", () => {
     const current = target("current", "rb-current", "현재 업무");
     const duplicate = target("duplicate", "rb-a", "중복 업무");
 
-    expect(defaultTaskMoveTargets([
+    expect(defaultFolderMoveTargets([
       current,
       target("task-a", "rb-a", "업무 A"),
       duplicate,
       target("task-b", "rb-b", "업무 B"),
-    ], "rb-current").map((item) => item.taskId)).toEqual(["rb-a", "rb-b"]);
+    ], "rb-current").map((item) => item.folderId)).toEqual(["rb-a", "rb-b"]);
   });
 
-  it("uses the bounded page search and returns only primary tasks", async () => {
+  it("searches all catalog folders and opens only matching pages", async () => {
     const snapshots = new Map([
-      ["remote-task", pageRead("remote-task", "화면 밖 업무", [taskBlock("rb-remote", true)])],
+      ["remote-task", pageRead("remote-task", "화면 밖 업무", [])],
       ["document", pageRead("document", "일반 문서", [])],
-      ["secondary", pageRead("secondary", "보조 참조", [taskBlock("rb-secondary", false)])],
-      ["current", pageRead("current", "현재 업무", [taskBlock("rb-current", true)])],
+      ["current", pageRead("current", "현재 업무", [])],
     ]);
     const api = {
-      searchPages: vi.fn(async () => ({
-        items: [...snapshots.values()].map(({ page }) => ({ pageId: page.id, title: page.title })),
-      })),
       getPage: vi.fn(async (pageId: string) => snapshots.get(pageId)!),
     } as unknown as PageApiClient;
+    const folders = [
+      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "rb-remote", name: "화면 밖 업무", projectPageId: "remote-task", sortOrder: 0 },
+      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "rb-current", name: "현재 업무", projectPageId: "current", sortOrder: 1 },
+      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-doc", name: "일반 문서", projectPageId: "document", sortOrder: 2 },
+    ];
 
-    await expect(searchTaskMoveTargets(api, "  화면 밖  ", "rb-current"))
+    await expect(searchFolderMoveTargets(api, "  화면 밖  ", "rb-current", folders))
       .resolves.toEqual([target("remote-task", "rb-remote", "화면 밖 업무")]);
-    expect(api.searchPages).toHaveBeenCalledWith("화면 밖", 8);
-    expect(api.getPage).toHaveBeenCalledTimes(4);
+    expect(api.getPage).toHaveBeenCalledWith("remote-task");
+    expect(api.getPage).toHaveBeenCalledTimes(1);
   });
 
   it("does not turn an empty query into an unbounded list request", async () => {
     const api = {
-      searchPages: vi.fn(),
       getPage: vi.fn(),
     } as unknown as PageApiClient;
 
-    await expect(searchTaskMoveTargets(api, "   ", "rb-current")).resolves.toEqual([]);
-    expect(api.searchPages).not.toHaveBeenCalled();
+    await expect(searchFolderMoveTargets(api, "   ", "rb-current", [])).resolves.toEqual([]);
     expect(api.getPage).not.toHaveBeenCalled();
   });
 });
 
-function target(id: string, taskId: string, title: string): TaskMoveTarget {
-  return { page: pageRead(id, title, []).page, taskId };
+function target(id: string, folderId: string, title: string): FolderMoveTarget {
+  return { page: pageRead(id, title, []).page, folderId };
 }
 
 function pageRead(
@@ -74,18 +73,5 @@ function pageRead(
     },
     blocks,
     state_vector: "AA==",
-  };
-}
-
-function taskBlock(taskId: string, primary: boolean): PageReadResponse["blocks"][number] {
-  return {
-    id: `block-${taskId}`,
-    page_id: "page",
-    parent_id: null,
-    position_key: "A",
-    block_type: "task_ref",
-    text: "",
-    properties: { taskId, primary },
-    collapsed: false,
   };
 }

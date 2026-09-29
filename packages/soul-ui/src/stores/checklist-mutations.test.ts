@@ -1,26 +1,26 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  TaskAssigneeFields,
-  TaskItemRow,
-  TaskSnapshot,
-} from "./task-store";
-import { applyTaskMutationOptimistically } from "./task-mutations";
+  ChecklistAssigneeFields,
+  ChecklistItemRow,
+  FolderSnapshot,
+} from "./folder-checklist-store";
+import { applyChecklistMutationOptimistically } from "./checklist-mutations";
 
-describe("applyTaskMutationOptimistically", () => {
+describe("applyChecklistMutationOptimistically", () => {
   it("creates and edits one section without mutating the input snapshot", () => {
     const before = snapshot();
-    const created = applyTaskMutationOptimistically(before, {
+    const created = applyChecklistMutationOptimistically(before, {
       kind: "create_section",
-      taskId: "rb-1",
+      folderId: "folder-1",
       sectionId: "sec-3",
       title: "새 섹션",
       afterSectionId: "sec-2",
       idempotencyKey: "create-section",
     }, "2026-07-17T00:00:01Z");
-    const edited = applyTaskMutationOptimistically(created, {
+    const edited = applyChecklistMutationOptimistically(created, {
       kind: "update_section",
-      taskId: "rb-1",
+      folderId: "folder-1",
       sectionId: "sec-3",
       expectedVersion: 1,
       title: "바뀐 섹션",
@@ -36,17 +36,17 @@ describe("applyTaskMutationOptimistically", () => {
     const before = snapshot();
     before.sections.reverse();
     before.items.reverse();
-    const movedSection = applyTaskMutationOptimistically(before, {
+    const movedSection = applyChecklistMutationOptimistically(before, {
       kind: "move_section",
-      taskId: "rb-1",
+      folderId: "folder-1",
       sectionId: "sec-2",
       expectedVersion: 1,
       beforeSectionId: "sec-1",
       idempotencyKey: "move-section",
     });
-    const movedItem = applyTaskMutationOptimistically(movedSection, {
+    const movedItem = applyChecklistMutationOptimistically(movedSection, {
       kind: "move_item",
-      taskId: "rb-1",
+      folderId: "folder-1",
       itemId: "item-2",
       sectionId: "sec-1",
       expectedVersion: 1,
@@ -57,25 +57,25 @@ describe("applyTaskMutationOptimistically", () => {
     expect(movedSection.sections.map((section) => section.id)).toEqual(["sec-2", "sec-1"]);
     expect(
       movedItem.items
-        .filter((item) => item.section_id === "sec-1")
+        .filter((item) => item.sectionId === "sec-1")
         .map((item) => item.id),
     ).toEqual(["item-2", "item-1"]);
   });
 
-  it("creates and edits item title and how_to together", () => {
+  it("creates and edits item title and howTo together", () => {
     const before = snapshot();
-    const created = applyTaskMutationOptimistically(before, {
+    const created = applyChecklistMutationOptimistically(before, {
       kind: "create_item",
-      taskId: "rb-1",
+      folderId: "folder-1",
       sectionId: "sec-2",
       itemId: "item-3",
       title: "New item",
       howTo: "First steps",
       idempotencyKey: "create-item",
     });
-    const edited = applyTaskMutationOptimistically(created, {
+    const edited = applyChecklistMutationOptimistically(created, {
       kind: "update_item",
-      taskId: "rb-1",
+      folderId: "folder-1",
       itemId: "item-3",
       expectedVersion: 1,
       title: "Edited item",
@@ -85,25 +85,25 @@ describe("applyTaskMutationOptimistically", () => {
 
     expect(before.items).toHaveLength(2);
     expect(edited.items.find((item) => item.id === "item-3")).toMatchObject({
-      section_id: "sec-2",
+      sectionId: "sec-2",
       title: "Edited item",
-      how_to: "",
+      howTo: "",
       version: 2,
     });
   });
 
   it("archives only the requested target and preserves sibling rows", () => {
     const before = snapshot();
-    const withoutItem = applyTaskMutationOptimistically(before, {
+    const withoutItem = applyChecklistMutationOptimistically(before, {
       kind: "archive_item",
-      taskId: "rb-1",
+      folderId: "folder-1",
       itemId: "item-1",
       expectedVersion: 1,
       idempotencyKey: "archive-item",
     });
-    const withoutSection = applyTaskMutationOptimistically(withoutItem, {
+    const withoutSection = applyChecklistMutationOptimistically(withoutItem, {
       kind: "archive_section",
-      taskId: "rb-1",
+      folderId: "folder-1",
       sectionId: "sec-2",
       expectedVersion: 1,
       idempotencyKey: "archive-section",
@@ -115,39 +115,46 @@ describe("applyTaskMutationOptimistically", () => {
   });
 });
 
-function snapshot(): TaskSnapshot {
+function snapshot(): FolderSnapshot {
   const common = {
     archived: false,
     version: 1,
-    created_session_id: "sess-1",
-    created_event_id: 1,
-    updated_session_id: null,
-    updated_event_id: null,
-    created_at: "2026-07-17T00:00:00Z",
-    updated_at: "2026-07-17T00:00:00Z",
+    createdSessionId: "sess-1",
+    createdEventId: 1,
+    updatedSessionId: null,
+    updatedEventId: null,
+    createdAt: "2026-07-17T00:00:00Z",
+    updatedAt: "2026-07-17T00:00:00Z",
   };
   const assignee = {
-    assignee_kind: null,
-    assignee_agent_id: null,
-    assignee_session_id: null,
-    assignee_user_id: null,
+    assigneeKind: null,
+    assigneeAgentId: null,
+    assigneeSessionId: null,
+    assigneeUserId: null,
   };
   return {
-    task: {
-      id: "rb-1",
-      board_item_id: "task:rb-1",
-      folder_id: "folder-1",
-      title: "Work",
+    folder: {
+      id: "folder-1",
+      name: "Work",
+      parentFolderId: null,
+      projectPageId: "page-1",
+      checklistEnabled: true,
+      status: "open",
+      completedKind: null,
+      completedSessionId: null,
+      completedEventId: null,
+      completedUserId: null,
+      completedAt: null,
       archived: false,
       version: 1,
-      created_session_id: "sess-1",
-      created_event_id: 1,
-      created_at: common.created_at,
-      updated_at: common.updated_at,
+      createdSessionId: "sess-1",
+      createdEventId: 1,
+      createdAt: common.createdAt,
+      updatedAt: common.updatedAt,
     },
     sections: [
-      { ...common, ...assignee, id: "sec-1", task_id: "rb-1", position_key: "a", title: "One" },
-      { ...common, ...assignee, id: "sec-2", task_id: "rb-1", position_key: "b", title: "Two" },
+      { ...common, ...assignee, id: "sec-1", folderId: "folder-1", positionKey: "a", title: "One" },
+      { ...common, ...assignee, id: "sec-2", folderId: "folder-1", positionKey: "b", title: "Two" },
     ],
     items: [
       item("item-1", "sec-1", "a", common, assignee),
@@ -161,31 +168,31 @@ function item(
   sectionId: string,
   positionKey: string,
   common: Pick<
-    TaskItemRow,
+    ChecklistItemRow,
     | "archived"
     | "version"
-    | "created_session_id"
-    | "created_event_id"
-    | "updated_session_id"
-    | "updated_event_id"
-    | "created_at"
-    | "updated_at"
+    | "createdSessionId"
+    | "createdEventId"
+    | "updatedSessionId"
+    | "updatedEventId"
+    | "createdAt"
+    | "updatedAt"
   >,
-  assignee: TaskAssigneeFields,
-): TaskItemRow {
+  assignee: ChecklistAssigneeFields,
+): ChecklistItemRow {
   return {
     ...common,
     ...assignee,
     id,
-    section_id: sectionId,
-    position_key: positionKey,
+    sectionId: sectionId,
+    positionKey: positionKey,
     title: id,
-    how_to: "",
+    howTo: "",
     status: "pending" as const,
-    completed_kind: null,
-    completed_session_id: null,
-    completed_event_id: null,
-    completed_user_id: null,
-    completed_at: null,
+    completedKind: null,
+    completedSessionId: null,
+    completedEventId: null,
+    completedUserId: null,
+    completedAt: null,
   };
 }

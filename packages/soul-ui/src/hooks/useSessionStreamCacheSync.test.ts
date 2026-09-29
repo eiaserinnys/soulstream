@@ -243,16 +243,16 @@ describe("useSessionStreamCacheSync", () => {
   it("applies folder rename, move, and delete snapshots to the store immediately", () => {
     const initialCatalog: CatalogState = {
       folders: [
-        { id: "parent", name: "Parent", sortOrder: 0, parentFolderId: null },
-        { id: "child", name: "Child", sortOrder: 0, parentFolderId: "parent" },
-        { id: "deleted", name: "Deleted", sortOrder: 1, parentFolderId: null },
+        { checklistEnabled: false, status: "open", version: 1, archived: false, id: "parent", name: "Parent", sortOrder: 0, parentFolderId: null },
+        { checklistEnabled: false, status: "open", version: 1, archived: false, id: "child", name: "Child", sortOrder: 0, parentFolderId: "parent" },
+        { checklistEnabled: false, status: "open", version: 1, archived: false, id: "deleted", name: "Deleted", sortOrder: 1, parentFolderId: null },
       ],
       sessions: {},
     };
     const nextCatalog: CatalogState = {
       folders: [
-        { id: "parent", name: "Renamed Parent", sortOrder: 0, parentFolderId: null },
-        { id: "child", name: "Child", sortOrder: 1, parentFolderId: null },
+        { checklistEnabled: false, status: "open", version: 1, archived: false, id: "parent", name: "Renamed Parent", sortOrder: 0, parentFolderId: null },
+        { checklistEnabled: false, status: "open", version: 1, archived: false, id: "child", name: "Child", sortOrder: 1, parentFolderId: null },
       ],
       sessions: {},
     };
@@ -284,6 +284,10 @@ describe("useSessionStreamCacheSync", () => {
     const initialCatalog: CatalogState = {
       folders: [
         {
+          checklistEnabled: false,
+          status: "open",
+          version: 1,
+          archived: false,
           id: "bound",
           name: "Bound",
           sortOrder: 0,
@@ -291,6 +295,10 @@ describe("useSessionStreamCacheSync", () => {
           projectPageId: null,
         },
         {
+          checklistEnabled: false,
+          status: "open",
+          version: 1,
+          archived: false,
           id: "unbound",
           name: "Unbound",
           sortOrder: 1,
@@ -303,6 +311,10 @@ describe("useSessionStreamCacheSync", () => {
     const nextCatalog: CatalogState = {
       folders: [
         {
+          checklistEnabled: false,
+          status: "open",
+          version: 1,
+          archived: false,
           id: "bound",
           name: "Bound",
           sortOrder: 0,
@@ -310,6 +322,10 @@ describe("useSessionStreamCacheSync", () => {
           projectPageId: "page-parent",
         },
         {
+          checklistEnabled: false,
+          status: "open",
+          version: 1,
+          archived: false,
           id: "unbound",
           name: "Unbound",
           sortOrder: 1,
@@ -356,7 +372,7 @@ describe("useSessionStreamCacheSync", () => {
       y: 0,
     }] as never[];
     useDashboardStore.getState().setCatalog({
-      folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-a", name: "A", sortOrder: 0 }],
       sessions: {
         unchanged: { folderId: "folder-a", displayName: "Unchanged" },
         updated: { folderId: "folder-a", displayName: "Before" },
@@ -377,7 +393,7 @@ describe("useSessionStreamCacheSync", () => {
     const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
     streamOptions.onCatalogUpdated?.({
       type: "catalog_updated",
-      folders: [{ id: "folder-b", name: "B", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-b", name: "B", sortOrder: 0 }],
       sessions_delta: {
         added: { folderId: "folder-b", displayName: "Added" },
         updated: { folderId: "folder-b", displayName: "After" },
@@ -389,7 +405,7 @@ describe("useSessionStreamCacheSync", () => {
 
     const catalog = useDashboardStore.getState().catalog;
     expect(catalog).toMatchObject({
-      folders: [{ id: "folder-b", name: "B", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-b", name: "B", sortOrder: 0 }],
       sessions: {
         unchanged: { folderId: "folder-a", displayName: "Unchanged" },
         updated: { folderId: "folder-b", displayName: "After" },
@@ -403,7 +419,7 @@ describe("useSessionStreamCacheSync", () => {
 
   it("requires both delta keys before accepting the new catalog contract", () => {
     const initialCatalog: CatalogState = {
-      folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-a", name: "A", sortOrder: 0 }],
       sessions: {
         unchanged: { folderId: "folder-a", displayName: "Unchanged" },
       },
@@ -422,7 +438,7 @@ describe("useSessionStreamCacheSync", () => {
     const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
     streamOptions.onCatalogUpdated?.({
       type: "catalog_updated",
-      folders: [{ id: "folder-b", name: "B", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-b", name: "B", sortOrder: 0 }],
       sessions_delta: {},
       board_items_delta: undefined,
     } as never);

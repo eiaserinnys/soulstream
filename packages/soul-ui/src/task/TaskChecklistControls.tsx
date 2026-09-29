@@ -42,10 +42,10 @@ const icons = {
   archive: Archive,
 };
 
-export const TaskRowActionButton = forwardRef<
+export const FolderRowActionButton = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement>
->(function TaskRowActionButton({ className, type = "button", ...props }, ref) {
+>(function FolderRowActionButton({ className, type = "button", ...props }, ref) {
   return (
     <button
       ref={ref}
@@ -60,7 +60,7 @@ export const TaskRowActionButton = forwardRef<
   );
 });
 
-export function TaskRowActions({
+export function FolderRowActions({
   label,
   actions,
   onPointerDown,
@@ -73,7 +73,7 @@ export function TaskRowActions({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <TaskRowActionButton
+          <FolderRowActionButton
             aria-label={label}
             data-testid="task-row-menu"
             className="opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100"

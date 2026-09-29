@@ -1,24 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  PlannerTaskCreationError,
-  createPlannerTask,
+  PlannerFolderCreationError,
+  createPlannerFolder,
   plannerTaskCreationErrorLabel,
-  type PlannerTaskCreationPort,
+  type PlannerFolderCreationPort,
 } from "./planner-task-creation";
 
-describe("createPlannerTask", () => {
+describe("createPlannerFolder", () => {
   it("creates one task identity and leaves the canonical project mount to the server", async () => {
     const calls: string[] = [];
-    const port: PlannerTaskCreationPort = {
-      createTaskIdentity: vi.fn(async () => {
+    const port: PlannerFolderCreationPort = {
+      createFolderIdentity: vi.fn(async () => {
         calls.push("identity");
-        return { id: "task-uuid" };
+        return { id: "folder-uuid", pageId: "page-uuid" };
       }),
       mountPage: vi.fn(async ({ sourcePageId }) => { calls.push(`${sourcePageId}-mount`); }),
     };
 
-    await expect(createPlannerTask({
+    await expect(createPlannerFolder({
       title: "새 업무",
       description: "## 첫 설명\n\n업무 배경",
       dailyPageId: "daily",
@@ -27,10 +27,10 @@ describe("createPlannerTask", () => {
         guidance: "초기 지침",
         atomReferences: [],
       },
-    }, port)).resolves.toEqual({ pageId: "task-uuid", taskId: "task-uuid" });
+    }, port)).resolves.toEqual({ pageId: "page-uuid", folderId: "folder-uuid" });
 
     expect(calls).toEqual(["identity", "daily-mount"]);
-    expect(port.createTaskIdentity).toHaveBeenCalledWith({
+    expect(port.createFolderIdentity).toHaveBeenCalledWith({
       title: "새 업무",
       description: "## 첫 설명\n\n업무 배경",
       folderId: "folder",
@@ -46,25 +46,25 @@ describe("createPlannerTask", () => {
   });
 
   it("reports the exact failed phase", async () => {
-    const port: PlannerTaskCreationPort = {
-      createTaskIdentity: vi.fn(async () => { throw new Error("offline"); }),
+    const port: PlannerFolderCreationPort = {
+      createFolderIdentity: vi.fn(async () => { throw new Error("offline"); }),
       mountPage: vi.fn(),
     };
 
-    const failure = await createPlannerTask({
+    const failure = await createPlannerFolder({
       title: "새 업무",
       description: "",
       dailyPageId: "daily",
       folderId: "folder",
     }, port).catch((error: unknown) => error);
 
-    expect(failure).toBeInstanceOf(PlannerTaskCreationError);
+    expect(failure).toBeInstanceOf(PlannerFolderCreationError);
     expect(failure).toMatchObject({ phase: "task" });
     expect(port.mountPage).not.toHaveBeenCalled();
   });
 
   it("owns the user-facing label for each creation phase", () => {
-    expect(plannerTaskCreationErrorLabel(new PlannerTaskCreationError("page", "offline")))
+    expect(plannerTaskCreationErrorLabel(new PlannerFolderCreationError("page", "offline")))
       .toBe("업무 페이지 생성");
     expect(plannerTaskCreationErrorLabel(new Error("offline"))).toBe("새 업무 생성");
   });

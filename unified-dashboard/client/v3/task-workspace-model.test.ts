@@ -291,7 +291,7 @@ describe("description markdown boundary", () => {
     const blocks = [
       block("paragraph-root", "paragraph", "**목표**"),
       block("check-child", "checklist", "완료 조건", "paragraph-root", { checked: true }),
-      block("task", "task_ref", "", null, { taskId: "rb-1", primary: true }),
+      block("task", "task_ref", "", null, { folderId: "rb-1", primary: true }),
       block("defaults", "session_defaults", "", null, { agentId: "roselin", scope: "run" }),
       block("atom", "atom_ref", "", null, { instance: "atom", nodeId: "node-a" }),
       block("guidance", "guidance", "검수 원칙", null, { enabled: true, scope: "run" }),

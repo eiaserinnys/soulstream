@@ -7,17 +7,16 @@ import {
 } from "react";
 
 import { cn } from "../lib/cn";
-import { TaskApiError } from "../stores/task-api";
 import {
-  type TaskAssigneeKind,
-  type TaskItemStatus,
-  type TaskSnapshot,
-  useTaskStore,
-} from "../stores/task-store";
+  type ChecklistAssigneeKind,
+  type ChecklistItemStatus,
+  type FolderSnapshot,
+  useFolderChecklistStore,
+} from "../stores/folder-checklist-store";
 import { TaskStatusChip } from "./TaskStatusChip";
 
 export interface TaskStatusToggleAssignee {
-  kind: TaskAssigneeKind | null;
+  kind: ChecklistAssigneeKind | null;
   agentId: string | null;
   sessionId: string | null;
   userId: string | null;
@@ -35,24 +34,24 @@ export interface TaskStatusToggleSection {
 
 export interface TaskStatusToggleItem {
   id: string;
-  status: TaskItemStatus;
+  status: ChecklistItemStatus;
   archived: boolean;
   version: number;
   createdSessionId: string | null;
   updatedSessionId: string | null;
 }
 
-type WritableStatus = Extract<TaskItemStatus, "pending" | "completed" | "cancelled">;
+type WritableStatus = Extract<ChecklistItemStatus, "pending" | "completed" | "cancelled">;
 
 function statusErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function isTaskItemTerminal(status: TaskItemStatus): boolean {
+export function isTaskItemTerminal(status: ChecklistItemStatus): boolean {
   return status === "completed" || status === "cancelled";
 }
 
-export function isTaskItemReview(status: TaskItemStatus): boolean {
+export function isTaskItemReview(status: ChecklistItemStatus): boolean {
   return status === "review";
 }
 
@@ -102,19 +101,18 @@ export function taskItemStatusDisabledReason(
   if (assignee.kind !== "human" && !isTaskItemReview(item.status)) {
     return "사람 담당 항목만 직접 변경할 수 있음";
   }
-  if (!resolveTaskItemActorSessionId(task, section, item, assignee)) return "세션 정보 없음";
   return null;
 }
 
 export function createTaskStatusIdempotencyKey(
-  taskId: string,
+  folderId: string,
   itemId: string,
   status: WritableStatus,
   expectedVersion: number,
 ): string {
   const randomId = globalThis.crypto?.randomUUID?.() ??
     `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `task:${taskId}:item:${itemId}:status:${status}:v${expectedVersion}:${randomId}`;
+  return `task:${folderId}:item:${itemId}:status:${status}:v${expectedVersion}:${randomId}`;
 }
 
 export function taskAssigneeLabel(assignee: TaskStatusToggleAssignee): string {
@@ -124,7 +122,7 @@ export function taskAssigneeLabel(assignee: TaskStatusToggleAssignee): string {
   return "미지정";
 }
 
-interface TaskItemStatusToggleProps {
+interface ChecklistItemStatusToggleProps {
   task: TaskStatusToggleTask;
   section: TaskStatusToggleSection;
   item: TaskStatusToggleItem;
@@ -136,10 +134,10 @@ interface TaskItemStatusToggleProps {
   showCaption?: boolean;
   compact?: boolean;
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
-  onStatusChanged?: (snapshot: TaskSnapshot | null) => Promise<void> | void;
+  onStatusChanged?: (snapshot: FolderSnapshot | null) => Promise<void> | void;
 }
 
-export function TaskItemStatusToggle({
+export function ChecklistItemStatusToggle({
   task,
   section,
   item,
@@ -152,12 +150,11 @@ export function TaskItemStatusToggle({
   compact = false,
   onPointerDown,
   onStatusChanged,
-}: TaskItemStatusToggleProps) {
-  const loadTask = useTaskStore((s) => s.loadTask);
-  const setItemStatus = useTaskStore((s) => s.setItemStatus);
+}: ChecklistItemStatusToggleProps) {
+  const setItemStatus = useFolderChecklistStore((s) => s.setItemStatus);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [optimisticStatus, setOptimisticStatus] = useState<TaskItemStatus | null>(null);
+  const [optimisticStatus, setOptimisticStatus] = useState<ChecklistItemStatus | null>(null);
   const captionId = useId();
   const displayStatus = optimisticStatus ?? item.status;
   const displayItem = { ...item, status: displayStatus };
@@ -190,42 +187,18 @@ export function TaskItemStatusToggle({
     setError(null);
     setOptimisticStatus(nextStatus);
     try {
-      let snapshot: TaskSnapshot | null;
-      try {
-        snapshot = await setItemStatus({
-          taskId: task.id,
-          itemId: item.id,
-          expectedVersion: item.version,
-          status: nextStatus,
-          idempotencyKey: createTaskStatusIdempotencyKey(
-            task.id,
-            item.id,
-            nextStatus,
-            item.version,
-          ),
-        });
-      } catch (caught) {
-        if (!(caught instanceof TaskApiError) || caught.status !== 409) throw caught;
-        const freshSnapshot = await loadTask(task.id, { force: true });
-        const freshItem = freshSnapshot?.items.find((candidate) => candidate.id === item.id);
-        if (!freshItem) throw caught;
-        if (freshItem.status === nextStatus) {
-          snapshot = freshSnapshot;
-        } else {
-          snapshot = await setItemStatus({
-            taskId: task.id,
-            itemId: item.id,
-            expectedVersion: freshItem.version,
-            status: nextStatus,
-            idempotencyKey: createTaskStatusIdempotencyKey(
-              task.id,
-              item.id,
-              nextStatus,
-              freshItem.version,
-            ),
-          });
-        }
-      }
+      const snapshot = await setItemStatus({
+        folderId: task.id,
+        itemId: item.id,
+        expectedVersion: item.version,
+        status: nextStatus,
+        idempotencyKey: createTaskStatusIdempotencyKey(
+          task.id,
+          item.id,
+          nextStatus,
+          item.version,
+        ),
+      });
       await onStatusChanged?.(snapshot);
     } catch (caught) {
       setOptimisticStatus(null);

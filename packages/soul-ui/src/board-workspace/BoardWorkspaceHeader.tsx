@@ -1,9 +1,7 @@
-import { BookOpen, ChevronRight, FolderPlus, Plus, RefreshCw, Sparkles, SquarePen, Undo2, Wifi, WifiOff } from "lucide-react";
+import { ChevronRight, FolderPlus, Plus, RefreshCw, Sparkles, SquarePen, Undo2, Wifi, WifiOff } from "lucide-react";
 
-import type { BoardContainerRef, CatalogFolder } from "../shared/types";
+import type { CatalogFolder } from "../shared/types";
 import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
-import type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 import type { BoardYjsConnectionStatus } from "./board-yjs-client";
 import { cn } from "../lib/cn";
 
@@ -11,14 +9,8 @@ interface BoardWorkspaceHeaderProps {
   breadcrumbs: CatalogFolder[];
   selectedFolder: CatalogFolder | null;
   selectedFolderId: string | null;
-  boardContainer: BoardContainerRef | null;
-  taskTitle?: string | null;
-  taskStatus?: string | null;
-  taskProgress?: { completed: number; total: number };
-  workspaceViewMode?: FolderWorkspaceViewMode;
   connectionStatus: BoardYjsConnectionStatus;
   connectionError?: string | null;
-  onWorkspaceViewModeChange?: (mode: FolderWorkspaceViewMode) => void;
   newMenuOpen: boolean;
   onToggleNewMenu: () => void;
   onSelectFolder: (folderId: string) => void;
@@ -37,14 +29,8 @@ export function BoardWorkspaceHeader({
   breadcrumbs,
   selectedFolder,
   selectedFolderId,
-  boardContainer,
-  taskTitle,
-  taskStatus,
-  taskProgress,
-  workspaceViewMode,
   connectionStatus,
   connectionError,
-  onWorkspaceViewModeChange,
   newMenuOpen,
   onToggleNewMenu,
   onSelectFolder,
@@ -60,9 +46,7 @@ export function BoardWorkspaceHeader({
 }: BoardWorkspaceHeaderProps) {
   const syncStatus = getSyncStatusMeta(connectionStatus);
   const SyncIcon = syncStatus.icon;
-  const isTaskBoard = boardContainer?.kind === "task";
-  const heading = isTaskBoard ? taskTitle ?? "업무 보드" : selectedFolder?.name ?? "워크스페이스";
-  const progress = taskProgress ?? { completed: 0, total: 0 };
+  const heading = selectedFolder?.name ?? "워크스페이스";
   return (
     <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3">
       <div className="flex min-w-0 flex-col gap-1">
@@ -77,69 +61,25 @@ export function BoardWorkspaceHeader({
                 type="button"
                 className={cn(
                   "truncate hover:text-foreground",
-                  folder.id === selectedFolderId && !isTaskBoard
+                  folder.id === selectedFolderId
                     ? "font-semibold text-muted-foreground"
                     : "text-muted-foreground/80",
                 )}
-                aria-current={folder.id === selectedFolderId && !isTaskBoard ? "page" : undefined}
+                aria-current={folder.id === selectedFolderId ? "page" : undefined}
                 onClick={() => onSelectFolder(folder.id)}
               >
                 {folder.name}
               </button>
             </div>
           ))}
-          {isTaskBoard && (
-            <div className="flex min-w-0 items-center gap-1.5">
-              <ChevronRight className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />
-              <span className="min-w-0 truncate font-semibold text-muted-foreground" aria-current="page">
-                업무 보드
-              </span>
-            </div>
-          )}
         </nav>
         <div className="flex min-w-0 items-center gap-2">
           <h1 className="truncate text-[22px] font-bold leading-tight text-foreground">
             {heading}
           </h1>
-          {isTaskBoard && (
-            <span className="flex min-w-0 shrink-0 items-center gap-1.5">
-              <BookOpen className="h-4 w-4 text-accent-blue" aria-hidden="true" />
-              {taskStatus ? (
-                <Badge variant="outline" size="sm" className="h-5 px-1.5 text-[10px]">
-                  {taskStatusLabel(taskStatus)}
-                </Badge>
-              ) : null}
-              <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
-                {progress.completed}/{progress.total}
-              </Badge>
-            </span>
-          )}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {workspaceViewMode && onWorkspaceViewModeChange && (
-          <div className="relative mr-1 flex h-[38px] shrink-0 gap-1 rounded-full border border-glass-border glass-strong glass-shadow-xs p-1">
-            {([
-              ["list", "폴더"],
-              ["board", "보드"],
-            ] as const).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                className={cn(
-                  "flex h-[30px] items-center rounded-full px-4 text-xs font-semibold transition-colors",
-                  workspaceViewMode === mode
-                    ? "bg-accent-blue/20 text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_16%)]"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                aria-pressed={workspaceViewMode === mode}
-                onClick={() => onWorkspaceViewModeChange(mode)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
         <span
           data-testid="board-sync-status"
           title={connectionError ?? syncStatus.title}
@@ -175,12 +115,10 @@ export function BoardWorkspaceHeader({
         </Button>
         {canCreateBoardItems && (
           <>
-            {!isTaskBoard && (
-              <Button variant="ghost" size="sm" onClick={onCreateFolder} title="New folder">
-                <FolderPlus className="mr-1 h-3.5 w-3.5" />
-                Folder
-              </Button>
-            )}
+            <Button variant="ghost" size="sm" onClick={onCreateFolder} title="New folder">
+              <FolderPlus className="mr-1 h-3.5 w-3.5" />
+              Folder
+            </Button>
             <div className="relative">
               <Button variant="ghost" size="sm" onClick={onToggleNewMenu} title="New">
                 <Plus className="mr-1 h-3.5 w-3.5" />
@@ -214,20 +152,6 @@ export function BoardWorkspaceHeader({
       </div>
     </div>
   );
-}
-
-function taskStatusLabel(status: string): string {
-  switch (status) {
-    case "open":
-    case "active":
-      return "진행";
-    case "completed":
-      return "완료";
-    case "cancelled":
-      return "취소";
-    default:
-      return status;
-  }
 }
 
 function getSyncStatusMeta(status: BoardYjsConnectionStatus): {

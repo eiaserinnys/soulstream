@@ -10,16 +10,16 @@ import {
   type CatalogFolder,
 } from "@seosoyoung/soul-ui";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import { taskProjectFolderOptions } from "./task-project-targets";
 
 export interface TaskProjectMoveDialogProps {
-  task: PlannerTask | null;
+  task: PlannerFolder | null;
   currentFolderId: string | null;
   folders: readonly CatalogFolder[];
   pending: boolean;
   error: string | null;
-  onMove(target: { folderId: string; projectPageId: string }): void;
+  onMove(target: { folderId: string }): void;
   onClose(): void;
 }
 
@@ -55,7 +55,6 @@ export function TaskProjectMoveDialog({
                     style={{ paddingInlineStart: `${12 + depth * 16}px` }}
                     onClick={() => onMove({
                       folderId: folder.id,
-                      projectPageId: folder.projectPageId!,
                     })}
                   >
                     <span className="v3-emoji" aria-hidden="true">↪</span>

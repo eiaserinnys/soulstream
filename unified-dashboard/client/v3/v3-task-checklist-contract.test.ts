@@ -11,7 +11,7 @@ describe("v3 task checklist", () => {
 
     expect(detail).toContain("TaskCard");
     expect(detail).toContain("<TaskCard");
-    expect(detail).toContain("taskId={task.taskId}");
+    expect(detail).toContain("folderId={task.folderId}");
     expect(detail).toContain("fallbackTitle={task.page.title}");
     expect(detail).not.toContain("onOpenBoard={() => onOpenBoard()}");
     expect(detail).not.toContain("defaultItemDetailsOpen");
@@ -20,19 +20,19 @@ describe("v3 task checklist", () => {
     expect(detail).toContain('textSize="session"');
     expect(detail.match(/label="업무 보드 열기"/g)).toHaveLength(1);
     expect(detail).not.toContain("TaskItemStatusToggle");
-    expect(detail).not.toContain("useTaskStore");
+    expect(detail).not.toContain("useFolderChecklistStore");
   });
 
   it("uses one row action primitive for the sibling menu and disclosure buttons", () => {
     const controls = read("../../../packages/soul-ui/src/task/TaskChecklistControls.tsx");
     const item = read("../../../packages/soul-ui/src/task/TaskChecklistItem.tsx");
 
-    expect(controls).toContain("export const TaskRowActionButton = forwardRef");
-    expect(controls).toContain("<TaskRowActionButton");
+    expect(controls).toContain("export const FolderRowActionButton = forwardRef");
+    expect(controls).toContain("<FolderRowActionButton");
     expect(item).toContain('data-testid="task-item-actions"');
-    expect(item).toContain("<TaskRowActionButton");
+    expect(item).toContain("<FolderRowActionButton");
     const detailsButton = item.match(
-      /<TaskRowActionButton[\s\S]*?data-testid="task-item-details-toggle"[\s\S]*?>/,
+      /<FolderRowActionButton[\s\S]*?data-testid="task-item-details-toggle"[\s\S]*?>/,
     )?.[0];
     expect(detailsButton).toBeDefined();
     expect(detailsButton).not.toContain("className=");

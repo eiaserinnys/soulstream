@@ -1,40 +1,38 @@
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
-
-import { classifyMountedPage } from "./planner-model";
+import type { CatalogFolder } from "@seosoyoung/soul-ui";
 
 const TASK_MOVE_SEARCH_LIMIT = 8;
 
-export interface TaskMoveTarget {
+export interface FolderMoveTarget {
   page: PageDto;
-  taskId: string;
+  folderId: string;
 }
 
-export function defaultTaskMoveTargets(
-  targets: readonly TaskMoveTarget[],
-  currentTaskId: string,
-): TaskMoveTarget[] {
+export function defaultFolderMoveTargets(
+  targets: readonly FolderMoveTarget[],
+  currentFolderId: string,
+): FolderMoveTarget[] {
   return [...new Map(
     targets
-      .filter((target) => target.taskId !== currentTaskId)
-      .map((target) => [target.taskId, target]),
+      .filter((target) => target.folderId !== currentFolderId)
+      .map((target) => [target.folderId, target]),
   ).values()];
 }
 
-export async function searchTaskMoveTargets(
+export async function searchFolderMoveTargets(
   api: PageApiClient,
   query: string,
-  currentTaskId: string,
-): Promise<TaskMoveTarget[]> {
+  currentFolderId: string,
+  folders: readonly CatalogFolder[],
+): Promise<FolderMoveTarget[]> {
   const normalized = query.trim();
   if (!normalized) return [];
-  const result = await api.searchPages(normalized, TASK_MOVE_SEARCH_LIMIT);
+  const matches = folders.filter((folder) => !folder.archived && folder.id !== currentFolderId
+    && folder.projectPageId && folder.name.toLocaleLowerCase().includes(normalized.toLocaleLowerCase()))
+    .slice(0, TASK_MOVE_SEARCH_LIMIT);
   const snapshots = await Promise.all(
-    result.items.map((item) => api.getPage(item.pageId)),
+    matches.map((folder) => api.getPage(folder.projectPageId!)),
   );
-  const targets = snapshots.flatMap((snapshot) => {
-    const classification = classifyMountedPage(snapshot.blocks);
-    if (classification.kind !== "task") return [];
-    return [{ page: snapshot.page, taskId: classification.taskId }];
-  });
-  return defaultTaskMoveTargets(targets, currentTaskId);
+  const targets = snapshots.map((snapshot, index) => ({ page: snapshot.page, folderId: matches[index]!.id }));
+  return defaultFolderMoveTargets(targets, currentFolderId);
 }

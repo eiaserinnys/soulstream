@@ -5,17 +5,17 @@ import { DashboardIconCap } from "../components/DashboardIconCap";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
 import { cn } from "../lib/cn";
 import {
-  type TaskItemRow,
-  type TaskSectionRow,
-  useTaskStore,
-} from "../stores/task-store";
+  type ChecklistItemRow,
+  type ChecklistSectionRow,
+  useFolderChecklistStore,
+} from "../stores/folder-checklist-store";
 import { TaskChecklist } from "./TaskChecklist";
 import { TaskCompletionAction } from "./TaskCompletionAction";
 
 interface TaskCardProps {
-  taskId: string;
+  folderId: string;
   fallbackTitle: string;
-  onOpenBoard?: (taskId: string) => void;
+  onOpenBoard?: (folderId: string) => void;
   textSize?: "compact" | "session";
   editable?: boolean;
 }
@@ -25,19 +25,19 @@ function stopTileDrag(event: PointerEvent<HTMLElement>) {
 }
 
 function buildSectionItems(
-  sections: readonly TaskSectionRow[],
-  items: readonly TaskItemRow[],
-): Map<string, TaskItemRow[]> {
-  const result = new Map(sections.map((section) => [section.id, [] as TaskItemRow[]]));
+  sections: readonly ChecklistSectionRow[],
+  items: readonly ChecklistItemRow[],
+): Map<string, ChecklistItemRow[]> {
+  const result = new Map(sections.map((section) => [section.id, [] as ChecklistItemRow[]]));
   for (const item of items) {
     if (item.archived) continue;
-    const sectionItems = result.get(item.section_id);
+    const sectionItems = result.get(item.sectionId);
     if (sectionItems) sectionItems.push(item);
   }
   for (const sectionItems of result.values()) {
     sectionItems.sort((a, b) =>
-      comparePositionKey(a.position_key, b.position_key) ||
-      a.created_at.localeCompare(b.created_at) ||
+      comparePositionKey(a.positionKey, b.positionKey) ||
+      a.createdAt.localeCompare(b.createdAt) ||
       a.id.localeCompare(b.id),
     );
   }
@@ -45,8 +45,8 @@ function buildSectionItems(
 }
 
 function progressFor(
-  sections: readonly TaskSectionRow[],
-  itemsBySection: Map<string, TaskItemRow[]>,
+  sections: readonly ChecklistSectionRow[],
+  itemsBySection: Map<string, ChecklistItemRow[]>,
 ): { completed: number; total: number } {
   let completed = 0;
   let total = 0;
@@ -61,13 +61,13 @@ function progressFor(
   return { completed, total };
 }
 
-function sortSections(sections: readonly TaskSectionRow[]): TaskSectionRow[] {
+function sortSections(sections: readonly ChecklistSectionRow[]): ChecklistSectionRow[] {
   return sections
     .filter((section) => !section.archived)
     .slice()
     .sort((a, b) =>
-      comparePositionKey(a.position_key, b.position_key) ||
-      a.created_at.localeCompare(b.created_at) ||
+      comparePositionKey(a.positionKey, b.positionKey) ||
+      a.createdAt.localeCompare(b.createdAt) ||
       a.id.localeCompare(b.id),
     );
 }
@@ -78,19 +78,19 @@ function comparePositionKey(left: string, right: string): number {
 }
 
 export function TaskCard({
-  taskId,
+  folderId,
   fallbackTitle,
   onOpenBoard,
   textSize = "compact",
   editable = false,
 }: TaskCardProps) {
-  const projection = useTaskStore((s) => s.byId[taskId]);
-  const loadTask = useTaskStore((s) => s.loadTask);
+  const projection = useFolderChecklistStore((s) => s.byId[folderId]);
+  const loadFolder = useFolderChecklistStore((s) => s.loadFolder);
   useEffect(() => {
     // The store owns and deduplicates this shared read. Aborting it from one
     // card's cleanup also aborts a StrictMode remount or another observer.
-    void loadTask(taskId);
-  }, [loadTask, taskId]);
+    void loadFolder(folderId);
+  }, [loadFolder, folderId]);
 
   const snapshot = projection?.snapshot ?? null;
   const sections = useMemo(
@@ -105,7 +105,7 @@ export function TaskCard({
     () => progressFor(sections, itemsBySection),
     [sections, itemsBySection],
   );
-  const title = snapshot?.task.title || fallbackTitle || "Task";
+  const title = snapshot?.folder.name || fallbackTitle || "폴더";
   const loading = projection === undefined || projection.status === "idle" || projection.status === "loading";
   const refreshing = Boolean(projection?.isRefreshing);
   const error = projection?.error ?? null;
@@ -131,7 +131,7 @@ export function TaskCard({
             >
               {title}
             </div>
-            <div className={cn(
+            {snapshot?.folder.checklistEnabled && <div className={cn(
               "mt-1 flex items-center gap-2 text-muted-foreground",
               textSize === "session" ? "text-xs" : "text-[11px]",
             )}>
@@ -139,15 +139,15 @@ export function TaskCard({
                 {progress.completed}/{progress.total}
               </span>
               {refreshing && <span>동기화 중</span>}
-            </div>
+            </div>}
           </div>
-          {snapshot ? (
+          {snapshot?.folder.checklistEnabled ? (
             <TaskCompletionAction
               task={{
-                id: snapshot.task.id,
+                id: snapshot.folder.id,
                 title,
-                status: snapshot.task.status,
-                version: snapshot.task.version,
+                status: snapshot.folder.status,
+                version: snapshot.folder.version,
               }}
               buttonClassName="px-2 text-[11px]"
             />
@@ -160,7 +160,7 @@ export function TaskCard({
               onPointerDown={stopTileDrag}
               onClick={(event) => {
                 event.stopPropagation();
-                onOpenBoard(taskId);
+                onOpenBoard(folderId);
               }}
             >
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -188,13 +188,13 @@ export function TaskCard({
           </div>
         )}
 
-        {snapshot && sections.length === 0 && !editable && (
+        {snapshot?.folder.checklistEnabled && sections.length === 0 && !editable && (
           <div className="px-1 py-2 text-xs text-muted-foreground">
             항목 없음
           </div>
         )}
 
-        {snapshot && (sections.length > 0 || editable) ? (
+        {snapshot?.folder.checklistEnabled && (sections.length > 0 || editable) ? (
           <TaskChecklist
             snapshot={snapshot}
             sections={sections}

@@ -9,7 +9,7 @@ import type { BoardContainerRef, CatalogBoardItem, CatalogState, SessionSummary 
 
 import {
   createFolder,
-  deleteFolderOptimistic,
+  archiveFolder,
   renameFolderOptimistic,
   updateFolderSettingsOptimistic,
 } from "client/lib/folder-operations";
@@ -17,7 +17,7 @@ import { deleteSessions } from "client/lib/delete-session";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOperation } from "client/lib/rename-session";
 import {
-  moveBoardItemToContainer,
+  moveBoardItemToFolder,
   uploadBoardAsset,
 } from "client/lib/board-workspace-operations";
 import { useContinueSession } from "client/hooks/useContinueSession";
@@ -99,9 +99,9 @@ export function BoardWorkspaceView({
       getContinueSessionDisabledReason={getContinueSessionDisabledReason}
       onCreateFolder={createFolder}
       onRenameFolder={renameFolderOptimistic}
-      onDeleteFolder={deleteFolderOptimistic}
+      onDeleteFolder={archiveFolder}
       onUpdateFolderSettings={updateFolderSettingsOptimistic}
-      onMoveBoardItemToContainer={moveBoardItemToContainer}
+      onMoveBoardItemToFolder={moveBoardItemToFolder}
       onUploadBoardAsset={uploadBoardAsset}
       onLoadMore={onLoadMore}
       hasMore={hasMore}

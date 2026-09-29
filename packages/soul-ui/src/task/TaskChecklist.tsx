@@ -2,21 +2,21 @@ import { useRef, useState, type PointerEvent } from "react";
 
 import { DisclosureActionIcon } from "../components/DisclosureActionIcon";
 import { cn } from "../lib/cn";
-import type { TaskChecklistMutation } from "../stores/task-mutations";
+import type { ChecklistMutation } from "../stores/checklist-mutations";
 import {
-  type TaskItemRow,
-  type TaskSectionRow,
-  type TaskSnapshot,
-  useTaskStore,
-} from "../stores/task-store";
+  type ChecklistItemRow,
+  type ChecklistSectionRow,
+  type FolderSnapshot,
+  useFolderChecklistStore,
+} from "../stores/folder-checklist-store";
 import {
   ItemEditorForm,
   QuietAddButton,
-  TaskRowActions,
+  FolderRowActions,
   SectionTitleForm,
   type RowAction,
 } from "./TaskChecklistControls";
-import { TaskItemRowView } from "./TaskChecklistItem";
+import { ChecklistItemRowView } from "./TaskChecklistItem";
 
 type SectionEditor = { mode: "create" } | { mode: "update"; sectionId: string };
 type ItemEditor =
@@ -30,13 +30,13 @@ export function TaskChecklist({
   textSize,
   editable,
 }: {
-  snapshot: TaskSnapshot;
-  sections: readonly TaskSectionRow[];
-  itemsBySection: ReadonlyMap<string, TaskItemRow[]>;
+  snapshot: FolderSnapshot;
+  sections: readonly ChecklistSectionRow[];
+  itemsBySection: ReadonlyMap<string, ChecklistItemRow[]>;
   textSize: "compact" | "session";
   editable: boolean;
 }) {
-  const mutateChecklist = useTaskStore((state) => state.mutateChecklist);
+  const mutateChecklist = useFolderChecklistStore((state) => state.mutateChecklist);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
   const [sectionEditor, setSectionEditor] = useState<SectionEditor | null>(null);
@@ -45,7 +45,7 @@ export function TaskChecklist({
   const [mutationError, setMutationError] = useState<string | null>(null);
   const pendingRef = useRef(false);
 
-  async function mutate(input: TaskChecklistMutation, onSuccess?: () => void) {
+  async function mutate(input: ChecklistMutation, onSuccess?: () => void) {
     if (pendingRef.current) return;
     pendingRef.current = true;
     setPending(true);
@@ -61,7 +61,7 @@ export function TaskChecklist({
     }
   }
 
-  function sectionActions(section: TaskSectionRow, index: number): RowAction[] {
+  function sectionActions(section: ChecklistSectionRow, index: number): RowAction[] {
     const previous = sections[index - 1];
     const next = sections[index + 1];
     return [
@@ -93,7 +93,7 @@ export function TaskChecklist({
         disabled: !previous || pending,
         onSelect: () => void mutate({
           kind: "move_section",
-          taskId: snapshot.task.id,
+          folderId: snapshot.folder.id,
           sectionId: section.id,
           expectedVersion: section.version,
           beforeSectionId: previous?.id,
@@ -107,7 +107,7 @@ export function TaskChecklist({
         disabled: !next || pending,
         onSelect: () => void mutate({
           kind: "move_section",
-          taskId: snapshot.task.id,
+          folderId: snapshot.folder.id,
           sectionId: section.id,
           expectedVersion: section.version,
           afterSectionId: next?.id,
@@ -124,7 +124,7 @@ export function TaskChecklist({
           if (!confirmArchive(`‘${section.title}’ 섹션을 아카이브할까요? 포함된 항목은 목록에서 함께 숨겨집니다.`)) return;
           void mutate({
             kind: "archive_section",
-            taskId: snapshot.task.id,
+            folderId: snapshot.folder.id,
             sectionId: section.id,
             expectedVersion: section.version,
             idempotencyKey: keyFor("archive-section", section.id, section.version),
@@ -135,9 +135,9 @@ export function TaskChecklist({
   }
 
   function itemActions(
-    section: TaskSectionRow,
-    item: TaskItemRow,
-    siblings: readonly TaskItemRow[],
+    section: ChecklistSectionRow,
+    item: ChecklistItemRow,
+    siblings: readonly ChecklistItemRow[],
     index: number,
   ): RowAction[] {
     const previous = siblings[index - 1];
@@ -160,7 +160,7 @@ export function TaskChecklist({
         disabled: !previous || pending,
         onSelect: () => void mutate({
           kind: "move_item",
-          taskId: snapshot.task.id,
+          folderId: snapshot.folder.id,
           sectionId: section.id,
           itemId: item.id,
           expectedVersion: item.version,
@@ -175,7 +175,7 @@ export function TaskChecklist({
         disabled: !next || pending,
         onSelect: () => void mutate({
           kind: "move_item",
-          taskId: snapshot.task.id,
+          folderId: snapshot.folder.id,
           sectionId: section.id,
           itemId: item.id,
           expectedVersion: item.version,
@@ -193,7 +193,7 @@ export function TaskChecklist({
           if (!confirmArchive(`‘${item.title}’ 항목을 아카이브할까요?`)) return;
           void mutate({
             kind: "archive_item",
-            taskId: snapshot.task.id,
+            folderId: snapshot.folder.id,
             itemId: item.id,
             expectedVersion: item.version,
             idempotencyKey: keyFor("archive-item", item.id, item.version),
@@ -222,7 +222,7 @@ export function TaskChecklist({
                 onCancel={() => { setSectionEditor(null); setMutationError(null); }}
                 onSubmit={(title) => void mutate({
                   kind: "update_section",
-                  taskId: snapshot.task.id,
+                  folderId: snapshot.folder.id,
                   sectionId: section.id,
                   expectedVersion: section.version,
                   title,
@@ -249,7 +249,7 @@ export function TaskChecklist({
                   <span className="min-w-0 flex-1 truncate">{section.title}</span>
                 </button>
                 {editable ? (
-                  <TaskRowActions
+                  <FolderRowActions
                     label={`${section.title} 섹션 메뉴`}
                     actions={sectionActions(section, sectionIndex)}
                     onPointerDown={stopTileDrag}
@@ -268,14 +268,14 @@ export function TaskChecklist({
                       <ItemEditorForm
                         key={item.id}
                         initialTitle={item.title}
-                        initialHowTo={item.how_to}
+                        initialHowTo={item.howTo}
                         submitLabel="저장"
                         pending={pending}
                         error={mutationError}
                         onCancel={() => { setItemEditor(null); setMutationError(null); }}
                         onSubmit={(title, howTo) => void mutate({
                           kind: "update_item",
-                          taskId: snapshot.task.id,
+                          folderId: snapshot.folder.id,
                           itemId: item.id,
                           expectedVersion: item.version,
                           title,
@@ -286,7 +286,7 @@ export function TaskChecklist({
                     );
                   }
                   return (
-                    <TaskItemRowView
+                    <ChecklistItemRowView
                       key={item.id}
                       snapshot={snapshot}
                       section={section}
@@ -316,7 +316,7 @@ export function TaskChecklist({
                       const last = sectionItems.at(-1);
                       void mutate({
                         kind: "create_item",
-                        taskId: snapshot.task.id,
+                        folderId: snapshot.folder.id,
                         sectionId: section.id,
                         itemId,
                         title,
@@ -354,7 +354,7 @@ export function TaskChecklist({
             const last = sections.at(-1);
             void mutate({
               kind: "create_section",
-              taskId: snapshot.task.id,
+              folderId: snapshot.folder.id,
               sectionId,
               title,
               afterSectionId: last?.id,
@@ -380,7 +380,7 @@ export function TaskChecklist({
   );
 }
 
-function sectionDefaultOpen(section: TaskSectionRow, items: readonly TaskItemRow[]): boolean {
+function sectionDefaultOpen(section: ChecklistSectionRow, items: readonly ChecklistItemRow[]): boolean {
   return !section.archived && items.some((item) =>
     item.status !== "completed" && item.status !== "cancelled");
 }

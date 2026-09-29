@@ -2,11 +2,10 @@ import type { BoardContainerRef, CatalogBoardItem, CatalogFolder, CatalogState, 
 import type { LoadMoreCallback } from "../components/load-more-guard";
 import type {
   BoardAssetCommitResponse,
-  MoveBoardItemToContainerInput,
-  MoveBoardItemToContainerResponse,
+  MoveBoardItemToFolderInput,
+  MoveBoardItemToFolderResponse,
   UploadBoardAssetInput,
 } from "../lib/board-workspace-operations";
-import type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
 export interface CreateMarkdownDocumentInput {
   folderId: string;
@@ -37,9 +36,9 @@ export interface BoardWorkspaceViewProps {
   onDeleteFolder?: (folderId: string) => Promise<void> | void;
   onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
   onUpdateBoardItemPosition?: (boardItemId: string, x: number, y: number) => Promise<void> | void;
-  onMoveBoardItemToContainer?: (
-    input: MoveBoardItemToContainerInput,
-  ) => Promise<MoveBoardItemToContainerResponse>;
+  onMoveBoardItemToFolder?: (
+    input: MoveBoardItemToFolderInput,
+  ) => Promise<MoveBoardItemToFolderResponse>;
   onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onOpenMarkdownDocument?: (documentId: string) => void;
@@ -49,8 +48,6 @@ export interface BoardWorkspaceViewProps {
   onUploadBoardAsset?: (input: UploadBoardAssetInput) => Promise<BoardAssetCommitResponse>;
   onLoadMore?: LoadMoreCallback;
   hasMore?: boolean;
-  workspaceViewMode?: FolderWorkspaceViewMode;
-  onWorkspaceViewModeChange?: (mode: FolderWorkspaceViewMode) => void;
   /**
    * 지정 시 보드 zoom/pan을 이 키(task page id)로 dashboard-store에 저장·복원한다(🔴23②).
    * 폴더 보드 등 미지정이면 기존 origin 리셋 동작을 유지한다.

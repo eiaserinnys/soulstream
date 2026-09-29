@@ -1,14 +1,14 @@
-export type StarredTaskDropBoundary =
+export type StarredFolderDropBoundary =
   | { kind: "before"; pageId: string }
   | { kind: "next-page" }
   | { kind: "end" }
   | { kind: "invalid" };
 
-export function resolveStarredTaskDropBoundary(
+export function resolveStarredFolderDropBoundary(
   orderedPageIds: readonly string[],
   movedPageId: string,
   hasMore: boolean,
-): StarredTaskDropBoundary {
+): StarredFolderDropBoundary {
   const movedIndex = orderedPageIds.indexOf(movedPageId);
   if (movedIndex < 0) return { kind: "invalid" };
   const nextPageId = orderedPageIds[movedIndex + 1];
@@ -16,7 +16,7 @@ export function resolveStarredTaskDropBoundary(
   return hasMore ? { kind: "next-page" } : { kind: "end" };
 }
 
-export function resolveStarredTaskBoundaryPageId(
+export function resolveStarredFolderBoundaryPageId(
   loadedPageIds: readonly string[],
   cursor: string,
   nextPageIds: readonly string[],
@@ -31,7 +31,7 @@ export function resolveStarredTaskBoundaryPageId(
   return nextPageIds[0] ?? null;
 }
 
-export function isStarredTaskBoundaryCurrent(input: {
+export function isStarredFolderBoundaryCurrent(input: {
   expectedRefreshKey: number;
   currentRefreshKey: number;
   expectedOrderRevision: number;
@@ -41,13 +41,13 @@ export function isStarredTaskBoundaryCurrent(input: {
   expectedPageIds: readonly string[];
   currentPageIds: readonly string[];
 }): boolean {
-  return isStarredTaskRequestCurrent(input)
+  return isStarredFolderRequestCurrent(input)
     && input.expectedCursor === input.currentCursor
     && input.expectedPageIds.length === input.currentPageIds.length
     && input.expectedPageIds.every((pageId, index) => pageId === input.currentPageIds[index]);
 }
 
-export function isStarredTaskRequestCurrent(input: {
+export function isStarredFolderRequestCurrent(input: {
   expectedRefreshKey: number;
   currentRefreshKey: number;
   expectedOrderRevision: number;
@@ -57,31 +57,31 @@ export function isStarredTaskRequestCurrent(input: {
     && input.expectedOrderRevision === input.currentOrderRevision;
 }
 
-export function isStarredTaskSnapshotCurrent(input: {
+export function isStarredFolderSnapshotCurrent(input: {
   loadedRefreshKey: number | null;
   expectedRefreshKey: number;
   currentRefreshKey: number;
   expectedOrderRevision: number;
   currentOrderRevision: number;
 }): boolean {
-  return isStarredTaskRefreshCurrent(input.loadedRefreshKey, input.currentRefreshKey)
-    && isStarredTaskRequestCurrent(input);
+  return isStarredFolderRefreshCurrent(input.loadedRefreshKey, input.currentRefreshKey)
+    && isStarredFolderRequestCurrent(input);
 }
 
-export function isStarredTaskRefreshCurrent(
+export function isStarredFolderRefreshCurrent(
   loadedRefreshKey: number | null,
   currentRefreshKey: number,
 ): boolean {
   return loadedRefreshKey === currentRefreshKey;
 }
 
-export function disableStarredTaskPaginationAfterRefreshFailure<T extends { nextCursor: string | null }>(
+export function disableStarredFolderPaginationAfterRefreshFailure<T extends { nextCursor: string | null }>(
   page: T,
 ): T {
   return { ...page, nextCursor: null };
 }
 
-export function reconcileStarredTaskOrderReloadFailure<T extends { nextCursor: string | null }>(input: {
+export function reconcileStarredFolderOrderReloadFailure<T extends { nextCursor: string | null }>(input: {
   currentPage: T | null;
   originalPage: T | null;
   saved: boolean;
@@ -91,16 +91,16 @@ export function reconcileStarredTaskOrderReloadFailure<T extends { nextCursor: s
 }): T | null {
   if (input.reloadSuperseded && input.loadedRefreshKey === input.currentRefreshKey) return null;
   const page = input.saved ? input.currentPage : input.originalPage;
-  return page ? disableStarredTaskPaginationAfterRefreshFailure(page) : null;
+  return page ? disableStarredFolderPaginationAfterRefreshFailure(page) : null;
 }
 
-export async function resolveStarredTaskBeforePageId(input: {
+export async function resolveStarredFolderBeforePageId(input: {
   orderedPageIds: readonly string[];
   movedPageId: string;
   nextCursor: string | null;
   fetchBoundaryPage(cursor: string): Promise<{ pageIds: readonly string[]; nextCursor: string | null }>;
 }): Promise<string | null> {
-  const boundary = resolveStarredTaskDropBoundary(
+  const boundary = resolveStarredFolderDropBoundary(
     input.orderedPageIds,
     input.movedPageId,
     Boolean(input.nextCursor),
@@ -111,7 +111,7 @@ export async function resolveStarredTaskBeforePageId(input: {
   if (!input.nextCursor) throw new Error("별표 목록 cursor가 없습니다.");
 
   const next = await input.fetchBoundaryPage(input.nextCursor);
-  const pageId = resolveStarredTaskBoundaryPageId(
+  const pageId = resolveStarredFolderBoundaryPageId(
     input.orderedPageIds,
     input.nextCursor,
     next.pageIds,
@@ -121,7 +121,7 @@ export async function resolveStarredTaskBeforePageId(input: {
   return pageId;
 }
 
-export async function saveStarredTaskOrderAndReload<T>(input: {
+export async function saveStarredFolderOrderAndReload<T>(input: {
   save(): Promise<void>;
   reload(): Promise<T>;
   isReloadCurrent?(): boolean;

@@ -55,7 +55,8 @@ describe("TaskBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
   function render(onSessionContextMenu: (session: SessionSummary, event: unknown) => void) {
     flushSync(() => root.render(
       <TaskBoardResourcePane
-        taskId="rb-1"
+        checklistEnabled
+        folderId="rb-1"
         taskTitle="보드뷰 개선"
         sessionIds={["s1"]}
         sessions={[session]}
@@ -112,7 +113,8 @@ describe("TaskBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
     const onLoadMoreRuns = vi.fn(async () => undefined);
     flushSync(() => root.render(
       <TaskBoardResourcePane
-        taskId="rb-1"
+        checklistEnabled
+        folderId="rb-1"
         taskTitle="보드뷰 개선"
         sessionIds={["s1", "s-child"]}
         sessions={[session, delegated]}
@@ -153,8 +155,6 @@ describe("TaskBoardResourcePane 마크다운 동기화", () => {
   const markdownItem: CatalogBoardItem = {
     id: "markdown:doc-a",
     folderId: "folder-a",
-    containerKind: "task",
-    containerId: "rb-1",
     itemType: "markdown",
     itemId: "doc-a",
     x: 0,
@@ -205,7 +205,8 @@ describe("TaskBoardResourcePane 마크다운 동기화", () => {
   it("문서 오버레이를 닫은 뒤 저장된 본문을 재조회해 표시한다", async () => {
     const renderPane = (markdownDocumentsRevision: number) => flushSync(() => root.render(
       <TaskBoardResourcePane
-        taskId="rb-1"
+        checklistEnabled
+        folderId="rb-1"
         taskTitle="보드뷰 개선"
         sessionIds={[]}
         sessions={[]}

@@ -31,10 +31,10 @@ describe("today task state", () => {
     const request = new Promise<"removed">((_, reject) => { rejectRequest = reject; });
 
     const pending = runOptimisticTodayMutation({
-      taskId: "task-a",
+      folderId: "task-a",
       wasInToday: true,
       optimisticInToday: false,
-      setPresence: (taskId, present) => changes.push([taskId, present]),
+      setPresence: (folderId, present) => changes.push([folderId, present]),
       mutate: () => request,
       finalPresence: () => false,
     });
@@ -49,7 +49,7 @@ describe("today task state", () => {
     const setPresence = vi.fn();
 
     await expect(runOptimisticTodayMutation({
-      taskId: "task-a",
+      folderId: "task-a",
       wasInToday: false,
       optimisticInToday: true,
       setPresence,

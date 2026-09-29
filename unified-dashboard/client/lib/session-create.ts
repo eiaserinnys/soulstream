@@ -1,6 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type {
-  BoardContainerRef,
   CreateSessionRequest,
   CreateSessionResponse,
   ReasoningEffort,
@@ -41,9 +40,8 @@ export interface CreateDashboardSessionInput {
   modelPreset?: string | null;
   reasoningEffort?: string | null;
   oauthProfileName?: string | null;
-  container?: BoardContainerRef | null;
   sourceSessionId?: string | null;
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
   boardPosition?: { x: number; y: number } | null;
   agentSessionId?: string;
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
@@ -69,10 +67,9 @@ export async function createDashboardSession(
     ...(input.nodeId ? { nodeId: input.nodeId } : {}),
     ...(input.attachmentPaths?.length ? { attachmentPaths: input.attachmentPaths } : {}),
     ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
-    ...(input.container ? { container: input.container } : {}),
     ...(input.sourceSessionId ? { sourceSessionId: input.sourceSessionId } : {}),
-    ...(input.sourceTaskItemId !== undefined
-      ? { sourceTaskItemId: input.sourceTaskItemId }
+    ...(input.sourceChecklistItemId !== undefined
+      ? { sourceChecklistItemId: input.sourceChecklistItemId }
       : {}),
     ...(input.agentId ? { profile: input.agentId } : {}),
     ...(input.modelPreset ? { model_preset: input.modelPreset } : {}),
@@ -112,7 +109,7 @@ export async function createDashboardSession(
     input.agent?.name ?? null,
     input.agent?.portraitUrl ?? null,
     input.agent?.backend ?? null,
-    input.container?.kind === "task" ? null : input.boardPosition ?? null,
+    input.boardPosition ?? null,
   );
 
   return result;

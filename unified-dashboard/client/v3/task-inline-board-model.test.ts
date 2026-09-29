@@ -28,15 +28,11 @@ describe("task inline board model", () => {
     expect(next[1]).toBe(original[1]);
   });
 
-  it("places new markdown outside the fixed task card and existing tiles", () => {
+  it("places new markdown without overlapping existing tiles", () => {
     const placement = findTaskMarkdownPlacement([
       { ...item("markdown", "doc-1", { title: "문서" }), x: 400, y: 0 },
     ]);
 
-    expect(overlaps(
-      { ...placement, width: 280, height: 160 },
-      { x: 0, y: 0, width: 360, height: 520 },
-    )).toBe(false);
     expect(overlaps(
       { ...placement, width: 280, height: 160 },
       { x: 400, y: 0, width: 280, height: 160 },
@@ -52,8 +48,6 @@ function item(
   return {
     id: `${itemType}:${itemId}`,
     folderId: "folder-a",
-    containerKind: "task",
-    containerId: "rb-a",
     itemType,
     itemId,
     x: 0,

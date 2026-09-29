@@ -24,7 +24,7 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import type { MobilePlannerTab } from "./mobile-planner-state";
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import { sessionPanelTitle } from "./v3-session-panel-model";
 import { buildRunTree, type RunSessionLoadState } from "./task-workspace-model";
 import { buildSuccessionSessionOptions, latestTaskRun } from "./session-succession-model";
@@ -32,8 +32,8 @@ import { SessionSuccessionModal } from "./SessionSuccessionModal";
 import { buildTaskSessionExtraActions } from "./context-menu-model";
 import { getRunSessionRenamePrefill } from "./TaskRunHistory";
 import { TaskMoveDialog } from "./TaskMoveDialog";
-import type { TaskMoveTarget } from "./task-move-targets";
-import { useTaskSessionContext } from "./use-task-session-context";
+import type { FolderMoveTarget } from "./task-move-targets";
+import { useFolderSessionContext } from "./use-task-session-context";
 import type { PageSessionDefaults } from "./task-workspace-api";
 import {
   V3_NAVIGATION_DEFAULT_WIDTH_PX,
@@ -93,7 +93,7 @@ export function TaskBoardWorkspace({
   onMoveSession,
   onAcknowledgedReview,
 }: {
-  task: PlannerTask;
+  task: PlannerFolder;
   projectFolderId: string | null;
   projectTitle: string;
   sessions: readonly SessionSummary[];
@@ -110,7 +110,7 @@ export function TaskBoardWorkspace({
   sessionStreamActive: boolean;
   sessionConnectionStatus: SessionProviderConnectionStatus;
   reconnectSession(): void;
-  taskMoveTargets: readonly PlannerTask[];
+  taskMoveTargets: readonly PlannerFolder[];
   folders: readonly CatalogFolder[];
   contextInvalidationKey: number;
   markdownDocumentsRevision: number;
@@ -121,7 +121,7 @@ export function TaskBoardWorkspace({
   onLoadMoreRuns(): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
+  onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
   // 🔴23: 이 task의 마지막 보드 레이아웃(dashboard-store persist)을 최초 1회만 읽어 복원 시드로 쓴다.
@@ -168,10 +168,11 @@ export function TaskBoardWorkspace({
   const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
   const moveApi = useMemo(() => createPageApiClient(), []);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
+  const checklistEnabled = folders.find((folder) => folder.id === task.folderId)?.checklistEnabled === true;
 
   // 새 세션 흐름은 업무 패널(TaskRunHistory)과 동일한 컨텍스트 상속 경로·다이얼로그를
-  // 재사용한다(useTaskSessionContext + SessionSuccessionModal, container=task).
-  const sessionContext = useTaskSessionContext({
+  // 재사용한다(useFolderSessionContext + SessionSuccessionModal, container=task).
+  const sessionContext = useFolderSessionContext({
     taskPageId: task.page.id,
     projectFolderId,
     folders,
@@ -445,6 +446,11 @@ export function TaskBoardWorkspace({
       items.length === 0 ? current : reconcileTaskBoardResourceState(current, items)
     ));
   }, []);
+  useEffect(() => {
+    if (!checklistEnabled && resourceState.activeTabId === "checklist") {
+      setResourceState((current) => ({ ...current, activeTabId: "sessions" }));
+    }
+  }, [checklistEnabled, resourceState.activeTabId]);
   const openResource = useCallback((resource: TaskBoardResourceSelection) => {
     setResourceState((current) => openTaskBoardResource(current, resource));
   }, []);
@@ -466,8 +472,9 @@ export function TaskBoardWorkspace({
           aria-label="업무 자료"
         >
           <TaskBoardResourcePane
-            taskId={task.taskId}
+            folderId={task.folderId}
             taskTitle={task.page.title}
+            checklistEnabled={checklistEnabled}
             sessionIds={task.sessionIds}
             sessions={sessions}
             runSessionLoadStates={runSessionLoadStates}
@@ -512,9 +519,8 @@ export function TaskBoardWorkspace({
           onMouseDownCapture={() => { if (activeTaskDocumentId) requestShrinkOverlay(); }}
         >
           <TaskBoardPane
-            taskId={task.taskId}
-            projectFolderId={projectFolderId}
-            projectTitle={projectTitle}
+            folderId={task.folderId}
+            folderName={task.page.title}
             sessions={sessions}
             taskMoveTargets={taskMoveTargets}
             viewportPersistenceKey={layoutKey}
@@ -623,7 +629,7 @@ export function TaskBoardWorkspace({
             <div className="v3-board-document-content">
               <MarkdownDocumentPanel
                 documentId={activeTaskDocumentId}
-                container={{ kind: "task", id: task.taskId }}
+                container={{ kind: "folder", id: task.folderId }}
                 pendingEditId={pendingTaskDocumentEditId}
                 onPendingEditConsumed={clearPendingTaskDocumentEdit}
                 onClose={closeTaskDocumentOverlay}
@@ -638,7 +644,7 @@ export function TaskBoardWorkspace({
         <SessionSuccessionModal
           taskTitle={task.page.title}
           taskPageId={task.page.id}
-          taskId={task.taskId}
+          folderId={task.folderId}
           contextItems={sessionContext.contextItems}
           documentOptions={documentOptions}
           contextPending={sessionContext.contextPending}
@@ -679,7 +685,7 @@ export function TaskBoardWorkspace({
       />
       <TaskMoveDialog
         api={moveApi}
-        currentTaskId={task.taskId}
+        currentFolderId={task.folderId}
         defaultTargets={taskMoveTargets}
         open={moveSessionId !== null}
         onClose={() => setMoveSessionId(null)}

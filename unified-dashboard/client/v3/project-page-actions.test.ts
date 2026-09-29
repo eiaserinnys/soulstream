@@ -8,7 +8,7 @@ describe("project page identity", () => {
   it("opens the bound same-ID page without search or lazy creation", async () => {
     const bound = page("folder-project", "프로젝트");
     const api = { getPage: vi.fn() } as unknown as PageApiClient;
-    const folder = {
+    const folder = { checklistEnabled: false, status: "open", version: 1, archived: false,
       id: bound.id,
       name: bound.title,
       sortOrder: 0,
@@ -20,21 +20,21 @@ describe("project page identity", () => {
     expect(api.getPage).not.toHaveBeenCalled();
   });
 
-  it("fetches a stale-list binding by ID and treats legacy NULL as unconnected", async () => {
+  it("fetches a stale-list binding by ID and leaves page-less system folders unconnected", async () => {
     const bound = page("folder-project", "프로젝트");
     const api = {
       getPage: vi.fn(async () => ({ page: bound, blocks: [], state_vector: "AA==" })),
     } as unknown as PageApiClient;
 
-    await expect(resolveProjectPage(api, {
+    await expect(resolveProjectPage(api, { checklistEnabled: false, status: "open", version: 1, archived: false,
       id: bound.id,
       name: bound.title,
       sortOrder: 0,
       projectPageId: bound.id,
     }, [])).resolves.toEqual(bound);
-    await expect(resolveProjectPage(api, {
-      id: "legacy",
-      name: "레거시",
+    await expect(resolveProjectPage(api, { checklistEnabled: false, status: "open", version: 1, archived: false,
+      id: "claude",
+      name: "클로드",
       sortOrder: 0,
       projectPageId: null,
     }, [])).resolves.toBeNull();

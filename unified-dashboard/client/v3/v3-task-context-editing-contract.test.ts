@@ -24,27 +24,24 @@ describe("PR-CJ task context editing contract", () => {
     expect(atomOptions).toContain("최근 자식 수");
   });
 
-  it("keeps inherited atom rows read-only and edits direct rows with one block mutation", () => {
+  it("edits folder atom references through one context editor", () => {
     const detail = read("./TaskDetailPane.tsx");
+    const sections = read("./FolderWorkspaceSections.tsx");
+    const editor = read("./ProjectContextEditor.tsx");
 
     expect(detail).toContain('direct: reference.source.pageId === task.page.id');
-    expect(detail).toContain("savePageAtomReference");
-    expect(detail).toContain("deletePageContextBlock");
-    expect(detail).toContain("updateOptimisticTaskAtomReference");
-    expect(detail).toContain("deleteOptimisticTaskContextBlock");
-    expect(detail).toContain("context.direct ?");
-    expect(detail).toContain("v3-context-row-readonly");
-    expect(detail).toContain("최근 자식 수");
+    expect(sections).toContain("<ProjectContextEditor");
+    expect(editor).toContain("saveProjectAtomReference");
+    expect(editor).toContain("deleteProjectContextBlock");
+    expect(detail).not.toContain("savePageAtomReference");
   });
 
-  it("uses destructive trash affordances instead of an atom toggle", () => {
-    const detail = read("./TaskDetailPane.tsx");
+  it("keeps atom deletion in the canonical editor", () => {
+    const editor = read("./ProjectContextEditor.tsx");
     const atomOptions = read("./AtomContextOptions.tsx");
-    const css = read("./v3-task-workspace.css");
 
-    expect(detail).toContain("<Trash2");
+    expect(editor).toContain("onDelete={() => removeAtom(reference.blockId)}");
     expect(atomOptions).toContain("<Trash2");
     expect(atomOptions).toContain("v3-context-option--selected");
-    expect(css).toMatch(/\.v3-context-row-remove\s*\{[^}]*color:\s*var\(--destructive\)/s);
   });
 });

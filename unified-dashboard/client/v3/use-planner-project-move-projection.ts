@@ -1,41 +1,38 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { retainEqualValue } from "@seosoyoung/soul-ui";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerLoadState } from "./PlannerViews";
 import type {
   DailyPlannerData,
-  PlannerTask,
+  PlannerFolder,
   ProjectPlannerData,
 } from "./planner-data";
 import {
-  movePlannerTaskProject,
-  projectPagesForTasks,
-  replacePlannerTask,
+  movePlannerFolderProject,
+  replacePlannerFolder,
 } from "./planner-mutation-projection";
 
 export function usePlannerProjectMoveProjection(
   setDaily: Dispatch<SetStateAction<PlannerLoadState<DailyPlannerData>>>,
   setProject: Dispatch<SetStateAction<PlannerLoadState<ProjectPlannerData>>>,
 ) {
-  return useCallback((task: PlannerTask, targetProject: PageDto) => {
-    const projectedTask = { ...task, projectPageId: targetProject.id };
+  return useCallback((task: PlannerFolder, targetFolderId: string | null) => {
+    const projectedTask = { ...task, parentFolderId: targetFolderId };
     setDaily((current) => {
       if (!current.data) return current;
-      const tasks = replacePlannerTask(current.data.tasks, task.page.id, () => projectedTask);
+      const tasks = replacePlannerFolder(current.data.tasks, task.page.id, () => projectedTask);
       if (tasks === current.data.tasks) return current;
-      const projects = projectPagesForTasks(current.data.projects, tasks, targetProject);
       return retainEqualValue(current, {
         ...current,
-        data: { ...current.data, tasks, projects },
+        data: { ...current.data, tasks },
       });
     });
     setProject((current) => {
       if (!current.data) return current;
-      const tasks = movePlannerTaskProject(
+      const tasks = movePlannerFolderProject(
         current.data.tasks,
         task,
-        targetProject.id,
+        targetFolderId,
         current.data.project.id,
       );
       return tasks === current.data.tasks

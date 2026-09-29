@@ -52,7 +52,6 @@ export const DECLUTTER_CATALOG_ITEM_TYPES: Readonly<Record<CatalogBoardItemType,
   subfolder: true,
   asset: true,
   frame: true,
-  task: true,
   custom_view: true,
 });
 
@@ -62,7 +61,6 @@ const CLUSTER_BY_WORKSPACE_ITEM_TYPE: Readonly<Record<BoardWorkspaceItem["type"]
   markdown: "markdown",
   asset: "other",
   frame: "other",
-  task: "other",
   custom_view: "custom_view",
 };
 

@@ -30,7 +30,7 @@ vi.mock("@seosoyoung/soul-ui/components/LiquidGlassCard", () => ({
 
 vi.mock("./V3ContextMenu", () => ({ V3ContextMenu: () => null }));
 vi.mock("./use-task-star", () => ({
-  useTaskStar: () => ({ starred: false, pending: false, toggle: async () => undefined }),
+  useFolderStar: () => ({ starred: false, pending: false, toggle: async () => undefined }),
 }));
 
 import { PlannerTaskCard } from "./PlannerTaskCard";
@@ -41,13 +41,13 @@ describe("PlannerTaskCard node connectivity", () => {
       <PlannerTaskCard
         task={{
           page: { id: "page-a", title: "정보를 덜어낸 업무" },
-          taskId: "aae680d9-internal-task-id",
+          folderId: "aae680d9-internal-task-id",
           sessionIds: ["session-a"],
           status: "in_progress",
           assignee: "담당 미지정",
           contextCount: 3,
           progress: 0,
-          projectPageId: null,
+          parentFolderId: null,
         } as never}
         sessions={[{
           agentSessionId: "session-a",
@@ -77,13 +77,13 @@ describe("PlannerTaskCard node connectivity", () => {
       <PlannerTaskCard
         task={{
           page: { id: "page-b", title: "진행 중인 업무" },
-          taskId: "rb-running",
+          folderId: "rb-running",
           sessionIds: ["session-b"],
           status: "in_progress",
           assignee: "로젤린",
           contextCount: 1,
           progress: 20,
-          projectPageId: null,
+          parentFolderId: null,
         } as never}
         sessions={[{
           agentSessionId: "session-b",
@@ -111,13 +111,13 @@ describe("PlannerTaskCard node connectivity", () => {
       <PlannerTaskCard
         task={{
           page: { id: "page-a", title: "노드 상태 업무" },
-          taskId: "rb-node-offline",
+          folderId: "rb-node-offline",
           sessionIds: ["session-a"],
           status: "in_progress",
           assignee: "로젤린",
           contextCount: 0,
           progress: 50,
-          projectPageId: null,
+          parentFolderId: null,
         } as never}
         sessions={[{
           agentSessionId: "session-a",
@@ -144,13 +144,13 @@ describe("PlannerTaskCard node connectivity", () => {
       <PlannerTaskCard
         task={{
           page: { id: "page-complete", title: "완료된 업무" },
-          taskId: "rb-complete",
+          folderId: "rb-complete",
           sessionIds: [],
           status: "completed",
           assignee: "로젤린",
           contextCount: 0,
           progress: 100,
-          projectPageId: null,
+          parentFolderId: null,
         } as never}
         sessions={[]}
         nodeConnectivity={{ ready: true, connectedNodeIds: new Set() }}

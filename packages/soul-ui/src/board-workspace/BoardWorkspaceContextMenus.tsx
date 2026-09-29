@@ -35,7 +35,7 @@ export interface BoardCardContextMenuState {
   item: BoardWorkspaceItem;
 }
 
-export interface TaskMoveTarget {
+export interface FolderMoveTarget {
   id: string;
   title: string;
 }
@@ -52,7 +52,7 @@ interface BoardWorkspaceContextMenusProps {
   folders: CatalogFolder[];
   boardContainer: BoardContainerRef | null;
   resolvedBoardFolderId: string | null;
-  taskMoveTargets: TaskMoveTarget[];
+  taskMoveTargets: FolderMoveTarget[];
   activeBoardDocumentId: string | null;
   boardYjsRuntime: BoardYjsRuntime | null;
   canCreateBoardItems?: boolean;
@@ -66,7 +66,7 @@ interface BoardWorkspaceContextMenusProps {
   onRenameFrame: (item: Extract<BoardWorkspaceItem, { type: "frame" }>, title: string) => void;
   onToggleFrameCollapsed: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
   onDeleteFrame: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
-  onMoveBoardItemToContainer?: (
+  onMoveBoardItemToFolder?: (
     item: MovableBoardWorkspaceItem,
     target: BoardContainerRef,
   ) => Promise<void>;
@@ -103,7 +103,7 @@ export function BoardWorkspaceContextMenus({
   onRenameFrame,
   onToggleFrameCollapsed,
   onDeleteFrame,
-  onMoveBoardItemToContainer,
+  onMoveBoardItemToFolder,
   onMarkdownDocumentDeleted,
   onRequestMarkdownEdit,
   onMoveSessions,
@@ -167,7 +167,7 @@ export function BoardWorkspaceContextMenus({
     cardContextMenu?.item.type === "custom_view"
       ? { screenX: cardContextMenu.screenX, screenY: cardContextMenu.screenY, item: cardContextMenu.item }
       : null;
-  const canMoveBoardItem = Boolean(onMoveBoardItemToContainer && boardContainer && resolvedBoardFolderId);
+  const canMoveBoardItem = Boolean(onMoveBoardItemToFolder && boardContainer && resolvedBoardFolderId);
 
   const copyToClipboard = (text: string, label: string) => {
     onCloseCardContextMenu();
@@ -190,29 +190,23 @@ export function BoardWorkspaceContextMenus({
     removeBoardItem(item.boardItemId);
     if (activeBoardDocumentId === item.customViewId) setActiveBoardDocument(null);
   };
-  const availableTaskMoveTargets = taskMoveTargets.filter((target) => (
-    boardContainer?.kind !== "task" || target.id !== boardContainer.id
-  ));
+  const availableFolderMoveTargets = taskMoveTargets.filter((target) => target.id !== boardContainer?.id);
 
   const moveSessionActions: SessionContextMenuExtraAction[] =
     movableContextMenu?.item.type === "session" && canMoveBoardItem
       ? [{
-          label: boardContainer?.kind === "task" ? "폴더 보드로 내보내기" : "업무 보드로 이동...",
+          label: "다른 폴더로 이동...",
           onClick: () => openMoveBoardItemTarget(movableContextMenu.item),
         }]
       : [];
 
   function openMoveBoardItemTarget(item: MovableBoardWorkspaceItem) {
-    if (!onMoveBoardItemToContainer || !boardContainer || !resolvedBoardFolderId) return;
+    if (!onMoveBoardItemToFolder || !boardContainer || !resolvedBoardFolderId) return;
     onCloseCardContextMenu();
-    if (boardContainer.kind === "task" && item.type !== "markdown") {
-      void handleMoveBoardItem(item, { kind: "folder", id: resolvedBoardFolderId });
-      return;
-    }
     setMoveTaskError("");
     setMoveTaskTarget({
       item,
-      selectedTaskId: availableTaskMoveTargets[0]?.id ?? "",
+      selectedTaskId: availableFolderMoveTargets[0]?.id ?? "",
     });
   }
 
@@ -220,11 +214,11 @@ export function BoardWorkspaceContextMenus({
     item: MovableBoardWorkspaceItem,
     target: BoardContainerRef,
   ) {
-    if (!onMoveBoardItemToContainer || moveTaskPending) return;
+    if (!onMoveBoardItemToFolder || moveTaskPending) return;
     setMoveTaskPending(true);
     try {
       setMoveTaskError("");
-      await onMoveBoardItemToContainer(item, target);
+      await onMoveBoardItemToFolder(item, target);
       setMoveTaskTarget(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -454,7 +448,7 @@ export function BoardWorkspaceContextMenus({
               onClick={() => openMoveBoardItemTarget(markdownContextMenu.item)}
             >
               <ArrowRightLeft className="h-4 w-4" />
-              {boardContainer?.kind === "task" ? "다른 업무로 이동..." : "업무 보드로 이동..."}
+              다른 폴더로 이동...
             </button>
           )}
           <button
@@ -521,7 +515,7 @@ export function BoardWorkspaceContextMenus({
               onClick={() => openMoveBoardItemTarget(customViewContextMenu.item)}
             >
               <ArrowRightLeft className="h-4 w-4" />
-              {boardContainer?.kind === "task" ? "폴더 보드로 내보내기" : "업무 보드로 이동..."}
+              다른 폴더로 이동...
             </button>
           )}
           <button
@@ -546,7 +540,7 @@ export function BoardWorkspaceContextMenus({
             onClick={() => openMoveBoardItemTarget(assetContextMenu.item)}
           >
             <ArrowRightLeft className="h-4 w-4" />
-            {boardContainer?.kind === "task" ? "폴더 보드로 내보내기" : "업무 보드로 이동..."}
+            다른 폴더로 이동...
           </button>
         </div>
       )}
@@ -598,7 +592,7 @@ export function BoardWorkspaceContextMenus({
       )}
 
       <FolderDialog
-        mode="delete"
+        mode="archive"
         open={!!deleteFolderTarget}
         onOpenChange={(open) => { if (!open) setDeleteFolderTarget(null); }}
         onConfirm={handleDeleteFolder}
@@ -731,7 +725,7 @@ export function BoardWorkspaceContextMenus({
               event.preventDefault();
               if (!moveTaskTarget.selectedTaskId) return;
               void handleMoveBoardItem(moveTaskTarget.item, {
-                kind: "task",
+                kind: "folder",
                 id: moveTaskTarget.selectedTaskId,
               });
             }}
@@ -739,8 +733,8 @@ export function BoardWorkspaceContextMenus({
             <DialogHeader><DialogTitle>다른 업무로 이동</DialogTitle></DialogHeader>
             <DialogPanel>
               <div id="board-task-move-target" className="flex max-h-64 flex-col gap-1 overflow-auto">
-                {availableTaskMoveTargets.length > 0 ? (
-                  availableTaskMoveTargets.map((target) => (
+                {availableFolderMoveTargets.length > 0 ? (
+                  availableFolderMoveTargets.map((target) => (
                     <button
                       key={target.id}
                       type="button"

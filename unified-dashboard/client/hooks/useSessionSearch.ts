@@ -82,22 +82,12 @@ export const DEFAULT_SEARCH_FILTERS: SearchFilters = {
   includeStory: false,
 };
 
-export type SearchNavigationResult =
-  | {
+export type SearchNavigationResult = {
     kind: "folder";
     id: string;
     title: string;
     folder_id: string;
     project_page_id: string;
-  }
-  | {
-    kind: "task";
-    id: string;
-    title: string;
-    folder_id: string;
-    project_page_id: string;
-    board_item_id: string;
-    task_page_id: string;
   };
 
 export function buildSessionSearchUrl(

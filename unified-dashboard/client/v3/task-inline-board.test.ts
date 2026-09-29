@@ -32,7 +32,7 @@ describe("task inline board API", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/board-items?container_kind=task&container_id=rb-a",
+      "/api/board-items?folderId=rb-a",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -156,8 +156,6 @@ function boardItem(itemType: string, itemId: string) {
   return {
     id: `${itemType}:${itemId}`,
     folderId: "folder-a",
-    containerKind: "task",
-    containerId: "rb-a",
     itemType,
     itemId,
     x: 0,

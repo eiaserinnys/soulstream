@@ -34,12 +34,14 @@ const TASK_SECTIONS: readonly {
 export function TaskSectionNavigation({
   scrollRef,
   sectionRefs,
+  checklistEnabled = true,
   focusRequest,
   focusTargetReady = true,
   onFocusRequestHandled,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   sectionRefs: TaskSectionRefs;
+  checklistEnabled?: boolean;
   focusRequest?: TaskSectionFocusRequest | null;
   focusTargetReady?: boolean;
   onFocusRequestHandled?(requestId: number): void;
@@ -87,7 +89,7 @@ export function TaskSectionNavigation({
         Math.max(56, scrollElement.clientHeight * 0.18),
       );
       let nextSection = TASK_SECTIONS[0].id;
-      for (const { id } of TASK_SECTIONS) {
+      for (const { id } of TASK_SECTIONS.filter(({ id }) => id !== "checklist" || checklistEnabled)) {
         const section = sectionRefs[id].current;
         if (!section || section.getBoundingClientRect().top > activationLine) break;
         nextSection = id;
@@ -106,7 +108,7 @@ export function TaskSectionNavigation({
       ? null
       : new ResizeObserver(updateActiveSection);
     resizeObserver?.observe(scrollElement);
-    for (const { id } of TASK_SECTIONS) {
+    for (const { id } of TASK_SECTIONS.filter(({ id }) => id !== "checklist" || checklistEnabled)) {
       const section = sectionRefs[id].current;
       if (section) resizeObserver?.observe(section);
     }
@@ -116,7 +118,7 @@ export function TaskSectionNavigation({
       resizeObserver?.disconnect();
       if (requestedSectionTimerRef.current) clearTimeout(requestedSectionTimerRef.current);
     };
-  }, [scrollRef, sectionRefs]);
+  }, [checklistEnabled, scrollRef, sectionRefs]);
 
   useEffect(() => {
     if (!focusRequest || !focusTargetReady) return;
@@ -136,7 +138,7 @@ export function TaskSectionNavigation({
       className="v3-task-section-nav"
       aria-label="업무 섹션"
     >
-      {TASK_SECTIONS.map(({ id, label, accessibleLabel, Icon }) => (
+      {TASK_SECTIONS.filter(({ id }) => id !== "checklist" || checklistEnabled).map(({ id, label, accessibleLabel, Icon }) => (
         <button
           key={id}
           type="button"

@@ -1,11 +1,11 @@
 import type { InitialTaskContext } from "@seosoyoung/soul-ui/page";
 
-export type PlannerTaskCreationPhase =
+export type PlannerFolderCreationPhase =
   | "page"
   | "task"
   | "reference";
 
-export interface PlannerTaskCreationInput {
+export interface PlannerFolderCreationInput {
   title: string;
   description: string;
   dailyPageId: string;
@@ -13,45 +13,45 @@ export interface PlannerTaskCreationInput {
   initialContext?: InitialTaskContext;
 }
 
-export interface PlannerTaskCreationPort {
+export interface PlannerFolderCreationPort {
   /** Creates the execution and document aspects of one task identity. */
-  createTaskIdentity(input: {
+  createFolderIdentity(input: {
     title: string;
     description: string;
     folderId: string;
     initialContext?: InitialTaskContext;
-  }): Promise<{ id: string }>;
+  }): Promise<{ id: string; pageId: string }>;
   mountPage(input: { sourcePageId: string; title: string }): Promise<void>;
 }
 
-export class PlannerTaskCreationError extends Error {
-  readonly name = "PlannerTaskCreationError";
+export class PlannerFolderCreationError extends Error {
+  readonly name = "PlannerFolderCreationError";
 
   constructor(
-    readonly phase: PlannerTaskCreationPhase,
+    readonly phase: PlannerFolderCreationPhase,
     readonly cause: unknown,
   ) {
     super(errorMessage(cause));
   }
 }
 
-const CREATION_ERROR_LABEL: Record<PlannerTaskCreationPhase, string> = {
+const CREATION_ERROR_LABEL: Record<PlannerFolderCreationPhase, string> = {
   page: "업무 페이지 생성",
   task: "업무 생성",
   reference: "업무 연결",
 };
 
 export function plannerTaskCreationErrorLabel(error: unknown): string {
-  return error instanceof PlannerTaskCreationError
+  return error instanceof PlannerFolderCreationError
     ? CREATION_ERROR_LABEL[error.phase]
     : "새 업무 생성";
 }
 
-export async function createPlannerTask(
-  input: PlannerTaskCreationInput,
-  port: PlannerTaskCreationPort,
-): Promise<{ pageId: string; taskId: string }> {
-  const identity = await runPhase("task", () => port.createTaskIdentity({
+export async function createPlannerFolder(
+  input: PlannerFolderCreationInput,
+  port: PlannerFolderCreationPort,
+): Promise<{ pageId: string; folderId: string }> {
+  const identity = await runPhase("task", () => port.createFolderIdentity({
     title: input.title,
     description: input.description,
     folderId: input.folderId,
@@ -61,14 +61,14 @@ export async function createPlannerTask(
     sourcePageId: input.dailyPageId,
     title: input.title,
   }));
-  return { pageId: identity.id, taskId: identity.id };
+  return { pageId: identity.pageId, folderId: identity.id };
 }
 
-async function runPhase<T>(phase: PlannerTaskCreationPhase, operation: () => Promise<T>): Promise<T> {
+async function runPhase<T>(phase: PlannerFolderCreationPhase, operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (error) {
-    throw new PlannerTaskCreationError(phase, error);
+    throw new PlannerFolderCreationError(phase, error);
   }
 }
 

@@ -38,7 +38,7 @@ describe("v3 aesthetic policy", () => {
   });
 
   it("removes nested glass framing from project context and documents", () => {
-    const view = read("./PlannerViews.tsx");
+    const view = read("./FolderWorkspaceSections.tsx");
     const css = read("./v3-planner-surfaces.css");
     const contextRule = css.match(/\.v3-project-context\s*\{[^}]*\}/s)?.[0] ?? "";
 

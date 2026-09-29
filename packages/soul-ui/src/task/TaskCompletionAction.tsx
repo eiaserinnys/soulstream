@@ -14,21 +14,21 @@ import {
 } from "../components/ui/alert-dialog";
 import { cn } from "../lib/cn";
 import {
-  type TaskSnapshot,
-  type TaskStatus,
-  useTaskStore,
-} from "../stores/task-store";
+  type FolderSnapshot,
+  type FolderStatus,
+  useFolderChecklistStore,
+} from "../stores/folder-checklist-store";
 
 interface TaskCompletionActionProps {
   task: {
     id: string;
     title: string;
-    status?: TaskStatus | null;
+    status?: FolderStatus | null;
     version?: number | null;
   };
   className?: string;
   buttonClassName?: string;
-  onStatusChanged?: (snapshot: TaskSnapshot | null) => Promise<void> | void;
+  onStatusChanged?: (snapshot: FolderSnapshot | null) => Promise<void> | void;
 }
 
 function statusErrorMessage(error: unknown): string {
@@ -36,30 +36,30 @@ function statusErrorMessage(error: unknown): string {
 }
 
 export function normalizeTaskStatus(
-  status: TaskStatus | null | undefined,
-): TaskStatus {
+  status: FolderStatus | null | undefined,
+): FolderStatus {
   return status === "completed" ? "completed" : "open";
 }
 
-export function isTaskCompleted(status: TaskStatus | null | undefined): boolean {
+export function isTaskCompleted(status: FolderStatus | null | undefined): boolean {
   return normalizeTaskStatus(status) === "completed";
 }
 
 export function createTaskLifecycleIdempotencyKey(
-  taskId: string,
-  status: TaskStatus,
+  folderId: string,
+  status: FolderStatus,
   expectedVersion: number,
 ): string {
   const randomId = globalThis.crypto?.randomUUID?.() ??
     `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `task:${taskId}:status:${status}:v${expectedVersion}:${randomId}`;
+  return `task:${folderId}:status:${status}:v${expectedVersion}:${randomId}`;
 }
 
 export function TaskCompletionBadge({
   status,
   className,
 }: {
-  status: TaskStatus | null | undefined;
+  status: FolderStatus | null | undefined;
   className?: string;
 }) {
   const normalized = normalizeTaskStatus(status);
@@ -80,13 +80,13 @@ export function TaskCompletionAction({
   buttonClassName,
   onStatusChanged,
 }: TaskCompletionActionProps) {
-  const loadTask = useTaskStore((s) => s.loadTask);
-  const setTaskStatus = useTaskStore((s) => s.setTaskStatus);
+  const loadFolder = useFolderChecklistStore((s) => s.loadFolder);
+  const setFolderStatus = useFolderChecklistStore((s) => s.setFolderStatus);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currentStatus = normalizeTaskStatus(task.status);
-  const nextStatus: TaskStatus = currentStatus === "completed" ? "open" : "completed";
+  const nextStatus: FolderStatus = currentStatus === "completed" ? "open" : "completed";
   const actionLabel = nextStatus === "completed" ? "업무 완료" : "다시 열기";
   const Icon = nextStatus === "completed" ? CheckCircle2 : RotateCcw;
 
@@ -100,12 +100,12 @@ export function TaskCompletionAction({
     try {
       const version = typeof task.version === "number"
         ? task.version
-        : (await loadTask(task.id, { force: true }))?.task.version;
+        : (await loadFolder(task.id, { force: true }))?.folder.version;
       if (typeof version !== "number") {
         throw new Error("업무 버전을 확인할 수 없습니다.");
       }
-      const snapshot = await setTaskStatus({
-        taskId: task.id,
+      const snapshot = await setFolderStatus({
+        folderId: task.id,
         expectedVersion: version,
         status: nextStatus,
         idempotencyKey: createTaskLifecycleIdempotencyKey(

@@ -31,7 +31,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
       catalog: { folders: [{ id: "folder-a", name: "음악" }] },
       setActiveSession: shared.openSession,
     }),
-    useTaskStore: (selector: any) => selector({
+    useFolderChecklistStore: (selector: any) => selector({
       overview: { snapshot: { tasks: [] } },
       loadOverview: async () => undefined,
     }),
@@ -147,8 +147,7 @@ describe("RecurringJobsTab lifecycle", () => {
     const create = requests.find((request) => request.method === "POST" && request.path === "/api/recurring-jobs");
     expect(create?.body).toMatchObject({
       schedule_expressions: ["0 9 * * 1-5"],
-      folder_id: "folder-a",
-      container: { kind: "folder", id: "folder-a" },
+      folderId: "folder-a",
     });
     expect(document.body.textContent).not.toContain("결과 폴더 ID");
     expect(document.body.textContent).not.toContain("결과 컨테이너 ID");
@@ -238,7 +237,7 @@ describe("RecurringJobsTab lifecycle", () => {
     expect(create?.body).toMatchObject({
       run_at: expectedRunAt,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      container: { kind: "folder", id: "folder-a" },
+      folderId: "folder-a",
     });
     expect(create?.body).not.toHaveProperty("schedule_expressions");
     await waitFor(() => expect(document.body.textContent).toContain("1회 ·"));
@@ -324,7 +323,7 @@ function recurringJob(patch: Partial<Record<string, unknown>> = {}) {
     job_id: "job-1", name: "음악 추천", prompt: "기존 지시문", timezone: "Asia/Seoul",
     schedule_kind: "recurring", run_at: null,
     schedule_expressions: ["0 9 * * 1-5"], node_id: "node-a", agent_id: "agent-a", model_preset: null,
-    folder_id: "folder-a", container: { kind: "folder", id: "folder-a" }, late_run_window_seconds: 1_800,
+    folderId: "folder-a", late_run_window_seconds: 1_800,
     enabled: true, archived_at: null, next_run_at: "2026-09-22T00:00:00.000Z", version: 1,
     created_at: "2026-09-21T00:00:00.000Z", updated_at: "2026-09-21T00:00:00.000Z",
     ...patch,

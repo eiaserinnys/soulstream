@@ -1,9 +1,9 @@
 /**
- * FolderDialog - 폴더 생성/삭제 다이얼로그
+ * FolderDialog - 폴더 생성/보관 다이얼로그
  *
  * 브라우저 기본 prompt()/confirm() 대신 앱 스타일에 맞는 다이얼로그를 제공한다.
  * mode="create": 폴더 이름 입력 → 생성
- * mode="delete": 삭제 확인 메시지 → 삭제
+ * mode="archive": 보관 확인 메시지 → 보관
  */
 
 import { useEffect } from "react";
@@ -31,7 +31,7 @@ type FolderDialogProps =
       folderName?: undefined;
     }
   | {
-      mode: "delete";
+      mode: "archive";
       open: boolean;
       onOpenChange: (open: boolean) => void;
       onConfirm: () => void;
@@ -50,7 +50,7 @@ export function FolderDialog(props: FolderDialogProps) {
   }
 
   return (
-    <DeleteFolderDialog
+    <ArchiveFolderDialog
       open={props.open}
       onOpenChange={props.onOpenChange}
       onConfirm={props.onConfirm}
@@ -125,7 +125,7 @@ function CreateFolderDialog({
   );
 }
 
-function DeleteFolderDialog({
+function ArchiveFolderDialog({
   open,
   onOpenChange,
   onConfirm,
@@ -140,10 +140,9 @@ function DeleteFolderDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>폴더 삭제</DialogTitle>
+          <DialogTitle>폴더 보관</DialogTitle>
           <DialogDescription>
-            &lsquo;{folderName}&rsquo; 폴더를 삭제하시겠습니까? 폴더 안의
-            세션은 미분류로 이동합니다.
+            &lsquo;{folderName}&rsquo; 폴더를 보관하시겠습니까? 내용과 세션은 보존됩니다.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter variant="bare">
@@ -151,7 +150,7 @@ function DeleteFolderDialog({
             취소
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
-            삭제
+            보관
           </Button>
         </DialogFooter>
       </DialogPopup>

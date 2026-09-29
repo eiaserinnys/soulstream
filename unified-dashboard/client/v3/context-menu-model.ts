@@ -67,7 +67,7 @@ export function buildProjectContextMenuActions(actions: {
     { label: "하위 프로젝트 만들기", onSelect: actions.createChildProject },
     { label: "프로젝트 설정", onSelect: actions.edit },
     {
-      label: "프로젝트 삭제",
+      label: "폴더 보관",
       onSelect: actions.remove,
       separatorBefore: true,
       destructive: true,
@@ -90,7 +90,7 @@ export function buildDocumentContextMenuActions(actions: {
   ];
   if (actions.moveToTask) {
     menu.push({
-      label: "다른 업무로 이동",
+      label: "다른 폴더로 이동",
       onSelect: actions.moveToTask,
       separatorBefore: true,
     });
@@ -126,6 +126,6 @@ export function buildTaskSessionExtraActions(actions: {
 }): V3SessionContextMenuExtraAction[] {
   return [
     { label: "＋ 이어서 새 세션 (승계)", onClick: actions.continueFromSession },
-    { label: "다른 업무로 이동", onClick: actions.moveToTask },
+    { label: "다른 폴더로 이동", onClick: actions.moveToTask },
   ];
 }

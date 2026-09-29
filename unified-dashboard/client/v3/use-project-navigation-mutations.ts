@@ -7,12 +7,12 @@ import {
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import {
-  deleteFolderOptimistic,
+  archiveFolder,
   renameFolderOptimistic,
   reorderFoldersOptimistic,
 } from "../lib/folder-operations";
 import {
-  deleteProjectFolder,
+  archiveProjectFolder,
   renameProjectFolder,
   reorderProjectFolders,
 } from "./project-folder-actions";
@@ -53,7 +53,7 @@ export function useProjectNavigationMutations({
   }, [patchProjectTitle]);
 
   const onDeleteProject = useCallback(async (folder: CatalogFolder) => {
-    await deleteProjectFolder(folder, deleteFolderOptimistic, readFolders);
+    await archiveProjectFolder(folder, archiveFolder, readFolders);
     if (selectedFolderId === folder.id) clearProject();
   }, [clearProject, selectedFolderId]);
 

@@ -49,7 +49,7 @@ export interface SuccessionDocumentOption {
 export function SessionSuccessionModal({
   taskTitle,
   taskPageId,
-  taskId,
+  folderId,
   contextItems,
   documentOptions,
   contextPending,
@@ -61,7 +61,7 @@ export function SessionSuccessionModal({
 }: {
   taskTitle: string;
   taskPageId: string;
-  taskId: string;
+  folderId: string;
   contextItems: readonly SuccessionContextItem[];
   documentOptions: readonly SuccessionDocumentOption[];
   contextPending: boolean;
@@ -196,7 +196,7 @@ export function SessionSuccessionModal({
         // Only ever the value this form actually offers. Sending an inherited
         // effort across a model change would 422 with no way to fix it here.
         ...(effort.submitValue ? { reasoningEffort: effort.submitValue } : {}),
-        container: { kind: "task", id: taskId },
+        folderId: folderId,
         contextItems: contextSelection.contextItems.length > 0
           ? contextSelection.contextItems
           : undefined,

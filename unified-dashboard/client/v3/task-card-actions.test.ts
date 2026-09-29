@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PageApiClient, PageDto, PageReadResponse } from "@seosoyoung/soul-ui/page";
 
-import type { PlannerTask } from "./planner-data";
-import { completePlannerTask, togglePlannerTaskToday } from "./task-card-actions";
+import type { PlannerFolder } from "./planner-data";
+import { togglePlannerFolderToday } from "./task-card-actions";
 
 describe("planner task card actions", () => {
   afterEach(() => {
@@ -23,7 +23,7 @@ describe("planner task card actions", () => {
       })),
     } as unknown as PageApiClient;
 
-    await expect(togglePlannerTaskToday(task(), api, () => "toggle-id"))
+    await expect(togglePlannerFolderToday(task(), api, () => "toggle-id"))
       .resolves.toBe("added");
 
     expect(api.applyOperations).toHaveBeenCalledWith("daily-today", expect.objectContaining({
@@ -69,7 +69,7 @@ describe("planner task card actions", () => {
       })),
     } as unknown as PageApiClient;
 
-    await expect(togglePlannerTaskToday(task(), api, () => "toggle-id"))
+    await expect(togglePlannerFolderToday(task(), api, () => "toggle-id"))
       .resolves.toBe("removed");
 
     expect(api.applyOperations).toHaveBeenCalledWith("daily-today", {
@@ -81,49 +81,19 @@ describe("planner task card actions", () => {
     });
   });
 
-  it("reuses the ritual completion path", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await completePlannerTask(task());
-
-    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/rb-task-a/status", expect.objectContaining({
-      method: "POST",
-      body: expect.stringContaining('"status":"completed"'),
-    }));
-  });
 });
 
-function task(): PlannerTask {
+function task(): PlannerFolder {
   return {
     page: page("task-a", "업무 A", 2),
     blocks: [],
     stateVector: "AA==",
-    taskId: "rb-task-a",
-    task: {
-      task: {
-        id: "rb-task-a",
-        board_item_id: "task:rb-task-a",
-        title: "업무 A",
-        status: "open",
-        archived: false,
-        version: 7,
-        created_session_id: null,
-        created_event_id: null,
-        created_at: "2026-07-14T00:00:00.000Z",
-        updated_at: "2026-07-14T00:00:00.000Z",
-      },
-      sections: [],
-      items: [],
-    },
+    folderId: "rb-task-a",
     status: "open",
     assignee: "로젤린",
     contextCount: 0,
     progress: null,
-    projectPageId: "project-a",
+    parentFolderId: "project-a",
     sessionIds: [],
     mountedDocuments: [],
   };

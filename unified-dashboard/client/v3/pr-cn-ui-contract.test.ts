@@ -13,23 +13,22 @@ describe("PR-CN planner polish contract", () => {
     expect(toolbar).not.toContain("onOpenRitual");
     expect(toolbar).not.toContain("onOpenNewTask");
     expect(views).toContain('label="아침 정리"');
-    expect(views.match(/label="새 업무"/g)).toHaveLength(2);
-    expect(views).toContain("<h2>업무</h2>");
+    expect(views).toContain('label="새 업무"');
     expect(views).not.toContain("역대 업무");
-    expect(layout).toContain("projectLegacySessions.state?.items.map");
+    expect(layout).toContain("folderSessions.state?.items.map");
     expect(layout).toContain("onOpenRitual={() => setRitualOpen(true)}");
     expect(navigation).toContain("<h2>중요 작업</h2>");
     expect(navigation).not.toContain("<h2>★ 작업</h2>");
     expect(navigation).toContain('<span className="v3-emoji" aria-hidden="true">📅</span>');
   });
 
-  it("keeps memo semantics while removing its visible title and centers project content", () => {
+  it("keeps memo semantics while removing its visible title", () => {
     const memo = read("./DailyMemo.tsx");
     const views = read("./PlannerViews.tsx");
 
     expect(memo).not.toContain('className="v3-memo-label"');
     expect(memo).toContain('ariaLabel={index === 0 ? "오늘 메모"');
-    expect(views).toMatch(/function ProjectPlannerView[\s\S]*className="v3-planner-column"/);
+    expect(views).toContain('className="v3-planner-column"');
   });
 
   it("removes session-only guidance and reuses the attachment submission contract", () => {
@@ -53,6 +52,6 @@ describe("PR-CN planner polish contract", () => {
     expect(ritual).toContain("데일리에서 내리기");
     expect(ritual).not.toContain("완료 처리");
     expect(model).not.toContain("completeTask");
-    expect(browserPort).not.toContain("postTaskStatus");
+    expect(browserPort).not.toContain("postFolderStatus");
   });
 });

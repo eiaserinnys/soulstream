@@ -6,18 +6,18 @@ import { MarkdownContent } from "../components/MarkdownContent";
 import { Badge } from "../components/ui/badge";
 import { cn } from "../lib/cn";
 import type {
-  TaskAssigneeKind,
-  TaskItemRow,
-  TaskSectionRow,
-  TaskSnapshot,
-} from "../stores/task-store";
+  ChecklistAssigneeKind,
+  ChecklistItemRow,
+  ChecklistSectionRow,
+  FolderSnapshot,
+} from "../stores/folder-checklist-store";
 import {
-  TaskRowActionButton,
-  TaskRowActions,
+  FolderRowActionButton,
+  FolderRowActions,
   type RowAction,
 } from "./TaskChecklistControls";
 import {
-  TaskItemStatusToggle,
+  ChecklistItemStatusToggle,
   isTaskItemHumanTurn,
   taskAssigneeLabel,
   type TaskStatusToggleItem,
@@ -26,13 +26,13 @@ import {
 } from "./TaskItemStatusToggle";
 
 interface EffectiveAssignee {
-  kind: TaskAssigneeKind | null;
+  kind: ChecklistAssigneeKind | null;
   agentId: string | null;
   sessionId: string | null;
   userId: string | null;
 }
 
-export function TaskItemRowView({
+export function ChecklistItemRowView({
   snapshot,
   section,
   item,
@@ -41,9 +41,9 @@ export function TaskItemRowView({
   actions,
   onToggleHowTo,
 }: {
-  snapshot: TaskSnapshot;
-  section: TaskSectionRow;
-  item: TaskItemRow;
+  snapshot: FolderSnapshot;
+  section: ChecklistSectionRow;
+  item: ChecklistItemRow;
   itemOpen: boolean;
   textSize: "compact" | "session";
   actions: readonly RowAction[] | null;
@@ -52,7 +52,7 @@ export function TaskItemRowView({
   const assignee = resolveAssignee(section, item);
   const toggleItem = toToggleItem(item);
   const myTurn = isTaskItemHumanTurn(assignee, toggleItem);
-  const hasHowTo = item.how_to.trim().length > 0;
+  const hasHowTo = item.howTo.trim().length > 0;
   const hasAssignee = assignee.kind !== null;
   const hasDetails = hasHowTo || hasAssignee;
   return (
@@ -65,8 +65,8 @@ export function TaskItemRowView({
       )}
     >
       <div className="flex min-w-0 items-start gap-2">
-        <TaskItemStatusToggle
-          task={toToggleTask(snapshot.task.id, snapshot.task.created_session_id)}
+        <ChecklistItemStatusToggle
+          task={toToggleTask(snapshot.folder.id, snapshot.folder.createdSessionId)}
           section={toToggleSection(section)}
           item={toggleItem}
           assignee={assignee}
@@ -92,14 +92,14 @@ export function TaskItemRowView({
                 className="flex shrink-0 items-center gap-1"
               >
                 {actions ? (
-                  <TaskRowActions
+                  <FolderRowActions
                     label={`${item.title} 항목 메뉴`}
                     actions={actions}
                     onPointerDown={stopTileDrag}
                   />
                 ) : null}
                 {hasDetails ? (
-                  <TaskRowActionButton
+                  <FolderRowActionButton
                     data-testid="task-item-details-toggle"
                     aria-label={`${item.title} 상세 ${itemOpen ? "접기" : "펼치기"}`}
                     aria-expanded={itemOpen}
@@ -107,7 +107,7 @@ export function TaskItemRowView({
                     onClick={onToggleHowTo}
                   >
                     <DisclosureActionIcon expanded={itemOpen} className="h-4 w-4" />
-                  </TaskRowActionButton>
+                  </FolderRowActionButton>
                 ) : null}
               </div>
             ) : null}
@@ -133,7 +133,7 @@ export function TaskItemRowView({
                   ) : null}
                 </div>
               ) : null}
-              {hasHowTo ? <MarkdownContent content={item.how_to} compact /> : null}
+              {hasHowTo ? <MarkdownContent content={item.howTo} compact /> : null}
             </div>
           ) : null}
         </div>
@@ -142,19 +142,19 @@ export function TaskItemRowView({
   );
 }
 
-function resolveAssignee(section: TaskSectionRow, item: TaskItemRow): EffectiveAssignee {
-  return item.assignee_kind
+function resolveAssignee(section: ChecklistSectionRow, item: ChecklistItemRow): EffectiveAssignee {
+  return item.assigneeKind
     ? {
-        kind: item.assignee_kind,
-        agentId: item.assignee_agent_id,
-        sessionId: item.assignee_session_id,
-        userId: item.assignee_user_id,
+        kind: item.assigneeKind,
+        agentId: item.assigneeAgentId,
+        sessionId: item.assigneeSessionId,
+        userId: item.assigneeUserId,
       }
     : {
-        kind: section.assignee_kind,
-        agentId: section.assignee_agent_id,
-        sessionId: section.assignee_session_id,
-        userId: section.assignee_user_id,
+        kind: section.assigneeKind,
+        agentId: section.assigneeAgentId,
+        sessionId: section.assigneeSessionId,
+        userId: section.assigneeUserId,
       };
 }
 
@@ -166,22 +166,22 @@ function AssigneeIcon({ assignee }: { assignee: EffectiveAssignee }) {
   return <Circle className={className} aria-label="unassigned" />;
 }
 
-function toToggleTask(taskId: string, createdSessionId: string | null): TaskStatusToggleTask {
-  return { id: taskId, createdSessionId };
+function toToggleTask(folderId: string, createdSessionId: string | null): TaskStatusToggleTask {
+  return { id: folderId, createdSessionId };
 }
 
-function toToggleSection(section: TaskSectionRow): TaskStatusToggleSection {
-  return { createdSessionId: section.created_session_id, updatedSessionId: section.updated_session_id };
+function toToggleSection(section: ChecklistSectionRow): TaskStatusToggleSection {
+  return { createdSessionId: section.createdSessionId, updatedSessionId: section.updatedSessionId };
 }
 
-function toToggleItem(item: TaskItemRow): TaskStatusToggleItem {
+function toToggleItem(item: ChecklistItemRow): TaskStatusToggleItem {
   return {
     id: item.id,
     status: item.status,
     archived: item.archived,
     version: item.version,
-    createdSessionId: item.created_session_id,
-    updatedSessionId: item.updated_session_id,
+    createdSessionId: item.createdSessionId,
+    updatedSessionId: item.updatedSessionId,
   };
 }
 

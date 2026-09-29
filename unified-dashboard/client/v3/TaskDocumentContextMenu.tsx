@@ -7,7 +7,7 @@ import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { buildDocumentContextMenuActions } from "./context-menu-model";
 import { metadataText } from "./task-inline-board-model";
-import type { TaskMoveTarget } from "./task-move-targets";
+import type { FolderMoveTarget } from "./task-move-targets";
 import { TaskMoveDialog } from "./TaskMoveDialog";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 
@@ -18,7 +18,7 @@ export interface TaskDocumentContextTarget {
 
 export function TaskDocumentContextMenu({
   api,
-  currentTaskId,
+  currentFolderId,
   defaultTargets,
   context,
   onClose,
@@ -27,12 +27,12 @@ export function TaskDocumentContextMenu({
   onDelete,
 }: {
   api: PageApiClient;
-  currentTaskId: string;
-  defaultTargets: readonly TaskMoveTarget[];
+  currentFolderId: string;
+  defaultTargets: readonly FolderMoveTarget[];
   context: TaskDocumentContextTarget | null;
   onClose(): void;
   onOpen(item: CatalogBoardItem): void;
-  onMove(item: CatalogBoardItem, target: TaskMoveTarget): Promise<void>;
+  onMove(item: CatalogBoardItem, target: FolderMoveTarget): Promise<void>;
   onDelete(item: CatalogBoardItem): Promise<void>;
 }) {
   const [moveItem, setMoveItem] = useState<CatalogBoardItem | null>(null);
@@ -55,7 +55,7 @@ export function TaskDocumentContextMenu({
       <V3ContextMenu target={context?.target ?? null} actions={actions} onClose={onClose} />
       <TaskMoveDialog
         api={api}
-        currentTaskId={currentTaskId}
+        currentFolderId={currentFolderId}
         defaultTargets={defaultTargets}
         open={moveItem !== null}
         onClose={() => setMoveItem(null)}

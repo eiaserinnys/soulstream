@@ -19,7 +19,7 @@ import type { PageSessionDefaults } from "./task-workspace-api";
  * `TaskDetailPane`(업무 패널)과 `TaskBoardWorkspace`(보드
  * 세션 리스트의 새 세션 버튼)가 이 훅을 공유해 동일한 컨테이너 상속 경로를 쓴다.
  */
-export function useTaskSessionContext({
+export function useFolderSessionContext({
   taskPageId,
   projectFolderId,
   folders,

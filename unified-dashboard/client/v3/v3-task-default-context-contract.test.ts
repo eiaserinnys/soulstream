@@ -6,18 +6,20 @@ import { describe, expect, it } from "vitest";
 const read = (name: string) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
 
 describe("PR-CD task default and context contract", () => {
-  it("keeps the editable assignment in information and removes the duplicate session label", () => {
+  it("keeps one context editor in information and removes the duplicate session label", () => {
     const detail = read("./TaskDetailPane.tsx");
+    const sections = read("./FolderWorkspaceSections.tsx");
+    const editor = read("./ProjectContextEditor.tsx");
     const information = detail.indexOf('data-task-section="information"');
     const checklist = detail.indexOf('data-task-section="checklist"');
 
-    expect(detail).toContain("TaskDefaultAssignment");
+    expect(sections).toContain("<ProjectContextEditor");
+    expect(editor).toContain("ProjectSessionDefaultsFields");
     expect(detail).not.toContain("effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ?");
-    expect(detail).toContain("<strong>컨텍스트</strong>");
     expect(detail).not.toContain("기본값:");
     expect(information).toBeGreaterThan(-1);
-    expect(detail.indexOf("<TaskDefaultAssignment")).toBeGreaterThan(information);
-    expect(detail.indexOf("<TaskDefaultAssignment")).toBeLessThan(checklist);
+    expect(detail.indexOf("{folderSections}")).toBeGreaterThan(information);
+    expect(detail.indexOf("{folderSections}")).toBeLessThan(checklist);
   });
 
   it("uses concise preview copy and right-aligns inheritance sources", () => {
@@ -41,7 +43,7 @@ describe("PR-CD task default and context contract", () => {
       mutations.indexOf("const applyRitualAction"),
     );
 
-    expect(applyTaskBlocks).toContain("patchPlannerTask");
+    expect(applyTaskBlocks).toContain("patchPlannerFolder");
     expect(applyTaskBlocks).not.toContain("refreshTask");
   });
 });

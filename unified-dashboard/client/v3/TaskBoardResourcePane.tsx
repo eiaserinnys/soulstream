@@ -29,8 +29,9 @@ import {
 import { useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 
 export function TaskBoardResourcePane({
-  taskId,
+  folderId,
   taskTitle,
+  checklistEnabled,
   sessionIds,
   sessions,
   runSessionLoadStates,
@@ -49,8 +50,9 @@ export function TaskBoardResourcePane({
   onNewSession,
   onSessionContextMenu,
 }: {
-  taskId: string;
+  folderId: string;
   taskTitle: string;
+  checklistEnabled: boolean;
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
@@ -70,8 +72,8 @@ export function TaskBoardResourcePane({
   onSessionContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
   const baseTabs = useMemo(
-    () => buildTaskBoardResourceTabs(boardItems, openedResources),
-    [boardItems, openedResources],
+    () => buildTaskBoardResourceTabs(boardItems, openedResources, checklistEnabled),
+    [boardItems, openedResources, checklistEnabled],
   );
   const baseActiveTab = baseTabs.find((tab) => tab.id === activeTabId) ?? baseTabs[0];
   const activeDocumentId = baseActiveTab.kind === "document" ? baseActiveTab.documentId : null;
@@ -100,7 +102,7 @@ export function TaskBoardResourcePane({
         aria-label={activeTab.title}
       >
         {activeTab.kind === "checklist" ? (
-          <TaskCard taskId={taskId} fallbackTitle={taskTitle} editable textSize="session" />
+          <TaskCard folderId={folderId} fallbackTitle={taskTitle} editable textSize="session" />
         ) : activeTab.kind === "sessions" ? (
           <TaskBoardSessionTree
             sessionIds={sessionIds}

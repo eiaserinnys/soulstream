@@ -10,13 +10,11 @@ import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { useDashboardStore } from "@seosoyoung/soul-ui";
 
 import { TaskInlineBoard } from "./TaskInlineBoard";
-import type { TaskMoveTarget } from "./task-move-targets";
+import type { FolderMoveTarget } from "./task-move-targets";
 
 const documentItem = {
   id: "markdown:doc-1",
-  folderId: "folder-1",
-  containerKind: "task" as const,
-  containerId: "task-1",
+  folderId: "task-1",
   itemType: "markdown" as const,
   itemId: "doc-1",
   x: 20,
@@ -65,26 +63,25 @@ describe("TaskInlineBoard document context menu", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
-      if (url === "/api/board-items/markdown%3Adoc-1/container" && init?.method === "PATCH") {
+      if (url === "/api/board-items/markdown%3Adoc-1/folder" && init?.method === "PATCH") {
         return new Response(JSON.stringify({
           ok: true,
-          boardItem: { ...documentItem, containerId: "task-2" },
+          boardItem: { ...documentItem, folderId: "task-2" },
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
     });
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
     const target = {
-      taskId: "task-2",
+      folderId: "task-2",
       page: { id: "page-2", title: "옮길 업무" },
-    } as TaskMoveTarget;
+    } as FolderMoveTarget;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     flushSync(() => {
       root!.render(createElement(TaskInlineBoard, {
-        taskId: "task-1",
-        folderId: "folder-1",
+        folderId: "task-1",
         api: {} as PageApiClient,
         taskMoveTargets: [target],
         onMarkdownDocumentsChanged: vi.fn(),
@@ -104,7 +101,7 @@ describe("TaskInlineBoard document context menu", () => {
       clientY: 80,
     })));
     const moveAction = Array.from(document.body.querySelectorAll<HTMLElement>("[role='menuitem']"))
-      .find((item) => item.textContent?.trim() === "다른 업무로 이동");
+      .find((item) => item.textContent?.trim() === "다른 폴더로 이동");
     expect(moveAction).not.toBeUndefined();
     flushSync(() => moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     const targetAction = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
@@ -119,15 +116,15 @@ describe("TaskInlineBoard document context menu", () => {
     }
 
     const patchCall = fetchMock.mock.calls.find(([input, init]) => (
-      String(input).endsWith("/container") && init?.method === "PATCH"
+      String(input).endsWith("/folder") && init?.method === "PATCH"
     ));
     expect(patchCall).toBeDefined();
     expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
-      container: { kind: "task", id: "task-2" },
+      folderId: "task-2",
     });
     expect(container.querySelector(".v3-inline-board-row")).toBeNull();
     expect(useDashboardStore.getState().catalog?.boardItems?.find((item) => item.id === documentItem.id))
-      .toMatchObject({ itemId: "doc-1", containerId: "task-2" });
+      .toMatchObject({ itemId: "doc-1", folderId: "task-2" });
   });
 
   it("re-fetches inline markdown when the task document revision changes", async () => {
@@ -159,8 +156,7 @@ describe("TaskInlineBoard document context menu", () => {
     root = createRoot(boardContainer);
     const render = (markdownDocumentsRevision: number) => flushSync(() => {
       root!.render(createElement(TaskInlineBoard, {
-        taskId: "task-1",
-        folderId: "folder-1",
+        folderId: "task-1",
         api: {} as PageApiClient,
         taskMoveTargets: [],
         onMarkdownDocumentsChanged: vi.fn(),

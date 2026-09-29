@@ -1,17 +1,17 @@
 import { useSyncExternalStore } from "react";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
-export interface TaskStarChange {
+export interface FolderStarChange {
   page: PageDto;
   starred: boolean;
 }
 
-let snapshot: readonly TaskStarChange[] = [];
+let snapshot: readonly FolderStarChange[] = [];
 const listeners = new Set<() => void>();
 const mutationIdsByPage = new Map<string, number>();
 let nextMutationId = 0;
 
-export function publishTaskStarChange(change: TaskStarChange): number {
+export function publishFolderStarChange(change: FolderStarChange): number {
   const mutationId = ++nextMutationId;
   mutationIdsByPage.set(change.page.id, mutationId);
   snapshot = [
@@ -22,7 +22,7 @@ export function publishTaskStarChange(change: TaskStarChange): number {
   return mutationId;
 }
 
-export function clearTaskStarChange(pageId: string, mutationId: number): void {
+export function clearFolderStarChange(pageId: string, mutationId: number): void {
   if (mutationIdsByPage.get(pageId) !== mutationId) return;
   mutationIdsByPage.delete(pageId);
   const next = snapshot.filter((candidate) => candidate.page.id !== pageId);
@@ -31,17 +31,17 @@ export function clearTaskStarChange(pageId: string, mutationId: number): void {
   for (const listener of listeners) listener();
 }
 
-export function useTaskStarChanges(): readonly TaskStarChange[] {
+export function useFolderStarChanges(): readonly FolderStarChange[] {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-export function getTaskStarChanges(): readonly TaskStarChange[] {
+export function getFolderStarChanges(): readonly FolderStarChange[] {
   return snapshot;
 }
 
-export function applyStarredTaskChanges(
+export function applyStarredFolderChanges(
   tasks: readonly PageDto[],
-  changes: readonly TaskStarChange[],
+  changes: readonly FolderStarChange[],
 ): PageDto[] {
   const byId = new Map(tasks.map((task) => [task.id, task]));
   for (const change of changes) {
@@ -51,12 +51,12 @@ export function applyStarredTaskChanges(
   return [...byId.values()];
 }
 
-export function taskStarredState(
-  taskId: string,
-  changes: readonly TaskStarChange[],
+export function folderStarredState(
+  folderId: string,
+  changes: readonly FolderStarChange[],
   initialState = true,
 ): boolean {
-  return changes.find((change) => change.page.id === taskId)?.starred ?? initialState;
+  return changes.find((change) => change.page.id === folderId)?.starred ?? initialState;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -64,11 +64,11 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-function getSnapshot(): readonly TaskStarChange[] {
+function getSnapshot(): readonly FolderStarChange[] {
   return snapshot;
 }
 
-export function resetTaskStarChangesForTest(): void {
+export function resetFolderStarChangesForTest(): void {
   snapshot = [];
   mutationIdsByPage.clear();
   nextMutationId = 0;

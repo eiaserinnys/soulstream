@@ -2,56 +2,56 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 import {
-  clearTaskStarChange,
-  applyStarredTaskChanges,
-  getTaskStarChanges,
-  publishTaskStarChange,
-  resetTaskStarChangesForTest,
-  taskStarredState,
-  type TaskStarChange,
+  clearFolderStarChange,
+  applyStarredFolderChanges,
+  getFolderStarChanges,
+  publishFolderStarChange,
+  resetFolderStarChangesForTest,
+  folderStarredState,
+  type FolderStarChange,
 } from "./task-star-store";
 
 describe("task star projection", () => {
-  afterEach(() => resetTaskStarChangesForTest());
+  afterEach(() => resetFolderStarChangesForTest());
 
   it("removes cleared tasks and adds newly starred tasks immediately", () => {
     const first = page("task-1", true);
     const second = page("task-2", true);
     const third = page("task-3", true);
-    const changes: TaskStarChange[] = [
+    const changes: FolderStarChange[] = [
       { page: first, starred: false },
       { page: third, starred: true },
     ];
 
-    expect(applyStarredTaskChanges([first, second], changes)).toEqual([second, third]);
-    expect(taskStarredState(first.id, changes, true)).toBe(false);
-    expect(taskStarredState(third.id, changes, false)).toBe(true);
+    expect(applyStarredFolderChanges([first, second], changes)).toEqual([second, third]);
+    expect(folderStarredState(first.id, changes, true)).toBe(false);
+    expect(folderStarredState(third.id, changes, false)).toBe(true);
   });
 
   it("drops the optimistic overlay when its request settles so newer server data wins", () => {
     const oldPage = page("task-1", true);
-    const mutationId = publishTaskStarChange({
+    const mutationId = publishFolderStarChange({
       page: { ...oldPage, metadata: { ...oldPage.metadata, starred: false } },
       starred: false,
     });
 
-    expect(applyStarredTaskChanges([oldPage], getTaskStarChanges())).toEqual([]);
+    expect(applyStarredFolderChanges([oldPage], getFolderStarChanges())).toEqual([]);
 
     const serverPage = { ...oldPage, title: "Renamed on the server", version: 3 };
-    clearTaskStarChange(oldPage.id, mutationId);
+    clearFolderStarChange(oldPage.id, mutationId);
 
-    expect(getTaskStarChanges()).toEqual([]);
-    expect(applyStarredTaskChanges([serverPage], getTaskStarChanges())).toEqual([serverPage]);
+    expect(getFolderStarChanges()).toEqual([]);
+    expect(applyStarredFolderChanges([serverPage], getFolderStarChanges())).toEqual([serverPage]);
   });
 
   it("keeps a newer page mutation when an older request settles last", () => {
-    const first = publishTaskStarChange({ page: page("task-1", false), starred: false });
+    const first = publishFolderStarChange({ page: page("task-1", false), starred: false });
     const secondPage = { ...page("task-1", true), title: "latest" };
-    publishTaskStarChange({ page: secondPage, starred: true });
+    publishFolderStarChange({ page: secondPage, starred: true });
 
-    clearTaskStarChange("task-1", first);
+    clearFolderStarChange("task-1", first);
 
-    expect(getTaskStarChanges()).toEqual([{ page: secondPage, starred: true }]);
+    expect(getFolderStarChanges()).toEqual([{ page: secondPage, starred: true }]);
   });
 });
 

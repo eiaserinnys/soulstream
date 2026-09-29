@@ -75,7 +75,7 @@ describe("catalog sessionList helpers", () => {
     const sessionList = [makeSession("unchanged")];
     const boardItems: CatalogState["boardItems"] = [];
     const current: CatalogState = {
-      folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-a", name: "A", sortOrder: 0 }],
       sessions: {
         unchanged,
         updated: { folderId: "folder-a", displayName: "Before" },
@@ -87,7 +87,7 @@ describe("catalog sessionList helpers", () => {
 
     const result = mergeCatalogSessionsDelta(
       current,
-      [{ id: "folder-b", name: "B", sortOrder: 0 }],
+      [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-b", name: "B", sortOrder: 0 }],
       {
         added: { folderId: "folder-b", displayName: "Added" },
         updated: { folderId: "folder-b", displayName: "After" },
@@ -107,7 +107,7 @@ describe("catalog sessionList helpers", () => {
 
   it("preserves the sessions map identity for empty and value-equivalent deltas", () => {
     const current: CatalogState = {
-      folders: [{ id: "folder-a", name: "A", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-a", name: "A", sortOrder: 0 }],
       sessions: {
         unchanged: { folderId: "folder-a", displayName: "Unchanged" },
       },
@@ -115,7 +115,7 @@ describe("catalog sessionList helpers", () => {
 
     const folderOnly = mergeCatalogSessionsDelta(
       current,
-      [{ id: "folder-a", name: "Renamed A", sortOrder: 0 }],
+      [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-a", name: "Renamed A", sortOrder: 0 }],
       {},
     );
     const equivalent = mergeCatalogSessionsDelta(
@@ -638,7 +638,7 @@ describe("applyCatalogDisplayNames", () => {
   it("catalog assignment이 없어도 provider가 넘긴 세션을 탈락시키지 않는다", () => {
     const sessions = [makeSession("s1", { prompt: "hello" })];
     const result = applyCatalogDisplayNames(sessions, {
-      folders: [{ id: "folder-1", name: "Folder", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-1", name: "Folder", sortOrder: 0 }],
       sessions: {},
     });
 
@@ -649,7 +649,7 @@ describe("applyCatalogDisplayNames", () => {
   it("displayName override만 적용한다", () => {
     const sessions = [makeSession("s1", { prompt: "hello" })];
     const result = applyCatalogDisplayNames(sessions, {
-      folders: [{ id: "folder-1", name: "Folder", sortOrder: 0 }],
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-1", name: "Folder", sortOrder: 0 }],
       sessions: { s1: { folderId: "folder-1", displayName: "Pinned" } },
     });
 
@@ -674,8 +674,8 @@ describe("reconcileSessionPagesForCatalog", () => {
       ["sessions", "folder", "folder-A"],
       {
         folders: [
-          { id: "folder-A", name: "A", sortOrder: 0 },
-          { id: "folder-B", name: "B", sortOrder: 1 },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-A", name: "A", sortOrder: 0 },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-B", name: "B", sortOrder: 1 },
         ],
         sessions: {
           "s-a": { folderId: "folder-A", displayName: null },
@@ -701,8 +701,12 @@ describe("reconcileSessionPagesForCatalog", () => {
       ["sessions", "feed", null],
       {
         folders: [
-          { id: "visible-folder", name: "Visible", sortOrder: 0 },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "visible-folder", name: "Visible", sortOrder: 0 },
           {
+            checklistEnabled: false,
+            status: "open",
+            version: 1,
+            archived: false,
             id: "hidden-folder",
             name: "Hidden",
             sortOrder: 1,
@@ -879,6 +883,10 @@ describe("shouldApplySessionCreatedToCache", () => {
         {
           folders: [
             {
+              checklistEnabled: false,
+              status: "open",
+              version: 1,
+              archived: false,
               id: "hidden-folder",
               name: "Hidden",
               sortOrder: 0,
@@ -900,6 +908,10 @@ describe("shouldApplySessionCreatedToCache", () => {
         {
           folders: [
             {
+              checklistEnabled: false,
+              status: "open",
+              version: 1,
+              archived: false,
               id: "visible-folder",
               name: "Visible",
               sortOrder: 0,
@@ -1006,11 +1018,19 @@ describe("countLoadedSessionsForQuery", () => {
         {
           folders: [
             {
+              checklistEnabled: false,
+              status: "open",
+              version: 1,
+              archived: false,
               id: "visible-folder",
               name: "Visible",
               sortOrder: 0,
             },
             {
+              checklistEnabled: false,
+              status: "open",
+              version: 1,
+              archived: false,
               id: "hidden-folder",
               name: "Hidden",
               sortOrder: 1,

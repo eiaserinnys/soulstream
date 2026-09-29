@@ -20,7 +20,7 @@ import {
 } from "./session-succession-model";
 import type { PageSessionDefaults } from "./task-workspace-api";
 import {
-  type TaskMoveTarget,
+  type FolderMoveTarget,
 } from "./task-move-targets";
 import { TaskMoveDialog } from "./TaskMoveDialog";
 import {
@@ -35,7 +35,7 @@ import "./v3-run-history.css";
 export function TaskRunHistory({
   taskTitle,
   taskPageId,
-  taskId,
+  folderId,
   contextItems,
   documentOptions,
   contextPending,
@@ -57,7 +57,7 @@ export function TaskRunHistory({
 }: {
   taskTitle: string;
   taskPageId: string;
-  taskId: string;
+  folderId: string;
   contextItems: readonly SuccessionContextItem[];
   documentOptions: readonly SuccessionDocumentOption[];
   contextPending: boolean;
@@ -70,12 +70,12 @@ export function TaskRunHistory({
   runHistoryLoading: boolean;
   activeSessionId: string | null;
   onLoadMoreRuns(): Promise<void>;
-  moveTargets: readonly TaskMoveTarget[];
+  moveTargets: readonly FolderMoveTarget[];
   onOpenSession(session: SessionSummary): void;
   onSessionCreated(session: SessionSummary): void;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
+  onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
 }) {
   const api = useMemo(() => createPageApiClient(), []);
   const treeRef = useRef<ReturnType<typeof buildRunTree>>([]);
@@ -158,7 +158,7 @@ export function TaskRunHistory({
         <SessionSuccessionModal
           taskTitle={taskTitle}
           taskPageId={taskPageId}
-          taskId={taskId}
+          folderId={folderId}
           contextItems={contextItems}
           documentOptions={documentOptions}
           contextPending={contextPending}
@@ -192,7 +192,7 @@ export function TaskRunHistory({
       />
       <TaskMoveDialog
         api={api}
-        currentTaskId={taskId}
+        currentFolderId={folderId}
         defaultTargets={moveTargets}
         open={moveSessionId !== null}
         onClose={() => setMoveSessionId(null)}

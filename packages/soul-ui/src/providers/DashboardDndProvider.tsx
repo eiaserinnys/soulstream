@@ -31,7 +31,7 @@ import {
   type FolderDragData,
   type FolderRootDropData,
 } from "./folder-dnd";
-import { reorderStarredTaskIds, type StarredTaskDragData } from "./starred-task-dnd";
+import { reorderStarredFolderIds, type StarredFolderDragData } from "./starred-task-dnd";
 
 export interface DashboardDndProviderProps {
   /** 세션을 다른 폴더로 이동하는 콜백 */
@@ -68,7 +68,7 @@ export function DashboardDndProvider({
       const activeData = active.data.current as
         | { type: "session"; sessionIds: string[] }
         | FolderDragData
-        | StarredTaskDragData
+        | StarredFolderDragData
         | undefined;
 
       if (!activeData) return;
@@ -80,10 +80,10 @@ export function DashboardDndProvider({
           over.id === "null-folder" ? null : (over.id as string);
         onMoveSessions?.(activeData.sessionIds, targetFolderId);
       } else if (activeData.type === "starred-task") {
-        const overData = over.data.current as StarredTaskDragData | undefined;
+        const overData = over.data.current as StarredFolderDragData | undefined;
         if (overData?.type !== "starred-task") return;
         const activeId = active.id as string;
-        const pageIds = reorderStarredTaskIds(activeData.pageIds, activeId, over.id as string);
+        const pageIds = reorderStarredFolderIds(activeData.pageIds, activeId, over.id as string);
         if (pageIds) onReorderStarredTasks?.(activeId, pageIds);
       } else if (activeData.type === "folder") {
         // 폴더 → 폴더 드롭: 같은 부모면 재정렬, 다른 부모면 target folder의 자식으로 이동

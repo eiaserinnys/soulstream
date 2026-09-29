@@ -2,14 +2,14 @@ export type MobilePlannerTab = "today" | "projects" | "task" | "chat";
 
 export interface MobilePlannerState {
   activeTab: MobilePlannerTab;
-  selectedTaskId: string | null;
+  selectedFolderId: string | null;
   selectedRunId: string | null;
   workspaceOpen: boolean;
   chatOpen: boolean;
 }
 
-export interface MobilePlannerTaskOption {
-  taskId: string;
+export interface MobilePlannerFolderOption {
+  folderId: string;
   runIds: readonly string[];
   latestRunId: string | null;
 }
@@ -17,7 +17,7 @@ export interface MobilePlannerTaskOption {
 export function selectMobilePlannerTab(
   state: MobilePlannerState,
   target: MobilePlannerTab,
-  tasks: readonly MobilePlannerTaskOption[],
+  tasks: readonly MobilePlannerFolderOption[],
 ): MobilePlannerState {
   if (target === "today") {
     return {
@@ -37,25 +37,25 @@ export function selectMobilePlannerTab(
     };
   }
 
-  const selectedTask = tasks.find((task) => task.taskId === state.selectedTaskId) ?? tasks[0] ?? null;
+  const selectedTask = tasks.find((task) => task.folderId === state.selectedFolderId) ?? tasks[0] ?? null;
   if (!selectedTask) {
     return {
       ...state,
       activeTab: "today",
-      selectedTaskId: null,
+      selectedFolderId: null,
       selectedRunId: null,
       workspaceOpen: false,
       chatOpen: false,
     };
   }
 
-  const taskChanged = selectedTask.taskId !== state.selectedTaskId;
+  const taskChanged = selectedTask.folderId !== state.selectedFolderId;
   const selectedRunId = taskChanged || !selectedTask.runIds.includes(state.selectedRunId ?? "")
     ? null
     : state.selectedRunId;
   return {
     activeTab: target,
-    selectedTaskId: selectedTask.taskId,
+    selectedFolderId: selectedTask.folderId,
     selectedRunId: target === "chat" ? selectedRunId ?? selectedTask.latestRunId : selectedRunId,
     workspaceOpen: true,
     chatOpen: target === "chat",

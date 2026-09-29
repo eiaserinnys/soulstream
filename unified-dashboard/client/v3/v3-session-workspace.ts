@@ -1,5 +1,5 @@
 import type { CatalogBoardItem, SessionSummary } from "@seosoyoung/soul-ui";
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 
 import {
   sessionWorkspaceTargetFromBoardItems,
@@ -13,7 +13,7 @@ export interface ResolvedSessionWorkspace {
 
 export class SessionWorkspaceResolutionError extends Error {
   constructor(
-    public readonly phase: "membership" | "task",
+    public readonly phase: "membership" | "folder",
     message: string,
     options?: ErrorOptions,
   ) {
@@ -50,7 +50,7 @@ export async function resolveSessionWorkspace({
   const cached = sessionWorkspaceTargetFromBoardItems(boardItems, session.agentSessionId);
   if (cached) return { target: cached };
 
-  const query = new URLSearchParams({ session_id: session.agentSessionId });
+  const query = new URLSearchParams({ sessionId: session.agentSessionId });
   const response = await fetchImplementation(`/api/board-items?${query.toString()}`, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
@@ -73,15 +73,15 @@ export async function resolveSessionTaskWorkspace({
   session,
   boardItems,
   currentTasks,
-  loadTaskByTaskId,
+  loadTaskByFolderId,
   fetchImplementation = globalThis.fetch,
 }: {
   session: SessionSummary;
   boardItems: readonly CatalogBoardItem[];
-  currentTasks: readonly PlannerTask[];
-  loadTaskByTaskId(taskId: string): Promise<PlannerTask>;
+  currentTasks: readonly PlannerFolder[];
+  loadTaskByFolderId(folderId: string): Promise<PlannerFolder>;
   fetchImplementation?: typeof globalThis.fetch;
-}): Promise<{ workspace: ResolvedSessionWorkspace; task: PlannerTask | null }> {
+}): Promise<{ workspace: ResolvedSessionWorkspace; task: PlannerFolder | null }> {
   let workspace: ResolvedSessionWorkspace;
   try {
     workspace = await resolveSessionWorkspace({ session, boardItems, fetchImplementation });
@@ -93,14 +93,14 @@ export async function resolveSessionTaskWorkspace({
     );
   }
   if (workspace.target.kind === "standalone") return { workspace, task: null };
-  const { taskId } = workspace.target;
-  const cached = currentTasks.find((task) => task.taskId === taskId);
+  const folderId = workspace.target.folderId;
+  const cached = currentTasks.find((task) => task.folderId === folderId);
   if (cached) return { workspace, task: cached };
   try {
-    return { workspace, task: await loadTaskByTaskId(taskId) };
+    return { workspace, task: await loadTaskByFolderId(folderId) };
   } catch (error) {
     throw new SessionWorkspaceResolutionError(
-      "task",
+      "folder",
       "소속 업무를 불러오지 못했습니다.",
       { cause: error },
     );

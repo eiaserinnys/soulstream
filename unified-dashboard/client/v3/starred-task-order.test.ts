@@ -1,35 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  disableStarredTaskPaginationAfterRefreshFailure,
-  isStarredTaskBoundaryCurrent,
-  isStarredTaskRequestCurrent,
-  isStarredTaskRefreshCurrent,
-  isStarredTaskSnapshotCurrent,
-  reconcileStarredTaskOrderReloadFailure,
-  resolveStarredTaskBoundaryPageId,
-  resolveStarredTaskBeforePageId,
-  resolveStarredTaskDropBoundary,
-  saveStarredTaskOrderAndReload,
+  disableStarredFolderPaginationAfterRefreshFailure,
+  isStarredFolderBoundaryCurrent,
+  isStarredFolderRequestCurrent,
+  isStarredFolderRefreshCurrent,
+  isStarredFolderSnapshotCurrent,
+  reconcileStarredFolderOrderReloadFailure,
+  resolveStarredFolderBoundaryPageId,
+  resolveStarredFolderBeforePageId,
+  resolveStarredFolderDropBoundary,
+  saveStarredFolderOrderAndReload,
 } from "./starred-task-order";
 
 describe("starred task order boundaries", () => {
   it("uses the visible successor, requests a cursor boundary for a partial end, and only nulls at the full end", () => {
-    expect(resolveStarredTaskDropBoundary(["a", "b", "c"], "b", true))
+    expect(resolveStarredFolderDropBoundary(["a", "b", "c"], "b", true))
       .toEqual({ kind: "before", pageId: "c" });
-    expect(resolveStarredTaskDropBoundary(["a", "b", "c"], "c", true))
+    expect(resolveStarredFolderDropBoundary(["a", "b", "c"], "c", true))
       .toEqual({ kind: "next-page" });
-    expect(resolveStarredTaskDropBoundary(["a", "b", "c"], "c", false))
+    expect(resolveStarredFolderDropBoundary(["a", "b", "c"], "c", false))
       .toEqual({ kind: "end" });
   });
 
   it("uses the next cursor page's first ID and rejects empty, repeated, or duplicate boundaries", () => {
-    expect(resolveStarredTaskBoundaryPageId(["a", "b"], "cursor-a", ["c", "d"], "cursor-b"))
+    expect(resolveStarredFolderBoundaryPageId(["a", "b"], "cursor-a", ["c", "d"], "cursor-b"))
       .toBe("c");
-    expect(resolveStarredTaskBoundaryPageId(["a", "b"], "cursor-a", [], null)).toBeNull();
-    expect(resolveStarredTaskBoundaryPageId(["a", "b"], "cursor-a", ["c"], "cursor-a"))
+    expect(resolveStarredFolderBoundaryPageId(["a", "b"], "cursor-a", [], null)).toBeNull();
+    expect(resolveStarredFolderBoundaryPageId(["a", "b"], "cursor-a", ["c"], "cursor-a"))
       .toBeNull();
-    expect(resolveStarredTaskBoundaryPageId(["a", "b"], "cursor-a", ["b", "c"], "cursor-b"))
+    expect(resolveStarredFolderBoundaryPageId(["a", "b"], "cursor-a", ["b", "c"], "cursor-b"))
       .toBeNull();
   });
 
@@ -38,13 +38,13 @@ describe("starred task order boundaries", () => {
       expect(cursor).toBe("opaque-cursor");
       return { pageIds: ["unloaded-first", "unloaded-second"], nextCursor: null };
     });
-    await expect(resolveStarredTaskBeforePageId({
+    await expect(resolveStarredFolderBeforePageId({
       orderedPageIds: ["b", "a"],
       movedPageId: "a",
       nextCursor: "opaque-cursor",
       fetchBoundaryPage,
     })).resolves.toBe("unloaded-first");
-    await expect(resolveStarredTaskBeforePageId({
+    await expect(resolveStarredFolderBeforePageId({
       orderedPageIds: ["a", "b"],
       movedPageId: "b",
       nextCursor: "opaque-cursor",
@@ -53,7 +53,7 @@ describe("starred task order boundaries", () => {
   });
 
   it("rejects a stale boundary after a second-page reorder even when first-page IDs and cursor are unchanged", () => {
-    expect(isStarredTaskBoundaryCurrent({
+    expect(isStarredFolderBoundaryCurrent({
       expectedRefreshKey: 4,
       currentRefreshKey: 5,
       expectedOrderRevision: 1,
@@ -69,19 +69,19 @@ describe("starred task order boundaries", () => {
     const orderBeforeMutation = 8;
     const orderDuringMutation = orderBeforeMutation + 1;
     const orderAfterMutation = orderDuringMutation + 1;
-    expect(isStarredTaskRequestCurrent({
+    expect(isStarredFolderRequestCurrent({
       expectedRefreshKey: 5,
       currentRefreshKey: 5,
       expectedOrderRevision: orderBeforeMutation,
       currentOrderRevision: orderAfterMutation,
     })).toBe(false);
-    expect(isStarredTaskRequestCurrent({
+    expect(isStarredFolderRequestCurrent({
       expectedRefreshKey: 5,
       currentRefreshKey: 5,
       expectedOrderRevision: orderDuringMutation,
       currentOrderRevision: orderAfterMutation,
     })).toBe(false);
-    expect(isStarredTaskRequestCurrent({
+    expect(isStarredFolderRequestCurrent({
       expectedRefreshKey: 5,
       currentRefreshKey: 5,
       expectedOrderRevision: orderAfterMutation,
@@ -90,9 +90,9 @@ describe("starred task order boundaries", () => {
   });
 
   it("keeps stale starred snapshots from enabling reorder or pagination", () => {
-    expect(isStarredTaskRefreshCurrent(null, 5)).toBe(false);
-    expect(isStarredTaskRefreshCurrent(4, 5)).toBe(false);
-    expect(isStarredTaskRefreshCurrent(5, 5)).toBe(true);
+    expect(isStarredFolderRefreshCurrent(null, 5)).toBe(false);
+    expect(isStarredFolderRefreshCurrent(4, 5)).toBe(false);
+    expect(isStarredFolderRefreshCurrent(5, 5)).toBe(true);
   });
 
   it("preserves a loaded snapshot after a failed retry only within its refresh and order revision", () => {
@@ -103,15 +103,15 @@ describe("starred task order boundaries", () => {
       expectedOrderRevision: 3,
       currentOrderRevision: 3,
     };
-    expect(isStarredTaskSnapshotCurrent(current)).toBe(true);
-    expect(isStarredTaskSnapshotCurrent({ ...current, loadedRefreshKey: null })).toBe(false);
-    expect(isStarredTaskSnapshotCurrent({ ...current, currentRefreshKey: 8 })).toBe(false);
-    expect(isStarredTaskSnapshotCurrent({ ...current, currentOrderRevision: 4 })).toBe(false);
+    expect(isStarredFolderSnapshotCurrent(current)).toBe(true);
+    expect(isStarredFolderSnapshotCurrent({ ...current, loadedRefreshKey: null })).toBe(false);
+    expect(isStarredFolderSnapshotCurrent({ ...current, currentRefreshKey: 8 })).toBe(false);
+    expect(isStarredFolderSnapshotCurrent({ ...current, currentOrderRevision: 4 })).toBe(false);
   });
 
   it("reloads the first page after a failed save so optimistic order can roll back", async () => {
     const reload = vi.fn(async () => ({ items: ["server-order"] }));
-    const result = await saveStarredTaskOrderAndReload({
+    const result = await saveStarredFolderOrderAndReload({
       save: async () => { throw new Error("409 stale member"); },
       reload,
     });
@@ -124,7 +124,7 @@ describe("starred task order boundaries", () => {
   it("discards a reload superseded by a newer starred invalidation", async () => {
     let refreshKey = 4;
     let resolveReload: ((page: { items: string[] }) => void) | undefined;
-    const pending = saveStarredTaskOrderAndReload({
+    const pending = saveStarredFolderOrderAndReload({
       save: async () => undefined,
       reload: async () => await new Promise((resolve) => { resolveReload = resolve; }),
       isReloadCurrent: () => refreshKey === 4,
@@ -138,7 +138,7 @@ describe("starred task order boundaries", () => {
   });
 
   it("invalidates the old cursor when the saved order cannot be reloaded", () => {
-    expect(disableStarredTaskPaginationAfterRefreshFailure({
+    expect(disableStarredFolderPaginationAfterRefreshFailure({
       items: ["a", "b"],
       nextCursor: "old-cursor",
     })).toEqual({
@@ -148,7 +148,7 @@ describe("starred task order boundaries", () => {
   });
 
   it("rolls back a failed reorder and disables its cursor when the newer refresh has not loaded", () => {
-    expect(reconcileStarredTaskOrderReloadFailure({
+    expect(reconcileStarredFolderOrderReloadFailure({
       currentPage: { items: ["optimistic"], nextCursor: "old-cursor" },
       originalPage: { items: ["original"], nextCursor: "old-cursor" },
       saved: false,
@@ -159,7 +159,7 @@ describe("starred task order boundaries", () => {
   });
 
   it("preserves a concurrently completed refresh instead of restoring stale reorder data", () => {
-    expect(reconcileStarredTaskOrderReloadFailure({
+    expect(reconcileStarredFolderOrderReloadFailure({
       currentPage: { items: ["fresh"], nextCursor: "fresh-cursor" },
       originalPage: { items: ["original"], nextCursor: "old-cursor" },
       saved: false,

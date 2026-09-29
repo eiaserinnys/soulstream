@@ -112,7 +112,7 @@ function mountWithSession(session: Record<string, unknown> | null, presetId = "c
       createElement(SessionSuccessionModal, {
         taskTitle: "업무",
         taskPageId: "page-1",
-        taskId: "task-1",
+        folderId: "task-1",
         contextItems: [],
         documentOptions: [],
         contextPending: false,
@@ -145,7 +145,7 @@ function mount() {
       createElement(SessionSuccessionModal, {
         taskTitle: "업무",
         taskPageId: "page-1",
-        taskId: "task-1",
+        folderId: "task-1",
         contextItems: [],
         documentOptions: [],
         contextPending: false,

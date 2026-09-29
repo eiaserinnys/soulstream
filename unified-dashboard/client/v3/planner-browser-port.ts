@@ -8,9 +8,9 @@ import { serializeInitialTaskContext } from "@seosoyoung/soul-ui/page";
 
 import { HttpResponseError } from "../lib/http-response-error";
 import { parseSingleMountTitle } from "./planner-model";
-import type { PlannerTaskCreationPort } from "./planner-task-creation";
+import type { PlannerFolderCreationPort } from "./planner-task-creation";
 
-export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
+export class BrowserPlannerMutationPort implements PlannerFolderCreationPort {
   constructor(
     private readonly api: PageApiClient,
     // fetch를 unbound로 저장하면 this.fetchImplementation() 호출 시 this가 인스턴스가 되어
@@ -22,22 +22,24 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
     return await this.createMountedPage(input);
   }
 
-  async createTaskIdentity(input: {
+  async createFolderIdentity(input: {
     title: string;
     description: string;
     folderId: string;
     initialContext?: InitialTaskContext;
   }) {
     const initialContext = serializeInitialTaskContext(input.initialContext);
-    const response = await this.fetchImplementation("/api/tasks", {
+    const response = await this.fetchImplementation("/api/folders", {
       method: "POST",
       credentials: "same-origin",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: input.title,
+        name: input.title,
         description: input.description,
-        folder_id: input.folderId,
-        ...(initialContext ? { initial_context: initialContext } : {}),
+        parentFolderId: input.folderId,
+        checklistEnabled: true,
+        idempotencyKey: operationId("folder-create"),
+        ...(initialContext ? { initialContext } : {}),
       }),
     });
     const payload = await readPayload(response);
@@ -47,16 +49,11 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
         response.status,
       );
     }
-    const ids = extractTaskIdentityIds(payload);
-    if (!ids.id) throw new Error("업무 생성 응답에 ID가 없습니다");
-    if (
-      (ids.pageId && ids.pageId !== ids.id)
-      || (ids.taskId && ids.taskId !== ids.id)
-      || (ids.pageId && ids.taskId && ids.pageId !== ids.taskId)
-    ) {
-      throw new Error("업무 생성 응답의 ID가 일치하지 않습니다");
-    }
-    return { id: ids.id };
+    const folder = objectValue(objectValue(payload)?.folder);
+    const id = stringValue(folder?.id);
+    const pageId = stringValue(folder?.projectPageId);
+    if (!id || !pageId) throw new Error("업무 생성 응답에 폴더 또는 페이지 ID가 없습니다");
+    return { id, pageId };
   }
 
   async mountPage(input: { sourcePageId: string; title: string }) {
@@ -178,28 +175,6 @@ async function readPayload(response: Response): Promise<unknown> {
   } catch {
     return text;
   }
-}
-
-function extractTaskIdentityIds(payload: unknown): {
-  id: string | null;
-  pageId: string | null;
-  taskId: string | null;
-} {
-  if (!payload || typeof payload !== "object") {
-    return { id: null, pageId: null, taskId: null };
-  }
-  const record = payload as Record<string, unknown>;
-  const task = objectValue(record.task)
-    ?? objectValue(objectValue(record.snapshot)?.task);
-  const taskId = stringValue(record.taskId)
-    ?? stringValue(record.task_id)
-    ?? stringValue(task?.id);
-  const pageId = stringValue(record.pageId) ?? stringValue(record.page_id);
-  return {
-    id: stringValue(record.id) ?? pageId ?? taskId,
-    pageId,
-    taskId,
-  };
 }
 
 function responseMessage(payload: unknown, fallback: string): string {

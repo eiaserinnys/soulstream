@@ -3,13 +3,13 @@ import { useEffect, useMemo } from "react";
 import type { CustomViewBindingData } from "./CustomViewRenderer";
 import { useCustomViewStore, type CustomViewProjection } from "../stores/custom-view-store";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useTaskStore, type TaskSnapshot } from "../stores/task-store";
+import { useFolderChecklistStore, type FolderSnapshot } from "../stores/folder-checklist-store";
 
 function sessionTitle(session: { displayName?: string | null; prompt?: string; agentSessionId: string }): string {
   return session.displayName || session.prompt || session.agentSessionId;
 }
 
-function taskProgress(snapshot: TaskSnapshot): { completed: number; total: number } {
+function taskProgress(snapshot: FolderSnapshot): { completed: number; total: number } {
   let completed = 0;
   let total = 0;
   for (const item of snapshot.items) {
@@ -21,14 +21,14 @@ function taskProgress(snapshot: TaskSnapshot): { completed: number; total: numbe
 }
 
 function buildBindings(
-  taskSnapshots: readonly TaskSnapshot[],
+  taskSnapshots: readonly FolderSnapshot[],
   sessions: CustomViewBindingData["sessions"],
 ): CustomViewBindingData {
   const tasks: CustomViewBindingData["tasks"] = {};
   const taskItems: CustomViewBindingData["taskItems"] = {};
 
   for (const snapshot of taskSnapshots) {
-    tasks[snapshot.task.id] = taskProgress(snapshot);
+    tasks[snapshot.folder.id] = taskProgress(snapshot);
     for (const item of snapshot.items) {
       taskItems[item.id] = {
         title: item.title,
@@ -43,7 +43,7 @@ function buildBindings(
 /** catalog·업무 정본에서 <soul-bind> 라이브 바인딩 데이터를 만든다 (패널·타일 공용). */
 export function useCustomViewBindings(): CustomViewBindingData {
   const catalog = useDashboardStore((s) => s.catalog);
-  const taskById = useTaskStore((s) => s.byId);
+  const taskById = useFolderChecklistStore((s) => s.byId);
 
   return useMemo(() => {
     const sessions: CustomViewBindingData["sessions"] = {};
@@ -63,7 +63,7 @@ export function useCustomViewBindings(): CustomViewBindingData {
 
     const taskSnapshots = Object.values(taskById)
       .map((projection) => projection.snapshot)
-      .filter((snapshot): snapshot is TaskSnapshot => Boolean(snapshot));
+      .filter((snapshot): snapshot is FolderSnapshot => Boolean(snapshot));
     return buildBindings(taskSnapshots, sessions);
   }, [catalog?.sessionList, catalog?.sessions, taskById]);
 }

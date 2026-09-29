@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import {
-  movePlannerTaskProject,
+  movePlannerFolderProject,
   movePlannerSession,
-  projectPagesForTasks,
   removePlannerSessions,
-  replacePlannerTask,
+  replacePlannerFolder,
 } from "./planner-mutation-projection";
 
 describe("planner mutation projection", () => {
@@ -16,7 +15,7 @@ describe("planner mutation projection", () => {
     const second = task("second", ["session-2"]);
     const tasks = [first, second];
 
-    const next = replacePlannerTask(tasks, "first", (current) => ({
+    const next = replacePlannerFolder(tasks, "first", (current) => ({
       ...current,
       page: { ...current.page, title: "바뀐 업무" },
     }));
@@ -25,14 +24,14 @@ describe("planner mutation projection", () => {
     expect(next[0]).not.toBe(first);
     expect(next[0]?.page.title).toBe("바뀐 업무");
     expect(next[1]).toBe(second);
-    expect(replacePlannerTask(next, "missing", (current) => current)).toBe(next);
+    expect(replacePlannerFolder(next, "missing", (current) => current)).toBe(next);
   });
 
   it("retains the original array for equivalent replacements and no-op removals", () => {
     const first = task("first", ["session-1"]);
     const tasks = [first];
 
-    expect(replacePlannerTask(tasks, "first", (current) => ({
+    expect(replacePlannerFolder(tasks, "first", (current) => ({
       ...current,
       page: { ...current.page },
       sessionIds: [...current.sessionIds],
@@ -88,10 +87,10 @@ describe("planner mutation projection", () => {
   });
 
   it("projects a project move into the visible source or target without broad replacement", () => {
-    const moving = { ...task("moving", []), projectPageId: "project-source" };
-    const untouched = { ...task("untouched", []), projectPageId: "project-source" };
+    const moving = { ...task("moving", []), parentFolderId: "project-source" };
+    const untouched = { ...task("untouched", []), parentFolderId: "project-source" };
 
-    const source = movePlannerTaskProject(
+    const source = movePlannerFolderProject(
       [moving, untouched],
       moving,
       "project-target",
@@ -100,37 +99,29 @@ describe("planner mutation projection", () => {
     expect(source).toEqual([untouched]);
     expect(source[0]).toBe(untouched);
 
-    const target = movePlannerTaskProject(
+    const target = movePlannerFolderProject(
       [untouched],
       moving,
       "project-target",
       "project-target",
     );
-    expect(target).toEqual([untouched, { ...moving, projectPageId: "project-target" }]);
+    expect(target).toEqual([untouched, { ...moving, parentFolderId: "project-target" }]);
     expect(target[0]).toBe(untouched);
   });
 
-  it("keeps daily project labels aligned with the projected task memberships", () => {
-    const source = page("project-source");
-    const target = page("project-target");
-    const moving = { ...task("moving", []), projectPageId: "project-target" };
-
-    expect(projectPagesForTasks([source], [moving], target)).toEqual([target]);
-  });
 });
 
-function task(id: string, sessionIds: string[]): PlannerTask {
+function task(id: string, sessionIds: string[]): PlannerFolder {
   return {
     page: page(id),
     blocks: [],
     stateVector: "state-vector",
-    taskId: `task-${id}`,
-    task: null,
+    folderId: `task-${id}`,
     status: "open",
     assignee: "",
     contextCount: 0,
     progress: null,
-    projectPageId: null,
+    parentFolderId: null,
     sessionIds,
     mountedDocuments: [],
   };

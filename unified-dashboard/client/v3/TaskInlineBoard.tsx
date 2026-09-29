@@ -27,7 +27,7 @@ import {
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import { TaskDocumentContextMenu, type TaskDocumentContextTarget } from "./TaskDocumentContextMenu";
 import { documentContextMenuTargetForKey } from "./document-context-menu-keyboard";
-import { moveBoardItemToContainer } from "../lib/board-workspace-operations";
+import { moveBoardItemToFolder } from "../lib/board-workspace-operations";
 import "./v3-context-menus.css";
 import { useV3InvalidationKey, useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 import { loadConfirmedResult } from "./planner-query-state";
@@ -39,7 +39,7 @@ import {
   patchBoardMarkdownTitle,
   type TaskBoardMarkdownDocument,
 } from "./task-inline-board-model";
-import type { TaskMoveTarget } from "./task-move-targets";
+import type { FolderMoveTarget } from "./task-move-targets";
 
 interface MarkdownRenameState {
   documentId: string;
@@ -55,17 +55,15 @@ const INLINE_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
 ]);
 
 export function TaskInlineBoard({
-  taskId,
   folderId,
   api,
   taskMoveTargets,
   markdownDocumentsRevision = 0,
   onMarkdownDocumentsChanged,
 }: {
-  taskId: string;
-  folderId: string | null;
+  folderId: string;
   api: PageApiClient;
-  taskMoveTargets: readonly TaskMoveTarget[];
+  taskMoveTargets: readonly FolderMoveTarget[];
   markdownDocumentsRevision?: number;
   onMarkdownDocumentsChanged(documents: TaskBoardMarkdownDocument[]): void;
 }) {
@@ -74,7 +72,7 @@ export function TaskInlineBoard({
   const [renameState, setRenameState] = useState<MarkdownRenameState | null>(null);
   const [documentContext, setDocumentContext] = useState<TaskDocumentContextTarget | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const itemInvalidationKey = useV3InvalidationKey(["catalog", "task", "replay"]);
+  const itemInvalidationKey = useV3InvalidationKey(["catalog", "folder", "replay"]);
   const pageInvalidationKey = useV3PageInvalidationKey(
     items.filter((item) => item.itemType === "markdown").map((item) => item.itemId),
   ) + useV3InvalidationKey(["replay"]) + markdownDocumentsRevision;
@@ -83,7 +81,7 @@ export function TaskInlineBoard({
   const departedItemIdsRef = useRef(new Set<string>());
   const addBoardItem = useDashboardStore((state) => state.addBoardItem);
   const removeBoardItem = useDashboardStore((state) => state.removeBoardItem);
-  const loadedTaskIdRef = useRef<string | null>(null);
+  const loadedFolderIdRef = useRef<string | null>(null);
   itemsRef.current = items;
   const boardCatalog = useMemo<CatalogState>(() => ({
     folders: [],
@@ -92,8 +90,8 @@ export function TaskInlineBoard({
     sessionList: [],
   }), [items]);
   const boardSync = useBoardYjsRuntime({
-    container: status === "ready" ? { kind: "task", id: taskId } : null,
-    resolvedFolderId: folderId ?? items[0]?.folderId ?? taskId,
+    container: status === "ready" ? { kind: "folder", id: folderId } : null,
+    resolvedFolderId: folderId,
     catalog: boardCatalog,
     selectionItemId: null,
   });
@@ -103,18 +101,18 @@ export function TaskInlineBoard({
     setRenameState(null);
     setDocumentContext(null);
     departedItemIdsRef.current.clear();
-  }, [taskId]);
+  }, [folderId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    const sameTask = loadedTaskIdRef.current === taskId;
+    const sameTask = loadedFolderIdRef.current === folderId;
     const previous = sameTask ? itemsRef.current : null;
     if (!sameTask) {
       setItems([]);
       setStatus("loading");
     }
     const load = () => fetchTaskBoardItems(
-      taskId,
+      folderId,
       globalThis.fetch.bind(globalThis),
       controller.signal,
     );
@@ -123,7 +121,7 @@ export function TaskInlineBoard({
       load,
       clearsVisibleContent: (current, next) => current.length > 0 && next.length === 0,
     }).then((next) => {
-      loadedTaskIdRef.current = taskId;
+      loadedFolderIdRef.current = folderId;
       for (const item of next) departedItemIdsRef.current.delete(item.id);
       setItems((current) => retainEqualValue(current, next));
       setStatus("ready");
@@ -132,7 +130,7 @@ export function TaskInlineBoard({
       setStatus("error");
     });
     return () => controller.abort();
-  }, [itemInvalidationKey, taskId]);
+  }, [itemInvalidationKey, folderId]);
 
   useEffect(() => {
     if (!boardSync.hasSynced || !boardSync.boardItems) return;
@@ -221,13 +219,13 @@ export function TaskInlineBoard({
     }
   };
 
-  const moveMarkdownToTask = async (item: CatalogBoardItem, target: TaskMoveTarget) => {
-    const result = await moveBoardItemToContainer({
+  const moveMarkdownToTask = async (item: CatalogBoardItem, target: FolderMoveTarget) => {
+    const result = await moveBoardItemToFolder({
       boardItemId: item.id,
-      container: { kind: "task", id: target.taskId },
+      folderId: target.folderId,
       x: item.x,
       y: item.y,
-      idempotencyKey: createMoveIdempotencyKey(item.id, target.taskId),
+      idempotencyKey: createMoveIdempotencyKey(item.id, target.folderId),
     });
     departedItemIdsRef.current.add(item.id);
     boardSync.runtime?.deleteBoardItem(item.id);
@@ -374,7 +372,7 @@ export function TaskInlineBoard({
       </div>
       <TaskDocumentContextMenu
         api={api}
-        currentTaskId={taskId}
+        currentFolderId={folderId}
         defaultTargets={taskMoveTargets}
         context={documentContext}
         onClose={() => setDocumentContext(null)}
@@ -386,11 +384,11 @@ export function TaskInlineBoard({
   );
 }
 
-function createMoveIdempotencyKey(boardItemId: string, targetTaskId: string): string {
+function createMoveIdempotencyKey(boardItemId: string, targetFolderId: string): string {
   const randomPart = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `board-item-move:${boardItemId}:task:${targetTaskId}:${randomPart}`;
+  return `board-item-move:${boardItemId}:task:${targetFolderId}:${randomPart}`;
 }
 
 function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; invalidationKey: number }) {

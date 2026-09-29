@@ -7,36 +7,36 @@ export function visibleDailyTasks<
 >(
   tasks: readonly Task[],
   isTodayView: boolean,
-  todayTaskIds: ReadonlySet<string>,
+  todayFolderIds: ReadonlySet<string>,
 ): Task[] {
   if (!isTodayView) return [...tasks];
   return tasks.filter((task) => (
-    task.status !== "completed" && todayTaskIds.has(task.page.id)
+    task.status !== "completed" && todayFolderIds.has(task.page.id)
   ));
 }
 
 export async function runOptimisticTodayMutation<Result>({
-  taskId,
+  folderId,
   wasInToday,
   optimisticInToday,
   setPresence,
   mutate,
   finalPresence,
 }: {
-  taskId: string;
+  folderId: string;
   wasInToday: boolean;
   optimisticInToday: boolean;
-  setPresence(taskId: string, present: boolean): void;
+  setPresence(folderId: string, present: boolean): void;
   mutate(): Promise<Result>;
   finalPresence(result: Result): boolean;
 }): Promise<Result> {
-  setPresence(taskId, optimisticInToday);
+  setPresence(folderId, optimisticInToday);
   try {
     const result = await mutate();
-    setPresence(taskId, finalPresence(result));
+    setPresence(folderId, finalPresence(result));
     return result;
   } catch (error) {
-    setPresence(taskId, wasInToday);
+    setPresence(folderId, wasInToday);
     throw error;
   }
 }

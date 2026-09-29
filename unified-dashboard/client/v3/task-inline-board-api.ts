@@ -14,23 +14,20 @@ const INLINE_TYPES = new Set<CatalogBoardItem["itemType"]>([
 ]);
 
 export async function fetchTaskBoardItems(
-  taskId: string,
+  folderId: string,
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
   signal?: AbortSignal,
 ): Promise<CatalogBoardItem[]> {
-  return (await fetchTaskBoardContainerItems(taskId, fetchImplementation, signal))
+  return (await fetchTaskBoardContainerItems(folderId, fetchImplementation, signal))
     .filter((item) => INLINE_TYPES.has(item.itemType));
 }
 
 export async function fetchTaskBoardContainerItems(
-  taskId: string,
+  folderId: string,
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
   signal?: AbortSignal,
 ): Promise<CatalogBoardItem[]> {
-  const query = new URLSearchParams({
-    container_kind: "task",
-    container_id: taskId,
-  });
+  const query = new URLSearchParams({ folderId });
   const response = await fetchWithProjectionRetry(
     (requestSignal) => fetchImplementation(`/api/board-items?${query.toString()}`, {
       credentials: "same-origin",

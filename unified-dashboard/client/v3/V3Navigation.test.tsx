@@ -50,20 +50,20 @@ describe("V3Navigation frame contract", () => {
         selectedDate="2026-07-15"
         folders={[folder("project-a", "프로젝트 A")]}
         selectedFolderId={null}
-        starredTasks={[]}
-        starredTasksHasMore={false}
-        starredTasksLoading={false}
-        todayTaskIds={new Set()}
-        completedTaskIds={new Set()}
-        onLoadMoreStarredTasks={vi.fn()}
-        onReorderStarredTasks={vi.fn(async () => undefined)}
+        starredFolders={[]}
+        starredFoldersHasMore={false}
+        starredFoldersLoading={false}
+        todayFolderIds={new Set()}
+        completedFolderIds={new Set()}
+        onLoadMoreStarredFolders={vi.fn()}
+        onReorderStarredFolders={vi.fn(async () => undefined)}
         onSelectDate={vi.fn()}
         onSelectFolder={vi.fn()}
         onSelectTask={vi.fn()}
         onCompleteTask={vi.fn(async () => undefined)}
         onToggleTaskToday={vi.fn(async () => undefined)}
         onMoveTaskToProject={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open", version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
@@ -87,7 +87,7 @@ describe("V3Navigation frame contract", () => {
         folders={[]}
         catalogLoadError="목록 불러오기 실패"
         selectedFolderId={null}
-        starredTasks={[{
+        starredFolders={[{
           id: "starred-a",
           title: "중요 작업 A",
           daily_date: null,
@@ -97,19 +97,19 @@ describe("V3Navigation frame contract", () => {
           created_at: "2026-07-15T00:00:00Z",
           updated_at: "2026-07-15T00:00:00Z",
         } as never]}
-        starredTasksHasMore={true}
-        starredTasksLoading={false}
-        todayTaskIds={new Set()}
-        completedTaskIds={new Set()}
-        onLoadMoreStarredTasks={vi.fn()}
-        onReorderStarredTasks={vi.fn(async () => undefined)}
+        starredFoldersHasMore={true}
+        starredFoldersLoading={false}
+        todayFolderIds={new Set()}
+        completedFolderIds={new Set()}
+        onLoadMoreStarredFolders={vi.fn()}
+        onReorderStarredFolders={vi.fn(async () => undefined)}
         onSelectDate={vi.fn()}
         onSelectFolder={vi.fn()}
         onSelectTask={vi.fn()}
         onCompleteTask={vi.fn(async () => undefined)}
         onToggleTaskToday={vi.fn(async () => undefined)}
         onMoveTaskToProject={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open", version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
@@ -132,7 +132,7 @@ describe("V3Navigation frame contract", () => {
         selectedDate="2026-07-15"
         folders={[]}
         selectedFolderId={null}
-        starredTasks={[{
+        starredFolders={[{
           id: "starred-a",
           title: "중요 작업 A",
           daily_date: null,
@@ -142,19 +142,19 @@ describe("V3Navigation frame contract", () => {
           created_at: "2026-07-15T00:00:00Z",
           updated_at: "2026-07-15T00:00:00Z",
         } as never]}
-        starredTasksHasMore={false}
-        starredTasksLoading={false}
-        todayTaskIds={new Set()}
-        completedTaskIds={new Set()}
-        onLoadMoreStarredTasks={vi.fn()}
-        onReorderStarredTasks={vi.fn(async () => undefined)}
+        starredFoldersHasMore={false}
+        starredFoldersLoading={false}
+        todayFolderIds={new Set()}
+        completedFolderIds={new Set()}
+        onLoadMoreStarredFolders={vi.fn()}
+        onReorderStarredFolders={vi.fn(async () => undefined)}
         onSelectDate={vi.fn()}
         onSelectFolder={vi.fn()}
         onSelectTask={vi.fn()}
         onCompleteTask={vi.fn(async () => undefined)}
         onToggleTaskToday={vi.fn(async () => undefined)}
         onMoveTaskToProject={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open", version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
@@ -183,5 +183,5 @@ describe("V3Navigation frame contract", () => {
 });
 
 function folder(id: string, name: string): CatalogFolder {
-  return { id, name, parentFolderId: null, sortOrder: 0 };
+  return { checklistEnabled: false, status: "open", version: 1, archived: false,  id, name, parentFolderId: null, sortOrder: 0 };
 }

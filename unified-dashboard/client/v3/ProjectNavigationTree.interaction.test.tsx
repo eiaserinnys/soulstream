@@ -46,8 +46,8 @@ describe("ProjectNavigationTree expansion", () => {
     flushSync(() => root.render(
       <ProjectNavigationTree
         folders={[
-          { id: "root", name: "Root", sortOrder: 0, parentFolderId: null },
-          { id: "child", name: "Child", sortOrder: 0, parentFolderId: "root" },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "root", name: "Root", sortOrder: 0, parentFolderId: null },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "child", name: "Child", sortOrder: 0, parentFolderId: "root" },
         ]}
         selectedFolderId={null}
         isExpanded={(folderId) => localStorage.getItem(`soulstream:folder-tree:expanded:v1:${folderId}`) === "true"}

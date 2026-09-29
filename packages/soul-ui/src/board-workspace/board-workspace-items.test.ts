@@ -20,6 +20,10 @@ import {
 const catalog: CatalogState = {
   folders: [
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "folder-old",
       name: "Old folder",
       sortOrder: 0,
@@ -27,6 +31,10 @@ const catalog: CatalogState = {
       createdAt: "2026-06-01T00:00:00.000Z",
     },
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "folder-new",
       name: "New folder",
       sortOrder: 1,
@@ -34,6 +42,10 @@ const catalog: CatalogState = {
       createdAt: "2026-06-03T00:00:00.000Z",
     },
     {
+      checklistEnabled: false,
+      status: "open",
+      version: 1,
+      archived: false,
       id: "nested",
       name: "Nested",
       sortOrder: 0,
@@ -150,387 +162,6 @@ describe("board workspace item helpers", () => {
     });
   });
 
-  it("builds task board items as first-class board objects", () => {
-    const items = buildBoardWorkspaceItems({
-      catalog: {
-        ...catalog,
-        boardItems: [
-          ...(catalog.boardItems ?? []),
-          {
-            id: "task:rb-1",
-            folderId: "root",
-            itemType: "task",
-            itemId: "rb-1",
-            x: 400,
-            y: 200,
-            metadata: {
-              title: "Launch task",
-            },
-          },
-        ],
-      },
-      selectedFolderId: "root",
-      sessions,
-    });
-
-    expect(items.find((item) => item.boardItemId === "task:rb-1")).toMatchObject({
-      type: "task",
-      id: "rb-1",
-      taskId: "rb-1",
-      title: "Launch task",
-      x: 400,
-      y: 200,
-    });
-  });
-
-  it("builds task container items without folder board fallback entries", () => {
-    const items = buildBoardWorkspaceItems({
-      catalog: {
-        ...catalog,
-        boardItems: [
-          ...(catalog.boardItems ?? []),
-          {
-            id: "session:task-s1",
-            folderId: "root",
-            containerKind: "task",
-            containerId: "rb-1",
-            itemType: "session",
-            itemId: "task-s1",
-            x: -120,
-            y: 0,
-          },
-          {
-            id: "markdown:task-note",
-            folderId: "root",
-            containerKind: "task",
-            containerId: "rb-1",
-            itemType: "markdown",
-            itemId: "task-note",
-            x: 0,
-            y: 0,
-            metadata: { title: "Task note" },
-          },
-        ],
-      },
-      selectedFolderId: "root",
-      boardContainer: { kind: "task", id: "rb-1" },
-      sessions: [
-        ...sessions,
-        {
-          agentSessionId: "task-s1",
-          status: "running",
-          eventCount: 1,
-          prompt: "Task",
-          folderId: "root",
-        },
-      ],
-    });
-
-    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual([
-      "session:task-s1",
-      "markdown:task-note",
-    ]);
-  });
-
-  it("projects an existing task session title from catalog without board metadata", () => {
-    const items = buildBoardWorkspaceItems({
-      catalog: {
-        folders: catalog.folders,
-        sessions: {
-          "older-session": { folderId: "root", displayName: "Recovered title" },
-        },
-        boardItems: [{
-          id: "session:older-session",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          itemType: "session",
-          itemId: "older-session",
-          x: 0,
-          y: 0,
-          metadata: {},
-        }],
-      },
-      selectedFolderId: "root",
-      boardContainer: { kind: "task", id: "rb-1" },
-      sessions: [],
-    });
-
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      type: "session",
-      session: {
-        agentSessionId: "older-session",
-        displayName: "Recovered title",
-      },
-    });
-    expect(getSessionBoardTitle((items[0] as { session: SessionSummary }).session))
-      .toBe("Recovered title");
-  });
-
-  it("keeps same-task primary child sessions inside the visible parent stack", () => {
-    const taskCatalog: CatalogState = {
-      folders: [{
-        id: "root",
-        name: "Root",
-        sortOrder: 0,
-        parentFolderId: null,
-        createdAt: "2026-06-01T00:00:00.000Z",
-      }],
-      sessions: {
-        parent: { folderId: "root", displayName: null },
-        child1: { folderId: "root", displayName: null },
-        child2: { folderId: "root", displayName: null },
-      },
-      boardItems: [
-        {
-          id: "session:parent",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          membershipKind: "primary",
-          itemType: "session",
-          itemId: "parent",
-          x: 0,
-          y: 0,
-        },
-        {
-          id: "session:child1",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          membershipKind: "primary",
-          itemType: "session",
-          itemId: "child1",
-          x: 320,
-          y: 0,
-        },
-        {
-          id: "session:child2",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          membershipKind: "primary",
-          itemType: "session",
-          itemId: "child2",
-          x: 640,
-          y: 0,
-        },
-      ],
-      sessionList: [
-        {
-          agentSessionId: "parent",
-          status: "completed",
-          eventCount: 1,
-          folderId: "root",
-          prompt: "Parent",
-        },
-        {
-          agentSessionId: "child1",
-          status: "running",
-          eventCount: 1,
-          folderId: "root",
-          callerSessionId: "parent",
-          prompt: "Child 1",
-        },
-        {
-          agentSessionId: "child2",
-          status: "completed",
-          eventCount: 1,
-          folderId: "root",
-          callerSessionId: "parent",
-          prompt: "Child 2",
-        },
-      ],
-    };
-
-    const items = buildBoardWorkspaceItems({
-      catalog: taskCatalog,
-      selectedFolderId: "root",
-      boardContainer: { kind: "task", id: "rb-1" },
-      sessions: [],
-    });
-
-    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual(["session:parent"]);
-    expect(items[0]).toMatchObject({
-      type: "session",
-      childStack: { count: 2, status: "running" },
-    });
-  });
-
-  it("keeps a task child session visible when its parent has no primary item in the task", () => {
-    const taskCatalog: CatalogState = {
-      folders: [{
-        id: "root",
-        name: "Root",
-        sortOrder: 0,
-        parentFolderId: null,
-        createdAt: "2026-06-01T00:00:00.000Z",
-      }],
-      sessions: {
-        child: { folderId: "root", displayName: null },
-      },
-      boardItems: [{
-        id: "session:child",
-        folderId: "root",
-        containerKind: "task",
-        containerId: "rb-1",
-        membershipKind: "primary",
-        itemType: "session",
-        itemId: "child",
-        x: 0,
-        y: 0,
-      }],
-      sessionList: [{
-        agentSessionId: "child",
-        status: "running",
-        eventCount: 1,
-        folderId: "root",
-        callerSessionId: "parent",
-        prompt: "Child",
-      }],
-    };
-
-    const items = buildBoardWorkspaceItems({
-      catalog: taskCatalog,
-      selectedFolderId: "root",
-      boardContainer: { kind: "task", id: "rb-1" },
-      sessions: [],
-    });
-
-    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual(["session:child"]);
-  });
-
-  it("does not suppress reference session memberships in a task container", () => {
-    const taskCatalog: CatalogState = {
-      folders: [{
-        id: "root",
-        name: "Root",
-        sortOrder: 0,
-        parentFolderId: null,
-        createdAt: "2026-06-01T00:00:00.000Z",
-      }],
-      sessions: {
-        parent: { folderId: "root", displayName: null },
-        child: { folderId: "root", displayName: null },
-      },
-      boardItems: [
-        {
-          id: "session:parent",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          membershipKind: "primary",
-          itemType: "session",
-          itemId: "parent",
-          x: 0,
-          y: 0,
-        },
-        {
-          id: "session:child:reference",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          membershipKind: "reference",
-          itemType: "session",
-          itemId: "child",
-          x: 320,
-          y: 0,
-        },
-      ],
-      sessionList: [
-        {
-          agentSessionId: "parent",
-          status: "completed",
-          eventCount: 1,
-          folderId: "root",
-          prompt: "Parent",
-        },
-        {
-          agentSessionId: "child",
-          status: "running",
-          eventCount: 1,
-          folderId: "root",
-          callerSessionId: "parent",
-          prompt: "Child",
-        },
-      ],
-    };
-
-    const items = buildBoardWorkspaceItems({
-      catalog: taskCatalog,
-      selectedFolderId: "root",
-      boardContainer: { kind: "task", id: "rb-1" },
-      sessions: [],
-    });
-
-    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual([
-      "session:parent",
-      "session:child",
-    ]);
-  });
-
-  it("does not generate folder board fallback entries for sessions owned by another folder container", () => {
-    const items = buildBoardWorkspaceItems({
-      catalog: {
-        folders: [{
-          id: "root",
-          name: "Root",
-          sortOrder: 0,
-          parentFolderId: null,
-          createdAt: "2026-06-01T00:00:00.000Z",
-        }],
-        sessions: {
-          "root-session": { folderId: "root", displayName: null },
-          "nested-board-session": { folderId: "root", displayName: null },
-        },
-        boardItems: [
-          {
-            id: "session:root-session",
-            folderId: "root",
-            containerKind: "folder",
-            containerId: "root",
-            membershipKind: "primary",
-            itemType: "session",
-            itemId: "root-session",
-            x: 0,
-            y: 0,
-          },
-          {
-            id: "session:nested-board-session",
-            folderId: "root",
-            containerKind: "folder",
-            containerId: "child-folder-or-nested-board",
-            membershipKind: "primary",
-            itemType: "session",
-            itemId: "nested-board-session",
-            x: 120,
-            y: 120,
-          },
-        ],
-      },
-      selectedFolderId: "root",
-      sessions: [
-        {
-          agentSessionId: "root-session",
-          status: "running",
-          eventCount: 1,
-          folderId: "root",
-          prompt: "Root session",
-        },
-        {
-          agentSessionId: "nested-board-session",
-          status: "running",
-          eventCount: 1,
-          folderId: "root",
-          prompt: "Nested board session",
-        },
-      ],
-    });
-
-    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual(["session:root-session"]);
-  });
-
   it("builds frame items and hides children while collapsed without changing child coordinates", () => {
     const frameCatalog: CatalogState = {
       ...catalog,
@@ -593,7 +224,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps collapsed frame running state when only a stacked same-folder child is running", () => {
     const frameCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -731,6 +362,10 @@ describe("board workspace item helpers", () => {
       folders: [
         ...catalog.folders,
         {
+          checklistEnabled: false,
+          status: "open",
+          version: 1,
+          archived: false,
           id: "other",
           name: "Other",
           sortOrder: 2,
@@ -768,6 +403,10 @@ describe("board workspace item helpers", () => {
     const movedCatalog: CatalogState = {
       folders: [
         {
+          checklistEnabled: false,
+          status: "open",
+          version: 1,
+          archived: false,
           id: "source",
           name: "Source",
           sortOrder: 0,
@@ -775,6 +414,10 @@ describe("board workspace item helpers", () => {
           createdAt: "2026-06-01T00:00:00.000Z",
         },
         {
+          checklistEnabled: false,
+          status: "open",
+          version: 1,
+          archived: false,
           id: "target",
           name: "Target",
           sortOrder: 1,
@@ -908,7 +551,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps a single assigned session visible when synced Yjs boardItems are empty", () => {
     const singleSessionCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "general-user-folder",
         name: "김서하",
         sortOrder: 0,
@@ -948,7 +591,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps a generated same-folder child in its visible parent stack without moving existing cards", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -1004,7 +647,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps a generated same-folder child in the inbox rail when its parent is also generated there", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -1077,7 +720,7 @@ describe("board workspace item helpers", () => {
 
   it("spawns generated sessions without a visible parent on the inbox rail", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -1127,7 +770,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps generated parentless sessions in the inbox rail without overlapping frames or existing cards", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -1196,7 +839,7 @@ describe("board workspace item helpers", () => {
 
   it("does not create a board card for a dense same-folder child stack", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -1270,7 +913,7 @@ describe("board workspace item helpers", () => {
 
   it("allocates non-overlapping inbox slots for simultaneous generated sessions", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{
+      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,

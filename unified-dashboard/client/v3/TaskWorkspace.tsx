@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   ChatView,
   DashboardIconCap,
@@ -14,9 +14,9 @@ import {
 } from "@seosoyoung/soul-ui";
 import { X } from "lucide-react";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import { sessionPanelTitle } from "./v3-session-panel-model";
-import type { TaskMoveTarget } from "./task-move-targets";
+import type { FolderMoveTarget } from "./task-move-targets";
 import type { PageSessionDefaults } from "./task-workspace-api";
 import {
   DEFAULT_WORKSPACE_SPLIT,
@@ -34,6 +34,11 @@ import type { MobilePlannerTab } from "./mobile-planner-state";
 
 export function TaskWorkspace({
   task,
+  folderSections,
+  checklistEnabled,
+  parentFolder,
+  onOpenParent,
+  onToggleChecklist,
   taskResolutionError,
   projectTitle,
   projectFolderId,
@@ -74,7 +79,12 @@ export function TaskWorkspace({
   onTaskBlocksChanged,
   onAcknowledgedReview,
 }: {
-  task: PlannerTask | null;
+  task: PlannerFolder | null;
+  folderSections: ReactNode;
+  checklistEnabled: boolean;
+  parentFolder: CatalogFolder | null;
+  onOpenParent(folder: CatalogFolder): void;
+  onToggleChecklist(enabled: boolean): Promise<void>;
   taskResolutionError: string | null;
   projectTitle: string;
   projectFolderId: string | null;
@@ -100,7 +110,7 @@ export function TaskWorkspace({
   sessionConnectionStatus: SessionProviderConnectionStatus;
   reconnectSession(): void;
   onChatVisibilityChange(visible: boolean): void;
-  taskMoveTargets: readonly PlannerTask[];
+  taskMoveTargets: readonly PlannerFolder[];
   taskInToday: boolean;
   onReturnToToday(): void;
   onToggleTaskToday(): Promise<void>;
@@ -111,8 +121,8 @@ export function TaskWorkspace({
   onSaveDescription(markdown: string): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
-  onTaskBlocksChanged(blocks: PlannerTask["blocks"]): void;
+  onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
+  onTaskBlocksChanged(blocks: PlannerFolder["blocks"]): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -302,6 +312,11 @@ export function TaskWorkspace({
       >
         <TaskDetailPane
           task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
+          folderSections={folderSections}
+          checklistEnabled={checklistEnabled}
+          parentFolder={parentFolder}
+          onOpenParent={onOpenParent}
+          onToggleChecklist={onToggleChecklist}
           projectFolderId={projectFolderId}
           folders={folders}
           contextInvalidationKey={contextInvalidationKey}

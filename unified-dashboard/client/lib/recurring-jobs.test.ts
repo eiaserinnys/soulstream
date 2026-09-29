@@ -29,8 +29,7 @@ describe("recurring job dashboard client", () => {
       node_id: "node-a",
       agent_id: "seosoyoung",
       model_preset: null,
-      container: { kind: "folder" as const, id: "folder-a" },
-      folder_id: "folder-a",
+      folderId: "folder-a",
       idempotency_key: "once-create",
     };
 
@@ -54,8 +53,7 @@ describe("recurring job dashboard client", () => {
       node_id: "node-a",
       agent_id: "seosoyoung",
       model_preset: null,
-      container: { kind: "folder" as const, id: "folder-a" },
-      folder_id: "folder-a",
+      folderId: "folder-a",
       late_run_window_seconds: 1_800,
       enabled: false,
     };

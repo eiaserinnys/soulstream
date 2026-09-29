@@ -6,7 +6,7 @@ import type {
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
 
-import { setTaskStarred } from "./task-star-actions";
+import { setFolderStarred } from "./task-star-actions";
 
 describe("task star actions", () => {
   it("reads the current task page version before sending the starred CAS mutation", async () => {
@@ -17,7 +17,7 @@ describe("task star actions", () => {
       setStarred: vi.fn(async () => updated),
     } as unknown as PageApiClient;
 
-    await expect(setTaskStarred(api, "task-1", true, () => "task-star-1"))
+    await expect(setFolderStarred(api, "task-1", true, () => "task-star-1"))
       .resolves.toEqual(updated.page);
 
     expect(api.setStarred).toHaveBeenCalledWith("task-1", {

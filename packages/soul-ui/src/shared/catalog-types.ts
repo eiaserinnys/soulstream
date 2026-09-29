@@ -6,9 +6,9 @@
  */
 
 import type { SessionSummary } from "./session-types";
-import type { BoardContainerKind, BoardItemType } from "@soulstream/wire-schema";
+import type { BoardItemType } from "@soulstream/wire-schema";
 
-export type { BoardContainerKind } from "@soulstream/wire-schema";
+export type BoardContainerKind = "folder";
 
 /** atom 트리 주입 설정 */
 export interface AtomContextNodeSettings {
@@ -34,6 +34,10 @@ export interface CatalogFolder {
   sortOrder: number;
   parentFolderId?: string | null;
   projectPageId?: string | null;
+  checklistEnabled: boolean;
+  status: "open" | "completed";
+  version: number;
+  archived: boolean;
   settings?: FolderSettings;
   createdAt?: string;
   updatedAt?: string;
@@ -55,20 +59,19 @@ export interface CatalogAssignment {
 /** catalog_updated 신형 payload의 세션별 변경분. null은 카탈로그 제거를 뜻한다. */
 export type CatalogSessionsDelta = Record<string, CatalogAssignment | null>;
 
-export type CatalogBoardItemType = BoardItemType;
+export type CatalogBoardItemType = Extract<BoardItemType,
+  "session" | "markdown" | "subfolder" | "asset" | "frame" | "custom_view">;
 
 export interface BoardContainerRef {
-  kind: BoardContainerKind;
+  kind: "folder";
   id: string;
 }
 
 export interface CatalogBoardItem {
   id: string;
   folderId: string;
-  containerKind?: BoardContainerKind;
-  containerId?: string;
   membershipKind?: "primary" | "reference";
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
   itemType: CatalogBoardItemType;
   itemId: string;
   x: number;

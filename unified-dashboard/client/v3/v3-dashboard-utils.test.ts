@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
-
-import type { PlannerTask } from "./planner-data";
+import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 import {
   AUTH_EXPIRED_MESSAGE,
   buildMobileTaskOptions,
@@ -13,21 +11,18 @@ import {
 } from "./v3-dashboard-utils";
 
 describe("v3 dashboard utilities", () => {
-  it("builds one mobile option per task and includes descendant runs", () => {
-    const tasks = [
-      task("task-1", ["run-1", "run-child"]),
-      task("task-1", ["run-1", "run-child"]),
-    ];
+  it("builds mobile options from every visible folder and includes descendant runs", () => {
+    const folders = [folder("folder-1"), folder("folder-2")];
     const sessions = [
-      session("run-1", undefined, "2026-07-14T00:00:00.000Z"),
-      session("run-child", "run-1", "2026-07-14T01:00:00.000Z"),
+      session("run-1", undefined, "2026-07-14T00:00:00.000Z", "folder-1"),
+      session("run-child", "run-1", "2026-07-14T01:00:00.000Z", "folder-1"),
     ];
 
-    expect(buildMobileTaskOptions(tasks, sessions)).toEqual([{
-      taskId: "task-1",
+    expect(buildMobileTaskOptions(folders, sessions)).toEqual([{
+      folderId: "folder-1",
       runIds: ["run-1", "run-child"],
       latestRunId: "run-1",
-    }]);
+    }, { folderId: "folder-2", runIds: [], latestRunId: null }]);
   });
 
   it("produces stable planner dates and error messages", () => {
@@ -66,18 +61,16 @@ describe("v3 dashboard utilities", () => {
   });
 });
 
-function task(id: string, sessionIds: string[]): PlannerTask {
-  return {
-    page: { id },
-    sessionIds,
-  } as PlannerTask;
+function folder(id: string): CatalogFolder {
+  return { checklistEnabled: false, status: "open", version: 1, archived: false,  id, name: id, sortOrder: 0 };
 }
 
-function session(id: string, callerSessionId: string | undefined, createdAt: string): SessionSummary {
+function session(id: string, callerSessionId: string | undefined, createdAt: string, folderId: string): SessionSummary {
   return {
     agentSessionId: id,
     callerSessionId,
     createdAt,
+    folderId,
     status: "completed",
     eventCount: 1,
   };

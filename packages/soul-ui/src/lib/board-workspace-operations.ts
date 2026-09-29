@@ -1,21 +1,15 @@
-import type { BoardContainerRef, CatalogBoardItem, MarkdownDocument } from "../shared/types";
+import type { CatalogBoardItem, MarkdownDocument } from "../shared/types";
 
 export interface BoardWorkspaceApiConfig {
   updateBoardItemPositionUrl: (id: string) => string;
-  moveBoardItemToContainerUrl: (id: string) => string;
+  moveBoardItemToFolderUrl: (id: string) => string;
   createMarkdownDocumentUrl: string;
-  initBoardAssetUrl: (target: BoardAssetUrlTarget) => string;
-  commitBoardAssetUrl: (target: BoardAssetUrlTarget, assetId: string) => string;
-}
-
-export interface BoardAssetUrlTarget {
-  folderId: string;
-  container: BoardContainerRef;
+  initBoardAssetUrl: (folderId: string) => string;
+  commitBoardAssetUrl: (folderId: string, assetId: string) => string;
 }
 
 export interface CreateMarkdownDocumentRequest {
   folderId: string;
-  container?: BoardContainerRef | null;
   title: string;
   body: string;
   x: number;
@@ -27,22 +21,21 @@ export interface CreateMarkdownDocumentResponse {
   boardItem: CatalogBoardItem;
 }
 
-export interface MoveBoardItemToContainerInput {
+export interface MoveBoardItemToFolderInput {
   boardItemId: string;
-  container: BoardContainerRef;
+  folderId: string;
   x?: number;
   y?: number;
   idempotencyKey: string;
 }
 
-export interface MoveBoardItemToContainerResponse {
+export interface MoveBoardItemToFolderResponse {
   ok: true;
   boardItem: CatalogBoardItem;
 }
 
 export interface UploadBoardAssetInput {
   folderId: string;
-  container?: BoardContainerRef | null;
   file: File;
   x: number;
   y: number;
@@ -79,9 +72,9 @@ interface UploadedPart {
 
 export interface BoardWorkspaceOperations {
   updateBoardItemPosition: (boardItemId: string, x: number, y: number) => Promise<void>;
-  moveBoardItemToContainer: (
-    input: MoveBoardItemToContainerInput,
-  ) => Promise<MoveBoardItemToContainerResponse>;
+  moveBoardItemToFolder: (
+    input: MoveBoardItemToFolderInput,
+  ) => Promise<MoveBoardItemToFolderResponse>;
   createMarkdownDocument: (
     input: CreateMarkdownDocumentRequest,
   ) => Promise<CreateMarkdownDocumentResponse>;
@@ -134,23 +127,23 @@ export function createBoardWorkspaceOperations(
     }
   }
 
-  async function moveBoardItemToContainer(
-    input: MoveBoardItemToContainerInput,
-  ): Promise<MoveBoardItemToContainerResponse> {
-    const res = await fetch(config.moveBoardItemToContainerUrl(input.boardItemId), {
+  async function moveBoardItemToFolder(
+    input: MoveBoardItemToFolderInput,
+  ): Promise<MoveBoardItemToFolderResponse> {
+    const res = await fetch(config.moveBoardItemToFolderUrl(input.boardItemId), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        container: input.container,
+        folderId: input.folderId,
         x: input.x,
         y: input.y,
         idempotencyKey: input.idempotencyKey,
       }),
     });
     if (!res.ok) {
-      throw new Error(`Move board item to container failed: ${res.status}`);
+      throw new Error(`Move board item to folder failed: ${res.status}`);
     }
-    return await res.json() as MoveBoardItemToContainerResponse;
+    return await res.json() as MoveBoardItemToFolderResponse;
   }
 
   async function createMarkdownDocument(
@@ -168,7 +161,7 @@ export function createBoardWorkspaceOperations(
   }
 
   async function initBoardAsset(input: UploadBoardAssetInput): Promise<BoardAssetInitResponse> {
-    const res = await fetch(config.initBoardAssetUrl(resolveBoardAssetUrlTarget(input)), {
+    const res = await fetch(config.initBoardAssetUrl(input.folderId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -222,7 +215,7 @@ export function createBoardWorkspaceOperations(
     assetId: string,
     parts: UploadedPart[],
   ): Promise<BoardAssetCommitResponse> {
-    const res = await fetch(config.commitBoardAssetUrl(resolveBoardAssetUrlTarget(input), assetId), {
+    const res = await fetch(config.commitBoardAssetUrl(input.folderId, assetId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -240,13 +233,6 @@ export function createBoardWorkspaceOperations(
     return await res.json() as BoardAssetCommitResponse;
   }
 
-  function resolveBoardAssetUrlTarget(input: UploadBoardAssetInput): BoardAssetUrlTarget {
-    return {
-      folderId: input.folderId,
-      container: input.container ?? { kind: "folder", id: input.folderId },
-    };
-  }
-
   async function uploadBoardAsset(input: UploadBoardAssetInput): Promise<BoardAssetCommitResponse> {
     input.onProgress?.(0);
     const init = await initBoardAsset(input);
@@ -256,7 +242,7 @@ export function createBoardWorkspaceOperations(
 
   return {
     updateBoardItemPosition,
-    moveBoardItemToContainer,
+    moveBoardItemToFolder,
     createMarkdownDocument,
     uploadBoardAsset,
   };

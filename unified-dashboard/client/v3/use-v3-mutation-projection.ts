@@ -2,7 +2,7 @@ import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { retainEqualValue } from "@seosoyoung/soul-ui";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerFolder } from "./planner-data";
 import { movePlannerSession, removePlannerSessions } from "./planner-mutation-projection";
 
 export function useV3MutationProjection({
@@ -12,46 +12,46 @@ export function useV3MutationProjection({
   moveLoadedTaskProject,
   removeRunHistorySessions,
   moveRunHistorySession,
-  setSelectedTaskSnapshot,
+  setSelectedFolderSnapshot,
 }: {
-  patchLoadedTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
+  patchLoadedTask(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
   removeLoadedSessions(sessionIds: readonly string[]): void;
-  moveLoadedSession(sessionId: string, targetTaskId: string): void;
-  moveLoadedTaskProject(task: PlannerTask, targetProject: PageDto): void;
+  moveLoadedSession(sessionId: string, targetFolderId: string): void;
+  moveLoadedTaskProject(task: PlannerFolder, targetFolderId: string | null): void;
   removeRunHistorySessions(sessionIds: readonly string[]): void;
-  moveRunHistorySession(sessionId: string, targetTaskId: string): void;
-  setSelectedTaskSnapshot: Dispatch<SetStateAction<PlannerTask | null>>;
+  moveRunHistorySession(sessionId: string, targetFolderId: string): void;
+  setSelectedFolderSnapshot: Dispatch<SetStateAction<PlannerFolder | null>>;
 }) {
-  const patchPlannerTask = useCallback((taskId: string, update: (task: PlannerTask) => PlannerTask) => {
-    patchLoadedTask(taskId, update);
-    setSelectedTaskSnapshot((current) => current?.page.id === taskId
+  const patchPlannerFolder = useCallback((folderId: string, update: (task: PlannerFolder) => PlannerFolder) => {
+    patchLoadedTask(folderId, update);
+    setSelectedFolderSnapshot((current) => current?.page.id === folderId
       ? retainEqualValue(current, update(current))
       : current);
-  }, [patchLoadedTask, setSelectedTaskSnapshot]);
+  }, [patchLoadedTask, setSelectedFolderSnapshot]);
 
   const removeSessionsFromPlanner = useCallback((sessionIds: readonly string[]) => {
     removeLoadedSessions(sessionIds);
     removeRunHistorySessions(sessionIds);
     const removed = new Set(sessionIds);
-    setSelectedTaskSnapshot((current) => current
+    setSelectedFolderSnapshot((current) => current
       ? removePlannerSessions([current], removed)[0] ?? current
       : current);
-  }, [removeLoadedSessions, removeRunHistorySessions, setSelectedTaskSnapshot]);
+  }, [removeLoadedSessions, removeRunHistorySessions, setSelectedFolderSnapshot]);
 
-  const moveSessionInPlanner = useCallback((sessionId: string, targetTaskId: string) => {
-    moveLoadedSession(sessionId, targetTaskId);
-    moveRunHistorySession(sessionId, targetTaskId);
-    setSelectedTaskSnapshot((current) => current
-      ? movePlannerSession([current], sessionId, targetTaskId)[0] ?? current
+  const moveSessionInPlanner = useCallback((sessionId: string, targetFolderId: string) => {
+    moveLoadedSession(sessionId, targetFolderId);
+    moveRunHistorySession(sessionId, targetFolderId);
+    setSelectedFolderSnapshot((current) => current
+      ? movePlannerSession([current], sessionId, targetFolderId)[0] ?? current
       : current);
-  }, [moveLoadedSession, moveRunHistorySession, setSelectedTaskSnapshot]);
+  }, [moveLoadedSession, moveRunHistorySession, setSelectedFolderSnapshot]);
 
-  const moveTaskProjectInPlanner = useCallback((task: PlannerTask, targetProject: PageDto) => {
-    moveLoadedTaskProject(task, targetProject);
-    setSelectedTaskSnapshot((current) => current?.page.id === task.page.id
-      ? retainEqualValue(current, { ...current, projectPageId: targetProject.id })
+  const moveTaskProjectInPlanner = useCallback((task: PlannerFolder, targetFolderId: string | null) => {
+    moveLoadedTaskProject(task, targetFolderId);
+    setSelectedFolderSnapshot((current) => current?.page.id === task.page.id
+      ? retainEqualValue(current, { ...current, parentFolderId: targetFolderId })
       : current);
-  }, [moveLoadedTaskProject, setSelectedTaskSnapshot]);
+  }, [moveLoadedTaskProject, setSelectedFolderSnapshot]);
 
-  return { patchPlannerTask, removeSessionsFromPlanner, moveSessionInPlanner, moveTaskProjectInPlanner };
+  return { patchPlannerFolder, removeSessionsFromPlanner, moveSessionInPlanner, moveTaskProjectInPlanner };
 }

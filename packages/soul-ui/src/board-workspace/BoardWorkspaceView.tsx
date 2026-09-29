@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { BoardContainerRef, CatalogBoardItem, SessionSummary } from "../shared/types";
-import { useTaskStore, type TaskSnapshot } from "../stores/task-store";
 import { FolderDialog } from "../components/FolderDialog";
 import { runGuardedLoadMore } from "../components/load-more-guard";
 import { toastManager } from "../components/ui/toast";
@@ -17,7 +16,6 @@ import {
   BOARD_ASSET_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
-  filterTaskBoardSpatialItems,
   getVisibleBoardWorkspaceItems,
   snapBoardPosition,
   type AssetBoardWorkspaceItem,
@@ -44,7 +42,7 @@ import {
   BoardWorkspaceContextMenus,
   type BoardCardContextMenuState,
   type BoardContextMenuState,
-  type TaskMoveTarget,
+  type FolderMoveTarget,
 } from "./BoardWorkspaceContextMenus";
 import { useBoardYjsRuntime } from "./board-yjs-client";
 import { BoardWorkspaceMinimap } from "./BoardWorkspaceMinimap";
@@ -68,21 +66,7 @@ function boardContainerKey(container: BoardContainerRef | null): string | null {
 }
 
 function boardItemsUrl(container: BoardContainerRef): string {
-  if (container.kind === "folder") {
-    return `/api/board-items?folder_id=${encodeURIComponent(container.id)}`;
-  }
-  return `/api/board-items?container_kind=${encodeURIComponent(container.kind)}&container_id=${encodeURIComponent(container.id)}`;
-}
-
-function taskProgress(snapshot: TaskSnapshot | null): { completed: number; total: number } {
-  let completed = 0;
-  let total = 0;
-  for (const item of snapshot?.items ?? []) {
-    if (item.archived || item.status === "cancelled") continue;
-    total += 1;
-    if (item.status === "completed") completed += 1;
-  }
-  return { completed, total };
+  return `/api/board-items?folderId=${encodeURIComponent(container.id)}`;
 }
 
 function createBoardMoveIdempotencyKey(
@@ -106,8 +90,6 @@ function boardWorkspaceItemToCatalogBoardItem(
   const withContainer = (boardItem: CatalogBoardItem): CatalogBoardItem => ({
     ...boardItem,
     folderId: resolvedFolderId,
-    containerKind: container.kind,
-    containerId: container.id,
   });
   if (item.type === "session") {
     return withContainer({
@@ -137,20 +119,6 @@ function boardWorkspaceItemToCatalogBoardItem(
     return withContainer({
       ...frameItemToCatalogBoardItem(item, { x, y }),
       updatedAt: item.updatedAt,
-    });
-  }
-  if (item.type === "task") {
-    return withContainer({
-      id: item.boardItemId,
-      folderId: resolvedFolderId,
-      itemType: "task",
-      itemId: item.taskId,
-      updatedAt: item.updatedAt,
-      x,
-      y,
-      metadata: {
-        title: item.title,
-      },
     });
   }
   if (item.type === "custom_view") {
@@ -252,7 +220,7 @@ export function BoardWorkspaceView({
   boardContainerOverride,
   selectedFolderIdOverride,
   sessions = EMPTY_SESSIONS,
-  taskMoveTargets: providedTaskMoveTargets,
+  taskMoveTargets: providedFolderMoveTargets,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -263,7 +231,7 @@ export function BoardWorkspaceView({
   onDeleteFolder,
   onUpdateFolderSettings,
   onUpdateBoardItemPosition: _onUpdateBoardItemPosition,
-  onMoveBoardItemToContainer,
+  onMoveBoardItemToFolder,
   onBoardItemMoved,
   onMarkdownDocumentDeleted,
   onOpenMarkdownDocument,
@@ -273,8 +241,6 @@ export function BoardWorkspaceView({
   onUploadBoardAsset,
   onLoadMore,
   hasMore,
-  workspaceViewMode,
-  onWorkspaceViewModeChange,
   viewportPersistenceKey,
 }: BoardWorkspaceViewProps) {
   const storedCatalog = useDashboardStore((s) => s.catalog);
@@ -294,7 +260,6 @@ export function BoardWorkspaceView({
   const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
   const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
-  const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
   const setBoardItemsForContainer = useDashboardStore((s) => s.setBoardItemsForContainer);
   const updateBoardItemPosition = useDashboardStore((s) => s.updateBoardItemPosition);
   const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
@@ -331,19 +296,8 @@ export function BoardWorkspaceView({
   ), [activeBoardContainer, boardContainerOverride, selectedFolderId]);
   const activeBoardContainerKey = boardContainerKey(boardContainer);
   const resolvedBoardFolderId = boardContainer
-    ? boardContainer.kind === "folder"
-      ? boardContainer.id
-      : selectedFolderId ?? boardContainer.id
+    ? boardContainer.id
     : null;
-  const isTaskBoard = boardContainer?.kind === "task";
-  const taskId = isTaskBoard ? boardContainer.id : null;
-  const taskProjection = useTaskStore((s) => (taskId ? s.byId[taskId] : undefined));
-  const loadTask = useTaskStore((s) => s.loadTask);
-  const taskSnapshot = taskProjection?.snapshot ?? null;
-  const taskBoardProgress = useMemo(
-    () => taskProgress(taskSnapshot),
-    [taskSnapshot],
-  );
   const displaySessions = useMemo(() => applyCatalogDisplayNames(sessions, catalog), [sessions, catalog]);
   const boardSync = useBoardYjsRuntime({
     container: boardContainer,
@@ -351,15 +305,6 @@ export function BoardWorkspaceView({
     catalog,
     selectionItemId: primarySelectedBoardItemId,
   });
-
-  useEffect(() => {
-    if (!taskId) return;
-    const controller = new AbortController();
-    void loadTask(taskId, { signal: controller.signal });
-    return () => {
-      controller.abort();
-    };
-  }, [loadTask, taskId]);
 
   const rememberAssetSignedUrls = useCallback((items: CatalogBoardItem[]) => {
     const current = assetSignedUrlsRef.current;
@@ -392,9 +337,7 @@ export function BoardWorkspaceView({
           rememberAssetSignedUrls(data.boardItems);
           setBoardItemsForContainer(
             boardContainer,
-            boardContainer.kind === "task"
-              ? filterTaskBoardSpatialItems(data.boardItems)
-              : data.boardItems,
+            data.boardItems,
           );
         }
       })
@@ -459,26 +402,16 @@ export function BoardWorkspaceView({
     () => [...persistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [assetPlaceholders, persistedBoardItems],
   );
-  const catalogTaskMoveTargets = useMemo<TaskMoveTarget[]>(() => {
+  const catalogFolderMoveTargets = useMemo<FolderMoveTarget[]>(() => {
     if (!effectiveCatalog || !resolvedBoardFolderId) return [];
-    return (effectiveCatalog.boardItems ?? [])
-      .filter((item) =>
-        item.itemType === "task" &&
-        item.folderId === resolvedBoardFolderId &&
-        (item.containerKind ?? "folder") === "folder" &&
-        (item.containerId ?? item.folderId) === resolvedBoardFolderId
-      )
-      .map((item) => ({
-        id: item.itemId,
-        title: typeof item.metadata?.title === "string" && item.metadata.title.trim()
-          ? item.metadata.title
-          : item.itemId,
-      }))
+    return effectiveCatalog.folders
+      .filter((folder) => folder.parentFolderId === resolvedBoardFolderId && !folder.archived)
+      .map((folder) => ({ id: folder.id, title: folder.name }))
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [effectiveCatalog, resolvedBoardFolderId]);
   const taskMoveTargets = useMemo(
-    () => providedTaskMoveTargets ? [...providedTaskMoveTargets] : catalogTaskMoveTargets,
-    [catalogTaskMoveTargets, providedTaskMoveTargets],
+    () => providedFolderMoveTargets ? [...providedFolderMoveTargets] : catalogFolderMoveTargets,
+    [catalogFolderMoveTargets, providedFolderMoveTargets],
   );
   const allBoardItems = useMemo(
     () => [...allPersistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
@@ -605,8 +538,6 @@ export function BoardWorkspaceView({
       const boardItem: CatalogBoardItem = {
         id: `subfolder:${created.id}`,
         folderId: selectedFolderId,
-        containerKind: "folder",
-        containerId: selectedFolderId,
         itemType: "subfolder",
         itemId: created.id,
         x: position.x,
@@ -690,10 +621,7 @@ export function BoardWorkspaceView({
     frame: FrameBoardWorkspaceItem,
     overrides: Parameters<typeof frameItemToCatalogBoardItem>[1],
   ) => {
-    const boardItem = {
-      ...frameItemToCatalogBoardItem(frame, overrides),
-      ...(boardContainer ? { containerKind: boardContainer.kind, containerId: boardContainer.id } : {}),
-    } satisfies CatalogBoardItem;
+    const boardItem = frameItemToCatalogBoardItem(frame, overrides);
     boardSync.runtime?.upsertBoardItem(boardItem);
     addBoardItem(boardItem);
   }, [addBoardItem, boardContainer, boardSync.runtime]);
@@ -712,14 +640,14 @@ export function BoardWorkspaceView({
     clearBoardSelection();
   }, [boardSync.runtime, clearBoardSelection, removeBoardItem]);
 
-  const moveBoardItemToContainer = useCallback(async (
+  const moveBoardItemToFolder = useCallback(async (
     item: Extract<BoardWorkspaceItem, { type: "session" | "markdown" | "asset" | "custom_view" }>,
     target: BoardContainerRef,
   ) => {
-    if (!onMoveBoardItemToContainer) return;
-    const result = await onMoveBoardItemToContainer({
+    if (!onMoveBoardItemToFolder) return;
+    const result = await onMoveBoardItemToFolder({
       boardItemId: item.boardItemId,
-      container: target,
+      folderId: target.id,
       x: item.x,
       y: item.y,
       idempotencyKey: createBoardMoveIdempotencyKey(item.boardItemId, target),
@@ -728,7 +656,7 @@ export function BoardWorkspaceView({
     addBoardItem(result.boardItem);
     onBoardItemMoved?.(result.boardItem);
     clearBoardSelection();
-  }, [addBoardItem, boardSync.runtime, clearBoardSelection, onBoardItemMoved, onMoveBoardItemToContainer]);
+  }, [addBoardItem, boardSync.runtime, clearBoardSelection, onBoardItemMoved, onMoveBoardItemToFolder]);
 
   useEffect(() => {
     if (!boardSync.connectionError) return;
@@ -916,7 +844,6 @@ export function BoardWorkspaceView({
           const metadata = await extractMediaMetadata(file, sourceUrl);
           const result = await onUploadBoardAsset({
             folderId: resolvedBoardFolderId,
-            container: boardContainer,
             file,
             x: position.x,
             y: position.y,
@@ -961,8 +888,6 @@ export function BoardWorkspaceView({
 
   const canCreateBoardItems = Boolean(boardContainer);
   const canCreateSessions = boardContainer?.kind === "folder";
-  const taskTitle = taskSnapshot?.task.title ?? null;
-  const taskStatus = taskSnapshot?.task.status ?? null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -970,14 +895,8 @@ export function BoardWorkspaceView({
         breadcrumbs={breadcrumbs}
         selectedFolder={selectedFolder}
         selectedFolderId={selectedFolderId}
-        boardContainer={boardContainer}
-        taskTitle={taskTitle}
-        taskStatus={taskStatus}
-        taskProgress={taskBoardProgress}
-        workspaceViewMode={workspaceViewMode}
         connectionStatus={boardSync.connectionStatus}
         connectionError={boardSync.connectionError}
-        onWorkspaceViewModeChange={onWorkspaceViewModeChange}
         newMenuOpen={newMenuOpen}
         onToggleNewMenu={() => setNewMenuOpen((open) => !open)}
         onSelectFolder={selectFolder}
@@ -1051,9 +970,6 @@ export function BoardWorkspaceView({
                   raiseBoardItems([item.boardItemId]);
                   selectFolder(folderId);
                 }}
-                onOpenTaskBoard={(taskId) => {
-                  openTaskBoard(taskId, selectedFolderId);
-                }}
                 onOpenMarkdown={(item, documentId) => {
                   selectSingleBoardItem(item.boardItemId);
                   raiseBoardItems([item.boardItemId]);
@@ -1074,11 +990,6 @@ export function BoardWorkspaceView({
                     if (isMobile) setActiveTab("chat");
                   }
                 }}
-                emptyMessage={
-                  isTaskBoard
-                    ? "아직 이 업무 보드에 배치된 항목이 없음"
-                    : undefined
-                }
               />
             </div>
           </div>
@@ -1104,7 +1015,7 @@ export function BoardWorkspaceView({
             onRenameFrame={renameFrame}
             onToggleFrameCollapsed={toggleFrameCollapsed}
             onDeleteFrame={deleteFrame}
-            onMoveBoardItemToContainer={moveBoardItemToContainer}
+            onMoveBoardItemToFolder={moveBoardItemToFolder}
             onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
             onRequestMarkdownEdit={onRequestMarkdownEdit}
             onMoveSessions={onMoveSessions}

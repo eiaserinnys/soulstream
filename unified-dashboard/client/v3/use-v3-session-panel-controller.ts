@@ -7,7 +7,7 @@ import {
 } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
-import { loadPlannerTaskByTaskId, type PlannerTask } from "./planner-data";
+import { loadPlannerFolderById, type PlannerFolder } from "./planner-data";
 import type { TaskSectionFocusRequest } from "./TaskSectionNavigation";
 import { activateRunSession } from "./task-workspace-model";
 import { errorText } from "./v3-dashboard-utils";
@@ -29,19 +29,17 @@ export function useV3SessionPanelController({
   catalog,
   currentTasks,
   acknowledgedReviewIds,
-  setSelectedTaskId,
-  setSelectedTaskSnapshot,
-  setWorkspaceOpen,
+  onSelectTask,
+  onClearFolder,
   setChatOpen,
   notify,
 }: {
   api: PageApiClient;
   catalog: CatalogState | null;
-  currentTasks: readonly PlannerTask[];
+  currentTasks: readonly PlannerFolder[];
   acknowledgedReviewIds: ReadonlySet<string>;
-  setSelectedTaskId: Dispatch<SetStateAction<string | null>>;
-  setSelectedTaskSnapshot: Dispatch<SetStateAction<PlannerTask | null>>;
-  setWorkspaceOpen: Dispatch<SetStateAction<boolean>>;
+  onSelectTask(task: PlannerFolder): Promise<void>;
+  onClearFolder(): void;
   setChatOpen: Dispatch<SetStateAction<boolean>>;
   notify(message: string): void;
 }) {
@@ -86,15 +84,14 @@ export function useV3SessionPanelController({
         session,
         boardItems: catalog?.boardItems ?? [],
         currentTasks,
-        loadTaskByTaskId: (taskId) => loadPlannerTaskByTaskId(api, taskId),
+        loadTaskByFolderId: (folderId) => loadPlannerFolderById(api, folderId),
       });
       if (requestSequence !== openRequestSequence.current) return false;
 
       activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
       setWorkspaceTaskError(null);
       if (resolved.task) {
-        setSelectedTaskId(resolved.task.page.id);
-        setSelectedTaskSnapshot(resolved.task);
+        await onSelectTask(resolved.task);
         focusRequestSequence.current += 1;
         setFocusRequest({
           requestId: focusRequestSequence.current,
@@ -102,11 +99,9 @@ export function useV3SessionPanelController({
           sessionId: session.agentSessionId,
         });
       } else {
-        setSelectedTaskId(null);
-        setSelectedTaskSnapshot(null);
+        onClearFolder();
         setFocusRequest(null);
       }
-      setWorkspaceOpen(true);
       setChatOpen(true);
       return true;
     } catch (error) {
@@ -121,7 +116,7 @@ export function useV3SessionPanelController({
       notify(`세션의 업무 열기 실패 · ${message} · ${detail}`);
       return false;
     }
-  }, [api, catalog?.boardItems, currentTasks, notify, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen, setSelectedTaskId, setSelectedTaskSnapshot, setWorkspaceOpen]);
+  }, [api, catalog?.boardItems, currentTasks, notify, onClearFolder, onSelectTask, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen]);
 
   const openSession = useCallback(async (session: SessionSummary) => {
     const requestSequence = ++openRequestSequence.current;

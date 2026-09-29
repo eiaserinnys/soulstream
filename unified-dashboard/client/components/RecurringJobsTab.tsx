@@ -2,12 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import {
   Button,
   NewSessionFolderSelector,
-  Select,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
   useDashboardStore,
-  useTaskStore,
 } from "@seosoyoung/soul-ui";
 
 import { AgentNodeAssignmentFields } from "../v3/AgentNodeAssignmentFields";
@@ -41,8 +36,6 @@ type Editor = {
   agentId: string;
   modelPreset: string;
   folderId: string;
-  containerKind: "folder" | "task";
-  containerId: string;
   lateRunWindowSeconds: string;
   enabled: boolean;
 };
@@ -56,8 +49,6 @@ const emptyEditor = (): Editor => ({
   agentId: "",
   modelPreset: "",
   folderId: "",
-  containerKind: "folder",
-  containerId: "",
   lateRunWindowSeconds: "1800",
   enabled: true,
 });
@@ -65,8 +56,6 @@ const emptyEditor = (): Editor => ({
 export function RecurringJobsTab() {
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const catalog = useDashboardStore((state) => state.catalog);
-  const taskOverview = useTaskStore((state) => state.overview.snapshot);
-  const loadTaskOverview = useTaskStore((state) => state.loadOverview);
   const [jobs, setJobs] = useState<RecurringJob[]>([]);
   const [selected, setSelected] = useState<RecurringJob | null>(null);
   const [editor, setEditor] = useState<Editor>(emptyEditor);
@@ -104,10 +93,6 @@ export function RecurringJobsTab() {
     void refresh().catch((caught: unknown) => setError(message(caught)));
   }, [refresh]);
 
-  useEffect(() => {
-    if (editor.containerKind !== "task") return;
-    void loadTaskOverview().catch((caught: unknown) => setError(message(caught)));
-  }, [editor.containerKind, loadTaskOverview]);
 
   const save = async () => {
     setBusy(true);
@@ -275,21 +260,11 @@ export function RecurringJobsTab() {
             onFolderChange={(folderId) => setEditor((current) => ({
               ...current,
               folderId: folderId ?? "",
-              containerId: current.containerKind === "folder" ? folderId ?? "" : "",
             }))}
             label="결과 폴더"
             placeholder="폴더를 선택하세요"
           />
-          <Field label="결과 위치"><select value={editor.containerKind} onChange={(event) => setEditor((current) => ({
-            ...current,
-            containerKind: event.target.value as Editor["containerKind"],
-            containerId: event.target.value === "folder" ? current.folderId : "",
-          }))}><option value="folder">선택한 폴더</option><option value="task">기존 업무</option></select></Field>
-          {editor.containerKind === "task" ? <TaskTargetSelector
-            selectedTaskId={editor.containerId}
-            tasks={(taskOverview?.tasks ?? []).filter((task) => task.folder_id === editor.folderId)}
-            onChange={(containerId) => setEditor((current) => ({ ...current, containerId }))}
-          /> : <p className="text-sm text-muted-foreground">선택한 폴더에 결과 세션을 저장합니다.</p>}
+          <p className="text-sm text-muted-foreground">선택한 폴더에 결과 세션을 저장합니다.</p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -306,19 +281,6 @@ export function RecurringJobsTab() {
 
 function JobList({ title, jobs, selectedId, onSelect }: { title: string; jobs: RecurringJob[]; selectedId: string | null; onSelect(job: RecurringJob): void }) {
   return <div className="mb-4"><p className="mb-1 text-xs font-medium text-muted-foreground">{title}</p><div className="space-y-1">{jobs.length === 0 ? <p className="px-2 py-1 text-xs text-muted-foreground">없음</p> : jobs.map((job) => <button key={job.job_id} type="button" className={`w-full rounded px-2 py-2 text-left text-sm ${selectedId === job.job_id ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`} onClick={() => onSelect(job)}><span className="block truncate font-medium">{job.name}</span><span className="block truncate text-xs text-muted-foreground">{job.archived_at ? "보관됨" : !job.enabled ? "일시정지" : job.schedule_kind === "once" ? `1회 · ${displayTime(job.next_run_at ?? job.run_at)}` : displayTime(job.next_run_at)}</span></button>)}</div></div>;
-}
-
-function TaskTargetSelector({
-  selectedTaskId,
-  tasks,
-  onChange,
-}: {
-  selectedTaskId: string;
-  tasks: Array<{ task_id: string; task_title: string }>;
-  onChange(taskId: string): void;
-}) {
-  const selected = tasks.find((task) => task.task_id === selectedTaskId);
-  return <div className="grid gap-1 text-sm"><span className="text-muted-foreground">결과 업무</span>{tasks.length === 0 ? <p className="text-sm text-muted-foreground">선택한 폴더의 업무를 불러오는 중이거나 업무가 없습니다.</p> : <Select value={selectedTaskId} onValueChange={(taskId) => onChange(taskId ?? "")}><SelectTrigger><span className={selected ? "" : "text-muted-foreground"}>{selected?.task_title ?? "업무를 선택하세요"}</span></SelectTrigger><SelectPopup>{tasks.map((task) => <SelectItem key={task.task_id} value={task.task_id}>{task.task_title}</SelectItem>)}</SelectPopup></Select>}</div>;
 }
 
 function RunHistory({ runs, onOpenSession }: { runs: RecurringJobRun[]; onOpenSession(sessionId: string): void }) {
@@ -363,9 +325,7 @@ function editorFromJob(job: RecurringJob): Editor {
     nodeId: job.node_id,
     agentId: job.agent_id,
     modelPreset: job.model_preset ?? "",
-    folderId: job.folder_id,
-    containerKind: job.container.kind,
-    containerId: job.container.id,
+    folderId: job.folderId,
     lateRunWindowSeconds: String(job.late_run_window_seconds),
     enabled: job.enabled,
   };
@@ -383,8 +343,7 @@ function writeFromEditor(editor: Editor): RecurringJobWrite {
     node_id: editor.nodeId.trim(),
     agent_id: editor.agentId.trim(),
     model_preset: editor.modelPreset.trim() || null,
-    container: { kind: editor.containerKind, id: editor.containerId.trim() },
-    folder_id: editor.folderId.trim(),
+    folderId: editor.folderId.trim(),
     late_run_window_seconds: lateRunWindowSeconds,
     enabled: editor.enabled,
   };

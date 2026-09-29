@@ -20,10 +20,9 @@ describe("morning ritual data", () => {
           blocks: [],
           state_vector: "",
         },
-        projects: [],
-        memo_blocks: [],
-        tasks: [],
-        review_session_ids: [],
+        folders: [],
+        memoBlocks: [],
+        reviewSessionIds: [],
       };
     });
 

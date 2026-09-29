@@ -1,12 +1,12 @@
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
-export type TaskStarOperationIdFactory = (prefix: string) => string;
+export type FolderStarOperationIdFactory = (prefix: string) => string;
 
-export async function setTaskStarred(
+export async function setFolderStarred(
   api: PageApiClient,
   pageId: string,
   starred: boolean,
-  idFactory: TaskStarOperationIdFactory = operationId,
+  idFactory: FolderStarOperationIdFactory = operationId,
 ): Promise<PageDto> {
   const current = await api.getPage(pageId);
   const updated = await api.setStarred(pageId, {

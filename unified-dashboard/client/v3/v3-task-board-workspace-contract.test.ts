@@ -11,8 +11,8 @@ describe("task board r3 workspace contract", () => {
     const workspace = read("./TaskBoardWorkspace.tsx");
 
     expect(pane).toContain("catalogOverride={scopedCatalog}");
-    expect(pane).toContain("boardContainerOverride={{ kind: \"task\", id: taskId }}");
-    expect(pane).toContain("selectedFolderIdOverride={projectFolderId}");
+    expect(pane).toContain("boardContainerOverride={{ kind: \"folder\", id: folderId }}");
+    expect(pane).toContain("selectedFolderIdOverride={folderId}");
     expect(pane).not.toContain("useDashboardStore");
     expect(pane).not.toContain("previousStoreRef");
     expect(pane).not.toContain("openTaskBoard(");

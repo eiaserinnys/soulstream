@@ -8,7 +8,6 @@ import {
 import {
   boardItemBelongsToContainer,
   isPrimarySessionBoardItem,
-  sessionIdsOwnedByOtherBoardContainer,
 } from "./board-container-visibility";
 import {
   buildBoardSessionRelations,
@@ -24,16 +23,6 @@ export const BOARD_GRID_SIZE = 20;
 export const BOARD_TILE_WIDTH = 280;
 export const BOARD_TILE_HEIGHT = 160;
 export const BOARD_ASSET_TILE_HEIGHT = 200;
-export const BOARD_TASK_TILE_WIDTH = 360;
-export const BOARD_TASK_TILE_HEIGHT = 360;
-export const BOARD_TASK_FIXED_CARD_WIDTH = 360;
-export const BOARD_TASK_FIXED_CARD_HEIGHT = 520;
-export const BOARD_TASK_FIXED_CARD_RECT = Object.freeze({
-  x: 0,
-  y: 0,
-  width: BOARD_TASK_FIXED_CARD_WIDTH,
-  height: BOARD_TASK_FIXED_CARD_HEIGHT,
-});
 export const BOARD_CUSTOM_VIEW_TILE_WIDTH = 280;
 export const BOARD_CUSTOM_VIEW_TILE_HEIGHT = 160;
 export const BOARD_CANVAS_BUFFER = 200;
@@ -45,20 +34,9 @@ export const BOARD_CANVAS_ORIGIN_Y = BOARD_CANVAS_HEIGHT / 2;
 const BOARD_SPAWN_GAP = BOARD_GRID_SIZE * 2;
 const BOARD_SPAWN_X_STEP = BOARD_TILE_WIDTH + BOARD_SPAWN_GAP;
 const BOARD_SPAWN_Y_STEP = BOARD_TILE_HEIGHT + BOARD_GRID_SIZE;
-const TASK_BOARD_SPATIAL_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
-  "markdown",
-  "asset",
-  "custom_view",
-  "frame",
-]);
 
 export type GeneratedPlacementKind = "near-parent" | "inbox";
 
-export function filterTaskBoardSpatialItems(
-  boardItems: readonly CatalogBoardItem[],
-): CatalogBoardItem[] {
-  return boardItems.filter((item) => TASK_BOARD_SPATIAL_ITEM_TYPES.has(item.itemType));
-}
 
 interface BoardRect {
   x: number;
@@ -149,19 +127,6 @@ export interface FrameBoardWorkspaceItem {
   height: number;
 }
 
-export interface TaskBoardWorkspaceItem {
-  type: "task";
-  id: string;
-  boardItemId: string;
-  taskId: string;
-  title: string;
-  updatedAt?: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 export interface CustomViewBoardWorkspaceItem {
   type: "custom_view";
   id: string;
@@ -183,7 +148,6 @@ export type BoardWorkspaceItem =
   | MarkdownBoardWorkspaceItem
   | AssetBoardWorkspaceItem
   | FrameBoardWorkspaceItem
-  | TaskBoardWorkspaceItem
   | CustomViewBoardWorkspaceItem;
 
 export interface BuildBoardWorkspaceItemsParams {
@@ -604,21 +568,6 @@ function buildPositionedItems({
       });
       continue;
     }
-    if (boardItem.itemType === "task") {
-      items.push({
-        type: "task",
-        id: boardItem.itemId,
-        boardItemId: boardItem.id,
-        taskId: boardItem.itemId,
-        title: metadataText(boardItem, "title") || "Task",
-        updatedAt: boardItem.updatedAt,
-        x: boardItem.x,
-        y: boardItem.y,
-        width: BOARD_TASK_TILE_WIDTH,
-        height: BOARD_TASK_TILE_HEIGHT,
-      });
-      continue;
-    }
     if (boardItem.itemType === "custom_view") {
       items.push({
         type: "custom_view",
@@ -655,24 +604,13 @@ function buildPositionedItems({
     items.filter((item): item is SessionBoardWorkspaceItem => item.type === "session").map((item) => item.id),
   );
 
-  // 현재 폴더 컨테이너가 아닌 다른 primary placement가 이미 소유한 세션은
-  // 폴더 보드에서 합성하지 않는다. task뿐 아니라 하위 folder 컨테이너도
-  // 같은 소유권 경계로 취급한다.
-  const sessionIdsOwnedByOtherContainer = sessionIdsOwnedByOtherBoardContainer(
-    catalog.boardItems,
-    boardContainer,
-    selectedFolderId,
-  );
-
   const sessionCandidates = new Map<string, SessionSummary>();
   for (const session of relations.sessions) {
-    if (sessionIdsOwnedByOtherContainer.has(session.agentSessionId)) continue;
     const assignedFolderId = getSessionFolderAssignment(catalog, session.agentSessionId, session);
     if (assignedFolderId !== selectedFolderId) continue;
     sessionCandidates.set(session.agentSessionId, { ...session, folderId: assignedFolderId });
   }
   for (const [sessionId, assignment] of Object.entries(catalog.sessions)) {
-    if (sessionIdsOwnedByOtherContainer.has(sessionId)) continue;
     if ((assignment.folderId ?? null) !== selectedFolderId || sessionCandidates.has(sessionId)) continue;
     sessionCandidates.set(
       sessionId,

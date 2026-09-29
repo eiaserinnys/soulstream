@@ -30,7 +30,8 @@ describe("v3 icon action cap contract", () => {
     ["./TaskBoardPane.tsx", ["업무 상세로 돌아가기", "업무 보드 닫기"]],
     ["./TaskWorkspace.tsx", ["업무 창 닫기", "채팅 닫기"]],
     ["./TaskBoardWorkspace.tsx", ["문서 편집기 높이 축소"]],
-    ["./PlannerViews.tsx", ["아침 정리", "새 업무", "오늘로 돌아가기", "새 문서", "이전 문서 더 보기", "이전 업무 더 보기"]],
+    ["./PlannerViews.tsx", ["아침 정리", "새 업무"]],
+    ["./FolderWorkspaceSections.tsx", ["새 문서", "이전 문서 더 보기"]],
     ["./V3Navigation.tsx", ["별표 업무 더 보기", "새 프로젝트"]],
     ["./V3SessionPanel.tsx", ["확인 처리"]],
     ["./V3SessionReviewBanner.tsx", ["검수 확인"]],
@@ -47,7 +48,7 @@ describe("v3 icon action cap contract", () => {
   });
 
   it("keeps star and today controls as pressed-state toggles", () => {
-    expect(read("./PlannerTaskCard.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{taskStar\.starred\}/);
+    expect(read("./PlannerTaskCard.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{folderStar\.starred\}/);
     expect(read("./TaskTodayToggle.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{inToday\}/);
   });
 
@@ -56,7 +57,7 @@ describe("v3 icon action cap contract", () => {
     const workspace = read("./TaskWorkspace.tsx");
     const layout = read("./V3DashboardLayout.tsx");
 
-    expect(detail).toContain('label="오늘 플래너로 돌아가기"');
+    expect(detail).toContain('parentFolder ? "상위 폴더로 이동" : "오늘 플래너로 돌아가기"');
     expect(detail).not.toContain('label="업무 상세 닫기"');
     expect(workspace).not.toContain('label="우측 패널 닫기"');
     expect(workspace).toContain("onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}");

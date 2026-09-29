@@ -141,6 +141,7 @@ function ProjectTreeNode({
         className={`v3-project-nav-row${active ? " is-active" : ""}${drag.isDragging ? " is-dragging" : ""}${drag.isOver ? " is-drop-target" : ""}`}
         style={style}
         data-testid={`v3-project-row-${node.folder.id}`}
+        data-selected={active ? "true" : "false"}
         onContextMenu={(event) => onContextMenu(event, node.folder)}
       >
         {node.children.length > 0 ? (

@@ -68,7 +68,6 @@ export function AgentProfileEditorTab() {
   const [removePortrait, setRemovePortrait] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [previewSource, setPreviewSource] = useState("browser");
-  const [previewContainerKind, setPreviewContainerKind] = useState("task");
   const [previewSources, setPreviewSources] = useState<ManifestSource[]>([]);
 
   const connectedNodeIds = useMemo(
@@ -234,7 +233,7 @@ export function AgentProfileEditorTab() {
             atom_contexts: effectiveContexts.map(({ context }) => context),
             session: {
               source: previewSource,
-              container_kind: previewContainerKind,
+              container_kind: "folder",
               agent: draft.agent_id,
             },
           }),
@@ -455,7 +454,7 @@ export function AgentProfileEditorTab() {
 
             <section className="rounded border border-border p-3">
               <SectionHeading title="컴파일 미리보기" />
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <label className="text-xs font-medium">
                   실행 노드
                   <select aria-label="미리보기 실행 노드" className={inputClassName} value={selectedNodeId} onChange={(event) => setSelectedNodeId(event.target.value)}>
@@ -467,14 +466,6 @@ export function AgentProfileEditorTab() {
                   호출 소스
                   <select aria-label="미리보기 호출 소스" className={inputClassName} value={previewSource} onChange={(event) => setPreviewSource(event.target.value)}>
                     {["browser", "agent", "api", "channel_observer", "execute-proxy", "llm", "slack", "soul-app", "system", "trello_watcher"].map((value) => <option key={value} value={value}>{value}</option>)}
-                  </select>
-                </label>
-                <label className="text-xs font-medium">
-                  컨테이너
-                  <select aria-label="미리보기 컨테이너" className={inputClassName} value={previewContainerKind} onChange={(event) => setPreviewContainerKind(event.target.value)}>
-                    <option value="task">task</option>
-                    <option value="runbook">runbook</option>
-                    <option value="folder">folder</option>
                   </select>
                 </label>
               </div>

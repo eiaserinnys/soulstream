@@ -2,13 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
-import type { PlannerTask, StarredPlannerTask } from "./planner-data";
-import { loadStarredPlannerTask } from "./planner-data";
+import type { PlannerFolder, StarredPlannerFolder } from "./planner-data";
+import { loadStarredPlannerFolder } from "./planner-data";
 import type { TaskProjectMoveDialogProps } from "./TaskProjectMoveDialog";
-import type { TaskProjectMoveTarget } from "./task-project-move";
+import type { FolderParentTarget } from "./folder-parent-move";
 import { errorText } from "./v3-dashboard-utils";
 
-export function useTaskProjectMoveController({
+export function useFolderParentMoveController({
   api,
   folders,
   moveTask,
@@ -16,30 +16,28 @@ export function useTaskProjectMoveController({
 }: {
   api: PageApiClient;
   folders: readonly CatalogFolder[];
-  moveTask(task: PlannerTask, target: TaskProjectMoveTarget): Promise<void>;
+  moveTask(task: PlannerFolder, target: FolderParentTarget): Promise<void>;
   notify(message: string): void;
 }) {
-  const [task, setTask] = useState<PlannerTask | null>(null);
+  const [task, setTask] = useState<PlannerFolder | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const openTask = useCallback((next: PlannerTask) => {
+  const openTask = useCallback((next: PlannerFolder) => {
     setTask(next);
     setError(null);
   }, []);
-  const openPage = useCallback(async (task: StarredPlannerTask) => {
+  const openPage = useCallback(async (task: StarredPlannerFolder) => {
     try {
-      openTask(await loadStarredPlannerTask(api, task));
+      openTask(await loadStarredPlannerFolder(api, task, folders));
     } catch (cause) {
       notify(`업무 불러오기 실패 · ${errorText(cause)}`);
     }
-  }, [api, notify, openTask]);
-  const currentFolderId = useMemo(() => folders.find(
-    (folder) => folder.projectPageId === task?.projectPageId,
-  )?.id ?? null, [folders, task?.projectPageId]);
+  }, [api, folders, notify, openTask]);
+  const currentFolderId = task?.parentFolderId ?? null;
   const close = useCallback(() => {
     if (!pending) setTask(null);
   }, [pending]);
-  const move = useCallback((target: TaskProjectMoveTarget) => {
+  const move = useCallback((target: FolderParentTarget) => {
     if (!task || pending) return;
     setPending(true);
     setError(null);

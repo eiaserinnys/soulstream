@@ -20,24 +20,7 @@ import type {
 
 const searchHarness = vi.hoisted(() => ({
   results: [] as SearchResultItem[],
-  navigationResults: [] as Array<
-    | {
-      kind: "folder";
-      id: string;
-      title: string;
-      folder_id: string;
-      project_page_id: string;
-    }
-    | {
-      kind: "task";
-      id: string;
-      title: string;
-      folder_id: string;
-      project_page_id: string;
-      board_item_id: string;
-      task_page_id: string;
-    }
-  >,
+  navigationResults: [] as SearchNavigationResult[],
   sessionResults: [] as SearchSessionResult[],
   searchStatus: null as null | {
     search?: { status: "partial"; stage: "lexical" | "semantic" | "navigation"; reason: "timeout" | "cancelled" };
@@ -87,8 +70,8 @@ function makeSession(
 function makeCatalog(session: SessionSummary): CatalogState {
   return {
     folders: [
-      { id: "current-folder", name: "Current", sortOrder: 0 },
-      { id: "target-folder", name: "Target", sortOrder: 1 },
+      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "current-folder", name: "Current", sortOrder: 0 },
+      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "target-folder", name: "Target", sortOrder: 1 },
     ],
     sessions: {
       [session.agentSessionId]: {
@@ -109,12 +92,7 @@ function renderSearchModal(options: {
     session?: SessionSummary,
     focusTarget?: ChatFocusTarget,
   ) => boolean | void | Promise<boolean | void>;
-  onOpenFolder?: (
-    result: Extract<SearchNavigationResult, { kind: "folder" }>,
-  ) => void;
-  onOpenTask?: (
-    result: Extract<SearchNavigationResult, { kind: "task" }>,
-  ) => void;
+  onOpenFolder?: (result: SearchNavigationResult) => void;
 } = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -122,7 +100,6 @@ function renderSearchModal(options: {
   const onOpenChange = options.onOpenChange ?? vi.fn();
   const onOpenSession = options.onOpenSession ?? vi.fn(() => true);
   const onOpenFolder = options.onOpenFolder ?? vi.fn();
-  const onOpenTask = options.onOpenTask ?? vi.fn();
 
   flushSync(() => {
     root.render(createElement(SearchModal, {
@@ -131,11 +108,10 @@ function renderSearchModal(options: {
       sessions: options.sessions ?? [],
       onOpenSession,
       onOpenFolder,
-      onOpenTask,
     }));
   });
 
-  return { container, root, onOpenChange, onOpenSession, onOpenFolder, onOpenTask };
+  return { container, root, onOpenChange, onOpenSession, onOpenFolder };
 }
 
 function clickResult(preview: string) {
@@ -413,7 +389,7 @@ describe("SearchModal", () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
-  it("delegates project and task navigation to the host", () => {
+  it("delegates folder navigation to the host", () => {
     searchHarness.navigationResults = [
       {
         kind: "folder",
@@ -429,25 +405,6 @@ describe("SearchModal", () => {
     clickResult("Needle project");
     expect(onOpenFolder).toHaveBeenCalledWith(expect.objectContaining({ kind: "folder", id: "project-folder" }));
 
-    flushSync(() => root?.unmount());
-    root = undefined;
-    container?.remove();
-    searchHarness.navigationResults = [
-      {
-        kind: "task",
-        id: "task-a",
-        title: "Needle task",
-        folder_id: "project-folder",
-        project_page_id: "project-page",
-        board_item_id: "board-item-a",
-        task_page_id: "task-page-a",
-      },
-    ];
-    const onOpenTask = vi.fn();
-    ({ container, root } = renderSearchModal({ onOpenTask }));
-
-    clickResult("Needle task");
-    expect(onOpenTask).toHaveBeenCalledWith(expect.objectContaining({ kind: "task", id: "task-a" }));
   });
 
   it("removes the human tool filter and gives every leading result badge one width", () => {
@@ -460,13 +417,11 @@ describe("SearchModal", () => {
         project_page_id: "project-page",
       },
       {
-        kind: "task",
-        id: "task-a",
-        title: "Aligned task",
-        folder_id: "project-folder",
-        project_page_id: "project-page",
-        board_item_id: "board-item-a",
-        task_page_id: "task-page-a",
+        kind: "folder",
+        id: "folder-a",
+        title: "Aligned folder",
+        folder_id: "folder-a",
+        project_page_id: "folder-page-a",
       },
     ];
     searchHarness.results = [
@@ -483,7 +438,7 @@ describe("SearchModal", () => {
     ({ container, root } = renderSearchModal());
 
     expect(document.body.textContent).not.toContain("툴 사용");
-    for (const label of ["프로젝트", "업무", "Assistant"]) {
+    for (const label of ["폴더", "Assistant"]) {
       const badge = Array.from(document.body.querySelectorAll("span"))
         .find((span) => span.textContent === label);
       expect(badge?.className).toContain("w-20");

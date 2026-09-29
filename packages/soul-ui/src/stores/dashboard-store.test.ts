@@ -241,8 +241,8 @@ describe("dashboard-store", () => {
     it("should not rewrite selected folder when selecting a session", () => {
       useDashboardStore.getState().setCatalog({
         folders: [
-          { id: "folder-a", name: "Folder A", sortOrder: 0 },
-          { id: "folder-b", name: "Folder B", sortOrder: 1 },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-a", name: "Folder A", sortOrder: 0 },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-b", name: "Folder B", sortOrder: 1 },
         ],
         sessions: {
           "sess-b": { folderId: "folder-b", displayName: null },
@@ -751,7 +751,7 @@ describe("dashboard-store", () => {
 
     it("should assign folderId in catalog.sessions when folderId is provided", () => {
       const catalog: CatalogState = {
-        folders: [{ id: "folder-1", name: "Test Folder", sortOrder: 0 }],
+        folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: {},
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -770,7 +770,7 @@ describe("dashboard-store", () => {
 
     it("should not modify catalog.sessions when folderId is null/undefined", () => {
       const catalog: CatalogState = {
-        folders: [{ id: "folder-1", name: "Test Folder", sortOrder: 0 }],
+        folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: { "sess-existing": { folderId: "folder-1", displayName: null } },
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -846,6 +846,10 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().setCatalog({
         folders: [
           {
+            checklistEnabled: false,
+            status: "open",
+            version: 1,
+            archived: false,
             id: "hidden-folder",
             name: "Hidden",
             sortOrder: 0,
@@ -875,7 +879,7 @@ describe("dashboard-store", () => {
 
     it("should place session in correct folder via catalog assignment and filterSessionsInFolder", () => {
       const catalog: CatalogState = {
-        folders: [{ id: "folder-1", name: "Test Folder", sortOrder: 0 }],
+        folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: {},
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -1897,7 +1901,7 @@ describe("dashboard-store", () => {
   });
 
   describe("reorderFolders", () => {
-    const makeFolder = (id: string, name: string, sortOrder: number): CatalogState["folders"][number] => ({
+    const makeFolder = (id: string, name: string, sortOrder: number): CatalogState["folders"][number] => ({ checklistEnabled: false, status: "open", version: 1, archived: false,
       id,
       name,
       sortOrder,
@@ -1953,8 +1957,8 @@ describe("dashboard-store", () => {
 
       store.setCatalog({
         folders: [
-          { id: "parent", name: "Parent", sortOrder: 0, parentFolderId: null },
-          { id: "child", name: "Child", sortOrder: 1, parentFolderId: "parent" },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "parent", name: "Parent", sortOrder: 0, parentFolderId: null },
+          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "child", name: "Child", sortOrder: 1, parentFolderId: "parent" },
         ],
         sessions: {},
       });
@@ -1995,14 +1999,14 @@ describe("dashboard-store", () => {
       expect(state.leftNavigationMode).toBe("folders");
     });
 
-    it("openTaskBoard 호출 시 폴더 선택과 보드 렌더 컨테이너를 분리한다", () => {
+    it("폴더 보드를 열 때 선택과 렌더 대상이 같은 폴더를 가리킨다", () => {
       useDashboardStore.getState().selectFolder("folder-1");
 
       useDashboardStore.getState().openTaskBoard("rb-1", "folder-1");
 
       const state = useDashboardStore.getState();
-      expect(state.selectedFolderId).toBe("folder-1");
-      expect(state.activeBoardContainer).toEqual({ kind: "task", id: "rb-1" });
+      expect(state.selectedFolderId).toBe("rb-1");
+      expect(state.activeBoardContainer).toEqual({ kind: "folder", id: "rb-1" });
       expect(state.viewMode).toBe("folder");
       expect(state.activeTab).toBe("folder");
       expect(state.leftNavigationMode).toBe("folders");

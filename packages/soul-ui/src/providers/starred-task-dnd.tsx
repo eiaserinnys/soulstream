@@ -2,12 +2,12 @@ import type { ReactNode } from "react";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-export interface StarredTaskDragData {
+export interface StarredFolderDragData {
   type: "starred-task";
   pageIds: string[];
 }
 
-export function reorderStarredTaskIds(
+export function reorderStarredFolderIds(
   pageIds: readonly string[],
   movedPageId: string,
   overPageId: string,
@@ -41,7 +41,7 @@ export function useStarredTaskDragSurface({
   pageIds: string[];
   disabled?: boolean;
 }) {
-  const data: StarredTaskDragData = { type: "starred-task", pageIds };
+  const data: StarredFolderDragData = { type: "starred-task", pageIds };
   const sortable = useSortable({ id, disabled, data });
 
   return {
