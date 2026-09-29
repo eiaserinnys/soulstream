@@ -5,6 +5,7 @@ import {
   fetchOrchResponse,
   readOrchErrorEnvelope,
 } from "../../control_plane/persistence_host_transport.js";
+import { resolveEffectiveCallerSessionId } from "./caller_session.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
@@ -53,9 +54,12 @@ export function registerSearchSessionsTool(
       const orch = runtime.orch;
       if (!orch) return errorResult("orchestrator proxy is not configured");
 
+      const callerSessionId = resolveEffectiveCallerSessionId(undefined);
+      const resultLimit = top_k ?? 10;
+      const orchLimit = callerSessionId ? resultLimit + 1 : resultLimit;
       const searchParams = new URLSearchParams({
         q: query,
-        top_k: String(top_k ?? 10),
+        top_k: String(orchLimit),
         include_session_results: "true",
         session_search_mode: "expanded",
         search_session_id: "true",
@@ -83,11 +87,16 @@ export function registerSearchSessionsTool(
         const data = await response.json() as CogitoSearchResponse;
         const search = data.search_status?.search;
         const isPartial = search?.status === "partial";
+        const sessionResults = callerSessionId
+          ? data.session_results
+            .filter((result) => result.session_id !== callerSessionId)
+            .slice(0, resultLimit)
+          : data.session_results;
         return jsonResult({
           query,
           status: isPartial ? "partial" : "complete",
           partial_reason: isPartial ? search.reason ?? null : null,
-          results: data.session_results.map((result) => ({
+          results: sessionResults.map((result) => ({
             session_id: result.session_id,
             title: result.title,
             agent_name: result.agent_name,

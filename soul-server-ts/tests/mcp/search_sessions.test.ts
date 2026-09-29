@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { McpRuntime } from "../../src/mcp/runtime.js";
+import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 import { registerSessionQueryTools } from "../../src/mcp/tools/session_query.js";
 
 type InputSchema = Record<string, {
@@ -27,6 +28,50 @@ const orch = {
 
 describe("search_sessions", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("excludes the calling session and requests one extra result", async () => {
+    const fetch = vi.fn().mockResolvedValue(response({
+      search_status: { search: { status: "complete" } },
+      session_results: [
+        searchResult("session-1", "첫 번째 결과"),
+        searchResult("caller-session", "현재 세션"),
+        searchResult("session-2", "두 번째 결과"),
+      ],
+    }));
+    vi.stubGlobal("fetch", fetch);
+    const { call } = register();
+
+    const result = await withMcpRequestContext(
+      { callerSessionId: "caller-session" },
+      () => call({ query: "세션 검색", top_k: 2 }),
+    );
+
+    expect((result.structuredContent?.results as Array<{ session_id: string }>).map(
+      ({ session_id }) => session_id,
+    )).toEqual(["session-1", "session-2"]);
+    const url = new URL(String(fetch.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("top_k")).toBe("3");
+  });
+
+  it("keeps the requested result count when the caller session is unknown", async () => {
+    const fetch = vi.fn().mockResolvedValue(response({
+      search_status: { search: { status: "complete" } },
+      session_results: [
+        searchResult("session-1", "첫 번째 결과"),
+        searchResult("session-2", "두 번째 결과"),
+      ],
+    }));
+    vi.stubGlobal("fetch", fetch);
+    const { call } = register();
+
+    const result = await call({ query: "세션 검색", top_k: 2 });
+
+    expect((result.structuredContent?.results as Array<{ session_id: string }>).map(
+      ({ session_id }) => session_id,
+    )).toEqual(["session-1", "session-2"]);
+    const url = new URL(String(fetch.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("top_k")).toBe("2");
+  });
 
   it("maps session rows and sends the expanded search parameters", async () => {
     const fetch = vi.fn().mockResolvedValue(response({
@@ -217,4 +262,19 @@ function response(body: unknown): Response {
     status: 200,
     headers: { "content-type": "application/json" },
   });
+}
+
+function searchResult(sessionId: string, title: string) {
+  return {
+    session_id: sessionId,
+    title,
+    agent_name: null,
+    node_id: null,
+    status: null,
+    updated_at: null,
+    task_title: null,
+    relevance: null,
+    best_match: null,
+    session_url: null,
+  };
 }
