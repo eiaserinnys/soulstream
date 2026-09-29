@@ -17,8 +17,8 @@
 
 `packages/db-schema/sql/migrations/108_unify_folders.sql`이 기존 업무 id를 폴더 id로 보존하고 체크리스트, 감사, 세션 소속, binding, 반복 실행, worktree 참조를 옮긴다. 보드의 중복 scope 열과 checklist projection outbox는 제거한다.
 
-중앙 `deploy/release-manifest.json`은 `orch-server-ts/scripts/apply-folder-storage.mjs`를 실행한다. 기존 release executor의 SQL 적용 직후 `folder_storage_documents` 하위 단계로 `folder_storage_migration_cli`를 실행하며 orch 기동 전에 끝나야 한다. core 빌드가 orch 변환기 산출물을 먼저 만든다. converter는 Y.Doc 안의 이름과 참조를 바꾸고 투영을 갱신한 뒤 누락된 부모 mount를 보충한다. 변환할 문서나 보충할 mount가 없으면 변경하지 않는다.
+당시 중앙 `deploy/release-manifest.json`은 `orch-server-ts/scripts/apply-folder-storage.mjs`를 실행했다. SQL 적용 직후 `folder_storage_documents` 하위 단계에서 `folder_storage_migration_cli`가 Y.Doc 이름과 참조를 변환하고 투영과 부모 mount를 갱신했다. 세 노드 배포와 문서 변환을 확인한 뒤 이 일회성 연결과 변환기는 제거했다.
 
-이 manifest 연결과 database-release-central의 필수 하위 단계, 배포 진입점과 converter는 **배포 확인 후 제거할 일회성 단계**다. 운영 적용은 위임자가 수행한다. source SQL과 운영 schema의 기존 drift를 수정하는 migration은 포함하지 않는다.
+현재 중앙 배포는 `release-executor.mjs apply`로 SQL migration만 적용하며 필수 하위 단계는 없다. migration 108과 manifest 기록은 적용 이력으로 남는다.
 
 사용자가 체크리스트 항목을 완료·취소하면 mutation owner가 `checklist_handoff.ts`를 호출한다. 기존 세션 전달 저장소에 durable_next_turn을 기록한 뒤 기존 router와 bridge로 알린다. HTTP와 host 모두 같은 경로이며 idempotent 재전송에는 중복 알림이 없다.

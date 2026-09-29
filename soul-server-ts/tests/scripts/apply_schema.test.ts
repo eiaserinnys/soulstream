@@ -861,7 +861,7 @@ describe("apply-schema.mjs", () => {
     ]);
     expect(manifest.environment_service).toBe("soulstream-orch-server");
     expect(manifest.migration.apply.command).toBe(
-      "node orch-server-ts/scripts/apply-folder-storage.mjs",
+      "node packages/db-schema/scripts/release-executor.mjs apply --manifest deploy/release-manifest.json --database-contract deploy/database-release-central.json",
     );
     expect(fixture.services["soulstream-soul-server-ts"].after).toEqual([
       "soulstream-orch-server",

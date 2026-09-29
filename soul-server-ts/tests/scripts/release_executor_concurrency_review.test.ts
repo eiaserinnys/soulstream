@@ -1,8 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -32,10 +31,6 @@ const EXECUTOR = fileURLToPath(new URL(
   "../../../packages/db-schema/scripts/release-executor.mjs",
   import.meta.url,
 ));
-const FOLDER_WRITER = fileURLToPath(new URL(
-  "../../../orch-server-ts/scripts/apply-folder-storage.mjs",
-  import.meta.url,
-));
 const directories: string[] = [];
 
 afterEach(() => {
@@ -54,7 +49,7 @@ function environment(backupDirectory: string, requestId = "request-1") {
   return {
     HANIEL_BACKUP_DIR: backupDirectory,
     HANIEL_DATABASE_OPERATION: "fresh_install",
-    HANIEL_DATABASE_REQUIRED_SUBPHASES: '["folder_storage_documents"]',
+    HANIEL_DATABASE_REQUIRED_SUBPHASES: '["sample_documents"]',
     HANIEL_DATABASE_AFFECTED_SERVICES: '["soulstream-orch-server"]',
     HANIEL_DEPLOY_REPO: "soulstream",
     HANIEL_DEPLOYMENT_JOURNAL: join(backupDirectory, "haniel-deployment.json"),
@@ -349,14 +344,14 @@ describe.sequential("database release cross-process and subphase boundaries", ()
       import { writeFileSync } from "node:fs";
       import { assertDatabaseReleaseSubphaseGate } from ${JSON.stringify(EXECUTOR_MODULE)};
       await assertDatabaseReleaseSubphaseGate({
-        env: process.env, subphase: "folder_storage_documents"
+        env: process.env, subphase: "sample_documents"
       });
       writeFileSync(${JSON.stringify(marker)}, "entered");
       process.stdout.write("child-json-one\\nchild-json-two\\n");
     `;
     const report = await runDatabaseRelease("run-subphase", {
       env,
-      subphase: "folder_storage_documents",
+      subphase: "sample_documents",
       childCommand: [process.execPath, "--input-type=module", "-e", child],
     });
     expect(readFileSync(marker, "utf8")).toBe("entered");
@@ -365,7 +360,7 @@ describe.sequential("database release cross-process and subphase boundaries", ()
     const runner = vi.fn();
     await expect(runDatabaseRelease("run-subphase", {
       env,
-      subphase: "folder_storage_documents",
+      subphase: "sample_documents",
       subphaseRun: runner,
     })).resolves.toMatchObject({ status: "applied" });
     expect(runner).not.toHaveBeenCalled();
@@ -403,14 +398,14 @@ describe.sequential("database release cross-process and subphase boundaries", ()
     const failedChild = `
       import { assertDatabaseReleaseSubphaseGate } from ${JSON.stringify(EXECUTOR_MODULE)};
       await assertDatabaseReleaseSubphaseGate({
-        env: process.env, subphase: "folder_storage_documents"
+        env: process.env, subphase: "sample_documents"
       });
       process.stderr.write("document mutation crashed");
       process.exit(17);
     `;
     await expect(runDatabaseRelease("run-subphase", {
       env,
-      subphase: "folder_storage_documents",
+      subphase: "sample_documents",
       childCommand: [process.execPath, "--input-type=module", "-e", failedChild],
     })).rejects.toThrow("SUBPHASE_FAILED");
     expect(await readDatabaseReleaseJournal(databaseReleaseJournalPath(env))).toMatchObject({
@@ -424,49 +419,23 @@ describe.sequential("database release cross-process and subphase boundaries", ()
       import { writeFileSync } from "node:fs";
       import { assertDatabaseReleaseSubphaseGate } from ${JSON.stringify(EXECUTOR_MODULE)};
       await assertDatabaseReleaseSubphaseGate({
-        env: process.env, subphase: "folder_storage_documents"
+        env: process.env, subphase: "sample_documents"
       });
       writeFileSync(${JSON.stringify(marker)}, "completed");
     `;
     await expect(runDatabaseRelease("run-subphase", {
       env,
-      subphase: "folder_storage_documents",
+      subphase: "sample_documents",
       childCommand: [process.execPath, "--input-type=module", "-e", retryChild],
     })).resolves.toMatchObject({ status: "applied" });
     expect(readFileSync(marker, "utf8")).toBe("completed");
-  });
-
-  it("does not complete the journal when the actual document child has no database credentials", async () => {
-    const backupDirectory = directory("release-subphase-missing-database-");
-    const prepared = await prepareSqlAppliedRelease(backupDirectory);
-    const env = {
-      ...prepared,
-      PATH: process.env.PATH ?? "",
-      HOME: process.env.HOME ?? "",
-      HANIEL_SERVICE_CWD: backupDirectory,
-    };
-
-    await expect(runDatabaseRelease("run-subphase", {
-      env,
-      subphase: "folder_storage_documents",
-      childCommand: [
-        process.execPath,
-        FOLDER_WRITER,
-        "--documents",
-      ],
-    })).rejects.toThrow(/SUBPHASE_FAILED:[\s\S]*DATABASE_URL.*required/);
-    expect(await readDatabaseReleaseJournal(databaseReleaseJournalPath(env))).toMatchObject({
-      status: "subphase_started",
-      completed_subphases: [],
-      active_subphase_token_digest: null,
-    });
   });
 
   it("emits one executor JSON result while suppressing child stdout", async () => {
     const backupDirectory = directory("release-single-result-");
     const env = await prepareSqlAppliedRelease(backupDirectory);
     const result = spawnSync(process.execPath, [EXECUTOR,
-      "run-subphase", "--subphase", "folder_storage_documents", "--",
+      "run-subphase", "--subphase", "sample_documents", "--",
       process.execPath, "-e", "console.log('child noise'); console.log('more noise')",
     ], { encoding: "utf8", env, timeout: 10_000 });
     expect(result.status, result.stderr).toBe(0);

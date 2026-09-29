@@ -137,10 +137,6 @@ describe("database release executor", () => {
   it("routes every known DB writer through the executor and pins paired Haniel", () => {
     const files = {
       applySchema: readFileSync(new URL("../../scripts/apply-schema.mjs", import.meta.url), "utf8"),
-      boardWrapper: readFileSync(new URL(
-        "../../../orch-server-ts/scripts/apply-folder-storage.mjs",
-        import.meta.url,
-      ), "utf8"),
       migrate: readFileSync(new URL(
         "../../../packages/db-schema/scripts/migrate.mjs",
         import.meta.url,
@@ -153,8 +149,6 @@ describe("database release executor", () => {
 
     expect(files.applySchema).toContain("release-executor.mjs");
     expect(files.applySchema).not.toContain("runMigrations");
-    expect(files.boardWrapper).toContain("release-executor.mjs");
-    expect(files.boardWrapper).not.toContain("packages/db-schema/scripts/migrate.mjs");
     expect(files.migrate).toContain("assertDatabaseReleaseApplyGate");
     expect(files.migrate).toContain('import("./release-executor.mjs")');
     expect(files.workflow).toContain("809798b981b9282b96dc074d77d523efa280f9ec");

@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,10 +12,6 @@ import { runDatabaseReleaseCli } from
 
 const MIGRATE = fileURLToPath(new URL(
   "../../../packages/db-schema/scripts/migrate.mjs",
-  import.meta.url,
-));
-const FOLDER_WRITER = fileURLToPath(new URL(
-  "../../../orch-server-ts/scripts/apply-folder-storage.mjs",
   import.meta.url,
 ));
 const CENTRAL_MANIFEST = fileURLToPath(new URL(
@@ -248,69 +243,4 @@ describe("database release CLI and direct writer boundaries", () => {
     },
   );
 
-  it("requires the document writer to enter through the existing subphase gate", () => {
-    const source = readFileSync(FOLDER_WRITER, "utf8");
-    expect(source).toContain("assertDatabaseReleaseSubphaseGate");
-    expect(source).toContain("folder_storage_documents");
-  });
-
-  it("fails direct document conversion with one JSON error before loading the converter", () => {
-    const directory = tempDirectory("release-folder-direct-");
-    const result = spawnSync(process.execPath, [FOLDER_WRITER, "--documents"], {
-      encoding: "utf8",
-      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "",
-        HANIEL_SERVICE_CWD: directory, HANIEL_BACKUP_DIR: directory },
-      timeout: 10_000,
-    });
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe("");
-    const lines = result.stderr.trim().split("\n");
-    expect(lines).toHaveLength(1);
-    const failure = JSON.parse(lines[0]);
-    expect(failure).toMatchObject({ ok: false, error: { code: "DATABASE_RELEASE_FAILED" } });
-    expect(failure.error.message).toContain("database-release.json");
-    expect(result.stderr).not.toContain("ERR_MODULE_NOT_FOUND");
-    expect(result.stderr).not.toContain("DATABASE_URL is required");
-  });
-
-  it("redacts and bounds an actual folder deployment failure", () => {
-    const directory = tempDirectory("release-folder-error-");
-    const secret = "folder-release-secret-value";
-    writeFileSync(join(directory, ".env.soul-server-ts"), "\n", "utf8");
-    const result = spawnSync(process.execPath, [FOLDER_WRITER], {
-      encoding: "utf8",
-      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "",
-        HANIEL_SERVICE_CWD: directory, HANIEL_BACKUP_DIR: directory,
-        HANIEL_RELEASE_ID: `AUTH=${secret}`, AUTH_TOKEN: secret },
-      timeout: 10_000,
-    });
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe("");
-    const lines = result.stderr.trim().split("\n");
-    expect(lines).toHaveLength(1);
-    expect(Buffer.byteLength(lines[0], "utf8")).toBeLessThanOrEqual(32_768);
-    expect(JSON.parse(lines[0])).toMatchObject({
-      schema_version: "soulstream.database-release.v1", ok: false, phase: "apply",
-      error: { message: expect.stringContaining("DATABASE_URL is required") },
-    });
-    expect(result.stderr).not.toContain(secret);
-  });
-
-  it("rejects a mismatched release identity before opening the database", () => {
-    const directory = tempDirectory("release-folder-identity-");
-    const result = spawnSync(process.execPath, [FOLDER_WRITER], {
-      encoding: "utf8",
-      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "",
-        HANIEL_SERVICE_CWD: directory, HANIEL_MANIFEST_DIGEST: "0".repeat(64) },
-      timeout: 10_000,
-    });
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe("");
-    const lines = result.stderr.trim().split("\n");
-    expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0])).toMatchObject({
-      ok: false, error: { code: "JOURNAL_GATE_FAILED" },
-    });
-    expect(result.stderr).not.toContain("DATABASE_URL is required");
-  });
 });
