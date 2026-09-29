@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
-  ContainerBrowseService,
-  createContainerBrowseStore,
-} from "../../src/catalog/container_browse_service.js";
+  FolderBrowseService,
+  createFolderBrowseStore,
+} from "../../src/catalog/folder_browse_service.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
@@ -16,9 +16,9 @@ import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_
 
 const describePostgres = hasFullSchemaPostgresBackend ? describe : describe.skip;
 
-describePostgres("container browse PostgreSQL integration", () => {
+describePostgres("folder browse PostgreSQL integration", () => {
   let harness: FullSchemaPostgresHarness | undefined;
-  let service: ContainerBrowseService;
+  let service: FolderBrowseService;
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
@@ -50,23 +50,18 @@ describePostgres("container browse PostgreSQL integration", () => {
     `;
     await sql`
       INSERT INTO board_items (
-        id, folder_id, container_kind, container_id, item_type, item_id, metadata
+        id, folder_id, item_type, item_id, metadata
       ) VALUES
-        ('session:session-named', 'container-folder', 'folder', 'container-folder', 'session', 'session-named', '{}'),
-        ('markdown:doc-spec', 'container-folder', 'folder', 'container-folder', 'markdown', 'doc-spec', '{}'),
-        ('asset:asset-diagram', 'container-folder', 'folder', 'container-folder', 'asset', 'asset-diagram', '{}'),
-        ('task:archived', 'container-folder', 'folder', 'container-folder', 'task', 'archived', '{}')
-    `;
-    await sql`
-      INSERT INTO tasks (id, board_item_id, title, archived)
-      VALUES ('archived', 'task:archived', 'Archived Task', TRUE)
+        ('session:session-named', 'container-folder', 'session', 'session-named', '{}'),
+        ('markdown:doc-spec', 'container-folder', 'markdown', 'doc-spec', '{}'),
+        ('asset:asset-diagram', 'container-folder', 'asset', 'asset-diagram', '{}')
     `;
     await sql`
       INSERT INTO board_items (
-        id, folder_id, container_kind, container_id, item_type, item_id, metadata, updated_at
+        id, folder_id, item_type, item_id, metadata, updated_at
       )
       SELECT
-        'frame:' || value, 'container-folder', 'folder', 'container-folder',
+        'frame:' || value, 'container-folder',
         'frame', 'frame-' || value, jsonb_build_object('title', 'Frame ' || value),
         NOW() - make_interval(secs => value)
       FROM generate_series(1, 205) AS value
@@ -93,12 +88,10 @@ describePostgres("container browse PostgreSQL integration", () => {
     `;
     await sql`
       INSERT INTO board_items (
-        id, folder_id, container_kind, container_id, item_type, item_id, metadata, updated_at
+        id, folder_id, item_type, item_id, metadata, updated_at
       )
       SELECT
         'session:large-session-' || value,
-        'large-search-folder',
-        'folder',
         'large-search-folder',
         'session',
         'large-session-' || value,
@@ -111,16 +104,16 @@ describePostgres("container browse PostgreSQL integration", () => {
     db.configureFolderHost(
       new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
     );
-    service = new ContainerBrowseService(createContainerBrowseStore(db));
+    service = new FolderBrowseService(createFolderBrowseStore(db));
   }, 45_000);
 
   afterAll(async () => {
     await harness?.cleanup();
   }, 15_000);
 
-  it("pages hundreds of scoped items and excludes archived items by default", async () => {
+  it("pages hundreds of folder items", async () => {
     const result = await service.browse({
-      container: { containerKind: "folder", containerId: "container-folder" },
+      folderId: "container-folder",
       cursor: 200,
       limit: 50,
     });
@@ -131,21 +124,12 @@ describePostgres("container browse PostgreSQL integration", () => {
       nextCursor: null,
     });
     expect(result.items).toHaveLength(8);
-    expect(result.items.every((item) => item.type !== "task")).toBe(true);
     expect(result).not.toHaveProperty("search");
-
-    const archived = await service.browse({
-      container: { containerKind: "folder", containerId: "container-folder" },
-      limit: 1,
-      includeArchived: true,
-    });
-    expect(archived.page.total).toBe(209);
-    expect(archived.counts.task).toBe(1);
   });
 
-  it("searches only session display names and markdown title/body in the container", async () => {
+  it("searches only session display names and markdown title/body in the folder", async () => {
     const markdown = await service.search({
-      container: { containerKind: "folder", containerId: "container-folder" },
+      folderId: "container-folder",
       query: "searchable details",
       limit: 999,
     });
@@ -160,7 +144,7 @@ describePostgres("container browse PostgreSQL integration", () => {
     });
 
     const session = await service.search({
-      container: { containerKind: "folder", containerId: "container-folder" },
+      folderId: "container-folder",
       query: "Named Session",
     });
     expect(session.items).toEqual([
@@ -175,7 +159,7 @@ describePostgres("container browse PostgreSQL integration", () => {
 
   it("caps a large zero-match search and reports the truncation explicitly", async () => {
     const result = await service.search({
-      container: { containerKind: "folder", containerId: "large-search-folder" },
+      folderId: "large-search-folder",
       query: "존재하지 않는 검색어",
     });
 

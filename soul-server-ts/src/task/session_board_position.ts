@@ -6,22 +6,6 @@ export interface PositionedBoardItem {
   y: number;
 }
 
-export interface ScopedBoardItem extends PositionedBoardItem {
-  folderId: string;
-  containerKind?: "folder" | "task" | null;
-  containerId?: string | null;
-}
-
-export function boardItemsInContainer<T extends ScopedBoardItem>(
-  boardItems: readonly T[],
-  container: { containerKind: "folder" | "task"; containerId: string },
-): T[] {
-  return boardItems.filter((item) =>
-    (item.containerKind ?? "folder") === container.containerKind
-    && (item.containerId ?? item.folderId) === container.containerId
-  );
-}
-
 /** Preserve an idempotently upserted session card; allocate only when absent. */
 export function sessionBoardItemPosition(
   boardItems: readonly PositionedBoardItem[],
@@ -30,11 +14,11 @@ export function sessionBoardItemPosition(
   const existing = boardItems.find((item) =>
     item.id === `session:${sessionId}`
     || (item.itemType === "session" && item.itemId === sessionId));
-  return existing ? [existing.x, existing.y] : nextTaskSessionPosition(boardItems);
+  return existing ? [existing.x, existing.y] : nextSessionBoardPosition(boardItems);
 }
 
-/** Existing task placement policy shared by initial projection and durable replay. */
-export function nextTaskSessionPosition(
+/** Session card placement policy shared by initial projection and durable replay. */
+export function nextSessionBoardPosition(
   boardItems: readonly PositionedBoardItem[],
 ): [number, number] {
   const occupied = new Set(boardItems.map((item) => `${item.x}:${item.y}`));

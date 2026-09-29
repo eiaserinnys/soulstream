@@ -17,7 +17,6 @@ const ReasoningEffortToolSchema = z.enum(
   REASONING_EFFORT_ACCEPT_SET as unknown as [ReasoningEffort, ...ReasoningEffort[]],
 );
 
-import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 
 import {
   fetchOrchResponse,
@@ -25,7 +24,7 @@ import {
   readOrchErrorEnvelope,
 } from "../../control_plane/persistence_host_transport.js";
 import { AgentProfileSchema } from "../../agent_registry.js";
-import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
+import { resolveDelegatedFolderId } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
@@ -33,10 +32,6 @@ import { requireRemoteCallerAttribution } from "./caller_session.js";
 import { appendModelPresetLookupHint } from "./model_preset_hint.js";
 
 const NOT_CONFIGURED_MSG = "multi-node not configured";
-const delegatedContainerSchema = z.object({
-  kind: boardContainerKindInputSchema,
-  id: z.string().min(1),
-});
 
 export function registerMultiNodeTools(
   server: McpServer,
@@ -277,7 +272,7 @@ export function registerMultiNodeTools(
     "create_remote_agent_session",
     {
       description:
-        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. notify_completion=false는 업무 기반 워크플로우에서 업무를 추적 표면으로 쓸 때 권장.",
+        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. notify_completion=false는 폴더 체크리스트를 추적 표면으로 쓸 때 권장.",
       inputSchema: {
         node_id: z.string().min(1),
         agent_id: z.string().optional(),
@@ -288,13 +283,12 @@ export function registerMultiNodeTools(
         caller_session_id: z.string().optional(),
         notify_completion: z.boolean().optional(),
         folder_id: z.string().nullable().optional(),
-        container: delegatedContainerSchema.optional(),
-        source_task_item_id: z.string().optional(),
+        source_checklist_item_id: z.string().optional(),
         worktree_id: z.string().uuid().optional(),
       },
     },
     async (input) => {
-      const { node_id, agent_id, model_preset, reasoning_effort, prompt, caller_session_id, notify_completion, folder_id, container, source_task_item_id, worktree_id } = input;
+      const { node_id, agent_id, model_preset, reasoning_effort, prompt, caller_session_id, notify_completion, folder_id, source_checklist_item_id, worktree_id } = input;
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
@@ -308,22 +302,15 @@ export function registerMultiNodeTools(
       if (agent_id !== undefined) body.profile = agent_id;
       if (model_preset !== undefined) body.model_preset = model_preset;
       if (reasoning_effort !== undefined) body.reasoningEffort = reasoning_effort;
-      const resolvedContainer = await resolveDelegatedContainer(runtime, {
+      const resolvedFolderId = await resolveDelegatedFolderId(runtime, {
         callerSessionId: caller.callerSessionId,
         ...(Object.prototype.hasOwnProperty.call(input, "folder_id") && folder_id !== undefined
           ? { folderId: folder_id }
           : {}),
-        container: container ?? null,
       });
-      body.folderId = resolvedContainer.folderId;
-      if (resolvedContainer.container) {
-        body.container = {
-          kind: resolvedContainer.container.containerKind,
-          id: resolvedContainer.container.containerId,
-        };
-      }
-      if (source_task_item_id !== undefined) {
-        body.sourceTaskItemId = source_task_item_id;
+      body.folderId = resolvedFolderId;
+      if (source_checklist_item_id !== undefined) {
+        body.sourceChecklistItemId = source_checklist_item_id;
       }
       if (notify_completion !== undefined) {
         body.notify_completion = notify_completion;

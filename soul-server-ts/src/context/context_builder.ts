@@ -52,7 +52,7 @@ import {
   fetchBoardWorkspaceContextItem,
   fetchRunningSessionsContextItem,
 } from "./session_context_items.js";
-import type { PrimarySessionContainerContext } from "./session_container_context.js";
+import type { PrimarySessionFolderContext } from "./session_folder_context.js";
 import {
   NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
   type PageContextResolver,
@@ -239,9 +239,9 @@ export class ExecutionContextBuilder {
       folder: folder.atomContextSpecs ?? [],
       agent: extractAgentAtomContextSpecs(agent),
     });
-    const { primaryContainer, filterParameters } = await resolveContextFilterContext({
+    const { primaryFolder, filterParameters } = await resolveContextFilterContext({
       db: this.db, logger: this.logger, task, agent, nodeId: this.cfg.nodeId,
-      folderName: folder.folderName,
+      folderId: folder.folderId,
     });
     const [agentAtomCompilation, atomCompilation, taskAtomCompilation, boardWorkspaceItem] =
       await Promise.all([
@@ -287,7 +287,7 @@ export class ExecutionContextBuilder {
       atomMarkdown: atomCompilation.assembled,
       taskAtomMarkdown: taskAtomCompilation.assembled,
       contextManifest,
-      primaryContainer,
+      primaryFolder,
       pageContextItem,
       boardWorkspaceItem,
       runningSessionsItem,
@@ -416,7 +416,7 @@ export class ExecutionContextBuilder {
     atomMarkdown: string | null;
     taskAtomMarkdown: string | null;
     contextManifest: ContextManifest;
-    primaryContainer: PrimarySessionContainerContext | null;
+    primaryFolder: PrimarySessionFolderContext | null;
     pageContextItem: ContextItem | null;
     boardWorkspaceItem: ContextItem | null;
     runningSessionsItem: ContextItem | null;
@@ -441,9 +441,9 @@ export class ExecutionContextBuilder {
       nodeId: this.cfg.nodeId,
       agentId: args.agent.id,
       callerInfo: args.task.callerInfo,
-      container: args.primaryContainer?.container ?? null,
-      sourceTaskItemId: args.primaryContainer?.sourceTaskItemId ?? null,
-      taskGuidance: args.primaryContainer?.taskGuidance ?? null,
+      folder: args.primaryFolder?.folder ?? null,
+      sourceChecklistItemId: args.primaryFolder?.sourceChecklistItemId ?? null,
+      folderGuidance: args.primaryFolder?.folderGuidance ?? null,
     });
 
     const combinedContextItems: ContextItem[] = [soulstreamItem];

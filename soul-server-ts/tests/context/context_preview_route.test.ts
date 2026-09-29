@@ -45,10 +45,10 @@ describe("context preview route", () => {
           {
             node_id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
             depth: 1,
-            applies_when: { container_kind: ["folder"] },
+            applies_when: { folder_id: ["folder-other"] },
           },
         ],
-        session: { source: "agent", container_kind: "task", agent: "seosoyoung" },
+        session: { source: "agent", folder_id: "folder-current", agent: "seosoyoung" },
       },
     });
 

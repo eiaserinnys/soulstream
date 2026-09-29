@@ -16,13 +16,12 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type {
-  BoardYjsContainerRef,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
   SessionDB,
 } from "../db/session_db.js";
 import { assertMutableFolder } from "../system_folders.js";
-import type { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
+import type { FolderService } from "../folder/folder_service.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import {
@@ -38,11 +37,12 @@ import {
   type CatalogSessionsDelta,
 } from "./catalog_delta.js";
 import {
-  ContainerBrowseService,
-  type ContainerBrowseResult,
-  type ContainerSessionItem,
-  createContainerBrowseStore,
-} from "./container_browse_service.js";
+  FolderBrowseService,
+  type FolderBrowseResult,
+  type FolderBrowseItem,
+  type FolderSessionItem,
+  createFolderBrowseStore,
+} from "./folder_browse_service.js";
 
 function renameSessionIdempotencyKey(
   sessionId: string,
@@ -93,6 +93,8 @@ export interface BrowseFolderResult {
     nextCursor: number | null;
   };
   boardItems: CatalogBoardItemRow[];
+  items: FolderBrowseItem[];
+  itemsPage: FolderBrowseResult["page"];
   counts: {
     childFolders: number;
     sessions: number;
@@ -115,15 +117,15 @@ export interface BrowseFolderResult {
  */
 export class CatalogService {
   private readonly boardItems: CatalogBoardItemService;
-  private readonly containerBrowser: ContainerBrowseService;
+  private readonly folderBrowser: FolderBrowseService;
 
   constructor(
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
     boardYjsService?: CatalogBoardYjsPort,
-    private readonly folderProjectIdentityHost?: Pick<
-      FolderProjectIdentityHostClient,
-      "create" | "rename" | "archive"
+    private readonly folderService?: Pick<
+      FolderService,
+      "createFolder" | "renameFolder" | "setFolderArchived"
     >,
     private readonly sessionMutations?: SessionMutationHost,
   ) {
@@ -132,7 +134,7 @@ export class CatalogService {
       boardYjsService,
       (delta) => this.broadcastCatalog(delta),
     );
-    this.containerBrowser = new ContainerBrowseService(createContainerBrowseStore(db));
+    this.folderBrowser = new FolderBrowseService(createFolderBrowseStore(db));
   }
 
   async listFolders(): Promise<CatalogFolderDto[]> {
@@ -155,6 +157,9 @@ export class CatalogService {
     folderId: string;
     sessionCursor?: number;
     sessionLimit?: number;
+    cursor?: number;
+    limit?: number;
+    includeArchived?: boolean;
   }): Promise<BrowseFolderResult> {
     const folders = await this.listFolders();
     const folder = folders.find((candidate) => candidate.id === params.folderId);
@@ -164,21 +169,31 @@ export class CatalogService {
     const childFolders = folders.filter(
       (candidate) => candidate.parentFolderId === params.folderId,
     );
-    const snapshot = await this.containerBrowser.browseLegacyFolder({
-      folderId: params.folderId,
-      sessionCursor: params.sessionCursor,
-      sessionLimit: params.sessionLimit,
-    });
+    const [snapshot, itemPage] = await Promise.all([
+      this.folderBrowser.browseFolderContents({
+        folderId: params.folderId,
+        sessionCursor: params.sessionCursor,
+        sessionLimit: params.sessionLimit,
+      }),
+      this.folderBrowser.browse({
+        folderId: params.folderId,
+        cursor: params.cursor,
+        limit: params.limit,
+        includeArchived: params.includeArchived,
+      }),
+    ]);
     const boardItems = snapshot.boardItems;
     return {
       folderId: params.folderId,
       folder,
       childFolders,
       sessions: snapshot.sessions.items
-        .filter((item): item is ContainerSessionItem => item.type === "session")
+        .filter((item): item is FolderSessionItem => item.type === "session")
         .map(toBrowseFolderSession),
       sessionsPage: snapshot.sessions.page,
       boardItems,
+      items: itemPage.items,
+      itemsPage: itemPage.page,
       counts: {
         childFolders: childFolders.length,
         sessions: snapshot.sessions.page.total,
@@ -189,16 +204,10 @@ export class CatalogService {
     };
   }
 
-  async browseContainer(
-    params: Parameters<ContainerBrowseService["browse"]>[0],
-  ): Promise<ContainerBrowseResult> {
-    return await this.containerBrowser.browse(params);
-  }
-
-  async searchContainerItems(
-    params: Parameters<ContainerBrowseService["search"]>[0],
-  ): Promise<ContainerBrowseResult> {
-    return await this.containerBrowser.search(params);
+  async searchFolderItems(
+    params: Parameters<FolderBrowseService["search"]>[0],
+  ): Promise<FolderBrowseResult> {
+    return await this.folderBrowser.search(params);
   }
 
   /**
@@ -210,10 +219,12 @@ export class CatalogService {
     sortOrder = 0,
     parentFolderId: string | null = null,
   ): Promise<CatalogFolderDto> {
-    if (!this.folderProjectIdentityHost) {
-      throw new Error("folder identity host is required to create folders");
+    if (!this.folderService) {
+      throw new Error("folder service is required to create folders");
     }
-    return (await this.folderProjectIdentityHost.create({
+    return (await this.folderService.createFolder({
+      actorKind: "system",
+      actorSessionId: null,
       name,
       sortOrder,
       parentFolderId,
@@ -223,25 +234,19 @@ export class CatalogService {
 
   async renameFolder(folderId: string, name: string): Promise<void> {
     assertMutableFolder(folderId, "renamed");
-    if (this.folderProjectIdentityHost) {
-      await this.folderProjectIdentityHost.rename({
-        folderId,
-        name,
-        idempotencyKey: randomUUID(),
-      });
-      return;
-    }
-    await this.db.updateFolder(folderId, ["name"], [name]);
-    await this.broadcastCatalog();
+    await this.renameFolderFields(folderId, { name });
   }
 
   async deleteFolder(folderId: string): Promise<void> {
     assertMutableFolder(folderId, "deleted");
-    if (!this.folderProjectIdentityHost) {
-      throw new Error("orchestrator folder project identity port is not configured");
-    }
-    await this.folderProjectIdentityHost.archive({
+    if (!this.folderService) throw new Error("folder service is required");
+    const folder = await this.requireFolder(folderId);
+    await this.folderService.setFolderArchived({
+      actorKind: "system",
+      actorSessionId: null,
       folderId,
+      expectedVersion: folder.version,
+      archived: true,
       idempotencyKey: randomUUID(),
     });
   }
@@ -330,12 +335,7 @@ export class CatalogService {
     } else {
       delete settings.folderPrompt;
     }
-    await this.db.updateFolder(
-      folderId,
-      ["settings"],
-      [JSON.stringify(settings)],
-    );
-    await this.broadcastCatalog();
+    await this.renameFolderFields(folderId, { settings }, folder.version);
   }
 
   async setFolderParent(
@@ -343,13 +343,7 @@ export class CatalogService {
     parentFolderId: string | null,
   ): Promise<void> {
     assertMutableFolder(folderId, "moved");
-    await this.assertParentAllowed(folderId, parentFolderId);
-    await this.db.updateFolder(
-      folderId,
-      ["parent_folder_id"],
-      [parentFolderId],
-    );
-    await this.broadcastCatalog();
+    await this.renameFolderFields(folderId, { parentFolderId });
   }
 
   /** 폴더 전체와 변경된 세션·보드 항목만 발행한다. */
@@ -380,18 +374,17 @@ export class CatalogService {
     await this.boardItems.updateBoardItemPosition(boardItemId, x, y);
   }
 
-  async moveBoardItemToContainer(params: {
+  async moveBoardItemToFolder(params: {
     boardItemId: string;
-    target: BoardYjsContainerRef;
+    folderId: string;
     position?: { x: number; y: number };
     idempotencyKey: string;
   }): Promise<CatalogBoardItemMoveResult> {
-    return await this.boardItems.moveBoardItemToContainer(params);
+    return await this.boardItems.moveBoardItemToFolder(params);
   }
 
   async createMarkdownDocument(params: {
     folderId: string;
-    container?: BoardYjsContainerRef | null;
     title: string;
     body?: string;
     x?: number;
@@ -418,32 +411,31 @@ export class CatalogService {
     await this.boardItems.deleteMarkdownDocument(documentId);
   }
 
-  private async assertParentAllowed(
+  private async requireFolder(folderId: string) {
+    const folder = await this.db.getFolderById(folderId);
+    if (!folder) throw new Error(`folder not found: ${folderId}`);
+    return folder;
+  }
+
+  private async renameFolderFields(
     folderId: string,
-    parentFolderId: string | null,
+    fields: { name?: string; parentFolderId?: string | null; settings?: Record<string, unknown> },
+    expectedVersion?: number,
   ): Promise<void> {
-    if (parentFolderId === null) return;
-    if (folderId === parentFolderId) {
-      throw new Error("folder parent cycle");
-    }
-    const folders = await this.db.getAllFolders();
-    const parentById = new Map(folders.map((folder) => [folder.id, folder.parent_folder_id]));
-    let current: string | null | undefined = parentFolderId;
-    const seen = new Set<string>();
-    while (current) {
-      if (current === folderId) {
-        throw new Error("folder parent cycle");
-      }
-      if (seen.has(current)) {
-        throw new Error("folder parent cycle");
-      }
-      seen.add(current);
-      current = parentById.get(current);
-    }
+    if (!this.folderService) throw new Error("folder service is required");
+    const version = expectedVersion ?? (await this.requireFolder(folderId)).version;
+    await this.folderService.renameFolder({
+      actorKind: "system",
+      actorSessionId: null,
+      folderId,
+      expectedVersion: version,
+      ...fields,
+      idempotencyKey: randomUUID(),
+    });
   }
 }
 
-function toBrowseFolderSession(row: ContainerSessionItem): BrowseFolderSessionDto {
+function toBrowseFolderSession(row: FolderSessionItem): BrowseFolderSessionDto {
   return {
     sessionId: row.agentSessionId,
     title: row.displayName,

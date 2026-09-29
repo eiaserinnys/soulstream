@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FolderHostClient } from "../src/folder/folder_host_client.js";
 import { ScheduleHostClient } from "../src/schedule/schedule_host_client.js";
-import { TaskVersionConflict } from "../src/work-task/task_models.js";
-import { TaskService } from "../src/work-task/task_service.js";
+import { FolderVersionConflict } from "../src/folder/folder_models.js";
+import { FolderService } from "../src/folder/folder_service.js";
 import {
   ClaudeRuntimeHostClient,
   PersistenceHostTransport,
@@ -148,64 +148,61 @@ describe("worker control-plane host clients", () => {
     now.mockRestore();
   });
 
-  it("serializes task provenance in snake_case and dispatches a returned handoff", async () => {
-    const notifyHumanHandoff = vi.fn();
+  it("serializes checklist mutation input and returns the host mutation result", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const request = JSON.parse(String(init?.body));
       expect(request).toMatchObject({
         actor_kind: "agent",
         actor_session_id: "session-1",
+        folder_id: "folder-1",
         item_id: "item-1",
         expected_version: 4,
         idempotency_key: "idem-1",
       });
       return new Response(JSON.stringify({
-        snapshot: { task: { id: "task-1" }, sections: [], items: [] },
+        folderId: "folder-1",
+        item: { id: "item-1", status: "completed" },
         operation: { id: "operation-1" },
-        eventId: 12,
-        handoff: {
-          taskId: "task-1",
-          taskTitle: "Task",
-          boardItemId: "task:task-1",
-          itemId: "item-1",
-          itemTitle: "Item",
-          status: "completed",
-          operationId: "operation-1",
-          eventId: 12,
-        },
+        idempotent: false,
       }), { status: 200, headers: { "content-type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
-    const service = new TaskService({ orch, logger });
-    service.setHandoffNotifier({ notifyHumanHandoff });
+    const service = new FolderService({ orch, logger });
 
-    await service.setItemStatus({
+    const result = await service.setChecklistItemStatus({
       actorSessionId: "session-1",
+      folderId: "folder-1",
       itemId: "item-1",
       expectedVersion: 4,
       status: "completed",
       idempotencyKey: "idem-1",
     });
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/tasks/host/set_item_status");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/set_checklist_item_status");
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeDefined();
-    expect(notifyHumanHandoff).toHaveBeenCalledOnce();
+    expect(result).toEqual({
+      folderId: "folder-1",
+      item: { id: "item-1", status: "completed" },
+      operation: { id: "operation-1" },
+      idempotent: false,
+    });
   });
 
   it("parses both orchestrator host error envelope shapes", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       error: { code: "BAD_INPUT", message: "invalid folder", details: { field: "name" } },
     }), { status: 400 })));
-    const client = new (await import("../src/folder/folder_project_identity_host_client.js"))
-      .FolderProjectIdentityHostClient({ orch, logger });
+    const client = new FolderService({ orch, logger });
 
-    await expect(client.create({
+    await expect(client.createFolder({
+      actorKind: "system",
+      actorSessionId: null,
       name: "",
       sortOrder: 0,
       parentFolderId: null,
       idempotencyKey: "idem-1",
     })).rejects.toMatchObject({
-      message: "folder project identity host create failed: invalid folder",
+      message: "folder host create_folder failed: invalid folder",
     });
   });
 
@@ -253,11 +250,11 @@ describe("worker control-plane host clients", () => {
     });
   });
 
-  it("restores a task version conflict returned by the host", async () => {
+  it("restores a folder version conflict returned by the host", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       detail: {
         error: {
-          code: "TASK_VERSION_CONFLICT",
+          code: "FOLDER_VERSION_CONFLICT",
           message: "stale item",
           details: {
             targetKind: "item",
@@ -268,14 +265,15 @@ describe("worker control-plane host clients", () => {
         },
       },
     }), { status: 409, headers: { "content-type": "application/json" } })));
-    const service = new TaskService({ orch, logger });
+    const service = new FolderService({ orch, logger });
 
-    await expect(service.setItemStatus({
+    await expect(service.setChecklistItemStatus({
       actorSessionId: "session-1",
+      folderId: "folder-1",
       itemId: "item-1",
       expectedVersion: 2,
       status: "completed",
-    })).rejects.toBeInstanceOf(TaskVersionConflict);
+    })).rejects.toBeInstanceOf(FolderVersionConflict);
   });
 
   it("uses the folder host for session assignment", async () => {
@@ -290,6 +288,24 @@ describe("worker control-plane host clients", () => {
       session_id: "session-1",
       folder_id: "folder-1",
     });
+  });
+
+  it("reads a folder header from the canonical folder snapshot host operation", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      folder: {
+        id: "folder-1", name: "Work", checklistEnabled: true, status: "open",
+        version: 4, settings: { folderPrompt: "Guide" }, parentFolderId: null,
+      },
+      sections: [], items: [],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FolderHostClient({ orch, logger });
+
+    await expect(client.getFolderById("folder-1")).resolves.toMatchObject({
+      id: "folder-1", name: "Work", checklist_enabled: true,
+      settings: { folderPrompt: "Guide" }, parent_folder_id: null,
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/get_folder");
   });
 
   it("serializes background terminalize and its delivery identity in one request", async () => {

@@ -2,44 +2,21 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
-
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
-import { registerContainerBrowseTools } from "./container_browse.js";
-
-const boardContainerSchema = z.object({
-  kind: boardContainerKindInputSchema,
-  id: z.string().min(1),
-});
+import { registerFolderSearchTools, serializeFolderItem } from "./folder_browse.js";
 
 export function registerCatalogTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
-  registerContainerBrowseTools(server, runtime);
+  registerFolderSearchTools(server, runtime);
   server.registerTool(
     "list_folders",
     { description: "전체 폴더 목록.", inputSchema: {} },
     async () => {
       const folders = await runtime.catalogService.listFolders();
       return jsonResult({ folders });
-    },
-  );
-
-  server.registerTool(
-    "list_child_folders",
-    {
-      description: "특정 폴더의 직접 자식 폴더만 조회.",
-      inputSchema: {
-        folder_id: z.string().nullable().optional(),
-      },
-    },
-    async ({ folder_id }) => {
-      const folders = await runtime.catalogService.listChildFolders(
-        folder_id ?? null,
-      );
-      return jsonResult({ folder_id: folder_id ?? null, folders });
     },
   );
 
@@ -52,14 +29,20 @@ export function registerCatalogTools(
         folder_id: z.string().min(1),
         session_cursor: z.number().int().min(0).default(0),
         session_limit: z.number().int().min(1).max(100).default(20),
+        cursor: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(100).default(20),
+        include_archived: z.boolean().default(false),
       },
     },
-    async ({ folder_id, session_cursor, session_limit }) => {
+    async ({ folder_id, session_cursor, session_limit, cursor, limit, include_archived }) => {
       try {
         const result = await runtime.catalogService.browseFolder({
           folderId: folder_id,
           sessionCursor: session_cursor ?? 0,
           sessionLimit: session_limit ?? 20,
+          cursor,
+          limit,
+          includeArchived: include_archived,
         });
         return jsonResult({
           folder_id,
@@ -68,44 +51,10 @@ export function registerCatalogTools(
           sessions: result.sessions,
           sessions_page: result.sessionsPage,
           board_items: result.boardItems,
+          items: result.items.map((item) => serializeFolderItem(item, runtime)),
+          items_page: result.itemsPage,
           counts: result.counts,
         });
-      } catch (err) {
-        return errorResult(err instanceof Error ? err.message : String(err));
-      }
-    },
-  );
-
-  server.registerTool(
-    "create_folder",
-    {
-      description: "새 폴더 생성.",
-      inputSchema: {
-        name: z.string().min(1),
-        sort_order: z.number().int().default(0),
-        parent_folder_id: z.string().nullable().optional(),
-      },
-    },
-    async ({ name, sort_order, parent_folder_id }) => {
-      const folder = await runtime.catalogService.createFolder(
-        name,
-        sort_order ?? 0,
-        parent_folder_id ?? null,
-      );
-      return jsonResult(folder);
-    },
-  );
-
-  server.registerTool(
-    "rename_folder",
-    {
-      description: "폴더 이름 변경.",
-      inputSchema: { folder_id: z.string(), name: z.string().min(1) },
-    },
-    async ({ folder_id, name }) => {
-      try {
-        await runtime.catalogService.renameFolder(folder_id, name);
-        return jsonResult({ ok: true });
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));
       }
@@ -193,29 +142,26 @@ export function registerCatalogTools(
   );
 
   server.registerTool(
-    "move_board_item_to_container",
+    "move_board_item_to_folder",
     {
       description:
-        "기존 보드 항목을 폴더 보드와 업무 보드 사이에서 이동한다. 세션/마크다운/애셋/커스텀뷰와 폴더 간 업무(task) primary 항목이 대상.",
+        "기존 보드 항목을 다른 폴더로 이동한다.",
       inputSchema: {
         board_item_id: z.string().min(1),
-        container: boardContainerSchema,
+        folder_id: z.string().min(1),
         x: z.number().optional(),
         y: z.number().optional(),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ board_item_id, container, x, y, idempotency_key }) => {
+    async ({ board_item_id, folder_id, x, y, idempotency_key }) => {
       try {
         if ((x === undefined) !== (y === undefined)) {
           return errorResult("x and y must be supplied together");
         }
-        const result = await runtime.catalogService.moveBoardItemToContainer({
+        const result = await runtime.catalogService.moveBoardItemToFolder({
           boardItemId: board_item_id,
-          target: {
-            containerKind: container.kind,
-            containerId: container.id,
-          },
+          folderId: folder_id,
           ...(x !== undefined && y !== undefined ? { position: { x, y } } : {}),
           idempotencyKey: idempotency_key,
         });
@@ -236,33 +182,17 @@ export function registerCatalogTools(
     {
       description: "현재 보드 폴더에 마크다운 문서와 보드 카드를 생성.",
       inputSchema: {
-        folder_id: z.string().min(1).optional(),
-        container: boardContainerSchema.optional(),
+        folder_id: z.string().min(1),
         title: z.string().min(1),
         body: z.string().default(""),
         x: z.number().optional(),
         y: z.number().optional(),
       },
     },
-    async ({ folder_id, container, title, body, x, y }) => {
+    async ({ folder_id, title, body, x, y }) => {
       try {
-        const resolvedFolderId = folder_id
-          ?? (container?.kind === "folder"
-            ? container.id
-            : (container
-                ? (await runtime.db.resolveBoardYjsContainerScope({
-                    containerKind: container.kind,
-                    containerId: container.id,
-                  }))?.folderId
-                : undefined));
-        if (!resolvedFolderId) {
-          return errorResult("folder_id or resolvable container is required");
-        }
         const result = await runtime.catalogService.createMarkdownDocument({
-          folderId: resolvedFolderId,
-          ...(container
-            ? { container: { containerKind: container.kind, containerId: container.id } }
-            : {}),
+          folderId: folder_id,
           title,
           body: body ?? "",
           x,

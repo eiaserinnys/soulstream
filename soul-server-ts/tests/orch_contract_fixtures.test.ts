@@ -66,9 +66,7 @@ describe("orch contract fixtures", () => {
     expect(order.get("/api/sessions/{session_id}/events/viewport")).toBeLessThan(
       order.get("/api/sessions/{session_id}/events") ?? Number.POSITIVE_INFINITY,
     );
-    expect(order.get("/api/tasks/my-turn")).toBeLessThan(
-      order.get("/api/tasks/{task_id}") ?? Number.POSITIVE_INFINITY,
-    );
+    expect(fixture.routes.some((route) => route.path.startsWith("/api/tasks"))).toBe(false);
   });
 
   it("keeps upstream respond and subscribe_events wire semantics explicit", () => {

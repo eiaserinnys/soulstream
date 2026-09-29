@@ -197,6 +197,9 @@ describe("SessionDB folder ops (B-5)", () => {
         parent_folder_id: null,
         project_page_id: "page-f1",
         archived: false,
+        checklist_enabled: false,
+        status: "open",
+        version: 1,
         created_at: createdAt,
       },
       {
@@ -207,6 +210,9 @@ describe("SessionDB folder ops (B-5)", () => {
         parent_folder_id: "f1",
         project_page_id: null,
         archived: false,
+        checklist_enabled: false,
+        status: "open",
+        version: 1,
       },
     ];
     const sessionRows = [
@@ -216,8 +222,8 @@ describe("SessionDB folder ops (B-5)", () => {
     const cachedBoardItems = [{
       id: "session:s1",
       folderId: "f1",
-      containerKind: "folder",
-      containerId: "f1",
+      membershipKind: "primary",
+      sourceChecklistItemId: null,
       itemType: "session",
       itemId: "s1",
       x: 0,
@@ -231,7 +237,7 @@ describe("SessionDB folder ops (B-5)", () => {
       if (text.includes("folder_get_all")) return folderRows;
       if (text.includes("catalog_get_sessions")) return sessionRows;
       if (text.includes("FROM board_yjs_catalog_cache")) {
-        return [{ container_id: "f1", board_items: cachedBoardItems }];
+        return [{ folder_id: "f1", board_items: cachedBoardItems }];
       }
       if (text.includes("board_yjs_documents") || text.includes("board_yjs_updates")) {
         throw new Error("catalog must not decode or compact Yjs documents");
@@ -256,6 +262,10 @@ describe("SessionDB folder ops (B-5)", () => {
         settings: { excludeFromFeed: true },
         parentFolderId: null,
         projectPageId: "page-f1",
+        archived: false,
+        checklistEnabled: false,
+        status: "open",
+        version: 1,
         createdAt: "2026-06-03T00:00:00.000Z",
       },
       {
@@ -265,6 +275,10 @@ describe("SessionDB folder ops (B-5)", () => {
         settings: {},
         parentFolderId: "f1",
         projectPageId: null,
+        archived: false,
+        checklistEnabled: false,
+        status: "open",
+        version: 1,
       },  // null settings → 빈 객체로 정규화
     ]);
     expect(catalog.sessions).toEqual({
@@ -275,10 +289,8 @@ describe("SessionDB folder ops (B-5)", () => {
       {
         id: "session:s1",
         folderId: "f1",
-        containerKind: "folder",
-        containerId: "f1",
         membershipKind: "primary",
-        sourceTaskItemId: null,
+        sourceChecklistItemId: null,
         itemType: "session",
         itemId: "s1",
         x: 0,
@@ -448,6 +460,9 @@ describe("SessionDB session-data host delegation", () => {
         parent_folder_id: null,
         project_page_id: "page-f1",
         archived: false,
+        checklist_enabled: false,
+        status: "open",
+        version: 1,
       },
       {
         id: "f2",
@@ -457,6 +472,9 @@ describe("SessionDB session-data host delegation", () => {
         parent_folder_id: "f1",
         project_page_id: null,
         archived: false,
+        checklist_enabled: false,
+        status: "open",
+        version: 1,
       },
     ]);
     const folders = await createFolderHostedDb(sql).getAllFolders();
@@ -468,6 +486,10 @@ describe("SessionDB session-data host delegation", () => {
         settings: { x: 1 },
         parent_folder_id: null,
         project_page_id: "page-f1",
+        archived: false,
+        checklist_enabled: false,
+        status: "open",
+        version: 1,
       },
       {
         id: "f2",
@@ -476,18 +498,12 @@ describe("SessionDB session-data host delegation", () => {
         settings: {},
         parent_folder_id: "f1",
         project_page_id: null,
+        archived: false,
+        checklist_enabled: false,
+        status: "open",
+        version: 1,
       },
     ]);
-  });
-
-  it("updateFolder parent_folder_id=null → 루트 승격을 stored proc에 null로 전달", async () => {
-    const { sql, calls } = createMockSql();
-    const db = createFolderHostedDb(sql);
-
-    await db.updateFolder("child", ["parent_folder_id"], [null]);
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].values).toEqual(["child", ["parent_folder_id"], [null]]);
   });
 
 });
@@ -519,38 +535,23 @@ describe("session_delete SQL", () => {
 });
 
 describe("board_seed_items SQL", () => {
-  it("limits cleanup and insertion to the requested board container", () => {
+  it("limits cleanup and insertion to the requested folder", () => {
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
-    const migration = readFileSync(
-      new URL("../../../packages/db-schema/sql/migrations/059_scope_board_seed_items.sql", import.meta.url),
-      "utf8",
-    );
-
-    for (const sql of [schema, migration]) {
-      const start = sql.indexOf(
-        "CREATE OR REPLACE FUNCTION board_seed_items(p_container_kind TEXT, p_container_id TEXT)",
-      );
-      const end = sql.indexOf("$$;", start);
-      expect(start).toBeGreaterThanOrEqual(0);
-      expect(end).toBeGreaterThan(start);
-      const body = sql.slice(start, end);
-      expect(body).toContain("pg_advisory_xact_lock");
-      expect(body).toContain("hashtext('soulstream:board_items')::bigint");
-      expect(body.match(/bi\.container_kind = p_container_kind/g)).toHaveLength(5);
-      expect(body.match(/bi\.container_id = p_container_id/g)).toHaveLength(5);
-      expect(body).toContain("p_container_kind = 'folder'");
-      expect(body).toContain("s.folder_id = p_container_id");
-      expect(body).toContain("f.parent_folder_id = p_container_id");
-      expect(body).toContain("ON CONFLICT DO NOTHING");
-      expect(body).not.toContain("ON CONFLICT (id) DO NOTHING");
-      expect(body).toContain("existing_primary.item_type = 'session'");
-      expect(body).toContain("existing_primary.item_id = s.session_id");
-      expect(body).toContain("existing_primary.membership_kind = 'primary'");
-    }
-    expect(migration).toContain("DROP FUNCTION IF EXISTS board_seed_items()");
+    const start = schema.indexOf("CREATE OR REPLACE FUNCTION board_seed_items(p_folder_id TEXT)");
+    const end = schema.indexOf("$$;", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const body = schema.slice(start, end);
+    expect(body).toContain("pg_advisory_xact_lock");
+    expect(body).toContain("hashtext('soulstream:board_items')::bigint");
+    expect(body.match(/bi\.folder_id = p_folder_id/g)).toHaveLength(5);
+    expect(body).toContain("s.folder_id = p_folder_id");
+    expect(body).toContain("f.parent_folder_id = p_folder_id");
+    expect(body).toContain("ON CONFLICT DO NOTHING");
+    expect(body).toContain("existing_primary.membership_kind = 'primary'");
   });
 });
 

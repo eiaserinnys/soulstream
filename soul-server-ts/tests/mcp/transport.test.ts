@@ -224,8 +224,8 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
       expect.arrayContaining([
         "create_agent_session",
         "create_remote_agent_session",
-        "create_task",
-        "archive_task",
+        "create_folder",
+        "archive_folder",
         "batch_page_operations",
       ]),
     );

@@ -19,7 +19,7 @@ type CogitoSearchResult = {
   status: string | null;
   created_at: string | null;
   updated_at: string | null;
-  task_title: string | null;
+  folder_name: string | null;
   relevance?: number | null;
   best_match?: { excerpt?: string | null } | null;
   session_url: string | null;
@@ -105,7 +105,7 @@ export function registerSearchSessionsTool(
             status: result.status,
             created_at: result.created_at,
             updated_at: result.updated_at,
-            task_title: result.task_title,
+            folder_name: result.folder_name,
             relevance: result.relevance ?? null,
             excerpt: result.best_match?.excerpt ?? null,
             session_url: result.session_url,

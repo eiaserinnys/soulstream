@@ -181,7 +181,6 @@ function createInput() {
     node_id: "node-a",
     agent_id: "roselin",
     model_preset: null,
-    container: { kind: "folder", id: "folder-a" },
     folder_id: "folder-a",
     enabled: false,
   };

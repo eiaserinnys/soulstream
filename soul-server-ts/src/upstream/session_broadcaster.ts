@@ -107,25 +107,6 @@ export class SessionBroadcaster {
     });
   }
 
-  /**
-   * Task mutation 갱신 wire.
-   *
-   * SessionEventEnvelope 경로를 사용한다. 업무은 board item에 붙은 공유 상태지만,
-   * MCP mutation의 actor session을 envelope owner로 삼아 기존 orch subscribe_events
-   * 릴레이를 그대로 탄다.
-   */
-  async emitTaskUpdated(
-    agentSessionId: string,
-    taskId: string,
-    boardItemId: string,
-  ): Promise<void> {
-    await this.emitEventEnvelope(agentSessionId, {
-      type: "task_updated",
-      taskId,
-      boardItemId,
-    });
-  }
-
   async emitCustomViewUpdated(
     agentSessionId: string,
     customViewId: string,

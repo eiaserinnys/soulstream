@@ -3,18 +3,12 @@ import type { Logger } from "pino";
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type {
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
   CatalogBoardItemRow,
   CustomViewRow,
-  ListContainerItemsParams,
-  ListContainerItemsResult,
+  ListFolderItemsParams,
+  ListFolderItemsResult,
   MarkdownDocumentRow,
 } from "../db/session_db.js";
-import type {
-  ChecklistProjectionOutboxRow,
-  ChecklistTaskProjectionRepository,
-} from "../page/checklist_task_projection_repository.js";
 import {
   CustomViewRevisionConflictError,
   type CustomViewProjectionHost,
@@ -27,8 +21,7 @@ export interface BoardYjsHostClientConfig {
   logger: Logger;
 }
 
-export class BoardYjsHostClient
-  implements ChecklistTaskProjectionRepository, CustomViewProjectionHost {
+export class BoardYjsHostClient implements CustomViewProjectionHost {
   private readonly transport: PersistenceHostTransport;
 
   constructor(private readonly config: BoardYjsHostClientConfig) {
@@ -37,7 +30,6 @@ export class BoardYjsHostClient
 
   async createMarkdownDocument(input: {
     folderId: string;
-    container?: BoardYjsContainerRef;
     title: string;
     body: string;
     x: number;
@@ -49,11 +41,10 @@ export class BoardYjsHostClient
 
   async upsertSessionBoardItem(input: {
     folderId: string;
-    container: BoardYjsContainerRef;
     sessionId: string;
     x: number;
     y: number;
-    sourceTaskItemId?: string | null;
+    sourceChecklistItemId?: string | null;
   }): Promise<CatalogBoardItemRow> {
     return await this.request("upsert-session-board-item", input);
   }
@@ -65,21 +56,8 @@ export class BoardYjsHostClient
     return await this.request("move-session-to-folder", { sessionId, folderId });
   }
 
-  async upsertTaskBoardItem(input: {
-    folderId: string;
-    boardItemId: string;
-    taskId: string;
-    title: string;
-    x: number;
-    y: number;
-    metadata?: Record<string, unknown>;
-  }): Promise<CatalogBoardItemRow> {
-    return await this.request("upsert-task-board-item", input);
-  }
-
   async upsertCustomViewBoardItem(input: {
     folderId: string;
-    container: BoardYjsContainerRef;
     boardItemId: string;
     customViewId: string;
     title: string;
@@ -92,65 +70,51 @@ export class BoardYjsHostClient
     return await this.request("upsert-custom-view-board-item", input);
   }
 
-  async removeTaskBoardItem(folderId: string, boardItemId: string): Promise<void> {
-    await this.request("remove-task-board-item", { folderId, boardItemId });
-  }
-
-  async removeBoardItem(
-    container: string | BoardYjsContainerRef,
-    boardItemId: string,
-  ): Promise<void> {
-    await this.request("remove-board-item", {
-      container: normalizeContainer(container),
-      boardItemId,
-    });
+  async removeBoardItem(folderId: string, boardItemId: string): Promise<void> {
+    await this.request("remove-board-item", { folderId, boardItemId });
   }
 
   async updateBoardItemPosition(
-    container: string | BoardYjsContainerRef,
+    folderId: string,
     boardItemId: string,
     x: number,
     y: number,
   ): Promise<void> {
     await this.request("update-board-item-position", {
-      container: normalizeContainer(container),
+      folderId,
       boardItemId,
       x,
       y,
     });
   }
 
-  async moveBoardItemToContainer(input: {
+  async moveBoardItemToFolder(input: {
     boardItem: CatalogBoardItemRow;
-    targetScope: {
-      folderId: string;
-      containerKind: BoardYjsContainerRef["containerKind"];
-      containerId: string;
-    };
+    targetFolderId: string;
     position?: { x: number; y: number };
     idempotencyKey: string;
   }): Promise<CatalogBoardItemRow> {
-    return await this.request("move-board-item-to-container", input);
+    return await this.request("move-board-item-to-folder", input);
   }
 
   async updateMarkdownDocument(
-    container: string | BoardYjsContainerRef,
+    folderId: string,
     documentId: string,
     fields: { title?: string; body?: string; expectedVersion: number },
   ): Promise<MarkdownDocumentRow | null> {
     return await this.request("update-markdown-document", {
-      container: normalizeContainer(container),
+      folderId,
       documentId,
       fields,
     });
   }
 
   async deleteMarkdownDocument(
-    container: string | BoardYjsContainerRef,
+    folderId: string,
     documentId: string,
   ): Promise<void> {
     await this.request("delete-markdown-document", {
-      container: normalizeContainer(container),
+      folderId,
       documentId,
     });
   }
@@ -159,11 +123,8 @@ export class BoardYjsHostClient
     return await this.request("get-board-items", {});
   }
 
-  async getBoardItemsByContainer(
-    folderId: string,
-    container: BoardYjsContainerRef,
-  ): Promise<CatalogBoardItemRow[]> {
-    return await this.request("get-board-items-by-container", { folderId, container });
+  async getBoardItemsByFolder(folderId: string): Promise<CatalogBoardItemRow[]> {
+    return await this.request("get-board-items-by-folder", { folderId });
   }
 
   async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {
@@ -186,18 +147,10 @@ export class BoardYjsHostClient
     return await this.request("get-board-item-ids-for-session", { sessionId });
   }
 
-  async listContainerItems(
-    params: ListContainerItemsParams,
-  ): Promise<ListContainerItemsResult> {
-    return await this.request("list-container-items", params);
-  }
-
-  async resolveBoardYjsContainerScope(
-    container: string | BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope | null> {
-    return await this.request("resolve-board-yjs-container-scope", {
-      container: normalizeContainer(container),
-    });
+  async listFolderItems(
+    params: ListFolderItemsParams,
+  ): Promise<ListFolderItemsResult> {
+    return await this.request("list-folder-items", params);
   }
 
   async getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
@@ -209,7 +162,7 @@ export class BoardYjsHostClient
   }
 
   async listCustomViews(params: {
-    container: BoardYjsContainerRef;
+    folderId: string;
     includeArchived?: boolean;
     limit?: number;
   }): Promise<CustomViewWithBoardItem[]> {
@@ -254,45 +207,6 @@ export class BoardYjsHostClient
     }
   }
 
-  async claimDue(
-    nodeId: string,
-    limit = 20,
-    leaseMs = 30_000,
-  ): Promise<ChecklistProjectionOutboxRow[]> {
-    return await this.request("claim-checklist-task-projections", {
-      nodeId,
-      limit,
-      leaseMs,
-    });
-  }
-
-  async markSuccess(
-    row: ChecklistProjectionOutboxRow,
-    nodeId: string,
-  ): Promise<boolean> {
-    return await this.request("mark-checklist-task-projection-success", { row, nodeId });
-  }
-
-  async markFailure(
-    row: ChecklistProjectionOutboxRow,
-    nodeId: string,
-    error: string,
-  ): Promise<void> {
-    await this.request("mark-checklist-task-projection-failure", { row, nodeId, error });
-  }
-
-  async markDeadLetter(
-    row: ChecklistProjectionOutboxRow,
-    nodeId: string,
-    error: string,
-  ): Promise<boolean> {
-    return await this.request("mark-checklist-task-projection-dead-letter", {
-      row,
-      nodeId,
-      error,
-    });
-  }
-
   private async request<T>(operation: string, body: unknown): Promise<T> {
     const response = await this.transport.send(
       "POST",
@@ -314,13 +228,6 @@ export class BoardYjsHostClient
     }
     return await response.json() as T;
   }
-}
-
-function normalizeContainer(container: string | BoardYjsContainerRef): BoardYjsContainerRef {
-  if (typeof container === "string") {
-    return { containerKind: "folder", containerId: container };
-  }
-  return container;
 }
 
 class BoardYjsHostClientError extends Error {

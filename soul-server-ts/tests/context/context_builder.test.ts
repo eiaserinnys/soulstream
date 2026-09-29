@@ -298,6 +298,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       const getFolderById = vi.fn().mockResolvedValue({
         id: "folder-1",
         name: "Legacy Folder",
+        checklist_enabled: true,
         sort_order: 0,
         settings: {
           folderPrompt: "legacy folder prompt",
@@ -337,10 +338,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
         id: "session:sess-1",
         folderId: "folder-1",
-        containerKind: "task",
-        containerId: "rb-1",
         membershipKind: "primary",
-        sourceTaskItemId: "item-1",
+        sourceChecklistItemId: "item-1",
         itemType: "session",
         itemId: "sess-1",
         x: 0,
@@ -372,7 +371,6 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
           getCatalog,
           listRunningSessionsSummary,
           getPrimarySessionBoardItem,
-          tasks: () => ({ getTask: async () => ({ title: "Task" }) }),
         } as unknown as Partial<SessionDB>,
         new AgentRegistry([agent]),
         true,
@@ -392,8 +390,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       expect(keys).toContain("cogito_context");
       expect(keys).toContain("board_workspace");
       expect(keys).toContain("atom_context");
-      expect(sessionContent.container).toEqual({ kind: "task", id: "rb-1", title: "Task" });
-      expect(sessionContent.task_guidance).toContain("rb-1(Task)");
+      expect(sessionContent.folder).toEqual({ id: "folder-1", title: "Legacy Folder", checklist_enabled: true });
+      expect(sessionContent.folder_guidance).toContain("get_folder");
       expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
         String(url).includes("/api/tree/"))).toHaveLength(2);
     } finally {
@@ -645,67 +643,55 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     expect(content.caller_info).toEqual({ source: "slack", display_name: "Alice" });
   });
 
-  it("task primary board item → soulstream_session에 container와 실행 안내를 주입", async () => {
+  it("checklist-enabled folder → soulstream_session에 folder와 안내를 주입", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "업무 폴더",
+      checklist_enabled: true,
       sort_order: 0,
       settings: {},
     });
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
       id: "session:sess-1",
       folderId: "folder-a",
-      containerKind: "task",
-      containerId: "rb-1",
       membershipKind: "primary",
-      sourceTaskItemId: "rb-item-13",
+      sourceChecklistItemId: "rb-item-13",
       itemType: "session",
       itemId: "sess-1",
       x: 0,
       y: 0,
       metadata: {},
     });
-    const getTask = vi.fn().mockResolvedValue({ id: "rb-1", title: "PR-12 업무" });
     const cb = makeBuilder({
       getSession,
       getFolderById,
       getPrimarySessionBoardItem,
-      tasks: () => ({ getTask }),
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toBe("업무 폴더");
-    expect(content.container).toEqual({
-      kind: "task",
-      id: "rb-1",
-      title: "PR-12 업무",
-    });
-    expect(content.source_task_item_id).toBe("rb-item-13");
-    expect(content.task_guidance).toBe(
-      "이 세션은 업무 rb-1(PR-12 업무) 소속. get_task으로 체크리스트를 확인하고, 산출물·후속 세션은 이 업무 컨테이너에 연결한다.",
-    );
+    expect(content.folder).toEqual({ id: "folder-a", title: "업무 폴더", checklist_enabled: true });
+    expect(content.source_checklist_item_id).toBe("rb-item-13");
+    expect(content.folder_guidance).toContain("get_folder");
     expect(getPrimarySessionBoardItem).toHaveBeenCalledWith("sess-1");
-    expect(getTask).toHaveBeenCalledWith("rb-1");
   });
 
-  it("folder primary board item → container만 주입하고 task 안내는 추가하지 않는다", async () => {
+  it("체크리스트가 꺼진 폴더는 안내를 주입하지 않는다", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "일반 폴더",
+      checklist_enabled: false,
       sort_order: 0,
       settings: {},
     });
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
       id: "session:sess-1",
       folderId: "folder-a",
-      containerKind: "folder",
-      containerId: "folder-a",
       membershipKind: "primary",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
       itemType: "session",
       itemId: "sess-1",
       x: 0,
@@ -721,14 +707,9 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toBe("일반 폴더");
-    expect(content.container).toEqual({
-      kind: "folder",
-      id: "folder-a",
-      title: "일반 폴더",
-    });
-    expect(content).not.toHaveProperty("source_task_item_id");
-    expect(content).not.toHaveProperty("task_guidance");
+    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
+    expect(content).not.toHaveProperty("source_checklist_item_id");
+    expect(content).not.toHaveProperty("folder_guidance");
   });
 
   it("primary board item 없음 → 기존 soulstream_session 형태로 폴백", async () => {
@@ -736,6 +717,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "일반 폴더",
+      checklist_enabled: false,
       sort_order: 0,
       settings: {},
     });
@@ -749,10 +731,9 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toBe("일반 폴더");
-    expect(content).not.toHaveProperty("container");
-    expect(content).not.toHaveProperty("source_task_item_id");
-    expect(content).not.toHaveProperty("task_guidance");
+    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
+    expect(content).not.toHaveProperty("source_checklist_item_id");
+    expect(content).not.toHaveProperty("folder_guidance");
   });
 
   it("primary board item 조회 실패 → 세션 기동을 막지 않고 기존 형태로 폴백", async () => {
@@ -760,6 +741,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "일반 폴더",
+      checklist_enabled: false,
       sort_order: 0,
       settings: {},
     });
@@ -773,9 +755,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toBe("일반 폴더");
-    expect(content).not.toHaveProperty("container");
-    expect(content).not.toHaveProperty("task_guidance");
+    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
+    expect(content).not.toHaveProperty("folder_guidance");
   });
 
   it("getSession throw → graceful, folder 없는 흐름과 동일", async () => {
@@ -835,15 +816,13 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     ]);
   });
 
-  it("evaluates agent applies_when from caller, worker node, primary container, and base agent id", async () => {
+  it("evaluates agent applies_when from caller, worker node, folder, and base agent id", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ markdown: "# matched agent context" }), { status: 200 }),
     );
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
       itemType: "session",
       membershipKind: "primary",
-      containerKind: "task",
-      containerId: "task-a",
       folderId: "folder-a",
       metadata: { title: "업무 A" },
     });
@@ -857,7 +836,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
           applies_when: {
             source: ["agent"],
             node_id: ["node-A"],
-            container_kind: ["runbook"],
+            folder_id: ["folder-a"],
             agent: ["codex-default"],
           },
         },
@@ -870,7 +849,11 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
       ],
     };
     const cb = makeBuilder(
-      { getPrimarySessionBoardItem } as Partial<SessionDB>,
+      {
+        getSession: vi.fn().mockResolvedValue({ folder_id: "folder-a" }),
+        getFolderById: vi.fn().mockResolvedValue({ id: "folder-a", name: "업무 A", checklist_enabled: true, settings: {} }),
+        getPrimarySessionBoardItem,
+      } as Partial<SessionDB>,
       new AgentRegistry([agent]),
       true,
     );

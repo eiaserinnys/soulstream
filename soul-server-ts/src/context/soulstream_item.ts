@@ -1,6 +1,5 @@
 /**
- * soulstream 세션 메타데이터 context_item 생성기 — Python `service/context_builder.py
- * build_soulstream_context_item` 정본 그대로 이식.
+ * soulstream 세션 메타데이터 context_item 생성기.
  *
  * codex 세션의 첫 turn prompt에 prepend되어 codex agent가 *자기 세션 정보·발신자 신원*을
  * 인지하도록 한다. caller_info 운반은 R-2 회로(dashboard owner Google portrait fallback) 차단
@@ -14,10 +13,10 @@ import type { CallerInfo } from "../task/task_models.js";
 
 import type { ContextItem } from "./prompt_assembler.js";
 
-export interface SoulstreamContainerContext {
-  kind: "folder" | "task";
+export interface SoulstreamFolderContext {
   id: string;
   title: string;
+  checklist_enabled: boolean;
 }
 
 export interface SoulstreamContextParams {
@@ -28,9 +27,9 @@ export interface SoulstreamContextParams {
   nodeId?: string;
   agentId?: string;
   callerInfo?: CallerInfo;
-  container?: SoulstreamContainerContext | null;
-  sourceTaskItemId?: string | null;
-  taskGuidance?: string | null;
+  folder?: SoulstreamFolderContext | null;
+  sourceChecklistItemId?: string | null;
+  folderGuidance?: string | null;
 }
 
 /**
@@ -55,10 +54,9 @@ function detectLocalIp(): string {
  *
  * dict content (key/value):
  *   - agent_session_id, claude_session_id(또는 "(new session)"), workspace_dir
- *   - folder(folder_name 또는 "(unassigned)")
- *   - container (primary board item container가 있으면)
- *   - source_task_item_id (task item에서 파생된 세션이면)
- *   - task_guidance (task container면 행동 안내)
+ *   - folder_name과 folder(id/title/checklist_enabled)
+ *   - source_checklist_item_id (체크리스트 항목에서 파생된 세션이면)
+ *   - folder_guidance (체크리스트가 켜진 폴더면 행동 안내)
  *   - hostname, ip_address, current_node_id
  *   - host_os, os_version, current_time (ISO)
  *   - agent_id (있을 때만)
@@ -71,7 +69,7 @@ export function buildSoulstreamContextItem(
     agent_session_id: params.agentSessionId,
     claude_session_id: params.claudeSessionId ?? "(new session)",
     workspace_dir: params.workspaceDir,
-    folder: params.folderName ?? "(unassigned)",
+    folder_name: params.folderName ?? "(unassigned)",
     hostname: hostname(),
     ip_address: detectLocalIp(),
     current_node_id: params.nodeId ?? "",
@@ -82,14 +80,14 @@ export function buildSoulstreamContextItem(
   if (params.agentId) {
     content.agent_id = params.agentId;
   }
-  if (params.container) {
-    content.container = params.container;
+  if (params.folder) {
+    content.folder = params.folder;
   }
-  if (params.sourceTaskItemId) {
-    content.source_task_item_id = params.sourceTaskItemId;
+  if (params.sourceChecklistItemId) {
+    content.source_checklist_item_id = params.sourceChecklistItemId;
   }
-  if (params.taskGuidance) {
-    content.task_guidance = params.taskGuidance;
+  if (params.folderGuidance) {
+    content.folder_guidance = params.folderGuidance;
   }
   if (params.callerInfo) {
     // R-2 회로 차단 정본 (PR #56 hydration callerInfo 복원과 짝).

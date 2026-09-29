@@ -19,8 +19,8 @@ import {
 } from "./compiler/index.js";
 import type { PreparedContext } from "./context_builder.js";
 import { formatContextItems, type ContextItem } from "./prompt_assembler.js";
-import type { PrimarySessionContainerContext } from "./session_container_context.js";
-import { resolvePrimarySessionContainerContext } from "./session_container_context.js";
+import type { PrimarySessionFolderContext } from "./session_folder_context.js";
+import { resolvePrimarySessionFolderContext } from "./session_folder_context.js";
 
 export interface FolderChainEntry {
   id: string;
@@ -158,7 +158,7 @@ export function buildContextFilterParameters(
     task: Task;
     agent: AgentProfile;
     nodeId: string;
-    primaryContainer: PrimarySessionContainerContext | null;
+    primaryFolder: PrimarySessionFolderContext | null;
   },
   osType = getOsType(),
 ): ContextFilterParameters {
@@ -166,7 +166,7 @@ export function buildContextFilterParameters(
   return {
     ...(typeof source === "string" && source.length > 0 ? { source } : {}),
     node_id: args.nodeId,
-    ...(args.primaryContainer ? { container_kind: args.primaryContainer.container.kind } : {}),
+    ...(args.primaryFolder ? { folder_id: args.primaryFolder.folder.id } : {}),
     agent: args.agent.id,
     backend: effectiveTaskBackend(args.task, args.agent),
     os: hostOsConditionValue(osType),
@@ -179,20 +179,20 @@ export async function resolveContextFilterContext(args: {
   task: Task;
   agent: AgentProfile;
   nodeId: string;
-  folderName?: string;
+  folderId?: string;
 }): Promise<{
-  primaryContainer: PrimarySessionContainerContext | null;
+  primaryFolder: PrimarySessionFolderContext | null;
   filterParameters: ContextFilterParameters;
 }> {
-  const primaryContainer = await resolvePrimarySessionContainerContext(
+  const primaryFolder = await resolvePrimarySessionFolderContext(
     args.db,
     args.logger,
     args.task.agentSessionId,
-    args.folderName,
+    args.folderId,
   );
   return {
-    primaryContainer,
-    filterParameters: buildContextFilterParameters({ ...args, primaryContainer }),
+    primaryFolder,
+    filterParameters: buildContextFilterParameters({ ...args, primaryFolder }),
   };
 }
 

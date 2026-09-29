@@ -30,7 +30,7 @@ type ContextCompilerLogger = Pick<Logger, "warn">;
 export type ContextFilterField =
   | "source"
   | "node_id"
-  | "container_kind"
+  | "folder_id"
   | "agent"
   | "backend"
   | "os";
@@ -132,7 +132,7 @@ function resolveContextSources(specs: readonly AtomContextSpec[]): ContextSource
 const CONTEXT_FILTER_FIELDS = new Set<ContextFilterField>([
   "source",
   "node_id",
-  "container_kind",
+  "folder_id",
   "agent",
   "backend",
   "os",
@@ -140,7 +140,6 @@ const CONTEXT_FILTER_FIELDS = new Set<ContextFilterField>([
 
 const KNOWN_CALLER_SOURCES = new Set<string>(CALLER_INFO_SOURCES);
 
-const KNOWN_CONTAINER_KINDS = new Set(["folder", "task", "runbook"]);
 const KNOWN_OS_VALUES = new Set(["windows", "linux", "darwin"]);
 const IDENTIFIER_VALUE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 
@@ -182,7 +181,7 @@ function sourceMatches(
     const values = recognizedConditionValues(field, rawValues, source, logger);
     if (values === undefined) continue;
     const actual = parameters[field];
-    if (actual === undefined || !values.some((value) => conditionValueMatches(field, value, actual))) {
+    if (actual === undefined || !values.includes(actual)) {
       return false;
     }
   }
@@ -216,7 +215,6 @@ function recognizedConditionValues(
 function isKnownConditionValue(field: ContextFilterField, value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0) return false;
   if (field === "source") return KNOWN_CALLER_SOURCES.has(value);
-  if (field === "container_kind") return KNOWN_CONTAINER_KINDS.has(value);
   if (field === "backend") return AgentBackendSchema.safeParse(value).success;
   if (field === "os") return KNOWN_OS_VALUES.has(value);
   return IDENTIFIER_VALUE.test(value);
@@ -232,19 +230,6 @@ function warnUnknownConditionValue(
     { field, value, nodeId: source.nodeId },
     "[context compiler] unknown applies_when value — ignoring condition",
   );
-}
-
-function conditionValueMatches(
-  field: ContextFilterField,
-  desired: string,
-  actual: string,
-): boolean {
-  if (field !== "container_kind") return desired === actual;
-  return canonicalContainerKind(desired) === canonicalContainerKind(actual);
-}
-
-function canonicalContainerKind(value: string): string {
-  return value === "runbook" ? "task" : value;
 }
 
 async function renderContextSources(

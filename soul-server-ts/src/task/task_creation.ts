@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
+import type { SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
@@ -31,7 +31,7 @@ import {
 import { initialSessionReview } from "./session_review.js";
 import {
   sessionBoardItemPosition,
-} from "./task_session_position.js";
+} from "./session_board_position.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
 import type { AgentProfile } from "../agent_registry.js";
 import { toStoredReasoningEffort } from "./session_effort_storage.js";
@@ -67,8 +67,7 @@ export interface CreateTaskParams {
   /** 요청별 Claude Agent SDK permission mode override. */
   claudePermissionMode?: ClaudePermissionMode;
   folderId?: string | null;
-  container?: BoardYjsContainerRef | null;
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
   /** Optional centrally owned worktree used as the only execution cwd. */
   worktreeId?: string;
   /** MCP/upstream caller that owns the worktree. Required with worktreeId. */
@@ -131,10 +130,6 @@ export class TaskCreation {
   }
 
   private async createTaskOnce(params: CreateTaskParams): Promise<Task> {
-    if (params.container?.containerKind === "task" && !this.deps.boardYjsService) {
-      throw new Error("Board Yjs service is required for task session placement");
-    }
-
     const now = new Date();
     const sessionType = params.sessionType ?? "claude";
     const review = initialSessionReview(params.callerInfo);
@@ -219,7 +214,7 @@ export class TaskCreation {
     const registeredReview = await registerTaskSession(this.deps.sessionMutations, registration, {
       worktreeId: task.worktreeId,
       actorSessionId: params.worktreeActorSessionId,
-      ownerTaskId: params.container?.containerKind === "task" ? params.container.containerId : null,
+      ownerFolderId: params.folderId ?? null,
     });
     if (registeredReview !== undefined) {
       task.reviewRequired = registeredReview.reviewRequired;
@@ -328,8 +323,7 @@ export class TaskCreation {
       task.agentSessionId,
       sessionType,
       params.folderId ?? null,
-      params.container ?? null,
-      params.sourceTaskItemId ?? null,
+      params.sourceChecklistItemId ?? null,
     );
     try {
       await creationHook.afterLegacyProjection?.({
@@ -376,56 +370,35 @@ export class TaskCreation {
     sessionId: string,
     sessionType: string,
     folderId: string | null,
-    container: BoardYjsContainerRef | null,
-    sourceTaskItemId: string | null,
+    sourceChecklistItemId: string | null,
   ): Promise<{ assignedFolderId: string | null; completed: boolean }> {
     let assigned: string | null = null;
-    let target: {
-      folderId: string;
-      container: BoardYjsContainerRef;
-    } | null = null;
+    let targetFolderId: string | null = null;
     let completed = true;
     try {
-      if (container?.containerKind === "task") {
-        const scope = await this.deps.db.resolveBoardYjsContainerScope(container);
-        if (!scope) {
-          throw new Error(`board container not found: ${container.containerKind}:${container.containerId}`);
-        }
-        target = { folderId: scope.folderId, container };
-      } else if (folderId !== null) {
-        target = {
-          folderId,
-          container: { containerKind: "folder", containerId: folderId },
-        };
+      if (folderId !== null) {
+        targetFolderId = folderId;
       } else {
         const defaultFolderId = defaultFolderIdForSessionType(sessionType);
         const folder = await this.deps.db.getFolderById(defaultFolderId);
         if (folder) {
-          target = {
-            folderId: folder.id,
-            container: { containerKind: "folder", containerId: folder.id },
-          };
+          targetFolderId = folder.id;
         }
       }
-      if (target) {
+      if (targetFolderId) {
         if (!this.deps.boardYjsService) {
           throw new Error("Board Yjs service is required for session placement");
         }
-        const boardItems = await this.deps.db.getBoardItemsByContainer(
-          target.folderId,
-          target.container,
-        );
+        const boardItems = await this.deps.db.getBoardItemsByFolder(targetFolderId);
         const [x, y] = sessionBoardItemPosition(boardItems, sessionId);
         await this.deps.boardYjsService.upsertSessionBoardItem({
-          folderId: target.folderId,
-          container: target.container,
+          folderId: targetFolderId,
           sessionId,
-          sourceTaskItemId:
-            target.container.containerKind === "task" ? sourceTaskItemId : null,
+          sourceChecklistItemId,
           x,
           y,
         });
-        assigned = target.folderId;
+        assigned = targetFolderId;
       }
     } catch (err) {
       completed = false;
@@ -435,16 +408,10 @@ export class TaskCreation {
           sessionId,
           requestedFolderId: folderId,
           assignedFolderId: assigned,
-          targetFolderId: target?.folderId ?? null,
-          targetContainer: target
-            ? {
-                containerKind: target.container.containerKind,
-                containerId: target.container.containerId,
-              }
-            : null,
-          sourceTaskItemId,
+          targetFolderId,
+          sourceChecklistItemId,
         },
-        "session folder assignment or board container enrollment failed; atomic placement was not applied",
+        "session folder assignment or board item enrollment failed; atomic placement was not applied",
       );
     }
 

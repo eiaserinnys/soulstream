@@ -1,42 +1,39 @@
 import type {
   BoardItemType,
-  BoardYjsContainerRef,
   CatalogBoardItemRow,
   FolderRow,
-  ListContainerItemsParams,
-  ListContainerItemsResult,
-  TaskRow,
+  ListFolderItemsParams,
+  ListFolderItemsResult,
   SessionDB,
 } from "../db/session_db.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_BROWSE_LIMIT = 100;
 const MAX_SEARCH_LIMIT = 50;
-export const CONTAINER_SEARCH_SCAN_LIMIT = 2_000;
+export const FOLDER_SEARCH_SCAN_LIMIT = 2_000;
 const SESSION_PREVIEW_LIMIT = 120;
 const MARKDOWN_PREVIEW_LIMIT = 240;
-const LEGACY_BOARD_ITEM_LIMIT = 10_000;
+const BOARD_ITEM_LIMIT = 10_000;
 
-export interface ContainerBrowseStore {
+export interface FolderBrowseStore {
   getFolderById(folderId: string): Promise<FolderRow | null>;
-  getTaskById(taskId: string): Promise<TaskRow | null>;
-  listContainerItems(params: ListContainerItemsParams): Promise<ListContainerItemsResult>;
+  listFolderItems(params: ListFolderItemsParams): Promise<ListFolderItemsResult>;
 }
 
-export interface ContainerBrowsePage {
+export interface FolderBrowsePage {
   cursor: number;
   limit: number;
   total: number;
   nextCursor: number | null;
 }
 
-interface BaseContainerItem {
+interface BaseFolderItem {
   boardItemId: string;
   archived: boolean;
   updatedAt: string | null;
 }
 
-export interface ContainerSessionItem extends BaseContainerItem {
+export interface FolderSessionItem extends BaseFolderItem {
   type: "session";
   agentSessionId: string;
   displayName: string;
@@ -53,36 +50,36 @@ export interface ContainerSessionItem extends BaseContainerItem {
   lastReadEventId: number | null;
 }
 
-export interface ContainerMarkdownItem extends BaseContainerItem {
+export interface FolderMarkdownItem extends BaseFolderItem {
   type: "markdown";
   id: string;
   title: string;
   preview: string;
 }
 
-export interface ContainerTitledItem extends BaseContainerItem {
+export interface FolderTitledItem extends BaseFolderItem {
   type: Exclude<BoardItemType, "session" | "markdown" | "frame">;
   id: string;
   title: string;
 }
 
-export interface ContainerFrameItem extends BaseContainerItem {
+export interface FolderFrameItem extends BaseFolderItem {
   type: "frame";
   id: string;
   title: string;
 }
 
-export type ContainerBrowseItem =
-  | ContainerSessionItem
-  | ContainerMarkdownItem
-  | ContainerTitledItem
-  | ContainerFrameItem;
+export type FolderBrowseItem =
+  | FolderSessionItem
+  | FolderMarkdownItem
+  | FolderTitledItem
+  | FolderFrameItem;
 
-export interface ContainerBrowseResult {
-  container: BoardYjsContainerRef;
-  items: ContainerBrowseItem[];
-  page: ContainerBrowsePage;
-  counts: ListContainerItemsResult["counts"];
+export interface FolderBrowseResult {
+  folderId: string;
+  items: FolderBrowseItem[];
+  page: FolderBrowsePage;
+  counts: ListFolderItemsResult["counts"];
   search?: {
     scanLimit: number;
     scannedItems: number;
@@ -90,18 +87,18 @@ export interface ContainerBrowseResult {
   };
 }
 
-export class ContainerBrowseService {
-  constructor(private readonly store: ContainerBrowseStore) {}
+export class FolderBrowseService {
+  constructor(private readonly store: FolderBrowseStore) {}
 
   async browse(params: {
-    container: BoardYjsContainerRef;
+    folderId: string;
     cursor?: number;
     limit?: number;
     includeArchived?: boolean;
-  }): Promise<ContainerBrowseResult> {
-    await this.assertContainer(params.container);
+  }): Promise<FolderBrowseResult> {
+    await this.assertFolder(params.folderId);
     return await this.read({
-      container: params.container,
+      folderId: params.folderId,
       cursor: normalizeCursor(params.cursor),
       limit: normalizeLimit(params.limit, MAX_BROWSE_LIMIT),
       includeArchived: params.includeArchived ?? false,
@@ -111,63 +108,56 @@ export class ContainerBrowseService {
   }
 
   async search(params: {
-    container: BoardYjsContainerRef;
+    folderId: string;
     query: string;
     limit?: number;
     includeArchived?: boolean;
-  }): Promise<ContainerBrowseResult> {
+  }): Promise<FolderBrowseResult> {
     const query = params.query.trim();
     if (!query) throw new Error("query must not be empty");
-    await this.assertContainer(params.container);
+    await this.assertFolder(params.folderId);
     return await this.read({
-      container: params.container,
+      folderId: params.folderId,
       cursor: 0,
       limit: normalizeLimit(params.limit, MAX_SEARCH_LIMIT),
       includeArchived: params.includeArchived ?? false,
       query,
       itemTypes: ["session", "markdown"],
-      scanLimit: CONTAINER_SEARCH_SCAN_LIMIT,
+      scanLimit: FOLDER_SEARCH_SCAN_LIMIT,
     });
   }
 
-  async browseLegacyFolder(params: {
+  async browseFolderContents(params: {
     folderId: string;
     sessionCursor?: number;
     sessionLimit?: number;
-  }): Promise<{
-    sessions: ContainerBrowseResult;
-    boardItems: CatalogBoardItemRow[];
-  }> {
-    const container = { containerKind: "folder", containerId: params.folderId } as const;
-    await this.assertContainer(container);
-    const [sessions, nonSessions] = await Promise.all([
+  }): Promise<{ sessions: FolderBrowseResult; boardItems: CatalogBoardItemRow[] }> {
+    await this.assertFolder(params.folderId);
+    const [sessions, otherItems] = await Promise.all([
       this.read({
-        container,
+        folderId: params.folderId,
         cursor: normalizeCursor(params.sessionCursor),
         limit: normalizeLimit(params.sessionLimit, MAX_BROWSE_LIMIT),
         includeArchived: false,
         query: null,
         itemTypes: ["session"],
       }),
-      this.store.listContainerItems({
-        container,
+      this.store.listFolderItems({
+        folderId: params.folderId,
         cursor: 0,
-        limit: LEGACY_BOARD_ITEM_LIMIT,
+        limit: BOARD_ITEM_LIMIT,
         includeArchived: false,
         query: null,
-        itemTypes: ["markdown", "subfolder", "asset", "frame", "task", "custom_view"],
+        itemTypes: ["markdown", "subfolder", "asset", "frame", "custom_view"],
       }),
     ]);
-    return {
-      sessions,
-      boardItems: nonSessions.items.map((item) => item.boardItem),
-    };
+    return { sessions, boardItems: otherItems.items.map((item) => item.boardItem) };
   }
 
-  private async read(params: ListContainerItemsParams): Promise<ContainerBrowseResult> {
-    const result = await this.store.listContainerItems(params);
+  private async read(params: ListFolderItemsParams): Promise<FolderBrowseResult> {
+    const result = await this.store.listFolderItems(params);
     return {
-      container: params.container,
+      folderId: params.folderId,
       items: result.items.map(toBrowseItem),
       page: {
         cursor: params.cursor,
@@ -178,37 +168,29 @@ export class ContainerBrowseService {
           : null,
       },
       counts: result.counts,
-      ...(result.scan
-        ? {
-            search: {
-              scanLimit: result.scan.limit,
-              scannedItems: result.scan.scannedItems,
-              truncated: result.scan.truncated,
-            },
-          }
-        : {}),
+      ...(result.scan ? { search: {
+        scanLimit: result.scan.limit,
+        scannedItems: result.scan.scannedItems,
+        truncated: result.scan.truncated,
+      } } : {}),
     };
   }
 
-  private async assertContainer(container: BoardYjsContainerRef): Promise<void> {
-    const row = container.containerKind === "folder"
-      ? await this.store.getFolderById(container.containerId)
-      : await this.store.getTaskById(container.containerId);
-    if (!row) {
-      throw new Error(`${container.containerKind} not found: ${container.containerId}`);
+  private async assertFolder(folderId: string): Promise<void> {
+    if (!await this.store.getFolderById(folderId)) {
+      throw new Error(`folder not found: ${folderId}`);
     }
   }
 }
 
-export function createContainerBrowseStore(db: SessionDB): ContainerBrowseStore {
+export function createFolderBrowseStore(db: SessionDB): FolderBrowseStore {
   return {
     getFolderById: async (folderId) => await db.getFolderById(folderId),
-    getTaskById: async (taskId) => await db.tasks().getTask(taskId),
-    listContainerItems: async (params) => await db.listContainerItems(params),
+    listFolderItems: async (params) => await db.listFolderItems(params),
   };
 }
 
-function toBrowseItem(record: ListContainerItemsResult["items"][number]): ContainerBrowseItem {
+function toBrowseItem(record: ListFolderItemsResult["items"][number]): FolderBrowseItem {
   const base = {
     boardItemId: record.boardItem.id,
     archived: record.archived,
@@ -260,15 +242,14 @@ function toBrowseItem(record: ListContainerItemsResult["items"][number]): Contai
       title: readableText(record.boardItem.metadata.title) ?? "제목 없는 프레임",
     };
   }
-  const titled = record.task ?? record.customView ?? record.asset ?? record.subfolder;
+  const titled = record.customView ?? record.asset ?? record.subfolder;
   return {
     ...base,
     type: record.boardItem.itemType,
     id: titled?.id ?? record.boardItem.itemId,
     title: readableText(titled?.title ?? record.boardItem.metadata.title)
       ?? untitledLabel(record.boardItem.itemType),
-    updatedAt: record.subfolder ? base.updatedAt : record.task?.updatedAt
-      ?? record.customView?.updatedAt
+    updatedAt: record.subfolder ? base.updatedAt :  record.customView?.updatedAt
       ?? record.asset?.updatedAt
       ?? base.updatedAt,
   };
@@ -294,7 +275,6 @@ function normalizeLimit(limit: number | undefined, max: number): number {
 
 function untitledLabel(itemType: BoardItemType): string {
   const labels: Partial<Record<BoardItemType, string>> = {
-    task: "제목 없는 업무",
     custom_view: "제목 없는 커스텀뷰",
     asset: "이름 없는 파일",
     subfolder: "이름 없는 폴더",

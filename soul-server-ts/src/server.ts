@@ -14,10 +14,6 @@ import {
 } from "./cogito/search_route.js";
 import { registerLlmRoutes, type LlmRouteConfig } from "./llm/router.js";
 import {
-  registerTaskHttpRoutes,
-  type TaskHttpRouteConfig,
-} from "./work-task/task_http_route.js";
-import {
   registerBoardItemHttpRoutes,
   type BoardItemHttpRouteConfig,
 } from "./catalog/board_item_http_route.js";
@@ -65,7 +61,6 @@ export interface ServerParams {
   /** LLM proxy route 설정. 미지정 시 `/llm/completions` 미등록. */
   llm?: LlmRouteConfig;
   /** Task dashboard write routes. */
-  task?: TaskHttpRouteConfig;
   /** Board item dashboard write routes. */
   boardItem?: BoardItemHttpRouteConfig;
   /** Markdown document dashboard write routes. */
@@ -159,9 +154,6 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   }
   if (params.llm) {
     registerLlmRoutes(fastify, params.llm);
-  }
-  if (params.task) {
-    registerTaskHttpRoutes(fastify, params.task);
   }
   if (params.boardItem) {
     registerBoardItemHttpRoutes(fastify, params.boardItem);

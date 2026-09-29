@@ -60,7 +60,7 @@ describe("board Yjs orchestrator delegation", () => {
     });
 
     await client.updateBoardItemPosition(
-      { containerKind: "task", containerId: "task-1" },
+      "folder-1",
       "markdown:doc-1",
       120,
       240,
@@ -75,98 +75,30 @@ describe("board Yjs orchestrator delegation", () => {
       "content-type": "application/json",
     });
     expect(JSON.parse(init.body as string)).toEqual({
-      container: { containerKind: "task", containerId: "task-1" },
+      folderId: "folder-1",
       boardItemId: "markdown:doc-1",
       x: 120,
       y: 240,
     });
   });
 
-  it("worker projection reads and checklist leases use the same explicit host route", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        items: [],
-        total: 0,
-        counts: {
-          session: 0,
-          markdown: 0,
-          subfolder: 0,
-          asset: 0,
-          frame: 0,
-          task: 0,
-          custom_view: 0,
-        },
-        scan: null,
-      }), { status: 200, headers: { "content-type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const client = new BoardYjsHostClient({
-      orch: {
-        baseUrl: "http://orch.local",
-        headers: { authorization: "Bearer test-token" },
-      },
-      logger: createSilentLogger() as never,
-    });
-
-    await client.listContainerItems({
-      container: { containerKind: "task", containerId: "task-1" },
-      query: null,
-      includeArchived: false,
-      itemTypes: null,
-      limit: 20,
-      cursor: 0,
-    });
-    await client.claimDue("node-1", 20, 30_000);
-
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://orch.local/api/board-yjs/host/list-container-items",
-      "http://orch.local/api/board-yjs/host/claim-checklist-task-projections",
-    ]);
-    expect(JSON.parse(fetchMock.mock.calls[1]![1]!.body as string)).toEqual({
-      nodeId: "node-1",
-      limit: 20,
-      leaseMs: 30_000,
-    });
-  });
-
-  it("sends checklist dead-letter transitions through the explicit host route", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("true", {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }));
+  it("reads folder items through the explicit host route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [], total: 0,
+      counts: { session: 0, markdown: 0, subfolder: 0, asset: 0, frame: 0, custom_view: 0 },
+      scan: null,
+    }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new BoardYjsHostClient({
-      orch: {
-        baseUrl: "http://orch.local",
-        headers: { authorization: "Bearer test-token" },
-      },
+      orch: { baseUrl: "http://orch.local", headers: { authorization: "Bearer test-token" } },
       logger: createSilentLogger() as never,
     });
-    const row = {
-      block_id: "block-1",
-      page_id: "page-1",
-      source_hash: "hash-1",
-      actor_kind: "agent" as const,
-      actor_session_id: "session-1",
-      actor_user_id: null,
-      routing_session_id: "session-1",
-      attempts: 7,
-    };
-
-    await expect(client.markDeadLetter(row, "node-1", "permanent")).resolves.toBe(true);
+    const params = { folderId: "folder-1", query: null, includeArchived: false,
+      itemTypes: null, limit: 20, cursor: 0 };
+    await client.listFolderItems(params);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      "http://orch.local/api/board-yjs/host/mark-checklist-task-projection-dead-letter",
-    );
-    expect(JSON.parse(init.body as string)).toEqual({
-      row,
-      nodeId: "node-1",
-      error: "permanent",
-    });
+    expect(url).toBe("http://orch.local/api/board-yjs/host/list-folder-items");
+    expect(JSON.parse(init.body as string)).toEqual(params);
   });
 });
 

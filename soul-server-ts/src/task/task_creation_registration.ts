@@ -7,7 +7,7 @@ export async function registerTaskSession(
   worktree: {
     worktreeId?: string;
     actorSessionId?: string;
-    ownerTaskId: string | null;
+    ownerFolderId: string | null;
   },
 ): Promise<RegisterSessionReviewResult | undefined> {
   if (!worktree.worktreeId) {
@@ -24,6 +24,6 @@ export async function registerTaskSession(
     ...registration,
     worktreeId: worktree.worktreeId,
     worktreeActorSessionId: actorSessionId,
-    ownerTaskId: worktree.ownerTaskId,
+    ownerFolderId: worktree.ownerFolderId,
   }, `register_session_with_worktree:${registration.sessionId}`);
 }

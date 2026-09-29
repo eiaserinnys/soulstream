@@ -7,7 +7,6 @@ import { vi } from "vitest";
 
 import { composeTaskRuntime } from "../../src/runtime/task_runtime_composition.js";
 import { composeWorkerRuntime } from "../../src/runtime/worker_composition.js";
-import { composeChecklistTaskProjection } from "../../src/runtime/checklist_task_composition.js";
 import { parseEnv } from "../../src/config.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -66,10 +65,6 @@ describe("worker composition boundary", () => {
     expect(workerComposition).toContain("new AncestorPageContextResolver");
     expect(workerComposition).toContain("new DefaultPageContextAssembler");
     expect(workerComposition).not.toContain("NO_PAGE_ANCHOR_CONTEXT_RESOLVER");
-  });
-
-  it("exports an executable checklist projection composition boundary", () => {
-    expect(composeChecklistTaskProjection).toBeTypeOf("function");
   });
 
   it("production task composition keeps gate-OFF completion delivery DB-free and legacy-local", async () => {
@@ -274,11 +269,7 @@ describe("worker composition boundary", () => {
       "context/page_context_resolver.ts",
       "context/page_context_repository.ts",
       "context/page_context_assembler.ts",
-      "page/checklist_task_adapter.ts",
-      "page/checklist_task_projection_repository.ts",
-      "page/checklist_task_reconciler.ts",
-      "runtime/checklist_task_composition.ts",
-      "work-task/task_service.ts",
+      "folder/folder_service.ts",
       "task/task_creation.ts",
       "task/task_creation_hook.ts",
       "engine/claude_sdk_client.ts",

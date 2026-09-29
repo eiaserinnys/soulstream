@@ -33,12 +33,7 @@ export function makeTaskCreationHarness(options: {
     display_name: null,
   }));
   const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
-  const resolveBoardYjsContainerScope = vi.fn().mockResolvedValue({
-    folderId: "root",
-    containerKind: "task",
-    containerId: "rb-1",
-  });
-  const getBoardItemsByContainer = vi.fn().mockResolvedValue([]);
+  const getBoardItemsByFolder = vi.fn().mockResolvedValue([]);
   const getBoardItems = vi.fn().mockResolvedValue([]);
   const db = {
     registerSession,
@@ -48,8 +43,7 @@ export function makeTaskCreationHarness(options: {
     getAllFolders,
     getSession,
     getPrimarySessionBoardItem,
-    resolveBoardYjsContainerScope,
-    getBoardItemsByContainer,
+    getBoardItemsByFolder,
     getBoardItems,
   } as unknown as SessionDB;
 
@@ -60,10 +54,8 @@ export function makeTaskCreationHarness(options: {
     return {
       id: `session:${input.sessionId}`,
       folderId: input.folderId,
-      containerKind: input.container.containerKind,
-      containerId: input.container.containerId,
       membershipKind: "primary" as const,
-      sourceTaskItemId: input.sourceTaskItemId ?? null,
+      sourceChecklistItemId: input.sourceChecklistItemId ?? null,
       itemType: "session" as const,
       itemId: input.sessionId,
       x: input.x,
@@ -105,8 +97,7 @@ export function makeTaskCreationHarness(options: {
     getAllFolders,
     getSession,
     getPrimarySessionBoardItem,
-    resolveBoardYjsContainerScope,
-    getBoardItemsByContainer,
+    getBoardItemsByFolder,
     getBoardItems,
     upsertSessionBoardItem,
     emitCatalogUpdated,

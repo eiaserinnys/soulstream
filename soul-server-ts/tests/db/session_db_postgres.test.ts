@@ -96,9 +96,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       dailyDate: "2026-07-13",
       sessionType: "claude",
       legacyFolderId: null,
-      legacyContainerKind: null,
-      legacyContainerId: null,
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
     };
     const first = await repository.enqueue(input);
     const duplicate = await repository.enqueue({ ...input, dailyDate: "2026-07-14" });
@@ -228,7 +226,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
     });
   }, 30_000);
 
-  it("binds a nullable-task worktree atomically and rejects a competing terminal resume", async () => {
+  it("binds a worktree atomically and rejects a competing terminal resume", async () => {
     await harness!.sql`
       INSERT INTO sessions (session_id, node_id, session_type, status)
       VALUES ('owner-session', 'node-worktree', 'claude', 'completed')
@@ -248,7 +246,6 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       worktreeIdentity: "worktree-db-1",
     });
     expect(registered).toMatchObject({
-      ownerTaskId: null,
       createdBySessionId: "owner-session",
       state: "ready",
     });
@@ -271,7 +268,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       callerInfo: null,
       worktreeId: "worktree-db-1",
       worktreeActorSessionId: "owner-session",
-      ownerTaskId: "task-attached-after-creation",
+      ownerFolderId: null,
     });
     await expect(db.getSession("worktree-session-1")).resolves.toMatchObject({
       worktree_id: "worktree-db-1",
@@ -298,7 +295,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       callerInfo: null,
       worktreeId: "worktree-db-1",
       worktreeActorSessionId: "owner-session",
-      ownerTaskId: null,
+      ownerFolderId: null,
     });
     const resume = await harness!.sql<Array<{ applied: boolean }>>`
       SELECT applied FROM session_apply_running_transition(
@@ -346,7 +343,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       callerInfo: null,
       worktreeId: "worktree-db-1",
       worktreeActorSessionId: "owner-session",
-      ownerTaskId: null,
+      ownerFolderId: null,
     });
     await expect(db.getSession("worktree-session-3")).resolves.toMatchObject({
       status: "initializing",
@@ -392,9 +389,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       dailyDate: "2026-07-13",
       sessionType: "claude",
       legacyFolderId: null,
-      legacyContainerKind: null,
-      legacyContainerId: null,
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
     });
     await harness!.sql`
       UPDATE session_page_bindings

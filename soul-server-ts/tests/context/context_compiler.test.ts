@@ -235,7 +235,7 @@ describe("context compiler applies_when filter", () => {
   const session: ContextFilterParameters = {
     source: "agent",
     node_id: "eiaserinnys",
-    container_kind: "task",
+    folder_id: "folder-a",
     agent: "seosoyoung",
   };
 
@@ -255,7 +255,7 @@ describe("context compiler applies_when filter", () => {
     ["cross-field AND", {
       source: ["agent"],
       node_id: ["eiaserinnys"],
-      container_kind: ["runbook"],
+      folder_id: ["folder-a"],
       agent: ["seosoyoung"],
     }],
   ])("injects a source for %s", async (_name, appliesWhen) => {
@@ -274,7 +274,7 @@ describe("context compiler applies_when filter", () => {
   it.each([
     ["OR miss", { source: ["browser", "slack"] }],
     ["AND miss", { source: ["agent"], agent: ["roselin"] }],
-    ["missing session parameter", { source: ["agent"], container_kind: ["folder"] }, {
+    ["missing session parameter", { source: ["agent"], folder_id: ["folder-a"] }, {
       source: "agent",
       node_id: "eiaserinnys",
       agent: "seosoyoung",
@@ -348,7 +348,7 @@ describe("context compiler applies_when filter", () => {
     const appliesWhen = {
       future_field: ["future-value"],
       source: ["future-source"],
-      container_kind: ["future-container"],
+      folder_id: [42],
       agent: [42],
     };
     const compiled = await compileContexts(config, [{

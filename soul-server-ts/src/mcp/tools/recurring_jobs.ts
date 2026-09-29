@@ -7,16 +7,11 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 
-const containerSchema = z.object({
-  kind: z.enum(["folder", "task"]),
-  id: z.string().min(1),
-});
 const callerSchema = { caller_session_id: z.string().min(1).optional() };
 const jobTargetSchema = {
   node_id: z.string().min(1),
   agent_id: z.string().min(1),
   model_preset: z.string().min(1).nullable(),
-  container: containerSchema,
   folder_id: z.string().min(1),
 };
 const scheduleSchema = {
@@ -99,7 +94,6 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
       node_id: input.node_id,
       agent_id: input.agent_id,
       model_preset: input.model_preset,
-      container: input.container,
       folder_id: input.folder_id,
       ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
       ...(input.late_run_window_seconds === undefined
@@ -123,7 +117,6 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
         node_id: z.string().min(1).optional(),
         agent_id: z.string().min(1).optional(),
         model_preset: z.string().min(1).nullable().optional(),
-        container: containerSchema.optional(),
         folder_id: z.string().min(1).optional(),
         enabled: z.boolean().optional(),
         late_run_window_seconds: z.number().int().positive().optional(),

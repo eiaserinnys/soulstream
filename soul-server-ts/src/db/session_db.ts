@@ -17,7 +17,6 @@ import type {
   SessionTurnExcerptResult,
 } from "../control_plane/session_data_host_client.js";
 import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
-import type { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
 import type { ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
@@ -29,7 +28,7 @@ import {
   type SessionTurnSummaryCounts,
 } from "./session_story_types.js";
 import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
-import type { BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 
@@ -37,7 +36,7 @@ export type * from "./session_db_types.js";
 export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 
 export class SessionDB {
-  private taskReader?: { getTask(taskId: string): Promise<TaskSnapshot | null> };
+  private folderReader?: { getFolder(folderId: string): Promise<FolderSnapshot | null> };
   private scheduleHost?: ScheduleHostClient;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
   private boardProjectionHost?: BoardYjsHostClient;
@@ -47,20 +46,13 @@ export class SessionDB {
   private folderHost?: FolderHostClient;
   private claudeTranscriptHost?: ClaudeRuntimeHostClient;
 
-  configureTaskReader(reader: { getTask(taskId: string): Promise<TaskSnapshot | null> }): void {
-    this.taskReader = reader;
+  configureFolderReader(reader: { getFolder(folderId: string): Promise<FolderSnapshot | null> }): void {
+    this.folderReader = reader;
   }
 
-  async getTaskSnapshot(taskId: string): Promise<TaskSnapshot | null> {
-    if (!this.taskReader) throw new Error("task reader host is not configured");
-    return await this.taskReader.getTask(taskId);
-  }
-
-  tasks(): { getTask(taskId: string): Promise<TaskRow | null> } {
-    if (!this.taskReader) throw new Error("task reader host is not configured");
-    return {
-      getTask: async (taskId) => (await this.getTaskSnapshot(taskId))?.task ?? null,
-    };
+  async getFolderSnapshot(folderId: string): Promise<FolderSnapshot | null> {
+    if (!this.folderReader) throw new Error("folder reader host is not configured");
+    return await this.folderReader.getFolder(folderId);
   }
 
   configureScheduleHost(host: ScheduleHostClient): void {
@@ -114,9 +106,6 @@ export class SessionDB {
     return this.sessionPageBindingRepository;
   }
 
-  checklistTaskProjections(): ChecklistTaskProjectionRepository {
-    return this.requireBoardProjectionHost();
-  }
 
   sessionDeliveries(): SessionDeliveryHostClient {
     if (!this.sessionDeliveryHost) throw new Error("session delivery host is not configured");
@@ -205,15 +194,12 @@ export class SessionDB {
     return await this.requireBoardProjectionHost().getBoardItems();
   }
 
-  async getBoardItemsByContainer(
-    folderId: string,
-    container: BoardYjsContainerRef,
-  ): Promise<CatalogBoardItemRow[]> {
-    return await this.requireBoardProjectionHost().getBoardItemsByContainer(folderId, container);
+  async getBoardItemsByFolder(folderId: string): Promise<CatalogBoardItemRow[]> {
+    return await this.requireBoardProjectionHost().getBoardItemsByFolder(folderId);
   }
 
-  listContainerItems(params: ListContainerItemsParams): Promise<ListContainerItemsResult> {
-    return this.requireBoardProjectionHost().listContainerItems(params);
+  listFolderItems(params: ListFolderItemsParams): Promise<ListFolderItemsResult> {
+    return this.requireBoardProjectionHost().listFolderItems(params);
   }
 
   async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {
@@ -234,12 +220,6 @@ export class SessionDB {
 
   async getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
     return await this.requireBoardProjectionHost().getMarkdownDocument(documentId);
-  }
-
-  async resolveBoardYjsContainerScope(
-    container: string | BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope | null> {
-    return await this.requireBoardProjectionHost().resolveBoardYjsContainerScope(container);
   }
 
   async listSessionsSummary(params: {
@@ -327,14 +307,6 @@ export class SessionDB {
     Array<{ id: number; event_type: string; payload_text: string }>
   > {
     return await this.requireSessionDataHost().streamEventsRaw(sessionId, afterId);
-  }
-
-  async updateFolder(
-    folderId: string,
-    columns: ReadonlyArray<"name" | "sort_order" | "settings" | "parent_folder_id">,
-    values: ReadonlyArray<string | null>,
-  ): Promise<void> {
-    await this.requireFolderHost().updateFolder(folderId, columns, values);
   }
 
   configureFolderHost(host: FolderHostClient): void {

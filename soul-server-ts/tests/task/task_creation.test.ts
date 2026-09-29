@@ -243,9 +243,8 @@ describe("TaskCreation", () => {
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "folder-42",
-      container: { containerKind: "folder", containerId: "folder-42" },
       sessionId: "sess-1",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
       x: 0,
       y: 160,
     });
@@ -280,8 +279,8 @@ describe("TaskCreation", () => {
         display_name: "Coordinator",
       },
       notifyCompletion: false,
-      container: { containerKind: "task", containerId: "rb-1" },
-      sourceTaskItemId: "task-item-1",
+      folderId: "rb-1",
+      sourceChecklistItemId: "checklist-item-1",
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
@@ -309,9 +308,9 @@ describe("TaskCreation", () => {
       }),
     }, { waitForAck: true });
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
-      container: { containerKind: "task", containerId: "rb-1" },
+      folderId: "rb-1",
       sessionId: "sess-fire-and-forget",
-      sourceTaskItemId: "task-item-1",
+      sourceChecklistItemId: "checklist-item-1",
     }));
   });
 
@@ -337,9 +336,8 @@ describe("TaskCreation", () => {
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "llm",
-      container: { containerKind: "folder", containerId: "llm" },
       sessionId: "sess-default",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
       x: 0,
       y: 160,
     });
@@ -348,12 +346,10 @@ describe("TaskCreation", () => {
 
   it("places an explicitly assigned folder session through that folder Y.Doc before catalog broadcast", async () => {
     const h = makeHarness();
-    h.getBoardItemsByContainer.mockResolvedValueOnce([
+    h.getBoardItemsByFolder.mockResolvedValueOnce([
       {
         id: "session:existing-target",
         folderId: "folder-42",
-        containerKind: "folder",
-        containerId: "folder-42",
         itemType: "session",
         itemId: "existing-target",
         x: 0,
@@ -371,15 +367,11 @@ describe("TaskCreation", () => {
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
-    expect(h.getBoardItemsByContainer).toHaveBeenCalledWith("folder-42", {
-      containerKind: "folder",
-      containerId: "folder-42",
-    });
+    expect(h.getBoardItemsByFolder).toHaveBeenCalledWith("folder-42");
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "folder-42",
-      container: { containerKind: "folder", containerId: "folder-42" },
       sessionId: "sess-folder-immediate",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
       x: 280,
       y: 160,
     });
@@ -409,26 +401,13 @@ describe("TaskCreation", () => {
     expect(h.tasks.get("sess-no-folder")).toBe(task);
   });
 
-  it("places delegated task sessions through the task board Y-doc before catalog broadcast", async () => {
+  it("places delegated sessions in the inherited folder before catalog broadcast", async () => {
     const h = makeHarness();
-    h.getBoardItemsByContainer.mockResolvedValueOnce(
+    h.getBoardItemsByFolder.mockResolvedValueOnce(
       [
         {
-          id: "task:rb-1",
-          folderId: "root",
-          containerKind: "folder",
-          containerId: "root",
-          itemType: "task",
-          itemId: "rb-1",
-          x: 0,
-          y: 0,
-          metadata: {},
-        },
-        {
           id: "markdown:doc-1",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
+          folderId: "rb-1",
           itemType: "markdown",
           itemId: "doc-1",
           x: 0,
@@ -443,26 +422,18 @@ describe("TaskCreation", () => {
       prompt: "task workflow",
       profileId: "roselin_codex",
       sessionType: "llm",
-      container: { containerKind: "task", containerId: "rb-1" },
-      sourceTaskItemId: "task-item-1",
+      folderId: "rb-1",
+      sourceChecklistItemId: "checklist-item-1",
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
-    expect(h.resolveBoardYjsContainerScope).toHaveBeenCalledWith({
-      containerKind: "task",
-      containerId: "rb-1",
-    });
-    expect(h.assignSessionToFolder).not.toHaveBeenCalledWith("sess-task", "root");
-    expect(h.getBoardItemsByContainer).toHaveBeenCalledWith("root", {
-      containerKind: "task",
-      containerId: "rb-1",
-    });
+    expect(h.assignSessionToFolder).not.toHaveBeenCalled();
+    expect(h.getBoardItemsByFolder).toHaveBeenCalledWith("rb-1");
     expect(h.getBoardItems).not.toHaveBeenCalled();
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
-      folderId: "root",
-      container: { containerKind: "task", containerId: "rb-1" },
+      folderId: "rb-1",
       sessionId: "sess-task",
-      sourceTaskItemId: "task-item-1",
+      sourceChecklistItemId: "checklist-item-1",
       x: 280,
       y: 160,
     });
@@ -472,17 +443,15 @@ describe("TaskCreation", () => {
     expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]).toBeLessThan(
       h.emitSessionCreated.mock.invocationCallOrder[0],
     );
-    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "root");
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "rb-1");
   });
 
   it("preserves an existing delegated session card position during idempotent creation", async () => {
     const h = makeHarness();
-    h.getBoardItemsByContainer.mockResolvedValueOnce(
+    h.getBoardItemsByFolder.mockResolvedValueOnce(
       [{
         id: "session:sess-task",
-        folderId: "root",
-        containerKind: "task",
-        containerId: "rb-1",
+        folderId: "rb-1",
         itemType: "session",
         itemId: "sess-task",
         x: 840,
@@ -496,8 +465,8 @@ describe("TaskCreation", () => {
       prompt: "task workflow",
       profileId: "roselin_codex",
       sessionType: "llm",
-      container: { containerKind: "task", containerId: "rb-1" },
-      sourceTaskItemId: "task-item-1",
+      folderId: "rb-1",
+      sourceChecklistItemId: "checklist-item-1",
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
@@ -508,7 +477,7 @@ describe("TaskCreation", () => {
     }));
   });
 
-  it("logs target container and leaves assignment unchanged when atomic placement fails", async () => {
+  it("logs target folder and leaves assignment unchanged when atomic placement fails", async () => {
     const logger = {
       warn: vi.fn(),
       child: () => logger,
@@ -521,21 +490,20 @@ describe("TaskCreation", () => {
       prompt: "task workflow",
       profileId: "roselin_codex",
       sessionType: "llm",
-      container: { containerKind: "task", containerId: "rb-1" },
-      sourceTaskItemId: "task-item-1",
+      folderId: "rb-1",
+      sourceChecklistItemId: "checklist-item-1",
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
-    expect(h.assignSessionToFolder).not.toHaveBeenCalledWith("sess-task-fallback", "root");
+    expect(h.assignSessionToFolder).not.toHaveBeenCalled();
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, null);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         err: expect.any(Error),
         sessionId: "sess-task-fallback",
         assignedFolderId: null,
-        targetFolderId: "root",
-        targetContainer: { containerKind: "task", containerId: "rb-1" },
-        sourceTaskItemId: "task-item-1",
+        targetFolderId: "rb-1",
+        sourceChecklistItemId: "checklist-item-1",
       }),
       expect.stringContaining("atomic placement was not applied"),
     );

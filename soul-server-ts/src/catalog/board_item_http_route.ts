@@ -11,16 +11,15 @@ export interface BoardItemHttpRouteConfig {
   auth: BoardYjsAuthConfig;
 }
 
-interface BoardItemContainerRouteParams {
+interface BoardItemRouteParams {
   boardItemId: string;
 }
 
-interface BoardItemContainerMoveBody {
-  container?: unknown;
+interface BoardItemFolderMoveBody {
+  folderId?: unknown;
   x?: unknown;
   y?: unknown;
   idempotencyKey?: unknown;
-  idempotency_key?: unknown;
 }
 
 interface BoardItemPositionBody {
@@ -33,7 +32,7 @@ export function registerBoardItemHttpRoutes(
   config: BoardItemHttpRouteConfig,
 ): void {
   fastify.patch<{
-    Params: BoardItemContainerRouteParams;
+    Params: BoardItemRouteParams;
     Body: BoardItemPositionBody;
   }>("/api/board-items/:boardItemId/position", async (request, reply) => {
     try {
@@ -86,9 +85,9 @@ export function registerBoardItemHttpRoutes(
   });
 
   fastify.patch<{
-    Params: BoardItemContainerRouteParams;
-    Body: BoardItemContainerMoveBody;
-  }>("/api/board-items/:boardItemId/container", async (request, reply) => {
+    Params: BoardItemRouteParams;
+    Body: BoardItemFolderMoveBody;
+  }>("/api/board-items/:boardItemId/folder", async (request, reply) => {
     try {
       await authenticateDashboardHttpRequest({
         requestHeaders: request.headers,
@@ -110,7 +109,7 @@ export function registerBoardItemHttpRoutes(
       return reply.status(422).send({
         detail: {
           error: {
-            code: "INVALID_BOARD_ITEM_CONTAINER_MOVE",
+            code: "INVALID_BOARD_ITEM_FOLDER_MOVE",
             message: parsed.error,
           },
         },
@@ -118,12 +117,9 @@ export function registerBoardItemHttpRoutes(
     }
 
     try {
-      const result = await config.service.moveBoardItemToContainer({
+      const result = await config.service.moveBoardItemToFolder({
         boardItemId: request.params.boardItemId,
-        target: {
-          containerKind: parsed.value.container.kind,
-          containerId: parsed.value.container.id,
-        },
+        folderId: parsed.value.folderId,
         ...(parsed.value.position ? { position: parsed.value.position } : {}),
         idempotencyKey: parsed.value.idempotencyKey,
       });
@@ -148,7 +144,7 @@ export function registerBoardItemHttpRoutes(
           detail: { error: { code: "BOARD_ITEM_MOVE_REJECTED", message } },
         });
       }
-      request.log.error({ err }, "Board item container move failed");
+      request.log.error({ err }, "Board item folder move failed");
       return reply.status(500).send({
         detail: {
           error: {
@@ -174,22 +170,16 @@ function parsePositionBody(
 }
 
 function parseMoveBody(
-  body: BoardItemContainerMoveBody,
+  body: BoardItemFolderMoveBody,
 ): { ok: true; value: {
-  container: { kind: "folder" | "task"; id: string };
+  folderId: string;
   position?: { x: number; y: number };
   idempotencyKey: string;
 } } | { ok: false; error: string } {
-  const container = body.container;
-  if (!container || typeof container !== "object") {
-    return { ok: false, error: "container is required" };
+  if (typeof body.folderId !== "string" || !body.folderId.trim()) {
+    return { ok: false, error: "folderId is required" };
   }
-  const kind = (container as { kind?: unknown }).kind;
-  const id = (container as { id?: unknown }).id;
-  if ((kind !== "folder" && kind !== "task") || typeof id !== "string" || !id.trim()) {
-    return { ok: false, error: "invalid container" };
-  }
-  const idempotencyKey = body.idempotencyKey ?? body.idempotency_key;
+  const idempotencyKey = body.idempotencyKey;
   if (typeof idempotencyKey !== "string" || !idempotencyKey.trim()) {
     return { ok: false, error: "idempotencyKey is required" };
   }
@@ -197,7 +187,7 @@ function parseMoveBody(
     return {
       ok: true,
       value: {
-        container: { kind, id },
+        folderId: body.folderId,
         idempotencyKey,
       },
     };
@@ -211,7 +201,7 @@ function parseMoveBody(
   return {
     ok: true,
     value: {
-      container: { kind, id },
+      folderId: body.folderId,
       position: { x: body.x, y: body.y },
       idempotencyKey,
     },
