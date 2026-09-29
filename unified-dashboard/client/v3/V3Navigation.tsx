@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
-  Button,
   DashboardDndProvider,
   DashboardIconCap,
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPopup,
-  DialogTitle,
   isSystemFolderId,
   readFolderTreeExpandedState,
   reorderStarredFolderIds,
@@ -24,6 +17,7 @@ import { ChevronsDown, FolderPlus, GripVertical } from "lucide-react";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { ProjectDialog, type ProjectDialogTarget } from "./ProjectDialog";
+import { FolderArchiveDialog } from "./FolderArchiveDialog";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { saveProjectFormContext } from "./project-form-actions";
 import { setFolderStarred } from "./folder-star-actions";
@@ -342,25 +336,10 @@ export function V3Navigation({
           if (folder.parentFolderId) setProjectExpanded(folder.parentFolderId, true);
         }}
       />
-      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
-        <DialogPopup className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>폴더 보관</DialogTitle>
-            <DialogDescription>
-              &lsquo;{deleteTarget?.name ?? ""}&rsquo; 폴더를 보관합니다. 내용과 세션은 보존됩니다.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter variant="bare">
-            <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>취소</Button>
-            <Button type="button" variant="destructive" onClick={() => {
-              if (!deleteTarget) return;
-              const folder = deleteTarget;
-              setDeleteTarget(null);
-              void onDeleteProject(folder).catch((cause) => setError(`폴더 보관 실패 · ${errorText(cause)}`));
-            }}>보관</Button>
-          </DialogFooter>
-        </DialogPopup>
-      </Dialog>
+      <FolderArchiveDialog folder={deleteTarget} onClose={() => setDeleteTarget(null)} onArchive={(folder) => {
+        setDeleteTarget(null);
+        void onDeleteProject(folder).catch((cause) => setError(`폴더 보관 실패 · ${errorText(cause)}`));
+      }} />
       <div className="v3-nav-foot">
         <div><kbd>C</kbd> 새 업무 · <kbd>Esc</kbd> 닫기</div>
       </div>

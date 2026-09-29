@@ -262,6 +262,16 @@
   place-items: center;
 }
 
+.v3-task-card--managed {
+  grid-template-columns: minmax(0, 1fr) var(--v3-task-state-column) calc(2 * var(--v3-action-size) + 4px);
+}
+
+.v3-task-card--managed .v3-task-star-slot {
+  display: flex;
+  width: auto;
+  gap: 4px;
+}
+
 .v3-task-star-toggle {
   width: var(--v3-action-size);
   height: var(--v3-action-size);

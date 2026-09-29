@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import { DashboardIconCap, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
-import { Star } from "lucide-react";
+import { MoreHorizontal, Star } from "lucide-react";
 
 import {
   latestRun,
@@ -31,6 +31,10 @@ export function PlannerFolderCard({
   onComplete,
   onToggleToday,
   onMoveToParent,
+  navigationLabel,
+  onRename,
+  onArchive,
+  onToggleChecklist,
 }: {
   task: PlannerFolder;
   folder?: CatalogFolder;
@@ -41,6 +45,10 @@ export function PlannerFolderCard({
   onComplete(): Promise<void>;
   onToggleToday(): Promise<void>;
   onMoveToParent(): void;
+  navigationLabel?: string;
+  onRename?(): void;
+  onArchive?(): void;
+  onToggleChecklist?(): void | Promise<void>;
 }) {
   const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
   const folderStar = useFolderStar(task.page);
@@ -65,7 +73,7 @@ export function PlannerFolderCard({
     <LiquidGlassCard
       webglSurface
       cornerRadius={18}
-      className={`v3-task-card v3-task-card--${task.status} rounded-[18px] border border-white/8 shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]`}
+      className={`v3-task-card v3-task-card--${task.status}${onRename ? " v3-task-card--managed" : ""} rounded-[18px] border border-white/8 shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]`}
       role="button"
       tabIndex={0}
       onClick={onOpen}
@@ -74,10 +82,10 @@ export function PlannerFolderCard({
       data-testid={`v3-task-${task.page.id}`}
     >
       <div className="v3-task-main">
-        {folder?.checklistEnabled === false ? null : <div className="v3-task-kicker">
-          <span className={`v3-status-chip v3-status-chip--${task.status}`}>
+        {folder?.checklistEnabled === false && !navigationLabel ? null : <div className="v3-task-kicker">
+          {navigationLabel ? <span className="v3-status-chip">{navigationLabel}</span> : <span className={`v3-status-chip v3-status-chip--${task.status}`}>
             <span aria-hidden="true">{status.icon}</span> {status.label}
-          </span>
+          </span>}
         </div>}
         <h3
           className="v3-text-clamp-2"
@@ -117,6 +125,14 @@ export function PlannerFolderCard({
         )}
       </div>
       <div className="v3-task-star-slot">
+        {onRename ? <DashboardIconCap
+          label={`${task.page.title} 관리 메뉴`}
+          onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            setContextMenu({ x: rect.left, y: rect.bottom });
+          }}
+        ><MoreHorizontal className="h-4 w-4" aria-hidden="true" /></DashboardIconCap> : null}
         <DashboardIconCap
           className="v3-task-star-toggle"
           label={`${task.page.title} ${folderStar.starred ? "별표 해제" : "별표 추가"}`}
@@ -142,6 +158,9 @@ export function PlannerFolderCard({
           moveToParent: onMoveToParent,
           complete: onComplete,
           toggleToday: onToggleToday,
+          rename: onRename,
+          archive: onArchive,
+          toggleChecklist: onToggleChecklist,
         })}
       />
     </LiquidGlassCard>

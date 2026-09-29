@@ -56,6 +56,25 @@ describe("v3 context menu model", () => {
     }, folderActions()).map((action) => action.label)).not.toContain("완료 처리");
   });
 
+  it("offers the existing folder management actions on child cards", () => {
+    const rename = vi.fn();
+    const archive = vi.fn();
+    const toggleChecklist = vi.fn();
+    const menu = buildFolderContextMenuActions({
+      starred: false, completed: false, inToday: false, checklistEnabled: false,
+    }, { ...folderActions(), rename, archive, toggleChecklist });
+
+    expect(menu.slice(-3).map((action) => action.label)).toEqual([
+      "이름 변경", "체크리스트 켜기", "폴더 보관",
+    ]);
+    menu.at(-3)?.onSelect();
+    menu.at(-2)?.onSelect();
+    menu.at(-1)?.onSelect();
+    expect(rename).toHaveBeenCalledOnce();
+    expect(toggleChecklist).toHaveBeenCalledOnce();
+    expect(archive).toHaveBeenCalledOnce();
+  });
+
   it("keeps document common actions while adding only meaningful mount actions", () => {
     const common = buildDocumentContextMenuActions({
       open: vi.fn(),

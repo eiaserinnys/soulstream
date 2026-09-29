@@ -37,6 +37,7 @@ const EMPTY_DETAILS: ProjectPageDetails = {
 
 export function ProjectDialog({
   target,
+  createLabel = "새 프로젝트",
   onClose,
   onCreateIdentity,
   onRename,
@@ -44,6 +45,7 @@ export function ProjectDialog({
   onSaved,
 }: {
   target: ProjectDialogTarget | null;
+  createLabel?: string;
   onClose(): void;
   onCreateIdentity(title: string, parentFolderId: string | null): Promise<CatalogFolder>;
   onRename(folder: CatalogFolder, title: string): Promise<void>;
@@ -90,7 +92,7 @@ export function ProjectDialog({
     return () => { active = false; };
   }, [target]);
 
-  const title = target?.mode === "create" && !createdFolder ? "새 프로젝트" : "프로젝트 설정";
+  const title = target?.mode === "create" && !createdFolder ? createLabel : "프로젝트 설정";
   const description = target?.mode === "create" && target.parentName
     ? `${target.parentName} 아래에 만듭니다.`
     : "이름과 프로젝트 컨텍스트를 한곳에서 관리합니다.";

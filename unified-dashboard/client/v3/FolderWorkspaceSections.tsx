@@ -7,7 +7,7 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
-import { ChevronsDown, FilePlus2 } from "lucide-react";
+import { ChevronsDown, FilePlus2, FolderPlus, Plus } from "lucide-react";
 
 import { PlannerFolderCard } from "./PlannerFolderCard";
 import { ProjectContextEditor } from "./ProjectContextEditor";
@@ -23,6 +23,7 @@ import { plannerEntryForFolder } from "./folder-workspace-model";
 
 export function FolderWorkspaceSections({
   folder,
+  parentFolder,
   project,
   children,
   hasMoreChildren,
@@ -38,6 +39,11 @@ export function FolderWorkspaceSections({
   documentsLoadingMore,
   onLoadMoreDocuments,
   onOpenFolder,
+  onCreateTask,
+  onCreateSubfolder,
+  onRenameChild,
+  onArchiveChild,
+  onToggleChildChecklist,
   onOpenDocument,
   onToggleNewDocument,
   onNewDocumentTitle,
@@ -48,6 +54,7 @@ export function FolderWorkspaceSections({
   onBlocksChanged,
 }: {
   folder: CatalogFolder;
+  parentFolder: CatalogFolder | null;
   project: PlannerLoadState<FolderPlannerData>;
   children: readonly CatalogFolder[];
   hasMoreChildren: boolean;
@@ -63,6 +70,11 @@ export function FolderWorkspaceSections({
   documentsLoadingMore: boolean;
   onLoadMoreDocuments(): void;
   onOpenFolder(folder: CatalogFolder): void;
+  onCreateTask(): void;
+  onCreateSubfolder(): void;
+  onRenameChild(folder: CatalogFolder): void;
+  onArchiveChild(folder: CatalogFolder): void;
+  onToggleChildChecklist(folder: CatalogFolder): Promise<void>;
   onOpenDocument(page: PageDto): void;
   onToggleNewDocument(): void;
   onNewDocumentTitle(value: string): void;
@@ -78,7 +90,7 @@ export function FolderWorkspaceSections({
     data: ProjectPageSnapshot | null;
     message: string | null;
   }>({ status: "loading", data: null, message: null });
-  const [childPages, setChildPages] = useState<Record<string, PageDto>>({});
+  const [cardPages, setCardPages] = useState<Record<string, PageDto>>({});
   const [documentMenu, setDocumentMenu] = useState<{ target: V3ContextMenuTarget; page: PageDto } | null>(null);
   const pageId = folder.projectPageId;
 
@@ -107,25 +119,30 @@ export function FolderWorkspaceSections({
 
   useEffect(() => {
     let active = true;
-    const missing = children.filter((child) => child.projectPageId
-      && !knownPages.some((page) => page.id === child.projectPageId));
-    void Promise.all(missing.map(async (child) => {
-      const snapshot = await api.getPage(child.projectPageId!);
-      return [child.id, snapshot.page] as const;
+    const missing = [...(parentFolder ? [parentFolder] : []), ...children].filter((item) => item.projectPageId
+      && !knownPages.some((page) => page.id === item.projectPageId));
+    void Promise.all(missing.map(async (item) => {
+      const snapshot = await api.getPage(item.projectPageId!);
+      return [item.id, snapshot.page] as const;
     })).then((entries) => {
-      if (active) setChildPages(Object.fromEntries(entries));
+      if (active) setCardPages((current) => ({ ...current, ...Object.fromEntries(entries) }));
     }).catch((error: unknown) => {
       console.error("[v3/folder] 하위 폴더 페이지 조회 실패", error);
     });
     return () => { active = false; };
-  }, [api, children, knownPages]);
+  }, [api, children, knownPages, parentFolder]);
 
   const childTasks = children.map((child) => {
     const page = knownPages.find((candidate) => candidate.id === child.projectPageId)
-      ?? childPages[child.id];
+      ?? cardPages[child.id];
     if (!page) return null;
-    return { folder: child, task: plannerEntryForFolder(child, page, pageId ?? null) };
+    return { folder: child, task: plannerEntryForFolder(child, { ...page, title: child.name }, pageId ?? null) };
   }).filter((entry): entry is { folder: CatalogFolder; task: PlannerFolder } => entry !== null);
+  const parentPage = parentFolder && (knownPages.find((candidate) => candidate.id === parentFolder.projectPageId)
+    ?? cardPages[parentFolder.id]);
+  const parentTask = parentFolder && parentPage
+    ? plannerEntryForFolder(parentFolder, { ...parentPage, title: parentFolder.name }, parentFolder.parentFolderId ?? null)
+    : null;
 
   return (
     <>
@@ -175,8 +192,31 @@ export function FolderWorkspaceSections({
       </section>
 
       <section className="v3-child-folders">
-        <div className="v3-section-head"><h2>하위 폴더</h2><span>{children.length}개</span></div>
+        <div className="v3-section-head">
+          <h2>하위 폴더</h2><span>{children.length}개</span>
+          <span className="v3-spacer" />
+          <DashboardIconCap label="새 업무" onClick={onCreateTask}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
+          <DashboardIconCap label="새 폴더" onClick={onCreateSubfolder}>
+            <FolderPlus className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
+        </div>
         <div className="v3-task-list">
+          {parentFolder && parentTask ? <div data-testid={`v3-parent-folder-${parentFolder.id}`}>
+            <PlannerFolderCard
+              task={parentTask}
+              folder={parentFolder}
+              navigationLabel="상위 폴더"
+              sessions={sessions}
+              nodeConnectivity={nodeConnectivity}
+              isInToday={todayFolderIds.has(parentTask.page.id)}
+              onOpen={() => onOpenFolder(parentFolder)}
+              onComplete={() => onCompleteFolder(parentTask)}
+              onToggleToday={() => onToggleFolderToday(parentTask)}
+              onMoveToParent={() => onMoveFolderToParent(parentTask)}
+            />
+          </div> : null}
           {childTasks.map(({ folder: child, task }) => <div key={child.id} data-testid={`v3-child-folder-${child.id}`}>
             <PlannerFolderCard
               task={task}
@@ -188,6 +228,9 @@ export function FolderWorkspaceSections({
               onComplete={() => onCompleteFolder(task)}
               onToggleToday={() => onToggleFolderToday(task)}
               onMoveToParent={() => onMoveFolderToParent(task)}
+              onRename={() => onRenameChild(child)}
+              onArchive={() => onArchiveChild(child)}
+              onToggleChecklist={() => onToggleChildChecklist(child)}
             />
           </div>)}
         </div>

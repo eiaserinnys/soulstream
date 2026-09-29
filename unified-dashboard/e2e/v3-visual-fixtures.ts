@@ -17,6 +17,7 @@ let blockSequence = 0;
 
 export interface V3VisualQaRouteOptions {
   unifiedFolderView?: boolean;
+  nestedSubfolder?: boolean;
   alphaRunHistoryPages?: boolean;
   catalogDelayMs?: number;
   failTaskTitleRenameOnce?: boolean;
@@ -540,7 +541,7 @@ export async function installV3VisualQaRoutes(
     fixtureFolder("folder-dashboard", pages.projectDashboard, "folder-amber", false),
     fixtureFolder("folder-ops", pages.projectOps, null, false),
     fixtureFolder("rb-alpha", pages.taskAlpha, "folder-amber", true),
-    fixtureFolder("rb-beta", pages.taskBeta, "folder-amber", true),
+    fixtureFolder("rb-beta", pages.taskBeta, options.nestedSubfolder ? "folder-dashboard" : "folder-amber", true),
     fixtureFolder("rb-done", pages.taskDone, "folder-amber", true),
     fixtureFolder("rb-carry", pages.carryover, "folder-amber", true),
     ...(options.includeCreatedTaskWhen?.() === true
@@ -618,6 +619,14 @@ export async function installV3VisualQaRoutes(
         typeof payload.parentFolderId === "string" ? payload.parentFolderId : null, payload.checklistEnabled === true);
       unifiedFolders.push(created);
       return fulfillJson(route, { folder: created, created: true });
+    }
+    const archiveFolderMatch = /^\/api\/folders\/([^/]+)\/archive$/.exec(path);
+    if (archiveFolderMatch && request.method() === "POST") {
+      const folder = unifiedFolders.find((candidate) => candidate.id === decodeURIComponent(archiveFolderMatch[1]));
+      if (!folder) return fulfillJson(route, { detail: "folder not found" }, 404);
+      folder.archived = true;
+      folder.version += 1;
+      return fulfillJson(route, { folder, idempotent: false });
     }
     {
       const unifiedFolderMatch = /^\/api\/folders\/([^/]+)$/.exec(path);
@@ -1091,7 +1100,7 @@ export async function installV3VisualQaRoutes(
       const payload = request.postDataJSON() as { checklistEnabled?: boolean };
       folder.checklistEnabled = payload.checklistEnabled === true;
       folder.version += 1;
-      return fulfillJson(route, { ok: true, snapshot: { folder, sections: [], items: [] } });
+      return fulfillJson(route, { folder, idempotent: false });
     }
     if (path === "/api/board-items") {
       await delay(options.plannerDelayMs);
