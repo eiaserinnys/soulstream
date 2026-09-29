@@ -13,6 +13,7 @@ import { z } from "zod";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { applyToolContentPolicy } from "./session_query_content_policy.js";
+import { resolveEffectiveCallerSessionId } from "./caller_session.js";
 import { searchSessionEvents } from "../../search/session_search.js";
 import { buildSessionTurnExcerpt } from "../../context/session_turn_summary.js";
 import {
@@ -324,7 +325,8 @@ export function registerSessionQueryTools(
       description:
         "이벤트 텍스트 검색 (BM25, Python SessionSearchEngine 정합). "
         + '툴 사용 기록은 event_types: ["tool_start","tool_result"]를 명시해 검색한다. '
-        + "세션 단위로 찾을 때는 search_sessions를 먼저 쓴다.",
+        + "세션 단위로 찾을 때는 search_sessions를 먼저 쓴다. "
+        + "호출한 세션 자신의 이벤트는 session_ids에 직접 넣지 않는 한 결과에서 뺀다.",
       inputSchema: {
         query: z.string().min(1),
         session_ids: z.array(z.string()).optional(),
@@ -351,9 +353,15 @@ export function registerSessionQueryTools(
           extra.signal,
           AbortSignal.timeout(4_800),
         ]);
+        const callerSessionId = resolveEffectiveCallerSessionId(undefined);
+        const excludeSessionIds = callerSessionId
+          && !session_ids?.includes(callerSessionId)
+          ? [callerSessionId]
+          : undefined;
         const results = await searchSessionEvents(runtime.db, {
           query,
           sessionIds: session_ids ?? null,
+          excludeSessionIds,
           eventTypes: event_types,
           searchSessionId: search_session_id,
           includeTurnSummaries: include_turn_summaries,

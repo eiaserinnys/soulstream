@@ -48,6 +48,34 @@ describe("searchSessionEvents derived-text scope", () => {
     }, expect.any(AbortSignal));
   });
 
+  it("requests twenty extra matches before excluding sessions and applies the limit", async () => {
+    const candidates = Array.from({ length: 22 }, (_, index) => ({
+      id: index + 1,
+      session_id: index < 20 ? "caller-session" : `result-${index - 19}`,
+      event_type: "user_message",
+      searchable_text: `needle result ${index + 1}`,
+      score: 1 - index / 100,
+    }));
+    const searchSessionHistory = vi.fn(async (params: { limit: number }) => ({
+      events: candidates.slice(0, params.limit),
+      sessionIdEvents: [],
+      digests: [],
+    }));
+
+    const results = await searchSessionEvents({ searchSessionHistory } as never, {
+      query: "needle",
+      limit: 2,
+      excludeSessionIds: ["caller-session"],
+    });
+
+    expect(searchSessionHistory.mock.calls[0]?.[0].limit).toBe(22);
+    expect(results).toHaveLength(2);
+    expect(results.map((result) => result.session_id)).toEqual([
+      "result-1",
+      "result-2",
+    ]);
+  });
+
   it("adds turn summaries and merges highlight/story matches with explicit sources", async () => {
     const db = { searchSessionHistory: vi.fn(async () => ({
       events: [{

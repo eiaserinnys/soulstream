@@ -693,6 +693,75 @@ describe("search_session_history", () => {
     expect(searchTool?.description).toContain(
       'event_types: ["tool_start","tool_result"]',
     );
+    expect(searchTool?.description).toContain(
+      "호출한 세션 자신의 이벤트는 session_ids에 직접 넣지 않는 한 결과에서 뺀다.",
+    );
+  });
+
+  it("excludes the caller's events while keeping top_k full", async () => {
+    const events = Array.from({ length: 22 }, (_, index) => ({
+      id: index + 1,
+      session_id: index < 20 ? "caller-session" : `result-${index - 19}`,
+      event_type: "user_message",
+      searchable_text: `needle result ${index + 1}`,
+      score: 1 - index / 100,
+    }));
+    const searchSessionHistory = vi.fn(async (params: SessionHistorySearchParams) => ({
+      events: events.slice(0, params.limit),
+      sessionIdEvents: [],
+      digests: [],
+    }));
+    const client = await createClient(
+      makeRuntime({ db: { searchSessionHistory } }),
+      { "x-soulstream-agent-session-id": "caller-session" },
+    );
+
+    const result = await client.callTool({
+      name: "search_session_history",
+      arguments: { query: "needle", top_k: 2 },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(searchSessionHistory.mock.calls[0]?.[0].limit).toBe(22);
+    expect((result.structuredContent?.results as Array<{ session_id: string }>).map(
+      ({ session_id }) => session_id,
+    )).toEqual(["result-1", "result-2"]);
+  });
+
+  it("keeps the caller's events when session_ids explicitly includes the caller", async () => {
+    const searchSessionHistory = vi.fn(async () => ({
+      events: [{
+        id: 1,
+        session_id: "caller-session",
+        event_type: "user_message",
+        searchable_text: "needle caller event",
+        score: 0.9,
+      }],
+      sessionIdEvents: [],
+      digests: [],
+    }));
+    const client = await createClient(
+      makeRuntime({ db: { searchSessionHistory } }),
+      { "x-soulstream-agent-session-id": "caller-session" },
+    );
+
+    const result = await client.callTool({
+      name: "search_session_history",
+      arguments: {
+        query: "needle",
+        session_ids: ["caller-session"],
+        top_k: 1,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(searchSessionHistory.mock.calls[0]?.[0]).toMatchObject({
+      sessionIds: ["caller-session"],
+      limit: 1,
+    });
+    expect((result.structuredContent?.results as Array<{ session_id: string }>).map(
+      ({ session_id }) => session_id,
+    )).toEqual(["caller-session"]);
   });
 
   it("defaults to readable event types", async () => {
