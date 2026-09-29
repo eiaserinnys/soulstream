@@ -37,7 +37,7 @@ describe("FolderHandoffNotifier", () => {
     expect(sender.send).toHaveBeenCalledTimes(2);
     expect(sender.send).toHaveBeenNthCalledWith(1, {
       targetSessionId: "sess-agent-1",
-      message: expect.stringContaining("업무 'Launch'의 'Deploy' 완료됨, 이어서 진행"),
+      message: expect.stringContaining("폴더 'Launch'의 'Deploy' 완료됨, 이어서 진행"),
       ...handoffDelivery("sess-agent-1", "op-1"),
     });
     expect(sender.send).toHaveBeenNthCalledWith(2, {

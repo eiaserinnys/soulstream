@@ -312,7 +312,7 @@ export interface RegisterSessionWithWorktreeParams extends RegisterSessionParams
   worktreeId: string;
   /** Trusted MCP/upstream caller used for central ownership verification. */
   worktreeActorSessionId: string;
-  /** Primary task container selected for the new session, or null. */
+  /** Primary folder selected for the new session, or null. */
   ownerFolderId: string | null;
 }
 

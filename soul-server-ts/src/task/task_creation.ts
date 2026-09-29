@@ -411,7 +411,7 @@ export class TaskCreation {
           targetFolderId,
           sourceChecklistItemId,
         },
-        "session folder assignment or board container enrollment failed; atomic placement was not applied",
+        "session folder assignment or board item enrollment failed; atomic placement was not applied",
       );
     }
 

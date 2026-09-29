@@ -103,7 +103,7 @@ function handoffDelivery(
 function buildFolderHandoffMessage(event: FolderHandoffEvent): string {
   const statusText = event.status === "completed" ? "완료" : "취소";
   return [
-    `업무 '${event.folderName}'의 '${event.itemTitle}' ${statusText}됨, 이어서 진행`,
+    `폴더 '${event.folderName}'의 '${event.itemTitle}' ${statusText}됨, 이어서 진행`,
     "",
     `folder_id: ${event.folderId}`,
     `item_id: ${event.itemId}`,
