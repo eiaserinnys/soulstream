@@ -8,8 +8,7 @@ import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
 import { CustomViewRevisionConflictError } from
   "../src/board-yjs/board_projection_types.js";
 import type {
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsReplica,
   BoardYjsSeed,
 } from "../src/board-yjs/board_yjs_types.js";
@@ -159,7 +158,7 @@ describe("orch-local Board Yjs host operation routes", () => {
       projectionHost: projectionHost as never,
     });
     const payload = {
-      container: { containerKind: "task", containerId: "task-1" },
+      container: { folderId: "task-1" },
       query: null,
       includeArchived: false,
       itemTypes: null,
@@ -444,17 +443,17 @@ class CapturingBoardYjsRepository {
   async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
     return this.snapshots.get(documentName) ?? null;
   }
-  async resolveBoardYjsContainerScope(
-    container: BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope> {
+  async resolveBoardYjsFolderScope(
+    container: BoardYjsFolderScope,
+  ): Promise<BoardYjsFolderScope> {
     return {
-      folderId: container.containerKind === "folder" ? container.containerId : "folder-1",
+      folderId: container.containerKind === "folder" ? container.folderId : "folder-1",
       ...container,
     };
   }
   async backfillTaskBoardItemsIntoSnapshot(
     _documentName: string,
-    _container: BoardYjsContainerScope,
+    _container: BoardYjsFolderScope,
     snapshot: { snapshot: Uint8Array; revision: number },
   ) {
     return snapshot;

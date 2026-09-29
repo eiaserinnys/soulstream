@@ -8,6 +8,10 @@ interface FolderRow {
   parent_folder_id: string | null;
   project_page_id: string | null;
   created_at?: Date | string;
+  archived: boolean;
+  checklist_enabled: boolean;
+  status: string;
+  version: number;
 }
 
 type FolderDbRow = Omit<FolderRow, "settings"> & { settings: unknown; archived?: boolean };
@@ -28,7 +32,7 @@ export class FolderControlPlaneService {
 
   async getFolderById(folderId: string): Promise<FolderRow | null> {
     const rows = await this.sql<readonly FolderDbRow[]>`
-      SELECT id, name, sort_order, settings, parent_folder_id, project_page_id, created_at
+      SELECT *
       FROM folders
       WHERE id = ${folderId}
     `;
@@ -54,16 +58,6 @@ export class FolderControlPlaneService {
     `;
   }
 
-  async updateFolder(
-    folderId: string,
-    columns: ReadonlyArray<"name" | "sort_order" | "settings" | "parent_folder_id">,
-    values: ReadonlyArray<string | null>,
-  ): Promise<void> {
-    await this.sql`
-      SELECT folder_update(${folderId}, ${this.sql.array(columns)}, ${this.sql.array(values)})
-    `;
-  }
-
   async getCatalog() {
     const folders = await this.getAllFolders();
     const sessionRows = await this.sql<readonly {
@@ -79,13 +73,12 @@ export class FolderControlPlaneService {
     const folderIds = folders.map((folder) => folder.id);
     const cacheRows = folderIds.length === 0
       ? []
-      : await this.sql<readonly { container_id: string; board_items: unknown }[]>`
-          SELECT container_id, board_items
+      : await this.sql<readonly { folder_id: string; board_items: unknown }[]>`
+          SELECT folder_id, board_items
           FROM board_yjs_catalog_cache
-          WHERE container_kind = 'folder'
-            AND container_id = ANY(${this.sql.array(folderIds)}::text[])
+          WHERE folder_id = ANY(${this.sql.array(folderIds)}::text[])
         `;
-    const cachedFolderIds = new Set(cacheRows.map((row) => row.container_id));
+    const cachedFolderIds = new Set(cacheRows.map((row) => row.folder_id));
     const boardItems = cacheRows.flatMap((row) => (
       Array.isArray(row.board_items)
         ? row.board_items.flatMap((item) => normalizeCachedBoardItem(item))
@@ -95,8 +88,7 @@ export class FolderControlPlaneService {
     if (missingFolderIds.length > 0) {
       const legacyRows = await this.sql<readonly Record<string, unknown>[]>`
         SELECT * FROM board_items
-        WHERE container_kind = 'folder'
-          AND container_id = ANY(${this.sql.array(missingFolderIds)}::text[])
+        WHERE folder_id = ANY(${this.sql.array(missingFolderIds)}::text[])
       `;
       boardItems.push(...legacyRows.map(legacyBoardItem));
     }
@@ -114,6 +106,8 @@ export class FolderControlPlaneService {
         parentFolderId: folder.parent_folder_id,
         projectPageId: folder.project_page_id,
         settings: folder.settings,
+        archived: folder.archived, checklistEnabled: folder.checklist_enabled,
+        status: folder.status, version: folder.version,
         ...(folder.created_at ? { createdAt: new Date(folder.created_at).toISOString() } : {}),
       })),
       sessions,
@@ -128,7 +122,7 @@ function normalizeCachedBoardItem(value: unknown): Array<Record<string, unknown>
   return [{
     ...item,
     membershipKind: item.membershipKind ?? "primary",
-    sourceTaskItemId: item.sourceTaskItemId ?? null,
+    sourceChecklistItemId: item.sourceChecklistItemId ?? null,
   }];
 }
 
@@ -142,6 +136,8 @@ function folderFromRow(row: FolderDbRow): FolderRow {
       : {},
     parent_folder_id: row.parent_folder_id,
     project_page_id: row.project_page_id,
+    archived: Boolean(row.archived), checklist_enabled: Boolean(row.checklist_enabled),
+    status: row.status, version: Number(row.version),
     ...(row.created_at ? { created_at: row.created_at } : {}),
   };
 }
@@ -150,10 +146,8 @@ function legacyBoardItem(row: Record<string, unknown>) {
   return {
     id: row.id,
     folderId: row.folder_id,
-    containerKind: row.container_kind ?? "folder",
-    containerId: row.container_id ?? row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceTaskItemId: row.source_task_item_id ?? null,
+    sourceChecklistItemId: row.source_checklist_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),

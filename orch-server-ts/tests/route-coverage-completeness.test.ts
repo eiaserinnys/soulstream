@@ -192,7 +192,7 @@ function createAllOptInRouteApp() {
         getToday: async () => null,
         getProject: async () => null,
       },
-      starredTaskOrder: { moveStarredTask: async () => ({ pageVersion: 1, changed: false }) },
+      starredTaskOrder: { moveStarredFolder: async () => ({ pageVersion: 1, changed: false }) },
       onPageUpdated: () => undefined,
       createService: () => ({
         handleConnection: () => undefined,

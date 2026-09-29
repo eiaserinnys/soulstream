@@ -37,7 +37,7 @@ describe("BoardProjectionReadRepository.listContainerItems", () => {
       bi_container_kind: "task",
       bi_container_id: "task-1",
       bi_membership_kind: "primary",
-      bi_source_task_item_id: null,
+      bi_source_checklist_item_id: null,
       bi_item_type: "session",
       bi_item_id: "session-1",
       bi_x: 10,
@@ -92,7 +92,7 @@ describe("BoardProjectionReadRepository.listContainerItems", () => {
     });
 
     const result = await repository.listContainerItems({
-      container: { containerKind: "task", containerId: "task-1" },
+      container: { folderId: "task-1" },
       query: "발화",
       includeArchived: false,
       itemTypes: ["session", "markdown"],
@@ -129,9 +129,7 @@ describe("BoardProjectionReadRepository.listContainerItems", () => {
         boardItem: expect.objectContaining({
           itemType: "session",
           itemId: "session-1",
-          containerKind: "task",
-          containerId: "task-1",
-        }),
+          }),
         session: expect.objectContaining({
           agentSessionId: "session-1",
           lastUserMessagePreview: "최신 사용자 발화",
@@ -160,7 +158,7 @@ describe("BoardProjectionReadRepository.listContainerItems", () => {
     });
 
     const result = await repository.listContainerItems({
-      container: { containerKind: "folder", containerId: "folder-1" },
+      container: { folderId: "folder-1" },
       query: null,
       includeArchived: false,
       itemTypes: null,
@@ -192,7 +190,7 @@ describe("BoardProjectionReadRepository.getBoardItemsByContainer", () => {
         container_kind: "folder",
         container_id: "shared-id",
         membership_kind: "primary",
-        source_task_item_id: null,
+        source_checklist_item_id: null,
         item_type: "markdown",
         item_id: "folder-item",
         x: 0,
@@ -207,7 +205,7 @@ describe("BoardProjectionReadRepository.getBoardItemsByContainer", () => {
         container_kind: "task",
         container_id: "shared-id",
         membership_kind: "primary",
-        source_task_item_id: null,
+        source_checklist_item_id: null,
         item_type: "markdown",
         item_id: "task-item",
         x: 280,
@@ -222,7 +220,7 @@ describe("BoardProjectionReadRepository.getBoardItemsByContainer", () => {
         container_kind: "folder",
         container_id: "shared-id",
         membership_kind: "primary",
-        source_task_item_id: null,
+        source_checklist_item_id: null,
         item_type: "markdown",
         item_id: "other-folder-item",
         x: 560,
@@ -243,13 +241,9 @@ describe("BoardProjectionReadRepository.getBoardItemsByContainer", () => {
     });
 
     const folderItems = await repository.getBoardItemsByContainer("folder-1", {
-      containerKind: "folder",
-      containerId: "shared-id",
-    });
+      });
     const taskItems = await repository.getBoardItemsByContainer("folder-1", {
-      containerKind: "task",
-      containerId: "shared-id",
-    });
+      });
 
     expect(folderItems.map((item) => item.id)).toEqual(["markdown:folder-item"]);
     expect(taskItems.map((item) => item.id)).toEqual(["markdown:task-item"]);

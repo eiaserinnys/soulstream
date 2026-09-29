@@ -1,23 +1,23 @@
 export {
-  checklistTaskBlockProperties,
+  checklistFolderBlockProperties,
   validatePageBlockProperties,
 } from "./block_properties.js";
 export type {
   ChecklistBlockProperties,
-  ChecklistTaskBlockProperties,
-  ChecklistTaskReference,
+  LinkedChecklistBlockProperties,
+  ChecklistItemReference,
 } from "./types.js";
 
 export { parseInlineRefs } from "./inline_refs.js";
 
 export {
-  parseInitialTaskContextWire,
-  serializeInitialTaskContext,
+  parseInitialFolderContextWire,
+  serializeInitialFolderContext,
 } from "./initial_task_context.js";
 export type {
-  InitialTaskAtomReference,
-  InitialTaskContext,
-  InitialTaskContextWire,
+  InitialFolderAtomReference,
+  InitialFolderContext,
+  InitialFolderContextWire,
 } from "./initial_task_context.js";
 
 export {

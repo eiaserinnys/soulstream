@@ -4,19 +4,20 @@ import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
-import { TaskControlPlaneService } from "./task_control_plane_service.js";
-import type { TaskDbPort } from "./control_plane/task_types.js";
+import { ChecklistControlPlaneService } from "./task_control_plane_service.js";
+import type { FolderDbPort } from "./control_plane/task_types.js";
 
-export function createTaskControlPlaneServiceProvider(options: {
+export function createChecklistControlPlaneServiceProvider(options: {
   sqlResolver: LiveDbSqlResolver;
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
-}): () => Promise<TaskControlPlaneService> {
+  onFolderHeaderUpdated?: () => Promise<void>;
+}): () => Promise<ChecklistControlPlaneService> {
   const resolver = new BoardYjsSqlResolver(options.sqlResolver);
-  let service: TaskControlPlaneService | undefined;
+  let service: ChecklistControlPlaneService | undefined;
   return async () => {
     if (service) return service;
     const sql = await resolver.resolveSql();
-    const db: TaskDbPort = {
+    const db: FolderDbPort = {
       async appendEventTx(transaction, params) {
         const rows = await transaction<readonly { event_append: number }[]>`
           SELECT event_append(
@@ -33,9 +34,10 @@ export function createTaskControlPlaneServiceProvider(options: {
         return eventId;
       },
     };
-    service = new TaskControlPlaneService(sql, db, {
-      async emitTaskUpdated(_actorSessionId, taskId, boardItemId) {
-        options.broadcaster.append({ type: "task_updated", taskId, boardItemId });
+    service = new ChecklistControlPlaneService(sql, db, {
+      async emitFolderUpdated(folderId, _sessionId, headerChanged) {
+        if (headerChanged) await options.onFolderHeaderUpdated?.();
+        options.broadcaster.append({ type: "folder_updated", folderId });
       },
     });
     return service;

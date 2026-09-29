@@ -1,3 +1,6 @@
+import type { BoardYjsService } from "../board-yjs/board_yjs_service.js";
+import type { BoardYjsDocumentApplication } from "../board-yjs/board_yjs_types.js";
+import type { InitialFolderContext } from "@soulstream/page-model";
 import type {
   PageMutationActor,
   PageMutationApplication,
@@ -12,6 +15,19 @@ export interface FolderProjectRecord {
   settings: Record<string, unknown>;
   parentFolderId: string | null;
   projectPageId: string;
+  archived: boolean;
+  checklistEnabled: boolean;
+  status: "open" | "completed";
+  version: number;
+  createdSessionId: string | null;
+  createdEventId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  completedKind: string | null;
+  completedSessionId: string | null;
+  completedEventId: number | null;
+  completedUserId: string | null;
+  completedAt: string | null;
 }
 
 export interface FolderProjectBinding extends FolderProjectRecord {
@@ -34,38 +50,13 @@ export interface FolderProjectIdentityMutationResult {
   folder: FolderProjectRecord;
   operation: Record<string, unknown>;
   pageCommit: PageMutationCommitResult;
-  catalogDelta?: FolderProjectCatalogDelta;
-  idempotent?: boolean;
-}
-
-export interface FolderProjectCatalogDelta {
-  sessionsDelta: Record<string, {
-    folderId: null;
-    displayName: string | null;
-  }>;
-  deletedBoardItemIds: string[];
-}
-
-export interface LegacyProjectFolder {
-  folderId: string;
-  name: string;
-  sortOrder: number;
-  settings: Record<string, unknown>;
-  parentFolderId: string | null;
-}
-
-export interface LegacyFolderBackfillResult {
-  folderId: string;
-  pageId: string;
-  createdPage: boolean;
-  operation: Record<string, unknown>;
-  pageCommit?: PageMutationCommitResult;
   idempotent?: boolean;
 }
 
 export interface FolderProjectIdentityRepository {
   findMutationByIdempotencyKey(
     idempotencyKey: string,
+    request: Record<string, unknown>,
   ): Promise<FolderProjectIdentityMutationResult | null>;
   create(input: {
     id: string;
@@ -74,52 +65,43 @@ export interface FolderProjectIdentityRepository {
     sortOrder: number;
     settings: Record<string, unknown>;
     parentFolderId: string | null;
+    checklistEnabled: boolean;
+    parentPageApplication?: PageMutationApplication;
+    parentPageOperationId?: string;
     actor: PageMutationActor;
     idempotencyKey: string;
+    request: Record<string, unknown>;
     operationId: string;
     pageOperationId: string;
     pageApplication: PageMutationApplication;
+    boardApplications?: BoardYjsDocumentApplication[];
   }): Promise<FolderProjectIdentityMutationResult>;
   mutate(input: {
     binding: FolderProjectBinding;
+    expectedVersion: number;
     title: string;
     archived: boolean;
     update: FolderProjectUpdate;
     actor: PageMutationActor;
     idempotencyKey: string;
+    request: Record<string, unknown>;
     operationId: string;
     pageOperationId: string;
     pageApplication: PageMutationApplication;
+    boardApplications?: BoardYjsDocumentApplication[];
   }): Promise<FolderProjectIdentityMutationResult>;
   findByFolderId(folderId: string): Promise<FolderProjectBinding | null>;
   findByPageId(pageId: string): Promise<FolderProjectBinding | null>;
   readPageSnapshot(pageId: string): Promise<Uint8Array | null>;
-  listLegacyFolders(): Promise<readonly LegacyProjectFolder[]>;
-  bindLegacyPage(input: {
-    folder: LegacyProjectFolder;
-    pageId: string;
-    actor: PageMutationActor;
-    idempotencyKey: string;
-    operationId: string;
-    pageOperationId: string;
-    pageApplication: PageMutationApplication;
-  }): Promise<LegacyFolderBackfillResult>;
-  createLegacyPageAndBind(input: {
-    folder: LegacyProjectFolder;
-    pageId: string;
-    actor: PageMutationActor;
-    idempotencyKey: string;
-    operationId: string;
-    pageOperationId: string;
-    pageApplication: PageMutationApplication;
-  }): Promise<LegacyFolderBackfillResult>;
+
 }
 
 export interface FolderProjectIdentityServiceConfig {
   repository: FolderProjectIdentityRepository;
+  withBoardApplication: BoardYjsService["withFolderBoardApplication"];
   createId?: () => string;
   createOperationId?: () => string;
   hydratePage: (pageId: string) => Promise<void>;
-  onCommitted?: (delta?: FolderProjectCatalogDelta) => Promise<void>;
+  onCommitted?: () => Promise<void>;
   onPageUpdated?: PageUpdatedObserver;
 }

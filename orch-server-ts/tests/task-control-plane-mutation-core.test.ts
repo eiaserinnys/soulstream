@@ -1,23 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { TaskMutationCore } from "../src/tasks/control_plane/task_mutation_core.js";
-import type { TaskRepository } from "../src/tasks/control_plane/task_repository.js";
+import { ChecklistMutationCore } from "../src/tasks/control_plane/task_mutation_core.js";
+import type { ChecklistRepository } from "../src/tasks/control_plane/task_repository.js";
 import type {
   RepositorySql,
-  TaskDbPort,
-  TaskOperationRow,
-  TaskSnapshot,
+  FolderDbPort,
+  FolderOperationRow,
+  FolderSnapshot,
 } from "../src/tasks/control_plane/task_types.js";
 
-describe("TaskMutationCore orchestrator transaction", () => {
+describe("ChecklistMutationCore orchestrator transaction", () => {
   it("commits actor event, domain mutation, and operation with the same provenance", async () => {
     const order: string[] = [];
-    const operation: TaskOperationRow = {
+    const operation: FolderOperationRow = {
       id: "operation-1",
-      task_id: "task-1",
+      folder_id: "task-1",
       target_kind: "section",
       target_id: "section-1",
-      operation_type: "update_task_section",
+      operation_type: "update_checklist_section",
       actor_kind: "agent",
       actor_session_id: "session-1",
       actor_event_id: 42,
@@ -28,10 +28,10 @@ describe("TaskMutationCore orchestrator transaction", () => {
       created_at: new Date("2026-08-05T00:00:00.000Z"),
     };
     const snapshot = {
-      task: {
+      folder: {
         id: "task-1",
-        board_item_id: "task:task-1",
-        title: "Task",
+        parent_folder_id: null, project_page_id: "page-1", sort_order: 0, settings: {}, checklist_enabled: false,
+        name: "Folder",
         status: "open",
         archived: false,
         version: 1,
@@ -47,7 +47,7 @@ describe("TaskMutationCore orchestrator transaction", () => {
       },
       sections: [],
       items: [],
-    } satisfies TaskSnapshot;
+    } satisfies FolderSnapshot;
     const transactionSql = {} as RepositorySql;
     const appendOperationTx = vi.fn(async (_sql, input) => {
       order.push("operation");
@@ -69,23 +69,23 @@ describe("TaskMutationCore orchestrator transaction", () => {
       getOperationByIdempotencyKey: vi.fn(async () => null),
       appendOperationTx,
       getSnapshot: vi.fn(async () => snapshot),
-    } as unknown as TaskRepository;
-    const db: TaskDbPort = {
+    } as unknown as ChecklistRepository;
+    const db: FolderDbPort = {
       async appendEventTx(sql, input) {
         expect(sql).toBe(transactionSql);
-        expect(input).toMatchObject({ sessionId: "session-1", eventType: "task_operation" });
+        expect(input).toMatchObject({ sessionId: "session-1", eventType: "folder_operation" });
         order.push("event");
         return 42;
       },
     };
-    const broadcaster = { emitTaskUpdated: vi.fn(async () => undefined) };
-    const core = new TaskMutationCore(db, repo, broadcaster);
+    const broadcaster = { emitFolderUpdated: vi.fn(async () => undefined) };
+    const core = new ChecklistMutationCore(db, repo, broadcaster);
 
     const result = await core.mutate({
-      taskId: "task-1",
+      folderId: "task-1",
       targetKind: "section",
       targetId: "section-1",
-      operationType: "update_task_section",
+      operationType: "update_checklist_section",
       actor: { actorKind: "agent", actorSessionId: "session-1" },
       payload: { title: "Renamed" },
       reason: "test",
@@ -99,10 +99,10 @@ describe("TaskMutationCore orchestrator transaction", () => {
 
     expect(order).toEqual(["begin", "event", "apply", "operation", "commit"]);
     expect(result).toMatchObject({ eventId: 42, operation: { actor_session_id: "session-1" } });
-    expect(broadcaster.emitTaskUpdated).toHaveBeenCalledWith(
-      "session-1",
+    expect(broadcaster.emitFolderUpdated).toHaveBeenCalledWith(
       "task-1",
-      "task:task-1",
+      "session-1",
+      false,
     );
   });
 });

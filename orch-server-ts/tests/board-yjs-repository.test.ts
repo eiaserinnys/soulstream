@@ -5,10 +5,8 @@ import { createBoardYDocSnapshot, readBoardYDocReplica } from "../src/board-yjs/
 import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
 import { assertBoardItemProjectionParity } from
   "../src/board-yjs/board_yjs_projection_verification.js";
-import { normalizeMissingSourceTaskItemReferences } from
+import { normalizeMissingSourceChecklistItemReferences } from
   "../src/board-yjs/board_yjs_replica_normalization.js";
-import { computeBoardYjsRawRevision } from
-  "../src/board-yjs/board_yjs_raw_document.js";
 import {
   createLiveDbSqlResolver,
   type LivePostgresSql,
@@ -60,109 +58,6 @@ function createMockSql(resultFor?: (call: SqlCall) => readonly Record<string, un
 }
 
 describe("orch BoardYjsRepository", () => {
-  it("loads a legacy document by its exact raw name from the snapshot only", async () => {
-    const snapshot = Buffer.from([1, 2, 3]);
-    const { sql, calls } = createMockSql((call) => {
-      if (call.query.includes("FROM board_yjs_documents")) return [{ snapshot }];
-      return [];
-    });
-    const repository = new BoardYjsRepository({
-      resolveSql: vi.fn(async () => sql),
-      close: vi.fn(),
-    });
-
-    const state = await repository.loadRawBoardYjsDocument("board:runbook:task-a");
-
-    expect(state).toEqual({
-      snapshot: new Uint8Array(snapshot),
-      revision: computeBoardYjsRawRevision(new Uint8Array(snapshot)),
-    });
-    expect(calls[0]?.query).toContain("REPEATABLE READ, READ ONLY");
-    expect(calls.slice(1).every((call) => call.inTransaction)).toBe(true);
-    expect(calls[1]?.values).toEqual(["board:runbook:task-a"]);
-    expect(calls).toHaveLength(2);
-  });
-
-  it("rechecks a locked source revision before atomically writing and retiring it", async () => {
-    const sourceSnapshot = Buffer.from([1, 2, 3]);
-    const expectedRevision = computeBoardYjsRawRevision(
-      new Uint8Array(sourceSnapshot),
-    );
-    const { sql, calls } = createMockSql((call) => {
-      if (call.query.includes("SELECT snapshot") &&
-        call.values[0] === "board:runbook:task-a") return [{ snapshot: sourceSnapshot }];
-      if (call.query.includes("RETURNING name")) return [{ name: "board:task:task-a" }];
-      return [];
-    });
-    const repository = new BoardYjsRepository({
-      resolveSql: vi.fn(async () => sql),
-      close: vi.fn(),
-    });
-
-    await repository.commitBoardYjsRunbookMigration({
-      sourceDocumentName: "board:runbook:task-a",
-      canonicalDocumentName: "board:task:task-a",
-      expectedSourceRevision: expectedRevision,
-      expectedCanonicalRevision: null,
-      canonicalSnapshot: new Uint8Array([9]),
-      scope: {
-        folderId: "folder-1",
-        containerKind: "task",
-        containerId: "task-a",
-      },
-      replica: { boardItems: [], markdownDocuments: [] },
-      preserveCanonical: false,
-    });
-
-    expect(calls.some((call) => call.query.includes("FOR UPDATE"))).toBe(true);
-    expect(calls.some((call) => call.query.includes("ON CONFLICT (name) DO NOTHING")))
-      .toBe(true);
-    expect(calls.some((call) =>
-      call.query.includes("DELETE FROM board_yjs_documents") &&
-      call.values.includes("board:runbook:task-a")
-    )).toBe(true);
-    expect(calls.every((call) => call.inTransaction)).toBe(true);
-  });
-
-  it("keeps an approved canonical collision and synchronizes its SQL projection atomically", async () => {
-    const sourceSnapshot = Buffer.from([1]);
-    const canonicalSnapshot = Buffer.from([2]);
-    const { sql, calls } = createMockSql((call) => {
-      if (!call.query.includes("SELECT snapshot")) return [];
-      if (call.values[0] === "board:runbook:task-a") return [{ snapshot: sourceSnapshot }];
-      if (call.values[0] === "board:task:task-a") return [{ snapshot: canonicalSnapshot }];
-      return [];
-    });
-    const repository = new BoardYjsRepository({
-      resolveSql: vi.fn(async () => sql),
-      close: vi.fn(),
-    });
-
-    await repository.commitBoardYjsRunbookMigration({
-      sourceDocumentName: "board:runbook:task-a",
-      canonicalDocumentName: "board:task:task-a",
-      expectedSourceRevision: computeBoardYjsRawRevision(
-        new Uint8Array(sourceSnapshot),
-      ),
-      expectedCanonicalRevision: computeBoardYjsRawRevision(
-        new Uint8Array(canonicalSnapshot),
-      ),
-      canonicalSnapshot: new Uint8Array([9]),
-      scope: { folderId: "folder-1", containerKind: "task", containerId: "task-a" },
-      replica: { boardItems: [], markdownDocuments: [] },
-      preserveCanonical: true,
-    });
-
-    expect(calls.some((call) => call.query.includes("INSERT INTO board_yjs_catalog_cache")))
-      .toBe(true);
-    expect(calls.some((call) => call.query.includes("RETURNING name"))).toBe(false);
-    expect(calls.some((call) =>
-      call.query.includes("DELETE FROM board_yjs_documents") &&
-      call.values.includes("board:runbook:task-a")
-    )).toBe(true);
-    expect(calls.every((call) => call.inTransaction)).toBe(true);
-  });
-
   it("reconciles one Y.Doc replica with transaction-scoped SET-DIFF and object JSONB", async () => {
     const { sql, calls, jsonValues } = createMockSql();
     const factory = vi.fn(() => sql);
@@ -173,19 +68,16 @@ describe("orch BoardYjsRepository", () => {
     const repository = new BoardYjsRepository(resolver);
     const scope = {
       folderId: "folder-1",
-      containerKind: "task" as const,
-      containerId: "rb-1",
-    };
+
+      };
     const doc = new Y.Doc();
     Y.applyUpdate(doc, createBoardYDocSnapshot({
       ...scope,
       boardItems: [{
         id: "markdown:d1",
         folderId: "folder-1",
-        containerKind: "task",
-        containerId: "rb-1",
         membershipKind: "primary",
-        sourceTaskItemId: null,
+        sourceChecklistItemId: null,
         itemType: "markdown",
         itemId: "d1",
         x: 280,
@@ -220,13 +112,13 @@ describe("orch BoardYjsRepository", () => {
   });
 
   it("normalizes deleted task item references identically for sync and verification", async () => {
-    const danglingSourceTaskItemId = "missing-task-item";
-    const existingSourceTaskItemId = "existing-task-item";
+    const danglingSourceChecklistItemId = "missing-task-item";
+    const existingSourceChecklistItemId = "existing-task-item";
     const { sql, calls, jsonValues } = createMockSql((call) => {
-      if (call.query.includes("FROM task_items")) return [{ id: existingSourceTaskItemId }];
+      if (call.query.includes("FROM task_items")) return [{ id: existingSourceChecklistItemId }];
       if (
         call.query.includes("INSERT INTO board_items") &&
-        call.values[5] === danglingSourceTaskItemId
+        call.values[5] === danglingSourceChecklistItemId
       ) {
         throw new Error(
           'violates foreign key constraint "board_items_source_runbook_item_id_fkey"',
@@ -242,10 +134,9 @@ describe("orch BoardYjsRepository", () => {
       boardItems: [{
         id: "session:poisoned",
         folderId: "folder-1",
-        containerKind: "task" as const,
-        containerId: "task-1",
+
         membershipKind: "primary" as const,
-        sourceTaskItemId: danglingSourceTaskItemId,
+        sourceChecklistItemId: danglingSourceChecklistItemId,
         itemType: "session" as const,
         itemId: "poisoned",
         x: 0,
@@ -254,10 +145,9 @@ describe("orch BoardYjsRepository", () => {
       }, {
         id: "session:valid",
         folderId: "folder-1",
-        containerKind: "task" as const,
-        containerId: "task-1",
+
         membershipKind: "primary" as const,
-        sourceTaskItemId: existingSourceTaskItemId,
+        sourceChecklistItemId: existingSourceChecklistItemId,
         itemType: "session" as const,
         itemId: "valid",
         x: 10,
@@ -266,10 +156,9 @@ describe("orch BoardYjsRepository", () => {
       }, {
         id: "markdown:created",
         folderId: "folder-1",
-        containerKind: "task" as const,
-        containerId: "task-1",
+
         membershipKind: "primary" as const,
-        sourceTaskItemId: null,
+        sourceChecklistItemId: null,
         itemType: "markdown" as const,
         itemId: "created",
         x: 20,
@@ -278,8 +167,7 @@ describe("orch BoardYjsRepository", () => {
       }, {
         id: "markdown:moved",
         folderId: "folder-1",
-        containerKind: "task" as const,
-        containerId: "task-1",
+
         membershipKind: "primary" as const,
         itemType: "markdown" as const,
         itemId: "moved",
@@ -302,15 +190,13 @@ describe("orch BoardYjsRepository", () => {
 
     await expect(repository.syncBoardYjsReplica({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "task-1",
-    }, replica)).resolves.toBeUndefined();
+      }, replica)).resolves.toBeUndefined();
 
     const sourceLookup = calls.find((call) => call.query.includes("FROM task_items"));
     expect(sourceLookup?.query).toContain("FOR KEY SHARE");
     expect(sourceLookup?.values).toEqual([[
-      danglingSourceTaskItemId,
-      existingSourceTaskItemId,
+      danglingSourceChecklistItemId,
+      existingSourceChecklistItemId,
     ]]);
     const poisonedInsert = calls.find((call) =>
       call.query.includes("INSERT INTO board_items") && call.values[0] === "session:poisoned"
@@ -319,23 +205,23 @@ describe("orch BoardYjsRepository", () => {
     const validInsert = calls.find((call) =>
       call.query.includes("INSERT INTO board_items") && call.values[0] === "session:valid"
     );
-    expect(validInsert?.values[5]).toBe(existingSourceTaskItemId);
+    expect(validInsert?.values[5]).toBe(existingSourceChecklistItemId);
     const cachedBoardItems = jsonValues.find(Array.isArray) as typeof replica.boardItems;
     expect(cachedBoardItems).toEqual([
-      expect.objectContaining({ id: "session:poisoned", sourceTaskItemId: null }),
+      expect.objectContaining({ id: "session:poisoned", sourceChecklistItemId: null }),
       expect.objectContaining({
         id: "session:valid",
-        sourceTaskItemId: existingSourceTaskItemId,
+        sourceChecklistItemId: existingSourceChecklistItemId,
       }),
       expect.objectContaining({ id: "markdown:created" }),
       expect.objectContaining({ id: "markdown:moved" }),
     ]);
-    const normalizedYdocReplica = normalizeMissingSourceTaskItemReferences(
+    const normalizedYdocReplica = normalizeMissingSourceChecklistItemReferences(
       replica,
-      new Set([existingSourceTaskItemId]),
+      new Set([existingSourceChecklistItemId]),
     );
     expect(() => assertBoardItemProjectionParity({
-      label: "board:task:task-1",
+      label: "board-folder:task-1",
       ydocItems: normalizedYdocReplica.boardItems,
       projectionItems: cachedBoardItems,
     })).not.toThrow();
@@ -349,7 +235,7 @@ describe("orch BoardYjsRepository", () => {
     const repository = new BoardYjsRepository(resolver);
 
     await repository.syncBoardYjsReplica(
-      { folderId: "folder-1", containerKind: "folder", containerId: "folder-1" },
+      {  folderId: "folder-1" },
       { boardItems: [], markdownDocuments: [] },
     );
 
@@ -367,7 +253,7 @@ describe("orch BoardYjsRepository", () => {
           container_kind: "task",
           container_id: "rb-1",
           membership_kind: "primary",
-          source_task_item_id: null,
+          source_checklist_item_id: null,
           item_type: "markdown",
           item_id: "d1",
           x: 10,
@@ -396,9 +282,7 @@ describe("orch BoardYjsRepository", () => {
 
     const seed = await repository.loadBoardYjsSeed({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    });
+      });
 
     expect(calls.map((call) => call.query)).toEqual([
       expect.stringContaining("board_seed_items"),
@@ -414,135 +298,10 @@ describe("orch BoardYjsRepository", () => {
     expect(seed).toEqual({
       boardItems: [expect.objectContaining({
         id: "markdown:d1",
-        containerKind: "task",
-        containerId: "rb-1",
-      })],
+        })],
       markdownDocuments: [{ id: "d1", title: "Note", body: "Body", version: 2 }],
     });
   });
 
-  it("backfills a DB-only task tile into the folder snapshot and reconciles it", async () => {
-    const { sql, calls } = createMockSql((call) => {
-      if (call.query.includes("FROM board_items") && call.query.includes("item_type = 'task'")) {
-        return [{
-          id: "task:rb-1",
-          folder_id: "folder-1",
-          container_kind: "folder",
-          container_id: "folder-1",
-          membership_kind: "primary",
-          source_task_item_id: null,
-          item_type: "task",
-          item_id: "rb-1",
-          x: 40,
-          y: 80,
-          metadata: { title: "Task" },
-          created_at: null,
-          updated_at: null,
-        }];
-      }
-      if (call.query.includes("UPDATE board_yjs_documents") &&
-        call.query.includes("RETURNING revision")) {
-        return [{ revision: 2 }];
-      }
-      return [];
-    });
-    const repository = new BoardYjsRepository({
-      resolveSql: vi.fn(async () => sql),
-      close: vi.fn(),
-    });
-    const empty = createBoardYDocSnapshot({
-      folderId: "folder-1",
-      boardItems: [],
-      markdownDocuments: [],
-    });
 
-    const repaired = await repository.backfillTaskBoardItemsIntoSnapshot(
-      "board-folder:folder-1",
-      { folderId: "folder-1", containerKind: "folder", containerId: "folder-1" },
-      { snapshot: empty, revision: 1 },
-    );
-    const doc = new Y.Doc();
-    Y.applyUpdate(doc, repaired.snapshot);
-
-    expect(readBoardYDocReplica("folder-1", doc).boardItems)
-      .toEqual([expect.objectContaining({ id: "task:rb-1", itemType: "task" })]);
-    expect(calls.some((call) =>
-      call.query.includes("UPDATE board_yjs_documents") &&
-      call.query.includes("AND revision =")
-    ))
-      .toBe(true);
-    expect(calls.some((call) => call.query.includes("INSERT INTO board_yjs_catalog_cache")))
-      .toBe(true);
-  });
-
-  it("reloads the winning snapshot and retries task backfill after a CAS conflict", async () => {
-    const scope = {
-      folderId: "folder-retry",
-      containerKind: "folder" as const,
-      containerId: "folder-retry",
-    };
-    const concurrent = createBoardYDocSnapshot({
-      ...scope,
-      boardItems: [{
-        id: "session:concurrent",
-        folderId: scope.folderId,
-        itemType: "session",
-        itemId: "concurrent",
-        x: 0,
-        y: 0,
-        metadata: {},
-      }],
-      markdownDocuments: [],
-    });
-    let casAttempts = 0;
-    const { sql } = createMockSql((call) => {
-      if (call.query.includes("FROM board_items") && call.query.includes("item_type = 'task'")) {
-        return [{
-          id: "task:retry",
-          folder_id: scope.folderId,
-          container_kind: scope.containerKind,
-          container_id: scope.containerId,
-          membership_kind: "primary",
-          source_task_item_id: null,
-          item_type: "task",
-          item_id: "retry",
-          x: 40,
-          y: 80,
-          metadata: { title: "Retry" },
-          created_at: null,
-          updated_at: null,
-        }];
-      }
-      if (call.query.includes("UPDATE board_yjs_documents") &&
-        call.query.includes("RETURNING revision")) {
-        casAttempts += 1;
-        return casAttempts === 1 ? [] : [{ revision: 3 }];
-      }
-      if (call.query.includes("SELECT snapshot, revision")) {
-        return [{ snapshot: Buffer.from(concurrent), revision: 2 }];
-      }
-      return [];
-    });
-    const repository = new BoardYjsRepository({
-      resolveSql: vi.fn(async () => sql),
-      close: vi.fn(),
-    });
-    const initial = createBoardYDocSnapshot({
-      ...scope,
-      boardItems: [],
-      markdownDocuments: [],
-    });
-
-    const repaired = await repository.backfillTaskBoardItemsIntoSnapshot(
-      "board-folder:folder-retry",
-      scope,
-      { snapshot: initial, revision: 1 },
-    );
-
-    const doc = new Y.Doc();
-    Y.applyUpdate(doc, repaired.snapshot);
-    expect(casAttempts).toBe(2);
-    expect(readBoardYDocReplica(scope, doc).boardItems.map((item) => item.id).sort())
-      .toEqual(["session:concurrent", "task:retry"]);
-  });
 });

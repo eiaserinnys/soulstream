@@ -18,8 +18,7 @@ export type SessionSearchResult = {
   readonly title: string;
   readonly excerpt: string;
   readonly updated_at: string | null;
-  readonly task_id: string | null;
-  readonly task_title: string | null;
+  readonly folder_name: string | null;
   readonly parent_session_id: string | null;
   readonly best_match: {
     readonly event_id: number | null;
@@ -75,7 +74,7 @@ export function projectSessionSearchResults(
       numberValue(row.score) >= 2 ? 2 : 1);
   }
 
-  addPrimaryTaskTitleMatches(bestPerSessionAndFamily, rows, originalQuery);
+  addPrimaryFolderTitleMatches(bestPerSessionAndFamily, rows, originalQuery);
 
   const bySession = new Map<string, ScoredCandidate[]>();
   for (const candidate of bestPerSessionAndFamily.values()) {
@@ -93,10 +92,10 @@ export function projectSessionSearchResults(
       const prompt = stringValue(row.session_prompt)?.trim();
       const title = displayName || firstLine(prompt ?? null) || "제목 없음";
       const excerpt = best.evidence.excerpt || buildSearchPreview(prompt ?? "", originalQuery);
-      const explicitTaskEvidence = taskEvidenceForSession(rows, sessionId, originalQuery);
+      const explicitFolderEvidence = folderEvidenceForSession(rows, sessionId, originalQuery);
       const evidence = uniqueEvidence([
         ...group.map((candidate) => candidate.evidence),
-        ...explicitTaskEvidence,
+        ...explicitFolderEvidence,
       ]);
       const eventId = best.evidence.event_id;
       return {
@@ -111,8 +110,7 @@ export function projectSessionSearchResults(
         excerpt,
         created_at: timestampValue(row.session_created_at),
         updated_at: timestampValue(row.session_updated_at),
-        task_id: stringValue(row.task_id),
-        task_title: stringValue(row.task_title),
+        folder_name: stringValue(row.folder_name),
         parent_session_id: stringValue(row.parent_session_id)
           ?? stringValue(row.caller_session_id),
         best_match: {
@@ -126,8 +124,8 @@ export function projectSessionSearchResults(
           ...(eventId === null ? {} : { eventId: String(eventId) }),
         }),
         relevance: group.reduce((sum, candidate) => sum + candidate.score, 0),
-        workEvidenceRank: explicitTaskEvidence.reduce(
-          (rank, item) => Math.max(rank, taskEvidenceRank(item.source)),
+        workEvidenceRank: explicitFolderEvidence.reduce(
+          (rank, item) => Math.max(rank, folderEvidenceRank(item.source)),
           0,
         ),
       };
@@ -201,7 +199,7 @@ function keepBestCandidate(
   if (!current || candidate.score > current.score) candidates.set(key, candidate);
 }
 
-function addPrimaryTaskTitleMatches(
+function addPrimaryFolderTitleMatches(
   candidates: Map<string, ScoredCandidate>,
   rows: readonly SessionSearchCandidateRow[],
   originalQuery: string,
@@ -211,20 +209,20 @@ function addPrimaryTaskTitleMatches(
   const bestBySession = new Map<string, SessionSearchCandidateRow>();
   for (const row of rows) {
     const sessionId = stringValue(row.session_id);
-    const taskId = stringValue(row.task_id);
-    const title = stringValue(row.task_title)?.trim();
-    if (!sessionId || !taskId || !title || !compactSearchQuery(title).includes(compactQuery)) continue;
+    const folderId = stringValue(row.folder_id);
+    const title = stringValue(row.folder_name)?.trim();
+    if (!sessionId || !folderId || !title || !compactSearchQuery(title).includes(compactQuery)) continue;
     if (!bestBySession.has(sessionId)) bestBySession.set(sessionId, row);
   }
   for (const [queryRank, [sessionId, row]] of [...bestBySession.entries()].entries()) {
-    const title = stringValue(row.task_title) ?? "";
+    const title = stringValue(row.folder_name) ?? "";
     keepBestCandidate(candidates, {
       sessionId,
       score: 1.5 / (60 + queryRank + 1),
       queryFamily: "lexical",
       queryRank: queryRank + 1,
       evidence: {
-        source: "task_title",
+        source: "folder_name",
         event_id: null,
         excerpt: buildSearchPreview(title, originalQuery),
       },
@@ -233,7 +231,7 @@ function addPrimaryTaskTitleMatches(
   }
 }
 
-function taskEvidenceForSession(
+function folderEvidenceForSession(
   rows: readonly SessionSearchCandidateRow[],
   sessionId: string,
   originalQuery: string,
@@ -241,29 +239,29 @@ function taskEvidenceForSession(
   const evidenceByKind = new Map<string, SessionSearchCandidateRow>();
   for (const row of rows) {
     if (stringValue(row.session_id) !== sessionId) continue;
-    const kind = stringValue(row.task_evidence_kind);
-    const title = stringValue(row.task_evidence_title)?.trim();
-    if (!kind || !title || !isTaskEvidenceKind(kind)) continue;
+    const kind = stringValue(row.folder_evidence_kind);
+    const title = stringValue(row.folder_evidence_title)?.trim();
+    if (!kind || !title || !isFolderEvidenceKind(kind)) continue;
     if (!evidenceByKind.has(kind)) evidenceByKind.set(kind, row);
   }
   return [...evidenceByKind.entries()]
-    .sort(([left], [right]) => taskEvidenceRank(right) - taskEvidenceRank(left))
+    .sort(([left], [right]) => folderEvidenceRank(right) - folderEvidenceRank(left))
     .map(([kind, row]) => ({
       source: kind,
       event_id: null,
-      excerpt: buildSearchPreview(stringValue(row.task_evidence_title) ?? "", originalQuery),
+      excerpt: buildSearchPreview(stringValue(row.folder_evidence_title) ?? "", originalQuery),
     }));
 }
 
-function isTaskEvidenceKind(kind: string): boolean {
-  return kind === "source_task_item"
-    || kind === "task_item_completed"
-    || kind === "task_completed"
-    || kind === "task_item_assigned";
+function isFolderEvidenceKind(kind: string): boolean {
+  return kind === "source_checklist_item"
+    || kind === "checklist_item_completed"
+    || kind === "folder_completed"
+    || kind === "checklist_item_assigned";
 }
 
-function taskEvidenceRank(kind: string): number {
-  return kind === "task_item_completed" || kind === "task_completed" ? 2 : 0;
+function folderEvidenceRank(kind: string): number {
+  return kind === "checklist_item_completed" || kind === "folder_completed" ? 2 : 0;
 }
 
 function isSemanticQuery(queryKind: string): boolean {

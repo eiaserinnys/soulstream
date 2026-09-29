@@ -211,37 +211,6 @@ function normalizeReviewState(value: unknown): string {
     : "not_required";
 }
 
-export function serializeTaskRow(
-  row: Record<string, unknown>,
-  linkedSession: Record<string, unknown> | undefined,
-  options: SessionSerializationOptions = {},
-): Record<string, unknown> {
-  return {
-    id: row.id,
-    parentId: row.parent_id,
-    positionKey: row.position_key,
-    title: row.title,
-    description: row.description,
-    acceptanceCriteria: row.acceptance_criteria,
-    verificationOwner: row.verification_owner,
-    status: row.status,
-    linkedSessionId: row.linked_session_id,
-    linkedNodeId: row.linked_node_id,
-    activeForSessionId: row.active_for_session_id,
-    createdFromSessionId: row.created_from_session_id,
-    createdFromEventId: row.created_from_event_id,
-    navigationSessionId: row.navigation_session_id,
-    navigationNodeId: row.navigation_node_id,
-    navigationEventId: row.navigation_event_id,
-    archived: row.archived,
-    pinned: row.pinned,
-    version: row.version,
-    createdAt: iso(row.created_at),
-    updatedAt: iso(row.updated_at),
-    linkedSession:
-      linkedSession === undefined ? null : serializeSessionRow(linkedSession, options),
-  };
-}
 
 export function iso(value: unknown): string | null {
   if (value === null || value === undefined) return null;

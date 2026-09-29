@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { createPostgresQueryAdapter } from "../src/runtime/postgres_query_adapter.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
-import { TaskRepository } from "../src/tasks/control_plane/task_repository.js";
+import { ChecklistRepository } from "../src/tasks/control_plane/task_repository.js";
 
 type SqlCall = {
   query: string;
@@ -115,22 +115,22 @@ describe("task control-plane postgres.js adapter", () => {
     await expect(result).resolves.toBe(rows);
   });
 
-  it("executes patchTaskTx with a synchronous SET helper", async () => {
+  it("executes patchFolderTx with a synchronous SET helper", async () => {
     const { calls, helpers, rawSql } = createSqlHarness();
     const sql = createBoardYjsSqlAdapter(rawSql);
-    const repository = new TaskRepository(sql);
+    const repository = new ChecklistRepository(sql);
 
     await sql.begin((transaction) =>
-      repository.patchTaskTx(transaction, "task-1", { title: "renamed" }, 7)
+      repository.patchFolderTx(transaction, "folder-1", { name: "renamed" }, 7)
     );
 
-    expectSynchronousHelper(calls, helpers, "tasks", { title: "renamed" });
+    expectSynchronousHelper(calls, helpers, "folders", { name: "renamed" });
   });
 
   it("executes patchSectionTx with a synchronous SET helper", async () => {
     const { calls, helpers, rawSql } = createSqlHarness();
     const sql = createBoardYjsSqlAdapter(rawSql);
-    const repository = new TaskRepository(sql);
+    const repository = new ChecklistRepository(sql);
 
     await sql.begin((transaction) =>
       repository.patchSectionTx(
@@ -143,13 +143,13 @@ describe("task control-plane postgres.js adapter", () => {
       )
     );
 
-    expectSynchronousHelper(calls, helpers, "task_sections", { title: "renamed" });
+    expectSynchronousHelper(calls, helpers, "checklist_sections", { title: "renamed" });
   });
 
   it("executes patchItemTx with a synchronous SET helper", async () => {
     const { calls, helpers, rawSql } = createSqlHarness();
     const sql = createBoardYjsSqlAdapter(rawSql);
-    const repository = new TaskRepository(sql);
+    const repository = new ChecklistRepository(sql);
 
     await sql.begin((transaction) =>
       repository.patchItemTx(
@@ -162,6 +162,6 @@ describe("task control-plane postgres.js adapter", () => {
       )
     );
 
-    expectSynchronousHelper(calls, helpers, "task_items", { how_to: "new steps" });
+    expectSynchronousHelper(calls, helpers, "checklist_items", { how_to: "new steps" });
   });
 });

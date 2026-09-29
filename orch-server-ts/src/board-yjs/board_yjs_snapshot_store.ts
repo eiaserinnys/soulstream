@@ -8,7 +8,7 @@ import {
 import { syncBoardYjsReplicaWithSql } from "./board_yjs_replica_sync.js";
 import type { BoardYjsQuerySql } from "./board_yjs_sql.js";
 import type {
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsDocumentApplication,
   BoardYjsReplica,
 } from "./board_yjs_types.js";
@@ -21,7 +21,7 @@ export interface BoardYjsSnapshotRecord {
 }
 
 export interface BoardYjsSnapshotProjection {
-  scope: BoardYjsContainerScope;
+  scope: BoardYjsFolderScope;
   replica: BoardYjsReplica;
 }
 
@@ -121,7 +121,7 @@ export async function storeMergedBoardYjsApplicationWithSql(
 }
 
 export function mergeBoardYjsSnapshots(
-  scope: BoardYjsContainerScope,
+  scope: BoardYjsFolderScope,
   currentSnapshot: Uint8Array | null,
   candidateSnapshot: Uint8Array,
 ): { snapshot: Uint8Array; replica: BoardYjsReplica } {

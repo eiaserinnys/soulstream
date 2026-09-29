@@ -54,17 +54,7 @@ function createHarness(overrides: Partial<MarkdownDocumentRouteProvider> = {}) {
       calls.push(["listFolders"]);
       return folders;
     },
-    async resolveBoardContainerFolderId(container) {
-      calls.push(["resolveContainer", container]);
-      if (container.kind === "task" && container.id === "task-1") {
-        return "folder-a";
-      }
-      throw new MarkdownDocumentRouteError(
-        "BOARD_CONTAINER_NOT_FOUND",
-        "Task board container not found",
-        404,
-      );
-    },
+
     async getMarkdownDocument(documentId) {
       calls.push(["getDocument", documentId]);
       return documents.get(documentId) ?? null;

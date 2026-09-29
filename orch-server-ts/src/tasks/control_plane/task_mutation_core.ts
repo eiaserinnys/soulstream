@@ -1,33 +1,34 @@
+import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
 import type { RepositorySql } from "./task_types.js";
 import type {
-  TaskItemStatus,
-  TaskOperationRow,
-  TaskOperationActorKind,
-  TaskOperationTargetKind,
-  TaskSnapshot,
-  TaskStatus,
+  ChecklistItemStatus,
+  FolderOperationRow,
+  FolderOperationActorKind,
+  FolderOperationTargetKind,
+  FolderSnapshot,
+  FolderStatus,
 } from "./task_types.js";
 
-import { TaskVersionConflict } from "./task_models.js";
+import { ChecklistVersionConflict } from "./task_models.js";
 import { resolveItemPositionTx } from "./task_position_queries.js";
-import type { TaskRepository } from "./task_repository.js";
+import type { ChecklistRepository } from "./task_repository.js";
 import type {
-  TaskActorParams,
-  TaskBroadcasterPort,
-  TaskDbPort,
-  TaskMutationResult,
+  FolderActorParams,
+  FolderBroadcasterPort,
+  FolderDbPort,
+  ChecklistMutationResult,
 } from "./task_types.js";
 
-export interface TaskMutateParams {
-  taskId: string;
-  targetKind: TaskOperationTargetKind;
+export interface FolderMutateParams {
+  folderId: string;
+  targetKind: FolderOperationTargetKind;
   targetId: string;
   operationType: string;
-  actor: TaskActorParams;
+  actor: FolderActorParams;
   payload: Record<string, unknown>;
   preflight?: (sql: RepositorySql) => Promise<void>;
   apply: (sql: RepositorySql, eventId: number | null) => Promise<void>;
@@ -35,13 +36,13 @@ export interface TaskMutateParams {
   idempotencyKey?: string | null;
 }
 
-export interface SessionlessTaskMutateParams {
-  taskId: string;
-  targetKind: TaskOperationTargetKind;
+export interface SessionlessFolderMutateParams {
+  folderId: string;
+  targetKind: FolderOperationTargetKind;
   targetId: string;
   operationType: string;
   actor: {
-    actorKind: Extract<TaskOperationActorKind, "user" | "system" | "llm">;
+    actorKind: Extract<FolderOperationActorKind, "user" | "system" | "llm">;
     actorSessionId: null;
     actorUserId?: string | null;
   };
@@ -51,34 +52,34 @@ export interface SessionlessTaskMutateParams {
   idempotencyKey?: string | null;
 }
 
-type TaskEventParams = Omit<TaskMutateParams, "preflight" | "apply"> & {
+type FolderEventParams = Omit<FolderMutateParams, "preflight" | "apply"> & {
   operationId: string;
 };
 
-export class TaskMutationCore {
+export class ChecklistMutationCore {
   constructor(
-    private readonly db: TaskDbPort,
-    private readonly repo: TaskRepository,
-    private readonly broadcaster?: TaskBroadcasterPort,
+    private readonly db: FolderDbPort,
+    private readonly repo: ChecklistRepository,
+    private readonly broadcaster?: FolderBroadcasterPort,
   ) {}
 
-  async mutate(params: TaskMutateParams): Promise<TaskMutationResult> {
-    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
+  async mutate(params: FolderMutateParams): Promise<ChecklistMutationResult> {
+    const idempotent = await this.resolveIdempotent(params.idempotencyKey, params);
     if (idempotent) return idempotent;
 
-    let operation!: TaskOperationRow;
+    let operation!: FolderOperationRow;
     let eventId: number | null = null;
     await this.repo.transaction(async (sql) => {
       await params.preflight?.(sql);
       const opId = randomUUID();
-      eventId = await this.appendTaskEventIfPresent(
+      eventId = await this.appendFolderEventIfPresent(
         sql,
         { ...params, operationId: opId },
       );
       await params.apply(sql, eventId);
       operation = await this.repo.appendOperationTx(sql, {
         id: opId,
-        taskId: params.taskId,
+        folderId: params.folderId,
         targetKind: params.targetKind,
         targetId: params.targetId,
         operationType: params.operationType,
@@ -93,7 +94,7 @@ export class TaskMutationCore {
     });
 
     const result = {
-      snapshot: await this.requireSnapshot(params.taskId),
+      snapshot: await this.requireSnapshot(params.folderId),
       operation,
       eventId: eventId ?? 0,
     };
@@ -102,18 +103,18 @@ export class TaskMutationCore {
   }
 
   async mutateWithoutSession(
-    params: SessionlessTaskMutateParams,
-  ): Promise<TaskMutationResult> {
-    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
+    params: SessionlessFolderMutateParams,
+  ): Promise<ChecklistMutationResult> {
+    const idempotent = await this.resolveIdempotent(params.idempotencyKey, params);
     if (idempotent) return idempotent;
 
-    let operation!: TaskOperationRow;
+    let operation!: FolderOperationRow;
     await this.repo.transaction(async (sql) => {
       const operationId = randomUUID();
       await params.apply(sql);
       operation = await this.repo.appendOperationTx(sql, {
         id: operationId,
-        taskId: params.taskId,
+        folderId: params.folderId,
         targetKind: params.targetKind,
         targetId: params.targetId,
         operationType: params.operationType,
@@ -127,32 +128,32 @@ export class TaskMutationCore {
       });
     });
     return {
-      snapshot: await this.requireSnapshot(params.taskId),
+      snapshot: await this.requireSnapshot(params.folderId),
       operation,
       eventId: 0,
     };
   }
 
-  async setItemStatus(params: TaskActorParams & {
+  async setItemStatus(params: FolderActorParams & {
     itemId: string;
     expectedVersion: number;
-    status: TaskItemStatus;
+    status: ChecklistItemStatus;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
-    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
+  }): Promise<ChecklistMutationResult> {
+    const idempotent = await this.resolveIdempotent(params.idempotencyKey, { targetId: params.itemId, operationType: "set_checklist_item_status", payload: { status: params.status } });
     if (idempotent) return idempotent;
 
-    let taskId = "";
-    let operation!: TaskOperationRow;
+    let folderId = "";
+    let operation!: FolderOperationRow;
     let eventId: number | null = null;
     let shouldNotifyHandoff = false;
     await this.repo.transaction(async (sql) => {
-      taskId = await this.repo.getTaskIdForItemTx(sql, params.itemId);
+      folderId = await this.repo.getFolderIdForItemTx(sql, params.itemId);
       const item = await this.repo.getItemForUpdateTx(sql, params.itemId);
       const actualVersion = Number(item.version);
       if (actualVersion !== params.expectedVersion) {
-        throw new TaskVersionConflict(
+        throw new ChecklistVersionConflict(
           "item",
           params.itemId,
           params.expectedVersion,
@@ -164,10 +165,10 @@ export class TaskMutationCore {
         isTerminalHandoffStatus(params.status) &&
         item.status !== params.status;
       const opId = randomUUID();
-      eventId = await this.appendTaskEventIfPresent(sql, {
+      eventId = await this.appendFolderEventIfPresent(sql, {
         operationId: opId,
-        taskId,
-        operationType: "set_item_status",
+        folderId,
+        operationType: "set_checklist_item_status",
         targetKind: "item",
         targetId: params.itemId,
         actor: params,
@@ -186,10 +187,10 @@ export class TaskMutationCore {
       });
       operation = await this.repo.appendOperationTx(sql, {
         id: opId,
-        taskId,
+        folderId,
         targetKind: "item",
         targetId: params.itemId,
-        operationType: "set_item_status",
+        operationType: "set_checklist_item_status",
         actorKind: params.actorKind ?? "agent",
         actorSessionId: params.actorSessionId,
         actorEventId: eventId,
@@ -200,8 +201,8 @@ export class TaskMutationCore {
       });
     });
 
-    const result: TaskMutationResult = {
-      snapshot: await this.requireSnapshot(taskId),
+    const result: ChecklistMutationResult = {
+      snapshot: await this.requireSnapshot(folderId),
       operation,
       eventId: eventId ?? 0,
     };
@@ -212,43 +213,43 @@ export class TaskMutationCore {
     return result;
   }
 
-  async setTaskStatus(params: TaskActorParams & {
-    taskId: string;
+  async setFolderStatus(params: FolderActorParams & {
+    folderId: string;
     expectedVersion: number;
-    status: TaskStatus;
+    status: FolderStatus;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
-    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
+  }): Promise<ChecklistMutationResult> {
+    const idempotent = await this.resolveIdempotent(params.idempotencyKey, { folderId: params.folderId, targetId: params.folderId, operationType: "set_folder_status", payload: { status: params.status } });
     if (idempotent) return idempotent;
 
-    let operation!: TaskOperationRow;
+    let operation!: FolderOperationRow;
     let eventId: number | null = null;
     await this.repo.transaction(async (sql) => {
-      const task = await this.repo.getTaskForUpdateTx(sql, params.taskId);
-      const actualVersion = Number(task.version);
+      const folder = await this.repo.getFolderForUpdateTx(sql, params.folderId);
+      const actualVersion = Number(folder.version);
       if (actualVersion !== params.expectedVersion) {
-        throw new TaskVersionConflict(
-          "task",
-          params.taskId,
+        throw new ChecklistVersionConflict(
+          "folder",
+          params.folderId,
           params.expectedVersion,
           actualVersion,
         );
       }
       const opId = randomUUID();
-      eventId = await this.appendTaskEventIfPresent(sql, {
+      eventId = await this.appendFolderEventIfPresent(sql, {
         operationId: opId,
-        taskId: params.taskId,
-        operationType: "set_task_status",
-        targetKind: "task",
-        targetId: params.taskId,
+        folderId: params.folderId,
+        operationType: "set_folder_status",
+        targetKind: "folder",
+        targetId: params.folderId,
         actor: params,
         payload: { status: params.status },
         reason: params.reason,
         idempotencyKey: params.idempotencyKey,
       });
-      await this.repo.setTaskStatusTx(sql, {
-        taskId: params.taskId,
+      await this.repo.setFolderStatusTx(sql, {
+        folderId: params.folderId,
         status: params.status,
         expectedVersion: params.expectedVersion,
         actorKind: params.actorKind ?? "agent",
@@ -258,10 +259,10 @@ export class TaskMutationCore {
       });
       operation = await this.repo.appendOperationTx(sql, {
         id: opId,
-        taskId: params.taskId,
-        targetKind: "task",
-        targetId: params.taskId,
-        operationType: "set_task_status",
+        folderId: params.folderId,
+        targetKind: "folder",
+        targetId: params.folderId,
+        operationType: "set_folder_status",
         actorKind: params.actorKind ?? "agent",
         actorSessionId: params.actorSessionId,
         actorEventId: eventId,
@@ -273,7 +274,7 @@ export class TaskMutationCore {
     });
 
     const result = {
-      snapshot: await this.requireSnapshot(params.taskId),
+      snapshot: await this.requireSnapshot(params.folderId),
       operation,
       eventId: eventId ?? 0,
     };
@@ -281,8 +282,8 @@ export class TaskMutationCore {
     return result;
   }
 
-  async moveItem(params: TaskActorParams & {
-    taskId: string;
+  async moveItem(params: FolderActorParams & {
+    folderId: string;
     itemId: string;
     expectedVersion: number;
     sectionId?: string | null;
@@ -290,13 +291,13 @@ export class TaskMutationCore {
     beforeItemId?: string | null;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     let targetSectionId = params.sectionId ?? "";
     return await this.mutate({
-      taskId: params.taskId,
+      folderId: params.folderId,
       targetKind: "item",
       targetId: params.itemId,
-      operationType: "move_task_item",
+      operationType: "move_checklist_item",
       actor: params,
       idempotencyKey: params.idempotencyKey,
       reason: params.reason,
@@ -306,11 +307,11 @@ export class TaskMutationCore {
         before_item_id: params.beforeItemId ?? null,
       },
       preflight: async (sql) => {
-        await this.repo.assertItemBelongsToTaskTx(sql, params.itemId, params.taskId);
+        await this.repo.assertItemBelongsToFolderTx(sql, params.itemId, params.folderId);
         const item = await this.repo.getItemForUpdateTx(sql, params.itemId);
         const actualVersion = Number(item.version);
         if (actualVersion !== params.expectedVersion) {
-          throw new TaskVersionConflict(
+          throw new ChecklistVersionConflict(
             "item",
             params.itemId,
             params.expectedVersion,
@@ -318,7 +319,7 @@ export class TaskMutationCore {
           );
         }
         targetSectionId = params.sectionId ?? item.section_id;
-        await this.repo.assertSectionBelongsToTaskTx(sql, targetSectionId, params.taskId);
+        await this.repo.assertSectionBelongsToFolderTx(sql, targetSectionId, params.folderId);
       },
       apply: async (sql, eventId) => {
         const bounds = await resolveItemPositionTx(sql, targetSectionId, params);
@@ -338,78 +339,84 @@ export class TaskMutationCore {
   }
 
   private async resolveIdempotent(
-    idempotencyKey?: string | null,
-  ): Promise<TaskMutationResult | null> {
+    idempotencyKey: string | null | undefined,
+    expected: { folderId?: string; targetId: string; operationType: string; payload: Record<string, unknown> },
+  ): Promise<ChecklistMutationResult | null> {
     if (!idempotencyKey) return null;
     const operation = await this.repo.getOperationByIdempotencyKey(idempotencyKey);
-    if (!operation?.task_id) return null;
+    if (!operation?.folder_id) return null;
+    if ((expected.folderId && operation.folder_id !== expected.folderId)
+      || operation.operation_type !== expected.operationType
+      || (!expected.operationType.startsWith("create_") && operation.target_id !== expected.targetId)
+      || !isDeepStrictEqual(operation.payload_json, JSON.parse(JSON.stringify(expected.payload)))) {
+      throw Object.assign(new Error("Idempotency key belongs to a different request"), { statusCode: 409, code: "FOLDER_IDEMPOTENCY_CONFLICT" });
+    }
     return {
-      snapshot: await this.requireSnapshot(operation.task_id),
+      snapshot: await this.requireSnapshot(operation.folder_id),
       operation,
       eventId: operation.actor_event_id ?? 0,
       idempotent: true,
     };
   }
 
-  private async appendTaskEvent(
+  private async appendFolderEvent(
     sql: RepositorySql,
-    params: TaskEventParams,
+    params: FolderEventParams,
     actorSessionId: string,
   ): Promise<number> {
     return await this.db.appendEventTx(sql, {
       sessionId: actorSessionId,
-      eventType: "task_operation",
+      eventType: "folder_operation",
       payload: JSON.stringify({
         operation_id: params.operationId,
         operation_type: params.operationType,
-        task_id: params.taskId,
+        folder_id: params.folderId,
         target_kind: params.targetKind,
         target_id: params.targetId,
         payload: params.payload,
         reason: params.reason ?? null,
       }),
-      searchableText: `task operation ${params.operationType}`,
+      searchableText: `folder operation ${params.operationType}`,
       createdAt: new Date(),
       dedupeKey: params.idempotencyKey ?? null,
     });
   }
 
-  private async appendTaskEventIfPresent(
+  private async appendFolderEventIfPresent(
     sql: RepositorySql,
-    params: TaskEventParams,
+    params: FolderEventParams,
   ): Promise<number | null> {
     const actorSessionId = params.actor.actorSessionId;
     if (actorSessionId === null) return null;
-    return await this.appendTaskEvent(sql, params, actorSessionId);
+    return await this.appendFolderEvent(sql, params, actorSessionId);
   }
 
-  private async requireSnapshot(taskId: string): Promise<TaskSnapshot> {
-    const snapshot = await this.repo.getSnapshot(taskId);
-    if (!snapshot) throw new Error(`task not found: ${taskId}`);
+  private async requireSnapshot(folderId: string): Promise<FolderSnapshot> {
+    const snapshot = await this.repo.getSnapshot(folderId);
+    if (!snapshot) throw new Error(`folder not found: ${folderId}`);
     return snapshot;
   }
 
   private async broadcastMutation(
     actorSessionId: string | null,
-    result: TaskMutationResult,
+    result: ChecklistMutationResult,
   ): Promise<void> {
-    if (result.idempotent || !this.broadcaster || actorSessionId === null) return;
-    await this.broadcaster.emitTaskUpdated(
+    if (result.idempotent || !this.broadcaster) return;
+    await this.broadcaster.emitFolderUpdated(
+      result.snapshot.folder.id,
       actorSessionId,
-      result.snapshot.task.id,
-      result.snapshot.task.board_item_id,
+      result.operation.target_kind === "folder",
     );
   }
 
-  private handoffEvent(result: TaskMutationResult): TaskMutationResult["handoff"] {
+  private handoffEvent(result: ChecklistMutationResult): ChecklistMutationResult["handoff"] {
     const item = result.snapshot.items.find(
       (candidate) => candidate.id === result.operation.target_id,
     );
     if (!item || !isTerminalHandoffStatus(item.status)) return undefined;
     return {
-      taskId: result.snapshot.task.id,
-      taskTitle: result.snapshot.task.title,
-      boardItemId: result.snapshot.task.board_item_id,
+      folderId: result.snapshot.folder.id,
+      folderName: result.snapshot.folder.name,
       itemId: item.id,
       itemTitle: item.title,
       status: item.status,
@@ -421,7 +428,7 @@ export class TaskMutationCore {
 }
 
 function isTerminalHandoffStatus(
-  status: TaskItemStatus,
-): status is Extract<TaskItemStatus, "completed" | "cancelled"> {
+  status: ChecklistItemStatus,
+): status is Extract<ChecklistItemStatus, "completed" | "cancelled"> {
   return status === "completed" || status === "cancelled";
 }

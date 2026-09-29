@@ -16,8 +16,6 @@ import { PageYjsService } from "./page/page_service.js";
 import { SqlFolderProjectIdentityRepository } from "./folders/folder_project_identity_repository.js";
 import { FolderProjectIdentityService } from "./folders/folder_project_identity_service.js";
 import { PlannerRepository } from "./planner/planner_repository.js";
-import { SqlTaskIdentityRepository } from "./tasks/task_identity_repository.js";
-import { TaskIdentityService } from "./tasks/task_identity_service.js";
 import {
   createEnvironmentConfigProvider,
   type OrchServerEnvironmentConfig,
@@ -78,7 +76,7 @@ import {
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
 import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.js";
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
-import { createTaskControlPlaneServiceProvider } from "./tasks/task_control_plane_runtime.js";
+import { createChecklistControlPlaneServiceProvider } from "./tasks/task_control_plane_runtime.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
 import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
 import { createPersistenceHostRepositoryProvider } from "./control_plane/persistence_host_runtime.js";
@@ -251,7 +249,6 @@ export async function createLiveProductionApplication(
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const boardProjectionHost = createBoardProjectionHost(sqlResolver, boardYjsRepository);
   const pageRepository = new PageRepository(sqlResolver);
-  const taskIdentityRepository = new SqlTaskIdentityRepository(sqlResolver);
   const folderProjectIdentityRepository = new SqlFolderProjectIdentityRepository(sqlResolver);
   const plannerRepository = new PlannerRepository(sqlResolver);
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
@@ -327,7 +324,6 @@ export async function createLiveProductionApplication(
   });
   let providers: LiveOrchestratorProviderBundle;
   let pageYjsService: PageYjsService | undefined;
-  let taskIdentityService: TaskIdentityService | undefined;
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;
   let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
   let recurringJobScheduler: RecurringJobScheduler | undefined;
@@ -361,10 +357,6 @@ export async function createLiveProductionApplication(
       createService: (logger) => boardYjsService ??= new BoardYjsService({
         repository: boardYjsRepository,
         logger,
-        moveTaskBoardItem: async (input) => {
-          if (!taskIdentityService) throw new Error("Task identity service is not initialized");
-          return await taskIdentityService.moveBoardItemToContainer(input);
-        },
         moveSessionBoardItem: async (input) =>
           await sessionBoardMoveService.moveSessionBoardItem(input),
         persistBoardItemMove: async ({ boardApplications }) =>
@@ -383,7 +375,7 @@ export async function createLiveProductionApplication(
       authBearerToken: config.auth_bearer_token,
       browserReads: pageRepository,
       plannerReads: plannerRepository,
-      starredTaskOrder: plannerRepository,
+      starredFolderOrder: plannerRepository,
       onPageUpdated: ({ pageId, version }) => {
         runtimeServices.sessionBroadcaster.append({
           type: "page_updated",
@@ -404,9 +396,7 @@ export async function createLiveProductionApplication(
         repository: pageRepository,
         logger,
         onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
-        mutateTaskIdentity: async (input) =>
-          await taskIdentityService?.mutateFromPage(input) ?? null,
-        mutateProjectIdentity: async (input) =>
+        mutateFolderIdentity: async (input) =>
           await folderProjectIdentityService?.mutateFromPage(input) ?? null,
         auth: {
           authBearerToken: config.auth_bearer_token,
@@ -458,31 +448,6 @@ export async function createLiveProductionApplication(
     pageYjsDocuments: () =>
       pageYjsService?.getPersistenceDiagnostics().activeDocuments ?? 0,
   });
-  taskIdentityService = new TaskIdentityService({
-    board: {
-      async withTaskBoardApplication(input, persist) {
-        if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
-        return await boardYjsService.withTaskBoardApplication(input, persist);
-      },
-      async withTaskBoardMoveApplication(input, persist) {
-        if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
-        return await boardYjsService.withTaskBoardMoveApplication(input, persist);
-      },
-    },
-    repository: taskIdentityRepository,
-    hydratePage: async (pageId) => {
-      if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
-      await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
-    },
-    resolveAgentId: (nodeId, agentId) =>
-      resolveRegisteredAgentId(
-        registry,
-        nodeId,
-        agentId,
-        dbCatalogRepository.agentProfileRepository.snapshot(),
-      ),
-    onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
-  });
   const dependencies: LiveProviderDependencies = {
     dbCatalogRepository,
     nodeHttpClient: runtimeServices.nodeHttpClient,
@@ -510,21 +475,16 @@ export async function createLiveProductionApplication(
   }
   folderProjectIdentityService = new FolderProjectIdentityService({
     repository: folderProjectIdentityRepository,
+    withBoardApplication: async (input, persist) => {
+      if (!boardYjsService) throw new Error("Board service is not initialized");
+      return await boardYjsService.withFolderBoardApplication(input, persist);
+    },
     hydratePage: async (pageId) => {
       if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
       await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
     },
-    onCommitted: async (delta) => {
-      await broadcastCatalogSnapshot(
-        providers.folderRoutes.provider,
-        runtimeServices.sessionBroadcaster,
-        delta
-          ? {
-              sessionsDelta: delta.sessionsDelta,
-              boardItemsDelta: deletedBoardItemsDelta(delta.deletedBoardItemIds),
-            }
-          : {},
-      );
+    onCommitted: async () => {
+      await broadcastCatalogSnapshot(providers.folderRoutes.provider, runtimeServices.sessionBroadcaster);
     },
     onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
   });
@@ -544,7 +504,6 @@ export async function createLiveProductionApplication(
       registry,
       modelPresetAvailability: providers.modelPresetAvailability,
       listFolders: providers.folderRoutes.provider.listFolders,
-      getTaskSnapshot: providers.taskRoutes.provider.getTaskSnapshot,
       findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
     }),
     launcher: {
@@ -560,7 +519,6 @@ export async function createLiveProductionApplication(
         agentId: job.agentId,
         modelPreset: job.modelPreset,
         folderId: job.folderId,
-        container: job.container,
         callerInfo: job.executionCaller,
       }),
       findDurableSession: async (sessionId) => {
@@ -591,11 +549,11 @@ export async function createLiveProductionApplication(
       providers,
       persistenceRepositoryProvider,
       config.cors_allowed_origins,
-      taskIdentityService,
       folderProjectIdentityService,
       memoryStats,
       ephemeralLlmRoutes,
-      createTaskControlPlaneServiceProvider({
+      createChecklistControlPlaneServiceProvider({
+        onFolderHeaderUpdated: () => broadcastCatalogSnapshot(providers.folderRoutes.provider, runtimeServices.sessionBroadcaster),
         sqlResolver,
         broadcaster: runtimeServices.sessionBroadcaster,
       }),
@@ -781,11 +739,10 @@ export function buildProductionRouteOptions(
     CreateAppOptions["persistenceHostRoutes"]
   >["repositoryProvider"],
   corsAllowedOrigins: readonly string[] = [],
-  taskIdentityService?: TaskIdentityService,
   folderProjectIdentityService?: FolderProjectIdentityService,
   memoryStats?: ReturnType<typeof createOrchestratorMemoryStatsCollector>,
   ephemeralLlmRoutes?: EphemeralLlmRouteOptions,
-  taskControlPlaneServiceProvider?: NonNullable<CreateAppOptions["taskRoutes"]>["taskControlPlaneServiceProvider"],
+  checklistServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["checklistServiceProvider"],
   scheduleRepositoryProvider?: NonNullable<CreateAppOptions["scheduleHostRoutes"]>["repositoryProvider"],
   folderControlPlaneServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["controlPlaneServiceProvider"],
   databaseSchemaProvider?: PublicDatabaseSchemaProvider,
@@ -817,6 +774,7 @@ export function buildProductionRouteOptions(
     ...(ephemeralLlmRoutes === undefined ? {} : { ephemeralLlmRoutes }),
     folderRoutes: {
       ...providers.folderRoutes,
+      ...(checklistServiceProvider ? { checklistServiceProvider } : {}),
       authBearerToken: config.authBearerToken,
       ...(folderProjectIdentityService
         ? { projectIdentityService: folderProjectIdentityService }
@@ -845,12 +803,6 @@ export function buildProductionRouteOptions(
       ...(databaseSchemaProvider ? { databaseSchemaProvider } : {}),
     },
     pushRoutes: providers.pushRoutes,
-    taskRoutes: {
-      ...providers.taskRoutes,
-      authBearerToken: config.authBearerToken,
-      ...(taskIdentityService ? { taskIdentityService } : {}),
-      ...(taskControlPlaneServiceProvider ? { taskControlPlaneServiceProvider } : {}),
-    },
     ...(scheduleRepositoryProvider
       ? {
           scheduleHostRoutes: {

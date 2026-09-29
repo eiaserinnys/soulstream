@@ -5,13 +5,13 @@ export function taskPatchOperationType(archived: boolean | undefined): string {
 }
 
 export function sectionPatchOperationType(archived: boolean | undefined): string {
-  if (archived === true) return "archive_task_section";
-  if (archived === false) return "unarchive_task_section";
-  return "update_task_section";
+  if (archived === true) return "archive_checklist_section";
+  if (archived === false) return "unarchive_checklist_section";
+  return "update_checklist_section";
 }
 
 export function itemPatchOperationType(archived: boolean | undefined): string {
-  if (archived === true) return "archive_task_item";
-  if (archived === false) return "unarchive_task_item";
-  return "update_task_item";
+  if (archived === true) return "archive_checklist_item";
+  if (archived === false) return "unarchive_checklist_item";
+  return "update_checklist_item";
 }

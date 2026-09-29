@@ -436,8 +436,7 @@ export interface SessionEventEnvelope {
     | SSEEventClaudeRuntimeModeState
     | SSEEventClaudeRuntimeScheduleUpdated
     | SSEEventClaudeRuntimeScheduleDeleted
-    | SSEEventTaskUpdated
-    | SSEEventRunbookUpdatedLegacy
+    | SSEEventFolderUpdated
     | SSEEventCustomViewUpdated
     | SSEEventContextUsage
     | SSEEventContextManifest
@@ -1021,21 +1020,11 @@ export interface SSEEventClaudeRuntimeScheduleDeleted {
   [k: string]: unknown;
 }
 /**
- * SSE: 업무 mutation 후 뷰 갱신 트리거.
+ * SSE: 폴더와 체크리스트 변경 후 뷰 갱신.
  */
-export interface SSEEventTaskUpdated {
-  type: "task_updated";
-  taskId: string;
-  boardItemId: string;
-  [k: string]: unknown;
-}
-/**
- * Production-gated read compatibility event. Producers must emit task_updated. Removal follows docs/task-read-compatibility.md.
- */
-export interface SSEEventRunbookUpdatedLegacy {
-  type: "runbook_updated";
-  runbookId: string;
-  boardItemId: string;
+export interface SSEEventFolderUpdated {
+  type: "folder_updated";
+  folderId: string;
   [k: string]: unknown;
 }
 /**
@@ -2639,8 +2628,7 @@ export const EVENT_DURABILITY = {
   "compact": "durable",
   "reconnect": "durable",
   "history_sync": "durable",
-  "task_updated": "durable",
-  "runbook_updated": "durable",
+  "folder_updated": "durable",
   "custom_view_updated": "durable",
   "metadata_updated": "durable",
   "assistant_error": "durable",
@@ -2710,8 +2698,7 @@ export const SSE_EVENT_TYPES = [
   "compact",
   "reconnect",
   "history_sync",
-  "task_updated",
-  "runbook_updated",
+  "folder_updated",
   "custom_view_updated",
   "metadata_updated",
   "assistant_error",
@@ -2773,14 +2760,14 @@ export const CALLER_INFO_SOURCES = [
   "trello_watcher",
 ] as const;
 
-export const TASK_ITEM_STATUSES = [
+export const CHECKLIST_ITEM_STATUSES = [
   "pending",
   "in_progress",
   "review",
   "completed",
   "cancelled",
 ] as const;
-export type TaskItemStatus = (typeof TASK_ITEM_STATUSES)[number];
+export type ChecklistItemStatus = (typeof CHECKLIST_ITEM_STATUSES)[number];
 
 export const BOARD_ITEM_TYPES = [
   "session",
@@ -2788,14 +2775,12 @@ export const BOARD_ITEM_TYPES = [
   "subfolder",
   "asset",
   "frame",
-  "task",
   "custom_view",
 ] as const;
 export type BoardItemType = (typeof BOARD_ITEM_TYPES)[number];
 
 export const BOARD_CONTAINER_KINDS = [
   "folder",
-  "task",
 ] as const;
 export type BoardContainerKind = (typeof BOARD_CONTAINER_KINDS)[number];
 

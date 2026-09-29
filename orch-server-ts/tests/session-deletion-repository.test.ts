@@ -58,9 +58,7 @@ describe("SessionDeletionRepository", () => {
         documentName: "board-folder:folder-1",
         scope: {
           folderId: "folder-1",
-          containerKind: "folder",
-          containerId: "folder-1",
-        },
+          },
         snapshot: Y.encodeStateAsUpdate(new Y.Doc()),
         replica: { boardItems: [], markdownDocuments: [] },
       }],
@@ -94,16 +92,15 @@ describe("SessionDeletionRepository", () => {
 function cachedBoardItem(
   id: string,
   containerKind: "folder" | "task",
-  containerId: string,
   membershipKind: "primary" | "reference",
 ) {
   return {
     id,
-    folderId: "folder-1",
-    containerKind,
-    containerId,
+
+
+    folderId,
     membershipKind,
-    sourceTaskItemId: null,
+    sourceChecklistItemId: null,
     itemType: "session",
     itemId: "session-a",
     x: 0,
@@ -115,7 +112,6 @@ function cachedBoardItem(
 function boardItemRow(
   id: string,
   containerKind: "folder" | "task",
-  containerId: string,
   membershipKind: "primary" | "reference",
 ) {
   return {
@@ -124,7 +120,7 @@ function boardItemRow(
     container_kind: containerKind,
     container_id: containerId,
     membership_kind: membershipKind,
-    source_task_item_id: null,
+    source_checklist_item_id: null,
     item_type: "session" as const,
     item_id: "session-a",
     x: 0,

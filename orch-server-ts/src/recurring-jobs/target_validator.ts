@@ -12,24 +12,21 @@ import {
   selectNodeForSessionCreate,
   SessionCreateNodeSelectionError,
 } from "../session/session_create_node_selector.js";
-import { snapshotTaskFolderId } from "../tasks/task_snapshot.js";
-import type { TaskRouteProvider } from "../tasks/task_route_types.js";
 import type { DashboardUserRepository } from "../runtime/live_dashboard_access_provider.js";
 
 import { RecurringJobError, type RecurringJob, type RecurringJobActor } from "./types.js";
 
 type RecurringJobTarget = Pick<
   RecurringJob,
-  "nodeId" | "agentId" | "modelPreset" | "container" | "folderId"
+  "nodeId" | "agentId" | "modelPreset" | "folderId"
 >;
 
 export type RecurringJobTargetValidatorOptions = {
   readonly registry: InMemoryNodeRegistry;
   readonly modelPresetAvailability: Pick<ModelPresetAvailabilityService, "requireAvailable">;
   readonly listFolders: () =>
-    | readonly BoardAccessFolderRecord[]
-    | Promise<readonly BoardAccessFolderRecord[]>;
-  readonly getTaskSnapshot?: TaskRouteProvider["getTaskSnapshot"];
+    | readonly (BoardAccessFolderRecord & { archived?: boolean })[]
+    | Promise<readonly (BoardAccessFolderRecord & { archived?: boolean })[]>;
   readonly findUserByEmail: DashboardUserRepository["findUserByEmail"];
 };
 
@@ -68,6 +65,9 @@ export function createRecurringJobTargetValidator(
     if (!folders.some((folder) => folder.id === target.folderId)) {
       throw new RecurringJobError("NOT_FOUND", "Target folder was not found.", 404);
     }
+    if (folders.find(folder => folder.id === target.folderId)?.archived === true) {
+      throw new RecurringJobError("ARCHIVED", "Target folder is archived.", 409);
+    }
     const user = await options.findUserByEmail(actor.ownerEmail);
     const access = normalizeBoardAccess(
       user === null
@@ -80,32 +80,7 @@ export function createRecurringJobTargetValidator(
       throw new RecurringJobError("FORBIDDEN", "Target folder access is not allowed.", 403);
     }
 
-    if (target.container.kind === "folder") {
-      if (target.container.id !== target.folderId) {
-        throw new RecurringJobError(
-          "VALIDATION",
-          "A folder container must match folder_id.",
-          422,
-        );
-      }
-      return;
-    }
 
-    if (!options.getTaskSnapshot) {
-      throw new RecurringJobError("VALIDATION", "Task target validation is not configured.", 422);
-    }
-    const snapshot = await options.getTaskSnapshot(target.container.id);
-    if (!snapshot) throw new RecurringJobError("NOT_FOUND", "Target task was not found.", 404);
-    if (snapshot.task?.archived === true) {
-      throw new RecurringJobError("ARCHIVED", "Target task is archived.", 409);
-    }
-    if (snapshotTaskFolderId(snapshot) !== target.folderId) {
-      throw new RecurringJobError(
-        "VALIDATION",
-        "Target task does not belong to the selected folder.",
-        422,
-      );
-    }
   };
 }
 

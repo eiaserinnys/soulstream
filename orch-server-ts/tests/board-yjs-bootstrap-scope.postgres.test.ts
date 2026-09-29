@@ -71,9 +71,8 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
 
     const scope = {
       folderId: "seed-folder-a",
-      containerKind: "folder" as const,
-      containerId: "seed-folder-a",
-    };
+
+      };
     const doc = new Y.Doc();
     Y.applyUpdate(doc, snapshot as Uint8Array);
     expect(readBoardYDocReplica(scope, doc).boardItems.map((item) => item.id))
@@ -97,21 +96,18 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
     `;
     const targetScope = {
       folderId: "instant-folder-a",
-      containerKind: "folder" as const,
-      containerId: "instant-folder-a",
-    };
+
+      };
     const otherScope = {
       folderId: "instant-folder-b",
-      containerKind: "folder" as const,
-      containerId: "instant-folder-b",
-    };
+
+      };
     const otherItem = {
       id: "session:instant-session-b",
       folderId: "instant-folder-b",
-      containerKind: "folder" as const,
-      containerId: "instant-folder-b",
+
       membershipKind: "primary" as const,
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
       itemType: "session" as const,
       itemId: "instant-session-b",
       x: 17,
@@ -147,7 +143,7 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
       )
       VALUES (
         ${otherItem.id}, ${otherItem.folderId}, ${otherItem.containerKind},
-        ${otherItem.containerId}, ${otherItem.membershipKind}, ${otherItem.itemType},
+        ${otherItem.folderId}, ${otherItem.membershipKind}, ${otherItem.itemType},
         ${otherItem.itemId}, ${otherItem.x}, ${otherItem.y},
         ${harness.sql.json(otherItem.metadata)}::jsonb
       )
@@ -184,7 +180,7 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
         folderId: targetScope.folderId,
         container: targetScope,
         sessionId: "instant-session-a",
-        sourceTaskItemId: null,
+        sourceChecklistItemId: null,
         x: 0,
         y: 160,
       });
@@ -199,8 +195,7 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
         expect.objectContaining({
           id: "session:instant-session-a",
           itemId: "instant-session-a",
-          containerId: "instant-folder-a",
-        }),
+          }),
       ]);
       await expect(readContainerRows(harness, "instant-folder-a")).resolves.toEqual([
         expect.objectContaining({
@@ -291,8 +286,7 @@ function createSilentLogger() {
 
 async function readContainerRows(
   harness: FullSchemaPostgresHarness,
-  containerId: string,
-): Promise<Array<Record<string, unknown>>> {
+  ): Promise<Array<Record<string, unknown>>> {
   return await harness.sql<Array<Record<string, unknown>>>`
     SELECT id, folder_id, container_kind, container_id, membership_kind,
       item_type, item_id, x, y, metadata

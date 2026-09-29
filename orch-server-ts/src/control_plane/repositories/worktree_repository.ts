@@ -7,7 +7,7 @@ type WorktreeRow = {
   canonical_path: string;
   branch: string;
   created_from_sha: string;
-  owner_task_id: string | null;
+  owner_folder_id: string | null;
   created_by_session_id: string;
   state: "ready" | "removing" | "removed";
   setup_mode: "none" | "shared_dependencies";
@@ -28,7 +28,7 @@ type WorktreeRow = {
 export type WorktreeBinding = {
   id: string;
   nodeId: string;
-  ownerTaskId: string | null;
+  ownerFolderId: string | null;
   createdBySessionId: string;
   state: string;
   setupRequired: boolean;
@@ -76,15 +76,15 @@ export class WorktreeRepository {
     if (!input.actorSessionId) throw hostError(422, "actorSessionId is required");
     return await this.sql.begin(async (transaction) => {
       const tx = transaction as unknown as SqlClient;
-      const ownerTaskId = await primaryTaskId(tx, input.actorSessionId);
+      const ownerFolderId = await primaryFolderId(tx, input.actorSessionId);
       const rows = await tx<WorktreeRow[]>`
         INSERT INTO worktrees (
           id, node_id, repo_id, canonical_path, branch, created_from_sha,
-          owner_task_id, created_by_session_id, setup_mode, setup_required,
+          owner_folder_id, created_by_session_id, setup_mode, setup_required,
           setup_status, managed_paths, worktree_identity
         ) VALUES (
           ${input.id}, ${input.nodeId}, ${input.repoId}, ${input.canonicalPath},
-          ${input.branch}, ${input.createdFromSha}, ${ownerTaskId},
+          ${input.branch}, ${input.createdFromSha}, ${ownerFolderId},
           ${input.actorSessionId}, ${input.setupMode}, ${input.setupRequired},
           ${input.setupStatus}, ${tx.json(input.managedPaths as never)},
           ${input.worktreeIdentity}
@@ -240,7 +240,7 @@ export async function lockWorktreeForSessionBinding(
     worktreeId: string;
     nodeId: string;
     actorSessionId: string;
-    ownerTaskId: string | null;
+    ownerFolderId: string | null;
   },
 ): Promise<WorktreeBinding> {
   const rows = await sql<WorktreeRow[]>`
@@ -253,8 +253,8 @@ export async function lockWorktreeForSessionBinding(
   if (row.setup_required && row.setup_status !== "ready") {
     throw hostError(409, "WORKTREE_SETUP_REQUIRED");
   }
-  if (row.owner_task_id !== null && row.owner_task_id !== input.ownerTaskId) {
-    throw hostError(403, "WORKTREE_TASK_MISMATCH");
+  if (row.owner_folder_id !== null && row.owner_folder_id !== input.ownerFolderId) {
+    throw hostError(403, "WORKTREE_FOLDER_MISMATCH");
   }
   if (!await actorOwns(sql, row, input.actorSessionId)) {
     throw hostError(403, "WORKTREE_NOT_OWNED");
@@ -264,7 +264,7 @@ export async function lockWorktreeForSessionBinding(
   return {
     id: row.id,
     nodeId: row.node_id,
-    ownerTaskId: row.owner_task_id,
+    ownerFolderId: row.owner_folder_id,
     createdBySessionId: row.created_by_session_id,
     state: row.state,
     setupRequired: row.setup_required,
@@ -272,14 +272,11 @@ export async function lockWorktreeForSessionBinding(
   };
 }
 
-async function primaryTaskId(sql: SqlClient, sessionId: string): Promise<string | null> {
-  const rows = await sql<Array<{ container_id: string }>>`
-    SELECT container_id FROM board_items
-    WHERE item_type = 'session' AND item_id = ${sessionId}
-      AND membership_kind = 'primary' AND container_kind = 'task'
-    ORDER BY created_at LIMIT 1
+async function primaryFolderId(sql: SqlClient, sessionId: string): Promise<string | null> {
+  const rows = await sql<Array<{ folder_id: string | null }>>`
+    SELECT folder_id FROM sessions WHERE session_id = ${sessionId}
   `;
-  return rows[0]?.container_id ?? null;
+  return rows[0]?.folder_id ?? null;
 }
 
 async function activeSessionId(sql: SqlClient, worktreeId: string): Promise<string | null> {
@@ -292,8 +289,8 @@ async function activeSessionId(sql: SqlClient, worktreeId: string): Promise<stri
 }
 
 async function actorOwns(sql: SqlClient, row: WorktreeRow, actorSessionId: string): Promise<boolean> {
-  if (row.owner_task_id !== null) {
-    return await primaryTaskId(sql, actorSessionId) === row.owner_task_id;
+  if (row.owner_folder_id !== null) {
+    return await primaryFolderId(sql, actorSessionId) === row.owner_folder_id;
   }
   if (row.created_by_session_id === actorSessionId) return true;
   const rows = await sql<Array<{ owned: boolean }>>`
@@ -319,7 +316,7 @@ function project(row: WorktreeRow): Record<string, unknown> {
     canonicalPath: row.canonical_path,
     branch: row.branch,
     createdFromSha: row.created_from_sha,
-    ownerTaskId: row.owner_task_id,
+    ownerFolderId: row.owner_folder_id,
     createdBySessionId: row.created_by_session_id,
     state: row.state,
     setupMode: row.setup_mode,

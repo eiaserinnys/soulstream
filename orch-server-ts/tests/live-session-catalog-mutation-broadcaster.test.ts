@@ -99,10 +99,7 @@ function createFolderProvider(): LiveFolderProvider {
         { folderId: "folder-b", displayName: "Renamed" },
       ])),
     ),
-    deleteFolderWithCatalogDelta: vi.fn(async () => ({
-      sessionsDelta: {},
-      deletedBoardItemIds: [],
-    })),
+
     listBoardItemIdsForSessionDeletion: vi.fn(async () => ["session:sess-a"]),
     findSessionFolderId: vi.fn(async () => "folder-a"),
     createFolder: vi.fn(async () => undefined),

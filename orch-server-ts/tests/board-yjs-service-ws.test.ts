@@ -15,8 +15,7 @@ import { assertBoardItemProjectionParity } from
 import { SessionDeletionService } from
   "../src/session/session_deletion_service.js";
 import type {
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsDocumentApplication,
   BoardYjsReplica,
   BoardYjsSeed,
@@ -61,20 +60,16 @@ describe("orch BoardYjsService", () => {
         boardItem: created.boardItem,
         targetScope: {
           folderId: "folder-1",
-          containerKind: "task",
-          containerId: "task-1",
-        },
+          },
         position: { x: 100, y: 200 },
       });
       const updated = await service.updateMarkdownDocument(
-        { containerKind: "task", containerId: "task-1" },
+        { folderId: "task-1" },
         "doc-1",
         { title: "Moved", expectedVersion: 1 },
       );
 
       expect(moved).toMatchObject({
-        containerKind: "task",
-        containerId: "task-1",
         x: 100,
         y: 200,
       });
@@ -95,7 +90,7 @@ describe("orch BoardYjsService", () => {
     try {
       const boardItem = await service.upsertSessionBoardItem({
         folderId: "folder-1",
-        container: { containerKind: "task", containerId: "task-1" },
+        container: { folderId: "task-1" },
         sessionId: "session-delete",
         x: 10,
         y: 20,
@@ -123,16 +118,14 @@ describe("orch BoardYjsService", () => {
 
       await deletion.deleteSession("session-delete");
 
-      const documentName = "board:task:task-1";
+      const documentName = "board-folder:task-1";
       const storedSnapshot = repository.snapshots.get(documentName);
       expect(storedSnapshot).toBeDefined();
       const storedDocument = new Y.Doc();
       Y.applyUpdate(storedDocument, storedSnapshot!);
       const storedReplica = readBoardYDocReplica({
         folderId: "folder-1",
-        containerKind: "task",
-        containerId: "task-1",
-      }, storedDocument);
+        }, storedDocument);
       expect(storedReplica.boardItems).toEqual([]);
       assertBoardItemProjectionParity({
         label: documentName,
@@ -150,7 +143,7 @@ describe("orch BoardYjsService", () => {
     try {
       const oldA = await service.upsertSessionBoardItem({
         folderId: "folder-old-a",
-        container: { containerKind: "folder", containerId: "folder-old-a" },
+        container: { folderId: "folder-old-a" },
         sessionId: "session-move",
         x: 10,
         y: 20,
@@ -158,13 +151,11 @@ describe("orch BoardYjsService", () => {
       const oldB = {
         ...oldA,
         folderId: "folder-old-b",
-        containerId: "folder-old-b",
-      };
+        };
       const reference = {
         ...oldA,
         id: "session-reference:session-move",
-        containerKind: "task" as const,
-        containerId: "task-1",
+
         membershipKind: "reference" as const,
       };
       repository.sessionInventory.set("session-move", [oldA, oldB, reference]);
@@ -173,21 +164,20 @@ describe("orch BoardYjsService", () => {
         snapshotWithBoardItems("folder-old-b", [oldB]),
       );
       const referenceSnapshot = snapshotWithBoardItems("folder-old-a", [reference]);
-      repository.snapshots.set("board:task:task-1", referenceSnapshot);
+      repository.snapshots.set("board-folder:task-1", referenceSnapshot);
 
       const moved = await service.moveSessionToFolder("session-move", "folder-target");
 
       expect(moved).toMatchObject({
         id: "session:session-move",
         folderId: "folder-target",
-        containerId: "folder-target",
-      });
+        });
       expect(readSnapshotItems(repository, "folder-old-a")).toEqual([]);
       expect(readSnapshotItems(repository, "folder-old-b")).toEqual([]);
       expect(readSnapshotItems(repository, "folder-target")).toEqual([
         expect.objectContaining({ id: "session:session-move", itemId: "session-move" }),
       ]);
-      expect(repository.snapshots.get("board:task:task-1")).toBe(referenceSnapshot);
+      expect(repository.snapshots.get("board-folder:task-1")).toBe(referenceSnapshot);
     } finally {
       await service.close();
     }
@@ -348,18 +338,18 @@ class MemoryBoardYjsRepository {
     return this.snapshots.get(documentName) ?? null;
   }
 
-  async resolveBoardYjsContainerScope(
-    container: BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope> {
+  async resolveBoardYjsFolderScope(
+    container: BoardYjsFolderScope,
+  ): Promise<BoardYjsFolderScope> {
     return {
-      folderId: container.containerKind === "folder" ? container.containerId : "folder-1",
+      folderId: container.containerKind === "folder" ? container.folderId : "folder-1",
       ...container,
     };
   }
 
   async backfillTaskBoardItemsIntoSnapshot(
     _documentName: string,
-    _container: BoardYjsContainerScope,
+    _container: BoardYjsFolderScope,
     snapshot: { snapshot: Uint8Array; revision: number },
   ) {
     return snapshot;
@@ -395,7 +385,7 @@ function snapshotWithBoardItems(
       x: item.x,
       y: item.y,
       membership_kind: item.membershipKind,
-      source_task_item_id: item.sourceTaskItemId,
+      source_checklist_item_id: item.sourceChecklistItemId,
       metadata: item.metadata,
     });
   }
@@ -411,7 +401,5 @@ function readSnapshotItems(
   if (snapshot) Y.applyUpdate(document, snapshot);
   return readBoardYDocReplica({
     folderId,
-    containerKind: "folder",
-    containerId: folderId,
-  }, document).boardItems;
+    }, document).boardItems;
 }

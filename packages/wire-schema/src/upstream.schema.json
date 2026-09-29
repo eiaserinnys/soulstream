@@ -102,7 +102,7 @@
     "system",
     "trello_watcher"
   ],
-  "x-soulstream-task-item-statuses": [
+  "x-soulstream-checklist-item-statuses": [
     "pending",
     "in_progress",
     "review",
@@ -115,10 +115,9 @@
     "subfolder",
     "asset",
     "frame",
-    "task",
     "custom_view"
   ],
-  "x-soulstream-board-container-kinds": ["folder", "task"],
+  "x-soulstream-board-container-kinds": ["folder"],
   "x-soulstream-event-durability": {
     "init": "durable",
     "reconnected": "durable",
@@ -176,8 +175,7 @@
     "compact": "durable",
     "reconnect": "durable",
     "history_sync": "durable",
-    "task_updated": "durable",
-    "runbook_updated": "durable",
+    "folder_updated": "durable",
     "custom_view_updated": "durable",
     "metadata_updated": "durable",
     "assistant_error": "durable",
@@ -674,8 +672,7 @@
             { "$ref": "#/$defs/SSEEventClaudeRuntimeModeState" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleUpdated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleDeleted" },
-            { "$ref": "#/$defs/SSEEventTaskUpdated" },
-            { "$ref": "#/$defs/SSEEventRunbookUpdatedLegacy" },
+            { "$ref": "#/$defs/SSEEventFolderUpdated" },
             { "$ref": "#/$defs/SSEEventCustomViewUpdated" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
             { "$ref": "#/$defs/SSEEventContextManifest" },
@@ -3095,26 +3092,14 @@
         "reset_required": { "type": "boolean" }
       }
     },
-    "SSEEventTaskUpdated": {
+    "SSEEventFolderUpdated": {
       "type": "object",
-      "description": "SSE: 업무 mutation 후 뷰 갱신 트리거.",
-      "required": ["type", "taskId", "boardItemId"],
+      "description": "SSE: 폴더와 체크리스트 변경 후 뷰 갱신.",
+      "required": ["type", "folderId"],
       "additionalProperties": true,
       "properties": {
-        "type": { "const": "task_updated" },
-        "taskId": { "type": "string" },
-        "boardItemId": { "type": "string" }
-      }
-    },
-    "SSEEventRunbookUpdatedLegacy": {
-      "type": "object",
-      "description": "Production-gated read compatibility event. Producers must emit task_updated. Removal follows docs/task-read-compatibility.md.",
-      "required": ["type", "runbookId", "boardItemId"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "runbook_updated" },
-        "runbookId": { "type": "string" },
-        "boardItemId": { "type": "string" }
+        "type": { "const": "folder_updated" },
+        "folderId": { "type": "string" }
       }
     },
     "SSEEventCustomViewUpdated": {

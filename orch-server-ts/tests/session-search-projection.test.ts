@@ -222,7 +222,7 @@ describe("product session search projection", () => {
     expect(result?.evidence.some((item) => [
       "task_item_completed",
       "task_completed",
-      "source_task_item",
+      "source_checklist_item",
       "task_item_assigned",
     ].includes(item.source))).toBe(false);
   });
@@ -234,7 +234,7 @@ describe("product session search projection", () => {
         ...candidate("zz-source-session", 4, "original", 1, "needle is discussed"),
         task_id: "task-search",
         task_title: "unrelated task title",
-        task_evidence_kind: "source_task_item",
+        task_evidence_kind: "source_checklist_item",
         task_evidence_title: "source item output",
       },
     ], "needle", 10);
@@ -244,7 +244,7 @@ describe("product session search projection", () => {
       "zz-source-session",
     ]);
     expect(results[1]?.evidence).toContainEqual(expect.objectContaining({
-      source: "source_task_item",
+      source: "source_checklist_item",
       excerpt: "source item output",
     }));
   });

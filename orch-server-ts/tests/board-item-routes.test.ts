@@ -27,8 +27,6 @@ const boardItems = [
   {
     id: "item/one",
     folderId: "folder-a-child",
-    containerKind: "folder",
-    containerId: "folder-a-child",
     membershipKind: "primary",
     itemType: "markdown",
     itemId: "doc-1",
@@ -39,7 +37,7 @@ const boardItems = [
   {
     id: "task-card",
     folderId: "folder-a",
-    itemType: "task",
+    itemType: "subfolder",
     itemId: "task-1",
   },
   { id: "item-b", folderId: "folder-b" },
@@ -63,16 +61,7 @@ function createHarness(overrides: Partial<BoardItemRouteProvider> = {}) {
       calls.push(["listBoardItems", query]);
       return [{ id: "item-1", folderId: "folder-a" }];
     },
-    async resolveBoardContainerFolderId(container) {
-      calls.push(["resolveContainer", container]);
-      if (container.kind === "folder") return container.id;
-      if (container.id === "task-1") return "folder-a";
-      throw new BoardItemRouteError(
-        "BOARD_CONTAINER_NOT_FOUND",
-        "Task board container not found",
-        404,
-      );
-    },
+
     async getCatalogSnapshot() {
       calls.push(["catalog"]);
       return { folders, boardItems };
@@ -129,7 +118,7 @@ describe("board item route harness", () => {
       [
         "PATCH",
         "/api/board-items/item-1/container",
-        { container: { kind: "folder", id: "folder-a" }, idempotencyKey: "idem" },
+        { folderId: "folder-a", idempotencyKey: "idem" },
       ],
     ] as const) {
       expect(await app.inject({ method, url, payload })).toMatchObject({
@@ -234,7 +223,7 @@ describe("board item route harness", () => {
       ["listFolders"],
       ["resolveContainer", { kind: "task", id: "task-1" }],
       ["access"],
-      ["listBoardItems", { container: { kind: "task", id: "task-1" } }],
+      ["listBoardItems", { folderId: "task-1" }],
     ]);
 
     await app.close();
@@ -244,8 +233,6 @@ describe("board item route harness", () => {
     const membership = {
       id: "session:session-a",
       folderId: "folder-a",
-      containerKind: "task",
-      containerId: "task-outside-page",
       membershipKind: "primary",
       itemType: "session",
       itemId: "session-a",
@@ -297,7 +284,7 @@ describe("board item route harness", () => {
     expect(response.json()).toEqual({ ok: true });
     expect(calls).toEqual([["access"], ["catalog"], ["catalog"]]);
     expect(service.updateBoardItemPosition).toHaveBeenCalledWith(
-      { containerKind: "folder", containerId: "folder-a-child" },
+      { folderId: "folder-a-child" },
       "item/one",
       10.5,
       -3,
@@ -360,7 +347,7 @@ describe("board item route harness", () => {
       method: "PATCH",
       url: "/api/board-items/item%2Fone/container",
       payload: {
-        container: { kind: "task", id: "task-1" },
+        folderId: "task-1",
         idempotency_key: "idem-1",
         x: 2,
         y: 3,
@@ -375,7 +362,7 @@ describe("board item route harness", () => {
     ]);
     expect(service.moveBoardItemToContainer).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetScope: { folderId: "folder-a", containerKind: "task", containerId: "task-1" },
+        targetScope: {  folderId: "task-1" },
         idempotencyKey: "idem-1",
         position: { x: 2, y: 3 },
       }),
@@ -385,7 +372,7 @@ describe("board item route harness", () => {
   });
 
   it("returns the board item produced by the orchestrator-local service", async () => {
-    const moved = { ...boardItems[0], containerKind: "task", containerId: "task-1" };
+    const moved = { ...boardItems[0], folderId: "task-1" };
     const moveBoardItemToContainer = vi.fn(async () => moved);
     const { app } = createAppWithBoardItems(
       { restricted: false },
@@ -397,7 +384,7 @@ describe("board item route harness", () => {
       method: "PATCH",
       url: "/api/board-items/item%2Fone/container",
       payload: {
-        container: { kind: "task", id: "task-1" },
+        folderId: "task-1",
         idempotencyKey: "idem-local",
         x: 3,
         y: 4,
@@ -407,7 +394,7 @@ describe("board item route harness", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true, boardItem: moved });
     expect(moveBoardItemToContainer).toHaveBeenCalledWith(expect.objectContaining({
-      targetScope: { folderId: "folder-a", containerKind: "task", containerId: "task-1" },
+      targetScope: {  folderId: "task-1" },
       position: { x: 3, y: 4 },
     }));
     await app.close();
@@ -420,7 +407,7 @@ describe("board item route harness", () => {
       method: "PATCH",
       url: "/api/board-items/item%2Fone/container",
       payload: {
-        container: { kind: "folder", id: "folder-a" },
+        folderId: "folder-a",
         idempotencyKey: "idem-1",
         x: 2,
       },

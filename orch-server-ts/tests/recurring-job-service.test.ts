@@ -370,7 +370,7 @@ describe("RecurringJobService", () => {
       validateTarget: createRecurringJobTargetValidator({
         registry,
         modelPresetAvailability: { requireAvailable: vi.fn() },
-        listFolders: async () => [{ id: "folder-a" }],
+        listFolders: async () => [{ id: "folder-a", archived: taskArchived }],
         findUserByEmail: async () => ({
           email: actor.ownerEmail,
           isAdmin: false,
@@ -607,20 +607,16 @@ describe("RecurringJobService", () => {
       validateTarget: createRecurringJobTargetValidator({
         registry,
         modelPresetAvailability: { requireAvailable: vi.fn() },
-        listFolders: async () => [{ id: "folder-a" }],
+        listFolders: async () => [{ id: "folder-a", archived: taskArchived }],
         findUserByEmail: async () => ({
           email: actor.ownerEmail,
           isAdmin: false,
           allowedFolderIds: ["folder-a"],
         }),
-        getTaskSnapshot: async () => ({
-          task: { folder_id: "folder-a", archived: taskArchived },
-        }),
       }),
     });
     const job = await service.create(actor, {
       ...createInput(),
-      container: { kind: "task", id: "task-a" },
     });
     taskArchived = true;
 
@@ -715,7 +711,7 @@ describe("RecurringJobService", () => {
     });
 
     const job = await service.create(actor, createInput());
-    await service.update(actor, job.jobId, { expectedVersion: job.version, folderId: "folder-b", container: { kind: "folder", id: "folder-b" } });
+    await service.update(actor, job.jobId, { expectedVersion: job.version, folderId: "folder-b" });
 
     expect(validateTarget).toHaveBeenNthCalledWith(1, {
       actor,

@@ -1,4 +1,4 @@
-export interface InitialTaskAtomReference {
+export interface InitialFolderAtomReference {
   instance: "atom" | "atom-nl";
   nodeId: string;
   nodeTitle: string;
@@ -8,19 +8,19 @@ export interface InitialTaskAtomReference {
   mode?: "full" | "index" | "titles";
 }
 
-export interface InitialTaskSessionDefaults {
+export interface InitialFolderSessionDefaults {
   agentId: string;
   nodeId: string;
   modelPreset?: string;
 }
 
-export interface InitialTaskContext {
+export interface InitialFolderContext {
   guidance: string;
-  atomReferences: InitialTaskAtomReference[];
-  sessionDefaults?: InitialTaskSessionDefaults;
+  atomReferences: InitialFolderAtomReference[];
+  sessionDefaults?: InitialFolderSessionDefaults;
 }
 
-export interface InitialTaskContextWire {
+export interface InitialFolderContextWire {
   guidance?: string;
   atom_references?: Array<{
     instance: "atom" | "atom-nl";
@@ -38,11 +38,11 @@ export interface InitialTaskContextWire {
   };
 }
 
-export type InitialTaskContextParseResult =
-  | { ok: true; value: InitialTaskContext | undefined }
+export type InitialFolderContextParseResult =
+  | { ok: true; value: InitialFolderContext | undefined }
   | { ok: false; error: string };
 
-export function parseInitialTaskContextWire(value: unknown): InitialTaskContextParseResult {
+export function parseInitialFolderContextWire(value: unknown): InitialFolderContextParseResult {
   if (value === undefined) return { ok: true, value: undefined };
   if (!isRecord(value)) return { ok: false, error: "initial_context must be an object" };
   if (value.guidance !== undefined && typeof value.guidance !== "string") {
@@ -51,7 +51,7 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
   if (value.atom_references !== undefined && !Array.isArray(value.atom_references)) {
     return { ok: false, error: "initial_context.atom_references must be an array" };
   }
-  let sessionDefaults: InitialTaskSessionDefaults | undefined;
+  let sessionDefaults: InitialFolderSessionDefaults | undefined;
   if (value.session_defaults !== undefined) {
     if (!isRecord(value.session_defaults)) {
       return { ok: false, error: "initial_context.session_defaults must be an object" };
@@ -78,7 +78,7 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
     };
   }
 
-  const atomReferences: InitialTaskAtomReference[] = [];
+  const atomReferences: InitialFolderAtomReference[] = [];
   for (const [index, candidate] of (value.atom_references ?? []).entries()) {
     if (!isRecord(candidate)) {
       return { ok: false, error: `initial_context.atom_references[${index}] must be an object` };
@@ -131,9 +131,9 @@ export function parseInitialTaskContextWire(value: unknown): InitialTaskContextP
   };
 }
 
-export function serializeInitialTaskContext(
-  context: InitialTaskContext | undefined,
-): InitialTaskContextWire | undefined {
+export function serializeInitialFolderContext(
+  context: InitialFolderContext | undefined,
+): InitialFolderContextWire | undefined {
   if (!context) return undefined;
   const guidance = context.guidance.trim();
   const atomReferences = context.atomReferences.map((reference) => ({

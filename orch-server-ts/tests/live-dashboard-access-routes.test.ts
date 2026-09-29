@@ -221,7 +221,7 @@ function createBoardItemProvider(): BoardItemRouteProvider {
   return {
     listFolders: vi.fn(async () => folders),
     listBoardItems: vi.fn(async () => [{ id: "item-child", folderId: "folder-a-child" }]),
-    resolveBoardContainerFolderId: vi.fn(async () => "folder-a-child"),
+
     getCatalogSnapshot: vi.fn(async () => ({
       folders,
       boardItems: [{ id: "item-child", folderId: "folder-a-child" }],
@@ -232,7 +232,7 @@ function createBoardItemProvider(): BoardItemRouteProvider {
 function createMarkdownProvider(): MarkdownDocumentRouteProvider {
   return {
     listFolders: vi.fn(async () => folders),
-    resolveBoardContainerFolderId: vi.fn(async () => "folder-a-child"),
+
     getMarkdownDocument: vi.fn(async (documentId) => {
       if (documentId === "doc-child") return { id: "doc-child", folderId: "folder-a-child" };
       if (documentId === "doc-b") return { id: "doc-b", folderId: "folder-b" };

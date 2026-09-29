@@ -147,9 +147,9 @@ describe("live DB board asset route provider", () => {
 
     await expect(
       provider.initFileAsset({
-        folderId: "folder-a",
-        containerKind: "task",
-        containerId: "rb-1",
+
+
+        folderId: "rb-1",
         name: "clip.mov",
         mimeType: "video/quicktime",
         byteSize: 5 * 1024 * 1024 + 1,
@@ -337,10 +337,7 @@ function createProvider(
       listFolders: async () => [serializeFolderRow(folderRow())],
       listSessionAssignments: async () => ({}),
       listSessionAssignmentsByIds: async () => ({}),
-      deleteFolderWithCatalogDelta: async () => ({
-        sessionsDelta: {},
-        deletedBoardItemIds: [],
-      }),
+
       listBoardItemIdsForSessionDeletion: async () => [],
       findSessionFolderId: async () => undefined,
       createFolder: async () => ({}),
@@ -352,8 +349,7 @@ function createProvider(
     boardItemProvider: {
       listFolders: async () => [serializeFolderRow(folderRow())],
       listBoardItems: async () => [],
-      resolveBoardContainerFolderId: async (container) =>
-        container.kind === "folder" ? container.id : "folder-a",
+
       getCatalogSnapshot: async () => ({
         folders: [serializeFolderRow(folderRow())],
         boardItems: [serializeBoardItemRow(boardItemRow())],
@@ -424,7 +420,7 @@ function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, u
     container_kind: "folder",
     container_id: "folder-a",
     membership_kind: "primary",
-    source_task_item_id: null,
+    source_checklist_item_id: null,
     item_type: "task",
     item_id: "rb-1",
     x: 20,
@@ -469,11 +465,11 @@ function serializeFolderRow(row: Record<string, unknown>) {
 function serializeBoardItemRow(row: Record<string, unknown>) {
   return {
     id: String(row.id),
-    folderId: String(row.folder_id),
-    containerKind: String(row.container_kind ?? "folder"),
-    containerId: String(row.container_id ?? row.folder_id),
+
+
+    folderId: String(row.container_id ?? row.folder_id),
     membershipKind: String(row.membership_kind ?? "primary"),
-    sourceTaskItemId: row.source_task_item_id as string | null,
+    sourceChecklistItemId: row.source_checklist_item_id as string | null,
     itemType: String(row.item_type),
     itemId: String(row.item_id),
     x: Number(row.x ?? 0),

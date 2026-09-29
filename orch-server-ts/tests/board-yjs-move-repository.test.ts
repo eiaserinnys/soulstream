@@ -24,7 +24,7 @@ describe("BoardYjsMoveRepository", () => {
       folderId: "folder-target",
       boardApplications: ["folder-source", "folder-target"].map((containerId) => ({
         documentName: `board-folder:${containerId}`,
-        scope: { folderId: containerId, containerKind: "folder" as const, containerId },
+        scope: {   folderId },
         snapshot: Y.encodeStateAsUpdate(new Y.Doc()),
         replica: { boardItems: [], markdownDocuments: [] },
       })),

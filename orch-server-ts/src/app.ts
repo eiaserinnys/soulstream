@@ -55,10 +55,6 @@ import {
   type EphemeralLlmRouteOptions,
 } from "./llm/ephemeral_llm_routes.js";
 import {
-  registerTaskRoutes,
-  type TaskRouteOptions,
-} from "./tasks/task_routes.js";
-import {
   registerScheduleHostRoute,
   type ScheduleHostRouteOptions,
 } from "./schedule/schedule_host_route.js";
@@ -214,7 +210,6 @@ export type CreateAppOptions = {
   boardItemRoutes?: BoardItemRouteOptions;
   cogitoRoutes?: CogitoRouteOptions;
   markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
-  taskRoutes?: TaskRouteOptions;
   scheduleHostRoutes?: ScheduleHostRouteOptions;
   recurringJobRoutes?: RecurringJobRouteOptions;
   recurringJobHostRoutes?: RecurringJobHostRouteOptions;
@@ -382,12 +377,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.markdownDocumentRoutes !== undefined) {
     registerMarkdownDocumentRoutes(app, options.markdownDocumentRoutes);
   }
-  if (options.taskRoutes !== undefined) {
-    registerTaskRoutes(app, {
-      ...options.taskRoutes,
-      environment: options.config.environment,
-    });
-  }
+
   if (options.scheduleHostRoutes !== undefined) {
     registerScheduleHostRoute(app, {
       ...options.scheduleHostRoutes,

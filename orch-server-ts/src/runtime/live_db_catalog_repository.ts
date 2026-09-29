@@ -42,8 +42,6 @@ import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
 import type { LiveBoardAssetStorage } from "./live_board_asset_storage.js";
 import { createLiveMarkdownDocumentRouteProvider } from "./live_markdown_document_route_provider.js";
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
-import { createLiveTaskRouteProvider } from "./live_task_route_provider.js";
-import type { TaskRouteProvider } from "../tasks/task_route_types.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { createLiveCogitoSearchProvider } from "./live_cogito_search_provider.js";
 import {
@@ -83,7 +81,6 @@ export type LiveDbCatalogRepository = {
   readonly boardAssetRouteProvider: BoardAssetRouteProvider;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
-  readonly taskRouteProvider: TaskRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
   readonly cogitoSearchProvider: ReturnType<typeof createLiveCogitoSearchProvider>;
@@ -188,11 +185,7 @@ export function createLiveDbCatalogRepository(
     storage: options.boardAssetStorage,
     configProvider: options.configProvider,
   });
-  const taskProvider = createLiveTaskRouteProvider({
-    sqlResolver,
-    folderProvider,
-    registry: options.registry,
-  });
+
   const sessionResourceAccessRepository =
     createSessionResourceAccessRepository(sqlResolver);
   const sessionReviewRepository = createLiveSessionReviewRepository({
@@ -354,9 +347,7 @@ export function createLiveDbCatalogRepository(
     markdownDocumentRouteProvider: createLiveMarkdownDocumentRouteProvider(
       sqlResolver,
       folderProvider,
-      boardItemProvider,
     ),
-    taskRouteProvider: taskProvider,
     sessionCatalogProvider: createSessionCatalogProvider(
       sqlResolver,
       options.sessionDeletion,

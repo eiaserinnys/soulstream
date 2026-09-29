@@ -26,7 +26,7 @@ export interface PageYjsRouteOptions {
   browserReads?: PageBrowserRouteOptions["reads"];
   resolveAgentId?: PageBrowserRouteOptions["resolveAgentId"];
   plannerReads?: PlannerRouteOptions["provider"];
-  starredTaskOrder?: PlannerRouteOptions["starredTaskOrder"];
+  starredFolderOrder?: PlannerRouteOptions["starredFolderOrder"];
   onPageUpdated?: PageUpdatedObserver;
 }
 
@@ -52,12 +52,12 @@ export function registerPageYjsRoutes(
       resolveAgentId: options.resolveAgentId,
     });
     if (options.plannerReads) {
-      if (!options.starredTaskOrder || !options.onPageUpdated) {
+      if (!options.starredFolderOrder || !options.onPageUpdated) {
         throw new Error("Planner writes and page update notifications are not configured");
       }
       registerPlannerRoutes(app, {
         provider: options.plannerReads,
-        starredTaskOrder: options.starredTaskOrder,
+        starredFolderOrder: options.starredFolderOrder,
         onPageUpdated: options.onPageUpdated,
         dailyPages: service,
         resolveUser: options.resolveBrowserUser,

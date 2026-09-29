@@ -7,33 +7,37 @@ export type SqlClient = RepositorySql & {
   begin<T>(callback: (sql: RepositorySql) => Promise<T>): Promise<T>;
 };
 
-import type { TaskItemStatus } from "@soulstream/wire-schema";
+import type { ChecklistItemStatus } from "@soulstream/wire-schema";
 
-export type { TaskItemStatus } from "@soulstream/wire-schema";
+export type { ChecklistItemStatus } from "@soulstream/wire-schema";
 
-export type TaskAssigneeKind = "agent" | "human" | "session";
-export type TaskStatus = "open" | "completed";
-export type TaskOperationTargetKind = "task" | "section" | "item";
-export type TaskOperationActorKind = "agent" | "user" | "system" | "llm";
-export type TaskCompletionKind = Exclude<TaskOperationActorKind, "system">;
+export type ChecklistAssigneeKind = "agent" | "human" | "session";
+export type FolderStatus = "open" | "completed";
+export type FolderOperationTargetKind = "folder" | "section" | "item";
+export type FolderOperationActorKind = "agent" | "user" | "system" | "llm";
+export type FolderCompletionKind = Exclude<FolderOperationActorKind, "system">;
 
-export interface TaskAssigneeFields extends Record<string, unknown> {
-  assignee_kind: TaskAssigneeKind | null;
+export interface ChecklistAssigneeFields extends Record<string, unknown> {
+  assignee_kind: ChecklistAssigneeKind | null;
   assignee_agent_id: string | null;
   assignee_session_id: string | null;
   assignee_user_id: string | null;
 }
 
-export interface TaskRow extends Record<string, unknown> {
+export interface FolderRow extends Record<string, unknown> {
   id: string;
-  board_item_id: string;
-  title: string;
-  status: TaskStatus;
+  name: string;
+  sort_order: number;
+  settings: Record<string, unknown>;
+  parent_folder_id: string | null;
+  project_page_id: string | null;
+  checklist_enabled: boolean;
+  status: FolderStatus;
   archived: boolean;
   version: number;
   created_session_id: string | null;
   created_event_id: number | null;
-  completed_kind: TaskCompletionKind | null;
+  completed_kind: FolderCompletionKind | null;
   completed_session_id: string | null;
   completed_event_id: number | null;
   completed_user_id: string | null;
@@ -42,9 +46,9 @@ export interface TaskRow extends Record<string, unknown> {
   updated_at: Date;
 }
 
-export interface TaskSectionRow extends TaskAssigneeFields {
+export interface ChecklistSectionRow extends ChecklistAssigneeFields {
   id: string;
-  task_id: string;
+  folder_id: string;
   position_key: string;
   title: string;
   archived: boolean;
@@ -57,20 +61,20 @@ export interface TaskSectionRow extends TaskAssigneeFields {
   updated_at: Date;
 }
 
-export interface TaskItemRow extends TaskAssigneeFields {
+export interface ChecklistItemRow extends ChecklistAssigneeFields {
   id: string;
   section_id: string;
   position_key: string;
   title: string;
   how_to: string;
-  status: TaskItemStatus;
+  status: ChecklistItemStatus;
   archived: boolean;
   version: number;
   created_session_id: string | null;
   created_event_id: number | null;
   updated_session_id: string | null;
   updated_event_id: number | null;
-  completed_kind: TaskCompletionKind | null;
+  completed_kind: FolderCompletionKind | null;
   completed_session_id: string | null;
   completed_event_id: number | null;
   completed_user_id: string | null;
@@ -79,13 +83,13 @@ export interface TaskItemRow extends TaskAssigneeFields {
   updated_at: Date;
 }
 
-export interface TaskOperationRow extends Record<string, unknown> {
+export interface FolderOperationRow extends Record<string, unknown> {
   id: string;
-  task_id: string | null;
-  target_kind: TaskOperationTargetKind;
+  folder_id: string | null;
+  target_kind: FolderOperationTargetKind;
   target_id: string;
   operation_type: string;
-  actor_kind: TaskOperationActorKind;
+  actor_kind: FolderOperationActorKind;
   actor_session_id: string | null;
   actor_event_id: number | null;
   actor_user_id: string | null;
@@ -95,81 +99,61 @@ export interface TaskOperationRow extends Record<string, unknown> {
   created_at: Date;
 }
 
-export interface TaskSnapshot {
-  task: TaskRow;
-  sections: TaskSectionRow[];
-  items: TaskItemRow[];
+export interface FolderSnapshot {
+  folder: FolderRow;
+  sections: ChecklistSectionRow[];
+  items: ChecklistItemRow[];
 }
 
-export interface TaskListRow extends Record<string, unknown> {
-  id: string;
-  board_item_id: string;
+export type FolderListRow = FolderRow;
+
+export interface FolderMyTurnItemRow extends Record<string, unknown> {
   folder_id: string;
-  title: string;
-  status: TaskStatus;
-  archived: boolean;
-  version: number;
-  x: number;
-  y: number;
-  metadata: Record<string, unknown>;
-  completed_kind: TaskCompletionKind | null;
-  completed_session_id: string | null;
-  completed_event_id: number | null;
-  completed_user_id: string | null;
-  completed_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface TaskMyTurnItemRow extends Record<string, unknown> {
-  task_id: string;
-  task_title: string;
-  task_status: TaskStatus;
-  board_item_id: string;
-  task_completed_kind: TaskCompletionKind | null;
-  task_completed_session_id: string | null;
-  task_completed_event_id: number | null;
-  task_completed_user_id: string | null;
-  task_completed_at: Date | null;
+  folder_name: string;
+  folder_status: FolderStatus;
+  folder_completed_kind: FolderCompletionKind | null;
+  folder_completed_session_id: string | null;
+  folder_completed_event_id: number | null;
+  folder_completed_user_id: string | null;
+  folder_completed_at: Date | null;
   section_id: string;
   section_title: string;
   item_id: string;
   item_title: string;
   how_to: string;
-  status: TaskItemStatus;
+  status: ChecklistItemStatus;
   item_version: number;
-  effective_assignee_kind: TaskAssigneeKind | null;
+  effective_assignee_kind: ChecklistAssigneeKind | null;
   effective_assignee_agent_id: string | null;
   effective_assignee_session_id: string | null;
   effective_assignee_user_id: string | null;
 }
 
-export interface TaskActorParams {
-  actorKind?: TaskOperationActorKind;
+export interface FolderActorParams {
+  actorKind?: FolderOperationActorKind;
   actorSessionId: string | null;
   actorUserId?: string | null;
 }
 
-export interface TaskHandoffEvent {
-  taskId: string;
-  taskTitle: string;
-  boardItemId: string;
+export interface FolderHandoffEvent {
+  folderId: string;
+  folderName: string;
   itemId: string;
   itemTitle: string;
-  status: Extract<TaskItemStatus, "completed" | "cancelled">;
+  status: Extract<ChecklistItemStatus, "completed" | "cancelled">;
   operationId: string;
   eventId: number;
 }
 
-export interface TaskMutationResult {
-  snapshot: TaskSnapshot;
-  operation: TaskOperationRow;
+export interface ChecklistMutationResult {
+  snapshot: FolderSnapshot;
+  operation: FolderOperationRow;
   eventId: number;
   idempotent?: boolean;
-  handoff?: TaskHandoffEvent;
+  handoff?: FolderHandoffEvent;
 }
 
-export interface TaskDbPort {
+export interface FolderDbPort {
   appendEventTx(
     sql: RepositorySql,
     params: {
@@ -183,6 +167,6 @@ export interface TaskDbPort {
   ): Promise<number>;
 }
 
-export interface TaskBroadcasterPort {
-  emitTaskUpdated(agentSessionId: string, taskId: string, boardItemId: string): Promise<void>;
+export interface FolderBroadcasterPort {
+  emitFolderUpdated(folderId: string, agentSessionId: string | null, headerChanged?: boolean): Promise<void>;
 }

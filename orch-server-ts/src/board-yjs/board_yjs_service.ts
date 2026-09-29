@@ -1,3 +1,5 @@
+import { withFolderBoardIdentity, folderIdentityDocumentNames, type FolderBoardIdentityInput } from "./board_yjs_folder_identity.js";
+import { upsertFolderYjsBoardItem } from "./board_yjs_model.js";
 import type { IncomingMessage } from "node:http";
 
 import { Hocuspocus } from "@hocuspocus/server";
@@ -17,7 +19,6 @@ import {
   readBoardYDocReplica,
   updateMarkdownYjsDocument,
   upsertCustomViewYjsBoardItem,
-  upsertTaskYjsBoardItem,
 } from "./board_yjs_model.js";
 import { BoardYjsDocumentMutationGate } from "./board_yjs_document_mutation_gate.js";
 import {
@@ -27,10 +28,8 @@ import {
   sessionBoardMoveDocumentNames,
   type StagedBoardMove,
   type StagedSessionBoardMove,
-  type StagedTaskBoardMove,
   withStagedBoardMove,
   withStagedSessionBoardMove,
-  withStagedTaskBoardMove,
 } from "./board_yjs_move.js";
 import {
   boardItemRemovalDocumentNames,
@@ -45,7 +44,7 @@ import {
   type BoardYjsPersistenceRepository,
 } from "./board_yjs_persistence.js";
 import type {
-  BoardYjsContainerRef,
+  BoardYjsFolderScope,
   BoardYjsDocumentApplication,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
@@ -55,14 +54,11 @@ export interface BoardYjsServiceConfig {
   repository: BoardYjsPersistenceRepository;
   auth: BoardYjsAuthConfig;
   logger: FastifyBaseLogger;
-  moveTaskBoardItem?: (
-    input: BoardMoveInput & { idempotencyKey: string },
-  ) => Promise<CatalogBoardItemRow>;
   moveSessionBoardItem?: (input: {
     sessionId: string;
     targetScope: SessionBoardMoveInput["targetScope"];
     position?: { x: number; y: number };
-    sourceTaskItemId?: string | null;
+    sourceChecklistItemId?: string | null;
   }) => Promise<CatalogBoardItemRow | null>;
   persistBoardItemMove?: (application: StagedBoardMove) => Promise<void>;
 }
@@ -98,7 +94,7 @@ export class BoardYjsService {
   handleContainerConnection(
     socket: WebSocket,
     request: IncomingMessage,
-    container: BoardYjsContainerRef,
+    container: BoardYjsFolderScope,
   ): void {
     const documentName = getBoardYjsContainerDocumentName(container);
     this.requireHocuspocus().handleConnection(socket, request, {
@@ -118,7 +114,6 @@ export class BoardYjsService {
 
   async createMarkdownDocument(input: {
     folderId: string;
-    container?: BoardYjsContainerRef;
     title: string;
     body: string;
     x?: number;
@@ -127,8 +122,6 @@ export class BoardYjsService {
   }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }> {
     const scope = {
       folderId: input.folderId,
-      containerKind: input.container?.containerKind ?? "folder",
-      containerId: input.container?.containerId ?? input.folderId,
     } as const;
     return await this.withDirectContainerConnection(scope, (doc) => {
       const [x, y] = input.x !== undefined && input.y !== undefined
@@ -140,11 +133,10 @@ export class BoardYjsService {
 
   async upsertSessionBoardItem(input: {
     folderId: string;
-    container: BoardYjsContainerRef;
     sessionId: string;
     x: number;
     y: number;
-    sourceTaskItemId?: string | null;
+    sourceChecklistItemId?: string | null;
   }): Promise<CatalogBoardItemRow> {
     if (!this.config.moveSessionBoardItem) {
       throw new Error("session board move is not configured");
@@ -153,11 +145,9 @@ export class BoardYjsService {
       sessionId: input.sessionId,
       targetScope: {
         folderId: input.folderId,
-        containerKind: input.container.containerKind,
-        containerId: input.container.containerId,
       },
       position: { x: input.x, y: input.y },
-      sourceTaskItemId: input.sourceTaskItemId ?? null,
+      sourceChecklistItemId: input.sourceChecklistItemId ?? null,
     });
     if (!moved) throw new Error(`session board item was not created: ${input.sessionId}`);
     return moved;
@@ -174,95 +164,20 @@ export class BoardYjsService {
       sessionId,
       targetScope: folderId === null
         ? null
-        : { folderId, containerKind: "folder", containerId: folderId },
-      sourceTaskItemId: null,
+        : { folderId },
+      sourceChecklistItemId: null,
     });
   }
 
-  async upsertTaskBoardItem(input: {
-    folderId: string;
-    boardItemId: string;
-    taskId: string;
-    title: string;
-    x: number;
-    y: number;
-    metadata?: Record<string, unknown>;
-  }): Promise<CatalogBoardItemRow> {
-    return await this.withDirectConnection(input.folderId, (doc) =>
-      upsertTaskYjsBoardItem(doc, input)
-    );
-  }
-
-  /**
-   * Stages a task board mutation off-document. The live Y.Doc is updated only
-   * after the caller's database transaction commits successfully.
-   */
-  async withTaskBoardApplication<T>(input: {
-    folderId: string;
-    boardItemId: string;
-    taskId: string;
-    title: string;
-    archived: boolean;
-    x: number;
-    y: number;
-  }, persist: (application: {
-    documentName: string;
-    scope: {
-      folderId: string;
-      containerKind: "folder";
-      containerId: string;
-    };
-    snapshot: Uint8Array;
-    replica: ReturnType<typeof readBoardYDocReplica>;
-  }) => Promise<T>): Promise<T> {
-    return await this.withBoardIdentityLock(input.folderId, async () => {
-      const scope = {
-        folderId: input.folderId,
-        containerKind: "folder" as const,
-        containerId: input.folderId,
-      };
-      const documentName = getBoardYjsContainerDocumentName(scope);
-      return await this.documentMutationGate.withMutation([documentName], async () => {
-        const connection = await this.hocuspocus.openDirectConnection(documentName, {
-          ...scope,
-          source: "task-identity",
-        });
-        try {
-          const live = connection.document as unknown as Y.Doc | null;
-          if (!live) throw new Error(`board Y.Doc direct connection closed: ${documentName}`);
-          const staged = new Y.Doc();
-          Y.applyUpdate(staged, Y.encodeStateAsUpdate(live));
-          upsertTaskYjsBoardItem(staged, {
-            folderId: input.folderId,
-            boardItemId: input.boardItemId,
-            taskId: input.taskId,
-            title: input.title,
-            x: input.x,
-            y: input.y,
-            metadata: { archived: input.archived },
-          });
-          const update = Y.encodeStateAsUpdate(staged, Y.encodeStateVector(live));
-          const snapshot = Y.encodeStateAsUpdate(staged);
-          const result = await persist({
-            documentName,
-            scope,
-            snapshot,
-            replica: readBoardYDocReplica(scope, staged),
-          });
-          await connection.transact((document) => {
-            Y.applyUpdate(document as unknown as Y.Doc, update);
-          });
-          return result;
-        } finally {
-          await connection.disconnect();
-        }
-      });
-    });
+  async withFolderBoardApplication<T>(input: FolderBoardIdentityInput,
+    persist: (applications: BoardYjsDocumentApplication[]) => Promise<T>): Promise<T> {
+    return this.withBoardIdentityLock(input.folderId, () =>
+      this.documentMutationGate.withMutation(folderIdentityDocumentNames(input), () =>
+        withFolderBoardIdentity(this.hocuspocus, input, persist)));
   }
 
   async upsertCustomViewBoardItem(input: {
     folderId: string;
-    container: BoardYjsContainerRef;
     boardItemId: string;
     customViewId: string;
     title: string;
@@ -272,19 +187,11 @@ export class BoardYjsService {
     y: number;
     metadata?: Record<string, unknown>;
   }): Promise<CatalogBoardItemRow> {
-    return await this.withDirectContainerConnection(input.container, (doc) =>
+    return await this.withDirectContainerConnection({ folderId: input.folderId }, (doc) =>
       upsertCustomViewYjsBoardItem(doc, {
         folderId: input.folderId,
-        ...input.container,
       }, input)
     );
-  }
-
-  async removeTaskBoardItem(folderId: string, boardItemId: string): Promise<void> {
-    await this.withDirectConnection(folderId, (doc) => {
-      deleteBoardYjsItem(doc, boardItemId);
-      return true;
-    });
   }
 
   async withBoardItemRemovalApplications<T>(
@@ -298,7 +205,7 @@ export class BoardYjsService {
   }
 
   async removeBoardItem(
-    container: string | BoardYjsContainerRef,
+    container: string | BoardYjsFolderScope,
     boardItemId: string,
   ): Promise<void> {
     await this.withDirectContainerConnection(container, (doc) => {
@@ -308,7 +215,7 @@ export class BoardYjsService {
   }
 
   async updateBoardItemPosition(
-    container: string | BoardYjsContainerRef,
+    container: string | BoardYjsFolderScope,
     boardItemId: string,
     x: number,
     y: number,
@@ -323,24 +230,10 @@ export class BoardYjsService {
     boardItem: CatalogBoardItemRow;
     targetScope: {
       folderId: string;
-      containerKind: BoardYjsContainerRef["containerKind"];
-      containerId: string;
     };
     position?: { x: number; y: number };
     idempotencyKey?: string;
   }): Promise<CatalogBoardItemRow> {
-    if (input.boardItem.itemType === "task") {
-      if (!input.idempotencyKey?.trim()) {
-        throw new Error("task board move idempotencyKey is required");
-      }
-      if (!this.config.moveTaskBoardItem) {
-        throw new Error("task identity move is not configured");
-      }
-      return await this.config.moveTaskBoardItem({
-        ...input,
-        idempotencyKey: input.idempotencyKey,
-      });
-    }
     if (input.boardItem.itemType === "session") {
       if (!this.config.moveSessionBoardItem) {
         throw new Error("session board move is not configured");
@@ -349,7 +242,7 @@ export class BoardYjsService {
         sessionId: input.boardItem.itemId,
         targetScope: input.targetScope,
         ...(input.position ? { position: input.position } : {}),
-        sourceTaskItemId: input.boardItem.sourceTaskItemId ?? null,
+        sourceChecklistItemId: input.boardItem.sourceChecklistItemId ?? null,
       });
       if (!moved) throw new Error(`session board item was not created: ${input.boardItem.itemId}`);
       return moved;
@@ -379,19 +272,8 @@ export class BoardYjsService {
     });
   }
 
-  async withTaskBoardMoveApplication(
-    input: BoardMoveInput,
-    persist: (application: StagedTaskBoardMove) => Promise<void>,
-  ): Promise<CatalogBoardItemRow> {
-    return await this.withBoardIdentityLock(input.boardItem.id, async () =>
-      await this.documentMutationGate.withMutation(boardMoveDocumentNames(input), async () =>
-        await withStagedTaskBoardMove(this.hocuspocus, input, persist)
-      )
-    );
-  }
-
   async updateMarkdownDocument(
-    container: string | BoardYjsContainerRef,
+    container: string | BoardYjsFolderScope,
     documentId: string,
     fields: { title?: string; body?: string; expectedVersion: number },
   ): Promise<MarkdownDocumentRow | null> {
@@ -401,7 +283,7 @@ export class BoardYjsService {
   }
 
   async deleteMarkdownDocument(
-    container: string | BoardYjsContainerRef,
+    container: string | BoardYjsFolderScope,
     documentId: string,
   ): Promise<void> {
     await this.withDirectContainerConnection(container, (doc) => {
@@ -418,7 +300,7 @@ export class BoardYjsService {
   }
 
   private async withDirectContainerConnection<T>(
-    container: string | BoardYjsContainerRef,
+    container: string | BoardYjsFolderScope,
     callback: (doc: Y.Doc) => T,
   ): Promise<T> {
     const resolved = typeof container === "string" ? boardYjsFolderScope(container) : container;

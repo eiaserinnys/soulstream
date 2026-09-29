@@ -1,23 +1,16 @@
-import type { BoardContainerKind, BoardItemType } from "@soulstream/wire-schema";
+import type { BoardItemType } from "@soulstream/wire-schema";
 
-export type { BoardContainerKind, BoardItemType } from "@soulstream/wire-schema";
+export type { BoardItemType } from "@soulstream/wire-schema";
 
-export interface BoardYjsContainerRef {
-  containerKind: BoardContainerKind;
-  containerId: string;
-}
-
-export interface BoardYjsContainerScope extends BoardYjsContainerRef {
+export interface BoardYjsFolderScope {
   folderId: string;
 }
 
 export interface CatalogBoardItemRow {
   id: string;
   folderId: string;
-  containerKind?: BoardContainerKind;
-  containerId?: string;
   membershipKind?: "primary" | "reference";
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
   itemType: BoardItemType;
   itemId: string;
   x: number;
@@ -48,7 +41,7 @@ export interface BoardYjsReplica {
 
 export interface BoardYjsDocumentApplication {
   documentName: string;
-  scope: BoardYjsContainerScope;
+  scope: BoardYjsFolderScope;
   snapshot: Uint8Array;
   replica: BoardYjsReplica;
 }
@@ -59,7 +52,7 @@ export interface BoardYjsItemValue {
   x: number;
   y: number;
   membership_kind?: "primary" | "reference";
-  source_task_item_id?: string | null;
+  source_checklist_item_id?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;

@@ -28,9 +28,7 @@ describe("SessionBoardMoveService", () => {
           expect(input.boardItems).toEqual(sourceItems);
           expect(input.targetScope).toEqual({
             folderId: "folder-target",
-            containerKind: "folder",
-            containerId: "folder-target",
-          });
+            });
           await persist({
             movedBoardItem: sessionItem("folder-target"),
             boardApplications: applications,
@@ -49,9 +47,7 @@ describe("SessionBoardMoveService", () => {
     expect(moved).toMatchObject({
       id: "session:session-a",
       folderId: "folder-target",
-      containerKind: "folder",
-      containerId: "folder-target",
-    });
+      });
     expect(commitSessionMove).toHaveBeenCalledWith({
       sessionId: "session-a",
       folderId: "folder-target",
@@ -110,7 +106,7 @@ describe("SessionBoardMoveService", () => {
 
     await service.moveSessionBoardItem({
       sessionId: "session-a",
-      targetScope: { folderId: "folder-target", containerKind: "folder", containerId: "folder-target" },
+      targetScope: {  folderId: "folder-target" },
     });
 
     expect(commitSessionMove).toHaveBeenCalledTimes(1);
@@ -140,7 +136,7 @@ describe("SessionBoardMoveService", () => {
 
     await expect(service.moveSessionBoardItem({
       sessionId: "session-a",
-      targetScope: { folderId: "folder-target", containerKind: "folder", containerId: "folder-target" },
+      targetScope: {  folderId: "folder-target" },
     })).rejects.toThrow("transaction rolled back");
 
     expect(onBoardMoveCommitted).not.toHaveBeenCalled();
@@ -161,7 +157,7 @@ describe("SessionBoardMoveService", () => {
             firstEntered.resolve();
             await firstBlocked;
           }
-          const moved = sessionItem(input.targetScope!.containerId);
+          const moved = sessionItem(input.targetScope!.folderId);
           await persist({ movedBoardItem: moved, boardApplications: [] });
           inventory.splice(0, inventory.length, moved);
           return moved;
@@ -183,7 +179,7 @@ describe("SessionBoardMoveService", () => {
     await Promise.all([first, second]);
 
     expect(listSessionBoardItems).toHaveBeenCalledTimes(2);
-    expect(inventory[0]?.containerId).toBe("folder-second");
+    expect(inventory[0]?.folderId).toBe("folder-second");
   });
 });
 
@@ -194,18 +190,17 @@ function deferred<T>() {
 }
 
 function sessionItem(
-  containerId: string,
   containerKind: "folder" | "task" = "folder",
   membershipKind: "primary" | "reference" = "primary",
   id = "session:session-a",
 ): CatalogBoardItemRow {
   return {
     id,
-    folderId: containerKind === "folder" ? containerId : "folder-target",
-    containerKind,
-    containerId,
+
+
+    folderId,
     membershipKind,
-    sourceTaskItemId: null,
+    sourceChecklistItemId: null,
     itemType: "session",
     itemId: "session-a",
     x: 0,
@@ -215,12 +210,11 @@ function sessionItem(
 }
 
 function application(
-  containerId: string,
   boardItems: CatalogBoardItemRow[],
 ): BoardYjsDocumentApplication {
   return {
     documentName: `board-folder:${containerId}`,
-    scope: { folderId: containerId, containerKind: "folder", containerId },
+    scope: {  folderId },
     snapshot: new Uint8Array(),
     replica: { boardItems, markdownDocuments: [] },
   };

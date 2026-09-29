@@ -5,8 +5,7 @@ import { registerFolderControlPlaneHostRoute } from "../src/folders/folder_contr
 import type { FolderControlPlaneService } from "../src/folders/folder_control_plane_service.js";
 import { registerScheduleHostRoute } from "../src/schedule/schedule_host_route.js";
 import type { SoulstreamScheduleRepository } from "../src/schedule/schedule_repository.js";
-import { registerTaskControlPlaneHostRoute } from "../src/tasks/task_control_plane_host_route.js";
-import type { TaskControlPlaneService } from "../src/tasks/task_control_plane_service.js";
+import type { ChecklistControlPlaneService } from "../src/tasks/task_control_plane_service.js";
 import { registerPersistenceHostRoutes } from "../src/control_plane/persistence_host_routes.js";
 import type { PersistenceHostRepositories } from "../src/control_plane/persistence_host_runtime.js";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
@@ -162,133 +161,6 @@ describe("control-plane host routes", () => {
       .toBeGreaterThanOrEqual(Number(response.headers["x-soulstream-host-received-at-ms"]));
   });
 
-  it("rejects a task mutation without agent provenance", async () => {
-    const app = Fastify();
-    apps.push(app);
-    registerTaskControlPlaneHostRoute(app, {
-      authBearerToken: token,
-      serviceProvider: async () => ({}) as TaskControlPlaneService,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/tasks/host/create_section",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { actor_kind: "agent", actor_session_id: null, task_id: "task-1", title: "S" },
-    });
-
-    expect(response.statusCode).toBe(422);
-    expect(response.json().detail.error.code).toBe("INVALID_TASK_HOST_ACTOR");
-  });
-
-  it("preserves task actor and idempotency fields across the host boundary", async () => {
-    const setTaskStatus = vi.fn(async (input: unknown) => ({ input }));
-    const app = Fastify();
-    apps.push(app);
-    registerTaskControlPlaneHostRoute(app, {
-      authBearerToken: token,
-      serviceProvider: async () => ({ setTaskStatus }) as unknown as TaskControlPlaneService,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/tasks/host/set_task_status",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        actor_kind: "agent",
-        actor_session_id: "session-1",
-        actor_user_id: null,
-        task_id: "task-1",
-        expected_version: 3,
-        status: "completed",
-        idempotency_key: "idem-1",
-        reason: "done",
-      },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(setTaskStatus).toHaveBeenCalledWith({
-      actorKind: "agent",
-      actorSessionId: "session-1",
-      actorUserId: null,
-      taskId: "task-1",
-      expectedVersion: 3,
-      status: "completed",
-      idempotencyKey: "idem-1",
-      reason: "done",
-    });
-  });
-
-  it("preserves a sessionless llm mutation actor", async () => {
-    const createSection = vi.fn(async (input: unknown) => ({ input }));
-    const app = Fastify();
-    apps.push(app);
-    registerTaskControlPlaneHostRoute(app, {
-      authBearerToken: token,
-      serviceProvider: async () => ({ createSection }) as unknown as TaskControlPlaneService,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/tasks/host/create_section",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        actor_kind: "llm",
-        actor_session_id: null,
-        task_id: "task-1",
-        title: "Plan",
-        idempotency_key: "llm-section-1",
-      },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(createSection).toHaveBeenCalledWith(expect.objectContaining({
-      actorKind: "llm",
-      actorSessionId: null,
-    }));
-  });
-
-  it("returns version-conflict details across the task host boundary", async () => {
-    const setItemStatus = vi.fn(async () => {
-      throw Object.assign(new Error("stale item"), {
-        statusCode: 409,
-        targetKind: "item",
-        targetId: "item-1",
-        expectedVersion: 2,
-        actualVersion: 3,
-      });
-    });
-    const app = Fastify();
-    apps.push(app);
-    registerTaskControlPlaneHostRoute(app, {
-      authBearerToken: token,
-      serviceProvider: async () => ({ setItemStatus }) as unknown as TaskControlPlaneService,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/tasks/host/set_item_status",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        actor_kind: "agent",
-        actor_session_id: "session-1",
-        item_id: "item-1",
-        expected_version: 2,
-        status: "completed",
-      },
-    });
-
-    expect(response.statusCode).toBe(409);
-    expect(response.json()).toMatchObject({
-      detail: {
-        error: {
-          code: "TASK_VERSION_CONFLICT",
-          details: { targetKind: "item", actualVersion: 3 },
-        },
-      },
-    });
-  });
-
   it("revives schedule timestamps before invoking the repository", async () => {
     let capturedInput: { now: unknown; claimedUntil: unknown } | undefined;
     const claimDueSchedules = vi.fn(async (input: { now: unknown; claimedUntil: unknown }) => {
@@ -352,35 +224,6 @@ describe("control-plane host routes", () => {
       sourceTool: "ResumeAfterLimit",
       toolUseId: "ResumeAfterLimit:3232",
     }, 3259);
-  });
-
-  it("keeps folder update columns and nullable values explicit", async () => {
-    const updateFolder = vi.fn(async () => undefined);
-    const app = Fastify();
-    apps.push(app);
-    registerFolderControlPlaneHostRoute(app, {
-      authBearerToken: token,
-      serviceProvider: async () => ({ updateFolder }) as unknown as FolderControlPlaneService,
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/folders/host/update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        folder_id: "folder-1",
-        columns: ["settings", "parent_folder_id"],
-        values: ["{\"color\":\"blue\"}", null],
-      },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(updateFolder).toHaveBeenCalledWith(
-      "folder-1",
-      ["settings", "parent_folder_id"],
-      ["{\"color\":\"blue\"}", null],
-    );
-    expect(response.json()).toBeNull();
   });
 
   it("returns explicit JSON null for a void schedule operation", async () => {

@@ -7,7 +7,7 @@ import {
   readBoardYDocReplica,
 } from "./board_yjs_model.js";
 import type {
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsDocumentApplication,
   CatalogBoardItemRow,
 } from "./board_yjs_types.js";
@@ -24,13 +24,11 @@ export async function withStagedBoardItemRemoval<T>(
     connection: DirectConnection;
     live: Y.Doc;
     staged: Y.Doc;
-    scope: BoardYjsContainerScope;
+    scope: BoardYjsFolderScope;
   }> = [];
   try {
     for (const removal of removals) {
       const connection = await hocuspocus.openDirectConnection(removal.documentName, {
-        containerKind: removal.scope.containerKind,
-        containerId: removal.scope.containerId,
         source: "session-delete",
       });
       const live = connection.document as unknown as Y.Doc | null;
@@ -76,7 +74,7 @@ export function boardItemRemovalDocumentNames(
 
 function groupRemovals(boardItems: readonly CatalogBoardItemRow[]): Array<{
   documentName: string;
-  scope: BoardYjsContainerScope;
+  scope: BoardYjsFolderScope;
   boardItemIds: string[];
 }> {
   if (boardItems.length === 0) {
@@ -84,7 +82,7 @@ function groupRemovals(boardItems: readonly CatalogBoardItemRow[]): Array<{
   }
   const grouped = new Map<string, {
     documentName: string;
-    scope: BoardYjsContainerScope;
+    scope: BoardYjsFolderScope;
     boardItemIds: string[];
   }>();
   for (const boardItem of boardItems) {
@@ -108,11 +106,9 @@ function groupRemovals(boardItems: readonly CatalogBoardItemRow[]): Array<{
     .sort((left, right) => left.documentName.localeCompare(right.documentName));
 }
 
-function scopeOf(boardItem: CatalogBoardItemRow): BoardYjsContainerScope {
+function scopeOf(boardItem: CatalogBoardItemRow): BoardYjsFolderScope {
   return {
     folderId: boardItem.folderId,
-    containerKind: boardItem.containerKind ?? "folder",
-    containerId: boardItem.containerId ?? boardItem.folderId,
   };
 }
 

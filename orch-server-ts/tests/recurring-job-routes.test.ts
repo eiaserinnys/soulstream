@@ -316,7 +316,7 @@ function createBody(idempotencyKey: string) {
     node_id: "node-a",
     agent_id: "roselin",
     model_preset: null,
-    container: { kind: "folder", id: "folder-a" },
+
     folder_id: "folder-a",
     enabled: false,
   };
@@ -328,7 +328,7 @@ function job(): RecurringJob {
     name: "music recommendation", prompt: "recommend music", timezone: "Asia/Seoul",
     scheduleKind: "recurring", runAt: null,
     scheduleExpressions: ["0 9,12 * * 1-5"], nodeId: "node-a", agentId: "roselin",
-    modelPreset: null, container: { kind: "folder", id: "folder-a" }, folderId: "folder-a",
+    modelPreset: null,  folderId: "folder-a",
     enabled: true, archivedAt: null, lateRunWindowSeconds: 1800, nextRunAt: "2026-09-22T00:00:00.000Z",
     version: 1, createdIdempotencyKey: "create", createdBy: "owner", updatedBy: "owner",
     createdAt: "2026-09-21T00:00:00.000Z", updatedAt: "2026-09-21T00:00:00.000Z",

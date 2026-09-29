@@ -1,12 +1,11 @@
 import type {
   BoardItemType,
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
 } from "./board_yjs_types.js";
 
-export type { BoardItemType, BoardYjsContainerRef, BoardYjsContainerScope };
+export type { BoardItemType, BoardYjsFolderScope };
 
 export interface CustomViewRow {
   id: string;
@@ -74,18 +73,7 @@ export class CustomViewRevisionConflictError extends Error {
   }
 }
 
-export interface ChecklistProjectionOutboxRow extends Record<string, unknown> {
-  block_id: string;
-  page_id: string;
-  source_hash: string;
-  actor_kind: ProjectionActorKind;
-  actor_session_id: string | null;
-  actor_user_id: string | null;
-  routing_session_id: string;
-  attempts: number;
-}
-
-export interface ContainerSessionRecord {
+export interface FolderSessionRecord {
   agentSessionId: string;
   displayName: string | null;
   lastUserMessagePreview: string | null;
@@ -103,32 +91,31 @@ export interface ContainerSessionRecord {
   lastReadEventId: number | null;
 }
 
-export interface ContainerMarkdownRecord {
+export interface FolderMarkdownRecord {
   id: string;
   title: string;
   body: string;
   updatedAt: string | null;
 }
 
-export interface ContainerTitleRecord {
+export interface FolderTitleRecord {
   id: string;
   title: string | null;
   updatedAt: string | null;
 }
 
-export interface ContainerItemRecord {
+export interface FolderItemRecord {
   boardItem: CatalogBoardItemRow;
   archived: boolean;
-  session?: ContainerSessionRecord;
-  markdown?: ContainerMarkdownRecord;
-  task?: ContainerTitleRecord;
-  customView?: ContainerTitleRecord;
-  asset?: ContainerTitleRecord;
+  session?: FolderSessionRecord;
+  markdown?: FolderMarkdownRecord;
+  customView?: FolderTitleRecord;
+  asset?: FolderTitleRecord;
   subfolder?: { id: string; title: string | null };
 }
 
-export interface ListContainerItemsParams {
-  container: BoardYjsContainerRef;
+export interface ListFolderItemsParams {
+  folderId: string;
   query: string | null;
   includeArchived: boolean;
   itemTypes: BoardItemType[] | null;
@@ -137,8 +124,8 @@ export interface ListContainerItemsParams {
   scanLimit?: number | null;
 }
 
-export interface ListContainerItemsResult {
-  items: ContainerItemRecord[];
+export interface ListFolderItemsResult {
+  items: FolderItemRecord[];
   total: number;
   counts: Record<BoardItemType, number>;
   scan: { limit: number; scannedItems: number; truncated: boolean } | null;
@@ -146,22 +133,21 @@ export interface ListContainerItemsResult {
 
 export interface BoardProjectionHost {
   getBoardItems(): Promise<CatalogBoardItemRow[]>;
-  getBoardItemsByContainer(
+  getBoardItemsByFolder(
     folderId: string,
-    container: BoardYjsContainerRef,
   ): Promise<CatalogBoardItemRow[]>;
   getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null>;
   getPrimarySessionBoardItem(sessionId: string): Promise<CatalogBoardItemRow | null>;
   getMarkdownDocumentBoardItem(documentId: string): Promise<CatalogBoardItemRow | null>;
   getBoardItemIdsForSession(sessionId: string): Promise<string[]>;
-  listContainerItems(params: ListContainerItemsParams): Promise<ListContainerItemsResult>;
-  resolveBoardYjsContainerScope(
-    container: BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope | null>;
+  listFolderItems(params: ListFolderItemsParams): Promise<ListFolderItemsResult>;
+  resolveBoardYjsFolderScope(
+    container: BoardYjsFolderScope,
+  ): Promise<BoardYjsFolderScope | null>;
   getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null>;
   getCustomView(customViewId: string): Promise<CustomViewWithBoardItem | null>;
   listCustomViews(params: {
-    container: BoardYjsContainerRef;
+    folderId: string;
     includeArchived?: boolean;
     limit?: number;
   }): Promise<CustomViewWithBoardItem[]>;
@@ -171,23 +157,5 @@ export interface BoardProjectionHost {
   patchCustomViewRecord(
     input: PatchCustomViewRecordInput,
   ): Promise<CustomViewRecordMutationResult>;
-  claimChecklistTaskProjections(
-    nodeId: string,
-    limit?: number,
-    leaseMs?: number,
-  ): Promise<ChecklistProjectionOutboxRow[]>;
-  markChecklistTaskProjectionSuccess(
-    row: ChecklistProjectionOutboxRow,
-    nodeId: string,
-  ): Promise<boolean>;
-  markChecklistTaskProjectionFailure(
-    row: ChecklistProjectionOutboxRow,
-    nodeId: string,
-    error: string,
-  ): Promise<void>;
-  markChecklistTaskProjectionDeadLetter(
-    row: ChecklistProjectionOutboxRow,
-    nodeId: string,
-    error: string,
-  ): Promise<boolean>;
+
 }

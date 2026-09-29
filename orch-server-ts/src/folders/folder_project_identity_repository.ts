@@ -1,3 +1,8 @@
+import { isDeepStrictEqual } from "node:util";
+import { appendFolderOperation } from "./folder_operation_store.js";
+import { syncBoardYjsReplicaWithSql } from "../board-yjs/board_yjs_replica_sync.js";
+import { storePageDocument } from "../page/page_repository_projection.js";
+import { ChecklistVersionConflict } from "../tasks/control_plane/task_models.js";
 import { Buffer } from "node:buffer";
 
 import { BoardYjsSqlResolver, type BoardYjsQuerySql } from "../board-yjs/board_yjs_sql.js";
@@ -9,12 +14,9 @@ import { getPageYjsDocumentName } from "../page/page_yjs_model.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import type {
   FolderProjectBinding,
-  FolderProjectCatalogDelta,
   FolderProjectIdentityMutationResult,
   FolderProjectIdentityRepository,
   FolderProjectRecord,
-  LegacyFolderBackfillResult,
-  LegacyProjectFolder,
 } from "./folder_project_identity_contracts.js";
 
 type OperationRow = Record<string, unknown> & {
@@ -33,10 +35,13 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
 
   async findMutationByIdempotencyKey(
     idempotencyKey: string,
+    request: Record<string, unknown>,
   ): Promise<FolderProjectIdentityMutationResult | null> {
     const sql = await this.sqlResolver.resolveSql();
     const operation = await findOperation(sql, idempotencyKey);
-    return operation ? await readResult(sql, operation, true) : null;
+    if (!operation) return null;
+    assertSameRequest(operation, request);
+    return await readResult(sql, operation, true);
   }
 
   async create(
@@ -46,7 +51,10 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
     return await sql.begin(async (transaction) => {
       await lock(transaction, input.id);
       const existing = await findOperation(transaction, input.idempotencyKey);
-      if (existing) return await readResult(transaction, existing, true);
+      if (existing) {
+        assertSameRequest(existing, input.request);
+        return await readResult(transaction, existing, true);
+      }
       await assertParent(transaction, input.parentFolderId);
       const collisions = await transaction<readonly { folder_exists: boolean; page_exists: boolean }[]>`
         SELECT
@@ -59,19 +67,27 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
       const pageCommit = await commitPage(transaction, input);
       await transaction`
         INSERT INTO folders (
-          id, name, sort_order, settings, parent_folder_id, project_page_id, archived
+          id, name, sort_order, settings, parent_folder_id, project_page_id, archived, checklist_enabled, created_session_id, created_event_id
         ) VALUES (
           ${input.id}, ${input.name}, ${input.sortOrder}, ${transaction.json(input.settings)}::jsonb,
-          ${input.parentFolderId}, ${input.pageId}, FALSE
+          ${input.parentFolderId}, ${input.pageId}, FALSE, ${input.checklistEnabled},
+          ${input.actor.actorSessionId ?? null}, ${pageCommit.operation.actor_event_id ?? null}
         )
       `;
+      for (const application of input.boardApplications ?? []) {
+        await storePageDocument(transaction, application.documentName, application.snapshot);
+        await syncBoardYjsReplicaWithSql(transaction, application.scope, application.replica, application.documentName);
+      }
+      if (input.parentPageApplication && input.parentPageOperationId) {
+        await commitPage(transaction, { pageApplication: input.parentPageApplication, pageOperationId: input.parentPageOperationId });
+      }
       const operation = await insertOperation(transaction, {
         id: input.operationId,
         folderId: input.id,
-        operationType: "create_folder_project",
+        operationType: "create_folder",
         actor: input.actor,
         idempotencyKey: input.idempotencyKey,
-        payload: { page_id: input.pageId, page_operation_id: pageCommit.operation.id },
+        payload: { request: input.request, page_id: input.pageId, page_operation_id: pageCommit.operation.id },
         reason: "create folder project identity",
       });
       return await readResult(transaction, operation, false, pageCommit);
@@ -85,13 +101,19 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
     return await sql.begin(async (transaction) => {
       await lock(transaction, input.binding.folderId);
       const existing = await findOperation(transaction, input.idempotencyKey);
-      if (existing) return await readResult(transaction, existing, true);
+      if (existing) {
+        assertSameRequest(existing, input.request);
+        return await readResult(transaction, existing, true);
+      }
       const locked = await bindingRows(transaction, "folder", input.binding.folderId, true);
       if (!locked[0] || locked[0].pageId !== input.binding.pageId) {
         throw new Error(`folder project identity mapping changed: ${input.binding.folderId}`);
       }
+      if (locked[0].version !== input.expectedVersion) {
+        throw new ChecklistVersionConflict("folder", input.binding.folderId, input.expectedVersion, locked[0].version);
+      }
       if (hasOwn(input.update, "parentFolderId")) {
-        await assertParent(transaction, input.update.parentFolderId ?? null);
+        await assertParent(transaction, input.update.parentFolderId ?? null, input.binding.folderId);
       }
       const pageCommit = await commitPage(transaction, input);
       const hasSortOrder = typeof input.update.sortOrder === "number";
@@ -100,6 +122,7 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
       await transaction`
         UPDATE folders
         SET name = ${input.title},
+            version = version + 1, updated_at = NOW(),
             archived = ${input.archived},
             sort_order = CASE WHEN ${hasSortOrder} THEN ${input.update.sortOrder ?? 0} ELSE sort_order END,
             settings = CASE WHEN ${hasSettings}
@@ -109,12 +132,14 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         WHERE id = ${input.binding.folderId}
           AND project_page_id = ${input.binding.pageId}
       `;
-      const catalogDelta = input.archived && !input.binding.archived
-        ? await cleanupArchivedFolder(transaction, input.binding.folderId)
-        : undefined;
+
+      for (const application of input.boardApplications ?? []) {
+        await storePageDocument(transaction, application.documentName, application.snapshot);
+        await syncBoardYjsReplicaWithSql(transaction, application.scope, application.replica, application.documentName);
+      }
       const operationType = input.archived !== input.binding.archived
-        ? input.archived ? "archive_folder_project" : "unarchive_folder_project"
-        : "update_folder_project";
+        ? input.archived ? "archive_folder" : "unarchive_folder"
+        : "update_folder";
       const operation = await insertOperation(transaction, {
         id: input.operationId,
         folderId: input.binding.folderId,
@@ -122,6 +147,7 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         actor: input.actor,
         idempotencyKey: input.idempotencyKey,
         payload: {
+          request: input.request,
           page_id: input.binding.pageId,
           page_operation_id: pageCommit.operation.id,
           title: input.title,
@@ -129,7 +155,7 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         },
         reason: input.pageApplication.reason ?? "mutate folder project identity",
       });
-      return await readResult(transaction, operation, false, pageCommit, catalogDelta);
+      return await readResult(transaction, operation, false, pageCommit);
     });
   }
 
@@ -152,63 +178,6 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
     return rows[0]?.snapshot ? new Uint8Array(rows[0].snapshot) : null;
   }
 
-  async listLegacyFolders(): Promise<readonly LegacyProjectFolder[]> {
-    const sql = await this.sqlResolver.resolveSql();
-    const rows = await sql<readonly Record<string, unknown>[]>`
-      SELECT id, name, sort_order, settings, parent_folder_id
-      FROM folders
-      WHERE project_page_id IS NULL AND archived = FALSE
-        AND id NOT IN ('claude', 'llm')
-      ORDER BY sort_order, name, id
-    `;
-    return rows.flatMap(legacyFolder);
-  }
-
-  async bindLegacyPage(
-    input: Parameters<FolderProjectIdentityRepository["bindLegacyPage"]>[0],
-  ): Promise<LegacyFolderBackfillResult> {
-    return await this.persistBackfill(input, false);
-  }
-
-  async createLegacyPageAndBind(
-    input: Parameters<FolderProjectIdentityRepository["createLegacyPageAndBind"]>[0],
-  ): Promise<LegacyFolderBackfillResult> {
-    return await this.persistBackfill(input, true);
-  }
-
-  private async persistBackfill(
-    input: Parameters<FolderProjectIdentityRepository["bindLegacyPage"]>[0],
-    createdPage: boolean,
-  ): Promise<LegacyFolderBackfillResult> {
-    const sql = await this.sqlResolver.resolveSql();
-    return await sql.begin(async (transaction) => {
-      await lock(transaction, input.folder.folderId);
-      const existing = await findOperation(transaction, input.idempotencyKey);
-      if (existing) return backfillResult(existing, true);
-      await assertBackfillCandidate(transaction, input.folder, input.pageId, createdPage);
-      const pageCommit = await commitPage(transaction, input);
-      const updated = await transaction<readonly { id: string }[]>`
-        UPDATE folders SET project_page_id = ${input.pageId}
-        WHERE id = ${input.folder.folderId} AND project_page_id IS NULL
-        RETURNING id
-      `;
-      if (!updated[0]) throw new Error(`legacy folder binding changed: ${input.folder.folderId}`);
-      const operation = await insertOperation(transaction, {
-        id: input.operationId,
-        folderId: input.folder.folderId,
-        operationType: "backfill_folder_project",
-        actor: input.actor,
-        idempotencyKey: input.idempotencyKey,
-        payload: {
-          page_id: input.pageId,
-          created_page: createdPage,
-          page_operation_id: pageCommit.operation.id,
-        },
-        reason: "backfill legacy folder project identity",
-      });
-      return { ...backfillResult(operation, false), pageCommit };
-    });
-  }
 }
 
 async function commitPage(
@@ -229,7 +198,7 @@ async function lock(sql: BoardYjsQuerySql, id: string): Promise<void> {
   await sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`;
 }
 
-async function assertParent(sql: BoardYjsQuerySql, parentFolderId: string | null): Promise<void> {
+async function assertParent(sql: BoardYjsQuerySql, parentFolderId: string | null, folderId?: string): Promise<void> {
   if (parentFolderId === null) return;
   const rows = await sql<readonly { exists: boolean }[]>`
     SELECT EXISTS(
@@ -237,71 +206,14 @@ async function assertParent(sql: BoardYjsQuerySql, parentFolderId: string | null
     ) AS exists
   `;
   if (!rows[0]?.exists) throw new Error(`active parent folder not found: ${parentFolderId}`);
-}
+  if (folderId) {
+    const ancestors = await sql<readonly { id: string }[]>`WITH RECURSIVE ancestors AS (
+      SELECT id, parent_folder_id FROM folders WHERE id = ${parentFolderId}
+      UNION SELECT f.id, f.parent_folder_id FROM folders f JOIN ancestors a ON a.parent_folder_id = f.id
+    ) SELECT id FROM ancestors WHERE id = ${folderId}`;
+    if (ancestors.length) throw Object.assign(new Error("folder parent cycle"), { statusCode: 422, code: "FOLDER_PARENT_CYCLE" });
+  }
 
-async function cleanupArchivedFolder(
-  sql: BoardYjsQuerySql,
-  folderId: string,
-): Promise<FolderProjectCatalogDelta> {
-  const sessionRows = await sql<readonly {
-    session_id: string;
-    display_name: string | null;
-  }[]>`
-    UPDATE sessions
-    SET folder_id = NULL
-    WHERE folder_id = ${folderId}
-    RETURNING session_id, display_name
-  `;
-  await sql`UPDATE folders SET parent_folder_id = NULL WHERE parent_folder_id = ${folderId}`;
-  const boardItemRows = await sql<readonly { id: string }[]>`
-    DELETE FROM board_items
-    WHERE folder_id = ${folderId}
-       OR (item_type = 'subfolder' AND item_id = ${folderId})
-    RETURNING id
-  `;
-  return {
-    sessionsDelta: Object.fromEntries(sessionRows.map((row) => [
-      row.session_id,
-      {
-        folderId: null,
-        displayName: row.display_name,
-      },
-    ])),
-    deletedBoardItemIds: boardItemRows.map((row) => row.id),
-  };
-}
-
-async function assertBackfillCandidate(
-  sql: BoardYjsQuerySql,
-  folder: LegacyProjectFolder,
-  pageId: string,
-  createdPage: boolean,
-): Promise<void> {
-  const folders = await sql<readonly { project_page_id: string | null }[]>`
-    SELECT project_page_id FROM folders WHERE id = ${folder.folderId} FOR UPDATE
-  `;
-  if (!folders[0] || folders[0].project_page_id !== null) {
-    throw new Error(`legacy folder is already bound: ${folder.folderId}`);
-  }
-  const pages = await sql<readonly {
-    exists: boolean;
-    daily: boolean;
-    used_by_folder: boolean;
-    used_by_task: boolean;
-  }[]>`
-    SELECT
-      EXISTS(SELECT 1 FROM pages WHERE id = ${pageId}) AS exists,
-      EXISTS(SELECT 1 FROM pages WHERE id = ${pageId} AND daily_date IS NOT NULL) AS daily,
-      EXISTS(SELECT 1 FROM folders WHERE project_page_id = ${pageId}) AS used_by_folder,
-      EXISTS(SELECT 1 FROM tasks WHERE task_page_id = ${pageId}) AS used_by_task
-  `;
-  const page = pages[0];
-  if (createdPage ? page?.exists : !page?.exists) {
-    throw new Error(`legacy page existence conflict: ${pageId}`);
-  }
-  if (page?.daily || page?.used_by_folder || page?.used_by_task) {
-    throw new Error(`legacy page is not available for folder binding: ${pageId}`);
-  }
 }
 
 async function bindingRows(
@@ -313,27 +225,23 @@ async function bindingRows(
   const rows = by === "folder"
     ? forUpdate
       ? await sql<readonly Record<string, unknown>[]>`
-          SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
-                 f.project_page_id, f.archived, p.version AS page_version
+          SELECT f.*, p.version AS page_version
           FROM folders f JOIN pages p ON p.id = f.project_page_id
           WHERE f.id = ${id} FOR UPDATE OF f, p
         `
       : await sql<readonly Record<string, unknown>[]>`
-          SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
-                 f.project_page_id, f.archived, p.version AS page_version
+          SELECT f.*, p.version AS page_version
           FROM folders f JOIN pages p ON p.id = f.project_page_id
           WHERE f.id = ${id}
         `
     : forUpdate
       ? await sql<readonly Record<string, unknown>[]>`
-          SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
-                 f.project_page_id, f.archived, p.version AS page_version
+          SELECT f.*, p.version AS page_version
           FROM folders f JOIN pages p ON p.id = f.project_page_id
           WHERE f.project_page_id = ${id} FOR UPDATE OF f, p
         `
       : await sql<readonly Record<string, unknown>[]>`
-          SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
-                 f.project_page_id, f.archived, p.version AS page_version
+          SELECT f.*, p.version AS page_version
           FROM folders f JOIN pages p ON p.id = f.project_page_id
           WHERE f.project_page_id = ${id}
         `;
@@ -364,19 +272,20 @@ function folderRow(row: Record<string, unknown>): FolderProjectRecord | null {
     settings: recordValue(row.settings),
     parentFolderId: stringValue(row.parent_folder_id),
     projectPageId: pageId,
+    archived: Boolean(row.archived),
+    checklistEnabled: Boolean(row.checklist_enabled),
+    status: row.status as "open" | "completed",
+    version: Number(row.version),
+    createdSessionId: stringValue(row.created_session_id),
+    createdEventId: row.created_event_id === null ? null : Number(row.created_event_id),
+    createdAt: new Date(row.created_at as string | Date).toISOString(),
+    updatedAt: new Date(row.updated_at as string | Date).toISOString(),
+    completedKind: stringValue(row.completed_kind),
+    completedSessionId: stringValue(row.completed_session_id),
+    completedEventId: row.completed_event_id === null ? null : Number(row.completed_event_id),
+    completedUserId: stringValue(row.completed_user_id),
+    completedAt: row.completed_at ? new Date(row.completed_at as string | Date).toISOString() : null,
   };
-}
-
-function legacyFolder(row: Record<string, unknown>): LegacyProjectFolder[] {
-  const folderId = stringValue(row.id);
-  if (!folderId) return [];
-  return [{
-    folderId,
-    name: String(row.name ?? ""),
-    sortOrder: Number(row.sort_order ?? 0),
-    settings: recordValue(row.settings),
-    parentFolderId: stringValue(row.parent_folder_id),
-  }];
 }
 
 async function findOperation(
@@ -384,7 +293,7 @@ async function findOperation(
   idempotencyKey: string,
 ): Promise<OperationRow | null> {
   const rows = await sql<readonly OperationRow[]>`
-    SELECT * FROM folder_project_operations WHERE idempotency_key = ${idempotencyKey}
+    SELECT * FROM folder_operations WHERE idempotency_key = ${idempotencyKey}
   `;
   return rows[0] ?? null;
 }
@@ -401,18 +310,12 @@ async function insertOperation(
     reason: string | null;
   },
 ): Promise<OperationRow> {
-  const rows = await sql<readonly OperationRow[]>`
-    INSERT INTO folder_project_operations (
-      id, folder_id, operation_type, actor_kind, actor_session_id, actor_user_id,
-      idempotency_key, payload_json, reason
-    ) VALUES (
-      ${input.id}, ${input.folderId}, ${input.operationType}, ${input.actor.actorKind},
-      ${input.actor.actorSessionId ?? null}, ${input.actor.actorUserId ?? null},
-      ${input.idempotencyKey}, ${sql.json(input.payload)}::jsonb, ${input.reason}
-    ) RETURNING *
-  `;
-  if (!rows[0]) throw new Error("folder project operation insert returned no row");
-  return rows[0];
+  const operation = await appendFolderOperation(sql, {
+    ...input, targetKind: "folder", targetId: input.folderId,
+    actorKind: input.actor.actorKind as import("../tasks/control_plane/task_types.js").FolderOperationActorKind,
+    actorSessionId: input.actor.actorSessionId, actorUserId: input.actor.actorUserId, actorEventId: null,
+  });
+  return operation as OperationRow;
 }
 
 async function readResult(
@@ -420,7 +323,6 @@ async function readResult(
   operation: OperationRow,
   idempotent: boolean,
   pageCommit?: FolderProjectIdentityMutationResult["pageCommit"],
-  catalogDelta?: FolderProjectCatalogDelta,
 ): Promise<FolderProjectIdentityMutationResult> {
   const binding = (await bindingRows(sql, "folder", operation.folder_id))[0];
   if (!binding) throw new Error(`folder project identity not found: ${operation.folder_id}`);
@@ -431,7 +333,6 @@ async function readResult(
     folder: binding,
     operation,
     pageCommit: resolvedCommit,
-    ...(catalogDelta ? { catalogDelta } : {}),
     idempotent,
   };
 }
@@ -440,7 +341,7 @@ async function pageCommitFromOperation(sql: BoardYjsQuerySql, operation: Operati
   const operationId = stringValue(operation.payload_json?.page_operation_id);
   if (!operationId) throw new Error(`folder operation has no page operation: ${operation.id}`);
   const rows = await sql<readonly Record<string, unknown>[]>`
-    SELECT * FROM page_operations WHERE id = ${operationId}
+    SELECT * FROM block_operations WHERE id = ${operationId}
   `;
   const pageOperation = rows[0];
   if (!pageOperation) throw new Error(`page operation not found: ${operationId}`);
@@ -457,16 +358,6 @@ async function pageCommitFromOperation(sql: BoardYjsQuerySql, operation: Operati
   };
 }
 
-function backfillResult(operation: OperationRow, idempotent: boolean): LegacyFolderBackfillResult {
-  return {
-    folderId: operation.folder_id,
-    pageId: String(operation.payload_json.page_id),
-    createdPage: operation.payload_json.created_page === true,
-    operation,
-    idempotent,
-  };
-}
-
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
@@ -480,4 +371,10 @@ function recordValue(value: unknown): Record<string, unknown> {
 
 function hasOwn(value: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function assertSameRequest(operation: OperationRow, request: Record<string, unknown>): void {
+  if (!isDeepStrictEqual(operation.payload_json.request, request)) {
+    throw Object.assign(new Error("Idempotency key belongs to a different folder request"), { statusCode: 409, code: "FOLDER_IDEMPOTENCY_CONFLICT" });
+  }
 }

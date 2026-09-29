@@ -12,33 +12,31 @@ import {
   upsertMovedBoardYjsItem,
 } from "./board_yjs_model.js";
 import type {
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsDocumentApplication,
   CatalogBoardItemRow,
 } from "./board_yjs_types.js";
 
 export interface BoardMoveInput {
   boardItem: CatalogBoardItemRow;
-  targetScope: BoardYjsContainerScope;
+  targetScope: BoardYjsFolderScope;
   position?: { x: number; y: number };
 }
 
 export type StagedBoardApplication = BoardYjsDocumentApplication;
 
-export interface StagedTaskBoardMove {
+export interface StagedBoardMove {
   movedBoardItem: CatalogBoardItemRow;
   boardApplications: readonly StagedBoardApplication[];
 }
 
-export type StagedBoardMove = StagedTaskBoardMove;
 
 export interface SessionBoardMoveInput {
   sessionId: string;
   boardItems: readonly CatalogBoardItemRow[];
-  targetScope: BoardYjsContainerScope | null;
+  targetScope: BoardYjsFolderScope | null;
   position?: { x: number; y: number };
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
 }
 
 export interface StagedSessionBoardMove {
@@ -47,21 +45,6 @@ export interface StagedSessionBoardMove {
 }
 
 type DirectConnection = Awaited<ReturnType<Hocuspocus["openDirectConnection"]>>;
-
-export async function withStagedTaskBoardMove(
-  hocuspocus: Hocuspocus,
-  input: BoardMoveInput,
-  persist: (application: StagedTaskBoardMove) => Promise<void>,
-): Promise<CatalogBoardItemRow> {
-  return await withStagedBoardMove(hocuspocus, input, async (application) => {
-    if (application.movedBoardItem.itemType !== "task") {
-      throw new Error(
-        `staged task identity move requires task: ${application.movedBoardItem.itemType}`,
-      );
-    }
-    await persist(application);
-  });
-}
 
 export async function withStagedBoardMove(
   hocuspocus: Hocuspocus,
@@ -127,7 +110,7 @@ export async function withStagedSessionBoardMove(
     return null;
   }
   const connections: Array<{
-    scope: BoardYjsContainerScope;
+    scope: BoardYjsFolderScope;
     connection: DirectConnection;
     live: Y.Doc;
     staged: Y.Doc;
@@ -197,7 +180,7 @@ export function boardMoveDocumentNames(input: BoardMoveInput): string[] {
   ];
 }
 
-function application(scope: BoardYjsContainerScope, document: Y.Doc): StagedBoardApplication {
+function application(scope: BoardYjsFolderScope, document: Y.Doc): StagedBoardApplication {
   return {
     documentName: getBoardYjsContainerDocumentName(scope),
     scope,
@@ -206,22 +189,20 @@ function application(scope: BoardYjsContainerScope, document: Y.Doc): StagedBoar
   };
 }
 
-function scopeOf(item: CatalogBoardItemRow): BoardYjsContainerScope {
+function scopeOf(item: CatalogBoardItemRow): BoardYjsFolderScope {
   return {
     folderId: item.folderId,
-    containerKind: item.containerKind ?? "folder",
-    containerId: item.containerId ?? item.folderId,
   };
 }
 
-function open(hocuspocus: Hocuspocus, container: BoardYjsContainerRef) {
+function open(hocuspocus: Hocuspocus, container: BoardYjsFolderScope) {
   return hocuspocus.openDirectConnection(
     getBoardYjsContainerDocumentName(container),
     { ...container, source: "server" },
   );
 }
 
-function requireDocument(connection: DirectConnection, scope: BoardYjsContainerRef): Y.Doc {
+function requireDocument(connection: DirectConnection, scope: BoardYjsFolderScope): Y.Doc {
   const document = connection.document as unknown as Y.Doc | null;
   if (!document) {
     throw new Error(`board Y.Doc direct connection closed: ${getBoardYjsContainerDocumentName(scope)}`);
@@ -237,9 +218,9 @@ function clone(source: Y.Doc): Y.Doc {
 
 function sessionMoveScopes(
   primaryItems: readonly CatalogBoardItemRow[],
-  targetScope: BoardYjsContainerScope | null,
-): BoardYjsContainerScope[] {
-  const scopes = new Map<string, BoardYjsContainerScope>();
+  targetScope: BoardYjsFolderScope | null,
+): BoardYjsFolderScope[] {
+  const scopes = new Map<string, BoardYjsFolderScope>();
   for (const item of primaryItems) {
     const scope = scopeOf(item);
     scopes.set(getBoardYjsContainerDocumentName(scope), scope);
@@ -254,7 +235,7 @@ function sessionMoveScopes(
 
 function requireEntry(
   entries: ReadonlyMap<string, { staged: Y.Doc }>,
-  scope: BoardYjsContainerScope,
+  scope: BoardYjsFolderScope,
 ): { staged: Y.Doc } {
   const documentName = getBoardYjsContainerDocumentName(scope);
   const entry = entries.get(documentName);
@@ -264,13 +245,12 @@ function requireEntry(
 
 function createTargetSessionItem(
   input: SessionBoardMoveInput,
-  targetScope: BoardYjsContainerScope,
+  targetScope: BoardYjsFolderScope,
   primaryItems: readonly CatalogBoardItemRow[],
   targetDocument: Y.Doc,
 ): CatalogBoardItemRow {
   const existingTarget = primaryItems.find((item) =>
-    (item.containerKind ?? "folder") === targetScope.containerKind &&
-    (item.containerId ?? item.folderId) === targetScope.containerId
+    item.folderId === targetScope.folderId
   );
   const source = existingTarget ?? primaryItems[0];
   const position = input.position ?? (source
@@ -279,10 +259,8 @@ function createTargetSessionItem(
   return {
     id: `session:${input.sessionId}`,
     folderId: targetScope.folderId,
-    containerKind: targetScope.containerKind,
-    containerId: targetScope.containerId,
     membershipKind: "primary",
-    sourceTaskItemId: input.sourceTaskItemId ?? null,
+    sourceChecklistItemId: input.sourceChecklistItemId ?? null,
     itemType: "session",
     itemId: input.sessionId,
     x: position.x,

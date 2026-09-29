@@ -672,7 +672,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       allowedFolderIds: ["folder-allowed"],
     });
     expect(outputSearch.session_results?.find((row) => row.session_id === "source-item-session")?.evidence)
-      .toContainEqual(expect.objectContaining({ source: "source_task_item" }));
+      .toContainEqual(expect.objectContaining({ source: "source_checklist_item" }));
     await sql`UPDATE sessions SET display_name = 'source-item-session' WHERE session_id = 'source-item-session'`;
   });
 
@@ -1350,7 +1350,7 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
     )
   `;
   await sql`
-    UPDATE board_items SET source_task_item_id = 'source-item'
+    UPDATE board_items SET source_checklist_item_id = 'source-item'
     WHERE id = 'source-item-membership'
   `;
 }

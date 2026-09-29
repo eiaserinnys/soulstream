@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { RecurringJobError, type RecurringJobActor, type RecurringJobContainer, type RecurringJobCreateInput, type RecurringJobUpdateInput } from "./types.js";
+import { RecurringJobError, type RecurringJobActor, type RecurringJobCreateInput, type RecurringJobUpdateInput } from "./types.js";
 import { RecurringJobService } from "./service.js";
 
 export type RecurringJobRouteActorResolver = (
@@ -135,6 +135,7 @@ export function registerRecurringJobRoutes(
 }
 
 export function createInput(body: Record<string, unknown>): RecurringJobCreateInput {
+  if (has(body, "container")) throw new RecurringJobError("VALIDATION", "Use folderId for placement", 422);
   return {
     idempotencyKey: stringAlias(body, "idempotencyKey", "idempotency_key"),
     name: stringValue(body, "name"),
@@ -149,7 +150,6 @@ export function createInput(body: Record<string, unknown>): RecurringJobCreateIn
     nodeId: stringAlias(body, "nodeId", "node_id"),
     agentId: stringAlias(body, "agentId", "agent_id"),
     modelPreset: nullableStringAlias(body, "modelPreset", "model_preset"),
-    container: containerValue(body),
     folderId: stringAlias(body, "folderId", "folder_id"),
     ...(body.lateRunWindowSeconds === undefined && body.late_run_window_seconds === undefined
       ? {}
@@ -159,6 +159,7 @@ export function createInput(body: Record<string, unknown>): RecurringJobCreateIn
 }
 
 export function updateInput(body: Record<string, unknown>): RecurringJobUpdateInput {
+  if (has(body, "container")) throw new RecurringJobError("VALIDATION", "Use folderId for placement", 422);
   const result: { -readonly [Key in keyof RecurringJobUpdateInput]: RecurringJobUpdateInput[Key] } = {
     expectedVersion: integerAlias(body, "expectedVersion", "expected_version"),
   };
@@ -174,7 +175,6 @@ export function updateInput(body: Record<string, unknown>): RecurringJobUpdateIn
   if (has(body, "modelPreset") || has(body, "model_preset")) {
     result.modelPreset = nullableStringAlias(body, "modelPreset", "model_preset");
   }
-  if (has(body, "container")) result.container = containerValue(body);
   if (has(body, "folderId") || has(body, "folder_id")) result.folderId = stringAlias(body, "folderId", "folder_id");
   if (has(body, "enabled")) {
     if (typeof body.enabled !== "boolean") throw new RecurringJobError("VALIDATION", "enabled must be boolean", 422);
@@ -200,7 +200,6 @@ export function serializeJob(job: import("./types.js").RecurringJob): Record<str
     node_id: job.nodeId,
     agent_id: job.agentId,
     model_preset: job.modelPreset,
-    container: job.container,
     folder_id: job.folderId,
     enabled: job.enabled,
     archived_at: job.archivedAt,
@@ -283,17 +282,7 @@ function stringsValue(body: Record<string, unknown>, camel: string, snakeKey: st
   }
   return [...value] as string[];
 }
-function containerValue(body: Record<string, unknown>): RecurringJobContainer {
-  const value = body.container;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new RecurringJobError("VALIDATION", "container must be an object", 422);
-  }
-  const container = value as Record<string, unknown>;
-  if ((container.kind !== "folder" && container.kind !== "task") || typeof container.id !== "string") {
-    throw new RecurringJobError("VALIDATION", "container must include kind and id", 422);
-  }
-  return { kind: container.kind, id: container.id };
-}
+
 function has(body: Record<string, unknown>, key: string): boolean { return Object.hasOwn(body, key); }
 function snake(value: string): string { return value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`); }
 function numberQuery(request: FastifyRequest, key: string): number | undefined {

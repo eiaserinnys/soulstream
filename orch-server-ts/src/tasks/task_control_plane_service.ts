@@ -2,75 +2,96 @@ import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
-import { assigneeToFields, assertTaskPatchHasFields, type TaskAssigneeInput } from "./control_plane/task_models.js";
-import { TaskMutationCore } from "./control_plane/task_mutation_core.js";
+import { assigneeToFields, assertFolderPatchHasFields, type ChecklistAssigneeInput } from "./control_plane/task_models.js";
+import { ChecklistMutationCore } from "./control_plane/task_mutation_core.js";
 import { itemPatchOperationType, sectionPatchOperationType } from "./control_plane/task_operation_types.js";
 import { resolveItemPositionTx, resolveSectionPositionTx } from "./control_plane/task_position_queries.js";
-import { TaskRepository } from "./control_plane/task_repository.js";
+import { ChecklistRepository } from "./control_plane/task_repository.js";
 import type {
   SqlClient,
-  TaskActorParams,
-  TaskBroadcasterPort,
-  TaskDbPort,
-  TaskItemStatus,
-  TaskMutationResult,
-  TaskStatus,
+  FolderActorParams,
+  FolderBroadcasterPort,
+  FolderDbPort,
+  ChecklistItemStatus,
+  ChecklistMutationResult,
+  FolderStatus,
 } from "./control_plane/task_types.js";
 
-export class TaskControlPlaneService {
-  private readonly repo: TaskRepository;
-  private readonly core: TaskMutationCore;
+export class ChecklistControlPlaneService {
+  private readonly repo: ChecklistRepository;
+  private readonly core: ChecklistMutationCore;
 
-  constructor(sql: SqlClient, db: TaskDbPort, broadcaster?: TaskBroadcasterPort) {
-    this.repo = new TaskRepository(sql);
-    this.core = new TaskMutationCore(db, this.repo, broadcaster);
+  constructor(sql: SqlClient, db: FolderDbPort, broadcaster?: FolderBroadcasterPort) {
+    this.repo = new ChecklistRepository(sql);
+    this.core = new ChecklistMutationCore(db, this.repo, broadcaster);
   }
 
-  async getTask(taskId: string) {
-    return await this.repo.getSnapshot(taskId);
+  async getFolder(folderId: string) {
+    return await this.repo.getSnapshot(folderId);
   }
 
-  async listTasks(params: { folderId: string; includeArchived?: boolean; limit?: number }) {
-    return await this.repo.listTasks(params);
+  async listFolders(params: { folderId: string | null; includeArchived?: boolean; limit?: number; offset?: number }) {
+    return await this.repo.listFolders(params);
   }
 
   async listMyTurnItems(params: { userId?: string | null; limit?: number } = {}) {
     return await this.repo.listMyTurnItems(params);
   }
 
-  async listOperations(taskId: string, limit?: number) {
-    return await this.repo.listOperations(taskId, limit);
+  async listOperations(folderId: string, limit?: number, offset?: number) {
+    return await this.repo.listOperations(folderId, limit, offset);
   }
 
-  async listAgentSubscriberSessionIds(taskId: string): Promise<string[]> {
-    return await this.repo.listAgentSubscriberSessionIds(taskId);
+  async listAgentSubscriberSessionIds(folderId: string): Promise<string[]> {
+    return await this.repo.listAgentSubscriberSessionIds(folderId);
   }
 
-  async setTaskStatus(params: TaskActorParams & {
-    taskId: string;
+  async setFolderStatus(params: FolderActorParams & {
+    folderId: string;
     expectedVersion: number;
-    status: TaskStatus;
+    status: FolderStatus;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
-    return await this.core.setTaskStatus(params);
+  }): Promise<ChecklistMutationResult> {
+    return await this.core.setFolderStatus(params);
   }
 
-  async createSection(params: TaskActorParams & {
-    taskId: string;
+  async setFolderChecklistEnabled(params: FolderActorParams & {
+    folderId: string;
+    checklistEnabled: boolean;
+    expectedVersion: number;
+    idempotencyKey?: string | null;
+  }): Promise<ChecklistMutationResult> {
+    return await this.core.mutate({
+      folderId: params.folderId,
+      targetKind: "folder",
+      targetId: params.folderId,
+      operationType: "set_folder_checklist_enabled",
+      actor: params,
+      idempotencyKey: params.idempotencyKey,
+      payload: { checklist_enabled: params.checklistEnabled },
+      apply: async (sql) => {
+        await this.repo.patchFolderTx(sql, params.folderId,
+          { checklist_enabled: params.checklistEnabled }, params.expectedVersion);
+      },
+    });
+  }
+
+  async createSection(params: FolderActorParams & {
+    folderId: string;
     title: string;
     sectionId?: string;
-    assignee?: TaskAssigneeInput | null;
+    assignee?: ChecklistAssigneeInput | null;
     afterSectionId?: string | null;
     beforeSectionId?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     const sectionId = params.sectionId ?? randomUUID();
     return await this.core.mutate({
-      taskId: params.taskId,
+      folderId: params.folderId,
       targetKind: "section",
       targetId: sectionId,
-      operationType: "create_task_section",
+      operationType: "create_checklist_section",
       actor: params,
       idempotencyKey: params.idempotencyKey,
       payload: {
@@ -80,10 +101,10 @@ export class TaskControlPlaneService {
         assignee: params.assignee ?? null,
       },
       apply: async (sql, eventId) => {
-        const bounds = await resolveSectionPositionTx(sql, params.taskId, params);
+        const bounds = await resolveSectionPositionTx(sql, params.folderId, params);
         await this.repo.createSectionTx(sql, {
           id: sectionId,
-          taskId: params.taskId,
+          folderId: params.folderId,
           title: params.title,
           positionKey: generateKeyBetween(bounds.lower, bounds.upper),
           assignee: assigneeToFields(params.assignee),
@@ -94,26 +115,26 @@ export class TaskControlPlaneService {
     });
   }
 
-  async patchSection(params: TaskActorParams & {
-    taskId: string;
+  async patchSection(params: FolderActorParams & {
+    folderId: string;
     sectionId: string;
     expectedVersion: number;
     title?: string;
     archived?: boolean;
-    assignee?: TaskAssigneeInput | null;
+    assignee?: ChecklistAssigneeInput | null;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     const assigneeFields = Object.prototype.hasOwnProperty.call(params, "assignee")
       ? assigneeToFields(params.assignee)
       : {};
-    assertTaskPatchHasFields("section", {
+    assertFolderPatchHasFields("section", {
       title: params.title,
       archived: params.archived,
       ...assigneeFields,
     });
     return await this.core.mutate({
-      taskId: params.taskId,
+      folderId: params.folderId,
       targetKind: "section",
       targetId: params.sectionId,
       operationType: sectionPatchOperationType(params.archived),
@@ -126,7 +147,7 @@ export class TaskControlPlaneService {
         assignee: params.assignee ?? null,
       },
       preflight: async (sql) => {
-        await this.repo.assertSectionBelongsToTaskTx(sql, params.sectionId, params.taskId);
+        await this.repo.assertSectionBelongsToFolderTx(sql, params.sectionId, params.folderId);
         await this.repo.assertSectionVersionTx(sql, params.sectionId, params.expectedVersion);
       },
       apply: async (sql, eventId) => {
@@ -142,25 +163,25 @@ export class TaskControlPlaneService {
     });
   }
 
-  async setSectionAssignee(params: TaskActorParams & {
-    taskId: string;
+  async setSectionAssignee(params: FolderActorParams & {
+    folderId: string;
     sectionId: string;
     expectedVersion: number;
-    assignee?: TaskAssigneeInput | null;
+    assignee?: ChecklistAssigneeInput | null;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     return await this.core.mutate({
-      taskId: params.taskId,
+      folderId: params.folderId,
       targetKind: "section",
       targetId: params.sectionId,
-      operationType: "set_task_section_assignee",
+      operationType: "set_checklist_section_assignee",
       actor: params,
       idempotencyKey: params.idempotencyKey,
       reason: params.reason,
       payload: { assignee: params.assignee ?? null },
       preflight: async (sql) => {
-        await this.repo.assertSectionBelongsToTaskTx(sql, params.sectionId, params.taskId);
+        await this.repo.assertSectionBelongsToFolderTx(sql, params.sectionId, params.folderId);
         await this.repo.assertSectionVersionTx(sql, params.sectionId, params.expectedVersion);
       },
       apply: async (sql, eventId) => {
@@ -176,20 +197,20 @@ export class TaskControlPlaneService {
     });
   }
 
-  async moveSection(params: TaskActorParams & {
-    taskId: string;
+  async moveSection(params: FolderActorParams & {
+    folderId: string;
     sectionId: string;
     expectedVersion: number;
     afterSectionId?: string | null;
     beforeSectionId?: string | null;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     return await this.core.mutate({
-      taskId: params.taskId,
+      folderId: params.folderId,
       targetKind: "section",
       targetId: params.sectionId,
-      operationType: "move_task_section",
+      operationType: "move_checklist_section",
       actor: params,
       idempotencyKey: params.idempotencyKey,
       reason: params.reason,
@@ -198,11 +219,11 @@ export class TaskControlPlaneService {
         before_section_id: params.beforeSectionId ?? null,
       },
       preflight: async (sql) => {
-        await this.repo.assertSectionBelongsToTaskTx(sql, params.sectionId, params.taskId);
+        await this.repo.assertSectionBelongsToFolderTx(sql, params.sectionId, params.folderId);
         await this.repo.assertSectionVersionTx(sql, params.sectionId, params.expectedVersion);
       },
       apply: async (sql, eventId) => {
-        const bounds = await resolveSectionPositionTx(sql, params.taskId, params);
+        const bounds = await resolveSectionPositionTx(sql, params.folderId, params);
         await this.repo.patchSectionTx(
           sql,
           params.sectionId,
@@ -215,23 +236,23 @@ export class TaskControlPlaneService {
     });
   }
 
-  async createItem(params: TaskActorParams & {
-    taskId: string;
+  async createItem(params: FolderActorParams & {
+    folderId: string;
     sectionId: string;
     title: string;
     howTo?: string;
     itemId?: string;
-    assignee?: TaskAssigneeInput | null;
+    assignee?: ChecklistAssigneeInput | null;
     afterItemId?: string | null;
     beforeItemId?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     const itemId = params.itemId ?? randomUUID();
     return await this.core.mutate({
-      taskId: params.taskId,
+      folderId: params.folderId,
       targetKind: "item",
       targetId: itemId,
-      operationType: "create_task_item",
+      operationType: "create_checklist_item",
       actor: params,
       idempotencyKey: params.idempotencyKey,
       payload: {
@@ -240,7 +261,7 @@ export class TaskControlPlaneService {
         how_to: params.howTo ?? "",
         assignee: params.assignee ?? null,
       },
-      preflight: (sql) => this.repo.assertSectionBelongsToTaskTx(sql, params.sectionId, params.taskId),
+      preflight: (sql) => this.repo.assertSectionBelongsToFolderTx(sql, params.sectionId, params.folderId),
       apply: async (sql, eventId) => {
         const bounds = await resolveItemPositionTx(sql, params.sectionId, params);
         await this.repo.createItemTx(sql, {
@@ -259,28 +280,28 @@ export class TaskControlPlaneService {
     });
   }
 
-  async patchItem(params: TaskActorParams & {
-    taskId: string;
+  async patchItem(params: FolderActorParams & {
+    folderId: string;
     itemId: string;
     expectedVersion: number;
     title?: string;
     howTo?: string;
     archived?: boolean;
-    assignee?: TaskAssigneeInput | null;
+    assignee?: ChecklistAssigneeInput | null;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     const assigneeFields = Object.prototype.hasOwnProperty.call(params, "assignee")
       ? assigneeToFields(params.assignee)
       : {};
-    assertTaskPatchHasFields("item", {
+    assertFolderPatchHasFields("item", {
       title: params.title,
       howTo: params.howTo,
       archived: params.archived,
       ...assigneeFields,
     });
     return await this.core.mutate({
-      taskId: params.taskId,
+      folderId: params.folderId,
       targetKind: "item",
       targetId: params.itemId,
       operationType: itemPatchOperationType(params.archived),
@@ -294,7 +315,7 @@ export class TaskControlPlaneService {
         assignee: params.assignee ?? null,
       },
       preflight: async (sql) => {
-        await this.repo.assertItemBelongsToTaskTx(sql, params.itemId, params.taskId);
+        await this.repo.assertItemBelongsToFolderTx(sql, params.itemId, params.folderId);
         await this.repo.assertItemVersionTx(sql, params.itemId, params.expectedVersion);
       },
       apply: async (sql, eventId) => {
@@ -310,25 +331,25 @@ export class TaskControlPlaneService {
     });
   }
 
-  async setItemAssignee(params: TaskActorParams & {
-    taskId: string;
+  async setItemAssignee(params: FolderActorParams & {
+    folderId: string;
     itemId: string;
     expectedVersion: number;
-    assignee?: TaskAssigneeInput | null;
+    assignee?: ChecklistAssigneeInput | null;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     return await this.core.mutate({
-      taskId: params.taskId,
+      folderId: params.folderId,
       targetKind: "item",
       targetId: params.itemId,
-      operationType: "set_task_item_assignee",
+      operationType: "set_checklist_item_assignee",
       actor: params,
       idempotencyKey: params.idempotencyKey,
       reason: params.reason,
       payload: { assignee: params.assignee ?? null },
       preflight: async (sql) => {
-        await this.repo.assertItemBelongsToTaskTx(sql, params.itemId, params.taskId);
+        await this.repo.assertItemBelongsToFolderTx(sql, params.itemId, params.folderId);
         await this.repo.assertItemVersionTx(sql, params.itemId, params.expectedVersion);
       },
       apply: async (sql, eventId) => {
@@ -344,8 +365,8 @@ export class TaskControlPlaneService {
     });
   }
 
-  async moveItem(params: TaskActorParams & {
-    taskId: string;
+  async moveItem(params: FolderActorParams & {
+    folderId: string;
     itemId: string;
     expectedVersion: number;
     sectionId?: string | null;
@@ -353,17 +374,17 @@ export class TaskControlPlaneService {
     beforeItemId?: string | null;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     return await this.core.moveItem(params);
   }
 
-  async setItemStatus(params: TaskActorParams & {
+  async setItemStatus(params: FolderActorParams & {
     itemId: string;
     expectedVersion: number;
-    status: TaskItemStatus;
+    status: ChecklistItemStatus;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<TaskMutationResult> {
+  }): Promise<ChecklistMutationResult> {
     return await this.core.setItemStatus(params);
   }
 }

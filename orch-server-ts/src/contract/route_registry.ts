@@ -10,7 +10,7 @@ export type RouteFamily =
   | "control_plane"
   | "board_yjs_proxy"
   | "page_yjs"
-  | "task"
+  | "folder"
   | "dashboard_static"
   | "session"
   | "node_proxy"
@@ -96,8 +96,8 @@ const KNOWN_STATIC_BEFORE_DYNAMIC_HAZARDS: StaticBeforeDynamicHazard[] = [
     dynamicPath: "/api/sessions/{session_id}/events",
   },
   {
-    staticPath: "/api/tasks/my-turn",
-    dynamicPath: "/api/tasks/{task_id}",
+    staticPath: "/api/folders/reorder",
+    dynamicPath: "/api/folders/{folder_id}",
   },
   {
     staticPath: "/api/pages/daily",
@@ -247,15 +247,15 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["GET"],
-    path: "/api/planner/starred-tasks",
-    name: "list_planner_starred_tasks",
+    path: "/api/planner/starred-folders",
+    name: "list_planner_starred_folders",
     authRequired: true,
     family: "page_yjs",
   },
   {
     methods: ["PATCH"],
-    path: "/api/planner/starred-tasks/order",
-    name: "move_planner_starred_task",
+    path: "/api/planner/starred-folders/order",
+    name: "move_planner_starred_folder",
     authRequired: true,
     family: "page_yjs",
   },
@@ -268,36 +268,29 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["GET"],
-    path: "/api/planner/projects/{pageId}",
-    name: "read_project_planner",
+    path: "/api/planner/folders/{folder_id}",
+    name: "read_folder_planner",
     authRequired: true,
     family: "page_yjs",
   },
   {
     methods: ["GET"],
-    path: "/api/planner/projects/{pageId}/tasks",
-    name: "list_project_planner_tasks",
+    path: "/api/planner/folders/{folder_id}/subfolders",
+    name: "list_folder_planner_subfolders",
     authRequired: true,
     family: "page_yjs",
   },
   {
     methods: ["GET"],
-    path: "/api/planner/projects/{pageId}/documents",
-    name: "list_project_planner_documents",
+    path: "/api/planner/folders/{folder_id}/documents",
+    name: "list_folder_planner_documents",
     authRequired: true,
     family: "page_yjs",
   },
   {
     methods: ["GET"],
-    path: "/api/planner/projects/{pageId}/legacy-sessions",
-    name: "list_project_planner_legacy_sessions",
-    authRequired: true,
-    family: "page_yjs",
-  },
-  {
-    methods: ["GET"],
-    path: "/api/planner/tasks/{pageId}/runs",
-    name: "list_planner_task_runs",
+    path: "/api/planner/folders/{folder_id}/sessions",
+    name: "list_folder_planner_sessions",
     authRequired: true,
     family: "page_yjs",
   },
@@ -322,70 +315,7 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     authRequired: true,
     family: "session",
   },
-  {
-    methods: ["POST"],
-    path: "/api/tasks",
-    name: "create_task",
-    authRequired: true,
-    family: "task",
-    beforePath: "/api/tasks/{task_id}",
-  },
-  {
-    methods: ["POST"],
-    path: "/api/tasks/{task_id}/sections",
-    name: "create_task_section_browser",
-    authRequired: true,
-    family: "task",
-  },
-  {
-    methods: ["POST"],
-    path: "/api/tasks/{task_id}/sections/{section_id}",
-    name: "update_task_section_browser",
-    authRequired: true,
-    family: "task",
-  },
-  {
-    methods: ["POST"],
-    path: "/api/tasks/{task_id}/sections/{section_id}/move",
-    name: "move_task_section_browser",
-    authRequired: true,
-    family: "task",
-  },
-  {
-    methods: ["POST"],
-    path: "/api/tasks/{task_id}/sections/{section_id}/archive",
-    name: "archive_task_section_browser",
-    authRequired: true,
-    family: "task",
-  },
-  {
-    methods: ["POST"],
-    path: "/api/tasks/{task_id}/sections/{section_id}/items",
-    name: "create_task_item_browser",
-    authRequired: true,
-    family: "task",
-  },
-  {
-    methods: ["POST"],
-    path: "/api/tasks/{task_id}/items/{item_id}",
-    name: "update_task_item_browser",
-    authRequired: true,
-    family: "task",
-  },
-  {
-    methods: ["POST"],
-    path: "/api/tasks/{task_id}/items/{item_id}/move",
-    name: "move_task_item_browser",
-    authRequired: true,
-    family: "task",
-  },
-  {
-    methods: ["POST"],
-    path: "/api/tasks/{task_id}/items/{item_id}/archive",
-    name: "archive_task_item_browser",
-    authRequired: true,
-    family: "task",
-  },
+
 ];
 
 /**
@@ -527,7 +457,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   ) {
     return "page_yjs";
   }
-  if (path.startsWith("/api/tasks/")) return "task";
+  if (path.startsWith("/api/folders/")) return "folder";
   if (path.startsWith("/api/sessions")) return "session";
   if (path.startsWith("/api/nodes/")) return "node_proxy";
   if (path.startsWith("/api/usage/")) return "node_proxy";

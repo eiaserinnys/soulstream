@@ -16,7 +16,6 @@ import {
   PageMutationVersionConflictError,
 } from "./page_mutation_helpers.js";
 import { reconcilePageLinks } from "./page_link_projection.js";
-import { reconcileChecklistProjectionOutbox } from "./page_checklist_projection_outbox.js";
 import {
   findPageIdByDailyDate,
   findPageIdByTitle,
@@ -131,7 +130,7 @@ export class PageRepository {
       }
       await upsertPageProjection(transaction, input.replica);
       await reconcileBlockProjection(transaction, input.replica);
-      await reconcileChecklistProjectionOutbox(transaction, input.replica);
+
       await reconcilePageLinks(transaction, input.replica);
     });
   }
@@ -320,7 +319,7 @@ export async function commitPageMutationInTransaction(
   await storePageDocument(transaction, input.documentName, input.application.snapshot);
   const pageTimes = await upsertPageProjection(transaction, input.application.replica, provenance);
   await reconcileBlockProjection(transaction, input.application.replica, provenance);
-  await reconcileChecklistProjectionOutbox(transaction, input.application.replica, input.application.actor);
+
   await reconcilePageLinks(transaction, input.application.replica);
   const targetBlockId = input.application.targetBlockId &&
     input.application.replica.blocks.some((block) => block.id === input.application.targetBlockId)

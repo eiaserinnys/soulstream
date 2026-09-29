@@ -20,127 +20,58 @@ export interface PlannerBlockDto {
   collapsed: boolean;
 }
 
-export interface PlannerTaskSummaryDto {
-  id: string;
-  board_item_id: string;
-  title: string;
-  status: string;
-  archived: boolean;
-  version: number;
-  created_session_id: string | null;
-  created_event_id: number | null;
-  created_at: string;
-  updated_at: string;
-  item_counts: Record<string, number>;
-  item_total: number;
-  completed_item_count: number;
+export interface PlannerFolderDto {
+  folder: Record<string, unknown>;
+  page: PlannerPageDto;
+  itemCounts: Record<string, number>;
+  itemTotal: number;
+  completedItemCount: number;
   assignee: string | null;
-}
-
-export interface PlannerSessionSummaryDto {
-  agent_session_id: string;
-  folder_id: string | null;
-  display_name: string | null;
-  node_id: string | null;
-  session_type: string | null;
-  status: string | null;
-  agent_id: string | null;
-  predecessor_session_id: string | null;
-  review_state: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PlannerMountedDocumentDto {
-  block_id: string;
-  page: PlannerPageDto;
-}
-
-export interface PlannerTaskDto {
-  page: PlannerPageDto;
-  blocks: PlannerBlockDto[];
-  task_id: string;
-  task: PlannerTaskSummaryDto | null;
-  project_page_id: string | null;
-  sessions: PlannerSessionSummaryDto[];
-  mounted_documents: PlannerMountedDocumentDto[];
 }
 
 export interface PlannerPageSlice<T> {
   items: T[];
-  next_cursor: string | null;
+  nextCursor: string | null;
 }
 
-export interface PlannerLegacySessionDto extends Record<string, unknown> {
+export interface PlannerSessionDto extends Record<string, unknown> {
   agentSessionId: string;
   status: string;
   eventCount: number;
 }
 
 export interface PlannerTodayDto {
-  daily: {
-    page: PlannerPageDto;
-    blocks: PlannerBlockDto[];
-    state_vector: string;
-  };
-  projects: PlannerPageDto[];
-  memo_blocks: PlannerBlockDto[];
-  tasks: PlannerTaskDto[];
-  review_session_ids: string[];
+  daily: { page: PlannerPageDto; blocks: PlannerBlockDto[]; state_vector: string };
+  folders: PlannerFolderDto[];
+  memoBlocks: PlannerBlockDto[];
+  reviewSessionIds: string[];
 }
 
-export interface PlannerProjectDto {
-  project: PlannerPageDto;
-  tasks: PlannerPageSlice<PlannerTaskDto>;
+export interface PlannerFolderDetailDto {
+  folder: Record<string, unknown>;
+  page: PlannerPageDto;
+  blocks: PlannerBlockDto[];
+  sections: Record<string, unknown>[];
+  items: Record<string, unknown>[];
+  subfolders: PlannerPageSlice<Record<string, unknown>>;
   documents: PlannerPageSlice<PlannerPageDto>;
+  sessions: PlannerPageSlice<PlannerSessionDto>;
 }
 
-export interface PlannerDailyHistoryDto {
-  dates: string[];
-}
-
-export interface PlannerTaskRunPageDto extends PlannerPageSlice<{
-  agent_session_id: string;
-}> {
-  total: number;
-}
-
+export interface PlannerDailyHistoryDto { dates: string[] }
+export interface PlannerPageInput { cursor?: string; limit: number }
 export const PLANNER_READ_PAGE_LIMITS = {
-  starredTasks: { default: 50, max: 100 },
+  starredFolders: { default: 50, max: 100 },
   dailyHistory: { default: 2, max: 10 },
-  project: { default: 20, max: 50 },
-  projectTasks: { default: 20, max: 50 },
-  projectDocuments: { default: 20, max: 50 },
-  projectLegacySessions: { default: 20, max: 50 },
-  taskRuns: { default: 20, max: 50 },
-} as const satisfies Record<string, {
-  default: number;
-  max: number;
-}>;
+  folder: { default: 20, max: 50 },
+} as const;
 
 export interface PlannerReadProvider {
-  getStarredTasks(input: {
-    cursor?: string;
-    limit: number;
-    detail?: "full";
-  }): Promise<PlannerPageSlice<PlannerPageDto | PlannerTaskDto>>;
+  getStarredFolders(input: PlannerPageInput): Promise<PlannerPageSlice<PlannerFolderDto>>;
   getDailyHistory(input: { before: string; limit: number }): Promise<PlannerDailyHistoryDto>;
   getToday(date: string): Promise<PlannerTodayDto | null>;
-  getProject(pageId: string, input: { limit: number }): Promise<PlannerProjectDto | null>;
-  getProjectTasks(
-    pageId: string,
-    input: { cursor?: string; limit: number },
-  ): Promise<PlannerPageSlice<PlannerTaskDto> | null>;
-  getProjectDocuments(
-    pageId: string,
-    input: { cursor?: string; limit: number },
-  ): Promise<PlannerPageSlice<PlannerPageDto> | null>;
-  getProjectLegacySessions(
-    pageId: string,
-    input: { cursor?: string; limit: number },
-  ): Promise<PlannerPageSlice<PlannerLegacySessionDto>>;
-  getTaskRuns(
-    pageId: string,
-    input: { cursor?: string; limit: number },
-  ): Promise<PlannerTaskRunPageDto | null>;
+  getFolder(folderId: string, input: { limit: number }): Promise<PlannerFolderDetailDto | null>;
+  getSubfolders(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<Record<string, unknown>>>;
+  getDocuments(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<PlannerPageDto>>;
+  getSessions(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<PlannerSessionDto>>;
 }

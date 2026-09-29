@@ -1,8 +1,3 @@
-export type RecurringJobContainer = {
-  readonly kind: "folder" | "task";
-  readonly id: string;
-};
-
 export type RecurringJobRunTrigger = "scheduled" | "manual";
 export type RecurringJobScheduleKind = "recurring" | "once";
 
@@ -41,7 +36,6 @@ export type RecurringJob = {
   readonly agentId: string;
   /** null means use the selected agent's default at run dispatch time. */
   readonly modelPreset: string | null;
-  readonly container: RecurringJobContainer;
   readonly folderId: string;
   readonly enabled: boolean;
   readonly archivedAt: string | null;
@@ -82,7 +76,6 @@ export type RecurringJobCreateInput = {
   readonly nodeId: string;
   readonly agentId: string;
   readonly modelPreset: string | null;
-  readonly container: RecurringJobContainer;
   readonly folderId: string;
   readonly lateRunWindowSeconds?: number;
   /** false stages a job safely before its first automatic occurrence. */
@@ -99,7 +92,6 @@ export type RecurringJobUpdateInput = {
   readonly nodeId?: string;
   readonly agentId?: string;
   readonly modelPreset?: string | null;
-  readonly container?: RecurringJobContainer;
   readonly folderId?: string;
   readonly enabled?: boolean;
   readonly lateRunWindowSeconds?: number;

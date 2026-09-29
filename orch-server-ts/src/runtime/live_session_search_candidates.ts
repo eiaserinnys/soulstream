@@ -225,79 +225,75 @@ export async function loadCandidateRows(
       session.caller_session_id AS parent_session_id,
       session.created_at AS session_created_at,
       session.updated_at AS session_updated_at,
-      linked_task.id AS task_id,
-      linked_task.title AS task_title,
-      linked_task.task_evidence_kind,
-      linked_task.task_evidence_title
+      folder_evidence.name AS folder_name,
+      folder_evidence.folder_evidence_kind,
+      folder_evidence.folder_evidence_title
     FROM raw_hits hit
     JOIN sessions session ON session.session_id = hit.session_id
     LEFT JOIN LATERAL (
       SELECT
-        task.id,
-        task.title,
+        linked_folder.id,
+        linked_folder.name,
         CASE
-          WHEN task.completed_session_id = session.session_id THEN 'task_completed'
-          WHEN completed_item.id IS NOT NULL THEN 'task_item_completed'
-          WHEN primary_session_item.source_task_item_id IS NOT NULL THEN 'source_task_item'
-          WHEN assigned_item.id IS NOT NULL THEN 'task_item_assigned'
+          WHEN linked_folder.completed_session_id = session.session_id THEN 'folder_completed'
+          WHEN completed_item.id IS NOT NULL THEN 'checklist_item_completed'
+          WHEN primary_session_item.source_checklist_item_id IS NOT NULL THEN 'source_checklist_item'
+          WHEN assigned_item.id IS NOT NULL THEN 'checklist_item_assigned'
           ELSE NULL
-        END AS task_evidence_kind,
+        END AS folder_evidence_kind,
         CASE
-          WHEN task.completed_session_id = session.session_id THEN task.title
+          WHEN linked_folder.completed_session_id = session.session_id THEN linked_folder.name
           WHEN completed_item.id IS NOT NULL THEN completed_item.title
-          WHEN primary_session_item.source_task_item_id IS NOT NULL THEN source_item.title
+          WHEN primary_session_item.source_checklist_item_id IS NOT NULL THEN source_item.title
           WHEN assigned_item.id IS NOT NULL THEN assigned_item.title
           ELSE NULL
-        END AS task_evidence_title
+        END AS folder_evidence_title
       FROM board_items primary_session_item
-      JOIN tasks task ON task.id = primary_session_item.container_id
-      JOIN board_items task_board_item ON task_board_item.id = task.board_item_id
-      LEFT JOIN task_items source_item
-        ON source_item.id = primary_session_item.source_task_item_id
+      JOIN folders linked_folder ON linked_folder.id = primary_session_item.folder_id
+      LEFT JOIN checklist_items source_item
+        ON source_item.id = primary_session_item.source_checklist_item_id
        AND EXISTS (
-         SELECT 1 FROM task_sections source_section
+         SELECT 1 FROM checklist_sections source_section
          WHERE source_section.id = source_item.section_id
-           AND source_section.task_id = task.id
+           AND source_section.folder_id = linked_folder.id
        )
       LEFT JOIN LATERAL (
-        SELECT task_item.id, task_item.title
-        FROM task_items task_item
-        JOIN task_sections section ON section.id = task_item.section_id
-        WHERE section.task_id = task.id
+        SELECT checklist_item.id, checklist_item.title
+        FROM checklist_items checklist_item
+        JOIN checklist_sections section ON section.id = checklist_item.section_id
+        WHERE section.folder_id = linked_folder.id
           AND section.archived = FALSE
-          AND task_item.archived = FALSE
-          AND task_item.completed_session_id = session.session_id
-        ORDER BY task_item.completed_at DESC NULLS LAST, task_item.id
+          AND checklist_item.archived = FALSE
+          AND checklist_item.completed_session_id = session.session_id
+        ORDER BY checklist_item.completed_at DESC NULLS LAST, checklist_item.id
         LIMIT 1
       ) completed_item ON TRUE
       LEFT JOIN LATERAL (
-        SELECT task_item.id, task_item.title
-        FROM task_items task_item
-        JOIN task_sections section ON section.id = task_item.section_id
-        WHERE section.task_id = task.id
+        SELECT checklist_item.id, checklist_item.title
+        FROM checklist_items checklist_item
+        JOIN checklist_sections section ON section.id = checklist_item.section_id
+        WHERE section.folder_id = linked_folder.id
           AND section.archived = FALSE
-          AND task_item.archived = FALSE
-          AND task_item.assignee_session_id = session.session_id
-        ORDER BY task_item.updated_at DESC, task_item.id
+          AND checklist_item.archived = FALSE
+          AND checklist_item.assignee_session_id = session.session_id
+        ORDER BY checklist_item.updated_at DESC, checklist_item.id
         LIMIT 1
       ) assigned_item ON TRUE
-      WHERE primary_session_item.container_kind = 'task'
-        AND primary_session_item.container_id = task.id
+      WHERE primary_session_item.folder_id = linked_folder.id
         AND primary_session_item.folder_id = session.folder_id
         AND primary_session_item.item_type = 'session'
         AND primary_session_item.item_id = session.session_id
         AND primary_session_item.membership_kind = 'primary'
-        AND task.archived = FALSE
-        AND task_board_item.folder_id = session.folder_id
+        AND linked_folder.archived = FALSE
         AND session.folder_id IS NOT NULL
       ORDER BY
-        ((task.completed_session_id = session.session_id) IS TRUE) DESC,
+        ((linked_folder.completed_session_id = session.session_id) IS TRUE) DESC,
         (completed_item.id IS NOT NULL) DESC,
-        (primary_session_item.source_task_item_id IS NOT NULL) DESC,
+        (primary_session_item.source_checklist_item_id IS NOT NULL) DESC,
         (assigned_item.id IS NOT NULL) DESC,
-        task.id ASC
+        linked_folder.id ASC
       LIMIT 1
-    ) linked_task ON TRUE
+    ) folder_evidence ON TRUE
     ORDER BY hit.query_order, hit.score DESC, hit.created_at DESC NULLS LAST,
              hit.session_id ASC, hit.id ASC NULLS LAST
   `, params.signal, deadlineAt, sql);

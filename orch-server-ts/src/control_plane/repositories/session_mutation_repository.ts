@@ -60,7 +60,7 @@ export type RegisterSessionMutationResult = {
 export type RegisterSessionWithWorktreeMutation = RegisterSessionMutation & {
   worktreeId: string;
   worktreeActorSessionId: string;
-  ownerTaskId: string | null;
+  ownerFolderId: string | null;
 };
 
 type RegisterWireContract = "central_policy_v1" | "legacy_worker_v1";
@@ -217,7 +217,7 @@ export class SessionMutationRepository {
           worktreeId: sanitizedInput.worktreeId,
           nodeId: sanitizedInput.nodeId,
           actorSessionId: sanitizedInput.worktreeActorSessionId,
-          ownerTaskId: sanitizedInput.ownerTaskId,
+          ownerFolderId: sanitizedInput.ownerFolderId,
         });
         const centralPolicy = await readSessionReviewPolicy(sql, { lock: "share" });
         const review = evaluateInitialSessionReview(

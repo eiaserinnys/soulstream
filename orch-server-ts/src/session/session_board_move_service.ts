@@ -3,7 +3,7 @@ import type {
   StagedSessionBoardMove,
 } from "../board-yjs/board_yjs_move.js";
 import type {
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsDocumentApplication,
   CatalogBoardItemRow,
 } from "../board-yjs/board_yjs_types.js";
@@ -47,16 +47,16 @@ export class SessionBoardMoveService {
       sessionId,
       targetScope: folderId === null
         ? null
-        : { folderId, containerKind: "folder", containerId: folderId },
-      sourceTaskItemId: null,
+        : { folderId },
+      sourceChecklistItemId: null,
     }, false);
   }
 
   async moveSessionBoardItem(input: {
     sessionId: string;
-    targetScope: BoardYjsContainerScope | null;
+    targetScope: BoardYjsFolderScope | null;
     position?: { x: number; y: number };
-    sourceTaskItemId?: string | null;
+    sourceChecklistItemId?: string | null;
   }): Promise<CatalogBoardItemRow | null> {
     return await this.moveSessionBoardItemInternal(input, true);
   }
@@ -64,9 +64,9 @@ export class SessionBoardMoveService {
   private async moveSessionBoardItemInternal(
     input: {
       sessionId: string;
-      targetScope: BoardYjsContainerScope | null;
+      targetScope: BoardYjsFolderScope | null;
       position?: { x: number; y: number };
-      sourceTaskItemId?: string | null;
+      sourceChecklistItemId?: string | null;
     },
     emitBoardCatalogDelta: boolean,
   ): Promise<CatalogBoardItemRow | null> {
@@ -78,7 +78,7 @@ export class SessionBoardMoveService {
           boardItems,
           targetScope: input.targetScope,
           ...(input.position ? { position: input.position } : {}),
-          sourceTaskItemId: input.sourceTaskItemId ?? null,
+          sourceChecklistItemId: input.sourceChecklistItemId ?? null,
         },
         async ({ movedBoardItem, boardApplications }) => {
           await this.config.repository.commitSessionMove({

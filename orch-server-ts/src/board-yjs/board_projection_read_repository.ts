@@ -7,13 +7,13 @@ import type {
 } from "./board_projection_serialization.js";
 import {
   toCatalogBoardItemRow,
-  toContainerItemRecord,
+  toFolderItemRecord,
   toMarkdownDocumentRow,
 } from "./board_projection_serialization.js";
 import type {
-  BoardYjsContainerRef,
-  ListContainerItemsParams,
-  ListContainerItemsResult,
+  BoardYjsFolderScope,
+  ListFolderItemsParams,
+  ListFolderItemsResult,
 } from "./board_projection_types.js";
 import type {
   CatalogBoardItemRow,
@@ -33,17 +33,14 @@ export class BoardProjectionReadRepository {
     return rows.map(toCatalogBoardItemRow);
   }
 
-  async getBoardItemsByContainer(
+  async getBoardItemsByFolder(
     folderId: string,
-    container: BoardYjsContainerRef,
   ): Promise<CatalogBoardItemRow[]> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql<readonly BoardItemDbRow[]>`
       SELECT *
       FROM board_items
       WHERE folder_id = ${folderId}
-        AND container_kind = ${container.containerKind}
-        AND container_id = ${container.containerId}
     `;
     return rows.map(toCatalogBoardItemRow);
   }
@@ -101,9 +98,9 @@ export class BoardProjectionReadRepository {
     return rows[0] ? toMarkdownDocumentRow(rows[0]) : null;
   }
 
-  async listContainerItems(
-    params: ListContainerItemsParams,
-  ): Promise<ListContainerItemsResult> {
+  async listFolderItems(
+    params: ListFolderItemsParams,
+  ): Promise<ListFolderItemsResult> {
     const sql = await this.sqlResolver.resolveSql();
     const itemTypes = params.itemTypes ?? [];
     const scanLimit = params.scanLimit ?? null;
@@ -119,8 +116,7 @@ export class BoardProjectionReadRepository {
         LEFT JOIN markdown_documents md
           ON bi.item_type = 'markdown' AND md.id = bi.item_id
         WHERE ${scanLimit}::INTEGER IS NOT NULL
-          AND bi.container_kind = ${params.container.containerKind}
-          AND bi.container_id = ${params.container.containerId}
+          AND bi.folder_id = ${params.folderId}
           AND bi.item_type IN ('session', 'markdown')
         ORDER BY content_updated_at DESC NULLS LAST, bi.id ASC
         LIMIT ${scanCandidateLimit}
@@ -141,7 +137,7 @@ export class BoardProjectionReadRepository {
         SELECT
           bi.*,
           CASE
-            WHEN bi.item_type = 'task' THEN COALESCE(r.archived, FALSE)
+
             WHEN bi.item_type = 'custom_view' THEN COALESCE(cv.archived, FALSE)
             WHEN bi.item_type = 'subfolder' THEN COALESCE(sf.archived, FALSE)
             ELSE FALSE
@@ -180,9 +176,9 @@ export class BoardProjectionReadRepository {
           md.title AS markdown_title,
           md.body AS markdown_body,
           md.updated_at AS markdown_updated_at,
-          r.id AS task_id,
-          r.title AS task_title,
-          r.updated_at AS task_updated_at,
+
+
+
           cv.id AS custom_view_id,
           cv.title AS custom_view_title,
           cv.updated_at AS custom_view_updated_at,
@@ -204,16 +200,14 @@ export class BoardProjectionReadRepository {
         ) AS user_event ON TRUE
         LEFT JOIN markdown_documents md
           ON bi.item_type = 'markdown' AND md.id = bi.item_id
-        LEFT JOIN tasks r
-          ON bi.item_type = 'task' AND r.id = bi.item_id
+
         LEFT JOIN board_custom_views cv
           ON bi.item_type = 'custom_view' AND cv.id = bi.item_id
         LEFT JOIN file_assets fa
           ON bi.item_type = 'asset' AND fa.id = bi.item_id
         LEFT JOIN folders sf
           ON bi.item_type = 'subfolder' AND sf.id = bi.item_id
-        WHERE bi.container_kind = ${params.container.containerKind}
-          AND bi.container_id = ${params.container.containerId}
+        WHERE bi.folder_id = ${params.folderId}
           AND (${itemTypes.length === 0} OR bi.item_type = ANY(${sql.array(itemTypes)}))
           AND (
             ${scanLimit}::INTEGER IS NULL
@@ -252,7 +246,7 @@ export class BoardProjectionReadRepository {
           COUNT(*) FILTER (WHERE item_type = 'subfolder')::BIGINT AS subfolder_count,
           COUNT(*) FILTER (WHERE item_type = 'asset')::BIGINT AS asset_count,
           COUNT(*) FILTER (WHERE item_type = 'frame')::BIGINT AS frame_count,
-          COUNT(*) FILTER (WHERE item_type = 'task')::BIGINT AS task_count,
+
           COUNT(*) FILTER (WHERE item_type = 'custom_view')::BIGINT AS custom_view_count,
           (SELECT scanned_items FROM search_scan) AS scanned_items,
           (SELECT truncated FROM search_scan) AS search_truncated
@@ -261,10 +255,10 @@ export class BoardProjectionReadRepository {
       SELECT
         p.id AS bi_id,
         p.folder_id AS bi_folder_id,
-        p.container_kind AS bi_container_kind,
-        p.container_id AS bi_container_id,
+
+
         p.membership_kind AS bi_membership_kind,
-        p.source_task_item_id AS bi_source_task_item_id,
+        p.source_checklist_item_id AS bi_source_checklist_item_id,
         p.item_type AS bi_item_type,
         p.item_id AS bi_item_id,
         p.x AS bi_x,
@@ -291,9 +285,9 @@ export class BoardProjectionReadRepository {
         p.markdown_title,
         p.markdown_body,
         p.markdown_updated_at,
-        p.task_id,
-        p.task_title,
-        p.task_updated_at,
+
+
+
         p.custom_view_id,
         p.custom_view_title,
         p.custom_view_updated_at,
@@ -310,7 +304,7 @@ export class BoardProjectionReadRepository {
     `;
     const summary = rows[0];
     return {
-      items: rows.flatMap((row) => row.bi_id ? [toContainerItemRecord(row)] : []),
+      items: rows.flatMap((row) => row.bi_id ? [toFolderItemRecord(row)] : []),
       total: Number(summary?.total_count ?? 0),
       counts: {
         session: Number(summary?.session_count ?? 0),
@@ -318,7 +312,7 @@ export class BoardProjectionReadRepository {
         subfolder: Number(summary?.subfolder_count ?? 0),
         asset: Number(summary?.asset_count ?? 0),
         frame: Number(summary?.frame_count ?? 0),
-        task: Number(summary?.task_count ?? 0),
+
         custom_view: Number(summary?.custom_view_count ?? 0),
       },
       scan: scanLimit == null

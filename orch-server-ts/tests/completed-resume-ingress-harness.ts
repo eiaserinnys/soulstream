@@ -220,7 +220,7 @@ export async function observeCompletedResumeIngress(
     } as never,
   });
   const route = new TaskInterventionRoute({
-    getTask: (sessionId: string) => tasks.get(sessionId),
+    getFolder: (sessionId: string) => tasks.get(sessionId),
     loadEvictedTask: async (sessionId: string) => {
       sessionLoads += 1;
       if (sessionId !== SESSION_ID) return null;
@@ -270,8 +270,8 @@ export async function observeCompletedResumeIngress(
   };
   const taskManager = {
     addIntervention: route.addIntervention.bind(route),
-    getTask: (sessionId: string) => tasks.get(sessionId),
-    listTasks: () => [...tasks.values()],
+    getFolder: (sessionId: string) => tasks.get(sessionId),
+    listFolders: () => [...tasks.values()],
   };
   const taskExecutor = {
     startNewExecution: vi.fn((task: RuntimeTask, _agent: unknown, activation?: {

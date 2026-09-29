@@ -141,14 +141,7 @@ function boardItemProvider(input: {
   return {
     listFolders: vi.fn(async () => folders),
     listBoardItems: vi.fn(async () => boardItems),
-    resolveBoardContainerFolderId: vi.fn(async (container) => {
-      if (container.kind === "folder") return container.id;
-      const task = boardItems.find((item) =>
-        item.itemType === "task" && item.itemId === container.id
-      );
-      if (typeof task?.folderId !== "string") throw new Error("missing task");
-      return task.folderId;
-    }),
+
     getCatalogSnapshot: vi.fn(async () => ({ folders, boardItems })),
   };
 }

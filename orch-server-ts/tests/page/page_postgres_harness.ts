@@ -256,7 +256,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       FOREIGN KEY (updated_session_id, updated_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL
     );
-    CREATE OR REPLACE FUNCTION planner_starred_task_identity_trim(identity_value TEXT)
+    CREATE OR REPLACE FUNCTION planner_starred_page_identity_trim(identity_value TEXT)
     RETURNS TEXT
     LANGUAGE sql
     IMMUTABLE
@@ -271,12 +271,12 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
         chr(8239) || chr(8287) || chr(12288) || chr(65279)
       ), '')
     $$;
-    CREATE TABLE planner_starred_task_order (
+    CREATE TABLE planner_starred_page_order (
       page_id TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
       position BIGINT NOT NULL CHECK (position >= 0)
     );
-    CREATE INDEX idx_planner_starred_task_order_position
-      ON planner_starred_task_order(position, page_id);
+    CREATE INDEX idx_planner_starred_page_order_position
+      ON planner_starred_page_order(position, page_id);
     CREATE TABLE blocks (
       id TEXT PRIMARY KEY,
       page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
@@ -341,39 +341,12 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       CHECK (actor_kind <> 'agent' OR actor_session_id IS NOT NULL),
       CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL)
     );
-    CREATE TABLE checklist_task_projection_outbox (
-      block_id TEXT PRIMARY KEY,
-      page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
-      source_hash TEXT NOT NULL,
-      processed_hash TEXT,
-      actor_kind TEXT NOT NULL DEFAULT 'system'
-        CHECK (actor_kind IN ('agent','user','system','llm')),
-      actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-      actor_user_id TEXT,
-      routing_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-      last_error TEXT,
-      next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      lease_owner_node_id TEXT,
-      lease_expires_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      CHECK (
-        (actor_kind = 'agent' AND actor_session_id IS NOT NULL AND actor_user_id IS NULL)
-        OR (actor_kind = 'user' AND actor_user_id IS NOT NULL)
-        OR (actor_kind = 'system' AND actor_user_id IS NULL)
-        OR (actor_kind = 'llm' AND actor_session_id IS NULL AND actor_user_id IS NULL)
-      )
-    );
     CREATE UNIQUE INDEX uq_pages_title_key ON pages(title_key);
     CREATE UNIQUE INDEX uq_pages_daily_date ON pages(daily_date) WHERE daily_date IS NOT NULL;
     CREATE INDEX idx_pages_title_prefix
       ON pages (title_key text_pattern_ops, id) WHERE archived = FALSE;
     CREATE INDEX idx_blocks_text_prefix
       ON blocks ((lower(text_plain)) text_pattern_ops, id);
-    CREATE INDEX idx_checklist_task_projection_due
-      ON checklist_task_projection_outbox(next_retry_at, updated_at, block_id)
-      WHERE processed_hash IS DISTINCT FROM source_hash;
     CREATE TABLE block_links (
       id TEXT PRIMARY KEY,
       source_block_id TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
@@ -398,15 +371,28 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
           AND target_title IS NULL AND target_title_key IS NULL)
       )
     );
-    CREATE TABLE folders (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      settings JSONB NOT NULL DEFAULT '{}'::jsonb,
-      parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
-      project_page_id TEXT UNIQUE REFERENCES pages(id) ON DELETE RESTRICT,
-      archived BOOLEAN NOT NULL DEFAULT FALSE
-    );
+CREATE TABLE folders (
+    id          TEXT PRIMARY KEY,
+    settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+    name        TEXT NOT NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
+    project_page_id TEXT,
+    archived    BOOLEAN NOT NULL DEFAULT FALSE,
+    checklist_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','completed')),
+    version INTEGER NOT NULL DEFAULT 1,
+    created_session_id TEXT,
+    created_event_id INTEGER,
+    completed_kind TEXT CHECK (completed_kind IN ('agent','user','llm')),
+    completed_session_id TEXT,
+    completed_event_id INTEGER,
+    completed_user_id TEXT,
+    completed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
     CREATE TABLE markdown_documents (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -418,10 +404,8 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
     CREATE TABLE board_items (
       id TEXT PRIMARY KEY,
       folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-      container_kind TEXT NOT NULL DEFAULT 'folder',
-      container_id TEXT NOT NULL,
       membership_kind TEXT NOT NULL DEFAULT 'primary',
-      source_task_item_id TEXT,
+      source_checklist_item_id TEXT,
       item_type TEXT NOT NULL,
       item_id TEXT NOT NULL,
       x DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -432,74 +416,83 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
     );
     CREATE TABLE board_yjs_catalog_cache (
       folder_id TEXT NOT NULL,
-      container_kind TEXT NOT NULL,
-      container_id TEXT NOT NULL,
       board_items JSONB NOT NULL DEFAULT '[]'::jsonb,
       markdown_documents JSONB NOT NULL DEFAULT '[]'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (container_kind, container_id)
+      PRIMARY KEY (folder_id)
     );
-    CREATE TABLE tasks (
-      id TEXT PRIMARY KEY,
-      board_item_id TEXT NOT NULL UNIQUE REFERENCES board_items(id) ON DELETE CASCADE,
-      task_page_id TEXT UNIQUE REFERENCES pages(id) ON DELETE RESTRICT,
-      title TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'open',
-      archived BOOLEAN NOT NULL DEFAULT FALSE,
-      version INTEGER NOT NULL DEFAULT 1,
-      created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-      created_event_id INTEGER,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE task_sections (
-      id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-      position_key TEXT NOT NULL,
-      assignee_agent_id TEXT,
-      assignee_user_id TEXT,
-      assignee_session_id TEXT,
-      archived BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE task_items (
-      id TEXT PRIMARY KEY,
-      section_id TEXT NOT NULL REFERENCES task_sections(id) ON DELETE CASCADE,
-      position_key TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      assignee_agent_id TEXT,
-      assignee_user_id TEXT,
-      assignee_session_id TEXT,
-      archived BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE task_operations (
-      id TEXT PRIMARY KEY,
-      task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
-      target_kind TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      operation_type TEXT NOT NULL,
-      actor_kind TEXT NOT NULL,
-      actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-      actor_event_id INTEGER,
-      actor_user_id TEXT,
-      idempotency_key TEXT UNIQUE,
-      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-      reason TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE folder_project_operations (
-      id TEXT PRIMARY KEY,
-      folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
-      operation_type TEXT NOT NULL,
-      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system','llm')),
-      actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-      actor_user_id TEXT,
-      idempotency_key TEXT NOT NULL UNIQUE,
-      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-      reason TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+CREATE TABLE checklist_sections (
+    id                 TEXT PRIMARY KEY,
+    folder_id         TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    position_key       TEXT NOT NULL,
+    title              TEXT NOT NULL,
+    assignee_kind      TEXT CHECK (assignee_kind IN ('agent','human','session')),
+    assignee_agent_id  TEXT,
+    assignee_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    assignee_user_id   TEXT,
+    archived           BOOLEAN NOT NULL DEFAULT FALSE,
+    version            INTEGER NOT NULL DEFAULT 1,
+    created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_event_id   INTEGER,
+    updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    updated_event_id   INTEGER,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_session_id, updated_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+);
+CREATE TABLE checklist_items (
+    id                   TEXT PRIMARY KEY,
+    section_id           TEXT NOT NULL REFERENCES checklist_sections(id) ON DELETE CASCADE,
+    position_key         TEXT NOT NULL,
+    title                TEXT NOT NULL,
+    how_to               TEXT NOT NULL DEFAULT '',
+    assignee_kind        TEXT CHECK (assignee_kind IN ('agent','human','session')),
+    assignee_agent_id    TEXT,
+    assignee_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    assignee_user_id     TEXT,
+    status               TEXT NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending','in_progress','review','completed','cancelled')),
+    archived             BOOLEAN NOT NULL DEFAULT FALSE,
+    version              INTEGER NOT NULL DEFAULT 1,
+    created_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_event_id     INTEGER,
+    updated_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    updated_event_id     INTEGER,
+    completed_kind       TEXT CHECK (completed_kind IN ('agent','user','llm')),
+    completed_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    completed_event_id   INTEGER,
+    completed_user_id    TEXT,
+    completed_at         TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_session_id, updated_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (completed_session_id, completed_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+);
+CREATE TABLE folder_operations (
+    id               TEXT PRIMARY KEY,
+    folder_id       TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
+    target_kind      TEXT NOT NULL CHECK (target_kind IN ('folder','section','item')),
+    target_id        TEXT NOT NULL,
+    operation_type   TEXT NOT NULL,
+    actor_kind       TEXT NOT NULL DEFAULT 'agent' CHECK (actor_kind IN ('agent','user','system','llm')),
+    actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    actor_event_id   INTEGER,
+    actor_user_id    TEXT,
+    idempotency_key  TEXT,
+    payload_json     JSONB NOT NULL DEFAULT '{}'::JSONB,
+    reason           TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (actor_session_id, actor_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX uq_folder_ops_idem ON folder_operations(idempotency_key) WHERE idempotency_key IS NOT NULL;
   `);
 }
 

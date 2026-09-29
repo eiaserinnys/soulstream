@@ -1,85 +1,53 @@
 import * as Y from "yjs";
 
-import { normalizeBoardContainerKind } from "./board_container_kind_compat.js";
 import { normalizeMarkdownVersion } from "./markdown_document_version.js";
 import type {
-  BoardContainerKind,
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsItemValue,
   BoardYjsReplica,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
 } from "./board_yjs_types.js";
 
-export const BOARD_YJS_LEGACY_FOLDER_PREFIX = "board-folder:";
-export const BOARD_YJS_CONTAINER_PREFIX = "board:";
-export const BOARD_YJS_PREFIX = BOARD_YJS_LEGACY_FOLDER_PREFIX;
+export const BOARD_YJS_PREFIX = "board-folder:";
 export const BOARD_ITEMS_MAP = "boardItems";
 export const MARKDOWN_BODIES_MAP = "markdownBodies";
 
 export function getBoardYjsDocumentName(folderId: string): string {
-  return getBoardYjsContainerDocumentName(boardYjsFolderScope(folderId));
+  if (!folderId.trim()) throw new Error("folderId is required");
+  return `${BOARD_YJS_PREFIX}${folderId}`;
 }
 
-export function getBoardYjsContainerDocumentName(
-  container: BoardYjsContainerRef,
-): string {
-  assertBoardYjsContainer(container);
-  if (container.containerKind === "folder") {
-    return `${BOARD_YJS_LEGACY_FOLDER_PREFIX}${container.containerId}`;
-  }
-  return `${BOARD_YJS_CONTAINER_PREFIX}${container.containerKind}:${container.containerId}`;
-}
-
-export function getFormalBoardYjsDocumentName(
-  container: BoardYjsContainerRef,
-): string {
-  assertBoardYjsContainer(container);
-  return `${BOARD_YJS_CONTAINER_PREFIX}${container.containerKind}:${container.containerId}`;
+export function getBoardYjsContainerDocumentName(scope: BoardYjsFolderScope): string {
+  return getBoardYjsDocumentName(scope.folderId);
 }
 
 export function normalizeBoardYjsDocumentName(documentName: string): string | null {
-  const container = parseBoardYjsDocumentName(documentName);
-  return container ? getBoardYjsContainerDocumentName(container) : null;
+  const scope = parseBoardYjsDocumentName(documentName);
+  return scope ? getBoardYjsDocumentName(scope.folderId) : null;
 }
 
-export function parseBoardYjsDocumentName(documentName: string): BoardYjsContainerRef | null {
-  if (documentName.startsWith(BOARD_YJS_LEGACY_FOLDER_PREFIX)) {
-    const folderId = documentName.slice(BOARD_YJS_LEGACY_FOLDER_PREFIX.length);
-    return folderId.length > 0
-      ? { containerKind: "folder", containerId: folderId }
-      : null;
-  }
-  if (!documentName.startsWith(BOARD_YJS_CONTAINER_PREFIX)) return null;
-  const rest = documentName.slice(BOARD_YJS_CONTAINER_PREFIX.length);
-  const separator = rest.indexOf(":");
-  if (separator <= 0) return null;
-  const rawContainerKind = rest.slice(0, separator);
-  const containerId = rest.slice(separator + 1);
-  const containerKind = normalizeBoardContainerKind(rawContainerKind);
-  if (!containerKind || containerId.length === 0) return null;
-  return { containerKind, containerId };
+export function parseBoardYjsDocumentName(documentName: string): BoardYjsFolderScope | null {
+  if (!documentName.startsWith(BOARD_YJS_PREFIX)) return null;
+  const folderId = documentName.slice(BOARD_YJS_PREFIX.length);
+  return folderId.trim() ? { folderId } : null;
 }
 
-export function boardYjsFolderScope(folderId: string): BoardYjsContainerScope {
+export function boardYjsFolderScope(folderId: string): BoardYjsFolderScope {
   if (!folderId.trim()) throw new Error("folderId is required");
-  return { folderId, containerKind: "folder", containerId: folderId };
+  return { folderId };
 }
 
 export function getFolderIdFromBoardYjsDocumentName(documentName: string): string | null {
-  const container = parseBoardYjsDocumentName(documentName);
-  return container?.containerKind === "folder" ? container.containerId : null;
+  return parseBoardYjsDocumentName(documentName)?.folderId ?? null;
 }
 
 export function createBoardYDocSnapshot(params: {
   folderId: string;
-  containerKind?: BoardContainerKind;
-  containerId?: string;
   boardItems: readonly CatalogBoardItemRow[];
   markdownDocuments: readonly MarkdownDocumentRow[];
 }): Uint8Array {
-  const scope = scopeFromSnapshotParams(params);
+  const scope = boardYjsFolderScope(params.folderId);
   const doc = new Y.Doc();
   const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   const markdownBodies = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
@@ -87,7 +55,7 @@ export function createBoardYDocSnapshot(params: {
 
   doc.transact(() => {
     for (const item of params.boardItems) {
-      if (!boardItemBelongsToScope(item, scope)) continue;
+      if (item.folderId !== scope.folderId) continue;
       const metadata = item.metadata ?? {};
       const markdown = item.itemType === "markdown" ? markdownById.get(item.itemId) : undefined;
       boardItems.set(item.id, {
@@ -96,8 +64,8 @@ export function createBoardYDocSnapshot(params: {
         x: item.x,
         y: item.y,
         ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
-        ...(item.sourceTaskItemId !== undefined
-          ? { source_task_item_id: item.sourceTaskItemId }
+        ...(item.sourceChecklistItemId !== undefined
+          ? { source_checklist_item_id: item.sourceChecklistItemId }
           : {}),
         metadata: markdown
           ? { ...metadata, version: normalizeMarkdownVersion(metadata.version ?? markdown.version) }
@@ -116,7 +84,7 @@ export function createBoardYDocSnapshot(params: {
 }
 
 export function readBoardYDocReplica(
-  scopeInput: string | BoardYjsContainerScope,
+  scopeInput: string | BoardYjsFolderScope,
   doc: Y.Doc,
 ): BoardYjsReplica {
   const scope = typeof scopeInput === "string" ? boardYjsFolderScope(scopeInput) : scopeInput;
@@ -126,17 +94,15 @@ export function readBoardYDocReplica(
   const rows: CatalogBoardItemRow[] = [];
 
   for (const [id, value] of boardItems.entries()) {
-    const normalizedValue = normalizeLegacyBoardYjsItemValue(value);
+    const normalizedValue = value;
     const metadata = normalizedValue.metadata && typeof normalizedValue.metadata === "object"
       ? normalizedValue.metadata
       : {};
     rows.push({
       id,
       folderId: scope.folderId,
-      containerKind: scope.containerKind,
-      containerId: scope.containerId,
       membershipKind: normalizedValue.membership_kind ?? "primary",
-      sourceTaskItemId: normalizedValue.source_task_item_id ?? null,
+      sourceChecklistItemId: normalizedValue.source_checklist_item_id ?? null,
       itemType: normalizedValue.item_type,
       itemId: normalizedValue.item_id,
       x: Number(normalizedValue.x),
@@ -162,62 +128,11 @@ export function readBoardYDocReplica(
 
 export function readBoardYDocSnapshot(params: {
   folderId: string;
-  containerKind?: BoardContainerKind;
-  containerId?: string;
   snapshot?: Uint8Array | null;
 }): { replica: BoardYjsReplica; snapshot: Uint8Array } {
-  const scope = scopeFromSnapshotParams(params);
+  const scope = boardYjsFolderScope(params.folderId);
   const doc = new Y.Doc();
   if (params.snapshot && params.snapshot.byteLength > 0) Y.applyUpdate(doc, params.snapshot);
   return { replica: readBoardYDocReplica(scope, doc), snapshot: Y.encodeStateAsUpdate(doc) };
 }
 
-function isBoardContainerKind(value: string): value is BoardContainerKind {
-  return value === "folder" || value === "task";
-}
-
-/** Persisted Y.Doc read compatibility; see docs/task-read-compatibility.md. */
-export function normalizeLegacyBoardYjsItemValue(
-  value: BoardYjsItemValue,
-): BoardYjsItemValue {
-  const legacy = value as Omit<BoardYjsItemValue, "item_type"> & {
-    item_type: BoardYjsItemValue["item_type"] | "runbook";
-    source_runbook_item_id?: string | null;
-  };
-  const { source_runbook_item_id: legacySourceItemId, ...canonical } = legacy;
-  return {
-    ...canonical,
-    item_type: legacy.item_type === "runbook" ? "task" : legacy.item_type,
-    ...(canonical.source_task_item_id === undefined && legacySourceItemId !== undefined
-      ? { source_task_item_id: legacySourceItemId }
-      : {}),
-  };
-}
-
-function assertBoardYjsContainer(container: BoardYjsContainerRef): void {
-  if (!isBoardContainerKind(container.containerKind)) {
-    throw new Error(`unsupported board container kind: ${String(container.containerKind)}`);
-  }
-  if (!container.containerId.trim()) throw new Error("containerId is required");
-}
-
-function scopeFromSnapshotParams(params: {
-  folderId: string;
-  containerKind?: BoardContainerKind;
-  containerId?: string;
-}): BoardYjsContainerScope {
-  if (!params.folderId.trim()) throw new Error("folderId is required");
-  return {
-    folderId: params.folderId,
-    containerKind: params.containerKind ?? "folder",
-    containerId: params.containerId ?? params.folderId,
-  };
-}
-
-function boardItemBelongsToScope(
-  item: CatalogBoardItemRow,
-  scope: BoardYjsContainerScope,
-): boolean {
-  return (item.containerKind ?? "folder") === scope.containerKind &&
-    (item.containerId ?? item.folderId) === scope.containerId;
-}

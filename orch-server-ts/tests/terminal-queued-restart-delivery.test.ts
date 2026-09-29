@@ -157,7 +157,7 @@ describe("terminal queued delivery across node restart", () => {
     const queueOnly = vi.spyOn(running, "queueOnly");
     const autoResumeCall = vi.spyOn(autoResume, "resume");
     const route = new TaskInterventionRoute({
-      getTask: (sessionId) => tasks.get(sessionId),
+      getFolder: (sessionId) => tasks.get(sessionId),
       loadEvictedTask: async (sessionId) => {
         if (sessionId !== SESSION_ID) return null;
         return hydrateEvictedTaskFromSessionRow(
@@ -172,8 +172,8 @@ describe("terminal queued delivery across node restart", () => {
     });
     const taskManager = {
       addIntervention: route.addIntervention.bind(route),
-      getTask: (sessionId: string) => tasks.get(sessionId),
-      listTasks: () => [...tasks.values()],
+      getFolder: (sessionId: string) => tasks.get(sessionId),
+      listFolders: () => [...tasks.values()],
     };
 
     const { registry, transports, router, bridge } = createHarnessCore({

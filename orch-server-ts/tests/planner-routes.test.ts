@@ -1,536 +1,58 @@
-import Fastify, { type FastifyRequest } from "fastify";
-import { describe, expect, it, vi } from "vitest";
-
-import {
-  PLANNER_READ_PAGE_LIMITS,
-  plannerRouteAuthRequirements,
-  registerPlannerRoutes,
-  type PlannerReadProvider,
-} from "../src/index.js";
-import { PlannerStarredTaskMembershipConflictError } from "../src/planner/planner_starred_task_order.js";
-
-const browserCookie = "soul_dashboard_auth=dashboard-token";
-
-describe("planner routes", () => {
-  it("moves a starred task before a member outside the first page and notifies after commit", async () => {
-    const provider = providerDouble();
-    const eventOrder: string[] = [];
-    const starredTaskOrder = {
-      moveStarredTask: vi.fn(async () => {
-        eventOrder.push("transaction committed");
-        return { pageVersion: 2, changed: true };
-      }),
-    };
-    const onPageUpdated = vi.fn(() => eventOrder.push("page_updated"));
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder,
-      onPageUpdated,
-      dailyPages: dailyPageServiceDouble(),
-      resolveUser: cookieUserResolver(),
-    });
-    try {
-      const response = await app.inject({
-        method: "PATCH",
-        url: "/api/planner/starred-tasks/order",
-        headers: { cookie: browserCookie },
-        payload: { page_id: "source", before_page_id: "unloaded-target" },
-      });
-
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ ok: true });
-      expect(starredTaskOrder.moveStarredTask).toHaveBeenCalledWith({
-        pageId: "source",
-        beforePageId: "unloaded-target",
-      });
-      expect(onPageUpdated).toHaveBeenCalledWith({ pageId: "source", version: 2 });
-      expect(eventOrder).toEqual(["transaction committed", "page_updated"]);
-    } finally {
-      await app.close();
-    }
+import Fastify from "fastify";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { registerPlannerRoutes, type PlannerRouteOptions } from "../src/planner/planner_routes.js";
+import type { PlannerReadProvider } from "../src/planner/planner_contract.js";
+import { PlannerStarredFolderMembershipConflictError } from "../src/planner/planner_starred_task_order.js";
+const apps: ReturnType<typeof Fastify>[] = [];
+afterEach(async () => { await Promise.all(apps.splice(0).map(a => a.close())); });
+function setup(loggedIn = true) {
+  const slice = { items: [], nextCursor: null };
+  const provider = { getToday: vi.fn(async () => ({ folders: [], memoBlocks: [], reviewSessionIds: [] })),
+    getStarredFolders: vi.fn(async () => slice), getDailyHistory: vi.fn(async () => ({ dates: [] })),
+    getFolder: vi.fn(async () => ({ folder: { id: "f" } })), getSubfolders: vi.fn(async () => slice),
+    getDocuments: vi.fn(async () => slice), getSessions: vi.fn(async () => slice) };
+  const moveStarredFolder = vi.fn(async () => ({ pageVersion: 4, changed: true }));
+  const onPageUpdated = vi.fn(); const getDailyPage = vi.fn(async () => ({}));
+  const app = Fastify(); apps.push(app);
+  registerPlannerRoutes(app, { provider: provider as unknown as PlannerReadProvider,
+    starredFolderOrder: { moveStarredFolder }, onPageUpdated,
+    dailyPages: { getDailyPage } as unknown as PlannerRouteOptions["dailyPages"],
+    resolveUser: async () => loggedIn ? { email: "u@example.com" } : null });
+  return { app, provider, moveStarredFolder, onPageUpdated, getDailyPage };
+}
+describe("folder planner HTTP", () => {
+  it.each([
+    ["/today?date=2026-09-30", "getToday"], ["/starred-folders", "getStarredFolders"],
+    ["/daily-history?before=2026-09-30", "getDailyHistory"], ["/folders/f", "getFolder"],
+    ["/folders/f/subfolders", "getSubfolders"], ["/folders/f/documents", "getDocuments"], ["/folders/f/sessions", "getSessions"],
+  ] as const)("authenticates and dispatches %s", async (path, method) => {
+    const anonymous = setup(false); expect((await anonymous.app.inject(`/api/planner${path}`)).statusCode).toBe(401);
+    const { app, provider } = setup(); expect((await app.inject(`/api/planner${path}`)).statusCode).toBe(200);
+    expect(provider[method]).toHaveBeenCalledOnce();
   });
-
-  it("rejects invalid ordering requests with 400 and stale members with 409", async () => {
-    const provider = providerDouble();
-    const starredTaskOrder = starredTaskOrderDouble();
-    starredTaskOrder.moveStarredTask.mockRejectedValueOnce(
-      new PlannerStarredTaskMembershipConflictError("source is not an active starred task"),
-    );
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder,
-      onPageUpdated: vi.fn(),
-      dailyPages: dailyPageServiceDouble(),
-      resolveUser: cookieUserResolver(),
-    });
-    try {
-      const headers = { cookie: browserCookie };
-      const sameId = await app.inject({
-        method: "PATCH",
-        url: "/api/planner/starred-tasks/order",
-        headers,
-        payload: { page_id: "same", before_page_id: "same" },
-      });
-      expect(sameId.statusCode).toBe(400);
-      expect(starredTaskOrder.moveStarredTask).not.toHaveBeenCalled();
-
-      const inactive = await app.inject({
-        method: "PATCH",
-        url: "/api/planner/starred-tasks/order",
-        headers,
-        payload: { page_id: "gone", before_page_id: null },
-      });
-      expect(inactive.statusCode).toBe(409);
-      expect(inactive.json()).toMatchObject({ detail: { error: { code: "PLANNER_STARRED_TASK_NOT_ACTIVE" } } });
-    } finally {
-      await app.close();
+  it("bounds every cursor page and uses folder IDs for folder slices", async () => {
+    const { app, provider } = setup();
+    expect((await app.inject("/api/planner/starred-folders?limit=101")).statusCode).toBe(422);
+    for (const name of ["subfolders", "documents", "sessions"]) {
+      expect((await app.inject(`/api/planner/folders/f/${name}?limit=51`)).statusCode).toBe(422);
     }
+    await app.inject("/api/planner/folders/f/sessions?cursor=c&limit=10");
+    expect(provider.getSessions).toHaveBeenCalledWith("f", { cursor: "c", limit: 10 });
   });
-
-  it("requires browser authentication and validates the requested date", async () => {
-    const provider = providerDouble();
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder: starredTaskOrderDouble(),
-      onPageUpdated: vi.fn(),
-      dailyPages: dailyPageServiceDouble(),
-      resolveUser: cookieUserResolver(),
-    });
-    try {
-      const unauthorized = await app.inject({
-        method: "GET",
-        url: "/api/planner/today?date=2026-07-14",
-      });
-      expect(unauthorized.statusCode).toBe(401);
-      expect(provider.getToday).not.toHaveBeenCalled();
-
-      const invalid = await app.inject({
-        method: "GET",
-        url: "/api/planner/today?date=14-07-2026",
-        headers: { cookie: browserCookie },
-      });
-      expect(invalid.statusCode).toBe(422);
-      expect(provider.getToday).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
+  it("keeps page IDs in star ordering and broadcasts only after commit", async () => {
+    const { app, moveStarredFolder, onPageUpdated } = setup();
+    const response = await app.inject({ method: "PATCH", url: "/api/planner/starred-folders/order", payload: { pageId: "p", beforePageId: null } });
+    expect(response.statusCode).toBe(200); expect(moveStarredFolder).toHaveBeenCalledWith({ pageId: "p", beforePageId: null });
+    expect(onPageUpdated).toHaveBeenCalledWith({ pageId: "p", version: 4 });
+    moveStarredFolder.mockRejectedValueOnce(new PlannerStarredFolderMembershipConflictError("no longer starred"));
+    expect((await app.inject({ method: "PATCH", url: "/api/planner/starred-folders/order", payload: { pageId: "p", beforePageId: null } })).statusCode).toBe(409);
+    expect(onPageUpdated).toHaveBeenCalledOnce();
   });
-
-  it("returns one aggregated today payload", async () => {
-    const provider = providerDouble();
-    vi.mocked(provider.getToday).mockResolvedValueOnce({
-      daily: { page: page("daily"), blocks: [], state_vector: "" },
-      projects: [page("project")],
-      memo_blocks: [],
-      tasks: [],
-      review_session_ids: ["review-session"],
-    });
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder: starredTaskOrderDouble(),
-      onPageUpdated: vi.fn(),
-      dailyPages: dailyPageServiceDouble(),
-      resolveUser: cookieUserResolver(),
-    });
-    try {
-      const response = await app.inject({
-        method: "GET",
-        url: "/api/planner/today?date=2026-07-14",
-        headers: { cookie: browserCookie },
-      });
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({
-        daily: { page: { id: "daily" } },
-        projects: [{ id: "project" }],
-        review_session_ids: ["review-session"],
-      });
-      expect(provider.getToday).toHaveBeenCalledOnce();
-      expect(provider.getToday).toHaveBeenCalledWith("2026-07-14");
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("lazily creates a missing daily page once before returning the aggregate", async () => {
-    const provider = providerDouble();
-    vi.mocked(provider.getToday)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        daily: { page: page("daily"), blocks: [], state_vector: "" },
-        projects: [],
-        memo_blocks: [],
-        tasks: [],
-        review_session_ids: [],
-      });
-    const dailyPages = {
-      getDailyPage: vi.fn().mockResolvedValue({
-        page: page("daily"),
-        created: true,
-      }),
-    };
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder: starredTaskOrderDouble(),
-      onPageUpdated: vi.fn(),
-      dailyPages,
-      resolveUser: cookieUserResolver(),
-    });
-    try {
-      const response = await app.inject({
-        method: "GET",
-        url: "/api/planner/today?date=2026-07-17",
-        headers: { cookie: browserCookie },
-      });
-
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({ daily: { page: { id: "daily" } } });
-      expect(dailyPages.getDailyPage).toHaveBeenCalledOnce();
-      expect(dailyPages.getDailyPage).toHaveBeenCalledWith({
-        date: "2026-07-17",
-        actor: { actorKind: "user", actorUserId: "user@example.com" },
-      });
-      expect(provider.getToday).toHaveBeenCalledTimes(2);
-      expect(provider.getToday).toHaveBeenNthCalledWith(1, "2026-07-17");
-      expect(provider.getToday).toHaveBeenNthCalledWith(2, "2026-07-17");
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("returns a project aggregate and maps missing replica pages to 404", async () => {
-    const provider = providerDouble();
-    vi.mocked(provider.getProject)
-      .mockResolvedValueOnce({
-        project: page("project"),
-        tasks: { items: [], next_cursor: null },
-        documents: { items: [], next_cursor: null },
-      })
-      .mockResolvedValueOnce(null);
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder: starredTaskOrderDouble(),
-      onPageUpdated: vi.fn(),
-      dailyPages: dailyPageServiceDouble(),
-      resolveUser: cookieUserResolver(),
-    });
-    try {
-      const found = await app.inject({
-        method: "GET",
-        url: "/api/planner/projects/project",
-        headers: { cookie: browserCookie },
-      });
-      expect(found.statusCode).toBe(200);
-      expect(found.json()).toMatchObject({ project: { id: "project" } });
-      expect(provider.getProject).toHaveBeenNthCalledWith(1, "project", { limit: 20 });
-
-      const missing = await app.inject({
-        method: "GET",
-        url: "/api/planner/projects/missing",
-        headers: { cookie: browserCookie },
-      });
-      expect(missing.statusCode).toBe(404);
-      expect(missing.json()).toMatchObject({ code: "PLANNER_PAGE_NOT_FOUND" });
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("serves bounded starred tasks, daily history, project slices, and lazy task runs", async () => {
-    const provider = providerDouble();
-    vi.mocked(provider.getStarredTasks).mockResolvedValueOnce({
-      items: [page("task")],
-      next_cursor: "task-next",
-    });
-    vi.mocked(provider.getDailyHistory).mockResolvedValueOnce({
-      dates: ["2026-07-13", "2026-07-11"],
-    });
-    vi.mocked(provider.getProjectTasks).mockResolvedValueOnce({
-      items: [],
-      next_cursor: "task-next",
-    });
-    vi.mocked(provider.getProjectDocuments).mockResolvedValueOnce({
-      items: [page("document")],
-      next_cursor: null,
-    });
-    vi.mocked(provider.getProjectLegacySessions).mockResolvedValueOnce({
-      items: [{ agentSessionId: "legacy-session", status: "completed", eventCount: 0 }],
-      next_cursor: "legacy-next",
-    });
-    vi.mocked(provider.getTaskRuns).mockResolvedValueOnce({
-      items: [{ agent_session_id: "session-a" }],
-      next_cursor: "run-next",
-      total: 61,
-    });
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder: starredTaskOrderDouble(),
-      onPageUpdated: vi.fn(),
-      dailyPages: dailyPageServiceDouble(),
-      resolveUser: cookieUserResolver(),
-    });
-    try {
-      const headers = { cookie: browserCookie };
-      const [starred, history, tasks, documents, legacySessions, runs] = await Promise.all([
-        app.inject({ method: "GET", url: "/api/planner/starred-tasks?cursor=task-cursor&limit=25", headers }),
-        app.inject({ method: "GET", url: "/api/planner/daily-history?before=2026-07-14&limit=2", headers }),
-        app.inject({ method: "GET", url: "/api/planner/projects/project/tasks?cursor=task-cursor&limit=10", headers }),
-        app.inject({ method: "GET", url: "/api/planner/projects/project/documents?limit=8", headers }),
-        app.inject({ method: "GET", url: "/api/planner/projects/project/legacy-sessions?cursor=legacy-cursor&limit=12", headers }),
-        app.inject({ method: "GET", url: "/api/planner/tasks/task/runs?cursor=run-cursor&limit=20", headers }),
-      ]);
-
-      expect(starred.json()).toMatchObject({ next_cursor: "task-next" });
-      expect(history.json()).toEqual({ dates: ["2026-07-13", "2026-07-11"] });
-      expect(tasks.json()).toMatchObject({ next_cursor: "task-next" });
-      expect(documents.json()).toMatchObject({ items: [{ id: "document" }] });
-      expect(legacySessions.json()).toMatchObject({
-        items: [{ agentSessionId: "legacy-session" }],
-        next_cursor: "legacy-next",
-      });
-      expect(runs.json()).toMatchObject({ total: 61, next_cursor: "run-next" });
-      expect(provider.getStarredTasks).toHaveBeenCalledWith({ cursor: "task-cursor", limit: 25 });
-      expect(provider.getDailyHistory).toHaveBeenCalledWith({ before: "2026-07-14", limit: 2 });
-      expect(provider.getProjectTasks).toHaveBeenCalledWith("project", { cursor: "task-cursor", limit: 10 });
-      expect(provider.getProjectDocuments).toHaveBeenCalledWith("project", { cursor: undefined, limit: 8 });
-      expect(provider.getProjectLegacySessions).toHaveBeenCalledWith("project", {
-        cursor: "legacy-cursor",
-        limit: 12,
-      });
-      expect(provider.getTaskRuns).toHaveBeenCalledWith("task", { cursor: "run-cursor", limit: 20 });
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("applies the canonical default and maximum limit to every planner page route", async () => {
-    expect(PLANNER_READ_PAGE_LIMITS).toEqual({
-      starredTasks: { default: 50, max: 100 },
-      dailyHistory: { default: 2, max: 10 },
-      project: { default: 20, max: 50 },
-      projectTasks: { default: 20, max: 50 },
-      projectDocuments: { default: 20, max: 50 },
-      projectLegacySessions: { default: 20, max: 50 },
-      taskRuns: { default: 20, max: 50 },
-    });
-
-    const provider = providerDouble();
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder: starredTaskOrderDouble(),
-      onPageUpdated: vi.fn(),
-      dailyPages: dailyPageServiceDouble(),
-      resolveUser: cookieUserResolver(),
-    });
-    const headers = { cookie: browserCookie };
-    const cases = [
-      {
-        url: "/api/planner/starred-tasks",
-        limits: PLANNER_READ_PAGE_LIMITS.starredTasks,
-      },
-      {
-        url: "/api/planner/daily-history?before=2026-07-14",
-        limits: PLANNER_READ_PAGE_LIMITS.dailyHistory,
-      },
-      {
-        url: "/api/planner/projects/project",
-        limits: PLANNER_READ_PAGE_LIMITS.project,
-      },
-      {
-        url: "/api/planner/projects/project/tasks",
-        limits: PLANNER_READ_PAGE_LIMITS.projectTasks,
-      },
-      {
-        url: "/api/planner/projects/project/documents",
-        limits: PLANNER_READ_PAGE_LIMITS.projectDocuments,
-      },
-      {
-        url: "/api/planner/projects/project/legacy-sessions",
-        limits: PLANNER_READ_PAGE_LIMITS.projectLegacySessions,
-      },
-      {
-        url: "/api/planner/tasks/task/runs",
-        limits: PLANNER_READ_PAGE_LIMITS.taskRuns,
-      },
-    ] as const;
-
-    try {
-      for (const { url, limits } of cases) {
-        const separator = url.includes("?") ? "&" : "?";
-        await app.inject({ method: "GET", url, headers });
-        const maximum = await app.inject({
-          method: "GET",
-          url: `${url}${separator}limit=${limits.max}`,
-          headers,
-        });
-        const overMaximum = await app.inject({
-          method: "GET",
-          url: `${url}${separator}limit=${limits.max + 1}`,
-          headers,
-        });
-        expect(maximum.statusCode).not.toBe(422);
-        expect(overMaximum.statusCode).toBe(422);
-      }
-
-      expect(provider.getStarredTasks).toHaveBeenNthCalledWith(1, { limit: 50 });
-      expect(provider.getStarredTasks).toHaveBeenNthCalledWith(2, { limit: 100 });
-      expect(provider.getDailyHistory).toHaveBeenNthCalledWith(1, {
-        before: "2026-07-14",
-        limit: 2,
-      });
-      expect(provider.getDailyHistory).toHaveBeenNthCalledWith(2, {
-        before: "2026-07-14",
-        limit: 10,
-      });
-      expect(provider.getProject).toHaveBeenNthCalledWith(1, "project", { limit: 20 });
-      expect(provider.getProject).toHaveBeenNthCalledWith(2, "project", { limit: 50 });
-      expect(provider.getProjectTasks).toHaveBeenNthCalledWith(1, "project", {
-        cursor: undefined,
-        limit: 20,
-      });
-      expect(provider.getProjectTasks).toHaveBeenNthCalledWith(2, "project", {
-        cursor: undefined,
-        limit: 50,
-      });
-      expect(provider.getProjectDocuments).toHaveBeenNthCalledWith(1, "project", {
-        cursor: undefined,
-        limit: 20,
-      });
-      expect(provider.getProjectDocuments).toHaveBeenNthCalledWith(2, "project", {
-        cursor: undefined,
-        limit: 50,
-      });
-      expect(provider.getProjectLegacySessions).toHaveBeenNthCalledWith(1, "project", {
-        cursor: undefined,
-        limit: 20,
-      });
-      expect(provider.getProjectLegacySessions).toHaveBeenNthCalledWith(2, "project", {
-        cursor: undefined,
-        limit: 50,
-      });
-      expect(provider.getTaskRuns).toHaveBeenNthCalledWith(1, "task", {
-        cursor: undefined,
-        limit: 20,
-      });
-      expect(provider.getTaskRuns).toHaveBeenNthCalledWith(2, "task", {
-        cursor: undefined,
-        limit: 50,
-      });
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("preserves the default starred page response and opts into full task details explicitly", async () => {
-    const provider = providerDouble();
-    const fullTask = {
-      page: page("task"), blocks: [], task_id: "task-id", task: null,
-      project_page_id: "project", sessions: [], mounted_documents: [],
-    };
-    vi.mocked(provider.getStarredTasks)
-      .mockResolvedValueOnce({ items: [page("task")], next_cursor: null })
-      .mockResolvedValueOnce({ items: [fullTask], next_cursor: null });
-    const app = Fastify({ logger: false });
-    registerPlannerRoutes(app, {
-      provider,
-      starredTaskOrder: starredTaskOrderDouble(),
-      onPageUpdated: vi.fn(),
-      dailyPages: dailyPageServiceDouble(),
-      resolveUser: cookieUserResolver(),
-    });
-    try {
-      const headers = { cookie: browserCookie };
-      const legacy = await app.inject({
-        method: "GET", url: "/api/planner/starred-tasks?limit=25", headers,
-      });
-      const full = await app.inject({
-        method: "GET", url: "/api/planner/starred-tasks?limit=25&detail=full", headers,
-      });
-
-      expect(legacy.json()).toMatchObject({ items: [{ id: "task" }] });
-      expect(full.json()).toMatchObject({ items: [{ task_id: "task-id", page: { id: "task" } }] });
-      expect(provider.getStarredTasks).toHaveBeenNthCalledWith(1, { limit: 25 });
-      expect(provider.getStarredTasks).toHaveBeenNthCalledWith(2, { limit: 25, detail: "full" });
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("declares every planner read route as authenticated", () => {
-    expect(plannerRouteAuthRequirements).toEqual({
-      "GET /api/planner/today": true,
-      "GET /api/planner/starred-tasks": true,
-      "PATCH /api/planner/starred-tasks/order": true,
-      "GET /api/planner/daily-history": true,
-      "GET /api/planner/projects/{pageId}": true,
-      "GET /api/planner/projects/{pageId}/tasks": true,
-      "GET /api/planner/projects/{pageId}/documents": true,
-      "GET /api/planner/projects/{pageId}/legacy-sessions": true,
-      "GET /api/planner/tasks/{pageId}/runs": true,
-    });
+  it("lazily creates a missing daily page and has no old planner routes", async () => {
+    const { app, provider, getDailyPage } = setup();
+    provider.getToday.mockResolvedValueOnce(null as never);
+    expect((await app.inject("/api/planner/today?date=2026-09-30")).statusCode).toBe(200);
+    expect(getDailyPage).toHaveBeenCalledWith({ date: "2026-09-30", actor: { actorKind: "user", actorUserId: "u@example.com" } });
+    for (const path of ["starred-tasks", "projects/p", "tasks/p/runs"]) expect((await app.inject(`/api/planner/${path}`)).statusCode).toBe(404);
   });
 });
-
-function providerDouble(): PlannerReadProvider & {
-  getToday: ReturnType<typeof vi.fn>;
-  getProject: ReturnType<typeof vi.fn>;
-  getStarredTasks: ReturnType<typeof vi.fn>;
-  getDailyHistory: ReturnType<typeof vi.fn>;
-  getProjectTasks: ReturnType<typeof vi.fn>;
-  getProjectDocuments: ReturnType<typeof vi.fn>;
-  getProjectLegacySessions: ReturnType<typeof vi.fn>;
-  getTaskRuns: ReturnType<typeof vi.fn>;
-} {
-  return {
-    getToday: vi.fn(async () => null),
-    getProject: vi.fn(async () => null),
-    getStarredTasks: vi.fn(async () => ({ items: [], next_cursor: null })),
-    getDailyHistory: vi.fn(async () => ({ dates: [] })),
-    getProjectTasks: vi.fn(async () => null),
-    getProjectDocuments: vi.fn(async () => null),
-    getProjectLegacySessions: vi.fn(async () => ({ items: [], next_cursor: null })),
-    getTaskRuns: vi.fn(async () => null),
-  };
-}
-
-function starredTaskOrderDouble() {
-  return {
-    moveStarredTask: vi.fn(async () => ({ pageVersion: 2, changed: true })),
-  };
-}
-
-function dailyPageServiceDouble() {
-  return {
-    getDailyPage: vi.fn().mockResolvedValue({
-      page: page("daily"),
-      created: false,
-    }),
-  };
-}
-
-function cookieUserResolver() {
-  return vi.fn(async (request: FastifyRequest) =>
-    request.headers.cookie === browserCookie
-      ? { email: "user@example.com" }
-      : null);
-}
-
-function page(id: string) {
-  return {
-    id,
-    title: id,
-    daily_date: null,
-    version: 1,
-    archived: false,
-    metadata: {},
-    created_at: "2026-07-14T00:00:00.000Z",
-    updated_at: "2026-07-14T00:00:00.000Z",
-  };
-}

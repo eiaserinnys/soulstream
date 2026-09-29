@@ -7,7 +7,7 @@ import {
 
 describe("board projection host operations", () => {
   it("validates and dispatches board items scoped to a folder and container", async () => {
-    const container = { containerKind: "task" as const, containerId: "task-1" };
+    const container = {  folderId: "task-1" };
     const input = { folderId: "root", container };
     const schema = getBoardProjectionHostOperationSchema("get-board-items-by-container");
     const getBoardItemsByContainer = vi.fn(async () => [{ id: "markdown:doc-1" }]);

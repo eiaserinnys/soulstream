@@ -343,7 +343,7 @@ function job(overrides: Partial<RecurringJob> = {}): RecurringJob {
     nodeId: "node-a",
     agentId: "roselin",
     modelPreset: null,
-    container: { kind: "folder", id: "folder-a" },
+
     folderId: "folder-a",
     enabled: true,
     archivedAt: null,
@@ -375,7 +375,7 @@ function run(overrides: Partial<RecurringJobRun> = {}): RecurringJobRun {
       nodeId: "node-a",
       agentId: "roselin",
       modelPreset: null,
-      container: { kind: "folder", id: "folder-a" },
+
       folderId: "folder-a",
       executionCaller: { source: "agent" },
       lateRunWindowSeconds: 1800,

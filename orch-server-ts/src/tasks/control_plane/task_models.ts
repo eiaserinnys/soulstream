@@ -1,59 +1,59 @@
 import type {
-  TaskAssigneeFields,
-  TaskOperationRow,
-  TaskOperationActorKind,
-  TaskOperationTargetKind,
+  ChecklistAssigneeFields,
+  FolderOperationRow,
+  FolderOperationActorKind,
+  FolderOperationTargetKind,
 } from "./task_types.js";
 import { recordFromDb } from "./repository_helpers.js";
 
-export class TaskVersionConflict extends Error {
+export class ChecklistVersionConflict extends Error {
   readonly statusCode = 409;
 
   constructor(
-    public readonly targetKind: TaskOperationTargetKind,
+    public readonly targetKind: FolderOperationTargetKind,
     public readonly targetId: string,
     public readonly expectedVersion: number,
     public readonly actualVersion: number,
   ) {
     super(
-      `task ${targetKind} version conflict: ${targetId} expected version ${expectedVersion}, actual version ${actualVersion}`,
+      `folder ${targetKind} version conflict: ${targetId} expected version ${expectedVersion}, actual version ${actualVersion}`,
     );
-    this.name = "TaskVersionConflict";
+    this.name = "ChecklistVersionConflict";
   }
 }
 
-export class EmptyTaskPatchError extends Error {
+export class EmptyFolderPatchError extends Error {
   readonly statusCode = 422;
 
-  constructor(public readonly targetKind: TaskOperationTargetKind) {
-    super(`task ${targetKind} patch requires at least one field to update`);
-    this.name = "EmptyTaskPatchError";
+  constructor(public readonly targetKind: FolderOperationTargetKind) {
+    super(`folder ${targetKind} patch requires at least one field to update`);
+    this.name = "EmptyFolderPatchError";
   }
 }
 
-export function assertTaskPatchHasFields(
-  targetKind: TaskOperationTargetKind,
+export function assertFolderPatchHasFields(
+  targetKind: FolderOperationTargetKind,
   fields: Record<string, unknown>,
 ): void {
   if (Object.values(fields).every((value) => value === undefined)) {
-    throw new EmptyTaskPatchError(targetKind);
+    throw new EmptyFolderPatchError(targetKind);
   }
 }
 
-export interface TaskAssigneeInput {
-  kind: TaskAssigneeFields["assignee_kind"];
+export interface ChecklistAssigneeInput {
+  kind: ChecklistAssigneeFields["assignee_kind"];
   agentId?: string | null;
   sessionId?: string | null;
   userId?: string | null;
 }
 
-export interface AppendTaskOperationTxParams {
+export interface AppendFolderOperationTxParams {
   id: string;
-  taskId: string;
-  targetKind: TaskOperationTargetKind;
+  folderId: string;
+  targetKind: FolderOperationTargetKind;
   targetId: string;
   operationType: string;
-  actorKind: TaskOperationActorKind;
+  actorKind: FolderOperationActorKind;
   actorSessionId?: string | null;
   actorEventId: number | null;
   actorUserId?: string | null;
@@ -63,8 +63,8 @@ export interface AppendTaskOperationTxParams {
 }
 
 export function assigneeToFields(
-  assignee?: TaskAssigneeInput | null,
-): TaskAssigneeFields {
+  assignee?: ChecklistAssigneeInput | null,
+): ChecklistAssigneeFields {
   if (!assignee?.kind) {
     return {
       assignee_kind: null,
@@ -87,7 +87,7 @@ export function cleanPatch<T extends Record<string, unknown>>(fields: T): T {
   ) as T;
 }
 
-export function normalizeOperation(row: TaskOperationRow): TaskOperationRow {
+export function normalizeOperation(row: FolderOperationRow): FolderOperationRow {
   return { ...row, payload_json: recordFromDb(row.payload_json) };
 }
 

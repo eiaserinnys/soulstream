@@ -29,7 +29,6 @@ export type CreateRecurringSessionInput = {
   readonly agentId: string;
   readonly modelPreset: string | null;
   readonly folderId: string;
-  readonly container: { readonly kind: "folder" | "task"; readonly id: string };
   readonly callerInfo: Readonly<Record<string, unknown>>;
 };
 
@@ -68,7 +67,7 @@ export async function createRecurringSession(
     profile: input.agentId,
     ...(input.modelPreset === null ? {} : { model_preset: input.modelPreset }),
     folderId: input.folderId,
-    container: input.container,
+
     caller_info: { ...input.callerInfo },
   };
   const routed = options.router.createSession(command, {

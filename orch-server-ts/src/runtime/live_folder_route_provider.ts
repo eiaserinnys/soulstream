@@ -17,10 +17,6 @@ export type LiveFolderProvider = FolderRouteProvider &
     listSessionAssignmentsByIds: (
       sessionIds: readonly string[],
     ) => Promise<Record<string, SessionAssignmentRecord>>;
-    deleteFolderWithCatalogDelta: (folderId: string) => Promise<{
-      sessionsDelta: Record<string, SessionAssignmentRecord>;
-      deletedBoardItemIds: string[];
-    }>;
     listBoardItemIdsForSessionDeletion: (sessionId: string) => Promise<string[]>;
   };
 
@@ -62,9 +58,6 @@ export function createLiveFolderProvider(
       `;
       return Object.fromEntries(rows.flatMap(sessionAssignmentEntry));
     },
-    async deleteFolderWithCatalogDelta(folderId) {
-      return await deleteFolderAndCollectCatalogDelta(sqlResolver, folderId);
-    },
     async listBoardItemIdsForSessionDeletion(sessionId) {
       const sql = await sqlResolver.resolveSql();
       const rows = await sql`
@@ -76,52 +69,6 @@ export function createLiveFolderProvider(
         const id = stringOrNull(row.id);
         return id === null ? [] : [id];
       });
-    },
-    async createFolder(name, sortOrder, options) {
-      const folderId = randomUUID();
-      await validateFolderParentUpdates(sqlResolver, new Map([
-        [folderId, options.parentFolderId],
-      ]));
-      const sql = await sqlResolver.resolveSql();
-      await sql`
-        SELECT folder_create(${folderId}, ${name}, ${sortOrder}, ${options.parentFolderId})
-      `;
-      return {
-        id: folderId,
-        name,
-        sortOrder,
-        parentFolderId: options.parentFolderId,
-        settings: {},
-      };
-    },
-    async updateFolder(folderId, update) {
-      const patch = folderUpdatePatch(update);
-      if (patch === null) return;
-      if (hasOwn(update, "parentFolderId")) {
-        await validateFolderParentUpdates(sqlResolver, new Map([
-          [folderId, update.parentFolderId ?? null],
-        ]));
-      }
-      const sql = await sqlResolver.resolveSql();
-      await sql`
-        SELECT folder_update(${folderId}, ${patch.columns}, ${patch.values})
-      `;
-    },
-    async deleteFolder(folderId) {
-      await deleteFolderAndCollectCatalogDelta(sqlResolver, folderId);
-    },
-    async reorderFolders(items) {
-      const parentUpdates = folderReorderParentUpdates(items);
-      if (parentUpdates.size > 0) {
-        await validateFolderParentUpdates(sqlResolver, parentUpdates);
-      }
-      const sql = await sqlResolver.resolveSql();
-      for (const item of items) {
-        const patch = folderReorderPatch(item);
-        await sql`
-          SELECT folder_update(${item.id}, ${patch.columns}, ${patch.values})
-        `;
-      }
     },
     async getFolderCounts() {
       const sql = await sqlResolver.resolveSql();
@@ -140,69 +87,6 @@ export function createLiveFolderProvider(
   };
 }
 
-type TransactionCapableLivePostgresSql = LivePostgresSql & {
-  readonly begin: <T>(
-    callback: (sql: LivePostgresSql) => Promise<T>,
-  ) => Promise<T>;
-};
-
-async function deleteFolderAndCollectCatalogDelta(
-  sqlResolver: LiveDbSqlResolver,
-  folderId: string,
-): Promise<{
-  sessionsDelta: Record<string, SessionAssignmentRecord>;
-  deletedBoardItemIds: string[];
-}> {
-  const sql = await sqlResolver.resolveSql();
-  assertTransactionSql(sql);
-  return await sql.begin(async (transaction) => {
-    const sessionRows = await transaction`
-      UPDATE sessions
-      SET folder_id = NULL
-      WHERE folder_id = ${folderId}
-      RETURNING session_id, display_name
-    `;
-    await transaction`
-      UPDATE folders
-      SET parent_folder_id = NULL
-      WHERE parent_folder_id = ${folderId}
-    `;
-    const boardItemRows = await transaction`
-      DELETE FROM board_items
-      WHERE folder_id = ${folderId}
-         OR (item_type = 'subfolder' AND item_id = ${folderId})
-      RETURNING id
-    `;
-    await transaction`
-      UPDATE folders
-      SET archived = TRUE
-      WHERE id = ${folderId}
-    `;
-    return {
-      sessionsDelta: Object.fromEntries(sessionRows.flatMap((row) => {
-        const sessionId = stringOrNull(row.session_id ?? row.sessionId);
-        if (sessionId === null) return [];
-        return [[sessionId, {
-          folderId: null,
-          displayName: stringOrNull(row.display_name ?? row.displayName),
-        }]];
-      })),
-      deletedBoardItemIds: boardItemRows.flatMap((row) => {
-        const id = stringOrNull(row.id);
-        return id === null ? [] : [id];
-      }),
-    };
-  });
-}
-
-function assertTransactionSql(
-  sql: LivePostgresSql,
-): asserts sql is TransactionCapableLivePostgresSql {
-  if (typeof (sql as Partial<TransactionCapableLivePostgresSql>).begin !== "function") {
-    throw new Error("folder deletion requires postgres.js begin()");
-  }
-}
-
 function serializeFolderRow(row: Record<string, unknown>): FolderRecord[] {
   const id = stringOrNull(row.id);
   if (id === null) return [];
@@ -213,6 +97,8 @@ function serializeFolderRow(row: Record<string, unknown>): FolderRecord[] {
     parentFolderId: stringOrNull(row.parent_folder_id ?? row.parentFolderId),
     projectPageId: stringOrNull(row.project_page_id ?? row.projectPageId),
     settings: objectValue(row.settings),
+    archived: Boolean(row.archived), checklistEnabled: Boolean(row.checklist_enabled),
+    status: row.status, version: Number(row.version),
   };
   const createdAt = timestampString(row.created_at ?? row.createdAt);
   if (createdAt !== undefined) folder.createdAt = createdAt;
@@ -230,106 +116,6 @@ function sessionAssignmentEntry(
     folderId: stringOrNull(row.folder_id ?? row.folderId),
     displayName: stringOrNull(row.display_name ?? row.displayName),
   }]];
-}
-
-type FolderUpdatePatch = {
-  readonly columns: string[];
-  readonly values: Array<string | null>;
-};
-
-function folderUpdatePatch(update: FolderUpdateInput): FolderUpdatePatch | null {
-  const columns: string[] = [];
-  const values: Array<string | null> = [];
-  if (typeof update.name === "string") {
-    columns.push("name");
-    values.push(update.name);
-  }
-  if (typeof update.sortOrder === "number") {
-    columns.push("sort_order");
-    values.push(String(update.sortOrder));
-  }
-  if (update.settings !== undefined && update.settings !== null) {
-    columns.push("settings");
-    values.push(JSON.stringify(update.settings));
-  }
-  if (hasOwn(update, "parentFolderId")) {
-    columns.push("parent_folder_id");
-    values.push(update.parentFolderId ?? null);
-  }
-  return columns.length === 0 ? null : { columns, values };
-}
-
-function folderReorderParentUpdates(
-  items: readonly FolderReorderInput[],
-): Map<string, string | null> {
-  const parentUpdates = new Map<string, string | null>();
-  for (const item of items) {
-    if (hasOwn(item, "parentFolderId")) {
-      parentUpdates.set(item.id, item.parentFolderId ?? null);
-    }
-  }
-  return parentUpdates;
-}
-
-function folderReorderPatch(item: FolderReorderInput): FolderUpdatePatch {
-  const columns = ["sort_order"];
-  const values: Array<string | null> = [String(item.sortOrder)];
-  if (hasOwn(item, "parentFolderId")) {
-    columns.push("parent_folder_id");
-    values.push(item.parentFolderId ?? null);
-  }
-  return { columns, values };
-}
-
-async function validateFolderParentUpdates(
-  sqlResolver: LiveDbSqlResolver,
-  parentUpdates: ReadonlyMap<string, string | null>,
-): Promise<void> {
-  if ([...parentUpdates.values()].every((parentId) => parentId === null)) return;
-  const sql = await sqlResolver.resolveSql();
-  const rows = await sql`
-    SELECT id, parent_folder_id FROM folders WHERE archived = FALSE
-  `;
-  const existingParents = new Map<string, string | null>();
-  for (const row of rows) {
-    const id = stringOrNull(row.id);
-    if (id !== null) {
-      existingParents.set(id, stringOrNull(row.parent_folder_id ?? row.parentFolderId));
-    }
-  }
-  for (const [folderId, parentFolderId] of parentUpdates) {
-    assertFolderParent(folderId, parentFolderId, parentUpdates, existingParents);
-  }
-}
-
-function assertFolderParent(
-  folderId: string,
-  parentFolderId: string | null,
-  parentUpdates: ReadonlyMap<string, string | null>,
-  existingParents: ReadonlyMap<string, string | null>,
-): void {
-  if (parentFolderId !== null && !existingParents.has(parentFolderId)) {
-    throw new FolderRouteError(
-      "FOLDER_PARENT_NOT_FOUND",
-      "Parent folder not found",
-      400,
-    );
-  }
-  const seen = new Set<string>([folderId]);
-  let current: string | null = parentFolderId;
-  while (current !== null) {
-    if (current === folderId || seen.has(current)) {
-      throw new FolderRouteError(
-        "FOLDER_PARENT_CYCLE",
-        "folder parent cycle",
-        400,
-      );
-    }
-    seen.add(current);
-    current = parentUpdates.has(current)
-      ? parentUpdates.get(current) ?? null
-      : existingParents.get(current) ?? null;
-  }
 }
 
 function stringOrNull(value: unknown): string | null {

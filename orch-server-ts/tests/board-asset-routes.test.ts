@@ -28,13 +28,13 @@ const boardItems = [
   {
     id: "task:rb-1",
     folderId: "folder-a",
-    itemType: "task",
+    itemType: "subfolder",
     itemId: "rb-1",
   },
   {
     id: "task:rb-empty-folder",
     folderId: "",
-    itemType: "task",
+    itemType: "subfolder",
     itemId: "rb-empty-folder",
   },
   {
@@ -225,9 +225,7 @@ describe("board asset route harness", () => {
           name: "photo.png",
           mimeType: "image/png",
           byteSize: 123,
-          containerKind: "task",
-          containerId: "rb-1",
-        },
+          },
       ],
     ]);
 
@@ -309,9 +307,7 @@ describe("board asset route harness", () => {
           x: 41,
           y: 79,
           parts: [],
-          containerKind: "task",
-          containerId: "rb-1",
-        },
+          },
       ],
     ]);
 

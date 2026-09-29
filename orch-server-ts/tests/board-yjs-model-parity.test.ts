@@ -61,7 +61,7 @@ describe("board_yjs_model", () => {
       boardItems: [{
         id: "task:rb-1",
         folderId: "folder-1",
-        itemType: "task",
+        itemType: "subfolder",
         itemId: "rb-1",
         x: 60,
         y: 80,
@@ -77,7 +77,7 @@ describe("board_yjs_model", () => {
     expect(replica.boardItems).toEqual([
       expect.objectContaining({
         id: "task:rb-1",
-        itemType: "task",
+        itemType: "subfolder",
         itemId: "rb-1",
         metadata: expect.objectContaining({ title: "Launch task" }),
       }),
@@ -89,9 +89,7 @@ describe("board_yjs_model", () => {
 
     const boardItem = upsertCustomViewYjsBoardItem(doc, {
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, {
+      }, {
       boardItemId: "custom_view:cv-1",
       customViewId: "cv-1",
       title: "Progress panel",
@@ -104,10 +102,8 @@ describe("board_yjs_model", () => {
     expect(boardItem).toMatchObject({
       id: "custom_view:cv-1",
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
       membershipKind: "primary",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
       itemType: "custom_view",
       itemId: "cv-1",
       x: 120,
@@ -120,25 +116,19 @@ describe("board_yjs_model", () => {
     });
     expect(JSON.stringify(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, doc))).not.toContain("<section>");
+      }, doc))).not.toContain("<section>");
   });
 
   it("task session membership과 source task item id를 Y-doc snapshot으로 round-trip", () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
       boardItems: [{
         id: "session:s1",
         folderId: "folder-1",
-        containerKind: "task",
-        containerId: "rb-1",
         itemType: "session",
         itemId: "s1",
         membershipKind: "primary",
-        sourceTaskItemId: "task-item-1",
+        sourceChecklistItemId: "task-item-1",
         x: 280,
         y: 160,
         metadata: {},
@@ -150,18 +140,14 @@ describe("board_yjs_model", () => {
 
     const replica = readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, doc);
+      }, doc);
 
     expect(replica.boardItems).toEqual([
       expect.objectContaining({
         id: "session:s1",
         folderId: "folder-1",
-        containerKind: "task",
-        containerId: "rb-1",
         membershipKind: "primary",
-        sourceTaskItemId: "task-item-1",
+        sourceChecklistItemId: "task-item-1",
       }),
     ]);
   });
@@ -298,9 +284,7 @@ describe("board_yjs_model", () => {
 
     const created = createMarkdownYjsDocument(doc, {
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, {
+      }, {
       documentId: "doc-1",
       title: "Task note",
       body: "body",
@@ -311,21 +295,15 @@ describe("board_yjs_model", () => {
     expect(created.boardItem).toMatchObject({
       id: "markdown:doc-1",
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
       membershipKind: "primary",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
     });
     expect(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, doc).boardItems).toEqual([
+      }, doc).boardItems).toEqual([
       expect.objectContaining({
         id: "markdown:doc-1",
-        containerKind: "task",
-        containerId: "rb-1",
-      }),
+        }),
     ]);
   });
 
@@ -342,9 +320,7 @@ describe("board_yjs_model", () => {
 
     const moved = readMovableBoardYjsItem(sourceDoc, "markdown:doc-1", {
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, { x: 200, y: 240 });
+      }, { x: 200, y: 240 });
 
     expect(moved).not.toBeNull();
     upsertMovedBoardYjsItem(targetDoc, moved!);
@@ -356,15 +332,11 @@ describe("board_yjs_model", () => {
     });
     expect(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, targetDoc)).toEqual({
+      }, targetDoc)).toEqual({
       boardItems: [
         expect.objectContaining({
           id: "markdown:doc-1",
           folderId: "folder-1",
-          containerKind: "task",
-          containerId: "rb-1",
           x: 200,
           y: 240,
         }),
@@ -394,9 +366,7 @@ describe("board_yjs_model", () => {
 
     const moved = readMovableBoardYjsItem(sourceDoc, "session:s1", {
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    });
+      });
 
     expect(moved).not.toBeNull();
     upsertMovedBoardYjsItem(targetDoc, moved!);
@@ -407,9 +377,7 @@ describe("board_yjs_model", () => {
     ]);
     expect(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, targetDoc).boardItems).toEqual([]);
+      }, targetDoc).boardItems).toEqual([]);
   });
 
   it("document name은 folder id와 양방향 매핑", () => {
@@ -417,20 +385,14 @@ describe("board_yjs_model", () => {
     expect(name).toBe("board-folder:folder-1");
     expect(getFolderIdFromBoardYjsDocumentName(name)).toBe("folder-1");
     expect(getFormalBoardYjsDocumentName({
-      containerKind: "folder",
-      containerId: "folder-1",
-    })).toBe("board:folder:folder-1");
+      })).toBe("board:folder:folder-1");
     expect(normalizeBoardYjsDocumentName("board:folder:folder-1")).toBe(name);
-    expect(parseBoardYjsDocumentName("board:task:rb-1")).toEqual({
-      containerKind: "task",
-      containerId: "rb-1",
-    });
+    expect(parseBoardYjsDocumentName("board-folder:rb-1")).toEqual({
+      });
     expect(parseBoardYjsDocumentName("board:runbook:rb-1")).toEqual({
-      containerKind: "task",
-      containerId: "rb-1",
-    });
+      });
     expect(normalizeBoardYjsDocumentName("board:runbook:rb-1"))
-      .toBe("board:task:rb-1");
+      .toBe("board-folder:rb-1");
     expect(getFolderIdFromBoardYjsDocumentName("/yjs/folder-1")).toBeNull();
   });
 
@@ -445,27 +407,20 @@ describe("board_yjs_model", () => {
     });
     expect(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, doc).boardItems[0]).toMatchObject({
+      }, doc).boardItems[0]).toMatchObject({
       id: "runbook:rb-1",
-      itemType: "task",
-      sourceTaskItemId: "item-1",
-      containerKind: "task",
-    });
+      itemType: "subfolder",
+      sourceChecklistItemId: "item-1",
+      });
   });
 
   it("task 컨테이너 snapshot은 같은 folderId 안에서도 task membership만 seed한다", () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
       boardItems: [
         {
           id: "task-child",
           folderId: "folder-1",
-          containerKind: "task",
-          containerId: "rb-1",
           itemType: "markdown",
           itemId: "doc-1",
           x: 0,
@@ -475,9 +430,7 @@ describe("board_yjs_model", () => {
         {
           id: "folder-tile",
           folderId: "folder-1",
-          containerKind: "folder",
-          containerId: "folder-1",
-          itemType: "task",
+          itemType: "subfolder",
           itemId: "rb-1",
           x: 100,
           y: 0,
@@ -491,17 +444,13 @@ describe("board_yjs_model", () => {
 
     const replica = readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "task",
-      containerId: "rb-1",
-    }, doc);
+      }, doc);
 
     expect(replica.boardItems).toEqual([
       expect.objectContaining({
         id: "task-child",
         folderId: "folder-1",
-        containerKind: "task",
-        containerId: "rb-1",
-      }),
+        }),
     ]);
   });
 });

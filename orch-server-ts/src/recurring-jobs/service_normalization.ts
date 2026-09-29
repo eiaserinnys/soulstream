@@ -1,7 +1,6 @@
 import { compileRecurringSchedule, nextRecurringOccurrences } from "./cron.js";
 import {
   compileSchedule,
-  normalizedContainer,
   normalizedModelPreset,
   onceTimezone,
   parseRunAt,
@@ -18,7 +17,7 @@ import type {
 
 export type ValidateRecurringJobTarget = (input: {
   readonly actor: RecurringJobActor;
-  readonly target: Pick<RecurringJob, "nodeId" | "agentId" | "modelPreset" | "container" | "folderId">;
+  readonly target: Pick<RecurringJob, "nodeId" | "agentId" | "modelPreset" | "folderId">;
   readonly requireAvailableTarget: boolean;
 }) => Promise<void>;
 
@@ -32,7 +31,6 @@ export type NormalizedRecurringJobCreate = {
   nodeId: string;
   agentId: string;
   modelPreset: string | null;
-  container: RecurringJob["container"];
   folderId: string;
   lateRunWindowSeconds: number;
   schedule: ReturnType<typeof compileRecurringSchedule> | null;
@@ -68,7 +66,7 @@ export async function normalizeRecurringJobCreate(
     nodeId: requiredText(input.nodeId, "node_id"),
     agentId: requiredText(input.agentId, "agent_id"),
     modelPreset: normalizedModelPreset(input.modelPreset),
-    container: normalizedContainer(input.container),
+
     folderId: requiredText(input.folderId, "folder_id"),
     lateRunWindowSeconds: positiveLateRunWindowSeconds(input.lateRunWindowSeconds ?? 1_800),
     schedule,
@@ -112,7 +110,7 @@ export async function mergeRecurringJobUpdate(
     nodeId: input.nodeId === undefined ? current.nodeId : requiredText(input.nodeId, "node_id"),
     agentId: input.agentId === undefined ? current.agentId : requiredText(input.agentId, "agent_id"),
     modelPreset,
-    container: input.container === undefined ? current.container : normalizedContainer(input.container),
+
     folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
     lateRunWindowSeconds: positiveLateRunWindowSeconds(
       input.lateRunWindowSeconds === undefined ? current.lateRunWindowSeconds : input.lateRunWindowSeconds,

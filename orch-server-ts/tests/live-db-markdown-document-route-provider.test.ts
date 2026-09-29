@@ -102,49 +102,7 @@ describe("live DB markdown document route provider", () => {
     });
   });
 
-  it("uses the board item provider indexed lookup for task container folders", async () => {
-    let cacheCalls = 0;
-    const harness = createSqlHarness((text) => {
-      if (text.includes("board_yjs_catalog_cache")) {
-        cacheCalls += 1;
-        return cacheCalls === 1 ? [{ folder_id: "folder-a" }] : [];
-      }
-      return [];
-    });
-    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
 
-    await expect(
-      repository.markdownDocumentRouteProvider.resolveBoardContainerFolderId({
-        kind: "folder",
-        id: "folder-direct",
-      }),
-    ).resolves.toBe("folder-direct");
-    await expect(
-      repository.markdownDocumentRouteProvider.resolveBoardContainerFolderId({
-        kind: "task",
-        id: "task-1",
-      }),
-    ).resolves.toBe("folder-a");
-    await expect(
-      repository.markdownDocumentRouteProvider.resolveBoardContainerFolderId({
-        kind: "task",
-        id: "missing",
-      }),
-    ).rejects.toMatchObject(
-      new MarkdownDocumentRouteError(
-        "BOARD_CONTAINER_NOT_FOUND",
-        "Task board container not found",
-        404,
-      ),
-    );
-    const taskCalls = harness.calls.filter((call) =>
-      call.text.includes("board_yjs_catalog_cache")
-    );
-    expect(taskCalls).toHaveLength(2);
-    expect(taskCalls[0]?.text).toContain("container_kind = 'task'");
-    expect(taskCalls[0]?.text).not.toContain("board_item_get_all");
-    expect(taskCalls[0]?.values).toEqual(["task-1"]);
-  });
 });
 
 function folderRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {

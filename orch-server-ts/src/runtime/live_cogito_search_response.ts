@@ -160,12 +160,7 @@ function serializeNavigationRow(
     folder_id: stringValue(row.folder_id) ?? "",
     project_page_id: stringValue(row.project_page_id) ?? "",
   };
-  if (common.kind !== "task") return common;
-  return {
-    ...common,
-    board_item_id: stringValue(row.board_item_id) ?? "",
-    task_page_id: stringValue(row.task_page_id) ?? "",
-  };
+  return common;
 }
 
 function scoreValue(result: CogitoSearchResult): number {

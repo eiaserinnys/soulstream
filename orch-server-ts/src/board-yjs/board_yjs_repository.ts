@@ -19,14 +19,6 @@ import {
 } from "./board_yjs_sql.js";
 import { syncBoardYjsReplicaWithSql } from "./board_yjs_replica_sync.js";
 import {
-  type BoardYjsRawDocument,
-  type BoardYjsRunbookMigrationCommit,
-} from "./board_yjs_persistence.js";
-import {
-  BoardYjsMigrationRevisionConflictError,
-  loadExactRawBoardYjsDocument,
-} from "./board_yjs_raw_document.js";
-import {
   BOARD_YJS_SNAPSHOT_CAS_MAX_ATTEMPTS,
   BoardYjsSnapshotCasExhaustedError,
   compareAndSwapBoardYjsSnapshotWithSql,
@@ -36,8 +28,7 @@ import {
 } from "./board_yjs_snapshot_store.js";
 import type {
   BoardItemType,
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
+  BoardYjsFolderScope,
   BoardYjsReplica,
   BoardYjsSeed,
   CatalogBoardItemRow,
@@ -49,7 +40,6 @@ export class BoardYjsRepository {
 
   constructor(
     resolver: LiveDbSqlResolver,
-    private readonly migrationTransactionSql: BoardYjsQuerySql | null = null,
   ) {
     this.sqlResolver = new BoardYjsSqlResolver(resolver);
   }
@@ -62,110 +52,6 @@ export class BoardYjsRepository {
     const sql = await this.sqlResolver.resolveSql();
     const canonicalName = canonicalBoardYjsDocumentName(documentName);
     return await loadBoardYjsSnapshotWithSql(sql, canonicalName);
-  }
-
-  async loadRawBoardYjsDocument(documentName: string): Promise<BoardYjsRawDocument | null> {
-    if (this.migrationTransactionSql) {
-      return await loadExactRawBoardYjsDocument(
-        this.migrationTransactionSql,
-        documentName,
-        false,
-      );
-    }
-    const sql = await this.sqlResolver.resolveSql();
-    return await sql.begin(async (transaction) => {
-      await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
-      return await loadExactRawBoardYjsDocument(transaction, documentName, false);
-    });
-  }
-
-  async commitBoardYjsRunbookMigration(input: BoardYjsRunbookMigrationCommit): Promise<void> {
-    await this.withMigrationTransaction(async (transaction) => {
-      const names = [...new Set([
-        input.sourceDocumentName,
-        input.canonicalDocumentName,
-      ])].sort();
-      const locked = new Map<string, BoardYjsRawDocument | null>();
-      for (const name of names) {
-        locked.set(name, await loadExactRawBoardYjsDocument(transaction, name, true));
-      }
-
-      const source = locked.get(input.sourceDocumentName) ?? null;
-      if (source?.revision !== input.expectedSourceRevision) {
-        throw new BoardYjsMigrationRevisionConflictError(input.sourceDocumentName);
-      }
-      const canonical = locked.get(input.canonicalDocumentName) ?? null;
-      if (input.sourceDocumentName !== input.canonicalDocumentName &&
-        (canonical?.revision ?? null) !== input.expectedCanonicalRevision) {
-        throw new BoardYjsMigrationRevisionConflictError(input.canonicalDocumentName);
-      }
-
-      if (input.preserveCanonical) {
-        if (!canonical || input.sourceDocumentName === input.canonicalDocumentName) {
-          throw new Error("preserveCanonical requires a distinct canonical document");
-        }
-        await syncBoardYjsReplicaWithSql(
-          transaction,
-          input.scope,
-          input.replica,
-          input.canonicalDocumentName,
-        );
-      } else if (input.sourceDocumentName === input.canonicalDocumentName) {
-        await transaction`
-          UPDATE board_yjs_documents
-          SET snapshot = ${Buffer.from(input.canonicalSnapshot)}, updated_at = NOW()
-          WHERE name = ${input.canonicalDocumentName}
-        `;
-        await syncBoardYjsReplicaWithSql(
-          transaction,
-          input.scope,
-          input.replica,
-          input.canonicalDocumentName,
-        );
-      } else {
-        const inserted = await transaction<readonly { name: string }[]>`
-          INSERT INTO board_yjs_documents (name, snapshot, updated_at)
-          VALUES (
-            ${input.canonicalDocumentName},
-            ${Buffer.from(input.canonicalSnapshot)},
-            NOW()
-          )
-          ON CONFLICT (name) DO NOTHING
-          RETURNING name
-        `;
-        if (inserted[0]?.name !== input.canonicalDocumentName) {
-          throw new BoardYjsMigrationRevisionConflictError(input.canonicalDocumentName);
-        }
-        await syncBoardYjsReplicaWithSql(
-          transaction,
-          input.scope,
-          input.replica,
-          input.canonicalDocumentName,
-        );
-      }
-
-      if (input.sourceDocumentName !== input.canonicalDocumentName) {
-        await transaction`
-          DELETE FROM board_yjs_documents WHERE name = ${input.sourceDocumentName}
-        `;
-      }
-    });
-  }
-
-  async runBoardYjsRunbookMigrationTransaction<T>(
-    operation: (repository: BoardYjsRepository) => Promise<T>,
-  ): Promise<T> {
-    if (this.migrationTransactionSql) {
-      throw new Error("nested board Y.Doc migration transactions are not allowed");
-    }
-    const sql = await this.sqlResolver.resolveSql();
-    return await sql.begin(async (transaction) => {
-      await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
-      return await operation(new BoardYjsRepository({
-        resolveSql: async () => transaction as unknown as LivePostgresSql,
-        close: async () => undefined,
-      }, transaction));
-    });
   }
 
   async storeBoardYjsSnapshot(
@@ -186,42 +72,8 @@ export class BoardYjsRepository {
     );
   }
 
-  async resolveBoardYjsContainerScope(
-    containerInput: string | BoardYjsContainerRef | BoardYjsContainerScope,
-  ): Promise<BoardYjsContainerScope | null> {
-    if (typeof containerInput !== "string" && "folderId" in containerInput) {
-      return containerInput;
-    }
-    const container = normalizeBoardYjsContainerInput(containerInput);
-    if (container.containerKind === "folder") {
-      return {
-        folderId: container.containerId,
-        containerKind: "folder",
-        containerId: container.containerId,
-      };
-    }
-    const sql = this.migrationTransactionSql ?? await this.sqlResolver.resolveSql();
-    const rows = await sql<readonly { folder_id: string }[]>`
-      SELECT bi.folder_id
-      FROM tasks r
-      JOIN board_items bi ON bi.id = r.board_item_id
-      WHERE r.id = ${container.containerId}
-      LIMIT 1
-    `;
-    const folderId = rows[0]?.folder_id;
-    return folderId
-      ? { folderId, containerKind: container.containerKind, containerId: container.containerId }
-      : null;
-  }
-
-  private async withMigrationTransaction<T>(
-    operation: (transaction: BoardYjsQuerySql) => Promise<T>,
-  ): Promise<T> {
-    if (this.migrationTransactionSql) {
-      return await operation(this.migrationTransactionSql);
-    }
-    const sql = await this.sqlResolver.resolveSql();
-    return await sql.begin(operation);
+  async resolveBoardYjsFolderScope(input: string | BoardYjsFolderScope): Promise<BoardYjsFolderScope> {
+    return typeof input === "string" ? { folderId: input } : input;
   }
 
   async markBoardYjsDocumentSynced(documentName: string): Promise<void> {
@@ -234,16 +86,15 @@ export class BoardYjsRepository {
   }
 
   async loadBoardYjsSeed(
-    containerInput: string | BoardYjsContainerRef | BoardYjsContainerScope,
+    containerInput: string | BoardYjsFolderScope,
   ): Promise<BoardYjsSeed> {
-    const scope = await this.resolveBoardYjsContainerScope(containerInput);
+    const scope = await this.resolveBoardYjsFolderScope(containerInput);
     if (!scope) return { boardItems: [], markdownDocuments: [] };
     const sql = await this.sqlResolver.resolveSql();
-    await sql`SELECT board_seed_items(${scope.containerKind}, ${scope.containerId})`;
+    await sql`SELECT board_seed_items(${scope.folderId})`;
     const rows = await sql<readonly BoardItemDbRow[]>`
       SELECT * FROM board_item_get_all()
-      WHERE container_kind = ${scope.containerKind}
-        AND container_id = ${scope.containerId}
+      WHERE folder_id = ${scope.folderId}
     `;
     const boardItems = rows.map(toCatalogBoardItemRow);
     const markdownIds = boardItems
@@ -258,11 +109,11 @@ export class BoardYjsRepository {
   }
 
   async syncBoardYjsReplica(
-    containerInput: string | BoardYjsContainerRef | BoardYjsContainerScope,
+    containerInput: string | BoardYjsFolderScope,
     replica: BoardYjsReplica,
     documentName?: string,
   ): Promise<void> {
-    const scope = await this.resolveBoardYjsContainerScope(containerInput);
+    const scope = await this.resolveBoardYjsFolderScope(containerInput);
     if (!scope) return;
     const canonicalName = documentName
       ? canonicalBoardYjsDocumentName(documentName)
@@ -276,47 +127,6 @@ export class BoardYjsRepository {
     });
   }
 
-  async backfillTaskBoardItemsIntoSnapshot(
-    documentName: string,
-    containerInput: string | BoardYjsContainerRef | BoardYjsContainerScope,
-    initial: BoardYjsSnapshotRecord,
-  ): Promise<BoardYjsSnapshotRecord> {
-    const scope = await this.resolveBoardYjsContainerScope(containerInput);
-    if (!scope || scope.containerKind !== "folder") return initial;
-    const sql = await this.sqlResolver.resolveSql();
-    let current = initial;
-    for (let attempt = 1; attempt <= BOARD_YJS_SNAPSHOT_CAS_MAX_ATTEMPTS; attempt += 1) {
-      const taskItems = await this.loadTaskBoardItems(sql, scope);
-      if (taskItems.length === 0) return current;
-      const doc = new Y.Doc();
-      if (current.snapshot.byteLength > 0) Y.applyUpdate(doc, current.snapshot);
-      const replica = readBoardYDocReplica(scope, doc);
-      const existingIds = new Set(replica.boardItems.map((item) => item.id));
-      const missing = taskItems.filter((item) => !existingIds.has(item.id));
-      if (missing.length === 0) return current;
-      doc.transact(() => {
-        for (const item of missing) upsertBoardYjsItem(doc, item);
-      });
-      const repaired = Y.encodeStateAsUpdate(doc);
-      const stored = await this.storeBoardYjsSnapshot(
-        documentName,
-        repaired,
-        current.revision,
-        { scope, replica: readBoardYDocReplica(scope, doc) },
-      );
-      if (stored) return stored;
-      const reloaded = await this.loadBoardYjsSnapshot(documentName);
-      if (!reloaded) {
-        throw new Error(`board Y.Doc disappeared during task backfill: ${documentName}`);
-      }
-      current = reloaded;
-    }
-    throw new BoardYjsSnapshotCasExhaustedError(
-      documentName,
-      BOARD_YJS_SNAPSHOT_CAS_MAX_ATTEMPTS,
-    );
-  }
-
   private async loadMarkdownDocuments(
     sql: BoardYjsQuerySql,
     markdownIds: string[],
@@ -325,23 +135,6 @@ export class BoardYjsRepository {
       SELECT * FROM markdown_documents WHERE id = ANY(${sql.array(markdownIds)})
     `;
     return rows.map(toMarkdownDocumentRow);
-  }
-
-  private async loadTaskBoardItems(
-    sql: BoardYjsQuerySql,
-    scope: BoardYjsContainerScope,
-  ): Promise<CatalogBoardItemRow[]> {
-    const rows = await sql<readonly BoardItemDbRow[]>`
-      SELECT
-        id, folder_id, container_kind, container_id, membership_kind,
-        source_task_item_id, item_type, item_id, x, y, metadata, created_at, updated_at
-      FROM board_items
-      WHERE container_kind = ${scope.containerKind}
-        AND container_id = ${scope.containerId}
-        AND item_type = 'task'
-      ORDER BY y ASC, x ASC, id ASC
-    `;
-    return rows.map(toCatalogBoardItemRow);
   }
 
   private async hasBoardYjsDocumentSynced(
@@ -361,10 +154,8 @@ export class BoardYjsRepository {
 interface BoardItemDbRow extends Record<string, unknown> {
   id: string;
   folder_id: string;
-  container_kind?: "folder" | "task" | null;
-  container_id?: string | null;
   membership_kind?: "primary" | "reference" | null;
-  source_task_item_id?: string | null;
+  source_checklist_item_id?: string | null;
   item_type: BoardItemType;
   item_id: string;
   x: string | number;
@@ -387,10 +178,8 @@ function toCatalogBoardItemRow(row: BoardItemDbRow): CatalogBoardItemRow {
   return {
     id: row.id,
     folderId: row.folder_id,
-    containerKind: row.container_kind ?? "folder",
-    containerId: row.container_id ?? row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceTaskItemId: row.source_task_item_id ?? null,
+    sourceChecklistItemId: row.source_checklist_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),
@@ -432,10 +221,3 @@ function canonicalBoardYjsDocumentName(documentName: string): string {
   return normalizeBoardYjsDocumentName(documentName) ?? documentName;
 }
 
-function normalizeBoardYjsContainerInput(
-  containerInput: string | BoardYjsContainerRef,
-): BoardYjsContainerRef {
-  return typeof containerInput === "string"
-    ? { containerKind: "folder", containerId: containerInput }
-    : containerInput;
-}

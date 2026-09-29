@@ -1,7 +1,6 @@
 import type { FastifyRequest } from "fastify";
 
 import type {
-  BoardContainerTarget,
   BoardItemCatalogSnapshot,
   BoardItemRecord,
   BoardItemRouteProvider,
@@ -77,18 +76,17 @@ async function prepareSessionCreate(
   const sourceSessionId = optionalString(body, "sourceSessionId");
   const bodyCallerInfo = optionalObject(body, "caller_info");
   const nodeId = optionalString(body, "nodeId") ?? "";
-  const container = validateOptionalContainer(body);
-  if (container === undefined) delete payload.container;
-  else payload.container = container;
+  if ("container" in body) throw new SessionCreateLifecycleError("INVALID_REQUEST", "folderId is required for folder placement", 422);
+  optionalString(body, "folderId");
 
   let snapshot: BoardItemCatalogSnapshot | undefined;
   delete payload.sourceSessionId;
   if (sourceSessionId) {
-    if (!isJsonObject(payload.container)) {
+    if (!stringOrNull(payload.folderId)) {
       snapshot = await options.boardItems.getCatalogSnapshot();
       const sourceItem = primarySessionBoardItem(snapshot.boardItems, sourceSessionId);
-      const inherited = inheritedTaskContainer(sourceItem);
-      if (inherited !== undefined) payload.container = inherited;
+      const inherited = stringOrNull(sourceItem?.folderId);
+      if (inherited !== null) payload.folderId = inherited;
     }
   }
 
@@ -99,7 +97,7 @@ async function prepareSessionCreate(
   });
   if (access.restricted) {
     snapshot ??= await options.boardItems.getCatalogSnapshot();
-    let folderId = await resolvePayloadFolderId(options.boardItems, payload);
+    let folderId = stringOrNull(payload.folderId);
     if (folderId === null) {
       folderId = firstAllowedSessionFolderId(access, snapshot.folders);
       if (folderId !== null) payload.folderId = folderId;
@@ -128,60 +126,6 @@ function primarySessionBoardItem(
     item.itemId === sourceSessionId &&
     (item.membershipKind ?? "primary") === "primary"
   );
-}
-
-function inheritedTaskContainer(
-  item: BoardItemRecord | undefined,
-): BoardContainerTarget | undefined {
-  if (item?.containerKind !== "task") return undefined;
-  const containerId = item.containerId;
-  if (typeof containerId !== "string" || containerId.length === 0) return undefined;
-  return { kind: "task", id: containerId };
-}
-
-async function resolvePayloadFolderId(
-  provider: BoardItemRouteProvider,
-  payload: JsonObject,
-): Promise<string | null> {
-  let folderId = stringOrNull(payload.folderId);
-  if (!isJsonObject(payload.container)) return folderId;
-  const kind = payload.container.kind;
-  const containerId = stringOrNull(payload.container.id);
-  if (kind === "folder" && containerId !== null) return containerId;
-  if (kind !== "task" || containerId === null) return folderId;
-  folderId = await provider.resolveBoardContainerFolderId({
-    kind: "task",
-    id: containerId,
-  });
-  return folderId;
-}
-
-function validateOptionalContainer(body: JsonObject): BoardContainerTarget | undefined {
-  if (body.container === undefined || body.container === null) return undefined;
-  if (!isJsonObject(body.container)) {
-    throw new SessionCreateLifecycleError(
-      "INVALID_REQUEST",
-      "container must be a JSON object or null",
-      422,
-    );
-  }
-  const kind = body.container.kind;
-  if (kind !== "folder" && kind !== "task") {
-    throw new SessionCreateLifecycleError(
-      "INVALID_REQUEST",
-      "container.kind must be folder or task",
-      422,
-    );
-  }
-  const id = body.container.id;
-  if (typeof id !== "string" || id.trim().length === 0) {
-    throw new SessionCreateLifecycleError(
-      "INVALID_REQUEST",
-      "container.id must be a non-empty string",
-      422,
-    );
-  }
-  return { kind, id: id.trim() };
 }
 
 function optionalObject(
