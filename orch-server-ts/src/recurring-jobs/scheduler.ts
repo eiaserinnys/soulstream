@@ -11,6 +11,7 @@ export type RecurringJobSchedulerOptions = {
   readonly dueLimit?: number;
   readonly activeLimit?: number;
   readonly onError?: (error: unknown, context: string) => void;
+  readonly onTick?: () => Promise<void> | void;
 };
 
 /**
@@ -103,6 +104,7 @@ export class RecurringJobScheduler {
       const activeRuns = await this.options.repository.listActiveRuns(this.activeLimit);
       for (const run of activeRuns) await this.reconcileActiveRun(run);
       await this.flushQueuedReconciliations();
+      await this.options.onTick?.();
     } catch (error) {
       this.report(error, "tick recurring jobs");
     }

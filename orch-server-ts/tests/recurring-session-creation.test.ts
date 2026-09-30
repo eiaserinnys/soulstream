@@ -51,7 +51,7 @@ describe("recurring session creation", () => {
       router: { createSession, waitForCreatedSession } as unknown as SessionCommandRouter,
       bridge: { sendPendingCommand } as unknown as SessionCommandTransportBridge,
       reconcileTimeoutMs: 0,
-    }, input())).resolves.toEqual({
+    }, { ...input(), cardId: "card-1" })).resolves.toEqual({
       state: "awaiting_session",
       resolvedModelPreset: "preset-a",
     });
@@ -62,6 +62,7 @@ describe("recurring session creation", () => {
       agentSessionId: sessionId,
       nodeId: "node-a",
       profile: "roselin",
+      cardId: "card-1",
     }), expect.any(Object));
     expect(sendPendingCommand).toHaveBeenCalledWith(routed);
     expect(waitForCreatedSession).toHaveBeenCalledWith(sessionId, "node-a", { timeoutMs: 0 });

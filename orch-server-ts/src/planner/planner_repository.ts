@@ -48,8 +48,7 @@ export class PlannerRepository implements PlannerReadProvider {
     const review = await sql`SELECT session_id FROM sessions WHERE review_state = 'needs_review'
       ORDER BY updated_at DESC, session_id DESC LIMIT 50`;
     const cards = await sql`SELECT c.* FROM cards c JOIN folders f ON f.id=c.folder_id
-      WHERE NOT c.archived AND NOT f.archived AND (c.status IN ('review','running','queued')
-        OR c.status='blocked' AND c.blocked_kind IN ('question','no_report'))
+      WHERE NOT c.archived AND NOT f.archived AND c.status IN ('review','running','queued','blocked')
       ORDER BY c.queue_position_key COLLATE "C" NULLS LAST,c.updated_at DESC,c.id`;
     const byStatus = (status: string) => cards.filter(c=>c.status === status).map(serializeCardRow);
     return { attention: cards.filter(c=>c.status === 'review' || c.status === 'blocked').map(serializeCardRow),

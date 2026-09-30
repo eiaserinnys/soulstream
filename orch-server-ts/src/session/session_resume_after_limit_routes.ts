@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { PersistenceHostRepositories } from "../control_plane/persistence_host_runtime.js";
 import type { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { latestValidResetAt } from "../schedule/resume_after_limit_continuity.js";
+import { isUsageLimitTermination } from "./session_limit_termination.js";
 import type {
   ScheduleCreateInput,
   SoulstreamSchedule,
@@ -150,7 +151,7 @@ async function resolveEligibility(
   }
 
   const terminalEventId = positiveEventId(session.termination_event_id);
-  if (session.status !== "error" || session.termination_reason !== "limit_hit" || terminalEventId === null) {
+  if (!isUsageLimitTermination(session) || terminalEventId === null) {
     return ineligible("현재 세션이 사용량 제한으로 중단된 상태가 아닙니다.");
   }
 

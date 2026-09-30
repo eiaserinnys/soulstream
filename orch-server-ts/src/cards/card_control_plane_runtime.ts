@@ -1,13 +1,14 @@
 import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
-import { CardControlPlaneService } from "./card_control_plane_service.js";
+import { CardControlPlaneService, type CardMutationChange } from "./card_control_plane_service.js";
 
 export function createCardControlPlaneServiceProvider(options: {
   sqlResolver: LiveDbSqlResolver;
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   onFolderHeaderUpdated?: () => Promise<void>;
   warn: (message: string) => void;
+  onMutation?: (change:CardMutationChange)=>void;
 }): () => Promise<CardControlPlaneService> {
   const resolver=new BoardYjsSqlResolver(options.sqlResolver);
   let service: CardControlPlaneService | undefined;
@@ -28,7 +29,7 @@ export function createCardControlPlaneServiceProvider(options: {
       async emitCardUpdated(cardId, folderId) {
         options.broadcaster.append({ type: "card_updated", cardId, folderId });
       },
-    });
+    },options.onMutation);
     return service;
   };
 }

@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { registerCardDispatchSettingsRoutes, type CardDispatchSettingsRouteOptions } from "./cards/card_dispatch_settings_routes.js";
 
 import {
   registerAdminUsersRoutes,
@@ -181,6 +182,7 @@ export type CreateAppOptions = {
   authRoutes?: AuthRouteOptions;
   attachmentRoutes?: AttachmentRouteOptions;
   folderRoutes?: FolderRouteOptions;
+  cardDispatchSettingsRoutes?:CardDispatchSettingsRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   agentProfileRoutes?: AgentProfileRouteOptions;
@@ -344,6 +346,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.userPreferencesRoutes !== undefined) {
     registerUserPreferencesRoutes(app, options.userPreferencesRoutes);
   }
+  if (options.cardDispatchSettingsRoutes) registerCardDispatchSettingsRoutes(app,options.cardDispatchSettingsRoutes);
   if (options.folderRoutes !== undefined) {
     registerFolderRoutes(app, {
       ...options.folderRoutes,

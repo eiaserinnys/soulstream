@@ -166,6 +166,7 @@ function createAllOptInRouteApp() {
     executeProxyRoutes: inert,
     ephemeralLlmRoutes: inert,
     folderRoutes: inert,
+    cardDispatchSettingsRoutes: inert,
     markdownDocumentRoutes: inert,
     nodeAgentProfileRoutes: {
       ...inert,
