@@ -215,6 +215,7 @@
         "callerSessionId": "sess-parent-1"
       },
       "expectedSoulUiSummaryFromOrch": {
+        "cardId": null,
         "agentSessionId": "sess-contract-1",
         "bindingWarnings": [],
         "status": "running",
