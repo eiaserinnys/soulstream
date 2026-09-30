@@ -83,6 +83,10 @@ export class FolderService {
     return this.cardMutation(params, "POST", "/reports", { title: params.title, format: params.format, body: params.body });
   }
 
+  async addCardComment(params: FolderActorParams & { cardId: string; text: string }) {
+    return this.cardMutation(params, "POST", "/comments", { body: params.text, kind: "spoken" });
+  }
+
   async requestCardReview(params: FolderActorParams & { cardId: string }) {
     return this.cardMutation(params, "POST", "/status", { status: "review" }, true);
   }

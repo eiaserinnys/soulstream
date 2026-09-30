@@ -24,7 +24,7 @@ export function registerCardTools(server: McpServer, runtime: McpRuntime): void 
   }, async input => run(() => getFolderService(runtime).listCards({ folderId: input.folder_id, status: input.status,
     actorSessionId: resolveEffectiveCallerSessionId(input.caller_session_id) })));
   server.registerTool("get_card", {
-    description: "카드 본문과 최신순 보고, 질문, 연결된 세션 목록을 조회한다.", inputSchema: scope,
+    description: "카드 본문과 보고, 질문, 커멘트, 연결된 세션 목록을 조회한다.", inputSchema: scope,
   }, async input => run(() => getFolderService(runtime).getCard(input.card_id, resolveEffectiveCallerSessionId(input.caller_session_id))));
   server.registerTool("update_card_brief", {
     description: "카드의 해석된 요구사항과 진행 경과를 갱신한다.", inputSchema: { ...scope, brief: z.string() },
@@ -33,6 +33,10 @@ export function registerCardTools(server: McpServer, runtime: McpRuntime): void 
     description: "카드에 보고를 추가하며 보고를 고칠 때는 새 보고를 올린다.",
     inputSchema: { ...scope, title: id, format: z.enum(["markdown", "html"]), body: z.string() },
   }, async input => run(() => getFolderService(runtime).addCardReport({ ...agent(input.caller_session_id), cardId: input.card_id, title: input.title, format: input.format, body: input.body })));
+  server.registerTool("add_card_comment", {
+    description: "담당 세션이 대화로 받은 디렉터 지시의 요점을 카드에 남긴다",
+    inputSchema: { ...scope, text: id },
+  }, async input => run(() => getFolderService(runtime).addCardComment({ ...agent(input.caller_session_id), cardId: input.card_id, text: input.text })));
   server.registerTool("request_card_review", {
     description: "카드 검수를 요청하며 보고가 없으면 서버가 거부한다.", inputSchema: scope,
   }, async input => run(() => getFolderService(runtime).requestCardReview({ ...agent(input.caller_session_id), cardId: input.card_id })));

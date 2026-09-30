@@ -35,6 +35,9 @@ describe("route registry", () => {
       family: "public_config",
       authRequired: false,
     });
+    expect(getRouteByKey(registry, "POST", "/api/cards/{id}/comments")).toMatchObject({
+      authRequired: true,
+    });
   });
 
   it("supports path and method lookup without losing route metadata", () => {

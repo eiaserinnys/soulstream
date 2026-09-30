@@ -127,7 +127,8 @@
     {"order": 224, "methods": ["POST"], "path": "/api/cards/{id}/reports", "name": "cards", "authRequired": true},
     {"order": 225, "methods": ["POST"], "path": "/api/cards/{id}/questions/{qid}/answer", "name": "cards", "authRequired": true},
     {"order": 226, "methods": ["POST"], "path": "/api/cards/{id}/questions", "name": "ask_card_question", "authRequired": true},
-    {"order": 227, "methods": ["GET"], "path": "/api/settings/card-dispatch", "name": "get_card_dispatch", "authRequired": true},
-    {"order": 228, "methods": ["PUT"], "path": "/api/settings/card-dispatch", "name": "put_card_dispatch", "authRequired": true}
+    {"order": 227, "methods": ["POST"], "path": "/api/cards/{id}/comments", "name": "add_card_comment", "authRequired": true},
+    {"order": 228, "methods": ["GET"], "path": "/api/settings/card-dispatch", "name": "get_card_dispatch", "authRequired": true},
+    {"order": 229, "methods": ["PUT"], "path": "/api/settings/card-dispatch", "name": "put_card_dispatch", "authRequired": true}
   ]
 }

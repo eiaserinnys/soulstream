@@ -96,6 +96,20 @@ export class CardDispatcher {
             return;
         const card = detail.card;
         const payload = op.payload_json;
+        if (op.operation_type === "add_card_comment") {
+            const commentId=String(payload.comment_id ?? "");
+            const comment=detail.comments.find(item => item.id === commentId);
+            const sessionId=card.assignee_session_id ?? await this.options.repository.latestDispatchedSessionId(card.id);
+            if (comment && sessionId) {
+                try {
+                    await this.options.sendMessage(sessionId, `[카드 커멘트] 「${card.title}」\n${String(comment.body)}`);
+                    await cards.markCommentDelivered(card.id, commentId);
+                }
+                catch (error) {
+                    this.options.warn(`card ${card.id} comment delivery failed: ${String(error)}`);
+                }
+            }
+        }
         if (op.operation_type === "ask_card_question" || op.operation_type === "set_card_status"
             && previousStatus !== "blocked" && payload.status === "blocked" && payload.blocked_kind === "question") {
             await this.notify(card, "question", String(payload.text ?? card.blocked_detail ?? ""));
@@ -195,6 +209,7 @@ export class CardDispatcher {
             const running = await this.options.repository.running();
             const prompt = buildCardPrompt({ cardId: card.id, title: card.title, folderName: card.folder_name, request: card.request,
                 brief: [card.brief, answers].filter(Boolean).join("\n"), reason: await this.options.repository.rejectionReason(card.id),
+                comments: detail.comments.map(comment => ({ createdAt: comment.created_at as Date | string, body: String(comment.body) })),
                 running: running.filter(c => c.id !== card.id).map(c => ({ title: c.title, folderName: c.folder_name })),
                 queued: queue.map(c => ({ title: c.title, folderName: c.folder_name })) });
             const sessionId = randomUUID();

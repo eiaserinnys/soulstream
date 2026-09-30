@@ -14,12 +14,18 @@ export const cardOperationSchemas={
   move_card:mutation.extend({ folderId:id,afterCardId:id.nullable().optional() }),
   reorder_card_queue:mutation.extend({ afterCardId:id.nullable().optional() }),
   add_card_report:append.extend({ title:id,format:z.enum(["markdown","html"]),body:z.string() }),
+  add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional() }),
   ask_card_question:append.extend({ text:id,options:z.array(id).nullable().optional() }),
   answer_card_question:append.extend({ questionId:id,answer:id }),
 } as const;
 export type CardOperation=keyof typeof cardOperationSchemas;
 export async function executeCardOperation(service:CardControlPlaneService,operation:CardOperation,body:unknown,cardId:string | undefined,actor:FolderActorParams) {
   const parsed=cardOperationSchemas[operation].strict().parse(body);
+  if (operation === "add_card_comment") {
+    const common={ ...actor,cardId:id.parse(cardId) };
+    const comment=await service.addComment({ ...common,...cardOperationSchemas.add_card_comment.parse(parsed) });
+    return serializeCardRow(comment);
+  }
   const result=await (async () => {
     if (operation === "create_card") return service.createCard({ ...actor,...cardOperationSchemas.create_card.parse(parsed) });
     const common={ ...actor,cardId:id.parse(cardId) };
@@ -36,5 +42,5 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
   return serializeCardMutation(result);
 }
 export function serializeCardDetail(detail:NonNullable<Awaited<ReturnType<CardControlPlaneService["getCard"]>>>) {
-  return { card:serializeCardRow(detail.card),reports:detail.reports.map(serializeCardRow),questions:detail.questions.map(serializeCardRow),sessions:detail.sessions.map(serializeCardRow) };
+  return { card:serializeCardRow(detail.card),reports:detail.reports.map(serializeCardRow),questions:detail.questions.map(serializeCardRow),comments:detail.comments.map(serializeCardRow),sessions:detail.sessions.map(serializeCardRow) };
 }
