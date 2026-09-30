@@ -54,6 +54,67 @@ describe("FolderInlineBoard document context menu", () => {
     vi.restoreAllMocks();
   });
 
+  function renderBoardItems(count: number) {
+    const boardItems = Array.from({ length: count }, (_, index) => ({
+      ...documentItem,
+      id: `markdown:doc-${index + 1}`,
+      itemId: `doc-${index + 1}`,
+      metadata: { title: `보드 문서 ${index + 1}`, version: 1 },
+    }));
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ boardItems }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof globalThis.fetch;
+    useDashboardStore.getState().setCatalog({ folders: [], sessions: {}, sessionList: [], boardItems });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const render = (folderId: string) => flushSync(() => {
+      root!.render(createElement(FolderInlineBoard, {
+        folderId,
+        api: {} as PageApiClient,
+        folderMoveTargets: [],
+        onMarkdownDocumentsChanged: vi.fn(),
+      }));
+    });
+    render("task-1");
+    return render;
+  }
+
+  it("shows the first five items, toggles the whole board, and collapses on folder change", async () => {
+    const render = renderBoardItems(7);
+    await vi.waitFor(() => expect(container!.textContent).toContain("7개"));
+    const titles = () => Array.from(container!.querySelectorAll(".v3-inline-board-label"))
+      .map((node) => node.textContent);
+    const firstFive = Array.from({ length: 5 }, (_, index) => `📄 보드 문서 ${index + 1}`);
+    expect(titles()).toEqual(firstFive);
+    const expand = container!.querySelector<HTMLButtonElement>('[aria-label="보드 전체 펼치기"]');
+    expect(expand?.getAttribute("aria-expanded")).toBe("false");
+    flushSync(() => expand!.click());
+    expect(titles()).toEqual(Array.from({ length: 7 }, (_, index) => `📄 보드 문서 ${index + 1}`));
+    expect(container!.textContent).toContain("7개");
+    const collapse = container!.querySelector<HTMLButtonElement>('[aria-label="보드 접기"]');
+    expect(collapse?.getAttribute("aria-expanded")).toBe("true");
+    flushSync(() => collapse!.click());
+    expect(titles()).toEqual(firstFive);
+    expect(container!.textContent).toContain("7개");
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[aria-label="보드 전체 펼치기"]')!.click());
+    render("task-2");
+    await vi.waitFor(() => {
+      expect(container!.textContent).toContain("7개");
+      expect(titles()).toEqual(firstFive);
+    });
+    expect(container!.querySelector('[aria-label="보드 전체 펼치기"]')?.getAttribute("aria-expanded"))
+      .toBe("false");
+  });
+
+  it.each([0, 4, 5])("does not show a whole-board toggle for %i items", async (count) => {
+    renderBoardItems(count);
+    await vi.waitFor(() => expect(container!.textContent).toContain(`${count}개`));
+    expect(container!.querySelectorAll(".v3-inline-board-item")).toHaveLength(count);
+    expect(container!.querySelector('[aria-label="보드 전체 펼치기"], [aria-label="보드 접기"]')).toBeNull();
+  });
+
   it("moves the same board item to another task and removes the source row only after success", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

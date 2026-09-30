@@ -48,6 +48,8 @@ interface MarkdownRenameState {
   error: string;
 }
 
+const COLLAPSED_BOARD_ITEM_LIMIT = 5;
+
 const INLINE_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
   "markdown",
   "custom_view",
@@ -69,6 +71,7 @@ export function FolderInlineBoard({
 }) {
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [boardExpanded, setBoardExpanded] = useState(false);
   const [renameState, setRenameState] = useState<MarkdownRenameState | null>(null);
   const [documentContext, setDocumentContext] = useState<FolderDocumentContextTarget | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -98,6 +101,7 @@ export function FolderInlineBoard({
 
   useEffect(() => {
     setExpandedId(null);
+    setBoardExpanded(false);
     setRenameState(null);
     setDocumentContext(null);
     departedItemIdsRef.current.clear();
@@ -253,6 +257,15 @@ export function FolderInlineBoard({
       <div className="v3-detail-section-head">
         <h3>▦ 보드</h3><span>{status === "ready" ? `${items.length}개` : ""}</span>
         <span className="v3-spacer" />
+        {items.length > COLLAPSED_BOARD_ITEM_LIMIT ? (
+          <DashboardIconCap
+            label={boardExpanded ? "보드 접기" : "보드 전체 펼치기"}
+            aria-expanded={boardExpanded}
+            onClick={() => setBoardExpanded((expanded) => !expanded)}
+          >
+            <DisclosureActionIcon expanded={boardExpanded} className="h-4 w-4" />
+          </DashboardIconCap>
+        ) : null}
         <DashboardIconCap
           label="마크다운 추가"
           disabled={!boardSync.runtime || !boardSync.hasSynced}
@@ -265,7 +278,7 @@ export function FolderInlineBoard({
       {status === "error" ? <p className="v3-inline-board-error" role="alert">보드 항목을 불러오지 못했습니다.</p> : null}
       {status === "ready" && items.length === 0 ? <p className="v3-detail-empty">보드에 표시할 문서가 없습니다.</p> : null}
       <div className="v3-inline-board-list">
-        {items.map((item) => {
+        {(boardExpanded ? items : items.slice(0, COLLAPSED_BOARD_ITEM_LIMIT)).map((item) => {
           const expanded = expandedId === item.id;
           if (item.itemType === "markdown") {
             const title = metadataText(item, "title") || "제목 없는 문서";
