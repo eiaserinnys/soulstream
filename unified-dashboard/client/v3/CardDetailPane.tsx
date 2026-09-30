@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { DashboardIconCap, MarkdownContent, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { CustomViewIframe } from "@seosoyoung/soul-ui/custom-view/CustomViewRenderer";
 import { ArrowLeft, FileText, History, ListChecks, MessageCircle, MoreHorizontal, ScrollText } from "lucide-react";
@@ -11,9 +11,10 @@ import { CardQuestionView } from "./CardQuestionView";
 import { CardMenu } from "./CardMenu";
 import "./v3-cards.css";
 const sections=[{id:"request",label:"원문",accessibleLabel:"원문",Icon:FileText},{id:"brief",label:"경과",accessibleLabel:"해석과 경과",Icon:ListChecks},{id:"reports",label:"보고",accessibleLabel:"보고",Icon:ScrollText},{id:"questions",label:"질문",accessibleLabel:"질문",Icon:MessageCircle},{id:"sessions",label:"세션",accessibleLabel:"세션",Icon:History}] as const;
-export function CardDetailPane({cardId,folders,onClose,onOpenSession,placement="inline",focus}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;placement?:"inline"|"overlay";focus?:string|null}) {
+export function CardDetailPane({cardId,folders,onClose,onOpenSession,placement="inline",focus,scrollContainerRef}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;placement?:"inline"|"overlay";focus?:string|null;scrollContainerRef?:RefObject<HTMLDivElement|null>}) {
  const card=useCardStore(s=>s.byId[cardId]);const detail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
  const scroll=useRef<HTMLDivElement>(null),surface=useRef<HTMLElement>(null);
+ const activeScroll=placement==="inline"&&scrollContainerRef?scrollContainerRef:scroll;
  const request=useRef<HTMLElement>(null),brief=useRef<HTMLElement>(null),reports=useRef<HTMLElement>(null),questions=useRef<HTMLElement>(null),sessions=useRef<HTMLElement>(null);
  const refs=useMemo(()=>({request,brief,reports,questions,sessions}),[]);
  const [menu,setMenu]=useState<{x:number;y:number}|null>(null);
@@ -31,7 +32,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,placement="
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
   <CardMenu card={card} folders={folders} target={menu} onClose={()=>setMenu(null)}/>
   <div className="v3-detail-scroll" ref={scroll}><div className="v3-task-detail-layout">
-   <SectionNavigation scrollRef={scroll} sectionRefs={refs} sections={sections} ariaLabel="카드 섹션"/>
+   <SectionNavigation scrollRef={activeScroll} sectionRefs={refs} sections={sections} ariaLabel="카드 섹션"/>
    <div className="v3-task-detail-content">
     <section className="v3-detail-section" ref={request} data-card-section="request"><div className="v3-detail-section-head"><h3>요청 원문</h3></div><details open><summary>원문 보기</summary><div className="v3-card-request">{card.request}</div></details></section>
     <section className="v3-detail-section" ref={brief} data-card-section="brief"><div className="v3-detail-section-head"><h3>해석과 경과</h3></div><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></section>
