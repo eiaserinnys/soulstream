@@ -171,9 +171,13 @@ export class BoardYjsService {
 
   async withFolderBoardApplication<T>(input: FolderBoardIdentityInput,
     persist: (applications: BoardYjsDocumentApplication[]) => Promise<T>): Promise<T> {
-    return this.withBoardIdentityLock(input.folderId, () =>
-      this.documentMutationGate.withMutation(folderIdentityDocumentNames(input), () =>
-        withFolderBoardIdentity(this.hocuspocus, input, persist)));
+    return this.withBoardIdentityLock(input.folderId, () => {
+      const documentNames = folderIdentityDocumentNames(input);
+      // A top-level folder has no parent board tile to stage or mutate.
+      if (documentNames.length === 0) return persist([]);
+      return this.documentMutationGate.withMutation(documentNames, () =>
+        withFolderBoardIdentity(this.hocuspocus, input, persist));
+    });
   }
 
   async upsertCustomViewBoardItem(input: {

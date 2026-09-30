@@ -7,6 +7,41 @@ import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
 import type { CatalogBoardItemRow } from "../src/board-yjs/board_yjs_types.js";
 
 describe("Board Y.Doc mutation gate", () => {
+  it.each([[], [" "]])("rejects invalid document names %j before persisting", async (...documentNames) => {
+    const persist = vi.fn();
+    await expect(new BoardYjsDocumentMutationGate().withMutation(documentNames, persist))
+      .rejects.toThrow("Board Y.Doc mutation gate requires document names");
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("serializes top-level persistence under the folder identity lock", async () => {
+    const service = createNodeService();
+    const input = { folderId: "root", parentFolderId: null, previousParentFolderId: null,
+      title: "Root", archived: false };
+    const order: string[] = [];
+    let release!: () => void;
+    let started!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const firstStarted = new Promise<void>(resolve => { started = resolve; });
+    const first = service.withFolderBoardApplication(input, async applications => {
+      expect(applications).toEqual([]);
+      order.push("first-start"); started(); await held; order.push("first-end");
+      return "first";
+    });
+    try {
+      // Surface an early rejection instead of hanging while waiting for the callback.
+      await Promise.race([firstStarted, first]);
+      const second = service.withFolderBoardApplication(input, async applications => {
+        expect(applications).toEqual([]); order.push("second"); return "second";
+      });
+      await service.withFolderBoardApplication({ ...input, folderId: "other-root" }, async () => undefined);
+      expect(order).toEqual(["first-start"]);
+      release();
+      await expect(Promise.all([first, second])).resolves.toEqual(["first", "second"]);
+      expect(order).toEqual(["first-start", "first-end", "second"]);
+    } finally { release(); await first.catch(() => undefined); await service.close(); }
+  });
+
   it("blocks every Board Y.Doc mutation entry point at the same guard", async () => {
     const service = createNodeService();
     const deny = vi.fn(async () => {
@@ -19,6 +54,14 @@ describe("Board Y.Doc mutation gate", () => {
     });
 
     const paths = [
+      {
+        name: "folder identity move to top level",
+        expectedNames: ["board-folder:folder-a"],
+        run: () => service.withFolderBoardApplication({
+          folderId: "child", parentFolderId: null, previousParentFolderId: "folder-a",
+          title: "Child", archived: false,
+        }, vi.fn()),
+      },
       {
         name: "withDirectContainerConnection",
         expectedNames: ["board-folder:folder-a"],
