@@ -32,8 +32,7 @@
   width: var(--v3-tree-drag-column);
 }
 
-.v3-folder-picker-row[aria-disabled="true"] .v3-project-nav-link,
-.v3-folder-picker-row[aria-disabled="true"] .v3-project-tree-icon {
+.v3-folder-picker-row .v3-project-nav-link:disabled {
   color: var(--v3-text-disabled);
 }
 

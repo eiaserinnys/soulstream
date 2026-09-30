@@ -24,15 +24,19 @@ describe("FolderPicker", () => {
     render(["child", "other"], ["child"], onSelect);
     expect(tab("별표").getAttribute("aria-selected")).toBe("true");
     expect(rows()).toEqual(["child", "other"]);
-    expect(row("child").getAttribute("aria-disabled")).toBe("true");
+    expect(row("child").hasAttribute("aria-disabled")).toBe(false);
+    expect(row("child").querySelector<HTMLButtonElement>(".v3-project-nav-link")!.disabled).toBe(true);
     click(row("other").querySelector("button")!);
     expect(onSelect).toHaveBeenCalledWith(folders[3]);
   });
 
   it("starts collapsed, expands matching ancestors, and restores local expansion after search", () => {
-    render([], []);
+    render([], ["root"]);
     expect(tab("전체").getAttribute("aria-selected")).toBe("true");
     expect(rows()).toEqual(["other", "root"]);
+    expect(row("root").hasAttribute("aria-disabled")).toBe(false);
+    expect(row("root").querySelector<HTMLButtonElement>(".v3-project-nav-link")!.disabled).toBe(true);
+    expect(button("Root 펼치기").disabled).toBe(false);
     click(button("Root 펼치기"));
     expect(rows()).toEqual(["other", "root", "child"]);
     search("Leaf");

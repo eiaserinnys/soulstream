@@ -42,16 +42,16 @@ export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, sel
     const selected = selectedFolderId === node.folder.id;
     return <div key={node.folder.id}>
       <div className={`v3-project-nav-row v3-folder-picker-row${selected ? " is-active" : ""}`}
-        role="treeitem" aria-level={depth + 1} aria-selected={selected} aria-disabled={disabled}
+        role="treeitem" aria-level={depth + 1} aria-selected={selected}
         aria-expanded={node.children.length ? isExpanded : undefined} data-folder-id={node.folder.id}
         style={{ "--v3-project-depth": depth } as CSSProperties}>
-        {node.children.length ? <button type="button" className="v3-project-tree-toggle" disabled={pending || Boolean(normalized)}
+        {node.children.length ? <button type="button" className="v3-project-tree-toggle"
           aria-label={`${node.folder.name} ${isExpanded ? "접기" : "펼치기"}`} aria-expanded={isExpanded}
           onClick={() => toggle(node.folder.id)}><DisclosureActionIcon expanded={isExpanded} /></button>
           : <span className="v3-project-tree-toggle-spacer" />}
         <span className="v3-folder-picker-drag-spacer" aria-hidden="true" />
         <span className="v3-project-tree-icon" aria-hidden="true"><Folder /></span>
-        <button type="button" className="v3-project-nav-link" disabled={disabled} onClick={() => onSelect(node.folder)}>
+        <button type="button" className="v3-project-nav-link" disabled={disabled} aria-disabled={disabled} onClick={() => onSelect(node.folder)}>
           <span>{node.folder.name}</span>
         </button>
       </div>

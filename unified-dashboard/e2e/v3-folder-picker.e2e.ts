@@ -58,7 +58,7 @@ test("parent move disables current parent, self and descendants", async ({ page 
   await verifyPicker(page, dialog, "parent");
   if (before) return;
   await dialog.getByRole("tab", { name: "전체", exact: true }).click();
-  await expect(dialog.locator('[data-folder-id="folder-amber"]')).toHaveAttribute("aria-disabled", "true");
+  await expect(dialog.getByRole("button", { name: "소울스트림", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "소울스트림 펼치기", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "대시보드", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "대시보드 펼치기", exact: true }).click();
