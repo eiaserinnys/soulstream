@@ -49,6 +49,9 @@ for(const width of [1440,390]){
   await page.getByRole("button",{name:`카드 ${card.title} 열기`,exact:true}).click();
   const detail=page.getByTestId("card-detail");await expect(detail).toBeVisible();await expect(detail.locator('[data-card-section=sessions] .v3-run-row')).toHaveCount(34);
   await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(output,`${phase}-${width}-detail.png`)});
+  await detail.locator('[data-card-section=brief]').evaluate(el=>el.scrollIntoView({block:"start"}));
+  if(phase==='after')await expect(detail.locator('.v3-description-content')).toContainText('작업');
+  await page.screenshot({path:path.join(output,`${phase}-${width}-brief.png`)});
   await detail.locator('[data-card-section=sessions]').evaluate(el=>el.scrollIntoView({block:"start"}));
   await page.screenshot({path:path.join(output,`${phase}-${width}-card-sessions.png`)});
   const cardMetrics=await detail.evaluate(el=>{
