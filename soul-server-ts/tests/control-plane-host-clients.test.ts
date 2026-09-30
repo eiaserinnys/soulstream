@@ -254,10 +254,10 @@ describe("worker control-plane host clients", () => {
       detail: {
         error: {
           code: "FOLDER_VERSION_CONFLICT",
-          message: "stale item",
+          message: "stale folder",
           details: {
-            targetKind: "item",
-            targetId: "item-1",
+            targetKind: "folder",
+            targetId: "folder-1",
             expectedVersion: 2,
             actualVersion: 3,
           },
@@ -266,10 +266,9 @@ describe("worker control-plane host clients", () => {
     }), { status: 409, headers: { "content-type": "application/json" } })));
     const service = new FolderService({ orch, logger });
 
-    await expect(service.setCardStatus({
+    await expect(service.setFolderStatus({
       actorSessionId: "session-1",
       folderId: "folder-1",
-      itemId: "item-1",
       expectedVersion: 2,
       status: "completed",
     })).rejects.toBeInstanceOf(FolderVersionConflict);

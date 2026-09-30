@@ -68,6 +68,7 @@ describe("card MCP contract", () => {
     expect(JSON.stringify(result)).toContain("보고 없이 검수 요청 불가");
   });
   it("injects the same card context for agent and browser sessions using sessions.card_id", async () => {
+    const snapshots: unknown[] = [];
     for (const source of ["agent", "browser"]) {
     const db = { getSession: vi.fn().mockResolvedValue({ folder_id: "folder-1", card_id: "card-1" }),
       getFolderById: vi.fn().mockResolvedValue({ id: "folder-1", name: "폴더", checklist_enabled: false }),
@@ -76,7 +77,13 @@ describe("card MCP contract", () => {
     const context = await resolvePrimarySessionFolderContext(db as unknown as SessionDB, logger, "session-1", "folder-1");
     const item = buildSoulstreamContextItem({ agentSessionId: "session-1", workspaceDir: "/workspace", callerInfo: { source }, ...context } as any);
     const content = item.content as Record<string, unknown>;
-    expect({ card: content.card, card_guidance: content.card_guidance }).toMatchInlineSnapshot(`
+    snapshots.push({ card: content.card, card_guidance: content.card_guidance });
+    expect(content.folder_guidance).toContain("카드");
+    expect(content).not.toHaveProperty("source_checklist_item_id");
+    expect(db.getPrimarySessionBoardItem).not.toHaveBeenCalled();
+    }
+    expect(snapshots[1]).toEqual(snapshots[0]);
+    expect(snapshots[0]).toMatchInlineSnapshot(`
       {
         "card": {
           "id": "card-1",
@@ -86,10 +93,6 @@ describe("card MCP contract", () => {
         "card_guidance": "이 세션은 카드 card-1를 맡았다. 경과는 update_card_brief, 보고는 add_card_report, 검수는 request_card_review, 질문은 ask_card_question으로 남긴다. AskUserQuestion은 쓰지 않는다.",
       }
     `);
-    expect(content.folder_guidance).toContain("카드");
-    expect(content).not.toHaveProperty("source_checklist_item_id");
-    expect(db.getPrimarySessionBoardItem).not.toHaveBeenCalled();
-    }
   });
   it("passes cardId at session registration and keeps it out of board projection", async () => {
     const h = makeTaskCreationHarness();
