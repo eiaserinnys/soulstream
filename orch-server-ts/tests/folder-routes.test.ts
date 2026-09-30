@@ -15,10 +15,9 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
   const getFolder = vi.fn(async () => snapshot);
   const listFolders = vi.fn(async () => [row]);
   const mutate = vi.fn(async () => ({ snapshot, operation: { folder_id: "f", target_kind: "folder", target_id: "f" }, idempotent: false }));
-  const checklist = { getFolder, listFolders, listOperations: vi.fn(async () => []),
+  const cards = { getFolder, listFolders, listOperations: vi.fn(async () => []),
     setFolderStatus: mutate, setFolderChecklistEnabled: mutate,
-    setItemStatus: mutate, createSection: mutate, createItem: mutate, patchSection: mutate, patchItem: mutate,
-    moveSection: mutate, moveItem: mutate, setSectionAssignee: mutate, setItemAssignee: mutate } as unknown as CardControlPlaneService;
+  } as unknown as CardControlPlaneService;
   const identity = { create: vi.fn(async () => ({ folder: { id: "f", name: "새 폴더", checklistEnabled: false }, operation: { id: "op" }, idempotent: false })),
     mutateFromFolder: vi.fn(async () => ({ folder: { id: "f", archived: true }, operation: { id: "op" }, idempotent: false })) };
   const app = Fastify(); apps.push(app);
@@ -26,7 +25,7 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
     provider: { listFolders: () => [{ id: "f" }, { id: "other" }], listSessionAssignments: () => ({ a: { folderId: "f" }, b: { folderId: "other" } }) },
     accessProvider: { resolveAccess: () => ({ restricted, allowedFolderIds: ["f"] }) },
     resolveDashboardUserId: () => user || null, projectIdentityService: identity as unknown as FolderRouteOptions["projectIdentityService"],
-    cardServiceProvider: async () => checklist, controlPlaneServiceProvider: async () => ({} as FolderControlPlaneService),
+    cardServiceProvider: async () => cards, controlPlaneServiceProvider: async () => ({} as FolderControlPlaneService),
     authBearerToken: "test-token", environment: "production",
   });
   return { app, identity, getFolder, listFolders, mutate };

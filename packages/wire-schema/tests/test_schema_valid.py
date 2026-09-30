@@ -127,7 +127,7 @@ def test_shared_contract_inventories_match_generated_types() -> None:
         "x-soulstream-session-timeline-event-types": "SESSION_TIMELINE_EVENT_TYPES",
         "x-soulstream-session-statuses": "SESSION_STATUSES",
         "x-soulstream-caller-info-sources": "CALLER_INFO_SOURCES",
-        "x-soulstream-checklist-item-statuses": "CHECKLIST_ITEM_STATUSES",
+        "x-soulstream-card-statuses": "CARD_STATUSES",
         "x-soulstream-board-item-types": "BOARD_ITEM_TYPES",
     }
 

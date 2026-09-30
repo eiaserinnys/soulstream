@@ -38,6 +38,9 @@ export async function inspectSchemaShape(sql) {
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('checklist_sections')) AS checklist_sections,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('checklist_items')) AS checklist_items,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('folder_operations')) AS folder_operations,
+        (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('cards')) AS cards,
+        (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('card_reports')) AS card_reports,
+        (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('card_questions')) AS card_questions,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('tasks')) AS tasks,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('task_sections'))
           AS task_sections,
@@ -55,7 +58,9 @@ export async function inspectSchemaShape(sql) {
       FROM information_schema.columns
       WHERE table_schema = current_schema()
         AND (
-          (table_name = 'task_items'
+          (table_name = 'cards' AND column_name IN ('folder_id', 'request'))
+          OR (table_name = 'sessions' AND column_name = 'card_id')
+          OR (table_name = 'task_items'
             AND column_name IN ('parent_id', 'section_id'))
           OR (table_name = 'session_deliveries'
             AND column_name IN (
@@ -100,6 +105,11 @@ export async function inspectSchemaShape(sql) {
     checklistSections: relations[0]?.checklist_sections ?? null,
     checklistItems: relations[0]?.checklist_items ?? null,
     folderOperations: relations[0]?.folder_operations ?? null,
+    cards: relations[0]?.cards ?? null,
+    cardReports: relations[0]?.card_reports ?? null,
+    cardQuestions: relations[0]?.card_questions ?? null,
+    cardsHaveFolderRequest: ['folder_id','request'].every(name=>columns.some(row=>row.table_name==='cards' && row.column_name===name)),
+    sessionsHaveCard: columns.some(row=>row.table_name==='sessions' && row.column_name==='card_id'),
     tasks: relations[0]?.tasks ?? null,
     taskSections: relations[0]?.task_sections ?? null,
     runbooks: relations[0]?.runbooks ?? null,

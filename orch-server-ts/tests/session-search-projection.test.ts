@@ -140,7 +140,7 @@ describe("product session search projection", () => {
       {
         ...candidate("zz-actual-work-session", 21, "original", 1, "피드 검색 결과를 확인했다"),
         event_type: "assistant_message",
-        folder_evidence_kind: "checklist_item_completed",
+        folder_evidence_kind: "card_completed",
         folder_evidence_title: "피드 검색 결과 검증",
       },
       {
@@ -154,7 +154,7 @@ describe("product session search projection", () => {
       "aa-diagnostic-session",
     ]);
     expect(results[0]?.evidence).toContainEqual(expect.objectContaining({
-      source: "checklist_item_completed",
+      source: "card_completed",
       excerpt: "피드 검색 결과 검증",
     }));
     expect(results[1]?.evidence.some((item) => item.source.includes("task"))).toBe(false);
@@ -183,7 +183,7 @@ describe("product session search projection", () => {
       {
         ...candidate("performed-session", 1, "semantic_2", 18.160247489075633, "기존 대화를 이어서 여는 기능을 구현했습니다."),
         relevance_source: "assistant_message",
-        folder_evidence_kind: "checklist_item_completed",
+        folder_evidence_kind: "card_completed",
         folder_evidence_title: "검색 결과 업무 재개 완료",
       },
       ...Array.from({ length: 60 }, (_, index) => ({
@@ -201,7 +201,7 @@ describe("product session search projection", () => {
 
     expect(results[0]?.session_id).toBe("performed-session");
     expect(results[0]?.evidence).toContainEqual(expect.objectContaining({
-      source: "checklist_item_completed",
+      source: "card_completed",
     }));
   });
 
@@ -220,10 +220,10 @@ describe("product session search projection", () => {
       folder_name: "Search task result",
     });
     expect(result?.evidence.some((item) => [
-      "checklist_item_completed",
+      "card_completed",
       "folder_completed",
-      "source_checklist_item",
-      "checklist_item_assigned",
+      "source_card",
+      "card_assigned",
     ].includes(item.source))).toBe(false);
   });
 
@@ -234,7 +234,7 @@ describe("product session search projection", () => {
         ...candidate("zz-source-session", 4, "original", 1, "needle is discussed"),
         folder_id: "task-search",
         folder_name: "unrelated task title",
-        folder_evidence_kind: "source_checklist_item",
+        folder_evidence_kind: "source_card",
         folder_evidence_title: "source item output",
       },
     ], "needle", 10);
@@ -244,7 +244,7 @@ describe("product session search projection", () => {
       "zz-source-session",
     ]);
     expect(results[1]?.evidence).toContainEqual(expect.objectContaining({
-      source: "source_checklist_item",
+      source: "source_card",
       excerpt: "source item output",
     }));
   });

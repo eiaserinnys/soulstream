@@ -82,8 +82,7 @@ export type SoulstreamUpstreamProtocol =
   | WorktreeCreate
   | WorktreeRemove
   | WorktreeDeleteBranch
-  | WorktreeResult
-  | SSEEventCardUpdated;
+  | WorktreeResult;
 export type SessionLifecycleStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
 export type CallerInfoSource =
   | "agent"
@@ -364,6 +363,7 @@ export interface SessionCreated {
     [k: string]: unknown;
   };
   folderId?: string | null;
+  cardId?: string | null;
   /**
    * agent caller_info 흐름 보존 (R-2 fix, atom 0499ee7b).
    */
@@ -438,6 +438,7 @@ export interface SessionEventEnvelope {
     | SSEEventClaudeRuntimeScheduleUpdated
     | SSEEventClaudeRuntimeScheduleDeleted
     | SSEEventFolderUpdated
+    | SSEEventCardUpdated
     | SSEEventCustomViewUpdated
     | SSEEventContextUsage
     | SSEEventContextManifest
@@ -1021,12 +1022,20 @@ export interface SSEEventClaudeRuntimeScheduleDeleted {
   [k: string]: unknown;
 }
 /**
- * SSE: 폴더 헤더 변경 후 뷰 갱신.
+ * SSE: 폴더와 체크리스트 변경 후 뷰 갱신.
  */
 export interface SSEEventFolderUpdated {
   type: "folder_updated";
   folderId: string;
   [k: string]: unknown;
+}
+/**
+ * SSE: 카드 변경 알림. 본문은 HTTP로 조회한다.
+ */
+export interface SSEEventCardUpdated {
+  type: "card_updated";
+  cardId: string;
+  folderId: string;
 }
 /**
  * SSE: 커스텀 뷰 mutation 후 뷰 갱신 트리거. HTML 본문은 wire에 싣지 않는다.
@@ -1458,6 +1467,7 @@ export interface HealthStatus {
  */
 export interface SessionUpdated {
   type: "session_updated";
+  card_id?: string | null;
   status: SessionLifecycleStatus;
   agent_session_id?: string;
   agentSessionId?: string;
@@ -2567,14 +2577,6 @@ export interface WorktreeResult {
   result: unknown;
   [k: string]: unknown;
 }
-/**
- * SSE: 카드 변경 알림. 본문은 HTTP로 조회한다.
- */
-export interface SSEEventCardUpdated {
-  type: "card_updated";
-  cardId: string;
-  folderId: string;
-}
 
 /**
  * Event persistence policy generated from upstream.schema.json.
@@ -2638,6 +2640,7 @@ export const EVENT_DURABILITY = {
   "reconnect": "durable",
   "history_sync": "durable",
   "folder_updated": "durable",
+  "card_updated": "durable",
   "custom_view_updated": "durable",
   "metadata_updated": "durable",
   "assistant_error": "durable",
@@ -2645,7 +2648,6 @@ export const EVENT_DURABILITY = {
   "metadata": "durable",
   "system_message": "durable",
   "subtree_update": "durable",
-  "card_updated": "durable",
 } as const;
 
 export type PersistenceEventType = keyof typeof EVENT_DURABILITY;
@@ -2708,6 +2710,7 @@ export const SSE_EVENT_TYPES = [
   "compact",
   "reconnect",
   "history_sync",
+  "card_updated",
   "folder_updated",
   "custom_view_updated",
   "metadata_updated",
@@ -2715,7 +2718,6 @@ export const SSE_EVENT_TYPES = [
   "away_summary",
   "system_message",
   "subtree_update",
-  "card_updated",
 ] as const;
 export type SSEEventType = (typeof SSE_EVENT_TYPES)[number];
 

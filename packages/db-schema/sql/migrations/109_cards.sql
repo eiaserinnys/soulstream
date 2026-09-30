@@ -1,3 +1,11 @@
+-- 소울스트림 정의 밖 드리프트: 실험 중 유입된 지식 카드 두 테이블.
+-- 백업: .local/artifacts/cards-p1-rehearsal/legacy-knowledge-cards.dump (데이터 포함).
+-- 테이블 삭제가 전용 트리거와 인덱스도 함께 제거한다.
+DROP TABLE IF EXISTS public.tree_nodes;
+DROP TABLE IF EXISTS public.cards;
+DROP FUNCTION IF EXISTS public.update_fts_vector();
+DROP FUNCTION IF EXISTS public.update_updated_at();
+
 -- Card identity is inherited; link provenance is consolidated before either source is removed.
 ALTER TABLE checklist_items RENAME TO cards;
 ALTER TABLE cards ADD COLUMN folder_id TEXT REFERENCES folders(id) ON DELETE CASCADE;
@@ -27,7 +35,6 @@ UPDATE cards SET status=CASE status WHEN 'pending' THEN 'todo' WHEN 'in_progress
 ALTER TABLE cards ALTER COLUMN status SET DEFAULT 'todo';
 ALTER TABLE cards ADD CONSTRAINT cards_status_check CHECK(status IN ('todo','queued','blocked','running','review','done','cancelled'));
 ALTER TABLE cards DROP COLUMN section_id;
-DROP INDEX IF EXISTS idx_checklist_items_human_self;
 -- RENAME TABLE does not rename its existing constraints or backing indexes.
 DO $$ DECLARE r RECORD; BEGIN
   FOR r IN SELECT conname FROM pg_constraint WHERE conrelid='cards'::regclass AND conname LIKE '%checklist_items%' LOOP
@@ -82,8 +89,8 @@ CREATE TABLE card_questions (
     answered_by TEXT
 );
 CREATE INDEX idx_card_questions_card ON card_questions(card_id, asked_at);
-INSERT INTO system_settings(setting_key,value)
-VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb) ON CONFLICT DO NOTHING;
+INSERT INTO system_settings(setting_key,value,version,updated_by)
+VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb,1,'migration:109_cards') ON CONFLICT (setting_key) DO NOTHING;
 
 
 DROP FUNCTION IF EXISTS board_item_get_all();

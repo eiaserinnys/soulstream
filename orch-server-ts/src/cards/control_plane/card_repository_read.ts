@@ -7,6 +7,11 @@ export class CardRepositoryRead {
   async getFolder(folderId: string): Promise<FolderRow | null> {
     return (await this.sql<FolderRow[]>`SELECT * FROM folders WHERE id=${folderId}`)[0] ?? null;
   }
+  async getFolderForUpdateTx(sql: RepositorySql, folderId: string): Promise<FolderRow> {
+    const folder=(await sql<FolderRow[]>`SELECT * FROM folders WHERE id=${folderId} FOR UPDATE`)[0];
+    if (!folder) throw Object.assign(new Error("Folder not found"),{ statusCode:404 });
+    return folder;
+  }
   async getSnapshot(folderId: string): Promise<FolderSnapshot | null> {
     const folder = await this.getFolder(folderId);
     if (!folder) return null;

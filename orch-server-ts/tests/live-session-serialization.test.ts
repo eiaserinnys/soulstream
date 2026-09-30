@@ -22,6 +22,10 @@ const callerIdentityFixture = JSON.parse(
 };
 
 describe("serializeSessionRow predecessor contract", () => {
+  it("exposes the authoritative cardId and handles unlinked sessions", () => {
+    expect(serializeSessionRow({ session_id: "linked", card_id: "card-one" })).toMatchObject({ cardId: "card-one" });
+    expect(serializeSessionRow({ session_id: "unlinked" })).toMatchObject({ cardId: null });
+  });
   it("exposes the additive predecessorSessionId field", () => {
     expect(serializeSessionRow({
       session_id: "sess-next",

@@ -7,7 +7,7 @@ import { isFolderAllowed, normalizeAccess } from "./folder_route_access.js";
 import { executeFolderOperation, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
 import { serializeCardRow, serializeFolder } from "./folder_contracts.js";
 
-type Scope = { folder_id: string; section_id?: string; item_id?: string };
+type Scope = { folder_id: string };
 const mutations: readonly ["POST" | "PUT", string, FolderOperation][] = [
   ["POST", "/api/folders", "create_folder"],
   ["PUT", "/api/folders/:folder_id", "rename_folder"],

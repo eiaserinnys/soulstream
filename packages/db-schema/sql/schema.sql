@@ -3456,8 +3456,8 @@ CREATE TABLE IF NOT EXISTS card_questions (
     answered_by TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_card_questions_card ON card_questions(card_id, asked_at);
-INSERT INTO system_settings(setting_key,value)
-VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb) ON CONFLICT DO NOTHING;
+INSERT INTO system_settings(setting_key,value,version,updated_by)
+VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb,1,'migration:109_cards') ON CONFLICT (setting_key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS folder_operations (
     id               TEXT PRIMARY KEY,

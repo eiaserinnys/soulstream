@@ -13,4 +13,4 @@
 | [전달 원장](delivery-ledger.md) | `session_deliveries.state`·`aggregate_state` 전이와 작성자 |
 | [세션 검색](session-search.md) | `/cogito/search` 모드 분기·A0·문서 색인·RRF·Jev·partial 응답 |
 | [타이머 목록](timers-inventory.md) | 복구·전달·러너 경로의 cadence·owner·유지 판정 |
-| [폴더와 체크리스트](folder-checklist-storage.md) | 폴더 identity·부모 mount·체크리스트·보드·planner·108 이관 |
+| [폴더와 카드](folder-card-storage.md) | 폴더 identity·부모 mount·카드·보드·planner·108/109 이관 |

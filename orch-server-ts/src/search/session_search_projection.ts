@@ -254,14 +254,14 @@ function folderEvidenceForSession(
 }
 
 function isFolderEvidenceKind(kind: string): boolean {
-  return kind === "source_checklist_item"
-    || kind === "checklist_item_completed"
+  return kind === "source_card"
+    || kind === "card_completed"
     || kind === "folder_completed"
-    || kind === "checklist_item_assigned";
+    || kind === "card_assigned";
 }
 
 function folderEvidenceRank(kind: string): number {
-  return kind === "checklist_item_completed" || kind === "folder_completed" ? 2 : 0;
+  return kind === "card_completed" || kind === "folder_completed" ? 2 : 0;
 }
 
 function isSemanticQuery(queryKind: string): boolean {

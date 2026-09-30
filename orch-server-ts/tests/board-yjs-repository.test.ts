@@ -5,8 +5,6 @@ import { createBoardYDocSnapshot, readBoardYDocReplica } from "../src/board-yjs/
 import { BoardYjsRepository } from "../src/board-yjs/board_yjs_repository.js";
 import { assertBoardItemProjectionParity } from
   "../src/board-yjs/board_yjs_projection_verification.js";
-import { normalizeMissingSourceChecklistItemReferences } from
-  "../src/board-yjs/board_yjs_replica_normalization.js";
 import {
   createLiveDbSqlResolver,
   type LivePostgresSql,
@@ -108,118 +106,6 @@ describe("orch BoardYjsRepository", () => {
       replica.markdownDocuments,
     ]);
     expect(jsonValues.every((value) => typeof value !== "string")).toBe(true);
-  });
-
-  it("normalizes deleted task item references identically for sync and verification", async () => {
-    const danglingSourceChecklistItemId = "missing-task-item";
-    const existingSourceChecklistItemId = "existing-task-item";
-    const { sql, calls, jsonValues } = createMockSql((call) => {
-      if (call.query.includes("FROM checklist_items")) return [{ id: existingSourceChecklistItemId }];
-      if (
-        call.query.includes("INSERT INTO board_items") &&
-        call.values[3] === danglingSourceChecklistItemId
-      ) {
-        throw new Error(
-          'violates foreign key constraint "board_items_source_checklist_item_id_fkey"',
-        );
-      }
-      return [];
-    });
-    const repository = new BoardYjsRepository({
-      resolveSql: vi.fn(async () => sql),
-      close: vi.fn(),
-    });
-    const replica = {
-      boardItems: [{
-        id: "session:poisoned",
-        folderId: "folder-1",
-
-        membershipKind: "primary" as const,
-        itemType: "session" as const,
-        itemId: "poisoned",
-        x: 0,
-        y: 0,
-        metadata: {},
-      }, {
-        id: "session:valid",
-        folderId: "folder-1",
-
-        membershipKind: "primary" as const,
-        itemType: "session" as const,
-        itemId: "valid",
-        x: 10,
-        y: 10,
-        metadata: {},
-      }, {
-        id: "markdown:created",
-        folderId: "folder-1",
-
-        membershipKind: "primary" as const,
-        itemType: "markdown" as const,
-        itemId: "created",
-        x: 20,
-        y: 20,
-        metadata: { title: "Created in task" },
-      }, {
-        id: "markdown:moved",
-        folderId: "folder-1",
-
-        membershipKind: "primary" as const,
-        itemType: "markdown" as const,
-        itemId: "moved",
-        x: 40,
-        y: 40,
-        metadata: { title: "Moved into task" },
-      }],
-      markdownDocuments: [{
-        id: "created",
-        title: "Created in task",
-        body: "Created body",
-        version: 1,
-      }, {
-        id: "moved",
-        title: "Moved into task",
-        body: "Moved body",
-        version: 1,
-      }],
-    };
-
-    await expect(repository.syncBoardYjsReplica({
-      folderId: "folder-1",
-      }, replica)).resolves.toBeUndefined();
-
-    const sourceLookup = calls.find((call) => call.query.includes("FROM checklist_items"));
-    expect(sourceLookup?.query).toContain("FOR KEY SHARE");
-    expect(sourceLookup?.values).toEqual([[
-      danglingSourceChecklistItemId,
-      existingSourceChecklistItemId,
-    ]]);
-    const poisonedInsert = calls.find((call) =>
-      call.query.includes("INSERT INTO board_items") && call.values[0] === "session:poisoned"
-    );
-    expect(poisonedInsert?.values[3]).toBeNull();
-    const validInsert = calls.find((call) =>
-      call.query.includes("INSERT INTO board_items") && call.values[0] === "session:valid"
-    );
-    expect(validInsert?.values[3]).toBe(existingSourceChecklistItemId);
-    const cachedBoardItems = jsonValues.find(Array.isArray) as typeof replica.boardItems;
-    expect(cachedBoardItems).toEqual([
-      expect.objectContaining({ id: "session:poisoned", sourceChecklistItemId: null }),
-      expect.objectContaining({
-        id: "session:valid",
-      }),
-      expect.objectContaining({ id: "markdown:created" }),
-      expect.objectContaining({ id: "markdown:moved" }),
-    ]);
-    const normalizedYdocReplica = normalizeMissingSourceChecklistItemReferences(
-      replica,
-      new Set([existingSourceChecklistItemId]),
-    );
-    expect(() => assertBoardItemProjectionParity({
-      label: "board-folder:task-1",
-      ydocItems: normalizedYdocReplica.boardItems,
-      projectionItems: cachedBoardItems,
-    })).not.toThrow();
   });
 
   it("does not let a never-synced empty Y.Doc erase relational board_items", async () => {

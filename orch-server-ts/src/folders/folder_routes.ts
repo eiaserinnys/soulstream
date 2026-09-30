@@ -143,9 +143,9 @@ export function registerFolderRoutes(
     try {
       if (!options.projectIdentityService || !options.cardServiceProvider) throw new Error("Folder services are not configured");
       const actor = await dashboardFolderActor(request, options);
-      const checklist = await options.cardServiceProvider();
+      const cards = await options.cardServiceProvider();
       for (const item of items.value) {
-        const snapshot = await checklist.getFolder(item.id);
+        const snapshot = await cards.getFolder(item.id);
         if (!snapshot) return reply.code(404).send({ detail: { error: { code: "FOLDER_NOT_FOUND", message: item.id } } });
         const { id, ...update } = item;
         await options.projectIdentityService.mutateFromFolder({ folderId: id, update,

@@ -593,6 +593,7 @@
           }
         },
         "folderId": { "type": ["string", "null"] },
+        "cardId": { "type": ["string", "null"] },
         "caller_source": {
           "type": "object",
           "description": "agent caller_info 흐름 보존 (R-2 fix, atom 0499ee7b).",
@@ -667,6 +668,7 @@
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleUpdated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleDeleted" },
             { "$ref": "#/$defs/SSEEventFolderUpdated" },
+            { "$ref": "#/$defs/SSEEventCardUpdated" },
             { "$ref": "#/$defs/SSEEventCustomViewUpdated" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
             { "$ref": "#/$defs/SSEEventContextManifest" },
@@ -1052,6 +1054,7 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "session_updated" },
+        "card_id": { "type": ["string", "null"] },
         "status": { "$ref": "#/$defs/SessionLifecycleStatus" },
         "agent_session_id": { "type": "string" },
         "agentSessionId": { "type": "string" },

@@ -648,7 +648,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     });
     expect(execution.session_results?.find((row) => row.session_id === "actual-work-session")?.evidence)
       .toContainEqual(expect.objectContaining({
-      source: "checklist_item_completed",
+      source: "card_completed",
       excerpt: "Unique execution verification",
     }));
     await sql`UPDATE sessions SET display_name = 'actual-work-session' WHERE session_id = 'actual-work-session'`;
@@ -692,7 +692,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       allowedFolderIds: ["folder-allowed", "task-primary"],
     });
     expect(outputSearch.session_results?.find((row) => row.session_id === "source-item-session")?.evidence)
-      .toContainEqual(expect.objectContaining({ source: "source_checklist_item" }));
+      .toContainEqual(expect.objectContaining({ source: "source_card" }));
     await sql`UPDATE sessions SET display_name = 'source-item-session' WHERE session_id = 'source-item-session'`;
   });
 
@@ -1302,29 +1302,25 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
     )
   `;
   await sql`
-    INSERT INTO checklist_sections (id, folder_id, position_key, title, updated_session_id)
-    VALUES ('search-section', 'task-primary', 'a', 'Search work', 'metadata-only-session')
-  `;
-  await sql`
-    INSERT INTO checklist_items (
-      id, section_id, position_key, title, status, completed_session_id
+    INSERT INTO cards (
+      id, folder_id, position_key, title, status, completed_session_id
     ) VALUES (
-      'execution-item', 'search-section', 'a', 'Unique execution verification',
-      'completed', 'actual-work-session'
+      'execution-item', 'task-primary', 'a', 'Unique execution verification',
+      'done', 'actual-work-session'
     )
   `;
   await sql`
-    INSERT INTO checklist_items (
-      id, section_id, position_key, title, updated_session_id
+    INSERT INTO cards (
+      id, folder_id, position_key, title, updated_session_id
     ) VALUES (
-      'source-item', 'search-section', 'b', 'Output artifact marker', 'metadata-only-session'
+      'source-item', 'task-primary', 'b', 'Output artifact marker', 'metadata-only-session'
     )
   `;
   await sql`
-    INSERT INTO checklist_items (
-      id, section_id, position_key, title, updated_session_id
+    INSERT INTO cards (
+      id, folder_id, position_key, title, updated_session_id
     ) VALUES (
-      'history-item', 'search-section', 'c', 'Edit history only', 'metadata-only-session'
+      'history-item', 'task-primary', 'c', 'Edit history only', 'metadata-only-session'
     )
   `;
   await sql`
@@ -1354,8 +1350,8 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
   await sql`UPDATE sessions SET folder_id = 'task-primary'
     WHERE session_id IN ('task-session', 'actual-work-session', 'source-item-session')`;
   await sql`
-    UPDATE board_items SET source_checklist_item_id = 'source-item'
-    WHERE id = 'source-item-membership'
+    UPDATE sessions SET card_id = 'source-item'
+    WHERE session_id = 'source-item-session'
   `;
 }
 
