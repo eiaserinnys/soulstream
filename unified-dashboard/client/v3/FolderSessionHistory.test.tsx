@@ -96,6 +96,10 @@ describe("FolderSessionHistory", () => {
   it("waits for the next run page and restores the owning detail scroller", async () => {
     const scroller = document.createElement("div");
     scroller.className = "v3-detail-scroll";
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 1000 },
+      clientHeight: { value: 500 },
+    });
     const button = document.createElement("button");
     scroller.appendChild(button);
     scroller.scrollTop = 420;
