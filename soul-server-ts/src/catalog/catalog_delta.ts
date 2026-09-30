@@ -7,6 +7,7 @@ import type {
 export interface CatalogFolderRecord {
   id: string;
   name: string;
+  checklistEnabled: boolean;
   sortOrder: number;
   settings: Record<string, unknown>;
   parentFolderId: string | null;
@@ -41,6 +42,7 @@ export function serializeCatalogFolders(
     return {
       id: folder.id,
       name: folder.name,
+      checklistEnabled: folder.checklist_enabled,
       sortOrder: folder.sort_order,
       settings: folder.settings ?? {},
       parentFolderId: folder.parent_folder_id,

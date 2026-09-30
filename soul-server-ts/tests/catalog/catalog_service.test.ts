@@ -2,8 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CatalogService } from "../../src/catalog/catalog_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
-import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
+import { createLiveFolderProvider } from "../../../orch-server-ts/src/runtime/live_folder_route_provider.js";
+import { serializeChecklistRow } from "../../../orch-server-ts/src/folders/folder_contracts.js";
+import { mergeCatalogSessionsDelta } from "../../../packages/soul-ui/src/hooks/session-catalog-helpers.js";
+import { useFolderChecklistStore } from "../../../packages/soul-ui/src/stores/folder-checklist-store.js";
+import type { CatalogFolder, CatalogState } from "../../../packages/soul-ui/src/shared/catalog-types.js";
 import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
 import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_board_projection_host.js";
 
@@ -113,6 +119,7 @@ describe("CatalogService.listFolders", () => {
         id: "f1",
         name: "F1",
         sort_order: 1,
+        checklist_enabled: true,
         settings: { x: 1 },
         parent_folder_id: null,
         project_page_id: "page-f1",
@@ -123,6 +130,7 @@ describe("CatalogService.listFolders", () => {
         id: "f2",
         name: "F2",
         sort_order: 2,
+        checklist_enabled: false,
         settings: null,
         parent_folder_id: "f1",
         project_page_id: null,
@@ -138,13 +146,70 @@ describe("CatalogService.listFolders", () => {
         id: "f1",
         name: "F1",
         sortOrder: 1,
+        checklistEnabled: true,
         settings: { x: 1 },
         parentFolderId: null,
         projectPageId: "page-f1",
         createdAt: "2026-06-03T00:00:00.000Z",
       },
-      { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1", projectPageId: null },
+      { id: "f2", name: "F2", checklistEnabled: false, sortOrder: 2, settings: {}, parentFolderId: "f1", projectPageId: null },
     ]);
+  });
+});
+
+describe("catalog checklist visibility", () => {
+  it("keeps catalog and checklist snapshot enabled across alternating orch and worker refreshes", async () => {
+    const row = {
+      id: "f1", name: "업무", sort_order: 0, settings: {},
+      parent_folder_id: null, project_page_id: "page-f1",
+      checklist_enabled: true, status: "open", archived: false, version: 1,
+      created_at: "2026-09-30T00:00:00Z", updated_at: "2026-09-30T00:00:00Z",
+    };
+    const { sql } = createMockSql((call) =>
+      call.fragments.join("|").includes("folder_get_all") ? [{ ...row }] : [],
+    );
+    const provider = createLiveFolderProvider({ resolveSql: async () => sql } as never);
+    let catalog: CatalogState = { folders: [], sessions: {} };
+    const trace: Array<{ source: string; catalog: boolean | null; snapshot: boolean | null }> = [];
+    const record = (source: string) => trace.push({
+      source,
+      catalog: catalog.folders[0]?.checklistEnabled ?? null,
+      snapshot: useFolderChecklistStore.getState().byId.f1?.snapshot?.folder.checklistEnabled ?? null,
+    });
+    const broadcaster = new SessionBroadcaster(async (message) => {
+      // The client replaces folders with each catalog_updated payload.
+      catalog = mergeCatalogSessionsDelta(catalog, message.folders as CatalogFolder[], {}, {});
+      record("worker");
+    }, new AgentRegistry([]), "eiaserinnys");
+    const svc = new CatalogService(createSessionDb(sql), broadcaster);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      folder: serializeChecklistRow(row), sections: [], items: [],
+    })));
+    useFolderChecklistStore.getState().reset();
+    try {
+      await useFolderChecklistStore.getState().loadFolder("f1");
+      for (let refresh = 0; refresh < 3; refresh++) {
+        catalog = mergeCatalogSessionsDelta(catalog, await provider.listFolders() as CatalogFolder[], {}, {});
+        record("orch");
+        await svc.broadcastCatalog();
+        await useFolderChecklistStore.getState().loadFolder("f1", { force: true });
+        record("snapshot");
+      }
+      console.info("checklist refresh trace", JSON.stringify(trace));
+      expect(trace.map(({ catalog, snapshot }) => [catalog, snapshot]))
+        .toEqual(Array.from({ length: 9 }, () => [true, true]));
+
+      // An intentional server toggle must still hide the section immediately.
+      row.checklist_enabled = false;
+      await svc.broadcastCatalog();
+      await useFolderChecklistStore.getState().loadFolder("f1", { force: true });
+      expect(catalog.folders[0]?.checklistEnabled).toBe(false);
+      expect(useFolderChecklistStore.getState().byId.f1?.snapshot?.folder.checklistEnabled).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      useFolderChecklistStore.getState().reset();
+    }
   });
 });
 
@@ -178,8 +243,8 @@ describe("CatalogService.listChildFolders", () => {
     const svc = new CatalogService(db, broadcaster);
 
     await expect(svc.listChildFolders("root")).resolves.toEqual([
-      { id: "child-a", name: "Child A", sortOrder: 1, settings: {}, parentFolderId: "root", projectPageId: null },
-      { id: "child-b", name: "Child B", sortOrder: 2, settings: {}, parentFolderId: "root", projectPageId: null },
+      { id: "child-a", name: "Child A", checklistEnabled: false, sortOrder: 1, settings: {}, parentFolderId: "root", projectPageId: null },
+      { id: "child-b", name: "Child B", checklistEnabled: false, sortOrder: 2, settings: {}, parentFolderId: "root", projectPageId: null },
     ]);
   });
 });
