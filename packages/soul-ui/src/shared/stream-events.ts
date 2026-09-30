@@ -160,6 +160,8 @@ export interface ReplayGapStreamEvent {
 }
 
 /** 세션 스트림 이벤트 유니온 */
+export interface CardUpdatedStreamEvent { type: "card_updated"; cardId: string; folderId: string; lastEventId?: string }
+
 export type SessionStreamEvent =
   | SessionListStreamEvent
   | SessionCreatedStreamEvent
@@ -167,6 +169,7 @@ export type SessionStreamEvent =
   | SessionDeletedStreamEvent
   | CatalogUpdatedStreamEvent
   | MetadataUpdatedStreamEvent
+  | CardUpdatedStreamEvent
   | FolderUpdatedStreamEvent
   | CustomViewUpdatedStreamEvent
   | PageUpdatedStreamEvent

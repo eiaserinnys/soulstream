@@ -47,7 +47,7 @@ export interface FolderPlannerData {
   folder: CatalogFolder;
   project: PageDto;
   blocks: BlockDto[];
-  items: Array<{ status: string }>;
+  cards: Array<{ status: string }>;
   subfolders: CatalogFolder[];
   nextSubfolderCursor: string | null;
   sessions: PlannerPage<SessionSummary>;
@@ -162,7 +162,7 @@ export async function loadFolderPlanner(
     folder: payload.folder,
     project: payload.page,
     blocks: payload.blocks,
-    items: payload.items,
+    cards: payload.cards,
     subfolders: payload.subfolders.items,
     nextSubfolderCursor: payload.subfolders.nextCursor,
     sessions: payload.sessions,
@@ -237,8 +237,8 @@ export async function loadPlannerFolderById(
     `/api/planner/folders/${encodeURIComponent(folderId)}`,
   ) as PlannerFolderAggregate;
   return { ...plannerFolder({ folder: payload.folder, page: payload.page,
-    itemCounts: {}, itemTotal: payload.items.length,
-    completedItemCount: payload.items.filter((item) => item.status === "completed").length,
+    itemCounts: {}, itemTotal: payload.cards.length,
+    completedItemCount: payload.cards.filter((item) => item.status === "done").length,
     assignee: null }),
     blocks: payload.blocks,
     contextCount: folderContextCount(payload.blocks),
@@ -284,7 +284,7 @@ interface PlannerFolderAggregate {
   folder: CatalogFolder;
   page: PageDto;
   blocks: BlockDto[];
-  items: Array<{ status: string }>;
+  cards: Array<{ status: string }>;
   subfolders: FolderSlicePayload<CatalogFolder>;
   sessions: FolderSlicePayload<SessionSummary>;
 }
@@ -303,7 +303,7 @@ function plannerFolder(payload: PlannerFolderPayload): PlannerFolder {
     folderId: folder.id,
     status: derivePlannerFolderStatus({
       folder,
-      items: Object.entries(payload.itemCounts).filter(([, count]) => count > 0)
+      cards: Object.entries(payload.itemCounts).filter(([, count]) => count > 0)
         .map(([status]) => ({ status })),
     }),
     assignee: payload.assignee ?? "담당 미지정",

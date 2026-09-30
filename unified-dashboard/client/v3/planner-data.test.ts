@@ -45,7 +45,7 @@ describe("unified folder planner API", () => {
 
   it("reads the folder aggregate including each first cursor slice", async () => {
     const fetchPlanner = vi.fn(async () => ({
-      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], items: [],
+      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], cards: [],
       subfolders: { items: [folder("child")], nextCursor: "sub-next" },
       sessions: { items: [{ agentSessionId: "session-a" }], nextCursor: "session-next" },
     }));
@@ -59,7 +59,7 @@ describe("unified folder planner API", () => {
   });
 
   it("uses one cursor route per folder collection", async () => {
-    const fetchPlanner = vi.fn(async (_path: string) => ({ items: [], nextCursor: "next" }));
+    const fetchPlanner = vi.fn(async (_path: string) => ({ cards: [], nextCursor: "next" }));
     const dependencies = { fetchPlanner };
     await loadFolderSubfolderPage(dependencies, "folder/a", "child-cursor");
     await loadFolderSessionPage(dependencies, "folder/a", "session-cursor");
@@ -71,9 +71,9 @@ describe("unified folder planner API", () => {
 
   it("opens a folder by its identity without reading an old task route", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
-      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], items: [],
-      subfolders: { items: [], nextCursor: null },
-      sessions: { items: [], nextCursor: null },
+      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], cards: [],
+      subfolders: { cards: [], nextCursor: null },
+      sessions: { cards: [], nextCursor: null },
     }), { headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetcher);
     try {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   History,
   Info,
@@ -26,33 +26,33 @@ const TASK_SECTIONS: readonly {
   Icon: LucideIcon;
 }[] = [
   { id: "information", label: "정보", accessibleLabel: "정보", Icon: Info },
-  { id: "checklist", label: "체크", accessibleLabel: "체크리스트", Icon: ListChecks },
+  { id: "checklist", label: "카드", accessibleLabel: "카드", Icon: ListChecks },
   { id: "board", label: "보드", accessibleLabel: "보드", Icon: LayoutGrid },
   { id: "sessions", label: "세션", accessibleLabel: "세션", Icon: History },
 ];
 
-export function FolderSectionNavigation({
-  scrollRef,
-  sectionRefs,
-  checklistEnabled = true,
-  focusRequest,
-  focusTargetReady = true,
-  onFocusRequestHandled,
-}: {
-  scrollRef: RefObject<HTMLDivElement | null>;
-  sectionRefs: FolderSectionRefs;
-  checklistEnabled?: boolean;
-  focusRequest?: FolderSectionFocusRequest | null;
-  focusTargetReady?: boolean;
+export function FolderSectionNavigation(props: {
+  scrollRef: RefObject<HTMLDivElement | null>; sectionRefs: FolderSectionRefs; checklistEnabled?: boolean;
+  focusRequest?: FolderSectionFocusRequest | null; focusTargetReady?: boolean;
   onFocusRequestHandled?(requestId: number): void;
 }) {
-  const requestedSectionRef = useRef<FolderSectionId | null>(null);
+  const sections = useMemo(() => TASK_SECTIONS.filter(s => s.id !== "checklist" || props.checklistEnabled !== false), [props.checklistEnabled]);
+  return <SectionNavigation {...props} sections={sections} ariaLabel="업무 섹션" />;
+}
+export function SectionNavigation<Id extends string>({scrollRef, sectionRefs, sections, focusRequest, focusTargetReady = true, onFocusRequestHandled, ariaLabel}: {
+  scrollRef: RefObject<HTMLDivElement | null>;
+  sectionRefs: Record<Id, RefObject<HTMLElement | null>>;
+  sections: readonly {id:Id;label:string;accessibleLabel:string;Icon:LucideIcon}[];
+  focusRequest?: {requestId:number;sectionId:Id;sessionId?:string}|null;
+  focusTargetReady?: boolean; onFocusRequestHandled?(requestId:number):void; ariaLabel:string;
+}) {
+  const requestedSectionRef = useRef<Id | null>(null);
   const requestedSectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeSection, setActiveSection] = useState<FolderSectionId>("information");
+  const [activeSection, setActiveSection] = useState<Id>(sections[0].id);
 
-  const moveToSection = useCallback((id: FolderSectionId, target?: HTMLElement | null) => {
+  const moveToSection = useCallback((id: Id, target?: HTMLElement | null) => {
     const scrollElement = scrollRef.current;
-    const section = sectionRefs[id].current;
+    const section = sectionRefs[id]?.current;
     const targetElement = target ?? section;
     if (!scrollElement || !section || !targetElement) return;
     const top = targetElement.getBoundingClientRect().top
@@ -88,9 +88,9 @@ export function FolderSectionNavigation({
         96,
         Math.max(56, scrollElement.clientHeight * 0.18),
       );
-      let nextSection = TASK_SECTIONS[0].id;
-      for (const { id } of TASK_SECTIONS.filter(({ id }) => id !== "checklist" || checklistEnabled)) {
-        const section = sectionRefs[id].current;
+      let nextSection = sections[0].id;
+      for (const { id } of sections) {
+        const section = sectionRefs[id]?.current;
         if (!section || section.getBoundingClientRect().top > activationLine) break;
         nextSection = id;
       }
@@ -98,7 +98,7 @@ export function FolderSectionNavigation({
         scrollElement.scrollTop + scrollElement.clientHeight
         >= scrollElement.scrollHeight - 2
       ) {
-        nextSection = TASK_SECTIONS.at(-1)?.id ?? nextSection;
+        nextSection = sections.at(-1)?.id ?? nextSection;
       }
       setActiveSection((current) => current === nextSection ? current : nextSection);
     };
@@ -108,8 +108,8 @@ export function FolderSectionNavigation({
       ? null
       : new ResizeObserver(updateActiveSection);
     resizeObserver?.observe(scrollElement);
-    for (const { id } of TASK_SECTIONS.filter(({ id }) => id !== "checklist" || checklistEnabled)) {
-      const section = sectionRefs[id].current;
+    for (const { id } of sections) {
+      const section = sectionRefs[id]?.current;
       if (section) resizeObserver?.observe(section);
     }
     updateActiveSection();
@@ -118,7 +118,7 @@ export function FolderSectionNavigation({
       resizeObserver?.disconnect();
       if (requestedSectionTimerRef.current) clearTimeout(requestedSectionTimerRef.current);
     };
-  }, [checklistEnabled, scrollRef, sectionRefs]);
+  }, [sections, scrollRef, sectionRefs]);
 
   useEffect(() => {
     if (!focusRequest || !focusTargetReady) return;
@@ -136,9 +136,9 @@ export function FolderSectionNavigation({
   return (
     <nav
       className="v3-task-section-nav"
-      aria-label="업무 섹션"
+      aria-label={ariaLabel}
     >
-      {TASK_SECTIONS.filter(({ id }) => id !== "checklist" || checklistEnabled).map(({ id, label, accessibleLabel, Icon }) => (
+      {sections.map(({ id, label, accessibleLabel, Icon }) => (
         <button
           key={id}
           type="button"

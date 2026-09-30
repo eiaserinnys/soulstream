@@ -29,7 +29,7 @@ import type { ChatFocusTarget } from "../shared/search-focus";
 export interface NewSessionDefaults {
   folderId?: string | null;
   container?: BoardContainerRef | null;
-  sourceChecklistItemId?: string | null;
+  cardId?: string | null;
   nodeId?: string;
   agentId?: string | null;
   modelPreset?: string | null;

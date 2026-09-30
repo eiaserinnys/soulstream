@@ -20,7 +20,7 @@ describe("v3 task checklist", () => {
     expect(detail).toContain('textSize="session"');
     expect(detail.match(/label="업무 보드 열기"/g)).toHaveLength(1);
     expect(detail).not.toContain("ChecklistItemStatusToggle");
-    expect(detail).not.toContain("useFolderChecklistStore");
+    expect(detail).not.toContain("useFolderCardStore");
   });
 
   it("uses one row action primitive for the sibling menu and disclosure buttons", () => {

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { mergeCatalogSessionsDelta } from "../hooks/session-stream-helpers";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useFolderChecklistStore } from "../stores/folder-checklist-store";
+import { useFolderCardStore } from "../stores/folder-card-store";
 import { BoardWorkspaceView } from "./BoardWorkspaceView";
 import { resolveEffectiveBoardCatalog } from "./board-catalog-resolution";
 
@@ -270,7 +270,7 @@ function findButtonByText(scope: ParentNode, text: string): HTMLButtonElement | 
 }
 
 function seedTaskProjection(taskId = "rb-1") {
-  useFolderChecklistStore.setState({
+  useFolderCardStore.setState({
     byId: {
       [taskId]: {
         snapshot: {
@@ -404,7 +404,7 @@ describe("BoardWorkspaceView", () => {
     container?.remove();
     root = undefined;
     container = undefined;
-    useFolderChecklistStore.getState().reset();
+    useFolderCardStore.getState().reset();
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
     vi.restoreAllMocks();

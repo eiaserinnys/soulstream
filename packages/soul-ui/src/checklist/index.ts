@@ -1,1 +1,1 @@
-export * from "./FolderChecklistCard";
+export * from "./FolderCompletionAction";

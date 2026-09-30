@@ -1,0 +1,39 @@
+.v3-card-row { gap: var(--v3-space-1); }
+.v3-card-open { align-items: center; gap: var(--v3-space-2); }
+.v3-card-open strong { font: var(--v3-type-card); }
+.v3-card-folder { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--v3-text-tertiary); font: var(--v3-type-meta); }
+.v3-card-actions, .v3-card-add { display: flex; align-items: center; gap: var(--v3-space-1); }
+.v3-card-add input { flex: 1; min-width: 0; }
+.v3-card-error { color: var(--v3-error); font: var(--v3-type-body); }
+.v3-card-status--review { color: var(--v3-favorite); }
+.v3-card-status--blocked { color: var(--v3-error); }
+.v3-card-status--running { color: var(--v3-live); }
+.v3-card-status--done { color: var(--v3-complete); }
+.v3-card-status--queued, .v3-card-status--todo, .v3-card-status--cancelled { color: var(--v3-text-secondary); }
+.v3-folder-cards, .v3-card-inbox { display: flex; flex-direction: column; gap: var(--v3-space-3); }
+.v3-card-inbox > section { display: flex; flex-direction: column; gap: var(--v3-space-2); margin-bottom: var(--v3-space-4); }
+.v3-card-handoff { display: flex; align-items: center; gap: var(--v3-space-2); margin-bottom: var(--v3-space-6); }
+.v3-card-handoff > input { min-width: 0; flex: 1; font: var(--v3-type-body); height: var(--v3-control-height); }
+.v3-card-handoff .v3-succession-assignment { flex: none; }
+.v3-card-handoff .v3-assignment-field label { display: none; }
+.v3-card-handoff .v3-succession-assignment--compact-row { margin: 0; }
+.v3-card-folder-picker { min-width: 0; }
+.v3-card-handoff-folder { max-width: calc(var(--v3-action-size) * 3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--v3-type-body); }
+.v3-card-detail .v3-detail-section { margin-bottom: var(--v3-space-6); }
+.v3-card-detail summary { cursor: pointer; font: var(--v3-type-body); }
+.v3-card-detail details, .v3-card-question { margin-bottom: var(--v3-space-3); }
+.v3-card-detail details > :not(summary) { margin-top: var(--v3-space-2); }
+.v3-card-report-html { width: 100%; height: calc(var(--v3-control-height) * 8); border: 0; border-radius: var(--radius); }
+.v3-card-question { display: flex; flex-direction: column; gap: var(--v3-space-2); font: var(--v3-type-body); }
+.v3-card-answer-options { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); }
+.v3-card-detail .v3-task-detail-content { min-width: 0; }
+.v3-card-request { white-space: pre-wrap; overflow-wrap: anywhere; font: var(--v3-type-body); }
+.v3-card-dispatch { display: flex; flex-direction: column; gap: var(--v3-space-4); font: var(--v3-type-body); }
+.v3-card-dispatch label { display: flex; align-items: center; justify-content: space-between; gap: var(--v3-space-4); }
+.v3-card-dispatch input { max-width: calc(var(--v3-action-size) * 3); }
+@media (width < 900px) {
+  .v3-card-handoff { flex-wrap: wrap; }
+  .v3-card-handoff > input { flex-basis: 100%; }
+  .v3-card-handoff .v3-succession-assignment { flex: 1; min-width: 0; }
+  .v3-card-handoff .v3-succession-assignment--compact-row { flex-wrap: wrap; }
+}

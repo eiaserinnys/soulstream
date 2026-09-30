@@ -41,7 +41,7 @@ export interface CreateDashboardSessionInput {
   reasoningEffort?: string | null;
   oauthProfileName?: string | null;
   sourceSessionId?: string | null;
-  sourceChecklistItemId?: string | null;
+  cardId?: string | null;
   boardPosition?: { x: number; y: number } | null;
   agentSessionId?: string;
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
@@ -68,8 +68,8 @@ export async function createDashboardSession(
     ...(input.attachmentPaths?.length ? { attachmentPaths: input.attachmentPaths } : {}),
     ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
     ...(input.sourceSessionId ? { sourceSessionId: input.sourceSessionId } : {}),
-    ...(input.sourceChecklistItemId !== undefined
-      ? { sourceChecklistItemId: input.sourceChecklistItemId }
+    ...(input.cardId !== undefined
+      ? { cardId: input.cardId }
       : {}),
     ...(input.agentId ? { profile: input.agentId } : {}),
     ...(input.modelPreset ? { model_preset: input.modelPreset } : {}),
