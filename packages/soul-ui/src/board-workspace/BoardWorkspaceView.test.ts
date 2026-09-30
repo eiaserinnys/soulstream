@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { mergeCatalogSessionsDelta } from "../hooks/session-stream-helpers";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useFolderChecklistStore } from "../stores/folder-checklist-store";
+import { useFolderCardStore } from "../stores/folder-card-store";
 import { BoardWorkspaceView } from "./BoardWorkspaceView";
 import { resolveEffectiveBoardCatalog } from "./board-catalog-resolution";
 
@@ -269,107 +269,6 @@ function findButtonByText(scope: ParentNode, text: string): HTMLButtonElement | 
     .find((button) => button.textContent?.trim() === text);
 }
 
-function seedTaskProjection(taskId = "rb-1") {
-  useFolderChecklistStore.setState({
-    byId: {
-      [taskId]: {
-        snapshot: {
-          folder: {
-            id: taskId,
-            parentFolderId: "root",
-            projectPageId: null,
-            checklistEnabled: true,
-            name: "Deploy Task",
-            status: "open",
-            completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
-            archived: false,
-            version: 3,
-            createdSessionId: null,
-            createdEventId: null,
-            createdAt: "2026-07-06T00:00:00.000Z",
-            updatedAt: "2026-07-06T00:00:00.000Z",
-          },
-          sections: [
-            {
-              id: "sec-1",
-              folderId: taskId,
-              positionKey: "a",
-              title: "Checklist",
-              archived: false,
-              version: 1,
-              createdSessionId: null,
-              createdEventId: null,
-              updatedSessionId: null,
-              updatedEventId: null,
-              createdAt: "2026-07-06T00:00:00.000Z",
-              updatedAt: "2026-07-06T00:00:00.000Z",
-              assigneeKind: null,
-              assigneeAgentId: null,
-              assigneeSessionId: null,
-              assigneeUserId: null,
-            },
-          ],
-          items: [
-            {
-              id: "item-1",
-              sectionId: "sec-1",
-              positionKey: "a",
-              title: "Done",
-              howTo: "",
-              status: "completed",
-              archived: false,
-              version: 1,
-              createdSessionId: null,
-              createdEventId: null,
-              updatedSessionId: null,
-              updatedEventId: null,
-              completedKind: null,
-              completedSessionId: null,
-              completedEventId: null,
-              completedUserId: null,
-              completedAt: null,
-              createdAt: "2026-07-06T00:00:00.000Z",
-              updatedAt: "2026-07-06T00:00:00.000Z",
-              assigneeKind: null,
-              assigneeAgentId: null,
-              assigneeSessionId: null,
-              assigneeUserId: null,
-            },
-            {
-              id: "item-2",
-              sectionId: "sec-1",
-              positionKey: "b",
-              title: "Pending",
-              howTo: "",
-              status: "pending",
-              archived: false,
-              version: 1,
-              createdSessionId: null,
-              createdEventId: null,
-              updatedSessionId: null,
-              updatedEventId: null,
-              completedKind: null,
-              completedSessionId: null,
-              completedEventId: null,
-              completedUserId: null,
-              completedAt: null,
-              createdAt: "2026-07-06T00:00:00.000Z",
-              updatedAt: "2026-07-06T00:00:00.000Z",
-              assigneeKind: null,
-              assigneeAgentId: null,
-              assigneeSessionId: null,
-              assigneeUserId: null,
-            },
-          ],
-        },
-        status: "ready",
-        error: null,
-        isRefreshing: false,
-      },
-    },
-  });
-}
-
 describe("BoardWorkspaceView", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
@@ -404,7 +303,7 @@ describe("BoardWorkspaceView", () => {
     container?.remove();
     root = undefined;
     container = undefined;
-    useFolderChecklistStore.getState().reset();
+    useFolderCardStore.getState().reset();
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
     vi.restoreAllMocks();

@@ -27,6 +27,7 @@ import type {
   CustomViewUpdatedStreamEvent,
   ReplayGapStreamEvent,
   FolderUpdatedStreamEvent,
+  CardUpdatedStreamEvent,
   SessionListStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
@@ -100,6 +101,7 @@ export interface UseSessionStreamCacheSyncOptions {
   /** replay_gap 수신 시 호출 (풀 refetch 트리거용). */
   onReplayGap?: (event: ReplayGapStreamEvent) => boolean | void;
   /** folder_updated 수신 시 호출 (폴더 snapshot projection 갱신용). */
+  onCardUpdated?: (event: CardUpdatedStreamEvent) => void;
   onFolderUpdated?: (event: FolderUpdatedStreamEvent) => void;
   /** session_deleted 캐시 반영 뒤 detail cursor 같은 외부 projection을 회수한다. */
   onSessionDeleted?: (event: SessionDeletedStreamEvent) => void;
@@ -130,6 +132,7 @@ export function useSessionStreamCacheSync(
     onEventIdAdvance,
     onStreamMeta: onStreamMetaOption,
     onReplayGap: onReplayGapOption,
+    onCardUpdated: onCardUpdatedOption,
     onFolderUpdated: onFolderUpdatedOption,
     onSessionDeleted: onSessionDeletedOption,
     onCustomViewUpdated: onCustomViewUpdatedOption,
@@ -399,6 +402,11 @@ export function useSessionStreamCacheSync(
     [queryClient, onEventIdAdvance],
   );
 
+  const onCardUpdated = useCallback((event: CardUpdatedStreamEvent) => {
+    if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
+    onCardUpdatedOption?.(event);
+  }, [onEventIdAdvance, onCardUpdatedOption]);
+
   const onFolderUpdated = useCallback(
     (event: FolderUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
@@ -494,6 +502,9 @@ export function useSessionStreamCacheSync(
       case "metadata_updated":
         onMetadataUpdated(event);
         break;
+      case "card_updated":
+        onCardUpdated(event);
+        break;
       case "folder_updated":
         onFolderUpdated(event);
         break;
@@ -516,6 +527,7 @@ export function useSessionStreamCacheSync(
     onSessionDeleted,
     onSessionList,
     onSessionUpdated,
+    onCardUpdated,
     onFolderUpdated,
   ]);
 
@@ -698,6 +710,7 @@ export function useSessionStreamCacheSync(
     onSessionDeleted: routeDataEvent,
     onCatalogUpdated: routeDataEvent,
     onMetadataUpdated: routeDataEvent,
+    onCardUpdated: routeDataEvent,
     onFolderUpdated: routeDataEvent,
     onCustomViewUpdated: routeDataEvent,
     onPageUpdated: routeDataEvent,

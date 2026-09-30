@@ -1,10 +1,10 @@
+import { FolderCardSection } from "./FolderCardSection";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   CustomViewPanel,
   DashboardIconCap,
   DisclosureActionIcon,
   MarkdownContent,
-  FolderChecklistCard,
   retainEqualValue,
   type CatalogBoardItem,
   type MarkdownDocument,
@@ -102,7 +102,7 @@ export function FolderBoardResourcePane({
         aria-label={activeTab.title}
       >
         {activeTab.kind === "checklist" ? (
-          <FolderChecklistCard folderId={folderId} fallbackTitle={folderTitle} editable textSize="session" />
+          <FolderCardSection folderId={folderId} placement="overlay" />
         ) : activeTab.kind === "sessions" ? (
           <FolderBoardSessionTree
             sessionIds={sessionIds}

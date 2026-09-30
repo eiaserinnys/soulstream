@@ -71,7 +71,6 @@ export interface CatalogBoardItem {
   id: string;
   folderId: string;
   membershipKind?: "primary" | "reference";
-  sourceChecklistItemId?: string | null;
   itemType: CatalogBoardItemType;
   itemId: string;
   x: number;

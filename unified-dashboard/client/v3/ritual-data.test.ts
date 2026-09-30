@@ -22,7 +22,7 @@ describe("morning ritual data", () => {
         },
         folders: [],
         memoBlocks: [],
-        reviewSessionIds: [],
+        attention: [], running: [], queued: [], reviewSessionIds: [],
       };
     });
 

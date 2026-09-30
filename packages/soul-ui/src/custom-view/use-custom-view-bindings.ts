@@ -1,9 +1,10 @@
+import { useCardStore } from "../cards/card-store";
 import { useEffect, useMemo } from "react";
 
 import type { CustomViewBindingData } from "./CustomViewRenderer";
 import { useCustomViewStore, type CustomViewProjection } from "../stores/custom-view-store";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useFolderChecklistStore, type FolderSnapshot } from "../stores/folder-checklist-store";
+import { useFolderCardStore, type FolderSnapshot } from "../stores/folder-card-store";
 
 function sessionTitle(session: { displayName?: string | null; prompt?: string; agentSessionId: string }): string {
   return session.displayName || session.prompt || session.agentSessionId;
@@ -12,10 +13,10 @@ function sessionTitle(session: { displayName?: string | null; prompt?: string; a
 function taskProgress(snapshot: FolderSnapshot): { completed: number; total: number } {
   let completed = 0;
   let total = 0;
-  for (const item of snapshot.items) {
+  for (const item of snapshot.cards) {
     if (item.archived || item.status === "cancelled") continue;
     total += 1;
-    if (item.status === "completed") completed += 1;
+    if (item.status === "done") completed += 1;
   }
   return { completed, total };
 }
@@ -29,7 +30,7 @@ function buildBindings(
 
   for (const snapshot of taskSnapshots) {
     tasks[snapshot.folder.id] = taskProgress(snapshot);
-    for (const item of snapshot.items) {
+    for (const item of snapshot.cards) {
       taskItems[item.id] = {
         title: item.title,
         status: item.status,
@@ -43,7 +44,8 @@ function buildBindings(
 /** catalog·업무 정본에서 <soul-bind> 라이브 바인딩 데이터를 만든다 (패널·타일 공용). */
 export function useCustomViewBindings(): CustomViewBindingData {
   const catalog = useDashboardStore((s) => s.catalog);
-  const taskById = useFolderChecklistStore((s) => s.byId);
+  const cards = useCardStore(s=>s.byId);
+  const taskById = useFolderCardStore((s) => s.byId);
 
   return useMemo(() => {
     const sessions: CustomViewBindingData["sessions"] = {};
@@ -64,8 +66,8 @@ export function useCustomViewBindings(): CustomViewBindingData {
     const taskSnapshots = Object.values(taskById)
       .map((projection) => projection.snapshot)
       .filter((snapshot): snapshot is FolderSnapshot => Boolean(snapshot));
-    return buildBindings(taskSnapshots, sessions);
-  }, [catalog?.sessionList, catalog?.sessions, taskById]);
+    return buildBindings(taskSnapshots.map(snapshot=>({...snapshot,cards:Object.values(cards).filter(card=>card.folderId===snapshot.folder.id)})), sessions);
+  }, [catalog?.sessionList, catalog?.sessions, taskById, cards]);
 }
 
 /** 커스텀 뷰 문서를 로드하고 projection을 반환한다 (패널·타일 공용). */

@@ -20,9 +20,9 @@ describe("project folder bridge", () => {
 
 describe("planner task status", () => {
   it("derives review and in-progress states from open task items", () => {
-    expect(derivePlannerFolderStatus(snapshot("open", ["pending"]))).toBe("open");
-    expect(derivePlannerFolderStatus(snapshot("open", ["in_progress"]))).toBe("in_progress");
-    expect(derivePlannerFolderStatus(snapshot("open", ["in_progress", "review"]))).toBe("review");
+    expect(derivePlannerFolderStatus(snapshot("open", ["todo"]))).toBe("open");
+    expect(derivePlannerFolderStatus(snapshot("open", ["running"]))).toBe("in_progress");
+    expect(derivePlannerFolderStatus(snapshot("open", ["running", "review"]))).toBe("review");
     expect(derivePlannerFolderStatus(snapshot("completed", ["review"]))).toBe("completed");
   });
 
@@ -37,6 +37,6 @@ describe("planner task status", () => {
 function snapshot(status: "open" | "completed", itemStatuses: string[]) {
   return {
     folder: { status },
-    items: itemStatuses.map((itemStatus) => ({ status: itemStatus })),
+    cards: itemStatuses.map((itemStatus) => ({ status: itemStatus })),
   };
 }

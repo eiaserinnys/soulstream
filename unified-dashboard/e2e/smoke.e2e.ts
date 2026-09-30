@@ -26,5 +26,9 @@ test("renders the built v3 dashboard with its deterministic API fixture", async 
   await installV3VisualQaRoutes(page);
 
   await page.goto("/v3", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "무엇을 맡길까요" })).toBeVisible();
+  const inbox = page.locator(".v3-card-inbox");
+  for (const name of ["확인할 것", "진행 중", "대기열"]) {
+    await expect(inbox.getByRole("heading", { name, exact: true })).toBeVisible();
+  }
 });

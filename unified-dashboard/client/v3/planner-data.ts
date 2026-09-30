@@ -1,3 +1,5 @@
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type {
   BlockDto,
   PageApiClient,
@@ -36,6 +38,9 @@ export function starredFolderPage(value: StarredPlannerFolder): PageDto {
 }
 
 export interface DailyPlannerData {
+  attention: CardRow[];
+  running: CardRow[];
+  queued: CardRow[];
   daily: PageReadResponse;
   projects: PageDto[];
   memoBlocks: BlockDto[];
@@ -47,7 +52,7 @@ export interface FolderPlannerData {
   folder: CatalogFolder;
   project: PageDto;
   blocks: BlockDto[];
-  items: Array<{ status: string }>;
+  cards: Array<{ status: string }>;
   subfolders: CatalogFolder[];
   nextSubfolderCursor: string | null;
   sessions: PlannerPage<SessionSummary>;
@@ -140,7 +145,9 @@ export async function loadDailyPlanner(
   const payload = await dependencies.fetchPlanner(
     `/api/planner/today?${query.toString()}`,
   ) as PlannerTodayPayload;
+  useCardStore.getState().putCards([...payload.attention, ...payload.running, ...payload.queued]);
   return {
+    attention: payload.attention, running: payload.running, queued: payload.queued,
     daily: payload.daily,
     projects: [],
     folders: payload.folders.map(plannerFolder),
@@ -162,7 +169,7 @@ export async function loadFolderPlanner(
     folder: payload.folder,
     project: payload.page,
     blocks: payload.blocks,
-    items: payload.items,
+    cards: payload.cards,
     subfolders: payload.subfolders.items,
     nextSubfolderCursor: payload.subfolders.nextCursor,
     sessions: payload.sessions,
@@ -237,8 +244,8 @@ export async function loadPlannerFolderById(
     `/api/planner/folders/${encodeURIComponent(folderId)}`,
   ) as PlannerFolderAggregate;
   return { ...plannerFolder({ folder: payload.folder, page: payload.page,
-    itemCounts: {}, itemTotal: payload.items.length,
-    completedItemCount: payload.items.filter((item) => item.status === "completed").length,
+    itemCounts: {}, itemTotal: payload.cards.length,
+    completedItemCount: payload.cards.filter((item) => item.status === "done").length,
     assignee: null }),
     blocks: payload.blocks,
     contextCount: folderContextCount(payload.blocks),
@@ -265,6 +272,7 @@ function pagePath(path: string, cursor: string | undefined): string {
 }
 
 interface PlannerTodayPayload {
+  attention: CardRow[]; running: CardRow[]; queued: CardRow[];
   daily: PageReadResponse;
   folders: PlannerFolderPayload[];
   memoBlocks: BlockDto[];
@@ -284,7 +292,7 @@ interface PlannerFolderAggregate {
   folder: CatalogFolder;
   page: PageDto;
   blocks: BlockDto[];
-  items: Array<{ status: string }>;
+  cards: Array<{ status: string }>;
   subfolders: FolderSlicePayload<CatalogFolder>;
   sessions: FolderSlicePayload<SessionSummary>;
 }
@@ -303,7 +311,7 @@ function plannerFolder(payload: PlannerFolderPayload): PlannerFolder {
     folderId: folder.id,
     status: derivePlannerFolderStatus({
       folder,
-      items: Object.entries(payload.itemCounts).filter(([, count]) => count > 0)
+      cards: Object.entries(payload.itemCounts).filter(([, count]) => count > 0)
         .map(([status]) => ({ status })),
     }),
     assignee: payload.assignee ?? "담당 미지정",

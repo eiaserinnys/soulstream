@@ -31,7 +31,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
       catalog: { folders: [{ id: "folder-a", name: "음악" }] },
       setActiveSession: shared.openSession,
     }),
-    useFolderChecklistStore: (selector: any) => selector({
+    useFolderCardStore: (selector: any) => selector({
       overview: { snapshot: { tasks: [] } },
       loadOverview: async () => undefined,
     }),

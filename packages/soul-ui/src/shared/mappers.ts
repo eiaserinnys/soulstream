@@ -68,6 +68,7 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
       ? { noticesTruncated: (raw.notices_truncated ?? raw.noticesTruncated) === true }
       : {}),
     metadata: (raw.metadata as MetadataEntry[] | undefined) ?? [],
+    cardId: (raw.card_id ?? raw.cardId ?? null) as string | null,
     folderId: (raw.folder_id ?? raw.folderId) as string | null | undefined,
     lastEventId: (raw.last_event_id ?? raw.lastEventId ?? 0) as number,
     ...(feedLastEventId === undefined ? {} : { feedLastEventId }),

@@ -1,3 +1,5 @@
+import { CardInbox } from "./CardInbox";
+import { CardHandoff } from "./CardHandoff";
 import { DashboardIconCap, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { Plus, Sun } from "lucide-react";
 
@@ -77,43 +79,9 @@ export function DailyPlannerView({
         </DashboardIconCap>
       </div>
       {state.status === "error" ? <LoadError message={state.message} /> : null}
+      <CardHandoff folders={folders} />
       {data ? <DailyMemo blocks={data.memoBlocks} onSave={onSaveMemo} /> : null}
-      <div className="v3-section-head">
-        <h2>오늘의 업무</h2><span>{visibleTasks.length}개</span>
-        <span className="v3-spacer" />
-        <DashboardIconCap className="v3-planner-head-action" label="새 업무" onClick={onCreateFolder}>
-          <Plus className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
-      </div>
-      {groups.map((group) => (
-        <section className="v3-project-group" key={group.project?.id ?? "unclassified"}>
-          <div className="v3-project-head">
-            <h3>{group.project?.name ?? "미분류"}</h3><span>{group.tasks.length}개</span>
-            {group.project ? (
-              <button type="button" onClick={() => onOpenProject(group.project!.id)}>아카이브 보기 ›</button>
-            ) : null}
-          </div>
-          <div className="v3-task-list">
-            {group.tasks.map((task) => (
-              <PlannerFolderCard
-                key={task.page.id}
-                task={task}
-                folder={folders.find((folder) => folder.id === task.folderId)}
-                sessions={sessions}
-                nodeConnectivity={nodeConnectivity}
-                isInToday={todayFolderIds.has(task.page.id)}
-                onOpen={() => onOpenFolder(task)}
-                onComplete={() => onCompleteFolder(task)}
-                onToggleToday={() => onToggleFolderToday(task)}
-                onMoveToParent={() => onMoveFolderToParent(task)}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-      {state.status === "ready" && groups.length === 0 ? (
-        <EmptyState text="이 날짜에 편입된 업무가 없습니다." />
-      ) : null}
+      <CardInbox folders={folders} />
     </div>
   );
 }

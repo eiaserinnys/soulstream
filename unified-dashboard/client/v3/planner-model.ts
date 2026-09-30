@@ -1,3 +1,4 @@
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type {
   BlockDto,
   PageDto,
@@ -7,9 +8,8 @@ import type {
   SessionSummary,
 } from "@seosoyoung/soul-ui";
 import type {
-  ChecklistItemRow,
   FolderSnapshot,
-} from "@seosoyoung/soul-ui/stores/folder-checklist-store";
+} from "@seosoyoung/soul-ui/stores/folder-card-store";
 
 export type PlannerFolderStatus = "open" | "in_progress" | "review" | "completed";
 
@@ -30,11 +30,11 @@ export function parseSingleMountTitle(
 
 export function derivePlannerFolderStatus(snapshot: {
   folder: { status: "open" | "completed" };
-  items: readonly { status: string }[];
+  cards: readonly { status: string }[];
 }): PlannerFolderStatus {
   if (snapshot.folder.status === "completed") return "completed";
-  if (snapshot.items.some((item) => item.status === "review")) return "review";
-  if (snapshot.items.some((item) => item.status === "in_progress")) return "in_progress";
+  if (snapshot.cards.some((item) => item.status === "review")) return "review";
+  if (snapshot.cards.some((item) => item.status === "running")) return "in_progress";
   return "open";
 }
 
@@ -43,9 +43,9 @@ export function plannerStatusPresentation(status: PlannerFolderStatus) {
 }
 
 export function plannerProgress(snapshot: FolderSnapshot | null): number | null {
-  if (!snapshot || snapshot.items.length === 0) return null;
-  const completed = snapshot.items.filter((item) => item.status === "completed").length;
-  return Math.round((completed / snapshot.items.length) * 100);
+  if (!snapshot || snapshot.cards.length === 0) return null;
+  const completed = snapshot.cards.filter((item) => item.status === "done").length;
+  return Math.round((completed / snapshot.cards.length) * 100);
 }
 
 export function folderContextCount(blocks: readonly BlockDto[]): number {
@@ -56,7 +56,7 @@ export function folderContextCount(blocks: readonly BlockDto[]): number {
 
 export function folderAssignee(snapshot: FolderSnapshot | null): string {
   if (!snapshot) return "담당 미확인";
-  const item = preferredAssigneeItem(snapshot.items);
+  const item = preferredAssigneeItem(snapshot.cards);
   if (!item) return "담당 미지정";
   return item.assigneeAgentId
     ?? item.assigneeUserId
@@ -82,10 +82,10 @@ export function resolveProjectFolderId(
   return folders.find((folder) => folder.projectPageId === page.id)?.id ?? null;
 }
 
-function preferredAssigneeItem(items: readonly ChecklistItemRow[]): ChecklistItemRow | null {
-  const active = items.find((item) => item.status === "in_progress")
+function preferredAssigneeItem(items: readonly CardRow[]): CardRow | null {
+  const active = items.find((item) => item.status === "running")
     ?? items.find((item) => item.status === "review")
-    ?? items.find((item) => item.status === "pending")
+    ?? items.find((item) => item.status === "todo")
     ?? items[0];
   return active ?? null;
 }

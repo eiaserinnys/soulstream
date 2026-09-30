@@ -16,7 +16,6 @@ export interface BoardYjsItemValue {
   x: number;
   y: number;
   membership_kind?: CatalogBoardItem["membershipKind"];
-  source_checklist_item_id?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -37,7 +36,6 @@ export function catalogBoardItemsFromYDoc(
       id,
       folderId,
       membershipKind: value.membership_kind ?? "primary",
-      sourceChecklistItemId: value.source_checklist_item_id ?? null,
       itemType: value.item_type,
       itemId: value.item_id,
       x: value.x,
@@ -111,7 +109,6 @@ export function createMarkdownYjsDocument(
     id: `markdown:${documentId}`,
     folderId,
     membershipKind: "primary",
-    sourceChecklistItemId: null,
     itemType: "markdown",
     itemId: documentId,
     x: input.x,
@@ -190,9 +187,6 @@ function toYjsItemValue(item: CatalogBoardItem): BoardYjsItemValue {
     x: item.x,
     y: item.y,
     ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
-    ...(item.sourceChecklistItemId !== undefined
-      ? { source_checklist_item_id: item.sourceChecklistItemId }
-      : {}),
     metadata: sanitizeBoardItemMetadata(item.metadata),
     ...(item.createdAt ? { created_at: item.createdAt } : {}),
     ...(item.updatedAt ? { updated_at: item.updatedAt } : {}),

@@ -35,7 +35,7 @@ describe("unified folder planner API", () => {
   it("reads today as one folder list with no page fanout", async () => {
     const fetchPlanner = vi.fn(async () => ({
       daily: { page: page("daily"), blocks: [], state_vector: "" },
-      folders: [entry("folder-a")], memoBlocks: [], reviewSessionIds: [],
+      attention: [], running: [], queued: [], folders: [entry("folder-a")], memoBlocks: [], reviewSessionIds: [],
     }));
     const result = await loadDailyPlanner(api, "2026-09-29", { fetchPlanner });
     expect(result.folders).toMatchObject([{ folderId: "folder-a", page: { id: "folder-a-page" } }]);
@@ -45,7 +45,7 @@ describe("unified folder planner API", () => {
 
   it("reads the folder aggregate including each first cursor slice", async () => {
     const fetchPlanner = vi.fn(async () => ({
-      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], items: [],
+      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], cards: [],
       subfolders: { items: [folder("child")], nextCursor: "sub-next" },
       sessions: { items: [{ agentSessionId: "session-a" }], nextCursor: "session-next" },
     }));
@@ -71,7 +71,7 @@ describe("unified folder planner API", () => {
 
   it("opens a folder by its identity without reading an old task route", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
-      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], items: [],
+      folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], cards: [],
       subfolders: { items: [], nextCursor: null },
       sessions: { items: [], nextCursor: null },
     }), { headers: { "Content-Type": "application/json" } }));

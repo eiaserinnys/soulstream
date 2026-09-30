@@ -16,8 +16,8 @@ import { cn } from "../lib/cn";
 import {
   type FolderSnapshot,
   type FolderStatus,
-  useFolderChecklistStore,
-} from "../stores/folder-checklist-store";
+  useFolderCardStore,
+} from "../stores/folder-card-store";
 
 interface FolderCompletionActionProps {
   task: {
@@ -80,8 +80,8 @@ export function FolderCompletionAction({
   buttonClassName,
   onStatusChanged,
 }: FolderCompletionActionProps) {
-  const loadFolder = useFolderChecklistStore((s) => s.loadFolder);
-  const setFolderStatus = useFolderChecklistStore((s) => s.setFolderStatus);
+  const loadFolder = useFolderCardStore((s) => s.loadFolder);
+  const setFolderStatus = useFolderCardStore((s) => s.setFolderStatus);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

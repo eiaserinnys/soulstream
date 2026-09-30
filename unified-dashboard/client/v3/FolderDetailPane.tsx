@@ -1,5 +1,6 @@
+import { FolderCardSection } from "./FolderCardSection";
 import { useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
-import { Button, DashboardIconCap, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, FolderChecklistCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ArrowLeft, LayoutDashboard, MoreHorizontal, Star } from "lucide-react";
 
@@ -236,7 +237,7 @@ export function FolderDetailPane({
       <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
     </DashboardIconCap>
     <V3ContextMenu target={folderMenu} onClose={() => setFolderMenu(null)} actions={[{
-      label: checklistEnabled ? "체크리스트 숨기기" : "체크리스트 보이기",
+      label: checklistEnabled ? "카드 숨기기" : "카드 보이기",
       onSelect: () => onToggleChecklist(!checklistEnabled),
     }, ...(onArchiveFolder ? [{ label: "폴더 보관", separatorBefore: true, destructive: true, onSelect: () => setArchiveOpen(true) }] : [])]} />
   </>;
@@ -291,15 +292,7 @@ export function FolderDetailPane({
             </section>
 
             {checklistEnabled ? <section ref={checklistSectionRef} className="v3-detail-section" data-task-section="checklist" data-testid="v3-task-checklist">
-              <div className="v3-detail-section-head"><h3>체크리스트</h3><span>업무</span></div>
-              <div className="v3-task-checklist">
-                <FolderChecklistCard
-                  folderId={task.folderId}
-                  fallbackTitle={task.page.title}
-                  editable
-                  textSize="session"
-                />
-              </div>
+              <FolderCardSection folderId={task.folderId} folders={folders} placement={placement} />
             </section> : null}
 
             <div ref={boardSectionRef} data-task-section="board">

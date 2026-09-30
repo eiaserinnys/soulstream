@@ -1,3 +1,6 @@
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { CardRow } from "./CardRow";
+import type { ReactNode } from "react";
 import {
   forwardRef,
   memo,
@@ -56,6 +59,8 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   onDeleteSessions,
   onAcknowledged,
 }, forwardedRef) {
+  const cards = useCardStore(s=>s.byId);
+  const reviewCards = Object.values(cards).filter(card=>card.status==="review"&&!card.archived);
   const surfaceRef = useRef<HTMLElement>(null);
   const pendingRef = useRef(false);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -65,8 +70,8 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   );
   const affiliations = useMemo(() => new Map(sessions.map((session) => [
     session.agentSessionId,
-    sessionPanelAffiliation(boardItems, folders, session.agentSessionId),
-  ])), [boardItems, folders, sessions]);
+    (session.cardId ? cards[session.cardId]?.title : null) ?? sessionPanelAffiliation(boardItems, folders, session.agentSessionId),
+   ])), [boardItems, folders, sessions, cards]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
@@ -146,6 +151,8 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
           onContextMenu={openContextMenu}
           onAcknowledge={acknowledge}
           review
+          extraCount={reviewCards.length}
+          children={reviewCards.map(card=><CardRow key={card.id} card={card} folders={folders}/>)}
         />
         {error ? <p className="v3-session-panel-error" role="alert">{error}</p> : null}
       </div>
@@ -174,6 +181,7 @@ function SessionGroup({
   onAcknowledge,
   review = false,
   nodeOffline = false,
+  children, extraCount = 0,
 }: {
   title: string;
   testId: string;
@@ -187,10 +195,11 @@ function SessionGroup({
   onAcknowledge(session: SessionSummary): Promise<void>;
   review?: boolean;
   nodeOffline?: boolean;
+  children?: ReactNode; extraCount?: number;
 }) {
   return (
     <section className="v3-session-group" data-testid={testId}>
-      <header><h2>{title}</h2><span>{sessions.length}</span></header>
+      <header><h2>{title}</h2><span>{sessions.length+extraCount}</span></header>
       <div className="v3-session-list">
         {sessions.map((session) => (
           <SessionPanelRow
@@ -206,7 +215,8 @@ function SessionGroup({
             onAcknowledge={onAcknowledge}
           />
         ))}
-        {sessions.length === 0 ? <p>{emptyText}</p> : null}
+        {children}
+        {sessions.length === 0 && extraCount === 0 ? <p>{emptyText}</p> : null}
       </div>
     </section>
   );

@@ -32,7 +32,7 @@ describe("task board r3 workspace contract", () => {
     expect(workspace).toContain('data-testid="v3-folder-board-document-overlay"');
     expect(workspace).toContain("<MarkdownDocumentPanel");
     expect(workspace).toContain("<ChatView");
-    expect(resources).toContain("<FolderChecklistCard");
+    expect(resources).toContain("<FolderCardSection");
     expect(resources).toContain("<RichSessionRow");
     expect(resources).toContain("<MarkdownContent");
     expect(resources).toContain("<CustomViewPanel");
