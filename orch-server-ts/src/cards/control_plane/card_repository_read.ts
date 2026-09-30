@@ -39,6 +39,17 @@ export class CardRepositoryRead {
   async listQuestions(cardId: string) {
     return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_questions WHERE card_id=${cardId} ORDER BY asked_at,id`;
   }
+  async listComments(cardId: string) {
+    return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} ORDER BY created_at,id`;
+  }
+  async getComment(cardId: string, commentId: string) {
+    return (await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND id=${commentId}`)[0] ?? null;
+  }
+  async markCommentDelivered(cardId: string, commentId: string) {
+    const rows = await this.sql`UPDATE card_comments SET delivered_at=NOW()
+      WHERE card_id=${cardId} AND id=${commentId} AND delivered_at IS NULL RETURNING id`;
+    return rows.length > 0;
+  }
   async listSessions(cardId: string) {
     return await this.sql<Record<string, unknown>[]>`SELECT session_id,card_id,display_name,node_id,agent_id,status,created_at,caller_session_id,updated_at
       FROM sessions WHERE card_id=${cardId} ORDER BY created_at,session_id`;
