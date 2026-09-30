@@ -21,7 +21,7 @@ beforeAll(async () => {
 afterAll(async () => { await h?.cleanup(); });
 it("imports before the migration, preserves existing values, and verifies SQL secret CAS", async () => {
   expect(await importBoardR2(h.sql, env)).toMatchObject({ imported: true, version: 1 });
-  const migration = readFileSync(new URL("../../packages/db-schema/sql/migrations/111_r2_storage_settings.sql", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../../packages/db-schema/sql/migrations/112_r2_storage_settings.sql", import.meta.url), "utf8");
   await h.sql.unsafe(migration);
   expect((await readR2Settings(h.sql, "board")).secretAccessKey).toBe(fields.secretAccessKey);
   await expect(importBoardR2(h.sql, { ...env, R2_BOARD_ASSETS_SECRET_ACCESS_KEY: "overwrite" })).rejects.toThrow("without overwriting");

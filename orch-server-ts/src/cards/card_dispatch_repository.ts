@@ -59,6 +59,14 @@ export class CardDispatchRepository {
         return (await sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id
       FROM sessions WHERE card_id=${cardId} ORDER BY created_at DESC,session_id DESC LIMIT 1`)[0] ?? null;
     }
+    async latestDispatchedSessionId(cardId:string): Promise<string | null> {
+        const sql = await this.resolveSql();
+        const rows=await sql<{ session_id:string | null }[]>`SELECT payload_json->>'session_id' AS session_id FROM folder_operations
+      WHERE target_kind='card' AND target_id=${cardId} AND operation_type='dispatch_card'
+        AND NULLIF(payload_json->>'session_id','') IS NOT NULL
+      ORDER BY created_at DESC,id DESC LIMIT 1`;
+        return rows[0]?.session_id ?? null;
+    }
     async rejectionReason(cardId: string): Promise<string | null> {
         const sql = await this.resolveSql();
         const rows = await sql<{

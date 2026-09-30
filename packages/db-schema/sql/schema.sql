@@ -3455,6 +3455,18 @@ CREATE TABLE IF NOT EXISTS card_questions (
     answered_by TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_card_questions_card ON card_questions(card_id, asked_at);
+CREATE TABLE IF NOT EXISTS card_comments (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    author_kind TEXT NOT NULL CHECK (author_kind IN ('user','agent')),
+    author_id TEXT,
+    session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    kind TEXT NOT NULL DEFAULT 'comment' CHECK (kind IN ('comment','spoken')),
+    body TEXT NOT NULL,
+    delivered_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_card_comments_card ON card_comments(card_id, created_at);
 INSERT INTO system_settings(setting_key,value,version,updated_by)
 VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb,1,'migration:109_cards') ON CONFLICT (setting_key) DO NOTHING;
 

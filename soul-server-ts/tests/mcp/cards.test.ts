@@ -12,11 +12,11 @@ import { makeTaskCreationHarness } from "../task/task_creation_harness.js";
 
 // Reuses folder.test.ts tool registration and task_creation.test.ts creation harness;
 // direct callbacks isolate the new card wire contract without opening an MCP server.
-const names = ["create_card", "list_cards", "get_card", "update_card_brief", "add_card_report",
+const names = ["create_card", "list_cards", "get_card", "update_card_brief", "add_card_report", "add_card_comment",
   "request_card_review", "ask_card_question", "move_card"];
 const logger = pino({ level: "silent" });
 const card = { id: "card-1", folderId: "folder-1", title: "카드", status: "running", version: 3 };
-const detail = { card, reports: [{ title: "보고" }], questions: [], sessions: [] };
+const detail = { card, reports: [{ title: "보고" }], questions: [], comments: [{ body: "지시 요점", kind: "spoken" }], sessions: [] };
 function harness() {
   const entries = new Map<string, { config: { inputSchema: z.ZodRawShape }; callback: (input: unknown) => Promise<any> }>();
   const service = new FolderService({ orch: { baseUrl: "https://orch.test", headers: { authorization: "Bearer test-service" } }, logger });
@@ -29,7 +29,7 @@ function harness() {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("card MCP contract", () => {
-  it("registers eight card tools and removes every checklist item/section tool", () => {
+  it("registers nine card tools and removes every checklist item/section tool", () => {
     const { entries } = harness();
     expect([...entries.keys()]).toEqual(expect.arrayContaining(names));
     expect([...entries.keys()].filter(n => /checklist_(item|section)|set_card_status|list_my_turn_items/.test(n))).toEqual([]);
@@ -45,6 +45,7 @@ describe("card MCP contract", () => {
       ["get_card", { card_id: "card-1" }, "GET", "/api/cards/card-1", undefined],
       ["update_card_brief", { card_id: "card-1", brief: "경과" }, "PATCH", "/api/cards/card-1", { brief: "경과", expectedVersion: 3 }],
       ["add_card_report", { card_id: "card-1", title: "보고", format: "html", body: "<p>결과</p>" }, "POST", "/api/cards/card-1/reports", { title: "보고", format: "html", body: "<p>결과</p>" }],
+      ["add_card_comment", { card_id: "card-1", text: "회의에서 받은 요청" }, "POST", "/api/cards/card-1/comments", { body: "회의에서 받은 요청", kind: "spoken" }],
       ["request_card_review", { card_id: "card-1" }, "POST", "/api/cards/card-1/status", { status: "review", expectedVersion: 3 }],
       ["ask_card_question", { card_id: "card-1", text: "질문", options: ["하나", "둘"] }, "POST", "/api/cards/card-1/questions", { text: "질문", options: ["하나", "둘"] }],
       ["move_card", { card_id: "card-1", folder_id: "folder-2", after_card_id: "card-2" }, "POST", "/api/cards/card-1/move", { folderId: "folder-2", afterCardId: "card-2", expectedVersion: 3 }],
@@ -56,6 +57,8 @@ describe("card MCP contract", () => {
       expect(init.method).toBe(method);
       expect(init.headers).toMatchObject({ authorization: "Bearer test-service", "x-soulstream-agent-session-id": "session-1" });
       if (body) expect(JSON.parse(init.body as string)).toMatchObject({ ...body, idempotencyKey: expect.any(String) });
+      if (name === "add_card_comment") expect(h.entries.get(name)!.config.description).toBe("담당 세션이 대화로 받은 디렉터 지시의 요점을 카드에 남긴다");
+      if (name === "get_card") expect(JSON.stringify(result)).toContain("지시 요점");
       if (name === "ask_card_question") expect(JSON.stringify(result)).toContain("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     }
   });

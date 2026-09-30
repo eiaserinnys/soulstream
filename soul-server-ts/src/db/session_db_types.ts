@@ -535,7 +535,7 @@ export interface ChildFolderRow {
   updated_at: Date;
 }
 
-/** Card HTTP uses camelCase rows; report/question/session arrays are orch-owned. */
+/** Card HTTP uses camelCase rows; report/question/comment/session arrays are orch-owned. */
 export interface CardRow extends Record<string, unknown> {
   id: string;
   folderId: string;
@@ -547,6 +547,7 @@ export interface CardDetail {
   card: CardRow;
   reports: Record<string, unknown>[];
   questions: Record<string, unknown>[];
+  comments: Record<string, unknown>[];
   sessions: Record<string, unknown>[];
 }
 

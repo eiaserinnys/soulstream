@@ -23,8 +23,8 @@ export class CardControlPlaneService {
   async getCard(cardId: string) {
     const card=await this.repo.getCard(cardId);
     if (!card) return null;
-    const [reports,questions,sessions]=await Promise.all([this.repo.listReports(cardId),this.repo.listQuestions(cardId),this.repo.listSessions(cardId)]);
-    return { card,reports,questions,sessions };
+    const [reports,questions,comments,sessions]=await Promise.all([this.repo.listReports(cardId),this.repo.listQuestions(cardId),this.repo.listComments(cardId),this.repo.listSessions(cardId)]);
+    return { card,reports,questions,comments,sessions };
   }
   listReports(cardId: string) { return this.repo.listReports(cardId); }
   setFolderStatus(params: FolderActorParams & { folderId: string; expectedVersion: number; status: FolderStatus; reason?: string | null; idempotencyKey?: string | null }) {
@@ -93,6 +93,23 @@ export class CardControlPlaneService {
         VALUES(${randomUUID()},${card.id},${params.title},${params.format},${params.body},${params.actorSessionId})`;
     });
   }
+  async addComment(params: CardMutationParams & { body:string; kind?:"comment" | "spoken" }) {
+    const kind=params.actorKind === "agent" ? "spoken" : params.kind ?? "comment";
+    if (params.actorKind !== "agent" && kind !== "comment") throw invalid("Only trusted session actors may add spoken comments");
+    const existing=params.idempotencyKey ? await this.repo.getOperationByIdempotencyKey(params.idempotencyKey) : null;
+    const existingCommentId=existing?.operation_type === "add_card_comment" && existing.target_kind === "card" && existing.target_id === params.cardId
+      && typeof existing.payload_json.comment_id === "string" ? existing.payload_json.comment_id : null;
+    const commentId=existingCommentId ?? randomUUID();
+    const result=await this.mutateCard(params,"add_card_comment",{ comment_id:commentId,body:params.body,kind },async (sql,card) => {
+      await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body)
+        VALUES(${commentId},${card.id},'user',${params.actorUserId ?? null},${params.actorSessionId},${kind},${params.body})`;
+    });
+    const storedId=String(result.operation.payload_json.comment_id ?? commentId);
+    const comment=await this.repo.getComment(params.cardId,storedId);
+    if (!comment) throw new Error("Card comment was not stored");
+    return comment;
+  }
+  markCommentDelivered(cardId:string,commentId:string) { return this.repo.markCommentDelivered(cardId,commentId); }
   async askQuestion(params: CardMutationParams & { text:string; options?:string[] | null }) {
     return this.mutateCard(params,"ask_card_question",{ text:params.text,options:params.options ?? null },async (sql,card,eventId) => {
       assertCardTransition(card.status,"blocked",params.actorKind ?? "agent",0,"question");
