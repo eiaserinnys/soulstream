@@ -40,7 +40,7 @@ export class CardRepositoryRead {
     return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_questions WHERE card_id=${cardId} ORDER BY asked_at,id`;
   }
   async listSessions(cardId: string) {
-    return await this.sql<Record<string, unknown>[]>`SELECT session_id,card_id,display_name,node_id,agent_id,status,created_at
+    return await this.sql<Record<string, unknown>[]>`SELECT session_id,card_id,display_name,node_id,agent_id,status,created_at,caller_session_id,updated_at
       FROM sessions WHERE card_id=${cardId} ORDER BY created_at,session_id`;
   }
   async getOperationByIdempotencyKey(key: string): Promise<FolderOperationRow | null> {

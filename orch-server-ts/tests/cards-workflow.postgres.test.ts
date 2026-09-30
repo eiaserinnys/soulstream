@@ -120,6 +120,47 @@ describe("cards storage, HTTP and planner", () => {
     } finally { await app.close(); }
   });
 
+  it("returns linked session ancestry and allows human status changes through the real HTTP routes", async () => {
+    const app=Fastify();
+    registerFolderRoutes(app,{
+      provider:{listFolders:()=>[{id:'cards-a'}],listSessionAssignments:()=>({})},
+      accessProvider:{resolveAccess:()=>({restricted:true,allowedFolderIds:['cards-a']})},
+      resolveDashboardUserId:()=>human.actorUserId,cardServiceProvider:async()=>cards,
+      authBearerToken:'service-test',environment:'production',
+    });
+    try {
+      const created=await app.inject({method:'POST',url:'/api/cards',payload:{
+        folderId:'cards-a',title:'상태 메뉴 계약',request:'원문',idempotencyKey:key(),
+      }});
+      expect(created.statusCode).toBe(201);
+      const id=created.json().card.id;
+      await h.sql`INSERT INTO sessions(session_id,folder_id,card_id,caller_session_id,updated_at)
+        VALUES ('http-root','cards-a',${id},NULL,'2026-09-30T00:00:00Z'),
+               ('http-child','cards-a',${id},'http-root','2026-09-30T01:00:00Z')`;
+      const read=()=>app.inject(`/api/cards/${id}`);
+      let response=await read();
+      expect(response.statusCode).toBe(200);
+      expect(response.json().sessions).toEqual(expect.arrayContaining([
+        expect.objectContaining({sessionId:'http-root',callerSessionId:null,updatedAt:'2026-09-30T00:00:00.000Z'}),
+        expect.objectContaining({sessionId:'http-child',callerSessionId:'http-root',updatedAt:'2026-09-30T01:00:00.000Z'}),
+      ]));
+      for(const status of ['running','todo','done','cancelled']) {
+        const changed=await app.inject({method:'POST',url:`/api/cards/${id}/status`,payload:{
+          status,expectedVersion:response.json().card.version,idempotencyKey:key(),
+        }});
+        expect(changed.statusCode).toBe(200);
+        response=await read();
+        expect(response.json().card.status).toBe(status);
+      }
+      const rejected=await app.inject({method:'POST',url:`/api/cards/${id}/status`,payload:{
+        status:'review',expectedVersion:response.json().card.version,idempotencyKey:key(),
+      }});
+      expect(rejected.statusCode).toBe(422);
+      expect(rejected.json().detail.error.message).toMatch(/report/i);
+      expect((await read()).json().card.status).toBe('cancelled');
+    } finally {await app.close();}
+  });
+
   it("exposes review and every blocked kind in attention with running and globally ordered queued cards on today", async () => {
     await h.sql`INSERT INTO pages(id,title,daily_date,version) VALUES ('card-day','Today','2026-09-30',1),('card-page-a','A',NULL,1),('card-page-b','B',NULL,1)`;
     await h.sql`UPDATE folders SET project_page_id=CASE id WHEN 'cards-a' THEN 'card-page-a' ELSE 'card-page-b' END WHERE id IN ('cards-a','cards-b')`;

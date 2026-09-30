@@ -65,7 +65,7 @@ const components: Components = {
     // GFM 태스크 리스트: remark-gfm이 className="task-list-item"을 추가
     if (className === "task-list-item") {
       return (
-        <li className="mb-0.5 list-none -ml-4 flex items-start gap-1.5">
+        <li className="mb-0.5 list-none -ml-4">
           {children}
         </li>
       );
@@ -80,7 +80,7 @@ const components: Components = {
           type="checkbox"
           checked={checked}
           readOnly
-          className="mt-1 accent-accent-blue pointer-events-none"
+          className="mt-1 mr-1.5 accent-accent-blue pointer-events-none"
           {...props}
         />
       );

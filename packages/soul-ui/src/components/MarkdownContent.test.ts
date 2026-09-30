@@ -32,6 +32,17 @@ const renderMarkdownContent = (
   renderToStaticMarkup(createElement(MarkdownContent, { content: markdown, ...props }));
 
 describe("MarkdownContent — remark-breaks plugin", () => {
+  test("mixed checklist text and inline code stay in one inline flow", () => {
+    const html = renderMarkdownContent('- [ ] 폴더 `folders.checklist_enabled` 제거 후 **기존 상태**를 유지합니다.\n- [x] `create_card` 요청 확인');
+    const items = [...html.matchAll(/<li\b[^>]*>/g)].map(match => match[0]);
+    expect(items).toHaveLength(2);
+    // Flex/grid would split ReactMarkdown's text, code and emphasis nodes into
+    // separate columns. This renderer's public markup must retain inline flow.
+    for (const item of items) expect(item).not.toMatch(/\b(?:flex|grid)\b/);
+    expect(html.match(/type="checkbox"/g)).toHaveLength(2);
+    expect(html).toContain('checked=""');
+    expect(html).toContain('folders.checklist_enabled</code> 제거 후 <strong');
+  });
   test("case 1: single \\n is rendered as <br>", () => {
     const html = render("a\nb");
     expect(html).toMatch(/<br\s*\/?>/);

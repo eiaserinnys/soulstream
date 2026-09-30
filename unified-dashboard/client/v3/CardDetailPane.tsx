@@ -6,7 +6,7 @@ import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardActions, CardStatusChip } from "./CardActions";
 import { FolderTitleEditor } from "./FolderTitleEditor";
 import { SectionNavigation } from "./FolderSectionNavigation";
-import { RichSessionRow } from "./RichSessionRow";
+import { CardSessionHistory } from "./CardSessionHistory";
 import { CardQuestionView } from "./CardQuestionView";
 import { CardMenu } from "./CardMenu";
 import "./v3-cards.css";
@@ -19,10 +19,10 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,placement="
  const refs=useMemo(()=>({request,brief,reports,questions,sessions}),[]);
  const [menu,setMenu]=useState<{x:number;y:number}|null>(null);
  const glass=useGlassSurface(surface,{enabled:placement==="overlay"});
+ const sessionIds=useMemo(()=>detail?.sessions.map(session=>session.sessionId)??[],[detail?.sessions]);
  useEffect(()=>{void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId]);
  useEffect(()=>{if(focus==="questions"&&detail)questions.current?.scrollIntoView({block:"start"});},[detail,focus]);
  if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;
- const linked=detail?.sessions.map(s=>({agentSessionId:s.sessionId,displayName:s.displayName,nodeId:s.nodeId,agentId:s.agentId,status:s.status,createdAt:s.createdAt,eventCount:0,cardId:s.cardId}))??[];
  return <article ref={surface} className={`v3-detail-pane v3-card-detail${placement==="inline"?" v3-detail-pane--inline":" border border-glass-border glass-strong glass-chrome lg-rim"}`} data-liquid-glass-webgl={glass?"true":undefined} data-testid="card-detail">
   <header className={`v3-folder-header${placement==="inline"?" v3-inline-folder-header":" v3-workspace-toolbar"}`}>
    <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap><CardStatusChip card={card}/>
@@ -34,11 +34,11 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,placement="
   <div className="v3-detail-scroll" ref={scroll}><div className="v3-task-detail-layout">
    <SectionNavigation scrollRef={activeScroll} sectionRefs={refs} sections={sections} ariaLabel="카드 섹션"/>
    <div className="v3-task-detail-content">
-    <section className="v3-detail-section" ref={request} data-card-section="request"><div className="v3-detail-section-head"><h3>요청 원문</h3></div><details open><summary>원문 보기</summary><div className="v3-card-request"><CardRequestContent request={card.request}/></div></details></section>
-    <section className="v3-detail-section" ref={brief} data-card-section="brief"><div className="v3-detail-section-head"><h3>해석과 경과</h3></div><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></section>
-    <section className="v3-detail-section" ref={reports} data-card-section="reports"><div className="v3-detail-section-head"><h3>보고</h3></div>{detail?.reports.map((report,index)=><details key={report.id} data-report-id={report.id} open={index===0}><summary>{report.title} · {new Date(report.createdAt).toLocaleString("ko-KR")}</summary>{report.format==="html"?<CustomViewIframe html={report.body} title={report.title} className="v3-card-report-html"/>:<MarkdownContent content={report.body} codeBlockLayout="document"/>}</details>)}</section>
-    <section className="v3-detail-section" ref={questions} data-card-section="questions"><div className="v3-detail-section-head"><h3>질문</h3></div>{detail?.questions.map(q=><CardQuestionView key={q.id} cardId={cardId} question={q}/>)}</section>
-    <section className="v3-detail-section" ref={sessions} data-card-section="sessions"><div className="v3-detail-section-head"><h3>세션</h3></div>{linked.length===0?<p className="v3-card-request">세션 없음</p>:<div className="v3-run-list">{linked.map(s=><RichSessionRow key={s.agentSessionId} session={s} onOpen={onOpenSession}/>)}</div>}</section>
+    <section className="v3-detail-section" ref={request} data-card-section="request"><div className="v3-detail-section-head"><h3>요청 원문</h3><span>{card.request?1:0}건</span></div><details open><summary>원문 보기</summary><div className="v3-card-request"><CardRequestContent request={card.request}/></div></details></section>
+    <section className="v3-detail-section" ref={brief} data-card-section="brief"><div className="v3-detail-section-head"><h3>해석과 경과</h3><span>{card.brief?1:0}건</span></div><div className="v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></div></section>
+    <section className="v3-detail-section" ref={reports} data-card-section="reports"><div className="v3-detail-section-head"><h3>보고</h3><span>{detail?.reports.length??0}건</span></div>{detail?.reports.length===0?<p className="v3-detail-empty">아직 보고가 없습니다.</p>:null}{detail?.reports.map((report,index)=><details key={report.id} data-report-id={report.id} open={index===0}><summary>{report.title} · {new Date(report.createdAt).toLocaleString("ko-KR")}</summary>{report.format==="html"?<CustomViewIframe html={report.body} title={report.title} className="v3-card-report-html"/>:<MarkdownContent content={report.body} codeBlockLayout="document"/>}</details>)}</section>
+    <section className="v3-detail-section" ref={questions} data-card-section="questions"><div className="v3-detail-section-head"><h3>질문</h3><span>{detail?.questions.length??0}건</span></div>{detail?.questions.length===0?<p className="v3-detail-empty">질문이 없습니다.</p>:null}{detail?.questions.map(q=><CardQuestionView key={q.id} cardId={cardId} question={q}/>)}</section>
+    <section className="v3-detail-section v3-runs" ref={sessions} data-card-section="sessions"><CardSessionHistory sessionIds={sessionIds} onOpenSession={onOpenSession}/></section>
    </div>
   </div></div>
  </article>;

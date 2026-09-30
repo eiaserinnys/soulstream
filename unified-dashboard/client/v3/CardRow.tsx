@@ -10,23 +10,23 @@ export function CardRow({card,folders=[],placement="inline",handle,showQueueActi
  const open=useCardNavigation(s=>s.open);
  const portrait=card.nodeId&&card.assigneeAgentId?`/api/nodes/${encodeURIComponent(card.nodeId)}/agents/${encodeURIComponent(card.assigneeAgentId)}/portrait`:null;
  if(today) return <LiquidGlassCard webglSurface className="v3-card-row v3-card-row--today" data-card-id={card.id} data-blocked-kind={card.blockedKind}>
-   <button type="button" className="v3-card-open" onClick={()=>open(card.id,placement)} aria-label={`카드 ${card.title} 열기`}>
+   <div className="v3-card-open">
     {queueNumber ? <span className="v3-card-status--queued">{queueNumber}번</span> : <CardStatusChip card={card}/>}
-    <span className="v3-card-copy"><strong title={card.title}>{card.title}</strong><span className="v3-card-meta">
+    <button type="button" className="v3-card-link v3-card-link--today" onClick={()=>open(card.id,placement)} aria-label={`카드 ${card.title} 열기`}><span className="v3-card-copy"><strong title={card.title}>{card.title}</strong><span className="v3-card-meta">
      <span className="v3-card-folder">📁 {folders.find(f=>f.id===card.folderId)?.name??""}</span>
      <span className="v3-card-avatar" title={card.assigneeAgentId??"담당 미지정"}><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/></span>
      {card.status!=="queued" ? <time dateTime={card.updatedAt}>{cardElapsed(card.updatedAt)}</time> : null}
-    </span></span>
-   </button>
+    </span></span></button>
+   </div>
    <div className="v3-card-row-actions">{handle??(card.status!=="queued"||showQueueAction?<CardActions card={card} onAnswer={()=>open(card.id,placement,"questions")}/>:null)}</div>
   </LiquidGlassCard>;
  return <LiquidGlassCard webglSurface className="v3-run-row v3-card-row" data-card-id={card.id}>
    {handle}
-   <button type="button" className="v3-run-open v3-card-open" onClick={()=>open(card.id,placement)} aria-label={`카드 ${card.title} 열기`}>
-     <CardStatusChip card={card}/><span className="v3-run-copy"><strong title={card.title}>{card.title}</strong>
+   <div className="v3-run-open v3-card-open">
+     <CardStatusChip card={card}/><button type="button" className="v3-card-link" onClick={()=>open(card.id,placement)} aria-label={`카드 ${card.title} 열기`}><span className="v3-run-copy"><strong title={card.title}>{card.title}</strong>
      <span className="v3-card-folder">{folders.find(f=>f.id===card.folderId)?.name??""}</span></span>
-     <span className="v3-run-avatar" title={card.assigneeAgentId??card.assigneeUserId??"담당 미지정"}><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/></span>
-   </button>
+     <span className="v3-run-avatar" title={card.assigneeAgentId??card.assigneeUserId??"담당 미지정"}><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/></span></button>
+   </div>
    <div className="v3-run-row-actions">{card.status!=="queued"||showQueueAction?<CardActions card={card} onAnswer={()=>open(card.id,placement,"questions")}/>:null}</div>
  </LiquidGlassCard>;
 }

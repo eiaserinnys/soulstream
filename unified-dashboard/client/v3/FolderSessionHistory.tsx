@@ -12,7 +12,6 @@ import { retainEqualValue } from "@seosoyoung/soul-ui";
 import {
   buildRunTree,
   type RunSessionLoadState,
-  type RunTreeNode,
 } from "./folder-workspace-run-model";
 import {
   buildSuccessionSessionOptions,
@@ -28,7 +27,7 @@ import {
   type SuccessionContextItem,
   type SuccessionDocumentOption,
 } from "./SessionSuccessionModal";
-import { RichSessionRow } from "./RichSessionRow";
+import { SessionRunList } from "./SessionRunList";
 import { buildFolderSessionExtraActions } from "./context-menu-model";
 import "./v3-run-history.css";
 
@@ -130,18 +129,8 @@ export function FolderSessionHistory({
         </DashboardIconCap>
       </div>
       {tree.length === 0 ? <p className="v3-detail-empty">아직 실행된 세션이 없습니다.</p> : null}
-      <div className="v3-run-list">
-        {tree.map((node) => (
-          <RunNode
-            key={node.session.agentSessionId}
-            node={node}
-            depth={0}
-            activeSessionId={activeSessionId}
-            onOpenSession={onOpenSession}
-            onContextMenu={openRunContextMenu}
-          />
-        ))}
-      </div>
+      <SessionRunList tree={tree} activeSessionId={activeSessionId}
+        onOpenSession={onOpenSession} onContextMenu={openRunContextMenu} />
       {runHistoryHasMore ? (
         <div className="v3-run-load-more">
           <DashboardIconCap
@@ -202,59 +191,6 @@ export function FolderSessionHistory({
         }}
       />
     </section>
-  );
-}
-
-function RunNode({
-  node,
-  depth,
-  activeSessionId,
-  onOpenSession,
-  onContextMenu,
-}: {
-  node: RunTreeNode;
-  depth: number;
-  activeSessionId: string | null;
-  onOpenSession(session: SessionSummary): void;
-  onContextMenu(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
-}) {
-  const { session } = node;
-  if (node.loadState === "loading") {
-    return (
-      <div className={depth > 0 ? "v3-run-children" : undefined}>
-        <div className="v3-run-row v3-run-row--loading" data-depth={depth} aria-label="세션 정보 불러오는 중" aria-busy="true">
-          <span className="v3-run-skeleton v3-run-skeleton--avatar" />
-          <span className="v3-run-skeleton-copy">
-            <span className="v3-run-skeleton v3-run-skeleton--title" />
-            <span className="v3-run-skeleton v3-run-skeleton--preview" />
-          </span>
-          <span className="v3-run-skeleton v3-run-skeleton--badge" />
-        </div>
-      </div>
-    );
-  }
-  const failed = node.loadState === "failed";
-  return (
-    <div className={depth > 0 ? "v3-run-children" : undefined}>
-      <RichSessionRow
-        session={session}
-        runNumber={node.runNumber}
-        failed={failed}
-        active={!failed && session.agentSessionId === activeSessionId}
-        onOpen={onOpenSession}
-        onContextMenu={onContextMenu}
-      />
-      {node.children.map((child) => (
-        <RunNode
-          key={child.session.agentSessionId}
-          node={child}
-          depth={depth + 1}
-          activeSessionId={activeSessionId}
-          onOpenSession={onOpenSession}
-          onContextMenu={onContextMenu}
-        />
-      ))}
-    </div>
   );
 }
 
