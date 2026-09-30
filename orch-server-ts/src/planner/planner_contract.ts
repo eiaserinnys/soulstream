@@ -54,7 +54,6 @@ export interface PlannerFolderDetailDto {
   sections: Record<string, unknown>[];
   items: Record<string, unknown>[];
   subfolders: PlannerPageSlice<Record<string, unknown>>;
-  documents: PlannerPageSlice<PlannerPageDto>;
   sessions: PlannerPageSlice<PlannerSessionDto>;
 }
 
@@ -72,6 +71,5 @@ export interface PlannerReadProvider {
   getToday(date: string): Promise<PlannerTodayDto | null>;
   getFolder(folderId: string, input: { limit: number }): Promise<PlannerFolderDetailDto | null>;
   getSubfolders(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<Record<string, unknown>>>;
-  getDocuments(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<PlannerPageDto>>;
   getSessions(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<PlannerSessionDto>>;
 }

@@ -39,7 +39,6 @@ describe("route coverage completeness gate", () => {
     "GET /api/planner/daily-history",
     "GET /api/planner/folders/{folder_id}",
     "GET /api/planner/folders/{folder_id}/subfolders",
-    "GET /api/planner/folders/{folder_id}/documents",
     "GET /api/planner/folders/{folder_id}/sessions",
   ];
   const reviewRouteKey = "POST /api/sessions/{session_id}/review/acknowledge";

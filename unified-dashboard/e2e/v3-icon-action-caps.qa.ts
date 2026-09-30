@@ -44,9 +44,9 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await capture(page, theme, "01-today-actions");
 
     await page.getByRole("button", { name: fixtureTitles.project, exact: true }).click();
-    await page.getByRole("button", { name: "새 문서" }).waitFor({ state: "visible" });
+    await expect(page.getByRole("button", { name: "새 문서" })).toHaveCount(0);
     const projectCaps = await auditVisibleCaps(page);
-    for (const label of ["오늘로 돌아가기", "새 문서"]) {
+    for (const label of ["오늘로 돌아가기"]) {
       assert(projectCaps.some((cap) => cap.label === label), `${label} 아이콘 캡이 없습니다.`);
     }
     await capture(page, theme, "02-project-actions");

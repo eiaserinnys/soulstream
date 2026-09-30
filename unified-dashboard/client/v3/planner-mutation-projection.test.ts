@@ -123,7 +123,6 @@ function task(id: string, sessionIds: string[]): PlannerFolder {
     progress: null,
     parentFolderId: null,
     sessionIds,
-    mountedDocuments: [],
   };
 }
 

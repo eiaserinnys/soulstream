@@ -112,7 +112,7 @@ describe("unified folder and checklist workflow", () => {
     const first = await planner.getStarredFolders({ limit: 1 });
     const second = await planner.getStarredFolders({ limit: 1, cursor: first.nextCursor! });
     expect([...first.items, ...second.items].map(row => row.folder.id).sort()).toEqual(["checklist", "ordinary"]);
-    expect(await planner.getFolder("ordinary", { limit: 10 })).toMatchObject({ folder: { id: "ordinary", checklistEnabled: false }, sections: [], items: [], subfolders: { items: [] }, documents: { items: [] }, sessions: { items: [] } });
+    expect(await planner.getFolder("ordinary", { limit: 10 })).toMatchObject({ folder: { id: "ordinary", checklistEnabled: false }, sections: [], items: [], subfolders: { items: [] }, sessions: { items: [] } });
     await pages.close();
   });
 });

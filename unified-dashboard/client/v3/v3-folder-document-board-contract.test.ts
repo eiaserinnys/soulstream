@@ -10,7 +10,7 @@ describe("v3 task document board unification", () => {
     expect(detail).not.toContain("v3-task-documents");
     expect(detail).not.toContain("＋ 문서");
     expect(detail).not.toContain("프로젝트로 승격");
-    expect(detail).not.toContain("documentOptions={task.mountedDocuments");
+    expect(detail).not.toContain("mountedDocuments");
   });
 
   it("keeps markdown creation and inline rename on the task board list", () => {

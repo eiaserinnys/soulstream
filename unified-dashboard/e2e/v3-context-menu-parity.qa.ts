@@ -78,15 +78,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await assertMissingMenuItems(page, ["＋ 이어서 새 세션 (승계)", "다른 업무로 이동"]);
     await page.keyboard.press("Escape");
 
-    const projectRow = page.getByTestId("v3-all-projects").locator(".v3-project-nav-row").filter({ hasText: fixtureTitles.project });
-    await projectRow.getByRole("button", { name: fixtureTitles.project, exact: true }).click();
-    const projectDocument = page.locator(".v3-document-list button").filter({ hasText: fixtureTitles.document });
-    await projectDocument.waitFor({ state: "visible" });
-    await openContextMenu(projectDocument);
-    await assertMenuItems(page, ["문서 열기", "페이지 ID 복사"]);
-    await assertMissingMenuItems(page, ["업무에서 마운트 해제", "프로젝트로 승격"]);
-    await page.keyboard.press("Escape");
-
     await page.getByRole("button", { name: "오늘로 돌아가기" }).click();
     await dailyTask.waitFor({ state: "visible" });
 
@@ -102,7 +93,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       todayRoundtrip: true,
       completionImmediate: true,
       sessionPanelMenu: true,
-      projectDocumentMenu: true,
     };
   } finally {
     await context.close();

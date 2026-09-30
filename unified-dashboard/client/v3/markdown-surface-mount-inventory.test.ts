@@ -48,7 +48,6 @@ describe("markdown surface mount inventory", () => {
   it("enumerates every shared MarkdownDocumentPanel surface", () => {
     expect(inventoryMounts("MarkdownDocumentPanel")).toEqual([
       "unified-dashboard/client/v3/FolderBoardWorkspace.tsx",
-      "unified-dashboard/client/v3/V3StandaloneDocumentInspector.tsx",
     ]);
   });
 

@@ -10,7 +10,7 @@ function setup(loggedIn = true) {
   const provider = { getToday: vi.fn(async () => ({ folders: [], memoBlocks: [], reviewSessionIds: [] })),
     getStarredFolders: vi.fn(async () => slice), getDailyHistory: vi.fn(async () => ({ dates: [] })),
     getFolder: vi.fn(async () => ({ folder: { id: "f" } })), getSubfolders: vi.fn(async () => slice),
-    getDocuments: vi.fn(async () => slice), getSessions: vi.fn(async () => slice) };
+    getSessions: vi.fn(async () => slice) };
   const moveStarredFolder = vi.fn(async () => ({ pageVersion: 4, changed: true }));
   const onPageUpdated = vi.fn(); const getDailyPage = vi.fn(async () => ({}));
   const app = Fastify(); apps.push(app);
@@ -24,7 +24,7 @@ describe("folder planner HTTP", () => {
   it.each([
     ["/today?date=2026-09-30", "getToday"], ["/starred-folders", "getStarredFolders"],
     ["/daily-history?before=2026-09-30", "getDailyHistory"], ["/folders/f", "getFolder"],
-    ["/folders/f/subfolders", "getSubfolders"], ["/folders/f/documents", "getDocuments"], ["/folders/f/sessions", "getSessions"],
+    ["/folders/f/subfolders", "getSubfolders"], ["/folders/f/sessions", "getSessions"],
   ] as const)("authenticates and dispatches %s", async (path, method) => {
     const anonymous = setup(false); expect((await anonymous.app.inject(`/api/planner${path}`)).statusCode).toBe(401);
     const { app, provider } = setup(); expect((await app.inject(`/api/planner${path}`)).statusCode).toBe(200);
@@ -33,11 +33,15 @@ describe("folder planner HTTP", () => {
   it("bounds every cursor page and uses folder IDs for folder slices", async () => {
     const { app, provider } = setup();
     expect((await app.inject("/api/planner/starred-folders?limit=101")).statusCode).toBe(422);
-    for (const name of ["subfolders", "documents", "sessions"]) {
+    for (const name of ["subfolders", "sessions"]) {
       expect((await app.inject(`/api/planner/folders/f/${name}?limit=51`)).statusCode).toBe(422);
     }
     await app.inject("/api/planner/folders/f/sessions?cursor=c&limit=10");
     expect(provider.getSessions).toHaveBeenCalledWith("f", { cursor: "c", limit: 10 });
+  });
+  it("does not expose the removed general-page document route", async () => {
+    const { app } = setup();
+    expect((await app.inject("/api/planner/folders/f/documents")).statusCode).toBe(404);
   });
   it("keeps page IDs in star ordering and broadcasts only after commit", async () => {
     const { app, moveStarredFolder, onPageUpdated } = setup();

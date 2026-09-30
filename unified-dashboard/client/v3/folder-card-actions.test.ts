@@ -95,7 +95,6 @@ function task(): PlannerFolder {
     progress: null,
     parentFolderId: "project-a",
     sessionIds: [],
-    mountedDocuments: [],
   };
 }
 

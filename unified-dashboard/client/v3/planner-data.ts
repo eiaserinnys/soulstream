@@ -23,7 +23,6 @@ export interface PlannerFolder {
   progress: number | null;
   parentFolderId: string | null;
   sessionIds: string[];
-  mountedDocuments: MountedFolderDocument[];
 }
 
 export type StarredPlannerFolder = PlannerFolder | PageDto;
@@ -34,11 +33,6 @@ export function isPlannerFolder(value: StarredPlannerFolder): value is PlannerFo
 
 export function starredFolderPage(value: StarredPlannerFolder): PageDto {
   return isPlannerFolder(value) ? value.page : value;
-}
-
-export interface MountedFolderDocument {
-  blockId: string;
-  page: PageDto;
 }
 
 export interface DailyPlannerData {
@@ -55,9 +49,7 @@ export interface FolderPlannerData {
   blocks: BlockDto[];
   items: Array<{ status: string }>;
   subfolders: CatalogFolder[];
-  documents: PageDto[];
   nextSubfolderCursor: string | null;
-  nextDocumentCursor: string | null;
   sessions: PlannerPage<SessionSummary>;
 }
 
@@ -172,9 +164,7 @@ export async function loadFolderPlanner(
     blocks: payload.blocks,
     items: payload.items,
     subfolders: payload.subfolders.items,
-    documents: payload.documents.items,
     nextSubfolderCursor: payload.subfolders.nextCursor,
-    nextDocumentCursor: payload.documents.nextCursor,
     sessions: payload.sessions,
   };
 }
@@ -201,20 +191,6 @@ export async function loadDailyHistoryDates(
     `/api/planner/daily-history?${query.toString()}`,
   ) as { dates: string[] };
   return payload.dates;
-}
-
-export async function loadFolderDocumentPage(
-  dependencies: PlannerDataDependencies,
-  folderId: string,
-  cursor: string | undefined,
-): Promise<PlannerPage<PageDto>> {
-  const payload = await dependencies.fetchPlanner(
-    pagePath(
-      `/api/planner/folders/${encodeURIComponent(folderId)}/documents`,
-      cursor,
-    ),
-  ) as FolderSlicePayload<PageDto>;
-  return { items: payload.items, nextCursor: payload.nextCursor };
 }
 
 export async function loadFolderSubfolderPage(
@@ -310,7 +286,6 @@ interface PlannerFolderAggregate {
   blocks: BlockDto[];
   items: Array<{ status: string }>;
   subfolders: FolderSlicePayload<CatalogFolder>;
-  documents: FolderSlicePayload<PageDto>;
   sessions: FolderSlicePayload<SessionSummary>;
 }
 
@@ -338,6 +313,5 @@ function plannerFolder(payload: PlannerFolderPayload): PlannerFolder {
       : null,
     parentFolderId: folder.parentFolderId ?? null,
     sessionIds: [],
-    mountedDocuments: [],
   };
 }

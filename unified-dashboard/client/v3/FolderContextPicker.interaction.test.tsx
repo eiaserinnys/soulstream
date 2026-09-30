@@ -6,12 +6,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { InitialFolderContextPicker, FolderContextPicker } from "./FolderContextPicker";
-
-const pageApi = vi.hoisted(() => ({
-  listPages: vi.fn(async () => ({ items: [] })),
-  searchPages: vi.fn(async () => ({ items: [] })),
-}));
+import { InitialFolderContextPicker } from "./FolderContextPicker";
 
 vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@seosoyoung/soul-ui")>();
@@ -20,14 +15,6 @@ vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
     AtomNodeSelector: ({ onChange }: { onChange(nodeId: string, title: string): void }) => (
       <button type="button" aria-label="테스트 atom 선택" onClick={() => onChange("node-soulstream", "soulstream")}>atom 선택</button>
     ),
-  };
-});
-
-vi.mock("@seosoyoung/soul-ui/page", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@seosoyoung/soul-ui/page")>();
-  return {
-    ...actual,
-    createPageApiClient: () => pageApi,
   };
 });
 
@@ -88,36 +75,6 @@ describe("InitialFolderContextPicker atom options", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       atomReferences: [expect.objectContaining({ limit: 3 })],
     }));
-  });
-
-  it("keeps the same options on the existing-task selection card before apply", async () => {
-    flushSync(() => root.render(
-      <FolderContextPicker
-        folderPageId="task-page"
-        folderBlocks={[]}
-        onBlocksChanged={vi.fn()}
-        onClose={vi.fn()}
-      />,
-    ));
-    await vi.waitFor(() => expect(pageApi.listPages).toHaveBeenCalled());
-
-    clickButton("🧠 atom");
-    clickButton("atom 선택");
-    const depth = select("soulstream atom depth");
-    setSelect(depth, "5");
-    expect(depth.value).toBe("5");
-
-    const mode = select("soulstream atom 렌더 방식");
-    setSelect(mode, "titles");
-    expect(mode.value).toBe("titles");
-
-    const titlesOnly = input("soulstream 제목만 포함");
-    flushSync(() => titlesOnly.click());
-    expect(titlesOnly.checked).toBe(true);
-
-    const limit = input("soulstream 최근 자식 수");
-    setNumberInput(limit, "5");
-    expect(limit.value).toBe("5");
   });
 });
 

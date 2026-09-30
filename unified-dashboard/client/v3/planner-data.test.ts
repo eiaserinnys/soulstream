@@ -7,7 +7,6 @@ import {
   loadFolderSessionPage,
   loadFolderSubfolderPage,
   loadPlannerFolderById,
-  loadFolderDocumentPage,
   loadFolderPlanner,
   loadStarredFolders,
 } from "./planner-data";
@@ -48,15 +47,14 @@ describe("unified folder planner API", () => {
     const fetchPlanner = vi.fn(async () => ({
       folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], items: [],
       subfolders: { items: [folder("child")], nextCursor: "sub-next" },
-      documents: { items: [page("document")], nextCursor: "doc-next" },
       sessions: { items: [{ agentSessionId: "session-a" }], nextCursor: "session-next" },
     }));
     const result = await loadFolderPlanner(api, "folder-a", page("folder-a-page"), { fetchPlanner });
     expect(result).toMatchObject({
       subfolders: [{ id: "child" }], nextSubfolderCursor: "sub-next",
-      documents: [{ id: "document" }], nextDocumentCursor: "doc-next",
       sessions: { items: [{ agentSessionId: "session-a" }], nextCursor: "session-next" },
     });
+    expect(result).not.toHaveProperty("documents");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/folders/folder-a");
   });
 
@@ -64,11 +62,9 @@ describe("unified folder planner API", () => {
     const fetchPlanner = vi.fn(async (_path: string) => ({ items: [], nextCursor: "next" }));
     const dependencies = { fetchPlanner };
     await loadFolderSubfolderPage(dependencies, "folder/a", "child-cursor");
-    await loadFolderDocumentPage(dependencies, "folder/a", "doc-cursor");
     await loadFolderSessionPage(dependencies, "folder/a", "session-cursor");
     expect(fetchPlanner.mock.calls.map(([path]) => path)).toEqual([
       "/api/planner/folders/folder%2Fa/subfolders?cursor=child-cursor",
-      "/api/planner/folders/folder%2Fa/documents?cursor=doc-cursor",
       "/api/planner/folders/folder%2Fa/sessions?cursor=session-cursor",
     ]);
   });
@@ -77,7 +73,6 @@ describe("unified folder planner API", () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
       folder: folder("folder-a"), page: page("folder-a-page"), blocks: [], sections: [], items: [],
       subfolders: { items: [], nextCursor: null },
-      documents: { items: [], nextCursor: null },
       sessions: { items: [], nextCursor: null },
     }), { headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetcher);

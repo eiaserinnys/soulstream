@@ -93,7 +93,6 @@
 }
 
 .v3-context-panel > input,
-.v3-context-create-page input,
 .v3-succession-assignment select {
   min-width: 0;
   border: 1px solid var(--border);
@@ -265,17 +264,6 @@
 .v3-context-option.is-selected i::after {
   background: var(--info-foreground);
   transform: translateX(11px);
-}
-
-.v3-context-create-page {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-}
-
-.v3-context-create-page [data-slot="button"] {
-  font-size: var(--font-size-xs);
-  font-weight: 760;
 }
 
 .v3-new-task-context {

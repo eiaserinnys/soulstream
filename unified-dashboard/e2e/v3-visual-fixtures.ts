@@ -98,8 +98,6 @@ const pages = {
   taskBeta: page("task-beta", "모바일 3탭 선택 상태 검증"),
   taskDone: page("task-done", "완료한 접근성 정리"),
   carryover: page("task-carryover", "이월 업무: 모달 간격 확인"),
-  document: page("doc-release", "디자인 검수 메모"),
-  documentTwo: page("doc-decisions", "플래너 결정 로그"),
 };
 
 const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<typeof block>[]; state_vector: string }> = {
@@ -136,10 +134,8 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
         nodeId: "eiaserinnys",
         scope: "project",
       }),
-      block("project-doc-2", pages.project.id, "paragraph", `[[${pages.documentTwo.title}]]`),
       block("project-done", pages.project.id, "paragraph", `[[${pages.taskDone.title}]]`),
       block("project-carry", pages.project.id, "paragraph", `[[${pages.carryover.title}]]`),
-      block("project-doc", pages.project.id, "paragraph", `[[${pages.document.title}]]`),
       block("project-alpha", pages.project.id, "paragraph", `[[${pages.taskAlpha.title}]]`),
       block("project-beta", pages.project.id, "paragraph", `[[${pages.taskBeta.title}]]`),
     ],
@@ -164,7 +160,6 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
       block("alpha-atom", pages.taskAlpha.id, "atom_ref", "", { instance: "atom", nodeId: "planner-design", title: "플래너 UX 원칙" }),
       block("alpha-guidance", pages.taskAlpha.id, "guidance", "대비와 잘림을 실제 픽셀로 확인", { enabled: true, scope: "session" }),
       block("alpha-defaults", pages.taskAlpha.id, "session_defaults", "", { agentId: "roselin_codex", nodeId: "eiaserinnys", scope: "session" }),
-      block("alpha-doc", pages.taskAlpha.id, "paragraph", `[[${pages.document.title}]]`),
     ],
   },
   [pages.taskCreated.id]: {
@@ -200,8 +195,6 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
       block("carry-task", pages.carryover.id, "task_ref", "", { taskId: "rb-carry", primary: true }),
     ],
   },
-  [pages.document.id]: { page: pages.document, state_vector: "AA==", blocks: [] },
-  [pages.documentTwo.id]: { page: pages.documentTwo, state_vector: "AA==", blocks: [] },
 };
 
 const allPages = Object.values(pages);
@@ -658,7 +651,7 @@ export async function installV3VisualQaRoutes(
         return fulfillJson(route, { items: pages.taskAlpha.metadata.starred
           ? [plannerFolderPayload(alpha, pages.taskAlpha)] : [], nextCursor: null });
       }
-      const unifiedPlannerMatch = /^\/api\/planner\/folders\/([^/]+)(?:\/(subfolders|documents|sessions))?$/.exec(path);
+      const unifiedPlannerMatch = /^\/api\/planner\/folders\/([^/]+)(?:\/(subfolders|sessions))?$/.exec(path);
       if (unifiedPlannerMatch && request.method() === "GET") {
         const folderId = decodeURIComponent(unifiedPlannerMatch[1]);
         const folder = unifiedFolders.find((candidate) => candidate.id === folderId);
@@ -686,10 +679,7 @@ export async function installV3VisualQaRoutes(
             ? (url.searchParams.get("cursor") ? null : "alpha-older")
             : offset + 20 < folderSessions.length ? String(offset + 20) : null };
         const subfolders = { items: unifiedFolders.filter((candidate) => candidate.parentFolderId === folderId), nextCursor: null };
-        const documents = { items: folderId === "folder-amber" ? [pages.document, pages.documentTwo]
-          : folderId === "rb-alpha" ? [pages.document] : [], nextCursor: null };
         if (unifiedPlannerMatch[2] === "subfolders") return fulfillJson(route, subfolders);
-        if (unifiedPlannerMatch[2] === "documents") return fulfillJson(route, documents);
         if (unifiedPlannerMatch[2] === "sessions") return fulfillJson(route, sessionSlice);
         const snapshot = tasks[folderId] as ReturnType<typeof task> | undefined;
         return fulfillJson(route, { folder, page: folderPage,
@@ -697,7 +687,7 @@ export async function installV3VisualQaRoutes(
           sections: snapshot ? [{ ...unifiedSection, folderId }] : [unifiedSection],
           items: snapshot ? snapshot.items.map((item) => ({ ...unifiedItem, id: item.id,
             sectionId: "section-amber", title: item.title, status: item.status })) : [unifiedItem],
-          subfolders, documents, sessions: sessionSlice });
+          subfolders, sessions: sessionSlice });
       }
     }
     const qaNodes = [{
@@ -1215,5 +1205,4 @@ export const fixtureTitles = {
   secondaryTask: pages.taskBeta.title,
   carryoverTask: pages.carryover.title,
   project: pages.project.title,
-  document: pages.document.title,
 };

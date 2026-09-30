@@ -24,7 +24,6 @@ export function useFolderWorkspaceFolder({ folder, aggregate, knownFolder }: {
         progress: aggregate.items.length ? Math.round(100 * completed / aggregate.items.length) : null,
         parentFolderId: aggregate.folder.parentFolderId ?? null,
         sessionIds: aggregate.sessions.items.map((session) => session.agentSessionId),
-        mountedDocuments: [],
       },
       error: null,
     };
