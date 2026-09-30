@@ -11,6 +11,7 @@ describe("card linked session response",()=>{
   const projection=query.split("FROM")[0];
   expect(projection).toMatch(/\bcaller_session_id\b/);expect(projection).toMatch(/\bupdated_at\b/);
   expect(params).toEqual(["c"]);
-  expect(serializeCardRow(sessions[0])).toEqual({sessionId:"child",callerSessionId:"parent",updatedAt:"2026-09-30T00:00:00.000Z"});
+  expect(sessions).toHaveLength(1);
+  expect(serializeCardRow(sessions[0]!)).toEqual({sessionId:"child",callerSessionId:"parent",updatedAt:"2026-09-30T00:00:00.000Z"});
  });
 });
