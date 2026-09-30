@@ -44,7 +44,7 @@ describe("card dispatch and session lifecycle", () => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
         await h.sql `INSERT INTO system_settings(setting_key,value,updated_by) VALUES ('card_dispatch','{"nodeConcurrency":{"default":1}}','migration')`;
         const sql = createBoardYjsSqlAdapter(h.liveSql);
-        repo = new CardDispatchRepository(sql);
+        repo = new CardDispatchRepository(async () => sql);
         cards = new CardControlPlaneService(sql, { appendEventTx: async (tx, p) => {
                 const rows = await tx<{
                     id: number;

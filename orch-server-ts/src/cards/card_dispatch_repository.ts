@@ -13,24 +13,28 @@ export type CardSession = {
     termination_event_id: number | null;
 };
 export class CardDispatchRepository {
-    constructor(private readonly sql: SqlClient) { }
-    settings() { return readCardDispatchSettings(this.sql); }
+    constructor(private readonly resolveSql: () => Promise<SqlClient>) { }
+    async settings() { return readCardDispatchSettings(await this.resolveSql()); }
     async queued(): Promise<DispatchCard[]> {
-        return this.sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
+        const sql = await this.resolveSql();
+        return sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
       WHERE c.status='queued' AND NOT c.archived AND NOT f.archived ORDER BY c.queue_position_key COLLATE "C",c.id`;
     }
     async limited(): Promise<DispatchCard[]> {
-        return this.sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
+        const sql = await this.resolveSql();
+        return sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
       WHERE c.status='blocked' AND c.blocked_kind='limit' AND NOT c.archived AND NOT f.archived
       ORDER BY c.queue_position_key COLLATE "C" NULLS LAST,c.id`;
     }
     async running(): Promise<DispatchCard[]> {
-        return this.sql<DispatchCard[]> `SELECT DISTINCT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
+        const sql = await this.resolveSql();
+        return sql<DispatchCard[]> `SELECT DISTINCT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
       JOIN sessions s ON s.card_id=c.id WHERE s.status NOT IN ('completed','error','interrupted') AND NOT c.archived AND NOT f.archived`;
     }
     async occupancy(): Promise<Record<string, number>> {
+        const sql = await this.resolveSql();
         // Dispatch provenance uses the existing immutable operation ledger. Manually created sessions have no marker.
-        const rows = await this.sql<{
+        const rows = await sql<{
             node_id: string;
             count: number;
         }[]> `SELECT op.payload_json->>'node_id' AS node_id,count(*)::int AS count
@@ -46,15 +50,18 @@ export class CardDispatchRepository {
         return Object.fromEntries(rows.map(row => [row.node_id, row.count]));
     }
     async session(sessionId: string): Promise<CardSession | null> {
-        return (await this.sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id
+        const sql = await this.resolveSql();
+        return (await sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id
       FROM sessions WHERE session_id=${sessionId} AND card_id IS NOT NULL`)[0] ?? null;
     }
     async latestSession(cardId: string): Promise<CardSession | null> {
-        return (await this.sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id
+        const sql = await this.resolveSql();
+        return (await sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id
       FROM sessions WHERE card_id=${cardId} ORDER BY created_at DESC,session_id DESC LIMIT 1`)[0] ?? null;
     }
     async rejectionReason(cardId: string): Promise<string | null> {
-        const rows = await this.sql<{
+        const sql = await this.resolveSql();
+        const rows = await sql<{
             reason: string;
         }[]> `SELECT reason FROM folder_operations WHERE target_id=${cardId}
       AND operation_type='set_card_status' AND actor_kind='user' AND payload_json->>'status'='running' AND reason IS NOT NULL

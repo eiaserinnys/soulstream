@@ -23,11 +23,12 @@ export async function createCardDispatchRuntime(options: {
     warn: (message: string) => void;
     onFolderHeaderUpdated: () => Promise<void>;
 }) {
-    const sql = await new BoardYjsSqlResolver(options.sqlResolver).resolveSql();
+    const resolver = new BoardYjsSqlResolver(options.sqlResolver);
+    const resolveSql = () => resolver.resolveSql();
     let dispatcher: CardDispatcher;
     const serviceProvider = createCardControlPlaneServiceProvider({ sqlResolver: options.sqlResolver, broadcaster: options.broadcaster,
         warn: options.warn, onFolderHeaderUpdated: options.onFolderHeaderUpdated, onMutation: change => dispatcher.acceptMutation(change) });
-    dispatcher = new CardDispatcher({ repository: new CardDispatchRepository(sql), cards: serviceProvider, warn: options.warn,
+    dispatcher = new CardDispatcher({ repository: new CardDispatchRepository(resolveSql), cards: serviceProvider, warn: options.warn,
         resolveTarget: (card, modelPreset) => {
             // Central agent identities have no default-node field; the configured card node wins, then the documented default.
             const nodeId = card.node_id ?? "eiaserinnys";
@@ -55,8 +56,8 @@ export async function createCardDispatchRuntime(options: {
         notify: input => options.notifier.notifyCard(input),
     });
     return { dispatcher, serviceProvider, settingsRoutes: { ...options.admin,
-            get: () => readCardDispatchSettings(sql), put: async (input: Parameters<typeof updateCardDispatchSettings>[1]) => {
-                const result = await updateCardDispatchSettings(sql, input);
+            get: async () => readCardDispatchSettings(await resolveSql()), put: async (input: Parameters<typeof updateCardDispatchSettings>[1]) => {
+                const result = await updateCardDispatchSettings(await resolveSql(), input);
                 void dispatcher.dispatch();
                 return result;
             } } };
