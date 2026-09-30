@@ -77,20 +77,20 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
             )}
           />
         </div>
-        <Button
-          data-testid="send-button"
-          onClick={onSend}
-          disabled={disabled}
-          size="icon"
-          variant={buttonVariant}
-          aria-label={buttonLabel}
-          title={buttonLabel}
-          data-button-variant={buttonVariant}
-          className="h-9 w-9 shrink-0 self-end rounded-full sm:h-8 sm:w-8"
-        >
-          <SendHorizontal className="h-4 w-4" aria-hidden="true" />
-        </Button>
+        <ChatSendButton onSend={onSend} disabled={disabled} label={buttonLabel} variant={buttonVariant} />
       </>
     );
   },
 );
+
+/** The chat send control, also used by card handoff. Size and icon stay canonical here. */
+export function ChatSendButton({ onSend, disabled, label, variant = "default", className }: {
+ onSend(): void; disabled: boolean; label: string;
+ variant?: Extract<ButtonVariant, "default" | "success" | "warning">; className?: string;
+}) {
+ return <Button data-testid="send-button" onClick={onSend} disabled={disabled} size="icon"
+  variant={variant} aria-label={label} title={label} data-button-variant={variant}
+  className={cn("h-9 w-9 shrink-0 self-end rounded-full sm:h-8 sm:w-8", className)}>
+  <SendHorizontal className="h-4 w-4" aria-hidden="true" />
+ </Button>;
+}

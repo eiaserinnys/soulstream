@@ -1,3 +1,5 @@
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { groupCards } from "@seosoyoung/soul-ui/cards/card-api";
 import { CardInbox } from "./CardInbox";
 import { CardHandoff } from "./CardHandoff";
 import { DashboardIconCap, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
@@ -51,6 +53,9 @@ export function DailyPlannerView({
   onOpenRitual(): void;
   onCreateFolder(): void;
 }) {
+  const byId = useCardStore(s=>s.byId);
+  const cards = groupCards(Object.values(byId));
+  const summary = ([ ["확인할 것",cards.attention.length], ["진행 중",cards.running.length], ["대기",cards.queued.length] ] as const).filter(([,count])=>count>0).map(([label,count])=>`${label} ${count}`).join(" / ");
   const data = state.data;
   const visibleTasks = visibleDailyFolders(data?.folders ?? [], isTodayView, todayFolderIds);
   const visibleProjects = folders.filter((folder) => visibleTasks.some((task) => task.parentFolderId === folder.id));
@@ -70,15 +75,15 @@ export function DailyPlannerView({
 
   return (
     <div className="v3-planner-column v3-planner-column--daily">
+      <div className="v3-today-list">
       <div className="v3-date-head">
         <div><span>DAILY</span><h1>{formatLongDate(selectedDate)}</h1></div>
-        <p>{state.status === "loading" ? "플래너를 불러오는 중…" : `${visibleTasks.length}개의 업무`}</p>
+        {summary ? <p>{summary}</p> : null}
         <span className="v3-spacer" />
         <DashboardIconCap className="v3-planner-head-action" label="아침 정리" onClick={onOpenRitual}>
           <Sun className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>
-      <div className="v3-today-list">
       {state.status === "error" ? <LoadError message={state.message} /> : null}
       {data ? <DailyMemo blocks={data.memoBlocks} onSave={onSaveMemo} /> : null}
       <CardInbox folders={folders} />
