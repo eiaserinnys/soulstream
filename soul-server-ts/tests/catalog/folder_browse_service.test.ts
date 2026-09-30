@@ -4,7 +4,7 @@ import { FOLDER_SEARCH_SCAN_LIMIT, FolderBrowseService, type FolderBrowseStore }
 import type { CatalogBoardItemRow, ListFolderItemsResult } from "../../src/db/session_db_types.js";
 
 function item(itemType: CatalogBoardItemRow["itemType"], itemId: string): CatalogBoardItemRow {
-  return { id: `${itemType}:${itemId}`, folderId: "folder-1", membershipKind: "primary", sourceChecklistItemId: null,
+  return { id: `${itemType}:${itemId}`, folderId: "folder-1", membershipKind: "primary",
     itemType, itemId, x: 0, y: 0, metadata: {}, updatedAt: "2026-07-16T00:00:00.000Z" };
 }
 

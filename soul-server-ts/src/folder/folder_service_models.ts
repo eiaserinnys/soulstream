@@ -9,13 +9,12 @@ export interface FolderIdentityMutationResult extends FolderMutationBase {
   folder: FolderSnapshot["folder"];
 }
 
-export interface ChecklistMutationResult extends FolderMutationBase {
+export interface CardMutationResult extends FolderMutationBase {
   folderId: string;
-  section?: Record<string, unknown> & { id: string } | null;
-  item?: Record<string, unknown> & { id: string } | null;
+  card?: Record<string, unknown> & { id: string } | null;
 }
 
-export type FolderMutationResult = FolderIdentityMutationResult | ChecklistMutationResult;
+export type FolderMutationResult = FolderIdentityMutationResult | CardMutationResult;
 
 export interface FolderActorParams {
   actorKind?: FolderOperationActorKind;

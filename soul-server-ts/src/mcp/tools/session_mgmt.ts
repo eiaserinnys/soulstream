@@ -76,11 +76,11 @@ export function registerSessionMgmtTools(
         predecessor_session_id: z.string().min(1).optional(),
         notify_completion: z.boolean().optional(),
         folder_id: z.string().optional(),
-        source_checklist_item_id: z.string().optional(),
+        card_id: z.string().optional(),
         worktree_id: z.string().uuid().optional(),
       },
     },
-    async ({ agent_id, model_preset, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, source_checklist_item_id, worktree_id }) => {
+    async ({ agent_id, model_preset, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, card_id, worktree_id }) => {
       let agentResolution: AgentProfileResolution | undefined;
       let agent: AgentProfile | undefined;
       let resolvedAgentId: string;
@@ -133,7 +133,7 @@ export function registerSessionMgmtTools(
           callerInfo: attribution.callerInfo,
           notifyCompletion: notify_completion,
           folderId: resolvedFolderId,
-          sourceChecklistItemId: source_checklist_item_id ?? null,
+          cardId: card_id ?? null,
           ...(worktree_id
             ? {
                 worktreeId: worktree_id,

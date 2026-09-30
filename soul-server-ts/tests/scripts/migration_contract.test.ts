@@ -287,7 +287,7 @@ describe("versioned migration contract", () => {
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migrations.at(-1)?.id).toBe("108_unify_folders.sql");
+    expect(migrations.at(-1)?.id).toBe("109_cards.sql");
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS schedule_kind TEXT NOT NULL DEFAULT 'recurring'");
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS run_at TIMESTAMPTZ");
     expect(migration?.sql).toContain("DROP CONSTRAINT IF EXISTS recurring_jobs_schedule_array");
@@ -360,7 +360,9 @@ describe("versioned migration contract", () => {
       "FOREIGN KEY (source_task_item_id) REFERENCES task_items(id) ON DELETE SET NULL",
     );
     expect(migration?.sql).not.toMatch(/SIMILAR TO|source_task_item_id\s*~/);
-    expect(schema).toContain("FOREIGN KEY (source_checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL");
+    expect(schema).toContain("card_id TEXT REFERENCES cards(id) ON DELETE SET NULL");
+    expect(schema).not.toContain("source_checklist_item_id");
+    expect(schema).not.toContain("CREATE TABLE IF NOT EXISTS checklist_sections");
     expect(schema).not.toContain("source_task_item_id");
   });
 

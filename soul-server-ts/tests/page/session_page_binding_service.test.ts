@@ -23,7 +23,6 @@ function binding(overrides: Partial<SessionPageBindingRow> = {}): SessionPageBin
     daily_date: "2026-07-13",
     session_type: "claude",
     legacy_folder_id: "folder-1",
-    source_checklist_item_id: null,
     page_state: "pending",
     legacy_state: "pending",
     attempts: 0,

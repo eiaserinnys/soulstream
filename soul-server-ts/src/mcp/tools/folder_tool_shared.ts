@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ChecklistAssigneeInput } from "../../folder/folder_models.js";
+import type { CardAssigneeInput } from "../../folder/folder_models.js";
 import type { FolderService } from "../../folder/folder_service.js";
 import { errorResultFromError, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
@@ -11,7 +11,6 @@ import {
 } from "./caller_session.js";
 import type { FolderMutationResult } from "../../folder/folder_service_models.js";
 
-export const checklistItemStatusSchema = z.enum(["pending", "in_progress", "review", "completed", "cancelled"]);
 export const folderStatusSchema = z.enum(["open", "completed"]);
 export const assigneeValueSchema = z.object({
   kind: z.enum(["agent", "human", "session"]),
@@ -25,7 +24,7 @@ export const optionalReasonSchema = z.string().nullable().optional();
 export const expectedVersionSchema = z.number().int().positive();
 export const callerSessionIdSchema = z.string().optional();
 export function mutationToolDescription(description: string): string {
-  return `${description} 변경 결과는 폴더 또는 체크리스트 항목과 operation을 반환한다. 전체 체크리스트는 get_folder로 조회한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
+  return `${description} 변경 결과는 폴더 또는 카드과 operation을 반환한다. 전체 카드 목록는 get_folder로 조회한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
 }
 
 export async function mutation(
@@ -34,7 +33,7 @@ export async function mutation(
   fn: (service: FolderService, actor: McpMutationActor) => Promise<FolderMutationResult>,
 ) {
   try {
-    const result = await fn(getFolderService(runtime), requireMcpMutationActor(explicitCallerSessionId, "folder/checklist mutation tools"));
+    const result = await fn(getFolderService(runtime), requireMcpMutationActor(explicitCallerSessionId, "folder mutation tools"));
     return jsonResult(result);
   } catch (err) {
     return errorResultFromError(err);
@@ -46,7 +45,7 @@ export function getFolderService(runtime: McpRuntime): FolderService {
   return runtime.folderService;
 }
 
-export function assigneePatch(input: { assignee?: z.infer<typeof assigneeSchema> }): { assignee?: ChecklistAssigneeInput | null } | Record<string, never> {
+export function assigneePatch(input: { assignee?: z.infer<typeof assigneeSchema> }): { assignee?: CardAssigneeInput | null } | Record<string, never> {
   if (!Object.prototype.hasOwnProperty.call(input, "assignee")) return {};
   if (!input.assignee) return { assignee: null };
   return { assignee: {

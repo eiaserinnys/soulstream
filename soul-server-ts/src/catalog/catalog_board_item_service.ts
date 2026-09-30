@@ -40,7 +40,6 @@ export interface CatalogBoardYjsPort {
     sessionId: string;
     x: number;
     y: number;
-    sourceChecklistItemId?: string | null;
   }): Promise<CatalogBoardItemRow>;
 }
 
@@ -207,7 +206,6 @@ export class CatalogBoardItemService {
     return await this.requireBoard().upsertSessionBoardItem({
       folderId,
       sessionId,
-      sourceChecklistItemId: null,
       x,
       y,
     });

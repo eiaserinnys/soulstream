@@ -47,7 +47,7 @@ interface CreateSessionCmd extends CommandLike {
   claudePermissionMode?: ClaudePermissionMode;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
-  sourceChecklistItemId?: string | null;
+  cardId?: string | null;
   worktree_id?: string;
   worktree_actor_session_id?: string;
   /**
@@ -185,7 +185,7 @@ async function handleCreateSession(
       useMcp: cmd.use_mcp ?? cmd.useMcp,
       claudePermissionMode: cmd.claude_permission_mode ?? cmd.claudePermissionMode,
       folderId: cmd.folderId ?? null,
-      sourceChecklistItemId: cmd.sourceChecklistItemId ?? null,
+      cardId: cmd.cardId ?? null,
       worktreeId: cmd.worktree_id,
       worktreeActorSessionId: cmd.worktree_actor_session_id,
       systemPrompt: cmd.systemPrompt,

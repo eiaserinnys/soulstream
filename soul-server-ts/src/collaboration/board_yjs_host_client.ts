@@ -44,7 +44,6 @@ export class BoardYjsHostClient implements CustomViewProjectionHost {
     sessionId: string;
     x: number;
     y: number;
-    sourceChecklistItemId?: string | null;
   }): Promise<CatalogBoardItemRow> {
     return await this.request("upsert-session-board-item", input);
   }

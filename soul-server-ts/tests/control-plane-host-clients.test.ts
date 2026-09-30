@@ -148,20 +148,20 @@ describe("worker control-plane host clients", () => {
     now.mockRestore();
   });
 
-  it("serializes checklist mutation input and returns the host mutation result", async () => {
+  it("serializes folder mutation input and returns the host mutation result", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const request = JSON.parse(String(init?.body));
       expect(request).toMatchObject({
         actor_kind: "agent",
         actor_session_id: "session-1",
         folder_id: "folder-1",
-        item_id: "item-1",
+
         expected_version: 4,
         idempotency_key: "idem-1",
       });
       return new Response(JSON.stringify({
         folderId: "folder-1",
-        item: { id: "item-1", status: "completed" },
+        folder: { id: "folder-1", status: "completed" },
         operation: { id: "operation-1" },
         idempotent: false,
       }), { status: 200, headers: { "content-type": "application/json" } });
@@ -169,20 +169,19 @@ describe("worker control-plane host clients", () => {
     vi.stubGlobal("fetch", fetchMock);
     const service = new FolderService({ orch, logger });
 
-    const result = await service.setChecklistItemStatus({
+    const result = await service.setFolderStatus({
       actorSessionId: "session-1",
       folderId: "folder-1",
-      itemId: "item-1",
       expectedVersion: 4,
       status: "completed",
       idempotencyKey: "idem-1",
     });
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/set_checklist_item_status");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/set_folder_status");
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeDefined();
     expect(result).toEqual({
       folderId: "folder-1",
-      item: { id: "item-1", status: "completed" },
+      folder: { id: "folder-1", status: "completed" },
       operation: { id: "operation-1" },
       idempotent: false,
     });
@@ -267,7 +266,7 @@ describe("worker control-plane host clients", () => {
     }), { status: 409, headers: { "content-type": "application/json" } })));
     const service = new FolderService({ orch, logger });
 
-    await expect(service.setChecklistItemStatus({
+    await expect(service.setCardStatus({
       actorSessionId: "session-1",
       folderId: "folder-1",
       itemId: "item-1",

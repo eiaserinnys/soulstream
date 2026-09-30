@@ -1,12 +1,12 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
   BoardItemType,
-  ChecklistItemStatus,
+  CardStatus,
 } from "@soulstream/wire-schema";
 
 export type {
   BoardItemType,
-  ChecklistItemStatus,
+  CardStatus,
 } from "@soulstream/wire-schema";
 
 import type {
@@ -89,7 +89,6 @@ export interface CatalogBoardItemRow {
   id: string;
   folderId: string;
   membershipKind?: "primary" | "reference";
-  sourceChecklistItemId?: string | null;
   itemType: BoardItemType;
   itemId: string;
   x: number;
@@ -206,6 +205,7 @@ export interface BoardYjsReplica {
 
 /** `session_get` 반환 행 (sessions 테이블 컬럼 매핑). */
 export interface SessionRow {
+  card_id?: string | null;
   session_id: string;
   folder_id: string | null;
   display_name: string | null;
@@ -284,6 +284,7 @@ export interface UpstreamSessionDumpRow extends ListSessionSummaryRow {
 }
 
 export interface RegisterSessionParams {
+  cardId?: string | null;
   sessionId: string;
   nodeId: string;
   agentId: string | null;
@@ -469,54 +470,17 @@ export interface SessionDeliveryNotificationOutboxRow {
   dead_lettered_at: Date | null;
 }
 
-export type ChecklistAssigneeKind = "agent" | "human" | "session";
+export type CardAssigneeKind = "agent" | "human" | "session";
 export type FolderStatus = "open" | "completed";
-export type FolderOperationTargetKind = "folder" | "section" | "item";
+export type FolderOperationTargetKind = "folder" | "card";
 export type FolderOperationActorKind = "agent" | "user" | "system" | "llm";
 export type FolderCompletionKind = Exclude<FolderOperationActorKind, "system">;
 
-export interface ChecklistAssigneeFields {
-  assignee_kind: ChecklistAssigneeKind | null;
+export interface CardAssigneeFields {
+  assignee_kind: CardAssigneeKind | null;
   assignee_agent_id: string | null;
   assignee_session_id: string | null;
   assignee_user_id: string | null;
-}
-
-export interface ChecklistSectionRow extends ChecklistAssigneeFields {
-  id: string;
-  folder_id: string;
-  position_key: string;
-  title: string;
-  archived: boolean;
-  version: number;
-  created_session_id: string | null;
-  created_event_id: number | null;
-  updated_session_id: string | null;
-  updated_event_id: number | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface ChecklistItemRow extends ChecklistAssigneeFields {
-  id: string;
-  section_id: string;
-  position_key: string;
-  title: string;
-  how_to: string;
-  status: ChecklistItemStatus;
-  archived: boolean;
-  version: number;
-  created_session_id: string | null;
-  created_event_id: number | null;
-  updated_session_id: string | null;
-  updated_event_id: number | null;
-  completed_kind: FolderCompletionKind | null;
-  completed_session_id: string | null;
-  completed_event_id: number | null;
-  completed_user_id: string | null;
-  completed_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
 }
 
 export interface FolderOperationRow {
@@ -551,8 +515,7 @@ export interface FolderSnapshot {
     createdAt?: string;
     updatedAt?: string;
   };
-  sections: Array<Record<string, unknown> & { id: string }>;
-  items: Array<Record<string, unknown> & { id: string; sectionId: string }>;
+  cards: CardRow[];
 }
 
 export interface ChildFolderRow {
@@ -575,28 +538,20 @@ export interface ChildFolderRow {
   updated_at: Date;
 }
 
-export interface ChecklistMyTurnItemRow {
-  folder_id: string;
-  folder_name: string;
-  folder_status: FolderStatus;
-  folder_completed_kind: FolderCompletionKind | null;
-  folder_completed_session_id: string | null;
-  folder_completed_event_id: number | null;
-  folder_completed_user_id: string | null;
-  folder_completed_at: Date | null;
-  section_id: string;
-  section_title: string;
-  item_id: string;
-  item_title: string;
-  how_to: string;
-  status: ChecklistItemStatus;
-  item_version: number;
-  effective_assignee_kind: ChecklistAssigneeKind | null;
-  effective_assignee_agent_id: string | null;
-  effective_assignee_session_id: string | null;
-  effective_assignee_user_id: string | null;
+/** Card HTTP uses camelCase rows; report/question/session arrays are orch-owned. */
+export interface CardRow extends Record<string, unknown> {
+  id: string;
+  folderId: string;
+  title: string;
+  status: CardStatus;
+  version: number;
 }
-
+export interface CardDetail {
+  card: CardRow;
+  reports: Record<string, unknown>[];
+  questions: Record<string, unknown>[];
+  sessions: Record<string, unknown>[];
+}
 
 export interface ClaudeTranscriptKey {
   projectKey: string;

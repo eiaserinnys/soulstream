@@ -47,7 +47,7 @@ export interface CreateSessionRuntimeParams {
   claudePermissionMode?: ClaudePermissionMode;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
-  sourceChecklistItemId?: string | null;
+  cardId?: string | null;
   worktreeId?: string;
   worktreeActorSessionId?: string;
   systemPrompt?: string;
@@ -201,7 +201,7 @@ export class TaskRuntimeCommands {
       useMcp: params.useMcp,
       claudePermissionMode: params.claudePermissionMode,
       folderId: params.folderId ?? null,
-      sourceChecklistItemId: params.sourceChecklistItemId ?? null,
+      cardId: params.cardId ?? null,
       worktreeId: params.worktreeId,
       worktreeActorSessionId: params.worktreeActorSessionId,
       systemPrompt: params.systemPrompt,
