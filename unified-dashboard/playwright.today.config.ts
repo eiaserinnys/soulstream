@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 import { realpathSync } from "node:fs";
 const baseline = Boolean(process.env.TODAY_BASELINE);
 export default defineConfig({
- testDir: "./e2e", testMatch: baseline ? "today-screen-design.e2e.ts" : ["today-screen-design.e2e.ts", "cards-p1-web.e2e.ts"],
+ testDir: "./e2e", testMatch: baseline ? "today-screen-design.e2e.ts" : ["today-screen-design.e2e.ts", "cards-p1-web.e2e.ts", "smoke.e2e.ts"],
  workers: 1, fullyParallel: false, retries: 0, timeout: 60000, reporter: "list",
  outputDir: "./e2e/test-results/today-screen-design",
  use: { baseURL: "http://127.0.0.1:4197", trace: "retain-on-failure" },
