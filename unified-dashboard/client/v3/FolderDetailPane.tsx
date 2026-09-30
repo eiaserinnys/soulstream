@@ -247,21 +247,14 @@ export function FolderDetailPane({
       className={`v3-detail-pane${inline ? " v3-detail-pane--inline" : " border border-glass-border glass-strong glass-chrome lg-rim"}`}
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
     >
-      {inline ? <header className="v3-date-head v3-project-title v3-inline-folder-header">
-        <div className="v3-inline-folder-heading">
-          <DashboardIconCap label={backLabel} onClick={goBack}>
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          </DashboardIconCap>
-          <FolderTitleEditor title={task.page.title} onRename={onRenameFolderTitle} headingLevel={1} />
-        </div>
-        <div className="v3-inline-folder-actions">{actions}</div>
-      </header> : <header className="v3-workspace-toolbar">
+      <header className={`v3-folder-header${inline ? " v3-inline-folder-header" : " v3-workspace-toolbar"}`}>
         <DashboardIconCap label={backLabel} onClick={goBack}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
-        <span className="v3-spacer" />
-        {actions}
-      </header>}
+        {checklistEnabled ? <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span> : null}
+        <FolderTitleEditor title={task.page.title} onRename={onRenameFolderTitle} headingLevel={1} />
+        <div className="v3-folder-header-actions">{actions}</div>
+      </header>
       <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <DialogPopup className="max-w-sm">
           <DialogHeader>
@@ -291,11 +284,6 @@ export function FolderDetailPane({
             onFocusRequestHandled={onFocusRequestHandled}
           />
           <div className="v3-task-detail-content">
-            <div className="v3-detail-title">
-              {checklistEnabled ? <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span> : null}
-              {inline ? null : <FolderTitleEditor title={task.page.title} onRename={onRenameFolderTitle} />}
-            </div>
-
             <section ref={informationSectionRef} className="v3-detail-section" data-task-section="information">
               <div className="v3-detail-section-head"><h3>정보</h3></div>
               <FolderDescriptionPanel markdown={description} onSave={onSaveDescription} />
