@@ -71,6 +71,15 @@ jobs:
           tests/runner/s4_new_session_full_slice_postgres.test.ts
           --minWorkers=1 --maxWorkers=1 --no-file-parallelism
 
+      - name: Upload full-slice failure logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: soul-server-ts-full-slice-failure-logs
+          path: soul-server-ts/test-artifacts/full-slice/
+          if-no-files-found: warn
+          retention-days: 7
+
   runner-kernel-lock-windows:
     name: runner kernel lock (Windows)
     runs-on: windows-latest

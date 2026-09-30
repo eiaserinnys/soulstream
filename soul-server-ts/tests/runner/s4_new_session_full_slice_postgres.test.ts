@@ -1,9 +1,15 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { createFullSchemaPostgresHarness } from
   "../db/full_schema_postgres_harness.js";
-import { ProductionFullSliceHarness } from
-  "./s4_new_session_full_slice_harness.js";
+import {
+  copyFullSliceFailureArtifacts,
+  ProductionFullSliceHarness,
+} from "./s4_new_session_full_slice_harness.js";
 import type {
   FullSliceBackend,
   FullSliceObservation,
@@ -137,6 +143,49 @@ describe("S3-S6 production full slice", () => {
       assertActiveIntervention(observed, "S6", backend);
     });
   }, 120_000);
+});
+
+describe("full-slice failure diagnostics", () => {
+  it("copies only worker, fixture, runner, lifecycle and engine-boundary logs", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "full-slice-diagnostics-test-"));
+    const sourceRoot = join(tempRoot, "source");
+    const destinationRoot = join(tempRoot, "destination");
+    const runnerDirectory = join(sourceRoot, "runner-state", "session-1");
+    const controlDirectory = join(sourceRoot, "control");
+    await Promise.all([
+      mkdir(runnerDirectory, { recursive: true }),
+      mkdir(controlDirectory, { recursive: true }),
+      mkdir(join(sourceRoot, "private"), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(sourceRoot, "worker.log"), "worker fixture log\n"),
+      writeFile(join(sourceRoot, "fixture.log"), "runner fixture log\n"),
+      writeFile(join(runnerDirectory, "runner.log"), "runner process log\n"),
+      writeFile(join(runnerDirectory, "runner-lifecycle.json"), "{}\n"),
+      writeFile(
+        join(controlDirectory, "engine-boundary-S4-codex-executeFrames-1-1.json"),
+        "{}\n",
+      ),
+      writeFile(join(sourceRoot, "agents.yaml"), "fixture configuration\n"),
+      writeFile(join(sourceRoot, "private", "other.json"), "not a diagnostic\n"),
+    ]);
+
+    try {
+      expect((await copyFullSliceFailureArtifacts(sourceRoot, destinationRoot)).sort()).toEqual([
+        "control/engine-boundary-S4-codex-executeFrames-1-1.json",
+        "fixture.log",
+        "runner-state/session-1/runner-lifecycle.json",
+        "runner-state/session-1/runner.log",
+        "worker.log",
+      ]);
+      expect(await readFile(join(destinationRoot, "worker.log"), "utf8"))
+        .toBe("worker fixture log\n");
+      await expect(readFile(join(destinationRoot, "agents.yaml")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 async function runCase(

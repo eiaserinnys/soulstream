@@ -1,11 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from
   "node:fs/promises";
 import { createRequire } from "node:module";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import pino from "pino";
@@ -55,6 +55,11 @@ const childFixturePath = join(testDirectory, "fixtures/runner_process_e2e_child.
 const requireFromTest = createRequire(import.meta.url);
 const tsxImportUrl = pathToFileURL(requireFromTest.resolve("tsx")).href;
 const silentLogger = pino({ level: "silent" });
+const workerLogPath = process.env.RUNNER_E2E_WORKER_LOG_PATH;
+const workerLogger = workerLogPath
+  ? pino({ level: "info" }, pino.destination({ dest: workerLogPath, sync: true }))
+  : silentLogger;
+const pendingTestCleanup = new Set<ProductionFullSliceHarness>();
 
 type NodeSnapshot = {
   nodeId: string;
@@ -122,7 +127,7 @@ export class ProductionFullSliceHarness {
       ].join("\n"),
     );
     await writeFile(modelCatalogPath, "presets: []\n");
-    return new ProductionFullSliceHarness(
+    const harness = new ProductionFullSliceHarness(
       postgres,
       scenario,
       backend,
@@ -135,6 +140,8 @@ export class ProductionFullSliceHarness {
       agentsConfigPath,
       modelCatalogPath,
     );
+    pendingTestCleanup.add(harness);
+    return harness;
   }
 
   async run(): Promise<FullSliceObservation> {
@@ -367,6 +374,9 @@ export class ProductionFullSliceHarness {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+  }
+
+  async removeTemporaryFiles(): Promise<void> {
     await rm(this.root, { recursive: true, force: true });
   }
 
@@ -447,6 +457,8 @@ export class ProductionFullSliceHarness {
           RUNNER_E2E_CONTROL_DIR: this.controlDirectory,
           RUNNER_E2E_FULL_SLICE_SCENARIO: this.scenario,
           RUNNER_E2E_FULL_SLICE_BACKEND: this.backend,
+          RUNNER_E2E_WORKER_LOG_PATH: join(this.root, "worker.log"),
+          RUNNER_E2E_FIXTURE_LOG_PATH: join(this.root, "fixture.log"),
         }),
         stdio: ["ignore", "ignore", "pipe"],
       },
@@ -881,6 +893,79 @@ export class ProductionFullSliceHarness {
   }
 }
 
+if (!process.argv.includes(WORKER_ROLE)) {
+  const { afterEach } = await import("vitest");
+  afterEach(async ({ task }) => {
+    const harnesses = [...pendingTestCleanup];
+    if (harnesses.length === 0) return;
+
+    try {
+      if (task.result?.state === "fail") {
+        const fileName = safeArtifactSegment(
+          basename(task.file.filepath).replace(/\.test\.[^.]+$/, ""),
+        );
+        const testName = safeArtifactSegment(task.name);
+        const destination = join(
+          testDirectory,
+          "../../test-artifacts/full-slice",
+          `${fileName}-${testName}`,
+        );
+        for (const harness of harnesses) {
+          await copyFullSliceFailureArtifacts(harness.root, destination);
+        }
+      }
+    } finally {
+      for (const harness of harnesses) {
+        try {
+          await harness.removeTemporaryFiles();
+        } finally {
+          pendingTestCleanup.delete(harness);
+        }
+      }
+    }
+  });
+}
+
+export async function copyFullSliceFailureArtifacts(
+  sourceRoot: string,
+  destinationRoot: string,
+): Promise<string[]> {
+  const copiedPaths: string[] = [];
+
+  async function copyDirectory(directory: string): Promise<void> {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const sourcePath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await copyDirectory(sourcePath);
+        continue;
+      }
+      if (!entry.isFile() || !isFullSliceDiagnosticFile(entry.name)) continue;
+
+      const relativePath = relative(sourceRoot, sourcePath);
+      const destinationPath = join(destinationRoot, relativePath);
+      await mkdir(dirname(destinationPath), { recursive: true });
+      await copyFile(sourcePath, destinationPath);
+      copiedPaths.push(relativePath.split(sep).join("/"));
+    }
+  }
+
+  await copyDirectory(sourceRoot);
+  return copiedPaths;
+}
+
+function isFullSliceDiagnosticFile(fileName: string): boolean {
+  return fileName === "worker.log"
+    || fileName === "fixture.log"
+    || fileName === "runner.log"
+    || fileName === "runner-lifecycle.json"
+    || (fileName.startsWith("engine-boundary-") && fileName.endsWith(".json"));
+}
+
+function safeArtifactSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
 async function runWorkerChild(): Promise<void> {
   const env = parseEnv(process.env);
   const mcpConfigService = new McpConfigService({
@@ -913,7 +998,7 @@ async function runWorkerChild(): Promise<void> {
   await startWorkerRuntime({
     compose: async () => await composeWorkerRuntime({
       env,
-      logger: silentLogger,
+      logger: workerLogger,
       agentRegistry,
       mcpConfigService,
       releaseActivationState,
@@ -923,6 +1008,7 @@ async function runWorkerChild(): Promise<void> {
     },
     logger: {
       info: ((message: unknown) => {
+        workerLogger.info({ message: String(message) });
         if (message === "Runner recovery initial scan completed") {
           void writeFile(recoveryReadyPath, "ready\n");
         }
