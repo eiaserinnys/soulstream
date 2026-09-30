@@ -1,0 +1,33 @@
+export type CardPromptEntry = { title: string; folderName: string };
+export type CardPromptInput = {
+  cardId: string; title: string; folderName: string; request: string; brief: string;
+  reason?: string | null; running: readonly CardPromptEntry[]; queued: readonly CardPromptEntry[];
+};
+
+export function buildCardPrompt(input: CardPromptInput): string {
+  const running = input.running.map(c => `${c.title} (${c.folderName})`).join("\n") || "없음";
+  const queued = input.queued.map((c,i) => `${i+1}. ${c.title} (${c.folderName})`).join("\n") || "없음";
+  return `[카드 실행] 이 세션은 카드 ${input.cardId} 「${input.title}」(폴더 ${input.folderName})을 맡았다.
+
+## 요청 원문
+${input.request}
+
+## 해석과 경과 (지금까지)
+${input.brief || "(아직 없음)"}
+${input.reason ? `
+## 검수 반려 사유 (있을 때만)
+${input.reason}
+` : ""}
+## 지금 실행 중인 다른 카드 세션
+${running}
+
+## 대기열
+${queued}
+
+## 카드 규칙
+1. 착수 전에 위 목록을 보고 같은 리포나 파일을 만질 작업이 겹치면 ask_card_question으로 멈춘다.
+2. 작업 중 해석과 경과를 update_card_brief로 갱신한다.
+3. 끝나면 add_card_report로 보고를 올린다. 결론 먼저, 증거(PR, 머지 SHA, 배포 결과, 캡처 URL)를 넣고, 표와 그림은 시각 요소로 만든다. 그다음 request_card_review를 부른다.
+4. 판단이 필요하면 ask_card_question으로 묻고 턴을 끝낸다. AskUserQuestion은 쓰지 않는다.
+5. 보고나 질문 없이 세션을 끝내지 않는다.`;
+}

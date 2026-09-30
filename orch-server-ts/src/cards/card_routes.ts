@@ -11,6 +11,7 @@ const mutations:readonly ["POST" | "PATCH",string,CardOperation][]=[
   ["POST","/api/cards","create_card"],["PATCH","/api/cards/:id","update_card"],
   ["POST","/api/cards/:id/status","set_card_status"],["POST","/api/cards/:id/move","move_card"],
   ["POST","/api/cards/:id/queue-position","reorder_card_queue"],["POST","/api/cards/:id/reports","add_card_report"],
+  ["POST","/api/cards/:id/questions","ask_card_question"],
   ["POST","/api/cards/:id/questions/:qid/answer","answer_card_question"],
 ];
 export const cardRouteAuthRequirements:Record<string,boolean>=Object.fromEntries([
@@ -56,7 +57,7 @@ export function registerCardRoutes(app:FastifyInstance,options:FolderRouteOption
           actor={ actorKind:"agent" as const,actorSessionId:sessionId };
         } else actor=await dashboardFolderActor(request,options);
         const result=await executeCardOperation(service,operation,operation === "answer_card_question" ? { ...body,questionId:request.params.qid } : body,request.params.id,actor);
-        return reply.code(operation === "create_card" || operation === "add_card_report" ? 201 : 200).send(result);
+        return reply.code(operation === "create_card" || operation === "add_card_report" || operation === "ask_card_question" ? 201 : 200).send(result);
       } catch(error) { return folderOperationError(reply,error); }
     } });
   }

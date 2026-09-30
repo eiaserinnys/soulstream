@@ -3,14 +3,16 @@ import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
 import { CardMutationCore } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
-import type { CardRow, CardStatus, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
+import type { CardRow, CardStatus, CardMutationResult, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
 import { assertCardTransition } from "./card_status.js";
 
 export type CardMutationParams = FolderActorParams & { cardId: string; expectedVersion?: number; idempotencyKey?: string | null; reason?: string | null };
+export type CardMutationChange = {result:CardMutationResult;previousStatus?:CardStatus};
 export class CardControlPlaneService {
   private readonly repo: CardRepository;
   private readonly core: CardMutationCore;
-  constructor(sql: SqlClient, db: FolderDbPort, private readonly broadcaster?: FolderBroadcasterPort) {
+  constructor(sql: SqlClient, db: FolderDbPort, private readonly broadcaster?: FolderBroadcasterPort,
+    private readonly onMutation?: (change:CardMutationChange)=>void) {
     this.repo=new CardRepository(sql);
     this.core=new CardMutationCore(db,this.repo,broadcaster);
   }
@@ -38,7 +40,7 @@ export class CardControlPlaneService {
     nodeId?: string | null; modelPreset?: string | null; idempotencyKey?: string | null;
   }) {
     const id=randomUUID();
-    return this.core.mutate({ folderId:params.folderId,targetKind:"card",targetId:id,operationType:"create_card",actor:params,
+    const result=await this.core.mutate({ folderId:params.folderId,targetKind:"card",targetId:id,operationType:"create_card",actor:params,
       idempotencyKey:params.idempotencyKey,payload:{ title:params.title,request:params.request,queue:params.queue ?? false,assignee:params.assignee ?? null,nodeId:params.nodeId ?? null,modelPreset:params.modelPreset ?? null },
       apply:async (sql,eventId) => {
         await this.lockFolder(sql,params.folderId);
@@ -52,6 +54,8 @@ export class CardControlPlaneService {
           ${a.assignee_kind},${a.assignee_agent_id},${a.assignee_session_id},${a.assignee_user_id},${params.nodeId ?? null},${params.modelPreset ?? null},
           ${params.actorSessionId},${eventId},${params.actorSessionId},${eventId})`;
       } });
+    if (!result.idempotent) this.onMutation?.({result});
+    return result;
   }
   async patchCard(params: CardMutationParams & { title?: string; brief?: string; archived?: boolean; assignee?: CardAssigneeInput | null; nodeId?: string | null; modelPreset?: string | null }) {
     return this.mutateCard(params,"update_card",{ title:params.title,brief:params.brief,archived:params.archived,
@@ -62,11 +66,12 @@ export class CardControlPlaneService {
     return this.mutateCard(params,"set_card_status",{ status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null },async (sql,card,eventId) => {
       const counts=await sql<{ count:number }[]>`SELECT count(*)::int AS count FROM card_reports WHERE card_id=${card.id}`;
       assertCardTransition(card.status,params.status,params.actorKind ?? "agent",counts[0]?.count ?? 0,params.blockedKind ?? null);
+      if (card.status === "review" && params.status === "running" && params.actorKind === "user" && !params.reason?.trim()) throw invalid("Review rejection requires a reason");
       const open=await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL LIMIT 1`;
       if (open.length && (params.status !== "blocked" || params.blockedKind !== "question")) throw invalid("Open questions keep a card blocked");
       await this.patch(sql,card,{ status:params.status,
         blocked_kind:params.status === "blocked" ? params.blockedKind : null,blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
-        queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id) : null,
+        queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id) : params.blockedKind === "limit" ? card.queue_position_key : null,
         completed_kind:params.status === "done" ? "user" : null,completed_session_id:params.status === "done" ? params.actorSessionId : null,
         completed_event_id:params.status === "done" ? eventId : null,completed_user_id:params.status === "done" ? params.actorUserId ?? null : null,
         completed_at:params.status === "done" ? new Date() : null },params,eventId);
@@ -111,11 +116,31 @@ export class CardControlPlaneService {
       if (!open.length) await this.patch(sql,card,{ status:"running",blocked_kind:null,blocked_detail:null },params,eventId);
     });
   }
+  recordDispatch(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string}) {
+    const actor={actorKind:"system" as const,actorSessionId:null,...params};
+    return this.mutateCard(actor,"dispatch_card",{session_id:params.sessionId,node_id:params.nodeId},async(sql,card,eventId)=>{
+      if (card.status !== "queued") throw invalid("Only queued cards may dispatch");
+      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
+    });
+  }
+  resumeDispatchedCard(params:{cardId:string;expectedVersion:number;sessionId:string}) {
+    const actor={actorKind:"system" as const,actorSessionId:null,...params};
+    return this.mutateCard(actor,"resume_card",{session_id:params.sessionId},async(sql,card,eventId)=>{
+      if (card.status !== "blocked" || card.blocked_kind !== "limit") throw invalid("Only limit-blocked cards may resume");
+      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
+    });
+  }
+  noteMissingAssignee(params:{cardId:string;expectedVersion:number}) {
+    const actor={actorKind:"system" as const,actorSessionId:null,...params};
+    return this.mutateCard(actor,"note_card_assignee",{blocked_detail:"담당 에이전트 없음"},async(sql,card,eventId,payload)=>{
+      await this.patch(sql,card,payload,actor,eventId);
+    });
+  }
   private async mutateCard(params:CardMutationParams,operationType:string,payload:Record<string,unknown>,apply:(sql:RepositorySql,card:CardRow,eventId:number | null,payload:Record<string,unknown>)=>Promise<void>) {
     const card=await this.repo.getCard(params.cardId);
     if (!card) throw Object.assign(new Error("Card not found"),{ statusCode:404 });
     const clean=Object.fromEntries(Object.entries(payload).filter(([,v])=>v !== undefined));
-    return this.core.mutate({ folderId:card.folder_id,targetKind:"card",targetId:card.id,operationType,actor:params,
+    const result=await this.core.mutate({ folderId:card.folder_id,targetKind:"card",targetId:card.id,operationType,actor:params,
       idempotencyKey:params.idempotencyKey,reason:params.reason,payload:clean,
       apply:async (sql,eventId) => {
         const locked=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id} FOR UPDATE`)[0];
@@ -123,6 +148,8 @@ export class CardControlPlaneService {
         if (params.expectedVersion !== undefined && locked.version !== params.expectedVersion) throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version);
         await apply(sql,locked,eventId,clean);
       } });
+    if (!result.idempotent) this.onMutation?.({result,previousStatus:card.status});
+    return result;
   }
   private async patch(sql:RepositorySql,card:CardRow,fields:Record<string,unknown>,actor:FolderActorParams,eventId:number | null) {
     await sql`UPDATE cards SET ${sql(fields)},version=version+1,updated_at=NOW(),updated_session_id=${actor.actorSessionId},updated_event_id=${eventId} WHERE id=${card.id}`;

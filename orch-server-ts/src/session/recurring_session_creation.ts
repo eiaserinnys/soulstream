@@ -30,6 +30,7 @@ export type CreateRecurringSessionInput = {
   readonly modelPreset: string | null;
   readonly folderId: string;
   readonly callerInfo: Readonly<Record<string, unknown>>;
+  readonly cardId?: string;
 };
 
 export class RecurringSessionCreateError extends Error {
@@ -67,6 +68,7 @@ export async function createRecurringSession(
     profile: input.agentId,
     ...(input.modelPreset === null ? {} : { model_preset: input.modelPreset }),
     folderId: input.folderId,
+    ...(input.cardId ? {cardId:input.cardId} : {}),
 
     caller_info: { ...input.callerInfo },
   };

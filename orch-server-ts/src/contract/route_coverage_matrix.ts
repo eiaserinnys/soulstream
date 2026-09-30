@@ -1,4 +1,5 @@
 import { adminUsersRouteAuthRequirements } from "../admin/admin_users_routes.js";
+import { cardDispatchSettingsRouteAuthRequirements } from "../cards/card_dispatch_settings_routes.js";
 import { atomRouteAuthRequirements } from "../atom/atom_routes.js";
 import { attachmentRouteAuthRequirements } from "../attachments/attachment_routes.js";
 import { authRouteAuthRequirements } from "../auth/auth_routes.js";
@@ -39,6 +40,7 @@ import { recurringJobRouteAuthRequirements } from "../recurring-jobs/recurring_j
 import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
+  {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
   { owner: "admin.users", authRequirements: adminUsersRouteAuthRequirements },
   { owner: "atom", authRequirements: atomRouteAuthRequirements },
   { owner: "attachments", authRequirements: attachmentRouteAuthRequirements },

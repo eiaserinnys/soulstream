@@ -37,6 +37,7 @@ export type RegisterSessionMutation = {
   callerSessionId: string | null;
   predecessorSessionId: string | null;
   modelPreset?: string | null;
+  cardId?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
   notifyCompletion?: boolean | null;
@@ -135,6 +136,7 @@ export class SessionMutationRepository {
           ${sanitizedInput.reasoningEffort ?? null}
         )
       `;
+      if (sanitizedInput.cardId !== undefined) await sql`UPDATE sessions SET card_id=${sanitizedInput.cardId} WHERE session_id=${sanitizedInput.sessionId}`;
       return {
         ok: true,
         reviewRequired: review.reviewRequired,
@@ -239,7 +241,7 @@ export class SessionMutationRepository {
           )
         `;
         await sql`
-          UPDATE sessions SET worktree_id = ${sanitizedInput.worktreeId}
+          UPDATE sessions SET worktree_id = ${sanitizedInput.worktreeId},card_id=${sanitizedInput.cardId ?? null}
           WHERE session_id = ${sanitizedInput.sessionId}
         `;
         return {

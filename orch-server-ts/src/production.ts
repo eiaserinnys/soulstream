@@ -76,7 +76,8 @@ import {
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
 import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.js";
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
-import { createCardControlPlaneServiceProvider } from "./cards/card_control_plane_runtime.js";
+import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
+import type { CardDispatcher } from "./cards/card_dispatcher.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
 import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
 import { createPersistenceHostRepositoryProvider } from "./control_plane/persistence_host_runtime.js";
@@ -327,6 +328,7 @@ export async function createLiveProductionApplication(
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;
   let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
   let recurringJobScheduler: RecurringJobScheduler | undefined;
+  let cardDispatcher: CardDispatcher | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
@@ -352,6 +354,7 @@ export async function createLiveProductionApplication(
       (events) => pushNotifier.accept(events),
       (events) => turnSummaryPipeline?.accept(events),
       (events) => recurringJobScheduler?.accept(events),
+      (events) => cardDispatcher?.accept(events),
     ],
     boardYjsRoutes: {
       createService: (logger) => boardYjsService ??= new BoardYjsService({
@@ -498,6 +501,11 @@ export async function createLiveProductionApplication(
       processEnv: ephemeralProcessEnv,
     }),
   };
+  const cardDispatchRuntime=await createCardDispatchRuntime({sqlResolver,router:runtimeServices.sessionRouter,bridge:runtimeServices.sessionBridge,
+    availability:providers.modelPresetAvailability,notifier:pushNotifier,admin:providers.adminUsersRoutes.provider,
+    broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
+    onFolderHeaderUpdated:()=>broadcastCatalogSnapshot(providers.folderRoutes.provider,runtimeServices.sessionBroadcaster)});
+  cardDispatcher=cardDispatchRuntime.dispatcher;
   const recurringJobService = new RecurringJobService({
     repository: recurringJobRepository,
     validateTarget: createRecurringJobTargetValidator({
@@ -540,6 +548,7 @@ export async function createLiveProductionApplication(
     authBearerToken: config.auth_bearer_token,
     environment: config.environment,
     onError: (error, operation) => context.warn(warningMessage(`recurring jobs ${operation}`, error)),
+    onTick:()=>cardDispatchRuntime.dispatcher.tick(),
   });
   recurringJobScheduler = recurringJobWiring.scheduler;
   const app = createApp({
@@ -552,18 +561,14 @@ export async function createLiveProductionApplication(
       folderProjectIdentityService,
       memoryStats,
       ephemeralLlmRoutes,
-      createCardControlPlaneServiceProvider({
-        warn: context.warn,
-        onFolderHeaderUpdated: () => broadcastCatalogSnapshot(providers.folderRoutes.provider, runtimeServices.sessionBroadcaster),
-        sqlResolver,
-        broadcaster: runtimeServices.sessionBroadcaster,
-      }),
+      cardDispatchRuntime.serviceProvider,
       createScheduleRepositoryProvider(sqlResolver),
       createFolderControlPlaneServiceProvider(sqlResolver),
       new LiveDatabaseSchemaProvider(sqlResolver),
     ),
     recurringJobRoutes: recurringJobWiring.routes,
     recurringJobHostRoutes: recurringJobWiring.hostRoutes,
+    cardDispatchSettingsRoutes:cardDispatchRuntime.settingsRoutes,
   });
   logPushNotification = (event) => {
     app.log.info(
@@ -631,6 +636,7 @@ export async function createLiveProductionApplication(
       await sessionReconciliation.start();
       await recurringJobScheduler?.start();
       await dbCatalogRepository.agentProfileRepository.list();
+      await cardDispatchRuntime.dispatcher.dispatch();
       startStableSessionOrderIndexMaintenance(
         stableSessionOrderIndexMaintenance,
         app.log,
@@ -645,6 +651,7 @@ export async function createLiveProductionApplication(
       await maintenanceService.stop();
       await sessionReconciliation.close();
       await recurringJobScheduler?.stop();
+      await cardDispatchRuntime.dispatcher.drain();
       await usageSummaryService.stop();
       await turnSummaryPipeline?.drain();
       await pushNotifier.close();

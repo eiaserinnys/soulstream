@@ -1696,6 +1696,10 @@ export interface DownloadAttachmentResult {
  * orch→노드: 세션 생성 명령. soul-server-ts dispatcher create_session wire + 실측 caller_info 키.
  */
 export interface CreateSession {
+  /**
+   * Optional card link. Session registration persists this camelCase field to sessions.card_id.
+   */
+  cardId?: string;
   type: "create_session";
   prompt: string;
   profile?: string;

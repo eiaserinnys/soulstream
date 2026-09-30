@@ -1331,6 +1331,7 @@
       "required": ["type", "prompt"],
       "additionalProperties": true,
       "properties": {
+        "cardId": { "type": "string", "description": "Optional card link. Session registration persists this camelCase field to sessions.card_id." },
         "type": { "const": "create_session" },
         "prompt": { "type": "string" },
         "profile": { "type": "string" },

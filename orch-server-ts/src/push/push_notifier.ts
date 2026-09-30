@@ -6,6 +6,7 @@ import {
   type ResponseWaitSignal,
 } from "./response_wait_signal.js";
 import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
+import type { CardNotification } from "../cards/card_dispatcher.js";
 
 export { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
 export {
@@ -103,6 +104,18 @@ export class PushNotifier {
   constructor(private readonly options: PushNotifierOptions) {
     this.warn = options.onWarning;
     this.nowMs = options.nowMs ?? Date.now;
+  }
+
+  async notifyCard(input: CardNotification): Promise<boolean> {
+    if (this.closed) return false;
+    const folders=await this.options.catalog.listFolders();
+    if (folders.some(folder=>{
+      const value=recordValue(folder);
+      return value?.id === input.folderId && recordValue(value.settings)?.excludeFromNotification === true;
+    })) return false;
+    const title=input.kind === "review" ? `검수 요청: ${input.title}` : input.title;
+    return this.sendToUser(input.nodeId,title,input.kind === "question" ? input.question ?? "" : title,
+      {cardId:input.cardId,folderId:input.folderId,kind:`card_${input.kind}`});
   }
 
   accept(events: readonly NodeRegistryEvent[]): void {

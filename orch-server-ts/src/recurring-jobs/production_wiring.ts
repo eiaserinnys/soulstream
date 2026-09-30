@@ -15,6 +15,7 @@ export type ProductionRecurringJobWiringOptions = {
   readonly authBearerToken: string;
   readonly environment?: string;
   readonly onError: (error: unknown, operation: string) => void;
+  readonly onTick?: () => Promise<void>;
 };
 
 export function createProductionRecurringJobWiring(
@@ -25,6 +26,7 @@ export function createProductionRecurringJobWiring(
     service,
     repository: options.repository,
     onError: options.onError,
+    onTick: options.onTick,
   });
   const resolveActor: RecurringJobRouteActorResolver = async (request) => {
     const email = await options.authenticatedUserResolvers.resolveEmail(request);

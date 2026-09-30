@@ -9,6 +9,14 @@ import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 type SqlCall = { text: string; values: unknown[] };
 
 describe("SessionMutationRepository", () => {
+  it("persists the optional camelCase cardId during session registration", async () => {
+    const now=new Date("2026-09-30T00:00:00.000Z");
+    const {sql,calls}=fakeSql(()=>[]);
+    await new SessionMutationRepository(sql).registerSession({idempotencyKey:'card-session',sessionId:'session-card',nodeId:'node-a',agentId:'roselin',
+      claudeSessionId:null,sessionType:'agent',prompt:'실행',clientId:null,status:'running',createdAt:now,updatedAt:now,
+      callerSessionId:null,predecessorSessionId:null,cardId:'card-a'});
+    expect(calls.find(c=>c.text.includes('UPDATE sessions SET card_id'))?.values).toEqual(['card-a','session-card']);
+  });
   it("routes idempotent delete_session through canonical Y.Doc deletion", async () => {
     const { sql, calls } = fakeSql(() => []);
     const deleteSession = vi.fn().mockResolvedValue(undefined);

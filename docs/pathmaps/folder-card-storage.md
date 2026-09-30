@@ -31,4 +31,19 @@
 
 상태는 pending→todo, in_progress→running, completed→done으로 옮긴다. review와 cancelled는 유지한다. 에이전트의 상태 변경은 running→review 또는 running→blocked(question)만 허용하며, review는 보고가 있어야 하고 done은 사용자만 만든다. 열린 질문이 남아 있으면 blocked(question)를 유지한다.
 
-`system_settings.card_dispatch`는 기본 `{"nodeConcurrency":{"default":2}}`만 시드한다. 설정 읽기·쓰기와 디스패처, 질문 알림·세션 재개·첫 프롬프트는 다음 단계다. 기존 checklist handoff 경로는 제거한다. 모든 P1 단계를 머지한 뒤 한 번에 배포한다.
+`system_settings.card_dispatch`는 기본 `{"nodeConcurrency":{"default":2}}`를 시드한다. 기존 checklist handoff 경로는 제거한다. 모든 P1 단계를 머지한 뒤 한 번에 배포한다.
+
+## 카드 실행과 세션 연결
+
+| 경로 | 구현 | 계약 |
+| --- | --- | --- |
+| 대기열 진입·재정렬 | `orch-server-ts/src/cards/card_control_plane_service.ts` → `card_dispatcher.ts` | 커밋된 mutation만 실행을 깨운다. `pickNextCard`는 C 정렬 대기열에서 자리가 있는 첫 카드를 고른다. human과 담당 없는 카드는 queued로 두고 사유를 적는다. |
+| 실행 상한 | `card_dispatch_settings.ts`, `card_dispatch_settings_routes.ts` | GET/PUT `/api/settings/card-dispatch`, `{nodeConcurrency:{default:n,[nodeId]:n},expectedVersion}`. 정수 n≥0, CAS 충돌 409. 응답은 `{settings:{key,nodeConcurrency,version,updatedAt,updatedBy}}`. |
+| 실행 세션 구분 | `card_dispatch_repository.ts` | `folder_operations`의 system `dispatch_card` 감사 행에 session_id/node_id를 기록한다. 세션의 카드 연결 정본은 `sessions.card_id`이며 감사 행은 디스패처 생성 출처만 나타낸다. 수동 세션은 상한에서 제외한다. |
+| 세션 생성 | `card_dispatch_runtime.ts` → `session/recurring_session_creation.ts` → `SessionCommandRouter.createSession` | 기존 노드 생성/ACK/관측 경로를 재사용한다. 명령의 선택 필드 `cardId`는 camelCase다. 첫 프롬프트는 `card_prompt.ts`가 요청·경과·반려·실행 목록·대기열·카드 규칙을 조립한다. 답변 이력은 경과에 포함한다. |
+| 등록 저장 | `control_plane/repositories/session_mutation_repository.ts`의 registerSession/registerSessionWithWorktree | 선택 `cardId`를 기존 등록 트랜잭션에서 `sessions.card_id`에 저장한다. 디스패처에 별도 연결 UPDATE는 없다. wire 정본은 `packages/wire-schema/src/upstream.schema.json`의 CreateSession.cardId다. |
+| 종료·한도 | 커밋된 `node_session_session_updated` → `CardDispatcher.sessionEnded` | running만 blocked(no_report)로 옮긴다. `session_limit_termination.ts`의 기존 ResumeAfterLimit 신호(limit_hit)를 공유한다. review/question/done은 유지한다. 반복 작업 스케줄러의 기존 tick에서 1분마다 한도 카드의 프리셋을 확인한다. |
+| 질문·답 | POST `/api/cards/:id/questions` → askQuestion / POST `/api/cards/:id/questions/:qid/answer` | 질문 본문 `{text,options?,idempotencyKey}`, trusted service bearer와 agent session header, 성공 201. 답변은 기존 intervene 계약으로 유휴 재개/실행 중 개입. 완료 세션이면 queued로 돌린다. |
+| 반려 | 사람의 review→running, reason 필수 | 기존 세션이면 반려 사유 메시지, 완료 세션이면 queued. 새 세션의 첫 프롬프트에도 반려 사유를 넣는다. |
+| 카드 알림 | `push/push_notifier.ts`의 notifyCard → 기존 sendToUser | 질문은 카드 제목·질문, review는 `검수 요청: {제목}`. 기존 토큰 fan-out/invalid token 제거/폴더 알림 제외를 재사용한다. orch에 Slack DM 발송 경로는 없다. |
+| 표시 | `planner/planner_repository.ts`, `card_updated` | attention은 review와 blocked, running, queued는 전역 대기열 순서를 따른다. 카드 상세 및 세션 DTO는 같은 sessions.card_id를 읽는다. 웹·앱 소비 구현은 d/e다. |
