@@ -25,7 +25,7 @@ const operations = new Set([
   "get_all",
   "get_catalog",
   "get_session_assignments",
-  "list_child_folders", "list_folder_operations", 
+  "list_child_folders", "list_folder_operations",
   ...Object.keys(folderOperationSchemas),
 ]);
 

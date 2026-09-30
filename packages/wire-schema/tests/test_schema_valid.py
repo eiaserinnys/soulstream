@@ -416,7 +416,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 63
+    assert len(sse_event_types) == 64
     assert persistence_only_event_types == {"metadata"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
@@ -718,6 +718,7 @@ def test_known_sse_event_types_completeness() -> None:
         "claude_runtime_schedule_updated",
         "claude_runtime_schedule_deleted",
         "folder_updated",
+        "card_updated",
         "custom_view_updated",
         "context_usage",
         "context_manifest",
