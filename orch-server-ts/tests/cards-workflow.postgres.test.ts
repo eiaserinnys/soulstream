@@ -121,15 +121,15 @@ describe("cards storage, HTTP and planner", () => {
     } finally { await app.close(); }
   });
 
-  it("exposes attention, running and globally ordered queued cards on today", async () => {
+  it("exposes review and every blocked kind in attention with running and globally ordered queued cards on today", async () => {
     await h.sql`INSERT INTO pages(id,title,daily_date,version) VALUES ('card-day','Today','2026-09-30',1),('card-page-a','A',NULL,1),('card-page-b','B',NULL,1)`;
     await h.sql`UPDATE folders SET project_page_id=CASE id WHEN 'cards-a' THEN 'card-page-a' ELSE 'card-page-b' END WHERE id IN ('cards-a','cards-b')`;
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,status,blocked_kind) VALUES
       ('attention-review','cards-a','z1','Review','review',NULL),('attention-question','cards-a','z2','Question','blocked','question'),
-      ('attention-report','cards-a','z3','No report','blocked','no_report'),('excluded-limit','cards-a','z4','Limit','blocked','limit')`;
+      ('attention-report','cards-a','z3','No report','blocked','no_report'),('attention-limit','cards-a','z4','Limit','blocked','limit')`;
     const planner=new PlannerRepository(createLiveDbSqlResolver({ sql:h.liveSql }));
     const today=(await planner.getToday('2026-09-30'))!;
-    expect(today.attention.map(c=>c.id).sort()).toEqual(['attention-question','attention-report','attention-review']);
+    expect(today.attention.map(c=>c.id).sort()).toEqual(['attention-limit','attention-question','attention-report','attention-review']);
     expect(today.running.length).toBeGreaterThan(0);
     expect(today.queued.map(c=>c.title)).toEqual(['둘째','첫']);
     expect((await planner.getFolder('cards-a',{limit:10}))!).toHaveProperty('cards');

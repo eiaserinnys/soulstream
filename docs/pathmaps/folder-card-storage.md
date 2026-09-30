@@ -12,7 +12,7 @@
 | 카드 HTTP와 저장 | `src/cards/card_routes.ts`, `card_operations.ts`, `card_control_plane_service.ts`, `control_plane/card_mutation_core.ts` | `/api/cards`와 `/:id`의 상태·이동·대기열·보고·질문 답 경로. `cards.folder_id`가 소속이며 `folder_operations`가 감사 정본이다. request는 생성 후 고정, brief는 수정 가능, 보고는 추가만 한다. |
 | 세션과 카드 연결 | `sessions.card_id` | ON DELETE SET NULL. 카드 상세 세션 목록과 세션 DTO cardId가 같은 열을 읽는다. 보드와 페이지 바인딩에 카드 연결 복제는 없다. |
 | 보드 여섯 종류 | `src/board-yjs/board_yjs_repository.ts` | session, markdown, subfolder, asset, frame, custom_view 모두 `folder_id` 하나로 소속한다. 문서명은 `board-folder:<id>`. |
-| 오늘·별표·폴더 상세 | `src/planner/planner_repository.ts` | 오늘은 attention(review, blocked question/no_report), running, queued 카드 목록을 포함한다. 대기열 순서는 queue_position_key의 C 정렬이다. 폴더 상세는 cards를 읽고 섹션은 없다. 폴더와 project page를 조합한다. 별표 순서는 `planner_starred_page_order`가 저장한다. 시스템 폴더 claude와 llm은 제외한다. |
+| 오늘·별표·폴더 상세 | `src/planner/planner_repository.ts` | 오늘은 attention(review, blocked 전체: question/no_report/limit), running, queued 카드 목록을 포함한다. 대기열 순서는 queue_position_key의 C 정렬이다. 폴더 상세는 cards를 읽고 섹션은 없다. 폴더와 project page를 조합한다. 별표 순서는 `planner_starred_page_order`가 저장한다. 시스템 폴더 claude와 llm은 제외한다. |
 | 구독 갱신 | card/folder service → `card_updated` / `folder_updated` | 카드 변경은 `{cardId,folderId}`, 폴더 변경은 `{folderId}`로 해당 객체를 재조회한다. 폴더 헤더 변경은 catalog도 갱신한다. page mount 변경은 부모 page 구독자에게 알린다. |
 
 ## 한 번의 배포 이관
@@ -46,4 +46,4 @@
 | 질문·답 | POST `/api/cards/:id/questions` → askQuestion / POST `/api/cards/:id/questions/:qid/answer` | 질문 본문 `{text,options?,idempotencyKey}`, trusted service bearer와 agent session header, 성공 201. 답변은 기존 intervene 계약으로 유휴 재개/실행 중 개입. 완료 세션이면 queued로 돌린다. |
 | 반려 | 사람의 review→running, reason 필수 | 기존 세션이면 반려 사유 메시지, 완료 세션이면 queued. 새 세션의 첫 프롬프트에도 반려 사유를 넣는다. |
 | 카드 알림 | `push/push_notifier.ts`의 notifyCard → 기존 sendToUser | 질문은 카드 제목·질문, review는 `검수 요청: {제목}`. 기존 토큰 fan-out/invalid token 제거/폴더 알림 제외를 재사용한다. orch에 Slack DM 발송 경로는 없다. |
-| 표시 | `planner/planner_repository.ts`, `card_updated` | attention은 review와 blocked(question/no_report), running, queued는 전역 대기열 순서를 따른다. 카드 상세 및 세션 DTO는 같은 sessions.card_id를 읽는다. 웹·앱 소비 구현은 d/e다. |
+| 표시 | `planner/planner_repository.ts`, `card_updated` | attention은 review와 blocked 전체(question/no_report/limit), running, queued는 전역 대기열 순서를 따른다. 카드 상세 및 세션 DTO는 같은 sessions.card_id를 읽는다. 웹·앱 소비 구현은 d/e다. |
