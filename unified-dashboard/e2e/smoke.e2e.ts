@@ -26,8 +26,9 @@ test("renders the built v3 dashboard with its deterministic API fixture", async 
   await installV3VisualQaRoutes(page);
 
   await page.goto("/v3", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("textbox", { name: "무엇을 맡길까요" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "세션 첫 메시지" })).toBeVisible();
   const inbox = page.locator(".v3-card-inbox");
-  await expect(inbox.locator("[data-card-group]")).toHaveCount(0);
+  await expect(inbox.locator("[data-card-group]")).toHaveCount(1);
+  await expect(inbox.getByRole("button", { name: "카드 추가" })).toBeVisible();
   await expect(inbox.getByText("지금은 확인할 것이 없습니다", { exact: true })).toBeVisible();
 });
