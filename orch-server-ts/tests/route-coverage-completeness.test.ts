@@ -154,6 +154,7 @@ function createAllOptInRouteApp() {
     config,
     agentProfileRoutes: inert,
     adminUsersRoutes: inert,
+    r2SettingsRoutes: inert,
     atomRoutes: inert,
     authRoutes: inert,
     attachmentRoutes: inert,

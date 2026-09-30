@@ -45,10 +45,6 @@ describe("orch-server-ts config scaffold", () => {
         },
         "legacy@example.com": ["beta"],
       }),
-      R2_BOARD_ASSETS_ACCESS_KEY_ID: "r2-access",
-      R2_BOARD_ASSETS_SECRET_ACCESS_KEY: "r2-secret",
-      R2_BOARD_ASSETS_BUCKET: "r2-bucket",
-      R2_BOARD_ASSETS_ENDPOINT: "https://r2.example.com",
       ATOM_ENABLED: "yes",
       ATOM_SERVER_URL: "https://atom.example.com",
       ATOM_API_KEY: "atom-key",
@@ -79,10 +75,6 @@ describe("orch-server-ts config scaffold", () => {
       database_url: "postgres://orch@localhost/orch",
       dashboard_dir: "/srv/dashboard",
       dashboard_user_folder_access_configured: true,
-      r2_board_assets_access_key_id: "r2-access",
-      r2_board_assets_secret_access_key: "r2-secret",
-      r2_board_assets_bucket: "r2-bucket",
-      r2_board_assets_endpoint: "https://r2.example.com",
       atom_enabled: true,
       atom_server_url: "https://atom.example.com",
       atom_api_key: "atom-key",
@@ -122,10 +114,6 @@ describe("orch-server-ts config scaffold", () => {
       databaseUrl: "postgres://orch@localhost/orch",
       authBearerToken: "bearer-token",
       trustProxy: "loopback",
-      r2_board_assets_access_key_id: "r2-access",
-      r2_board_assets_secret_access_key: "r2-secret",
-      r2_board_assets_bucket: "r2-bucket",
-      r2_board_assets_endpoint: "https://r2.example.com",
     });
     const provider = createEnvironmentConfigProvider(config);
     await expect(provider.requireConfig("databaseUrl")).resolves.toBe(
@@ -137,6 +125,13 @@ describe("orch-server-ts config scaffold", () => {
     await expect(provider.requireConfig("missing_key")).rejects.toThrow(/missing_key/);
   });
 
+  it("ignores legacy board R2 environment credentials", () => {
+    const env = { ...minimalEnvironment(), HOST: "127.0.0.1", R2_BOARD_ASSETS_SECRET_ACCESS_KEY: "legacy-secret" };
+    const config = loadOrchServerEnvironment(env);
+    expect(JSON.stringify(config)).not.toContain("legacy-secret");
+    expect(Object.keys(config).some(key => key.startsWith("r2_board_assets_"))).toBe(false);
+  });
+
   it("preserves Python defaults while giving the TS listener port 5200", () => {
     expect(loadOrchServerEnvironment(minimalEnvironment())).toMatchObject({
       node_name: null,
@@ -144,7 +139,6 @@ describe("orch-server-ts config scaffold", () => {
       trusted_proxy: "loopback",
       dashboard_dir: "",
       dashboard_user_folder_access_configured: false,
-      r2_board_assets_access_key_id: "",
       atom_enabled: false,
       atom_root_node_id: null,
       auth_bearer_token: "",

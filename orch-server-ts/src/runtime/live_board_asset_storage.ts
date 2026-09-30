@@ -55,33 +55,13 @@ export type R2BoardAssetStorageConfig = {
   readonly endpoint: string;
 };
 
-type StorageConfigRecord = Readonly<Record<string, unknown>>;
-
 const AWS_REGION = "auto";
 const AWS_SERVICE = "s3";
 const UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
 
-export async function resolveLiveBoardAssetStorageFromConfig(
-  config: StorageConfigRecord,
-): Promise<LiveBoardAssetStorage | null> {
-  const accessKeyId = nonEmptyString(config.r2_board_assets_access_key_id);
-  const secretAccessKey = nonEmptyString(config.r2_board_assets_secret_access_key);
-  const bucket = nonEmptyString(config.r2_board_assets_bucket);
-  const endpoint = nonEmptyString(config.r2_board_assets_endpoint);
-  if (
-    accessKeyId === undefined ||
-    secretAccessKey === undefined ||
-    bucket === undefined ||
-    endpoint === undefined
-  ) {
-    return null;
-  }
-  return createR2BoardAssetStorage({
-    accessKeyId,
-    secretAccessKey,
-    bucket,
-    endpoint,
-  });
+export async function checkR2Bucket(config: R2BoardAssetStorageConfig): Promise<void> {
+  const response = await signedFetch(config, { method: "HEAD", storageKey: "", signal: AbortSignal.timeout(15_000) });
+  await assertR2Ok(response, "head bucket");
 }
 
 export function createR2BoardAssetStorage(
@@ -161,18 +141,13 @@ export function createR2BoardAssetStorage(
   };
 }
 
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
-}
-
 type SignInput = {
   readonly method: string;
   readonly storageKey: string;
   readonly query?: Readonly<Record<string, string>>;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string;
+  readonly signal?: AbortSignal;
 };
 
 type PresignInput = SignInput & {
@@ -251,6 +226,8 @@ async function signedFetch(
     method: input.method,
     headers: { ...headers, authorization },
     body: input.method === "HEAD" ? undefined : input.body,
+    redirect: "error",
+    signal: input.signal,
   });
 }
 
@@ -258,7 +235,7 @@ function objectUrl(config: R2BoardAssetStorageConfig, storageKey: string): URL {
   const url = new URL(config.endpoint);
   const prefix = url.pathname.replace(/\/+$/, "");
   const encodedKey = storageKey.split("/").map(encodeRfc3986).join("/");
-  url.pathname = `${prefix}/${encodeRfc3986(config.bucket)}/${encodedKey}`;
+  url.pathname = `${prefix}/${encodeRfc3986(config.bucket)}${storageKey ? `/${encodedKey}` : ""}`;
   url.search = "";
   return url;
 }
@@ -337,8 +314,7 @@ function formatAmzDate(date: Date): string {
 
 async function assertR2Ok(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const detail = response.status === 404 ? "" : `: ${await response.text()}`;
-  throw new Error(`R2 ${operation} failed with ${response.status}${detail}`);
+  throw new Error(`R2 ${operation} failed with ${response.status}`);
 }
 
 function uploadIdFromXml(xml: string): string {

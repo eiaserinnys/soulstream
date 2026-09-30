@@ -183,7 +183,6 @@ export function createLiveDbCatalogRepository(
     folderProvider,
     boardItemProvider,
     storage: options.boardAssetStorage,
-    configProvider: options.configProvider,
   });
 
   const sessionResourceAccessRepository =

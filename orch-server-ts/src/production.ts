@@ -1,3 +1,4 @@
+import type { SqlClient } from "./control_plane/control_plane_types.js";
 // 500줄 예외: 프로덕션 composition root의 단일 조립 순서를 한 파일에서 검증한다.
 // 도메인 동작은 각 service/repository 모듈에 있고, 이 파일은 연결만 소유한다.
 import { readFile } from "node:fs/promises";
@@ -51,7 +52,8 @@ import {
   createOrchestratorRuntimeServices,
   type OrchestratorRuntimeServices,
 } from "./runtime/composition.js";
-import { resolveLiveBoardAssetStorageFromConfig } from "./runtime/live_board_asset_storage.js";
+import { createR2StorageResolver } from "./runtime/r2_storage_resolver.js";
+import { readR2Settings, updateR2Settings } from "./system/r2_settings.js";
 import { OrchestratorMaintenanceService } from "./runtime/orchestrator_maintenance_service.js";
 import { createOrchestratorMemoryStatsCollector } from "./runtime/orchestrator_memory_stats.js";
 import {
@@ -252,8 +254,7 @@ export async function createLiveProductionApplication(
   const pageRepository = new PageRepository(sqlResolver);
   const folderProjectIdentityRepository = new SqlFolderProjectIdentityRepository(sqlResolver);
   const plannerRepository = new PlannerRepository(sqlResolver);
-  const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
-  warnForPartialR2Config(config, context.warn);
+
   if (!config.typesafe_api_key) {
     context.warn("TYPESAFE_API_KEY is not configured; expanded session search will return partial results.");
   }
@@ -264,7 +265,6 @@ export async function createLiveProductionApplication(
     registry,
     typesafeApiKey: config.typesafe_api_key,
     onSearchCancelError: reportSearchCancelError,
-    boardAssetStorage,
     sessionDeletion: sessionDeletionService,
     sessionMoves: sessionBoardMoveService,
   });
@@ -566,6 +566,13 @@ export async function createLiveProductionApplication(
       createFolderControlPlaneServiceProvider(sqlResolver),
       new LiveDatabaseSchemaProvider(sqlResolver),
     ),
+    r2SettingsRoutes: {
+      currentEmail: providers.adminUsersRoutes.provider.currentEmail,
+      isAdminEmail: providers.adminUsersRoutes.provider.isAdminEmail,
+      getSettings: async purpose => readR2Settings(await sqlResolver.resolveSql() as unknown as SqlClient, purpose),
+      updateSettings: async (purpose, input) => updateR2Settings(await sqlResolver.resolveSql() as unknown as SqlClient, purpose, input),
+      check: createR2StorageResolver(async () => await sqlResolver.resolveSql() as unknown as SqlClient).check,
+    },
     recurringJobRoutes: recurringJobWiring.routes,
     recurringJobHostRoutes: recurringJobWiring.hostRoutes,
     cardDispatchSettingsRoutes:cardDispatchRuntime.settingsRoutes,
@@ -879,21 +886,6 @@ async function closeApplication(application: ProductionApplication): Promise<voi
     throw resourceError;
   }
   if (appCloseError !== undefined) throw appCloseError;
-}
-
-function warnForPartialR2Config(
-  config: OrchServerEnvironmentConfig,
-  warn: (message: string) => void,
-): void {
-  const values = [
-    config.r2_board_assets_access_key_id,
-    config.r2_board_assets_secret_access_key,
-    config.r2_board_assets_bucket,
-    config.r2_board_assets_endpoint,
-  ];
-  if (values.some(Boolean) && !values.every(Boolean)) {
-    warn("Board asset R2 storage is partially configured; asset uploads are disabled");
-  }
 }
 
 function createSystemPortraitAssets(): LiveSystemPortraitAssetBoundary {

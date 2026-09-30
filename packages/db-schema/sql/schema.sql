@@ -4187,3 +4187,10 @@ ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_completed_session_id_fkey;
 ALTER TABLE folders ADD CONSTRAINT folders_completed_session_id_fkey FOREIGN KEY (completed_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
 ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_completed_event_fkey;
 ALTER TABLE folders ADD CONSTRAINT folders_completed_event_fkey FOREIGN KEY (completed_session_id, completed_event_id) REFERENCES events(session_id,id) ON DELETE SET NULL;
+
+-- Independent private R2 configurations; no environment fallback.
+INSERT INTO system_settings (setting_key, value, version, updated_by)
+VALUES
+  ('board_r2', '{"endpoint":"","bucket":"","accessKeyId":"","secretAccessKey":""}'::jsonb, 1, 'migration:r2-storage'),
+  ('attachment_r2', '{"endpoint":"","bucket":"","accessKeyId":"","secretAccessKey":""}'::jsonb, 1, 'migration:r2-storage')
+ON CONFLICT (setting_key) DO NOTHING;

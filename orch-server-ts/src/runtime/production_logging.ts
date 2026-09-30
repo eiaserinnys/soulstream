@@ -16,6 +16,7 @@ export type ProductionLogDestination = {
 };
 
 const REDACTED_LOG_PATHS = [
+  "secretAccessKey", "*.secretAccessKey", "req.body.secretAccessKey", "request.body.secretAccessKey", "body.secretAccessKey",
   "req.headers.authorization",
   "req.headers.cookie",
   "request.headers.authorization",
@@ -89,7 +90,9 @@ export function registerProductionLogging(
   });
   app.addHook("onError", async (request, reply, error) => {
     request.log.error({
-      err: error,
+      err: /^\/api\/admin\/settings\/(?:board|attachment)-r2(?:\/check)?$/.test(requestLogPath(request))
+        ? { type: error.name, message: "Storage settings request failed" }
+        : error,
       method: request.method,
       path: requestLogPath(request),
       statusCode: errorStatusCode(error, reply.statusCode),
