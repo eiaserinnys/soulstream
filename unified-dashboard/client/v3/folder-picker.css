@@ -1,0 +1,46 @@
+.v3-shell.v3-folder-picker {
+  display: flex;
+  height: auto;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+  overflow: visible;
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+
+.v3-folder-picker-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v3-space-2);
+}
+
+.v3-folder-picker-tabs [aria-selected="true"] {
+  color: var(--v3-accent);
+  background: var(--accent);
+}
+
+.v3-folder-picker-tabs [role="tab"] {
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.v3-folder-picker-scroll {
+  max-height: 45dvh;
+  flex: none;
+  padding-bottom: 0;
+}
+
+.v3-folder-picker-drag-spacer {
+  width: var(--v3-tree-drag-column);
+}
+
+.v3-folder-picker-row[aria-disabled="true"] .v3-project-nav-link,
+.v3-folder-picker-row[aria-disabled="true"] .v3-project-tree-icon {
+  color: var(--v3-text-disabled);
+}
+
+.v3-folder-picker-row .v3-project-nav-link {
+  width: 100%;
+}
+
+.v3-folder-picker [data-slot="input"] {
+  font: var(--v3-type-body) var(--v3-font-family);
+}
