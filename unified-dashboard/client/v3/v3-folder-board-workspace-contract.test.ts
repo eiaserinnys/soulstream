@@ -28,10 +28,11 @@ describe("task board r3 workspace contract", () => {
 
     expect(workspace).toContain('data-testid="v3-folder-board-resources"');
     expect(workspace).toContain('data-testid="v3-folder-board-canvas"');
-    expect(workspace).toContain('data-testid="v3-folder-board-chat"');
+    expect(workspace).toContain('chatTestId="v3-folder-board-chat"');
     expect(workspace).toContain('data-testid="v3-folder-board-document-overlay"');
     expect(workspace).toContain("<MarkdownDocumentPanel");
-    expect(workspace).toContain("<ChatView");
+    expect(workspace).toContain("<WorkspaceSessionColumn");
+    expect(read("./WorkspaceSessionColumn.tsx")).toContain("<ChatView");
     expect(resources).toContain("<FolderCardSection");
     expect(resources).toContain("<RichSessionRow");
     expect(resources).toContain("<MarkdownContent");
@@ -52,7 +53,8 @@ describe("task board r3 workspace contract", () => {
     expect(board).toContain("onOpenCustomView={onOpenCustomView}");
     expect(resources).toContain("onActiveTabChange(tab.id)");
     expect(resources).toContain("onOpenDocument(activeTab.documentId)");
-    expect(workspace).toContain("<ChatView");
+    expect(workspace).toContain("<WorkspaceSessionColumn");
+    expect(read("./WorkspaceSessionColumn.tsx")).toContain("<ChatView");
     expect(workspace).not.toContain("<RightPanel");
   });
 
@@ -82,7 +84,7 @@ describe("task board panel resize, overlay height, and session list contract", (
 
     expect(workspace).toContain("DragHandle");
     expect(workspace).toContain('data-testid="v3-folder-board-resize-handle"');
-    expect(workspace).toContain('data-testid="v3-folder-board-chat-resize-handle"');
+    expect(workspace).toContain('resizeTestId="v3-folder-board-chat-resize-handle"');
     expect(workspace).toContain("clampFolderResourceWidth");
     expect(workspace).toContain("clampFolderChatWidth");
     // widths are reflected onto the existing layout tokens via setProperty, not inline style.
@@ -92,7 +94,7 @@ describe("task board panel resize, overlay height, and session list contract", (
     // separator role + keyboard nudge for accessibility.
     expect(workspace).toContain('role="separator"');
     expect(workspace).toContain("onKeyDown={handleResourceResizeKeyDown}");
-    expect(workspace).toContain("onKeyDown={handleChatResizeKeyDown}");
+    expect(workspace).toContain("onResizeKeyDown={handleChatResizeKeyDown}");
   });
 
   it("places the two resize handles in the grid gap tracks", () => {

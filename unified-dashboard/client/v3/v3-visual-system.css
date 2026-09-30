@@ -517,7 +517,8 @@
     font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
-  .v3-planner {
+  .v3-planner,
+  .v3-card-session-chat {
     width: calc(100% - 28px);
     height: calc(100dvh - 146px);
     margin: 72px auto 12px;

@@ -1,3 +1,4 @@
+import { WorkspaceSessionColumn } from "./WorkspaceSessionColumn";
 import { CardDetailPane } from "./CardDetailPane";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -321,7 +322,8 @@ function V3DashboardContent() {
   }), [catalogSessions, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
   const sessions = runSessionResolution.sessions;
   const cursorScope = `${window.location.origin}|${user?.email ?? "anonymous"}`;
-  const detailActive = chatOpen && detailChatVisible;
+  const cardChatVisible = Boolean(cardNavigation.cardId && chatOpen && (!mobileMode || mobileTab === "chat"));
+  const detailActive = chatOpen && (cardChatVisible || detailChatVisible);
   const {
     synchronizedSessionKey,
     status: sessionConnectionStatus,
@@ -459,8 +461,8 @@ function V3DashboardContent() {
     clearSessionPanelFocus();
     activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
     setChatOpen(true);
-    if (mobileMode && selectedFolderId) setMobileTab("chat");
-  }, [clearSessionPanelFocus, mobileMode, selectedFolderId, setActiveSession, setActiveSessionSummary, setActiveTab]);
+    if (mobileMode && (selectedFolderId || cardNavigation.cardId)) setMobileTab("chat");
+  }, [cardNavigation.cardId, clearSessionPanelFocus, mobileMode, selectedFolderId, setActiveSession, setActiveSessionSummary, setActiveTab]);
   const {
     saveMemo,
     saveDescription,
@@ -536,7 +538,7 @@ function V3DashboardContent() {
     ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title)
     : Promise.reject(new Error("연결된 폴더가 없습니다"));
   return (
-    <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} data-mobile-project-open={selectedFolderId ? "true" : "false"} style={shellStyle}>
+    <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} data-card-chat-open={cardChatVisible ? "true" : "false"} data-mobile-project-open={selectedFolderId ? "true" : "false"} style={shellStyle}>
       <WallpaperLayer />
       <LiquidGlassCanvas />
       <V3GlobalToolbar
@@ -611,11 +613,28 @@ function V3DashboardContent() {
           </div>
         </div>
       </main>
+      {cardChatVisible ? <WorkspaceSessionColumn
+        activeSession={activeSession}
+        chatClassName="v3-session-panel v3-card-session-chat"
+        chatTestId="v3-card-session-chat"
+        resizeClassName="v3-session-panel-resize"
+        resizeTestId="v3-session-panel-resize-handle"
+        onResize={sessionPanel.resize}
+        onClose={() => { setChatOpen(false); if (mobileMode) setMobileTab(selectedFolderId ? "projects" : "today"); }}
+        chatInputDisabled={chatInputDisabled}
+        fileUploadUrl={fileUploadUrl}
+        historyEnabled={historyEnabled}
+        sessionStreamActive={detailActive}
+        sessionConnectionStatus={sessionConnectionStatus}
+        reconnectSession={reconnectSession}
+        onAcknowledgedReview={acknowledgeReview}
+      /> : <>
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
         <DragHandle onDrag={sessionPanel.resize} widthPx={V3_PANEL_GAP_PX} />
       </div>
       <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
-      {(chatOpen && activeSession) || (boardOverlayOpen && workspaceFolderEntry) ? (
+      </>}
+      {!cardNavigation.cardId && ((chatOpen && activeSession) || (boardOverlayOpen && workspaceFolderEntry)) ? (
         <FolderWorkspace
           task={workspaceFolderEntry}
           folderSections={folderSections}
