@@ -34,7 +34,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,placement="
   <div className="v3-detail-scroll" ref={scroll}><div className="v3-task-detail-layout">
    <SectionNavigation scrollRef={activeScroll} sectionRefs={refs} sections={sections} ariaLabel="카드 섹션"/>
    <div className="v3-task-detail-content">
-    <section className="v3-detail-section" ref={request} data-card-section="request"><div className="v3-detail-section-head"><h3>요청 원문</h3></div><details open><summary>원문 보기</summary><div className="v3-card-request">{card.request}</div></details></section>
+    <section className="v3-detail-section" ref={request} data-card-section="request"><div className="v3-detail-section-head"><h3>요청 원문</h3></div><details open><summary>원문 보기</summary><div className="v3-card-request"><CardRequestContent request={card.request}/></div></details></section>
     <section className="v3-detail-section" ref={brief} data-card-section="brief"><div className="v3-detail-section-head"><h3>해석과 경과</h3></div><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></section>
     <section className="v3-detail-section" ref={reports} data-card-section="reports"><div className="v3-detail-section-head"><h3>보고</h3></div>{detail?.reports.map((report,index)=><details key={report.id} data-report-id={report.id} open={index===0}><summary>{report.title} · {new Date(report.createdAt).toLocaleString("ko-KR")}</summary>{report.format==="html"?<CustomViewIframe html={report.body} title={report.title} className="v3-card-report-html"/>:<MarkdownContent content={report.body} codeBlockLayout="document"/>}</details>)}</section>
     <section className="v3-detail-section" ref={questions} data-card-section="questions"><div className="v3-detail-section-head"><h3>질문</h3></div>{detail?.questions.map(q=><CardQuestionView key={q.id} cardId={cardId} question={q}/>)}</section>
@@ -42,4 +42,19 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,placement="
    </div>
   </div></div>
  </article>;
+}
+
+export function cardRequestMarkdown(request: string): string {
+ return request.replace(/^첨부: (.+)\((https?:\/\/[^\s]+)\)$/gm, (_, name: string, url: string) => {
+  const label = name.replace(/[\[\]\\]/g, "\\$&");
+  const image = /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(name);
+  return `첨부: ${image ? "!" : ""}[${label}](${url})`;
+ });
+}
+
+function CardRequestContent({request}: {request: string}) {
+ return request.split(/(^첨부: .+\(https?:\/\/[^\s]+\)$)/m).map((part,index)=>
+  part.startsWith("첨부: ") && cardRequestMarkdown(part)!==part
+   ? <MarkdownContent key={index} content={cardRequestMarkdown(part)} codeBlockLayout="document"/>
+   : <span key={index}>{part}</span>);
 }

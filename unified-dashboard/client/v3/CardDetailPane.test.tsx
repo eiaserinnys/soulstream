@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
-import { CardDetailPane } from "./CardDetailPane";
+import { CardDetailPane, cardRequestMarkdown } from "./CardDetailPane";
 // SSR reads Zustand initial state; model the client snapshot with the same selector.
 vi.mock("@seosoyoung/soul-ui/cards/card-store", async importOriginal => {
  const actual = await importOriginal<typeof import("@seosoyoung/soul-ui/cards/card-store")>();
@@ -14,6 +14,13 @@ const seed = (status: string, blockedKind: string | null=null) => {
 afterEach(()=>useCardStore.getState().reset());
 function render(status:string, kind:string|null=null){seed(status,kind);return renderToStaticMarkup(<CardDetailPane cardId="c" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()} />);}
 describe("card detail",()=>{
+ it("renders attached images and documents through markdown while preserving the request text",()=>{
+  expect(cardRequestMarkdown("요청\n첨부: 참고.png(https://example.test/file?path=png)")).toBe("요청\n첨부: ![참고.png](https://example.test/file?path=png)");
+  expect(cardRequestMarkdown("첨부: 문서.pdf(https://example.test/file?path=pdf)")).toBe("첨부: [문서.pdf](https://example.test/file?path=pdf)");
+  seed("queued");useCardStore.setState(s=>({byId:{...s.byId,c:{...s.byId.c,request:"**강조 없이 원문 그대로**"}}}));
+  const html=renderToStaticMarkup(<CardDetailPane cardId="c" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()}/>);
+  expect(html).toContain("**강조 없이 원문 그대로**");
+ });
  it("renders all five sections, immutable request, newest expanded report, sandboxed HTML and questions",()=>{
   const html=render("blocked","question");
   for(const text of ["요청 원문","해석과 경과","보고","질문","세션","고정 원문","어느 쪽?","확인?","예"]) expect(html).toContain(text);
