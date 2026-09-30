@@ -69,7 +69,7 @@ export function DailyPlannerView({
   ].filter((group) => group.tasks.length > 0) : [];
 
   return (
-    <div className="v3-planner-column">
+    <div className="v3-planner-column v3-planner-column--daily">
       <div className="v3-date-head">
         <div><span>DAILY</span><h1>{formatLongDate(selectedDate)}</h1></div>
         <p>{state.status === "loading" ? "플래너를 불러오는 중…" : `${visibleTasks.length}개의 업무`}</p>
@@ -78,10 +78,12 @@ export function DailyPlannerView({
           <Sun className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>
+      <div className="v3-today-list">
       {state.status === "error" ? <LoadError message={state.message} /> : null}
-      <CardHandoff folders={folders} />
       {data ? <DailyMemo blocks={data.memoBlocks} onSave={onSaveMemo} /> : null}
       <CardInbox folders={folders} />
+      </div>
+      <div className="v3-today-handoff"><CardHandoff folders={folders} /></div>
     </div>
   );
 }
