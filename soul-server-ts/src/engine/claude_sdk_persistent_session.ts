@@ -310,7 +310,8 @@ export class ClaudeSdkPersistentSession {
       return;
     }
     const activeOwnsResult = active !== null
-      && this.runtime.isForegroundResultOwner(explicitUserMessageUuid);
+      && (explicitUserMessageUuid === active.uuid
+        || this.runtime.isForegroundResultOwner(explicitUserMessageUuid));
     if (!activeOwnsResult) {
       const observation = this.runtime.observeDetachedResult(explicitUserMessageUuid);
       if (observation === "duplicate") return;

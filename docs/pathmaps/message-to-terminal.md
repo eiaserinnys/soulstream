@@ -14,6 +14,8 @@ R52 코드 대조 커밋 SHA: `8d0a0be25a5e732816d525dcb340d7c01704a785`
 
 > 장부 경계: delivery bookkeeping 실패는 엔진 결과를 terminal error로 바꾸지 않는다. 실패 delivery를 `uncertain/dead_letter`로 남기고 level 40 로그를 기록한 뒤, 턴은 엔진 Result대로 닫는다.
 
+> 20단계 Result 소유 판정: Result의 소유 UUID가 현재 활성 전경 턴의 `active.uuid`와 같으면, interrupt receipt가 그 입력을 `receipt_still_queued`로 바꿨어도 해당 턴의 출력과 개입 대기를 종결한다. 활성 턴 자신의 UUID가 아닌 입력은 기존 원장 상태 판정을 따르므로, `still_queued`로 살아남은 continuation의 Result는 detached로 처리한다.
+
 > 배포 경계: 기준선의 `085a`·`085b` 다음에 비파괴 rename `086`, consumed projection trigger를 제거하는 drop-only `087`, generation sidecar를 추가하는 expand-only `088`을 적용한다. 088은 구 worker SQL 오류를 막지만 그 worker의 terminal-row collision 유실을 고치지는 않는다. 새 runtime의 boot pass가 exact native task/tool 증거가 있는 유실만 승격한 뒤 queued recovery를 실행한다. 이후 eiaserinnys(orch+host) → wsl → linegames 순으로 런타임을 갱신한다.
 
 | 단계 | 파일:심볼(라인) | 이 단계가 소유한 사실 | 거부/분기 조건 |
