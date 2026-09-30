@@ -1,13 +1,21 @@
-export type CardPromptEntry = { title: string; folderName: string };
-export type CardPromptInput = {
-  cardId: string; title: string; folderName: string; request: string; brief: string;
-  reason?: string | null; running: readonly CardPromptEntry[]; queued: readonly CardPromptEntry[];
+export type CardPromptEntry = {
+    title: string;
+    folderName: string;
 };
-
+export type CardPromptInput = {
+    cardId: string;
+    title: string;
+    folderName: string;
+    request: string;
+    brief: string;
+    reason?: string | null;
+    running: readonly CardPromptEntry[];
+    queued: readonly CardPromptEntry[];
+};
 export function buildCardPrompt(input: CardPromptInput): string {
-  const running = input.running.map(c => `${c.title} (${c.folderName})`).join("\n") || "없음";
-  const queued = input.queued.map((c,i) => `${i+1}. ${c.title} (${c.folderName})`).join("\n") || "없음";
-  return `[카드 실행] 이 세션은 카드 ${input.cardId} 「${input.title}」(폴더 ${input.folderName})을 맡았다.
+    const running = input.running.map(c => `${c.title} (${c.folderName})`).join("\n") || "없음";
+    const queued = input.queued.map((c, i) => `${i + 1}. ${c.title} (${c.folderName})`).join("\n") || "없음";
+    return `[카드 실행] 이 세션은 카드 ${input.cardId} 「${input.title}」(폴더 ${input.folderName})을 맡았다.
 
 ## 요청 원문
 ${input.request}

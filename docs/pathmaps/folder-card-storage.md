@@ -46,4 +46,4 @@
 | 질문·답 | POST `/api/cards/:id/questions` → askQuestion / POST `/api/cards/:id/questions/:qid/answer` | 질문 본문 `{text,options?,idempotencyKey}`, trusted service bearer와 agent session header, 성공 201. 답변은 기존 intervene 계약으로 유휴 재개/실행 중 개입. 완료 세션이면 queued로 돌린다. |
 | 반려 | 사람의 review→running, reason 필수 | 기존 세션이면 반려 사유 메시지, 완료 세션이면 queued. 새 세션의 첫 프롬프트에도 반려 사유를 넣는다. |
 | 카드 알림 | `push/push_notifier.ts`의 notifyCard → 기존 sendToUser | 질문은 카드 제목·질문, review는 `검수 요청: {제목}`. 기존 토큰 fan-out/invalid token 제거/폴더 알림 제외를 재사용한다. orch에 Slack DM 발송 경로는 없다. |
-| 표시 | `planner/planner_repository.ts`, `card_updated` | attention은 review와 blocked, running, queued는 전역 대기열 순서를 따른다. 카드 상세 및 세션 DTO는 같은 sessions.card_id를 읽는다. 웹·앱 소비 구현은 d/e다. |
+| 표시 | `planner/planner_repository.ts`, `card_updated` | attention은 review와 blocked(question/no_report), running, queued는 전역 대기열 순서를 따른다. 카드 상세 및 세션 DTO는 같은 sessions.card_id를 읽는다. 웹·앱 소비 구현은 d/e다. |
