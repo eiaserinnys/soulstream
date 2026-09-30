@@ -240,13 +240,17 @@ describe("task board markdown edit routing and reader refresh", () => {
   });
 
   it("refreshes both task markdown readers when the editor closes", () => {
+    const dashboardLayout = read("./V3DashboardLayout.tsx");
     const taskWorkspace = read("./FolderWorkspace.tsx");
     const workspace = read("./FolderBoardWorkspace.tsx");
     const detail = read("./FolderDetailPane.tsx");
     const resources = read("./FolderBoardResourcePane.tsx");
     const inlineBoard = read("./FolderInlineBoard.tsx");
 
-    expect(taskWorkspace).toContain("setMarkdownDocumentsRevision");
+    expect(dashboardLayout).toContain("setMarkdownDocumentsRevision");
+    expect(dashboardLayout).toContain(
+      "onMarkdownDocumentEditorClosed={() => setMarkdownDocumentsRevision((current) => current + 1)}",
+    );
     expect(workspace).toContain("onMarkdownDocumentEditorClosed");
     expect(taskWorkspace).toContain("markdownDocumentsRevision={markdownDocumentsRevision}");
     expect(detail).toContain("markdownDocumentsRevision={markdownDocumentsRevision}");
