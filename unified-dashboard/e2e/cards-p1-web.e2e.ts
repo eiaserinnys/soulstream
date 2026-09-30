@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 import type { CardDetail, CardRow } from "../../packages/soul-ui/src/cards/card-types";
+import { verifyHandoffLayout } from "./card-handoff-layout";
 const output=path.resolve(process.env.CARD_WEB_OUTPUT??"./e2e/test-results/cards-p1-web");
 const now="2026-09-30T05:00:00.000Z";
 function card(id:string,status:CardRow["status"],extra:Partial<CardRow>={}):CardRow{return {id,folderId:"folder-amber",title:id,request:"요청 원문",brief:"**해석**과 경과",status,blockedKind:null,blockedDetail:null,positionKey:id,queuePositionKey:id,assigneeKind:"agent",assigneeAgentId:"roselin_codex",assigneeUserId:null,assigneeSessionId:null,nodeId:"eiaserinnys",modelPreset:"qa-standard",version:1,archived:false,createdAt:now,updatedAt:now,...extra};}
@@ -18,6 +19,7 @@ for(const viewport of [{name:"desktop",width:1440,height:900},{name:"narrow",wid
   });
   await installV3VisualQaRoutes(page,{unifiedFolderView:true});
   const rows:Record<string,CardRow>={review:card("review","review",{title:"보고 검수"}),question:card("question","blocked",{title:"방향 확인",blockedKind:"question"}),limit:card("limit","blocked",{title:"실행 한도 대기",blockedKind:"limit"}),no_report:card("no_report","blocked",{title:"보고 누락",blockedKind:"no_report"}),running:card("running","running",{title:"자료 조사 중"}),queued:card("queued","queued",{title:"기존 대기 카드",queuePositionKey:"b"})};
+  if(process.env.CARD_HANDOFF_LAYOUT)for(let i=0;i<12;i++){const id=`tail-${i}`;rows[id]=card(id,"queued",{title:`대기 카드 ${i+1}`,queuePositionKey:`z${String(i).padStart(2,"0")}`});}
   const details:Record<string,CardDetail>={};
   if(process.env.CARD_WEB_SUPPLEMENT){details.review={card:rows.review,reports:[{id:"report-new",title:"작업 결과",format:"html",body:"<style>html{color-scheme:dark}body{color:CanvasText;background:Canvas;font-family:system-ui}</style><h1>검증 완료</h1><p>핵심 흐름을 확인했습니다.</p>",createdAt:now,sessionId:null}],questions:[{id:"qid",text:"환경 확인",answer:"개발",options:null,askedAt:now,answeredAt:now}],sessions:[]};}const calls:Array<{path:string;body:Record<string,unknown>}>=[];let settingVersion=1;let limits={default:2,eiaserinnys:1};let conflict=true;let todayReads=0;
   const detail=(id:string)=>details[id]??{card:rows[id],reports:[],questions:[],sessions:[]};
@@ -66,8 +68,11 @@ for(const viewport of [{name:"desktop",width:1440,height:900},{name:"narrow",wid
    await dialog.getByRole("spinbutton",{name:"기본값 동시 실행 상한"}).fill("4");await dialog.locator("form").getByRole("button",{name:"저장",exact:true}).click();await expect(dialog.getByRole("alert")).toContainText("최신 값");await expect(dialog.getByRole("spinbutton",{name:"기본값 동시 실행 상한"})).toHaveValue("3");await dialog.locator("form").getByRole("button",{name:"저장",exact:true}).click();await expect(dialog.getByRole("status")).toContainText("저장했습니다");
    writeFileSync(path.join(output,viewport.name,"supplement-requests.json"),JSON.stringify({calls,todayReads},null,2));return;
   }
-  await capture(page,viewport.name,"today");const initialReads=todayReads;
-  await page.getByRole("textbox",{name:"무엇을 맡길까요"}).fill("공유 코드 확인");await page.locator('.v3-card-handoff').getByRole("button",{name:"맡기기",exact:true}).click();
+  if(process.env.CARD_HANDOFF_LAYOUT)await verifyHandoffLayout(page,output,viewport.name);
+  else await capture(page,viewport.name,"today");const initialReads=todayReads;
+  await page.getByRole("textbox",{name:"무엇을 맡길까요"}).fill("공유 코드 확인");
+  if(process.env.CARD_HANDOFF_LAYOUT)await page.getByRole("textbox",{name:"무엇을 맡길까요"}).press("Enter");
+  else await page.locator('.v3-card-handoff').getByRole("button",{name:"맡기기",exact:true}).click();
   await expect(inbox.locator('[data-card-group="queued"] [data-card-id="created"]')).toBeVisible();expect(calls.find(c=>c.path==="/api/cards")?.body).toMatchObject({folderId:"folder-amber",title:"공유 코드 확인",request:"공유 코드 확인",assignee:{kind:"agent",agentId:"roselin_codex"},nodeId:"eiaserinnys",modelPreset:"qa-standard",queue:true,idempotencyKey:expect.any(String)});
   const handle=inbox.getByRole("button",{name:"공유 코드 확인 순서 변경"});await handle.scrollIntoViewIfNeeded();await handle.focus();await page.keyboard.press("Space");await expect(handle).toHaveAttribute("aria-pressed","true");await page.keyboard.press("ArrowUp");await expect(inbox.getByRole("status")).toContainText("queued");await page.keyboard.press("Space");await expect.poll(()=>calls.some(c=>c.path.endsWith("/queue-position")&&c.body.afterCardId===null)).toBe(true);
   await inbox.getByRole("button",{name:"카드 공유 코드 확인 열기"}).click();const pane=page.getByTestId("card-detail");await expect(pane).toBeVisible();await expect(pane.getByText("공유 코드 확인",{exact:true})).toHaveCount(2);

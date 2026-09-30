@@ -12,13 +12,7 @@
 .v3-shell .v3-card-status--queued, .v3-shell .v3-card-status--todo, .v3-shell .v3-card-status--cancelled { color: var(--v3-text-secondary); }
 .v3-folder-cards, .v3-card-inbox { display: flex; flex-direction: column; gap: var(--v3-space-3); }
 .v3-card-inbox > section { display: flex; flex-direction: column; gap: var(--v3-space-2); margin-bottom: var(--v3-space-4); }
-.v3-card-handoff { display: flex; align-items: center; gap: var(--v3-space-2); margin-bottom: var(--v3-space-6); }
-.v3-card-handoff > input { min-width: 0; flex: 1; font: var(--v3-type-body) var(--v3-font-family); height: var(--v3-control-height); }
-.v3-card-handoff .v3-succession-assignment { flex: none; }
-.v3-card-handoff .v3-assignment-field label { display: none; }
-.v3-card-handoff .v3-succession-assignment--compact-row { margin: 0; }
 .v3-card-folder-picker { min-width: 0; }
-.v3-card-handoff-folder { max-width: calc(var(--v3-action-size) * 3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--v3-type-body) var(--v3-font-family); }
 .v3-card-detail .v3-detail-section { margin-bottom: var(--v3-space-6); }
 .v3-card-detail summary { cursor: pointer; font: var(--v3-type-body) var(--v3-font-family); }
 .v3-card-detail details, .v3-card-question { margin-bottom: var(--v3-space-3); }
@@ -34,15 +28,95 @@
 
 .v3-shell .v3-card-open { grid-template-columns: max-content minmax(0, 1fr) var(--v3-session-avatar-size); }
 .v3-card-open .v3-status-chip { white-space: nowrap; }
-.v3-shell .v3-card-handoff { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr) auto; gap: var(--v3-space-2); }
+.v3-shell .v3-planner-scroll:has(> .v3-planner-column--daily) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+  padding: 0 var(--v3-space-6) var(--v3-space-6);
+}
+.v3-shell .v3-planner-column--daily {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: none;
+  min-height: 0;
+}
+.v3-planner-column--daily > .v3-date-head { flex: none; }
+.v3-today-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding-bottom: var(--v3-space-4);
+}
+.v3-today-list::-webkit-scrollbar { display: none; }
+.v3-today-handoff {
+  flex: none;
+  border-top: thin solid var(--v3-stroke-default);
+  padding-top: var(--v3-space-3);
+}
+.v3-shell .v3-card-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+}
+.v3-shell .v3-card-handoff > textarea {
+  width: 100%;
+  min-height: var(--v3-control-height);
+  resize: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--v3-stroke-default) transparent;
+  border: thin solid var(--v3-stroke-default);
+  border-radius: var(--v3-space-2);
+  padding: var(--v3-space-2) var(--v3-space-3);
+  background: var(--v3-glass-dense);
+  color: var(--v3-text-primary);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+.v3-card-handoff-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
 .v3-shell .v3-card-handoff .v3-succession-assignment { display: contents; }
 .v3-shell .v3-card-handoff label { display: none; }
-.v3-shell .v3-card-handoff .v3-model-preset-field { grid-column: auto; }
-.v3-shell .v3-card-handoff :is(input, select, .v3-model-preset-trigger, .v3-card-handoff-folder, button[type="submit"]) { height: var(--v3-control-height); min-height: var(--v3-control-height); width: 100%; min-width: 0; font: var(--v3-type-body) var(--v3-font-family); }
+.v3-shell .v3-card-handoff :is(.v3-assignment-field, .v3-model-preset-field) {
+  flex: none;
+  max-width: 100%;
+}
+.v3-shell .v3-card-handoff .v3-model-preset-trigger > span {
+  flex: none;
+  overflow: visible;
+  white-space: nowrap;
+}
+.v3-shell .v3-card-handoff :is(select, .v3-model-preset-trigger, .v3-card-handoff-folder, button[type="submit"]) {
+  flex: none;
+  height: var(--v3-control-height);
+  min-height: var(--v3-control-height);
+  width: max-content;
+  max-width: 100%;
+  padding-inline: var(--v3-space-3);
+  border-radius: var(--v3-space-2);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+.v3-shell .v3-card-handoff :is(select, .v3-model-preset-trigger, .v3-card-handoff-folder) {
+  border-color: var(--v3-stroke-default);
+  background: var(--v3-glass-dense);
+  color: var(--v3-text-primary);
+}
+.v3-shell .v3-card-handoff .v3-card-handoff-folder {
+  max-width: min(100%, calc(var(--v3-control-height) * 3));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v3-card-handoff-submit { margin-left: auto; }
 @media (max-width: 760px) {
- .v3-shell .v3-card-handoff { grid-template-columns: repeat(2, minmax(0, 1fr)); }
- .v3-shell .v3-card-handoff > [data-slot="input-control"], .v3-shell .v3-card-handoff > button[type="submit"] { grid-column: 1 / -1; }
+ .v3-shell .v3-planner-scroll:has(> .v3-planner-column--daily) {
+   padding-inline: var(--v3-space-3);
+   padding-bottom: var(--v3-space-3);
+ }
 }
 
-.v3-shell .v3-card-handoff > [data-slot="input-control"] { min-width: 0; }
 .v3-card-add > [data-slot="input-control"] { flex: 1; min-width: 0; }
