@@ -439,7 +439,6 @@ describe("TaskManager.createTask", () => {
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "claude",
       sessionId: "sess-1",
-      sourceChecklistItemId: null,
     }));
 
     expect(emitSessionCreated).toHaveBeenCalledTimes(1);
@@ -1972,7 +1971,6 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "folder-explicit",
       sessionId: "s1",
-      sourceChecklistItemId: null,
     }));
     expect(getFolderById).not.toHaveBeenCalled();  // 명시 folder가 있으면 default lookup 안 함
     expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-explicit");
@@ -1992,7 +1990,6 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "claude",
       sessionId: "s2",
-      sourceChecklistItemId: null,
     }));
     expect(emitSessionCreated.mock.calls[0][1]).toBe("claude");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);

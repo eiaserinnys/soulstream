@@ -244,7 +244,6 @@ describe("TaskCreation", () => {
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "folder-42",
       sessionId: "sess-1",
-      sourceChecklistItemId: null,
       x: 0,
       y: 160,
     });
@@ -280,7 +279,7 @@ describe("TaskCreation", () => {
       },
       notifyCompletion: false,
       folderId: "rb-1",
-      sourceChecklistItemId: "checklist-item-1",
+      cardId: "card-1",
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
@@ -310,7 +309,6 @@ describe("TaskCreation", () => {
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "rb-1",
       sessionId: "sess-fire-and-forget",
-      sourceChecklistItemId: "checklist-item-1",
     }));
   });
 
@@ -337,7 +335,6 @@ describe("TaskCreation", () => {
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "llm",
       sessionId: "sess-default",
-      sourceChecklistItemId: null,
       x: 0,
       y: 160,
     });
@@ -371,7 +368,6 @@ describe("TaskCreation", () => {
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "folder-42",
       sessionId: "sess-folder-immediate",
-      sourceChecklistItemId: null,
       x: 280,
       y: 160,
     });
@@ -423,7 +419,7 @@ describe("TaskCreation", () => {
       profileId: "roselin_codex",
       sessionType: "llm",
       folderId: "rb-1",
-      sourceChecklistItemId: "checklist-item-1",
+      cardId: "card-1",
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
@@ -433,7 +429,6 @@ describe("TaskCreation", () => {
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "rb-1",
       sessionId: "sess-task",
-      sourceChecklistItemId: "checklist-item-1",
       x: 280,
       y: 160,
     });
@@ -466,7 +461,7 @@ describe("TaskCreation", () => {
       profileId: "roselin_codex",
       sessionType: "llm",
       folderId: "rb-1",
-      sourceChecklistItemId: "checklist-item-1",
+      cardId: "card-1",
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
@@ -491,7 +486,7 @@ describe("TaskCreation", () => {
       profileId: "roselin_codex",
       sessionType: "llm",
       folderId: "rb-1",
-      sourceChecklistItemId: "checklist-item-1",
+      cardId: "card-1",
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
@@ -503,7 +498,6 @@ describe("TaskCreation", () => {
         sessionId: "sess-task-fallback",
         assignedFolderId: null,
         targetFolderId: "rb-1",
-        sourceChecklistItemId: "checklist-item-1",
       }),
       expect.stringContaining("atomic placement was not applied"),
     );

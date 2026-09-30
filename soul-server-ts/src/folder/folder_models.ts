@@ -1,5 +1,5 @@
 import type {
-  ChecklistAssigneeFields,
+  CardAssigneeFields,
   FolderOperationTargetKind,
 } from "../db/session_db_types.js";
 
@@ -19,17 +19,8 @@ export class FolderVersionConflict extends Error {
   }
 }
 
-export class EmptyChecklistPatchError extends Error {
-  readonly statusCode = 422;
-
-  constructor(public readonly targetKind: FolderOperationTargetKind) {
-    super(`checklist ${targetKind} patch requires at least one field to update`);
-    this.name = "EmptyChecklistPatchError";
-  }
-}
-
-export interface ChecklistAssigneeInput {
-  kind: ChecklistAssigneeFields["assignee_kind"];
+export interface CardAssigneeInput {
+  kind: CardAssigneeFields["assignee_kind"];
   agentId?: string | null;
   sessionId?: string | null;
   userId?: string | null;

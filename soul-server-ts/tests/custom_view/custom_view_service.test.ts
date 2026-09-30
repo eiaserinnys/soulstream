@@ -25,7 +25,6 @@ const boardItem: CatalogBoardItemRow = {
   id: "custom_view:cv-1",
   folderId: "folder-1",
   membershipKind: "primary",
-  sourceChecklistItemId: null,
   itemType: "custom_view",
   itemId: "cv-1",
   x: 120,

@@ -12,7 +12,6 @@ export function toFolderItemRecord(row: FolderItemDbRow): FolderItemRecord {
     id: row.bi_id!,
     folder_id: row.bi_folder_id!,
     membership_kind: row.bi_membership_kind,
-    source_checklist_item_id: row.bi_source_checklist_item_id,
     item_type: row.bi_item_type!,
     item_id: row.bi_item_id!,
     x: row.bi_x!,
@@ -84,7 +83,6 @@ export interface FolderItemDbRow {
   bi_id: string | null;
   bi_folder_id?: string;
   bi_membership_kind?: "primary" | "reference";
-  bi_source_checklist_item_id?: string | null;
   bi_item_type?: BoardItemType;
   bi_item_id?: string;
   bi_x?: string | number;

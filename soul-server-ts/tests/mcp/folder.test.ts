@@ -17,13 +17,8 @@ const openServers: Awaited<ReturnType<typeof buildInternalMcpServer>>[] = [];
 const mutationNames = [
   "create_folder", "rename_folder", "archive_folder", "unarchive_folder",
   "set_folder_status", "set_folder_checklist_enabled",
-  "create_checklist_section", "update_checklist_section", "set_checklist_section_assignee",
-  "archive_checklist_section", "unarchive_checklist_section", "move_checklist_section",
-  "create_checklist_item", "update_checklist_item", "set_checklist_item_assignee",
-  "archive_checklist_item", "unarchive_checklist_item", "move_checklist_item",
-  "set_checklist_item_status",
 ];
-const readNames = ["list_child_folders", "get_folder", "list_folder_operations", "list_my_turn_items"];
+const readNames = ["list_child_folders", "get_folder", "list_folder_operations"];
 
 function logger() {
   const noop = () => {};
@@ -73,9 +68,7 @@ afterEach(async () => {
 
 const snapshot = {
   folder: { id: "folder-1", name: "Work", checklistEnabled: true, status: "open", version: 4 },
-  sections: [{ id: "section-1", folderId: "folder-1", title: "Section", version: 2 }],
-  items: [{ id: "item-1", folderId: "folder-1", sectionId: "section-1", title: "Item",
-    howTo: "Do the thing", status: "completed", version: 3 }],
+  cards: [{ id: "card-1", folderId: "folder-1", title: "Card", request: "Do the thing", status: "done", version: 3 }],
 };
 
 describe("folder and checklist MCP contract", () => {
@@ -99,34 +92,10 @@ describe("folder and checklist MCP contract", () => {
     }
   });
 
-  it("passes folder_id and the caller session to checklist mutation", async () => {
-    const setChecklistItemStatus = vi.fn(async () => ({
-      folderId: "folder-1", item: snapshot.items[0],
-      operation: { id: "op-1", targetKind: "item", targetId: "item-1" },
-      idempotent: false,
-    }));
-    const client = await clientFor(runtime({ setChecklistItemStatus }),
-      { "x-soulstream-agent-session-id": "caller-1" });
-    const result = await client.callTool({ name: "set_checklist_item_status", arguments: {
-      folder_id: "folder-1", item_id: "item-1", status: "completed",
-      expected_version: 2, idempotency_key: "status-1",
-    } });
-    expect(result.isError).not.toBe(true);
-    expect(setChecklistItemStatus).toHaveBeenCalledWith(expect.objectContaining({
-      actorKind: "agent", actorSessionId: "caller-1", folderId: "folder-1",
-      itemId: "item-1", status: "completed", expectedVersion: 2,
-    }));
-    expect(result.structuredContent).toMatchObject({
-      folderId: "folder-1", item: { id: "item-1" },
-      operation: { targetId: "item-1" }, idempotent: false,
-    });
-  });
-
   it("returns folder snapshots with full, outline, and item views", async () => {
-    const getFolder = vi.fn(async (_folderId: string, options?: { view?: string; itemId?: string }) => ({
+    const getFolder = vi.fn(async (_folderId: string, options?: { view?: string; cardId?: string }) => ({
       folder: snapshot.folder,
-      sections: options?.itemId ? snapshot.sections : snapshot.sections,
-      items: options?.itemId ? snapshot.items.filter((item) => item.id === options.itemId) : snapshot.items,
+      cards: options?.cardId ? snapshot.cards.filter((item) => item.id === options.cardId) : snapshot.cards,
     }));
     const client = await clientFor(runtime({ getFolder }));
     const full = await client.callTool({ name: "get_folder", arguments: { folder_id: "folder-1" } });
@@ -134,14 +103,14 @@ describe("folder and checklist MCP contract", () => {
       folder_id: "folder-1", view: "outline",
     } });
     const item = await client.callTool({ name: "get_folder", arguments: {
-      folder_id: "folder-1", item_id: "item-1",
+      folder_id: "folder-1", card_id: "card-1",
     } });
-    expect(full.structuredContent).toMatchObject({ folder: { id: "folder-1" }, items: [{ howTo: "Do the thing" }] });
-    expect(outline.structuredContent).toMatchObject({ folder: { checklistEnabled: true }, items: [{ id: "item-1" }] });
-    expect(item.structuredContent).toMatchObject({ items: [{ id: "item-1" }], sections: [{ id: "section-1" }] });
+    expect(full.structuredContent).toMatchObject({ folder: { id: "folder-1" }, cards: [{ request: "Do the thing" }] });
+    expect(outline.structuredContent).toMatchObject({ folder: { checklistEnabled: true }, cards: [{ id: "card-1" }] });
+    expect(item.structuredContent).toMatchObject({ cards: [{ id: "card-1" }] });
     expect(getFolder).toHaveBeenCalledTimes(3);
     expect(getFolder).toHaveBeenNthCalledWith(2, "folder-1", { view: "outline" });
-    expect(getFolder).toHaveBeenNthCalledWith(3, "folder-1", { view: "full", itemId: "item-1" });
+    expect(getFolder).toHaveBeenNthCalledWith(3, "folder-1", { view: "full", cardId: "card-1" });
   });
 
   it("passes null to the host when listing root folders", async () => {

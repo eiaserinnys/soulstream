@@ -63,7 +63,6 @@ export class SessionPageBindingService implements TaskCreationHook {
       dailyDate: kstDate(this.deps.now?.() ?? new Date()),
       sessionType: params.sessionType ?? "claude",
       legacyFolderId: params.folderId ?? null,
-      sourceChecklistItemId: params.sourceChecklistItemId ?? null,
     });
   }
 
@@ -279,7 +278,6 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
       await this.boardYjsService.upsertSessionBoardItem({
         folderId: binding.legacy_folder_id,
         sessionId: binding.session_id,
-        sourceChecklistItemId: binding.source_checklist_item_id,
         x,
         y,
       });

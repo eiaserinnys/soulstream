@@ -432,7 +432,6 @@ export class ExecutionContextBuilder {
     });
 
     const effectiveWorkspaceDir = args.workingDir ?? args.agent.workspace_dir;
-
     const soulstreamItem = buildSoulstreamContextItem({
       agentSessionId: args.task.agentSessionId,
       claudeSessionId: args.task.codexThreadId ?? null,
@@ -442,7 +441,8 @@ export class ExecutionContextBuilder {
       agentId: args.agent.id,
       callerInfo: args.task.callerInfo,
       folder: args.primaryFolder?.folder ?? null,
-      sourceChecklistItemId: args.primaryFolder?.sourceChecklistItemId ?? null,
+      card: args.primaryFolder?.card ?? null,
+      cardGuidance: args.primaryFolder?.cardGuidance ?? null,
       folderGuidance: args.primaryFolder?.folderGuidance ?? null,
     });
 

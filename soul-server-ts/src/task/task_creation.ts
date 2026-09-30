@@ -67,7 +67,7 @@ export interface CreateTaskParams {
   /** 요청별 Claude Agent SDK permission mode override. */
   claudePermissionMode?: ClaudePermissionMode;
   folderId?: string | null;
-  sourceChecklistItemId?: string | null;
+  cardId?: string | null;
   /** Optional centrally owned worktree used as the only execution cwd. */
   worktreeId?: string;
   /** MCP/upstream caller that owns the worktree. Required with worktreeId. */
@@ -189,6 +189,7 @@ export class TaskCreation {
     // idempotency key를 재시도하면 기존 결과를 반환하고, 다른 intent면 충돌한다.
     const registration = {
       sessionId: task.agentSessionId,
+      ...(params.cardId !== undefined ? { cardId: params.cardId } : {}),
       nodeId: this.deps.nodeId,
       agentId: task.profileId ?? null,
       claudeSessionId: null,
@@ -323,7 +324,6 @@ export class TaskCreation {
       task.agentSessionId,
       sessionType,
       params.folderId ?? null,
-      params.sourceChecklistItemId ?? null,
     );
     try {
       await creationHook.afterLegacyProjection?.({
@@ -370,7 +370,6 @@ export class TaskCreation {
     sessionId: string,
     sessionType: string,
     folderId: string | null,
-    sourceChecklistItemId: string | null,
   ): Promise<{ assignedFolderId: string | null; completed: boolean }> {
     let assigned: string | null = null;
     let targetFolderId: string | null = null;
@@ -394,7 +393,6 @@ export class TaskCreation {
         await this.deps.boardYjsService.upsertSessionBoardItem({
           folderId: targetFolderId,
           sessionId,
-          sourceChecklistItemId,
           x,
           y,
         });
@@ -409,7 +407,6 @@ export class TaskCreation {
           requestedFolderId: folderId,
           assignedFolderId: assigned,
           targetFolderId,
-          sourceChecklistItemId,
         },
         "session folder assignment or board item enrollment failed; atomic placement was not applied",
       );

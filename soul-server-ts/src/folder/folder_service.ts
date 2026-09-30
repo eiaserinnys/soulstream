@@ -1,14 +1,15 @@
 import type { Logger } from "pino";
 
-import type { FolderSnapshot, FolderStatus, ChecklistItemStatus } from "../db/session_db_types.js";
+import { randomUUID } from "node:crypto";
+import type { CardDetail, FolderSnapshot, FolderStatus, CardStatus } from "../db/session_db_types.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
-import { FolderVersionConflict, type ChecklistAssigneeInput } from "./folder_models.js";
+import { FolderVersionConflict, type CardAssigneeInput } from "./folder_models.js";
 import type { FolderActorParams, FolderIdentityMutationResult, FolderMutationResult } from "./folder_service_models.js";
 
 export type { FolderActorParams, FolderMutationResult } from "./folder_service_models.js";
 
-/** Worker facade for the single folder/checklist owner in orch. */
+/** Worker facade for the single folder/card owner in orch. */
 export class FolderService {
   private readonly transport: PersistenceHostTransport;
 
@@ -16,7 +17,7 @@ export class FolderService {
     this.transport = new PersistenceHostTransport(config);
   }
 
-  async getFolder(folderId: string, options: { view?: "full" | "outline"; itemId?: string } = {}): Promise<FolderSnapshot | null> {
+  async getFolder(folderId: string, options: { view?: "full" | "outline"; cardId?: string } = {}): Promise<FolderSnapshot | null> {
     try {
       return await this.request("get_folder", { folderId, ...options });
     } catch (error) {
@@ -27,10 +28,6 @@ export class FolderService {
 
   async listChildFolders(params: { folderId: string | null; includeArchived?: boolean; limit?: number; cursor?: string }) {
     return await this.request("list_child_folders", params);
-  }
-
-  async listMyTurnItems(params: { userId?: string | null; limit?: number } = {}) {
-    return await this.request("list_my_turn_items", params);
   }
 
   async listFolderOperations(folderId: string, limit?: number, cursor?: string) {
@@ -66,44 +63,57 @@ export class FolderService {
     return await this.mutate("set_folder_checklist_enabled", params);
   }
 
-  async createChecklistSection(params: FolderActorParams & { folderId: string; title: string; assignee?: ChecklistAssigneeInput | null; afterSectionId?: string | null; beforeSectionId?: string | null; idempotencyKey: string }): Promise<FolderMutationResult> {
-    return await this.mutate("create_checklist_section", params);
+  async listCards(params: { folderId?: string; status?: CardStatus; actorSessionId?: string } = {}) {
+    const query = new URLSearchParams();
+    if (params.folderId !== undefined) query.set("folderId", params.folderId);
+    if (params.status !== undefined) query.set("status", params.status);
+    return this.cardRequest("GET", `/api/cards${query.size ? `?${query}` : ""}`, undefined, params.actorSessionId);
   }
 
-  async updateChecklistSection(params: FolderActorParams & { folderId: string; sectionId: string; expectedVersion: number; title?: string; archived?: boolean; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
-    const operation = params.archived === true ? "archive_checklist_section" : params.archived === false ? "unarchive_checklist_section" : "update_checklist_section";
-    const { archived, ...input } = params;
-    return await this.mutate(operation, input);
+  async getCard(cardId: string, actorSessionId?: string): Promise<CardDetail> {
+    return this.cardRequest("GET", `/api/cards/${encodeURIComponent(cardId)}`, undefined, actorSessionId);
   }
 
-  async setChecklistSectionAssignee(params: FolderActorParams & { folderId: string; sectionId: string; expectedVersion: number; assignee?: ChecklistAssigneeInput | null; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
-    return await this.mutate("set_checklist_section_assignee", params);
+  async createCard(params: FolderActorParams & { folderId: string; title: string; request: string; assignee?: CardAssigneeInput | null; nodeId?: string; modelPreset?: string; queue?: boolean }) {
+    const { actorSessionId, actorKind, actorUserId, ...body } = params;
+    return this.cardRequest("POST", "/api/cards", { ...body, idempotencyKey: randomUUID() }, actorSessionId ?? undefined);
   }
 
-  async moveChecklistSection(params: FolderActorParams & { folderId: string; sectionId: string; expectedVersion: number; afterSectionId?: string | null; beforeSectionId?: string | null; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
-    return await this.mutate("move_checklist_section", params);
+  async updateCardBrief(params: FolderActorParams & { cardId: string; brief: string }) {
+    return this.cardMutation(params, "PATCH", "", { brief: params.brief }, true);
   }
 
-  async createChecklistItem(params: FolderActorParams & { folderId: string; sectionId: string; title: string; howTo?: string; assignee?: ChecklistAssigneeInput | null; afterItemId?: string | null; beforeItemId?: string | null; idempotencyKey: string }): Promise<FolderMutationResult> {
-    return await this.mutate("create_checklist_item", params);
+  async addCardReport(params: FolderActorParams & { cardId: string; title: string; format: "markdown" | "html"; body: string }) {
+    return this.cardMutation(params, "POST", "/reports", { title: params.title, format: params.format, body: params.body });
   }
 
-  async updateChecklistItem(params: FolderActorParams & { folderId: string; itemId: string; expectedVersion: number; title?: string; howTo?: string; archived?: boolean; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
-    const operation = params.archived === true ? "archive_checklist_item" : params.archived === false ? "unarchive_checklist_item" : "update_checklist_item";
-    const { archived, ...input } = params;
-    return await this.mutate(operation, input);
+  async requestCardReview(params: FolderActorParams & { cardId: string }) {
+    return this.cardMutation(params, "POST", "/status", { status: "review" }, true);
   }
 
-  async setChecklistItemAssignee(params: FolderActorParams & { folderId: string; itemId: string; expectedVersion: number; assignee?: ChecklistAssigneeInput | null; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
-    return await this.mutate("set_checklist_item_assignee", params);
+  async askCardQuestion(params: FolderActorParams & { cardId: string; text: string; options?: string[] }) {
+    return this.cardMutation(params, "POST", "/questions", { text: params.text, ...(params.options !== undefined ? { options: params.options } : {}) });
   }
 
-  async moveChecklistItem(params: FolderActorParams & { folderId: string; itemId: string; expectedVersion: number; sectionId?: string | null; afterItemId?: string | null; beforeItemId?: string | null; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
-    return await this.mutate("move_checklist_item", params);
+  async moveCard(params: FolderActorParams & { cardId: string; folderId: string; afterCardId?: string | null }) {
+    return this.cardMutation(params, "POST", "/move", { folderId: params.folderId, ...(params.afterCardId !== undefined ? { afterCardId: params.afterCardId } : {}) }, true);
   }
 
-  async setChecklistItemStatus(params: FolderActorParams & { folderId: string; itemId: string; expectedVersion: number; status: ChecklistItemStatus; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
-    return await this.mutate("set_checklist_item_status", params);
+  private async cardMutation(params: FolderActorParams & { cardId: string }, method: "POST" | "PATCH", suffix: string, body: object, cas = false) {
+    const actorSessionId = params.actorSessionId ?? undefined;
+    const expected = cas ? { expectedVersion: (await this.getCard(params.cardId, actorSessionId)).card.version } : {};
+    return this.cardRequest(method, `/api/cards/${encodeURIComponent(params.cardId)}${suffix}`, { ...body, ...expected, idempotencyKey: randomUUID() }, actorSessionId);
+  }
+
+  private async cardRequest<T = Record<string, unknown>>(method: "GET" | "POST" | "PATCH", path: string, body?: unknown, actorSessionId?: string): Promise<T> {
+    const response = await this.transport.send(method, path, body, {
+      headers: actorSessionId ? { "x-soulstream-agent-session-id": actorSessionId } : {},
+    });
+    if (!response.ok) {
+      const failure = await readOrchErrorEnvelope(response);
+      throw Object.assign(new Error(failure.message), { statusCode: response.status, code: failure.code });
+    }
+    return await response.json() as T;
   }
 
   private async mutate<T extends FolderMutationResult>(operation: string, input: object): Promise<T> {
@@ -131,10 +141,10 @@ function snakeCaseFields(value: object): Record<string, unknown> {
   const assigneeFields = assignee === undefined ? {} : assignee === null
     ? { assigneeKind: null }
     : {
-      assigneeKind: (assignee as ChecklistAssigneeInput).kind,
-      assigneeAgentId: (assignee as ChecklistAssigneeInput).agentId,
-      assigneeSessionId: (assignee as ChecklistAssigneeInput).sessionId,
-      assigneeUserId: (assignee as ChecklistAssigneeInput).userId,
+      assigneeKind: (assignee as CardAssigneeInput).kind,
+      assigneeAgentId: (assignee as CardAssigneeInput).agentId,
+      assigneeSessionId: (assignee as CardAssigneeInput).sessionId,
+      assigneeUserId: (assignee as CardAssigneeInput).userId,
     };
   return Object.fromEntries(Object.entries({ ...fields, ...assigneeFields })
     .filter(([, child]) => child !== undefined)
@@ -142,13 +152,13 @@ function snakeCaseFields(value: object): Record<string, unknown> {
 }
 
 function isVersionConflictDetails(value: Record<string, unknown> | undefined): value is {
-  targetKind: "folder" | "section" | "item";
+  targetKind: "folder" | "card";
   targetId: string;
   expectedVersion: number;
   actualVersion: number;
 } {
   return value !== undefined
-    && (value.targetKind === "folder" || value.targetKind === "section" || value.targetKind === "item")
+    && (value.targetKind === "folder" || value.targetKind === "card")
     && typeof value.targetId === "string"
     && typeof value.expectedVersion === "number"
     && typeof value.actualVersion === "number";

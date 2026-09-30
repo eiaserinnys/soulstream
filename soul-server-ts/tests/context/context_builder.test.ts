@@ -339,7 +339,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
         id: "session:sess-1",
         folderId: "folder-1",
         membershipKind: "primary",
-        sourceChecklistItemId: "item-1",
+        cardId: "item-1",
         itemType: "session",
         itemId: "sess-1",
         x: 0,
@@ -643,8 +643,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     expect(content.caller_info).toEqual({ source: "slack", display_name: "Alice" });
   });
 
-  it("checklist-enabled folder → soulstream_session에 folder와 안내를 주입", async () => {
-    const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a" });
+  it("카드 연결 세션에 카드와 안내를 주입", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a", card_id: "rb-item-13" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "업무 폴더",
@@ -656,7 +656,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       id: "session:sess-1",
       folderId: "folder-a",
       membershipKind: "primary",
-      sourceChecklistItemId: "rb-item-13",
+      cardId: "rb-item-13",
       itemType: "session",
       itemId: "sess-1",
       x: 0,
@@ -666,19 +666,20 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const cb = makeBuilder({
       getSession,
       getFolderById,
-      getPrimarySessionBoardItem,
+      getCard: vi.fn().mockResolvedValue({ card: { id: "rb-item-13", folderId: "moved-folder", title: "연결 카드", status: "running" } }),
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
     expect(content.folder).toEqual({ id: "folder-a", title: "업무 폴더", checklist_enabled: true });
-    expect(content.source_checklist_item_id).toBe("rb-item-13");
+    expect(content.card).toEqual({ id: "rb-item-13", title: "연결 카드", status: "running" });
+    expect(content.card_guidance).toContain("ask_card_question");
     expect(content.folder_guidance).toContain("get_folder");
-    expect(getPrimarySessionBoardItem).toHaveBeenCalledWith("sess-1");
+    expect(getPrimarySessionBoardItem).not.toHaveBeenCalled();
   });
 
-  it("체크리스트가 꺼진 폴더는 안내를 주입하지 않는다", async () => {
+  it("일반 폴더에도 카드 안내를 주입한다", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
@@ -691,7 +692,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       id: "session:sess-1",
       folderId: "folder-a",
       membershipKind: "primary",
-      sourceChecklistItemId: null,
+      cardId: null,
       itemType: "session",
       itemId: "sess-1",
       x: 0,
@@ -709,7 +710,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
     expect(content).not.toHaveProperty("source_checklist_item_id");
-    expect(content).not.toHaveProperty("folder_guidance");
+    expect(content.folder_guidance).toContain("카드");
   });
 
   it("primary board item 없음 → 기존 soulstream_session 형태로 폴백", async () => {
@@ -733,7 +734,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
     expect(content).not.toHaveProperty("source_checklist_item_id");
-    expect(content).not.toHaveProperty("folder_guidance");
+    expect(content.folder_guidance).toContain("카드");
   });
 
   it("primary board item 조회 실패 → 세션 기동을 막지 않고 기존 형태로 폴백", async () => {
@@ -756,7 +757,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
-    expect(content).not.toHaveProperty("folder_guidance");
+    expect(content.folder_guidance).toContain("카드");
   });
 
   it("getSession throw → graceful, folder 없는 흐름과 동일", async () => {

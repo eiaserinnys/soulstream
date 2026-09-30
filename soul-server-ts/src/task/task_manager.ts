@@ -57,7 +57,6 @@ import {
   resolveEffortPreset,
   resolveReasoningEffortForCreate,
 } from "./task_reasoning_effort.js";
-import { resolveSourceChecklistItemProvenance } from "./source_checklist_item_provenance.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
 export type {
@@ -254,14 +253,7 @@ export class TaskManager {
    * TaskCreation이 소유하고, TaskManager는 public collection API를 유지한다.
    */
   async createTask(params: CreateTaskParams): Promise<Task> {
-    const sourceChecklistItemId = await resolveSourceChecklistItemProvenance({
-      sessionId: params.agentSessionId,
-      sourceChecklistItemId: params.sourceChecklistItemId,
-      folderId: params.folderId,
-      getFolderSnapshot: (folderId) => this.db.getFolderSnapshot(folderId),
-      logger: this.logger,
-    });
-    const resolvedParams = { ...params, sourceChecklistItemId };
+    const resolvedParams = params;
     const agent = resolvedParams.profileId
       ? this.agentRegistry?.get(resolvedParams.profileId)
       : undefined;

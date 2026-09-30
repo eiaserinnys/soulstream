@@ -283,12 +283,12 @@ export function registerMultiNodeTools(
         caller_session_id: z.string().optional(),
         notify_completion: z.boolean().optional(),
         folder_id: z.string().nullable().optional(),
-        source_checklist_item_id: z.string().optional(),
+        card_id: z.string().optional(),
         worktree_id: z.string().uuid().optional(),
       },
     },
     async (input) => {
-      const { node_id, agent_id, model_preset, reasoning_effort, prompt, caller_session_id, notify_completion, folder_id, source_checklist_item_id, worktree_id } = input;
+      const { node_id, agent_id, model_preset, reasoning_effort, prompt, caller_session_id, notify_completion, folder_id, card_id, worktree_id } = input;
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
@@ -309,8 +309,8 @@ export function registerMultiNodeTools(
           : {}),
       });
       body.folderId = resolvedFolderId;
-      if (source_checklist_item_id !== undefined) {
-        body.sourceChecklistItemId = source_checklist_item_id;
+      if (card_id !== undefined) {
+        body.cardId = card_id;
       }
       if (notify_completion !== undefined) {
         body.notify_completion = notify_completion;

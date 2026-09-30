@@ -96,7 +96,6 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       dailyDate: "2026-07-13",
       sessionType: "claude",
       legacyFolderId: null,
-      sourceChecklistItemId: null,
     };
     const first = await repository.enqueue(input);
     const duplicate = await repository.enqueue({ ...input, dailyDate: "2026-07-14" });
@@ -389,7 +388,6 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       dailyDate: "2026-07-13",
       sessionType: "claude",
       legacyFolderId: null,
-      sourceChecklistItemId: null,
     });
     await harness!.sql`
       UPDATE session_page_bindings

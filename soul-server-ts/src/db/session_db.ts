@@ -19,6 +19,7 @@ import type {
 import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
+import type { FolderService } from "../folder/folder_service.js";
 import type { ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
 import {
   type SessionDigestSearchMatch,
@@ -36,7 +37,7 @@ export type * from "./session_db_types.js";
 export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 
 export class SessionDB {
-  private folderReader?: { getFolder(folderId: string): Promise<FolderSnapshot | null> };
+  private folderReader?: Pick<FolderService, "getFolder" | "getCard">;
   private scheduleHost?: ScheduleHostClient;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
   private boardProjectionHost?: BoardYjsHostClient;
@@ -46,13 +47,18 @@ export class SessionDB {
   private folderHost?: FolderHostClient;
   private claudeTranscriptHost?: ClaudeRuntimeHostClient;
 
-  configureFolderReader(reader: { getFolder(folderId: string): Promise<FolderSnapshot | null> }): void {
+  configureFolderReader(reader: Pick<FolderService, "getFolder" | "getCard">): void {
     this.folderReader = reader;
   }
 
   async getFolderSnapshot(folderId: string): Promise<FolderSnapshot | null> {
     if (!this.folderReader) throw new Error("folder reader host is not configured");
     return await this.folderReader.getFolder(folderId);
+  }
+
+  async getCard(cardId: string, actorSessionId?: string) {
+    if (!this.folderReader) throw new Error("folder reader host is not configured");
+    return await this.folderReader.getCard(cardId, actorSessionId);
   }
 
   configureScheduleHost(host: ScheduleHostClient): void {

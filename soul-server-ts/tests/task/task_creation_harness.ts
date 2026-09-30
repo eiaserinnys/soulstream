@@ -55,7 +55,6 @@ export function makeTaskCreationHarness(options: {
       id: `session:${input.sessionId}`,
       folderId: input.folderId,
       membershipKind: "primary" as const,
-      sourceChecklistItemId: input.sourceChecklistItemId ?? null,
       itemType: "session" as const,
       itemId: input.sessionId,
       x: input.x,

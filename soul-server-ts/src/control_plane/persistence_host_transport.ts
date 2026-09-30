@@ -17,7 +17,7 @@ export interface OrchErrorEnvelope {
 
 export async function fetchOrchResponse(
   orch: Pick<OrchProxyConfig, "baseUrl" | "headers">,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH",
   path: string,
   body?: unknown,
   options: {
@@ -101,7 +101,7 @@ export class PersistenceHostTransport {
   constructor(private readonly config: HostClientConfig) {}
 
   async send(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH",
     path: string,
     body?: unknown,
     options: {

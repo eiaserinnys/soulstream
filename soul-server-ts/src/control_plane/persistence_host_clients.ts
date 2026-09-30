@@ -519,7 +519,7 @@ export type BindingStepState = "pending" | "bound" | "completed" | "manual_repai
 export interface SessionPageBindingRow {
   session_id: string; node_id: string; target_page_id: string | null; target_block_id: string | null;
   target_expected_version: number | null; daily_date: string; session_type: string;
-  legacy_folder_id: string | null; source_checklist_item_id: string | null;
+  legacy_folder_id: string | null;
   page_state: "pending" | "bound" | "manual_repair";
   legacy_state: "pending" | "completed" | "manual_repair";
   attempts: number; last_error: string | null; next_retry_at: Date;
@@ -528,7 +528,6 @@ export interface EnqueueSessionPageBinding {
   sessionId: string; nodeId: string; targetPageId: string | null; targetBlockId: string | null;
   targetExpectedVersion: number | null; initialPageState: "pending" | "bound";
   dailyDate: string; sessionType: string; legacyFolderId: string | null;
-  sourceChecklistItemId: string | null;
 }
 
 export class SessionPageBindingHostClient {

@@ -174,7 +174,7 @@ describe("TaskRuntimeCommands.createSession", () => {
       claudePermissionMode: "default",
       folderId: "folder-1",
       pageAnchor: undefined,
-      sourceChecklistItemId: null,
+      cardId: null,
       worktreeId: undefined,
       worktreeActorSessionId: undefined,
       systemPrompt: "system override",
