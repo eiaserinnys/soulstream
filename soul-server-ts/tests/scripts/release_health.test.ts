@@ -5,7 +5,7 @@ const mcpClient = vi.hoisted(() => ({
   ping: vi.fn(async () => undefined),
   listTools: vi.fn(async () => ({ tools: [
     { name: "get_folder" },
-    { name: "list_my_turn_items" },
+    { name: "list_cards" },
   ] })),
   callTool: vi.fn(async () => ({ isError: false })),
   close: vi.fn(async () => undefined),
@@ -80,10 +80,10 @@ describe("release health contract", () => {
       url: new URL("http://127.0.0.1:4205/mcp"),
       token: "token",
       folderId: null,
-    })).resolves.toEqual({ ping: "ok", tool: "list_my_turn_items", folder_id: null });
+    })).resolves.toEqual({ ping: "ok", tool: "list_cards", folder_id: null });
     expect(mcpClient.callTool).toHaveBeenCalledWith({
-      name: "list_my_turn_items",
-      arguments: { limit: 1 },
+      name: "list_cards",
+      arguments: {},
     });
   });
 
@@ -99,7 +99,7 @@ describe("release health contract", () => {
   it("keeps standalone health local and does not require upstream registration", async () => {
     const fetchImpl = vi.fn(healthyFetch);
     const nodeRead = vi.fn();
-    const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "list_my_turn_items" }));
+    const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "list_cards" }));
     const standaloneEnv = { ...env };
     delete (standaloneEnv as Partial<typeof env>).SOULSTREAM_UPSTREAM_URL;
     delete (standaloneEnv as Partial<typeof env>).SOULSTREAM_NODE_ID;
@@ -150,7 +150,7 @@ describe("release health contract", () => {
 
   it("uses the turn-item read when no deployment-specific folder is configured", async () => {
     const fetchImpl = vi.fn(healthyFetch);
-    const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "list_my_turn_items" }));
+    const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "list_cards" }));
 
     const report = await verifyReleaseHealth({
       scope: "cluster",
