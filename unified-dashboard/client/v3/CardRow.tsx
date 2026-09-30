@@ -9,7 +9,7 @@ import "./v3-cards.css";
 export function CardRow({card,folders=[],placement="inline",handle,showQueueAction=true,today=false,queueNumber}:{card:Card;folders?:readonly CatalogFolder[];placement?:"inline"|"overlay";handle?:ReactNode;showQueueAction?:boolean;today?:boolean;queueNumber?:number}) {
  const open=useCardNavigation(s=>s.open);
  const portrait=card.nodeId&&card.assigneeAgentId?`/api/nodes/${encodeURIComponent(card.nodeId)}/agents/${encodeURIComponent(card.assigneeAgentId)}/portrait`:null;
- if(today) return <LiquidGlassCard webglSurface className="v3-card-row v3-card-row--today" data-card-id={card.id}>
+ if(today) return <LiquidGlassCard webglSurface className="v3-card-row v3-card-row--today" data-card-id={card.id} data-blocked-kind={card.blockedKind}>
    <button type="button" className="v3-card-open" onClick={()=>open(card.id,placement)} aria-label={`카드 ${card.title} 열기`}>
     {queueNumber ? <span className="v3-card-status--queued">{queueNumber}번</span> : <CardStatusChip card={card}/>}
     <span className="v3-card-copy"><strong title={card.title}>{card.title}</strong><span className="v3-card-meta">
