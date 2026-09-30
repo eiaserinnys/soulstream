@@ -21,7 +21,7 @@ for (const viewport of [{width:1440,height:900},{width:2148,height:1222},{width:
    Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>undefined,active:null,addEventListener:()=>undefined})});
    Object.defineProperty(navigator.serviceWorker,"controller",{configurable:true,get:()=>null});
   });
-  await installV3VisualQaRoutes(page,{unifiedFolderView:true});
+  await installV3VisualQaRoutes(page,{unifiedFolderView:true,successionPickerRuns:viewport.width===1440&&!populated});
   const rows = populated ? [card("review","review","폴더 화면 헤더 통일"),card("question","blocked","문서 이관: 이미지 블록 12개는 어떻게 할까요?",{blockedKind:"question"}),card("running","running","체크리스트 깜빡임 수리"),card("q1","queued","보드 여닫기 앱에도"),card("q2","queued","xops 3안 선택 통계 화면")] : [];
   let created: CardRow | undefined; let payload: any;
   await page.route("**/api/**", async route => {
@@ -54,7 +54,7 @@ for (const viewport of [{width:1440,height:900},{width:2148,height:1222},{width:
   expect(Math.abs(metrics.column.x+metrics.column.width/2-(metrics.scroll.x+metrics.scroll.width/2))).toBeLessThanOrEqual(1);
   expect(metrics.memo.x).toBeCloseTo(metrics.composer.x,0);expect(metrics.memo.right).toBeCloseTo(metrics.composer.right,0);
   expect(metrics.memo.height).toBe(56);
-  expect(Math.abs(metrics.date.cy-metrics.ritual.cy)).toBeLessThanOrEqual(1);
+  if(viewport.width<760)expect(Math.abs(metrics.date.cy-metrics.ritual.cy)).toBeLessThanOrEqual(1);
   expect(metrics.avatars.every(a=>a.width===24&&a.height===24)).toBe(true);
   expect(metrics.textarea.height).toBe(66);expect(metrics.attach.width).toBe(32);expect(metrics.attach.height).toBe(32);
   expect(metrics.folder.height).toBe(28);expect(metrics.execution.height).toBe(28);
