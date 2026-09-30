@@ -107,13 +107,13 @@ export async function readMcpHealth({ url, token, folderId }) {
     await client.ping();
     const tools = await client.listTools();
     const names = new Set(tools.tools.map((tool) => tool.name));
-    if (!names.has("get_folder") || !names.has("list_my_turn_items")) {
+    if (!names.has("get_folder") || !names.has("list_cards")) {
       throw new Error("MCP canonical folder read tools are unavailable");
     }
-    const tool = folderId ? "get_folder" : "list_my_turn_items";
+    const tool = folderId ? "get_folder" : "list_cards";
     const result = await client.callTool(folderId
       ? { name: tool, arguments: { folder_id: folderId, view: "outline" } }
-      : { name: tool, arguments: { limit: 1 } });
+      : { name: tool, arguments: {} });
     if ("isError" in result && result.isError) {
       throw new Error(`MCP ${tool} returned an error result`);
     }
