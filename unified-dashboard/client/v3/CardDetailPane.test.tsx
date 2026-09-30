@@ -44,6 +44,14 @@ describe("card final UX",()=>{
   expect(preview).toContain('class="v3-card-three-lines"');
   expect(preview).toContain("첫 문단");expect(preview).toContain("두 번째 문단");expect(preview).toContain("세 번째 문단");
  });
+ it("previews every HTML conclusion with only a three-line clamp",()=>{
+  seed();useCardStore.setState(s=>({details:{c:{...s.details.c,reports:[{id:"html-paragraphs",sessionId:null,title:"HTML 보고",format:"html",body:"<style>.hidden { color: red; }</style><script>hiddenScript()</script><p>첫째 결론</p>\n\n<p>둘째 결론</p>",createdAt:"2026-09-30"}]}}}));
+  const html=render(),preview=html.split('data-report-id="html-paragraphs"')[1].split("<details>")[0];
+  expect(preview).toContain('class="v3-card-three-lines"');
+  expect(preview).toContain("첫째 결론");expect(preview).toContain("둘째 결론");
+  expect(preview).not.toContain("hiddenScript");expect(preview).not.toContain("color: red");
+  expect(html).toContain('sandbox="allow-scripts"');
+ });
  it("preserves attachment markdown conversion",()=>{
   expect(cardRequestMarkdown("첨부: 참고.png(https://example.test/file?path=png)")).toBe("첨부: ![참고.png](https://example.test/file?path=png)");
  });

@@ -35,7 +35,7 @@ function RequestPreview({request}:{request:string}) {
 }
 function ReportPreview({report}:{report:CardReport}) {
  const images=report.format==="markdown" ? [...report.body.matchAll(/!\[([^\]]*)\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)].slice(0,2).map(match=>({alt:match[1],src:match[2]})) : [];
- const summary=report.format==="html" ? report.body.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,"").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,"").replace(/<[^>]+>/g," ").trim().split(/\n\s*\n/)[0] : report.body;
+ const summary=report.format==="html" ? report.body.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,"").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,"").replace(/<[^>]+>/g," ").trim() : report.body;
  return <div data-report-id={report.id}><strong className="v3-card-report-title">{report.title}</strong><div className="v3-card-three-lines"><MarkdownContent content={summary}/></div>
   {images.length ? <div className="v3-card-report-thumbnails">{images.map((img,i)=><img key={i} src={img.src} alt={img.alt} loading="lazy"/>)}</div>:null}
   <details><summary>자세히</summary>{report.format==="html" ? <CustomViewIframe html={report.body} title={report.title} className="v3-card-report-html"/>:<MarkdownContent content={report.body} codeBlockLayout="document"/>}</details>
