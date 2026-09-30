@@ -5,6 +5,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 const output=path.resolve(process.env.CARD_DETAIL_OUTPUT!);
 const phase=process.env.CARD_DETAIL_PHASE==="before"?"before":"after";
 const fixture=JSON.parse(readFileSync(process.env.CARD_DETAIL_FIXTURE!,"utf8"));
+const checklist='- [ ] 폴더 `folders.checklist_enabled` 제거 후 `set_folder_checklist_enabled` 호출도 정리하고 기존 상태와 설명을 유지합니다.\n- [x] `create_card`의 요청과 **보고 내용**을 같은 순서로 확인합니다.';
 test.use({timezoneId:"Asia/Seoul"});
 for(const width of [1440,390]){
  test(`card and folder · ${width} · ${phase}`,async({page})=>{
@@ -14,7 +15,7 @@ for(const width of [1440,390]){
    Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>undefined,active:null,addEventListener:()=>undefined})});
    Object.defineProperty(navigator.serviceWorker,"controller",{configurable:true,get:()=>null});
   });
-  await installV3VisualQaRoutes(page,{unifiedFolderView:true});
+  await installV3VisualQaRoutes(page,{unifiedFolderView:true,timelineEventCount:1,liveEventText:checklist});
   const card={...fixture.card,folderId:"folder-amber",status:"running"};
   const root=fixture.sessions[0].sessionId;
   const sessions=fixture.sessions.map((s:any,i:number)=>({...s,agentSessionId:s.sessionId,callerSessionId:i?root:null,eventCount:1,updatedAt:s.updatedAt??s.createdAt,folderId:"folder-amber"}));
@@ -35,7 +36,7 @@ for(const width of [1440,390]){
    if(p==="/api/sessions"&&url.searchParams.has("session_id"))return json({sessions:sessions.filter((s:any)=>url.searchParams.getAll("session_id").includes(s.agentSessionId)),total:sessions.length});
    if(p==="/api/planner/folders/folder-amber/sessions")return json({items:sessions,nextCursor:null});
    if(p==="/api/planner/folders/folder-amber"){
-    return json({cards:[],folder:{id:"folder-amber",name:"소울스트림",projectPageId:"project-amber",parentFolderId:null,sortOrder:0,settings:{},checklistEnabled:true,status:"open",version:1,archived:false},page:{id:"project-amber",title:"소울스트림",version:1,metadata:{},archived:false},blocks:[],subfolders:{items:[],nextCursor:null},sessions:{items:sessions,nextCursor:null}});
+    return json({cards:[],folder:{id:"folder-amber",name:"소울스트림",projectPageId:"project-amber",parentFolderId:null,sortOrder:0,settings:{},status:"open",version:1,archived:false},page:{id:"project-amber",title:"소울스트림",version:1,metadata:{},archived:false},blocks:[{id:'checklist-description',page_id:'project-amber',block_type:'paragraph',text:checklist,parent_id:null,position_key:'A',properties:{},collapsed:false}],subfolders:{items:[],nextCursor:null},sessions:{items:sessions,nextCursor:null}});
    }
    return route.fallback();
   });
@@ -80,5 +81,31 @@ for(const width of [1440,390]){
   await page.screenshot({path:path.join(output,`${phase}-${width}-folder-sessions.png`)});
   const folderMetrics=await folderSection.evaluate(el=>({children:el.querySelectorAll(".v3-run-children").length,rows:[...el.querySelectorAll(".v3-run-row")].slice(0,3).map(row=>{const r=row.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};})}));
   writeFileSync(path.join(output,`${phase}-${width}-metrics.json`),JSON.stringify({inboxMetrics,cardMetrics,folderMetrics,writes},null,2));
+  const folderChecklist=page.locator('.v3-description-content[aria-label="폴더 설명 편집"]');
+  await expect(folderChecklist.locator('input[type=checkbox]')).toHaveCount(2);
+  await folderChecklist.evaluate(el=>el.scrollIntoView({block:'start'}));
+  await page.screenshot({path:path.join(output,`${phase}-${width}-folder-checklist.png`)});
+  const folderBounds=await checklistBounds(folderChecklist);
+  await folderSection.locator('.v3-run-open').first().click();
+  const chat=page.locator('.v3-chat-pane[aria-label="세션 채팅"]');
+  await expect(chat.locator('input[type=checkbox]')).toHaveCount(2);
+  await chat.locator('input[type=checkbox]').first().scrollIntoViewIfNeeded();
+  await expect(chat.locator('input[type=checkbox]').first()).toBeVisible();
+  await page.screenshot({path:path.join(output,`${phase}-${width}-chat-checklist.png`)});
+  const chatBounds=await checklistBounds(chat);
+  writeFileSync(path.join(output,`${phase}-${width}-checklist-metrics.json`),JSON.stringify({folderBounds,chatBounds},null,2));
+  if(phase==='after'){
+   expect(folderBounds.maxOverflow,'folder checklist inline content stays inside its row').toBeLessThanOrEqual(1);
+   expect(chatBounds.maxOverflow,'chat checklist inline content stays inside its row').toBeLessThanOrEqual(1);
+  }
  });
+}
+async function checklistBounds(scope:import('@playwright/test').Locator){
+ return scope.locator('li:has(input[type=checkbox])').evaluateAll(items=>({
+  maxOverflow:Math.max(...items.map(item=>{
+   const box=item.getBoundingClientRect();
+   const range=document.createRange();range.selectNodeContents(item);
+   return Math.max(...[...range.getClientRects()].map(r=>r.right-box.right));
+  })),
+ }));
 }
