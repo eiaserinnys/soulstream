@@ -1,20 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, useDashboardStore } from "@seosoyoung/soul-ui";
+import { Button, Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, useDashboardStore } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
-
-import {
-  defaultFolderMoveTargets,
-  searchFolderMoveTargets,
-  type FolderMoveTarget,
-} from "./folder-move-targets";
+import type { FolderMoveTarget } from "./folder-move-targets";
+import { FolderPicker } from "./FolderPicker";
+import { useFolderPickerStars } from "./use-folder-picker-stars";
 
 export function FolderMoveDialog({
-  api,
-  currentFolderId,
-  defaultTargets,
-  open,
-  onClose,
-  onMove,
+  api, currentFolderId, defaultTargets, open, onClose, onMove,
 }: {
   api: PageApiClient;
   currentFolderId: string;
@@ -23,59 +15,32 @@ export function FolderMoveDialog({
   onClose(): void;
   onMove(target: FolderMoveTarget): Promise<void>;
 }) {
-  const [query, setQuery] = useState("");
-  const [searchedTargets, setSearchedTargets] = useState<FolderMoveTarget[]>([]);
-  const [searchPending, setSearchPending] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [movePending, setMovePending] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
-  const folders = useDashboardStore((state) => state.catalog?.folders ?? []);
-  const visibleDefaultTargets = useMemo(
-    () => defaultFolderMoveTargets(defaultTargets, currentFolderId),
-    [currentFolderId, defaultTargets],
-  );
-  const normalizedQuery = query.trim();
-  const options = normalizedQuery ? searchedTargets : visibleDefaultTargets;
+  const folders = useDashboardStore((state) => state.catalog?.folders);
+  const pickerFolders = useMemo(() => folders ?? [], [folders]);
+  const stars = useFolderPickerStars(open, pickerFolders);
+  const disabledFolderIds = useMemo(() => new Set(pickerFolders
+    .filter((folder) => folder.id === currentFolderId || !folder.projectPageId)
+    .map((folder) => folder.id)), [currentFolderId, pickerFolders]);
+  useEffect(() => { setSelectedFolderId(null); setMoveError(null); }, [open]);
 
-  useEffect(() => {
-    if (!open || !normalizedQuery) {
-      setSearchedTargets([]);
-      setSearchPending(false);
-      setSearchError(null);
-      return;
-    }
-    let active = true;
-    setSearchPending(true);
-    setSearchError(null);
-    void searchFolderMoveTargets(api, normalizedQuery, currentFolderId, folders)
-      .then((targets) => { if (active) setSearchedTargets(targets); })
-      .catch((error: unknown) => {
-        if (active) setSearchError(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => { if (active) setSearchPending(false); });
-    return () => { active = false; };
-  }, [api, currentFolderId, folders, normalizedQuery, open]);
-
-  const close = () => {
-    if (movePending) return;
-    setQuery("");
-    setMoveError(null);
-    onClose();
-  };
-
-  const move = async (target: FolderMoveTarget) => {
-    if (movePending) return;
+  const close = () => { if (!movePending) onClose(); };
+  const move = async () => {
+    if (movePending || !selectedFolderId || disabledFolderIds.has(selectedFolderId)) return;
+    const folder = pickerFolders.find((folder) => folder.id === selectedFolderId);
+    if (!folder?.projectPageId) return;
     setMovePending(true);
     setMoveError(null);
     try {
+      const target = defaultTargets.find((target) => target.folderId === selectedFolderId)
+        ?? { folderId: selectedFolderId, page: (await api.getPage(folder.projectPageId)).page };
       await onMove(target);
-      setQuery("");
       onClose();
     } catch (error) {
       setMoveError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setMovePending(false);
-    }
+    } finally { setMovePending(false); }
   };
 
   return (
@@ -83,39 +48,18 @@ export function FolderMoveDialog({
       <DialogPopup className="max-w-md">
         <DialogHeader><DialogTitle>다른 폴더로 이동</DialogTitle></DialogHeader>
         <DialogPanel>
-          <div className="v3-context-picker v3-run-move-picker">
-            <div className="v3-context-panel">
-              <input
-                type="search"
-                value={query}
-                disabled={movePending}
-                aria-label="이동할 폴더 검색"
-                placeholder="전체 폴더 검색…"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <div className="v3-context-options" data-testid="v3-run-move-targets">
-                {options.map((target) => (
-                  <button
-                    type="button"
-                    className="v3-context-option"
-                    key={target.folderId}
-                    disabled={movePending}
-                    onClick={() => { void move(target); }}
-                  >
-                    <span className="v3-emoji" aria-hidden="true">↪</span>
-                    <span><strong>{target.page.title}</strong><small>폴더 · {target.folderId.slice(0, 8)}</small></span>
-                  </button>
-                ))}
-                {searchPending ? <p>폴더를 검색하는 중…</p> : null}
-                {!searchPending && options.length === 0 ? (
-                  <p>{normalizedQuery ? "일치하는 폴더가 없습니다." : "이동할 수 있는 다른 폴더가 없습니다."}</p>
-                ) : null}
-              </div>
-            </div>
+          <div data-testid="v3-run-move-targets">
+            {stars.loading ? <p>폴더를 불러오는 중…</p> : open ? <FolderPicker
+              folders={pickerFolders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
+              selectedFolderId={selectedFolderId} pending={movePending} onSelect={(folder) => setSelectedFolderId(folder.id)} /> : null}
           </div>
-          {searchError ? <p className="v3-load-error" role="alert">폴더 검색 실패 · {searchError}</p> : null}
+          {stars.error ? <p className="v3-load-error" role="alert">별표 조회 실패 · {stars.error}</p> : null}
           {moveError ? <p className="v3-load-error" role="alert">{moveError}</p> : null}
         </DialogPanel>
+        <DialogFooter>
+          <Button variant="ghost" disabled={movePending} onClick={close}>취소</Button>
+          <Button disabled={movePending || !selectedFolderId || disabledFolderIds.has(selectedFolderId)} onClick={() => { void move(); }}>이동</Button>
+        </DialogFooter>
       </DialogPopup>
     </Dialog>
   );

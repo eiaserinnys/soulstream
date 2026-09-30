@@ -1,17 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Button,
-  Dialog,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-  type CatalogFolder,
+  Button, Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, type CatalogFolder,
 } from "@seosoyoung/soul-ui";
-
 import type { PlannerFolder } from "./planner-data";
 import { folderParentOptions } from "./folder-parent-targets";
+import { FolderPicker } from "./FolderPicker";
+import { useFolderPickerStars } from "./use-folder-picker-stars";
 
 export interface FolderParentMoveDialogProps {
   task: PlannerFolder | null;
@@ -23,52 +17,44 @@ export interface FolderParentMoveDialogProps {
   onClose(): void;
 }
 
-export function FolderParentMoveDialog({
-  task,
-  currentFolderId,
-  folders,
-  pending,
-  error,
-  onMove,
-  onClose,
-}: FolderParentMoveDialogProps) {
-  const options = useMemo(
-    () => folderParentOptions(folders, currentFolderId),
-    [currentFolderId, folders],
-  );
+export function FolderParentMoveDialog({ task, currentFolderId, folders, pending, error, onMove, onClose }: FolderParentMoveDialogProps) {
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const stars = useFolderPickerStars(task !== null, folders);
+  const disabledFolderIds = useMemo(() => {
+    // Child-card callers can carry a page identity; the catalog owns hierarchy IDs.
+    const currentParentId = task
+      ? folders.find((folder) => folder.id === task.folderId)?.parentFolderId ?? null
+      : currentFolderId;
+    const allowed = new Set(folderParentOptions(folders, currentParentId).map(({ folder }) => folder.id));
+    const descendants = new Set<string>();
+    const append = (id: string) => {
+      descendants.add(id);
+      for (const folder of folders) {
+        if (folder.parentFolderId === id && !descendants.has(folder.id)) append(folder.id);
+      }
+    };
+    if (task) append(task.folderId);
+    return new Set(folders.filter((folder) => !allowed.has(folder.id) || descendants.has(folder.id)).map((folder) => folder.id));
+  }, [currentFolderId, folders, task]);
+  useEffect(() => { setSelectedFolderId(null); }, [task?.folderId]);
 
   return (
     <Dialog open={task !== null} onOpenChange={(open) => { if (!open && !pending) onClose(); }}>
       <DialogPopup className="max-w-md">
         <DialogHeader><DialogTitle>다른 프로젝트로 이동</DialogTitle></DialogHeader>
         <DialogPanel>
-          <div className="v3-context-picker v3-run-move-picker">
-            <div className="v3-context-panel">
-              <p>{task?.page.title ?? "업무"}의 새 프로젝트를 선택하세요.</p>
-              <div className="v3-context-options" data-testid="v3-folder-parent-targets">
-                {options.map(({ folder, depth }) => (
-                  <button
-                    type="button"
-                    className="v3-context-option"
-                    key={folder.id}
-                    disabled={pending}
-                    style={{ paddingInlineStart: `${12 + depth * 16}px` }}
-                    onClick={() => onMove({
-                      folderId: folder.id,
-                    })}
-                  >
-                    <span className="v3-emoji" aria-hidden="true">↪</span>
-                    <span><strong>{folder.name}</strong><small>프로젝트</small></span>
-                  </button>
-                ))}
-                {options.length === 0 ? <p>이동할 다른 프로젝트가 없습니다.</p> : null}
-              </div>
-            </div>
+          <div data-testid="v3-folder-parent-targets">
+            {stars.loading ? <p>폴더를 불러오는 중…</p> : task ? <FolderPicker key={task.folderId}
+              folders={folders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
+              selectedFolderId={selectedFolderId} pending={pending} onSelect={(folder) => setSelectedFolderId(folder.id)} /> : null}
           </div>
+          {stars.error ? <p className="v3-load-error" role="alert">별표 조회 실패 · {stars.error}</p> : null}
           {error ? <p className="v3-load-error" role="alert">{error}</p> : null}
         </DialogPanel>
         <DialogFooter>
           <Button variant="ghost" disabled={pending} onClick={onClose}>취소</Button>
+          <Button disabled={pending || !selectedFolderId || disabledFolderIds.has(selectedFolderId)}
+            onClick={() => { if (selectedFolderId && !pending && !disabledFolderIds.has(selectedFolderId)) onMove({ folderId: selectedFolderId }); }}>이동</Button>
         </DialogFooter>
       </DialogPopup>
     </Dialog>
