@@ -9,7 +9,7 @@ const folder = { id: "folder-a", parentFolderId: "parent-a", version: 4 } as Cat
 const task = {
   page: page("page-a"), blocks: [], stateVector: "", folderId: folder.id, status: "open",
   assignee: "", contextCount: 0, progress: null, parentFolderId: "parent-a",
-  sessionIds: [], mountedDocuments: [],
+  sessionIds: [],
 } as PlannerFolder;
 
 describe("folder parent move", () => {

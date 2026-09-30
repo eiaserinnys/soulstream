@@ -123,6 +123,12 @@ async function openFolder(page: Page, viewport: "desktop" | "mobile", name: stri
     await expect(page.getByTestId("v3-project-context")).toBeVisible();
     await expect(page.locator(".v3-workspace-scrim")).toHaveCount(0);
     await expect(page.getByTestId("v3-planner-scroll").locator(".v3-detail-pane--inline")).toBeVisible();
+    await expect(page.locator(".v3-documents")).toHaveCount(0);
+    await expect(page.locator(".v3-child-folders")).toHaveCount(1);
+    await expect(page.locator('[data-task-section="information"]')).toHaveCount(1);
+    await expect(page.locator('[data-task-section="checklist"]')).toHaveCount(name === "소울스트림" ? 1 : 0);
+    await expect(page.locator('[data-task-section="board"]')).toHaveCount(1);
+    await expect(page.locator('[data-task-section="sessions"]')).toHaveCount(1);
     if (viewport === "desktop") {
       await expect(page.locator(".v3-navigation")).toBeVisible();
       await expect(page.getByTestId("v3-session-panel")).toBeVisible();

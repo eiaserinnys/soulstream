@@ -24,7 +24,6 @@ export const plannerRouteAuthRequirements = {
   "GET /api/planner/daily-history": true,
   "GET /api/planner/folders/{folder_id}": true,
   "GET /api/planner/folders/{folder_id}/subfolders": true,
-  "GET /api/planner/folders/{folder_id}/documents": true,
   "GET /api/planner/folders/{folder_id}/sessions": true,
 } as const;
 
@@ -148,7 +147,7 @@ export function registerPlannerRoutes(
       return result ? reply.send(result) : notFound(reply, "folder not found");
     } catch (error) { return failed(request, reply, error, "folder"); }
   });
-  for (const kind of ["subfolders", "documents", "sessions"] as const) {
+  for (const kind of ["subfolders", "sessions"] as const) {
     app.get<{ Params: { folder_id: string } }>(`/api/planner/folders/:folder_id/${kind}`, async (request, reply) => {
       if (!await options.resolveUser(request)) return unauthorized(reply);
       const query = folderSliceQuery.safeParse(request.query);
@@ -156,7 +155,6 @@ export function registerPlannerRoutes(
       try {
         const folderId = request.params.folder_id;
         const result = kind === "subfolders" ? await options.provider.getSubfolders(folderId, query.data)
-          : kind === "documents" ? await options.provider.getDocuments(folderId, query.data)
           : await options.provider.getSessions(folderId, query.data);
         return reply.send(result);
       } catch (error) { return failed(request, reply, error, kind); }

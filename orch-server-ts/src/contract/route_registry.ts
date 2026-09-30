@@ -282,13 +282,6 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["GET"],
-    path: "/api/planner/folders/{folder_id}/documents",
-    name: "list_folder_planner_documents",
-    authRequired: true,
-    family: "page_yjs",
-  },
-  {
-    methods: ["GET"],
     path: "/api/planner/folders/{folder_id}/sessions",
     name: "list_folder_planner_sessions",
     authRequired: true,

@@ -14,12 +14,12 @@ describe("v3 right session panel policy", () => {
     expect(livePlane).toContain("projectSessionListSnapshot");
   });
 
-  it("replaces the old review surfaces and keeps the document-only inspector", () => {
+  it("replaces the old review surfaces and removes the general-page inspector", () => {
     const layout = read("./V3DashboardLayout.tsx");
     const navigation = read("./V3Navigation.tsx");
 
     expect(layout).toContain("V3SessionPanel");
-    expect(layout).toContain("V3StandaloneDocumentInspector");
+    expect(layout).not.toContain("V3StandaloneDocumentInspector");
     expect(layout).not.toContain("ReviewQueuePanel");
     expect(layout).not.toContain("V3StandaloneInspector");
     expect(navigation).not.toContain("검수 대기");

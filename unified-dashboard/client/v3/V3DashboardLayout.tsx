@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type BoardContainerRef, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { clampDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_NAVIGATION_DEFAULT_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX, readV3NavigationWidth } from "./v3-layout-metrics";
@@ -23,7 +23,6 @@ import { setFolderChecklistEnabled } from "./folder-workspace-api";
 import { FolderParentMoveDialog } from "./FolderParentMoveDialog";
 import { V3Navigation } from "./V3Navigation";
 import { V3SessionPanel } from "./V3SessionPanel";
-import { V3StandaloneDocumentInspector } from "./V3StandaloneDocumentInspector";
 import { V3GlobalToolbar } from "./V3GlobalToolbar";
 import { V3Toast } from "./V3Toast";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
@@ -73,9 +72,6 @@ function V3DashboardContent() {
   const [childFolderDialog, setChildFolderDialog] = useState<ProjectDialogTarget | null>(null);
   const [childArchiveTarget, setChildArchiveTarget] = useState<CatalogFolder | null>(null);
   const [ritualOpen, setRitualOpen] = useState(false);
-  const [documentInspectorOpen, setDocumentInspectorOpen] = useState(false);
-  const [standaloneDocumentId, setStandaloneDocumentId] = useState<string | null>(null);
-  const [standaloneDocumentContainer, setStandaloneDocumentContainer] = useState<BoardContainerRef | null>(null);
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<ReadonlySet<string>>(() => new Set());
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -86,8 +82,6 @@ function V3DashboardContent() {
   const [boardOverlayOpen, setBoardOverlayOpen] = useState(false);
   const [markdownDocumentsRevision, setMarkdownDocumentsRevision] = useState(0);
   const [detailChatVisible, setDetailChatVisible] = useState(false);
-  const [newDocumentOpen, setNewDocumentOpen] = useState(false);
-  const [newDocumentTitle, setNewDocumentTitle] = useState("");
   const [sessionDefaults, setSessionDefaults] = useState<PageSessionDefaults | null>(null);
   const [navigationWidth, setNavigationWidth] = useState(() => readV3NavigationWidth());
   const plannerSurfaceRef = useRef<HTMLDivElement>(null);
@@ -155,18 +149,15 @@ function V3DashboardContent() {
     starredFoldersLoading,
     starredFoldersLoadingMore,
     starredFoldersReordering,
-    projectDocumentsLoadingMore,
     subfoldersLoadingMore,
     loadMoreStarredFolders,
     reorderStarredFolders,
-    loadMoreProjectDocuments,
     loadMoreSubfolders,
     patchFolder: patchLoadedFolder,
     removeSessions: removeLoadedSessions,
     moveSession: moveLoadedSession,
     moveFolderParent: moveLoadedFolderParent,
     refreshDaily,
-    refreshProject,
     refreshFolder,
   } = usePlannerCollections({
     api,
@@ -214,7 +205,6 @@ function V3DashboardContent() {
     }
     setSelectedFolderSnapshot(task ?? null);
     await projectSelection.openFolder(api, folder, projects, notify);
-    setNewDocumentOpen(false);
     if (mobileMode) setMobileTab("task");
   }, [api, mobileMode, notify, projectSelection.openFolder, projects, setActiveSession, setActiveSessionSummary]);
   const sessionPanel = useV3SessionPanelController({
@@ -425,7 +415,6 @@ function V3DashboardContent() {
       }
       if (event.key !== "Escape") return;
       if (createOpen) setCreateOpen(false);
-      else if (newDocumentOpen) setNewDocumentOpen(false);
       else if (mobileMode && mobileTab === "chat" && chatOpen) {
         event.preventDefault();
         applyMobileState(reduceMobilePlannerEscape({
@@ -445,7 +434,7 @@ function V3DashboardContent() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSessionKey, applyMobileState, chatOpen, clearProject, closeWorkspace, createOpen, mobileMode, mobileTab, newDocumentOpen, selectedDate, selectedFolderId, selectedProjectId, today, workspaceOpen]);
+  }, [activeSessionKey, applyMobileState, chatOpen, clearProject, closeWorkspace, createOpen, mobileMode, mobileTab, selectedDate, selectedFolderId, selectedProjectId, today, workspaceOpen]);
   const openFolder = (task: PlannerFolder) => {
     clearSessionPanelFocus();
     setActiveSessionSummary(null);
@@ -469,15 +458,9 @@ function V3DashboardContent() {
     setChatOpen(true);
     if (mobileMode && selectedFolderId) setMobileTab("chat");
   }, [clearSessionPanelFocus, mobileMode, selectedFolderId, setActiveSession, setActiveSessionSummary, setActiveTab]);
-  const openProjectDocument = useCallback((documentId: string) => {
-    setStandaloneDocumentId(documentId);
-    setStandaloneDocumentContainer(selectedFolderId ? { kind: "folder", id: selectedFolderId } : null);
-    setDocumentInspectorOpen(true);
-  }, [selectedFolderId]);
   const {
     createFolder,
     saveMemo,
-    createDocument,
     saveDescription,
     acknowledgeReview,
     applyFolderBlocks,
@@ -490,23 +473,18 @@ function V3DashboardContent() {
     selectedDate,
     today,
     daily,
-    selectedProject,
     selectedFolderEntry,
     selectedPageId: selectedProjectId,
     setCreateOpen,
     setCreatePending,
     clearProject,
     setSelectedDate,
-    newDocumentTitle,
-    setNewDocumentTitle,
-    setNewDocumentOpen,
     setAcknowledgedReviewIds,
     notify,
     notifyWriteFailure,
     patchPlannerFolder,
     addFolderToToday,
     refreshDaily,
-    refreshProject,
     refreshFolder,
   });
   const { sessions: panelSessions, reviewSessions } = sessionPanel;
@@ -534,7 +512,6 @@ function V3DashboardContent() {
   const folderSections = selectedFolder ? <FolderWorkspaceSections
     folder={selectedFolder}
     parentFolder={parentFolder}
-    project={folderAggregate ? project : { status: "loading", data: null, message: null }}
     children={(folderAggregate?.subfolders ?? childFolders)
       .map((child) => catalog?.folders.find((current) => current.id === child.id) ?? child)
       .filter((child) => !child.archived)}
@@ -546,10 +523,6 @@ function V3DashboardContent() {
     nodeConnectivity={nodeConnectivity}
     todayFolderIds={todayFolderIds}
     invalidationKey={projectContextInvalidationKey}
-    newDocumentOpen={newDocumentOpen}
-    newDocumentTitle={newDocumentTitle}
-    documentsLoadingMore={projectDocumentsLoadingMore}
-    onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }}
     onOpenFolder={(folder) => { void selectFolder(folder); }}
     onCreateTask={() => setCreateOpen(true)}
     onCreateSubfolder={() => setChildFolderDialog({ mode: "create", parentFolderId: selectedFolder.id, parentName: selectedFolder.name })}
@@ -559,10 +532,6 @@ function V3DashboardContent() {
       else void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure("폴더 보관", error));
     }}
     onToggleChildChecklist={(folder) => toggleFolderChecklist(folder, !folder.checklistEnabled)}
-    onOpenDocument={(page) => openProjectDocument(page.id)}
-    onToggleNewDocument={() => setNewDocumentOpen((value) => !value)}
-    onNewDocumentTitle={setNewDocumentTitle}
-    onCreateDocument={() => { void createDocument(); }}
     onCompleteFolder={plannerActions.completeFolder}
     onToggleFolderToday={plannerActions.toggleFolderToday}
     onMoveFolderToParent={folderParentMove.openFolder}
@@ -731,13 +700,6 @@ function V3DashboardContent() {
           onMarkdownDocumentEditorClosed={() => setMarkdownDocumentsRevision((current) => current + 1)}
         />
       ) : null}
-      <V3StandaloneDocumentInspector
-        open={documentInspectorOpen}
-        documentId={standaloneDocumentId}
-        container={standaloneDocumentContainer}
-        onClose={() => { setDocumentInspectorOpen(false); setStandaloneDocumentId(null); setStandaloneDocumentContainer(null); }}
-        onDeleted={(boardItemId) => useDashboardStore.getState().removeBoardItem(boardItemId)}
-      />
       <AskQuestionBanner
         treeEnabled={detailActive}
         onOpenDetail={() => {

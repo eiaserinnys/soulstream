@@ -12,7 +12,6 @@ import {
 import type { FolderStarChange } from "./folder-star-store";
 import {
   loadDailyPlanner,
-  loadFolderDocumentPage,
   loadFolderSubfolderPage,
   loadStarredFolders,
   loadFolderPlanner,
@@ -75,7 +74,6 @@ export function usePlannerCollections({
   const [starredFolderIndex, setStarredFolderIndex] = useState<PlannerLoadState<PlannerPage<StarredPlannerFolder>>>({ status: "loading", data: null, message: null });
   const [starredLoadedRefreshKey, setStarredLoadedRefreshKey] = useState<number | null>(null);
   const [starredFoldersLoadingMore, setStarredFoldersLoadingMore] = useState(false);
-  const [projectDocumentsLoadingMore, setProjectDocumentsLoadingMore] = useState(false);
   const [subfoldersLoadingMore, setSubfoldersLoadingMore] = useState(false);
   const [mutationRefresh, setMutationRefresh] = useState({ daily: 0, project: 0 });
   const dailyRef = useRef(daily);
@@ -98,7 +96,6 @@ export function usePlannerCollections({
   const projectPageRefreshKey = useV3PageInvalidationKey([
     selectedProject?.id,
     project.data?.project.id,
-    ...(project.data?.documents.map((document) => document.id) ?? []),
   ]);
 
   useEffect(() => {
@@ -241,7 +238,6 @@ export function usePlannerCollections({
   useEffect(() => {
     if (!selectedProject || !selectedFolderId) return;
     let active = true;
-    setProjectDocumentsLoadingMore(false);
     setSubfoldersLoadingMore(false);
     const previous = projectRef.current.data?.project.id === selectedProject.id
       ? projectRef.current.data
@@ -252,9 +248,7 @@ export function usePlannerCollections({
     void loadConfirmedResult({
       previous,
       load: () => loadFolderPlanner(api, selectedFolderId, selectedProject, dependencies),
-      clearsVisibleContent: (current, next) => (
-        current.documents.length > 0 && next.documents.length === 0
-      ),
+      clearsVisibleContent: (current, next) => current.subfolders.length > 0 && next.subfolders.length === 0,
     }).then((data) => {
       if (active) setProject((current) => completePlannerLoad(current, data));
     }).catch((error: unknown) => {
@@ -301,10 +295,6 @@ export function usePlannerCollections({
 
   const refreshDaily = useCallback(() => {
     setMutationRefresh((current) => ({ ...current, daily: current.daily + 1 }));
-  }, []);
-
-  const refreshProject = useCallback(() => {
-    setMutationRefresh((current) => ({ ...current, project: current.project + 1 }));
   }, []);
 
   const refreshFolder = useCallback((folderId: string) => {
@@ -361,27 +351,6 @@ export function usePlannerCollections({
     }
   }, [dependencies, notify, starredFolderIndex.data, starredFoldersLoadingMore]);
 
-  const loadMoreProjectDocuments = useCallback(async () => {
-    const data = project.data;
-    if (!data?.nextDocumentCursor || projectDocumentsLoadingMore) return;
-    setProjectDocumentsLoadingMore(true);
-    try {
-      if (!selectedFolderId) return;
-      const next = await loadFolderDocumentPage(dependencies, selectedFolderId, data.nextDocumentCursor);
-      setProject((current) => current.data?.project.id === data.project.id
-        ? completePlannerLoad(current, {
-          ...current.data,
-          documents: mergePages(current.data.documents, next.items),
-          nextDocumentCursor: next.nextCursor,
-        })
-        : current);
-    } catch (error) {
-      notify(`프로젝트 문서 더 보기 실패 · ${errorText(error)}`);
-    } finally {
-      setProjectDocumentsLoadingMore(false);
-    }
-  }, [dependencies, notify, project.data, projectDocumentsLoadingMore, selectedFolderId]);
-
   const loadMoreSubfolders = useCallback(async () => {
     const data = project.data;
     if (!selectedFolderId || !data?.nextSubfolderCursor || subfoldersLoadingMore) return;
@@ -417,18 +386,15 @@ export function usePlannerCollections({
       || !isStarredFolderRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
     starredFoldersLoadingMore,
     starredFoldersReordering,
-    projectDocumentsLoadingMore,
     subfoldersLoadingMore,
     loadMoreStarredFolders,
     reorderStarredFolders,
-    loadMoreProjectDocuments,
     loadMoreSubfolders,
     patchFolder,
     removeSessions,
     moveSession,
     moveFolderParent,
     refreshDaily,
-    refreshProject,
     refreshFolder,
   };
 }

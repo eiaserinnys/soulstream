@@ -15,7 +15,7 @@ test.use({ serviceWorkers: "allow", timezoneId: "Asia/Seoul" });
 test.describe.configure({ mode: "serial" });
 
 for (const theme of ["dark", "light"] as const) {
-  test(`PR-O · ${theme} · four context menus, succession, move round-trip, and inline board`, async ({ context, page }) => {
+  test(`PR-O · ${theme} · project, task, and session context menus, succession, move round-trip, and inline board`, async ({ context, page }) => {
     test.setTimeout(180_000);
     await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: BASE_URL });
     await preparePage(page, theme, { width: 1440, height: 1000 });
@@ -52,12 +52,6 @@ for (const theme of ["dark", "light"] as const) {
     await expect.poll(() => requests.filter((pathName) => pathName === "/api/board-items").length).toBe(1);
     expect(requests.filter((pathName) => pathName === "/api/markdown-documents/doc-inline")).toHaveLength(0);
 
-    await page.locator(".v3-document-list button").filter({ hasText: "디자인 검수 메모" }).click({ button: "right" });
-    await expect(page.getByRole("menuitem", { name: "문서 열기" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "페이지 ID 복사" })).toBeVisible();
-    await capture(page, theme, "03-mounted-document-context-menu");
-    await page.keyboard.press("Escape");
-
     const alphaRun = page.locator('.v3-task-detail-content .v3-run-row[data-session-id="run-alpha-2"]');
     await alphaRun.click({ button: "right" });
     await expect(page.getByRole("menuitem", { name: "세션 ID 복사" })).toBeVisible();
@@ -65,7 +59,7 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("menuitem", { name: "삭제" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "＋ 이어서 새 세션 (승계)" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "다른 폴더로 이동" })).toBeVisible();
-    await capture(page, theme, "04-run-context-menu");
+    await capture(page, theme, "03-run-context-menu");
     await page.getByRole("menuitem", { name: "세션 ID 복사" }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("run-alpha-2");
 
@@ -75,7 +69,7 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("combobox", { name: "이어받을 이전 세션" })).toHaveValue("0");
     await expect(page.locator(".v3-succession-modal")).toContainText("시각 QA 순회 · 세션 #2");
     await expect(page.locator(".v3-succession-modal")).not.toContainText("run-alpha-2");
-    await capture(page, theme, "05-targeted-succession");
+    await capture(page, theme, "04-targeted-succession");
     await page.getByRole("button", { name: "승계 닫기" }).click();
 
     await alphaRun.click({ button: "right" });
@@ -102,14 +96,14 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: "PR-O 결정 로그 펼치기" }).click();
     await expect(page.getByTestId("v3-inline-markdown")).toContainText("마크다운 본문은 행을 연 뒤에만 불러옵니다.");
     await expect.poll(() => requests.filter((pathName) => pathName === "/api/markdown-documents/doc-inline").length).toBe(1);
-    await capture(page, theme, "06-inline-markdown");
+    await capture(page, theme, "05-inline-markdown");
 
     await page.getByRole("button", { name: "검증 현황 펼치기" }).click();
     const customView = page.locator('iframe[title="검증 현황"]');
     await expect(customView).toBeVisible();
     await expect(customView).toHaveAttribute("sandbox", "allow-scripts");
     await expect(page.getByTestId("v3-inline-markdown")).toHaveCount(0);
-    await capture(page, theme, "07-inline-custom-view");
+    await capture(page, theme, "06-inline-custom-view");
     await expectNoHorizontalOverflow(page);
   });
 }

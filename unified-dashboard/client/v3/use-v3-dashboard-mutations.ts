@@ -19,23 +19,18 @@ export function useV3DashboardMutations({
   selectedDate,
   today,
   daily,
-  selectedProject,
   selectedFolderEntry,
   selectedPageId,
   setCreateOpen,
   setCreatePending,
   clearProject,
   setSelectedDate,
-  newDocumentTitle,
-  setNewDocumentTitle,
-  setNewDocumentOpen,
   setAcknowledgedReviewIds,
   notify,
   notifyWriteFailure,
   patchPlannerFolder,
   addFolderToToday,
   refreshDaily,
-  refreshProject,
   refreshFolder,
 }: {
   api: PageApiClient;
@@ -45,23 +40,18 @@ export function useV3DashboardMutations({
   selectedDate: string;
   today: string;
   daily: PlannerLoadState<DailyPlannerData>;
-  selectedProject: PageDto | null;
   selectedFolderEntry: PlannerFolder | null;
   selectedPageId: string | null;
   setCreateOpen: Dispatch<SetStateAction<boolean>>;
   setCreatePending: Dispatch<SetStateAction<boolean>>;
   clearProject(): void;
   setSelectedDate: Dispatch<SetStateAction<string>>;
-  newDocumentTitle: string;
-  setNewDocumentTitle: Dispatch<SetStateAction<string>>;
-  setNewDocumentOpen: Dispatch<SetStateAction<boolean>>;
   setAcknowledgedReviewIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   notify(message: string): void;
   notifyWriteFailure(action: string, error: unknown): string;
   patchPlannerFolder(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
   addFolderToToday(task: PlannerFolder): void;
   refreshDaily(): void;
-  refreshProject(): void;
   refreshFolder(folderId: string): void;
 }) {
   const createFolder = useCallback(async (
@@ -119,20 +109,6 @@ export function useV3DashboardMutations({
     }
   }, [daily.data, mutationPort, notify, notifyWriteFailure, refreshDaily]);
 
-  const createDocument = useCallback(async () => {
-    const title = newDocumentTitle.trim();
-    if (!title || !selectedProject) return;
-    try {
-      await mutationPort.createDocument({ title, sourcePageId: selectedProject.id });
-      setNewDocumentTitle("");
-      setNewDocumentOpen(false);
-      refreshProject();
-      notify(`새 문서 생성 · ${title}`);
-    } catch (error) {
-      notifyWriteFailure("새 문서 생성", error);
-    }
-  }, [mutationPort, newDocumentTitle, notify, notifyWriteFailure, refreshProject, selectedProject, setNewDocumentOpen, setNewDocumentTitle]);
-
   const saveDescription = useCallback(async (markdown: string) => {
     if (!selectedFolderEntry) return;
     try {
@@ -170,7 +146,6 @@ export function useV3DashboardMutations({
   return {
     createFolder,
     saveMemo,
-    createDocument,
     saveDescription,
     acknowledgeReview,
     applyFolderBlocks,

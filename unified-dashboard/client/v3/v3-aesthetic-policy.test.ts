@@ -37,12 +37,14 @@ describe("v3 aesthetic policy", () => {
     expect(globals).toContain("--muted-foreground: #c8cdd7;");
   });
 
-  it("removes nested glass framing from project context and documents", () => {
+  it("removes the general-page document section while retaining folder context and subfolders", () => {
     const view = read("./FolderWorkspaceSections.tsx");
     const css = read("./v3-planner-surfaces.css");
     const contextRule = css.match(/\.v3-project-context\s*\{[^}]*\}/s)?.[0] ?? "";
 
-    expect(view).toContain('className="v3-documents"');
+    expect(view).not.toContain('className="v3-documents"');
+    expect(view).not.toContain('className="v3-document-list"');
+    expect(view).toContain('className="v3-child-folders"');
     expect(view).not.toContain("documentWebglActive");
     expect(contextRule).not.toContain("border:");
   });

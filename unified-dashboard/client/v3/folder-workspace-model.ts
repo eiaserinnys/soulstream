@@ -18,6 +18,5 @@ export function plannerEntryForFolder(
     progress: null,
     parentFolderId: parentFolderId,
     sessionIds: [],
-    mountedDocuments: [],
   };
 }

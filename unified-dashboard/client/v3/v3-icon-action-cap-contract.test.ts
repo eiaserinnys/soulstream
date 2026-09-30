@@ -31,11 +31,10 @@ describe("v3 icon action cap contract", () => {
     ["./FolderWorkspace.tsx", ["업무 창 닫기", "채팅 닫기"]],
     ["./FolderBoardWorkspace.tsx", ["문서 편집기 높이 축소"]],
     ["./PlannerViews.tsx", ["아침 정리", "새 업무"]],
-    ["./FolderWorkspaceSections.tsx", ["새 문서", "이전 문서 더 보기"]],
+    ["./FolderWorkspaceSections.tsx", ["하위 폴더 더 보기"]],
     ["./V3Navigation.tsx", ["별표 업무 더 보기", "새 프로젝트"]],
     ["./V3SessionPanel.tsx", ["확인 처리"]],
     ["./V3SessionReviewBanner.tsx", ["검수 확인"]],
-    ["./V3StandaloneDocumentInspector.tsx", ["문서 패널 닫기"]],
   ] as const)("%s uses the shared icon cap for its chrome actions", (path, labels) => {
     const source = read(path);
     expect(source).toContain("DashboardIconCap");

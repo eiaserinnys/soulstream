@@ -56,7 +56,6 @@ function plannerTask(id: string, title: string): PlannerFolder {
     progress: null,
     parentFolderId: null,
     sessionIds: [],
-    mountedDocuments: [],
   };
 }
 

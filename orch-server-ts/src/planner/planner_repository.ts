@@ -64,7 +64,7 @@ export class PlannerRepository implements PlannerReadProvider {
       WHERE s.folder_id = ${folderId} ORDER BY s.position_key, i.position_key, i.id`;
     return { folder: serializeChecklistRow(row.folder as Record<string, unknown>), page, blocks: blocks.map(blockDto),
       sections: sections.map(serializeChecklistRow), items: items.map(serializeChecklistRow),
-      subfolders: await this.getSubfolders(folderId, input), documents: await this.getDocuments(folderId, input),
+      subfolders: await this.getSubfolders(folderId, input),
       sessions: await this.getSessions(folderId, input) };
   }
   async getSubfolders(folderId: string, input: PlannerPageInput) {
@@ -74,21 +74,6 @@ export class PlannerRepository implements PlannerReadProvider {
       AND id NOT IN ('claude', 'llm') AND (${c?.first ?? null}::integer IS NULL OR (sort_order, id) > (${c?.first ?? null}::integer, ${c?.second ?? ""}))
       ORDER BY sort_order, id LIMIT ${input.limit + 1}`;
     return sliceRows(rows, input.limit, "subfolder", r => [String(r.sort_order), String(r.id)], serializeChecklistRow);
-  }
-  async getDocuments(folderId: string, input: PlannerPageInput) {
-    const sql = await this.resolver.resolveSql();
-    const c = input.cursor ? decodeCursor(input.cursor, "document") : null;
-    const rows = await sql`WITH mounted AS (
-      SELECT DISTINCT ON (p.id) p.id, p.title, p.daily_date::text, p.version, p.archived, p.metadata, p.created_at, p.updated_at,
-        b.position_key AS mount_position
-      FROM folders f JOIN blocks b ON b.page_id = f.project_page_id
-      JOIN block_links l ON l.source_block_id = b.id AND l.link_kind = 'mount'
-      JOIN pages p ON p.id = l.target_page_id AND NOT p.archived
-      WHERE f.id = ${folderId} AND NOT EXISTS(SELECT 1 FROM folders owner WHERE owner.project_page_id = p.id)
-      ORDER BY p.id, b.position_key, b.id, l.ordinal
-    ) SELECT * FROM mounted WHERE ${c?.first ?? null}::text IS NULL OR (mount_position, id) < (${c?.first ?? ""}, ${c?.second ?? ""})
-      ORDER BY mount_position DESC, id DESC LIMIT ${input.limit + 1}`;
-    return sliceRows(rows, input.limit, "document", r => [String(r.mount_position), String(r.id)], pageDto);
   }
   async getSessions(folderId: string, input: PlannerPageInput) {
     const sql = await this.resolver.resolveSql();

@@ -18,10 +18,6 @@ export class BrowserPlannerMutationPort implements PlannerFolderCreationPort {
     private readonly fetchImplementation: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
   ) {}
 
-  async createDocument(input: { title: string; sourcePageId: string }) {
-    return await this.createMountedPage(input);
-  }
-
   async createFolderIdentity(input: {
     title: string;
     description: string;
@@ -87,44 +83,6 @@ export class BrowserPlannerMutationPort implements PlannerFolderCreationPort {
       text: input.text,
       properties: {},
     });
-  }
-
-  private async createMountedPage(input: { title: string; sourcePageId: string }) {
-    const source = await this.api.getPage(input.sourcePageId);
-    const scratchTempId = operationId("page-seed");
-    const seeded = await this.api.applyOperations(input.sourcePageId, {
-      expectedVersion: source.page.version,
-      expectedStateVector: decodeStateVector(source.state_vector),
-      idempotencyKey: operationId("page-seed-create"),
-      reason: "v3 planner page creation seed",
-      operations: [{
-        op: "create_block",
-        temp_id: scratchTempId,
-        parent_id: null,
-        after_block_id: lastRootBlockId(source.blocks),
-        block_type: "paragraph",
-        text: "",
-        properties: {},
-        collapsed: false,
-      }],
-    });
-    const scratchBlockId = seeded.temp_id_mapping[scratchTempId];
-    if (!scratchBlockId) throw new Error("새 페이지 seed 블록 ID를 받지 못했습니다");
-    const currentSource = await this.api.getPage(input.sourcePageId);
-    const pageId = operationId("page");
-    await this.api.transferBlocks({
-      source: {
-        pageId: input.sourcePageId,
-        expectedVersion: currentSource.page.version,
-        expectedStateVector: decodeStateVector(currentSource.state_vector),
-        blockIds: [scratchBlockId],
-      },
-      target: { kind: "new", pageId, title: input.title },
-      sourceMount: { title: input.title, tempId: operationId("page-mount") },
-      idempotencyKey: operationId("page-extract"),
-      reason: "v3 planner create page and mount",
-    });
-    return { pageId };
   }
 
   private async appendBlock(
