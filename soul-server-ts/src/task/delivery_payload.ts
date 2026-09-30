@@ -38,7 +38,8 @@ export function readCanonicalDeliveryPayload(
 }
 
 function requiredString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0) {
+  // External messages may omit the sender label or contain only attachments.
+  if (typeof value !== "string") {
     throw new Error(`Stored delivery payload is missing ${field}`);
   }
   return value;
