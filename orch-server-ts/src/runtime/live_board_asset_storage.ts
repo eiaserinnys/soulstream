@@ -216,8 +216,7 @@ async function signedFetch(
     date,
     canonicalRequest,
   ));
-  const authorization = [
-    "AWS4-HMAC-SHA256",
+  const authorization = "AWS4-HMAC-SHA256 " + [
     `Credential=${config.accessKeyId}/${credentialScope(date)}`,
     `SignedHeaders=${signedHeaders}`,
     `Signature=${signature}`,

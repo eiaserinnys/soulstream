@@ -4,6 +4,7 @@ import { registerR2SettingsRoutes } from "../src/admin/r2_settings_routes.js";
 import { readR2Settings, updateR2Settings, r2SettingsMetadata, normalizeR2Fields } from "../src/system/r2_settings.js";
 import { createApp } from "../src/app.js";
 import { parseOrchServerConfig } from "../src/config.js";
+import { checkR2Bucket } from "../src/runtime/live_board_asset_storage.js";
 import { createR2StorageResolver } from "../src/runtime/r2_storage_resolver.js";
 
 const endpoint = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
@@ -29,6 +30,13 @@ function database() {
 }
 
 describe("central R2 settings", () => {
+  it("uses the SigV4 authorization scheme followed by a space for HeadBucket", async () => {
+    const fetchMock = vi.fn(async (_url: URL, _init: RequestInit) => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await checkR2Bucket(fields);
+    const authorization = new Headers(fetchMock.mock.calls[0]![1].headers).get("authorization");
+    expect(authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=access\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=[a-f0-9]{64}$/);
+  });
   it("keeps board and attachment independent and retains, replaces, deletes secrets with CAS", async () => {
     const { sql } = database();
     let saved = await updateR2Settings(sql, "board", { ...fields, expectedVersion: 1, updatedBy: "admin@example.com" });
