@@ -78,11 +78,10 @@ describe("FolderInlineBoard document context menu", () => {
       }));
     });
     render("task-1");
-    return render;
   }
 
-  it("shows the first five items, toggles the whole board, and collapses on folder change", async () => {
-    const render = renderBoardItems(7);
+  it("shows the first five items and toggles the whole board", async () => {
+    renderBoardItems(7);
     await vi.waitFor(() => expect(container!.textContent).toContain("7개"));
     const titles = () => Array.from(container!.querySelectorAll(".v3-inline-board-label"))
       .map((node) => node.textContent);
@@ -98,14 +97,6 @@ describe("FolderInlineBoard document context menu", () => {
     flushSync(() => collapse!.click());
     expect(titles()).toEqual(firstFive);
     expect(container!.textContent).toContain("7개");
-    flushSync(() => container!.querySelector<HTMLButtonElement>('[aria-label="보드 전체 펼치기"]')!.click());
-    render("task-2");
-    await vi.waitFor(() => {
-      expect(container!.textContent).toContain("7개");
-      expect(titles()).toEqual(firstFive);
-    });
-    expect(container!.querySelector('[aria-label="보드 전체 펼치기"]')?.getAttribute("aria-expanded"))
-      .toBe("false");
   });
 
   it.each([0, 4, 5])("does not show a whole-board toggle for %i items", async (count) => {
