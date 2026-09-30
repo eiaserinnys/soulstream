@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import type { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -138,6 +139,54 @@ function admitted(
 }
 
 describe("TaskInterventionRoute.addIntervention", () => {
+  it.each(["running", "completed"] as const)(
+    "delivers stored Slack messages with an empty user to %s sessions",
+    async (status) => {
+      const deliveryId = "79797979-7979-4797-8797-797979797979";
+      const task = makeTask({ status });
+      const callerInfo = { source: "slack", display_name: "Director" };
+      const canonical = buildCanonicalDeliveryPayload({
+        text: "앞에 이거 뭐야?",
+        user: "",
+        callerInfo,
+        source: "user_message",
+        completionId: `message:${deliveryId}`,
+        relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      });
+      const admission = admitted(deliveryId, "human_live_steer");
+      admission.row.payload = canonical.payload;
+      admission.row.payload_hash = canonical.payloadHash;
+      const gate = {
+        admit: vi.fn().mockResolvedValue(admission),
+        beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+        recordResult: vi.fn().mockResolvedValue(undefined),
+        deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
+      };
+      const { route, runningInterventionTransition, autoResumeTransition } =
+        makeSubject([task], gate);
+
+      await route.addIntervention({
+        agentSessionId: task.agentSessionId,
+        text: "retry must retain the stored message",
+        user: "",
+        deliveryId,
+        deliveryIntent: "human_live_steer",
+        source: "user_message",
+      }, vi.fn());
+
+      const transition = status === "running"
+        ? runningInterventionTransition.deliver
+        : autoResumeTransition.resume;
+      expect(transition).toHaveBeenCalledOnce();
+      expect(vi.mocked(transition).mock.calls[0]?.[1]).toMatchObject({
+        text: "앞에 이거 뭐야?",
+        user: "",
+        callerInfo,
+        deliveryId,
+      });
+    },
+  );
+
   it("keeps admitted human live steering on the existing live-delivery path", async () => {
     const deliveryId = "77777777-7777-4777-8777-777777777777";
     const gate = {
