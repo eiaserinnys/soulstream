@@ -6,15 +6,16 @@ const schema = readFileSync(fileURLToPath(new URL("../../packages/db-schema/sql/
 
 describe("canonical folder schema", () => {
   it("has one folder identity and one audit stream", () => {
-    for (const table of ["folders", "checklist_sections", "checklist_items", "folder_operations", "planner_starred_page_order"]) {
+    for (const table of ["folders", "cards", "card_reports", "card_questions", "folder_operations", "planner_starred_page_order"]) {
       expect(schema).toContain(`CREATE TABLE IF NOT EXISTS ${table} (`);
     }
     expect(schema).not.toMatch(/CREATE (?:TABLE|OR REPLACE VIEW)(?: IF NOT EXISTS)? (?:tasks|task_sections|task_items|task_operations|runbooks|folder_project_operations|checklist_task_projection_outbox)\b/);
   });
 
-  it("has a single board owner and preserves checklist lineage", () => {
+  it("has a single board owner and uses the session card link", () => {
     const board = schema.slice(schema.indexOf("CREATE TABLE IF NOT EXISTS board_items ("), schema.indexOf("CREATE TABLE IF NOT EXISTS board_yjs_documents ("));
-    expect(board).toContain("source_checklist_item_id");
+    expect(board).not.toContain("source_checklist_item_id");
+    expect(schema).toContain("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS card_id TEXT REFERENCES cards(id) ON DELETE SET NULL");
     expect(board).not.toMatch(/container_kind|container_id|board_items_fill_container_defaults/);
     expect(schema).toContain("owner_folder_id");
   });

@@ -7,7 +7,7 @@ const apps: ReturnType<typeof Fastify>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(a => a.close())); });
 function setup(loggedIn = true) {
   const slice = { items: [], nextCursor: null };
-  const provider = { getToday: vi.fn(async () => ({ folders: [], memoBlocks: [], reviewSessionIds: [] })),
+  const provider = { getToday: vi.fn(async () => ({ attention: [],running: [],queued: [],folders: [],memoBlocks: [],reviewSessionIds: [] })),
     getStarredFolders: vi.fn(async () => slice), getDailyHistory: vi.fn(async () => ({ dates: [] })),
     getFolder: vi.fn(async () => ({ folder: { id: "f" } })), getSubfolders: vi.fn(async () => slice),
     getSessions: vi.fn(async () => slice) };

@@ -213,7 +213,7 @@ export function buildMigrationPlan(migrations, ledger, shape) {
 
   let bootstrapCount = 0;
   if (state === "current") {
-    bootstrapCount = migrations.findIndex((item) => item.id === "108_unify_folders.sql") + 1;
+    bootstrapCount = migrations.findIndex((item) => item.id === "109_cards.sql") + 1;
   }
   if (state === "pre_folder_unification") {
     if (shape.deliveryAttemptTerminologyCurrent) {

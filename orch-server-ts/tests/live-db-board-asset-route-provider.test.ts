@@ -414,7 +414,6 @@ function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, u
     container_kind: "folder",
     container_id: "folder-a",
     membership_kind: "primary",
-    source_checklist_item_id: null,
     item_type: "task",
     item_id: "rb-1",
     x: 20,
@@ -463,7 +462,6 @@ function serializeBoardItemRow(row: Record<string, unknown>) {
 
     folderId: String(row.container_id ?? row.folder_id),
     membershipKind: String(row.membership_kind ?? "primary"),
-    sourceChecklistItemId: row.source_checklist_item_id as string | null,
     itemType: String(row.item_type),
     itemId: String(row.item_id),
     x: Number(row.x ?? 0),

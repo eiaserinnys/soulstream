@@ -200,7 +200,6 @@ function sessionItem(
 
     folderId,
     membershipKind,
-    sourceChecklistItemId: null,
     itemType: "session",
     itemId: "session-a",
     x: 0,

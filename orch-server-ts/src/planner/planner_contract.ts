@@ -41,6 +41,9 @@ export interface PlannerSessionDto extends Record<string, unknown> {
 }
 
 export interface PlannerTodayDto {
+  attention: Record<string, unknown>[];
+  running: Record<string, unknown>[];
+  queued: Record<string, unknown>[];
   daily: { page: PlannerPageDto; blocks: PlannerBlockDto[]; state_vector: string };
   folders: PlannerFolderDto[];
   memoBlocks: PlannerBlockDto[];
@@ -51,8 +54,7 @@ export interface PlannerFolderDetailDto {
   folder: Record<string, unknown>;
   page: PlannerPageDto;
   blocks: PlannerBlockDto[];
-  sections: Record<string, unknown>[];
-  items: Record<string, unknown>[];
+  cards: Record<string, unknown>[];
   subfolders: PlannerPageSlice<Record<string, unknown>>;
   sessions: PlannerPageSlice<PlannerSessionDto>;
 }

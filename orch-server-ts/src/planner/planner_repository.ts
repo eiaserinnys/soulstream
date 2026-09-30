@@ -47,7 +47,13 @@ export class PlannerRepository implements PlannerReadProvider {
       GROUP BY f.id ORDER BY position, f.id`;
     const review = await sql`SELECT session_id FROM sessions WHERE review_state = 'needs_review'
       ORDER BY updated_at DESC, session_id DESC LIMIT 50`;
-    return { daily: { page: pageDto(page), blocks: blocks.map(blockDto), state_vector: "" },
+    const cards = await sql`SELECT c.* FROM cards c JOIN folders f ON f.id=c.folder_id
+      WHERE NOT c.archived AND NOT f.archived AND (c.status IN ('review','running','queued')
+        OR c.status='blocked' AND c.blocked_kind IN ('question','no_report'))
+      ORDER BY c.queue_position_key COLLATE "C" NULLS LAST,c.updated_at DESC,c.id`;
+    const byStatus = (status: string) => cards.filter(c=>c.status === status).map(serializeCardRow);
+    return { attention: cards.filter(c=>c.status === 'review' || c.status === 'blocked').map(serializeCardRow),
+      running: byStatus('running'), queued: byStatus('queued'), daily: { page: pageDto(page), blocks: blocks.map(blockDto), state_vector: "" },
       folders: await loadPlannerFolders(sql, mounted.map(r => String(r.id))),
       memoBlocks: blocks.filter(r => r.block_type === "paragraph" && !r.is_mount).map(blockDto),
       reviewSessionIds: review.map(r => String(r.session_id)) };
@@ -59,12 +65,9 @@ export class PlannerRepository implements PlannerReadProvider {
     if (!row) return null;
     const page = pageDto(row.page as Record<string, unknown>);
     const blocks = await sql`SELECT * FROM blocks WHERE page_id = ${page.id} ORDER BY position_key, id`;
-    const sections = await sql`SELECT * FROM checklist_sections WHERE folder_id = ${folderId} ORDER BY position_key, id`;
-    const items = await sql`SELECT i.* FROM checklist_items i JOIN checklist_sections s ON s.id = i.section_id
-      WHERE s.folder_id = ${folderId} ORDER BY s.position_key, i.position_key, i.id`;
+    const cards = await sql`SELECT * FROM cards WHERE folder_id = ${folderId} AND NOT archived ORDER BY position_key COLLATE "C", id`;
     return { folder: serializeCardRow(row.folder as Record<string, unknown>), page, blocks: blocks.map(blockDto),
-      sections: sections.map(serializeCardRow), items: items.map(serializeCardRow),
-      subfolders: await this.getSubfolders(folderId, input),
+      cards: cards.map(serializeCardRow), subfolders: await this.getSubfolders(folderId, input),
       sessions: await this.getSessions(folderId, input) };
   }
   async getSubfolders(folderId: string, input: PlannerPageInput) {

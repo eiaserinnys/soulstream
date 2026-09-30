@@ -180,7 +180,7 @@ function createRouteApp() {
       resolveTokenAccess: vi.fn(async () => ({ ok: true as const })),
       userPayloadExtra: accessProvider.userPayloadExtra,
     },
-    folderRoutes: { provider: createFolderProvider(), accessProvider, checklistServiceProvider: async () => ({ getFolder: async (id: string) => ({ folder: { id }, sections: [], items: [] }) } as never) },
+    folderRoutes: { provider: createFolderProvider(), accessProvider, cardServiceProvider: async () => ({ getFolder: async (id: string) => ({ folder: { id }, sections: [], items: [] }) } as never) },
     boardItemRoutes: {
       provider: createBoardItemProvider(),
       accessProvider,

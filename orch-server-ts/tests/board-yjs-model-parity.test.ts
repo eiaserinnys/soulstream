@@ -102,7 +102,6 @@ describe("board_yjs_model", () => {
       id: "custom_view:cv-1",
       folderId: "folder-1",
       membershipKind: "primary",
-      sourceChecklistItemId: null,
       itemType: "custom_view",
       itemId: "cv-1",
       x: 120,
@@ -127,7 +126,6 @@ describe("board_yjs_model", () => {
         itemType: "session",
         itemId: "s1",
         membershipKind: "primary",
-        sourceChecklistItemId: "task-item-1",
         x: 280,
         y: 160,
         metadata: {},
@@ -146,7 +144,6 @@ describe("board_yjs_model", () => {
         id: "session:s1",
         folderId: "folder-1",
         membershipKind: "primary",
-        sourceChecklistItemId: "task-item-1",
       }),
     ]);
   });
@@ -295,7 +292,6 @@ describe("board_yjs_model", () => {
       id: "markdown:doc-1",
       folderId: "folder-1",
       membershipKind: "primary",
-      sourceChecklistItemId: null,
     });
     expect(readBoardYDocReplica({
       folderId: "folder-1",

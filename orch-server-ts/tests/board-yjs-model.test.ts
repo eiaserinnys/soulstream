@@ -31,7 +31,6 @@ describe("orch board Yjs model", () => {
           id: "session:s2",
           folderId: "folder-1",
           membershipKind: "primary",
-          sourceChecklistItemId: "item-2",
           itemType: "session",
           itemId: "s2",
           x: 300,
@@ -42,7 +41,6 @@ describe("orch board Yjs model", () => {
           id: "markdown:d1",
           folderId: "folder-1",
           membershipKind: "primary",
-          sourceChecklistItemId: null,
           itemType: "markdown",
           itemId: "d1",
           x: 100,
@@ -65,7 +63,6 @@ describe("orch board Yjs model", () => {
         }),
         expect.objectContaining({
           id: "session:s2",
-          sourceChecklistItemId: "item-2",
           x: 300,
           y: 200,
         }),

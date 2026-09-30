@@ -382,7 +382,6 @@ function snapshotWithBoardItems(
       x: item.x,
       y: item.y,
       membership_kind: item.membershipKind,
-      source_checklist_item_id: item.sourceChecklistItemId,
       metadata: item.metadata,
     });
   }

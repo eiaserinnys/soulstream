@@ -35,7 +35,6 @@ describe("BoardProjectionReadRepository.listFolderItems", () => {
       bi_id: "session:session-1",
       bi_folder_id: "folder-1",
       bi_membership_kind: "primary",
-      bi_source_checklist_item_id: null,
       bi_item_type: "session",
       bi_item_id: "session-1",
       bi_x: 10,
@@ -176,7 +175,6 @@ describe("BoardProjectionReadRepository.getBoardItemsByFolder", () => {
   it("returns only rows belonging to the requested folder", async () => {
     const rows = ["folder-1", "folder-2"].map((folderId) => ({
       id: `markdown:${folderId}`, folder_id: folderId, membership_kind: "primary",
-      source_checklist_item_id: null, item_type: "markdown", item_id: folderId,
       x: 0, y: 0, metadata: {}, created_at: null, updated_at: null,
     }));
     const { sql, calls } = createMockSql((call) => rows.filter((row) => row.folder_id === call.values[0]));

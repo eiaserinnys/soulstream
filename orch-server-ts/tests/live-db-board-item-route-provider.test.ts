@@ -42,7 +42,6 @@ describe("live DB board item route provider", () => {
 
         folderId: "folder-a",
         membershipKind: "primary",
-        sourceChecklistItemId: null,
         itemType: "markdown",
         itemId: "doc-1",
         x: 20,
@@ -66,7 +65,6 @@ describe("live DB board item route provider", () => {
 
       folderId: "task-1",
       membershipKind: "primary",
-      sourceChecklistItemId: "section-1",
       itemType: "session",
       itemId: "sess-1",
       x: 10,
@@ -143,7 +141,6 @@ function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, u
     id: "item-a",
     folder_id: "folder-a",
     membership_kind: "primary",
-    source_checklist_item_id: null,
     item_type: "session",
     item_id: "sess-1",
     x: 20,

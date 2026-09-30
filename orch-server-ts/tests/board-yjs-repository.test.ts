@@ -77,7 +77,6 @@ describe("orch BoardYjsRepository", () => {
         id: "markdown:d1",
         folderId: "folder-1",
         membershipKind: "primary",
-        sourceChecklistItemId: null,
         itemType: "markdown",
         itemId: "d1",
         x: 280,
@@ -136,7 +135,6 @@ describe("orch BoardYjsRepository", () => {
         folderId: "folder-1",
 
         membershipKind: "primary" as const,
-        sourceChecklistItemId: danglingSourceChecklistItemId,
         itemType: "session" as const,
         itemId: "poisoned",
         x: 0,
@@ -147,7 +145,6 @@ describe("orch BoardYjsRepository", () => {
         folderId: "folder-1",
 
         membershipKind: "primary" as const,
-        sourceChecklistItemId: existingSourceChecklistItemId,
         itemType: "session" as const,
         itemId: "valid",
         x: 10,
@@ -158,7 +155,6 @@ describe("orch BoardYjsRepository", () => {
         folderId: "folder-1",
 
         membershipKind: "primary" as const,
-        sourceChecklistItemId: null,
         itemType: "markdown" as const,
         itemId: "created",
         x: 20,
@@ -211,7 +207,6 @@ describe("orch BoardYjsRepository", () => {
       expect.objectContaining({ id: "session:poisoned", sourceChecklistItemId: null }),
       expect.objectContaining({
         id: "session:valid",
-        sourceChecklistItemId: existingSourceChecklistItemId,
       }),
       expect.objectContaining({ id: "markdown:created" }),
       expect.objectContaining({ id: "markdown:moved" }),
@@ -251,7 +246,6 @@ describe("orch BoardYjsRepository", () => {
           id: "markdown:d1",
           folder_id: "folder-1",
           membership_kind: "primary",
-          source_checklist_item_id: null,
           item_type: "markdown",
           item_id: "d1",
           x: 10,

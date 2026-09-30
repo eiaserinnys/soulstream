@@ -440,6 +440,10 @@
     {
       "id": "108_unify_folders.sql",
       "sha256": "9f4073af08968d0c362872e94659a9e63b30703cff77ec174bcae2320b2f2813"
+    },
+    {
+      "id": "109_cards.sql",
+      "sha256": "6fba28e99f14ca7a740146fac261bcf4ac3b9f05ab13e0888ac6bf5ec695f13d"
     }
   ]
 }
