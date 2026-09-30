@@ -13,10 +13,6 @@ const ConfigSchema = z
     databaseUrl: z.string().min(1),
     authBearerToken: z.string(),
     trustProxy: z.literal(DEFAULT_TRUSTED_PROXY).default(DEFAULT_TRUSTED_PROXY),
-    r2_board_assets_access_key_id: z.string().optional(),
-    r2_board_assets_secret_access_key: z.string().optional(),
-    r2_board_assets_bucket: z.string().optional(),
-    r2_board_assets_endpoint: z.string().optional(),
   })
   .strict();
 
@@ -35,10 +31,6 @@ export type OrchServerEnvironmentConfig = {
   readonly database_url: string;
   readonly dashboard_dir: string;
   readonly dashboard_user_folder_access_configured: boolean;
-  readonly r2_board_assets_access_key_id: string;
-  readonly r2_board_assets_secret_access_key: string;
-  readonly r2_board_assets_bucket: string;
-  readonly r2_board_assets_endpoint: string;
   readonly atom_enabled: boolean;
   readonly atom_server_url: string;
   readonly atom_api_key: string;
@@ -72,10 +64,6 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "PORT",
   "DATABASE_URL",
   "DASHBOARD_DIR",
-  "R2_BOARD_ASSETS_ACCESS_KEY_ID",
-  "R2_BOARD_ASSETS_SECRET_ACCESS_KEY",
-  "R2_BOARD_ASSETS_BUCKET",
-  "R2_BOARD_ASSETS_ENDPOINT",
   "ATOM_ENABLED",
   "ATOM_SERVER_URL",
   "ATOM_API_KEY",
@@ -144,10 +132,6 @@ export function loadOrchServerEnvironment(
     dashboard_dir: env.DASHBOARD_DIR ?? "",
     dashboard_user_folder_access_configured:
       (env.DASHBOARD_USER_FOLDER_ACCESS?.trim() ?? "").length > 0,
-    r2_board_assets_access_key_id: env.R2_BOARD_ASSETS_ACCESS_KEY_ID ?? "",
-    r2_board_assets_secret_access_key: env.R2_BOARD_ASSETS_SECRET_ACCESS_KEY ?? "",
-    r2_board_assets_bucket: env.R2_BOARD_ASSETS_BUCKET ?? "",
-    r2_board_assets_endpoint: env.R2_BOARD_ASSETS_ENDPOINT ?? "",
     atom_enabled: parseBoolean(env.ATOM_ENABLED, "ATOM_ENABLED", false),
     atom_server_url: env.ATOM_SERVER_URL ?? "",
     atom_api_key: env.ATOM_API_KEY ?? "",
@@ -196,10 +180,6 @@ export function toOrchServerTsConfig(
     databaseUrl: config.database_url,
     authBearerToken: config.auth_bearer_token,
     trustProxy: config.trusted_proxy,
-    r2_board_assets_access_key_id: config.r2_board_assets_access_key_id,
-    r2_board_assets_secret_access_key: config.r2_board_assets_secret_access_key,
-    r2_board_assets_bucket: config.r2_board_assets_bucket,
-    r2_board_assets_endpoint: config.r2_board_assets_endpoint,
   });
 }
 

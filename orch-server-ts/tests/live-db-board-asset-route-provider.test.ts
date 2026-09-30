@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BoardAssetRouteError,
   createLiveBoardAssetRouteProvider,
-  resolveLiveBoardAssetStorageFromConfig,
   type BoardAssetRouteProvider,
   type LiveBoardAssetStorage,
   type LivePostgresSql,
@@ -50,12 +49,32 @@ describe("live DB board asset route provider", () => {
         503,
       ),
     );
-    await expect(resolveLiveBoardAssetStorageFromConfig({})).resolves.toBeNull();
-    await expect(
-      resolveLiveBoardAssetStorageFromConfig({
-        r2_board_assets_bucket: "board-assets",
-      }),
-    ).resolves.toBeNull();
+
+  });
+
+  it("uses the latest central DB board key for upload, verification and signed download", async () => {
+    let accessKeyId = "db-access";
+    const harness = createSqlHarness((text, values) => {
+      if (text.includes("FROM system_settings")) {
+        expect(values[0]).toBe("board_r2");
+        return [{ value: { endpoint: `https://${"a".repeat(32)}.r2.cloudflarestorage.com`, bucket: "private-board", accessKeyId, secretAccessKey: "db-secret" }, version: 1 }];
+      }
+      if (text.includes("file_assets") && (text.includes("SELECT *") || text.includes("RETURNING"))) return [fileAssetRow()];
+      if (text.includes("INSERT INTO board_items")) return [boardItemRow({ item_type: "asset", metadata: { storageKey: "file" } })];
+      return [];
+    });
+    const provider = createProvider(harness);
+    const upload = await provider.initFileAsset({ folderId: "folder-a", name: "photo.png", mimeType: "image/png", byteSize: 1234 }) as { uploadUrl: string };
+    expect(upload.uploadUrl).toContain("db-access%2F");
+    accessKeyId = "rotated-db-access";
+    const fetchMock = vi.fn(async (_url: URL, _init: RequestInit) => new Response(null, { headers: { "content-length": "1234", "content-type": "image/png" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const commit = await provider.commitFileAsset({ folderId: "folder-a", assetId: "asset-1", x: 0, y: 0, parts: [] }) as { boardItem: { metadata: { signedUrl: string } } };
+      expect(commit.boardItem.metadata.signedUrl).toContain("rotated-db-access%2F");
+      expect(fetchMock.mock.calls[0]![1].headers).toMatchObject({ authorization: expect.stringContaining("Credential=rotated-db-access/") });
+      expect(fetchMock.mock.calls[0]![1].method).toBe("HEAD");
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it("initializes single uploads with Python quota, safe key and pending DB semantics", async () => {

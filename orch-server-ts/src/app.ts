@@ -1,3 +1,4 @@
+import { registerR2SettingsRoutes, type R2SettingsProvider } from "./admin/r2_settings_routes.js";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerCardDispatchSettingsRoutes, type CardDispatchSettingsRouteOptions } from "./cards/card_dispatch_settings_routes.js";
 
@@ -171,6 +172,7 @@ import {
 } from "./ui-events/ui_event_routes.js";
 
 export type CreateAppOptions = {
+  r2SettingsRoutes?: R2SettingsProvider;
   config: OrchServerTsConfig;
   logDestination?: ProductionLogDestination;
   corsAllowedOrigins?: readonly string[];
@@ -331,6 +333,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.authRoutes !== undefined) {
     registerAuthRoutes(app, options.authRoutes);
   }
+  if (options.r2SettingsRoutes) registerR2SettingsRoutes(app, options.r2SettingsRoutes);
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
   }

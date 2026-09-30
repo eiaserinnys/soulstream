@@ -7,11 +7,11 @@ import {
   type BoardAssetRouteProvider,
 } from "../board/board_asset_routes.js";
 import type { BoardItemRecord, BoardItemRouteProvider } from "../board/board_item_routes.js";
-import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
+import { createR2StorageResolver } from "./r2_storage_resolver.js";
+import type { SqlClient } from "../control_plane/control_plane_types.js";
 import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import {
-  resolveLiveBoardAssetStorageFromConfig,
   type LiveBoardAssetStorage,
 } from "./live_board_asset_storage.js";
 
@@ -20,7 +20,7 @@ export type CreateLiveBoardAssetRouteProviderOptions = {
   readonly folderProvider: LiveFolderProvider;
   readonly boardItemProvider: BoardItemRouteProvider;
   readonly storage?: LiveBoardAssetStorage | null;
-  readonly configProvider?: LiveConfigProviderBoundary;
+
   readonly assetIdGenerator?: () => string;
   readonly now?: () => Date;
 };
@@ -130,10 +130,9 @@ async function resolveStorage(
     if (options.storage !== null) return options.storage;
     throw storageUnavailable();
   }
-  const config = await options.configProvider?.getConfig();
-  const storage = config === undefined
-    ? null
-    : await resolveLiveBoardAssetStorageFromConfig(config);
+  const storage = await createR2StorageResolver(async () =>
+    await options.sqlResolver.resolveSql() as unknown as SqlClient,
+  ).resolve("board");
   if (storage === null) throw storageUnavailable();
   return storage;
 }

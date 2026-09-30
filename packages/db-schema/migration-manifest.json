@@ -452,6 +452,10 @@
     {
       "id": "111_card_comments.sql",
       "sha256": "e45b778e8fd893b662d0f649c73570be8d02978344be82f582dc6046e274ba99"
+    },
+    {
+      "id": "112_r2_storage_settings.sql",
+      "sha256": "b00db808ff0ad18e5199f3db9ca6c5ff7ed11655c6c8b3db3f7de48ebc9be9ad"
     }
   ]
 }

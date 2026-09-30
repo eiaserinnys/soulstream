@@ -1,3 +1,4 @@
+import { r2SettingsRouteAuthRequirements } from "../admin/r2_settings_routes.js";
 import { adminUsersRouteAuthRequirements } from "../admin/admin_users_routes.js";
 import { cardDispatchSettingsRouteAuthRequirements } from "../cards/card_dispatch_settings_routes.js";
 import { atomRouteAuthRequirements } from "../atom/atom_routes.js";
@@ -41,7 +42,7 @@ import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
-  { owner: "admin.users", authRequirements: adminUsersRouteAuthRequirements },
+  { owner: "admin.users", authRequirements: { ...adminUsersRouteAuthRequirements, ...r2SettingsRouteAuthRequirements } },
   { owner: "atom", authRequirements: atomRouteAuthRequirements },
   { owner: "attachments", authRequirements: attachmentRouteAuthRequirements },
   { owner: "auth", authRequirements: authRouteAuthRequirements },
@@ -98,6 +99,13 @@ export const tsOnlyRouteKeys = [
   "POST /api/nodes/{node_id}/worktrees/remove",
   "POST /api/nodes/{node_id}/worktrees/delete-branch",
   "GET /api/admin/settings/session-review-policy",
+  "GET /api/admin/settings/board-r2",
+  "PUT /api/admin/settings/board-r2",
+  "POST /api/admin/settings/board-r2/check",
+  "GET /api/admin/settings/attachment-r2",
+  "PUT /api/admin/settings/attachment-r2",
+  "POST /api/admin/settings/attachment-r2/check",
+
   "PUT /api/admin/settings/session-review-policy",
   "GET /api/sessions/{session_id}/conversation-context",
   "GET /api/sessions/{session_id}/resume-after-limit",
