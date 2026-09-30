@@ -15,13 +15,11 @@ describe("v3 context menu model", () => {
       starred: true,
       completed: false,
       inToday: true,
-      checklistEnabled: true,
     }, actions);
     const starredNavigation = buildFolderContextMenuActions({
       starred: true,
       completed: false,
       inToday: true,
-      checklistEnabled: true,
     }, actions);
 
     expect(starredNavigation).toEqual(planner);
@@ -41,7 +39,6 @@ describe("v3 context menu model", () => {
       starred: false,
       completed: true,
       inToday: false,
-      checklistEnabled: true,
     }, folderActions());
 
     expect(menu[2]?.label).toBe("별표 추가");
@@ -52,26 +49,22 @@ describe("v3 context menu model", () => {
       starred: false,
       completed: false,
       inToday: false,
-      checklistEnabled: false,
-    }, folderActions()).map((action) => action.label)).not.toContain("완료 처리");
+    }, folderActions()).map((action) => action.label)).toContain("완료 처리");
   });
 
   it("offers the existing folder management actions on child cards", () => {
     const rename = vi.fn();
     const archive = vi.fn();
-    const toggleChecklist = vi.fn();
     const menu = buildFolderContextMenuActions({
-      starred: false, completed: false, inToday: false, checklistEnabled: false,
-    }, { ...folderActions(), rename, archive, toggleChecklist });
+      starred: false, completed: false, inToday: false,
+    }, { ...folderActions(), rename, archive });
 
-    expect(menu.slice(-3).map((action) => action.label)).toEqual([
-      "이름 변경", "체크리스트 켜기", "폴더 보관",
+    expect(menu.slice(-2).map((action) => action.label)).toEqual([
+      "이름 변경", "폴더 보관",
     ]);
-    menu.at(-3)?.onSelect();
     menu.at(-2)?.onSelect();
     menu.at(-1)?.onSelect();
     expect(rename).toHaveBeenCalledOnce();
-    expect(toggleChecklist).toHaveBeenCalledOnce();
     expect(archive).toHaveBeenCalledOnce();
   });
 
@@ -92,7 +85,7 @@ describe("v3 context menu model", () => {
     expect(mounted.map((action) => action.label)).toEqual([
       "문서 열기",
       "페이지 ID 복사",
-      "업무에서 마운트 해제",
+      "폴더에서 마운트 해제",
       "프로젝트로 승격",
     ]);
     expect(mounted[2]).toMatchObject({ separatorBefore: true, destructive: true });
@@ -123,17 +116,13 @@ describe("v3 context menu model", () => {
       open: vi.fn(),
       copyId: vi.fn(),
       createFolder: vi.fn(),
-      createProject: vi.fn(),
-      createChildProject: vi.fn(),
       edit: vi.fn(),
       remove: vi.fn(),
     }).map((action) => action.label)).toEqual([
-      "프로젝트 열기",
+      "폴더 열기",
       "폴더 ID 복사",
-      "새 업무",
-      "새 프로젝트",
-      "하위 프로젝트 만들기",
-      "프로젝트 설정",
+      "새 폴더",
+      "폴더 설정",
       "폴더 보관",
     ]);
 

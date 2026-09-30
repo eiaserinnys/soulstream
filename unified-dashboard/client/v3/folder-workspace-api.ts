@@ -17,15 +17,6 @@ export async function moveFolderToParent(folder: CatalogFolder, parentFolderId: 
   return response.json() as Promise<FolderMutationResult>;
 }
 
-export async function setFolderChecklistEnabled(folder: CatalogFolder, enabled: boolean): Promise<FolderMutationResult> {
-  if (folder.version === undefined) throw new Error("폴더 버전을 찾을 수 없습니다.");
-  return mutateFolder(folder, "checklist-enabled", {
-    checklistEnabled: enabled,
-    expectedVersion: folder.version,
-    idempotencyKey: crypto.randomUUID(),
-  });
-}
-
 export async function setFolderStatus(folder: CatalogFolder, status: "open" | "completed"): Promise<FolderMutationResult> {
   if (folder.version === undefined) throw new Error("폴더 버전을 찾을 수 없습니다.");
   return mutateFolder(folder, "status", {

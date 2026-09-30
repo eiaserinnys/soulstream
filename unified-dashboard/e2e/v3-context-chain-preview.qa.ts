@@ -46,7 +46,7 @@ async function verify(browser: Browser) {
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "새 업무" }).click();
+    await page.getByRole("button", { name: "새 폴더" }).click();
     await page.getByLabel("프로젝트 선택").selectOption("folder-dashboard");
 
     const preview = page.getByTestId("new-task-inheritance-preview");
@@ -61,18 +61,18 @@ async function verify(browser: Browser) {
     await capture(page, "01-parent-chain-preview");
 
     await page.getByRole("button", { name: "취소", exact: true }).click();
-    await page.getByRole("heading", { name: "새 업무", exact: true }).waitFor({ state: "detached" });
+    await page.getByRole("heading", { name: "새 폴더", exact: true }).waitFor({ state: "detached" });
     await page.getByTestId("v3-task-task-alpha").click();
     try {
       await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask }).waitFor({ state: "visible", timeout: 10_000 });
     } catch (error) {
-      console.error(`[pr-an/qa] 업무 진입 실패 · ${(await page.locator("body").textContent() ?? "").slice(0, 2_000)}`);
+      console.error(`[pr-an/qa] 폴더 진입 실패 · ${(await page.locator("body").textContent() ?? "").slice(0, 2_000)}`);
       await capture(page, "diagnostic-task-open-failure");
       throw error;
     }
     const detailContext = page.locator(".v3-detail-section").filter({ has: page.getByRole("heading", { name: "정보" }) });
-    await waitText(detailContext, "프로젝트의 결정을 실제 근거와 함께 기록하고", "업무 상세 부모 guidance");
-    await waitText(detailContext, "플래너 UX 원칙", "업무 상세 자체 atom");
+    await waitText(detailContext, "프로젝트의 결정을 실제 근거와 함께 기록하고", "폴더 상세 부모 guidance");
+    await waitText(detailContext, "플래너 UX 원칙", "폴더 상세 자체 atom");
 
     await page.getByRole("button", { name: "새 세션", exact: true }).click();
     const modal = page.locator(".v3-succession-modal");
@@ -94,7 +94,7 @@ async function verify(browser: Browser) {
 
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await page.locator(".v3-workspace-scrim").waitFor({ state: "detached" });
-    await page.getByRole("button", { name: "새 업무" }).click();
+    await page.getByRole("button", { name: "새 폴더" }).click();
     await page.getByLabel("프로젝트 선택").selectOption("folder-dashboard");
     const refreshedPreview = page.getByTestId("new-task-inheritance-preview");
     const refreshedGuidance = page.getByTestId("inheritance-guidance-preview");

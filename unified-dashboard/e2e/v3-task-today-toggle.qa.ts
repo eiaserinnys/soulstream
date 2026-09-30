@@ -71,7 +71,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await removeToggle.waitFor({ state: "visible" });
     const mutations = await stopDailyMutationObserver(page);
     assert(mutations.listChild === 2, `오늘 목록 구조가 ${mutations.listChild}회 변경되었습니다.`);
-    assert(mutations.untouched === 0, `무관한 업무 행이 ${mutations.untouched}회 변경되었습니다.`);
+    assert(mutations.untouched === 0, `무관한 폴더 행이 ${mutations.untouched}회 변경되었습니다.`);
     assert(plannerTodayRequests === 1, `토글이 오늘 플래너를 ${plannerTodayRequests}회 광역 재조회했습니다.`);
     await capture(page, theme, "04-restored-toggle-and-row");
 
@@ -82,7 +82,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.locator('[data-session-id="review-session"]').click();
     const standalone = page.getByTestId("v3-standalone-task-empty");
     await standalone.waitFor({ state: "visible" });
-    assert(await standalone.getByRole("button", { name: /오늘 플래너/ }).count() === 0, "빈 업무창에 오늘 토글이 노출되었습니다.");
+    assert(await standalone.getByRole("button", { name: /오늘 플래너/ }).count() === 0, "빈 폴더창에 오늘 토글이 노출되었습니다.");
 
     return {
       stateTransition: true,

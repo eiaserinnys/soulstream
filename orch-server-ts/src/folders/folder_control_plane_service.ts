@@ -9,7 +9,6 @@ interface FolderRow {
   project_page_id: string | null;
   created_at?: Date | string;
   archived: boolean;
-  checklist_enabled: boolean;
   status: string;
   version: number;
 }
@@ -33,7 +32,7 @@ export class FolderControlPlaneService {
   async getFolderById(folderId: string): Promise<FolderRow | null> {
     const rows = await this.sql<readonly FolderDbRow[]>`
       SELECT id, name, sort_order, settings, parent_folder_id, project_page_id,
-             archived, checklist_enabled, status, version, created_at
+             archived, status, version, created_at
       FROM folders
       WHERE id = ${folderId}
     `;
@@ -107,7 +106,7 @@ export class FolderControlPlaneService {
         parentFolderId: folder.parent_folder_id,
         projectPageId: folder.project_page_id,
         settings: folder.settings,
-        archived: folder.archived, checklistEnabled: folder.checklist_enabled,
+        archived: folder.archived,
         status: folder.status, version: folder.version,
         ...(folder.created_at ? { createdAt: new Date(folder.created_at).toISOString() } : {}),
       })),
@@ -138,7 +137,7 @@ function folderFromRow(row: FolderDbRow): FolderRow {
       : {},
     parent_folder_id: row.parent_folder_id,
     project_page_id: row.project_page_id,
-    archived: Boolean(row.archived), checklist_enabled: Boolean(row.checklist_enabled),
+    archived: Boolean(row.archived),
     status: row.status, version: Number(row.version),
     ...(row.created_at ? { created_at: row.created_at } : {}),
   };

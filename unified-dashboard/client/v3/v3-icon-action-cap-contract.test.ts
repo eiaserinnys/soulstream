@@ -20,19 +20,19 @@ describe("v3 icon action cap contract", () => {
 
   it.each([
     ["./FolderCardSection.tsx", ["카드 추가"]],
-    ["../../../packages/soul-ui/src/checklist/FolderCompletionAction.tsx", ["actionLabel"]],
+    ["../../../packages/soul-ui/src/folder-status/FolderCompletionAction.tsx", ["actionLabel"]],
     ["./PlannerFolderCard.tsx", ["별표"]],
-    ["./FolderDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "업무 보드 열기"]],
+    ["./FolderDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "폴더 보드 열기"]],
     ["./FolderTodayToggle.tsx", ["todayPlannerMenuLabel"]],
     ["./FolderDescriptionPanel.tsx", ["편집"]],
     ["./FolderInlineBoard.tsx", ["마크다운 추가", "펼치기", "이름 수정"]],
     ["./FolderSessionHistory.tsx", ["새 세션", "이전 세션 더 보기"]],
-    ["./FolderBoardPane.tsx", ["업무 상세로 돌아가기", "업무 보드 닫기"]],
-    ["./FolderWorkspace.tsx", ["업무 창 닫기", "채팅 닫기"]],
+    ["./FolderBoardPane.tsx", ["폴더 상세로 돌아가기", "폴더 보드 닫기"]],
+    ["./FolderWorkspace.tsx", ["폴더 창 닫기", "채팅 닫기"]],
     ["./FolderBoardWorkspace.tsx", ["문서 편집기 높이 축소"]],
     ["./PlannerViews.tsx", ["아침 정리"]],
     ["./FolderWorkspaceSections.tsx", ["하위 폴더 더 보기"]],
-    ["./V3Navigation.tsx", ["별표 업무 더 보기", "새 프로젝트"]],
+    ["./V3Navigation.tsx", ["별표 폴더 더 보기", "새 폴더"]],
     ["./V3SessionPanel.tsx", ["확인 처리"]],
     ["./V3SessionReviewBanner.tsx", ["검수 확인"]],
   ] as const)("%s uses the shared icon cap for its chrome actions", (path, labels) => {
@@ -57,7 +57,7 @@ describe("v3 icon action cap contract", () => {
     const layout = read("./V3DashboardLayout.tsx");
 
     expect(detail).toContain('parentFolder ? "상위 폴더로 이동" : "오늘 플래너로 돌아가기"');
-    expect(detail).not.toContain('label="업무 상세 닫기"');
+    expect(detail).not.toContain('label="폴더 상세 닫기"');
     expect(workspace).not.toContain('label="우측 패널 닫기"');
     expect(workspace).toContain("onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}");
     expect(layout).toContain('if (event.key !== "Escape") return;');

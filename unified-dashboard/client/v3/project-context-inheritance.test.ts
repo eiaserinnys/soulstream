@@ -95,7 +95,7 @@ function readyState(folderId: string): Extract<ProjectContextPreviewState, { sta
 }
 
 function folder(id: string, name: string, parentFolderId: string | null, projectPageId: string | null) {
-  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,  id, name, parentFolderId, projectPageId, sortOrder: 0 };
+  return { status: "open" as const, version: 1, archived: false,  id, name, parentFolderId, projectPageId, sortOrder: 0 };
 }
 
 function guidance(blockId: string, text: string, scope: string) {

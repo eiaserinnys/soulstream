@@ -31,9 +31,9 @@ describe("buildMorningRitualQueue", () => {
           date: yesterday,
           pageId: "daily-yesterday",
           tasks: [
-            task("task-carry", "계속할 업무", "open"),
-            task("task-today", "이미 오늘로 온 업무", "open"),
-            task("task-completed", "끝난 업무", "completed"),
+            task("task-carry", "계속할 폴더", "open"),
+            task("task-today", "이미 오늘로 온 폴더", "open"),
+            task("task-completed", "끝난 폴더", "completed"),
           ],
         },
         {
@@ -41,7 +41,7 @@ describe("buildMorningRitualQueue", () => {
           pageId: "daily-older",
           tasks: [
             task("task-carry", "중복 마운트", "open"),
-            task("task-older", "이전 최근 업무", "open"),
+            task("task-older", "이전 최근 폴더", "open"),
           ],
         },
       ],
@@ -70,21 +70,21 @@ describe("dispatchRitualAction", () => {
   it("dispatches today and daily removal as membership-only actions", async () => {
     const port = mockPort();
     const item = buildMorningRitualQueue({
-      historicalDays: [{ date: "2026-07-13", pageId: "daily-yesterday", tasks: [task("task-1", "업무", "open")] }],
+      historicalDays: [{ date: "2026-07-13", pageId: "daily-yesterday", tasks: [task("task-1", "폴더", "open")] }],
       todayFolderPageIds: new Set(),
     })[0];
 
     await dispatchRitualAction(item, "today", port);
     expect(port.mountToday).toHaveBeenCalledWith({
       folderPageId: "task-1",
-      folderTitle: "업무",
+      folderTitle: "폴더",
     });
 
     await dispatchRitualAction(item, "remove", port);
     expect(port.removeFromDaily).toHaveBeenCalledWith({
       dailyPageId: "daily-yesterday",
       folderPageId: "task-1",
-      folderTitle: "업무",
+      folderTitle: "폴더",
     });
     expect(port.mountToday).toHaveBeenCalledTimes(1);
   });

@@ -14,7 +14,6 @@ const mutations: readonly ["POST" | "PUT", string, FolderOperation][] = [
   ["POST", "/api/folders/:folder_id/archive", "archive_folder"],
   ["POST", "/api/folders/:folder_id/unarchive", "unarchive_folder"],
   ["POST", "/api/folders/:folder_id/status", "set_folder_status"],
-  ["POST", "/api/folders/:folder_id/checklist-enabled", "set_folder_checklist_enabled"],
 
 ];
 

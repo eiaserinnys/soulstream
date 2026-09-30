@@ -222,13 +222,13 @@ export interface DashboardState {
   folderBoardLayouts: Record<string, FolderBoardLayoutSnapshot>;
 }
 
-/** 업무 보드 레이아웃 스냅샷 — 삭제 대상은 복원 시 안전 폴백한다. */
+/** 폴더 보드 레이아웃 스냅샷 — 삭제 대상은 복원 시 안전 폴백한다. */
 export interface FolderBoardLayoutSnapshot {
   /** 좌측 자료 패널 폭 (px) */
   resourceWidth?: number;
   /** 우측 채팅 패널 폭 (px) */
   chatWidth?: number;
-  /** 활성 자료 탭 id (checklist/sessions/document:.../custom-view:...) */
+  /** 활성 자료 탭 id (cards/sessions/document:.../custom-view:...) */
   activeTabId?: string;
   /** 열린 문서·Flux 탭 목록·순서 */
   openedResources?: { kind: "document" | "custom_view"; resourceId: string }[];

@@ -6,7 +6,7 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
-import { ChevronsDown, FolderPlus, Plus } from "lucide-react";
+import { ChevronsDown, FolderPlus } from "lucide-react";
 
 import { PlannerFolderCard } from "./PlannerFolderCard";
 import { ProjectContextEditor } from "./ProjectContextEditor";
@@ -30,11 +30,9 @@ export function FolderWorkspaceSections({
   todayFolderIds,
   invalidationKey,
   onOpenFolder,
-  onCreateTask,
   onCreateSubfolder,
   onRenameChild,
   onArchiveChild,
-  onToggleChildChecklist,
   onCompleteFolder,
   onToggleFolderToday,
   onMoveFolderToParent,
@@ -52,11 +50,9 @@ export function FolderWorkspaceSections({
   todayFolderIds: ReadonlySet<string>;
   invalidationKey: number;
   onOpenFolder(folder: CatalogFolder): void;
-  onCreateTask(): void;
   onCreateSubfolder(): void;
   onRenameChild(folder: CatalogFolder): void;
   onArchiveChild(folder: CatalogFolder): void;
-  onToggleChildChecklist(folder: CatalogFolder): Promise<void>;
   onCompleteFolder(task: PlannerFolder): Promise<void>;
   onToggleFolderToday(task: PlannerFolder): Promise<void>;
   onMoveFolderToParent(task: PlannerFolder): void;
@@ -135,9 +131,6 @@ export function FolderWorkspaceSections({
         <div className="v3-section-head">
           <h2>하위 폴더</h2><span>{children.length}개</span>
           <span className="v3-spacer" />
-          <DashboardIconCap label="새 업무" onClick={onCreateTask}>
-            <Plus className="h-4 w-4" aria-hidden="true" />
-          </DashboardIconCap>
           <DashboardIconCap label="새 폴더" onClick={onCreateSubfolder}>
             <FolderPlus className="h-4 w-4" aria-hidden="true" />
           </DashboardIconCap>
@@ -146,7 +139,6 @@ export function FolderWorkspaceSections({
           {parentFolder && parentTask ? <div data-testid={`v3-parent-folder-${parentFolder.id}`}>
             <PlannerFolderCard
               task={parentTask}
-              folder={parentFolder}
               navigationLabel="상위 폴더"
               sessions={sessions}
               nodeConnectivity={nodeConnectivity}
@@ -160,7 +152,6 @@ export function FolderWorkspaceSections({
           {childTasks.map(({ folder: child, task }) => <div key={child.id} data-testid={`v3-child-folder-${child.id}`}>
             <PlannerFolderCard
               task={task}
-              folder={child}
               sessions={sessions}
               nodeConnectivity={nodeConnectivity}
               isInToday={todayFolderIds.has(task.page.id)}
@@ -170,7 +161,6 @@ export function FolderWorkspaceSections({
               onMoveToParent={() => onMoveFolderToParent(task)}
               onRename={() => onRenameChild(child)}
               onArchive={() => onArchiveChild(child)}
-              onToggleChecklist={() => onToggleChildChecklist(child)}
             />
           </div>)}
         </div>

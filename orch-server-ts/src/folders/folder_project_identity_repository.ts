@@ -68,10 +68,10 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
       const pageCommit = await commitPage(transaction, input);
       await transaction`
         INSERT INTO folders (
-          id, name, sort_order, settings, parent_folder_id, project_page_id, archived, checklist_enabled, created_session_id, created_event_id
+          id, name, sort_order, settings, parent_folder_id, project_page_id, archived, created_session_id, created_event_id
         ) VALUES (
           ${input.id}, ${input.name}, ${input.sortOrder}, ${transaction.json(input.settings)}::jsonb,
-          ${input.parentFolderId}, ${input.pageId}, FALSE, ${input.checklistEnabled},
+          ${input.parentFolderId}, ${input.pageId}, FALSE,
           ${input.actor.actorSessionId ?? null}, ${pageCommit.operation.actor_event_id ?? null}
         )
       `;
@@ -281,7 +281,6 @@ function folderRow(row: Record<string, unknown>): FolderProjectRecord | null {
     parentFolderId: stringValue(row.parent_folder_id),
     projectPageId: pageId,
     archived: Boolean(row.archived),
-    checklistEnabled: Boolean(row.checklist_enabled),
     status: row.status as "open" | "completed",
     version: Number(row.version),
     createdSessionId: stringValue(row.created_session_id),

@@ -43,8 +43,8 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
 
-    await page.getByRole("button", { name: "새 업무", exact: true }).click();
-    const newTaskDialog = page.getByRole("dialog", { name: "새 업무", exact: true });
+    await page.getByRole("button", { name: "새 폴더", exact: true }).click();
+    const newTaskDialog = page.getByRole("dialog", { name: "새 폴더", exact: true });
     await newTaskDialog.waitFor({ state: "visible" });
     const newTask = await readModalMetrics(page, newTaskDialog);
     await capture(page, theme, "new-task");
@@ -64,7 +64,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     await capture(page, theme, "new-session");
 
     if (!baseline) {
-      assertModalContract(theme, "새 업무", newTask);
+      assertModalContract(theme, "새 폴더", newTask);
       assertModalContract(theme, "새 세션", newSession);
       assert(succession.sectionOrder, `${theme}: 새 세션 항목 순서가 다릅니다.`);
       assert(!succession.hasRemovedGuidance, `${theme}: 삭제한 추가 지침 입력이 남았습니다.`);

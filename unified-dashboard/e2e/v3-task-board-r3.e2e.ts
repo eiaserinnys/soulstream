@@ -33,7 +33,7 @@ test("keeps the r3 task-board resources, canvas, chat, and document overlay boun
   await page.goto("http://127.0.0.1:4173/v3", { waitUntil: "domcontentloaded" });
 
   await page.getByTestId("v3-task-task-alpha").click();
-  await page.getByRole("button", { name: "업무 보드 열기" }).click();
+  await page.getByRole("button", { name: "폴더 보드 열기" }).click();
   const resources = page.getByTestId("v3-folder-board-resources");
   const canvas = page.getByTestId("v3-folder-board-canvas");
   const chat = page.getByTestId("v3-folder-board-chat");

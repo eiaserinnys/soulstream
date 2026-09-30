@@ -1290,8 +1290,8 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
     )
   `;
   await sql`
-    INSERT INTO folders (id, parent_folder_id, name, checklist_enabled)
-    VALUES ('task-primary', 'folder-allowed', 'Search task result', TRUE)
+    INSERT INTO folders (id, parent_folder_id, name)
+    VALUES ('task-primary', 'folder-allowed', 'Search task result')
   `;
   await sql`
     INSERT INTO board_items (

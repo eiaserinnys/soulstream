@@ -31,7 +31,7 @@ export function FolderTitleEditor({
     if (savingRef.current) return;
     const nextTitle = draft.trim();
     if (!nextTitle) {
-      setError("업무 제목을 입력해야 합니다");
+      setError("폴더 제목을 입력해야 합니다");
       return;
     }
     if (nextTitle === title) {
@@ -45,7 +45,7 @@ export function FolderTitleEditor({
       await onRename(nextTitle);
       setEditing(false);
     } catch (cause) {
-      setError(`업무 제목 변경 실패 · ${errorText(cause)}`);
+      setError(`폴더 제목 변경 실패 · ${errorText(cause)}`);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -55,8 +55,8 @@ export function FolderTitleEditor({
   const titleButton = <button
     type="button"
     className="v3-task-title-button"
-    aria-label="업무 제목 편집"
-    title="클릭해서 업무 제목 편집"
+    aria-label="폴더 제목 편집"
+    title="클릭해서 폴더 제목 편집"
     onClick={() => {
       setDraft(title);
       setError(null);
@@ -70,7 +70,7 @@ export function FolderTitleEditor({
         <input
           autoFocus
           className="v3-task-title-input"
-          aria-label="업무 제목 편집"
+          aria-label="폴더 제목 편집"
           value={draft}
           disabled={saving}
           onChange={(event) => setDraft(event.target.value)}

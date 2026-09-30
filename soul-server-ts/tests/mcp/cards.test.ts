@@ -33,7 +33,7 @@ describe("card MCP contract", () => {
     const { entries } = harness();
     expect([...entries.keys()]).toEqual(expect.arrayContaining(names));
     expect([...entries.keys()].filter(n => /checklist_(item|section)|set_card_status|list_my_turn_items/.test(n))).toEqual([]);
-    expect(entries.has("set_folder_checklist_enabled")).toBe(true);
+    expect(entries.has("set_folder_checklist_enabled")).toBe(false);
   });
   it("calls every card HTTP with the service bearer, agent actor, CAS and camelCase body", async () => {
     const fetch = vi.fn(async (_url: string, init: RequestInit) => new Response(JSON.stringify(init.method === "GET" ? detail : { card }), { status: init.method === "GET" ? 200 : 201 }));
@@ -71,7 +71,7 @@ describe("card MCP contract", () => {
     const snapshots: unknown[] = [];
     for (const source of ["agent", "browser"]) {
     const db = { getSession: vi.fn().mockResolvedValue({ folder_id: "folder-1", card_id: "card-1" }),
-      getFolderById: vi.fn().mockResolvedValue({ id: "folder-1", name: "폴더", checklist_enabled: false }),
+      getFolderById: vi.fn().mockResolvedValue({ id: "folder-1", name: "폴더" }),
       getCard: vi.fn().mockResolvedValue({ ...detail, card: { ...card, folderId: "moved-folder" } }),
       getPrimarySessionBoardItem: vi.fn() };
     const context = await resolvePrimarySessionFolderContext(db as unknown as SessionDB, logger, "session-1", "folder-1");

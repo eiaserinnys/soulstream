@@ -30,7 +30,7 @@ export function useFolderParentMoveController({
     try {
       openFolder(await loadStarredPlannerFolder(api, task, folders));
     } catch (cause) {
-      notify(`업무 불러오기 실패 · ${errorText(cause)}`);
+      notify(`폴더 불러오기 실패 · ${errorText(cause)}`);
     }
   }, [api, folders, notify, openFolder]);
   const currentFolderId = task?.parentFolderId ?? null;

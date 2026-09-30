@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-describe("v3 task checklist", () => {
+describe("v3 folder card layout", () => {
   it("uses the section gap as the task workspace bottom inset", () => {
     const css = read("./v3-folder-workspace.css");
 

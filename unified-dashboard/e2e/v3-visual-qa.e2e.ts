@@ -89,7 +89,7 @@ for (const theme of ["dark", "light"] as const) {
       }, { appearance: theme, webglOverride: WEBGL_OVERRIDE });
       await installV3VisualQaRoutes(page);
       await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-      await expect(page.getByText("오늘의 업무")).toBeVisible();
+      await expect(page.getByText("오늘의 폴더")).toBeVisible();
       await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible({ timeout: 20_000 });
       await page.waitForLoadState("networkidle");
       diagnostics.fontFamily = await page.locator(".v3-emoji").first().evaluate((element) => (
@@ -97,7 +97,7 @@ for (const theme of ["dark", "light"] as const) {
       ));
 
       await capture(page, outputDir, "01-today-planner", diagnostics);
-      await page.getByRole("button", { name: "새 업무", exact: true }).hover();
+      await page.getByRole("button", { name: "새 폴더", exact: true }).hover();
       await capture(page, outputDir, "01b-today-primary-hover", diagnostics);
 
       if (viewport.name === "desktop") {
@@ -110,8 +110,8 @@ for (const theme of ["dark", "light"] as const) {
       await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible({ timeout: 20_000 });
       await capture(page, outputDir, "02-project-view", diagnostics);
 
-      await page.getByRole("button", { name: "새 업무", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "새 업무" })).toBeVisible();
+      await page.getByRole("button", { name: "새 폴더", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "새 폴더" })).toBeVisible();
       await capture(page, outputDir, "03-new-task-form-focus", diagnostics);
       await page.getByRole("button", { name: "취소" }).click();
 
@@ -119,7 +119,7 @@ for (const theme of ["dark", "light"] as const) {
       await expect(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 })).toBeVisible();
       await capture(page, outputDir, "04-task-detail-rendered", diagnostics);
       await page.locator(".v3-description-preview").click();
-      await expect(page.getByRole("textbox", { name: "업무 설명 마크다운" })).toBeFocused();
+      await expect(page.getByRole("textbox", { name: "폴더 설명 마크다운" })).toBeFocused();
       await capture(page, outputDir, "04b-task-detail-editing", diagnostics);
       await page.getByRole("button", { name: "완료", exact: true }).click();
 
@@ -146,7 +146,7 @@ for (const theme of ["dark", "light"] as const) {
         await page.waitForLoadState("networkidle");
         navigationInProgress = true;
         await page.reload({ waitUntil: "domcontentloaded" });
-        await expect(page.getByText("오늘의 업무")).toBeVisible();
+        await expect(page.getByText("오늘의 폴더")).toBeVisible();
         await page.waitForLoadState("networkidle");
         navigationInProgress = false;
         await page.getByTestId("v3-all-projects")
@@ -194,7 +194,7 @@ for (const theme of ["dark", "light"] as const) {
       navigationInProgress = true;
       await page.goto(`${BASE_URL}/v2`, { waitUntil: "domcontentloaded" });
       await expect(page).toHaveURL(`${BASE_URL}/`);
-      await expect(page.getByText("오늘의 업무")).toBeVisible();
+      await expect(page.getByText("오늘의 폴더")).toBeVisible();
       await page.waitForLoadState("networkidle");
       navigationInProgress = false;
       await capture(page, outputDir, "10-v2-redirected-to-main", diagnostics);
@@ -260,7 +260,7 @@ async function returnToPlanner(page: Page, viewport: "desktop" | "mobile"): Prom
   } else {
     await page.getByRole("button", { name: "← 오늘로" }).click();
   }
-  await expect(page.getByText("오늘의 업무")).toBeVisible();
+  await expect(page.getByText("오늘의 폴더")).toBeVisible();
 }
 
 function slug(label: string): string {

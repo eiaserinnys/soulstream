@@ -17,7 +17,6 @@ import { resolveEffectiveBoardCatalog } from "./board-catalog-resolution";
 const catalog: CatalogState = {
   folders: [
     {
-      checklistEnabled: false,
       status: "open",
       version: 1,
       archived: false,
@@ -28,7 +27,6 @@ const catalog: CatalogState = {
       createdAt: "2026-06-01T00:00:00.000Z",
     },
     {
-      checklistEnabled: false,
       status: "open",
       version: 1,
       archived: false,
@@ -137,7 +135,6 @@ const relationSessions: SessionSummary[] = [
 const relationCatalog: CatalogState = {
   folders: [
     {
-      checklistEnabled: false,
       status: "open",
       version: 1,
       archived: false,
@@ -148,7 +145,6 @@ const relationCatalog: CatalogState = {
       createdAt: "2026-06-01T00:00:00.000Z",
     },
     {
-      checklistEnabled: false,
       status: "open",
       version: 1,
       archived: false,
@@ -823,7 +819,7 @@ describe("BoardWorkspaceView", () => {
 
   it("upserts a missing session board item when dragging a fallback session tile", async () => {
     const fallbackCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "root",
         name: "김서하",
         sortOrder: 0,

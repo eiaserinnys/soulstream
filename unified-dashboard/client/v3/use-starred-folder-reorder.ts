@@ -59,7 +59,7 @@ export function useStarredFolderReorder({
     orderedPageIds: readonly string[],
   ) => {
     if (!isStarredFolderRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)) {
-      notify("별표 업무 목록을 새로고침하는 중이라 순서 변경을 잠시 기다려 주세요.");
+      notify("별표 폴더 목록을 새로고침하는 중이라 순서 변경을 잠시 기다려 주세요.");
       return;
     }
     const original = starredFolderIndexRef.current;

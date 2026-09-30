@@ -63,20 +63,19 @@ describe("V3Navigation frame contract", () => {
         onCompleteFolder={vi.fn(async () => undefined)}
         onToggleFolderToday={vi.fn(async () => undefined)}
         onMoveFolderToParent={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
         projectHasContents={vi.fn(() => false)}
-        onCreateFolder={vi.fn()}
       />,
     );
 
     expect(html).toContain('data-testid="v3-navigation-scroll"');
     expect(html).not.toContain("◆");
-    expect(html).not.toContain("업무는 프로젝트에 누적되고");
+    expect(html).not.toContain("폴더는 프로젝트에 누적되고");
     expect(html).not.toContain("검수 대기");
-    expect(html).toContain("새 업무");
+    expect(html).toContain("새 폴더");
   });
 
   it("keeps task opening separate from an accessible drag handle", () => {
@@ -109,12 +108,11 @@ describe("V3Navigation frame contract", () => {
         onCompleteFolder={vi.fn(async () => undefined)}
         onToggleFolderToday={vi.fn(async () => undefined)}
         onMoveFolderToParent={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
         projectHasContents={vi.fn(() => false)}
-        onCreateFolder={vi.fn()}
       />,
     );
 
@@ -130,7 +128,7 @@ describe("V3Navigation frame contract", () => {
       <V3Navigation
         dates={[]}
         selectedDate="2026-07-15"
-        folders={[{ ...folder("folder-starred-a", "중요 작업 A"), projectPageId: "starred-a", checklistEnabled: true }]}
+        folders={[{ ...folder("folder-starred-a", "중요 작업 A"), projectPageId: "starred-a" }]}
         selectedFolderId={null}
         starredFolders={[{
           id: "starred-a",
@@ -154,12 +152,11 @@ describe("V3Navigation frame contract", () => {
         onCompleteFolder={vi.fn(async () => undefined)}
         onToggleFolderToday={vi.fn(async () => undefined)}
         onMoveFolderToParent={vi.fn()}
-        onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
         projectHasContents={vi.fn(() => false)}
-        onCreateFolder={vi.fn()}
       />,
     ));
     const handle = container.querySelector<HTMLButtonElement>(
@@ -183,5 +180,5 @@ describe("V3Navigation frame contract", () => {
 });
 
 function folder(id: string, name: string): CatalogFolder {
-  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,  id, name, parentFolderId: null, sortOrder: 0 };
+  return { status: "open" as const, version: 1, archived: false,  id, name, parentFolderId: null, sortOrder: 0 };
 }

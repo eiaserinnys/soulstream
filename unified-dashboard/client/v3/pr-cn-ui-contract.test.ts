@@ -13,8 +13,8 @@ describe("PR-CN planner polish contract", () => {
     expect(toolbar).not.toContain("onOpenRitual");
     expect(toolbar).not.toContain("onOpenNewTask");
     expect(views).toContain('label="아침 정리"');
-    expect(views).toContain('label="새 업무"');
-    expect(views).not.toContain("역대 업무");
+    expect(views).toContain('label="새 폴더"');
+    expect(views).not.toContain("역대 폴더");
     expect(layout).toContain("folderSessions.state?.items.map");
     expect(layout).toContain("onOpenRitual={() => setRitualOpen(true)}");
     expect(navigation).toContain("<h2>중요 작업</h2>");

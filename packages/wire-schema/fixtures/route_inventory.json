@@ -116,7 +116,6 @@
     {"order": 212, "methods": ["POST"], "path": "/api/folders/{folder_id}/archive", "name": "folder_workspace", "authRequired": true},
     {"order": 213, "methods": ["POST"], "path": "/api/folders/{folder_id}/unarchive", "name": "folder_workspace", "authRequired": true},
     {"order": 214, "methods": ["POST"], "path": "/api/folders/{folder_id}/status", "name": "folder_workspace", "authRequired": true},
-    {"order": 215, "methods": ["POST"], "path": "/api/folders/{folder_id}/checklist-enabled", "name": "folder_workspace", "authRequired": true} ,
     {"order": 216, "methods": ["GET"], "path": "/api/cards", "name": "cards", "authRequired": true},
     {"order": 217, "methods": ["POST"], "path": "/api/cards", "name": "cards", "authRequired": true},
     {"order": 218, "methods": ["GET"], "path": "/api/cards/{id}", "name": "cards", "authRequired": true},

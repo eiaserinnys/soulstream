@@ -132,7 +132,7 @@ describe("FolderProjectIdentityService", () => {
       parentFolderId: null,
       archived: false,
       pageVersion: 1,
-      checklistEnabled: false, status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
+      status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
     });
     vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
     const onPageUpdated = vi.fn();
@@ -184,7 +184,7 @@ describe("FolderProjectIdentityService", () => {
       parentFolderId: null,
       archived: false,
       pageVersion: 1,
-      checklistEnabled: false, status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
+      status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
     });
     vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
     vi.mocked(repository.mutate).mockResolvedValueOnce({
@@ -322,7 +322,7 @@ function mutationResult(input: {
       settings: {},
       parentFolderId: null,
       projectPageId: input.pageId,
-      archived: false, checklistEnabled: false, status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
+      archived: false, status: "open" as const, version: 1, createdSessionId: null, createdEventId: null, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", completedKind: null, completedSessionId: null, completedEventId: null, completedUserId: null, completedAt: null,
     },
     operation: input.operation ?? { id: "folder-operation" },
     pageCommit: {

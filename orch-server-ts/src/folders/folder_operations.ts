@@ -24,14 +24,13 @@ const context = z.object({
 
 export const folderOperationSchemas = {
   create_folder: z.object({ name: id, parentFolderId: id.nullable().optional(), sortOrder: z.number().int().optional(),
-    settings: z.record(z.string(), z.unknown()).optional(), checklistEnabled: z.boolean().default(false),
+    settings: z.record(z.string(), z.unknown()).optional(),
     description: z.string().optional(), initialContext: context.optional(), idempotencyKey: id }),
   rename_folder: mutation.extend({ name: id.optional(), parentFolderId: id.nullable().optional(),
     sortOrder: z.number().int().optional(), settings: z.record(z.string(), z.unknown()).optional() }),
   archive_folder: mutation,
   unarchive_folder: mutation,
   set_folder_status: mutation.extend({ status: z.enum(["open", "completed"]) }),
-  set_folder_checklist_enabled: mutation.extend({ checklistEnabled: z.boolean() }),
   ...cardOperationSchemas,
 } as const;
 export type FolderOperation = keyof typeof folderOperationSchemas;
@@ -66,9 +65,10 @@ export async function executeFolderOperation(
     return { folder: result.folder, operation: serializeCardRow(result.operation), idempotent: result.idempotent ?? false };
   }
   const common={ ...actor,folderId };
-  const result=operation === "set_folder_status"
-    ? await services.cards.setFolderStatus({ ...common,...folderOperationSchemas.set_folder_status.parse(parsed) })
-    : await services.cards.setFolderChecklistEnabled({ ...common,...folderOperationSchemas.set_folder_checklist_enabled.parse(parsed) });
+  const result = await services.cards.setFolderStatus({
+    ...common,
+    ...folderOperationSchemas.set_folder_status.parse(parsed),
+  });
   return serializeCardMutation(result);
 }
 

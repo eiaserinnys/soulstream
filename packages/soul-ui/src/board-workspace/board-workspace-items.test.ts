@@ -20,7 +20,6 @@ import {
 const catalog: CatalogState = {
   folders: [
     {
-      checklistEnabled: false,
       status: "open",
       version: 1,
       archived: false,
@@ -31,7 +30,6 @@ const catalog: CatalogState = {
       createdAt: "2026-06-01T00:00:00.000Z",
     },
     {
-      checklistEnabled: false,
       status: "open",
       version: 1,
       archived: false,
@@ -42,7 +40,6 @@ const catalog: CatalogState = {
       createdAt: "2026-06-03T00:00:00.000Z",
     },
     {
-      checklistEnabled: false,
       status: "open",
       version: 1,
       archived: false,
@@ -224,7 +221,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps collapsed frame running state when only a stacked same-folder child is running", () => {
     const frameCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -362,7 +359,6 @@ describe("board workspace item helpers", () => {
       folders: [
         ...catalog.folders,
         {
-          checklistEnabled: false,
           status: "open",
           version: 1,
           archived: false,
@@ -403,7 +399,6 @@ describe("board workspace item helpers", () => {
     const movedCatalog: CatalogState = {
       folders: [
         {
-          checklistEnabled: false,
           status: "open",
           version: 1,
           archived: false,
@@ -414,7 +409,6 @@ describe("board workspace item helpers", () => {
           createdAt: "2026-06-01T00:00:00.000Z",
         },
         {
-          checklistEnabled: false,
           status: "open",
           version: 1,
           archived: false,
@@ -551,7 +545,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps a single assigned session visible when synced Yjs boardItems are empty", () => {
     const singleSessionCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "general-user-folder",
         name: "김서하",
         sortOrder: 0,
@@ -591,7 +585,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps a generated same-folder child in its visible parent stack without moving existing cards", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -647,7 +641,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps a generated same-folder child in the inbox rail when its parent is also generated there", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -720,7 +714,7 @@ describe("board workspace item helpers", () => {
 
   it("spawns generated sessions without a visible parent on the inbox rail", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -770,7 +764,7 @@ describe("board workspace item helpers", () => {
 
   it("keeps generated parentless sessions in the inbox rail without overlapping frames or existing cards", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -839,7 +833,7 @@ describe("board workspace item helpers", () => {
 
   it("does not create a board card for a dense same-folder child stack", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,
@@ -913,7 +907,7 @@ describe("board workspace item helpers", () => {
 
   it("allocates non-overlapping inbox slots for simultaneous generated sessions", () => {
     const spawnCatalog: CatalogState = {
-      folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+      folders: [{ status: "open", version: 1, archived: false,
         id: "root",
         name: "Root",
         sortOrder: 0,

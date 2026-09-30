@@ -87,7 +87,7 @@ export function FolderCompletionAction({
   const [error, setError] = useState<string | null>(null);
   const currentStatus = normalizeFolderStatus(task.status);
   const nextStatus: FolderStatus = currentStatus === "completed" ? "open" : "completed";
-  const actionLabel = nextStatus === "completed" ? "업무 완료" : "다시 열기";
+  const actionLabel = nextStatus === "completed" ? "폴더 완료" : "다시 열기";
   const Icon = nextStatus === "completed" ? CheckCircle2 : RotateCcw;
 
   const stopPointer = (event: PointerEvent<HTMLElement>) => {
@@ -102,7 +102,7 @@ export function FolderCompletionAction({
         ? task.version
         : (await loadFolder(task.id, { force: true }))?.folder.version;
       if (typeof version !== "number") {
-        throw new Error("업무 버전을 확인할 수 없습니다.");
+        throw new Error("폴더 버전을 확인할 수 없습니다.");
       }
       const snapshot = await setFolderStatus({
         folderId: task.id,
@@ -144,7 +144,7 @@ export function FolderCompletionAction({
         <AlertDialogPopup className="max-w-sm">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {nextStatus === "completed" ? "업무를 완료할까요?" : "업무를 다시 열까요?"}
+              {nextStatus === "completed" ? "폴더를 완료할까요?" : "폴더를 다시 열까요?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {nextStatus === "completed"

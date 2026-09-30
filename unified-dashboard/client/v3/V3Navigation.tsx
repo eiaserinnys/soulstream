@@ -68,7 +68,6 @@ export function V3Navigation({
   onDeleteProject,
   onReorderProjects,
   projectHasContents,
-  onCreateFolder,
 }: {
   dates: readonly PlannerDateNavItem[];
   selectedDate: string;
@@ -93,7 +92,6 @@ export function V3Navigation({
   onDeleteProject(folder: CatalogFolder): Promise<void>;
   onReorderProjects(items: CatalogFolderReorderItem[]): Promise<void>;
   projectHasContents(folderId: string): boolean;
-  onCreateFolder(folderId: string): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -254,10 +252,10 @@ export function V3Navigation({
               );
             })}
           </StarredFolderSortableContext>
-          {starredFolders.length === 0 ? <p>{starredFoldersLoading ? "업무를 불러오는 중…" : "별표 업무가 없습니다."}</p> : null}
+          {starredFolders.length === 0 ? <p>{starredFoldersLoading ? "폴더를 불러오는 중…" : "별표 폴더가 없습니다."}</p> : null}
           {starredFoldersHasMore ? (
             <DashboardIconCap
-              label="별표 업무 더 보기"
+              label="별표 폴더 더 보기"
               data-testid="v3-load-more-starred-tasks"
               disabled={starredFoldersLoading}
               onClick={onLoadMoreStarredFolders}
@@ -285,7 +283,7 @@ export function V3Navigation({
         {catalogLoadError ? <p className="v3-project-star-error" role="alert">{catalogLoadError}</p> : null}
         {!catalogLoadError && visibleFolders.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
         <DashboardIconCap
-          label="새 프로젝트"
+          label="새 폴더"
           className="v3-new-project-trigger"
           aria-expanded={projectDialog?.mode === "create" && projectDialog.parentFolderId === null}
           onClick={() => { setProjectDialog({ mode: "create", parentFolderId: null, parentName: null }); setError(null); }}
@@ -303,7 +301,6 @@ export function V3Navigation({
           starred: folderStarredState(starredFolderPage(contextMenu.task).id, folderStarChanges, true),
           completed: completedFolderIds.has(starredFolderPage(contextMenu.task).id),
           inToday: todayFolderIds.has(starredFolderPage(contextMenu.task).id),
-          checklistEnabled: starredContextFolder.checklistEnabled,
         }, {
           open: () => onSelectStarredFolder(contextMenu.task),
           copyId: () => navigator.clipboard.writeText(starredContextFolder.id),
@@ -314,9 +311,7 @@ export function V3Navigation({
         }) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({
           open: () => onSelectFolder(contextMenu.folder),
           copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
-          createFolder: () => onCreateFolder(contextMenu.folder.id),
-          createProject: () => setProjectDialog({ mode: "create", parentFolderId: null, parentName: null }),
-          createChildProject: () => setProjectDialog({ mode: "create", parentFolderId: contextMenu.folder.id, parentName: contextMenu.folder.name }),
+          createFolder: () => setProjectDialog({ mode: "create", parentFolderId: contextMenu.folder.id, parentName: contextMenu.folder.name }),
           edit: () => setProjectDialog({ mode: "edit", folder: contextMenu.folder }),
           remove: () => requestDeleteProject(contextMenu.folder),
         }).concat(contextMenu.folder.projectPageId && !isSystemFolderId(contextMenu.folder.id) ? [
@@ -341,7 +336,7 @@ export function V3Navigation({
         void onDeleteProject(folder).catch((cause) => setError(`폴더 보관 실패 · ${errorText(cause)}`));
       }} />
       <div className="v3-nav-foot">
-        <div><kbd>C</kbd> 새 업무 · <kbd>Esc</kbd> 닫기</div>
+        <div><kbd>C</kbd> 새 폴더 · <kbd>Esc</kbd> 닫기</div>
       </div>
     </nav>
   );

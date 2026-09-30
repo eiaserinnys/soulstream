@@ -5,8 +5,8 @@ import { createFolderOperations } from "./folder-operations";
 
 const catalog: CatalogState = {
   folders: [
-    { checklistEnabled: false, status: "open", version: 1, archived: false, id: "claude", name: "클로드", sortOrder: 0, parentFolderId: null },
-    { checklistEnabled: false, status: "open", archived: false, id: "normal", name: "업무", sortOrder: 1, parentFolderId: null, version: 2 },
+    { status: "open", version: 1, archived: false, id: "claude", name: "클로드", sortOrder: 0, parentFolderId: null },
+    { status: "open", archived: false, id: "normal", name: "폴더", sortOrder: 1, parentFolderId: null, version: 2 },
   ], sessions: {},
 };
 

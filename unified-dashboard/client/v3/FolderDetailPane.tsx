@@ -36,10 +36,8 @@ import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 export function FolderDetailPane({
   task,
   folderSections,
-  checklistEnabled,
   parentFolder,
   onOpenParent,
-  onToggleChecklist,
   projectFolderId,
   folders,
   contextInvalidationKey,
@@ -72,10 +70,8 @@ export function FolderDetailPane({
 }: {
   task: PlannerFolder;
   folderSections: ReactNode;
-  checklistEnabled: boolean;
   parentFolder: CatalogFolder | null;
   onOpenParent(folder: CatalogFolder): void;
-  onToggleChecklist(enabled: boolean): Promise<void>;
   projectFolderId: string | null;
   folders: readonly CatalogFolder[];
   contextInvalidationKey: number;
@@ -113,12 +109,12 @@ export function FolderDetailPane({
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const informationSectionRef = useRef<HTMLElement>(null);
-  const checklistSectionRef = useRef<HTMLElement>(null);
+  const cardsSectionRef = useRef<HTMLElement>(null);
   const boardSectionRef = useRef<HTMLDivElement>(null);
   const sessionsSectionRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useMemo<FolderSectionRefs>(() => ({
     information: informationSectionRef,
-    checklist: checklistSectionRef,
+    cards: cardsSectionRef,
     board: boardSectionRef,
     sessions: sessionsSectionRef,
   }), []);
@@ -152,7 +148,7 @@ export function FolderDetailPane({
   const effectiveContext = useMemo(() => mergeProjectContextPages([
     ...(inheritedContext.status === "ready" ? inheritedContext.data.pages : []),
     {
-      source: { folderId: task.folderId, folderName: "이 업무", pageId: task.page.id },
+      source: { folderId: task.folderId, folderName: "이 폴더", pageId: task.page.id },
       details: folderContext,
     },
   ]), [inheritedContext, task.page.id, folderContext]);
@@ -187,8 +183,8 @@ export function FolderDetailPane({
         direct: true,
         icon: "📄",
         contentLabel: match[1],
-        sourceLabel: "이 업무",
-        label: `${match[1]} · 이 업무`,
+        sourceLabel: "이 폴더",
+        label: `${match[1]} · 이 폴더`,
       }] : [];
     }),
   ], [contextBlocks, effectiveContext]);
@@ -230,16 +226,18 @@ export function FolderDetailPane({
       <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
     </DashboardIconCap>
     <FolderTodayToggle inToday={folderInToday} onToggle={onToggleFolderToday} />
-    <DashboardIconCap label="업무 보드 열기" onClick={onOpenBoard}>
+    <DashboardIconCap label="폴더 보드 열기" onClick={onOpenBoard}>
       <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
     </DashboardIconCap>
     <DashboardIconCap label="폴더 메뉴" onClick={(event) => setFolderMenu({ x: event.clientX, y: event.clientY })}>
       <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
     </DashboardIconCap>
-    <V3ContextMenu target={folderMenu} onClose={() => setFolderMenu(null)} actions={[{
-      label: checklistEnabled ? "카드 숨기기" : "카드 보이기",
-      onSelect: () => onToggleChecklist(!checklistEnabled),
-    }, ...(onArchiveFolder ? [{ label: "폴더 보관", separatorBefore: true, destructive: true, onSelect: () => setArchiveOpen(true) }] : [])]} />
+    <V3ContextMenu target={folderMenu} onClose={() => setFolderMenu(null)} actions={onArchiveFolder ? [{
+      label: "폴더 보관",
+      separatorBefore: true,
+      destructive: true,
+      onSelect: () => setArchiveOpen(true),
+    }] : []} />
   </>;
 
   return (
@@ -252,7 +250,7 @@ export function FolderDetailPane({
         <DashboardIconCap label={backLabel} onClick={goBack}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
-        {checklistEnabled ? <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span> : null}
+        <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span>
         <FolderTitleEditor title={task.page.title} onRename={onRenameFolderTitle} headingLevel={1} />
         <div className="v3-folder-header-actions">{actions}</div>
       </header>
@@ -279,7 +277,6 @@ export function FolderDetailPane({
           <FolderSectionNavigation
             scrollRef={scrollRef}
             sectionRefs={sectionRefs}
-            checklistEnabled={checklistEnabled}
             focusRequest={focusRequest}
             focusTargetReady={focusTargetReady}
             onFocusRequestHandled={onFocusRequestHandled}
@@ -291,9 +288,9 @@ export function FolderDetailPane({
               {folderSections}
             </section>
 
-            {checklistEnabled ? <section ref={checklistSectionRef} className="v3-detail-section" data-task-section="checklist" data-testid="v3-task-checklist">
+            <section ref={cardsSectionRef} className="v3-detail-section" data-task-section="cards" data-testid="v3-folder-cards-section">
               <FolderCardSection folderId={task.folderId} folders={folders} placement={placement} />
-            </section> : null}
+            </section>
 
             <div ref={boardSectionRef} data-task-section="board">
               <FolderInlineBoard
@@ -347,5 +344,5 @@ export function FolderDetailPane({
 }
 
 function contextSourceLabel(folderName: string): string {
-  return folderName === "이 업무" ? folderName : `${folderName}에서 상속`;
+  return folderName === "이 폴더" ? folderName : `${folderName}에서 상속`;
 }

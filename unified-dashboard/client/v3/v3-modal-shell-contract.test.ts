@@ -7,14 +7,16 @@ const SOUL_UI_COMPONENTS_DIRECTORY = new URL("../../../packages/soul-ui/src/comp
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 const expectedV3DialogConsumers = [
-  "NewFolderForm.tsx",
+  "CardActions.tsx",
+  "CardMenu.tsx",
+  "FolderArchiveDialog.tsx",
+  "FolderDetailPane.tsx",
   "ProjectDialog.tsx",
   "RitualModal.tsx",
   "SessionSuccessionModal.tsx",
   "FolderMoveDialog.tsx",
   "FolderParentMoveDialog.tsx",
   "V3ContextMenu.tsx",
-  "V3Navigation.tsx",
 ] as const;
 
 const sharedV3DialogConsumers = [
@@ -64,6 +66,12 @@ describe("v3 modal shell contract", () => {
       expect(source).not.toContain("liquidGlassStyle");
     },
   );
+
+  it("routes folder creation through the shared project dialog", () => {
+    const navigation = read("./V3Navigation.tsx");
+    expect(navigation).toContain("<ProjectDialog");
+    expect(navigation).not.toContain("<DialogPopup");
+  });
 
   it("keeps only mobile context menus on the explicit bottom-sheet exception", () => {
     expect(read("./V3ContextMenu.tsx")).toContain("bottomStickOnMobile");

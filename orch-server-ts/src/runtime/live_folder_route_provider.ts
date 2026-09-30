@@ -97,7 +97,7 @@ function serializeFolderRow(row: Record<string, unknown>): FolderRecord[] {
     parentFolderId: stringOrNull(row.parent_folder_id ?? row.parentFolderId),
     projectPageId: stringOrNull(row.project_page_id ?? row.projectPageId),
     settings: objectValue(row.settings),
-    archived: Boolean(row.archived), checklistEnabled: Boolean(row.checklist_enabled),
+    archived: Boolean(row.archived),
     status: row.status, version: Number(row.version),
   };
   const createdAt = timestampString(row.created_at ?? row.createdAt);

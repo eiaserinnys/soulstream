@@ -11,15 +11,15 @@ import {
 
 describe("starred planner collection", () => {
   it("merges full and fallback entries by page identity", () => {
-    const full = plannerTask("task-a", "업무 A");
-    const updatedPage = page("task-a", "업무 A 수정");
+    const full = plannerTask("task-a", "폴더 A");
+    const updatedPage = page("task-a", "폴더 A 수정");
 
     expect(mergeStarredPlannerFolders([full], [updatedPage])).toEqual([updatedPage]);
   });
 
   it("keeps full task data while applying a starred page update", () => {
-    const full = plannerTask("task-a", "업무 A");
-    const updatedPage = page("task-a", "업무 A 수정");
+    const full = plannerTask("task-a", "폴더 A");
+    const updatedPage = page("task-a", "폴더 A 수정");
 
     const result = applyStarredPlannerFolderChanges([full], [{ page: updatedPage, starred: true }]);
 
@@ -27,15 +27,15 @@ describe("starred planner collection", () => {
   });
 
   it("adds and removes fallback page entries", () => {
-    const added = page("task-b", "업무 B");
+    const added = page("task-b", "폴더 B");
 
     expect(applyStarredPlannerFolderChanges([], [{ page: added, starred: true }])).toEqual([added]);
     expect(applyStarredPlannerFolderChanges([added], [{ page: added, starred: false }])).toEqual([]);
   });
 
   it("rejects a load-more response after the first-page cursor or order changes", () => {
-    const first = plannerTask("task-a", "업무 A");
-    const second = plannerTask("task-b", "업무 B");
+    const first = plannerTask("task-a", "폴더 A");
+    const second = plannerTask("task-b", "폴더 B");
     const current = { items: [first, second], nextCursor: "cursor-new" };
 
     expect(isStarredPlannerPageCurrent(current, ["task-a", "task-b"], "cursor-new")).toBe(true);

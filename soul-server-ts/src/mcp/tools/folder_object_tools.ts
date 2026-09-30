@@ -22,7 +22,6 @@ export function registerFolderObjectTools(server: McpServer, runtime: McpRuntime
       parent_folder_id: z.string().nullable().optional(),
       name: z.string().min(1),
       description: z.string().optional(),
-      checklist_enabled: z.boolean().default(false),
       initial_context: z.unknown().optional(),
       sort_order: z.number().int().optional(),
       idempotency_key: idempotencyKeySchema,
@@ -30,7 +29,7 @@ export function registerFolderObjectTools(server: McpServer, runtime: McpRuntime
     },
   }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.createFolder({
     ...actor, parentFolderId: input.parent_folder_id,
-    name: input.name, description: input.description, checklistEnabled: input.checklist_enabled,
+    name: input.name, description: input.description,
     initialContext: input.initial_context, sortOrder: input.sort_order,
     idempotencyKey: input.idempotency_key,
   })));
@@ -69,10 +68,6 @@ export function registerFolderObjectTools(server: McpServer, runtime: McpRuntime
     inputSchema: { folder_id: z.string().min(1), status: folderStatusSchema, expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
   }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.setFolderStatus({ ...actor, folderId: input.folder_id, status: input.status, expectedVersion: input.expected_version, reason: input.reason, idempotencyKey: input.idempotency_key })));
 
-  server.registerTool("set_folder_checklist_enabled", {
-    description: mutationToolDescription("폴더의 카드 표시 여부를 설정한다."),
-    inputSchema: { folder_id: z.string().min(1), checklist_enabled: z.boolean(), expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
-  }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.setFolderChecklistEnabled({ ...actor, folderId: input.folder_id, checklistEnabled: input.checklist_enabled, expectedVersion: input.expected_version, reason: input.reason, idempotencyKey: input.idempotency_key })));
 
   server.registerTool("list_folder_operations", {
     description: "폴더와 카드의 감사 기록을 최신순으로 조회한다.",

@@ -49,13 +49,13 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     await dialog.getByRole("alert").waitFor({ state: "visible" });
     assert(await projectGroup(page, fixtureTitles.project).getByTestId("v3-task-alpha").count() === 1,
-      "실패 복구 후 기존 프로젝트에 업무가 돌아오지 않았습니다.");
+      "실패 복구 후 기존 프로젝트에 폴더가 돌아오지 않았습니다.");
 
     await target.click();
     await dialog.waitFor({ state: "detached" });
     await projectGroup(page, "Soulstream 운영").getByTestId("v3-task-alpha").waitFor({ state: "visible" });
     assert(await projectGroup(page, fixtureTitles.project).getByTestId("v3-task-alpha").count() === 0,
-      "이동 후 기존 프로젝트에 업무가 남았습니다.");
+      "이동 후 기존 프로젝트에 폴더가 남았습니다.");
     assert(audit.transfers === 3, `프로젝트 페이지 이동/복구 호출 수가 다릅니다: ${audit.transfers}`);
     assert(audit.boardMoves === 2, `보드 이동 호출 수가 다릅니다: ${audit.boardMoves}`);
     assert(audit.dailyWrites === 0, "프로젝트 이동이 데일리 마운트를 변경했습니다.");

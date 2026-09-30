@@ -36,7 +36,7 @@ export function buildSessionContextSelection({
     contextItems.push({
       key: PAGE_CONTEXT_SOURCES_KEY,
       label: inheritCard
-        ? hasAdditionalDocument ? "업무 카드와 선택한 보드 문서" : "업무 카드 본문"
+        ? hasAdditionalDocument ? "카드와 선택한 보드 문서" : "카드 본문"
         : "선택한 보드 문서",
       content: { pages: pageIds.map((pageId) => ({ page_id: pageId })) },
     });

@@ -192,7 +192,7 @@ function SearchSessionResultRow({
       </p>
       {result.task_title && (
         <p className="mt-1 text-xs text-muted-foreground truncate">
-          업무 · {result.task_title}
+          폴더 · {result.task_title}
         </p>
       )}
     </button>

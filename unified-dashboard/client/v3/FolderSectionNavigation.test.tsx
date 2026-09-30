@@ -38,7 +38,7 @@ describe("FolderSectionNavigation", () => {
     await vi.waitFor(() => expect(currentLabel()).toBe("정보 섹션으로 이동"));
 
     tops.information = -120;
-    tops.checklist = 180;
+    tops.cards = 180;
     flushSync(() => scroll.dispatchEvent(new Event("scroll")));
     await vi.waitFor(() => expect(currentLabel()).toBe("카드 섹션으로 이동"));
   });
@@ -81,9 +81,16 @@ describe("FolderSectionNavigation", () => {
     await vi.waitFor(() => expect(currentLabel()).toBe("세션 섹션으로 이동"));
   });
 
+  it("keeps the cards section visible in every folder", () => {
+    flushSync(() => root.render(<Harness />));
+
+    expect(container.querySelector("nav")?.getAttribute("aria-label")).toBe("폴더 섹션");
+    expect(button("카드 섹션으로 이동")).toBeDefined();
+  });
+
   function scrollElement(): HTMLDivElement {
     const scroll = container.querySelector<HTMLDivElement>('[data-testid="task-section-scroll"]');
-    if (!scroll) throw new Error("업무 상세 스크롤을 찾지 못했습니다.");
+    if (!scroll) throw new Error("폴더 상세 스크롤을 찾지 못했습니다.");
     return scroll;
   }
 
@@ -108,10 +115,10 @@ function Harness({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const information = useRef<HTMLElement>(null);
-  const checklist = useRef<HTMLElement>(null);
+  const cards = useRef<HTMLElement>(null);
   const board = useRef<HTMLElement>(null);
   const sessions = useRef<HTMLElement>(null);
-  const sectionRefs: FolderSectionRefs = { information, checklist, board, sessions };
+  const sectionRefs: FolderSectionRefs = { information, cards, board, sessions };
 
   return (
     <div ref={scrollRef} data-testid="task-section-scroll">
@@ -123,7 +130,7 @@ function Harness({
         onFocusRequestHandled={onFocusRequestHandled}
       />
       <section ref={information} data-section-id="information" />
-      <section ref={checklist} data-section-id="checklist" />
+      <section ref={cards} data-section-id="cards" />
       <section ref={board} data-section-id="board" />
       <section ref={sessions} data-section-id="sessions">
         <div data-session-id="session-target" />
@@ -135,7 +142,7 @@ function Harness({
 function installGeometry(scroll: HTMLDivElement) {
   const tops = {
     information: 120,
-    checklist: 660,
+    cards: 660,
     board: 800,
     sessions: 1120,
   };

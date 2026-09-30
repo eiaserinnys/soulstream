@@ -24,7 +24,7 @@ describe("🔴24 board card context menu portal", () => {
     expect(menus).toContain('import { createPortal } from "react-dom"');
     // 🔴24 유지: 메뉴는 여전히 document.body로 포털한다(backdrop-filter containing block 탈출).
     expect(menus).toContain(", document.body)");
-    // 카드 메뉴 상태 자체는 컨테이너 종류로 게이트되지 않는다(폴더·업무 보드 공통).
+    // 카드 메뉴 상태 자체는 컨테이너 종류로 게이트되지 않는다(폴더·폴더 보드 공통).
     const view = read("./BoardWorkspaceView.tsx");
     expect(view).toContain("onTileContextMenu={handleTileContextMenu}");
   });

@@ -60,7 +60,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const renameButton = inlineBoard.getByRole("button", { name: `${existingTitle} 이름 수정` });
     await renameButton.click();
     const renameInput = inlineBoard.getByRole("textbox", { name: "마크다운 이름" });
-    const renamedTitle = `${theme === "dark" ? "다크" : "라이트"} 업무 결정 로그`;
+    const renamedTitle = `${theme === "dark" ? "다크" : "라이트"} 폴더 결정 로그`;
     await renameInput.fill(renamedTitle);
     const renameResponse = page.waitForResponse((response) => (
       response.url().includes("/api/markdown-documents/doc-inline")

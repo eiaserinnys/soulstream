@@ -89,7 +89,7 @@ export function RitualModal({
       onActionApplied(item, action);
       setIndex((value) => value + 1);
     } catch (error) {
-      console.error("[v3/ritual] 이월 업무 변경 실패", error);
+      console.error("[v3/ritual] 이월 폴더 변경 실패", error);
       setActionError(errorText(error));
     } finally {
       setProcessing(false);
@@ -135,7 +135,7 @@ export function RitualModal({
                 <div className="v3-ritual-done">
                   <span aria-hidden="true">✓</span>
                   <h3>오늘 준비 완료</h3>
-                  <p>결정한 업무의 데일리 배치를 오늘 플래너에 반영했습니다.</p>
+                  <p>결정한 폴더의 데일리 배치를 오늘 플래너에 반영했습니다.</p>
                   {reviewCount > 0 ? (
                     <Button variant="link" className="v3-ritual-review-link" onClick={focusSessionPanel}>
                       검수 대기 {reviewCount}건 → 우측 세션
@@ -186,7 +186,7 @@ function RitualItemCard({
   return (
     <>
       <article className="v3-ritual-card">
-        <span>미완 업무</span>
+        <span>미완 폴더</span>
         <h3>{item.title}</h3>
         <p>{item.description}</p>
         <small>◉ {item.agentLabel}</small>

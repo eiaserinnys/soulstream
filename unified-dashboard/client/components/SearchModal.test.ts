@@ -70,8 +70,8 @@ function makeSession(
 function makeCatalog(session: SessionSummary): CatalogState {
   return {
     folders: [
-      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "current-folder", name: "Current", sortOrder: 0 },
-      { checklistEnabled: false, status: "open", version: 1, archived: false, id: "target-folder", name: "Target", sortOrder: 1 },
+      { status: "open", version: 1, archived: false, id: "current-folder", name: "Current", sortOrder: 0 },
+      { status: "open", version: 1, archived: false, id: "target-folder", name: "Target", sortOrder: 1 },
     ],
     sessions: {
       [session.agentSessionId]: {

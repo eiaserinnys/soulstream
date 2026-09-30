@@ -48,12 +48,8 @@ for (const viewport of [
     await expect(page.getByText("이름 변경", { exact: true })).toBeVisible();
     await expect(page.getByText("다른 폴더로 이동", { exact: true })).toBeVisible();
     await expect(page.getByText("폴더 보관", { exact: true })).toBeVisible();
-    await expect(page.getByText("체크리스트 끄기", { exact: true })).toBeVisible();
+    await expect(child.getByText("진행 중", { exact: true })).toBeVisible();
     await page.screenshot({ path: path.join(output, `${viewport.name}.png`), animations: "disabled", fullPage: true });
-
-    await page.getByText("체크리스트 끄기", { exact: true }).click();
-    await manage.click();
-    await expect(page.getByText("체크리스트 켜기", { exact: true })).toBeVisible();
     await page.getByText("이름 변경", { exact: true }).click();
     await expect(page.getByRole("dialog").getByRole("heading", { name: "프로젝트 설정" })).toBeVisible();
     await page.keyboard.press("Escape");
@@ -70,8 +66,8 @@ for (const viewport of [
     await section.getByRole("button", { name: "새 폴더" }).click();
     await expect(page.getByRole("dialog").getByRole("heading", { name: "새 폴더" })).toBeVisible();
     await page.keyboard.press("Escape");
-    await section.getByRole("button", { name: "새 업무" }).click();
-    await expect(page.getByRole("dialog").getByRole("heading", { name: "새 업무" })).toBeVisible();
+    await section.getByRole("button", { name: "새 폴더" }).click();
+    await expect(page.getByRole("dialog").getByRole("heading", { name: "새 폴더" })).toBeVisible();
     await page.keyboard.press("Escape");
 
     await parent.click();

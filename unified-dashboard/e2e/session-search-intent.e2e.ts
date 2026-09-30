@@ -63,7 +63,7 @@ test("opens the exact session and event after auth, follows a clicked search res
             excerpt: "정확한 세션 검색 결과",
             updated_at: "2026-07-14T01:30:00.000Z",
             task_id: "rb-alpha",
-            task_title: "업무 카드 밀도와 계층 최종 QA",
+            task_title: "카드 밀도와 계층 최종 QA",
             parent_session_id: null,
             best_match: {
               event_id: 7,
@@ -162,7 +162,7 @@ test("opens the exact session and event after auth, follows a clicked search res
     await searchInput.fill("open the matching work");
     await resultSearchResponse;
     const sessionResult = page.getByTestId("session-search-result");
-    await expect(sessionResult).toContainText("업무 카드 밀도와 계층 최종 QA");
+    await expect(sessionResult).toContainText("카드 밀도와 계층 최종 QA");
     await sessionResult.click();
 
     await expect(page.locator('[data-tree-node-id$="-7"].chat-focus-ring')).toBeVisible();

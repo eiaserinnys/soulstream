@@ -328,12 +328,12 @@ export function SessionSuccessionModal({
                   <label>
                     <input
                       type="checkbox"
-                      aria-label="업무 카드 본문과 컨텍스트 포함"
+                      aria-label="카드 본문과 컨텍스트 포함"
                       checked={inheritCard}
                       onChange={(event) => setInheritCard(event.target.checked)}
                     />
                     <span>
-                      <strong>업무 카드 본문</strong>
+                      <strong>카드 본문</strong>
                       <span className="v3-succession-context-chips">
                         {contextItems.map((context) => (
                           <span key={context.id}>
@@ -395,7 +395,7 @@ export function SessionSuccessionModal({
                     <span>{document.title}</span>
                   </label>
                 ))}
-                {documentOptions.length === 0 ? <small>업무에 마운트된 보드 문서가 없습니다.</small> : null}
+                {documentOptions.length === 0 ? <small>폴더에 마운트된 보드 문서가 없습니다.</small> : null}
               </div>
               <label className="flex min-w-0 flex-col gap-2">
                 <strong>atom 노드</strong>

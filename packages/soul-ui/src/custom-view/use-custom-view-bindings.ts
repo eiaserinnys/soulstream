@@ -41,7 +41,7 @@ function buildBindings(
   return { taskItems, tasks, sessions };
 }
 
-/** catalog·업무 정본에서 <soul-bind> 라이브 바인딩 데이터를 만든다 (패널·타일 공용). */
+/** catalog·폴더 정본에서 <soul-bind> 라이브 바인딩 데이터를 만든다 (패널·타일 공용). */
 export function useCustomViewBindings(): CustomViewBindingData {
   const catalog = useDashboardStore((s) => s.catalog);
   const cards = useCardStore(s=>s.byId);

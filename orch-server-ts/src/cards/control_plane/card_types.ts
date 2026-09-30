@@ -31,7 +31,6 @@ export interface FolderRow extends Record<string, unknown> {
   settings: Record<string, unknown>;
   parent_folder_id: string | null;
   project_page_id: string | null;
-  checklist_enabled: boolean;
   status: FolderStatus;
   archived: boolean;
   version: number;

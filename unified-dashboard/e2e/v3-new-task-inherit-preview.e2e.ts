@@ -36,7 +36,7 @@ test("PR-Y · one Chromium · inherited values, empty values, and project switch
       await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
       await expect(page.getByTestId("v3-global-toolbar")).toBeVisible();
       await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible();
-      await page.getByRole("button", { name: "새 업무" }).click();
+      await page.getByRole("button", { name: "새 폴더" }).click();
       await page.getByLabel("프로젝트 선택").selectOption("folder-dashboard");
 
       const preview = page.getByTestId("new-task-inheritance-preview");

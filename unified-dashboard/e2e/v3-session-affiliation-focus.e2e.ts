@@ -98,14 +98,14 @@ async function preparePage(page: Page, theme: "dark" | "light") {
 async function assertFocusedSession(page: Page) {
   await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })
     .waitFor({ state: "visible" });
-  const navigation = page.getByRole("navigation", { name: "업무 섹션" });
+  const navigation = page.getByRole("navigation", { name: "폴더 섹션" });
   await expect(navigation.getByRole("button", { name: "세션 섹션으로 이동" }))
     .toHaveAttribute("aria-current", "location");
   const activeRow = page.locator('.v3-detail-scroll [data-session-id="run-alpha-2"]');
   await expect(activeRow).toHaveClass(/is-active/);
   const visibility = await activeRow.evaluate((row) => {
     const scroll = row.closest<HTMLElement>(".v3-detail-scroll");
-    if (!scroll) throw new Error("업무 상세 스크롤을 찾지 못했습니다.");
+    if (!scroll) throw new Error("폴더 상세 스크롤을 찾지 못했습니다.");
     const rowRect = row.getBoundingClientRect();
     const scrollRect = scroll.getBoundingClientRect();
     return {

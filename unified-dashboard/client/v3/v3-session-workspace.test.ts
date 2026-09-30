@@ -125,7 +125,7 @@ describe("resolveSessionWorkspace", () => {
       session: session("session-a", null),
       boardItems: [],
       fetchImplementation: fetchImplementation as typeof globalThis.fetch,
-    })).rejects.toThrow("세션의 업무를 불러오지 못했습니다 (503)");
+    })).rejects.toThrow("세션의 폴더를 불러오지 못했습니다 (503)");
     expect(fetchImplementation).toHaveBeenCalledTimes(1);
   });
 });
@@ -176,7 +176,7 @@ describe("resolveSessionFolderWorkspace", () => {
 
     await expect(promise).rejects.toMatchObject({
       phase: "membership",
-      message: "세션의 소속 업무를 확인하지 못했습니다.",
+      message: "세션의 소속 폴더를 확인하지 못했습니다.",
     });
     expect(loadFolderById).not.toHaveBeenCalled();
   });
@@ -195,7 +195,7 @@ describe("resolveSessionFolderWorkspace", () => {
     await expect(promise).rejects.toBeInstanceOf(SessionWorkspaceResolutionError);
     await expect(promise).rejects.toMatchObject({
       phase: "folder",
-      message: "소속 업무를 불러오지 못했습니다.",
+      message: "소속 폴더를 불러오지 못했습니다.",
     });
 
     await expect(resolveSessionFolderWorkspace({

@@ -33,7 +33,6 @@ async function verify(browser: Browser) {
   const page = await context.newPage();
   const browserErrors: string[] = [];
   const taskOperations: Array<{ operations?: Array<Record<string, unknown>> }> = [];
-  const taskCreates: Record<string, unknown>[] = [];
   let plannerTodayRequests = 0;
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
@@ -53,7 +52,6 @@ async function verify(browser: Browser) {
       legacyAtomContext: mode === "before",
       taskContextEditing: mode === "after",
       onPlannerTodayRequest: (count) => { plannerTodayRequests = count; },
-      onTaskCreate: mode === "after" ? (payload) => taskCreates.push(payload) : undefined,
     });
     await page.route("**/api/atom/nodes", async (route) => {
       await route.fulfill({
@@ -72,35 +70,6 @@ async function verify(browser: Browser) {
       console.error(JSON.stringify({ browserErrors, pageUrl: page.url(), body: (await page.locator("body").textContent() ?? "").slice(0, 2_000) }));
       await capture(page, "diagnostic-load-failure").catch(() => undefined);
       throw cause;
-    }
-
-    await page.getByRole("button", { name: "새 업무", exact: true }).click();
-    const newTaskDialog = page.getByRole("dialog", { name: "새 업무", exact: true });
-    await newTaskDialog.waitFor({ state: "visible" });
-    if (mode === "after") {
-      await newTaskDialog.getByRole("button", { name: "＋ 컨텍스트", exact: true }).click();
-      await newTaskDialog.getByLabel("업무 직접 guidance").fill("PR-CJ 직접 guidance");
-      await newTaskDialog.getByRole("tab", { name: "atom" }).click();
-      await selectAtomNode(newTaskDialog, page);
-      const selected = newTaskDialog.locator(".v3-context-option--selected");
-      await waitForText(selected, atomNodeTitle);
-      await selected.getByLabel(`${atomNodeTitle} 최근 자식 수`).fill("3");
-      assert((await selected.textContent())?.includes(atomNodeId), "새 업무 atom 선택에 nodeId 메타가 없습니다.");
-    }
-    await capture(page, "01-new-task-dialog");
-
-    if (mode === "after") {
-      await newTaskDialog.getByLabel("새 업무 제목").fill("PR-CJ 생성 컨텍스트 QA");
-      await newTaskDialog.getByRole("button", { name: "업무 만들기", exact: true }).click();
-      await waitUntil(() => taskCreates.length === 1, "새 업무 생성 payload");
-      const initialContext = taskCreates[0]?.initial_context as Record<string, unknown> | undefined;
-      assert(initialContext?.guidance === "PR-CJ 직접 guidance", "생성 guidance가 initial_context에 없습니다.");
-      const references = initialContext?.atom_references;
-      assert(Array.isArray(references) && references.length === 1, "생성 atom_references가 한 건이 아닙니다.");
-      assert((references[0] as Record<string, unknown>).node_title === atomNodeTitle, "생성 atom 제목 스냅샷이 없습니다.");
-      assert((references[0] as Record<string, unknown>).limit === 3, "생성 atom limit가 initial_context에 없습니다.");
-    } else {
-      await newTaskDialog.getByRole("button", { name: "취소", exact: true }).click();
     }
 
     await page.getByTestId("v3-task-task-beta").click();

@@ -22,7 +22,7 @@ describe("FolderService host contract", () => {
     await service.createFolder({
       actorKind: "agent", actorSessionId: "session-1",
       parentFolderId: "parent-1",
-      name: "Work", checklistEnabled: true,
+      name: "Work",
       initialContext: { guidance: "Use the checklist", atomReferences: [] },
       idempotencyKey: "create-1",
     });
@@ -30,7 +30,7 @@ describe("FolderService host contract", () => {
     expect(calls[0]?.body).toMatchObject({
       actor_kind: "agent", actor_session_id: "session-1",
       parent_folder_id: "parent-1",
-      checklist_enabled: true, idempotency_key: "create-1",
+      idempotency_key: "create-1",
       initial_context: { guidance: "Use the checklist", atomReferences: [] },
     });
     expect(calls[0]?.body).not.toHaveProperty("folder_id");

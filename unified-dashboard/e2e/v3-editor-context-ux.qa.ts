@@ -200,7 +200,7 @@ async function gotoPlanner(page: Page) {
   console.log("[pr-ad/qa] /v3 진입");
   await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
   try {
-    await waitVisible(page.getByTestId("v3-task-task-alpha"), "플래너 업무 카드");
+    await waitVisible(page.getByTestId("v3-task-task-alpha"), "플래너 카드");
   } catch (error) {
     console.error(`[pr-ad/qa] 현재 URL · ${page.url()}`);
     const bodyText = await page.locator("body").textContent({ timeout: 1_000 }).catch(() => "본문 조회 실패");
@@ -221,8 +221,8 @@ async function openProject(page: Page) {
 
 async function openPrimaryTask(page: Page) {
   await page.getByTestId("v3-task-task-alpha").click();
-  await waitVisible(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 }), "업무 상세 제목");
-  console.log("[pr-ad/qa] 업무 상세 열림");
+  await waitVisible(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 }), "폴더 상세 제목");
+  console.log("[pr-ad/qa] 폴더 상세 열림");
 }
 
 async function elementHeight(locator: Locator) {

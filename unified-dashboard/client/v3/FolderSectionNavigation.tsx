@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
   History,
   Info,
@@ -9,7 +9,7 @@ import {
 
 import "./v3-folder-section-navigation.css";
 
-export type FolderSectionId = "information" | "checklist" | "board" | "sessions";
+export type FolderSectionId = "information" | "cards" | "board" | "sessions";
 
 export type FolderSectionRefs = Record<FolderSectionId, RefObject<HTMLElement | null>>;
 
@@ -26,18 +26,17 @@ const TASK_SECTIONS: readonly {
   Icon: LucideIcon;
 }[] = [
   { id: "information", label: "정보", accessibleLabel: "정보", Icon: Info },
-  { id: "checklist", label: "카드", accessibleLabel: "카드", Icon: ListChecks },
+  { id: "cards", label: "카드", accessibleLabel: "카드", Icon: ListChecks },
   { id: "board", label: "보드", accessibleLabel: "보드", Icon: LayoutGrid },
   { id: "sessions", label: "세션", accessibleLabel: "세션", Icon: History },
 ];
 
 export function FolderSectionNavigation(props: {
-  scrollRef: RefObject<HTMLDivElement | null>; sectionRefs: FolderSectionRefs; checklistEnabled?: boolean;
+  scrollRef: RefObject<HTMLDivElement | null>; sectionRefs: FolderSectionRefs;
   focusRequest?: FolderSectionFocusRequest | null; focusTargetReady?: boolean;
   onFocusRequestHandled?(requestId: number): void;
 }) {
-  const sections = useMemo(() => TASK_SECTIONS.filter(s => s.id !== "checklist" || props.checklistEnabled !== false), [props.checklistEnabled]);
-  return <SectionNavigation {...props} sections={sections} ariaLabel="업무 섹션" />;
+  return <SectionNavigation {...props} sections={TASK_SECTIONS} ariaLabel="폴더 섹션" />;
 }
 export function SectionNavigation<Id extends string>({scrollRef, sectionRefs, sections, focusRequest, focusTargetReady = true, onFocusRequestHandled, ariaLabel}: {
   scrollRef: RefObject<HTMLDivElement | null>;

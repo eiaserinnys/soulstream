@@ -63,7 +63,7 @@ export function useV3PlannerActions({
       mutate: async () => {
         try {
           const folder = folders.find((candidate) => candidate.id === task.folderId);
-          if (!folder?.checklistEnabled) throw new Error("체크리스트가 켜진 폴더만 완료할 수 있습니다.");
+          if (!folder) throw new Error("폴더를 찾을 수 없습니다.");
           const result = await setFolderStatus(folder, "completed");
           const state = useDashboardStore.getState();
           if (state.catalog) state.setCatalog({
@@ -73,9 +73,9 @@ export function useV3PlannerActions({
               : candidate),
           });
           patchFolder(folderId, (current) => ({ ...current, status: "completed" }));
-          notify(`업무 완료 · ${task.page.title}`);
+          notify(`폴더 완료 · ${task.page.title}`);
         } catch (error) {
-          notifyWriteFailure("업무 완료", error);
+          notifyWriteFailure("폴더 완료", error);
           throw error;
         }
       },
@@ -116,7 +116,7 @@ export function useV3PlannerActions({
       }
       return await loadStarredPlannerFolder(api, task, folders);
     } catch (error) {
-      notify(`별표 업무 불러오기 실패 · ${errorText(error)}`);
+      notify(`별표 폴더 불러오기 실패 · ${errorText(error)}`);
       throw error;
     }
   }, [api, folders, notify]);
@@ -147,10 +147,10 @@ export function useV3PlannerActions({
     try {
       const page = await renameFolderIdentityTitle(api, task.page.id, title);
       patchFolder(task.page.id, (current) => ({ ...current, page }));
-      notify("업무 제목을 변경했습니다");
+      notify("폴더 제목을 변경했습니다");
       return page.title;
     } catch (error) {
-      notifyWriteFailure("업무 제목 변경", error);
+      notifyWriteFailure("폴더 제목 변경", error);
       throw error;
     } finally {
       clearFolderStarChange(task.page.id, mutationId);

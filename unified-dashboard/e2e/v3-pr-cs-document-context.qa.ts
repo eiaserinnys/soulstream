@@ -71,7 +71,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     await row.focus();
     await page.keyboard.press("Shift+F10");
-    for (const label of ["문서 열기", "페이지 ID 복사", "다른 업무로 이동", "문서 삭제"]) {
+    for (const label of ["문서 열기", "페이지 ID 복사", "다른 폴더로 이동", "문서 삭제"]) {
       await page.getByRole("menuitem", { name: label }).waitFor({ state: "visible" });
     }
     await capture(page, theme, "01-inline-document-menu");
@@ -102,7 +102,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(selectionPolicy.input === "text", `입력 선택 정책이 text가 아닙니다: ${selectionPolicy.input}`);
 
     await row.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "다른 업무로 이동" }).click();
+    await page.getByRole("menuitem", { name: "다른 폴더로 이동" }).click();
     const moveResponse = page.waitForResponse((response) => (
       response.url().includes("/api/board-items/markdown%3Adoc-inline/container")
       && response.request().method() === "PATCH"
@@ -134,9 +134,9 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await page.getByTestId("v3-session-row-run-outside-task").getByRole("button").first().click();
-    await page.getByRole("button", { name: "업무 제목 편집" }).filter({ hasText: "완료한 접근성 정리" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "폴더 제목 편집" }).filter({ hasText: "완료한 접근성 정리" }).waitFor({ state: "visible" });
     await page.getByTestId("v3-standalone-session-chat").waitFor({ state: "detached" });
-    assert(await page.getByText("연결된 업무가 없습니다.", { exact: true }).count() === 0, "데일리 밖 세션을 무소속으로 표시했습니다.");
+    assert(await page.getByText("연결된 폴더가 없습니다.", { exact: true }).count() === 0, "데일리 밖 세션을 무소속으로 표시했습니다.");
     await capture(page, theme, "03-session-owning-task");
 
     const unexpectedErrors = errors.filter((message) => !message.includes("favicon"));

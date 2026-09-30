@@ -43,7 +43,7 @@ describe("PlannerFolderCard node connectivity", () => {
     const html = renderToStaticMarkup(
       <PlannerFolderCard
         task={{
-          page: { id: "page-a", title: "정보를 덜어낸 업무" },
+          page: { id: "page-a", title: "정보를 덜어낸 폴더" },
           folderId: "aae680d9-internal-task-id",
           sessionIds: ["session-a"],
           status: "in_progress",
@@ -72,14 +72,15 @@ describe("PlannerFolderCard node connectivity", () => {
     expect(html).not.toContain("담당 미지정");
     expect(html).not.toContain("컨텍스트 3");
     expect(html).not.toContain("세션 #1 완료");
-    expect(html).toContain('data-complete="false"');
+    expect(html).toContain('class="v3-status-chip v3-status-chip--in_progress"');
+    expect(html).toContain("진행");
   });
 
   it("keeps a meaningful assignee and an actively running session", () => {
     const html = renderToStaticMarkup(
       <PlannerFolderCard
         task={{
-          page: { id: "page-b", title: "진행 중인 업무" },
+          page: { id: "page-b", title: "진행 중인 폴더" },
           folderId: "rb-running",
           sessionIds: ["session-b"],
           status: "in_progress",
@@ -113,7 +114,7 @@ describe("PlannerFolderCard node connectivity", () => {
     const html = renderToStaticMarkup(
       <PlannerFolderCard
         task={{
-          page: { id: "page-a", title: "노드 상태 업무" },
+          page: { id: "page-a", title: "노드 상태 폴더" },
           folderId: "rb-node-offline",
           sessionIds: ["session-a"],
           status: "in_progress",
@@ -146,7 +147,7 @@ describe("PlannerFolderCard node connectivity", () => {
     const html = renderToStaticMarkup(
       <PlannerFolderCard
         task={{
-          page: { id: "page-complete", title: "완료된 업무" },
+          page: { id: "page-complete", title: "완료된 폴더" },
           folderId: "rb-complete",
           sessionIds: [],
           status: "completed",
@@ -166,8 +167,8 @@ describe("PlannerFolderCard node connectivity", () => {
     );
 
     expect(html).toContain('class="v3-task-main"');
-    expect(html).toContain('class="v3-task-state"');
+    expect(html).toContain('class="v3-status-chip v3-status-chip--completed"');
     expect(html).toContain('class="v3-task-star-slot"');
-    expect(html).toContain('data-complete="true"');
+    expect(html).toContain("완료");
   });
 });

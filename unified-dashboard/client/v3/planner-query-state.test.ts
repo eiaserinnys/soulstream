@@ -10,7 +10,7 @@ describe("planner query state", () => {
   it("does not replace ready content while a background refresh is pending", () => {
     const current = {
       status: "ready" as const,
-      data: { items: [{ id: "task-a", title: "업무" }] },
+      data: { items: [{ id: "task-a", title: "폴더" }] },
       message: null,
     };
 
@@ -20,7 +20,7 @@ describe("planner query state", () => {
   it("keeps the load state and rows across an equivalent response", () => {
     const current = {
       status: "ready" as const,
-      data: { items: [{ id: "task-a", title: "업무" }] },
+      data: { items: [{ id: "task-a", title: "폴더" }] },
       message: null,
     };
 

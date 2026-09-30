@@ -38,7 +38,6 @@ export class FolderService {
     parentFolderId?: string | null;
     name: string;
     description?: string;
-    checklistEnabled?: boolean;
     initialContext?: unknown;
     sortOrder?: number;
     idempotencyKey: string;
@@ -59,9 +58,6 @@ export class FolderService {
     return await this.mutate("set_folder_status", params);
   }
 
-  async setFolderChecklistEnabled(params: FolderActorParams & { folderId: string; expectedVersion: number; checklistEnabled: boolean; reason?: string | null; idempotencyKey: string }): Promise<FolderMutationResult> {
-    return await this.mutate("set_folder_checklist_enabled", params);
-  }
 
   async listCards(params: { folderId?: string; status?: CardStatus; actorSessionId?: string } = {}) {
     const query = new URLSearchParams();

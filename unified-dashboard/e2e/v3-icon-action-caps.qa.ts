@@ -54,14 +54,14 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.getByRole("button", { name: "오늘로 돌아가기" }).click();
     await page.getByTestId("v3-task-task-alpha").click();
     const detail = page.locator(".v3-detail-pane").first();
-    await detail.getByTestId("v3-task-checklist").waitFor({ state: "visible" });
+    await detail.getByTestId("v3-folder-cards-section").waitFor({ state: "visible" });
     await detail.getByTestId("v3-inline-board").waitFor({ state: "visible" });
 
     const detailCaps = await auditVisibleCaps(detail);
     for (const label of [
       "오늘 플래너로 돌아가기",
-      "업무 보드 열기",
-      "업무 설명 편집",
+      "폴더 보드 열기",
+      "폴더 설명 편집",
       "컨텍스트 추가",
       "마크다운 추가",
       "새 세션",

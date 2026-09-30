@@ -126,7 +126,7 @@ describe("FolderInlineBoard document context menu", () => {
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
     const target = {
       folderId: "task-2",
-      page: { id: "page-2", title: "옮길 업무" },
+      page: { id: "page-2", title: "옮길 폴더" },
     } as FolderMoveTarget;
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -157,7 +157,7 @@ describe("FolderInlineBoard document context menu", () => {
     expect(moveAction).not.toBeUndefined();
     flushSync(() => moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     const targetAction = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
-      .find((button) => button.textContent?.includes("옮길 업무"));
+      .find((button) => button.textContent?.includes("옮길 폴더"));
     expect(targetAction).not.toBeUndefined();
     flushSync(() => {
       targetAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));

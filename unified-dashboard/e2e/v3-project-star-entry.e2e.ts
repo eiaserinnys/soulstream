@@ -21,7 +21,7 @@ for (const theme of ["dark", "light"] as const) {
     await installV3VisualQaRoutes(page);
 
     await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByText("오늘의 업무")).toBeVisible();
+    await expect(page.getByText("오늘의 폴더")).toBeVisible();
     await expect(page.getByTestId("v3-starred-tasks")).toContainText(fixtureTitles.primaryTask);
     await capture(page, theme, "01-starred-folder-and-today");
 

@@ -44,7 +44,6 @@ export class FolderProjectIdentityService {
     sortOrder?: number;
     settings?: Record<string, unknown>;
     parentFolderId?: string | null;
-    checklistEnabled?: boolean;
     description?: string;
     initialContext?: InitialFolderContext;
     actor: PageMutationActor;
@@ -71,7 +70,7 @@ export class FolderProjectIdentityService {
       actor: input.actor,
       idempotencyKey: pageKey("create_folder", input.actor, input.idempotencyKey),
       reason: "create folder identity",
-      ...(input.checklistEnabled || input.description || input.initialContext ? {
+      ...(input.description || input.initialContext ? {
         initialCommand: { type: "batch_operations" as const,
           operations: initialFolderOperations(name, input.description ?? "", id, randomUUID, input.initialContext) },
       } : {}),
@@ -84,7 +83,6 @@ export class FolderProjectIdentityService {
       sortOrder: input.sortOrder ?? 0,
       settings: input.settings ?? {},
       parentFolderId: input.parentFolderId ?? null,
-      checklistEnabled: input.checklistEnabled ?? false,
       actor: input.actor,
       idempotencyKey: input.idempotencyKey,
       request,

@@ -46,7 +46,6 @@ export interface V3VisualQaRouteOptions {
   onPlannerTodayRequest?: (requestNumber: number) => void;
   onPlannerProjectRequest?: (requestNumber: number) => void;
   onRunHistoryRequest?: (requestNumber: number) => void;
-  onTaskCreate?: (payload: Record<string, unknown>) => void;
 }
 
 function page(
@@ -93,11 +92,11 @@ const pages = {
   projectDashboard: page("project-dashboard", "대시보드", null, { folderId: "folder-dashboard" }),
   today: page("daily-2026-07-14", "2026-07-14", "2026-07-14"),
   yesterday: page("daily-2026-07-13", "2026-07-13", "2026-07-13"),
-  taskAlpha: page("task-alpha", "업무 카드 밀도와 계층 최종 QA", null, { starred: true }),
+  taskAlpha: page("task-alpha", "카드 밀도와 계층 최종 QA", null, { starred: true }),
   taskCreated: page("task-created", "PR-CI 생성 직후 fetch 회귀"),
   taskBeta: page("task-beta", "모바일 3탭 선택 상태 검증"),
   taskDone: page("task-done", "완료한 접근성 정리"),
-  carryover: page("task-carryover", "이월 업무: 모달 간격 확인"),
+  carryover: page("task-carryover", "이월 폴더: 모달 간격 확인"),
 };
 
 const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<typeof block>[]; state_vector: string }> = {
@@ -174,7 +173,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     page: pages.taskBeta,
     state_vector: "AA==",
     blocks: [
-      block("beta-description", pages.taskBeta.id, "paragraph", "390px에서 오늘·업무·채팅의 선택 상태를 유지한다."),
+      block("beta-description", pages.taskBeta.id, "paragraph", "390px에서 오늘·폴더·채팅의 선택 상태를 유지한다."),
       block("beta-task", pages.taskBeta.id, "task_ref", "", { taskId: "rb-beta", primary: true }),
       block("beta-guidance", pages.taskBeta.id, "guidance", "손가락으로 누르기 쉬운 탭 크기", { enabled: true, scope: "session" }),
     ],
@@ -386,10 +385,10 @@ const outsideTaskSession = {
   sessionType: "claude",
   createdAt: "2026-07-14T01:29:00.000Z",
   updatedAt: NOW,
-  displayName: "데일리 밖 완료 업무 세션",
+  displayName: "데일리 밖 완료 폴더 세션",
   lastMessage: {
     type: "assistant",
-    preview: "완료 업무의 소속을 canonical membership으로 찾습니다.",
+    preview: "완료 폴더의 소속을 canonical membership으로 찾습니다.",
     timestamp: NOW,
   },
   nodeId: "eiaserinnys",
@@ -405,11 +404,11 @@ const runSessions: Record<string, string[]> = {
   "rb-carry": [],
 };
 
-function fixtureFolder(id: string, folderPage: typeof pages.taskAlpha, parentFolderId: string | null, checklistEnabled: boolean) {
+function fixtureFolder(id: string, folderPage: typeof pages.taskAlpha, parentFolderId: string | null) {
   const snapshot = tasks[id] as ReturnType<typeof task> | undefined;
   return {
     id, name: folderPage.title, parentFolderId, sortOrder: 0, projectPageId: folderPage.id,
-    checklistEnabled, status: snapshot?.task.status ?? "open", archived: false,
+    status: snapshot?.task.status ?? "open", archived: false,
     version: snapshot?.task.version ?? 1, settings: {},
   };
 }
@@ -530,15 +529,15 @@ export async function installV3VisualQaRoutes(
     };
   });
   const unifiedFolders = [
-    fixtureFolder("folder-amber", pages.project, null, true),
-    fixtureFolder("folder-dashboard", pages.projectDashboard, "folder-amber", false),
-    fixtureFolder("folder-ops", pages.projectOps, null, false),
-    fixtureFolder("rb-alpha", pages.taskAlpha, "folder-amber", true),
-    fixtureFolder("rb-beta", pages.taskBeta, options.nestedSubfolder ? "folder-dashboard" : "folder-amber", true),
-    fixtureFolder("rb-done", pages.taskDone, "folder-amber", true),
-    fixtureFolder("rb-carry", pages.carryover, "folder-amber", true),
+    fixtureFolder("folder-amber", pages.project, null),
+    fixtureFolder("folder-dashboard", pages.projectDashboard, "folder-amber"),
+    fixtureFolder("folder-ops", pages.projectOps, null),
+    fixtureFolder("rb-alpha", pages.taskAlpha, "folder-amber"),
+    fixtureFolder("rb-beta", pages.taskBeta, options.nestedSubfolder ? "folder-dashboard" : "folder-amber"),
+    fixtureFolder("rb-done", pages.taskDone, "folder-amber"),
+    fixtureFolder("rb-carry", pages.carryover, "folder-amber"),
     ...(options.includeCreatedTaskWhen?.() === true
-      ? [fixtureFolder(pages.taskCreated.id, pages.taskCreated, "folder-amber", true)] : []),
+      ? [fixtureFolder(pages.taskCreated.id, pages.taskCreated, "folder-amber")] : []),
   ];
   const folderPageById = new Map([
     ["folder-amber", pages.project], ["folder-dashboard", pages.projectDashboard],
@@ -599,6 +598,31 @@ export async function installV3VisualQaRoutes(
 
     if (path === "/api/auth/config") return fulfillJson(route, { authEnabled: false, devModeEnabled: false });
     if (path === "/api/auth/status") return fulfillJson(route, { authenticated: true, user: null });
+    if (path === "/api/cards" && request.method() === "GET") {
+      const folderId = url.searchParams.get("folderId");
+      return fulfillJson(route, { cards: options.unifiedFolderView && folderId === "folder-amber" ? [{
+        id: "p1-card-folder-display",
+        folderId: "folder-amber",
+        title: "P1 카드 표시",
+        request: "",
+        brief: "",
+        status: "running",
+        blockedKind: null,
+        blockedDetail: null,
+        positionKey: "a",
+        queuePositionKey: null,
+        assigneeKind: null,
+        assigneeAgentId: null,
+        assigneeUserId: null,
+        assigneeSessionId: null,
+        nodeId: null,
+        modelPreset: null,
+        version: 1,
+        archived: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      }] : [] });
+    }
     if (path === "/api/config/settings" && request.method() === "GET") {
       return fulfillJson(route, { categories: [] });
     }
@@ -607,9 +631,8 @@ export async function installV3VisualQaRoutes(
     });
     if (path === "/api/folders" && request.method() === "POST") {
       const payload = request.postDataJSON() as Record<string, unknown>;
-      options.onTaskCreate?.(payload);
-      const created = fixtureFolder("rb-cj-created", page("task-cj-created", String(payload.name ?? "새 업무")),
-        typeof payload.parentFolderId === "string" ? payload.parentFolderId : null, payload.checklistEnabled === true);
+      const created = fixtureFolder("rb-cj-created", page("task-cj-created", String(payload.name ?? "새 폴더")),
+        typeof payload.parentFolderId === "string" ? payload.parentFolderId : null);
       unifiedFolders.push(created);
       return fulfillJson(route, { folder: created, created: true });
     }
@@ -765,7 +788,7 @@ export async function installV3VisualQaRoutes(
         ? payload.initial_instruction.trim()
         : "";
       const prompt = [
-        "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.",
+        "폴더 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.",
         initialInstruction,
       ].filter(Boolean).join("\n");
       return fulfillJson(route, {
@@ -1082,15 +1105,6 @@ export async function installV3VisualQaRoutes(
       folder.status = payload.status ?? folder.status;
       folder.version += 1;
       return fulfillJson(route, { ok: true, snapshot: { folder, sections: [], items: [] } });
-    }
-    const checklistToggleMatch = /^\/api\/folders\/([^/]+)\/checklist-enabled$/.exec(path);
-    if (checklistToggleMatch && request.method() === "POST") {
-      const folder = unifiedFolders.find((candidate) => candidate.id === decodeURIComponent(checklistToggleMatch[1]));
-      if (!folder) return fulfillJson(route, { detail: "folder not found" }, 404);
-      const payload = request.postDataJSON() as { checklistEnabled?: boolean };
-      folder.checklistEnabled = payload.checklistEnabled === true;
-      folder.version += 1;
-      return fulfillJson(route, { folder, idempotent: false });
     }
     if (path === "/api/board-items") {
       await delay(options.plannerDelayMs);

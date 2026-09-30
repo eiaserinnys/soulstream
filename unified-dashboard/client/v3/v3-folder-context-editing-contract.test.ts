@@ -6,18 +6,16 @@ import { describe, expect, it } from "vitest";
 const read = (name: string) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
 
 describe("PR-CJ task context editing contract", () => {
-  it("adds initial task context through the canonical picker surface", () => {
-    const form = read("./NewFolderForm.tsx");
-    const picker = read("./FolderContextPicker.tsx");
+  it("creates folders with the canonical project context form", () => {
+    const dialog = read("./ProjectDialog.tsx");
+    const contextForm = read("./ProjectContextFormFields.tsx");
     const atomOptions = read("./AtomContextOptions.tsx");
 
-    expect(form).toContain("InitialFolderContextPicker");
-    expect(form).toContain("setError(await onCreate(normalized, folderId, description, {");
-    expect(form).toContain("sessionDefaults");
-    expect(picker).toContain("AtomNodeSelector");
-    expect(picker).toContain("업무 직접 guidance");
-    expect(picker).toContain("nodeTitle: title.trim() || normalized");
-    expect(picker).toContain("onOptionsChange");
+    expect(dialog).toContain("onCreateIdentity(value.title.trim()");
+    expect(dialog).toContain("ProjectFormFields");
+    expect(contextForm).toContain("ProjectAtomFields");
+    expect(contextForm).toContain("ProjectSessionDefaultsFields");
+    expect(contextForm).toContain("ProjectAtomFields");
     expect(atomOptions).toContain("atom depth");
     expect(atomOptions).toContain("atom 렌더 방식");
     expect(atomOptions).toContain("제목만 포함");

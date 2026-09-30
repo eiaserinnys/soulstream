@@ -105,7 +105,7 @@ export async function resolveStarredFolderBeforePageId(input: {
     input.movedPageId,
     Boolean(input.nextCursor),
   );
-  if (boundary.kind === "invalid") throw new Error("이동할 별표 업무를 찾을 수 없습니다.");
+  if (boundary.kind === "invalid") throw new Error("이동할 별표 폴더를 찾을 수 없습니다.");
   if (boundary.kind === "before") return boundary.pageId;
   if (boundary.kind === "end") return null;
   if (!input.nextCursor) throw new Error("별표 목록 cursor가 없습니다.");

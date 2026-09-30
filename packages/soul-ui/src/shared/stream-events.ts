@@ -107,7 +107,7 @@ export interface MetadataUpdatedStreamEvent {
   lastEventId?: string;
 }
 
-/** 폴더 체크리스트 변경 이벤트 — 클라이언트는 서버 snapshot을 다시 읽는다. */
+/** 폴더 상태 변경 이벤트 — 클라이언트는 서버 snapshot을 다시 읽는다. */
 export interface FolderUpdatedStreamEvent {
   type: "folder_updated";
   folderId: string;

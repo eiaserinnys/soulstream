@@ -34,7 +34,6 @@ export interface CatalogFolder {
   sortOrder: number;
   parentFolderId?: string | null;
   projectPageId?: string | null;
-  checklistEnabled: boolean;
   status: "open" | "completed";
   version: number;
   archived: boolean;

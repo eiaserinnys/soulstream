@@ -32,7 +32,7 @@ for (const theme of ["dark", "light"] as const) {
     await projectRow.click({ button: "right" });
     await expect(page.getByRole("menuitem", { name: "프로젝트 열기" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "폴더 ID 복사" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "새 업무" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "새 폴더" })).toBeVisible();
     await capture(page, theme, "01-project-context-menu");
     await page.keyboard.press("Escape");
 

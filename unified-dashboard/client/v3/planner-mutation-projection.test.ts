@@ -17,12 +17,12 @@ describe("planner mutation projection", () => {
 
     const next = replacePlannerFolder(tasks, "first", (current) => ({
       ...current,
-      page: { ...current.page, title: "바뀐 업무" },
+      page: { ...current.page, title: "바뀐 폴더" },
     }));
 
     expect(next).not.toBe(tasks);
     expect(next[0]).not.toBe(first);
-    expect(next[0]?.page.title).toBe("바뀐 업무");
+    expect(next[0]?.page.title).toBe("바뀐 폴더");
     expect(next[1]).toBe(second);
     expect(replacePlannerFolder(next, "missing", (current) => current)).toBe(next);
   });

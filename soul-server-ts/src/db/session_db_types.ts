@@ -48,7 +48,6 @@ export interface LastMessageRow {
 export interface FolderRow {
   id: string;
   name: string;
-  checklist_enabled: boolean;
   status: FolderStatus;
   archived: boolean;
   version: number;
@@ -76,7 +75,6 @@ export interface CatalogSessionAssignmentRow {
 export interface CatalogFolderRow {
   id: string;
   name: string;
-  checklistEnabled: boolean;
   status: "open" | "completed";
   sortOrder: number;
   settings: Record<string, unknown>;
@@ -504,7 +502,6 @@ export interface FolderSnapshot {
   folder: Record<string, unknown> & {
     id: string;
     name: string;
-    checklistEnabled: boolean;
     status: FolderStatus;
     archived: boolean;
     version: number;

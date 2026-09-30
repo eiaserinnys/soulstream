@@ -55,7 +55,6 @@ describe("FolderBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
   function render(onSessionContextMenu: (session: SessionSummary, event: unknown) => void) {
     flushSync(() => root.render(
       <FolderBoardResourcePane
-        checklistEnabled
         folderId="rb-1"
         folderTitle="보드뷰 개선"
         sessionIds={["s1"]}
@@ -113,7 +112,6 @@ describe("FolderBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
     const onLoadMoreRuns = vi.fn(async () => undefined);
     flushSync(() => root.render(
       <FolderBoardResourcePane
-        checklistEnabled
         folderId="rb-1"
         folderTitle="보드뷰 개선"
         sessionIds={["s1", "s-child"]}
@@ -205,7 +203,6 @@ describe("FolderBoardResourcePane 마크다운 동기화", () => {
   it("문서 오버레이를 닫은 뒤 저장된 본문을 재조회해 표시한다", async () => {
     const renderPane = (markdownDocumentsRevision: number) => flushSync(() => root.render(
       <FolderBoardResourcePane
-        checklistEnabled
         folderId="rb-1"
         folderTitle="보드뷰 개선"
         sessionIds={[]}

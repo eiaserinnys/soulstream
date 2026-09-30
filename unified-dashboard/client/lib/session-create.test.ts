@@ -80,7 +80,7 @@ describe("createDashboardSession", () => {
 
   it("sends raw initial_instruction and uses the server-assembled prompt for the optimistic session", async () => {
     const assembledPrompt =
-      "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n결과를 표로 정리해줘.";
+      "폴더 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n결과를 표로 정리해줘.";
     const fetchMock = vi.fn().mockResolvedValue(okJson({
       agentSessionId: "session-new",
       status: "running",
@@ -292,7 +292,7 @@ describe("createDashboardSession", () => {
     await createDashboardSession({
       queryClient,
       addOptimisticSession: vi.fn(),
-      prompt: "새 업무 run을 시작합니다",
+      prompt: "새 폴더 run을 시작합니다",
       nodeId: "node-a",
       agentId: "roselin_codex",
       contextItems: [{

@@ -14,7 +14,7 @@ interface BuildFolderBoardCatalogOptions {
 }
 
 export type FolderBoardResourceTab =
-  | { id: "checklist"; kind: "checklist"; title: string }
+  | { id: "cards"; kind: "cards"; title: string }
   | { id: "sessions"; kind: "sessions"; title: string }
   | { id: string; kind: "document"; title: string; documentId: string }
   | { id: string; kind: "custom_view"; title: string; customViewId: string };
@@ -31,7 +31,7 @@ export interface FolderBoardResourceState {
 export function initialFolderBoardResourceState(): FolderBoardResourceState {
   return {
     openedResources: [],
-    activeTabId: "checklist",
+    activeTabId: "cards",
   };
 }
 
@@ -61,10 +61,9 @@ export function openFolderWorkspaceResource(
 export function buildFolderBoardResourceTabs(
   boardItems: readonly CatalogBoardItem[],
   openedResources: readonly FolderBoardResourceSelection[] = [],
-  checklistEnabled = true,
 ): FolderBoardResourceTab[] {
   const tabs: FolderBoardResourceTab[] = [
-    ...(checklistEnabled ? [{ id: "checklist" as const, kind: "checklist" as const, title: "카드" }] : []),
+    { id: "cards", kind: "cards", title: "카드" },
     { id: "sessions", kind: "sessions", title: "세션" },
   ];
   const seenTabIds = new Set<string>();
@@ -113,7 +112,7 @@ export function reconcileFolderBoardResourceState(
   );
   const activeTabId = activeTabIds.has(state.activeTabId)
     ? state.activeTabId
-    : "checklist";
+    : "cards";
   const resourcesUnchanged = openedResources.length === state.openedResources.length
     && openedResources.every((resource, index) => resource === state.openedResources[index]);
   if (resourcesUnchanged && activeTabId === state.activeTabId) return state;
@@ -147,7 +146,7 @@ export function buildFolderBoardCatalog({
   return {
     folders: [currentCatalog?.folders.find((folder) => folder.id === folderId) ?? {
       id: folderId, name: folderName, sortOrder: 0,
-      checklistEnabled: true, status: "open", version: 1, archived: false,
+      status: "open", version: 1, archived: false,
     }],
     sessions: {},
     boardItems: retainEqualValue(currentCatalog?.boardItems, [...boardItems]),
@@ -161,7 +160,7 @@ export const TASK_CHAT_MIN_WIDTH_PX = 320;
 export const TASK_CHAT_MAX_WIDTH_PX = 560;
 
 /**
- * 좌측 업무 자료 패널 폭을 안전 범위로 clamp한다. 최소값은 그리드 좌 컬럼의
+ * 좌측 폴더 자료 패널 폭을 안전 범위로 clamp한다. 최소값은 그리드 좌 컬럼의
  * `minmax(240px, ...)` 하한과 일치하고, 최대값은 고정 상한을 둔다. 좌·우 패널이
  * 동시에 최대여도 그리드의 중앙 1fr 트랙이 남는 공간을 흡수해 오른쪽 채팅 열을
  * 밀어내거나 오버플로하지 않는다(각 패널은 자기 min 이하로 줄지 않는다).

@@ -6,7 +6,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 describe("v3 task section navigation contract", () => {
   it("keeps the director-approved task detail section order", () => {
     const detail = read("./FolderDetailPane.tsx");
-    const order = ["information", "checklist", "board", "sessions"]
+    const order = ["information", "cards", "board", "sessions"]
       .map((id) => detail.indexOf(`data-task-section=\"${id}\"`));
 
     expect(order.every((index) => index >= 0)).toBe(true);

@@ -298,7 +298,6 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       const getFolderById = vi.fn().mockResolvedValue({
         id: "folder-1",
         name: "Legacy Folder",
-        checklist_enabled: true,
         sort_order: 0,
         settings: {
           folderPrompt: "legacy folder prompt",
@@ -390,7 +389,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       expect(keys).toContain("cogito_context");
       expect(keys).toContain("board_workspace");
       expect(keys).toContain("atom_context");
-      expect(sessionContent.folder).toEqual({ id: "folder-1", title: "Legacy Folder", checklist_enabled: true });
+      expect(sessionContent.folder).toEqual({ id: "folder-1", title: "Legacy Folder" });
       expect(sessionContent.folder_guidance).toContain("get_folder");
       expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
         String(url).includes("/api/tree/"))).toHaveLength(2);
@@ -648,7 +647,6 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "업무 폴더",
-      checklist_enabled: true,
       sort_order: 0,
       settings: {},
     });
@@ -672,7 +670,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toEqual({ id: "folder-a", title: "업무 폴더", checklist_enabled: true });
+    expect(content.folder).toEqual({ id: "folder-a", title: "업무 폴더" });
     expect(content.card).toEqual({ id: "rb-item-13", title: "연결 카드", status: "running" });
     expect(content.card_guidance).toContain("ask_card_question");
     expect(content.folder_guidance).toContain("get_folder");
@@ -684,7 +682,6 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "일반 폴더",
-      checklist_enabled: false,
       sort_order: 0,
       settings: {},
     });
@@ -708,7 +705,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
+    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
     expect(content).not.toHaveProperty("source_checklist_item_id");
     expect(content.folder_guidance).toContain("카드");
   });
@@ -718,7 +715,6 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "일반 폴더",
-      checklist_enabled: false,
       sort_order: 0,
       settings: {},
     });
@@ -732,7 +728,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
+    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
     expect(content).not.toHaveProperty("source_checklist_item_id");
     expect(content.folder_guidance).toContain("카드");
   });
@@ -742,7 +738,6 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
       name: "일반 폴더",
-      checklist_enabled: false,
       sort_order: 0,
       settings: {},
     });
@@ -756,7 +751,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더", checklist_enabled: false });
+    expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
     expect(content.folder_guidance).toContain("카드");
   });
 
@@ -852,7 +847,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     const cb = makeBuilder(
       {
         getSession: vi.fn().mockResolvedValue({ folder_id: "folder-a" }),
-        getFolderById: vi.fn().mockResolvedValue({ id: "folder-a", name: "업무 A", checklist_enabled: true, settings: {} }),
+        getFolderById: vi.fn().mockResolvedValue({ id: "folder-a", name: "업무 A", settings: {} }),
         getPrimarySessionBoardItem,
       } as Partial<SessionDB>,
       new AgentRegistry([agent]),

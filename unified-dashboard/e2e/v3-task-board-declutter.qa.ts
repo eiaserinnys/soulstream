@@ -47,7 +47,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
     await page.getByTestId("v3-task-alpha").click();
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "업무 보드 열기" }).click();
+    await page.getByRole("button", { name: "폴더 보드 열기" }).click();
 
     const board = page.getByTestId("v3-folder-board-pane");
     const resources = page.getByTestId("v3-folder-board-resources");
@@ -63,13 +63,13 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const boardItemCount = Number(await board.getAttribute("data-board-item-count") ?? "0");
     assert(boardItemCount >= 5, `혼합 보드 응답이 ${boardItemCount}개뿐입니다: ${await board.innerText()}`);
     await page.waitForFunction(() => document.querySelectorAll('[data-board-tile="true"]').length >= 3);
-    assert(await page.getByTestId("task-board-fixed-card").count() === 0, "체크리스트가 중앙 보드에 남았습니다.");
+    assert(await page.getByTestId("task-board-fixed-card").count() === 0, "카드가 중앙 보드에 남았습니다.");
     assert(await canvas.locator('[data-testid="board-session-tile"]').count() === 0, "세션 카드가 중앙 보드에 남았습니다.");
-    assert(await resources.getByTestId("task-card").count() === 1, "체크리스트가 왼쪽 자료 패널에 없습니다.");
+    assert(await resources.getByTestId("task-card").count() === 1, "카드가 왼쪽 자료 패널에 없습니다.");
 
     const before = await measureLayout(page);
     assert(before.pairOverlaps > 0, "정리 전 공간 객체 겹침을 재현하지 못했습니다.");
-    assert(before.resources.right <= before.canvas.left, "업무 자료와 중앙 보드가 겹칩니다.");
+    assert(before.resources.right <= before.canvas.left, "폴더 자료와 중앙 보드가 겹칩니다.");
     assert(before.canvas.right <= before.chat.left, "중앙 보드와 채팅이 겹칩니다.");
     await capture(page, theme, "01-before-declutter");
 
@@ -96,7 +96,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await capture(page, theme, "02-after-declutter");
 
     await resources.getByRole("tab", { name: "위임 관계" }).click();
-    assert(await resources.locator(".v3-run-row").count() >= 2, "왼쪽 위임 관계에 업무 세션이 없습니다.");
+    assert(await resources.locator(".v3-run-row").count() >= 2, "왼쪽 위임 관계에 폴더 세션이 없습니다.");
     await resources.locator(".v3-run-open").first().click();
     assert(!(await chat.innerText()).includes("선택된 세션 없음"), "위임 세션 선택이 오른쪽 채팅에 연결되지 않았습니다.");
 
@@ -106,7 +106,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await overlay.waitFor({ state: "visible" });
     const wide = await measureLayout(page);
     assert(wide.overlay !== null, "넓은 화면 문서 오버레이가 없습니다.");
-    assert(wide.overlay.left >= wide.canvas.left, "넓은 화면 오버레이가 업무 자료를 덮습니다.");
+    assert(wide.overlay.left >= wide.canvas.left, "넓은 화면 오버레이가 폴더 자료를 덮습니다.");
     assert(wide.overlay.right <= wide.canvas.right, "넓은 화면 오버레이가 중앙 보드를 벗어납니다.");
     assert(wide.overlay.right <= wide.chat.left, "넓은 화면 오버레이가 채팅을 덮습니다.");
     await capture(page, theme, "03-document-wide");
@@ -124,7 +124,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     return {
       cards: await tiles.count(),
-      checklistInResources: true,
+      cardsInResources: true,
       centralSessions: 0,
       overlapsBefore: before.pairOverlaps,
       overlapsAfter: after.pairOverlaps,

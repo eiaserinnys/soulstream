@@ -38,7 +38,7 @@ for (const theme of ["dark", "light"] as const) {
 
     await preparePage(page, theme, false);
     await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByText("오늘의 업무")).toBeVisible();
+    await expect(page.getByText("오늘의 폴더")).toBeVisible();
     await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible({ timeout: 30_000 });
 
     await setWebgl(page, true);
@@ -115,7 +115,7 @@ test("v3 global toolbar reuses live search, config, and theme controls", async (
   test.setTimeout(90_000);
   await preparePage(page, "dark", false);
   await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("오늘의 업무")).toBeVisible();
+  await expect(page.getByText("오늘의 폴더")).toBeVisible();
   await expectGlobalToolbarInteractions(page);
 });
 
@@ -168,7 +168,7 @@ async function expectGlobalToolbarChrome(page: Page, v1NewSessionChrome: ButtonC
   await expect(toolbar.getByRole("button", { name: "Open session search" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Open server configuration" })).toBeVisible();
 
-  for (const name of ["아침 정리", "새 업무"]) {
+  for (const name of ["아침 정리", "새 폴더"]) {
     const action = toolbar.getByRole("button", { name });
     await expect(action).toHaveAttribute("data-slot", "button");
     expect(await readButtonChrome(action)).toEqual(v1NewSessionChrome);

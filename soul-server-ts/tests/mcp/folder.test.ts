@@ -16,7 +16,7 @@ const openServers: Awaited<ReturnType<typeof buildInternalMcpServer>>[] = [];
 
 const mutationNames = [
   "create_folder", "rename_folder", "archive_folder", "unarchive_folder",
-  "set_folder_status", "set_folder_checklist_enabled",
+  "set_folder_status",
 ];
 const readNames = ["list_child_folders", "get_folder", "list_folder_operations"];
 
@@ -67,7 +67,7 @@ afterEach(async () => {
 });
 
 const snapshot = {
-  folder: { id: "folder-1", name: "Work", checklistEnabled: true, status: "open", version: 4 },
+  folder: { id: "folder-1", name: "Work", status: "open", version: 4 },
   cards: [{ id: "card-1", folderId: "folder-1", title: "Card", request: "Do the thing", status: "done", version: 3 }],
 };
 
@@ -106,7 +106,7 @@ describe("folder and checklist MCP contract", () => {
       folder_id: "folder-1", card_id: "card-1",
     } });
     expect(full.structuredContent).toMatchObject({ folder: { id: "folder-1" }, cards: [{ request: "Do the thing" }] });
-    expect(outline.structuredContent).toMatchObject({ folder: { checklistEnabled: true }, cards: [{ id: "card-1" }] });
+    expect(outline.structuredContent).toMatchObject({ folder: { id: "folder-1" }, cards: [{ id: "card-1" }] });
     expect(item.structuredContent).toMatchObject({ cards: [{ id: "card-1" }] });
     expect(getFolder).toHaveBeenCalledTimes(3);
     expect(getFolder).toHaveBeenNthCalledWith(2, "folder-1", { view: "outline" });

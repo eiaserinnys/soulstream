@@ -49,7 +49,6 @@ export async function resolvePrimarySessionFolderContext(
   const folder = {
     id: row.id,
     title: row.name,
-    checklist_enabled: row.checklist_enabled,
   };
   return {
     folder,

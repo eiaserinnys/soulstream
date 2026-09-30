@@ -177,7 +177,7 @@ async function dragRow(active: Locator, over: Locator): Promise<void> {
   const handle = active.getByRole("button", { name: "중요 작업 Starred A 순서 변경" });
   const handleBox = await handle.boundingBox();
   const overBox = await over.boundingBox();
-  if (!handleBox || !overBox) throw new Error("별표 업무 행의 드래그 위치를 확인하지 못했습니다.");
+  if (!handleBox || !overBox) throw new Error("별표 폴더 행의 드래그 위치를 확인하지 못했습니다.");
   await handle.scrollIntoViewIfNeeded();
   await handle.hover();
   await handle.page().mouse.down();
@@ -206,7 +206,7 @@ function starredTask(pageId: string) {
       updated_at: "2026-07-15T00:00:00.000Z",
     },
     folder: { id: `${pageId}-folder`, name: title, parentFolderId: null, sortOrder: 0,
-      projectPageId: pageId, checklistEnabled: true, status: "open", archived: false,
+      projectPageId: pageId, status: "open", archived: false,
       version: 1, settings: {} },
     itemCounts: {},
     itemTotal: 0,
@@ -218,7 +218,7 @@ function starredTask(pageId: string) {
 function moveBefore(pageIds: readonly string[], movedPageId: string, beforePageId: string | null): string[] {
   const remaining = pageIds.filter((pageId) => pageId !== movedPageId);
   const destination = beforePageId === null ? remaining.length : remaining.indexOf(beforePageId);
-  if (destination < 0) throw new Error("별표 업무 경계를 확인할 수 없습니다.");
+  if (destination < 0) throw new Error("별표 폴더 경계를 확인할 수 없습니다.");
   remaining.splice(destination, 0, movedPageId);
   return remaining;
 }
