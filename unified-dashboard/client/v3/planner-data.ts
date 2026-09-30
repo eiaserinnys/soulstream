@@ -1,3 +1,5 @@
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type {
   BlockDto,
   PageApiClient,
@@ -36,6 +38,9 @@ export function starredFolderPage(value: StarredPlannerFolder): PageDto {
 }
 
 export interface DailyPlannerData {
+  attention: CardRow[];
+  running: CardRow[];
+  queued: CardRow[];
   daily: PageReadResponse;
   projects: PageDto[];
   memoBlocks: BlockDto[];
@@ -140,7 +145,9 @@ export async function loadDailyPlanner(
   const payload = await dependencies.fetchPlanner(
     `/api/planner/today?${query.toString()}`,
   ) as PlannerTodayPayload;
+  useCardStore.getState().putCards([...payload.attention, ...payload.running, ...payload.queued]);
   return {
+    attention: payload.attention, running: payload.running, queued: payload.queued,
     daily: payload.daily,
     projects: [],
     folders: payload.folders.map(plannerFolder),
@@ -265,6 +272,7 @@ function pagePath(path: string, cursor: string | undefined): string {
 }
 
 interface PlannerTodayPayload {
+  attention: CardRow[]; running: CardRow[]; queued: CardRow[];
   daily: PageReadResponse;
   folders: PlannerFolderPayload[];
   memoBlocks: BlockDto[];

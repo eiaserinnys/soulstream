@@ -46,6 +46,7 @@ export interface SessionCreatedStreamEvent {
 /** 세션 상태 업데이트 */
 export interface SessionUpdatedStreamEvent extends SessionFeedDelta {
   type: "session_updated";
+  card_id?: string | null;
   agent_session_id: string;
   status?: SessionStatus;
   updated_at?: string;

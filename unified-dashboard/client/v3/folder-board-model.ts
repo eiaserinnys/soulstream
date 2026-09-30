@@ -64,7 +64,7 @@ export function buildFolderBoardResourceTabs(
   checklistEnabled = true,
 ): FolderBoardResourceTab[] {
   const tabs: FolderBoardResourceTab[] = [
-    ...(checklistEnabled ? [{ id: "checklist" as const, kind: "checklist" as const, title: "체크리스트" }] : []),
+    ...(checklistEnabled ? [{ id: "checklist" as const, kind: "checklist" as const, title: "카드" }] : []),
     { id: "sessions", kind: "sessions", title: "세션" },
   ];
   const seenTabIds = new Set<string>();

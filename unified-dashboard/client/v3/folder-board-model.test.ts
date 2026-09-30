@@ -49,7 +49,7 @@ describe("task board bounded catalog", () => {
       { kind: "custom_view", resourceId: "view-a" },
       { kind: "document", resourceId: "doc-b" },
     ])).toEqual([
-      { id: "checklist", kind: "checklist", title: "체크리스트" },
+      { id: "checklist", kind: "checklist", title: "카드" },
       { id: "sessions", kind: "sessions", title: "세션" },
       { id: "custom-view:view-a", kind: "custom_view", title: "검증 현황", customViewId: "view-a" },
       { id: "document:doc-b", kind: "document", title: "운영 노트", documentId: "doc-b" },

@@ -1,3 +1,4 @@
+import { CardDispatchTab } from "./CardDispatchTab";
 /**
  * ConfigModal - 서버 설정 편집 모달 (unified-dashboard)
  *
@@ -79,6 +80,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
       { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
       ...(user?.isAdmin ? [
         { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
+        { name: "card_dispatch", label: "카드 실행" },
         { name: AGENTS_TAB_NAME, label: "에이전트" },
         { name: USERS_TAB_NAME, label: "사용자" },
       ] : []),
@@ -102,6 +104,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
     selectedTab === CHAT_TAB_NAME ||
     selectedTab === NODES_TAB_NAME ||
     selectedTab === RECURRING_JOBS_TAB_NAME ||
+    selectedTab === "card_dispatch" ||
     selectedTab === SESSION_REVIEW_TAB_NAME ||
     selectedTab === USAGE_LOG_TAB_NAME ||
     selectedTab === AGENTS_TAB_NAME ||
@@ -152,6 +155,8 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
                 <UsageLogTab />
               ) : selectedTab === SESSION_REVIEW_TAB_NAME ? (
                 <SessionReviewPolicyTab />
+              ) : selectedTab === "card_dispatch" ? (
+                <CardDispatchTab />
               ) : selectedTab === AGENTS_TAB_NAME ? (
                 <AgentProfileEditorTab />
               ) : selectedTab === USERS_TAB_NAME ? (

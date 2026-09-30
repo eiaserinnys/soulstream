@@ -1,3 +1,4 @@
+import { useCardStore } from "../cards/card-store";
 import { useEffect, useMemo } from "react";
 
 import type { CustomViewBindingData } from "./CustomViewRenderer";
@@ -43,6 +44,7 @@ function buildBindings(
 /** catalog·업무 정본에서 <soul-bind> 라이브 바인딩 데이터를 만든다 (패널·타일 공용). */
 export function useCustomViewBindings(): CustomViewBindingData {
   const catalog = useDashboardStore((s) => s.catalog);
+  const cards = useCardStore(s=>s.byId);
   const taskById = useFolderCardStore((s) => s.byId);
 
   return useMemo(() => {
@@ -64,8 +66,8 @@ export function useCustomViewBindings(): CustomViewBindingData {
     const taskSnapshots = Object.values(taskById)
       .map((projection) => projection.snapshot)
       .filter((snapshot): snapshot is FolderSnapshot => Boolean(snapshot));
-    return buildBindings(taskSnapshots, sessions);
-  }, [catalog?.sessionList, catalog?.sessions, taskById]);
+    return buildBindings(taskSnapshots.map(snapshot=>({...snapshot,cards:Object.values(cards).filter(card=>card.folderId===snapshot.folder.id)})), sessions);
+  }, [catalog?.sessionList, catalog?.sessions, taskById, cards]);
 }
 
 /** 커스텀 뷰 문서를 로드하고 projection을 반환한다 (패널·타일 공용). */

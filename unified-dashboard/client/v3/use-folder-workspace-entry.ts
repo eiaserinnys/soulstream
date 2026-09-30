@@ -10,7 +10,7 @@ export function useFolderWorkspaceFolder({ folder, aggregate, knownFolder }: {
 }): { folderId: string | null; folder: PlannerFolder | null; error: null } {
   if (!folder) return { folderId: null, folder: null, error: null };
   if (aggregate?.folder.id === folder.id) {
-    const completed = aggregate.items.filter((item) => item.status === "completed").length;
+    const completed = aggregate.cards.filter((item) => item.status === "done").length;
     return {
       folderId: folder.id,
       folder: {
@@ -18,10 +18,10 @@ export function useFolderWorkspaceFolder({ folder, aggregate, knownFolder }: {
         blocks: aggregate.blocks,
         stateVector: "",
         folderId: folder.id,
-        status: derivePlannerFolderStatus({ folder: aggregate.folder, items: aggregate.items }),
+        status: derivePlannerFolderStatus({ folder: aggregate.folder, cards: aggregate.cards }),
         assignee: knownFolder?.assignee ?? "담당 미지정",
         contextCount: folderContextCount(aggregate.blocks),
-        progress: aggregate.items.length ? Math.round(100 * completed / aggregate.items.length) : null,
+        progress: aggregate.cards.length ? Math.round(100 * completed / aggregate.cards.length) : null,
         parentFolderId: aggregate.folder.parentFolderId ?? null,
         sessionIds: aggregate.sessions.items.map((session) => session.agentSessionId),
       },

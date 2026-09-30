@@ -19,7 +19,7 @@ describe("v3 icon action cap contract", () => {
   });
 
   it.each([
-    ["../../../packages/soul-ui/src/checklist/FolderChecklistCard.tsx", ["업무 보드 열기"]],
+    ["./FolderCardSection.tsx", ["카드 추가"]],
     ["../../../packages/soul-ui/src/checklist/FolderCompletionAction.tsx", ["actionLabel"]],
     ["./PlannerFolderCard.tsx", ["별표"]],
     ["./FolderDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "업무 보드 열기"]],
@@ -30,7 +30,7 @@ describe("v3 icon action cap contract", () => {
     ["./FolderBoardPane.tsx", ["업무 상세로 돌아가기", "업무 보드 닫기"]],
     ["./FolderWorkspace.tsx", ["업무 창 닫기", "채팅 닫기"]],
     ["./FolderBoardWorkspace.tsx", ["문서 편집기 높이 축소"]],
-    ["./PlannerViews.tsx", ["아침 정리", "새 업무"]],
+    ["./PlannerViews.tsx", ["아침 정리"]],
     ["./FolderWorkspaceSections.tsx", ["하위 폴더 더 보기"]],
     ["./V3Navigation.tsx", ["별표 업무 더 보기", "새 프로젝트"]],
     ["./V3SessionPanel.tsx", ["확인 처리"]],

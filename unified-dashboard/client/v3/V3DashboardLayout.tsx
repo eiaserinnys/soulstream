@@ -1,3 +1,5 @@
+import { CardDetailPane } from "./CardDetailPane";
+import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { clampDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
@@ -55,6 +57,7 @@ export function V3DashboardLayout() {
   return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
 }
 function V3DashboardContent() {
+  const cardNavigation = useCardNavigation();
   const today = useTodayDate();
   const dates = useMemo(() => recentDates(today), [today]);
   const api = useMemo(() => createPageApiClient(), []);
@@ -593,7 +596,7 @@ function V3DashboardContent() {
         >
           <div ref={plannerScrollRef} className="v3-planner-scroll" data-testid="v3-planner-scroll">
             {createOpen ? <NewFolderForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={createFolder} onCancel={() => setCreateOpen(false)} /> : null}
-            {selectedFolderId ? (workspaceFolderEntry && selectedFolder ? <FolderDetailPane
+            {cardNavigation.cardId && cardNavigation.placement === "inline" ? <CardDetailPane cardId={cardNavigation.cardId} folders={catalog?.folders ?? []} focus={cardNavigation.focus} onClose={cardNavigation.close} onOpenSession={openSession} /> : selectedFolderId ? (workspaceFolderEntry && selectedFolder ? <FolderDetailPane
               placement="inline"
               scrollContainerRef={plannerScrollRef}
               task={workspaceFolderEntry}
@@ -733,6 +736,7 @@ function V3DashboardContent() {
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
+      {cardNavigation.cardId && cardNavigation.placement === "overlay" ? <div className="v3-workspace-scrim" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)cardNavigation.close();}}><div className="v3-workspace"><CardDetailPane cardId={cardNavigation.cardId} placement="overlay" focus={cardNavigation.focus} folders={catalog?.folders ?? []} onClose={cardNavigation.close} onOpenSession={session=>{cardNavigation.close();openSession(session);}} /></div></div> : null}
       <V3SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} onOpenFolder={(folderId) => { const folder = catalog?.folders.find((candidate) => candidate.id === folderId); if (folder) void selectFolder(folder); }} />
       <V3Toast message={toast} />
     </div>

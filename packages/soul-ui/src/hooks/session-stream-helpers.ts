@@ -349,6 +349,7 @@ export function findSessionInPages(
 export type SessionUpdatesPatch = Partial<
   Pick<
     SessionSummary,
+    | "cardId"
     | "status"
     | "updatedAt"
     | "lastMessage"
@@ -372,6 +373,7 @@ export function buildSessionUpdates(
   event: SessionUpdatedStreamEvent,
 ): SessionUpdatesPatch {
   const updates: SessionUpdatesPatch = {};
+  if (event.card_id !== undefined) updates.cardId = event.card_id;
   if (event.status != null) {
     updates.status = normalizeSessionStatus(event.status);
   }

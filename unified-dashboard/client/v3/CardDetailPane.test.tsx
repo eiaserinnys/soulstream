@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardDetailPane } from "./CardDetailPane";
+// SSR reads Zustand initial state; model the client snapshot with the same selector.
+vi.mock("@seosoyoung/soul-ui/cards/card-store", async importOriginal => {
+ const actual = await importOriginal<typeof import("@seosoyoung/soul-ui/cards/card-store")>();
+ return {useCardStore: Object.assign((selector: (state: ReturnType<typeof actual.useCardStore.getState>) => unknown) => selector(actual.useCardStore.getState()), actual.useCardStore)};
+});
 const seed = (status: string, blockedKind: string | null=null) => {
  const card={id:"c",folderId:"f",title:"제목",request:"고정 원문",brief:"**해석**",status,blockedKind,version:1};
  useCardStore.setState({byId:{c:card as never},details:{c:{card,reports:[{id:"new",title:"새 보고",format:"html",body:"<h1>결론</h1>",createdAt:"2026-09-30"},{id:"old",title:"옛 보고",format:"markdown",body:"이전",createdAt:"2026-09-29"}],questions:[{id:"q",text:"어느 쪽?",options:["A","B"],answer:null},{id:"answered",text:"확인?",answer:"예"}],sessions:[]} as never}});

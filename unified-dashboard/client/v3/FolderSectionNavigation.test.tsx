@@ -40,7 +40,7 @@ describe("FolderSectionNavigation", () => {
     tops.information = -120;
     tops.checklist = 180;
     flushSync(() => scroll.dispatchEvent(new Event("scroll")));
-    await vi.waitFor(() => expect(currentLabel()).toBe("체크리스트 섹션으로 이동"));
+    await vi.waitFor(() => expect(currentLabel()).toBe("카드 섹션으로 이동"));
   });
 
   it("scrolls the panel to the clicked section and marks it current", async () => {

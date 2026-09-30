@@ -1,3 +1,4 @@
+import { useCardStore } from "../cards/card-store";
 import { create } from "zustand";
 import { cardRequest } from "../cards/card-api";
 import type { CardRow } from "../cards/card-types";
@@ -48,7 +49,7 @@ export const useFolderCardStore=create<FolderState>((set,get)=>({
   const previous=get().byId[id];
   if(!options.force&&previous?.status==="ready")return previous.snapshot;
   set(s=>({byId:{...s.byId,[id]:{snapshot:previous?.snapshot??null,status:previous?.snapshot?"ready":"loading",error:null,isRefreshing:Boolean(previous?.snapshot)}}}));
-  try {const snapshot=await fetchFolderSnapshot(id,options.signal);set(s=>({byId:{...s.byId,[id]:{snapshot,status:"ready",error:null,isRefreshing:false}}}));return snapshot;}
+  try {const snapshot=await fetchFolderSnapshot(id,options.signal);if(snapshot)useCardStore.getState().putCards(snapshot.cards);set(s=>({byId:{...s.byId,[id]:{snapshot,status:"ready",error:null,isRefreshing:false}}}));return snapshot;}
   catch(error){if(error instanceof Error&&error.name==="AbortError")return get().byId[id]?.snapshot??null;set(s=>({byId:{...s.byId,[id]:{...s.byId[id],status:"error",error:String(error),isRefreshing:false}}}));throw error;}
  },
  async setFolderStatus(input){const {folderId,...body}=input;await cardRequest(`/api/folders/${encodeURIComponent(folderId)}/status`,"POST",body);return get().loadFolder(folderId,{force:true});},
