@@ -28,6 +28,8 @@ const REPOSITORY_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const TEST_USER = "migration_runner_test";
 const TEST_PASSWORD = "migration_runner_secret";
 const TEST_DB = "migration_runner_test_db";
+// Four 60s child-process limits total 240s; 300s lets them fail first.
+const DATABASE_TEST_TIMEOUT_MS = 300_000;
 
 const migrationManifest = JSON.parse(readFileSync(
   new URL("../../../packages/db-schema/migration-manifest.json", import.meta.url),
@@ -200,7 +202,7 @@ describe.sequential("versioned migration runner", () => {
     } finally {
       await sql.end({ timeout: 5 });
     }
-  });
+  }, DATABASE_TEST_TIMEOUT_MS);
 });
 
 async function seedHistoricalFolder(sql: ReturnType<typeof postgres>) {
