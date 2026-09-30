@@ -450,6 +450,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   ) {
     return "page_yjs";
   }
+  if (path.startsWith("/api/cards")) return "control_plane";
   if (path.startsWith("/api/folders/")) return "folder";
   if (path.startsWith("/api/sessions")) return "session";
   if (path.startsWith("/api/nodes/")) return "node_proxy";

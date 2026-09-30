@@ -12,8 +12,7 @@ describe("folder planner PostgreSQL", () => {
       await h.sql`INSERT INTO folders(id,name,project_page_id,checklist_enabled) VALUES (${n},${n},${`p-${n}`},${enabled})`;
       await h.sql`INSERT INTO planner_starred_page_order(page_id,position) VALUES (${`p-${n}`},${n==='a'?0:n==='b'?1:2})`;
     }
-    await h.sql`INSERT INTO checklist_sections(id,folder_id,position_key,title) VALUES ('s','b','a0','Section')`;
-    await h.sql`INSERT INTO checklist_items(id,section_id,position_key,title,status) VALUES ('i','s','a0','Item','completed')`;
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,status) VALUES ('i','b','a0','Card','done')`;
     await h.sql`INSERT INTO pages(id,title,daily_date,version) VALUES ('daily','2026-09-30','2026-09-30',1)`;
     await h.sql`INSERT INTO blocks(id,page_id,position_key,block_type,text_plain) VALUES ('mount','daily','a0','paragraph','[[Folder a]]'),('memo','daily','a1','paragraph','memo')`;
     await h.sql`INSERT INTO block_links(id,source_block_id,link_kind,ordinal,source_start,source_end,target_page_id,target_title,target_title_key) VALUES ('l','mount','mount',0,0,12,'p-a','Folder a','folder a')`;
@@ -26,12 +25,12 @@ describe("folder planner PostgreSQL", () => {
     expect(first.items.map(x=>x.folder.id)).toEqual(["a"]); expect(first.items[0]?.folder.checklistEnabled).toBe(false);
     const second = await repo.getStarredFolders({ limit: 1, cursor: first.nextCursor! });
     expect(second.items.map(x=>x.folder.id)).toEqual(["b"]); expect(second.nextCursor).toBeNull();
-    expect(second.items[0]).toMatchObject({ itemTotal: 1, completedItemCount: 1, itemCounts: { completed: 1 } });
+    expect(second.items[0]).toMatchObject({ itemTotal: 1, completedItemCount: 1, itemCounts: { done: 1 } });
   });
   it("uses page mounts for today and returns one session despite two ownership references", async () => {
     expect(await repo.getToday("2026-09-30")).toMatchObject({ folders: [{ folder: { id: "a" } }], memoBlocks: [{ id: "memo" }] });
     expect((await repo.getSessions("b", { limit: 20 })).items.map(x=>x.agentSessionId)).toEqual(["session"]);
-    expect(await repo.getFolder("b", { limit: 20 })).toMatchObject({ folder: { id: "b" }, sections: [{ id: "s" }], items: [{ id: "i" }] });
+    expect(await repo.getFolder("b", { limit: 20 })).toMatchObject({ folder: { id: "b" }, cards: [{ id: "i" }] });
   });
   it("reorders by page ID and detects stale star membership", async () => {
     expect(await repo.moveStarredFolder({ pageId: "p-b", beforePageId: "p-a" })).toMatchObject({ changed: true });

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 154개 $defs (top-level wire 79 + supporting/SSE 75). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -102,13 +102,7 @@
     "system",
     "trello_watcher"
   ],
-  "x-soulstream-checklist-item-statuses": [
-    "pending",
-    "in_progress",
-    "review",
-    "completed",
-    "cancelled"
-  ],
+  "x-soulstream-card-statuses": ["todo", "queued", "blocked", "running", "review", "done", "cancelled"],
   "x-soulstream-board-item-types": [
     "session",
     "markdown",
@@ -175,6 +169,7 @@
     "reconnect": "durable",
     "history_sync": "durable",
     "folder_updated": "durable",
+    "card_updated": "durable",
     "custom_view_updated": "durable",
     "metadata_updated": "durable",
     "assistant_error": "durable",
@@ -598,6 +593,7 @@
           }
         },
         "folderId": { "type": ["string", "null"] },
+        "cardId": { "type": ["string", "null"] },
         "caller_source": {
           "type": "object",
           "description": "agent caller_info 흐름 보존 (R-2 fix, atom 0499ee7b).",
@@ -672,6 +668,7 @@
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleUpdated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleDeleted" },
             { "$ref": "#/$defs/SSEEventFolderUpdated" },
+            { "$ref": "#/$defs/SSEEventCardUpdated" },
             { "$ref": "#/$defs/SSEEventCustomViewUpdated" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
             { "$ref": "#/$defs/SSEEventContextManifest" },
@@ -1057,6 +1054,7 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "session_updated" },
+        "card_id": { "type": ["string", "null"] },
         "status": { "$ref": "#/$defs/SessionLifecycleStatus" },
         "agent_session_id": { "type": "string" },
         "agentSessionId": { "type": "string" },
@@ -3089,6 +3087,27 @@
         "last_event_id": { "type": "integer", "minimum": 0 },
         "is_live": { "type": "boolean" },
         "reset_required": { "type": "boolean" }
+      }
+    },
+    "SSEEventCardUpdated": {
+      "type": "object",
+      "description": "SSE: 카드 변경 알림. 본문은 HTTP로 조회한다.",
+      "required": [
+        "type",
+        "cardId",
+        "folderId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "card_updated"
+        },
+        "cardId": {
+          "type": "string"
+        },
+        "folderId": {
+          "type": "string"
+        }
       }
     },
     "SSEEventFolderUpdated": {

@@ -32,8 +32,7 @@
         "folderId": "task-1",
         "sessionId": "session-1",
         "x": 30,
-        "y": 40,
-        "sourceChecklistItemId": "item-1"
+        "y": 40
       }
     },
     {
@@ -86,8 +85,7 @@
           "itemId": "session-1",
           "x": 30,
           "y": 40,
-          "metadata": {},
-          "sourceChecklistItemId": null
+          "metadata": {}
         },
         "position": {
           "x": 110,

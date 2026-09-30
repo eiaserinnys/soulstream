@@ -13,7 +13,6 @@ export interface BoardItemDbRow extends Record<string, unknown> {
   id: string;
   folder_id: string;
   membership_kind?: "primary" | "reference" | null;
-  source_checklist_item_id?: string | null;
   item_type: BoardItemType;
   item_id: string;
   x: string | number;
@@ -67,7 +66,6 @@ export interface CustomViewJoinRow extends Record<string, unknown> {
   bi_id: string;
   bi_folder_id: string;
   bi_membership_kind: "primary" | "reference" | null;
-  bi_source_checklist_item_id: string | null;
   bi_item_type: "custom_view";
   bi_item_id: string;
   bi_x: string | number;
@@ -81,7 +79,6 @@ export interface ContainerItemDbRow extends Record<string, unknown> {
   bi_id: string | null;
   bi_folder_id?: string;
   bi_membership_kind?: "primary" | "reference";
-  bi_source_checklist_item_id?: string | null;
   bi_item_type?: BoardItemType;
   bi_item_id?: string;
   bi_x?: string | number;
@@ -132,7 +129,6 @@ export function toCatalogBoardItemRow(row: BoardItemDbRow): CatalogBoardItemRow 
     id: row.id,
     folderId: row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceChecklistItemId: row.source_checklist_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),
@@ -198,7 +194,6 @@ export function normalizeCustomViewJoin(row: CustomViewJoinRow): CustomViewWithB
       id: row.bi_id,
       folder_id: row.bi_folder_id,
       membership_kind: row.bi_membership_kind,
-      source_checklist_item_id: row.bi_source_checklist_item_id,
       item_type: row.bi_item_type,
       item_id: row.bi_item_id,
       x: row.bi_x,
@@ -215,7 +210,6 @@ export function toFolderItemRecord(row: ContainerItemDbRow): FolderItemRecord {
     id: row.bi_id!,
     folder_id: row.bi_folder_id!,
     membership_kind: row.bi_membership_kind,
-    source_checklist_item_id: row.bi_source_checklist_item_id,
     item_type: row.bi_item_type!,
     item_id: row.bi_item_id!,
     x: row.bi_x!,

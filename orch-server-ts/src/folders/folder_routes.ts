@@ -1,4 +1,5 @@
-import type { ChecklistControlPlaneService } from "../checklist/checklist_control_plane_service.js";
+import { registerCardRoutes, cardRouteAuthRequirements } from "../cards/card_routes.js";
+import type { CardControlPlaneService } from "../cards/card_control_plane_service.js";
 import { registerFolderWorkspaceRoutes, folderWorkspaceRouteAuthRequirements, dashboardFolderActor, folderOperationError } from "./folder_workspace_routes.js";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -61,7 +62,7 @@ export type FolderRouteOptions = {
   >;
   authBearerToken?: string;
   environment?: string;
-  checklistServiceProvider?: () => Promise<ChecklistControlPlaneService>;
+  cardServiceProvider?: () => Promise<CardControlPlaneService>;
   controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
 };
 
@@ -90,6 +91,7 @@ const SYSTEM_FOLDER_IDS = new Set(["claude", "llm"]);
 export const folderRouteAuthRequirements = {
   "GET /api/folders": true,
   ...folderWorkspaceRouteAuthRequirements,
+  ...cardRouteAuthRequirements,
   "PATCH /api/folders/reorder": true,
 } as const;
 
@@ -98,10 +100,11 @@ export function registerFolderRoutes(
   options: FolderRouteOptions,
 ): void {
   registerFolderWorkspaceRoutes(app, options);
+  registerCardRoutes(app, options);
   if (options.controlPlaneServiceProvider) {
     registerFolderControlPlaneHostRoute(app, {
       serviceProvider: options.controlPlaneServiceProvider,
-      checklistServiceProvider: options.checklistServiceProvider,
+      cardServiceProvider: options.cardServiceProvider,
       identity: options.projectIdentityService,
       authBearerToken: options.authBearerToken ?? "",
       environment: options.environment,
@@ -138,11 +141,11 @@ export function registerFolderRoutes(
     }
 
     try {
-      if (!options.projectIdentityService || !options.checklistServiceProvider) throw new Error("Folder services are not configured");
+      if (!options.projectIdentityService || !options.cardServiceProvider) throw new Error("Folder services are not configured");
       const actor = await dashboardFolderActor(request, options);
-      const checklist = await options.checklistServiceProvider();
+      const cards = await options.cardServiceProvider();
       for (const item of items.value) {
-        const snapshot = await checklist.getFolder(item.id);
+        const snapshot = await cards.getFolder(item.id);
         if (!snapshot) return reply.code(404).send({ detail: { error: { code: "FOLDER_NOT_FOUND", message: item.id } } });
         const { id, ...update } = item;
         await options.projectIdentityService.mutateFromFolder({ folderId: id, update,

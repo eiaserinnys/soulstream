@@ -3,25 +3,25 @@ import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
-import type { RepositorySql } from "./checklist_types.js";
+import type { RepositorySql } from "./card_types.js";
 import type {
-  ChecklistItemStatus,
+  CardStatus,
   FolderOperationRow,
   FolderOperationActorKind,
   FolderOperationTargetKind,
   FolderSnapshot,
   FolderStatus,
-} from "./checklist_types.js";
+} from "./card_types.js";
 
-import { ChecklistVersionConflict } from "./checklist_models.js";
-import { resolveItemPositionTx } from "./checklist_position_queries.js";
-import type { ChecklistRepository } from "./checklist_repository.js";
+import { CardVersionConflict } from "./card_models.js";
+
+import type { CardRepository } from "./card_repository.js";
 import type {
   FolderActorParams,
   FolderBroadcasterPort,
   FolderDbPort,
-  ChecklistMutationResult,
-} from "./checklist_types.js";
+  CardMutationResult,
+} from "./card_types.js";
 
 export interface FolderMutateParams {
   folderId: string;
@@ -56,14 +56,14 @@ type FolderEventParams = Omit<FolderMutateParams, "preflight" | "apply"> & {
   operationId: string;
 };
 
-export class ChecklistMutationCore {
+export class CardMutationCore {
   constructor(
     private readonly db: FolderDbPort,
-    private readonly repo: ChecklistRepository,
+    private readonly repo: CardRepository,
     private readonly broadcaster?: FolderBroadcasterPort,
   ) {}
 
-  async mutate(params: FolderMutateParams): Promise<ChecklistMutationResult> {
+  async mutate(params: FolderMutateParams): Promise<CardMutationResult> {
     const idempotent = await this.resolveIdempotent(params.idempotencyKey, params);
     if (idempotent) return idempotent;
 
@@ -104,7 +104,7 @@ export class ChecklistMutationCore {
 
   async mutateWithoutSession(
     params: SessionlessFolderMutateParams,
-  ): Promise<ChecklistMutationResult> {
+  ): Promise<CardMutationResult> {
     const idempotent = await this.resolveIdempotent(params.idempotencyKey, params);
     if (idempotent) return idempotent;
 
@@ -134,93 +134,13 @@ export class ChecklistMutationCore {
     };
   }
 
-  async setItemStatus(params: FolderActorParams & {
-    itemId: string;
-    expectedVersion: number;
-    status: ChecklistItemStatus;
-    reason?: string | null;
-    idempotencyKey?: string | null;
-  }): Promise<ChecklistMutationResult> {
-    const idempotent = await this.resolveIdempotent(params.idempotencyKey, { targetId: params.itemId, operationType: "set_checklist_item_status", payload: { status: params.status } });
-    if (idempotent) return idempotent;
-
-    let folderId = "";
-    let operation!: FolderOperationRow;
-    let eventId: number | null = null;
-    let shouldNotifyHandoff = false;
-    await this.repo.transaction(async (sql) => {
-      folderId = await this.repo.getFolderIdForItemTx(sql, params.itemId);
-      const item = await this.repo.getItemForUpdateTx(sql, params.itemId);
-      const actualVersion = Number(item.version);
-      if (actualVersion !== params.expectedVersion) {
-        throw new ChecklistVersionConflict(
-          "item",
-          params.itemId,
-          params.expectedVersion,
-          actualVersion,
-        );
-      }
-      shouldNotifyHandoff =
-        params.actorKind === "user" &&
-        isTerminalHandoffStatus(params.status) &&
-        item.status !== params.status;
-      const opId = randomUUID();
-      eventId = await this.appendFolderEventIfPresent(sql, {
-        operationId: opId,
-        folderId,
-        operationType: "set_checklist_item_status",
-        targetKind: "item",
-        targetId: params.itemId,
-        actor: params,
-        payload: { status: params.status },
-        reason: params.reason,
-        idempotencyKey: params.idempotencyKey,
-      });
-      await this.repo.setItemStatusTx(sql, {
-        itemId: params.itemId,
-        status: params.status,
-        expectedVersion: params.expectedVersion,
-        actorKind: params.actorKind ?? "agent",
-        actorSessionId: params.actorSessionId,
-        actorUserId: params.actorUserId ?? null,
-        eventId,
-      });
-      operation = await this.repo.appendOperationTx(sql, {
-        id: opId,
-        folderId,
-        targetKind: "item",
-        targetId: params.itemId,
-        operationType: "set_checklist_item_status",
-        actorKind: params.actorKind ?? "agent",
-        actorSessionId: params.actorSessionId,
-        actorEventId: eventId,
-        actorUserId: params.actorUserId ?? null,
-        idempotencyKey: params.idempotencyKey,
-        payload: { status: params.status },
-        reason: params.reason,
-      });
-    });
-
-    const result: ChecklistMutationResult = {
-      snapshot: await this.requireSnapshot(folderId),
-      operation,
-      eventId: eventId ?? 0,
-    };
-    await this.broadcastMutation(params.actorSessionId, result);
-    if (shouldNotifyHandoff) {
-      result.handoff = this.handoffEvent(result);
-      if (result.handoff) await this.broadcaster?.notifyHumanHandoff?.(result.handoff);
-    }
-    return result;
-  }
-
   async setFolderStatus(params: FolderActorParams & {
     folderId: string;
     expectedVersion: number;
     status: FolderStatus;
     reason?: string | null;
     idempotencyKey?: string | null;
-  }): Promise<ChecklistMutationResult> {
+  }): Promise<CardMutationResult> {
     const idempotent = await this.resolveIdempotent(params.idempotencyKey, { folderId: params.folderId, targetId: params.folderId, operationType: "set_folder_status", payload: { status: params.status } });
     if (idempotent) return idempotent;
 
@@ -230,7 +150,7 @@ export class ChecklistMutationCore {
       const folder = await this.repo.getFolderForUpdateTx(sql, params.folderId);
       const actualVersion = Number(folder.version);
       if (actualVersion !== params.expectedVersion) {
-        throw new ChecklistVersionConflict(
+        throw new CardVersionConflict(
           "folder",
           params.folderId,
           params.expectedVersion,
@@ -283,70 +203,14 @@ export class ChecklistMutationCore {
     return result;
   }
 
-  async moveItem(params: FolderActorParams & {
-    folderId: string;
-    itemId: string;
-    expectedVersion: number;
-    sectionId?: string | null;
-    afterItemId?: string | null;
-    beforeItemId?: string | null;
-    reason?: string | null;
-    idempotencyKey?: string | null;
-  }): Promise<ChecklistMutationResult> {
-    let targetSectionId = params.sectionId ?? "";
-    return await this.mutate({
-      folderId: params.folderId,
-      targetKind: "item",
-      targetId: params.itemId,
-      operationType: "move_checklist_item",
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      reason: params.reason,
-      payload: {
-        section_id: params.sectionId ?? null,
-        after_item_id: params.afterItemId ?? null,
-        before_item_id: params.beforeItemId ?? null,
-      },
-      preflight: async (sql) => {
-        await this.repo.assertItemBelongsToFolderTx(sql, params.itemId, params.folderId);
-        const item = await this.repo.getItemForUpdateTx(sql, params.itemId);
-        const actualVersion = Number(item.version);
-        if (actualVersion !== params.expectedVersion) {
-          throw new ChecklistVersionConflict(
-            "item",
-            params.itemId,
-            params.expectedVersion,
-            actualVersion,
-          );
-        }
-        targetSectionId = params.sectionId ?? item.section_id;
-        await this.repo.assertSectionBelongsToFolderTx(sql, targetSectionId, params.folderId);
-      },
-      apply: async (sql, eventId) => {
-        const bounds = await resolveItemPositionTx(sql, targetSectionId, params);
-        await this.repo.patchItemTx(
-          sql,
-          params.itemId,
-          {
-            section_id: targetSectionId,
-            position_key: generateKeyBetween(bounds.lower, bounds.upper),
-          },
-          params.expectedVersion,
-          params.actorSessionId,
-          eventId,
-        );
-      },
-    });
-  }
-
   private async resolveIdempotent(
     idempotencyKey: string | null | undefined,
     expected: { folderId?: string; targetId: string; operationType: string; payload: Record<string, unknown> },
-  ): Promise<ChecklistMutationResult | null> {
+  ): Promise<CardMutationResult | null> {
     if (!idempotencyKey) return null;
     const operation = await this.repo.getOperationByIdempotencyKey(idempotencyKey);
     if (!operation?.folder_id) return null;
-    if ((expected.folderId && operation.folder_id !== expected.folderId)
+    if ((expected.folderId && expected.operationType !== "move_card" && operation.folder_id !== expected.folderId)
       || operation.operation_type !== expected.operationType
       || (!expected.operationType.startsWith("create_") && operation.target_id !== expected.targetId)
       || !isDeepStrictEqual(operation.payload_json, JSON.parse(JSON.stringify(expected.payload)))) {
@@ -400,9 +264,13 @@ export class ChecklistMutationCore {
 
   private async broadcastMutation(
     actorSessionId: string | null,
-    result: ChecklistMutationResult,
+    result: CardMutationResult,
   ): Promise<void> {
     if (result.idempotent || !this.broadcaster) return;
+    if (result.operation.target_kind === "card") {
+      await this.broadcaster.emitCardUpdated?.(result.operation.target_id, result.snapshot.folder.id);
+      return;
+    }
     await this.broadcaster.emitFolderUpdated(
       result.snapshot.folder.id,
       actorSessionId,
@@ -410,26 +278,4 @@ export class ChecklistMutationCore {
     );
   }
 
-  private handoffEvent(result: ChecklistMutationResult): ChecklistMutationResult["handoff"] {
-    const item = result.snapshot.items.find(
-      (candidate) => candidate.id === result.operation.target_id,
-    );
-    if (!item || !isTerminalHandoffStatus(item.status)) return undefined;
-    return {
-      folderId: result.snapshot.folder.id,
-      folderName: result.snapshot.folder.name,
-      itemId: item.id,
-      itemTitle: item.title,
-      status: item.status,
-      operationId: result.operation.id,
-      eventId: result.eventId,
-    };
-  }
-
-}
-
-function isTerminalHandoffStatus(
-  status: ChecklistItemStatus,
-): status is Extract<ChecklistItemStatus, "completed" | "cancelled"> {
-  return status === "completed" || status === "cancelled";
 }

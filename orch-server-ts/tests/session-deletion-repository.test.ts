@@ -94,7 +94,6 @@ function cachedBoardItem(
 
     folderId,
     membershipKind,
-    sourceChecklistItemId: null,
     itemType: "session",
     itemId: "session-a",
     x: 0,
@@ -112,7 +111,6 @@ function boardItemRow(
     id,
     folder_id: folderId,
     membership_kind: membershipKind,
-    source_checklist_item_id: null,
     item_type: "session" as const,
     item_id: "session-a",
     x: 0,

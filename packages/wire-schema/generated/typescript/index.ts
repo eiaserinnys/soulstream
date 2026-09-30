@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 154개 $defs (top-level wire 79 + supporting/SSE 75). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -363,6 +363,7 @@ export interface SessionCreated {
     [k: string]: unknown;
   };
   folderId?: string | null;
+  cardId?: string | null;
   /**
    * agent caller_info 흐름 보존 (R-2 fix, atom 0499ee7b).
    */
@@ -437,6 +438,7 @@ export interface SessionEventEnvelope {
     | SSEEventClaudeRuntimeScheduleUpdated
     | SSEEventClaudeRuntimeScheduleDeleted
     | SSEEventFolderUpdated
+    | SSEEventCardUpdated
     | SSEEventCustomViewUpdated
     | SSEEventContextUsage
     | SSEEventContextManifest
@@ -1028,6 +1030,14 @@ export interface SSEEventFolderUpdated {
   [k: string]: unknown;
 }
 /**
+ * SSE: 카드 변경 알림. 본문은 HTTP로 조회한다.
+ */
+export interface SSEEventCardUpdated {
+  type: "card_updated";
+  cardId: string;
+  folderId: string;
+}
+/**
  * SSE: 커스텀 뷰 mutation 후 뷰 갱신 트리거. HTML 본문은 wire에 싣지 않는다.
  */
 export interface SSEEventCustomViewUpdated {
@@ -1457,6 +1467,7 @@ export interface HealthStatus {
  */
 export interface SessionUpdated {
   type: "session_updated";
+  card_id?: string | null;
   status: SessionLifecycleStatus;
   agent_session_id?: string;
   agentSessionId?: string;
@@ -2629,6 +2640,7 @@ export const EVENT_DURABILITY = {
   "reconnect": "durable",
   "history_sync": "durable",
   "folder_updated": "durable",
+  "card_updated": "durable",
   "custom_view_updated": "durable",
   "metadata_updated": "durable",
   "assistant_error": "durable",
@@ -2698,6 +2710,7 @@ export const SSE_EVENT_TYPES = [
   "compact",
   "reconnect",
   "history_sync",
+  "card_updated",
   "folder_updated",
   "custom_view_updated",
   "metadata_updated",
@@ -2760,14 +2773,16 @@ export const CALLER_INFO_SOURCES = [
   "trello_watcher",
 ] as const;
 
-export const CHECKLIST_ITEM_STATUSES = [
-  "pending",
-  "in_progress",
+export const CARD_STATUSES = [
+  "todo",
+  "queued",
+  "blocked",
+  "running",
   "review",
-  "completed",
+  "done",
   "cancelled",
 ] as const;
-export type ChecklistItemStatus = (typeof CHECKLIST_ITEM_STATUSES)[number];
+export type CardStatus = (typeof CARD_STATUSES)[number];
 
 export const BOARD_ITEM_TYPES = [
   "session",

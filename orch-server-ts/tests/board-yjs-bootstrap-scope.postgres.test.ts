@@ -107,7 +107,6 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
       folderId: "instant-folder-b",
 
       membershipKind: "primary" as const,
-      sourceChecklistItemId: null,
       itemType: "session" as const,
       itemId: "instant-session-b",
       x: 17,
@@ -178,7 +177,6 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
       await service.upsertSessionBoardItem({
         folderId: targetScope.folderId,
         sessionId: "instant-session-a",
-        sourceChecklistItemId: null,
         x: 0,
         y: 160,
       });

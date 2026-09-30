@@ -8,6 +8,10 @@ import {
 } from "../src/index.js";
 
 describe("session feed projection", () => {
+  it("retains cardId in the snapshot and one canonical patch field", () => {
+    expect(projectSessionFeedSummary({ agentSessionId: "s",cardId: "c" })).toHaveProperty("cardId", "c");
+    expect(projectSessionFeedUpdate({ agentSessionId: "s",cardId: "c" })).toMatchObject({ card_id: "c" });
+  });
   it("normalizes aliases into one compact snake-case semantic patch", () => {
     expect(projectSessionFeedUpdate({
       type: "session_updated",

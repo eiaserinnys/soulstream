@@ -155,8 +155,12 @@ export function classifySchemaState(shape) {
   ) {
     return "empty";
   }
+  if (table(shape.folders) && table(shape.cards) && table(shape.cardReports) && table(shape.cardQuestions)
+    && shape.cardsHaveFolderRequest && shape.sessionsHaveCard
+    && table(shape.folderOperations) && !shape.checklistSections && !shape.checklistItems
+    && !shape.tasks && !shape.runbooks) return "current";
   if (table(shape.folders) && table(shape.checklistSections) && table(shape.checklistItems)
-    && table(shape.folderOperations) && !shape.tasks && !shape.runbooks) return "current";
+    && table(shape.folderOperations) && !shape.tasks && !shape.runbooks) return "pre_cards";
   if (
     table(shape.tasks)
     && table(shape.taskSections)
@@ -213,6 +217,9 @@ export function buildMigrationPlan(migrations, ledger, shape) {
 
   let bootstrapCount = 0;
   if (state === "current") {
+    bootstrapCount = migrations.findIndex((item) => item.id === "109_cards.sql") + 1;
+  }
+  if (state === "pre_cards") {
     bootstrapCount = migrations.findIndex((item) => item.id === "108_unify_folders.sql") + 1;
   }
   if (state === "pre_folder_unification") {

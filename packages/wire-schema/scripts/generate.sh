@@ -115,7 +115,7 @@ if (!Array.isArray(callerInfoSourceSchema)
 }
 const sharedStringSets = [
   ["x-soulstream-session-statuses", "session statuses"],
-  ["x-soulstream-checklist-item-statuses", "checklist item statuses"],
+  ["x-soulstream-card-statuses", "card statuses"],
   ["x-soulstream-board-item-types", "board item types"],
 ];
 for (const [key, label] of sharedStringSets) {
@@ -170,8 +170,8 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 ${generatedStringArray("CALLER_INFO_SOURCES", callerInfoSources)}
 
-${generatedStringArray("CHECKLIST_ITEM_STATUSES", schema["x-soulstream-checklist-item-statuses"])}
-export type ChecklistItemStatus = (typeof CHECKLIST_ITEM_STATUSES)[number];
+${generatedStringArray("CARD_STATUSES", schema["x-soulstream-card-statuses"])}
+export type CardStatus = (typeof CARD_STATUSES)[number];
 
 ${generatedStringArray("BOARD_ITEM_TYPES", schema["x-soulstream-board-item-types"])}
 export type BoardItemType = (typeof BOARD_ITEM_TYPES)[number];

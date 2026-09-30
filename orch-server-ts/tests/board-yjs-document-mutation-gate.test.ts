@@ -114,7 +114,6 @@ function boardItem(itemType: "session" | "subfolder"): CatalogBoardItemRow {
     id: `${itemType}:a`,
     folderId: "folder-a",
     membershipKind: "primary",
-    sourceChecklistItemId: null,
     itemType,
     itemId: "a",
     x: 0,

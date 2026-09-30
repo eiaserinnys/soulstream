@@ -1,25 +1,23 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerFolderRoutes, type FolderRouteOptions } from "../src/folders/folder_routes.js";
-import type { ChecklistControlPlaneService } from "../src/checklist/checklist_control_plane_service.js";
+import type { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import type { FolderControlPlaneService } from "../src/folders/folder_control_plane_service.js";
 
 const row = { id: "f", name: "기존 폴더", parent_folder_id: null, project_page_id: "p", sort_order: 0,
   settings: {}, archived: false, checklist_enabled: false, status: "open", version: 3,
   created_session_id: null, created_event_id: null, created_at: new Date("2026-09-30Z"), updated_at: new Date("2026-09-30Z") };
-const section = { id: "s", folder_id: "f", title: "섹션" };
-const item = { id: "i", section_id: "s", title: "항목", how_to: "절차" };
+const item = { id: "i", folder_id: "f", title: "카드", request: "절차", brief: "경과" };
 const apps: ReturnType<typeof Fastify>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())); });
 function setup({ user = "user@example.com", restricted = false } = {}) {
-  const snapshot = { folder: row, sections: [section], items: [item] };
+  const snapshot = { folder: row, cards: [item] };
   const getFolder = vi.fn(async () => snapshot);
   const listFolders = vi.fn(async () => [row]);
   const mutate = vi.fn(async () => ({ snapshot, operation: { folder_id: "f", target_kind: "folder", target_id: "f" }, idempotent: false }));
-  const checklist = { getFolder, listFolders, listOperations: vi.fn(async () => []),
+  const cards = { getFolder, listFolders, listOperations: vi.fn(async () => []),
     setFolderStatus: mutate, setFolderChecklistEnabled: mutate,
-    setItemStatus: mutate, createSection: mutate, createItem: mutate, patchSection: mutate, patchItem: mutate,
-    moveSection: mutate, moveItem: mutate, setSectionAssignee: mutate, setItemAssignee: mutate } as unknown as ChecklistControlPlaneService;
+  } as unknown as CardControlPlaneService;
   const identity = { create: vi.fn(async () => ({ folder: { id: "f", name: "새 폴더", checklistEnabled: false }, operation: { id: "op" }, idempotent: false })),
     mutateFromFolder: vi.fn(async () => ({ folder: { id: "f", archived: true }, operation: { id: "op" }, idempotent: false })) };
   const app = Fastify(); apps.push(app);
@@ -27,20 +25,20 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
     provider: { listFolders: () => [{ id: "f" }, { id: "other" }], listSessionAssignments: () => ({ a: { folderId: "f" }, b: { folderId: "other" } }) },
     accessProvider: { resolveAccess: () => ({ restricted, allowedFolderIds: ["f"] }) },
     resolveDashboardUserId: () => user || null, projectIdentityService: identity as unknown as FolderRouteOptions["projectIdentityService"],
-    checklistServiceProvider: async () => checklist, controlPlaneServiceProvider: async () => ({} as FolderControlPlaneService),
+    cardServiceProvider: async () => cards, controlPlaneServiceProvider: async () => ({} as FolderControlPlaneService),
     authBearerToken: "test-token", environment: "production",
   });
   return { app, identity, getFolder, listFolders, mutate };
 }
 
 describe("unified folder HTTP and host contracts", () => {
-  it("reads stored checklist content even when its display is disabled", async () => {
+  it("reads stored card content even when its display is disabled", async () => {
     const { app } = setup();
     const response = await app.inject("/api/folders/f");
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ folder: { checklistEnabled: false, createdSessionId: null }, sections: [{ folderId: "f" }], items: [{ howTo: "절차" }] });
-    const outline = await app.inject("/api/folders/f?view=outline&itemId=i");
-    expect(outline.json().items[0]).not.toHaveProperty("howTo");
+    expect(response.json()).toMatchObject({ folder: { checklistEnabled: false, createdSessionId: null }, cards: [{ folderId: "f", request: "절차" }] });
+    const outline = await app.inject("/api/folders/f?view=outline&cardId=i");
+    expect(outline.json().cards[0]).not.toHaveProperty("request");
   });
   it("creates through the identity owner and returns the agreed mutation envelope", async () => {
     const { app, identity } = setup();
@@ -64,7 +62,7 @@ describe("unified folder HTTP and host contracts", () => {
     expect(identity.mutateFromFolder).toHaveBeenCalledWith(expect.objectContaining({ folderId: "f", archived: true, expectedVersion: 3 }));
     expect((await app.inject({ method: "DELETE", url: "/api/folders/f" })).statusCode).toBe(404);
   });
-  it("checks login, folder access, system protection and checklist membership", async () => {
+  it("checks login, folder access, system protection and removed checklist endpoints", async () => {
     const { app } = setup({ restricted: true });
     expect((await app.inject("/api/folders/other")).statusCode).toBe(403);
     expect((await app.inject("/api/folders")).json().sessions).toEqual({ a: { folderId: "f" } });

@@ -1,12 +1,12 @@
 import type {
-  ChecklistAssigneeFields,
+  CardAssigneeFields,
   FolderOperationRow,
   FolderOperationActorKind,
   FolderOperationTargetKind,
-} from "./checklist_types.js";
+} from "./card_types.js";
 import { recordFromDb } from "./repository_helpers.js";
 
-export class ChecklistVersionConflict extends Error {
+export class CardVersionConflict extends Error {
   readonly statusCode = 409;
 
   constructor(
@@ -18,7 +18,7 @@ export class ChecklistVersionConflict extends Error {
     super(
       `folder ${targetKind} version conflict: ${targetId} expected version ${expectedVersion}, actual version ${actualVersion}`,
     );
-    this.name = "ChecklistVersionConflict";
+    this.name = "CardVersionConflict";
   }
 }
 
@@ -40,8 +40,8 @@ export function assertFolderPatchHasFields(
   }
 }
 
-export interface ChecklistAssigneeInput {
-  kind: ChecklistAssigneeFields["assignee_kind"];
+export interface CardAssigneeInput {
+  kind: CardAssigneeFields["assignee_kind"];
   agentId?: string | null;
   sessionId?: string | null;
   userId?: string | null;
@@ -63,8 +63,8 @@ export interface AppendFolderOperationTxParams {
 }
 
 export function assigneeToFields(
-  assignee?: ChecklistAssigneeInput | null,
-): ChecklistAssigneeFields {
+  assignee?: CardAssigneeInput | null,
+): CardAssigneeFields {
   if (!assignee?.kind) {
     return {
       assignee_kind: null,

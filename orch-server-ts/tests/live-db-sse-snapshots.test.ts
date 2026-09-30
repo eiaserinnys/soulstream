@@ -183,6 +183,7 @@ describe("live DB SSE replay snapshots", () => {
           displayName: "Display",
           nodeId: "node-a",
           folderId: "folder-1",
+          cardId: null,
           lastEventId: 7,
           feedLastEventId: null,
           lastReadEventId: 5,

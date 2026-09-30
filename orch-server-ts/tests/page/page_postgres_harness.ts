@@ -405,7 +405,6 @@ CREATE TABLE folders (
       id TEXT PRIMARY KEY,
       folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
       membership_kind TEXT NOT NULL DEFAULT 'primary',
-      source_checklist_item_id TEXT,
       item_type TEXT NOT NULL,
       item_id TEXT NOT NULL,
       x DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -421,40 +420,24 @@ CREATE TABLE folders (
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (folder_id)
     );
-CREATE TABLE checklist_sections (
-    id                 TEXT PRIMARY KEY,
-    folder_id         TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    position_key       TEXT NOT NULL,
-    title              TEXT NOT NULL,
-    assignee_kind      TEXT CHECK (assignee_kind IN ('agent','human','session')),
-    assignee_agent_id  TEXT,
-    assignee_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    assignee_user_id   TEXT,
-    archived           BOOLEAN NOT NULL DEFAULT FALSE,
-    version            INTEGER NOT NULL DEFAULT 1,
-    created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    created_event_id   INTEGER,
-    updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    updated_event_id   INTEGER,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    FOREIGN KEY (created_session_id, created_event_id)
-        REFERENCES events(session_id, id) ON DELETE SET NULL,
-    FOREIGN KEY (updated_session_id, updated_event_id)
-        REFERENCES events(session_id, id) ON DELETE SET NULL
-);
-CREATE TABLE checklist_items (
+CREATE TABLE cards (
     id                   TEXT PRIMARY KEY,
-    section_id           TEXT NOT NULL REFERENCES checklist_sections(id) ON DELETE CASCADE,
+    folder_id            TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
     position_key         TEXT NOT NULL,
+    queue_position_key   TEXT,
     title                TEXT NOT NULL,
-    how_to               TEXT NOT NULL DEFAULT '',
+    request              TEXT NOT NULL DEFAULT '',
+    brief                TEXT NOT NULL DEFAULT '',
+    blocked_kind         TEXT CHECK (blocked_kind IN ('limit','question','no_report')),
+    blocked_detail       TEXT,
+    node_id              TEXT,
+    model_preset         TEXT,
     assignee_kind        TEXT CHECK (assignee_kind IN ('agent','human','session')),
     assignee_agent_id    TEXT,
     assignee_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     assignee_user_id     TEXT,
-    status               TEXT NOT NULL DEFAULT 'pending'
-                           CHECK (status IN ('pending','in_progress','review','completed','cancelled')),
+    status               TEXT NOT NULL DEFAULT 'todo'
+                           CHECK (status IN ('todo','queued','blocked','running','review','done','cancelled')),
     archived             BOOLEAN NOT NULL DEFAULT FALSE,
     version              INTEGER NOT NULL DEFAULT 1,
     created_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
@@ -475,10 +458,38 @@ CREATE TABLE checklist_items (
     FOREIGN KEY (completed_session_id, completed_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
+
+CREATE INDEX idx_cards_folder ON cards(folder_id, position_key COLLATE "C");
+CREATE INDEX idx_cards_queue ON cards(queue_position_key COLLATE "C") WHERE status='queued' AND archived=FALSE;
+ALTER TABLE sessions ADD COLUMN card_id TEXT REFERENCES cards(id) ON DELETE SET NULL;
+CREATE INDEX idx_sessions_card ON sessions(card_id) WHERE card_id IS NOT NULL;
+
+CREATE TABLE card_reports (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    format TEXT NOT NULL CHECK (format IN ('markdown','html')),
+    body TEXT NOT NULL,
+    session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_card_reports_card ON card_reports(card_id, created_at DESC);
+CREATE TABLE card_questions (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    text TEXT NOT NULL,
+    options JSONB,
+    answer TEXT,
+    asked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    answered_at TIMESTAMPTZ,
+    answered_by TEXT
+);
+CREATE INDEX idx_card_questions_card ON card_questions(card_id, asked_at);
 CREATE TABLE folder_operations (
     id               TEXT PRIMARY KEY,
     folder_id       TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
-    target_kind      TEXT NOT NULL CHECK (target_kind IN ('folder','section','item')),
+    target_kind      TEXT NOT NULL CHECK (target_kind IN ('folder','section','card')),
     target_id        TEXT NOT NULL,
     operation_type   TEXT NOT NULL,
     actor_kind       TEXT NOT NULL DEFAULT 'agent' CHECK (actor_kind IN ('agent','user','system','llm')),

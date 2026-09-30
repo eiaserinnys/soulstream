@@ -155,7 +155,6 @@ interface BoardItemDbRow extends Record<string, unknown> {
   id: string;
   folder_id: string;
   membership_kind?: "primary" | "reference" | null;
-  source_checklist_item_id?: string | null;
   item_type: BoardItemType;
   item_id: string;
   x: string | number;
@@ -179,7 +178,6 @@ function toCatalogBoardItemRow(row: BoardItemDbRow): CatalogBoardItemRow {
     id: row.id,
     folderId: row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceChecklistItemId: row.source_checklist_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),

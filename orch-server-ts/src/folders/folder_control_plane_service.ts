@@ -121,9 +121,10 @@ function normalizeCachedBoardItem(value: unknown): Array<Record<string, unknown>
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   const item = value as Record<string, unknown>;
   return [{
-    ...item,
+    id: item.id, folderId: item.folderId, itemType: item.itemType, itemId: item.itemId,
+    x: item.x, y: item.y, metadata: item.metadata,
+    createdAt: item.createdAt, updatedAt: item.updatedAt,
     membershipKind: item.membershipKind ?? "primary",
-    sourceChecklistItemId: item.sourceChecklistItemId ?? null,
   }];
 }
 
@@ -148,7 +149,6 @@ function legacyBoardItem(row: Record<string, unknown>) {
     id: row.id,
     folderId: row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceChecklistItemId: row.source_checklist_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),

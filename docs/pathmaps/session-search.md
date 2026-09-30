@@ -20,4 +20,4 @@ The response retains `query_expansion: { status: "skipped", latency_ms: 0 }`; `o
 
 ## Folder and checklist evidence
 
-`session_search_projection.ts` joins `sessions.folder_id` to `folders`, exposing `folder_id` and `folder_name`. Checklist execution evidence reads `checklist_items` and `checklist_sections.folder_id`. Primary session membership comes from `board_items.folder_id`; reference memberships do not establish execution ownership. Internal LLM and archived folder filtering use the same folder tree.
+`session_search_projection.ts` joins `sessions.folder_id` to `folders`, exposing `folder_id` and `folder_name`. Card execution evidence reads `cards.folder_id`, completion/assignee provenance, and the authoritative `sessions.card_id` link. Primary session membership comes from `board_items.folder_id`; reference memberships do not establish execution ownership. Internal LLM and archived folder filtering use the same folder tree.

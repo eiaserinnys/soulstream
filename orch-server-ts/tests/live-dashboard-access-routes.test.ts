@@ -74,7 +74,7 @@ describe("live dashboard access provider route wiring", () => {
     await app.close();
   });
 
-  it("applies the same folder access to board, markdown, and task routes", async () => {
+  it("applies the same folder access to board, markdown, and folder card routes", async () => {
     const { app } = createRouteApp();
     const headers = { cookie: `${AUTH_COOKIE_NAME}=restricted-token` };
 
@@ -180,7 +180,7 @@ function createRouteApp() {
       resolveTokenAccess: vi.fn(async () => ({ ok: true as const })),
       userPayloadExtra: accessProvider.userPayloadExtra,
     },
-    folderRoutes: { provider: createFolderProvider(), accessProvider, checklistServiceProvider: async () => ({ getFolder: async (id: string) => ({ folder: { id }, sections: [], items: [] }) } as never) },
+    folderRoutes: { provider: createFolderProvider(), accessProvider, cardServiceProvider: async () => ({ getFolder: async (id: string) => ({ folder: { id }, cards: [] }) } as never) },
     boardItemRoutes: {
       provider: createBoardItemProvider(),
       accessProvider,

@@ -5,7 +5,7 @@ import { registerFolderControlPlaneHostRoute } from "../src/folders/folder_contr
 import type { FolderControlPlaneService } from "../src/folders/folder_control_plane_service.js";
 import { registerScheduleHostRoute } from "../src/schedule/schedule_host_route.js";
 import type { SoulstreamScheduleRepository } from "../src/schedule/schedule_repository.js";
-import type { ChecklistControlPlaneService } from "../src/checklist/checklist_control_plane_service.js";
+import type { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { registerPersistenceHostRoutes } from "../src/control_plane/persistence_host_routes.js";
 import type { PersistenceHostRepositories } from "../src/control_plane/persistence_host_runtime.js";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";

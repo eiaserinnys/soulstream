@@ -11,7 +11,6 @@ export interface SessionPageBindingRow {
   daily_date: string;
   session_type: string;
   legacy_folder_id: string | null;
-  source_checklist_item_id: string | null;
   page_state: "pending" | "bound" | "manual_repair";
   legacy_state: "pending" | "completed" | "manual_repair";
   attempts: number;
@@ -30,7 +29,6 @@ export interface EnqueueSessionPageBinding {
   dailyDate: string;
   sessionType: string;
   legacyFolderId: string | null;
-  sourceChecklistItemId: string | null;
 }
 
 export class SessionPageBindingRepository {
@@ -40,12 +38,12 @@ export class SessionPageBindingRepository {
     const rows = await this.sql<SessionPageBindingRow[]>`
       INSERT INTO session_page_bindings (
         session_id, node_id, target_page_id, target_block_id, target_expected_version,
-        daily_date, session_type, legacy_folder_id, source_checklist_item_id, page_state
+        daily_date, session_type, legacy_folder_id, page_state
       ) VALUES (
         ${input.sessionId}, ${input.nodeId}, ${input.targetPageId}, ${input.targetBlockId},
         ${input.targetExpectedVersion}, ${input.dailyDate}, ${input.sessionType},
         ${input.legacyFolderId},
-        ${input.sourceChecklistItemId}, ${input.initialPageState}
+        ${input.initialPageState}
       )
       ON CONFLICT (session_id) DO NOTHING
       RETURNING *
