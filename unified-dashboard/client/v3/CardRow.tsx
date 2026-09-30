@@ -17,7 +17,7 @@ export function CardRow({card,folderLabel,handle}:{card:Card;folders?:readonly C
    <button type="button" className="v3-card-avatar-link" aria-label={`카드 ${card.title} 열기`} onClick={()=>open(card.id,"inline")}><span className="v3-run-avatar" title={name}><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/></span></button>
    <span className="v3-run-copy"><span className="v3-run-title-line"><CardStatusChip card={card}/><button type="button" className="v3-card-link" onClick={()=>open(card.id,"inline")}><strong title={card.title}>{card.title}</strong></button></span>
     <span className="v3-card-meta"><span className="v3-card-folder">{folderLabel??name}</span><span aria-hidden="true">·</span><time dateTime={card.updatedAt}>{cardElapsed(card.updatedAt)}</time></span></span>
-  </div><div className="v3-run-row-actions"><CardActions card={card} onAnswer={()=>open(card.id,"inline","questions")}/></div>
+  </div><div className="v3-run-row-actions"><CardActions card={card}/></div>
  </LiquidGlassCard>;
 }
 function cardElapsed(timestamp:string) {

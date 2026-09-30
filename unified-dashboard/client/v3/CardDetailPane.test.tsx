@@ -38,6 +38,12 @@ describe("card final UX",()=>{
   useCardStore.setState(s=>({details:{c:{...s.details.c,sessions:lookup.sessions.map(s=>({sessionId:s.agentSessionId})) as never}}}));
   const html=render();expect(html.match(/data-session-id=/g)).toHaveLength(3);expect(html).toContain("2개 더");
  });
+ it("previews the whole markdown report with only a three-line clamp",()=>{
+  seed();useCardStore.setState(s=>({details:{c:{...s.details.c,reports:[{id:"paragraphs",sessionId:null,title:"문단 보고",format:"markdown",body:"첫 문단\n\n두 번째 문단\n\n세 번째 문단",createdAt:"2026-09-30"}]}}}));
+  const html=render(),preview=html.split('data-report-id="paragraphs"')[1].split("<details>")[0];
+  expect(preview).toContain('class="v3-card-three-lines"');
+  expect(preview).toContain("첫 문단");expect(preview).toContain("두 번째 문단");expect(preview).toContain("세 번째 문단");
+ });
  it("preserves attachment markdown conversion",()=>{
   expect(cardRequestMarkdown("첨부: 참고.png(https://example.test/file?path=png)")).toBe("첨부: ![참고.png](https://example.test/file?path=png)");
  });

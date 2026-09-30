@@ -1,37 +1,51 @@
 /** @vitest-environment jsdom */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import { CardStatusChip } from "./CardActions";
+import { CardActions, CardStatusChip } from "./CardActions";
 import { CardRow as CardRowView } from "./CardRow";
 import { useCardNavigation } from "./card-navigation";
-// Match existing createRoot interaction tests; isolate the menu portal, not mutations.
-vi.mock("./V3ContextMenu",()=>({V3ContextMenu:({target,actions,onClose}:any)=>target?<div role="menu">{actions.map((a:any)=><button key={a.label} disabled={a.disabled} onClick={()=>{onClose();a.onSelect();}}>{a.label}</button>)}</div>:null}));
-const card=(status:CardRow["status"]):CardRow=>({id:"c",title:"카드 제목",folderId:"f",status,version:7,blockedKind:null} as CardRow);
-describe("card status menu",()=>{
+
+const card=(status:CardRow["status"]):CardRow=>({id:"c",title:"카드 제목",folderId:"f",status,version:7,blockedKind:null,updatedAt:"2026-09-30"} as CardRow);
+describe("display-only card status and completion action",()=>{
  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT=true;
  let container:HTMLDivElement,root:Root;
  const mutate=vi.fn(),loadCard=vi.fn();
  beforeEach(()=>{container=document.createElement("div");document.body.append(container);root=createRoot(container);mutate.mockReset().mockResolvedValue({});loadCard.mockReset().mockResolvedValue({});useCardStore.setState({mutate,loadCard});});
  afterEach(async()=>{await act(()=>root.unmount());container.remove();useCardStore.getState().reset();vi.restoreAllMocks();});
- async function render(status:CardRow["status"],reports=0){const c=card(status);useCardStore.setState({details:{c:{card:c,reports:Array.from({length:reports},()=>({})) as never,questions:[],sessions:[]}}});await act(()=>root.render(<CardStatusChip card={c}/>));await click(container.querySelector("button")!);}
  async function click(el:HTMLElement){await act(async()=>{el.click();});}
- function menuButton(label:string){return [...container.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(b=>b.textContent===label)!;}
- it("lists six states, disables current and reportless review, and omits blocked",async()=>{await render("running");expect(menuButton("실행 중 (현재)").disabled).toBe(true);expect(menuButton("검수 (보고 필요)").disabled).toBe(true);expect(container.querySelectorAll('[role="menu"] button')).toHaveLength(6);expect(container.textContent).not.toContain("막힘");});
- it.each([["todo","실행 중","running"],["running","할 일","todo"],["running","완료","done"],["running","취소","cancelled"]] as const)("changes %s to %s with the version",async(from,label,status)=>{await render(from);await click(menuButton(label));expect(mutate).toHaveBeenCalledWith("c","/status",{status,expectedVersion:7});});
- it("enables review with a report",async()=>{await render("running",1);expect(menuButton("검수").disabled).toBe(false);await click(menuButton("검수"));expect(mutate).toHaveBeenCalledWith("c","/status",{status:"review",expectedVersion:7});});
- it("keeps review continuation in comments and exposes no rejection dialog",async()=>{await render("review",1);expect(menuButton("실행 중").disabled).toBe(true);expect(document.querySelector('input[aria-label="반려 사유"]')).toBeNull();});
- it("shows API rejection messages",async()=>{mutate.mockRejectedValueOnce(new Error("422: 보고가 필요합니다"));await render("todo");await click(menuButton("실행 중"));expect(container.querySelector('[role="alert"]')?.textContent).toContain("422: 보고가 필요합니다");});
- it.each([false,true])("keeps status and open as sibling buttons (context=%s)",async(folderLabel)=>{const open=vi.fn();useCardNavigation.setState({open});const c=card("running");await act(()=>root.render(<CardRowView card={c} folderLabel={folderLabel?"폴더":undefined}/>));const chip=container.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]');expect(chip).not.toBeNull();expect(chip!.parentElement?.closest("button")).toBeNull();await click(chip!);expect(open).not.toHaveBeenCalled();await click(container.querySelector('[aria-label="카드 카드 제목 열기"]')!);expect(open).toHaveBeenCalledWith("c","inline");});
-});
-
-it("uses the same row structure for today and folder metadata, with one review action",()=>{
- const c=card("review");c.updatedAt="2026-09-30";
- const render=(folderLabel?:string)=>import("react-dom/server").then(({renderToStaticMarkup})=>renderToStaticMarkup(<CardRowView card={c} folderLabel={folderLabel}/>));
- return Promise.all([render("폴더"),render()]).then(([today,folder])=>{
-  expect(today.match(/class="[^"]+"/g)).toEqual(folder.match(/class="[^"]+"/g));
-  expect(today).not.toContain("v3-card-row--today");expect(today).not.toContain('aria-label="반려"');
+ it.each(["todo","queued","blocked","running","review","done","cancelled"] as const)("shows %s as a word without a status control",async status=>{
+  await act(()=>root.render(<CardStatusChip card={card(status)}/>));
+  const word=container.querySelector('.v3-status-chip')!;
+  expect(word.tagName).toBe("SPAN");expect(word.textContent?.length).toBeGreaterThan(0);
+  expect(container.querySelector('button,[role="menu"],[aria-haspopup]')).toBeNull();
+  await click(word as HTMLElement);expect(mutate).not.toHaveBeenCalled();expect(loadCard).not.toHaveBeenCalled();
  });
+ it.each(["todo","queued","blocked","running","done","cancelled"] as const)("has no action outside review (%s)",async status=>{
+  const c:CardRow={...card(status),blockedKind:status==="blocked"?"question":null};
+  await act(()=>root.render(<CardRowView card={c}/>));
+  expect(container.querySelector('.v3-card-actions button')).toBeNull();
+  expect(container.querySelector('[aria-label="답하기"]')).toBeNull();
+ });
+ it("completes a review card with its current version",async()=>{
+  await act(()=>root.render(<CardActions card={card("review")}/>));
+  const action=container.querySelector<HTMLButtonElement>('button[aria-label="완료"]')!;
+  expect(container.querySelectorAll('button')).toHaveLength(1);await click(action);
+  expect(mutate).toHaveBeenCalledWith("c","/status",{status:"done",expectedVersion:7});
+ });
+ it.each([false,true])("keeps row opening on the title and status display-only (folder metadata=%s)",async folderLabel=>{
+  const open=vi.fn();useCardNavigation.setState({open});
+  await act(()=>root.render(<CardRowView card={card("running")} folderLabel={folderLabel?"폴더":undefined}/>));
+  await click(container.querySelector('.v3-status-chip')! as HTMLElement);expect(open).not.toHaveBeenCalled();
+  await click(container.querySelector('[aria-label="카드 카드 제목 열기"]')!);expect(open).toHaveBeenCalledWith("c","inline");
+ });
+});
+it("uses the same row structure for today and folder metadata, with one review action",()=>{
+ const c=card("review");
+ const today=renderToStaticMarkup(<CardRowView card={c} folderLabel="폴더"/>),folder=renderToStaticMarkup(<CardRowView card={c}/>);
+ expect(today.match(/class="[^"]+"/g)).toEqual(folder.match(/class="[^"]+"/g));
+ expect(today).not.toContain("v3-card-row--today");expect(today).not.toContain('aria-label="반려"');
 });

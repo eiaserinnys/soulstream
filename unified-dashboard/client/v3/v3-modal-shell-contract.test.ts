@@ -7,7 +7,6 @@ const SOUL_UI_COMPONENTS_DIRECTORY = new URL("../../../packages/soul-ui/src/comp
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 const expectedV3DialogConsumers = [
-  "CardActions.tsx",
   "CardMenu.tsx",
   "FolderArchiveDialog.tsx",
   "FolderDetailPane.tsx",
