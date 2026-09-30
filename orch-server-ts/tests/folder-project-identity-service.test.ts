@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import type { FastifyBaseLogger } from "fastify";
+import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
 
 import {
   FolderProjectIdentityService,
@@ -10,6 +12,78 @@ import { PageMutationCore } from "../src/page/page_mutation_core.js";
 const identityId = "00000000-0000-4000-8000-0000000000af";
 
 describe("FolderProjectIdentityService", () => {
+  it.each([
+    { name: "settings", update: { settings: { folderPrompt: "안내" } } },
+    { name: "rename", update: { name: "새 이름" } },
+    { name: "archive", archived: true },
+    { name: "unarchive", archived: false },
+  ])("persists a top-level folder $name with no parent board applications", async (change) => {
+    const repository = createRepository();
+    const folder = mutationResult({ id: identityId, pageId: identityId, name: "이전 이름" }).folder;
+    vi.mocked(repository.findByFolderId).mockResolvedValue({
+      ...folder, folderId: identityId, pageId: identityId, pageVersion: 1,
+      archived: change.name === "unarchive",
+    });
+    vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
+    const board = createBoardService();
+    const service = new FolderProjectIdentityService({
+      repository, hydratePage: vi.fn(),
+      withBoardApplication: board.withFolderBoardApplication.bind(board),
+    });
+    const { name, ...update } = change;
+    try {
+      await service.mutateFromFolder({
+        folderId: identityId, expectedVersion: 1, ...update,
+        actor: { actorKind: "system" }, idempotencyKey: `root-${name}`,
+      });
+      expect(repository.mutate).toHaveBeenCalledOnce();
+      expect(repository.mutate).toHaveBeenCalledWith(expect.objectContaining({
+        boardApplications: [], ...update,
+        title: change.update?.name ?? "이전 이름",
+      }));
+    } finally { await board.close(); }
+  });
+
+  it("creates a top-level folder with no parent board applications", async () => {
+    const repository = createRepository();
+    const board = createBoardService();
+    const service = new FolderProjectIdentityService({
+      repository, hydratePage: vi.fn(), createId: () => identityId,
+      withBoardApplication: board.withFolderBoardApplication.bind(board),
+    });
+    try {
+      await service.create({ name: "최상위", parentFolderId: null,
+        actor: { actorKind: "system" }, idempotencyKey: "root-create" });
+      expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({
+        boardApplications: [], parentFolderId: null,
+      }));
+    } finally { await board.close(); }
+  });
+
+  it.each([
+    { type: "rename_page" as const, title: "새 이름" },
+    { type: "archive_page" as const },
+  ])("persists top-level identity from page command $type", async (command) => {
+    const repository = createRepository();
+    const folder = mutationResult({ id: identityId, pageId: identityId, name: "이전 이름" }).folder;
+    vi.mocked(repository.findByPageId).mockResolvedValue({
+      ...folder, folderId: identityId, pageId: identityId, pageVersion: 1,
+    });
+    vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
+    const board = createBoardService();
+    const service = new FolderProjectIdentityService({
+      repository, hydratePage: vi.fn(),
+      withBoardApplication: board.withFolderBoardApplication.bind(board),
+    });
+    try {
+      await service.mutateFromPage({ pageId: identityId, expectedVersion: 1, command,
+        actor: { actorKind: "system" }, idempotencyKey: `${command.type}:system:root` });
+      expect(repository.mutate).toHaveBeenCalledWith(expect.objectContaining({
+        boardApplications: [], title: command.title ?? "이전 이름", archived: command.type === "archive_page",
+      }));
+    } finally { await board.close(); }
+  });
+
   it("creates the folder and project page with one UUID", async () => {
     const repository = createRepository();
     const onPageUpdated = vi.fn();
@@ -281,4 +355,15 @@ function createPageSnapshot(title = "이전 이름"): Uint8Array {
     actor: { actorKind: "system" },
     idempotencyKey: "test:system:snapshot-af",
   }).snapshot;
+}
+
+function createBoardService(): BoardYjsService {
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
+    trace: vi.fn(), fatal: vi.fn(), child: () => logger, level: "silent", silent: vi.fn() };
+  return new BoardYjsService({
+    repository: {} as never, persistBoardItemMove: vi.fn(),
+    logger: logger as unknown as FastifyBaseLogger,
+    auth: { authBearerToken: "test-token", environment: "production", dashboardAuthEnabled: false,
+      resolveDashboardUserFromHeaders: vi.fn().mockResolvedValue(null) },
+  });
 }
