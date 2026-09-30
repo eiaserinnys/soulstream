@@ -119,6 +119,7 @@ export function serializeSessionRow(
     displayName: firstDefined(row, "display_name", "displayName") ?? null,
     nodeId: firstDefined(row, "node_id", "nodeId") ?? null,
     folderId: firstDefined(row, "folder_id", "folderId") ?? null,
+    cardId: firstDefined(row, "card_id", "cardId") ?? null,
     lastEventId: firstDefined(row, "last_event_id", "lastEventId") ?? 0,
     lastReadEventId:
       firstDefined(row, "last_read_event_id", "lastReadEventId") ?? 0,

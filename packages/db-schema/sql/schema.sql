@@ -628,7 +628,6 @@ CREATE TABLE IF NOT EXISTS board_items (
     id TEXT PRIMARY KEY,
     folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
     membership_kind TEXT NOT NULL DEFAULT 'primary' CHECK (membership_kind IN ('primary','reference')),
-    source_checklist_item_id TEXT,
     item_type TEXT NOT NULL CHECK (item_type IN ('session','markdown','subfolder','asset','frame','custom_view')),
     item_id TEXT NOT NULL,
     x DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -3167,7 +3166,6 @@ RETURNS TABLE(
     id TEXT,
     folder_id TEXT,
     membership_kind TEXT,
-    source_checklist_item_id TEXT,
     item_type TEXT,
     item_id TEXT,
     x DOUBLE PRECISION,
@@ -3180,7 +3178,6 @@ RETURNS TABLE(
         bi.id,
         bi.folder_id,
         bi.membership_kind,
-        bi.source_checklist_item_id,
         bi.item_type,
         bi.item_id,
         bi.x,
@@ -3392,45 +3389,25 @@ ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_blob BYTEA;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_mime TEXT;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
--- Tasks: collaborative checklist state and append-only provenance.
-CREATE TABLE IF NOT EXISTS checklist_sections (
-    id                 TEXT PRIMARY KEY,
-    folder_id         TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    position_key       TEXT NOT NULL,
-    title              TEXT NOT NULL,
-    assignee_kind      TEXT CHECK (assignee_kind IN ('agent','human','session')),
-    assignee_agent_id  TEXT,
-    assignee_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    assignee_user_id   TEXT,
-    archived           BOOLEAN NOT NULL DEFAULT FALSE,
-    version            INTEGER NOT NULL DEFAULT 1,
-    created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    created_event_id   INTEGER,
-    updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    updated_event_id   INTEGER,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    FOREIGN KEY (created_session_id, created_event_id)
-        REFERENCES events(session_id, id) ON DELETE SET NULL,
-    FOREIGN KEY (updated_session_id, updated_event_id)
-        REFERENCES events(session_id, id) ON DELETE SET NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_checklist_sections_folder
-    ON checklist_sections(folder_id, position_key);
-
-CREATE TABLE IF NOT EXISTS checklist_items (
+-- Cards inherit checklist item identity and provenance.
+CREATE TABLE IF NOT EXISTS cards (
     id                   TEXT PRIMARY KEY,
-    section_id           TEXT NOT NULL REFERENCES checklist_sections(id) ON DELETE CASCADE,
+    folder_id            TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
     position_key         TEXT NOT NULL,
+    queue_position_key   TEXT,
     title                TEXT NOT NULL,
-    how_to               TEXT NOT NULL DEFAULT '',
+    request              TEXT NOT NULL DEFAULT '',
+    brief                TEXT NOT NULL DEFAULT '',
+    blocked_kind         TEXT CHECK (blocked_kind IN ('limit','question','no_report')),
+    blocked_detail       TEXT,
+    node_id              TEXT,
+    model_preset         TEXT,
     assignee_kind        TEXT CHECK (assignee_kind IN ('agent','human','session')),
     assignee_agent_id    TEXT,
     assignee_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     assignee_user_id     TEXT,
-    status               TEXT NOT NULL DEFAULT 'pending'
-                           CHECK (status IN ('pending','in_progress','review','completed','cancelled')),
+    status               TEXT NOT NULL DEFAULT 'todo'
+                           CHECK (status IN ('todo','queued','blocked','running','review','done','cancelled')),
     archived             BOOLEAN NOT NULL DEFAULT FALSE,
     version              INTEGER NOT NULL DEFAULT 1,
     created_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
@@ -3452,29 +3429,40 @@ CREATE TABLE IF NOT EXISTS checklist_items (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_checklist_items_section
-    ON checklist_items(section_id, position_key);
+CREATE INDEX IF NOT EXISTS idx_cards_folder ON cards(folder_id, position_key COLLATE "C");
+CREATE INDEX IF NOT EXISTS idx_cards_queue ON cards(queue_position_key COLLATE "C") WHERE status='queued' AND archived=FALSE;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS card_id TEXT REFERENCES cards(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_sessions_card ON sessions(card_id) WHERE card_id IS NOT NULL;
 
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_checklist_item_id_fkey;
-ALTER TABLE board_items ADD CONSTRAINT board_items_source_checklist_item_id_fkey
-    FOREIGN KEY (source_checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL;
-
-ALTER TABLE checklist_items DROP CONSTRAINT IF EXISTS checklist_items_status_check;
-ALTER TABLE checklist_items ADD CONSTRAINT checklist_items_status_check
-    CHECK (status IN ('pending','in_progress','review','completed','cancelled'));
-
--- "내 차례"는 review이거나, 유효 담당(항목 own, 없으면 섹션 상속)이 human이고 미완·미취소.
--- 상속 케이스는 부분 인덱스로 못 잡으므로 조회 시 항목⨝섹션으로 해석한다.
-CREATE INDEX IF NOT EXISTS idx_checklist_items_human_self
-    ON checklist_items(section_id)
-    WHERE assignee_kind = 'human'
-      AND status NOT IN ('completed','cancelled')
-      AND archived = FALSE;
+CREATE TABLE IF NOT EXISTS card_reports (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    format TEXT NOT NULL CHECK (format IN ('markdown','html')),
+    body TEXT NOT NULL,
+    session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_card_reports_card ON card_reports(card_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS card_questions (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    text TEXT NOT NULL,
+    options JSONB,
+    answer TEXT,
+    asked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    answered_at TIMESTAMPTZ,
+    answered_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_card_questions_card ON card_questions(card_id, asked_at);
+INSERT INTO system_settings(setting_key,value)
+VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb) ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS folder_operations (
     id               TEXT PRIMARY KEY,
     folder_id       TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
-    target_kind      TEXT NOT NULL CHECK (target_kind IN ('folder','section','item')),
+    target_kind      TEXT NOT NULL CHECK (target_kind IN ('folder','section','card')),
     target_id        TEXT NOT NULL,
     operation_type   TEXT NOT NULL,
     actor_kind       TEXT NOT NULL DEFAULT 'agent' CHECK (actor_kind IN ('agent','user','system','llm')),
@@ -3687,7 +3675,6 @@ CREATE TABLE IF NOT EXISTS session_page_bindings (
     daily_date             DATE NOT NULL,
     session_type           TEXT NOT NULL,
     legacy_folder_id       TEXT,
-    source_checklist_item_id TEXT,
     page_state             TEXT NOT NULL DEFAULT 'pending'
                            CHECK (page_state IN ('pending','bound','manual_repair')),
     legacy_state           TEXT NOT NULL DEFAULT 'pending'
@@ -3704,11 +3691,7 @@ CREATE TABLE IF NOT EXISTS session_page_bindings (
     )
 );
 
-ALTER TABLE session_page_bindings
-    DROP CONSTRAINT IF EXISTS session_page_bindings_source_checklist_item_id_fkey;
-ALTER TABLE session_page_bindings
-    ADD CONSTRAINT session_page_bindings_source_checklist_item_id_fkey
-    FOREIGN KEY (source_checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL;
+
 
 CREATE INDEX IF NOT EXISTS idx_session_page_bindings_due
     ON session_page_bindings(node_id, next_retry_at, created_at)

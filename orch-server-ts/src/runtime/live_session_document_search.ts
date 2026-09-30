@@ -236,47 +236,38 @@ export async function loadSessionDocumentCandidateRows(input: {
         linked_folder.name,
         CASE
           WHEN linked_folder.completed_session_id = session.session_id THEN 'folder_completed'
-          WHEN completed_item.id IS NOT NULL THEN 'checklist_item_completed'
-          WHEN primary_session_item.source_checklist_item_id IS NOT NULL THEN 'source_checklist_item'
-          WHEN assigned_item.id IS NOT NULL THEN 'checklist_item_assigned'
+          WHEN completed_item.id IS NOT NULL THEN 'card_completed'
+          WHEN source_item.id IS NOT NULL THEN 'source_card'
+          WHEN assigned_item.id IS NOT NULL THEN 'card_assigned'
           ELSE NULL
         END AS folder_evidence_kind,
         CASE
           WHEN linked_folder.completed_session_id = session.session_id THEN linked_folder.name
           WHEN completed_item.id IS NOT NULL THEN completed_item.title
-          WHEN primary_session_item.source_checklist_item_id IS NOT NULL THEN source_item.title
+          WHEN source_item.id IS NOT NULL THEN source_item.title
           WHEN assigned_item.id IS NOT NULL THEN assigned_item.title
           ELSE NULL
         END AS folder_evidence_title
       FROM board_items primary_session_item
       JOIN folders linked_folder ON linked_folder.id = primary_session_item.folder_id
-      LEFT JOIN checklist_items source_item
-        ON source_item.id = primary_session_item.source_checklist_item_id
-       AND EXISTS (
-         SELECT 1 FROM checklist_sections source_section
-         WHERE source_section.id = source_item.section_id
-           AND source_section.folder_id = linked_folder.id
-       )
+      LEFT JOIN cards source_item
+        ON source_item.id = session.card_id AND source_item.folder_id = linked_folder.id
       LEFT JOIN LATERAL (
-        SELECT checklist_item.id, checklist_item.title
-        FROM checklist_items checklist_item
-        JOIN checklist_sections section ON section.id = checklist_item.section_id
-        WHERE section.folder_id = linked_folder.id
-          AND section.archived = FALSE
-          AND checklist_item.archived = FALSE
-          AND checklist_item.completed_session_id = session.session_id
-        ORDER BY checklist_item.completed_at DESC NULLS LAST, checklist_item.id
+        SELECT card.id, card.title
+        FROM cards card
+        WHERE card.folder_id = linked_folder.id
+          AND card.archived = FALSE
+          AND card.completed_session_id = session.session_id
+        ORDER BY card.completed_at DESC NULLS LAST, card.id
         LIMIT 1
       ) completed_item ON TRUE
       LEFT JOIN LATERAL (
-        SELECT checklist_item.id, checklist_item.title
-        FROM checklist_items checklist_item
-        JOIN checklist_sections section ON section.id = checklist_item.section_id
-        WHERE section.folder_id = linked_folder.id
-          AND section.archived = FALSE
-          AND checklist_item.archived = FALSE
-          AND checklist_item.assignee_session_id = session.session_id
-        ORDER BY checklist_item.updated_at DESC, checklist_item.id
+        SELECT card.id, card.title
+        FROM cards card
+        WHERE card.folder_id = linked_folder.id
+          AND card.archived = FALSE
+          AND card.assignee_session_id = session.session_id
+        ORDER BY card.updated_at DESC, card.id
         LIMIT 1
       ) assigned_item ON TRUE
       WHERE primary_session_item.folder_id = linked_folder.id
@@ -289,7 +280,7 @@ export async function loadSessionDocumentCandidateRows(input: {
       ORDER BY
         ((linked_folder.completed_session_id = session.session_id) IS TRUE) DESC,
         (completed_item.id IS NOT NULL) DESC,
-        (primary_session_item.source_checklist_item_id IS NOT NULL) DESC,
+        (source_item.id IS NOT NULL) DESC,
         (assigned_item.id IS NOT NULL) DESC,
         linked_folder.id ASC
       LIMIT 1

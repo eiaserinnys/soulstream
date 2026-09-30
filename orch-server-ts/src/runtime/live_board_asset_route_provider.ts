@@ -419,9 +419,6 @@ function requireBoardItem(row: Record<string, unknown> | undefined): BoardItemRe
     folderId,
     membershipKind:
       stringValue(row?.membership_kind ?? row?.membershipKind) ?? "primary",
-    sourceChecklistItemId: stringOrNull(
-      row?.source_checklist_item_id ?? row?.sourceChecklistItemId,
-    ),
     itemType,
     itemId,
     x: numberValue(row?.x) ?? 0,

@@ -36,7 +36,6 @@ export interface SessionBoardMoveInput {
   boardItems: readonly CatalogBoardItemRow[];
   targetScope: BoardYjsFolderScope | null;
   position?: { x: number; y: number };
-  sourceChecklistItemId?: string | null;
 }
 
 export interface StagedSessionBoardMove {
@@ -260,7 +259,6 @@ function createTargetSessionItem(
     id: `session:${input.sessionId}`,
     folderId: targetScope.folderId,
     membershipKind: "primary",
-    sourceChecklistItemId: input.sourceChecklistItemId ?? null,
     itemType: "session",
     itemId: input.sessionId,
     x: position.x,

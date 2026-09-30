@@ -1,6 +1,4 @@
 import type { BoardYjsQuerySql } from "./board_yjs_sql.js";
-import { normalizeMissingSourceChecklistItemReferences } from
-  "./board_yjs_replica_normalization.js";
 import type {
   BoardYjsFolderScope,
   BoardYjsReplica,
@@ -15,11 +13,7 @@ export async function syncBoardYjsReplicaWithSql(
   documentName: string,
 ): Promise<void> {
   await sql`SELECT pg_advisory_xact_lock(hashtext(${BOARD_ITEMS_ADVISORY_LOCK_KEY})::bigint)`;
-  const existingSourceChecklistItemIds = await loadExistingSourceChecklistItemIds(sql, replica);
-  const projectedReplica = normalizeMissingSourceChecklistItemReferences(
-    replica,
-    existingSourceChecklistItemIds,
-  );
+  const projectedReplica = replica;
   const boardItemIds = projectedReplica.boardItems.map((item) => item.id);
   if (boardItemIds.length === 0) {
     await sql`
@@ -37,17 +31,16 @@ export async function syncBoardYjsReplicaWithSql(
     await sql`
       INSERT INTO board_items (
         id, folder_id, membership_kind,
-        source_checklist_item_id, item_type, item_id, x, y, metadata, updated_at
+        item_type, item_id, x, y, metadata, updated_at
       ) VALUES (
         ${item.id}, ${scope.folderId},
-        ${item.membershipKind ?? "primary"}, ${item.sourceChecklistItemId ?? null},
+        ${item.membershipKind ?? "primary"},
         ${item.itemType}, ${item.itemId}, ${item.x}, ${item.y},
         ${sql.json(item.metadata ?? {})}::jsonb, NOW()
       )
       ON CONFLICT (id) DO UPDATE
       SET folder_id = EXCLUDED.folder_id,
           membership_kind = EXCLUDED.membership_kind,
-          source_checklist_item_id = EXCLUDED.source_checklist_item_id,
           item_type = EXCLUDED.item_type,
           item_id = EXCLUDED.item_id,
           x = EXCLUDED.x,
@@ -87,26 +80,4 @@ export async function syncBoardYjsReplicaWithSql(
     SET synced_at = COALESCE(synced_at, NOW())
     WHERE name = ${documentName}
   `;
-}
-
-async function loadExistingSourceChecklistItemIds(
-  sql: BoardYjsQuerySql,
-  replica: BoardYjsReplica,
-): Promise<ReadonlySet<string>> {
-  const sourceChecklistItemIds = [...new Set(replica.boardItems
-    .map((item) => item.sourceChecklistItemId)
-    .filter((id): id is string => id !== null && id !== undefined))];
-  if (sourceChecklistItemIds.length === 0) return new Set();
-
-  const rows = await sql<readonly ChecklistItemIdRow[]>`
-    SELECT id
-    FROM checklist_items
-    WHERE id = ANY(${sql.array(sourceChecklistItemIds)})
-    FOR KEY SHARE
-  `;
-  return new Set(rows.map((row) => row.id));
-}
-
-interface ChecklistItemIdRow extends Record<string, unknown> {
-  id: string;
 }

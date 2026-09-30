@@ -258,7 +258,6 @@ export class BoardProjectionReadRepository {
 
 
         p.membership_kind AS bi_membership_kind,
-        p.source_checklist_item_id AS bi_source_checklist_item_id,
         p.item_type AS bi_item_type,
         p.item_id AS bi_item_id,
         p.x AS bi_x,

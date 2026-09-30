@@ -1,5 +1,5 @@
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
-import { serializeChecklistRow } from "../folders/folder_contracts.js";
+import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { PlannerFolderDto } from "./planner_contract.js";
 import { pageDto } from "./planner_repository_reads.js";
 
@@ -38,7 +38,7 @@ export async function loadPlannerFolders(sql: LivePostgresSql, folderIds: string
     WHERE NOT f.archived AND NOT p.archived AND f.id NOT IN ('claude', 'llm')
     ORDER BY array_position(${folderIds}::text[], f.id)
   `;
-  return rows.map(row => ({ folder: serializeChecklistRow(row.folder as Record<string, unknown>),
+  return rows.map(row => ({ folder: serializeCardRow(row.folder as Record<string, unknown>),
     page: pageDto(row.page as Record<string, unknown>), itemCounts: row.item_counts as Record<string, number>,
     itemTotal: Number(row.item_total), completedItemCount: Number(row.completed_item_count), assignee: row.assignee as string | null }));
 }

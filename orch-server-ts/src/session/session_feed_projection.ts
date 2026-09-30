@@ -20,6 +20,7 @@ const FEED_SUMMARY_KEYS = [
   "displayName",
   "nodeId",
   "folderId",
+  "cardId",
   "lastEventId",
   "feedLastEventId",
   "lastReadEventId",
@@ -46,6 +47,7 @@ const FEED_SUMMARY_KEYS = [
 ] as const;
 
 const FEED_UPDATE_FIELDS = [
+  ["card_id", "card_id", "cardId"],
   ["status", "status"],
   ["updated_at", "updated_at", "updatedAt"],
   ["last_message", "last_message", "lastMessage"],

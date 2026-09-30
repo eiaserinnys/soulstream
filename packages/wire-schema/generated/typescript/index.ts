@@ -82,7 +82,8 @@ export type SoulstreamUpstreamProtocol =
   | WorktreeCreate
   | WorktreeRemove
   | WorktreeDeleteBranch
-  | WorktreeResult;
+  | WorktreeResult
+  | SSEEventCardUpdated;
 export type SessionLifecycleStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
 export type CallerInfoSource =
   | "agent"
@@ -1020,7 +1021,7 @@ export interface SSEEventClaudeRuntimeScheduleDeleted {
   [k: string]: unknown;
 }
 /**
- * SSE: 폴더와 체크리스트 변경 후 뷰 갱신.
+ * SSE: 폴더 헤더 변경 후 뷰 갱신.
  */
 export interface SSEEventFolderUpdated {
   type: "folder_updated";
@@ -2566,6 +2567,14 @@ export interface WorktreeResult {
   result: unknown;
   [k: string]: unknown;
 }
+/**
+ * SSE: 카드 변경 알림. 본문은 HTTP로 조회한다.
+ */
+export interface SSEEventCardUpdated {
+  type: "card_updated";
+  cardId: string;
+  folderId: string;
+}
 
 /**
  * Event persistence policy generated from upstream.schema.json.
@@ -2636,6 +2645,7 @@ export const EVENT_DURABILITY = {
   "metadata": "durable",
   "system_message": "durable",
   "subtree_update": "durable",
+  "card_updated": "durable",
 } as const;
 
 export type PersistenceEventType = keyof typeof EVENT_DURABILITY;
@@ -2705,6 +2715,7 @@ export const SSE_EVENT_TYPES = [
   "away_summary",
   "system_message",
   "subtree_update",
+  "card_updated",
 ] as const;
 export type SSEEventType = (typeof SSE_EVENT_TYPES)[number];
 
@@ -2760,14 +2771,16 @@ export const CALLER_INFO_SOURCES = [
   "trello_watcher",
 ] as const;
 
-export const CHECKLIST_ITEM_STATUSES = [
-  "pending",
-  "in_progress",
+export const CARD_STATUSES = [
+  "todo",
+  "queued",
+  "blocked",
+  "running",
   "review",
-  "completed",
+  "done",
   "cancelled",
 ] as const;
-export type ChecklistItemStatus = (typeof CHECKLIST_ITEM_STATUSES)[number];
+export type CardStatus = (typeof CARD_STATUSES)[number];
 
 export const BOARD_ITEM_TYPES = [
   "session",

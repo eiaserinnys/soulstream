@@ -23,6 +23,8 @@ const SESSION_CACHE_PAYLOAD_KEYS = [
   "nodeId",
   "folder_id",
   "folderId",
+  "card_id",
+  "cardId",
   "folder_name",
   "folderName",
   "last_event_id",
@@ -124,7 +126,7 @@ export function selectedSessionCreateFields(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const selected: Record<string, unknown> = {};
-  for (const key of ["caller_source", "callerSource", "folder_id", "folderId"]) {
+  for (const key of ["caller_source", "callerSource", "folder_id", "folderId", "card_id", "cardId"]) {
     if (key in payload) selected[key] = payload[key];
   }
   return selected;

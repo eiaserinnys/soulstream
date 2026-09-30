@@ -65,7 +65,6 @@ function catalogBoardItem(item: BoardItemRecord): CatalogBoardItemRow {
     id: item.id,
     folderId,
     membershipKind: item.membershipKind === "reference" ? "reference" : "primary",
-    sourceChecklistItemId: stringOrNull(item.sourceChecklistItemId),
     itemType,
     itemId,
     x,

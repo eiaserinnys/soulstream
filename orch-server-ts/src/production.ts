@@ -76,8 +76,7 @@ import {
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
 import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.js";
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
-import { createChecklistControlPlaneServiceProvider } from "./checklist/checklist_control_plane_runtime.js";
-import { notifyChecklistHandoff } from "./folders/checklist_handoff.js";
+import { createCardControlPlaneServiceProvider } from "./cards/card_control_plane_runtime.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
 import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
 import { createPersistenceHostRepositoryProvider } from "./control_plane/persistence_host_runtime.js";
@@ -553,14 +552,7 @@ export async function createLiveProductionApplication(
       folderProjectIdentityService,
       memoryStats,
       ephemeralLlmRoutes,
-      createChecklistControlPlaneServiceProvider({
-        onHumanHandoff: async (event, subscribers) => notifyChecklistHandoff(event, subscribers, {
-          deliveries: (await persistenceRepositoryProvider()).deliveries,
-          send: async (payload) => runtimeServices.sessionBridge.sendPendingCommand(
-            await runtimeServices.sessionRouter.routeExistingSessionPendingCommand(payload),
-          ),
-          warn: context.warn,
-        }),
+      createCardControlPlaneServiceProvider({
         warn: context.warn,
         onFolderHeaderUpdated: () => broadcastCatalogSnapshot(providers.folderRoutes.provider, runtimeServices.sessionBroadcaster),
         sqlResolver,
@@ -751,7 +743,7 @@ export function buildProductionRouteOptions(
   folderProjectIdentityService?: FolderProjectIdentityService,
   memoryStats?: ReturnType<typeof createOrchestratorMemoryStatsCollector>,
   ephemeralLlmRoutes?: EphemeralLlmRouteOptions,
-  checklistServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["checklistServiceProvider"],
+  cardServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["cardServiceProvider"],
   scheduleRepositoryProvider?: NonNullable<CreateAppOptions["scheduleHostRoutes"]>["repositoryProvider"],
   folderControlPlaneServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["controlPlaneServiceProvider"],
   databaseSchemaProvider?: PublicDatabaseSchemaProvider,
@@ -783,7 +775,7 @@ export function buildProductionRouteOptions(
     ...(ephemeralLlmRoutes === undefined ? {} : { ephemeralLlmRoutes }),
     folderRoutes: {
       ...providers.folderRoutes,
-      ...(checklistServiceProvider ? { checklistServiceProvider } : {}),
+      ...(cardServiceProvider ? { cardServiceProvider } : {}),
       authBearerToken: config.authBearerToken,
       ...(folderProjectIdentityService
         ? { projectIdentityService: folderProjectIdentityService }

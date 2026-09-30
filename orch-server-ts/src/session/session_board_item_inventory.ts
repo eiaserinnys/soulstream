@@ -60,7 +60,6 @@ function cachedSessionBoardItems(
       id,
       folderId: cacheRow.folder_id,
       membershipKind: membershipKind === "reference" ? "reference" : "primary",
-      sourceChecklistItemId: stringValue(value.sourceChecklistItemId ?? value.source_checklist_item_id),
       itemType: "session" as const,
       itemId: sessionId,
       x: numberValue(value.x),

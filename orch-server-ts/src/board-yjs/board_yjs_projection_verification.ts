@@ -101,7 +101,6 @@ function normalizeItems(items: readonly CatalogBoardItemRow[]): NormalizedBoardI
     id: item.id,
     folderId: item.folderId,
     membershipKind: item.membershipKind ?? "primary",
-    sourceChecklistItemId: item.sourceChecklistItemId ?? null,
     itemType: item.itemType,
     itemId: item.itemId,
     x: Number(item.x),
@@ -160,7 +159,6 @@ interface NormalizedBoardItem {
   id: string;
   folderId: string;
   membershipKind: string;
-  sourceChecklistItemId: string | null;
   itemType: string;
   itemId: string;
   x: number;

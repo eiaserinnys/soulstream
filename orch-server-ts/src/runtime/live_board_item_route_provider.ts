@@ -69,9 +69,6 @@ function serializeBoardItemRow(row: Record<string, unknown>): BoardItemRecord[] 
     folderId,
     membershipKind:
       stringValue(row.membership_kind ?? row.membershipKind) ?? "primary",
-    sourceChecklistItemId: stringValue(
-      row.source_checklist_item_id ?? row.sourceChecklistItemId,
-    ),
     itemType,
     itemId,
     x: numberValue(row.x) ?? 0,

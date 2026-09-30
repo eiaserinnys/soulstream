@@ -39,6 +39,7 @@ export class SessionReadRepository {
       WITH paged AS (
         SELECT
           s.session_id,
+          s.card_id,
           s.display_name,
           s.status,
           s.session_type,
@@ -124,6 +125,7 @@ export class SessionReadRepository {
         NULLIF(s.reasoning_effort, 'auto') AS reasoning_effort,
         s.prompt,
         s.folder_id,
+        s.card_id,
         s.metadata,
         s.last_message,
         s.client_id,
@@ -157,9 +159,11 @@ export class SessionReadRepository {
       WITH filtered AS (
         SELECT
           s.session_id,
+          s.card_id,
           s.display_name,
           s.node_id,
           s.folder_id,
+        s.card_id,
           f.name AS folder_name,
           s.updated_at
         FROM sessions s

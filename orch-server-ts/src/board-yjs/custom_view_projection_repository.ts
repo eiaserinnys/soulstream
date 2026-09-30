@@ -48,7 +48,6 @@ export class CustomViewProjectionRepository {
 
 
         bi.membership_kind AS bi_membership_kind,
-        bi.source_checklist_item_id AS bi_source_checklist_item_id,
         bi.item_type AS bi_item_type,
         bi.item_id AS bi_item_id,
         bi.x AS bi_x,
@@ -92,7 +91,6 @@ export class CustomViewProjectionRepository {
 
 
         bi.membership_kind AS bi_membership_kind,
-        bi.source_checklist_item_id AS bi_source_checklist_item_id,
         bi.item_type AS bi_item_type,
         bi.item_id AS bi_item_id,
         bi.x AS bi_x,

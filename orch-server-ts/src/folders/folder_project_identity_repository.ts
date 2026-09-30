@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { appendFolderOperation } from "./folder_operation_store.js";
 import { syncBoardYjsReplicaWithSql } from "../board-yjs/board_yjs_replica_sync.js";
 import { storePageDocument } from "../page/page_repository_projection.js";
-import { ChecklistVersionConflict } from "../checklist/control_plane/checklist_models.js";
+import { CardVersionConflict } from "../cards/control_plane/card_models.js";
 import { Buffer } from "node:buffer";
 
 import { BoardYjsSqlResolver, type BoardYjsQuerySql } from "../board-yjs/board_yjs_sql.js";
@@ -112,7 +112,7 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         throw new Error(`folder project identity mapping changed: ${input.binding.folderId}`);
       }
       if (locked[0].version !== input.expectedVersion) {
-        throw new ChecklistVersionConflict("folder", input.binding.folderId, input.expectedVersion, locked[0].version);
+        throw new CardVersionConflict("folder", input.binding.folderId, input.expectedVersion, locked[0].version);
       }
       if (hasOwn(input.update, "parentFolderId")) {
         await assertParent(transaction, input.update.parentFolderId ?? null, input.binding.folderId);
@@ -320,7 +320,7 @@ async function insertOperation(
 ): Promise<OperationRow> {
   const operation = await appendFolderOperation(sql, {
     ...input, targetKind: "folder", targetId: input.folderId,
-    actorKind: input.actor.actorKind as import("../checklist/control_plane/checklist_types.js").FolderOperationActorKind,
+    actorKind: input.actor.actorKind as import("../cards/control_plane/card_types.js").FolderOperationActorKind,
     actorSessionId: input.actor.actorSessionId, actorUserId: input.actor.actorUserId, actorEventId: null,
   });
   return operation as OperationRow;

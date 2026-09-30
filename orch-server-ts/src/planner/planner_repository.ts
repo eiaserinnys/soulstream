@@ -1,5 +1,5 @@
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
-import { serializeChecklistRow } from "../folders/folder_contracts.js";
+import { serializeCardRow } from "../folders/folder_contracts.js";
 import { serializeSessionRow } from "../runtime/live_session_serialization.js";
 import type { PlannerReadProvider, PlannerPageInput, PlannerTodayDto, PlannerFolderDetailDto } from "./planner_contract.js";
 import { blockDto, pageDto, decodeCursor, decodeStarredFolderCursor, sliceRows } from "./planner_repository_reads.js";
@@ -62,8 +62,8 @@ export class PlannerRepository implements PlannerReadProvider {
     const sections = await sql`SELECT * FROM checklist_sections WHERE folder_id = ${folderId} ORDER BY position_key, id`;
     const items = await sql`SELECT i.* FROM checklist_items i JOIN checklist_sections s ON s.id = i.section_id
       WHERE s.folder_id = ${folderId} ORDER BY s.position_key, i.position_key, i.id`;
-    return { folder: serializeChecklistRow(row.folder as Record<string, unknown>), page, blocks: blocks.map(blockDto),
-      sections: sections.map(serializeChecklistRow), items: items.map(serializeChecklistRow),
+    return { folder: serializeCardRow(row.folder as Record<string, unknown>), page, blocks: blocks.map(blockDto),
+      sections: sections.map(serializeCardRow), items: items.map(serializeCardRow),
       subfolders: await this.getSubfolders(folderId, input),
       sessions: await this.getSessions(folderId, input) };
   }
@@ -73,7 +73,7 @@ export class PlannerRepository implements PlannerReadProvider {
     const rows = await sql`SELECT * FROM folders WHERE parent_folder_id = ${folderId} AND NOT archived
       AND id NOT IN ('claude', 'llm') AND (${c?.first ?? null}::integer IS NULL OR (sort_order, id) > (${c?.first ?? null}::integer, ${c?.second ?? ""}))
       ORDER BY sort_order, id LIMIT ${input.limit + 1}`;
-    return sliceRows(rows, input.limit, "subfolder", r => [String(r.sort_order), String(r.id)], serializeChecklistRow);
+    return sliceRows(rows, input.limit, "subfolder", r => [String(r.sort_order), String(r.id)], serializeCardRow);
   }
   async getSessions(folderId: string, input: PlannerPageInput) {
     const sql = await this.resolver.resolveSql();

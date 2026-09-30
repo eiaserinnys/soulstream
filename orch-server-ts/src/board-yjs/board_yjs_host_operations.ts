@@ -31,7 +31,6 @@ const rawBoardItemSchema = z.object({
   id: z.string().min(1),
   folderId: z.string().min(1),
   membershipKind: z.enum(["primary", "reference"]).nullable().optional(),
-  sourceChecklistItemId: z.string().nullable().optional(),
   itemType: boardItemTypeInputSchema,
   itemId: z.string().min(1),
   x: z.number(),
@@ -42,14 +41,12 @@ const rawBoardItemSchema = z.object({
 const boardItemSchema = rawBoardItemSchema.transform((item) => {
   const {
     membershipKind,
-    sourceChecklistItemId,
     metadata,
     ...rest
   } = item;
   return {
     ...rest,
     ...(membershipKind ? { membershipKind } : {}),
-    sourceChecklistItemId: sourceChecklistItemId ?? null,
     metadata: metadata ?? {},
   };
 });
@@ -68,7 +65,6 @@ const schemas = {
     sessionId: z.string().min(1),
     x: z.number(),
     y: z.number(),
-    sourceChecklistItemId: z.string().nullable().optional(),
   }),
   "move-session-to-folder": z.object({
     sessionId: z.string().min(1),

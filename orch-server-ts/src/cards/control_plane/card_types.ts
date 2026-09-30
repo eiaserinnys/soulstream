@@ -7,18 +7,18 @@ export type SqlClient = RepositorySql & {
   begin<T>(callback: (sql: RepositorySql) => Promise<T>): Promise<T>;
 };
 
-import type { ChecklistItemStatus } from "@soulstream/wire-schema";
+import type { CardStatus } from "@soulstream/wire-schema";
 
-export type { ChecklistItemStatus } from "@soulstream/wire-schema";
+export type { CardStatus } from "@soulstream/wire-schema";
 
-export type ChecklistAssigneeKind = "agent" | "human" | "session";
+export type CardAssigneeKind = "agent" | "human" | "session";
 export type FolderStatus = "open" | "completed";
-export type FolderOperationTargetKind = "folder" | "section" | "item";
+export type FolderOperationTargetKind = "folder" | "section" | "card";
 export type FolderOperationActorKind = "agent" | "user" | "system" | "llm";
 export type FolderCompletionKind = Exclude<FolderOperationActorKind, "system">;
 
-export interface ChecklistAssigneeFields extends Record<string, unknown> {
-  assignee_kind: ChecklistAssigneeKind | null;
+export interface CardAssigneeFields extends Record<string, unknown> {
+  assignee_kind: CardAssigneeKind | null;
   assignee_agent_id: string | null;
   assignee_session_id: string | null;
   assignee_user_id: string | null;
@@ -46,28 +46,19 @@ export interface FolderRow extends Record<string, unknown> {
   updated_at: Date;
 }
 
-export interface ChecklistSectionRow extends ChecklistAssigneeFields {
+export interface CardRow extends CardAssigneeFields {
   id: string;
   folder_id: string;
   position_key: string;
   title: string;
-  archived: boolean;
-  version: number;
-  created_session_id: string | null;
-  created_event_id: number | null;
-  updated_session_id: string | null;
-  updated_event_id: number | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface ChecklistItemRow extends ChecklistAssigneeFields {
-  id: string;
-  section_id: string;
-  position_key: string;
-  title: string;
-  how_to: string;
-  status: ChecklistItemStatus;
+  request: string;
+  queue_position_key: string | null;
+  brief: string;
+  blocked_kind: "limit" | "question" | "no_report" | null;
+  blocked_detail: string | null;
+  node_id: string | null;
+  model_preset: string | null;
+  status: CardStatus;
   archived: boolean;
   version: number;
   created_session_id: string | null;
@@ -101,33 +92,10 @@ export interface FolderOperationRow extends Record<string, unknown> {
 
 export interface FolderSnapshot {
   folder: FolderRow;
-  sections: ChecklistSectionRow[];
-  items: ChecklistItemRow[];
+  cards: CardRow[];
 }
 
 export type FolderListRow = FolderRow;
-
-export interface FolderMyTurnItemRow extends Record<string, unknown> {
-  folder_id: string;
-  folder_name: string;
-  folder_status: FolderStatus;
-  folder_completed_kind: FolderCompletionKind | null;
-  folder_completed_session_id: string | null;
-  folder_completed_event_id: number | null;
-  folder_completed_user_id: string | null;
-  folder_completed_at: Date | null;
-  section_id: string;
-  section_title: string;
-  item_id: string;
-  item_title: string;
-  how_to: string;
-  status: ChecklistItemStatus;
-  item_version: number;
-  effective_assignee_kind: ChecklistAssigneeKind | null;
-  effective_assignee_agent_id: string | null;
-  effective_assignee_session_id: string | null;
-  effective_assignee_user_id: string | null;
-}
 
 export interface FolderActorParams {
   actorKind?: FolderOperationActorKind;
@@ -135,22 +103,11 @@ export interface FolderActorParams {
   actorUserId?: string | null;
 }
 
-export interface FolderHandoffEvent {
-  folderId: string;
-  folderName: string;
-  itemId: string;
-  itemTitle: string;
-  status: Extract<ChecklistItemStatus, "completed" | "cancelled">;
-  operationId: string;
-  eventId: number;
-}
-
-export interface ChecklistMutationResult {
+export interface CardMutationResult {
   snapshot: FolderSnapshot;
   operation: FolderOperationRow;
   eventId: number;
   idempotent?: boolean;
-  handoff?: FolderHandoffEvent;
 }
 
 export interface FolderDbPort {
@@ -169,5 +126,5 @@ export interface FolderDbPort {
 
 export interface FolderBroadcasterPort {
   emitFolderUpdated(folderId: string, agentSessionId: string | null, headerChanged?: boolean): Promise<void>;
-  notifyHumanHandoff?(event: FolderHandoffEvent): Promise<void>;
+  emitCardUpdated?(cardId: string, folderId: string): Promise<void>;
 }

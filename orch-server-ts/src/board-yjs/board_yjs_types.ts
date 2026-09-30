@@ -10,7 +10,6 @@ export interface CatalogBoardItemRow {
   id: string;
   folderId: string;
   membershipKind?: "primary" | "reference";
-  sourceChecklistItemId?: string | null;
   itemType: BoardItemType;
   itemId: string;
   x: number;
@@ -52,7 +51,6 @@ export interface BoardYjsItemValue {
   x: number;
   y: number;
   membership_kind?: "primary" | "reference";
-  source_checklist_item_id?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;

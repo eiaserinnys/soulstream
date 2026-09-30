@@ -58,7 +58,6 @@ export interface BoardYjsServiceConfig {
     sessionId: string;
     targetScope: SessionBoardMoveInput["targetScope"];
     position?: { x: number; y: number };
-    sourceChecklistItemId?: string | null;
   }) => Promise<CatalogBoardItemRow | null>;
   persistBoardItemMove?: (application: StagedBoardMove) => Promise<void>;
 }
@@ -136,7 +135,6 @@ export class BoardYjsService {
     sessionId: string;
     x: number;
     y: number;
-    sourceChecklistItemId?: string | null;
   }): Promise<CatalogBoardItemRow> {
     if (!this.config.moveSessionBoardItem) {
       throw new Error("session board move is not configured");
@@ -147,7 +145,6 @@ export class BoardYjsService {
         folderId: input.folderId,
       },
       position: { x: input.x, y: input.y },
-      sourceChecklistItemId: input.sourceChecklistItemId ?? null,
     });
     if (!moved) throw new Error(`session board item was not created: ${input.sessionId}`);
     return moved;
@@ -165,7 +162,6 @@ export class BoardYjsService {
       targetScope: folderId === null
         ? null
         : { folderId },
-      sourceChecklistItemId: null,
     });
   }
 
@@ -246,7 +242,6 @@ export class BoardYjsService {
         sessionId: input.boardItem.itemId,
         targetScope: input.targetScope,
         ...(input.position ? { position: input.position } : {}),
-        sourceChecklistItemId: input.boardItem.sourceChecklistItemId ?? null,
       });
       if (!moved) throw new Error(`session board item was not created: ${input.boardItem.itemId}`);
       return moved;

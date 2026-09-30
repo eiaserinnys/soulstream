@@ -1,9 +1,9 @@
 import { z } from "zod";
-import type { ChecklistControlPlaneService } from "../checklist/checklist_control_plane_service.js";
-import type { FolderActorParams } from "../checklist/control_plane/checklist_types.js";
+import type { CardControlPlaneService } from "../cards/card_control_plane_service.js";
+import type { FolderActorParams } from "../cards/control_plane/card_types.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 import { executeFolderOperation, folderOperationSchemas, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
-import { serializeChecklistRow, serializeFolder } from "./folder_contracts.js";
+import { serializeCardRow, serializeFolder } from "./folder_contracts.js";
 import { folderOperationError } from "./folder_workspace_routes.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
@@ -12,7 +12,7 @@ import type { FolderControlPlaneService } from "./folder_control_plane_service.j
 
 export interface FolderControlPlaneHostRouteOptions {
   serviceProvider: () => Promise<FolderControlPlaneService>;
-  checklistServiceProvider?: () => Promise<ChecklistControlPlaneService>;
+  cardServiceProvider?: () => Promise<CardControlPlaneService>;
   identity?: Pick<FolderProjectIdentityService, "create" | "mutateFromFolder">;
   authBearerToken: string;
   environment?: string;
@@ -25,7 +25,7 @@ const operations = new Set([
   "get_all",
   "get_catalog",
   "get_session_assignments",
-  "list_child_folders", "list_folder_operations", "list_my_turn_items", "list_agent_subscribers",
+  "list_child_folders", "list_folder_operations", 
   ...Object.keys(folderOperationSchemas),
 ]);
 
@@ -83,9 +83,9 @@ async function dispatch(
 }
 
 async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, operation: string, body: Record<string, unknown>) {
-  if (!options.checklistServiceProvider) throw new Error("Checklist service is not configured");
-  const service = await options.checklistServiceProvider();
-  if (operation === "get_folder") return await readFolderSnapshot(service, requiredString(body, "folder_id"), body.item_id as string | undefined, body.view as string | undefined);
+  if (!options.cardServiceProvider) throw new Error("Card service is not configured");
+  const service = await options.cardServiceProvider();
+  if (operation === "get_folder") return await readFolderSnapshot(service, requiredString(body, "folder_id"), body.card_id as string | undefined, body.view as string | undefined);
   if (operation === "list_child_folders" || operation === "list_folder_operations") {
     const limit = z.number().int().min(1).max(200).parse(body.limit ?? 50);
     const offset = z.coerce.number().int().nonnegative().parse(body.cursor ?? 0);
@@ -93,10 +93,8 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
     const rows = operation === "list_child_folders"
       ? await service.listFolders({ folderId, includeArchived: body.include_archived === true, limit: limit + 1, offset })
       : await service.listOperations(folderId!, limit + 1, offset);
-    return { items: rows.slice(0, limit).map(serializeChecklistRow), nextCursor: rows.length > limit ? String(offset + limit) : null };
+    return { items: rows.slice(0, limit).map(serializeCardRow), nextCursor: rows.length > limit ? String(offset + limit) : null };
   }
-  if (operation === "list_agent_subscribers") return await service.listAgentSubscriberSessionIds(requiredString(body, "folder_id"));
-  if (operation === "list_my_turn_items") return (await service.listMyTurnItems({ userId: body.user_id as string | undefined, limit: body.limit as number | undefined })).map(serializeChecklistRow);
   if (!options.identity) throw new Error("Folder identity is not configured");
   const kind = requiredString(body, "actor_kind");
   if (!["agent", "user", "system", "llm"].includes(kind)) throw statusError(422, "Invalid actor_kind");
@@ -107,11 +105,11 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
   };
   if (kind === "agent" && !actor.actorSessionId) throw statusError(422, "actor_session_id is required");
   if (kind === "user" && !actor.actorUserId) throw statusError(422, "actor_user_id is required");
-  const { folder_id, section_id, item_id, actor_kind, actor_session_id, actor_event_id, actor_user_id, ...payload } = body;
+  const { folder_id, card_id, actor_kind, actor_session_id, actor_event_id, actor_user_id, ...payload } = body;
   if (operation === "create_folder" && folder_id !== undefined) throw statusError(422, "create_folder does not accept folder_id");
-  const input = camelize(operation === "move_checklist_item" ? { ...payload, section_id } : payload);
-  return await executeFolderOperation({ identity: options.identity, checklist: service }, operation as FolderOperation, input, {
-    folderId: folder_id as string | undefined, sectionId: section_id as string | undefined, itemId: item_id as string | undefined,
+  const input = camelize(operation === "create_card" || operation === "move_card" ? { ...payload, folder_id } : payload);
+  return await executeFolderOperation({ identity: options.identity, cards: service }, operation as FolderOperation, input, {
+    folderId: folder_id as string | undefined, cardId: card_id as string | undefined,
   }, actor);
 }
 

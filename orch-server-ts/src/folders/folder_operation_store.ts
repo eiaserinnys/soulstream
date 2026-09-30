@@ -1,7 +1,7 @@
-import type { RepositorySql, FolderOperationRow } from "../checklist/control_plane/checklist_types.js";
-import type { AppendFolderOperationTxParams } from "../checklist/control_plane/checklist_models.js";
-import { normalizeOperation, requireOne } from "../checklist/control_plane/checklist_models.js";
-import { asPostgresJsonValue } from "../checklist/control_plane/repository_helpers.js";
+import type { RepositorySql, FolderOperationRow } from "../cards/control_plane/card_types.js";
+import type { AppendFolderOperationTxParams } from "../cards/control_plane/card_models.js";
+import { normalizeOperation, requireOne } from "../cards/control_plane/card_models.js";
+import { asPostgresJsonValue } from "../cards/control_plane/repository_helpers.js";
 
 export async function appendFolderOperation(sql: RepositorySql, params: AppendFolderOperationTxParams): Promise<FolderOperationRow> {
     const rows = await sql<FolderOperationRow[]>`

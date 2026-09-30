@@ -64,9 +64,6 @@ export function createBoardYDocSnapshot(params: {
         x: item.x,
         y: item.y,
         ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
-        ...(item.sourceChecklistItemId !== undefined
-          ? { source_checklist_item_id: item.sourceChecklistItemId }
-          : {}),
         metadata: markdown
           ? { ...metadata, version: normalizeMarkdownVersion(metadata.version ?? markdown.version) }
           : metadata,
@@ -102,7 +99,6 @@ export function readBoardYDocReplica(
       id,
       folderId: scope.folderId,
       membershipKind: normalizedValue.membership_kind ?? "primary",
-      sourceChecklistItemId: normalizedValue.source_checklist_item_id ?? null,
       itemType: normalizedValue.item_type,
       itemId: normalizedValue.item_id,
       x: Number(normalizedValue.x),
