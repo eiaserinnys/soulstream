@@ -564,7 +564,7 @@ function V3DashboardContent() {
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
           <div ref={plannerScrollRef} className="v3-planner-scroll" data-testid="v3-planner-scroll">
-            {cardNavigation.cardId && cardNavigation.placement === "inline" ? <CardDetailPane cardId={cardNavigation.cardId} folders={catalog?.folders ?? []} focus={cardNavigation.focus} onClose={cardNavigation.close} scrollContainerRef={plannerScrollRef} onOpenSession={session=>{cardNavigation.close();openSession(session);}} /> : selectedFolderId ? (workspaceFolderEntry && selectedFolder ? <FolderDetailPane
+            {cardNavigation.cardId ? <CardDetailPane cardId={cardNavigation.cardId} folders={catalog?.folders ?? []} focus={cardNavigation.focus} onClose={cardNavigation.close} scrollContainerRef={plannerScrollRef} onOpenSession={openSession} /> : selectedFolderId ? (workspaceFolderEntry && selectedFolder ? <FolderDetailPane
               placement="inline"
               scrollContainerRef={plannerScrollRef}
               task={workspaceFolderEntry}
@@ -700,7 +700,6 @@ function V3DashboardContent() {
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
-      {cardNavigation.cardId && cardNavigation.placement === "overlay" ? <div className="v3-workspace-scrim" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)cardNavigation.close();}}><div className="v3-workspace"><CardDetailPane cardId={cardNavigation.cardId} placement="overlay" focus={cardNavigation.focus} folders={catalog?.folders ?? []} onClose={cardNavigation.close} onOpenSession={session=>{cardNavigation.close();openSession(session);}} /></div></div> : null}
       <V3SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} onOpenFolder={(folderId) => { const folder = catalog?.folders.find((candidate) => candidate.id === folderId); if (folder) void selectFolder(folder); }} />
       <V3Toast message={toast} />
     </div>

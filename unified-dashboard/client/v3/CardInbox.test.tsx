@@ -11,10 +11,11 @@ vi.mock("@seosoyoung/soul-ui/cards/card-store", async importOriginal => {
  return {useCardStore: Object.assign((selector: (state: ReturnType<typeof actual.useCardStore.getState>) => unknown) => selector(actual.useCardStore.getState()), actual.useCardStore)};
 });
 afterEach(() => useCardStore.getState().reset());
-it("renders one empty state without empty group DOM", () => {
+it("renders one empty state and the card creation header", () => {
  const html = renderToStaticMarkup(createElement(CardInbox, { folders: [] }));
  expect(html).toContain("지금은 확인할 것이 없습니다");
- expect(html).not.toContain("data-card-group");
+ expect(html).toContain('data-card-group="attention"');
+ expect(html).toContain('aria-label="카드 추가"');
 });
 it("renders only populated groups in attention, running, queued order", () => {
  useCardStore.getState().putCards([{

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { cardRequest, cardPath, cardMutationKey, fetchCards } from "./card-api";
-import type { CardDetail, CardRow } from "./card-types";
+import type { CardComment, CardDetail, CardRow } from "./card-types";
 interface CardState {
   byId: Record<string, CardRow>; details: Record<string, CardDetail>; errors: Record<string, string>;
   folderIds: Record<string, string[]>;
@@ -8,6 +8,7 @@ interface CardState {
   loadFolder(folderId: string): Promise<void>;
   loadCard(id: string): Promise<CardDetail>;
   mutate(id: string, suffix: string, body: object, method?: string): Promise<CardDetail>;
+  addComment(id: string, body: string, idempotencyKey: string): Promise<CardComment>;
   create(body: object): Promise<CardRow>;
   handleCardUpdated(event: {cardId: string; folderId: string}): Promise<CardDetail>;
   reset(): void;
@@ -29,8 +30,32 @@ export const useCardStore = create<CardState>((set,get) => ({
     }
   },
   async mutate(id,suffix,body,method="POST") {
-    await cardRequest(cardPath(id)+suffix,method,{...body,idempotencyKey:cardMutationKey()});
-    return get().loadCard(id);
+    try {
+      await cardRequest(cardPath(id)+suffix,method,{...body,idempotencyKey:cardMutationKey()});
+      return await get().loadCard(id);
+    } catch(error) {
+      set(state=>({errors:{...state.errors,[id]:error instanceof Error ? error.message : String(error)}}));
+      throw error;
+    }
+  },
+  async addComment(id, body, idempotencyKey) {
+    const optimistic: CardComment = {id:idempotencyKey,cardId:id,authorKind:"user",authorId:"",sessionId:null,kind:"comment",body,createdAt:new Date().toISOString()};
+    const patch = (comment: CardComment | null) => set(state => {
+      const detail = state.details[id];
+      if (!detail) return {};
+      const comments = (detail.comments ?? []).filter(item => item.id !== idempotencyKey && item.id !== comment?.id);
+      return {details:{...state.details,[id]:{...detail,comments:comment ? [...comments,comment] : comments}}};
+    });
+    patch(optimistic);
+    try {
+      const comment = await cardRequest<CardComment>(cardPath(id)+"/comments","POST",{body,idempotencyKey});
+      patch(comment);
+      return comment;
+    } catch (error) {
+      patch(null);
+      set(state => ({errors:{...state.errors,[id]:error instanceof Error ? error.message : String(error)}}));
+      throw error;
+    }
   },
   async create(body) {
     const result=await cardRequest<{card:CardRow}>("/api/cards","POST",body);

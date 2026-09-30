@@ -22,7 +22,16 @@ describe("card status menu",()=>{
  it("lists six states, disables current and reportless review, and omits blocked",async()=>{await render("running");expect(menuButton("실행 중 (현재)").disabled).toBe(true);expect(menuButton("검수 (보고 필요)").disabled).toBe(true);expect(container.querySelectorAll('[role="menu"] button')).toHaveLength(6);expect(container.textContent).not.toContain("막힘");});
  it.each([["todo","실행 중","running"],["running","할 일","todo"],["running","완료","done"],["running","취소","cancelled"]] as const)("changes %s to %s with the version",async(from,label,status)=>{await render(from);await click(menuButton(label));expect(mutate).toHaveBeenCalledWith("c","/status",{status,expectedVersion:7});});
  it("enables review with a report",async()=>{await render("running",1);expect(menuButton("검수").disabled).toBe(false);await click(menuButton("검수"));expect(mutate).toHaveBeenCalledWith("c","/status",{status:"review",expectedVersion:7});});
- it("requires rejection reason when leaving review for running",async()=>{await render("review",1);await click(menuButton("실행 중"));expect(mutate).not.toHaveBeenCalled();expect(document.querySelector('input[aria-label="반려 사유"]')).not.toBeNull();const reject=[...document.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent==="반려")!;expect(reject.disabled).toBe(true);});
+ it("keeps review continuation in comments and exposes no rejection dialog",async()=>{await render("review",1);expect(menuButton("실행 중").disabled).toBe(true);expect(document.querySelector('input[aria-label="반려 사유"]')).toBeNull();});
  it("shows API rejection messages",async()=>{mutate.mockRejectedValueOnce(new Error("422: 보고가 필요합니다"));await render("todo");await click(menuButton("실행 중"));expect(container.querySelector('[role="alert"]')?.textContent).toContain("422: 보고가 필요합니다");});
- it.each([false,true])("keeps status and open as sibling buttons (today=%s)",async(today)=>{const open=vi.fn();useCardNavigation.setState({open});const c=card("running");await act(()=>root.render(<CardRowView card={c} today={today}/>));const chip=container.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]');expect(chip).not.toBeNull();expect(chip!.parentElement?.closest("button")).toBeNull();await click(chip!);expect(open).not.toHaveBeenCalled();await click(container.querySelector('[aria-label="카드 카드 제목 열기"]')!);expect(open).toHaveBeenCalledWith("c","inline");});
+ it.each([false,true])("keeps status and open as sibling buttons (context=%s)",async(folderLabel)=>{const open=vi.fn();useCardNavigation.setState({open});const c=card("running");await act(()=>root.render(<CardRowView card={c} folderLabel={folderLabel?"폴더":undefined}/>));const chip=container.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]');expect(chip).not.toBeNull();expect(chip!.parentElement?.closest("button")).toBeNull();await click(chip!);expect(open).not.toHaveBeenCalled();await click(container.querySelector('[aria-label="카드 카드 제목 열기"]')!);expect(open).toHaveBeenCalledWith("c","inline");});
+});
+
+it("uses the same row structure for today and folder metadata, with one review action",()=>{
+ const c=card("review");c.updatedAt="2026-09-30";
+ const render=(folderLabel?:string)=>import("react-dom/server").then(({renderToStaticMarkup})=>renderToStaticMarkup(<CardRowView card={c} folderLabel={folderLabel}/>));
+ return Promise.all([render("폴더"),render()]).then(([today,folder])=>{
+  expect(today.match(/class="[^"]+"/g)).toEqual(folder.match(/class="[^"]+"/g));
+  expect(today).not.toContain("v3-card-row--today");expect(today).not.toContain('aria-label="반려"');
+ });
 });

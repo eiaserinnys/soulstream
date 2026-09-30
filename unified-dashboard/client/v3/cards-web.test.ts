@@ -46,3 +46,27 @@ describe("card web contracts", () => {
     expect(useCardStore.getState().details.changed.reports).toHaveLength(1);
   });
 });
+
+describe("card comments",()=>{
+ it("shows a new comment immediately, replaces it with the saved comment, then follows the wire detail",async()=>{
+  const c=card("c","running");
+  useCardStore.setState({details:{c:{card:c,reports:[],questions:[],sessions:[]} as never}});
+  let finish!:(response:Response)=>void;
+  const fetch=vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{finish=resolve;}));vi.stubGlobal("fetch",fetch);
+  const pending=useCardStore.getState().addComment("c","추가 지시","comment-key");
+  expect(useCardStore.getState().details.c.comments?.map(comment=>comment.body)).toEqual(["추가 지시"]);
+  const saved={id:"saved",cardId:"c",authorKind:"user",authorId:"director",sessionId:null,kind:"comment",body:"추가 지시",createdAt:"2026-09-30"};
+  finish(new Response(JSON.stringify(saved)));await pending;
+  expect(useCardStore.getState().details.c.comments).toEqual([saved]);
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({body:"추가 지시",idempotencyKey:"comment-key"});
+  fetch.mockResolvedValueOnce(new Response(JSON.stringify({card:c,reports:[],questions:[],sessions:[],comments:[saved,{...saved,id:"next",authorKind:"agent",body:"반영하겠습니다"}]})));
+  await useCardStore.getState().handleCardUpdated({cardId:"c",folderId:"folder"});
+  expect(useCardStore.getState().details.c.comments).toHaveLength(2);
+ });
+ it("removes the optimistic comment and surfaces a real save failure",async()=>{
+  useCardStore.setState({details:{c:{card:card("c","running"),reports:[],questions:[],sessions:[],comments:[]} as never}});
+  vi.stubGlobal("fetch",vi.fn().mockRejectedValue(new Error("저장 실패")));
+  await expect(useCardStore.getState().addComment("c","지시","key")).rejects.toThrow("저장 실패");
+  expect(useCardStore.getState().details.c.comments).toEqual([]);expect(useCardStore.getState().errors.c).toBe("저장 실패");
+ });
+});
