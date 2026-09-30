@@ -34,9 +34,15 @@ import { parseRunnerChildConfig } from "../../../src/runner/runner_process_spawn
 const configPath = argument("--config");
 const controlDirectory = required(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2E_CONTROL_DIR");
 const config = parseRunnerChildConfig(JSON.parse(await readFile(configPath, "utf8")));
-const logger = pino({
-  level: process.env.RUNNER_E2E_CAPTURE_WARNINGS === "1" ? "warn" : "silent",
-});
+const fixtureLogPath = process.env.RUNNER_E2E_FIXTURE_LOG_PATH;
+const logger = fixtureLogPath
+  ? pino(
+      { level: "info" },
+      pino.destination({ dest: fixtureLogPath, sync: true }),
+    )
+  : pino({
+      level: process.env.RUNNER_E2E_CAPTURE_WARNINGS === "1" ? "warn" : "silent",
+    });
 class ControlledEngine implements EnginePort {
   readonly backendId = config.backend;
   readonly detachedClaudeRuntime = config.backend === "claude" ? true : undefined;
