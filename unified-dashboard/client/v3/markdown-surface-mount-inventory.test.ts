@@ -40,6 +40,7 @@ describe("markdown surface mount inventory", () => {
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
       "unified-dashboard/client/v3/CardDetailPane.tsx",
+      "unified-dashboard/client/v3/CardTimeline.tsx",
       "unified-dashboard/client/v3/FolderBoardResourcePane.tsx",
       "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
     ]);

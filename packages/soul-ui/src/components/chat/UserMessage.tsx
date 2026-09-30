@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { ProfileAvatar } from "../ProfileAvatar";
@@ -10,7 +10,7 @@ import {
   pickMessageAvatarUrl,
 } from "./userAvatarSelectors";
 
-export const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
+export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, portraitUrl }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null }) {
   // caller_info v1 (atom ed3a216d): 세션-수준 발신자 신원 avatar_url —
   // 메시지 단위 caller_info(msg.callerInfo) 부재 시 fallback. 4 source(browser/slack/agent/soul-app) 동일 entry.
   const callerAvatarUrl = useDashboardStore((s) =>
@@ -44,7 +44,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg:
   // user 발신 portrait: 메시지 caller_info → 세션 caller_info.
   // 첫 history fetch 시점에도 메시지 단위 caller_info가 함께 도착하므로
   // 세션-수준 metadata propagation race로 인한 미표시 결함이 해소된다 (atom ed3a216d 통합 후속 fix).
-  const userPortraitUrl = pickMessageAvatarUrl(
+  const userPortraitUrl = portraitUrl ?? pickMessageAvatarUrl(
     msg.callerInfo,
     callerAvatarUrl,
   );
@@ -55,7 +55,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg:
   return (
     <div className="flex justify-end gap-2 px-3 py-1.5" data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId}>
       <div data-slot="chat-message-bubble" className="max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]">
-        <div className="mb-1 flex items-baseline justify-end gap-1.5">
+        {header ?? <div className="mb-1 flex items-baseline justify-end gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-white/75">
             {displayName}
           </span>
@@ -64,9 +64,9 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg:
               {displayId}
             </span>
           )}
-        </div>
+        </div>}
         <div data-slot="chat-body" className="chat-message-selectable break-words text-base leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white">
-          <MarkdownContent content={msg.content} linkTone="onUserBubble" enableBlockquoteCopy />
+          {children ?? <MarkdownContent content={msg.content} linkTone="onUserBubble" enableBlockquoteCopy />}
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} />

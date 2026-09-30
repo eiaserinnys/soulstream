@@ -2,16 +2,11 @@
 // 이번 변경은 실행 이력 페이징 전달만 추가하며, 구조 분리는 별도 계약 마이그레이션이 필요하다.
 import { useCallback, useEffect, useMemo, useRef, useState, type AnimationEvent as ReactAnimationEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
-  ChatView,
   DashboardIconCap,
   DragHandle,
   MarkdownDocumentPanel,
   SessionContextMenu,
-  SessionModelPresetBadge,
-  SessionStoryDisclosure,
-  STATUS_CONFIG,
   useDashboardStore,
-  useGlassSurface,
   type CatalogBoardItem,
   type CatalogFolder,
   type SessionContextMenuState,
@@ -25,7 +20,6 @@ import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import type { MobilePlannerTab } from "./mobile-planner-state";
 import type { PlannerFolder } from "./planner-data";
-import { sessionPanelTitle } from "./v3-session-panel-model";
 import { buildRunTree, type RunSessionLoadState } from "./folder-workspace-run-model";
 import { buildSuccessionSessionOptions, latestFolderRun } from "./session-succession-model";
 import { SessionSuccessionModal } from "./SessionSuccessionModal";
@@ -50,8 +44,7 @@ import {
 } from "./folder-board-model";
 import { FolderBoardPane } from "./FolderBoardPane";
 import { FolderBoardResourcePane } from "./FolderBoardResourcePane";
-import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
-import { SessionStreamStatus } from "./SessionStreamStatus";
+import { WorkspaceSessionColumn } from "./WorkspaceSessionColumn";
 
 const TASK_PANEL_KEYBOARD_STEP_PX = 24;
 
@@ -128,8 +121,6 @@ export function FolderBoardWorkspace({
   const layoutKey = task.page.id;
   const initialLayoutRef = useRef(useDashboardStore.getState().folderBoardLayouts[layoutKey] ?? null);
 
-  const chatSurfaceRef = useRef<HTMLElement>(null);
-  const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: true });
   const workspaceRef = useRef<HTMLDivElement>(null);
   const resourceWidthRef = useRef<number>(
     clampFolderResourceWidth(initialLayoutRef.current?.resourceWidth ?? V3_NAVIGATION_DEFAULT_WIDTH_PX),
@@ -532,57 +523,22 @@ export function FolderBoardWorkspace({
           />
         </main>
 
-        <div
-          className="v3-folder-board-resize v3-folder-board-resize--right"
-          data-testid="v3-folder-board-chat-resize-handle"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="채팅 패널 크기 조절"
-          tabIndex={0}
-          onKeyDown={handleChatResizeKeyDown}
-        >
-          <DragHandle onDrag={resizeChat} widthPx={V3_PANEL_GAP_PX} />
-        </div>
-
-        <section
-          ref={chatSurfaceRef}
-          className="v3-chat-pane v3-folder-board-chat border border-glass-border glass-strong glass-chrome lg-rim"
-          data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
-          data-testid="v3-folder-board-chat"
-          aria-label="세션 채팅"
-        >
-          <header className="v3-chat-header">
-            <div className="v3-chat-session-title">
-              <strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong>
-            </div>
-            <SessionModelPresetBadge session={activeSession} />
-            <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>
-              {activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}
-            </span>
-            {activeSession ? <SessionStreamStatus active={sessionStreamActive} status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
-            {activeSession ? (
-              <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
-            ) : null}
-          </header>
-          {activeSession ? (
-            <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} />
-          ) : null}
-          <div className="v3-chat-content">
-            {activeSession ? (
-              <ChatView
-                chatInputDisabled={chatInputDisabled}
-                fileUploadUrl={fileUploadUrl}
-                historyEnabled={historyEnabled}
-              />
-            ) : (
-              <div className="v3-chat-empty">
-                <span className="v3-emoji" aria-hidden="true">💬</span>
-                <strong>위임 관계에서 세션을 선택하세요.</strong>
-                <p>채팅은 보드와 문서 편집 중에도 이 자리에 유지됩니다.</p>
-              </div>
-            )}
-          </div>
-        </section>
+        <WorkspaceSessionColumn
+          activeSession={activeSession}
+          chatClassName="v3-folder-board-chat"
+          chatTestId="v3-folder-board-chat"
+          resizeClassName="v3-folder-board-resize v3-folder-board-resize--right"
+          resizeTestId="v3-folder-board-chat-resize-handle"
+          onResize={resizeChat}
+          onResizeKeyDown={handleChatResizeKeyDown}
+          chatInputDisabled={chatInputDisabled}
+          fileUploadUrl={fileUploadUrl}
+          historyEnabled={historyEnabled}
+          sessionStreamActive={sessionStreamActive}
+          sessionConnectionStatus={sessionConnectionStatus}
+          reconnectSession={reconnectSession}
+          onAcknowledgedReview={onAcknowledgedReview}
+        />
 
         {activeFolderDocumentId ? (
           <LiquidGlassCard

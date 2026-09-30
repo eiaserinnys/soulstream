@@ -136,7 +136,7 @@ describe("CI maintenance contract", () => {
     expect(smokeConfig).toContain('trace: "retain-on-failure"');
     expect(smokeConfig).toContain('command: "pnpm exec vite preview --host 127.0.0.1 --port 4173 --strictPort"');
     expect(readFileSync(dashboardSmokeTestPath, "utf8"))
-      .toContain('getByRole("textbox", { name: "무엇을 맡길까요" })');
+      .toContain('getByRole("textbox", { name: "세션 첫 메시지" })');
     expect(readFileSync(dashboardE2eReadmePath, "utf8"))
       .toContain("pnpm --dir unified-dashboard test:e2e:smoke");
   });

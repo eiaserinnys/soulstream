@@ -56,9 +56,9 @@ function sessionStoryMounts(): string[] {
 describe("SessionStoryDisclosure stacking contract", () => {
   it("enumerates every production mount surface", () => {
     expect(sessionStoryMounts()).toEqual([
-      "unified-dashboard/client/v3/FolderBoardWorkspace.tsx",
       "unified-dashboard/client/v3/FolderWorkspace.tsx",
       "unified-dashboard/client/v3/FolderWorkspace.tsx",
+      "unified-dashboard/client/v3/WorkspaceSessionColumn.tsx",
     ]);
   });
 
@@ -78,8 +78,11 @@ describe("SessionStoryDisclosure stacking contract", () => {
     expectV3HeaderLift();
   });
 
-  it("lifts the FolderBoardWorkspace chat header above its review banner and message list", () => {
-    const source = readSource("../../../../unified-dashboard/client/v3/FolderBoardWorkspace.tsx");
+  it("lifts the shared folder/card chat header above its review banner and message list", () => {
+    const source = readSource("../../../../unified-dashboard/client/v3/WorkspaceSessionColumn.tsx");
+    for (const surface of ["FolderBoardWorkspace", "V3DashboardLayout"]) {
+      expect(readSource(`../../../../unified-dashboard/client/v3/${surface}.tsx`)).toContain("<WorkspaceSessionColumn");
+    }
     const header = chatHeaders(source).find((candidate) => candidate.includes("<SessionStoryDisclosure"));
 
     expect(header).toContain("<SessionStoryDisclosure");

@@ -1,60 +1,65 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { DashboardIconCap, MarkdownContent, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
-import { CustomViewIframe } from "@seosoyoung/soul-ui/custom-view/CustomViewRenderer";
-import { ArrowLeft, FileText, History, ListChecks, MessageCircle, MoreHorizontal, ScrollText } from "lucide-react";
+import { DashboardIconCap, MarkdownContent, ProfileAvatar, useAuth, useDashboardStore, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { ArrowLeft, ArrowUp } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
-import { CardActions, CardStatusChip } from "./CardActions";
+import { cardMutationKey } from "@seosoyoung/soul-ui/cards/card-api";
+import { CardStatusChip } from "./CardActions";
 import { FolderTitleEditor } from "./FolderTitleEditor";
-import { SectionNavigation } from "./FolderSectionNavigation";
 import { CardSessionHistory } from "./CardSessionHistory";
-import { CardQuestionView } from "./CardQuestionView";
-import { CardMenu } from "./CardMenu";
+import { CardTimeline } from "./CardTimeline";
 import "./v3-cards.css";
-const sections=[{id:"request",label:"원문",accessibleLabel:"원문",Icon:FileText},{id:"brief",label:"경과",accessibleLabel:"해석과 경과",Icon:ListChecks},{id:"reports",label:"보고",accessibleLabel:"보고",Icon:ScrollText},{id:"questions",label:"질문",accessibleLabel:"질문",Icon:MessageCircle},{id:"sessions",label:"세션",accessibleLabel:"세션",Icon:History}] as const;
-export function CardDetailPane({cardId,folders,onClose,onOpenSession,placement="inline",focus,scrollContainerRef}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;placement?:"inline"|"overlay";focus?:string|null;scrollContainerRef?:RefObject<HTMLDivElement|null>}) {
+export { cardRequestMarkdown } from "./card-request-markdown";
+export function CardDetailPane({cardId,onClose,onOpenSession}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;focus?:string|null;scrollContainerRef?:RefObject<HTMLDivElement|null>}) {
  const card=useCardStore(s=>s.byId[cardId]);const detail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
- const scroll=useRef<HTMLDivElement>(null),surface=useRef<HTMLElement>(null);
- const activeScroll=placement==="inline"&&scrollContainerRef?scrollContainerRef:scroll;
- const request=useRef<HTMLElement>(null),brief=useRef<HTMLElement>(null),reports=useRef<HTMLElement>(null),questions=useRef<HTMLElement>(null),sessions=useRef<HTMLElement>(null);
- const refs=useMemo(()=>({request,brief,reports,questions,sessions}),[]);
- const [menu,setMenu]=useState<{x:number;y:number}|null>(null);
- const glass=useGlassSurface(surface,{enabled:placement==="overlay"});
- const sessionIds=useMemo(()=>detail?.sessions.map(session=>session.sessionId)??[],[detail?.sessions]);
- useEffect(()=>{void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId]);
- useEffect(()=>{if(focus==="questions"&&detail)questions.current?.scrollIntoView({block:"start"});},[detail,focus]);
+ const catalog=useDashboardStore(s=>s.catalog);
+ const {user}=useAuth();
+ const scroll=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement>(null);
+ const [comment,setComment]=useState(""),[pending,setPending]=useState(false);
+ const sessionIds=useMemo(()=>[...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId]:[]),...(detail?.sessions.map(session=>session.sessionId)??[])])],[card?.assigneeSessionId,detail?.sessions]);
+ const assignee=catalog?.sessionList?.find(session=>session.agentSessionId===card?.assigneeSessionId) ?? detail?.sessions.find(session=>session.sessionId===card?.assigneeSessionId);
+ const nodeId=assignee?.nodeId ?? card?.nodeId;
+ const agentId=assignee?.agentId ?? card?.assigneeAgentId;
+ const portrait=nodeId&&agentId ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait`:"";
+ const agentName=assignee && "agentName" in assignee ? assignee.agentName ?? agentId : agentId;
+ const model=assignee && "modelLabel" in assignee ? assignee.modelLabel ?? card?.modelPreset : card?.modelPreset;
+ const unanswered=detail?.questions.find(q=>!q.answer);
+ useEffect(()=>{setComment("");void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId]);
+ useEffect(()=>{if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[cardId,detail]);
+ const answer=async(questionId:string,text:string)=>{
+  setPending(true);
+  try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,{answer:text});setComment("");}
+  catch {} finally {setPending(false);}
+ };
+ const submit=async()=>{
+  if(!comment.trim()||pending)return;
+  if(unanswered){await answer(unanswered.id,comment.trim());return;}
+  setPending(true);
+  try {await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey());setComment("");if(input.current)input.current.style.height="";}
+  catch {} finally {setPending(false);}
+ };
+ const complete=async()=>{
+  if(!card || card.status!=="review" || pending)return;
+  setPending(true);
+  try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});}
+  catch {} finally {setPending(false);}
+ };
  if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;
- return <article ref={surface} className={`v3-detail-pane v3-card-detail${placement==="inline"?" v3-detail-pane--inline":" border border-glass-border glass-strong glass-chrome lg-rim"}`} data-liquid-glass-webgl={glass?"true":undefined} data-testid="card-detail">
-  <header className={`v3-folder-header${placement==="inline"?" v3-inline-folder-header":" v3-workspace-toolbar"}`}>
-   <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap><CardStatusChip card={card}/>
-   <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
-   <div className="v3-folder-header-actions"><CardActions card={card} onAnswer={()=>questions.current?.scrollIntoView({block:"start"})}/><DashboardIconCap label="카드 메뉴" onClick={e=>setMenu({x:e.clientX,y:e.clientY})}><MoreHorizontal className="h-4 w-4"/></DashboardIconCap></div>
+ return <article className="v3-detail-pane v3-detail-pane--inline v3-card-detail" data-testid="card-detail">
+  <header className="v3-card-panel-header">
+   <div className="v3-card-panel-title"><DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
+    <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/><CardStatusChip card={card}/></div>
+   <div className="v3-card-panel-chips"><span className="v3-card-panel-chip"><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji="🤖"/>{agentName??"담당 미지정"}</span>{nodeId?<span className="v3-card-panel-chip">{nodeId}</span>:null}{model?<span className="v3-card-panel-chip">{model}</span>:null}
+    <button type="button" className="v3-card-complete" aria-label="완료" disabled={pending||card.status!=="review"} onClick={()=>void complete()}>완료</button></div>
   </header>
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
-  <CardMenu card={card} folders={folders} target={menu} onClose={()=>setMenu(null)}/>
-  <div className="v3-detail-scroll" ref={scroll}><div className="v3-task-detail-layout">
-   <SectionNavigation scrollRef={activeScroll} sectionRefs={refs} sections={sections} ariaLabel="카드 섹션"/>
-   <div className="v3-task-detail-content">
-    <section className="v3-detail-section" ref={request} data-card-section="request"><div className="v3-detail-section-head"><h3>요청 원문</h3><span>{card.request?1:0}건</span></div><details open><summary>원문 보기</summary><div className="v3-card-request"><CardRequestContent request={card.request}/></div></details></section>
-    <section className="v3-detail-section" ref={brief} data-card-section="brief"><div className="v3-detail-section-head"><h3>해석과 경과</h3><span>{card.brief?1:0}건</span></div><div className="v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></div></section>
-    <section className="v3-detail-section" ref={reports} data-card-section="reports"><div className="v3-detail-section-head"><h3>보고</h3><span>{detail?.reports.length??0}건</span></div>{detail?.reports.length===0?<p className="v3-detail-empty">아직 보고가 없습니다.</p>:null}{detail?.reports.map((report,index)=><details key={report.id} data-report-id={report.id} open={index===0}><summary>{report.title} · {new Date(report.createdAt).toLocaleString("ko-KR")}</summary>{report.format==="html"?<CustomViewIframe html={report.body} title={report.title} className="v3-card-report-html"/>:<MarkdownContent content={report.body} codeBlockLayout="document"/>}</details>)}</section>
-    <section className="v3-detail-section" ref={questions} data-card-section="questions"><div className="v3-detail-section-head"><h3>질문</h3><span>{detail?.questions.length??0}건</span></div>{detail?.questions.length===0?<p className="v3-detail-empty">질문이 없습니다.</p>:null}{detail?.questions.map(q=><CardQuestionView key={q.id} cardId={cardId} question={q}/>)}</section>
-    <section className="v3-detail-section v3-runs" ref={sessions} data-card-section="sessions"><CardSessionHistory sessionIds={sessionIds} onOpenSession={onOpenSession}/></section>
-   </div>
-  </div></div>
+  <div className="v3-card-panel-scroll" ref={scroll}>
+   <section className="v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} onOpenSession={onOpenSession}/></section>
+   <CardTimeline key={cardId} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)}/>
+   <details className="v3-card-other"><summary>그 밖에</summary><div className="v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></div></details>
+  </div>
+  <form className="v3-card-comment-dock" onSubmit={e=>{e.preventDefault();void submit();}}><div className="v3-card-comment-input">
+   <textarea ref={input} rows={1} aria-label="커멘트" placeholder={unanswered ? "질문에 답하기":"커멘트"} value={comment} disabled={pending} onChange={e=>{setComment(e.target.value);e.target.style.height="auto";e.target.style.height=`${e.target.scrollHeight}px`;}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form?.requestSubmit();}}}/>
+   <DashboardIconCap label="커멘트 전송" type="submit" disabled={pending||!comment.trim()}><ArrowUp className="h-4 w-4"/></DashboardIconCap>
+  </div></form>
  </article>;
-}
-
-export function cardRequestMarkdown(request: string): string {
- return request.replace(/^첨부: (.+)\((https?:\/\/[^\s]+)\)$/gm, (_, name: string, url: string) => {
-  const label = name.replace(/[\[\]\\]/g, "\\$&");
-  const image = /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(name);
-  return `첨부: ${image ? "!" : ""}[${label}](${url})`;
- });
-}
-
-function CardRequestContent({request}: {request: string}) {
- return request.split(/(^첨부: .+\(https?:\/\/[^\s]+\)$)/m).map((part,index)=>
-  part.startsWith("첨부: ") && cardRequestMarkdown(part)!==part
-   ? <MarkdownContent key={index} content={cardRequestMarkdown(part)} codeBlockLayout="document"/>
-   : <span key={index}>{part}</span>);
 }

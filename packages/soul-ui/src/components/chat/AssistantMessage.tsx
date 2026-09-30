@@ -1,4 +1,4 @@
-import { memo, useRef } from "react";
+import { memo, useRef, type ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { ProfileAvatar } from "../ProfileAvatar";
@@ -7,14 +7,14 @@ import { useGlassSurface } from "../LiquidGlassProvider";
 import type { LlmContext } from "./hooks";
 
 /** text 노드: 일반 텍스트 표시 */
-export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
+export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext, header, children, portraitUrl }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null }) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const webglActive = useGlassSurface(bubbleRef, { enabled: true });
   const activeSession = useDashboardStore((s) => s.activeSessionSummary);
 
   // 세션에 바인딩된 에이전트 정보
   const agentName = activeSession?.agentName;
-  const agentPortraitUrl = activeSession?.agentPortraitUrl;
+  const agentPortraitUrl = portraitUrl ?? activeSession?.agentPortraitUrl;
 
   const isLlm = llmContext?.isLlm ?? false;
   // LLM 세션: assistant_message에 model 정보가 있으면 표시, 없으면 llmContext에서 가져옴
@@ -44,7 +44,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
         className="max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
-        <div className="mb-1 flex items-baseline gap-1.5">
+        {header ?? <div className="mb-1 flex items-baseline gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {displayName}
           </span>
@@ -58,7 +58,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
               {tokenInfo}
             </span>
           )}
-        </div>
+        </div>}
         {msg.isStreaming ? (
           <div data-slot="chat-body" className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">
             {msg.content}
@@ -66,7 +66,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
           </div>
         ) : (
           <div data-slot="chat-body" className="break-words text-base leading-snug text-foreground">
-            <MarkdownContent content={msg.content} enableBlockquoteCopy />
+            {children ?? <MarkdownContent content={msg.content} enableBlockquoteCopy />}
           </div>
         )}
       </div>
