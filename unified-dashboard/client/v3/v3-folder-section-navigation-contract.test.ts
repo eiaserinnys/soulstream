@@ -26,8 +26,8 @@ describe("v3 task section navigation contract", () => {
     expect(navigation).not.toContain("v3-task-section-nav-title");
     expect(navigation).not.toMatch(/collaps|접기|펼치기/i);
     expect(css).toMatch(/\.v3-task-section-nav\s*\{[^}]*position:\s*sticky/s);
-    expect(css).toMatch(/\.v3-task-detail-layout\s*\{[^}]*grid-template-columns:\s*58px\s+minmax\(0,\s*1fr\)/s);
-    expect(css).toMatch(/\.v3-task-section-anchor\s*\{[^}]*min-height:\s*38px/s);
+    expect(css).toMatch(/\.v3-task-detail-layout\s*\{[^}]*grid-template-columns:\s*var\(--v3-detail-nav-column\)\s+minmax\(0,\s*1fr\)/s);
+    expect(css).toMatch(/\.v3-task-section-anchor\s*\{[^}]*min-height:\s*var\(--v3-control-height\)/s);
     expect(css).toMatch(/\.v3-task-section-anchor:focus-visible\s*\{[^}]*box-shadow:/s);
     expect(css).not.toMatch(/\.v3-task-section-anchor:focus-visible\s*\{[^}]*outline:\s*2px/s);
     expect(css).toMatch(/@container\s*\(max-width:\s*620px\)[\s\S]*\.v3-task-section-nav\s*\{[^}]*display:\s*none/s);

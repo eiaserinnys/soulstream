@@ -85,6 +85,15 @@
   max-width: var(--v3-content-max-width);
 }
 
+.v3-planner-scroll:has(> .v3-detail-pane--inline) {
+  padding-inline: var(--v3-space-6);
+}
+
+.v3-planner-scroll > .v3-detail-pane--inline {
+  max-width: none;
+  margin-inline: 0;
+}
+
 .v3-date-head:not(.v3-project-title),
 .v3-date-head:not(.v3-project-title) > div {
   align-items: baseline;
