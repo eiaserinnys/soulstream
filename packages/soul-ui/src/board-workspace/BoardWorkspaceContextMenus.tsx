@@ -318,7 +318,7 @@ export function BoardWorkspaceContextMenus({
     setRenameFrameTarget(null);
   };
 
-  // 🔴24: fixed-position 메뉴/다이얼로그를 document.body로 포털한다. 업무 보드 스크롤러는
+  // 🔴24: fixed-position 메뉴/다이얼로그를 document.body로 포털한다. 폴더 보드 스크롤러는
   // backdrop-filter(blur)를 걸어 스스로 fixed 자식의 containing block이 되고 overflow로
   // 잘라내 메뉴가 화면에서 사라졌다(폴더 보드는 필터가 없어 정상). 포털로 뷰포트 기준
   // 좌표(clientX/clientY)가 항상 올바르게 적용된다. 폴더 보드 동작은 그대로 유지된다.
@@ -730,7 +730,7 @@ export function BoardWorkspaceContextMenus({
               });
             }}
           >
-            <DialogHeader><DialogTitle>다른 업무로 이동</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>다른 폴더로 이동</DialogTitle></DialogHeader>
             <DialogPanel>
               <div id="board-task-move-target" className="flex max-h-64 flex-col gap-1 overflow-auto">
                 {availableFolderMoveTargets.length > 0 ? (
@@ -755,7 +755,7 @@ export function BoardWorkspaceContextMenus({
                   ))
                 ) : (
                   <p className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
-                    이동할 수 있는 업무가 없습니다.
+                    이동할 수 있는 폴더가 없습니다.
                   </p>
                 )}
               </div>

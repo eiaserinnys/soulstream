@@ -186,7 +186,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })
       .waitFor({ state: "visible" });
     await page.locator('.v3-chat-pane[aria-label="세션 채팅"]').waitFor({ state: "visible" });
-    assert(await page.getByTestId("v3-standalone-task-empty").count() === 0, "업무 소속 세션이 단독 모드로 열렸습니다.");
+    assert(await page.getByTestId("v3-standalone-task-empty").count() === 0, "폴더 소속 세션이 단독 모드로 열렸습니다.");
     await capture(page, theme, "02-task-session-active-chat");
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
 
@@ -194,7 +194,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.getByTestId("v3-standalone-task-empty").waitFor({ state: "visible" });
     await page.getByTestId("v3-standalone-session-chat").waitFor({ state: "visible" });
     await capture(page, theme, "03-standalone-session-chat");
-    await page.getByRole("button", { name: "업무 창 닫기" }).click();
+    await page.getByRole("button", { name: "폴더 창 닫기" }).click();
 
     const removed = page.getByTestId("v3-session-row-review-session-2");
     const untouched = page.getByTestId("v3-session-row-review-session-3");
@@ -207,7 +207,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(await untouched.isVisible(), "검수 확인이 다른 행을 제거했습니다.");
     assert(mutations.untouched === 0, `검수 확인이 다른 행을 ${mutations.untouched}회 변경했습니다.`);
     assert(mutations.listChild === 1, `검수 확인이 목록 구조를 ${mutations.listChild}회 변경했습니다.`);
-    assert(folderBoardRequests === 1, `세션 업무 해석이 ${folderBoardRequests}회 요청되었습니다.`);
+    assert(folderBoardRequests === 1, `세션 폴더 해석이 ${folderBoardRequests}회 요청되었습니다.`);
     assert(sessionRequests.every((query) => query.includes("session_id=")), `우측 패널이 전체 세션 조회를 만들었습니다: ${sessionRequests.join(", ")}`);
     assert(pageErrors.length === 0, `브라우저 오류가 발생했습니다: ${pageErrors.join(" | ")}`);
     await capture(page, theme, "04-review-row-removed");

@@ -1,30 +1,20 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
-import { useDashboardStore, type CatalogState, type SessionReviewAcknowledgeResult } from "@seosoyoung/soul-ui";
-import type { InitialFolderContext, PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import { useDashboardStore, type SessionReviewAcknowledgeResult } from "@seosoyoung/soul-ui";
+import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerLoadState } from "./PlannerViews";
 import type { BrowserPlannerMutationPort } from "./planner-browser-port";
 import type { DailyPlannerData, PlannerFolder } from "./planner-data";
 import { folderContextCount } from "./planner-model";
-import { resolveProjectPage } from "./project-page-actions";
-import { createPlannerFolder, plannerFolderCreationErrorLabel } from "./planner-folder-creation";
 import type { RitualAction, RitualQueueItem } from "./ritual-model";
 import { saveFolderDescription } from "./folder-workspace-page-api";
 
 export function useV3DashboardMutations({
   api,
   mutationPort,
-  catalog,
-  projects,
-  selectedDate,
-  today,
   daily,
   selectedFolderEntry,
   selectedPageId,
-  setCreateOpen,
-  setCreatePending,
-  clearProject,
-  setSelectedDate,
   setAcknowledgedReviewIds,
   notify,
   notifyWriteFailure,
@@ -35,17 +25,9 @@ export function useV3DashboardMutations({
 }: {
   api: PageApiClient;
   mutationPort: BrowserPlannerMutationPort;
-  catalog: CatalogState | null;
-  projects: readonly PageDto[];
-  selectedDate: string;
-  today: string;
   daily: PlannerLoadState<DailyPlannerData>;
   selectedFolderEntry: PlannerFolder | null;
   selectedPageId: string | null;
-  setCreateOpen: Dispatch<SetStateAction<boolean>>;
-  setCreatePending: Dispatch<SetStateAction<boolean>>;
-  clearProject(): void;
-  setSelectedDate: Dispatch<SetStateAction<string>>;
   setAcknowledgedReviewIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   notify(message: string): void;
   notifyWriteFailure(action: string, error: unknown): string;
@@ -54,49 +36,6 @@ export function useV3DashboardMutations({
   refreshDaily(): void;
   refreshFolder(folderId: string): void;
 }) {
-  const createFolder = useCallback(async (
-    title: string,
-    folderId: string,
-    description: string,
-    initialContext?: InitialFolderContext,
-  ): Promise<string | null> => {
-    const folder = catalog?.folders.find((item) => item.id === folderId);
-    if (!folder) {
-      const message = "선택한 프로젝트를 찾을 수 없습니다";
-      notify(message);
-      return message;
-    }
-    setCreatePending(true);
-    try {
-      const projectPage = await resolveProjectPage(api, folder, projects);
-      if (!projectPage) {
-        const message = "이 폴더는 프로젝트에 연결되지 않아 새 업무를 만들 수 없습니다";
-        notify(message);
-        return message;
-      }
-      const dailyPage = selectedDate === today && daily.data
-        ? daily.data.daily.page
-        : (await api.getDailyPage(today)).page;
-      await createPlannerFolder({
-        title,
-        description,
-        dailyPageId: dailyPage.id,
-        folderId,
-        ...(initialContext ? { initialContext } : {}),
-      }, mutationPort);
-      setCreateOpen(false);
-      clearProject();
-      setSelectedDate(today);
-      refreshDaily();
-      notify(`새 업무 생성 · ${title}`);
-      return null;
-    } catch (error) {
-      return notifyWriteFailure(plannerFolderCreationErrorLabel(error), error);
-    } finally {
-      setCreatePending(false);
-    }
-  }, [api, catalog?.folders, clearProject, daily.data, mutationPort, notify, notifyWriteFailure, projects, refreshDaily, selectedDate, setCreateOpen, setCreatePending, setSelectedDate, today]);
-
   const saveMemo = useCallback(async (blockId: string | null, text: string) => {
     if (!daily.data) return;
     try {
@@ -114,9 +53,9 @@ export function useV3DashboardMutations({
     try {
       await saveFolderDescription(api, selectedFolderEntry.page.id, markdown);
       refreshFolder(selectedFolderEntry.page.id);
-      notify("업무 설명 저장됨");
+      notify("폴더 설명 저장됨");
     } catch (error) {
-      notifyWriteFailure("업무 설명 저장", error);
+      notifyWriteFailure("폴더 설명 저장", error);
       throw error;
     }
   }, [api, notify, notifyWriteFailure, refreshFolder, selectedFolderEntry]);
@@ -144,7 +83,6 @@ export function useV3DashboardMutations({
   }, [addFolderToToday]);
 
   return {
-    createFolder,
     saveMemo,
     saveDescription,
     acknowledgeReview,

@@ -88,7 +88,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
 
     if (strict) {
       assert(firstScreen.hasSharedColumn, `${theme}: 공통 플래너 열이 없습니다.`);
-      assert(Math.abs(firstScreen.x.date - firstScreen.x.tasks) <= 1, `${theme}: 날짜/업무 제목 기준선이 다릅니다.`);
+      assert(Math.abs(firstScreen.x.date - firstScreen.x.tasks) <= 1, `${theme}: 날짜/폴더 제목 기준선이 다릅니다.`);
       assert(Math.abs(firstScreen.x.date - firstScreen.x.card) <= 1, `${theme}: 제목/카드 기준선이 다릅니다.`);
       assert(firstScreen.trailingRightGap >= 9, `${theme}: trailing 우측 여백이 부족합니다: ${firstScreen.trailingRightGap}`);
       assert(chatHeader.breadcrumbCount === 0, `${theme}: 세션 채팅 breadcrumb가 남았습니다.`);

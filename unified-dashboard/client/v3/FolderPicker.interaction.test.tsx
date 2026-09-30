@@ -67,5 +67,5 @@ describe("FolderPicker", () => {
 
 function folder(id: string, name: string, parentFolderId: string | null = null): CatalogFolder {
   return { id, name, parentFolderId, projectPageId: `page-${id}`, sortOrder: 0,
-    checklistEnabled: false, status: "open", version: 1, archived: false };
+    status: "open", version: 1, archived: false };
 }

@@ -5,7 +5,7 @@ import { retainEqualSet, retainEqualValue } from "./structural-sharing";
 describe("structural sharing", () => {
   it("keeps the complete value when an equivalent JSON response is rebuilt", () => {
     const previous = {
-      pages: [{ id: "page-a", title: "업무" }],
+      pages: [{ id: "page-a", title: "폴더" }],
       cursor: null,
     };
     const next = {

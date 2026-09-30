@@ -24,7 +24,7 @@ for (const theme of ["dark", "light"] as const) {
       const errors = collectErrors(page);
       await preparePage(page, theme, viewport);
       await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-      await expect(page.getByText("오늘의 업무")).toBeVisible();
+      await expect(page.getByText("오늘의 폴더")).toBeVisible();
       await page.waitForTimeout(500);
 
       await expect(page.locator("[data-liquid-glass-webgl-provider=true]")).toHaveCount(1);

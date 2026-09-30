@@ -22,7 +22,7 @@ for (const viewport of [{width:1440,height:900},{width:2148,height:1222},{width:
    Object.defineProperty(navigator.serviceWorker,"controller",{configurable:true,get:()=>null});
   });
   await installV3VisualQaRoutes(page,{unifiedFolderView:true,successionPickerRuns:viewport.width===1440&&!populated});
-  const rows = populated ? [card("review","review","폴더 화면 헤더 통일"),card("question","blocked","문서 이관: 이미지 블록 12개는 어떻게 할까요?",{blockedKind:"question"}),card("running","running","체크리스트 깜빡임 수리"),card("q1","queued","보드 여닫기 앱에도"),card("q2","queued","xops 3안 선택 통계 화면")] : [];
+  const rows = populated ? [card("review","review","폴더 화면 헤더 통일"),card("question","blocked","문서 이관: 이미지 블록 12개는 어떻게 할까요?",{blockedKind:"question"}),card("running","running","카드 표시 깜빡임 수리"),card("q1","queued","보드 여닫기 앱에도"),card("q2","queued","xops 3안 선택 통계 화면")] : [];
   let created: CardRow | undefined; let payload: any;
   await page.route("**/api/**", async route => {
    const req=route.request(),url=new URL(req.url());const json=(value:unknown)=>route.fulfill({contentType:"application/json",body:JSON.stringify(value)});

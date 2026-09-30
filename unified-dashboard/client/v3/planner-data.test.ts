@@ -14,7 +14,7 @@ import {
 const page = (id: string): PageDto => ({ id, title: id, metadata: {} }) as PageDto;
 const folder = (id: string) => ({
   id, name: id, sortOrder: 0, parentFolderId: null, projectPageId: `${id}-page`,
-  checklistEnabled: false, status: "open" as const, archived: false, version: 1, settings: {},
+  status: "open" as const, archived: false, version: 1, settings: {},
 });
 const entry = (id: string) => ({ folder: folder(id), page: page(`${id}-page`),
   itemCounts: {}, itemTotal: 0, completedItemCount: 0, assignee: null });

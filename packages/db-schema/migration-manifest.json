@@ -444,6 +444,10 @@
     {
       "id": "109_cards.sql",
       "sha256": "fd2251c8fe6a124668a3e52a40b7a18bafa014611534d7592e672ff3ffcd6b69"
+    },
+    {
+      "id": "110_drop_checklist_enabled.sql",
+      "sha256": "9c1cbfb7f5a5cf57c7f5421a1c59ccd086c72a022d7bc8801db74a2da6db2957"
     }
   ]
 }

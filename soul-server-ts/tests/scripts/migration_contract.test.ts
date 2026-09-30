@@ -283,11 +283,14 @@ describe("versioned migration contract", () => {
   it("keeps the recurring once migration, manifest checksum, and canonical schema aligned", async () => {
     const migrations = await loadMigrationManifest();
     const migration = migrations.find((item) => item.id === "106_recurring_jobs_once.sql");
+    const removal = migrations.find((item) => item.id === "110_drop_checklist_enabled.sql");
     const schema = readFileSync(fileURLToPath(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migrations.at(-1)?.id).toBe("109_cards.sql");
+    expect(migrations.at(-1)?.id).toBe("110_drop_checklist_enabled.sql");
+    expect(removal?.sql).toMatch(/ALTER TABLE folders DROP COLUMN checklist_enabled/i);
+    expect(schema).not.toMatch(/\bchecklist_enabled\b/);
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS schedule_kind TEXT NOT NULL DEFAULT 'recurring'");
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS run_at TIMESTAMPTZ");
     expect(migration?.sql).toContain("DROP CONSTRAINT IF EXISTS recurring_jobs_schedule_array");

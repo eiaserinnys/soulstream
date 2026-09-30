@@ -35,10 +35,8 @@ import type { MobilePlannerTab } from "./mobile-planner-state";
 export function FolderWorkspace({
   task,
   folderSections,
-  checklistEnabled,
   parentFolder,
   onOpenParent,
-  onToggleChecklist,
   folderResolutionError,
   projectTitle,
   projectFolderId,
@@ -86,10 +84,8 @@ export function FolderWorkspace({
 }: {
   task: PlannerFolder | null;
   folderSections: ReactNode;
-  checklistEnabled: boolean;
   parentFolder: CatalogFolder | null;
   onOpenParent(folder: CatalogFolder): void;
-  onToggleChecklist(enabled: boolean): Promise<void>;
   folderResolutionError: string | null;
   projectTitle: string;
   projectFolderId: string | null;
@@ -227,22 +223,22 @@ export function FolderWorkspace({
           data-mobile-view={mobileMode ? mobileTab : undefined}
           style={!mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 8px)) 16px minmax(0, 1fr)` } : undefined}
         >
-          <section className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim" data-testid="v3-standalone-task-empty" aria-label="빈 업무 창">
+          <section className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim" data-testid="v3-standalone-task-empty" aria-label="빈 폴더 창">
             <header className="v3-workspace-toolbar">
-              <strong>업무</strong>
+              <strong>폴더</strong>
               <span className="v3-spacer" />
-              <DashboardIconCap label="업무 창 닫기" onClick={onCloseWorkspace}>
+              <DashboardIconCap label="폴더 창 닫기" onClick={onCloseWorkspace}>
                 <X className="h-4 w-4" aria-hidden="true" />
               </DashboardIconCap>
             </header>
             <div className="v3-chat-empty">
-              <strong>{folderResolutionError ?? "연결된 업무가 없습니다."}</strong>
+              <strong>{folderResolutionError ?? "연결된 폴더가 없습니다."}</strong>
               <p>{folderResolutionError
-                ? "업무 귀속을 다시 확인해 주세요. 이 세션의 채팅은 그대로 확인할 수 있습니다."
+                ? "폴더 귀속을 다시 확인해 주세요. 이 세션의 채팅은 그대로 확인할 수 있습니다."
                 : "이 세션의 채팅은 그대로 확인할 수 있습니다."}</p>
             </div>
           </section>
-          {divider("업무와 채팅 너비 조절")}
+          {divider("폴더와 채팅 너비 조절")}
           <section
             ref={chatSurfaceRef}
             className="v3-chat-pane border border-glass-border glass-strong glass-chrome lg-rim"
@@ -320,10 +316,8 @@ export function FolderWorkspace({
         <FolderDetailPane
           task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
           folderSections={folderSections}
-          checklistEnabled={checklistEnabled}
           parentFolder={parentFolder}
           onOpenParent={onOpenParent}
-          onToggleChecklist={onToggleChecklist}
           projectFolderId={projectFolderId}
           folders={folders}
           contextInvalidationKey={contextInvalidationKey}
@@ -386,8 +380,8 @@ export function FolderWorkspace({
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
                     <span className="v3-emoji" aria-hidden="true">💬</span>
                     <strong>선택된 세션이 없습니다.</strong>
-                    <p>업무 탭에서 세션을 선택하거나 새 세션을 시작하세요.</p>
-                    <button type="button" className="v3-button v3-button--soft" onClick={closeWorkspaceInspector}>업무 탭으로</button>
+                    <p>폴더 탭에서 세션을 선택하거나 새 세션을 시작하세요.</p>
+                    <button type="button" className="v3-button v3-button--soft" onClick={closeWorkspaceInspector}>폴더 탭으로</button>
                   </div>
                 )}
               </div>

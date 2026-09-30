@@ -37,7 +37,7 @@ const EMPTY_DETAILS: ProjectPageDetails = {
 
 export function ProjectDialog({
   target,
-  createLabel = "새 프로젝트",
+  createLabel = "새 폴더",
   onClose,
   onCreateIdentity,
   onRename,
@@ -92,10 +92,10 @@ export function ProjectDialog({
     return () => { active = false; };
   }, [target]);
 
-  const title = target?.mode === "create" && !createdFolder ? createLabel : "프로젝트 설정";
+  const title = target?.mode === "create" && !createdFolder ? createLabel : "폴더 설정";
   const description = target?.mode === "create" && target.parentName
     ? `${target.parentName} 아래에 만듭니다.`
-    : "이름과 프로젝트 컨텍스트를 한곳에서 관리합니다.";
+    : "이름과 폴더 컨텍스트를 한곳에서 관리합니다.";
   const canSubmit = !loadFailed && value.title.trim().length > 0
     && assignmentValid
     && value.guidance.every((item) => item.text.trim().length > 0)

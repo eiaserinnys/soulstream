@@ -26,7 +26,7 @@ import {
   CardVersionConflict,
 } from "./card_models.js";
 
-type FolderPatch = Partial<Pick<FolderRow, "name" | "archived" | "checklist_enabled">>;
+type FolderPatch = Partial<Pick<FolderRow, "name" | "archived">>;
 export class CardRepository extends CardRepositoryRead {
   async patchFolderTx(
     sql: RepositorySql,

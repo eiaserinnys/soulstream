@@ -31,7 +31,6 @@ import { useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 export function FolderBoardResourcePane({
   folderId,
   folderTitle,
-  checklistEnabled,
   sessionIds,
   sessions,
   runSessionLoadStates,
@@ -52,7 +51,6 @@ export function FolderBoardResourcePane({
 }: {
   folderId: string;
   folderTitle: string;
-  checklistEnabled: boolean;
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
@@ -72,8 +70,8 @@ export function FolderBoardResourcePane({
   onSessionContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
   const baseTabs = useMemo(
-    () => buildFolderBoardResourceTabs(boardItems, openedResources, checklistEnabled),
-    [boardItems, openedResources, checklistEnabled],
+    () => buildFolderBoardResourceTabs(boardItems, openedResources),
+    [boardItems, openedResources],
   );
   const baseActiveTab = baseTabs.find((tab) => tab.id === activeTabId) ?? baseTabs[0];
   const activeDocumentId = baseActiveTab.kind === "document" ? baseActiveTab.documentId : null;
@@ -86,7 +84,7 @@ export function FolderBoardResourcePane({
     <>
       <header className="v3-workspace-toolbar">
         <div>
-          <small>업무 자료</small>
+          <small>폴더 자료</small>
           <strong>{folderTitle}</strong>
         </div>
       </header>
@@ -101,7 +99,7 @@ export function FolderBoardResourcePane({
         role="tabpanel"
         aria-label={activeTab.title}
       >
-        {activeTab.kind === "checklist" ? (
+        {activeTab.kind === "cards" ? (
           <FolderCardSection folderId={folderId} placement="overlay" />
         ) : activeTab.kind === "sessions" ? (
           <FolderBoardSessionTree
@@ -192,7 +190,7 @@ function FolderBoardResourceTabStrip({
         ref={scrollerRef}
         className="v3-folder-board-resource-tabs"
         role="tablist"
-        aria-label="업무 자료"
+        aria-label="폴더 자료"
         onScroll={refreshOverflow}
       >
         {tabs.map((tab) => (
@@ -205,7 +203,7 @@ function FolderBoardResourceTabStrip({
             title={tab.title}
             onClick={() => onActiveTabChange(tab.id)}
           >
-            {tab.kind === "checklist" ? "✓" : tab.kind === "sessions" ? "↳" : tab.kind === "custom_view" ? "◇" : "▤"}
+            {tab.kind === "cards" ? "✓" : tab.kind === "sessions" ? "↳" : tab.kind === "custom_view" ? "◇" : "▤"}
             <span>{tab.title}</span>
           </button>
         ))}

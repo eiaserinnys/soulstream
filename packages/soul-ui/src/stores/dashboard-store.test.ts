@@ -241,8 +241,8 @@ describe("dashboard-store", () => {
     it("should not rewrite selected folder when selecting a session", () => {
       useDashboardStore.getState().setCatalog({
         folders: [
-          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-a", name: "Folder A", sortOrder: 0 },
-          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-b", name: "Folder B", sortOrder: 1 },
+          { status: "open", version: 1, archived: false, id: "folder-a", name: "Folder A", sortOrder: 0 },
+          { status: "open", version: 1, archived: false, id: "folder-b", name: "Folder B", sortOrder: 1 },
         ],
         sessions: {
           "sess-b": { folderId: "folder-b", displayName: null },
@@ -751,7 +751,7 @@ describe("dashboard-store", () => {
 
     it("should assign folderId in catalog.sessions when folderId is provided", () => {
       const catalog: CatalogState = {
-        folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
+        folders: [{ status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: {},
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -770,7 +770,7 @@ describe("dashboard-store", () => {
 
     it("should not modify catalog.sessions when folderId is null/undefined", () => {
       const catalog: CatalogState = {
-        folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
+        folders: [{ status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: { "sess-existing": { folderId: "folder-1", displayName: null } },
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -846,7 +846,6 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().setCatalog({
         folders: [
           {
-            checklistEnabled: false,
             status: "open",
             version: 1,
             archived: false,
@@ -879,7 +878,7 @@ describe("dashboard-store", () => {
 
     it("should place session in correct folder via catalog assignment and filterSessionsInFolder", () => {
       const catalog: CatalogState = {
-        folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
+        folders: [{ status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: {},
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -1901,7 +1900,7 @@ describe("dashboard-store", () => {
   });
 
   describe("reorderFolders", () => {
-    const makeFolder = (id: string, name: string, sortOrder: number): CatalogState["folders"][number] => ({ checklistEnabled: false, status: "open", version: 1, archived: false,
+    const makeFolder = (id: string, name: string, sortOrder: number): CatalogState["folders"][number] => ({ status: "open", version: 1, archived: false,
       id,
       name,
       sortOrder,
@@ -1957,8 +1956,8 @@ describe("dashboard-store", () => {
 
       store.setCatalog({
         folders: [
-          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "parent", name: "Parent", sortOrder: 0, parentFolderId: null },
-          { checklistEnabled: false, status: "open", version: 1, archived: false, id: "child", name: "Child", sortOrder: 1, parentFolderId: "parent" },
+          { status: "open", version: 1, archived: false, id: "parent", name: "Parent", sortOrder: 0, parentFolderId: null },
+          { status: "open", version: 1, archived: false, id: "child", name: "Child", sortOrder: 1, parentFolderId: "parent" },
         ],
         sessions: {},
       });

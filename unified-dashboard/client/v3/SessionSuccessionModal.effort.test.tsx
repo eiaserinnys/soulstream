@@ -110,7 +110,7 @@ function mountWithSession(session: Record<string, unknown> | null, presetId = "c
       QueryClientProvider,
       { client },
       createElement(SessionSuccessionModal, {
-        folderTitle: "업무",
+        folderTitle: "폴더",
         folderPageId: "page-1",
         folderId: "task-1",
         contextItems: [],
@@ -143,7 +143,7 @@ function mount() {
       QueryClientProvider,
       { client },
       createElement(SessionSuccessionModal, {
-        folderTitle: "업무",
+        folderTitle: "폴더",
         folderPageId: "page-1",
         folderId: "task-1",
         contextItems: [],

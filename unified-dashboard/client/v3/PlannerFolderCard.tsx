@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
-import { DashboardIconCap, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, type SessionSummary } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 import { MoreHorizontal, Star } from "lucide-react";
 
@@ -23,7 +23,6 @@ import "./v3-content-boundary.css";
 
 export function PlannerFolderCard({
   task,
-  folder,
   sessions,
   nodeConnectivity,
   isInToday,
@@ -34,10 +33,8 @@ export function PlannerFolderCard({
   navigationLabel,
   onRename,
   onArchive,
-  onToggleChecklist,
 }: {
   task: PlannerFolder;
-  folder?: CatalogFolder;
   sessions: readonly SessionSummary[];
   nodeConnectivity: SessionNodeConnectivity;
   isInToday: boolean;
@@ -48,7 +45,6 @@ export function PlannerFolderCard({
   navigationLabel?: string;
   onRename?(): void;
   onArchive?(): void;
-  onToggleChecklist?(): void | Promise<void>;
 }) {
   const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
   const folderStar = useFolderStar(task.page);
@@ -82,11 +78,11 @@ export function PlannerFolderCard({
       data-testid={`v3-task-${task.page.id}`}
     >
       <div className="v3-task-main">
-        {folder?.checklistEnabled === false && !navigationLabel ? null : <div className="v3-task-kicker">
+        <div className="v3-task-kicker">
           {navigationLabel ? <span className="v3-status-chip">{navigationLabel}</span> : <span className={`v3-status-chip v3-status-chip--${task.status}`}>
             <span aria-hidden="true">{status.icon}</span> {status.label}
           </span>}
-        </div>}
+        </div>
         <h3
           className="v3-text-clamp-2"
           aria-label={task.page.title}
@@ -103,27 +99,12 @@ export function PlannerFolderCard({
           </div>
         ) : null}
       </div>
-      <div className="v3-task-state">
-        {showRun && run ? (
+      {showRun && run ? <div className="v3-task-state">
           <span className="v3-run-line">
             {`세션 #${run.number} ${runState}`}
             {runStatus === "running" ? <i aria-label="실행 중" /> : null}
           </span>
-        ) : null}
-        {folder?.checklistEnabled === false || task.progress === null ? null : (
-          <span
-            className="v3-progress"
-            data-complete={task.progress === 100 ? "true" : "false"}
-            role="progressbar"
-            aria-label="업무 진행률"
-            aria-valuenow={task.progress}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <i style={{ width: `${task.progress}%` }} />
-          </span>
-        )}
-      </div>
+      </div> : null}
       <div className="v3-task-star-slot">
         {onRename ? <DashboardIconCap
           label={`${task.page.title} 관리 메뉴`}
@@ -150,7 +131,6 @@ export function PlannerFolderCard({
           starred: folderStar.starred,
           completed: task.status === "completed",
           inToday: isInToday,
-          checklistEnabled: folder?.checklistEnabled ?? false,
         }, {
           open: onOpen,
           copyId: () => navigator.clipboard.writeText(task.folderId),
@@ -160,7 +140,6 @@ export function PlannerFolderCard({
           toggleToday: onToggleToday,
           rename: onRename,
           archive: onArchive,
-          toggleChecklist: onToggleChecklist,
         })}
       />
     </LiquidGlassCard>

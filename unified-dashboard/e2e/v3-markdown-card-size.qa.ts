@@ -69,7 +69,7 @@ async function verifyMarkdownSurfaces(browser: Browser) {
     const inlineCodeMetrics = await measureDocumentCodeBlocks(inlineMarkdown);
     await capture(page, "01-inline-document-code-blocks");
 
-    await page.getByRole("button", { name: "업무 보드 열기" }).click();
+    await page.getByRole("button", { name: "폴더 보드 열기" }).click();
     const board = page.getByTestId("v3-folder-board-pane");
     const resources = page.getByTestId("v3-folder-board-resources");
     const canvas = page.getByTestId("v3-folder-board-canvas");
@@ -93,7 +93,7 @@ async function verifyMarkdownSurfaces(browser: Browser) {
     console.log(JSON.stringify({ inlineCodeMetrics, resourceCodeMetrics, centralCodeMetrics, centralReadSurface }, null, 2));
     await capture(page, "02-board-document-code-blocks");
     assertDocumentCodeBlocks(inlineCodeMetrics, "보드 인라인 문서");
-    assertDocumentCodeBlocks(resourceCodeMetrics, "왼쪽 업무 자료 문서");
+    assertDocumentCodeBlocks(resourceCodeMetrics, "왼쪽 폴더 자료 문서");
     assertDocumentCodeBlocks(centralCodeMetrics, "중앙 문서 오버레이");
     const verticalScrollOwners = centralReadSurface.nodes.filter((node) => node.ownsVerticalScroll);
     assert(verticalScrollOwners.length === 1, `중앙 문서의 세로 스크롤 소유자가 하나가 아닙니다: ${JSON.stringify(verticalScrollOwners)}`);

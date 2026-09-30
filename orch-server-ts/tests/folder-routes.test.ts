@@ -5,7 +5,7 @@ import type { CardControlPlaneService } from "../src/cards/card_control_plane_se
 import type { FolderControlPlaneService } from "../src/folders/folder_control_plane_service.js";
 
 const row = { id: "f", name: "기존 폴더", parent_folder_id: null, project_page_id: "p", sort_order: 0,
-  settings: {}, archived: false, checklist_enabled: false, status: "open", version: 3,
+  settings: {}, archived: false, status: "open", version: 3,
   created_session_id: null, created_event_id: null, created_at: new Date("2026-09-30Z"), updated_at: new Date("2026-09-30Z") };
 const item = { id: "i", folder_id: "f", title: "카드", request: "절차", brief: "경과" };
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -16,9 +16,9 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
   const listFolders = vi.fn(async () => [row]);
   const mutate = vi.fn(async () => ({ snapshot, operation: { folder_id: "f", target_kind: "folder", target_id: "f" }, idempotent: false }));
   const cards = { getFolder, listFolders, listOperations: vi.fn(async () => []),
-    setFolderStatus: mutate, setFolderChecklistEnabled: mutate,
+  setFolderStatus: mutate,
   } as unknown as CardControlPlaneService;
-  const identity = { create: vi.fn(async () => ({ folder: { id: "f", name: "새 폴더", checklistEnabled: false }, operation: { id: "op" }, idempotent: false })),
+  const identity = { create: vi.fn(async () => ({ folder: { id: "f", name: "새 폴더" }, operation: { id: "op" }, idempotent: false })),
     mutateFromFolder: vi.fn(async () => ({ folder: { id: "f", archived: true }, operation: { id: "op" }, idempotent: false })) };
   const app = Fastify(); apps.push(app);
   registerFolderRoutes(app, {
@@ -32,11 +32,12 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
 }
 
 describe("unified folder HTTP and host contracts", () => {
-  it("reads stored card content even when its display is disabled", async () => {
+  it("reads folder cards without a checklist visibility field", async () => {
     const { app } = setup();
     const response = await app.inject("/api/folders/f");
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ folder: { checklistEnabled: false, createdSessionId: null }, cards: [{ folderId: "f", request: "절차" }] });
+    expect(response.json()).toMatchObject({ folder: { createdSessionId: null }, cards: [{ folderId: "f", request: "절차" }] });
+    expect(response.json().folder).not.toHaveProperty("checklistEnabled");
     const outline = await app.inject("/api/folders/f?view=outline&cardId=i");
     expect(outline.json().cards[0]).not.toHaveProperty("request");
   });
@@ -44,16 +45,25 @@ describe("unified folder HTTP and host contracts", () => {
     const { app, identity } = setup();
     const response = await app.inject({ method: "POST", url: "/api/folders", payload: { name: "새 폴더", idempotencyKey: "new" } });
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual({ folder: { id: "f", name: "새 폴더", checklistEnabled: false }, operation: { id: "op" }, idempotent: false });
-    expect(identity.create).toHaveBeenCalledWith(expect.objectContaining({ checklistEnabled: false, actor: { actorKind: "user", actorSessionId: null, actorUserId: "user@example.com" } }));
+    expect(response.json()).toEqual({ folder: { id: "f", name: "새 폴더" }, operation: { id: "op" }, idempotent: false });
+    expect(identity.create).toHaveBeenCalledWith(expect.objectContaining({ actor: { actorKind: "user", actorSessionId: null, actorUserId: "user@example.com" } }));
   });
-  it.each(["status", "checklist-enabled"])("writes %s without a creating session or board tile", async action => {
+  it("writes status without a creating session or board tile", async () => {
     const { app, mutate } = setup();
-    const response = await app.inject({ method: "POST", url: `/api/folders/f/${action}`, payload: {
-      expectedVersion: 3, idempotencyKey: action, ...(action === "status" ? { status: "completed" } : { checklistEnabled: true }),
+    const response = await app.inject({ method: "POST", url: "/api/folders/f/status", payload: {
+      expectedVersion: 3, idempotencyKey: "status", status: "completed",
     } });
     expect(response.statusCode).toBe(200); expect(mutate).toHaveBeenCalledOnce();
-    expect(response.json()).toHaveProperty("folder.checklistEnabled", false);
+    expect(response.json().folder).not.toHaveProperty("checklistEnabled");
+  });
+  it("removes checklist mutation and create fields", async () => {
+    const { app } = setup();
+    expect((await app.inject({ method: "POST", url: "/api/folders/f/checklist-enabled", payload: {
+      expectedVersion: 3, idempotencyKey: "removed", checklistEnabled: true,
+    } })).statusCode).toBe(404);
+    expect((await app.inject({ method: "POST", url: "/api/folders", payload: {
+      name: "새 폴더", idempotencyKey: "old-create-field", checklistEnabled: true,
+    } })).statusCode).toBe(422);
   });
   it("archives with CAS and no destructive delete endpoint", async () => {
     const { app, identity } = setup();
@@ -87,14 +97,14 @@ describe("unified folder HTTP and host contracts", () => {
     expect((await call(null, "bad")).statusCode).toBe(401);
     expect((await call(null)).statusCode).toBe(200);
     expect(listFolders).toHaveBeenLastCalledWith({ folderId: null, includeArchived: false, limit: 51, offset: 0 });
-    expect((await call("f")).json()).toMatchObject({ items: [{ id: "f", checklistEnabled: false }], nextCursor: null });
+    expect((await call("f")).json()).toMatchObject({ items: [{ id: "f" }], nextCursor: null });
     expect(listFolders).toHaveBeenLastCalledWith({ folderId: "f", includeArchived: false, limit: 51, offset: 0 });
   });
   it("keeps host responses camelCase and mutation results free of a snapshot wrapper", async () => {
     const { app } = setup();
     const response = await app.inject({ method: "POST", url: "/api/folders/host/set_folder_status", headers: { authorization: "Bearer test-token" }, payload: { folder_id: "f", actor_kind: "user", actor_user_id: "u", expected_version: 3, idempotency_key: "host", status: "completed" } });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ folder: { id: "f", checklistEnabled: false }, operation: { folderId: "f" }, idempotent: false });
+    expect(response.json()).toMatchObject({ folder: { id: "f" }, operation: { folderId: "f" }, idempotent: false });
     expect(response.json()).not.toHaveProperty("snapshot");
   });
 });

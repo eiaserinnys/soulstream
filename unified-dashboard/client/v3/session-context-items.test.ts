@@ -14,7 +14,7 @@ describe("session context item selection", () => {
       needsPageAnchor: true,
       contextItems: [{
         key: "page_context_sources",
-        label: "업무 카드와 선택한 보드 문서",
+        label: "카드와 선택한 보드 문서",
         content: { pages: [
           { page_id: "task-page" },
           { page_id: "doc-a" },
@@ -66,7 +66,7 @@ describe("session context item selection", () => {
       needsPageAnchor: true,
       contextItems: [{
         key: "page_context_sources",
-        label: "업무 카드 본문",
+        label: "카드 본문",
         content: { pages: [{ page_id: "task-page" }] },
       }],
     });

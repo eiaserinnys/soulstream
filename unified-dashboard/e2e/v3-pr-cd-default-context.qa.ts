@@ -66,7 +66,7 @@ async function verify(browser: Browser) {
       throw cause;
     }
 
-    await page.getByRole("button", { name: "새 업무" }).click();
+    await page.getByRole("button", { name: "새 폴더" }).click();
     await page.getByLabel("프로젝트 선택").selectOption("folder-dashboard");
     const preview = page.getByTestId("new-task-inheritance-preview");
     await waitForText(
@@ -112,12 +112,12 @@ async function verify(browser: Browser) {
       await information.getByRole("button", { name: "직접 지정", exact: true }).click();
       await waitForText(summary, "roselin_codex@eiaserinnys · 직접 지정");
       assert(plannerTodayRequests === requestsBeforeSave, `저장 뒤 planner 광역 재조회가 발생했습니다: ${requestsBeforeSave} → ${plannerTodayRequests}`);
-      assert(taskOperations.length === 1, `업무 기본 담당 저장 요청 수가 다릅니다: ${taskOperations.length}`);
+      assert(taskOperations.length === 1, `폴더 기본 담당 저장 요청 수가 다릅니다: ${taskOperations.length}`);
       const operations = taskOperations[0]?.operations;
       assert(Array.isArray(operations) && operations.length === 1, "저장이 단일 page operation이 아닙니다.");
       const operation = operations[0] as Record<string, unknown>;
       assert(operation.op === "create_block" && operation.block_type === "session_defaults", "기존 session_defaults 표면을 사용하지 않았습니다.");
-      assert((operation.properties as Record<string, unknown>)?.scope === "session", "업무 직접 지정 scope가 session이 아닙니다.");
+      assert((operation.properties as Record<string, unknown>)?.scope === "session", "폴더 직접 지정 scope가 session이 아닙니다.");
       await capture(page, "04-task-default-direct");
     }
 

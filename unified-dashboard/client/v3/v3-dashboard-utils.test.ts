@@ -41,9 +41,9 @@ describe("v3 dashboard utilities", () => {
     let authRefreshes = 0;
     const error = Object.assign(new Error("Dashboard user is required"), { status: 401 });
 
-    expect(writeFailureText("새 업무 생성", error)).toBe(AUTH_EXPIRED_MESSAGE);
+    expect(writeFailureText("새 폴더 생성", error)).toBe(AUTH_EXPIRED_MESSAGE);
     expect(reportV3WriteFailure({
-      action: "새 업무 생성",
+      action: "새 폴더 생성",
       error,
       notify: (message) => messages.push(message),
       refreshAuthStatus: () => { authRefreshes += 1; },
@@ -51,18 +51,18 @@ describe("v3 dashboard utilities", () => {
 
     expect(messages).toEqual([AUTH_EXPIRED_MESSAGE]);
     expect(authRefreshes).toBe(1);
-    expect(writeFailureText("업무 저장", new Error("충돌"))).toBe("업무 저장 실패 · 충돌");
+    expect(writeFailureText("폴더 저장", new Error("충돌"))).toBe("폴더 저장 실패 · 충돌");
     expect(writeFailureText("세션 삭제", new Error("Failed to delete session: 401")))
       .toBe(AUTH_EXPIRED_MESSAGE);
     expect(writeFailureText(
-      "새 업무 생성",
-      Object.assign(new Error("업무 생성 실패"), { cause: error }),
+      "새 폴더 생성",
+      Object.assign(new Error("폴더 생성 실패"), { cause: error }),
     )).toBe(AUTH_EXPIRED_MESSAGE);
   });
 });
 
 function folder(id: string): CatalogFolder {
-  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,  id, name: id, sortOrder: 0 };
+  return { status: "open" as const, version: 1, archived: false,  id, name: id, sortOrder: 0 };
 }
 
 function session(id: string, callerSessionId: string | undefined, createdAt: string, folderId: string): SessionSummary {

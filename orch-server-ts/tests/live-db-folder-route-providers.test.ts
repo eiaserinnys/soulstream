@@ -51,7 +51,7 @@ describe("live DB folder route providers", () => {
 
     await expect(repository.folderRouteProvider.listFolders()).resolves.toEqual([
       {
-        archived: false, checklistEnabled: false, status: "open", version: 1,
+        archived: false, status: "open", version: 1,
         id: "folder-a",
         name: "Folder",
         sortOrder: 1,
@@ -61,7 +61,7 @@ describe("live DB folder route providers", () => {
         createdAt: "2026-07-09T01:00:00.000Z",
       },
       {
-        archived: false, checklistEnabled: false, status: "open", version: 1,
+        archived: false, status: "open", version: 1,
         id: "folder-b",
         name: "Folder",
         sortOrder: 2,
@@ -104,7 +104,7 @@ function folderRow(overrides: Record<string, unknown> = {}): Record<string, unkn
   return {
     id: "folder-a",
     name: "Folder",
-    status: "open", version: 1, checklist_enabled: false,
+    status: "open", version: 1,
     sort_order: 1,
     parent_folder_id: null,
     settings: {},

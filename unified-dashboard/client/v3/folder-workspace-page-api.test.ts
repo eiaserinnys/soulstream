@@ -44,7 +44,7 @@ describe("renameFolderPageTitle", () => {
     } as unknown as PageApiClient;
 
     await expect(renameFolderPageTitle(api, "task-a", "   ", () => "rename-1"))
-      .rejects.toThrow("업무 제목을 입력해야 합니다");
+      .rejects.toThrow("폴더 제목을 입력해야 합니다");
     expect(api.getPage).not.toHaveBeenCalled();
     expect(api.applyOperations).not.toHaveBeenCalled();
   });
@@ -52,7 +52,7 @@ describe("renameFolderPageTitle", () => {
 
 describe("saveFolderSessionDefaults", () => {
   it("creates a direct session_defaults block through the existing page CAS surface", async () => {
-    const folderPage = page("task-a", "업무 A", 5);
+    const folderPage = page("task-a", "폴더 A", 5);
     const blocks = [block("paragraph", "paragraph")];
     const saved = [...blocks, block("defaults-created", "session_defaults", {
       agentId: "roselin_codex",
@@ -93,7 +93,7 @@ describe("saveFolderSessionDefaults", () => {
   });
 
   it("updates the existing direct block and rejects an empty explicit value", async () => {
-    const folderPage = page("task-a", "업무 A", 5);
+    const folderPage = page("task-a", "폴더 A", 5);
     const defaults = block("defaults-direct", "session_defaults", {
       agentId: "old-agent",
       nodeId: "old-node",
@@ -136,7 +136,7 @@ describe("saveFolderSessionDefaults", () => {
 
 describe("unmountFolderDocument", () => {
   it("deletes the mounted document block through the page CAS contract", async () => {
-    const folderPage = page("task-a", "업무 A", 5);
+    const folderPage = page("task-a", "폴더 A", 5);
     const api = {
       getPage: vi.fn(async () => ({
         page: folderPage,

@@ -108,12 +108,12 @@ export function useV3SessionPanelController({
       if (requestSequence !== openRequestSequence.current) return false;
       const message = error instanceof SessionWorkspaceResolutionError
         ? error.message
-        : "세션의 업무를 열지 못했습니다.";
+        : "세션의 폴더를 열지 못했습니다.";
       const detail = error instanceof SessionWorkspaceResolutionError && error.cause
         ? errorText(error.cause)
         : errorText(error);
       setWorkspaceFolderError(message);
-      notify(`세션의 업무 열기 실패 · ${message} · ${detail}`);
+      notify(`세션의 폴더 열기 실패 · ${message} · ${detail}`);
       return false;
     }
   }, [api, catalog?.boardItems, currentFolderEntries, notify, onClearFolder, onSelectFolder, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen]);

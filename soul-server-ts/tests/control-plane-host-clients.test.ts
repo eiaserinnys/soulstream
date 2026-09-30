@@ -291,7 +291,7 @@ describe("worker control-plane host clients", () => {
   it("reads a folder header from the canonical folder snapshot host operation", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       folder: {
-        id: "folder-1", name: "Work", checklistEnabled: true, status: "open",
+        id: "folder-1", name: "Work", status: "open",
         version: 4, settings: { folderPrompt: "Guide" }, parentFolderId: null,
       },
       sections: [], items: [],
@@ -300,7 +300,7 @@ describe("worker control-plane host clients", () => {
     const client = new FolderHostClient({ orch, logger });
 
     await expect(client.getFolderById("folder-1")).resolves.toMatchObject({
-      id: "folder-1", name: "Work", checklist_enabled: true,
+      id: "folder-1", name: "Work",
       settings: { folderPrompt: "Guide" }, parent_folder_id: null,
     });
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/get_folder");

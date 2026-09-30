@@ -139,7 +139,7 @@ function folder(id: string, order: number): BoardWorkspaceItem {
     type: "folder",
     id,
     boardItemId: id,
-    folder: { checklistEnabled: false, status: "open", version: 1, archived: false,
+    folder: { status: "open", version: 1, archived: false,
       id,
       name: id,
       sortOrder: order,

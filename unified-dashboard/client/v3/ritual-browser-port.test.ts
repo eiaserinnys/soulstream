@@ -10,7 +10,7 @@ describe("removeRitualFolderFromDaily", () => {
         page: { id: "daily-yesterday", version: 4 },
         blocks: [
           { id: "memo", parent_id: null, block_type: "paragraph", text: "메모", properties: {} },
-          { id: "task-mount", parent_id: null, block_type: "paragraph", text: "[[업무]]", properties: {} },
+          { id: "task-mount", parent_id: null, block_type: "paragraph", text: "[[폴더]]", properties: {} },
         ],
         state_vector: "AQID",
       })),
@@ -20,7 +20,7 @@ describe("removeRitualFolderFromDaily", () => {
           sourcePageId: "daily-yesterday",
           sourcePageTitle: "2026년 7월 19일",
           sourceBlockId: "task-mount",
-          sourceTextPreview: "[[업무]]",
+          sourceTextPreview: "[[폴더]]",
           linkKind: "mount",
           targetPageId: "task-page",
           targetBlockId: null,
@@ -36,7 +36,7 @@ describe("removeRitualFolderFromDaily", () => {
       api as never,
       "daily-yesterday",
       "task-page",
-      "업무",
+      "폴더",
       () => "ritual-remove-1",
     );
 
@@ -65,7 +65,7 @@ describe("removeRitualFolderFromDaily", () => {
       api as never,
       "daily-yesterday",
       "task-page",
-      "업무",
+      "폴더",
     );
 
     expect(applyOperations).not.toHaveBeenCalled();

@@ -73,7 +73,7 @@ describe("FolderBoardPane catalog ownership", () => {
 
 function catalog(status: SessionSummary["status"]): CatalogState {
   return {
-    folders: [{ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "project-a", name: "Project A", sortOrder: 0, projectPageId: null }],
+    folders: [{ status: "open" as const, version: 1, archived: false, id: "project-a", name: "Project A", sortOrder: 0, projectPageId: null }],
     sessions: {},
     boardItems: [],
     sessionList: [{

@@ -30,11 +30,6 @@ export class CardControlPlaneService {
   setFolderStatus(params: FolderActorParams & { folderId: string; expectedVersion: number; status: FolderStatus; reason?: string | null; idempotencyKey?: string | null }) {
     return this.core.setFolderStatus(params);
   }
-  setFolderChecklistEnabled(params: FolderActorParams & { folderId: string; expectedVersion: number; checklistEnabled: boolean; idempotencyKey?: string | null }) {
-    return this.core.mutate({ folderId:params.folderId,targetKind:"folder",targetId:params.folderId,
-      operationType:"set_folder_checklist_enabled",actor:params,idempotencyKey:params.idempotencyKey,payload:{ checklist_enabled:params.checklistEnabled },
-      apply: async sql => { await this.repo.patchFolderTx(sql,params.folderId,{ checklist_enabled:params.checklistEnabled },params.expectedVersion); } });
-  }
   async createCard(params: FolderActorParams & {
     folderId: string; title: string; request: string; queue?: boolean; assignee?: CardAssigneeInput | null;
     nodeId?: string | null; modelPreset?: string | null; idempotencyKey?: string | null;

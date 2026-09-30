@@ -76,8 +76,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     try {
       await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask }).waitFor({ state: "visible", timeout: 10_000 });
     } catch (error) {
-      console.error(`[pr-ai/qa] 업무 진입 실패 URL · ${page.url()}`);
-      console.error(`[pr-ai/qa] 업무 진입 실패 본문 · ${(await page.locator("body").textContent() ?? "").slice(0, 2_000)}`);
+      console.error(`[pr-ai/qa] 폴더 진입 실패 URL · ${page.url()}`);
+      console.error(`[pr-ai/qa] 폴더 진입 실패 본문 · ${(await page.locator("body").textContent() ?? "").slice(0, 2_000)}`);
       await capture(page, theme, "diagnostic-task-open-failure");
       throw error;
     }
@@ -118,7 +118,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       "체크를 모두 끄면 빈 세션으로 시작합니다.",
       "목표·완료 조건·현재 결정",
       "컨텍스트 슬롯",
-      "업무 카드 본문에 포함",
+      "카드 본문에 포함",
       "승계 링크로 기록됨",
     ]) assert(!modalText.includes(forbidden), `삭제 대상 문구가 남았습니다: ${forbidden}`);
     assert(!modalText.includes("추가 지침"), "삭제한 추가 지침 입력이 새 세션 창에 남았습니다.");

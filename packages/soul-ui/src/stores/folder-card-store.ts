@@ -17,7 +17,6 @@ export interface FolderRow {
   name: string;
   parentFolderId: string | null;
   projectPageId: string | null;
-  checklistEnabled: boolean;
   status: FolderStatus;
   archived: boolean;
   version: number;

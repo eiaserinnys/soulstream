@@ -49,13 +49,13 @@ async function verifyViewport(
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("v3-task-task-beta").waitFor({ state: "visible", timeout: 30_000 });
 
-    await page.getByRole("button", { name: "새 업무", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "새 업무", exact: true });
+    await page.getByRole("button", { name: "새 폴더", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "새 폴더", exact: true });
     await dialog.waitFor({ state: "visible" });
     const newTaskAssignment = dialog.getByTestId("new-task-default-assignment");
     await newTaskAssignment.scrollIntoViewIfNeeded();
     const newTaskMetrics = await readAssignmentMetrics(newTaskAssignment);
-    assertAssignmentContract(viewportName, "새 업무", newTaskMetrics);
+    assertAssignmentContract(viewportName, "새 폴더", newTaskMetrics);
     await capture(page, viewportName, "01-new-task");
     await dialog.getByRole("button", { name: "취소", exact: true }).click();
 
@@ -78,7 +78,7 @@ async function verifyViewport(
     await editor.getByLabel("에이전트 선택").waitFor({ state: "visible" });
     await editor.scrollIntoViewIfNeeded();
     const editorMetrics = await readAssignmentMetrics(editor);
-    assertAssignmentContract(viewportName, "업무 편집", editorMetrics);
+    assertAssignmentContract(viewportName, "폴더 편집", editorMetrics);
     await capture(page, viewportName, "03-task-editor");
     await editor.getByRole("button", { name: "취소", exact: true }).click();
     await editor.waitFor({ state: "detached" });
@@ -155,7 +155,7 @@ async function readSummaryMetrics(summary: Locator) {
     const rect = element.getBoundingClientRect();
     const values = element.querySelector<HTMLElement>(".v3-task-default-values");
     const button = element.querySelector<HTMLElement>(".v3-task-default-edit");
-    if (!values || !button) throw new Error("업무 기본 담당 요약 요소를 찾지 못했습니다.");
+    if (!values || !button) throw new Error("폴더 기본 담당 요약 요소를 찾지 못했습니다.");
     const valueRect = values.getBoundingClientRect();
     const buttonRect = button.getBoundingClientRect();
     return {
@@ -209,8 +209,8 @@ function assertSummaryContract(
   viewportName: ViewportName,
   metrics: Awaited<ReturnType<typeof readSummaryMetrics>>,
 ) {
-  assert(!metrics.text.includes("모델 지정"), "업무 요약에 `모델 지정`이 남았습니다.");
-  assert(!metrics.text.includes("직접 지정"), "업무 요약에 `직접 지정`이 남았습니다.");
+  assert(!metrics.text.includes("모델 지정"), "폴더 요약에 `모델 지정`이 남았습니다.");
+  assert(!metrics.text.includes("직접 지정"), "폴더 요약에 `직접 지정`이 남았습니다.");
   assert(metrics.valueParts.length === 5, "노드·에이전트·모델 요약 구조가 아닙니다.");
   assert(metrics.valueParts[0].length > 0 && metrics.valueParts[2].length > 0 && metrics.valueParts[4].length > 0, "요약 값이 비었습니다.");
   assert(metrics.valueParts[4] === "QA 표준 모델", "모델 preset 사용자 표시명이 요약에 없습니다.");

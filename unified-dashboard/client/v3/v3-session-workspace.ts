@@ -57,7 +57,7 @@ export async function resolveSessionWorkspace({
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
-    throw new Error(`세션의 업무를 불러오지 못했습니다 (${response.status})`);
+    throw new Error(`세션의 폴더를 불러오지 못했습니다 (${response.status})`);
   }
   const payload = await response.json() as { boardItems?: CatalogBoardItem[] };
   const loadedBoardItems = payload.boardItems ?? [];
@@ -89,7 +89,7 @@ export async function resolveSessionFolderWorkspace({
   } catch (error) {
     throw new SessionWorkspaceResolutionError(
       "membership",
-      "세션의 소속 업무를 확인하지 못했습니다.",
+      "세션의 소속 폴더를 확인하지 못했습니다.",
       { cause: error },
     );
   }
@@ -102,7 +102,7 @@ export async function resolveSessionFolderWorkspace({
   } catch (error) {
     throw new SessionWorkspaceResolutionError(
       "folder",
-      "소속 업무를 불러오지 못했습니다.",
+      "소속 폴더를 불러오지 못했습니다.",
       { cause: error },
     );
   }

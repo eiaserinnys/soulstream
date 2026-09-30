@@ -58,12 +58,12 @@ async function verify(browser: Browser) {
       await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })
         .waitFor({ state: "visible", timeout: 10_000 });
     } catch (error) {
-      console.error(`[pr-ar/qa] 업무 진입 실패\n${(await page.locator("body").innerText()).slice(0, 4_000)}`);
+      console.error(`[pr-ar/qa] 폴더 진입 실패\n${(await page.locator("body").innerText()).slice(0, 4_000)}`);
       throw error;
     }
     await waitUntil(async () => (
       await page.locator('.v3-run-list .v3-run-row[data-load-state="ready"]').count()
-    ) === 2, "업무 세션 상세 초기 로드");
+    ) === 2, "폴더 세션 상세 초기 로드");
     await page.waitForTimeout(300);
 
     const before = snapshotCounts(requestCounts);
@@ -93,7 +93,7 @@ async function verify(browser: Browser) {
     if (baselineMode) return { stableWindow };
 
     assert(mutations.project === 0, `프로젝트 리스트 DOM 변이 ${mutations.project}건`);
-    assert(mutations.runHistory === 0, `업무 세션 리스트 DOM 변이 ${mutations.runHistory}건`);
+    assert(mutations.runHistory === 0, `폴더 세션 리스트 DOM 변이 ${mutations.runHistory}건`);
     assert(stableWindow.plannerRequestDelta === 0, `동등 이벤트가 planner를 ${stableWindow.plannerRequestDelta}회 재조회했습니다.`);
     assert(stableWindow.projectRequestDelta === 0, `프로젝트를 ${stableWindow.projectRequestDelta}회 재조회했습니다.`);
     assert(stableWindow.runHistoryRequestDelta === 0, `run history를 ${stableWindow.runHistoryRequestDelta}회 재조회했습니다.`);

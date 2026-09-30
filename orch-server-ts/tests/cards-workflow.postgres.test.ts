@@ -86,15 +86,14 @@ describe("cards storage, HTTP and planner", () => {
     await expect(cards.patchCard({ ...human,cardId:id,title:'낡은 버전',expectedVersion:1,idempotencyKey:key() })).rejects.toMatchObject({ statusCode:409 });
   });
 
-  it("preserves folder status/toggle provenance with cards instead of sections", async () => {
+  it("preserves folder status with cards instead of sections", async () => {
     const resolver=createLiveDbSqlResolver({ sql:h.liveSql });
     const identity=new FolderProjectIdentityService({ repository:new SqlFolderProjectIdentityRepository(resolver),
       withBoardApplication:async (_input,persist)=>persist([]),hydratePage:async ()=>undefined });
     const services={ identity,cards };
-    await executeFolderOperation(services,'set_folder_checklist_enabled',{ checklistEnabled:true,expectedVersion:1,idempotencyKey:key() },{ folderId:'cards-a' },human);
-    await executeFolderOperation(services,'set_folder_status',{ status:'completed',expectedVersion:2,idempotencyKey:key() },{ folderId:'cards-a' },human);
+    await executeFolderOperation(services,'set_folder_status',{ status:'completed',expectedVersion:1,idempotencyKey:key() },{ folderId:'cards-a' },human);
     const snapshot=(await cards.getFolder('cards-a'))!;
-    expect(snapshot.folder).toMatchObject({ checklist_enabled:true,status:'completed',completed_kind:'user',completed_session_id:null });
+    expect(snapshot.folder).toMatchObject({ status:'completed',completed_kind:'user',completed_session_id:null });
     expect(snapshot.cards.length).toBeGreaterThan(0);
     expect(snapshot).not.toHaveProperty('sections');
   });

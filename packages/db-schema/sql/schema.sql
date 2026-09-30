@@ -59,7 +59,6 @@ CREATE TABLE IF NOT EXISTS folders (
     parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
     project_page_id TEXT,
     archived    BOOLEAN NOT NULL DEFAULT FALSE,
-    checklist_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','completed')),
     version INTEGER NOT NULL DEFAULT 1,
     created_session_id TEXT,

@@ -5,8 +5,8 @@ import { Check, Pencil } from "lucide-react";
 export function FolderDescriptionPanel({
   markdown,
   onSave,
-  ariaLabel = "업무 설명",
-  emptyText = "클릭해서 업무 설명을 작성하세요.",
+  ariaLabel = "폴더 설명",
+  emptyText = "클릭해서 폴더 설명을 작성하세요.",
   variant = "default",
   initialEditing = false,
   onEditingChange,

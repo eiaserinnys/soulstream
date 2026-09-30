@@ -63,10 +63,10 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
 
     const toolbar = page.getByTestId("v3-global-toolbar");
     assert(await toolbar.getByRole("button", { name: "아침 정리", exact: true }).count() === 0, "아침 정리가 전역 툴바에 남았습니다.");
-    assert(await toolbar.getByRole("button", { name: "새 업무", exact: true }).count() === 0, "새 업무가 전역 툴바에 남았습니다.");
+    assert(await toolbar.getByRole("button", { name: "새 폴더", exact: true }).count() === 0, "새 폴더가 전역 툴바에 남았습니다.");
     const dailyActions = {
       ritual: await compactCap(page.getByRole("button", { name: "아침 정리", exact: true })),
-      newTask: await compactCap(page.getByRole("button", { name: "새 업무", exact: true })),
+      newTask: await compactCap(page.getByRole("button", { name: "새 폴더", exact: true })),
     };
     const dailyCenterOffsetPx = await horizontalCenterDelta(
       page.locator(".v3-planner-scroll > .v3-planner-column"),
@@ -76,7 +76,7 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
 
     await page.getByTestId("v3-starred-tasks").locator(".v3-starred-task-link").first().click();
     await page.locator(".v3-detail-pane").waitFor({ state: "visible" });
-    assert(await page.getByText("별표 페이지가 task 업무가 아닙니다", { exact: false }).count() === 0, "별표 업무 열기 오류가 재현됐습니다.");
+    assert(await page.getByText("별표 페이지가 task 폴더가 아닙니다", { exact: false }).count() === 0, "별표 폴더 열기 오류가 재현됐습니다.");
     const detailPane = page.locator(".v3-detail-pane");
     const contextRow = detailPane.locator(".v3-context-row").first();
     const description = detailPane.locator(".v3-description-preview").first();
@@ -114,7 +114,7 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
     const centerDeltaPx = await horizontalCenterDelta(projectColumn, plannerScroll);
     const centerRelativeToDailyPx = Math.abs(centerDeltaPx - dailyCenterOffsetPx);
     assert(centerRelativeToDailyPx <= 0.2, `프로젝트와 데일리 중앙선 차이가 ${centerRelativeToDailyPx}px입니다.`);
-    const projectNewTask = await compactCap(page.getByRole("button", { name: "새 업무", exact: true }));
+    const projectNewTask = await compactCap(page.getByRole("button", { name: "새 폴더", exact: true }));
 
     await capture(page, theme, "desktop");
     assert(errors.length === 0, `브라우저 오류: ${errors.join(" | ")}`);
@@ -150,7 +150,7 @@ async function verifyMobile(browser: Browser, theme: Theme) {
     await openPlanner(page);
     const actions = {
       ritual: await compactCap(page.getByRole("button", { name: "아침 정리", exact: true })),
-      newTask: await compactCap(page.getByRole("button", { name: "새 업무", exact: true })),
+      newTask: await compactCap(page.getByRole("button", { name: "새 폴더", exact: true })),
     };
     const overflowPx = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert(overflowPx <= 0, `모바일 가로 오버플로가 ${overflowPx}px입니다.`);

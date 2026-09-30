@@ -113,7 +113,6 @@ describe("CatalogService.listFolders", () => {
         id: "f1",
         name: "F1",
         sort_order: 1,
-        checklist_enabled: true,
         settings: { x: 1 },
         parent_folder_id: null,
         project_page_id: "page-f1",
@@ -124,7 +123,6 @@ describe("CatalogService.listFolders", () => {
         id: "f2",
         name: "F2",
         sort_order: 2,
-        checklist_enabled: false,
         settings: null,
         parent_folder_id: "f1",
         project_page_id: null,
@@ -140,13 +138,12 @@ describe("CatalogService.listFolders", () => {
         id: "f1",
         name: "F1",
         sortOrder: 1,
-        checklistEnabled: true,
         settings: { x: 1 },
         parentFolderId: null,
         projectPageId: "page-f1",
         createdAt: "2026-06-03T00:00:00.000Z",
       },
-      { id: "f2", name: "F2", checklistEnabled: false, sortOrder: 2, settings: {}, parentFolderId: "f1", projectPageId: null },
+      { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1", projectPageId: null },
     ]);
   });
 });
@@ -181,8 +178,8 @@ describe("CatalogService.listChildFolders", () => {
     const svc = new CatalogService(db, broadcaster);
 
     await expect(svc.listChildFolders("root")).resolves.toEqual([
-      { id: "child-a", name: "Child A", checklistEnabled: false, sortOrder: 1, settings: {}, parentFolderId: "root", projectPageId: null },
-      { id: "child-b", name: "Child B", checklistEnabled: false, sortOrder: 2, settings: {}, parentFolderId: "root", projectPageId: null },
+      { id: "child-a", name: "Child A", sortOrder: 1, settings: {}, parentFolderId: "root", projectPageId: null },
+      { id: "child-b", name: "Child B", sortOrder: 2, settings: {}, parentFolderId: "root", projectPageId: null },
     ]);
   });
 });

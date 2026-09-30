@@ -49,12 +49,13 @@ describe("task board bounded catalog", () => {
       { kind: "custom_view", resourceId: "view-a" },
       { kind: "document", resourceId: "doc-b" },
     ])).toEqual([
-      { id: "checklist", kind: "checklist", title: "카드" },
+      { id: "cards", kind: "cards", title: "카드" },
       { id: "sessions", kind: "sessions", title: "세션" },
       { id: "custom-view:view-a", kind: "custom_view", title: "검증 현황", customViewId: "view-a" },
       { id: "document:doc-b", kind: "document", title: "운영 노트", documentId: "doc-b" },
     ]);
-    expect(buildFolderBoardResourceTabs(items, [], false)).toEqual([
+    expect(buildFolderBoardResourceTabs(items, [])).toEqual([
+      { id: "cards", kind: "cards", title: "카드" },
       { id: "sessions", kind: "sessions", title: "세션" },
     ]);
   });
@@ -80,7 +81,7 @@ describe("task board bounded catalog", () => {
     expect(reopened.activeTabId).toBe("custom-view:view-a");
   });
 
-  it("removes deleted resources and returns an invalid active tab to the checklist", () => {
+  it("removes deleted resources and returns an invalid active tab to cards", () => {
     const openDocument = openFolderWorkspaceResource(initialFolderBoardResourceState(), {
       kind: "document",
       resourceId: "doc-a",
@@ -100,7 +101,7 @@ describe("task board bounded catalog", () => {
     ])).toEqual(["session-a", "session-b"]);
   });
 
-  it("builds a central catalog without task sessions or checklist cards", () => {
+  it("builds a central catalog without task sessions or folder cards", () => {
     const items = [
       boardItem("rb-a", "session", "session-a"),
       boardItem("rb-a", "markdown", "doc-a"),
@@ -110,11 +111,11 @@ describe("task board bounded catalog", () => {
       boardItems: items,
       sessions: [session("session-a", "첫 이름")],
       folderId: "rb-a",
-      folderName: "업무 A",
+      folderName: "폴더 A",
     });
 
     expect(catalog.folders).toEqual([
-      expect.objectContaining({ id: "rb-a", name: "업무 A" }),
+      expect.objectContaining({ id: "rb-a", name: "폴더 A" }),
     ]);
     expect(catalog.boardItems).toEqual(items);
     expect(catalog.sessions).toEqual({});

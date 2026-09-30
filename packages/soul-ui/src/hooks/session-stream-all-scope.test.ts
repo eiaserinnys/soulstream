@@ -10,7 +10,7 @@ describe("all-scope session stream cache", () => {
         "llm",
         "hidden-folder",
         {
-          folders: [{ checklistEnabled: false, status: "open", version: 1, archived: false,
+          folders: [{ status: "open", version: 1, archived: false,
             id: "hidden-folder",
             name: "Hidden",
             sortOrder: 0,

@@ -45,7 +45,7 @@ test("parent move disables current parent, self and descendants", async ({ page 
     writes.push(body);
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ folder: {
       id: "folder-dashboard", name: "대시보드", projectPageId: "project-dashboard", parentFolderId: body.parentFolderId,
-      checklistEnabled: false, status: "open", archived: false, sortOrder: 0, version: 2,
+      status: "open", archived: false, sortOrder: 0, version: 2,
     }, idempotent: false }) });
   });
   await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });

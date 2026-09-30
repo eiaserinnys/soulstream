@@ -272,7 +272,7 @@ export function registerMultiNodeTools(
     "create_remote_agent_session",
     {
       description:
-        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. notify_completion=false는 폴더 체크리스트를 추적 표면으로 쓸 때 권장.",
+        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. notify_completion=false는 카드가 추적 표면일 때 권장.",
       inputSchema: {
         node_id: z.string().min(1),
         agent_id: z.string().optional(),

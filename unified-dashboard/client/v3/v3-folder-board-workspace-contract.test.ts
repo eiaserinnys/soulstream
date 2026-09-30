@@ -311,7 +311,7 @@ describe("task board session list context menu (🔴30) contract", () => {
   it("reuses the canonical SessionContextMenu, actions, and dialogs in the board (🔴30)", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
 
-    // 업무 패널(FolderSessionHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다.
+    // 폴더 패널(FolderSessionHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다.
     expect(workspace).toContain("<SessionContextMenu");
     expect(workspace).toContain("onRenameSession={onRenameSession}");
     expect(workspace).toContain("onDeleteSessions={onDeleteSessions}");
@@ -320,7 +320,7 @@ describe("task board session list context menu (🔴30) contract", () => {
     expect(workspace).toContain("onSessionContextMenu={openSessionContextMenu}");
     // 이어서 새 세션은 우클릭한 세션을 대상으로 승계 모달을 연다.
     expect(workspace).toContain("currentSession={targetedSuccession}");
-    // 다른 업무로 이동은 기존 FolderMoveDialog 정본을 재사용한다.
+    // 다른 폴더로 이동은 기존 FolderMoveDialog 정본을 재사용한다.
     expect(workspace).toContain("<FolderMoveDialog");
     expect(workspace).toContain("await onMoveSession(moveSessionId, target)");
     // 우클릭 메뉴는 별도 인라인 style·svg를 만들지 않는다(계약 유지).

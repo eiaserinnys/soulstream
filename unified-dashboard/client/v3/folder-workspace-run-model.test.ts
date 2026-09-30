@@ -349,7 +349,7 @@ function session(id: string, createdAt: string, callerSessionId?: string): Sessi
 function pageDto(): PageDto {
   return {
     id: "task-page",
-    title: "업무 제목",
+    title: "폴더 제목",
     daily_date: null,
     version: 4,
     archived: false,

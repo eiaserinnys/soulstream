@@ -82,7 +82,7 @@ for (const theme of ["dark", "light"] as const) {
 
     await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
-    await expect(page.getByText("오늘의 업무")).toBeVisible();
+    await expect(page.getByText("오늘의 폴더")).toBeVisible();
     await page.getByRole("button", { name: "아침 정리", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
     await expect(page.locator(".v3-ritual-card")).toBeVisible();

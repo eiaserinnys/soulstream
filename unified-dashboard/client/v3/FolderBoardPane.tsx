@@ -154,25 +154,25 @@ export function FolderBoardPane({
       data-board-session-count={sessionIds.length}
     >
       <header className="v3-workspace-toolbar">
-        <DashboardIconCap label="업무 상세로 돌아가기" onClick={onClose}>
+        <DashboardIconCap label="폴더 상세로 돌아가기" onClick={onClose}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
-        <strong>▦ 업무 보드</strong>
+        <strong>▦ 폴더 보드</strong>
         <span className="v3-board-live-state">
           {boardItems === null || boardSessionsLoading ? "불러오는 중" : `${boardItems.length}개 항목 · 실시간`}
         </span>
         <span className="v3-spacer" />
-        <DashboardIconCap label="업무 보드 닫기" onClick={onClose}>
+        <DashboardIconCap label="폴더 보드 닫기" onClick={onClose}>
           <X className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </header>
       <div className="v3-full-board">
         {loadError ? (
-          <V3ErrorNotice className="v3-board-load-state" message="업무 보드를 열지 못했습니다." detail={loadError}>
+          <V3ErrorNotice className="v3-board-load-state" message="폴더 보드를 열지 못했습니다." detail={loadError}>
             <Button variant="secondary" onClick={() => { void reloadBoardItems(); }}>다시 시도</Button>
           </V3ErrorNotice>
         ) : boardItems === null ? (
-          <div className="v3-board-load-state" data-testid="v3-folder-board-loading">업무 내용을 불러오는 중…</div>
+          <div className="v3-board-load-state" data-testid="v3-folder-board-loading">폴더 내용을 불러오는 중…</div>
         ) : (
           <BoardWorkspaceView
             catalogOverride={scopedCatalog}

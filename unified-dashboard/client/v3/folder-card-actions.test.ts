@@ -28,7 +28,7 @@ describe("planner task card actions", () => {
 
     expect(api.applyOperations).toHaveBeenCalledWith("daily-today", expect.objectContaining({
       reason: "v3 planner daily task toggle",
-      operations: [expect.objectContaining({ text: "[[업무 A]]" })],
+      operations: [expect.objectContaining({ text: "[[폴더 A]]" })],
     }));
   });
 
@@ -42,7 +42,7 @@ describe("planner task card actions", () => {
         parent_id: null,
         position_key: "A",
         block_type: "paragraph",
-        text: "[[업무 A]]",
+        text: "[[폴더 A]]",
         properties: {},
         collapsed: false,
       }])),
@@ -52,7 +52,7 @@ describe("planner task card actions", () => {
           sourcePageId: daily.id,
           sourcePageTitle: daily.title,
           sourceBlockId: "mount-task-a",
-          sourceTextPreview: "[[업무 A]]",
+          sourceTextPreview: "[[폴더 A]]",
           linkKind: "mount",
           targetPageId: "task-a",
           targetBlockId: null,
@@ -85,7 +85,7 @@ describe("planner task card actions", () => {
 
 function task(): PlannerFolder {
   return {
-    page: page("task-a", "업무 A", 2),
+    page: page("task-a", "폴더 A", 2),
     blocks: [],
     stateVector: "AA==",
     folderId: "rb-task-a",

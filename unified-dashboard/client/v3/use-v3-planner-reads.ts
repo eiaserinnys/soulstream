@@ -163,7 +163,7 @@ export function usePlannerCollections({
             ? { ...failed, data: { ...failed.data, nextCursor: null } }
             : failed;
         });
-        notify(`별표 업무 조회 실패 · ${message}`);
+        notify(`별표 폴더 조회 실패 · ${message}`);
       }
     });
     return () => { active = false; };
@@ -345,7 +345,7 @@ export function usePlannerCollections({
         });
       });
     } catch (error) {
-      notify(`별표 업무 더 보기 실패 · ${errorText(error)}`);
+      notify(`별표 폴더 더 보기 실패 · ${errorText(error)}`);
     } finally {
       setStarredFoldersLoadingMore(false);
     }

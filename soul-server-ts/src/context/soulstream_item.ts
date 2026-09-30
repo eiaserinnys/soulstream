@@ -16,7 +16,6 @@ import type { ContextItem } from "./prompt_assembler.js";
 export interface SoulstreamFolderContext {
   id: string;
   title: string;
-  checklist_enabled: boolean;
 }
 
 export interface SoulstreamContextParams {
@@ -55,7 +54,7 @@ function detectLocalIp(): string {
  *
  * dict content (key/value):
  *   - agent_session_id, claude_session_id(또는 "(new session)"), workspace_dir
- *   - folder_name과 folder(id/title/checklist_enabled)
+ *   - folder_name과 folder(id/title)
  *   - card와 card_guidance (카드에 연결된 세션이면)
  *   - folder_guidance (폴더 카드 행동 안내)
  *   - hostname, ip_address, current_node_id

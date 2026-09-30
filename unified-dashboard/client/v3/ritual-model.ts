@@ -64,7 +64,7 @@ export function buildMorningRitualQueue(
         kind: "task",
         id: `task:${task.page.id}`,
         title: task.page.title,
-        description: `${displayDate(day.date)} 플래너에 남아 있는 업무입니다. 오늘로 이월할까요?`,
+        description: `${displayDate(day.date)} 플래너에 남아 있는 폴더입니다. 오늘로 이월할까요?`,
         agentLabel: task.assignee,
         sourceDate: day.date,
         sourcePageId: day.pageId,
@@ -96,7 +96,7 @@ export async function dispatchRitualAction(
     });
     return;
   }
-  throw new Error("미완 업무에서 사용할 수 없는 아침 정리 동작입니다");
+  throw new Error("미완 폴더에서 사용할 수 없는 아침 정리 동작입니다");
 }
 
 function isTerminalFolder(task: PlannerFolder): boolean {

@@ -27,7 +27,7 @@ for (const theme of ["dark", "light"] as const) {
 
     try {
       await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-      await expect(page.getByText("오늘의 업무")).toBeVisible();
+      await expect(page.getByText("오늘의 폴더")).toBeVisible();
       await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("v3-session-row-run-alpha-2")).toBeVisible();
       await capture(page, theme, "01-first-screen");
@@ -94,19 +94,19 @@ async function preparePage(page: Page, theme: "dark" | "light") {
 }
 
 async function assertAestheticContracts(page: Page) {
-  const navigation = page.getByRole("navigation", { name: "업무 섹션" });
+  const navigation = page.getByRole("navigation", { name: "폴더 섹션" });
   await expect(navigation.getByRole("button")).toHaveCount(4);
   await expect(navigation.getByRole("button").evaluateAll((buttons) => (
     buttons.map((button) => button.getAttribute("aria-label"))
   ))).resolves.toEqual([
     "정보 섹션으로 이동",
-    "체크리스트 섹션으로 이동",
+    "카드 섹션으로 이동",
     "보드 섹션으로 이동",
     "세션 섹션으로 이동",
   ]);
   await expect(page.locator(".v3-detail-scroll [data-task-section]").evaluateAll((sections) => (
     sections.map((section) => section.getAttribute("data-task-section"))
-  ))).resolves.toEqual(["information", "checklist", "board", "sessions"]);
+  ))).resolves.toEqual(["information", "cards", "board", "sessions"]);
   await expect(page.locator(".v3-session-panel .v3-run-row:not(.liquid-glass-card)"))
     .toHaveCount(0);
   await expect(page.locator(".v3-detail-scroll .v3-run-row:not(.liquid-glass-card)"))

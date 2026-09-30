@@ -150,7 +150,7 @@ export function FolderBoardWorkspace({
           kind: resource.kind,
           resourceId: resource.resourceId,
         })) as FolderBoardResourceSelection[],
-        activeTabId: snap.activeTabId ?? "checklist",
+        activeTabId: snap.activeTabId ?? "cards",
       };
     }
     return initialFolderBoardResourceState();
@@ -160,7 +160,7 @@ export function FolderBoardWorkspace({
   const [activeFolderDocumentId, setActiveFolderDocumentId] = useState<string | null>(null);
   const [pendingFolderDocumentEditId, setPendingFolderDocumentEditId] = useState<string | null>(null);
   const [successionOpen, setSuccessionOpen] = useState(false);
-  // 🔴30: 세션 행 우클릭 컨텍스트 메뉴 상태. 업무 패널(FolderSessionHistory)과 동일한 공통
+  // 🔴30: 세션 행 우클릭 컨텍스트 메뉴 상태. 폴더 패널(FolderSessionHistory)과 동일한 공통
   // SessionContextMenu·승계 모달·이동 다이얼로그를 재사용한다(테마·포털은 base-ui Menu가
   // 이미 text-foreground를 상속하므로 🔴29 래퍼가 불필요하다).
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
@@ -168,9 +168,8 @@ export function FolderBoardWorkspace({
   const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
   const moveApi = useMemo(() => createPageApiClient(), []);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
-  const checklistEnabled = folders.find((folder) => folder.id === task.folderId)?.checklistEnabled === true;
 
-  // 새 세션 흐름은 업무 패널(FolderSessionHistory)과 동일한 컨텍스트 상속 경로·다이얼로그를
+  // 새 세션 흐름은 폴더 패널(FolderSessionHistory)과 동일한 컨텍스트 상속 경로·다이얼로그를
   // 재사용한다(useFolderSessionContext + SessionSuccessionModal, container=task).
   const sessionContext = useFolderSessionContext({
     folderPageId: task.page.id,
@@ -446,11 +445,6 @@ export function FolderBoardWorkspace({
       items.length === 0 ? current : reconcileFolderBoardResourceState(current, items)
     ));
   }, []);
-  useEffect(() => {
-    if (!checklistEnabled && resourceState.activeTabId === "checklist") {
-      setResourceState((current) => ({ ...current, activeTabId: "sessions" }));
-    }
-  }, [checklistEnabled, resourceState.activeTabId]);
   const openResource = useCallback((resource: FolderBoardResourceSelection) => {
     setResourceState((current) => openFolderWorkspaceResource(current, resource));
   }, []);
@@ -469,12 +463,11 @@ export function FolderBoardWorkspace({
         <section
           className="v3-detail-pane v3-folder-board-resources border border-glass-border glass-strong glass-chrome lg-rim"
           data-testid="v3-folder-board-resources"
-          aria-label="업무 자료"
+          aria-label="폴더 자료"
         >
           <FolderBoardResourcePane
             folderId={task.folderId}
             folderTitle={task.page.title}
-            checklistEnabled={checklistEnabled}
             sessionIds={task.sessionIds}
             sessions={sessions}
             runSessionLoadStates={runSessionLoadStates}
@@ -506,7 +499,7 @@ export function FolderBoardWorkspace({
           data-testid="v3-folder-board-resize-handle"
           role="separator"
           aria-orientation="vertical"
-          aria-label="업무 자료 패널 크기 조절"
+          aria-label="폴더 자료 패널 크기 조절"
           tabIndex={0}
           onKeyDown={handleResourceResizeKeyDown}
         >
@@ -660,8 +653,8 @@ export function FolderBoardWorkspace({
         />
       ) : null}
 
-      {/* 🔴30: 세션 행 우클릭 메뉴 — 복사·이어서 새 세션·이름 변경·다른 업무로 이동·삭제.
-          업무 패널(FolderSessionHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다. */}
+      {/* 🔴30: 세션 행 우클릭 메뉴 — 복사·이어서 새 세션·이름 변경·다른 폴더로 이동·삭제.
+          폴더 패널(FolderSessionHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다. */}
       <SessionContextMenu
         contextMenu={sessionContextMenu}
         onClose={() => setSessionContextMenu(null)}

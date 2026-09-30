@@ -42,11 +42,11 @@ for (const theme of ["dark", "light"] as const) {
     await installV3VisualQaRoutes(page);
 
     await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByText("오늘의 업무")).toBeVisible();
+    await expect(page.getByText("오늘의 폴더")).toBeVisible();
     await page.getByRole("button", { name: "아침 정리", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
 
-    await expect(page.getByText("미완 업무", { exact: true })).toBeVisible();
+    await expect(page.getByText("미완 폴더", { exact: true })).toBeVisible();
     await expect(page.getByText("검수 대기 세션", { exact: true })).toHaveCount(0);
     const title = page.locator(".v3-ritual-card h3");
     const footer = page.locator(".v3-ritual-footer");

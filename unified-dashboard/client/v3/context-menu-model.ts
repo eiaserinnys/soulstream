@@ -14,7 +14,7 @@ export interface V3SessionContextMenuExtraAction {
 }
 
 export function buildFolderContextMenuActions(
-  state: { starred: boolean; completed: boolean; inToday: boolean; checklistEnabled: boolean },
+  state: { starred: boolean; completed: boolean; inToday: boolean },
   actions: {
     open(): void | Promise<void>;
     copyId(): void | Promise<void>;
@@ -24,7 +24,6 @@ export function buildFolderContextMenuActions(
     toggleToday(): void | Promise<void>;
     rename?(): void | Promise<void>;
     archive?(): void | Promise<void>;
-    toggleChecklist?(): void | Promise<void>;
   },
 ): V3ContextMenuAction[] {
   return [
@@ -39,18 +38,17 @@ export function buildFolderContextMenuActions(
       label: "다른 폴더로 이동",
       onSelect: actions.moveToParent,
     },
-    ...(state.checklistEnabled ? [{
+    {
       label: "완료 처리",
       onSelect: actions.complete,
       disabled: state.completed,
-    }] : []),
+    },
     {
       label: state.inToday ? "오늘에서 제외" : "오늘에 추가",
       onSelect: actions.toggleToday,
     },
-    ...(actions.rename && actions.archive && actions.toggleChecklist ? [
+    ...(actions.rename && actions.archive ? [
       { label: "이름 변경", onSelect: actions.rename, separatorBefore: true },
-      { label: state.checklistEnabled ? "체크리스트 끄기" : "체크리스트 켜기", onSelect: actions.toggleChecklist },
       { label: "폴더 보관", onSelect: actions.archive, destructive: true },
     ] : []),
   ];
@@ -60,18 +58,14 @@ export function buildProjectContextMenuActions(actions: {
   open(): void | Promise<void>;
   copyId(): void | Promise<void>;
   createFolder(): void | Promise<void>;
-  createProject(): void | Promise<void>;
-  createChildProject(): void | Promise<void>;
   edit(): void | Promise<void>;
   remove(): void | Promise<void>;
 }): V3ContextMenuAction[] {
   return [
-    { label: "프로젝트 열기", onSelect: actions.open },
+    { label: "폴더 열기", onSelect: actions.open },
     { label: "폴더 ID 복사", onSelect: actions.copyId },
-    { label: "새 업무", onSelect: actions.createFolder, separatorBefore: true },
-    { label: "새 프로젝트", onSelect: actions.createProject, separatorBefore: true },
-    { label: "하위 프로젝트 만들기", onSelect: actions.createChildProject },
-    { label: "프로젝트 설정", onSelect: actions.edit },
+    { label: "새 폴더", onSelect: actions.createFolder, separatorBefore: true },
+    { label: "폴더 설정", onSelect: actions.edit },
     {
       label: "폴더 보관",
       onSelect: actions.remove,
@@ -110,7 +104,7 @@ export function buildDocumentContextMenuActions(actions: {
   }
   if (actions.unmount) {
     menu.push({
-      label: "업무에서 마운트 해제",
+      label: "폴더에서 마운트 해제",
       onSelect: actions.unmount,
       separatorBefore: true,
       destructive: true,

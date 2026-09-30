@@ -57,7 +57,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
       throw new Error(`${theme}: 날짜 헤더가 좌측 정렬되지 않았습니다: ${JSON.stringify(headings.date)}`);
     }
     if (headings.tasks.justifyContent !== "flex-start" || headings.tasks.textAlign !== "left") {
-      throw new Error(`${theme}: 오늘의 업무 헤더가 좌측 정렬되지 않았습니다: ${JSON.stringify(headings.tasks)}`);
+      throw new Error(`${theme}: 오늘의 폴더 헤더가 좌측 정렬되지 않았습니다: ${JSON.stringify(headings.tasks)}`);
     }
     if (Math.abs(headings.date.x - headings.tasks.x) > 1) {
       throw new Error(`${theme}: 두 헤더의 좌측 기준선이 다릅니다: ${headings.date.x} / ${headings.tasks.x}`);

@@ -57,7 +57,6 @@ function renameSessionIdempotencyKey(
 export interface CatalogFolderDto {
   id: string;
   name: string;
-  checklistEnabled: boolean;
   sortOrder: number;
   settings: Record<string, unknown>;
   parentFolderId: string | null;

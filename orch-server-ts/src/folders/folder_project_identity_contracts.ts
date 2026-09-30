@@ -16,7 +16,6 @@ export interface FolderProjectRecord {
   parentFolderId: string | null;
   projectPageId: string;
   archived: boolean;
-  checklistEnabled: boolean;
   status: "open" | "completed";
   version: number;
   createdSessionId: string | null;
@@ -66,7 +65,6 @@ export interface FolderProjectIdentityRepository {
     sortOrder: number;
     settings: Record<string, unknown>;
     parentFolderId: string | null;
-    checklistEnabled: boolean;
     actor: PageMutationActor;
     idempotencyKey: string;
     request: Record<string, unknown>;

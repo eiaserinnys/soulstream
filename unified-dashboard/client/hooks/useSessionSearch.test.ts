@@ -72,7 +72,7 @@ describe("buildSessionSearchUrl", () => {
       { title: "피드 검색" },
     ])).toBe(true);
     expect(hasExactNormalizedSessionTitle("피드검색", [
-      { title: "피드 검색 업무 자동선택" },
+      { title: "피드 검색 폴더 자동선택" },
     ])).toBe(false);
     expect(hasExactNormalizedSessionTitle("의역 질의", [
       { title: "다른 제목" },

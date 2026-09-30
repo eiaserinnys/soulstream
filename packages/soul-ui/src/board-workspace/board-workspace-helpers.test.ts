@@ -10,11 +10,11 @@ import {
 
 const catalog: CatalogState = {
   folders: [
-    { checklistEnabled: false, status: "open", version: 1, archived: false, id: "root-a", name: "Root A", sortOrder: 0, parentFolderId: null },
-    { checklistEnabled: false, status: "open", version: 1, archived: false, id: "root-b", name: "Root B", sortOrder: 1, parentFolderId: null },
-    { checklistEnabled: false, status: "open", version: 1, archived: false, id: "child-a", name: "Child A", sortOrder: 0, parentFolderId: "root-a" },
-    { checklistEnabled: false, status: "open", version: 1, archived: false, id: "child-b", name: "Child B", sortOrder: 1, parentFolderId: "root-a" },
-    { checklistEnabled: false, status: "open", version: 1, archived: false, id: "grandchild", name: "Grandchild", sortOrder: 0, parentFolderId: "child-a" },
+    { status: "open", version: 1, archived: false, id: "root-a", name: "Root A", sortOrder: 0, parentFolderId: null },
+    { status: "open", version: 1, archived: false, id: "root-b", name: "Root B", sortOrder: 1, parentFolderId: null },
+    { status: "open", version: 1, archived: false, id: "child-a", name: "Child A", sortOrder: 0, parentFolderId: "root-a" },
+    { status: "open", version: 1, archived: false, id: "child-b", name: "Child B", sortOrder: 1, parentFolderId: "root-a" },
+    { status: "open", version: 1, archived: false, id: "grandchild", name: "Grandchild", sortOrder: 0, parentFolderId: "child-a" },
   ],
   sessions: {
     "sess-root": { folderId: "root-a", displayName: "Root Session" },

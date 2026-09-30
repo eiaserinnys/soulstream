@@ -1,6 +1,6 @@
 # 폴더와 카드 저장 경로
 
-업무를 별도 컨테이너로 저장하지 않는다. `folders.id`가 폴더, 카드, 보드, 세션, worktree의 공통 소속이다. `cards`는 섹션을 거치지 않는 별도 객체다. 표시 토글(`checklist_enabled`)을 꺼도 저장된 카드는 유지한다. 토글 제거는 P1 마지막 단계다.
+`folders.id`가 폴더, 카드, 보드, 세션, worktree의 공통 소속이다. 카드는 섹션 없이 폴더에 직접 속한다. 폴더 상세의 카드 영역은 항상 보이며, 카드가 없을 때는 제목과 추가 동작만 표시한다.
 
 | 경로 | 소유자 | 저장과 알림 |
 | --- | --- | --- |
@@ -17,7 +17,7 @@
 
 ## 한 번의 배포 이관
 
-`packages/db-schema/sql/migrations/108_unify_folders.sql`이 기존 업무 id를 폴더 id로 보존하고 체크리스트, 감사, 세션 소속, binding, 반복 실행, worktree 참조를 옮긴다. 보드의 중복 scope 열과 checklist projection outbox는 제거한다.
+`packages/db-schema/sql/migrations/108_unify_folders.sql`이 기존 폴더 id를 보존하고 체크리스트, 감사, 세션 소속, binding, 반복 실행, worktree 참조를 옮긴다. 보드의 중복 scope 열과 checklist projection outbox는 제거한다. `110_drop_checklist_enabled.sql`은 이전 표시 토글 열을 삭제한다.
 
 당시 중앙 `deploy/release-manifest.json`은 `orch-server-ts/scripts/apply-folder-storage.mjs`를 실행했다. SQL 적용 직후 `folder_storage_documents` 하위 단계에서 `folder_storage_migration_cli`가 Y.Doc 이름과 참조를 변환하고 투영과 부모 mount를 갱신했다. 세 노드 배포와 문서 변환을 확인한 뒤 이 일회성 연결과 변환기는 제거했다.
 

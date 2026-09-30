@@ -29,5 +29,5 @@ function folder(
   projectPageId: string | null,
   parentFolderId: string | null = null,
 ): CatalogFolder {
-  return { checklistEnabled: false, status: "open" as const, version: 1, archived: false,  id, name, sortOrder: 0, parentFolderId, projectPageId };
+  return { status: "open" as const, version: 1, archived: false,  id, name, sortOrder: 0, parentFolderId, projectPageId };
 }

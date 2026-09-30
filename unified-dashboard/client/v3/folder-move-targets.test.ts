@@ -9,34 +9,34 @@ import {
 
 describe("task move targets", () => {
   it("keeps the empty-query fallback small, unique, and outside the current task", () => {
-    const current = target("current", "rb-current", "현재 업무");
-    const duplicate = target("duplicate", "rb-a", "중복 업무");
+    const current = target("current", "rb-current", "현재 폴더");
+    const duplicate = target("duplicate", "rb-a", "중복 폴더");
 
     expect(defaultFolderMoveTargets([
       current,
-      target("task-a", "rb-a", "업무 A"),
+      target("task-a", "rb-a", "폴더 A"),
       duplicate,
-      target("task-b", "rb-b", "업무 B"),
+      target("task-b", "rb-b", "폴더 B"),
     ], "rb-current").map((item) => item.folderId)).toEqual(["rb-a", "rb-b"]);
   });
 
   it("searches all catalog folders and opens only matching pages", async () => {
     const snapshots = new Map([
-      ["remote-task", pageRead("remote-task", "화면 밖 업무", [])],
+      ["remote-task", pageRead("remote-task", "화면 밖 폴더", [])],
       ["document", pageRead("document", "일반 문서", [])],
-      ["current", pageRead("current", "현재 업무", [])],
+      ["current", pageRead("current", "현재 폴더", [])],
     ]);
     const api = {
       getPage: vi.fn(async (pageId: string) => snapshots.get(pageId)!),
     } as unknown as PageApiClient;
     const folders = [
-      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "rb-remote", name: "화면 밖 업무", projectPageId: "remote-task", sortOrder: 0 },
-      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "rb-current", name: "현재 업무", projectPageId: "current", sortOrder: 1 },
-      { checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "folder-doc", name: "일반 문서", projectPageId: "document", sortOrder: 2 },
+      { status: "open" as const, version: 1, archived: false, id: "rb-remote", name: "화면 밖 폴더", projectPageId: "remote-task", sortOrder: 0 },
+      { status: "open" as const, version: 1, archived: false, id: "rb-current", name: "현재 폴더", projectPageId: "current", sortOrder: 1 },
+      { status: "open" as const, version: 1, archived: false, id: "folder-doc", name: "일반 문서", projectPageId: "document", sortOrder: 2 },
     ];
 
     await expect(searchFolderMoveTargets(api, "  화면 밖  ", "rb-current", folders))
-      .resolves.toEqual([target("remote-task", "rb-remote", "화면 밖 업무")]);
+      .resolves.toEqual([target("remote-task", "rb-remote", "화면 밖 폴더")]);
     expect(api.getPage).toHaveBeenCalledWith("remote-task");
     expect(api.getPage).toHaveBeenCalledTimes(1);
   });

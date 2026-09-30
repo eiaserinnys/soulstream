@@ -8,7 +8,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 type Theme = "dark" | "light";
 
 const LONG_CHAT_TEXT = "긴 채팅에서도 문장 리듬과 버블 안쪽 여백이 무너지지 않아야 합니다. ".repeat(8).trim();
-const LONG_TASK_TITLE = "긴 한국어 업무 제목이 상태·진행 열과 즐겨찾기 클릭 영역을 침범하지 않는지 검증합니다";
+const LONG_TASK_TITLE = "긴 한국어 폴더 제목이 상태·진행 열과 즐겨찾기 클릭 영역을 침범하지 않는지 검증합니다";
 const LONG_SESSION_TITLE = "긴 세션 제목이 고정 상태 열을 밀어내지 않는 정렬선 검증";
 
 const phase = process.env.PR_CL_QA_PHASE === "before" ? "before" : "after";
@@ -206,7 +206,7 @@ async function measureDetail(page: Page) {
     const detailScroll = required<HTMLElement>(".v3-detail-scroll");
     const detailHeader = required<HTMLElement>(".v3-workspace-toolbar");
     const chatHeader = required<HTMLElement>(".v3-chat-header");
-    const checklist = required<HTMLElement>(".v3-task-checklist");
+    const cards = required<HTMLElement>(".v3-folder-cards");
     const composer = document.querySelector<HTMLElement>('[data-slot="chat-input-composer"]');
     const bubble = document.querySelector<HTMLElement>('.v3-chat-pane [data-slot="chat-message-bubble"]');
     const row = document.querySelector<HTMLElement>('.v3-chat-pane [data-slot="chat-message-row"]');
@@ -223,8 +223,8 @@ async function measureDetail(page: Page) {
       detailBottomPadding: Number.parseFloat(detailPadding.paddingBottom),
       detailHeaderHeight: detailHeader.getBoundingClientRect().height,
       chatHeaderHeight: chatHeader.getBoundingClientRect().height,
-      checklistHeight: checklist.getBoundingClientRect().height,
-      checklistMaxHeight: getComputedStyle(checklist).maxHeight,
+      cardsHeight: cards.getBoundingClientRect().height,
+      cardsMaxHeight: getComputedStyle(cards).maxHeight,
       composerHeight: composer?.getBoundingClientRect().height ?? null,
       bubble: bubbleStyle ? {
         maxWidth: bubbleStyle.maxWidth,
@@ -247,7 +247,7 @@ function assertAfter(theme: Theme, main: Awaited<ReturnType<typeof measureMain>>
   assert(close(main.navigationWidth, 336), `${theme}: 내비 폭 ${main.navigationWidth}px`);
   assert(close(main.sessionWidth, 500), `${theme}: 세션 폭 ${main.sessionWidth}px`);
   assert(main.contentWidth <= 961, `${theme}: 중앙 콘텐츠 폭 ${main.contentWidth}px`);
-  assert(main.taskColumns.endsWith("156px 44px"), `${theme}: 업무 카드 열 ${main.taskColumns}`);
+  assert(main.taskColumns.endsWith("156px 44px"), `${theme}: 카드 열 ${main.taskColumns}`);
   assert(close(main.starSize.width, 44) && close(main.starSize.height, 44), `${theme}: 즐겨찾기 클릭 영역 ${main.starSize.width}/${main.starSize.height}px`);
   assert(main.runColumns.startsWith("28px ") && main.runColumns.endsWith(" 64px"), `${theme}: 세션 행 열 ${main.runColumns}`);
   assert(main.projectColumns.startsWith("16px 12px 18px "), `${theme}: 프로젝트 행 열 ${main.projectColumns}`);
@@ -261,7 +261,7 @@ function assertAfter(theme: Theme, main: Awaited<ReturnType<typeof measureMain>>
   assert(detail.detailColumns.startsWith("72px ") && close(detail.detailGap, 24), `${theme}: 상세 내비 열 ${detail.detailColumns}/${detail.detailGap}`);
   assert(close(detail.detailBottomPadding, 28), `${theme}: 상세 하단 ${detail.detailBottomPadding}px`);
   assert(close(detail.detailHeaderHeight, 56) && close(detail.chatHeaderHeight, 56), `${theme}: 헤더 높이 ${detail.detailHeaderHeight}/${detail.chatHeaderHeight}px`);
-  assert(detail.checklistHeight > 0, `${theme}: 체크리스트 높이가 0입니다.`);
+  assert(detail.cardsHeight > 0, `${theme}: 카드 높이가 0입니다.`);
   if (detail.composerHeight !== null) assert(detail.composerHeight >= 56, `${theme}: 입력창 높이 ${detail.composerHeight}px`);
   assert(detail.bubble !== null, `${theme}: 긴 채팅 버블을 찾지 못했습니다.`);
   assert(detail.row !== null, `${theme}: 긴 채팅 행을 찾지 못했습니다.`);
