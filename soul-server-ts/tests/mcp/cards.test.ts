@@ -72,7 +72,7 @@ describe("card MCP contract", () => {
     for (const source of ["agent", "browser"]) {
     const db = { getSession: vi.fn().mockResolvedValue({ folder_id: "folder-1", card_id: "card-1" }),
       getFolderById: vi.fn().mockResolvedValue({ id: "folder-1", name: "폴더", checklist_enabled: false }),
-      getFolderSnapshot: vi.fn().mockResolvedValue({ cards: [card] }),
+      getCard: vi.fn().mockResolvedValue({ ...detail, card: { ...card, folderId: "moved-folder" } }),
       getPrimarySessionBoardItem: vi.fn() };
     const context = await resolvePrimarySessionFolderContext(db as unknown as SessionDB, logger, "session-1", "folder-1");
     const item = buildSoulstreamContextItem({ agentSessionId: "session-1", workspaceDir: "/workspace", callerInfo: { source }, ...context } as any);
@@ -81,6 +81,7 @@ describe("card MCP contract", () => {
     expect(content.folder_guidance).toContain("카드");
     expect(content).not.toHaveProperty("source_checklist_item_id");
     expect(db.getPrimarySessionBoardItem).not.toHaveBeenCalled();
+    expect(db.getCard).toHaveBeenCalledWith("card-1", "session-1");
     }
     expect(snapshots[1]).toEqual(snapshots[0]);
     expect(snapshots[0]).toMatchInlineSnapshot(`

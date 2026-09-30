@@ -666,7 +666,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const cb = makeBuilder({
       getSession,
       getFolderById,
-      getFolderSnapshot: vi.fn().mockResolvedValue({ cards: [{ id: "rb-item-13", title: "연결 카드", status: "running" }] }),
+      getCard: vi.fn().mockResolvedValue({ card: { id: "rb-item-13", folderId: "moved-folder", title: "연결 카드", status: "running" } }),
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);

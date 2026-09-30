@@ -432,7 +432,6 @@ export class ExecutionContextBuilder {
     });
 
     const effectiveWorkspaceDir = args.workingDir ?? args.agent.workspace_dir;
-
     const soulstreamItem = buildSoulstreamContextItem({
       agentSessionId: args.task.agentSessionId,
       claudeSessionId: args.task.codexThreadId ?? null,

@@ -39,9 +39,8 @@ export async function resolvePrimarySessionFolderContext(
   let card: PrimarySessionFolderContext["card"] = null;
   if (cardId) {
     try {
-      const snapshot = await db.getFolderSnapshot(id);
-      const row = snapshot?.cards.find(candidate => candidate.id === cardId);
-      if (row) card = { id: row.id, title: row.title, status: row.status };
+      const { card: row } = await db.getCard(cardId, sessionId);
+      card = { id: row.id, title: row.title, status: row.status };
     } catch (err) {
       logger.warn({ err, sessionId, cardId }, "session card lookup failed");
     }

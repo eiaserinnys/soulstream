@@ -24,7 +24,7 @@ export const optionalReasonSchema = z.string().nullable().optional();
 export const expectedVersionSchema = z.number().int().positive();
 export const callerSessionIdSchema = z.string().optional();
 export function mutationToolDescription(description: string): string {
-  return `${description} 변경 결과는 폴더 또는 카드과 operation을 반환한다. 전체 카드 목록는 get_folder로 조회한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
+  return `${description} 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
 }
 
 export async function mutation(
