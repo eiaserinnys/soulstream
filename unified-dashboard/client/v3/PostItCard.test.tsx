@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
-import { PostItCardView, postItRotation } from "./PostItCard";
+import { PostItCardView, PostItGrid, postItRotation } from "./PostItCard";
 import { reviewCard } from "./components-review-fixtures";
 
 it("uses the complete original body and reserves the same footer for empty cards", () => {
@@ -36,4 +36,13 @@ it("keeps completion as a separate small button without nesting it in the open b
   expect(html).toContain("dashboard-icon-cap--small");
   expect(html.match(/<button/g)).toHaveLength(2);
   expect(html.indexOf("</button>")).toBeLessThan(html.indexOf('aria-label="완료"'));
+});
+
+it("offers an explicit compact presentation while the default card keeps its existing frame", () => {
+  const props={card:reviewCard,activity:{kind:"report" as const,format:"markdown" as const,body:"같은 원문으로 비교합니다"},onOpen(){}};
+  const standard=renderToStaticMarkup(createElement(PostItCardView,props));
+  const compact=renderToStaticMarkup(createElement(PostItCardView,{...props,variant:"compact"}));
+  expect(compact).toContain("v3-postit-card--compact");expect(standard).not.toContain("v3-postit-card--compact");
+  expect(compact).toContain(props.activity.body);expect(standard).toContain(props.activity.body);
+  expect(renderToStaticMarkup(createElement(PostItGrid,{variant:"compact"}))).toContain("v3-postit-grid--compact");
 });

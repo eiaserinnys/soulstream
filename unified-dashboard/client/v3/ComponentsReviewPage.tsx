@@ -18,8 +18,10 @@ import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { reviewCard, reviewDetail, reviewFolder, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
+import { CardBoardSamples } from "./CardBoardSamples";
 
 const sections = [
+  { id: "board", title: "카드 보드", icon: LayoutDashboard },
   { id: "rows", title: "목록 행", icon: Folder },
   { id: "heads", title: "머리·캡", icon: Layers },
   { id: "bubbles", title: "말풍선", icon: MessageSquare },
@@ -83,6 +85,9 @@ export function ComponentsReviewPage() {
         </nav>
         <div className="v3-task-detail-content">
           <p role="status" className="v3-components-label">{notice}</p>
+          <section id="components-board" className="v3-detail-section">
+            <CardBoardSamples onOpen={open}/>
+          </section>
           <section id="components-rows" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>목록 행</h3></div>
             <div className="v3-components-samples">

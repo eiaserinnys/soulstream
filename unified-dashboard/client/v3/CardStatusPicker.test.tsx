@@ -20,13 +20,13 @@ async function render(load=vi.fn().mockResolvedValue(detail()),change=vi.fn().mo
 it("loads only on explicit opens, gates missing reports, and does not mutate the current status",async()=>{
  const d=detail();d.reports=[];const c=await render(vi.fn().mockResolvedValue(d));
  expect(c.load).not.toHaveBeenCalled();await click("카드 상태 변경");expect(c.load).toHaveBeenCalledTimes(1);
- expect(button("검수").disabled).toBe(true);expect(document.body.textContent).toContain("보고가 필요합니다");
- await click("할 일");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
+ expect(button("검수 대기").disabled).toBe(true);expect(document.body.textContent).toContain("보고가 필요합니다");
+ await click("드래프트");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
 it("blocks every change with unanswered questions and opens detail only through the explicit action",async()=>{
  const d=detail();d.questions=[{id:"q",text:"질문",options:null,answer:null,askedAt:"",answeredAt:null}];
  const c=await render(vi.fn().mockResolvedValue(d));await click("카드 상태 변경");
- for(const label of ["할 일","대기","실행 중","검수","완료","취소"])expect(button(label).disabled).toBe(true);
+ for(const label of ["드래프트","대기","실행 중","검수 대기","완료","취소"])expect(button(label).disabled).toBe(true);
  expect(document.body.textContent).toContain("질문에 답한 뒤 변경할 수 있습니다");expect(c.onOpen).not.toHaveBeenCalled();
  await click("카드 상세 열기");expect(c.onOpen).toHaveBeenCalledTimes(1);expect(c.change).not.toHaveBeenCalled();
 });
@@ -49,6 +49,6 @@ it("keeps loading and failures unselectable, ignores closed late responses, and 
 });
 it("keeps the current state unchanged and prevents duplicate writes while pending",async()=>{
  let resolve!:()=>void;const d=detail();d.card.status="todo";const change=vi.fn().mockReturnValue(new Promise<void>(done=>{resolve=done;}));
- const c=await render(vi.fn().mockResolvedValue(d),change);await click("카드 상태 변경");await click("할 일");expect(change).not.toHaveBeenCalled();
+ const c=await render(vi.fn().mockResolvedValue(d),change);await click("카드 상태 변경");await click("드래프트");expect(change).not.toHaveBeenCalled();
  await click("완료");await click("완료");expect(change).toHaveBeenCalledTimes(1);expect(c.onOpen).not.toHaveBeenCalled();await act(async()=>{resolve();await new Promise(done=>setTimeout(done,20));});
 });
