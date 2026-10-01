@@ -1,0 +1,18 @@
+.v3-shell [data-slot="status-chip"] {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  gap: var(--v3-space-1);
+  padding: calc(var(--v3-space-1) / 2) var(--v3-space-2);
+  border-radius: var(--v3-space-8);
+  font: var(--v3-type-badge) var(--v3-font-family);
+  color: var(--v3-text-secondary);
+  background: var(--muted);
+}
+.v3-status-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.v3-status-dot { width: var(--v3-space-1); height: var(--v3-space-1); flex: none; border-radius: 50%; background: currentColor; }
+.v3-shell [data-slot="status-chip"]:is(.v3-status-chip--running, .v3-status-chip--in_progress) { color: var(--v3-live); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.v3-shell [data-slot="status-chip"]:is(.v3-status-chip--offline, .v3-status-chip--review, .v3-status-chip--question) { color: var(--v3-favorite); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.v3-shell [data-slot="status-chip"]:is(.v3-status-chip--blocked, .v3-status-chip--error, .v3-status-chip--failed, .v3-status-chip--interrupted) { color: var(--v3-error); background: color-mix(in srgb, var(--destructive) 10%, transparent); }
+.v3-shell [data-slot="status-chip"]:is(.v3-status-chip--done, .v3-status-chip--completed) { color: var(--v3-complete); background: color-mix(in srgb, var(--info) 12%, transparent); }

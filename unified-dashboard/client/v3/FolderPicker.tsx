@@ -1,3 +1,4 @@
+import "./v3-project-star.css";
 import { useId, useMemo, useState, type CSSProperties } from "react";
 import { Button, DisclosureActionIcon, Input, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { Folder } from "lucide-react";

@@ -48,7 +48,7 @@
 }
 
 .v3-inline-board-row > .dashboard-icon-cap {
-  flex: 0 0 44px;
+  flex: none;
 }
 
 .v3-inline-board-rename {
@@ -91,30 +91,6 @@
 .v3-inline-markdown {
   border-top: 1px solid var(--lg-line);
   padding: 14px;
-}
-
-.v3-inline-markdown .v3-description-editor[data-editor-variant="inline"] {
-  position: relative;
-  display: block;
-  min-height: inherit;
-  padding: 0;
-  /* Preview and editor reuse one div; do not transition the preview padding into edit mode. */
-  transition: none;
-}
-
-.v3-inline-markdown .v3-description-editor[data-editor-variant="inline"] textarea {
-  height: auto;
-  min-height: 0;
-  resize: none;
-  overflow-y: hidden;
-  padding-bottom: 52px;
-}
-
-.v3-inline-markdown .v3-description-editor[data-editor-variant="inline"] > div {
-  position: absolute;
-  right: 8px;
-  bottom: 7px;
-  margin-top: 0;
 }
 
 .v3-inline-custom-view {

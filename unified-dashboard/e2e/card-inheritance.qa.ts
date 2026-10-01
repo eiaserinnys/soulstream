@@ -3,13 +3,13 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {installV3VisualQaRoutes} from './v3-visual-fixtures';
 const phase=process.env.CARD_INHERIT_PHASE??'after';
-const output=path.resolve('e2e/test-results/card-inheritance');
+const output=path.resolve('../../../.local/artifacts/20261001-components-feedback/operational');
 const now='2026-10-01T00:00:00Z';
 for(const width of [1440,390])test(`existing components ${width} ${phase}`,async({page})=>{
  await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});
  await page.clock.install({time:new Date(now)});
  await page.addInitScript(()=>{
-  localStorage.setItem('soul-dashboard-theme','dark');localStorage.setItem('ls.webglGlass','0');
+  localStorage.setItem('soul-dashboard-theme','dark');localStorage.setItem('ls.webglGlass','0');localStorage.setItem('soul-user-preferences:qa@example.test',JSON.stringify({chatFontSize:17}));
   localStorage.setItem('cards-p1-handoff',JSON.stringify({folderId:'folder-amber',nodeId:'eiaserinnys',agentId:'roselin_codex',modelPreset:'qa-standard'}));
   Object.defineProperty(navigator.serviceWorker,'register',{configurable:true,value:async()=>({update:async()=>undefined,active:null,addEventListener:()=>undefined})});
   Object.defineProperty(navigator.serviceWorker,'controller',{configurable:true,get:()=>null});
@@ -23,6 +23,7 @@ for(const width of [1440,390])test(`existing components ${width} ${phase}`,async
  await page.route('**/api/**',async route=>{
   const req=route.request(),url=new URL(req.url()),p=url.pathname;
   const json=(v:unknown)=>route.fulfill({contentType:'application/json',body:JSON.stringify(v)});
+  if(p==='/api/user/preferences')return json({preferences:{chatFontSize:17},hasBackground:false});
   if(p==='/api/auth/config')return json({authEnabled:true,devModeEnabled:false});
   if(p==='/api/auth/status')return json({authenticated:true,user:{email:'qa@example.test',name:'QA',isAdmin:true}});
   if(p==='/api/planner/today')return json({daily:{page:{id:'daily',title:'오늘',version:1,metadata:{},archived:false},blocks:[],state_vector:''},folders:[],memoBlocks:[],reviewSessionIds:[],attention:[],running:[card],queued:[]});
@@ -92,8 +93,8 @@ for(const width of [1440,390])test(`existing components ${width} ${phase}`,async
  if(phase==='after'){
   for(const key of ['padding','gap'] as const)expect(cardRow.open![key]).toBe(folderRow.open![key]);
   for(const row of [cardRow,folderRow,smallRow]){const sum=parseFloat(row.self!.borderTop)+parseFloat(row.self!.borderBottom)+parseFloat(row.open!.paddingTop)+parseFloat(row.open!.paddingBottom)+Math.max(row.avatar!.h,row.copy!.h,row.trailing!.h);expect(Math.abs(row.self!.h-sum)).toBeLessThanOrEqual(1);}
-  expect(cardRow.cap!.h).toBe(44);expect(cardRow.cap!.w).toBe(44);expect(cardRow.trailing!.w).toBe(folderRow.trailing!.w);expect(cardRow.avatar!.h).toBe(folderRow.avatar!.h);expect(cardRow.title!.fontSize).toBe(folderRow.title!.fontSize);
-  expect(smallRow.preview).toBeNull();expect(smallRow.titleLine!.h+smallRow.agent!.h+parseFloat(smallRow.copy!.gap)).toBeCloseTo(smallRow.copy!.h,0);expect(smallRow.trailing!.w).toBe(folderRow.trailing!.w);expect(smallRow.avatar!.h).toBe(folderRow.avatar!.h);expect(smallRow.open!.padding).toBe(folderRow.open!.padding);expect(smallIndent).toEqual(folderIndent);
+  expect(cardRow.cap!.h).toBe(32);expect(cardRow.cap!.w).toBe(32);expect(cardRow.avatar!.y).toBe(cardRow.titleLine!.y);expect(cardRow.avatar!.y+cardRow.avatar!.h).toBe(cardRow.agent!.y+cardRow.agent!.h);expect(cardRow.title!.fontSize).toBe(folderRow.title!.fontSize);
+  expect(smallRow.preview).toBeNull();expect(smallRow.avatar!.y).toBeCloseTo(smallRow.titleLine!.y,0);expect(smallRow.avatar!.y+smallRow.avatar!.h).toBeCloseTo(smallRow.agent!.y+smallRow.agent!.h,0);expect(smallRow.avatar!.h).toBe(folderRow.avatar!.h);expect(smallRow.open!.padding).toBe(folderRow.open!.padding);expect(smallIndent).toEqual(folderIndent);
   for(const row of [cardRow,smallRow]){
    expect(Math.abs((row.avatar!.x-row.self!.x)-(folderRow.avatar!.x-folderRow.self!.x))).toBeLessThanOrEqual(1);
    expect(Math.abs((row.self!.x+row.self!.w-row.trailing!.x-row.trailing!.w)-(folderRow.self!.x+folderRow.self!.w-folderRow.trailing!.x-folderRow.trailing!.w))).toBeLessThanOrEqual(1);

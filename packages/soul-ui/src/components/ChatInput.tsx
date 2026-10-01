@@ -22,6 +22,7 @@ import { useChatInputSend } from "./chat/useChatInputSend";
 import { createComposeFlowRecorder } from "./chat/composeFlowRecorder";
 import { useUiEventTracker } from "../lib/ui-events";
 import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
+import { useChatTypography } from "./chat/useChatTypography";
 import { SuggestionChip } from "./SuggestionChip";
 import { Button } from "./ui/button";
 import { ChatInputComposer } from "./chat/ChatInputComposer";
@@ -205,7 +206,8 @@ export function ChatInput({
   }, [activeSessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // textarea 높이 자동 조절
-  useTextareaAutoHeight(textareaRef, text);
+  const { chatFontSize } = useChatTypography();
+  useTextareaAutoHeight(textareaRef, text, chatFontSize);
 
   const handleFileInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

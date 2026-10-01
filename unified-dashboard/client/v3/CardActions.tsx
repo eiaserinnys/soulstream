@@ -3,6 +3,7 @@ import { DashboardIconCap } from "@seosoyoung/soul-ui";
 import { Check } from "lucide-react";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { StatusChip } from "./StatusChip";
 
 export function CardActions({card}:{card:CardRow}) {
  const [pending,setPending]=useState(false);
@@ -14,5 +15,5 @@ export function cardStatusLabel(card:CardRow) {
 }
 
 export function CardStatusChip({card}:{card:CardRow}) {
- return <span className={`v3-status-chip v3-card-status--${card.status}`}>{cardStatusLabel(card)}</span>;
+ return <StatusChip label={`카드 ${card.status==="running"?"진행 중":cardStatusLabel(card)}`} tone={card.status==="blocked"&&card.blockedKind==="question"?"question":card.status} className={`v3-card-status--${card.status}`}/>;
 }

@@ -29,64 +29,37 @@ describe("FolderDescriptionPanel content-sized editor interactions", () => {
     scrollHeightSpy.mockRestore();
   });
 
-  it("fits the compact textarea to its content after every input", async () => {
-    flushSync(() => root.render(
-      <FolderDescriptionPanel
-        markdown="첫 줄"
-        onSave={vi.fn(async () => undefined)}
-        ariaLabel="오늘 메모"
-        variant="daily"
-        initialEditing
-      />,
-    ));
-
-    const textarea = container.querySelector("textarea");
-    expect(textarea).not.toBeNull();
-    expect(textarea!.style.height).toBe("82px");
-
-    Object.defineProperties(textarea!, {
-      offsetHeight: { configurable: true, value: 84 },
-      clientHeight: { configurable: true, value: 82 },
+  for (const variant of ["default", "compact", "daily", "inline"] as const) {
+    it(`${variant} uses the shared CSS height bounds and scrolls after its limit`, async () => {
+      const style = document.createElement("style");
+      style.textContent = ".v3-description-editor textarea { min-height: 32px; max-height: 120px; border: 1px solid; }";
+      document.head.append(style);
+      flushSync(() => root.render(<FolderDescriptionPanel markdown="첫 줄" onSave={vi.fn(async () => undefined)}
+        variant={variant} initialEditing />));
+      const textarea = container.querySelector("textarea")!;
+      expect(textarea.style.height).toBe("84px");
+      scrollHeight = 164;
+      setTextareaValue(textarea, "첫 줄\n둘째 줄\n셋째 줄");
+      await vi.waitFor(() => expect(textarea.style.height).toBe("120px"));
+      expect(textarea.closest('[data-slot="chat-input-composer"]')).not.toBeNull();
+      style.remove();
     });
-    scrollHeight = 164;
-    setTextareaValue(textarea!, "첫 줄\n둘째 줄\n셋째 줄");
+  }
 
-    await vi.waitFor(() => {
-      expect(textarea!.style.height).toBe("166px");
-    });
+  it("fits an empty editor when entering editing without changing the draft", () => {
+    flushSync(() => root.render(<FolderDescriptionPanel markdown="" onSave={vi.fn()} />));
+    flushSync(() => container.querySelector<HTMLButtonElement>(".v3-description-content")!.click());
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")!.style.height).not.toBe("");
   });
 
-  it("enters inline editing at the preview height and grows with new content", async () => {
-    flushSync(() => root.render(
-      <FolderDescriptionPanel
-        markdown=""
-        onSave={vi.fn(async () => undefined)}
-        ariaLabel="빈 문서"
-        variant="inline"
-      />,
-    ));
-
-    const preview = container.querySelector<HTMLElement>(".v3-description-preview");
-    expect(preview).not.toBeNull();
-    Object.defineProperty(preview!, "offsetHeight", { configurable: true, value: 92 });
-    flushSync(() => preview!.click());
-
-    const shell = container.querySelector<HTMLElement>(".v3-description-shell");
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    expect(shell?.style.minHeight).toBe("92px");
-    expect(textarea).not.toBeNull();
-    expect(textarea!.style.height).toBe("92px");
-
-    Object.defineProperties(textarea!, {
-      offsetHeight: { configurable: true, value: 94 },
-      clientHeight: { configurable: true, value: 92 },
-    });
-    scrollHeight = 164;
-    setTextareaValue(textarea!, "첫 줄\n둘째 줄\n셋째 줄");
-
-    await vi.waitFor(() => {
-      expect(textarea!.style.height).toBe("166px");
-    });
+  it("preserves the unsaved draft after a failed blur save", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("offline"));
+    flushSync(() => root.render(<FolderDescriptionPanel markdown="원래 설명" onSave={onSave} initialEditing />));
+    const textarea = container.querySelector("textarea")!;
+    setTextareaValue(textarea, "저장되지 않은 설명");
+    textarea.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith("저장되지 않은 설명"));
+    expect(container.querySelector("textarea")!.value).toBe("저장되지 않은 설명");
   });
 
   it("saves the raw markdown and returns to the rendered surface", async () => {

@@ -4,7 +4,7 @@ import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow as Card, CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 import { DashboardIconCap } from "@seosoyoung/soul-ui";
 import { ChevronRight } from "lucide-react";
-import { CardActions, cardStatusLabel } from "./CardActions";
+import { CardActions, CardStatusChip } from "./CardActions";
 import { RunRowFrame } from "./RunRowFrame";
 import { useCardNavigation } from "./card-navigation";
 import { TASK_TITLE_PREVIEW_LENGTH, singleLinePreview } from "./session-preview";
@@ -32,9 +32,9 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,revi
  return <RunRowFrame className="v3-card-row" data-card-id={card.id} data-blocked-kind={card.blockedKind} handle={handle}
   openLabel={`카드 ${card.title} 열기`} onOpen={onOpen} interactiveTrailing
   avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/>}
-  title={<strong title={card.title}><span className={`v3-card-status--${card.status}`}>{cardStatusLabel(card)}</span> {card.title}</strong>}
+  title={<strong title={card.title}>{card.title}</strong>}
   agentLine={<>{folderLabel?<span>{folderLabel}</span>:null}<span>{name}</span><span>{nodeId??"노드 미상"}</span><span>{assignee?.modelLabel??card.modelPreset??"모델 미지정"}</span></>}
-  preview={preview??""} trailing={<><time dateTime={card.updatedAt}>{cardElapsed(card.updatedAt)}</time>{card.status==="review"?reviewActions:<DashboardIconCap label="카드 열기" onClick={onOpen}><ChevronRight className="h-4 w-4"/></DashboardIconCap>}</>}
+  preview={preview??""} trailing={<><CardStatusChip card={card}/><time dateTime={card.updatedAt}>{cardElapsed(card.updatedAt)}</time>{card.status==="review"?reviewActions:<DashboardIconCap size="small" label="카드 열기" onClick={onOpen}><ChevronRight className="h-4 w-4"/></DashboardIconCap>}</>}
  />;
 }
 function cardElapsed(timestamp:string) {

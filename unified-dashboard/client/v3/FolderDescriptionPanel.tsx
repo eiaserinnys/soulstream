@@ -1,5 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, DashboardIconCap, MarkdownContent } from "@seosoyoung/soul-ui";
+import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
+import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
+import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
 import { Check, Pencil } from "lucide-react";
 
 export function FolderDescriptionPanel({
@@ -24,10 +27,10 @@ export function FolderDescriptionPanel({
   const [editing, setEditing] = useState(initialEditing);
   const [draft, setDraft] = useState(markdown);
   const [saving, setSaving] = useState(false);
-  const [editorMinHeight, setEditorMinHeight] = useState<number | null>(null);
+  const { chatFontSize, chatTypographyStyle } = useChatTypography();
   const savingRef = useRef(false);
   const editorRef = useRef<HTMLTextAreaElement>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
+  useTextareaAutoHeight(editorRef, draft, chatFontSize, editing);
 
   useEffect(() => {
     if (!editing) {
@@ -35,37 +38,7 @@ export function FolderDescriptionPanel({
     }
   }, [editing, markdown]);
 
-  useLayoutEffect(() => {
-    const element = editorRef.current;
-    if (!editing || (variant !== "daily" && variant !== "inline") || !element) return;
-    let lastWidth = element.clientWidth;
-    const fitHeight = () => {
-      element.style.height = "0px";
-      const borderHeight = element.offsetHeight - element.clientHeight;
-      element.style.height = `${Math.max(82, editorMinHeight ?? 0, element.scrollHeight + borderHeight)}px`;
-    };
-    fitHeight();
-    if (typeof ResizeObserver === "function") {
-      const observer = new ResizeObserver((entries) => {
-        const width = entries[0]?.contentRect.width ?? element.clientWidth;
-        if (width === lastWidth) return;
-        lastWidth = width;
-        fitHeight();
-      });
-      observer.observe(element);
-      return () => observer.disconnect();
-    }
-    window.addEventListener("resize", fitHeight);
-    return () => window.removeEventListener("resize", fitHeight);
-  }, [draft, editing, editorMinHeight, variant]);
-
   const changeEditing = (next: boolean) => {
-    if (next && !editing) {
-      const previewHeight = previewRef.current?.offsetHeight ?? 0;
-      setEditorMinHeight(previewHeight > 0 ? previewHeight : null);
-    } else if (!next) {
-      setEditorMinHeight(null);
-    }
     setEditing(next);
     onEditingChange?.(next);
   };
@@ -91,13 +64,15 @@ export function FolderDescriptionPanel({
 
   return (
     <div
-      className="v3-description-shell"
+      className="v3-description-shell v3-chat-surface"
       data-testid={testId}
-      style={editorMinHeight ? { minHeight: `${editorMinHeight}px` } : undefined}
+      style={chatTypographyStyle}
     >
       {editing ? (
         <div className="v3-description-editor" data-editor-variant={variant}>
-          <textarea
+          <ChatInputComposer><textarea
+            data-slot="chat-input-body"
+            rows={1}
             ref={editorRef}
             autoFocus
             value={draft}
@@ -110,7 +85,7 @@ export function FolderDescriptionPanel({
                 void finish();
               }
             }}
-          />
+          /></ChatInputComposer>
           <div>
             {variant === "daily" ? (
               <DashboardIconCap
@@ -131,7 +106,6 @@ export function FolderDescriptionPanel({
         </div>
       ) : (
         <div
-          ref={previewRef}
           className="v3-description-preview"
           data-v3-selectable-content="true"
           data-editor-variant={variant}

@@ -10,6 +10,7 @@ import { CardRow } from "./CardRow";
 import { RichSessionRow } from "./RichSessionRow";
 import { CardCommentInput } from "./CardCommentInput";
 import { CardDetailPane } from "./CardDetailPane";
+import { CardRowView } from "./CardRow";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 
 vi.mock("@seosoyoung/soul-ui", async original => ({
@@ -29,7 +30,7 @@ afterEach(async()=>{await act(()=>root.unmount());container.remove();useCardStor
 it("uses the run row's three text lines and latest report preview",async()=>{
   await act(()=>root.render(<CardRow card={card} folderLabel="오늘 폴더"/>));
   const copy=container.querySelector(".v3-run-copy")!;
-  expect(copy.children).toHaveLength(3);
+  expect(copy.querySelector(".v3-run-identity")?.children).toHaveLength(2);
   expect(copy.querySelector(".v3-run-agent-line")?.textContent).toContain("오늘 폴더");
   expect(copy.querySelector("small")?.textContent).toBe("최신 보고 제목");
   expect(container.querySelector(".v3-run-trailing time")).not.toBeNull();
@@ -42,6 +43,18 @@ it("small session rows omit only the preview while retaining the default text an
   expect(base).toContain("<small>");expect(small).not.toContain("<small>");
   expect(small).toContain("v3-run-row--small");
   for(const name of ["v3-run-open","v3-run-avatar","v3-run-title-line","v3-run-agent-line"])expect(small).toContain(name);
+});
+
+it("keeps card state in the status slot and only the title in the title line",()=>{
+ container.innerHTML=renderToStaticMarkup(<CardRowView card={card} detail={detail} onOpen={()=>{}}/>);
+ expect(container.querySelector(".v3-run-title-line")?.textContent).toBe(card.title);
+ expect(container.querySelector('.v3-run-trailing [data-slot="status-chip"]')?.textContent).toBe("카드 진행 중");
+});
+
+it("does not reserve a mode slot for the card's empty icon",async()=>{
+ await act(()=>root.render(<CardCommentInput pending={false} onSend={vi.fn().mockResolvedValue(true)}/>));
+ const textarea=container.querySelector('[data-slot="chat-input-body"]')!;
+ expect(textarea.previousElementSibling).toBeNull();
 });
 
 it("expands reports by the bubble, keeps images independently clickable, and renders no more/details button row",async()=>{

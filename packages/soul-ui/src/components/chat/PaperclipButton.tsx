@@ -4,6 +4,7 @@
  */
 
 import { Paperclip } from "lucide-react";
+import { DashboardIconCap } from "../DashboardIconCap";
 
 interface PaperclipButtonProps {
   onClick: () => void;
@@ -12,14 +13,14 @@ interface PaperclipButtonProps {
 
 export function PaperclipButton({ onClick, disabled }: PaperclipButtonProps) {
   return (
-    <button
-      type="button"
+    <DashboardIconCap
+      size="small"
+      label="Attach files"
       disabled={disabled}
       onClick={onClick}
-      className="self-end h-9 sm:h-8 px-2 flex items-center justify-center rounded border border-border text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors"
-      title="Attach files"
+      className="self-end"
     >
-      <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
-    </button>
+      <Paperclip className="h-4 w-4" aria-hidden="true" />
+    </DashboardIconCap>
   );
 }

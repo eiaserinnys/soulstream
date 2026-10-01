@@ -1,8 +1,9 @@
 .v3-project-nav-row {
   display: grid;
-  grid-template-columns: 18px 18px minmax(0, 1fr);
+  grid-template-columns: var(--v3-tree-toggle-column) var(--v3-tree-drag-column) var(--v3-tree-icon-column) minmax(0, 1fr);
+  column-gap: var(--v3-space-1);
   align-items: center;
-  padding-left: calc(var(--v3-project-depth, 0) * 14px);
+  padding-left: calc(var(--v3-project-depth, 0) * var(--v3-tree-indent-step));
   border-radius: 9px;
 }
 
@@ -53,7 +54,7 @@
 .v3-nav-list .v3-project-tree-toggle,
 .v3-nav-list .v3-project-drag-handle {
   display: grid;
-  width: 18px;
+  width: var(--v3-tree-toggle-column);
   min-height: 28px;
   place-items: center;
   gap: 0;
@@ -79,7 +80,7 @@
 }
 
 .v3-project-tree-toggle-spacer {
-  width: 18px;
+  width: var(--v3-tree-toggle-column);
 }
 
 .v3-nav-list .v3-project-nav-link {
@@ -346,4 +347,13 @@
     width: 100%;
     flex-wrap: wrap;
   }
+}
+
+/* Four operational slots, shared by navigation and the folder picker. */
+.v3-nav-list .v3-project-drag-handle { width: var(--v3-tree-drag-column); }
+.v3-project-tree-icon, .v3-project-tree-icon svg {
+  display: block;
+  width: var(--v3-tree-icon-column);
+  height: var(--v3-tree-icon-column);
+  color: var(--v3-text-tertiary);
 }

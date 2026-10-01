@@ -124,7 +124,7 @@ export function FolderSessionHistory({
     <section className="v3-detail-section v3-runs">
       <div className="v3-detail-section-head">
         <h3>세션 히스토리</h3><span>{runHistoryTotal > tree.length ? `${tree.length}/${runHistoryTotal}회` : `${tree.length}회`}</span><span className="v3-spacer" />
-        <DashboardIconCap label="새 세션" onClick={() => setSuccessionOpen(true)}>
+        <DashboardIconCap size="small" label="새 세션" onClick={() => setSuccessionOpen(true)}>
           <Plus className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>

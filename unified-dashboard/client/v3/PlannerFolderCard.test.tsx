@@ -72,7 +72,7 @@ describe("PlannerFolderCard node connectivity", () => {
     expect(html).not.toContain("담당 미지정");
     expect(html).not.toContain("컨텍스트 3");
     expect(html).not.toContain("세션 #1 완료");
-    expect(html).toContain('class="v3-status-chip v3-status-chip--in_progress"');
+    expect(html).toContain('aria-label="카드 집계 · 진행"');
     expect(html).toContain("진행");
   });
 
@@ -167,7 +167,7 @@ describe("PlannerFolderCard node connectivity", () => {
     );
 
     expect(html).toContain('class="v3-task-main"');
-    expect(html).toContain('class="v3-status-chip v3-status-chip--completed"');
+    expect(html).toContain('aria-label="폴더 완료"');
     expect(html).toContain('class="v3-task-star-slot"');
     expect(html).toContain("완료");
   });
