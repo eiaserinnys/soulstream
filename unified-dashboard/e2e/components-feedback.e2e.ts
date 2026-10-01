@@ -76,7 +76,11 @@ async function metrics(page: Page) {
 for (const width of [1440, 390]) {
   test(`feedback contracts and existing surfaces ${width}`, async ({ page }) => {
     await prepare(page, width);
-    const errors: string[] = [];
+    const errors: string[] = [], writes: string[] = [];
+    page.on("request", request => {
+      const url = new URL(request.url());
+      if (url.pathname.startsWith("/api/") && !["GET", "HEAD"].includes(request.method()) && !url.pathname.includes("ui-events")) writes.push(`${request.method()} ${url.pathname}`);
+    });
     page.on("pageerror", error => errors.push(error.message));
     await page.goto("/components");
     await expect(page.getByTestId("components-review")).toBeVisible();
@@ -156,7 +160,7 @@ for (const width of [1440, 390]) {
       await input.press("Control+Enter");
       await expect(input).toHaveCount(0);
     }
-    writeFileSync(path.join(output, `${phase}-${width}-metrics.json`), JSON.stringify({ initial, multiline, editing, variants, sampleNames, errors }, null, 2));
+    writeFileSync(path.join(output, `${phase}-${width}-metrics.json`), JSON.stringify({ initial, multiline, editing, variants, sampleNames, errors, writes }, null, 2));
 
     for (const row of initial.rows) {
       expect.soft(row.avatar!.y).toBeCloseTo(row.title!.y, 0);
@@ -193,6 +197,7 @@ for (const width of [1440, 390]) {
     expect.soft(editing.editor!.scrollTop + editing.editor!.clientHeight).toBeGreaterThanOrEqual(editing.editor!.scrollHeight - 25);
     expect.soft(editing.documentWidth).toBe(width);
     expect.soft(errors).toEqual([]);
+    expect.soft(writes).toEqual([]);
   });
 }
 

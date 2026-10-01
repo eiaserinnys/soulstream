@@ -95,12 +95,12 @@ for (const width of [1440, 390]) {
     await capture(page, `components-${width}-rows`);
     await review.locator(".v3-run-open").first().focus();
     await page.keyboard.press("Enter");
-    await expect(review.getByRole("status")).toHaveText("세션 샘플을 열었습니다.");
+    await expect(review.locator("p[role=status]")).toHaveText("세션 샘플을 열었습니다.");
     await capture(page, `components-${width}-focus`);
     await review.locator(".v3-card-row .v3-run-open").first().click();
-    await expect(review.getByRole("status")).toHaveText("카드 샘플을 열었습니다.");
+    await expect(review.locator("p[role=status]")).toHaveText("카드 샘플을 열었습니다.");
     await review.locator("[data-testid=v3-task-components-parent]").click();
-    await expect(review.getByRole("status")).toHaveText("상위 폴더 샘플을 열었습니다.");
+    await expect(review.locator("p[role=status]")).toHaveText("상위 폴더 샘플을 열었습니다.");
     await review.locator("[data-board-kind=markdown] .v3-inline-board-expand").click();
     await expect(review.getByRole("button", { name: "검수 문서 편집", exact: true }).first()).toBeVisible();
     await capture(page, `components-${width}-documents`);
@@ -160,7 +160,7 @@ for (const width of [1440, 390]) {
     await expect(review.getByTitle("샘플.txt")).toBeVisible();
     await review.getByRole("button", { name: "샘플 전송", exact: true }).click();
     await expect(input).toHaveValue("");
-    await expect(review.getByRole("status")).toHaveText("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
+    await expect(review.locator("p[role=status]")).toHaveText("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
     await expect(review.locator('[data-card-entry="커멘트"]')).toHaveCount(1);
     await review.getByRole("button", { name: "샘플 패널 열기" }).click();
     await expect(page.getByRole("dialog", { name: "패널 표면 샘플" })).toBeVisible();
