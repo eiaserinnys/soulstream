@@ -12,7 +12,7 @@ export class CardOrchestrationWorkers {
   async reconcile() {
     for (const d of await this.options.repository.pendingWorkers()) {
       if (d.state === "launching") {
-        if (await this.options.repository.workerObserved(d.session_id))
+        if (await this.options.repository.workerObserved(d.session_id,d.run_id,d.card_id))
           await this.options.repository.workerState(d.session_id, "running");
         else if (d.expired) {
           if (!d.launch_accepted)
@@ -33,12 +33,13 @@ export class CardOrchestrationWorkers {
         runId: d.run_id,
         executionToken: d.launch_token,
         cardId: d.card_id,
+        ...(d.input.deliveryId ? {deliveryId:String(d.input.deliveryId)} : {}),
       };
       try {
-        if (d.input.resume === true)
+        if (d.input.existingSession === true || d.input.resume === true)
           await this.options.sendMessage(
             d.session_id,
-            "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다.",
+            String(d.input.prompt ?? "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다."),
             admission,
           );
         else
@@ -46,7 +47,7 @@ export class CardOrchestrationWorkers {
             ...d.input,
             orchestrationAdmission: admission,
           } as unknown as CardLaunch);
-        if (await this.options.repository.workerObserved(d.session_id))
+        if (await this.options.repository.workerObserved(d.session_id,d.run_id,d.card_id))
           await this.options.repository.workerState(d.session_id, "running");
       } catch (error) {
         if ((error as { code?: string }).code === "NODE_REJECTED")

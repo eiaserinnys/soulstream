@@ -6,6 +6,8 @@ import { errorResultFromError, jsonResult } from "../result.js";
 import { requireMcpMutationActor, resolveEffectiveCallerSessionId } from "./caller_session.js";
 import { assigneePatch, assigneeSchema, callerSessionIdSchema, getFolderService } from "./folder_tool_shared.js";
 
+import { getCurrentMcpCallerSessionId } from "../request_context.js";
+
 const id = z.string().min(1);
 const scope = { card_id: id, caller_session_id: callerSessionIdSchema };
 
@@ -37,6 +39,18 @@ export function registerCardTools(server: McpServer, runtime: McpRuntime): void 
     description: "담당 세션이 대화로 받은 디렉터 지시의 요점을 카드에 남긴다",
     inputSchema: { ...scope, text: id },
   }, async input => run(() => getFolderService(runtime).addCardComment({ ...agent(input.caller_session_id), cardId: input.card_id, text: input.text })));
+  server.registerTool("start_card_work", {
+    description: "현재 담당 카드의 작업 착수를 명시합니다. todo/review는 담당 선언, queued는 유효 자동배정 승인과 해당 실행의 전달 소비가 필요합니다. 검수 재착수에는 reason을 씁니다.",
+    inputSchema: {...scope,expected_version:z.number().int().positive(),idempotency_key:id,reason:id.optional()},
+  }, async input => run(async () => {
+    const header = getCurrentMcpCallerSessionId();
+    if (header && input.caller_session_id && input.caller_session_id.trim() !== header) throw new Error("caller_session_id must match the authenticated request session header");
+    const actor = agent(header ?? input.caller_session_id);
+    const task = runtime.taskManager.getTask(actor.actorSessionId);
+    if (!task?.executionRegistration || task.orchestrationPurpose) throw new Error("Current work execution required; orchestration purpose cannot start work");
+    return getFolderService(runtime).startCardWork({...actor,cardId:input.card_id,expectedVersion:input.expected_version,
+      idempotencyKey:input.idempotency_key,reason:input.reason,execution:{...task.executionRegistration}});
+  }));
   server.registerTool("request_card_review", {
     description: "카드 검수를 요청하며 보고가 없으면 서버가 거부한다.", inputSchema: scope,
   }, async input => run(() => getFolderService(runtime).requestCardReview({ ...agent(input.caller_session_id), cardId: input.card_id })));

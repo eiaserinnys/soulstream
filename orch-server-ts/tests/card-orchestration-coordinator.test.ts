@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OrchestrationDecision, OrchestrationSettings } from "../../packages/wire-schema/src/card_orchestration.js";
 import { CardOrchestrationCoordinator, type CoordinatorOptions } from "../src/cards/card_orchestration_coordinator.js";
-import type { CardOrchestrationRepository, OrchestrationRun } from "../src/cards/card_orchestration_repository.js";
+import type { CardOrchestrationRepository, OrchestrationRun, WorkerDispatch } from "../src/cards/card_orchestration_repository.js";
 import type { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import type { CardDispatchRepository, DispatchCard } from "../src/cards/card_dispatch_repository.js";
 import { ModelPresetAvailabilityService } from "../src/model/model_preset_availability.js";
@@ -79,7 +79,8 @@ function harness(state = durableState(), options: {
       if (status === "completed") state.lastHash = run.input_hash;
       state.notes.push({ state: status, reason });
     }),
-    pendingWorkers: vi.fn(async () => []),
+    pendingWorkers: vi.fn(async ():Promise<WorkerDispatch[]> => []),
+    workerObserved: vi.fn(async () => false),
   };
   const getCard = vi.fn(async (id: string) => {
     const card = state.cards.find(value => value.id === id);
@@ -127,6 +128,22 @@ async function finishJudgement(h: ReturnType<typeof harness>) {
 }
 
 describe("card orchestration logical-input cost and durable replay", () => {
+  it("keeps accepted but unstarted cards pending across duplicate ticks and restart", async () => {
+    const state=durableState();
+    for (const h of [harness(state),harness(state)]) {
+      h.repository.pendingWorkers.mockImplementation(async()=>[{
+        card_id:state.cards[0]!.id,run_id:"pending-run",session_id:"owner",node_id:"node",
+        input:{deliveryId:"pending-delivery"},state:"launching",launch_token:"token",launch_accepted:true,expired:false,
+      }]);
+      await h.coordinator.kick();
+      await h.coordinator.kick();
+      expect(h.launchDecision).not.toHaveBeenCalled();
+      expect(h.recordDispatch).not.toHaveBeenCalled();
+      expect(h.state.cards[0]!.status).toBe("queued");
+      expect(h.repository.workerObserved).toHaveBeenCalled();
+      expect(h.warn).not.toHaveBeenCalled();
+    }
+  });
   it("calls the model once for repeated unchanged polls and sufficient quota observation refreshes", async () => {
     const h = harness();
     await finishJudgement(h);

@@ -284,6 +284,13 @@ export class ProductionFullSliceHarness {
         afterConnectionId: restartedNode.connectionId,
       };
       await this.waitForWorkerRecoveryReady();
+      // Worker readiness is not the server inventory transaction boundary.
+      // First prove startup cleaned the old ghost, then stage S7's direct-resume
+      // condition after that boundary; keep both production guards unchanged.
+      await this.waitForStartupGhostReconciliation();
+      await this.recordGhostRunningState("startup_reconciled");
+      await this.stageGhostRunning();
+      await this.recordGhostRunningState("direct_resume_staged");
       const interveneAck = await this.publicCommand(
         "intervene",
         `/api/sessions/${this.sessionId}/intervene`,
@@ -350,6 +357,9 @@ export class ProductionFullSliceHarness {
   }
 
   async cleanup(): Promise<void> {
+    if (this.isGhostRunningResume && this.sessionId) {
+      await this.recordGhostRunningState("before_cleanup");
+    }
     await this.captureCurrentRunnerIdentity();
     await this.killWorker();
     await this.upstreamGate?.close();
@@ -713,6 +723,40 @@ export class ProductionFullSliceHarness {
     }
   }
 
+  private async waitForStartupGhostReconciliation(): Promise<void> {
+    await this.poll("server startup ghost reconciliation", async () => {
+      const [row] = await this.postgres.sql<Array<{ status: string; termination_detail: string | null }>>`
+        SELECT status, termination_detail FROM sessions WHERE session_id = ${this.sessionId}
+      `;
+      return row?.status === "interrupted" && row.termination_detail === "startup_reconciliation"
+        ? true : null;
+    });
+  }
+
+  private async recordGhostRunningState(phase: string): Promise<void> {
+    const rows = await this.postgres.sql`
+      SELECT session_id, status, termination_reason, termination_detail,
+        termination_event_id, updated_at::text AS updated_at, last_event_id,
+        execution_registration_id, execution_command_id
+      FROM sessions WHERE session_id = ${this.sessionId}
+    `;
+    const receipts = await this.postgres.sql`
+      SELECT event_id, effect_application,
+        effect_application->>'applied' AS applied,
+        effect_application->'canonical_session'->>'status' AS canonical_status
+      FROM event_ingress_receipts
+      WHERE session_id = ${this.sessionId} ORDER BY event_id
+    `;
+    await writeFile(join(this.controlDirectory, `ghost-running-${phase}.json`),
+      JSON.stringify({ phase, observedAt: new Date().toISOString(), rows, receipts }, null, 2));
+    console.info("S7 ordered checkpoint", {
+      phase, status: rows[0]?.status, terminationDetail: rows[0]?.termination_detail,
+      updatedAt: rows[0]?.updated_at, lastEventId: rows[0]?.last_event_id,
+      receipts: receipts.map((receipt) => ({ eventId: receipt.event_id,
+        applied: receipt.applied, status: receipt.canonical_status })),
+    });
+  }
+
   private async stageTerminalWithoutRegistration(): Promise<void> {
     const [shape] = await this.postgres.sql<Array<{
       status: string;
@@ -900,7 +944,8 @@ if (!process.argv.includes(WORKER_ROLE)) {
     if (harnesses.length === 0) return;
 
     try {
-      if (task.result?.state === "fail") {
+      if (task.result?.state === "fail"
+        || task.file.filepath.endsWith("r25b_ghost_running_full_slice_postgres.test.ts")) {
         const fileName = safeArtifactSegment(
           basename(task.file.filepath).replace(/\.test\.[^.]+$/, ""),
         );
@@ -959,7 +1004,8 @@ function isFullSliceDiagnosticFile(fileName: string): boolean {
     || fileName === "fixture.log"
     || fileName === "runner.log"
     || fileName === "runner-lifecycle.json"
-    || (fileName.startsWith("engine-boundary-") && fileName.endsWith(".json"));
+    || (fileName.startsWith("engine-boundary-") && fileName.endsWith(".json"))
+    || (fileName.startsWith("ghost-running-") && fileName.endsWith(".json"));
 }
 
 function safeArtifactSegment(value: string): string {

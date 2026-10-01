@@ -1,3 +1,4 @@
+import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
 import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
@@ -75,6 +76,21 @@ export class CardControlPlaneService {
         completed_at:params.status === "done" ? new Date() : null },params,eventId);
     });
   }
+  async startCardWork(params: CardMutationParams & { execution: CardWorkExecution }) {
+    if (params.actorKind !== "agent" || !params.actorSessionId) throw invalidWork("Only the assignee session may start work");
+    return this.mutateCard(params,"start_card_work",{execution:params.execution},async(sql,card,eventId)=>{
+      if (card.archived) throw invalidWork("Cannot start archived work");
+      if (card.assignee_session_id !== params.actorSessionId && !(card.status === "queued" && card.assignee_kind === "agent"))
+        throw invalidWork("Only the assignee session may start work");
+      if (!["todo","review","queued"].includes(card.status)) throw invalidWork("Cannot start this state; running requires replay of the same declaration");
+      if (card.status === "review" && !params.reason?.trim()) throw invalidWork("Review work requires a reason");
+      if ((await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL LIMIT 1`).length) throw invalidWork("Open questions keep work blocked");
+      await validateWorkExecution(sql,params.actorSessionId!,params.execution);
+      if (card.status === "queued") await acceptQueuedWork(sql,card,params.actorSessionId!,params.execution);
+      await this.patch(sql,card,{status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
+        ...(card.status === "queued" ? {assignee_kind:"session",assignee_session_id:params.actorSessionId,assignee_agent_id:null} : {})},params,eventId);
+    });
+  }
   async moveCard(params: CardMutationParams & { folderId:string; afterCardId?:string | null }) {
     const result=await this.mutateCard(params,"move_card",{ folder_id:params.folderId,after_card_id:params.afterCardId ?? null },async (sql,card,eventId) => {
       await this.lockFolder(sql,params.folderId);
@@ -136,7 +152,8 @@ export class CardControlPlaneService {
     return this.mutateCard(actor,"dispatch_card",{session_id:params.sessionId,node_id:params.nodeId},async(sql,card,eventId)=>{
       if (card.status !== "queued") throw invalid("Only queued cards may dispatch");
       await this.checkAdmission(sql,params);
-      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
+      await this.patch(sql,card,{status:params.admission ? "queued" : "running",blocked_kind:null,blocked_detail:null,
+        ...(!params.admission ? {queue_position_key:null} : {})},actor,eventId);
     });
   }
   resumeDispatchedCard(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId?:string;admission?:PolicyAdmission}) {
@@ -144,7 +161,8 @@ export class CardControlPlaneService {
     return this.mutateCard(actor,"resume_card",{session_id:params.sessionId},async(sql,card,eventId)=>{
       if (card.status !== "blocked" || card.blocked_kind !== "limit") throw invalid("Only limit-blocked cards may resume");
       await this.checkAdmission(sql,{...params,nodeId:params.nodeId??card.node_id??"eiaserinnys"});
-      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
+      await this.patch(sql,card,{status:params.admission ? "queued" : "running",blocked_kind:null,blocked_detail:null,
+        ...(!params.admission ? {queue_position_key:null} : {})},actor,eventId);
     });
   }
   private async checkAdmission(sql:RepositorySql,params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {

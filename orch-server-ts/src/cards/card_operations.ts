@@ -10,6 +10,7 @@ const append=z.object({ idempotencyKey:id });
 export const cardOperationSchemas={
   create_card:z.object({ folderId:id,title:id,request:z.string(),queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
   update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
+  start_card_work:mutation.extend({execution:z.object({registrationId:id,executionCommandId:id}).strict()}),
   set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional() }),
   move_card:mutation.extend({ folderId:id,afterCardId:id.nullable().optional() }),
   reorder_card_queue:mutation.extend({ afterCardId:id.nullable().optional() }),
@@ -31,6 +32,7 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
     const common={ ...actor,cardId:id.parse(cardId) };
     switch(operation) {
       case "update_card":return service.patchCard({ ...common,...cardOperationSchemas.update_card.parse(parsed) });
+      case "start_card_work":return service.startCardWork({ ...common,...cardOperationSchemas.start_card_work.parse(parsed) });
       case "set_card_status":return service.setCardStatus({ ...common,...cardOperationSchemas.set_card_status.parse(parsed) });
       case "move_card":return service.moveCard({ ...common,...cardOperationSchemas.move_card.parse(parsed) });
       case "reorder_card_queue":return service.reorderQueue({ ...common,...cardOperationSchemas.reorder_card_queue.parse(parsed) });

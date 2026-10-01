@@ -78,6 +78,11 @@ describe("server owns card orchestration admission", () => {
     ).toHaveLength(0);
     expect(cards[0]?.model_preset).toBe("worker-model");
   });
+  it("includes session assignments without agentId and does not double-charge occupied owners", () => {
+    const cards=[{id:"session",assignee_kind:"session",assignee_agent_id:null,assignee_session_id:"owner"},{id:"missing",assignee_kind:"session",assignee_agent_id:null,assignee_session_id:null}];
+    expect(selectEligibleCards(cards as never,{n:1},{default:1},()=>({nodeId:"n",available:true,capacityClaimed:true}))).toEqual([cards[0]]);
+    expect(selectEligibleCards(cards as never,{n:1},{default:1},()=>({nodeId:"n",available:true,capacityClaimed:false}))).toEqual([]);
+  });
   it("enabled policy never enters legacy FIFO or limit resume", async () => {
     const policy = vi.fn(async () => true),
       kick = vi.fn(async () => {}),
