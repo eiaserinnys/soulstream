@@ -9,8 +9,10 @@ export function assertCardTransition(
   if (to === "review" && reportCount === 0) reject("Review requires a report");
   if (to === "blocked" && !blockedKind) reject("Blocked cards require a kind");
   if (actor === "agent" || actor === "llm") {
-    if (from !== "running" || !(to === "review" || (to === "blocked" && blockedKind === "question"))) {
-      reject("Agents may only request review or block running cards with a question");
+    const review = to === "review" && from !== "done" && from !== "cancelled";
+    const question = from === "running" && to === "blocked" && blockedKind === "question";
+    if (!review && !question) {
+      reject("Agents may only request review of nonterminal cards or block running cards with a question");
     }
   }
 }
