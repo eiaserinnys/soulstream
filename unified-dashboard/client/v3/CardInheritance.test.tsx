@@ -27,13 +27,19 @@ beforeEach(()=>{
 });
 afterEach(async()=>{await act(()=>root.unmount());container.remove();useCardStore.getState().reset();vi.restoreAllMocks();});
 
-it("uses the run row's three text lines and latest report preview",async()=>{
-  await act(()=>root.render(<CardRow card={card} folderLabel="오늘 폴더"/>));
+it("uses the run row's three text lines and list activity without fetching detail",async()=>{
+  await act(()=>root.render(<CardRow card={{...card,latestActivity:{kind:"report",format:"markdown",body:"보고 원문 첫 줄\n다음 줄",createdAt:card.createdAt}}} folderLabel="오늘 폴더"/>));
   const copy=container.querySelector(".v3-run-copy")!;
   expect(copy.querySelector(".v3-run-identity")?.children).toHaveLength(2);
   expect(copy.querySelector(".v3-run-agent-line")?.textContent).toContain("오늘 폴더");
-  expect(copy.querySelector("small")?.textContent).toBe("최신 보고 제목");
+  expect(copy.querySelector("small")?.textContent).toBe("보고 원문 첫 줄");
+  expect(useCardStore.getState().loadCard).not.toHaveBeenCalled();
   expect(container.querySelector(".v3-run-trailing time")).not.toBeNull();
+});
+
+it("respects null activity instead of showing a cached report title or automatic comment",()=>{
+ container.innerHTML=renderToStaticMarkup(<CardRowView card={{...card,latestActivity:null}} detail={detail} onOpen={()=>{}}/>);
+ expect(container.querySelector("small")?.textContent).toBe("요청 첫 줄");
 });
 
 it("small session rows omit only the preview while retaining the default text and avatar classes",()=>{

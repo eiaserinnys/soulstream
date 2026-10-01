@@ -17,7 +17,7 @@ export function CardRow({card,folderLabel,handle}:{card:Card;folders?:readonly C
  return <CardRowView card={card} folderLabel={folderLabel} handle={handle} assignee={assignee} detail={detail}
   onOpen={()=>open(card.id,"overlay")} completion={completion} />;
 }
-/** Shared row presentation; the operational wrapper owns fetching and navigation. */
+/** Shared row presentation; the operational wrapper owns navigation and completion. */
 export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,completion}: {
  card:Card;folderLabel?:string;handle?:ReactNode;assignee?:SessionSummary;detail?:CardDetail;
  onOpen():void;completion?:{pending:boolean;onComplete():void};
@@ -27,7 +27,7 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
  const name=assignee?.agentName??agentId??card.assigneeUserId??"담당 미지정";
  const latestReport=detail?.reports.reduce((latest,report)=>!latest||report.createdAt>latest.createdAt?report:latest,detail.reports[0]);
  const latestComment=detail?.comments?.reduce((latest,comment)=>!latest||comment.createdAt>latest.createdAt?comment:latest,detail.comments[0]);
- const source=card.latestActivity ? cardActivityPreview(card.latestActivity) : latestReport?.title??latestComment?.body??card.request??"";
+ const source=card.latestActivity ? cardActivityPreview(card.latestActivity) : card.latestActivity===null ? card.request??"" : latestReport?.title??latestComment?.body??card.request??"";
  const preview=singleLinePreview(source.split(/\r?\n/)[0],TASK_TITLE_PREVIEW_LENGTH);
  return <RunRowFrame variant="card" cardId={card.id} blockedKind={card.blockedKind} handle={handle}
   openLabel={`카드 ${card.title} 열기`} onOpen={onOpen}

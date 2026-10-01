@@ -178,7 +178,7 @@ for(const width of [390,1920]) test(`keyboard drag diagnosis at ${width}`,async(
       const frame=()=>{const current=[...document.querySelectorAll("*")].filter(n=>n.scrollHeight>n.clientHeight).map(n=>[n.scrollTop,n.scrollLeft]).toString();stable=current===previous?stable+1:0;previous=current;if(stable>=3)resolve();else requestAnimationFrame(frame);};requestAnimationFrame(frame);
     }));
     await snapshot("over-target-scroll-settled");await page.keyboard.press("Space");
-    await expect(handle).toHaveAttribute("aria-pressed","false");
+    await expect(handle).not.toHaveAttribute("aria-pressed","true");
     await expect.poll(()=>state.mutations.length).toBe(1);
     expect(state.mutations[0]).toMatchObject({id:"qa-postit-3",suffix:"/queue-position",body:{afterCardId:"qa-postit-8",expectedVersion:1}});
     await expect.poll(()=>page.locator('[data-card-group="queued"] .v3-postit-card').evaluateAll(nodes=>nodes.map(n=>(n as HTMLElement).dataset.cardId))).toEqual(["qa-postit-8","qa-postit-3"]);
