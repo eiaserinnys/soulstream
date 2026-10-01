@@ -61,6 +61,17 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
     writeFileSync(path.join(output, `${name}-${state}.png`), Buffer.from(data, "base64"));
   };
   await page.locator('#components-rows').evaluate(el => el.scrollIntoView({ block:"center", behavior:"instant" })); await capture('rows');
+  if (process.env.ROWS_ONLY) {
+    await page.evaluate(async () => {
+      // This fixture mounts the actual operational component; the review page
+      // remains owned by the independent PostItCard implementation session.
+      const { mountManagedFolderFixture } = await import("/e2e/fixtures/run-row-layout.tsx");
+      const host = document.createElement("div"); host.dataset.testid="managed-long-fixture";
+      document.querySelector("#components-rows .v3-components-samples")!.append(host);
+      mountManagedFolderFixture(host);
+    });
+    await expect(page.getByTestId("v3-task-components-managed-long")).toBeVisible();
+  }
   const rows = await page.locator('.v3-run-row').evaluateAll(elements => elements.map(row => {
     const rect = (selector: string) => row.querySelector(selector)?.getBoundingClientRect().toJSON();
     const open = row.querySelector('.v3-run-open')!, actions = row.querySelector('.v3-run-row-actions');
@@ -68,18 +79,52 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
       frame:row.getBoundingClientRect().toJSON(), copy:rect('.v3-run-copy'), avatar:rect('.v3-run-avatar'),
       info:rect('.v3-run-trailing'), actions:rect('.v3-run-row-actions'),
       actionParent:actions?.parentElement?.className, tracks:getComputedStyle(open).gridTemplateRows,
-      columns:getComputedStyle(open).gridTemplateColumns,
+      columns:getComputedStyle(open).gridTemplateColumns, padding:getComputedStyle(open).padding,
+      narrow:getComputedStyle(row.querySelector('.v3-run-trailing')!).gridColumnStart === '2',
+      labels:[...row.querySelectorAll('.v3-status-label')].map(el=>({text:el.textContent,width:el.clientWidth,scrollWidth:el.scrollWidth,rect:el.getBoundingClientRect().toJSON()})),
+      title: (()=>{const el=row.querySelector('.v3-run-title-line strong')!;return {text:el.textContent,width:el.clientWidth,scrollWidth:el.scrollWidth};})(),
       caps:[...row.querySelectorAll('.v3-run-row-actions button')].map(el=>el.getBoundingClientRect().toJSON()) };
   }));
   writeFileSync(path.join(output, `${name}-row-metrics.json`), JSON.stringify(rows, null, 2));
   for (const row of rows) if (row.actions && row.info) {
     expect.soft(row.actionParent).toBe('v3-run-open outline-none focus-visible:ring-2 focus-visible:ring-ring');
     expect.soft(row.actions.left).toBeGreaterThanOrEqual(row.info.right);
-    expect.soft(Math.abs(row.actions.y + row.actions.height/2 - row.info.y - row.info.height/2)).toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(row.actions.y + row.actions.height/2 - row.frame.y - row.frame.height/2)).toBeLessThanOrEqual(1);
+    if (row.narrow) {
+      expect.soft(row.info.top).toBeGreaterThanOrEqual(row.copy!.bottom);
+      expect.soft(row.info.left).toBeCloseTo(row.copy!.left,0);
+      for (const label of row.labels) expect.soft(label.scrollWidth).toBeLessThanOrEqual(label.width);
+    }
+    expect.soft(row.padding).toBe("12px 16px");
+    expect.soft(row.frame.right - row.actions.right).toBe(17);
     for (const cap of row.caps) { expect.soft(cap.width).toBe(32); expect.soft(cap.height).toBe(32); }
   }
   await page.locator('[data-component="CardRowView / RunRowFrame actions"]').evaluate(el => el.scrollIntoView({ block:"center", behavior:"instant" })); await capture('card-states');
   await page.getByTestId('v3-task-components-parent').evaluate(el => el.scrollIntoView({ block:"center", behavior:"instant" })); await capture('parent-folder');
+  if (process.env.ROWS_ONLY) {
+    const short = rows.find(row => row.id === "v3-task-components-folder-card")!;
+    const long = rows.find(row => row.id === "v3-task-components-managed-long")!;
+    expect.soft(short.title.scrollWidth).toBeLessThanOrEqual(short.title.width);
+    for (const row of [short,long]) {
+      expect.soft(row.narrow).toBe(width === 390);
+      expect.soft(row.labels.map(label=>label.text)).toEqual(["카드 집계 · 진행", "세션 #1 실행 중"]);
+      for (const label of row.labels) expect.soft(label.scrollWidth).toBeLessThanOrEqual(label.width);
+    }
+    await page.getByTestId("v3-task-components-managed-long").evaluate(el=>el.scrollIntoView({block:"center",behavior:"instant"}));
+    await capture("managed-long-row");
+    if(width===1440) {
+      await page.getByTestId("managed-long-fixture").evaluate(el=>{el.style.width="340px";});
+      const narrow = await page.getByTestId("v3-task-components-managed-long").evaluate(row=>({
+        column:getComputedStyle(row.querySelector('.v3-run-trailing')!).gridColumnStart,
+        copyWidth:row.querySelector('.v3-run-copy')!.getBoundingClientRect().width,
+        labels:[...row.querySelectorAll('.v3-status-label')].map(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth}))}));
+      expect.soft(narrow.column).toBe("2");
+      for (const label of narrow.labels) expect.soft(label.scrollWidth).toBeLessThanOrEqual(label.width);
+      writeFileSync(path.join(output, `${name}-narrow-panel-metrics.json`), JSON.stringify(narrow,null,2));
+      await capture("managed-narrow-panel");
+    }
+    return;
+  }
   await page.locator("#components-heads").evaluate(el => el.scrollIntoView({ block:"center", behavior:"instant" })); await capture("unchanged-heads");
   const headers = await page.getByTestId("components-panel-headers").locator("header").evaluateAll(elements => elements.map(el => {
     const s = getComputedStyle(el), r = el.getBoundingClientRect();

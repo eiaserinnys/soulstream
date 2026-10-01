@@ -12,6 +12,8 @@
 
 .v3-run-row {
   display: flex;
+  container-name: v3-run-row;
+  container-type: inline-size;
   min-width: 0;
   max-width: 100%;
   align-items: center;
@@ -283,3 +285,33 @@
 .v3-run-row-actions [aria-pressed="true"] { color: var(--v3-favorite); }
 
 .v3-run-row[data-row-variant="folder"][data-row-state="completed"] { opacity: .62; }
+
+/* Use the existing detail-panel container breakpoint on each row itself.
+   Text retains its own tracks; information adds one real row below the copy,
+   and the small action group spans the content at the far right. */
+@container v3-run-row (max-width: 620px) {
+  .v3-run-row[data-row-lines] .v3-run-open {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: repeat(var(--v3-run-text-lines), auto) auto;
+  }
+  .v3-run-row[data-has-actions] .v3-run-open {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .v3-run-copy { grid-row: 1 / span var(--v3-run-text-lines); }
+  .v3-run-trailing {
+    grid-column: 2;
+    grid-row: calc(var(--v3-run-text-lines) + 1);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--v3-space-1);
+  }
+  .v3-run-trailing .v3-status-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+  }
+  .v3-run-row-actions { grid-column: 3; }
+}

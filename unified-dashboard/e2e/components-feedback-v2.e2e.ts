@@ -36,7 +36,7 @@ for (const width of [1440, 390]) test(`web feedback v2 ${width}`, async ({ page 
     const time = row.querySelector("time")!.getBoundingClientRect();
     const info = row.querySelector(".v3-run-trailing")!.getBoundingClientRect();
     return { h: row.getBoundingClientRect().height, actionW: action.width, actionH: action.height,
-      right: action.right, chipRight: chip.right, timeRight: time.right, gap: action.left - info.right, center:action.y + action.height/2 - info.y - info.height/2 };
+      right: action.right, chipRight: chip.right, timeRight: time.right, gap: action.left - info.right, center:action.y + action.height/2 - row.getBoundingClientRect().y - row.getBoundingClientRect().height/2 };
   }));
   expect.soft(actionRows[0]).toEqual(actionRows[1]);
   expect.soft(actionRows[2].h).toBeLessThan(actionRows[0].h);

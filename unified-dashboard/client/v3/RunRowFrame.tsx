@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { DashboardIconCap, DisclosureActionIcon } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 import { Check, ChevronRight, MoreHorizontal, Star } from "lucide-react";
@@ -44,6 +44,7 @@ export function RunRowFrame({avatar,title,agentLine,affiliation,preview,status,t
     </DashboardIconCap>)}</span>:null}
   </>;
   return <LiquidGlassCard webglSurface cornerRadius={14}
+    style={{"--v3-run-text-lines":lines} as CSSProperties}
     className={`v3-run-row${size==="small"?" v3-run-row--small":""}${variant==="card"?" v3-card-row":variant==="folder"?" v3-task-card":""}${active?" is-active":""}${failed?" v3-run-row--failed":""}${offline?" v3-run-row--offline":""}`}
     data-has-actions={hasActions || undefined} data-has-agent={Boolean(agentLine) || undefined} data-row-variant={variant} data-row-state={status.tone} data-row-lines={lines} data-load-state={failed?"failed":"ready"}
     data-session-id={sessionId} data-card-id={cardId} data-blocked-kind={blockedKind} data-testid={testId} onContextMenu={onContextMenu}>
