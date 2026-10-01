@@ -16,7 +16,7 @@
   min-height: 42px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--v3-space-1);
   padding: 9px 12px;
   text-align: left;
 }

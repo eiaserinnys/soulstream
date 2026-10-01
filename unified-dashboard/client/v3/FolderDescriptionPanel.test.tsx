@@ -72,21 +72,21 @@ describe("FolderDescriptionPanel", () => {
     expect(html).not.toContain("마크다운 ·");
   });
 
-  it("keeps the existing text completion action for the default task description editor", () => {
+  it("uses the shared small icon completion action for the default task description editor", () => {
     const html = renderToStaticMarkup(
       <FolderDescriptionPanel markdown="폴더 설명" onSave={vi.fn()} initialEditing />,
     );
 
-    expect(html).toContain(">완료<");
-    expect(html).not.toContain('aria-label="폴더 설명 저장"');
+    expect(html).not.toContain(">완료<");
+    expect(html).toContain('aria-label="폴더 설명 저장"');
   });
 
-  it("keeps the existing text completion action for compact project guidance", () => {
+  it("uses the shared small icon completion action for compact project guidance", () => {
     const html = renderToStaticMarkup(
       <FolderDescriptionPanel markdown="프로젝트 guidance" onSave={vi.fn()} ariaLabel="프로젝트 guidance" variant="compact" initialEditing />,
     );
 
-    expect(html).toContain(">완료<");
-    expect(html).not.toContain('aria-label="프로젝트 guidance 저장"');
+    expect(html).not.toContain(">완료<");
+    expect(html).toContain('aria-label="프로젝트 guidance 저장"');
   });
 });

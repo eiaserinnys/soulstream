@@ -102,7 +102,7 @@ describe("AgentNodeAssignmentFields", () => {
       });
     };
 
-    render("node-a", "");
+    render("node-a", "agent-a");
     await waitFor(() => expect(container.textContent).toContain("에이전트 A"));
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
@@ -119,6 +119,7 @@ describe("AgentNodeAssignmentFields", () => {
       ok: true,
       json: async () => ({ agents: [{ id: "agent-b", name: "에이전트 B" }] }),
     } as Response);
+    render("node-b", "agent-b");
     await waitFor(() => expect(container.textContent).toContain("에이전트 B"));
     expect(container.textContent).not.toContain("에이전트 A");
   });

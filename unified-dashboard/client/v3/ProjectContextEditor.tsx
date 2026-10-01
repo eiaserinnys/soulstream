@@ -140,15 +140,15 @@ export function ProjectContextEditor({
 
   return (
     <section className="v3-project-context" data-testid="v3-project-context">
-      <div className="v3-project-context-row">
-        <strong>프로젝트 컨텍스트</strong>
+      <div className="v3-detail-section-head">
+        <h3>프로젝트 컨텍스트</h3><span className="v3-spacer"/>
       <div className="v3-folder-header-actions">
-        <DashboardIconCap label="guidance 추가" disabled={pending || addingGuidance} onClick={() => setAddingGuidance(true)}><FilePlus2 className="h-4 w-4"/></DashboardIconCap>
+        <DashboardIconCap size="small" label="guidance 추가" disabled={pending || addingGuidance} onClick={() => setAddingGuidance(true)}><FilePlus2 className="h-4 w-4"/></DashboardIconCap>
         <Popover
           open={editor?.kind === "atom" && editor.blockId === null}
           onOpenChange={(open) => setEditor(open ? emptyAtomEditor() : null)}
         >
-          <PopoverTrigger render={<DashboardIconCap label="atom 추가" disabled={pending}><Network className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
+          <PopoverTrigger render={<DashboardIconCap size="small" label="atom 추가" disabled={pending}><Network className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
           <ContextPopover>
             {editor?.kind === "atom" && editor.blockId === null ? (
               <AtomEditorFields editor={editor} pending={pending} setEditor={setEditor} onCancel={() => setEditor(null)} onSave={commit} />
@@ -163,7 +163,7 @@ export function ProjectContextEditor({
               setEditor(open ? emptyDefaultsEditor() : null);
             }}
           >
-            <PopoverTrigger render={<DashboardIconCap label="기본 에이전트 추가" disabled={pending}><Bot className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
+            <PopoverTrigger render={<DashboardIconCap size="small" label="기본 에이전트 추가" disabled={pending}><Bot className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
             <ContextPopover>
               {editor?.kind === "defaults" && editor.blockId === null ? (
                 <DefaultsEditorFields editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
@@ -172,6 +172,8 @@ export function ProjectContextEditor({
           </Popover>
         ) : null}
       </div>
+      </div>
+      <div className="v3-project-context-row">
         {snapshot.atomReferences.map((reference) => (
           <Popover
             key={reference.blockId}

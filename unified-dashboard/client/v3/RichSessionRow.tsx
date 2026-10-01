@@ -1,12 +1,11 @@
-import type { MouseEvent, ReactNode } from "react";
+import type { MouseEvent } from "react";
 import {
   getSessionActivityTimestamp,
   ProfileAvatar,
   STATUS_CONFIG,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { RunRowFrame } from "./RunRowFrame";
-import { StatusChip } from "./StatusChip";
+import { RunRowFrame, type RunRowAction } from "./RunRowFrame";
 
 import { singleLinePreview } from "./session-preview";
 import { sessionPanelTitle } from "./v3-session-panel-model";
@@ -33,7 +32,7 @@ export function RichSessionRow({
   active?: boolean;
   affiliation?: string | null;
   preview?: string;
-  actions?: ReactNode;
+  actions?: readonly RunRowAction[];
   onOpen(session: SessionSummary): void;
   onContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
@@ -55,9 +54,8 @@ export function RichSessionRow({
 
   return <RunRowFrame
     size={size}
-    className={`${active ? "is-active" : ""}${failed ? " v3-run-row--failed" : ""}${nodeOffline ? " v3-run-row--offline" : ""}`.trim()}
-    data-load-state={failed ? "failed" : "ready"}
-    data-session-id={failed ? undefined : session.agentSessionId}
+    active={active} failed={failed} offline={nodeOffline}
+    sessionId={failed ? undefined : session.agentSessionId}
     onContextMenu={failed || !onContextMenu ? undefined : event=>onContextMenu(session,event)}
     disabled={failed} onOpen={()=>onOpen(session)}
     avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portraitUrl)} portraitUrl={portraitUrl} fallbackEmoji="🤖"/>}
@@ -65,7 +63,8 @@ export function RichSessionRow({
     agentLine={<><span>{failed ? "세션 상세 없음":session.agentName??session.agentId??"에이전트 미상"}</span>{size==="small"&&!failed?<span>{session.nodeId??"노드 미상"}</span>:null}{modelLabel?<span title={modelLabel}>{modelLabel}</span>:null}{size!=="small"&&!failed?<span>{session.nodeId??"노드 미상"}</span>:null}</>}
     affiliation={affiliation?<span className="v3-run-affiliation" title={affiliation}>{affiliation}</span>:null}
     preview={visiblePreview}
-    trailing={<><StatusChip label={`세션 ${status}`} tone={presentationStatus}/><time>{failed?"":formatRelativeSessionTime(session)}</time></>}
+    status={{label:`세션 ${status}`,tone:presentationStatus}}
+    timestamp={failed?undefined:{display:formatRelativeSessionTime(session),raw:getSessionActivityTimestamp(session)??undefined}}
     actions={actions}
   />;
 }

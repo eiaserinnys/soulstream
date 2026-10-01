@@ -8,6 +8,12 @@ export interface FolderTreeOption {
   depth: number;
 }
 
+/** Reuse the sorting parser without changing the stored folder name. */
+export function getFolderNamePresentation(name: string): { icon: string | null; text: string } {
+  const prefix = name.match(LEADING_EMOJI_CLUSTER_PATTERN)?.[0];
+  return prefix ? { icon: prefix.trimEnd(), text: name.slice(prefix.length) } : { icon: null, text: name };
+}
+
 export function getFolderNameSortKey(name: string): string {
   const stripped = name.replace(LEADING_EMOJI_CLUSTER_PATTERN, "");
   return stripped.length > 0 ? stripped : name;

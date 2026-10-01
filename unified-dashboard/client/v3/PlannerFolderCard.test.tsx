@@ -166,9 +166,9 @@ describe("PlannerFolderCard node connectivity", () => {
       />,
     );
 
-    expect(html).toContain('class="v3-task-main"');
+    expect(html).toContain('class="v3-run-copy"');
     expect(html).toContain('aria-label="폴더 완료"');
-    expect(html).toContain('class="v3-task-star-slot"');
+    expect(html).toContain('class="v3-run-row-actions"');
     expect(html).toContain("완료");
   });
 });

@@ -102,6 +102,14 @@ export function ComponentsReviewPage() {
                 <div className="v3-run-list">{[reviewCard.title, reviewTitle].map((label, index) => <CardRowView key={label}
                   card={{ ...reviewCard, id: `components-card-${index}`, title: label }} assignee={reviewSession} detail={reviewDetail} onOpen={() => open("카드")}/>)}</div>
               </Sample>
+              <Sample name="CardRowView / RunRowFrame actions" state="같은 내용 · 막힘 / 검수 · 미리보기 유무 · small 캡">
+                {(["blocked", "review"] as const).map(status => <CardRowView key={status}
+                  card={{...reviewCard, status, title: "상태별 같은 카드", request: "같은 미리보기", id: `compare-${status}`}}
+                  assignee={reviewSession} onOpen={() => open("카드 비교")}
+                  completion={{pending:false,onComplete:()=>open("완료 비교")}}/>)}
+                <CardRowView card={{...reviewCard, title: "상태별 같은 카드", request: "", id: "compare-no-preview"}}
+                  assignee={reviewSession} onOpen={() => open("카드 비교")}/>
+              </Sample>
               <Sample name="PlannerFolderCardView" state="하위 폴더 · 관리 캡">
                 <div className="v3-task-list"><PlannerFolderCardView {...folderProps} task={reviewFolder("폴더 카드 기본", "components-folder-card")}
                   onOpen={() => open("폴더")} onRename={() => open("폴더 관리")} onArchive={() => open("폴더 보관")}/></div>
@@ -120,11 +128,14 @@ export function ComponentsReviewPage() {
             </div>
           </section>
           <section id="components-heads" className="v3-detail-section">
-            <p className="v3-components-label">섹션 머리 · 실제 다음 항목 · small 캡</p>
+            <div className="v3-components-samples">
+            <Sample name="섹션 머리" state="실제 다음 항목 · small 캡">
+            <div>
             <div className="v3-detail-section-head"><h3>섹션 머리와 캡</h3><span className="v3-spacer"/>
               <DashboardIconCap size="small" label="샘플 항목 추가" onClick={() => open("항목 추가")}><Plus className="h-4 w-4"/></DashboardIconCap>
             </div>
             <div className="v3-run-list"><RichSessionRow size="small" session={reviewSession} onOpen={() => open("섹션 항목")}/></div>
+            </div></Sample>
             <Sample name="FolderTodayToggle / DashboardIconCap" state="기본 · 선택 · 포커스">
               <div className="v3-folder-header-actions">
                 <FolderTodayToggle inToday={inToday} onToggle={async () => setInToday(value => !value)}/>
@@ -134,6 +145,7 @@ export function ComponentsReviewPage() {
                 <DashboardIconCap label="비활성 샘플" disabled><Plus className="h-4 w-4"/></DashboardIconCap>
               </div>
             </Sample>
+            </div>
           </section>
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
@@ -168,6 +180,7 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-controls" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>선택과 설정</h3></div>
+            <div className="v3-components-samples">
             <Sample name="ProjectNavigationTree / FolderPicker" state="같은 폴더 이름 영역 · 로컬 선택">
               <div className="v3-nav-list"><ProjectNavigationTree folders={reviewFolders} selectedFolderId={folder.id}
                 isExpanded={id => expandedFolders.has(id)} onToggleExpanded={id => setExpandedFolders(current => {
@@ -175,11 +188,13 @@ export function ComponentsReviewPage() {
                 })} onSelect={setFolder} onContextMenu={() => open("폴더 메뉴")} onReorder={async () => open("폴더 순서")}/></div>
             </Sample>
             <ComponentsReviewControls/>
+            </div>
           </section>
           <section id="components-surfaces" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>패널 표면</h3><span className="v3-spacer"/>
               <DashboardIconCap size="small" label="샘플 패널 열기" onClick={() => setPanelOpen(true)}><Layers className="h-4 w-4"/></DashboardIconCap>
             </div>
+            <div className="v3-components-samples">
             <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">
               <FolderDescriptionPanel markdown={description} onSave={async body => { setDescription(body); open("설명 저장"); }}/>
               <Dialog open={panelOpen} onOpenChange={setPanelOpen}><DialogPopup>
@@ -191,6 +206,7 @@ export function ComponentsReviewPage() {
               <FolderDescriptionPanel variant={variant} markdown={description} ariaLabel={`${variant} 설명`}
                 onSave={async body => setDescription(body)}/>
             </Sample>)}
+            </div>
           </section>
         </div>
       </div>

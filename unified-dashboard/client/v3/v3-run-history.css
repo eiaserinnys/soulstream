@@ -15,7 +15,7 @@
   min-width: 0;
   max-width: 100%;
   align-items: center;
-  gap: 6px;
+  gap: 0;
   border: 1px solid var(--glass-border);
   border-radius: 14px;
 }
@@ -23,7 +23,8 @@
 .v3-run-row:hover { border-color: var(--glass-border); }
 
 .v3-run-row.is-active {
-  border-color: color-mix(in srgb, var(--primary) 34%, var(--glass-border));
+  border-color: var(--v3-stroke-selected);
+  background: color-mix(in srgb, var(--accent) 56%, transparent);
   box-shadow:
     inset 3px 0 0 color-mix(in srgb, var(--primary) 76%, transparent),
     var(--lg-shadow);
@@ -34,13 +35,13 @@
   min-width: 0;
   flex: 1;
   grid-template-columns: auto minmax(0, 1fr) fit-content(40%);
-  grid-template-rows: auto auto auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  column-gap: var(--v3-space-2);
+  column-gap: var(--v3-space-4);
   row-gap: calc(var(--v3-space-1) / 2);
   border: 0;
   border-radius: inherit;
-  padding: 10px;
+  padding: var(--v3-space-3) var(--v3-space-4);
   color: var(--foreground);
   background: transparent;
   text-align: left;
@@ -53,7 +54,7 @@
   display: flex;
   flex: none;
   align-items: center;
-  padding-right: 10px;
+  gap: var(--v3-space-1);
 }
 
 /* Both portrait and identity span only the title and agent rows. */
@@ -78,8 +79,8 @@
   align-items: center;
 }
 .v3-run-identity { display: grid; grid-row: 1 / 3; grid-template-rows: subgrid; min-width: 0; align-items: center; }
-.v3-run-row--small .v3-run-open { grid-template-rows: auto auto; }
-.v3-run-open:has(.v3-run-affiliation) { grid-template-rows: auto auto auto auto; }
+.v3-run-row[data-row-lines="3"] .v3-run-open { grid-template-rows: auto auto auto; }
+.v3-run-row[data-row-lines="4"] .v3-run-open { grid-template-rows: auto auto auto auto; }
 
 .v3-run-title-line,
 .v3-run-agent-line {
@@ -165,7 +166,8 @@
 }
 .v3-run-trailing > :first-child { grid-row: 1; }
 .v3-run-trailing time { grid-row: 2; }
-.v3-run-trailing > :is(button, .v3-card-actions) { grid-row: 3; }
+.v3-run-trailing > .v3-run-secondary-status { grid-row: 2; }
+.v3-run-trailing > .v3-run-row-actions { grid-row: -2 / -1; }
 
 .v3-run-trailing time {
   color: var(--muted-foreground);
@@ -264,8 +266,17 @@
 /* Two text lines retain every default dimension; only the height floor is released. */
 .v3-run-row--small { min-height: 0; }
 
-/* A single natural-height padding contract for the operational row family. */
-.v3-shell :is(.v3-run-open, .v3-task-card, .v3-inline-board-row) {
-  padding: var(--v3-space-3);
-}
-.v3-shell .v3-task-card { min-height: 0; align-items: center; }
+/* All operational rows use the inset and tracks above, independent of callers. */
+.v3-run-copy > small { align-self: end; margin: 0; font: var(--v3-type-body) var(--v3-font-family); }
+.v3-run-agent-line, .v3-run-affiliation, .v3-run-trailing time { color: var(--v3-text-tertiary); font: var(--v3-type-meta) var(--v3-font-family); }
+.v3-run-agent-line { align-self: stretch; }
+.v3-run-title-line strong { font: var(--v3-type-side-title) var(--v3-font-family); }
+.v3-run-trailing > * { max-width: 100%; min-width: 0; }
+.v3-run-trailing [data-slot="status-chip"] { width: fit-content; justify-self: end; }
+.v3-run-trailing time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.v3-run-row[data-row-variant="folder"] { --glass-chrome-surface-strong: var(--v3-glass-card); }
+.v3-run-row[data-row-variant="folder"] .v3-run-avatar { display: flex; align-items: center; justify-content: center; grid-row: 1; align-self: center; width: var(--v3-space-6); height: var(--v3-space-6); background: transparent; }
+.v3-run-row[data-row-variant="folder"] .v3-run-avatar > svg { position: static; width: var(--v3-space-6); height: var(--v3-space-6); }
+.v3-run-row-actions [aria-pressed="true"] { color: var(--v3-favorite); }
+
+.v3-run-row[data-row-variant="folder"][data-row-state="completed"] { opacity: .62; }

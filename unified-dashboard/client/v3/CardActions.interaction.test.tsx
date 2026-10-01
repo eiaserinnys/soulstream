@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import { CardActions, CardStatusChip } from "./CardActions";
+import { CardStatusChip } from "./CardActions";
 import { CardRow as CardRowView } from "./CardRow";
 import { useCardNavigation } from "./card-navigation";
 
@@ -24,22 +24,33 @@ describe("display-only card status and completion action",()=>{
   expect(container.querySelector('button,[role="menu"],[aria-haspopup]')).toBeNull();
   await click(word as HTMLElement);expect(mutate).not.toHaveBeenCalled();expect(loadCard).not.toHaveBeenCalled();
  });
- it.each(["todo","queued","blocked","running","done","cancelled"] as const)("has no action outside review (%s)",async status=>{
+ it.each(["todo","queued","blocked","running","done","cancelled"] as const)("has no completion action outside review (%s)",async status=>{
   const c:CardRow={...card(status),blockedKind:status==="blocked"?"question":null};
   await act(()=>root.render(<CardRowView card={c}/>));
-  expect(container.querySelector('.v3-card-actions button')).toBeNull();
+  expect(container.querySelector('button[aria-label="완료"]')).toBeNull();
   expect(container.querySelector('[aria-label="답하기"]')).toBeNull();
  });
  it("completes a review card with its current version",async()=>{
-  await act(()=>root.render(<CardActions card={card("review")}/>));
+  await act(()=>root.render(<CardRowView card={card("review")}/>));
   const action=container.querySelector<HTMLButtonElement>('button[aria-label="완료"]')!;
   expect(container.querySelectorAll('button')).toHaveLength(1);await click(action);
   expect(mutate).toHaveBeenCalledWith("c","/status",{status:"done",expectedVersion:7});
  });
+ it("keeps the common small action disabled while pending and allows retry after failure",async()=>{
+  let reject!: (error:Error)=>void;
+  mutate.mockReturnValueOnce(new Promise((_,failure)=>{reject=failure;}));
+  await act(()=>root.render(<CardRowView card={card("review")}/>));
+  const action=container.querySelector<HTMLButtonElement>('button[aria-label="완료"]')!;
+  expect(action.classList.contains("dashboard-icon-cap--small")).toBe(true);
+  await click(action); expect(action.disabled).toBe(true);
+  await act(async()=>{reject(new Error("저장 실패"));await Promise.resolve();});
+  expect(action.disabled).toBe(false);
+  await click(action); expect(mutate).toHaveBeenCalledTimes(2);
+ });
  it.each([false,true])("opens the whole row, including its display-only status word (folder metadata=%s)",async folderLabel=>{
   const open=vi.fn();useCardNavigation.setState({open});
   await act(()=>root.render(<CardRowView card={card("running")} folderLabel={folderLabel?"폴더":undefined}/>));
-  await click(container.querySelector('.v3-card-status--running')! as HTMLElement);expect(open).toHaveBeenCalledWith("c","overlay");expect(mutate).not.toHaveBeenCalled();
+  await click(container.querySelector('[data-slot="status-chip"]')! as HTMLElement);expect(open).toHaveBeenCalledWith("c","overlay");expect(mutate).not.toHaveBeenCalled();
   await click(container.querySelector('[aria-label="카드 카드 제목 열기"]')!);expect(open).toHaveBeenCalledWith("c","overlay");
  });
 });

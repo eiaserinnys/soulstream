@@ -320,15 +320,7 @@ function FolderBoardSessionNode({
         preview={loading ? "세션 정보를 불러오는 중…" : undefined}
         onOpen={onOpenSession}
         onContextMenu={onSessionContextMenu}
-        actions={node.children.length > 0 ? (
-          <DashboardIconCap
-            label={`${node.children.length}개 위임 세션 ${expanded ? "접기" : "펼치기"}`}
-            aria-expanded={expanded}
-            onClick={() => setExpanded((current) => !current)}
-          >
-            <DisclosureActionIcon expanded={expanded} className="h-4 w-4" />
-          </DashboardIconCap>
-        ) : null}
+        actions={node.children.length > 0 ? [{kind:"disclosure",label:`${node.children.length}개 위임 세션 ${expanded ? "접기" : "펼치기"}`,expanded,onAction:()=>setExpanded(current=>!current)}] : undefined}
       />
       {expanded ? (
         <div className="v3-folder-board-session-children">
