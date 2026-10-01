@@ -1,0 +1,5 @@
+{
+  "name": "soul-app-component-review",
+  "private": true,
+  "main": "../component-review-entry.tsx"
+}

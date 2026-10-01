@@ -139,7 +139,7 @@ describe('v3 design policy contract', () => {
 
     for (const file of [
       'components/planner/PlannerFolderRow.tsx',
-      'components/SessionCard.tsx',
+      'components/SessionCardView.tsx',
       'screens/ProjectListScreen.tsx',
       'components/planner/FolderSessionHistory.tsx',
       'components/split/SidebarPane.tsx',
@@ -147,8 +147,8 @@ describe('v3 design policy contract', () => {
       expect(read(file)).not.toContain('t.cardHeight.');
     }
     expect(read('components/planner/PlannerFolderRow.tsx')).not.toContain('chipsSlot');
-    expect(read('components/SessionCard.tsx')).not.toContain('subtitleSlot');
-    expect(read('components/SessionCard.tsx')).not.toContain('callerSlot');
+    expect(read('components/SessionCardView.tsx')).not.toContain('subtitleSlot');
+    expect(read('components/SessionCardView.tsx')).not.toContain('callerSlot');
 
     const pressable = read('components/AppGlassCard.tsx');
     expect(pressable).toMatch(
@@ -163,7 +163,7 @@ describe('v3 design policy contract', () => {
       'components/planner/FolderBoardContent.tsx',
       'components/planner/TabletMarkdownEditor.tsx',
       'components/planner/DailyMemo.tsx',
-      'components/planner/ProjectContextEditor.tsx',
+      'components/planner/ProjectContextEditorView.tsx',
       'components/planner/FolderWorkspace.styles.ts',
     ]) {
       expect(read(file)).toContain('t.cardLayout.padding');
@@ -183,7 +183,7 @@ describe('v3 design policy contract', () => {
     const groupedSheet = read('components/planner/GroupedGlassSheet.tsx');
     expect(groupedSheet).toContain('grouped.dividerColor');
     expect(read('components/planner/FolderBoardContent.tsx')).toContain('<GroupedGlassSheet');
-    expect(read('components/SessionCard.tsx')).toContain('makeSessionCardStyles(t, embedded, small)');
+    expect(read('components/SessionCardView.tsx')).toContain('makeSessionCardStyles(t, embedded, small)');
     expect(read('components/sessionCardFrame.ts')).toContain('t.cardLayout.gap / 2');
     expect(read('components/planner/FolderSessionHistory.tsx')).toContain('<SessionCard');
   });
@@ -234,7 +234,7 @@ describe('v3 design policy contract', () => {
     ]) {
       expect(read(file)).toContain('...planner.typography.section');
     }
-    expect(read('components/planner/ProjectContextEditor.tsx')).toContain('<PlannerSectionHeader');
+    expect(read('components/planner/ProjectContextEditorView.tsx')).toContain('<PlannerSectionHeader');
     expect(read('components/planner/FolderWorkspace.tsx')).toContain('<PlannerSectionHeader');
     expect(read('components/planner/FolderWorkspace.styles.ts')).toContain('...planner.typography.navigation');
     expect(read('components/chat/ClaudeRuntimeSignalsStrip.tsx')).toMatch(

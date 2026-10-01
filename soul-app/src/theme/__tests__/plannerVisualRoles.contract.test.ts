@@ -62,7 +62,7 @@ describe('N3 planner visual roles', () => {
       ['components/planner/PlannerFolderRow.tsx', ['PlannerFolderRow']],
       ['components/planner/GroupedGlassSheet.tsx', ['GroupedGlassSheet', 'GroupedGlassRow']],
       ['components/planner/ProjectTreeSheet.tsx', ['ProjectTreeSheet']],
-      ['components/planner/ProjectContextEditor.tsx', ['ProjectContextEditor']],
+      ['components/planner/ProjectContextEditorView.tsx', ['ProjectContextEditorView']],
       ['components/planner/StarredFolderList.tsx', ['StarredFolderList']],
       ['components/planner/TabletMarkdownEditor.tsx', ['TabletMarkdownEditor']],
       ['components/planner/FolderBoardContent.tsx', ['FolderBoardContent', 'FolderBoardItemCard', 'InlineMarkdown', 'InlineCustomView']],

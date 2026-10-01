@@ -3,6 +3,7 @@ import {
   AccessibilityInfo,
   Animated,
   AppState,
+  Platform,
   type AppStateStatus,
 } from 'react-native';
 import {
@@ -98,7 +99,7 @@ export function useSessionCardAnimation({
       Animated.timing(shimmer, {
         toValue: 1,
         duration: 2800,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
     );
     loop.start();

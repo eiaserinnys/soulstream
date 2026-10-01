@@ -14,7 +14,7 @@ describe('N3 production planner surface rhythm', () => {
       'components/planner/PlannerMarkdownText.tsx',
       'components/planner/PlannerFolderRow.tsx',
       'components/planner/GroupedGlassSheet.tsx',
-      'components/planner/ProjectContextEditor.tsx',
+      'components/planner/ProjectContextEditorView.tsx',
       'components/planner/StarredFolderList.tsx',
       'components/planner/TabletMarkdownEditor.tsx',
       'components/planner/FolderBoardContent.tsx',
