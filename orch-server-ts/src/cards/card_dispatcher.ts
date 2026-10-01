@@ -131,7 +131,7 @@ export class CardDispatcher {
         if (op.operation_type === "answer_card_question" && card.status === "running") {
             const q = answeredQuestion;
             const session = q && typeof q.session_id === "string" ? await this.options.repository.ownerSession(q.session_id) : null;
-            if (session && !isTerminalSessionStatus(session.status)) {
+            if (session?.status && !isTerminalSessionStatus(session.status)) {
                 const answer=`질문에 답이 왔다: ${String(q!.text)} → ${String(q!.answer)}. 이어서 진행한다.`;
                 await this.options.sendMessage(String(q!.session_id),mergeAnswer ? `${notification!.text}\n${answer}` : answer,
                   undefined,mergeAnswer ? notification! : undefined);
