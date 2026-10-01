@@ -1,16 +1,23 @@
-/* Approved concept tokens. Layout tracks sum to 238 + 40 padding + 2 border = 280. */
+/* Original 320×280 concept scales by chat font / 17, without viewport scaling. */
 .v3-postit-grid, .v3-postit-card {
-  --postit-width: 320px;
-  --postit-height: 280px;
-  --postit-title-height: 50px;
-  --postit-label-height: 20px;
-  --postit-body-height: 100px;
-  --postit-footer-height: 32px;
-  --postit-radius: 3px;
-  --postit-body-font: 450 17px/25px;
-  --postit-title-font: 650 18px/25px;
-  --postit-meta-font: 500 13px/20px;
-  --postit-assignee-font: 500 14px/20px;
+  --postit-width: calc(320px * var(--postit-scale));
+  --postit-height: calc(280px * var(--postit-scale));
+  --postit-title-height: calc(50px * var(--postit-scale));
+  --postit-label-height: max(20px, calc(20px * var(--postit-scale)));
+  --postit-body-height: calc(100px * var(--postit-scale));
+  --postit-footer-height: max(var(--v3-space-8), calc(32px * var(--postit-scale)));
+  --postit-radius: calc(3px * var(--postit-scale));
+  --postit-padding: calc(var(--v3-space-5) * var(--postit-scale));
+  --postit-gap-2: calc(var(--v3-space-2) * var(--postit-scale));
+  --postit-gap-3: calc(var(--v3-space-3) * var(--postit-scale));
+  --postit-body-font: 450 var(--postit-font-size)/calc(25px * var(--postit-scale));
+  --postit-title-font: 650 calc(18px * var(--postit-scale))/calc(25px * var(--postit-scale));
+  --postit-label-font: 500 max(13px, calc(13px * var(--postit-scale)))/var(--postit-label-height);
+  --postit-meta-font: 500 calc(13px * var(--postit-scale))/calc(20px * var(--postit-scale));
+  --postit-assignee-font: 500 calc(14px * var(--postit-scale))/calc(20px * var(--postit-scale));
+  /* Label and 32px hit area minima borrow only from existing blank tracks. */
+  --postit-title-gap: calc(var(--postit-gap-3) - (var(--postit-label-height) - 20px * var(--postit-scale)));
+  --postit-footer-gap: calc(var(--v3-space-4) * var(--postit-scale) - (var(--postit-footer-height) - 32px * var(--postit-scale)));
   --postit-ink: #2e3d39;
   --postit-muted: #59635a;
   --postit-paper: #fff7c6;
@@ -18,7 +25,7 @@
 .v3-postit-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, var(--postit-width));
-  gap: var(--v3-space-6);
+  gap: calc(var(--v3-space-6) * var(--postit-scale));
   justify-content: start;
   min-width: var(--postit-width);
   /* Reserve rotation overhang without moving the cards' shared left edge. */
@@ -30,25 +37,25 @@
   width: var(--postit-width);
   height: var(--postit-height);
   flex: none;
-  border: 1px solid #8c97701c;
+  border: calc(1px * var(--postit-scale)) solid #8c97701c;
   border-radius: var(--postit-radius);
   background: var(--postit-paper);
   color: var(--postit-ink);
-  box-shadow: 0 3px 10px #24483f1c, 0 1px 2px #24483f1a;
+  box-shadow: 0 calc(3px * var(--postit-scale)) calc(10px * var(--postit-scale)) #24483f1c, 0 calc(1px * var(--postit-scale)) calc(2px * var(--postit-scale)) #24483f1a;
   transform: rotate(var(--postit-rotation));
 }
-.v3-postit-card:hover { box-shadow: 0 5px 14px #24483f29; }
+.v3-postit-card:hover { box-shadow: 0 calc(5px * var(--postit-scale)) calc(14px * var(--postit-scale)) #24483f29; }
 .v3-postit-open {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-rows: var(--postit-title-height) var(--v3-space-3) var(--postit-label-height) var(--v3-space-2) var(--postit-body-height) var(--v3-space-4) var(--postit-footer-height);
+  grid-template-rows: var(--postit-title-height) var(--postit-title-gap) var(--postit-label-height) var(--postit-gap-2) var(--postit-body-height) var(--postit-footer-gap) var(--postit-footer-height);
   width: 100%;
   height: 100%;
   box-sizing: border-box;
   border: 0;
   border-radius: inherit;
-  padding: var(--v3-space-5);
+  padding: var(--postit-padding);
   background: transparent;
   text-align: left;
   color: inherit;
@@ -64,19 +71,25 @@
   align-self: start;
 }
 .v3-postit-title { grid-row: 1; -webkit-line-clamp: 2; font: var(--postit-title-font) var(--v3-font-family); }
-.v3-postit-card--actions .v3-postit-title { padding-right: calc(var(--postit-footer-height) + var(--v3-space-2)); }
-.v3-postit-latest-label { grid-row: 3; font: var(--postit-meta-font) var(--v3-font-family); color: var(--postit-muted); }
+.v3-postit-card--actions .v3-postit-title { padding-right: calc(var(--v3-space-8) + var(--postit-gap-2)); }
+.v3-postit-latest-label { grid-row: 3; font: var(--postit-label-font) var(--v3-font-family); color: var(--postit-muted); }
 .v3-postit-body { grid-row: 5; -webkit-line-clamp: 4; max-height: var(--postit-body-height); font: var(--postit-body-font) var(--v3-font-family); }
 .v3-postit-empty { color: var(--postit-muted); }
-.v3-postit-footer { grid-row: 7; display: flex; align-items: center; justify-content: space-between; gap: var(--v3-space-3); min-width: 0; }
-.v3-postit-assignee { display: flex; align-items: center; gap: var(--v3-space-2); min-width: 0; font: var(--postit-assignee-font) var(--v3-font-family); }
+.v3-postit-footer { position: absolute; inset-inline: var(--postit-padding); bottom: var(--postit-padding); height: var(--postit-footer-height); display: flex; align-items: center; justify-content: space-between; gap: var(--postit-gap-3); min-width: 0; }
+.v3-postit-assignee { display: flex; align-items: center; gap: var(--postit-gap-2); min-width: 0; font: var(--postit-assignee-font) var(--v3-font-family); }
 .v3-postit-assignee > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.v3-postit-assignee > :first-child { width: var(--v3-session-avatar-size); height: var(--v3-session-avatar-size); flex: none; }
+.v3-postit-assignee > :first-child { width: calc(var(--v3-session-avatar-size) * var(--postit-scale)); height: calc(var(--v3-session-avatar-size) * var(--postit-scale)); flex: none; }
 .v3-shell .v3-postit-footer [data-slot="status-chip"] { flex: none; font: var(--postit-meta-font) var(--v3-font-family); color: var(--postit-muted); background: #ffffffb8; }
 .v3-shell .v3-postit-footer [data-slot="status-chip"]:is(.v3-status-chip--review,.v3-status-chip--question) { color: #866022; background: #fff2d9; }
 .v3-shell .v3-postit-footer .v3-status-chip--blocked { color: #a54d3b; background: #ffede8; }
 .v3-shell .v3-postit-footer .v3-status-chip--running { color: #246e57; background: #e5f4e8; }
 .v3-shell .v3-postit-footer .v3-status-chip--done { color: #326488; background: #e8f0fa; }
 .v3-shell .v3-postit-footer .v3-status-chip--queued { color: #62577b; background: #eee8f6; }
-.v3-postit-actions { position: absolute; top: var(--v3-space-5); right: var(--v3-space-5); display: flex; gap: var(--v3-space-2); }
-.v3-postit-error { position: absolute; inset-inline: var(--v3-space-5); bottom: calc(var(--postit-footer-height) + var(--v3-space-5)); background: var(--postit-paper); color: #a54d3b; font: var(--postit-meta-font) var(--v3-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v3-postit-actions { position: absolute; top: var(--postit-padding); right: var(--postit-padding); display: flex; gap: var(--postit-gap-2); }
+.v3-postit-error { position: absolute; inset-inline: var(--postit-padding); bottom: calc(var(--postit-footer-height) + var(--postit-padding)); background: var(--postit-paper); color: #a54d3b; font: var(--postit-meta-font) var(--v3-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Shared chip appearance; its trigger keeps the original small action hit area. */
+.v3-postit-status-trigger { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: var(--v3-space-8); min-height: var(--v3-space-8); padding: 0; border: 0; background: transparent; cursor: pointer; border-radius: var(--v3-space-8); }
+.v3-postit-status-trigger:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
+.v3-shell .v3-postit-footer [data-slot="status-chip"] { gap: calc(var(--v3-space-1) * var(--postit-scale)); padding: calc(var(--v3-space-1) / 2 * var(--postit-scale)) var(--postit-gap-2); }
+.v3-postit-footer .v3-status-dot { width: calc(var(--v3-space-1) * var(--postit-scale)); height: calc(var(--v3-space-1) * var(--postit-scale)); }
