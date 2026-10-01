@@ -1,3 +1,4 @@
+import { diagnosticStage } from "./diagnostic_hooks.js";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -204,6 +205,7 @@ async function runCase(
     scenarioFailed = true;
     scenarioError = error;
   }
+  diagnosticStage("case.outcome",{scenario,backend,failed:scenarioFailed,error:scenarioError instanceof Error ? {message:scenarioError.message,stack:scenarioError.stack} : String(scenarioError)});
   const cleanupErrors: unknown[] = [];
   try {
     await harness?.cleanup();

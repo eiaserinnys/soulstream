@@ -1,3 +1,4 @@
+import { installDiagnosticHooks, diagnosticStage, captureDiagnosticSnapshot } from "./diagnostic_hooks.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from
@@ -145,6 +146,8 @@ export class ProductionFullSliceHarness {
   }
 
   async run(): Promise<FullSliceObservation> {
+    installDiagnosticHooks();
+    diagnosticStage("harness.run.enter",{scenario:this.scenario,backend:this.backend});
     this.orch = await createProductionOrchestrator({
       config: loadOrchServerEnvironment({
         HOST: "127.0.0.1",
@@ -186,7 +189,9 @@ export class ProductionFullSliceHarness {
     publicAcks.push(createAck);
     this.sessionId = requireString(createAck.body.agentSessionId, "create agentSessionId");
 
+    diagnosticStage("harness.create_ack",{sessionId:this.sessionId,status:createAck.status});
     await this.waitForExecuteProbe(false);
+    diagnosticStage("harness.initial_probe");
     const first = await this.waitForRunnerIdentity();
     let restart: FullSliceObservation["restart"] = null;
     let reattached: RunnerIdentityObservation | null = null;
@@ -350,6 +355,8 @@ export class ProductionFullSliceHarness {
   }
 
   async cleanup(): Promise<void> {
+    await captureDiagnosticSnapshot(this.root,this.postgres.sql,"before-cleanup");
+    diagnosticStage("harness.cleanup.enter");
     await this.captureCurrentRunnerIdentity();
     await this.killWorker();
     await this.upstreamGate?.close();
@@ -363,7 +370,9 @@ export class ProductionFullSliceHarness {
         ? true
         : null
     );
+    await captureDiagnosticSnapshot(this.root,this.postgres.sql,"after-child-stop-before-db-cleanup");
     await this.orch?.close();
+    diagnosticStage("harness.cleanup.resolved");
     try {
       const releases = await readdir(this.releasesDirectory, { withFileTypes: true });
       for (const release of releases) {
@@ -460,7 +469,7 @@ export class ProductionFullSliceHarness {
           RUNNER_E2E_WORKER_LOG_PATH: join(this.root, "worker.log"),
           RUNNER_E2E_FIXTURE_LOG_PATH: join(this.root, "fixture.log"),
         }),
-        stdio: ["ignore", "ignore", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
       },
     );
     this.worker = child;
@@ -967,6 +976,7 @@ function safeArtifactSegment(value: string): string {
 }
 
 async function runWorkerChild(): Promise<void> {
+  installDiagnosticHooks();
   const env = parseEnv(process.env);
   const mcpConfigService = new McpConfigService({
     agentsConfigPath: env.AGENTS_CONFIG_PATH,

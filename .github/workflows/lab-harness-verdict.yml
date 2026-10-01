@@ -1,122 +1,78 @@
-name: lab harness verdict
+name: S4 claude one-shot diagnostic
+run-name: S4 claude diagnostic for 00ae51e6 (single approved run)
 
-# scripts/lab-node/ 변경 시 랩 판정기가 스스로를 증명하는지 확인한다.
-#
-# 이 워크플로의 첫 판은 순수 테스트만 돌렸고, 독립 검수가 그것으로 부족함을
-# 실험으로 보였다: DB·파일에서 판정 스냅샷을 만드는 7개 출력을 전부 빈 값으로
-# 강제해도 순수 테스트는 41/41 초록에 exit 0이었다. 그런데 이번 감사가 발각한
-# 결함이 정확히 그 연결(DB → 스냅샷)의 부재였다. 재발 방지 장치가 그 재발을
-# 못 막으면, 그건 그것이 지키려던 판정기와 같은 부류의 물건이다.
-#
-# 그래서 여기서 일회용 PostgreSQL에 schema.sql을 그대로 적용하고, 랩에서 도는
-# 것과 **같은** 변이 게이트를 돌린다. 같은 사보타주에 이 잡은 exit 1이다.
-
+# Branch-only version of an already registered workflow_dispatch entry.
+# main and the product PR retain their original workflow definitions.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/lab-node/**'
-      - 'packages/db-schema/sql/schema.sql'
-      - '.github/workflows/lab-harness-verdict.yml'
-  pull_request:
-    paths:
-      - 'scripts/lab-node/**'
-      - 'packages/db-schema/sql/schema.sql'
-      - '.github/workflows/lab-harness-verdict.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: '10.32.1'
+
 jobs:
-  verdict-self-proof:
+  s4-claude-diagnostic:
+    if: github.ref == 'refs/heads/diagnostic/card-s4-ci-once'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    # 랩과 같은 메이저 버전. schema.sql은 identity 컬럼과 jsonb CHECK를 쓴다.
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: soulstream_lab_ci
-          POSTGRES_PASSWORD: soulstream_lab_ci
-          POSTGRES_DB: soulstream_lab_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-
-    env:
-      PGHOST: 127.0.0.1
-      PGPORT: '5432'
-      PGUSER: soulstream_lab_ci
-      PGPASSWORD: soulstream_lab_ci
-      PGDATABASE: soulstream_lab_ci
-
+    timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - name: Checkout isolated diagnostic commit
+        uses: actions/checkout@v7
         with:
-          node-version: '22'
+          fetch-depth: 2
+          persist-credentials: false
 
-      # 정본 스키마를 그대로 붓는다. migrate.mjs는 dotenv·postgres 의존성이
-      # 있어 설치가 필요하고, 이 잡이 검증하는 것은 마이그레이션 절차가 아니라
-      # 판정기가 진짜 테이블을 읽는가이다.
-      - name: Apply canonical schema
-        run: psql -v ON_ERROR_STOP=1 -q -f packages/db-schema/sql/schema.sql
+      - name: Setup exact failed-CI Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.3'
 
-      # 거부 경로를 먼저 태운다. 마커가 없는 DB에 게이트를 겨누고 exit 1과
-      # "쓰기 0건"을 요구한다 — 성공 경로만 돌리면 가드가 사라져도 초록이다.
-      # 이 자리는 이미 한 번 라이브 DB 오염 사고가 난 곳이다.
-      - name: Gate refuses a database that has not proven it is disposable
-        working-directory: scripts/lab-node
+      - name: Verify source and runner, preserve nonsecret environment evidence
+        shell: bash
         run: |
-          if node fault-harness-ci-gate.mjs; then
-            echo "::error::the gate ran against a database with no throwaway marker"
-            exit 1
-          fi
-          echo "refused as required"
-      - name: And wrote nothing while refusing
-        run: |
-          rows=$(psql -X -qAt -c \
-            "SELECT count(*) FROM node_release_activation_receipts")
-          if [ "$rows" != "0" ]; then
-            echo "::error::the gate wrote $rows row(s) before refusing"
-            exit 1
-          fi
-          echo "no rows written"
+          python3 - <<'PYENV'
+          import json, os, subprocess
+          from pathlib import Path
+          target = Path('soul-server-ts/test-artifacts/s4-ci-diagnostic')
+          target.mkdir(parents=True, exist_ok=True)
+          record = {'sourceSha': '00ae51e6c99e7744a584810f326607374c8a1e44',
+                    'diagnosticSha': subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                    'parentSha': subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip(),
+                    'node': subprocess.check_output(['node','--version'],text=True).strip(),
+                    'imageOS': os.environ.get('ImageOS'), 'imageVersion': os.environ.get('ImageVersion')}
+          (target/'environment.json').write_text(json.dumps(record,indent=2)+'\n')
+          assert record['parentSha'] == record['sourceSha']
+          assert record['node'] == 'v22.23.3'
+          assert record['imageOS'] == 'ubuntu24' and record['imageVersion'] == '20260927.320.1'
+          PYENV
 
-      # 이 DB가 버려도 되는 것임을 스스로 증명하게 한다. 게이트는 이 마커가
-      # 없으면 실행을 거부한다 — "랩이 아니면 허용"이 아니라 "이것이어야만
-      # 실행"이다. 살아 있는 어떤 DB에도 이 테이블은 없다.
-      - name: Mark the database disposable
+      - name: Install identical frozen repository dependencies
+        shell: bash
         run: |
-          psql -v ON_ERROR_STOP=1 -q -c \
-            "CREATE TABLE lab_harness_throwaway_marker (token text);"
-          psql -v ON_ERROR_STOP=1 -q -c \
-            "INSERT INTO lab_harness_throwaway_marker VALUES ('disposable-harness-database');"
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+          corepack pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Verdict and harness contract tests
-        working-directory: scripts/lab-node
+      - name: Preserve exact failed-CI PostgreSQL image
+        shell: bash
         run: |
-          node --test --test-concurrency=1 \
-            fault-acquire-application-evidence.test.mjs \
-            fault-activate-rollback-lifecycle-red.test.mjs \
-            fault-activate-rollback.test.mjs \
-            fault-h2-product-mutation.test.mjs \
-            fault-harness.test.mjs \
-            fault-harness-registration.test.mjs \
-            fault-harness-suite.test.mjs \
-            fault-harness-verdict.test.mjs \
-            fault-harness-contracts.test.mjs \
-            fault-transparency-oracle.test.mjs \
-            lab-node.test.mjs
+          docker pull postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+          docker tag postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea postgres:16-alpine
+          docker image inspect postgres:16-alpine --format '{"id":{{json .Id}},"repoDigests":{{json .RepoDigests}}}' > soul-server-ts/test-artifacts/s4-ci-diagnostic/postgres-image.json
 
-      # 진짜 위반 행을 심고, 진짜 샘플러를 돌리고, 판정기가 그것을 지목하기를
-      # 요구한다. 지목 못 하면 exit 1.
-      - name: Mutation gate against a real database
-        working-directory: scripts/lab-node
-        run: node fault-harness-ci-gate.mjs
+      - name: Collector import, temporary SQLite read-close-output smoke
+        run: python3 scripts/diagnostics/run_s4_ci.py smoke
+
+      - name: Single S4 claude case (only after smoke success)
+        run: python3 scripts/diagnostics/run_s4_ci.py s4
+
+      - name: Always upload sanitized diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: s4-claude-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: soul-server-ts/test-artifacts/s4-ci-diagnostic/
+          if-no-files-found: error
+          retention-days: 7
