@@ -91,9 +91,9 @@ for(const width of [390,1440])test(`status pointer keyboard retry and latest ver
  state.hold=true;await popup.getByRole("button",{name:"확인",exact:true}).click();await expect(popup.getByRole("button",{name:"확인",exact:true})).toBeDisabled();await expect(card.getByRole("button",{name:"완료",exact:true})).toBeDisabled();
  await expect.poll(()=>Boolean(state.release)).toBe(true);state.release!();await expect(card).toHaveAttribute("data-card-status","running");expect(state.writes).toHaveLength(2);expect(state.writes[1]).toMatchObject({status:"running",expectedVersion:8});
  expect(typeof state.writes[1].idempotencyKey).toBe("string");expect(state.writes[0].idempotencyKey).not.toBe(state.writes[1].idempotencyKey);await expect(page.getByTestId("card-detail")).toHaveCount(0);
- await page.locator('.v3-postit-card[data-card-id="scale-1"]').getByRole("button",{name:"카드 상태 변경"}).click();await expect(popup.getByRole("button",{name:"검수",exact:true})).toBeDisabled();await expect(popup).toContainText("보고가 필요합니다");await page.keyboard.press("Escape");
+ await page.locator('.v3-postit-card[data-card-id="scale-1"]').getByRole("button",{name:"카드 상태 변경"}).click();await expect(popup.getByRole("button",{name:"검수 대기",exact:true})).toBeDisabled();await expect(popup).toContainText("보고가 필요합니다");await page.keyboard.press("Escape");
  await page.locator('.v3-postit-card[data-card-id="scale-2"]').getByRole("button",{name:"카드 상태 변경"}).click();await expect(popup).toContainText("질문에 답한 뒤 변경할 수 있습니다");
- for(const name of ["할 일","대기","실행 중","검수","완료","취소"])await expect(popup.getByRole("button",{name,exact:true})).toBeDisabled();
+ for(const name of ["드래프트","대기","실행 중","검수 대기","완료","취소"])await expect(popup.getByRole("button",{name,exact:true})).toBeDisabled();
  await capture(page,`question-${width}`);expect(state.writes).toHaveLength(2);await expect(page.getByTestId("card-detail")).toHaveCount(0);
  await popup.getByRole("button",{name:"카드 상세 열기",exact:true}).click();await expect(page.getByTestId("card-detail")).toBeVisible();
 });

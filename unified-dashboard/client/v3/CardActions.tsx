@@ -9,7 +9,7 @@ export function useCardCompletion(card:CardRow) {
  return {pending,onComplete:()=>void complete()};
 }
 export function cardStatusLabel(card:CardRow) {
- return {todo:"할 일",queued:"대기",blocked:card.blockedKind==="question"?"질문":card.blockedKind==="limit"?"한도 대기":"막힘",running:"실행 중",review:"검수",done:"완료",cancelled:"취소"}[card.status];
+ return {todo:"드래프트",queued:"대기",blocked:card.blockedKind==="question"?"질문":card.blockedKind==="limit"?"한도 대기":"막힘",running:"실행 중",review:"검수 대기",done:"완료",cancelled:"취소"}[card.status];
 }
 
 export function CardStatusChip({card}:{card:CardRow}) {

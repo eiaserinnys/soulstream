@@ -16,8 +16,8 @@ export function postItRotation(id: string): number {
   return ((id.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0) % 5) - 2) * 0.4;
 }
 
-export function PostItGrid({ children }: { children: ReactNode }) {
-  return <div className="v3-postit-grid" style={usePostItScale()}>{children}</div>;
+export function PostItGrid({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`v3-postit-grid ${className}`} style={usePostItScale()}>{children}</div>;
 }
 
 /** List data already carries the latest original activity; mounting never loads detail. */
