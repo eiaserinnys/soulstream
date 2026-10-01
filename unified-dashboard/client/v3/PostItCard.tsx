@@ -16,25 +16,28 @@ export function postItRotation(id: string): number {
   return ((id.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0) % 5) - 2) * 0.4;
 }
 
-export function PostItGrid({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`v3-postit-grid ${className}`} style={usePostItScale()}>{children}</div>;
+export type PostItVariant = "default" | "compact";
+
+export function PostItGrid({ children, className = "", variant = "default" }: { children?: ReactNode; className?: string; variant?: PostItVariant }) {
+  return <div className={`v3-postit-grid${variant === "compact" ? " v3-postit-grid--compact" : ""} ${className}`} style={usePostItScale()}>{children}</div>;
 }
 
 /** List data already carries the latest original activity; mounting never loads detail. */
-export function PostItCard({ card, handle }: { card: CardRow; handle?: ReactNode }) {
+export function PostItCard({ card, handle, variant = "default" }: { card: CardRow; handle?: ReactNode; variant?: PostItVariant }) {
   const open = useCardNavigation(s => s.open);
   const completion = usePostItStatus(card);
   const assignee = useDashboardStore(s => s.catalog?.sessionList?.find(session => session.agentSessionId === card.assigneeSessionId));
   const error = useCardStore(s => s.errors[card.id]);
-  return <PostItCardView card={card} activity={card.latestActivity ?? null} handle={handle} assignee={assignee}
+  return <PostItCardView card={card} variant={variant} activity={card.latestActivity ?? null} handle={handle} assignee={assignee}
     onOpen={() => open(card.id, "overlay")} completion={completion} statusControl={completion} error={error}/>;
 }
 
-export function PostItCardView({ card, activity, handle, assignee, onOpen, completion, statusControl, error }: {
+export function PostItCardView({ card, activity, handle, assignee, onOpen, completion, statusControl, error, variant = "default" }: {
   card: CardRow; activity: Pick<CardActivity, "kind" | "body" | "format"> | null;
   handle?: ReactNode; assignee?: SessionSummary; onOpen(): void;
   statusControl?: CardStatusControl;
   completion?: { pending: boolean; onComplete(): void }; error?: string;
+  variant?: PostItVariant;
 }) {
   const scaleStyle = usePostItScale();
   const assigned = Boolean(card.assigneeKind);
@@ -46,7 +49,7 @@ export function PostItCardView({ card, activity, handle, assignee, onOpen, compl
   const actions = Boolean(handle || complete);
   const body = activity ? cardActivityPreview(activity) : "아직 지시나 보고가 없습니다";
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
-  return <article className={`v3-postit-card${actions ? " v3-postit-card--actions" : ""}`} data-card-id={card.id}
+  return <article className={`v3-postit-card${actions ? " v3-postit-card--actions" : ""}${variant === "compact" ? " v3-postit-card--compact" : ""}`} data-card-id={card.id} data-card-size={variant}
     data-card-status={card.status} style={{ ...scaleStyle, "--postit-rotation": `${postItRotation(card.id)}deg` } as CSSProperties}>
     <button type="button" className="v3-postit-open" aria-label={`카드 ${card.title} 열기`} onClick={onOpen}>
       <span className="v3-postit-title" title={card.title}>{card.title}</span>

@@ -26,5 +26,5 @@ export function CardInboxBoard() {
   </V3ErrorNotice>;
   if(!ids)return <p className="v3-card-board-empty" role="status">카드를 불러오는 중…</p>;
   return <CardBoard cards={ids.map(id=>byId[id]).filter((card):card is CardRow=>Boolean(card))}
-    renderCard={card=><PostItCard card={card}/>}/>;
+    renderCard={card=><PostItCard card={card} variant="compact"/>}/>;
 }

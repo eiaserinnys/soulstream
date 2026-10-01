@@ -1,7 +1,9 @@
 /* Original 320×280 concept scales by chat font / 17, without viewport scaling. */
 .v3-postit-grid, .v3-postit-card {
-  --postit-width: calc(320px * var(--postit-scale));
-  --postit-height: calc(280px * var(--postit-scale));
+  --postit-base-width: calc(320px * var(--postit-scale));
+  --postit-base-height: calc(280px * var(--postit-scale));
+  --postit-width: var(--postit-base-width);
+  --postit-height: var(--postit-base-height);
   --postit-title-height: calc(50px * var(--postit-scale));
   --postit-label-height: max(20px, calc(20px * var(--postit-scale)));
   --postit-body-height: calc(100px * var(--postit-scale));
@@ -45,6 +47,15 @@
   transform: rotate(var(--postit-rotation));
 }
 .v3-postit-card:hover { box-shadow: 0 calc(5px * var(--postit-scale)) calc(14px * var(--postit-scale)) #24483f29; }
+/* Only the paper/frame shrinks. Text, labels, controls and ID rotation keep their contract. */
+.v3-postit-grid--compact, .v3-postit-card--compact {
+  --postit-width: calc(var(--postit-base-width) * 0.8);
+  --postit-height: calc(var(--postit-base-height) * 0.8);
+  --postit-padding: calc(var(--v3-space-4) * var(--postit-scale));
+  --postit-title-gap: var(--postit-gap-2);
+  --postit-body-height: var(--postit-title-height);
+  --postit-footer-gap: var(--postit-gap-2);
+}
 .v3-postit-open {
   position: absolute;
   inset: 0;
@@ -74,6 +85,7 @@
 .v3-postit-card--actions .v3-postit-title { padding-right: calc(var(--v3-space-8) + var(--postit-gap-2)); }
 .v3-postit-latest-label { grid-row: 3; font: var(--postit-label-font) var(--v3-font-family); color: var(--postit-muted); }
 .v3-postit-body { grid-row: 5; -webkit-line-clamp: 4; max-height: var(--postit-body-height); font: var(--postit-body-font) var(--v3-font-family); }
+.v3-postit-card--compact .v3-postit-body { -webkit-line-clamp: 2; }
 .v3-postit-empty { color: var(--postit-muted); }
 .v3-postit-footer { position: absolute; inset-inline: var(--postit-padding); bottom: var(--postit-padding); height: var(--postit-footer-height); display: flex; align-items: center; justify-content: space-between; gap: var(--postit-gap-3); min-width: 0; }
 .v3-postit-assignee { display: flex; align-items: center; gap: var(--postit-gap-2); min-width: 0; font: var(--postit-assignee-font) var(--v3-font-family); }

@@ -38,3 +38,5 @@
 .v3-card-completion-hidden { font: var(--v3-type-meta) var(--v3-font-family); color: var(--v3-text-secondary); }
 .v3-card-board-sample .v3-detail-section-head { flex-wrap: wrap; }
 .v3-folder-card-head { flex-wrap: wrap; }
+.v3-postit-size-comparison { display: flex; flex-wrap: wrap; align-items: start; gap: var(--v3-space-6); margin-bottom: var(--v3-space-6); }
+.v3-postit-size-comparison > div { display: flex; flex-direction: column; gap: var(--v3-space-3); }

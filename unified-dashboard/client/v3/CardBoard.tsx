@@ -16,7 +16,7 @@ export function CardBoard({cards, renderCard, completion}: {
   cards: readonly CardRow[]; renderCard(card:CardRow):ReactNode; completion?:CardCompletionOption;
 }) {
   const visible=cards.filter(card=>!card.archived && card.status!=="cancelled");
-  return <PostItGrid className="v3-card-board">{boardColumns.map(({status,label})=>{
+  return <PostItGrid className="v3-card-board" variant="compact">{boardColumns.map(({status,label})=>{
     const column=visible.filter(card=>card.status===status).sort((a,b)=>{
       const left=status==="queued"?a.queuePositionKey??"":a.positionKey;
       const right=status==="queued"?b.queuePositionKey??"":b.positionKey;

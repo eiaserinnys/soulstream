@@ -22,7 +22,7 @@ export function FolderCardSection({folderId,folders=[],placement="inline"}:{fold
    <DashboardIconCap size="small" label="카드 추가" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap></div>
   {adding?<form className="v3-card-add" onSubmit={e=>{e.preventDefault();void add();}}><Input autoFocus aria-label="카드 제목" placeholder="카드 제목" value={title} onChange={e=>setTitle(e.target.value)} disabled={pending}/><DashboardIconCap label="카드 저장" type="submit" disabled={pending||!title.trim()}><Check className="h-4 w-4"/></DashboardIconCap><DashboardIconCap label="추가 취소" onClick={()=>setAdding(false)}><X className="h-4 w-4"/></DashboardIconCap></form>:null}
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
-  {board?<CardBoard cards={cards} renderCard={card=><PostItCard card={card}/>} completion={{includeCompleted,onChange:setIncludeCompleted}}/>
+  {board?<CardBoard cards={cards} renderCard={card=><PostItCard card={card} variant="compact"/>} completion={{includeCompleted,onChange:setIncludeCompleted}}/>
    :<PostItGrid>{visibleCards.map(card=><PostItCard key={card.id} card={card}/>)}</PostItGrid>}
  </div>;
 }
