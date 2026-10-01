@@ -2,7 +2,7 @@ import { FolderCardSection } from "./FolderCardSection";
 import { useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
 import { Button, DashboardIconCap, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
-import { ArrowLeft, LayoutDashboard, MoreHorizontal, Star } from "lucide-react";
+import { LayoutDashboard, MoreHorizontal, Star } from "lucide-react";
 
 import type { PlannerFolder } from "./planner-data";
 import type { FolderMoveTarget } from "./folder-move-targets";
@@ -22,7 +22,7 @@ import {
   type FolderSectionFocusRequest,
   type FolderSectionRefs,
 } from "./FolderSectionNavigation";
-import { FolderTitleEditor } from "./FolderTitleEditor";
+import { FolderPanelHeader } from "./WorkspacePanelHeaders";
 import { FolderTodayToggle } from "./FolderTodayToggle";
 import "./v3-context-succession.css";
 import { useFolderStar } from "./use-folder-star";
@@ -246,14 +246,8 @@ export function FolderDetailPane({
       className={`v3-detail-pane${inline ? " v3-detail-pane--inline" : " border border-glass-border glass-strong glass-chrome lg-rim"}`}
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
     >
-      <header className={`v3-folder-header${inline ? " v3-inline-folder-header" : " v3-workspace-toolbar"}`}>
-        <DashboardIconCap label={backLabel} onClick={goBack}>
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
-        <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span>
-        <FolderTitleEditor title={task.page.title} onRename={onRenameFolderTitle} headingLevel={1} />
-        <div className="v3-folder-header-actions">{actions}</div>
-      </header>
+      <FolderPanelHeader title={task.page.title} onRename={onRenameFolderTitle} inline={inline}
+        backLabel={backLabel} onBack={goBack} status={{value:task.status,icon:status.icon,label:status.label}} actions={actions}/>
       <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <DialogPopup className="max-w-sm">
           <DialogHeader>

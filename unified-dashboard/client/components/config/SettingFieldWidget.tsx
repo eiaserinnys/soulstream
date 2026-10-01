@@ -7,7 +7,7 @@
  */
 
 import { useState } from "react";
-import { cn } from "@seosoyoung/soul-ui";
+import { cn, Input } from "@seosoyoung/soul-ui";
 import { Eye, EyeOff, RotateCcw } from "lucide-react";
 
 export interface SettingField {
@@ -67,16 +67,12 @@ function SensitiveInput({
 
   return (
     <div className="flex items-center gap-1">
-      <input
+      <Input
         type={visible ? "text" : "password"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className={cn(
-          "flex-1 min-w-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground",
-          "focus:outline-none focus:ring-1 focus:ring-ring",
-          disabled && "opacity-50 cursor-not-allowed",
-        )}
+        nativeInput className="flex-1 min-w-0"
       />
       <button
         type="button"
@@ -124,17 +120,13 @@ function FieldInput({
       : "text";
 
   return (
-    <input
+    <Input
       type={inputType}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
       step={field.value_type === "float" ? "0.1" : undefined}
-      className={cn(
-        "w-full min-w-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground",
-        "focus:outline-none focus:ring-1 focus:ring-ring",
-        disabled && "opacity-50 cursor-not-allowed",
-      )}
+      nativeInput
     />
   );
 }
@@ -153,10 +145,9 @@ export function SettingFieldWidget({
       data-testid="config-field-row"
       className={cn(
         "grid grid-cols-1 gap-2 items-start px-1 py-1.5 rounded sm:grid-cols-[minmax(0,1fr)_minmax(16rem,1.2fr)]",
-        field.read_only && "opacity-60",
       )}
     >
-      <div className="min-w-0">
+      <div className={cn("min-w-0", field.read_only && "opacity-60")}>
         <div className="flex items-center gap-1">
           <span className="text-xs font-medium text-foreground truncate">
             {field.label}

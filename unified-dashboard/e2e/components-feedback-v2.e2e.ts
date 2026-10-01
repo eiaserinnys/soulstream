@@ -34,11 +34,13 @@ for (const width of [1440, 390]) test(`web feedback v2 ${width}`, async ({ page 
     const action = row.querySelector(".dashboard-icon-cap")!.getBoundingClientRect();
     const chip = row.querySelector('[data-slot="status-chip"]')!.getBoundingClientRect();
     const time = row.querySelector("time")!.getBoundingClientRect();
+    const info = row.querySelector(".v3-run-trailing")!.getBoundingClientRect();
     return { h: row.getBoundingClientRect().height, actionW: action.width, actionH: action.height,
-      right: action.right, chipRight: chip.right, timeRight: time.right, gap: action.top - time.bottom };
+      right: action.right, chipRight: chip.right, timeRight: time.right, gap: action.left - info.right, center:action.y + action.height/2 - info.y - info.height/2 };
   }));
   expect.soft(actionRows[0]).toEqual(actionRows[1]);
-  expect.soft(actionRows[2].h).toBe(actionRows[0].h);
+  expect.soft(actionRows[2].h).toBeLessThan(actionRows[0].h);
+  for (const row of actionRows) { expect.soft(row.gap).toBeGreaterThanOrEqual(0); expect.soft(Math.abs(row.center)).toBeLessThanOrEqual(1); }
   const rows = await page.locator(".v3-run-row").evaluateAll(rows => rows.map(row => {
     const open = row.querySelector(".v3-run-open")!;
     const avatar = row.querySelector(".v3-run-avatar")!.getBoundingClientRect();

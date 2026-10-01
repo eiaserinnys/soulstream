@@ -65,10 +65,10 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
    <CardComposer text={request} onChangeText={setRequest} onSend={()=>void submit()} placeholder="새 세션에서 무엇을 할까요" inputLabel="세션 첫 메시지" label="세션 시작" disabled={!canSubmit} pending={pending}
     files={files} onAddFiles={fileUploadUrl?attachFiles:undefined} onRemoveFile={removeFile} onAttachUnavailable={()=>setError("첨부하려면 실행 노드를 선택해 주세요.")}/>
    <div className="v3-card-handoff-controls">
-    <Popover open={folderOpen} onOpenChange={setFolderOpen}><PopoverTrigger type="button" className="v3-card-handoff-chip v3-card-handoff-folder rounded-full" disabled={pending}>
+    <Popover open={folderOpen} onOpenChange={setFolderOpen}><PopoverTrigger type="button" className="v3-card-handoff-chip control-surface v3-card-handoff-folder rounded-full" disabled={pending}>
      <span>{folder ? `📁 ${folder.name}` : "폴더 선택"}</span><span aria-hidden="true">▾</span>
     </PopoverTrigger><PopoverPopup side="top" align="start" sideOffset={8} className="v3-shell v3-card-folder-picker"><FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={selection.folderId} disabledFolderIds={new Set(["claude","llm"])} pending={pending} onSelect={f=>void selectFolder(f)}/></PopoverPopup></Popover>
-    <Popover open={executionOpen} onOpenChange={setExecutionOpen}><PopoverTrigger type="button" className="v3-card-handoff-chip v3-card-handoff-execution rounded-full" disabled={pending} aria-label="실행 조합 선택">
+    <Popover open={executionOpen} onOpenChange={setExecutionOpen}><PopoverTrigger type="button" className="v3-card-handoff-chip control-surface v3-card-handoff-execution rounded-full" disabled={pending} aria-label="실행 조합 선택">
      <span>{agent?.id===selection.agentId ? agent.name : selection.agentId||"에이전트"} · {selection.nodeId||"노드"} · {model?.id===selection.modelPreset ? model.label : selection.modelPreset||"모델"}</span><span aria-hidden="true">▾</span>
     </PopoverTrigger><PopoverPopup keepMounted side="top" align="start" sideOffset={8} className="v3-shell v3-card-execution-picker"><CardExecutionPicker selection={selection} onChange={next=>{if(files.length&&next.nodeId!==selection.nodeId){setError("첨부를 제거한 뒤 노드를 바꿔 주세요.");return;}changeId.current++;setSelection(next);}}
      onAgentInfoChange={setAgent} onModelPresetInfoChange={setModel} onValidityChange={setModelValid} disabled={pending} onError={setError}/></PopoverPopup></Popover>

@@ -2,9 +2,6 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, ty
 import {
   ChatView,
   DashboardIconCap,
-  SessionModelPresetBadge,
-  SessionStoryDisclosure,
-  STATUS_CONFIG,
   useDashboardStore,
   useGlassSurface,
   type CatalogFolder,
@@ -12,10 +9,10 @@ import {
   type SessionSummary,
   type SessionProviderConnectionStatus,
 } from "@seosoyoung/soul-ui";
+
 import { X } from "lucide-react";
 
 import type { PlannerFolder } from "./planner-data";
-import { sessionPanelTitle } from "./v3-session-panel-model";
 import type { FolderMoveTarget } from "./folder-move-targets";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
 import {
@@ -29,7 +26,7 @@ import { FolderDetailPane } from "./FolderDetailPane";
 import type { FolderSectionFocusRequest } from "./FolderSectionNavigation";
 import { FolderBoardWorkspace } from "./FolderBoardWorkspace";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
-import { SessionStreamStatus } from "./SessionStreamStatus";
+import { SessionPanelHeader } from "./WorkspacePanelHeaders";
 import type { MobilePlannerTab } from "./mobile-planner-state";
 
 export function FolderWorkspace({
@@ -246,18 +243,8 @@ export function FolderWorkspace({
             data-testid="v3-standalone-session-chat"
             aria-label="세션 채팅"
           >
-            <header className="v3-chat-header">
-              <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "세션"}</strong></div>
-              <SessionModelPresetBadge session={activeSession} />
-              <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}</span>
-              {activeSession ? <SessionStreamStatus active={sessionStreamActive} status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
-              {activeSession ? (
-                <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
-              ) : null}
-              <DashboardIconCap label="채팅 닫기" onClick={onCloseWorkspace}>
-                <X className="h-4 w-4" aria-hidden="true" />
-              </DashboardIconCap>
-            </header>
+            <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
+                connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} emptyTitle="세션" onClose={onCloseWorkspace}/>
             {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
             <div className="v3-chat-content">
               {activeSession ? <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
@@ -363,15 +350,8 @@ export function FolderWorkspace({
               data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
               aria-label="세션 채팅"
             >
-              <header className="v3-chat-header">
-                <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong></div>
-                <SessionModelPresetBadge session={activeSession} />
-                <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}</span>
-                {activeSession ? <SessionStreamStatus active={sessionStreamActive} status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
-                {activeSession ? (
-                  <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
-                ) : null}
-              </header>
+              <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
+                connectionStatus={sessionConnectionStatus} reconnect={reconnectSession}/>
               {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
               <div className="v3-chat-content">
                 {activeSession ? (
