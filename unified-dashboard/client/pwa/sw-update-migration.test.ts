@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 type WorkerListener = (event: Record<string, unknown>) => void;
 
 describe("sw-update-migration", () => {
-  it("migrates a hidden legacy client within the activation lifetime", async () => {
+  it("activates before migrating a hidden legacy client even while navigation is pending", async () => {
     let releaseNavigation!: () => void;
     const navigation = new Promise<void>((resolve) => { releaseNavigation = resolve; });
     const harness = await createHarness({ visibilityState: "hidden", navigation });
@@ -15,14 +15,25 @@ describe("sw-update-migration", () => {
     await harness.waitForActivationMessage();
     harness.releaseNextTimer();
     await vi.waitFor(() => expect(harness.client.navigate).toHaveBeenCalled());
-    let activated = false;
-    void activation.then(() => { activated = true; });
-    await Promise.resolve();
-    expect(activated).toBe(false);
-    releaseNavigation();
-    await activation;
-
+    try {
+      expect(harness.navigationStates).toEqual(["activated"]);
+      expect(harness.worker.state).toBe("activated");
+    } finally {
+      releaseNavigation();
+      await activation;
+    }
     expect(harness.client.navigate).toHaveBeenCalledWith(harness.client.url);
+  });
+
+  it("queues an older client's immediate approval until activation completes", async () => {
+    const harness = await createHarness();
+    const activation = harness.activate();
+    const message = await harness.waitForActivationMessage();
+    await harness.sendMessage({ type: "SOULSTREAM_SW_APPROVE_RELOAD", token: message.token });
+    expect(harness.client.navigate).not.toHaveBeenCalled();
+    harness.releaseNextTimer();
+    await activation;
+    expect(harness.navigationStates).toEqual(["activated"]);
   });
 
   it("leaves a visible legacy client for natural navigation", async () => {
@@ -75,16 +86,18 @@ async function createHarness(options: {
   const listeners = new Map<string, WorkerListener>();
   const timers: Array<() => void> = [];
   const capabilityCache = new Set<string>();
+  const worker = Object.assign(new EventTarget(), { state: "activating" });
+  const navigationStates: string[] = [];
   let activationPromise: Promise<unknown> | undefined;
   const client = {
     id: "client-1",
     url: "https://example.test/v2",
     visibilityState: options.visibilityState ?? "visible",
     postMessage: vi.fn(),
-    navigate: vi.fn(async () => options.navigation),
+    navigate: vi.fn(async () => { navigationStates.push(worker.state); return options.navigation; }),
   };
   const self = {
-    registration: { active: {} },
+    registration: { active: worker },
     clients: { matchAll: vi.fn(async () => [client]) },
     caches: {
       open: vi.fn(async () => ({
@@ -102,7 +115,7 @@ async function createHarness(options: {
   vm.runInNewContext(source, { self, Set, Map, Promise, Response, encodeURIComponent });
 
   return {
-    client,
+    client, worker, navigationStates,
     activate() {
       listeners.get("activate")!({
         waitUntil(promise: Promise<unknown>) {
@@ -110,7 +123,7 @@ async function createHarness(options: {
         },
       });
       return new Promise<void>((resolve, reject) => {
-        queueMicrotask(() => activationPromise!.then(() => resolve(), reject));
+        queueMicrotask(() => activationPromise!.then(() => { worker.state = "activated"; worker.dispatchEvent(new Event("statechange")); resolve(); }, reject));
       });
     },
     async waitForActivationMessage() {

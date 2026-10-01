@@ -24,6 +24,8 @@ type ServiceWorkerContainerLike = {
   readonly controller?: { postMessage(message: unknown): void } | null;
 };
 
+type ActivationSource = Pick<ServiceWorker, "state" | "postMessage" | "addEventListener" | "removeEventListener">;
+
 type UpdateEnvironment = {
   readonly serviceWorker: ServiceWorkerContainerLike | undefined;
   readonly document: Document;
@@ -45,21 +47,26 @@ export async function registerDashboardServiceWorker(
     const event = rawEvent as MessageEvent<unknown>;
     const data = activationMessage(event.data);
     if (!data) return;
-    const source = event.source as { postMessage?: (message: unknown) => void } | null;
-    if (!environment.hasPendingEdits()) {
-      source?.postMessage?.({ type: APPROVE_RELOAD_MESSAGE, token: data.token });
-      return;
-    }
-    source?.postMessage?.({ type: DEFER_RELOAD_MESSAGE, token: data.token });
-    showUpdateBanner(document, async () => {
-      if (!await environment.flushPendingEdits()) return false;
-      if (source?.postMessage) {
-        source.postMessage({ type: APPROVE_RELOAD_MESSAGE, token: data.token });
-      } else {
-        environment.reload();
+    const source = event.source as ActivationSource | null;
+    const respond = () => {
+      if (!environment.hasPendingEdits()) {
+        source?.postMessage({ type: APPROVE_RELOAD_MESSAGE, token: data.token });
+        return;
       }
-      return true;
-    });
+      source?.postMessage({ type: DEFER_RELOAD_MESSAGE, token: data.token });
+      showUpdateBanner(document, async () => {
+        if (!await environment.flushPendingEdits()) return false;
+        if (source) {
+          afterWorkerActivation(source, () => source.postMessage({ type: APPROVE_RELOAD_MESSAGE, token: data.token }));
+        } else {
+          environment.reload();
+        }
+        return true;
+      });
+    };
+    // Defer immediately; approval must not start navigation inside activate.
+    if (source && !environment.hasPendingEdits()) afterWorkerActivation(source, respond);
+    else respond();
   };
   serviceWorker.addEventListener("message", onMessage);
 
@@ -107,6 +114,16 @@ export async function registerDashboardServiceWorker(
     if (onUpdateFound) registration?.removeEventListener?.("updatefound", onUpdateFound);
     if (intervalId !== undefined) environment.clearInterval(intervalId);
   };
+}
+
+function afterWorkerActivation(worker: ActivationSource, action: () => void): void {
+  if (worker.state === "activated") { action(); return; }
+  const onStateChange = () => {
+    if (worker.state !== "activated") return;
+    worker.removeEventListener("statechange", onStateChange);
+    action();
+  };
+  worker.addEventListener("statechange", onStateChange);
 }
 
 function activationMessage(value: unknown): { token: string } | null {
