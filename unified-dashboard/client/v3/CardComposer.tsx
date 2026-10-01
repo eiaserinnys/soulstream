@@ -7,8 +7,8 @@ import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTe
 import { FileAttachmentPreview } from "@seosoyoung/soul-ui/components/FileAttachmentPreview";
 import type { UploadedFile } from "@seosoyoung/soul-ui/hooks/useFileUpload";
 
-export function CardComposer({text,onChangeText,onSend,placeholder,label,disabled,pending,files,onAddFiles,onRemoveFile,onAttachUnavailable}: {
- text:string;onChangeText(text:string):void;onSend():void;placeholder:string;label:string;disabled:boolean;pending:boolean;
+export function CardComposer({text,onChangeText,onSend,placeholder,inputLabel,label,disabled,pending,files,onAddFiles,onRemoveFile,onAttachUnavailable}: {
+ text:string;onChangeText(text:string):void;onSend():void;placeholder:string;inputLabel?:string;label:string;disabled:boolean;pending:boolean;
  files:UploadedFile[];onAddFiles?(files:FileList|File[]):void;onRemoveFile(id:string):void;onAttachUnavailable?():void;
 }) {
  const {chatTypographyStyle}=useChatTypography();
@@ -20,7 +20,7 @@ export function CardComposer({text,onChangeText,onSend,placeholder,label,disable
   {files.length?<div className="flex gap-2 overflow-x-auto pb-2">{files.map(file=><FileAttachmentPreview key={file.id} file={file.file} status={file.status} onRemove={()=>onRemoveFile(file.id)}/>)}</div>:null}
   <ChatInputComposer>
    <PaperclipButton disabled={pending} onClick={()=>onAddFiles?fileInput.current?.click():onAttachUnavailable?.()}/>
-   <ChatInputEditor ref={textarea} text={text} onChangeText={onChangeText} onSend={onSend} placeholder={placeholder} inputLabel={placeholder}
+   <ChatInputEditor ref={textarea} text={text} onChangeText={onChangeText} onSend={onSend} placeholder={placeholder} inputLabel={inputLabel??placeholder}
     buttonLabel={label} modeIcon="" modeLabel={placeholder} borderColor="" buttonVariant="default" disabled={disabled} textareaDisabled={pending}
     onPaste={event=>{if(onAddFiles&&!pending&&event.clipboardData.files.length){event.preventDefault();onAddFiles(event.clipboardData.files);}}}/>
   </ChatInputComposer>

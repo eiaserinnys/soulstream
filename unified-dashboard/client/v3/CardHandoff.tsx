@@ -62,7 +62,7 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
  const folder = folders.find(f=>f.id===selection.folderId);
  return <><div>
   <div className="v3-card-handoff">
-   <CardComposer text={request} onChangeText={setRequest} onSend={()=>void submit()} placeholder="새 세션에서 무엇을 할까요" label="세션 시작" disabled={!canSubmit} pending={pending}
+   <CardComposer text={request} onChangeText={setRequest} onSend={()=>void submit()} placeholder="새 세션에서 무엇을 할까요" inputLabel="세션 첫 메시지" label="세션 시작" disabled={!canSubmit} pending={pending}
     files={files} onAddFiles={fileUploadUrl?attachFiles:undefined} onRemoveFile={removeFile} onAttachUnavailable={()=>setError("첨부하려면 실행 노드를 선택해 주세요.")}/>
    <div className="v3-card-handoff-controls">
     <Popover open={folderOpen} onOpenChange={setFolderOpen}><PopoverTrigger type="button" className="v3-card-handoff-chip v3-card-handoff-folder rounded-full" disabled={pending}>
