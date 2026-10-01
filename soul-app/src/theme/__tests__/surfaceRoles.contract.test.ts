@@ -40,10 +40,10 @@ const HIGH_DENSITY_TOKEN_SURFACES = [
 ] as const;
 
 const GLASS_CARD_SURFACES = [
-  'components/SessionCard.tsx',
+  'components/SessionCardView.tsx',
   'components/planner/GroupedGlassSheet.tsx',
   'components/planner/DailyMemo.tsx',
-  'components/planner/ProjectContextEditor.tsx',
+  'components/planner/ProjectContextEditorView.tsx',
   'components/planner/FolderWorkspace.tsx',
   'components/split/SidebarPane.tsx',
 ] as const;
@@ -198,7 +198,7 @@ describe('surface role contract', () => {
   });
 
   test.each(GLASS_CARD_SURFACES)('%s 카드·행은 역할 기반 native glass 진입점을 사용한다', (file) => {
-    if (file === 'components/planner/ProjectContextEditor.tsx') {
+    if (file === 'components/planner/ProjectContextEditorView.tsx') {
       expect(read(file)).toContain('<PlannerForegroundCard');
       expect(read('components/planner/PlannerForegroundCard.tsx')).toMatch(/<AppGlassCard\b/);
     } else {
@@ -337,7 +337,7 @@ describe('surface role contract', () => {
       expect(source).not.toMatch(/<AppGlass(?:Card|Pressable)\b/);
     }
     expectCardRowSessionFrame(read('components/planner/CardRow.tsx'));
-    expect(read('components/SessionCard.tsx')).toContain('makeSessionCardStyles(t, embedded, small)');
+    expect(read('components/SessionCardView.tsx')).toContain('makeSessionCardStyles(t, embedded, small)');
     expect(read('components/planner/FolderWorkspace.tsx')).toContain('<AppGlassCard');
     expect(read('navigation/RootNavigator.tsx')).toMatch(/wallpaper:[\s\S]*opacity:\s*0\.42/);
   });

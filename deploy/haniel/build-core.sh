@@ -28,7 +28,7 @@ require_available_memory() {
   fi
 }
 
-run_heavy_pnpm() {
+run_heavy_command() {
   require_available_memory
   (
     # Corepack reads packageManager from the current checkout root.
@@ -42,15 +42,22 @@ run_heavy_pnpm() {
       PATH=/home/eias/.local/bin:/home/eias/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
       NODE_ENV=production \
       COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
-      corepack pnpm "$@"
+      "$@"
   )
+}
+
+run_heavy_pnpm() {
+  run_heavy_command corepack pnpm "$@"
 }
 
 run_heavy_pnpm install --frozen-lockfile --prod=false
 run_heavy_pnpm --filter @soulstream/soul-server-ts exec env SOULSTREAM_RELEASE_ENV_FILE="$app_dir/.env.soul-server-ts" pnpm run build
 run_heavy_pnpm --filter @soulstream/orch-server-ts run build
 run_heavy_pnpm --dir "$app_dir/unified-dashboard" run build
+run_heavy_command npm --prefix "$app_dir/soul-app" ci --include=dev --no-audit --no-fund
+run_heavy_command npm --prefix "$app_dir/soul-app" run export:components
 
 test -f "$app_dir/soul-server-ts/dist/main.js"
 test -f "$app_dir/orch-server-ts/dist/production_main.js"
 test -f "$app_dir/unified-dashboard/dist/index.html"
+test -f "$app_dir/unified-dashboard/dist/assets/ios-components/index.html"

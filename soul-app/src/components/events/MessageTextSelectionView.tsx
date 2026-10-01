@@ -15,11 +15,8 @@ import {
   type TextInputSelectionChangeEventData,
   type TextStyle,
 } from 'react-native';
-import {
-  EnrichedMarkdownTextInput,
-  type EnrichedMarkdownTextInputInstance,
-  type MarkdownTextInputStyle,
-} from 'react-native-enriched-markdown';
+import type { MarkdownTextInputStyle } from 'react-native-enriched-markdown';
+import { MarkdownSelectionInput } from './MarkdownSelectionInput';
 import {
   DESIGN_SPACING,
   DESIGN_TYPOGRAPHY,
@@ -45,7 +42,6 @@ export function MessageTextSelectionView({
   variant = 'assistant',
 }: Props) {
   const t = useTokens();
-  const markdownRef = useRef<EnrichedMarkdownTextInputInstance>(null);
   const plainRef = useRef<TextInput>(null);
   const completedRef = useRef(false);
   const [selection, setSelection] = useState({
@@ -64,8 +60,6 @@ export function MessageTextSelectionView({
     completedRef.current = false;
     setSelection({ start: 0, end: model.text.length });
     if (model.kind === 'markdown') {
-      markdownRef.current?.focus();
-      markdownRef.current?.setSelection(0, model.text.length);
       return;
     }
     plainRef.current?.focus();
@@ -83,13 +77,8 @@ export function MessageTextSelectionView({
       onTouchStart={(event) => event.stopPropagation()}
     >
       {model.kind === 'markdown' ? (
-        <EnrichedMarkdownTextInput
-          ref={markdownRef}
+        <MarkdownSelectionInput
           defaultValue={model.text}
-          editable={false}
-          autoFocus={false}
-          multiline
-          scrollEnabled={false}
           style={StyleSheet.flatten([styles.input, textStyle])}
           markdownStyle={markdownStyle}
           selectionColor={selectionColor}

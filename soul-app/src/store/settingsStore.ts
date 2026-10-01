@@ -1,7 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { withDiagnosticStateStorage } from './diagnosticStateStorage';
+import { settingsStorage } from './settingsStorage';
 import type { CardAssignment } from '../api/cardTypes';
 import {
   DEFAULT_USER_PREFERENCES,
@@ -75,7 +74,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'soul-app-settings',
-      storage: createJSONStorage(() => withDiagnosticStateStorage(AsyncStorage, 'settings')),
+      storage: createJSONStorage(() => settingsStorage),
     }
   )
 );

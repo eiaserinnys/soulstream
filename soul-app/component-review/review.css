@@ -1,0 +1,11 @@
+/* Browser defaults have no native counterpart. Keep the actual RN component
+   styles and selected states; only remove browser focus and scrollbar chrome. */
+input:focus, textarea:focus, [data-focusable="true"]:focus {
+  outline: none;
+}
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}

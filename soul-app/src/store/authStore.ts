@@ -1,24 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import * as SecureStore from 'expo-secure-store';
-import { withDiagnosticStateStorage } from './diagnosticStateStorage';
-
-/**
- * SecureStore adapter for Zustand persist middleware.
- *
- * iOS Keychain 기반 저장이므로 JWT 같은 민감 정보에 적합하다.
- * AsyncStorage는 평문이라 JWT 저장 용도로는 부적합.
- */
-const secureStorage = withDiagnosticStateStorage({
-  getItem: async (key: string): Promise<string | null> =>
-    (await SecureStore.getItemAsync(key)) ?? null,
-  setItem: async (key: string, value: string): Promise<void> => {
-    await SecureStore.setItemAsync(key, value);
-  },
-  removeItem: async (key: string): Promise<void> => {
-    await SecureStore.deleteItemAsync(key);
-  },
-}, 'auth');
+import { authStorage } from './authStorage';
 
 interface AuthState {
   jwt: string | null;
@@ -52,7 +34,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'soul-auth',
-      storage: createJSONStorage(() => secureStorage),
+      storage: createJSONStorage(() => authStorage),
       // 기존 저장 shape { jwt }는 유지하고, 거부 신호는 재시작 후 복원하지 않는다.
       partialize: (state) => ({ jwt: state.jwt }),
     }
