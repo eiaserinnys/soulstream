@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { DashboardIconCap, Input, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { useState, type ReactNode } from "react";
+import { Button, DashboardIconCap, Dialog, DialogPopup, Input, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { Check, LayoutDashboard, List, Plus, X } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { cardMutationKey, groupCards } from "@seosoyoung/soul-ui/cards/card-api";
@@ -9,15 +9,17 @@ import { useFolderPickerStars } from "./use-folder-picker-stars";
 import { FolderPicker } from "./FolderPicker";
 import { Popover, PopoverTrigger, PopoverPopup } from "@seosoyoung/soul-ui";
 import { CardInboxBoard } from "./CardInboxBoard";
-export function CardInbox({folders}:{folders:readonly CatalogFolder[]}) {
+export function CardInbox({folders,initialBoard=false,actions}:{folders:readonly CatalogFolder[];initialBoard?:boolean;actions?:ReactNode}) {
  const byId=useCardStore(s=>s.byId);const groups=groupCards(Object.values(byId));
  const [adding,setAdding]=useState(false);
- const [board,setBoard]=useState(false);
+ const [board,setBoard]=useState(initialBoard);
+ const [createdIds,setCreatedIds]=useState<string[]>([]);
  const empty=!groups.attention.length&&!groups.running.length&&!groups.queued.length;
  if(board)return <div className="v3-card-inbox" data-card-scope="all">
-  <div className="v3-section-head"><h2>전체 카드</h2><span className="v3-spacer"/>
-   <DashboardIconCap size="small" label="일반 보기" onClick={()=>setBoard(false)}><List className="h-4 w-4"/></DashboardIconCap></div>
-  <CardInboxBoard/>
+  <CardInboxBoard createdIds={createdIds}
+   actions={<>{actions}<DashboardIconCap size="small" label="일반 보기" onClick={()=>setBoard(false)}><List className="h-4 w-4"/></DashboardIconCap></>}
+   draftAction={<Button variant="ghost" size="sm" aria-label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/>새 카드</Button>}/>
+  {adding?<Dialog open onOpenChange={open=>{if(!open)setAdding(false);}}><DialogPopup showCloseButton={false}><CardCreateForm folders={folders} onCreated={id=>setCreatedIds(ids=>[...ids,id])} onClose={()=>setAdding(false)}/></DialogPopup></Dialog>:null}
  </div>;
  return <div className="v3-card-inbox">{(["attention","running","queued"] as const).filter(group=>group==="attention"||groups[group].length>0).map(group=><section key={group} data-card-group={group}>
   <div className="v3-section-head"><h2>{{attention:"확인할 것",running:"진행 중",queued:"대기열"}[group]}</h2><span>{groups[group].length}</span>{group==="attention"?<>
@@ -28,11 +30,11 @@ export function CardInbox({folders}:{folders:readonly CatalogFolder[]}) {
   <PostItGrid>{group==="queued"?<CardQueue layout="grid" cards={groups.queued} renderRow={(card,handle)=><PostItCard card={card} handle={handle}/>}/>:groups[group].map(card=><PostItCard key={card.id} card={card}/>)}</PostItGrid>
  </section>)}</div>;
 }
-function CardCreateForm({folders,onClose}:{folders:readonly CatalogFolder[];onClose():void}) {
+function CardCreateForm({folders,onClose,onCreated}:{folders:readonly CatalogFolder[];onClose():void;onCreated?(id:string):void}) {
  const [title,setTitle]=useState(""),[request,setRequest]=useState(""),[folderId,setFolderId]=useState("");
  const [open,setOpen]=useState(false),[pending,setPending]=useState(false),[error,setError]=useState<string|null>(null);
  const stars=useFolderPickerStars(open,folders);
- const save=async()=>{if(!folderId||!title.trim()||pending)return;setPending(true);try{await useCardStore.getState().create({folderId,title:title.trim(),request:request.trim(),queue:false,idempotencyKey:cardMutationKey()});onClose();}catch(e){setError(String(e));}finally{setPending(false);}};
+ const save=async()=>{if(!folderId||!title.trim()||pending)return;setPending(true);try{const saved=await useCardStore.getState().create({folderId,title:title.trim(),request:request.trim(),queue:false,idempotencyKey:cardMutationKey()});onCreated?.(saved.id);onClose();}catch(e){setError(String(e));}finally{setPending(false);}};
  return <form className="v3-card-create-form" onSubmit={e=>{e.preventDefault();void save();}}>
   <Input autoFocus aria-label="카드 제목" placeholder="카드 제목" value={title} onChange={e=>setTitle(e.target.value)} disabled={pending}/>
   <textarea aria-label="요청 원문" placeholder="요청 원문" rows={2} value={request} onChange={e=>setRequest(e.target.value)} disabled={pending}/>

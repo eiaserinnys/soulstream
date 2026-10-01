@@ -9,6 +9,7 @@ import { useNodes } from "../hooks/useNodes";
 import { ConfigModal } from "../components/ConfigModal";
 import { V3SearchModal } from "./V3SearchModal";
 import { orchestratorSessionProvider } from "../providers";
+import { CardHome } from "./CardHome";
 import { DailyPlannerView } from "./PlannerViews";
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import { MobileProjectList } from "./MobileProjectList";
@@ -62,6 +63,7 @@ function V3DashboardContent() {
   const dataDependencies = useMemo(() => createPlannerDataDependencies(), []);
   const mutationPort = useMemo(() => new BrowserPlannerMutationPort(api), [api]);
   const [selectedDate, setSelectedDate] = useState(today);
+  const [showRecord,setShowRecord]=useState(false);
   const selectedDateFollowsToday = useRef(true);
   const projectSelection = useProjectFolderController();
   const { resolution, selectedFolderId, selectedProject, clearProject } = projectSelection;
@@ -384,6 +386,7 @@ function V3DashboardContent() {
       }
     }
     if (next.activeTab === "today") {
+      setShowRecord(false);
       clearProject();
       selectedDateFollowsToday.current = true;
       setSelectedDate(today);
@@ -406,6 +409,7 @@ function V3DashboardContent() {
     clearProject();
     selectedDateFollowsToday.current = true;
     setSelectedDate(today);
+    setShowRecord(false);
   }, [cardNavigation.close, clearProject, today]);
   const closeWorkspace = useCallback(() => {
     setMobileTab("today");
@@ -414,6 +418,7 @@ function V3DashboardContent() {
   }, [clearProject]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if(event.defaultPrevented)return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       const typing = target?.matches("input, textarea, select, [contenteditable=true]") ?? false;
       if ((event.key === "c" || event.key === "C") && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -550,12 +555,12 @@ function V3DashboardContent() {
         onOpenSearch={() => setSearchOpen(true)}
       />
       <V3Navigation
-        dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} catalogLoadError={catalogLoadError} selectedFolderId={selectedFolderId}
+        onSelectHome={returnToPlanner} homeSelected={!selectedFolderId&&!showRecord} dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} catalogLoadError={catalogLoadError} selectedFolderId={selectedFolderId}
         starredFolders={starredFolders} starredFoldersHasMore={starredFoldersHasMore} starredFoldersLoading={starredFoldersLoading || starredFoldersLoadingMore || starredFoldersReordering} todayFolderIds={todayFolderIds}
         completedFolderIds={new Set(currentFolderEntries.filter((task) => task.status === "completed").map((task) => task.page.id))}
         onLoadMoreStarredFolders={() => { void loadMoreStarredFolders(); }}
         onReorderStarredFolders={reorderStarredFolders}
-        onSelectDate={(date) => { cardNavigation.close(); clearProject(); selectedDateFollowsToday.current = date === today; setSelectedDate(date); }} onSelectFolder={(folder) => { void selectFolder(folder); }}
+        onSelectDate={(date) => { setShowRecord(true); cardNavigation.close(); clearProject(); selectedDateFollowsToday.current = date === today; setSelectedDate(date); }} onSelectFolder={(folder) => { void selectFolder(folder); }}
         onSelectStarredFolder={(task) => { void openStarredFolder(task); }} onCompleteFolder={plannerActions.completeStarredFolder} onToggleFolderToday={plannerActions.toggleStarredFolderToday}
         onMoveFolderToParent={(task) => { void folderParentMove.openPage(task); }} {...projectNavigationMutations}
       />
@@ -611,7 +616,7 @@ function V3DashboardContent() {
                   <p>{resolution.status === "error" ? resolution.message : project.message}</p>
                 ) : <p>불러오는 중…</p>}
               </section>
-            ) : null) : (
+            ) : null) : !showRecord ? <CardHome folders={catalog?.folders??[]} onOpenRecord={()=>setShowRecord(true)}/> : (
               <DailyPlannerView state={daily} folders={catalog?.folders ?? []} selectedDate={selectedDate} isTodayView={selectedDate === today} todayFolderIds={todayFolderIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(folderId) => { void selectFolder(catalog?.folders.find((folder) => folder.id === folderId) ?? null); }} onOpenFolder={openFolder} onCompleteFolder={plannerActions.completeFolder} onToggleFolderToday={plannerActions.toggleFolderToday} onMoveFolderToParent={folderParentMove.openFolder} onOpenRitual={() => setRitualOpen(true)} onCreateFolder={() => setChildFolderDialog({ mode: "create", parentFolderId: null, parentName: null })} />
             )}
           </div>

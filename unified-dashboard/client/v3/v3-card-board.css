@@ -40,3 +40,33 @@
 .v3-folder-card-head { flex-wrap: wrap; }
 .v3-postit-size-comparison { display: flex; flex-wrap: wrap; align-items: start; gap: var(--v3-space-6); margin-bottom: var(--v3-space-6); }
 .v3-postit-size-comparison > div { display: flex; flex-direction: column; gap: var(--v3-space-3); }
+.v3-card-board-item { position: relative; }
+.v3-card-board-item.is-dragging { z-index: var(--v3-layer-popover); opacity: .7; }
+.v3-card-board-grip { touch-action: none; cursor: grab; }
+.v3-card-board-item.is-dragging .v3-card-board-grip { cursor: grabbing; }
+.v3-card-board-column.is-drop-target { background: var(--v3-glass-panel); border-radius: var(--v3-space-2); }
+.v3-card-board-column.is-drop-unavailable { outline: var(--v3-space-1) solid var(--v3-text-secondary); }
+.v3-card-board-workspace { min-width: 0; }
+.v3-card-board-workspace.is-expanded {
+  position: fixed;
+  inset: var(--v3-outer-inset);
+  z-index: var(--v3-layer-overlay);
+  display: flex;
+  flex-direction: column;
+  padding: var(--v3-space-5);
+  border-radius: var(--v3-space-5);
+}
+.v3-card-board-workspace.is-expanded > .v3-card-board { flex: 1; min-height: 0; }
+.v3-card-board-workspace.is-expanded .v3-card-board-column { display: flex; flex-direction: column; min-height: 0; }
+.v3-card-board-workspace.is-expanded .v3-card-board-lane { height: auto; flex: 1; min-height: 0; }
+.v3-card-home { display: flex; flex-direction: column; gap: var(--v3-space-5); min-height: 100%; }
+.v3-card-home > .v3-card-inbox { flex: 1; min-height: 0; }
+.v3-card-home .v3-card-board-workspace { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.v3-card-home .v3-card-board { flex: 1; min-height: 0; }
+.v3-card-home .v3-card-board-column { display: flex; flex-direction: column; min-height: 0; }
+.v3-card-home .v3-card-board-lane { height: auto; flex: 1; min-height: 0; }
+.v3-shell .v3-card-home { max-width: none; }
+.v3-card-board-column .v3-detail-section-head h3 { white-space: nowrap; }
+.v3-card-board-column .v3-detail-section-head span { white-space: nowrap; }
+
+.v3-postit-card--two-actions .v3-postit-title { padding-right: calc(var(--v3-space-8) * 2 + var(--postit-gap-2) * 2); }

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 import type { CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
-import { CardBoard, boardColumns } from "./CardBoard";
+import { boardColumns } from "./CardBoard";
+import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { CardCompletionFilter } from "./CardCompletionFilter";
 import { PostItCardView, PostItGrid, type PostItVariant } from "./PostItCard";
 import { reviewCard, reviewSession, reviewTitle } from "./components-review-fixtures";
@@ -20,10 +21,10 @@ export function CardBoardSamples({onOpen}:{onOpen(label:string):void}) {
       body:"긴 본문이 있어도 카드와 열의 폭을 줄이지 않습니다. 최신 원문은 네 줄까지 읽고 상세에서 이어 봅니다. ".repeat(5),createdAt:reviewCard.createdAt},
   }))).filter(card=>scenario!=="none"||card.status!=="done");
   const doneCount=cards.filter(card=>card.status==="done").length;
-  const renderCard=(card:typeof cards[number],variant:PostItVariant="compact")=><PostItCardView card={card} variant={variant} activity={card.latestActivity} assignee={reviewSession}
+  const renderCard=(card:typeof cards[number],variant:PostItVariant="compact",handle?:ReactNode,preview=false)=><PostItCardView card={card} variant={variant} activity={card.latestActivity} handle={handle} assignee={reviewSession}
     onOpen={()=>onOpen("보드 카드 상세")}
-    completion={{pending:false,onComplete:()=>setStatuses(previous=>({...previous,[card.id]:"done"}))}}
-    statusControl={{pending:false,load:async()=>({card,reports:card.status==="todo"?[]:[{id:"sample-report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
+    completion={preview?undefined:{pending:false,onComplete:()=>setStatuses(previous=>({...previous,[card.id]:"done"}))}}
+    statusControl={preview?undefined:{pending:false,load:async()=>({card,reports:card.status==="todo"?[]:[{id:"sample-report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
       questions:card.status==="blocked"?[{id:"sample-question",text:"질문",answer:null,options:null,askedAt:card.createdAt,answeredAt:null}]:[],sessions:[]}),
       change:async(_,status)=>setStatuses(previous=>({...previous,[card.id]:status}))}}/>;
   const comparison={...cards[0],id:"board-size-comparison",status:statuses["board-size-comparison"]??"review" as const};
@@ -40,7 +41,7 @@ export function CardBoardSamples({onOpen}:{onOpen(label:string):void}) {
       {(["grid","board"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={mode===value} onClick={()=>setMode(value)}>{value==="grid"?"일반 보기":"보드"}</Button>)}
       {(["mixed","none","done"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={scenario===value} onClick={()=>{setScenario(value);setStatuses({});}}>{{mixed:"혼합",none:"완료 0개",done:"전부 완료"}[value]}</Button>)}
     </div>
-    {mode==="board"?<CardBoard cards={cards} renderCard={renderCard} completion={scope==="folder"?{includeCompleted,onChange}:undefined}/>
+    {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={cards} renderCard={(card,handle,preview)=>renderCard(card as typeof cards[number],"compact",handle,preview)} completion={scope==="folder"?{includeCompleted,onChange}:undefined}/>
       : <PostItGrid>{cards.filter(card=>scope==="all"||includeCompleted||card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>}
   </div>;
 }

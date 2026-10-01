@@ -46,6 +46,8 @@ type MenuState =
 export function V3Navigation({
   dates,
   selectedDate,
+  onSelectHome,
+  homeSelected=false,
   folders,
   catalogLoadError = null,
   selectedFolderId,
@@ -69,6 +71,8 @@ export function V3Navigation({
   projectHasContents,
 }: {
   dates: readonly PlannerDateNavItem[];
+  onSelectHome?():void;
+  homeSelected?:boolean;
   selectedDate: string;
   folders: readonly CatalogFolder[];
   catalogLoadError?: string | null;
@@ -209,13 +213,14 @@ export function V3Navigation({
       aria-label="플래너 내비게이션"
     >
       <div className="v3-navigation-scroll" data-testid="v3-navigation-scroll">
-      <h2>데일리</h2>
+      {onSelectHome?<><h2>카드</h2><div className="v3-nav-list"><button type="button" className={homeSelected?"is-active":""} onClick={onSelectHome}><span className="v3-emoji" aria-hidden="true">▦</span><span>전체 카드</span></button></div></>:null}
+      <h2>기록</h2>
       <div className="v3-nav-list">
         {dates.map((item) => (
           <button
             type="button"
             key={item.date}
-            className={selectedFolderId === null && selectedDate === item.date ? "is-active" : ""}
+            className={!homeSelected && selectedFolderId === null && selectedDate === item.date ? "is-active" : ""}
             onClick={() => onSelectDate(item.date)}
           >
             <span className="v3-emoji" aria-hidden="true">📅</span>

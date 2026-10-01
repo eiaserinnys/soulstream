@@ -6,7 +6,7 @@ import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { useCardNavigation } from "./card-navigation";
 import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { PostItCard } from "./PostItCard";
-import { reviewCard } from "./components-review-fixtures";
+import { reviewCard, reviewDetail } from "./components-review-fixtures";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT:boolean }).IS_REACT_ACT_ENVIRONMENT=true;
 let element:HTMLDivElement,root:Root;
@@ -27,10 +27,10 @@ it("opens the whole card and never fetches per-card detail on list mount", async
 it("keeps the review action independent, pending-disabled, and retryable after failure", async () => {
   const open=vi.fn();let reject!: (error:Error)=>void;
   const mutate=vi.fn().mockReturnValueOnce(new Promise((_,fail)=>{reject=fail;})).mockResolvedValue({});
-  useCardStore.setState({mutate});useCardNavigation.setState({open});
+  useCardStore.setState({mutate,loadCard:vi.fn().mockResolvedValue({...reviewDetail,card:{...reviewCard,status:"review"},questions:[]})});useCardNavigation.setState({open});
   await act(()=>root.render(<PostItCard card={{...reviewCard,status:"review"}}/>));
   const button=element.querySelector<HTMLButtonElement>('button[aria-label="완료"]')!;
-  await act(()=>button.click());expect(button.disabled).toBe(true);expect(open).not.toHaveBeenCalled();
+  await act(async()=>{button.click();await Promise.resolve();});expect(button.disabled).toBe(true);expect(open).not.toHaveBeenCalled();
   expect(mutate).toHaveBeenCalledWith(reviewCard.id,"/status",{status:"done",expectedVersion:reviewCard.version});
   await act(async()=>{reject(new Error("저장 실패"));await Promise.resolve();});
   expect(button.disabled).toBe(false);
