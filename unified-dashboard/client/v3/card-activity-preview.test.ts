@@ -9,4 +9,6 @@ it("preserves markdown source and makes HTML a text-only preview without scripts
   expect(cardActivityPreview({format:"html",body:html})).toBe("첫 & 원문\n둘째\n줄");
   expect(document.querySelector("img")).toBeNull();
   expect((window as Window & {evil?:number}).evil).toBeUndefined();
+  expect(cardActivityPreview({format:"html",body:"<ul><li>A</li><li>B</li></ul>"})).toBe("A\nB");
+  expect(cardActivityPreview({format:"html",body:"<p> </p>"})).toBe("");
 });

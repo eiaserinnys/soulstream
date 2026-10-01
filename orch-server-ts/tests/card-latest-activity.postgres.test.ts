@@ -76,5 +76,8 @@ it("keeps authorized list results and detail/store refresh contracts additive", 
     const planner = new PlannerRepository({resolveSql:async()=>h.liveSql,close:async()=>{}});
     await h.sql`INSERT INTO pages(id,title,daily_date,version) VALUES ('activity-day','데일리','2026-10-01',1)`;
     expect((await planner.getToday('2026-10-01'))!.running.find(c=>c.id==='a')!.latestActivity).toMatchObject({body:'새 원문'});
+    await h.sql`INSERT INTO pages(id,title,version) VALUES ('activity-project','폴더',1)`;
+    await h.sql`UPDATE folders SET project_page_id='activity-project' WHERE id='activity-a'`;
+    expect((await planner.getFolder('activity-a',{limit:20}))!.cards.find(c=>c.id==='a')!.latestActivity).toMatchObject({body:'새 원문'});
   } finally { await app.close(); }
 });

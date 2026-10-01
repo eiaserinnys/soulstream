@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardInbox } from "./CardInbox";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-vi.mock("./CardRow", () => ({ CardRow: () => createElement("div", null, "card") }));
+vi.mock("./PostItCard", () => ({ PostItCard: () => createElement("div", null, "card"), PostItGrid: ({children}:{children:import("react").ReactNode})=>createElement("div",null,children) }));
 vi.mock("@seosoyoung/soul-ui/cards/CardQueue", () => ({ CardQueue: () => null }));
 vi.mock("@seosoyoung/soul-ui/cards/card-store", async importOriginal => {
  const actual = await importOriginal<typeof import("@seosoyoung/soul-ui/cards/card-store")>();

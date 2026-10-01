@@ -1,4 +1,5 @@
 import type { Page, Route } from "@playwright/test";
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 
 const NOW = "2026-07-14T01:30:00.000Z";
 const YESTERDAY = "2026-07-13T08:20:00.000Z";
@@ -16,6 +17,7 @@ type Json = Record<string, unknown> | unknown[] | string | number | boolean | nu
 let blockSequence = 0;
 
 export interface V3VisualQaRouteOptions {
+  postitCards?: CardRow[];
   unifiedFolderView?: boolean;
   nestedSubfolder?: boolean;
   alphaRunHistoryPages?: boolean;
@@ -600,6 +602,7 @@ export async function installV3VisualQaRoutes(
     if (path === "/api/auth/status") return fulfillJson(route, { authenticated: true, user: null });
     if (path === "/api/cards" && request.method() === "GET") {
       const folderId = url.searchParams.get("folderId");
+      if (options.postitCards) return fulfillJson(route, {cards:options.postitCards.filter(card=>!folderId||card.folderId===folderId)});
       return fulfillJson(route, { cards: options.unifiedFolderView && folderId === "folder-amber" ? [{
         id: "p1-card-folder-display",
         folderId: "folder-amber",
@@ -662,7 +665,8 @@ export async function installV3VisualQaRoutes(
       if (path === "/api/planner/today" && request.method() === "GET") {
         const daily = url.searchParams.get("date") === "2026-07-13" ? pageReads[pages.yesterday.id] : pageReads[pages.today.id];
         const todayIds = url.searchParams.get("date") === "2026-07-13" ? ["rb-carry"] : ["rb-alpha", "rb-beta"];
-        return fulfillJson(route, { attention: [], running: [], queued: [], daily, folders: todayIds.map((id) => {
+        const cards=options.postitCards??[];
+        return fulfillJson(route, { attention: cards.filter(card=>card.status==="review"||card.status==="blocked"), running: cards.filter(card=>card.status==="running"), queued: cards.filter(card=>card.status==="queued"), daily, folders: todayIds.map((id) => {
           const folder = unifiedFolders.find((candidate) => candidate.id === id)!;
           return plannerFolderPayload(folder, folderPageById.get(id)!);
         }), memoBlocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
@@ -705,7 +709,7 @@ export async function installV3VisualQaRoutes(
         if (unifiedPlannerMatch[2] === "subfolders") return fulfillJson(route, subfolders);
         if (unifiedPlannerMatch[2] === "sessions") return fulfillJson(route, sessionSlice);
         const snapshot = tasks[folderId] as ReturnType<typeof task> | undefined;
-        return fulfillJson(route, { cards: [], folder, page: folderPage,
+        return fulfillJson(route, { cards: options.postitCards?.filter(card=>card.folderId===folderId)??[], folder, page: folderPage,
           blocks: pageReads[folderPage.id]?.blocks ?? [],
           sections: snapshot ? [{ ...unifiedSection, folderId }] : [unifiedSection],
           items: snapshot ? snapshot.items.map((item) => ({ ...unifiedItem, id: item.id,
