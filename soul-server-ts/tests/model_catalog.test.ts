@@ -32,11 +32,16 @@ describe("ModelCatalog", () => {
 
     // 260906: codex-6-astra added, and codex-5.6-lunar corrected to the id the
     // live node catalogs actually use (codex-5.6-luna).
+    // 261001: the GPT-6 presets the live node catalogs already carry
+    // (codex-6.1-sol, codex-6-sol, codex-6-luna) added.
     expect(catalog.list().map((preset) => preset.id)).toEqual([
       "claude-sonnet",
       "claude-opus",
       "claude-fable",
       "codex-6-astra",
+      "codex-6.1-sol",
+      "codex-6-sol",
+      "codex-6-luna",
       "codex-5.6-sol",
       "codex-5.6-luna",
       "codex-5.6-terra",
@@ -56,7 +61,15 @@ describe("ModelCatalog", () => {
     expect(byId.get("claude-opus")?.default_effort).toBe("xhigh");
     expect(byId.get("claude-sonnet")?.default_effort).toBe("xhigh");
     expect(byId.get("codex-6-astra")?.default_effort).toBe("medium");
-    for (const id of ["codex-5.6-sol", "codex-5.6-luna", "codex-5.6-terra", "codex-5.3-spark"]) {
+    expect(byId.get("codex-6.1-sol")?.default_effort).toBe("high");
+    for (const id of [
+      "codex-6-sol",
+      "codex-6-luna",
+      "codex-5.6-sol",
+      "codex-5.6-luna",
+      "codex-5.6-terra",
+      "codex-5.3-spark",
+    ]) {
       expect(byId.get(id)?.default_effort, id).toBe("xhigh");
     }
     // The vendor does not validate output_config.effort, so declaring one here

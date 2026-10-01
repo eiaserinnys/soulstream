@@ -63,6 +63,27 @@ presets:
     model: gpt-6-astra
     supported_efforts: [low, medium, high, xhigh, max, ultra]
     default_effort: medium
+  # 261001: GPT-6 계열 세 프리셋을 실제 노드 카탈로그에 맞춰 추가했다.
+  # gpt-6.1-sol은 codex 0.159.0부터 model/list에 나타난다. 그보다 낮은 CLI에서는
+  # "계정에서 지원하지 않는 모델"로 거절되므로 CLI를 먼저 올린다.
+  - id: codex-6.1-sol
+    label: Codex - 6.1 Sol
+    backend: codex
+    model: gpt-6.1-sol
+    supported_efforts: [low, medium, high, xhigh, max, ultra]
+    default_effort: high
+  - id: codex-6-sol
+    label: Codex - 6 Sol
+    backend: codex
+    model: gpt-6-sol
+    supported_efforts: [low, medium, high, xhigh, max, ultra]
+    default_effort: xhigh
+  - id: codex-6-luna
+    label: Codex - 6 Luna
+    backend: codex
+    model: gpt-6-luna
+    supported_efforts: [low, medium, high, xhigh, max]
+    default_effort: xhigh
   - id: codex-5.6-sol
     label: Codex - 5.6 Sol
     backend: codex
