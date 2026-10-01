@@ -39,7 +39,7 @@
   --v3-glass-panel: color-mix(in srgb, var(--background) 16%, transparent);
   --v3-glass-detail: color-mix(in srgb, var(--background) 24%, transparent);
   --v3-glass-card: color-mix(in srgb, var(--background) 34%, transparent);
-  --v3-glass-dense: color-mix(in srgb, var(--background) 48%, transparent);
+  --v3-glass-dense: var(--control-surface);
   --v3-stroke-default: color-mix(in srgb, var(--foreground) 12%, transparent);
   --v3-stroke-hover: color-mix(in srgb, var(--v3-accent) 48%, var(--v3-stroke-default));
   --v3-stroke-selected: color-mix(in srgb, var(--v3-accent) 72%, transparent);
@@ -322,7 +322,6 @@
 
 .v3-workspace-toolbar,
 .v3-chat-header {
-  min-height: var(--v3-control-height);
   gap: var(--v3-space-3);
 }
 
@@ -341,10 +340,6 @@
 
 .v3-chat-pane [data-slot="tool-call-group-toggle"] {
   font: var(--v3-type-meta) var(--v3-font-family);
-}
-
-:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-input-composer"] {
-  min-height: var(--v3-control-height);
 }
 
 :is(.v3-chat-pane, .v3-chat-surface) [data-testid="send-button"]:not(:disabled) {
@@ -440,17 +435,5 @@
   }
 }
 
-/* The editor padding aligns the last text line with both canonical small controls.
-   User typography owns line-height; no font-size assumption is made here. */
-:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-input-body"] {
-  min-height: calc(var(--spacing) * 8);
-  padding-block: max(0px, calc((var(--spacing) * 8 - var(--chat-line-height)) / 2));
-  scrollbar-width: none;
-}
-:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-input-body"]::-webkit-scrollbar { display: none; }
-:is(.v3-chat-pane, .v3-chat-surface) [data-testid="send-button"] {
-  width: calc(var(--spacing) * 8); height: calc(var(--spacing) * 8);
-}
-.v3-description-shell .v3-description-editor textarea { padding: 0; }
 .v3-shell .v3-description-empty { font-size: inherit; line-height: inherit; }
 .v3-section-head { margin-bottom: var(--v3-space-2); }

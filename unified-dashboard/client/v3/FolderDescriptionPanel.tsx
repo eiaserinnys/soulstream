@@ -68,7 +68,7 @@ export function FolderDescriptionPanel({
       style={chatTypographyStyle}
     >
       {editing ? (
-        <div className="v3-description-editor" data-editor-variant={variant}>
+        <div className="v3-description-editor control-surface" data-editor-variant={variant}>
           <textarea
             data-slot="chat-input-body"
             rows={1}
@@ -96,7 +96,7 @@ export function FolderDescriptionPanel({
         </div>
       ) : (
         <div
-          className="v3-description-preview"
+          className="v3-description-preview control-surface"
           data-v3-selectable-content="true"
           data-editor-variant={variant}
           onClick={(event) => { if (event.target === event.currentTarget) changeEditing(true); }}

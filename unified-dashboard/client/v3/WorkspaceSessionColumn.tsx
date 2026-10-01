@@ -1,14 +1,12 @@
 import { useRef, type KeyboardEventHandler } from "react";
 import {
-  ChatView, DashboardIconCap, DragHandle, SessionModelPresetBadge,
-  SessionStoryDisclosure, STATUS_CONFIG, useGlassSurface,
+  ChatView, DragHandle,
+  useGlassSurface,
   type SessionProviderConnectionStatus, type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { X } from "lucide-react";
 import { V3_PANEL_GAP_PX } from "./v3-layout-metrics";
-import { sessionPanelTitle } from "./v3-session-panel-model";
-import { SessionStreamStatus } from "./SessionStreamStatus";
+import { SessionPanelHeader } from "./WorkspacePanelHeaders";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
 
 /** The folder board's resize handle and session column, shared with card overlays. */
@@ -47,16 +45,8 @@ export function WorkspaceSessionColumn({
       className={`v3-chat-pane ${chatClassName} border border-glass-border glass-strong glass-chrome lg-rim`}
       data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
       data-testid={chatTestId} aria-label="세션 채팅">
-      <header className="v3-chat-header">
-        <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong></div>
-        <SessionModelPresetBadge session={activeSession}/>
-        <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>
-          {activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}
-        </span>
-        {activeSession ? <SessionStreamStatus active={sessionStreamActive} status={sessionConnectionStatus} reconnect={reconnectSession}/> : null}
-        {activeSession ? <SessionStoryDisclosure sessionId={activeSession.agentSessionId}/> : null}
-        {onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap> : null}
-      </header>
+      <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
+        connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} onClose={onClose}/>
       {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview}/> : null}
       <div className="v3-chat-content">
         {activeSession ? <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}/> :

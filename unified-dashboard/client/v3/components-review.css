@@ -31,3 +31,9 @@
   color: var(--v3-text-secondary);
   overflow-wrap: anywhere;
 }
+
+.v3-components-panel-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v3-space-6); }
+.v3-components-panel-pair > :is(article, section) { height: auto; }
+@media (max-width: 760px) {
+  .v3-components-panel-pair { grid-template-columns: minmax(0, 1fr); }
+}

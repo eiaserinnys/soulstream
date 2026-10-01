@@ -3,7 +3,8 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {installV3VisualQaRoutes} from './v3-visual-fixtures';
 const phase=process.env.CARD_INHERIT_PHASE??'after';
-const output=path.resolve('../../../.local/artifacts/20261001-components-feedback/operational');
+const gutterOnly=Boolean(process.env.CARD_GUTTER_ONLY);
+const output=path.resolve(gutterOnly?'../../../.local/artifacts/20261001-web-ui-v3':'../../../.local/artifacts/20261001-components-feedback/operational');
 const now='2026-10-01T00:00:00Z';
 for(const width of [1440,390])test(`existing components ${width} ${phase}`,async({page})=>{
  await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});
@@ -58,6 +59,18 @@ for(const width of [1440,390])test(`existing components ${width} ${phase}`,async
  await expect(detail.locator('[data-card-section=sessions] .v3-run-row')).toHaveCount(3);
  await detail.locator('.v3-card-panel-scroll').evaluate(el=>{el.scrollTop=0;});
  await expect(page.getByTestId('v3-card-workspace')).toHaveAttribute('data-placement','overlay');await detail.getByPlaceholder('커멘트',{exact:true}).focus();await capture('card');const cardGeometry=await workspaceGeometry();const smallRow=await measure('[data-card-section=sessions] .v3-run-row');const commentInput=await measure('[data-testid=card-detail] [data-slot=chat-input-composer],.v3-card-comment-input');
+ if(gutterOnly){
+  const gutter=await detail.evaluate(pane=>{
+   const box=(el:Element)=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return {left:r.left,right:r.right,width:r.width,minWidth:s.minWidth,boxSizing:s.boxSizing,paddingInline:s.paddingInline};};
+   const header=pane.querySelector('header')!,content=pane.querySelector('.v3-task-detail-content')!,row=pane.querySelector('[data-card-section=sessions] .v3-run-row')!,composer=pane.querySelector('[data-slot=chat-input-composer]')!;
+   return {pane:box(pane),content:box(content),row:box(row),composer:box(composer),header:box(header),firstCap:box(header.querySelector('.dashboard-icon-cap')!),lastCap:box(header.querySelector('.v3-folder-header-actions .dashboard-icon-cap')!)};
+  });
+  writeFileSync(path.join(output,`${phase}-${width}-gutter-metrics.json`),JSON.stringify(gutter,null,2));
+  for(const edge of ['left','right'] as const){expect.soft(Math.abs(gutter.composer[edge]-gutter.content[edge])).toBeLessThanOrEqual(1);expect.soft(Math.abs(gutter.row[edge]-gutter.content[edge])).toBeLessThanOrEqual(1);}
+  expect.soft(gutter.firstCap.left).toBeCloseTo(gutter.content.left,0);expect.soft(gutter.lastCap.right).toBeCloseTo(gutter.content.right,0);
+  expect.soft(gutter.composer.boxSizing).toBe('border-box');expect.soft(gutter.composer.width).toBeLessThan(gutter.pane.width);expect(writes).toHaveLength(0);
+  return;
+ }
  const smallIndent=await detail.locator('.v3-run-children').first().evaluate(el=>({marginLeft:getComputedStyle(el).marginLeft,paddingLeft:getComputedStyle(el).paddingLeft}));
  await detail.locator('[data-card-entry=보고]').scrollIntoViewIfNeeded();await capture('report');
  const cardBubble=await detail.locator('[data-card-entry=보고] [data-slot=chat-message-bubble]').evaluate(el=>{const s=getComputedStyle(el);return {padding:s.padding,radius:s.borderRadius,font:getComputedStyle(el.querySelector('[data-slot=chat-body]')!).fontSize};});

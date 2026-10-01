@@ -143,7 +143,7 @@ describe("PlannerFolderCard node connectivity", () => {
     expect(html).not.toContain('aria-label="실행 중"');
   });
 
-  it("keeps body, state, and star in fixed columns and marks only 100 percent complete", () => {
+  it("keeps body, state, and star in distinct slots and marks only 100 percent complete", () => {
     const html = renderToStaticMarkup(
       <PlannerFolderCard
         task={{

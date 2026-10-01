@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { DashboardIconCap, DisclosureActionIcon } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 import { Check, ChevronRight, MoreHorizontal, Star } from "lucide-react";
@@ -28,7 +28,7 @@ export function RunRowFrame({avatar,title,agentLine,affiliation,preview,status,t
   openLabel,onOpen,disabled,size="default",variant="session",active,failed,offline,sessionId,cardId,blockedKind,testId,onContextMenu}: RunRowFrameProps) {
   const hasPreview=size!=="small"&&Boolean(preview);
   const hasActions=Boolean(actions?.length);
-  const lines=2+(hasPreview||(hasActions&&(variant!=="folder"||secondaryStatus))?1:0)+(affiliation?1:0);
+  const lines=1+(agentLine?1:0)+(hasPreview?1:0)+(affiliation?1:0);
   const content=<><span className="v3-run-avatar">{avatar}</span><span className="v3-run-copy">
     <span className="v3-run-identity"><span className="v3-run-title-line">{title}</span>{agentLine?<span className="v3-run-agent-line">{agentLine}</span>:null}</span>
     {affiliation}{hasPreview?<small>{preview}</small>:null}
@@ -36,16 +36,17 @@ export function RunRowFrame({avatar,title,agentLine,affiliation,preview,status,t
     <StatusChip label={status.label} tone={status.tone}/>
     {timestamp?<time dateTime={timestamp.raw}>{timestamp.display}</time>:null}
     {secondaryStatus?<StatusChip label={secondaryStatus.label} tone={secondaryStatus.tone} className="v3-run-secondary-status"/>:null}
-    {hasActions?<span className="v3-run-row-actions">{actions!.map(action=><DashboardIconCap key={action.kind} size="small"
+  </span>{hasActions?<span className="v3-run-row-actions">{actions!.map(action=><DashboardIconCap key={action.kind} size="small"
       label={action.label} disabled={disabled||action.disabled||action.pending}
       aria-pressed={action.kind==="star"?action.pressed:undefined} aria-expanded={action.kind==="disclosure"?action.expanded:undefined}
       onClick={event=>{event.stopPropagation();action.onAction(event);}}>
       <RowActionIcon action={action}/>
     </DashboardIconCap>)}</span>:null}
-  </span></>;
+  </>;
   return <LiquidGlassCard webglSurface cornerRadius={14}
+    style={{"--v3-run-text-lines":lines} as CSSProperties}
     className={`v3-run-row${size==="small"?" v3-run-row--small":""}${variant==="card"?" v3-card-row":variant==="folder"?" v3-task-card":""}${active?" is-active":""}${failed?" v3-run-row--failed":""}${offline?" v3-run-row--offline":""}`}
-    data-row-variant={variant} data-row-state={status.tone} data-row-lines={lines} data-load-state={failed?"failed":"ready"}
+    data-has-actions={hasActions || undefined} data-has-agent={Boolean(agentLine) || undefined} data-row-variant={variant} data-row-state={status.tone} data-row-lines={lines} data-load-state={failed?"failed":"ready"}
     data-session-id={sessionId} data-card-id={cardId} data-blocked-kind={blockedKind} data-testid={testId} onContextMenu={onContextMenu}>
     {handle}{hasActions?<div className="v3-run-open outline-none focus-visible:ring-2 focus-visible:ring-ring" role="button"
       tabIndex={disabled?-1:0} aria-disabled={disabled||undefined} aria-label={openLabel}

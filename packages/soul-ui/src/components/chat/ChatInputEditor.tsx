@@ -56,10 +56,10 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
     };
     return (
       <>
-        <div className="flex min-w-0 flex-1 items-end gap-2">
+        <div data-slot="chat-input-editor" className="flex min-w-0 flex-1 items-end gap-2">
           {modeIcon ? <span
             data-slot="chat-input-mode"
-            className="mb-2 flex h-5 min-w-5 shrink-0 items-center justify-center text-xs text-muted-foreground"
+            className="flex min-w-5 shrink-0 items-center justify-center text-xs text-muted-foreground"
             title={modeLabel}
             aria-hidden="true"
           >
@@ -77,9 +77,9 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
             disabled={textareaDisabled}
             rows={1}
             className={cn(
-              "min-h-9 w-full resize-none border-0 bg-transparent px-0 py-2",
+              "w-full resize-none border-0 bg-transparent px-0",
               "font-sans text-base leading-snug text-foreground outline-none placeholder:text-muted-foreground/55",
-              "max-h-[120px] transition-colors duration-150 sm:min-h-8",
+              "max-h-[120px] transition-colors duration-150",
               borderColor,
             )}
           />
@@ -97,7 +97,7 @@ export function ChatSendButton({ onSend, disabled, label, variant = "default", c
 }) {
  return <Button data-testid="send-button" onClick={onSend} disabled={disabled} size="icon"
   variant={variant} aria-label={label} title={label} data-button-variant={variant}
-  className={cn("h-9 w-9 shrink-0 self-end rounded-full sm:h-8 sm:w-8", className)}>
+  className={cn("shrink-0 self-end rounded-full", className)}>
   <SendHorizontal className="h-4 w-4" aria-hidden="true" />
  </Button>;
 }

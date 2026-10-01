@@ -15,7 +15,13 @@ function expectV3HeaderLift(): void {
 }
 
 function chatHeaders(source: string): string[] {
-  return source.match(/<header className="v3-chat-header"[\s\S]*?<\/header>/g) ?? [];
+  return source.match(/<header className="[^"]*\bv3-chat-header\b[^"]*"[\s\S]*?<\/header>/g) ?? [];
+}
+
+function expectSharedStoryHeader(): void {
+  const source = readSource("../../../../unified-dashboard/client/v3/WorkspacePanelHeaders.tsx");
+  expect(chatHeaders(source)[0]).toContain("<SessionStoryDisclosure");
+  expectV3HeaderLift();
 }
 
 function sessionStoryMounts(): string[] {
@@ -56,26 +62,24 @@ function sessionStoryMounts(): string[] {
 describe("SessionStoryDisclosure stacking contract", () => {
   it("enumerates every production mount surface", () => {
     expect(sessionStoryMounts()).toEqual([
-      "unified-dashboard/client/v3/FolderWorkspace.tsx",
-      "unified-dashboard/client/v3/FolderWorkspace.tsx",
-      "unified-dashboard/client/v3/WorkspaceSessionColumn.tsx",
+      "unified-dashboard/client/v3/WorkspacePanelHeaders.tsx",
     ]);
   });
 
   it("lifts the standalone FolderWorkspace chat header above its review banner and message list", () => {
     const source = readSource("../../../../unified-dashboard/client/v3/FolderWorkspace.tsx");
-    const header = chatHeaders(source).find((candidate) => candidate.includes('label="채팅 닫기"'));
+    const header = source.match(/<SessionPanelHeader[\s\S]*?\/>/g)?.find(candidate => candidate.includes("onClose="));
 
-    expect(header).toContain("<SessionStoryDisclosure");
-    expectV3HeaderLift();
+    expect(header).toContain("<SessionPanelHeader");
+    expectSharedStoryHeader();
   });
 
   it("lifts the task inspector chat header above its review banner and message list", () => {
     const source = readSource("../../../../unified-dashboard/client/v3/FolderWorkspace.tsx");
-    const header = chatHeaders(source).find((candidate) => !candidate.includes('label="채팅 닫기"'));
+    const header = source.match(/<SessionPanelHeader[\s\S]*?\/>/g)?.find(candidate => !candidate.includes("onClose="));
 
-    expect(header).toContain("<SessionStoryDisclosure");
-    expectV3HeaderLift();
+    expect(header).toContain("<SessionPanelHeader");
+    expectSharedStoryHeader();
   });
 
   it("lifts the shared folder/card chat header above its review banner and message list", () => {
@@ -84,9 +88,9 @@ describe("SessionStoryDisclosure stacking contract", () => {
       expect(readSource(`../../../../unified-dashboard/client/v3/${surface}.tsx`)).toContain("<WorkspaceSessionColumn");
     }
     expect(readSource("../../../../unified-dashboard/client/v3/V3DashboardLayout.tsx")).toContain("<CardWorkspace");
-    const header = chatHeaders(source).find((candidate) => candidate.includes("<SessionStoryDisclosure"));
+    const header = source.match(/<SessionPanelHeader[\s\S]*?\/>/)?.[0];
 
-    expect(header).toContain("<SessionStoryDisclosure");
-    expectV3HeaderLift();
+    expect(header).toContain("<SessionPanelHeader");
+    expectSharedStoryHeader();
   });
 });

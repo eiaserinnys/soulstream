@@ -209,6 +209,37 @@
   line-height: var(--chat-line-height);
 }
 
+/* The frame owns outer padding. One row owns the shared button/last-line seat. */
+[data-slot="chat-input-composer"] {
+  --chat-composer-control-size: calc(var(--spacing) * 8);
+}
+[data-slot="chat-input-editor"] textarea {
+  display: block;
+  min-height: var(--chat-composer-control-size);
+  padding-block: max(0px, calc((var(--chat-composer-control-size) - var(--chat-line-height)) / 2));
+  scrollbar-width: none;
+}
+[data-slot="chat-input-editor"] textarea::-webkit-scrollbar { display: none; }
+[data-slot="chat-input-composer"] > button {
+  width: var(--chat-composer-control-size);
+  height: var(--chat-composer-control-size);
+}
+[data-slot="chat-input-mode"] { height: var(--chat-composer-control-size); }
+
+/* The folder combo's existing surface is the canonical control/panel tint.
+   Render it once in either glass mode; disabled content never fades the tint. */
+:root { --control-surface: color-mix(in srgb, var(--background) 48%, transparent); }
+.control-surface { background: var(--control-surface); }
+.control-surface:is(:disabled, [data-disabled], :has(:disabled)) { opacity: 1; }
+.control-surface:disabled,
+.control-surface[data-disabled],
+.control-surface :disabled { color: var(--muted-foreground); cursor: default; }
+.control-surface[data-liquid-glass-webgl="true"] { background: transparent; }
+.control-surface[data-liquid-glass-webgl="true"]::before {
+  background: var(--control-surface);
+  opacity: 1;
+}
+
 [data-slot="tool-call-group-toggle"] {
   font-size: 12px;
   line-height: 18px;

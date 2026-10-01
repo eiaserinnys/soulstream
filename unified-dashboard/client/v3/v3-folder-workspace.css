@@ -247,7 +247,6 @@
   border-radius: var(--v3-space-3);
   padding: var(--v3-space-3);
   color: var(--foreground);
-  background: color-mix(in srgb, var(--muted) 72%, transparent);
   text-align: left;
 }
 .v3-description-editor:focus-within { box-shadow: 0 0 0 var(--v3-space-1) color-mix(in srgb, var(--ring) 24%, transparent); }
@@ -596,4 +595,33 @@
 .v3-review-banner [data-slot="button"] {
   font-size: var(--font-size-xs);
   font-weight: 800;
+}
+
+/* The operational header owns both sides of its separator. Adjacent content
+   supplies horizontal insets only; nested chat padding cannot add another gap. */
+.v3-panel-header:is(.v3-folder-header, .v3-chat-header) {
+  min-height: 0;
+  flex-wrap: wrap;
+  padding-block: var(--v3-space-3);
+  margin-bottom: var(--v3-space-7);
+  border-bottom: 1px solid var(--border);
+}
+.v3-panel-header + .v3-detail-scroll { padding-top: 0; }
+.v3-panel-header ~ .v3-chat-content [data-slot="chat-root"],
+.v3-panel-header ~ .v3-chat-content [data-virtuoso-scroller="true"] { padding-top: 0; }
+@media (max-width: 759px) {
+  .v3-panel-header .v3-chat-session-title { flex-basis: 100%; }
+}
+
+/* A detail panel owns the outer inset of its header, scroll content and dock.
+   The composer keeps its internal padding; the dock inherits the body gutter. */
+.v3-card-detail { --v3-detail-inline-inset: var(--v3-space-6); }
+.v3-detail-pane > .v3-detail-gutter,
+.v3-card-detail > .v3-card-comment-dock {
+  min-width: 0;
+  box-sizing: border-box;
+  padding-inline: var(--v3-detail-inline-inset);
+}
+@media (max-width: 760px) {
+  .v3-card-detail { --v3-detail-inline-inset: var(--v3-space-4); }
 }
