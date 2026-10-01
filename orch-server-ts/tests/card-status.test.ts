@@ -14,11 +14,22 @@ describe("card state authority", () => {
     expect(() => assertCardTransition("running", "review", "agent", 1, null)).not.toThrow();
     expect(() => assertCardTransition("running", "blocked", "agent", 0, "question")).not.toThrow();
   });
+  it("allows evidence-backed review from every nonterminal state for agent and llm", () => {
+    for (const actor of ["agent", "llm"] as const) {
+      for (const from of ["todo", "queued", "running", "blocked", "review"] as const) {
+        expect(() => assertCardTransition(from, "review", actor, 1, null)).not.toThrow();
+        expect(() => assertCardTransition(from, "review", actor, 0, null)).toThrow(/report/i);
+      }
+      for (const from of ["done", "cancelled"] as const) {
+        expect(() => assertCardTransition(from, "review", actor, 1, null)).toThrow();
+      }
+    }
+  });
   it("rejects other agent transitions and non-question blocking", () => {
     for (const status of ["todo", "queued", "running", "cancelled"] as const) {
       expect(() => assertCardTransition("running", status, "agent", 1, null)).toThrow();
     }
-    expect(() => assertCardTransition("todo", "review", "agent", 1, null)).toThrow();
+    expect(() => assertCardTransition("todo", "blocked", "agent", 1, "question")).toThrow();
     expect(() => assertCardTransition("running", "blocked", "agent", 1, "limit")).toThrow();
   });
   it("allows human completion and requires a blocked kind", () => {

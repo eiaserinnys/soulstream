@@ -60,6 +60,9 @@ describe("cards storage, HTTP and planner", () => {
     await cards.setCardStatus({ ...human,cardId:id,status:'running',idempotencyKey:key() });
     await cards.askQuestion({ ...agent,cardId:id,text:'결정?',options:['진행','중단'],idempotencyKey:key() });
     await cards.askQuestion({ ...human,cardId:id,text:'추가 확인?',idempotencyKey:key() });
+    await cards.addReport({ ...agent,cardId:id,title:'작업 보고',format:'markdown',body:'보고',idempotencyKey:key() });
+    await expect(cards.setCardStatus({ ...agent,cardId:id,status:'review',idempotencyKey:key() })).rejects.toThrow(/questions/i);
+    expect((await cards.getCard(id))!.card.status).toBe('blocked');
     const q=(await cards.getCard(id))!.questions;
     await expect(cards.setCardStatus({ ...human,cardId:id,status:'done',idempotencyKey:key() })).rejects.toThrow(/questions/i);
     await expect(cards.answerQuestion({ ...agent,cardId:id,questionId:String(q[0]!.id),answer:'진행',idempotencyKey:key() })).rejects.toThrow(/human/i);
@@ -68,6 +71,46 @@ describe("cards storage, HTTP and planner", () => {
     await cards.answerQuestion({ ...human,cardId:id,questionId:String(q[1]!.id),answer:'확인',idempotencyKey:key() });
     expect((await cards.getCard(id))!.card).toMatchObject({ status:'running',blocked_kind:null });
     expect((await cards.getCard(id))!.questions[0]).toMatchObject({ answered_by:human.actorUserId,answer:'진행' });
+  });
+
+  it.each(['todo','queued','blocked'] as const)("accepts an assigned session's %s review over HTTP and clears queue/block metadata", async (from) => {
+    const made=await cards.createCard({ ...human,folderId:'cards-a',title:'완료 보고 검수',request:'원문',
+      queue:from !== 'todo',assignee:{kind:'session',sessionId:agent.actorSessionId},idempotencyKey:key() });
+    const id=made.operation.target_id;
+    if (from === 'blocked') await cards.setCardStatus({ ...human,cardId:id,status:'blocked',
+      blockedKind:'limit',blockedDetail:'이전 한도',idempotencyKey:key() });
+    let before=(await cards.getCard(id))!.card;
+    expect(before.status).toBe(from);
+    if (from !== 'todo') expect(before.queue_position_key).not.toBeNull();
+    const app=Fastify();
+    registerFolderRoutes(app,{
+      provider:{listFolders:()=>[{id:'cards-a'}],listSessionAssignments:()=>({})},
+      accessProvider:{resolveAccess:()=>({restricted:true,allowedFolderIds:['cards-a']})},
+      resolveDashboardUserId:()=>human.actorUserId,cardServiceProvider:async()=>cards,
+      authBearerToken:'service-test',environment:'production',
+    });
+    const headers={authorization:'Bearer service-test','x-soulstream-agent-session-id':agent.actorSessionId};
+    const review=()=>app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,
+      payload:{status:'review',expectedVersion:before.version,idempotencyKey:key()}});
+    try {
+      const reportless=await review();
+      expect(reportless.statusCode).toBe(422);
+      expect(reportless.json().detail.error.message).toMatch(/report/i);
+      expect((await cards.getCard(id))!.card).toMatchObject({status:from,version:before.version});
+      await cards.addReport({ ...agent,cardId:id,title:'최종 보고',format:'markdown',body:'작업 증거',idempotencyKey:key() });
+      before=(await cards.getCard(id))!.card;
+      const accepted=await review();
+      expect(accepted.statusCode).toBe(200);
+      expect(accepted.json().card).toMatchObject({status:'review',version:before.version+1,
+        queuePositionKey:null,blockedKind:null,blockedDetail:null});
+      const stored=await app.inject(`/api/cards/${id}`);
+      expect(stored.json().card).toMatchObject({status:'review',version:before.version+1,
+        assigneeSessionId:agent.actorSessionId,queuePositionKey:null,blockedKind:null,blockedDetail:null});
+      expect(stored.json().reports).toHaveLength(1);
+    } finally {
+      await app.close();
+      await h.sql`DELETE FROM cards WHERE id=${id}`;
+    }
   });
 
   it("moves cards, replays the move, orders the global queue and keeps the session card link", async () => {
