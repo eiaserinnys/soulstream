@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { DashboardIconCap, ProfileAvatar, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { Check } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
@@ -7,7 +7,7 @@ import { cardStatusLabel } from "./CardActions";
 import { StatusChip } from "./StatusChip";
 import { useCardNavigation } from "./card-navigation";
 import { cardActivityPreview } from "./card-activity-preview";
-import { CardStatusPicker, type CardStatusControl } from "./CardStatusPicker";
+import { CardStatusPicker, type CardStatusControl, type CardStatusHandle } from "./CardStatusPicker";
 import { usePostItStatus } from "./use-postit-status";
 import "./v3-postit-cards.css";
 
@@ -23,13 +23,13 @@ export function PostItGrid({ children, className = "", variant = "default" }: { 
 }
 
 /** List data already carries the latest original activity; mounting never loads detail. */
-export function PostItCard({ card, handle, variant = "default" }: { card: CardRow; handle?: ReactNode; variant?: PostItVariant }) {
+export function PostItCard({ card, handle, variant = "default", preview=false }: { card: CardRow; handle?: ReactNode; variant?: PostItVariant; preview?:boolean }) {
   const open = useCardNavigation(s => s.open);
   const completion = usePostItStatus(card);
   const assignee = useDashboardStore(s => s.catalog?.sessionList?.find(session => session.agentSessionId === card.assigneeSessionId));
   const error = useCardStore(s => s.errors[card.id]);
   return <PostItCardView card={card} variant={variant} activity={card.latestActivity ?? null} handle={handle} assignee={assignee}
-    onOpen={() => open(card.id, "overlay")} completion={completion} statusControl={completion} error={error}/>;
+    onOpen={() => open(card.id, "overlay")} completion={preview?undefined:completion} statusControl={preview?undefined:completion} error={error}/>;
 }
 
 export function PostItCardView({ card, activity, handle, assignee, onOpen, completion, statusControl, error, variant = "default" }: {
@@ -39,6 +39,8 @@ export function PostItCardView({ card, activity, handle, assignee, onOpen, compl
   completion?: { pending: boolean; onComplete(): void }; error?: string;
   variant?: PostItVariant;
 }) {
+  const [statusBusy,setStatusBusy]=useState(false);
+  const statusHandle = useRef<CardStatusHandle>(null);
   const scaleStyle = usePostItScale();
   const assigned = Boolean(card.assigneeKind);
   const nodeId = assignee?.nodeId ?? card.nodeId, agentId = assignee?.agentId ?? card.assigneeAgentId;
@@ -49,8 +51,11 @@ export function PostItCardView({ card, activity, handle, assignee, onOpen, compl
   const actions = Boolean(handle || complete);
   const body = activity ? cardActivityPreview(activity) : "아직 지시나 보고가 없습니다";
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
-  return <article className={`v3-postit-card${actions ? " v3-postit-card--actions" : ""}${variant === "compact" ? " v3-postit-card--compact" : ""}`} data-card-id={card.id} data-card-size={variant}
-    data-card-status={card.status} style={{ ...scaleStyle, "--postit-rotation": `${postItRotation(card.id)}deg` } as CSSProperties}>
+  return <article className={`v3-postit-card${actions ? " v3-postit-card--actions" : ""}${handle&&complete?" v3-postit-card--two-actions":""}${variant === "compact" ? " v3-postit-card--compact" : ""}`} data-card-id={card.id} data-card-size={variant}
+    data-card-status={card.status}
+    onContextMenu={event=>{if(statusControl){event.preventDefault();event.stopPropagation();statusHandle.current?.request();}}}
+    onKeyDown={event=>{if(statusControl && (event.key==="ContextMenu" || event.shiftKey && event.key==="F10")){event.preventDefault();event.stopPropagation();statusHandle.current?.request();}}}
+    style={{ ...scaleStyle, "--postit-rotation": `${postItRotation(card.id)}deg` } as CSSProperties}>
     <button type="button" className="v3-postit-open" aria-label={`카드 ${card.title} 열기`} onClick={onOpen}>
       <span className="v3-postit-title" title={card.title}>{card.title}</span>
       <span className="v3-postit-latest-label">{activity ? activity.kind === "report" ? "마지막 보고" : "마지막 지시" : "지시·보고"}</span>
@@ -59,10 +64,10 @@ export function PostItCardView({ card, activity, handle, assignee, onOpen, compl
       <div className="v3-postit-footer" onClick={onOpen}>
         <span className="v3-postit-assignee"><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait}
           fallbackEmoji={assigned ? card.assigneeKind === "human" ? "👤" : "🤖" : "·"}/><span title={name}>{name}</span></span>
-        {statusControl ? <CardStatusPicker card={card} control={statusControl} onOpen={onOpen}/> : <StatusChip label={cardStatusLabel(card)} tone={tone}/>}
+        {statusControl ? <CardStatusPicker ref={statusHandle} onBusyChange={setStatusBusy} card={card} control={statusControl} onOpen={onOpen}/> : <StatusChip label={cardStatusLabel(card)} tone={tone}/>}
       </div>
     {actions ? <div className="v3-postit-actions">{handle}{complete ? <DashboardIconCap size="small" label="완료"
-      disabled={completion.pending} onClick={event => { event.stopPropagation(); completion.onComplete(); }}>
+      disabled={completion.pending||statusBusy} onClick={event => { event.stopPropagation(); if(statusControl)statusHandle.current?.request("done");else completion.onComplete(); }}>
       <Check className="h-4 w-4" aria-hidden="true"/>
     </DashboardIconCap> : null}</div> : null}
     {error ? <span className="v3-postit-error" role="alert">{error}</span> : null}

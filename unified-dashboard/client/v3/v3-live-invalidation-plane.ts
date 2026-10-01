@@ -8,6 +8,7 @@ export type V3InvalidationSource =
   | "metadata_updated"
   | "catalog"
   | "folder"
+  | "card"
   | "custom_view"
   | "starred_page"
   | "replay";
@@ -24,6 +25,7 @@ const SOURCE_NAMES: readonly V3InvalidationSource[] = [
   "metadata_updated",
   "catalog",
   "folder",
+  "card",
   "custom_view",
   "starred_page",
   "replay",
@@ -61,6 +63,10 @@ export function acceptV3SessionStreamEvent(event: SessionStreamEvent): void {
       break;
     case "folder_updated":
       invalidateV3("folder");
+      break;
+    case "card_updated":
+      // The event contains no permission, archive or deletion snapshot.
+      invalidateV3("card");
       break;
     case "custom_view_updated":
       invalidateV3("custom_view");

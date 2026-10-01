@@ -34,9 +34,18 @@ it("shares the folder completion option between grid and board without mutating 
   await act(async()=>{root.render(<FolderCardSection folderId={reviewCard.folderId}/>);await Promise.resolve();});
   expect(fetch.mock.calls[0][0]).toBe(`/api/cards?folderId=${reviewCard.folderId}`);
   expect(element.querySelector('[data-card-id="complete"]')).toBeNull();expect(element.textContent).toContain("완료 1개 숨김");
-  await act(()=>button("보드").click());expect(element.querySelectorAll('[data-board-column]')).toHaveLength(6);
+  expect(element.querySelectorAll('[data-board-column]')).toHaveLength(6);
   const show=[...element.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==="완료 포함 켜기")!;
   await act(()=>show.click());expect(element.querySelector('[data-card-id="complete"]')).not.toBeNull();
   await act(()=>button("일반 보기").click());expect(element.querySelector('[data-card-id="complete"]')).not.toBeNull();
   expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("starts the card home directly in the permission-filtered six-lane board",async()=>{
+ const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({cards:rows}),{status:200}));vi.stubGlobal("fetch",fetch);
+ await act(async()=>{root.render(<CardInbox folders={[]} initialBoard/>);await Promise.resolve();});
+ expect(element.querySelectorAll('[data-board-column]')).toHaveLength(6);
+ expect(element.querySelector('[data-card-id="complete"]')).not.toBeNull();
+ expect(element.querySelector('button[aria-label="보드 확대"]')).not.toBeNull();
+ expect(element.querySelector('[data-board-column="todo"] button[aria-label="새 카드"]')).not.toBeNull();
 });

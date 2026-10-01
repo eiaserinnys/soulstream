@@ -426,6 +426,9 @@ importers:
 
   unified-dashboard:
     dependencies:
+      '@dnd-kit/core':
+        specifier: ^6.3.1
+        version: 6.3.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@seosoyoung/soul-ui':
         specifier: workspace:*
         version: link:../packages/soul-ui
