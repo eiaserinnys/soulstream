@@ -4,6 +4,8 @@ import { Alert, StyleSheet } from 'react-native';
 import type { PlannerFolder } from '../../api/plannerTypes';
 import { useSettingsStore } from '../../store/settingsStore';
 
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+
 const mockGestures: any[] = [];
 const mockUsePlannerStarred = jest.fn();
 const mockOpenFolderMenu = jest.fn();

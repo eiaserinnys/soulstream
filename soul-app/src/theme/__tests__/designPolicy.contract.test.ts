@@ -174,16 +174,17 @@ describe('v3 design policy contract', () => {
     expect(read('components/sessionCardFrame.ts')).toContain('sessionRoles.feed.cardPadding');
     for (const file of [
       'screens/ProjectListScreen.tsx',
-      'screens/DailyPlannerScreen.tsx',
       'components/split/SidebarPane.tsx',
       'components/planner/DailyMemo.tsx',
     ]) {
       expect(read(file)).toContain('t.cardLayout.gap');
     }
+    expect(read('screens/DailyPlannerScreen.tsx')).toContain('gap: t.uiSpacing.lg');
     const groupedSheet = read('components/planner/GroupedGlassSheet.tsx');
     expect(groupedSheet).toContain('grouped.dividerColor');
     expect(read('components/planner/FolderBoardContent.tsx')).toContain('<GroupedGlassSheet');
-    expect(read('components/SessionCard.tsx')).toContain('t.cardLayout.gap / 2');
+    expect(read('components/SessionCard.tsx')).toContain('makeSessionCardStyles(t, embedded, small)');
+    expect(read('components/sessionCardFrame.ts')).toContain('t.cardLayout.gap / 2');
     expect(read('components/planner/FolderSessionHistory.tsx')).toContain('<SessionCard');
   });
 
@@ -229,11 +230,13 @@ describe('v3 design policy contract', () => {
     }
     for (const file of [
       'components/planner/DailyMemo.tsx',
-      'components/planner/ProjectContextEditor.tsx',
-      'components/planner/FolderWorkspace.styles.ts',
+      'components/planner/PlannerSectionHeader.tsx',
     ]) {
       expect(read(file)).toContain('...planner.typography.section');
     }
+    expect(read('components/planner/ProjectContextEditor.tsx')).toContain('<PlannerSectionHeader');
+    expect(read('components/planner/FolderWorkspace.tsx')).toContain('<PlannerSectionHeader');
+    expect(read('components/planner/FolderWorkspace.styles.ts')).toContain('...planner.typography.navigation');
     expect(read('components/chat/ClaudeRuntimeSignalsStrip.tsx')).toMatch(
       /rowTitle:\s*\{[^}]*fontSize:\s*t\.fontSize\.body/s,
     );

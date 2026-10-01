@@ -3,6 +3,8 @@ import { fireEvent, render } from '@testing-library/react-native';
 import type { PlannerFolder } from '../../../api/plannerTypes';
 import { StarredFolderList } from '../StarredFolderList';
 
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+
 const folder = {
   page: {
     id: 'starred-1', title: '별표 업무', dailyDate: null, version: 1,

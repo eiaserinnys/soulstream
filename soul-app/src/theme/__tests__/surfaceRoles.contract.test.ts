@@ -198,7 +198,12 @@ describe('surface role contract', () => {
   });
 
   test.each(GLASS_CARD_SURFACES)('%s 카드·행은 역할 기반 native glass 진입점을 사용한다', (file) => {
-    expect(read(file)).toMatch(/<AppGlass(?:Card|Pressable)\b/);
+    if (file === 'components/planner/ProjectContextEditor.tsx') {
+      expect(read(file)).toContain('<PlannerForegroundCard');
+      expect(read('components/planner/PlannerForegroundCard.tsx')).toMatch(/<AppGlassCard\b/);
+    } else {
+      expect(read(file)).toMatch(/<AppGlass(?:Card|Pressable)\b/);
+    }
   });
 
   test('별표·폴더 목록은 공통 업무 행, 오늘은 공통 카드 행을 재사용한다', () => {

@@ -34,7 +34,8 @@ jest.mock('../../components/SessionCardById', () => ({
 
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { act, render } from '@testing-library/react-native';
+import { act, render, renderHook } from '@testing-library/react-native';
+import { useTokens } from '../../theme/tokens';
 import { DailyPlannerScreen } from '../../screens/DailyPlannerScreen';
 import { SessionFeedScreen } from '../../screens/SessionFeedScreen';
 import { SettingsScreen } from '../../screens/SettingsScreen';
@@ -59,28 +60,33 @@ beforeEach(() => {
 beforeAll(() => jest.useFakeTimers());
 afterAll(() => jest.useRealTimers());
 
-test('representative phone bodies consume page inset20 without adding duplicate page titles', () => {
+test('phone bodies use their approved insets without adding duplicate page titles', () => {
+  const tokenHook = renderHook(() => useTokens());
+  const t = tokenHook.result.current;
   const daily = render(<DailyPlannerScreen />);
   const dailyStyle = StyleSheet.flatten(daily.getByTestId('phone-daily-body').props.contentContainerStyle);
-  expect(dailyStyle.paddingHorizontal).toBe(20);
+  expect(dailyStyle.paddingHorizontal).toBe(t.uiSpacing.lg);
+  expect(StyleSheet.flatten(daily.getByTestId('daily-composer-dock').props.style).paddingHorizontal).toBe(dailyStyle.paddingHorizontal);
+  expect(daily.getAllByTestId('daily-centered-date')).toHaveLength(1);
   expect(daily.queryByText('📅 데일리')).toBeNull();
-  expect(daily.getAllByText('오늘 업무')).toHaveLength(1);
+  expect(daily.queryByText('오늘 업무')).toBeNull();
 
   const feed = render(<SessionFeedScreen />);
   const feedStyle = StyleSheet.flatten(feed.getByTestId('phone-feed-body').props.contentContainerStyle);
-  expect(feedStyle.paddingHorizontal).toBe(20);
+  expect(feedStyle.paddingHorizontal).toBe(t.foundation.pageInset);
   expect(feed.queryByText('📰 피드')).toBeNull();
 
   const settings = render(<SettingsScreen showTitle={false} />);
   const settingsStyle = StyleSheet.flatten(
     settings.getByTestId('phone-settings-body').props.contentContainerStyle,
   );
-  expect(settingsStyle.paddingHorizontal).toBe(20);
+  expect(settingsStyle.paddingHorizontal).toBe(t.foundation.pageInset);
   expect(settings.queryByText('설정')).toBeNull();
 
   daily.unmount();
   feed.unmount();
   settings.unmount();
+  tokenHook.unmount();
   act(() => jest.runOnlyPendingTimers());
 });
 
