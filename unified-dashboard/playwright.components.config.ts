@@ -8,7 +8,7 @@ export default defineConfig({
   retries: 0,
   timeout: 60_000,
   reporter: [["list"]],
-  outputDir: "../../../.local/artifacts/20261001-components-review/results",
+  outputDir: "../../../.local/artifacts/20261001-components-full-page/results",
   use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:4198" },
   webServer: {
     command: `node "${realpathSync("node_modules/vite/bin/vite.js")}" --host 127.0.0.1 --port 4198 --strictPort`,

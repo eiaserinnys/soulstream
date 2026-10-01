@@ -1,3 +1,16 @@
+.v3-shell.v3-components-page {
+  display: block;
+  height: 100dvh;
+}
+
+.v3-components-main {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--v3-space-5) var(--v3-space-6) var(--v3-space-6);
+  --glass-chrome-surface-strong: var(--v3-glass-panel);
+}
+
 .v3-components-samples {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,4 @@
 import { CardWorkspace } from "./CardWorkspace";
-import { ComponentsReviewPage } from "./ComponentsReviewPage";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
@@ -52,10 +51,10 @@ import { useProjectNavigationMutations } from "./use-project-navigation-mutation
 import { useFolderSessions } from "./use-folder-sessions";
 import { useTodayDate } from "./use-today-date";
 import "./v3-dashboard-styles";
-export function V3DashboardLayout({ componentsPage = false }: { componentsPage?: boolean }) {
-  return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent componentsPage={componentsPage} /></LiquidGlassProvider>;
+export function V3DashboardLayout() {
+  return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
 }
-function V3DashboardContent({ componentsPage }: { componentsPage: boolean }) {
+function V3DashboardContent() {
   const cardNavigation = useCardNavigation();
   const today = useTodayDate();
   const dates = useMemo(() => recentDates(today), [today]);
@@ -571,7 +570,7 @@ function V3DashboardContent({ componentsPage }: { componentsPage: boolean }) {
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
           <div ref={plannerScrollRef} className="v3-planner-scroll" data-testid="v3-planner-scroll">
-            {componentsPage ? <ComponentsReviewPage /> : selectedFolderId ? (workspaceFolderEntry && selectedFolder ? <FolderDetailPane
+            {selectedFolderId ? (workspaceFolderEntry && selectedFolder ? <FolderDetailPane
               placement="inline"
               scrollContainerRef={plannerScrollRef}
               task={workspaceFolderEntry}
