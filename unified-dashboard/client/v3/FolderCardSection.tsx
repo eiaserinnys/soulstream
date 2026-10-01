@@ -18,8 +18,10 @@ export function FolderCardSection({folderId,folders=[],placement="inline"}:{fold
   <div className="v3-detail-section-head v3-folder-card-head"><h3>{board?"현재 폴더 카드":"카드"}</h3><span>{visibleCards.length}개</span>
    <CardCompletionFilter includeCompleted={includeCompleted} onChange={setIncludeCompleted} hiddenCount={doneCount}/>
    <span className="v3-spacer"/>
-   <DashboardIconCap size="small" label={board?"일반 보기":"보드"} onClick={()=>setBoard(value=>!value)}>{board?<List className="h-4 w-4"/>:<LayoutDashboard className="h-4 w-4"/>}</DashboardIconCap>
-   <DashboardIconCap size="small" label="카드 추가" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap></div>
+   <div className="v3-card-actions">
+    <DashboardIconCap size="small" label={board?"일반 보기":"보드"} onClick={()=>setBoard(value=>!value)}>{board?<List className="h-4 w-4"/>:<LayoutDashboard className="h-4 w-4"/>}</DashboardIconCap>
+    <DashboardIconCap size="small" label="카드 추가" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>
+   </div></div>
   {adding?<form className="v3-card-add" onSubmit={e=>{e.preventDefault();void add();}}><Input autoFocus aria-label="카드 제목" placeholder="카드 제목" value={title} onChange={e=>setTitle(e.target.value)} disabled={pending}/><DashboardIconCap label="카드 저장" type="submit" disabled={pending||!title.trim()}><Check className="h-4 w-4"/></DashboardIconCap><DashboardIconCap label="추가 취소" onClick={()=>setAdding(false)}><X className="h-4 w-4"/></DashboardIconCap></form>:null}
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
   {board?<CardBoard cards={cards} renderCard={card=><PostItCard card={card} variant="compact"/>} completion={{includeCompleted,onChange:setIncludeCompleted}}/>

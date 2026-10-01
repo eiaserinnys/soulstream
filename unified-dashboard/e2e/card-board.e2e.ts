@@ -43,6 +43,8 @@ for(const width of [1440,1210,390])test(`main and folder board ${width}`,async({
   await expect(folder.locator('[data-card-status="done"]')).toHaveCount(0);await expect(folder).toContainText("완료 1개 숨김");
   expect(reads).toContain("/api/cards?folderId=folder-amber");await folder.locator(".v3-folder-card-head").scrollIntoViewIfNeeded();await capture("after-folder-general-off");
   await folder.getByRole("button",{name:"보드",exact:true}).click();const folderBoard=folder.locator(".v3-card-board");
+  const actions=await folder.locator(".v3-folder-card-head .v3-card-actions button").evaluateAll(nodes=>nodes.map(e=>e.getBoundingClientRect().y));
+  expect(actions).toHaveLength(2);expect(Math.abs(actions[0]-actions[1])).toBeLessThanOrEqual(1);
   await expect(folderBoard.locator("[data-board-column]")).toHaveCount(6);await expect(folder.locator('[data-card-status="cancelled"]')).toHaveCount(0);
   const folderMetrics=await folderBoard.evaluate(element=>({clientWidth:element.clientWidth,scrollWidth:element.scrollWidth,
     cardWidth:getComputedStyle(element.querySelector(".v3-postit-card")!).width,
