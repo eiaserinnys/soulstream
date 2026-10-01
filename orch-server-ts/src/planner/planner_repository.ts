@@ -5,6 +5,7 @@ import type { PlannerReadProvider, PlannerPageInput, PlannerTodayDto, PlannerFol
 import { blockDto, pageDto, decodeCursor, decodeStarredFolderCursor, sliceRows } from "./planner_repository_reads.js";
 import { loadPlannerFolders } from "./planner_aggregate_query.js";
 import { moveStarredFolderOrder } from "./planner_starred_page_order.js";
+import { projectCardActivity } from "../cards/card_latest_activity.js";
 
 export class PlannerRepository implements PlannerReadProvider {
   constructor(private readonly resolver: LiveDbSqlResolver) {}
@@ -47,9 +48,9 @@ export class PlannerRepository implements PlannerReadProvider {
       GROUP BY f.id ORDER BY position, f.id`;
     const review = await sql`SELECT session_id FROM sessions WHERE review_state = 'needs_review'
       ORDER BY updated_at DESC, session_id DESC LIMIT 50`;
-    const cards = await sql`SELECT c.* FROM cards c JOIN folders f ON f.id=c.folder_id
+    const cards = await projectCardActivity(sql, await sql`SELECT c.* FROM cards c JOIN folders f ON f.id=c.folder_id
       WHERE NOT c.archived AND NOT f.archived AND c.status IN ('review','running','queued','blocked')
-      ORDER BY c.queue_position_key COLLATE "C" NULLS LAST,c.updated_at DESC,c.id`;
+      ORDER BY c.queue_position_key COLLATE "C" NULLS LAST,c.updated_at DESC,c.id`);
     const byStatus = (status: string) => cards.filter(c=>c.status === status).map(serializeCardRow);
     return { attention: cards.filter(c=>c.status === 'review' || c.status === 'blocked').map(serializeCardRow),
       running: byStatus('running'), queued: byStatus('queued'), daily: { page: pageDto(page), blocks: blocks.map(blockDto), state_vector: "" },
@@ -64,7 +65,7 @@ export class PlannerRepository implements PlannerReadProvider {
     if (!row) return null;
     const page = pageDto(row.page as Record<string, unknown>);
     const blocks = await sql`SELECT * FROM blocks WHERE page_id = ${page.id} ORDER BY position_key, id`;
-    const cards = await sql`SELECT * FROM cards WHERE folder_id = ${folderId} AND NOT archived ORDER BY position_key COLLATE "C", id`;
+    const cards = await projectCardActivity(sql, await sql`SELECT * FROM cards WHERE folder_id = ${folderId} AND NOT archived ORDER BY position_key COLLATE "C", id`);
     return { folder: serializeCardRow(row.folder as Record<string, unknown>), page, blocks: blocks.map(blockDto),
       cards: cards.map(serializeCardRow), subfolders: await this.getSubfolders(folderId, input),
       sessions: await this.getSessions(folderId, input) };

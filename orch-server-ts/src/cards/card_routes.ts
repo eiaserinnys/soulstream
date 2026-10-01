@@ -25,7 +25,8 @@ export function registerCardRoutes(app:FastifyInstance,options:FolderRouteOption
       const service=await options.cardServiceProvider!();
       const cards=await service.listCards(request.query);
       const [access,folders]=await Promise.all([options.accessProvider.resolveAccess(request),options.provider.listFolders()]);
-      return { cards:cards.filter(c=>isFolderAllowed(normalizeAccess(access),folders,c.folder_id)).map(serializeCardRow) };
+      const visible=cards.filter(c=>isFolderAllowed(normalizeAccess(access),folders,c.folder_id));
+      return { cards:(await service.projectCards(visible)).map(serializeCardRow) };
     } catch(error) { return folderOperationError(reply,error); }
   });
   for (const reports of [false,true]) {

@@ -1,0 +1,82 @@
+/* Approved concept tokens. Layout tracks sum to 238 + 40 padding + 2 border = 280. */
+.v3-postit-grid, .v3-postit-card {
+  --postit-width: 320px;
+  --postit-height: 280px;
+  --postit-title-height: 50px;
+  --postit-label-height: 20px;
+  --postit-body-height: 100px;
+  --postit-footer-height: 32px;
+  --postit-radius: 3px;
+  --postit-body-font: 450 17px/25px;
+  --postit-title-font: 650 18px/25px;
+  --postit-meta-font: 500 13px/20px;
+  --postit-assignee-font: 500 14px/20px;
+  --postit-ink: #2e3d39;
+  --postit-muted: #59635a;
+  --postit-paper: #fff7c6;
+}
+.v3-postit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--postit-width));
+  gap: var(--v3-space-6);
+  justify-content: start;
+  min-width: var(--postit-width);
+  /* Reserve rotation overhang without moving the cards' shared left edge. */
+  padding-block: var(--v3-space-1);
+}
+.v3-postit-card {
+  position: relative;
+  box-sizing: border-box;
+  width: var(--postit-width);
+  height: var(--postit-height);
+  flex: none;
+  border: 1px solid #8c97701c;
+  border-radius: var(--postit-radius);
+  background: var(--postit-paper);
+  color: var(--postit-ink);
+  box-shadow: 0 3px 10px #24483f1c, 0 1px 2px #24483f1a;
+  transform: rotate(var(--postit-rotation));
+}
+.v3-postit-card:hover { box-shadow: 0 5px 14px #24483f29; }
+.v3-postit-open {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: var(--postit-title-height) var(--v3-space-3) var(--postit-label-height) var(--v3-space-2) var(--postit-body-height) var(--v3-space-4) var(--postit-footer-height);
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: inherit;
+  padding: var(--v3-space-5);
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.v3-postit-open:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
+.v3-postit-title, .v3-postit-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  align-self: start;
+}
+.v3-postit-title { grid-row: 1; -webkit-line-clamp: 2; font: var(--postit-title-font) var(--v3-font-family); }
+.v3-postit-card--actions .v3-postit-title { padding-right: calc(var(--postit-footer-height) + var(--v3-space-2)); }
+.v3-postit-latest-label { grid-row: 3; font: var(--postit-meta-font) var(--v3-font-family); color: var(--postit-muted); }
+.v3-postit-body { grid-row: 5; -webkit-line-clamp: 4; max-height: var(--postit-body-height); font: var(--postit-body-font) var(--v3-font-family); }
+.v3-postit-empty { color: var(--postit-muted); }
+.v3-postit-footer { grid-row: 7; display: flex; align-items: center; justify-content: space-between; gap: var(--v3-space-3); min-width: 0; }
+.v3-postit-assignee { display: flex; align-items: center; gap: var(--v3-space-2); min-width: 0; font: var(--postit-assignee-font) var(--v3-font-family); }
+.v3-postit-assignee > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.v3-postit-assignee > :first-child { width: var(--v3-session-avatar-size); height: var(--v3-session-avatar-size); flex: none; }
+.v3-shell .v3-postit-footer [data-slot="status-chip"] { flex: none; font: var(--postit-meta-font) var(--v3-font-family); color: var(--postit-muted); background: #ffffffb8; }
+.v3-shell .v3-postit-footer [data-slot="status-chip"]:is(.v3-status-chip--review,.v3-status-chip--question) { color: #866022; background: #fff2d9; }
+.v3-shell .v3-postit-footer .v3-status-chip--blocked { color: #a54d3b; background: #ffede8; }
+.v3-shell .v3-postit-footer .v3-status-chip--running { color: #246e57; background: #e5f4e8; }
+.v3-shell .v3-postit-footer .v3-status-chip--done { color: #326488; background: #e8f0fa; }
+.v3-shell .v3-postit-footer .v3-status-chip--queued { color: #62577b; background: #eee8f6; }
+.v3-postit-actions { position: absolute; top: var(--v3-space-5); right: var(--v3-space-5); display: flex; gap: var(--v3-space-2); }
+.v3-postit-error { position: absolute; inset-inline: var(--v3-space-5); bottom: calc(var(--postit-footer-height) + var(--v3-space-5)); background: var(--postit-paper); color: #a54d3b; font: var(--postit-meta-font) var(--v3-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,5 +1,6 @@
 import type { CardRow, FolderRow, FolderSnapshot, FolderOperationRow, SqlClient, RepositorySql } from "./card_types.js";
 import { normalizeOperation } from "./card_models.js";
+import { projectCardActivity } from "../card_latest_activity.js";
 
 export class CardRepositoryRead {
   constructor(protected readonly sql: SqlClient) {}
@@ -15,7 +16,7 @@ export class CardRepositoryRead {
   async getSnapshot(folderId: string): Promise<FolderSnapshot | null> {
     const folder = await this.getFolder(folderId);
     if (!folder) return null;
-    return { folder, cards: await this.listCards({ folderId, includeArchived: true }) };
+    return { folder, cards: await this.projectCards(await this.listCards({ folderId, includeArchived: true })) };
   }
   async listFolders(params: { folderId: string | null; includeArchived?: boolean; limit?: number; offset?: number }) {
     return await this.sql<FolderRow[]>`SELECT * FROM folders
@@ -33,6 +34,7 @@ export class CardRepositoryRead {
   async getCard(cardId: string): Promise<CardRow | null> {
     return (await this.sql<CardRow[]>`SELECT * FROM cards WHERE id=${cardId}`)[0] ?? null;
   }
+  projectCards(cards: readonly CardRow[]) { return projectCardActivity(this.sql, cards); }
   async listReports(cardId: string) {
     return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_reports WHERE card_id=${cardId} ORDER BY created_at DESC,id DESC`;
   }
