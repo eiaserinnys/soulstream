@@ -100,7 +100,8 @@ export class CardDispatcher {
             const commentId=String(payload.comment_id ?? "");
             const comment=detail.comments.find(item => item.id === commentId);
             const sessionId=card.assignee_session_id ?? await this.options.repository.latestDispatchedSessionId(card.id);
-            if (comment && sessionId) {
+            // The target already received direction that it recorded from the conversation.
+            if (comment && sessionId && !(comment.kind === "spoken" && comment.session_id === sessionId)) {
                 try {
                     await this.options.sendMessage(sessionId, `[카드 커멘트] 「${card.title}」\n${String(comment.body)}`);
                     await cards.markCommentDelivered(card.id, commentId);

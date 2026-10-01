@@ -15,6 +15,8 @@ describe("card comments HTTP, storage, and delivery", () => {
   let sequence = 0;
   const messages = vi.fn(async (_sessionId: string, _text: string) => {});
   const warnings = vi.fn();
+  const notify = vi.fn(async () => {});
+  const cardUpdated = vi.fn(async () => {});
   const human = { actorKind: "user" as const, actorSessionId: null, actorUserId: "director@example.com" };
   const key = () => `comment-test:${++sequence}`;
 
@@ -27,14 +29,14 @@ describe("card comments HTTP, storage, and delivery", () => {
         const rows = await tx<{ id: number }[]>`SELECT event_append(${p.sessionId},${p.eventType},${p.payload},${p.searchableText},${p.createdAt},${p.dedupeKey ?? null}) AS id`;
         return rows[0]!.id;
       },
-    }, undefined, change => dispatcher.acceptMutation(change));
+    }, { emitCardUpdated: cardUpdated, emitFolderUpdated: async () => {} }, change => dispatcher.acceptMutation(change));
     dispatcher = new CardDispatcher({
       repository: new CardDispatchRepository(async () => sql),
       cards: async () => cards,
       resolveTarget: () => ({ nodeId: "eiaserinnys", agentId: "roselin", modelPreset: null, available: true, reason: null }),
       launch: async () => {},
       sendMessage: messages,
-      notify: async () => {},
+      notify,
       warn: warnings,
     });
   }, 60_000);
@@ -49,6 +51,8 @@ describe("card comments HTTP, storage, and delivery", () => {
     await h.sql`DELETE FROM sessions`;
     messages.mockClear();
     warnings.mockClear();
+    notify.mockClear();
+    cardUpdated.mockClear();
   });
 
   async function makeCard(title = "커멘트 대상") {
@@ -69,6 +73,46 @@ describe("card comments HTTP, storage, and delivery", () => {
     } as unknown as FolderRouteOptions);
     return server;
   }
+
+  it.each([
+    { target: "assigned", actor: "self", kind: "spoken", expected: 0 },
+    { target: "assigned", actor: "self", kind: "comment", expected: 1 },
+    { target: "assigned", actor: "other", kind: "spoken", expected: 1 },
+    { target: "fallback", actor: "self", kind: "spoken", expected: 0 },
+    { target: "fallback", actor: "self", kind: "comment", expected: 1 },
+    { target: "fallback", actor: "other", kind: "spoken", expected: 1 },
+  ] as const)("delivers $actor $kind to $target exactly $expected times, including idempotent replay", async ({ target, actor, kind, expected }) => {
+    const cardId = await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,folder_id,card_id,status) VALUES
+      ('target-session','comment-folder',${cardId},'running'),('other-session','comment-folder',${cardId},'running')`;
+    if (target === "assigned") {
+      await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='target-session' WHERE id=${cardId}`;
+    } else {
+      await h.sql`INSERT INTO folder_operations(id,folder_id,target_kind,target_id,operation_type,actor_kind,payload_json)
+        VALUES ('dispatch-target','comment-folder','card',${cardId},'dispatch_card','system','{"session_id":"target-session"}')`;
+    }
+    cardUpdated.mockClear();
+    const input = {
+      actorKind: kind === "spoken" ? "agent" as const : "user" as const,
+      actorSessionId: actor === "self" ? "target-session" : "other-session",
+      cardId, body: "옮겨 적은 사용자 지시", kind, idempotencyKey: key(),
+    };
+    const posted = await cards.addComment(input);
+    const retried = await cards.addComment(input);
+    expect(retried.id).toBe(posted.id);
+    await dispatcher.drain();
+    expect(messages).toHaveBeenCalledTimes(expected);
+    if (expected) expect(messages).toHaveBeenCalledWith("target-session", "[카드 커멘트] 「커멘트 대상」\n옮겨 적은 사용자 지시");
+    const detail = (await cards.getCard(cardId))!;
+    expect(detail.comments).toEqual([expect.objectContaining({
+      id: posted.id, author_kind: "user", session_id: input.actorSessionId, kind, body: input.body,
+      delivered_at: expected ? expect.any(Date) : null,
+    })]);
+    expect(detail.card.latest_activity).toMatchObject({ kind: "instruction", body: input.body });
+    expect(cardUpdated).toHaveBeenCalledTimes(1);
+    expect(notify).not.toHaveBeenCalled();
+    expect(warnings).not.toHaveBeenCalled();
+  });
 
   it("stores a dashboard comment, returns it in get_card, and delivers once to the assigned session", async () => {
     const cardId = await makeCard();
