@@ -1,14 +1,16 @@
-import React, { useMemo } from 'react';
+import React, { forwardRef, useMemo } from 'react';
 import { Platform } from 'react-native';
 import { createApiClient } from '../api/client';
 import { useSettingsStore } from '../store/settingsStore';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
-import { CardBoardWorkspace } from '../components/planner/CardBoardWorkspace';
+import { CardBoardWorkspace, type CardBoardWorkspaceHandle, type FolderCardDisplay } from '../components/planner/CardBoardWorkspace';
+import { useCardDisplay } from '../hooks/useCardDisplay';
 
-export function CardHomeScreen({ onOpen }: { onOpen(id: string): void }) {
+export const CardHomeScreen = forwardRef<CardBoardWorkspaceHandle, { onOpen(id: string): void; externalHeader?: boolean; cardDisplay?: FolderCardDisplay }>(function CardHomeScreen({ onOpen, externalHeader, cardDisplay: controlledDisplay }, ref) {
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  const cardDisplay = useCardDisplay();
   return <AppKeyboardAvoidingView testID="card-home-screen" style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <CardBoardWorkspace api={api} cardDisplay={{ includeCompleted: true, onChange: () => {} }} onOpen={onOpen} />
+    <CardBoardWorkspace ref={ref} api={api} cardDisplay={controlledDisplay ?? cardDisplay} externalHeader={externalHeader} onOpen={onOpen} />
   </AppKeyboardAvoidingView>;
-}
+});

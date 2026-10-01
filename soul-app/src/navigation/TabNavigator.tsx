@@ -43,7 +43,8 @@ import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { ROOT_SECTION_CONFIG, type RootSectionKey } from './rootSectionConfig';
 import { RootSectionHeaderTitle } from '../components/navigation/RootSectionHeaderTitle';
 import { DailyHeaderActions } from '../components/planner/DailyHeaderActions';
-import { CardHomeScreen } from '../screens/CardHomeScreen';
+import { useCardDisplay } from '../hooks/useCardDisplay';
+import { PhoneCardHome } from './PhoneCardHome';
 import {
   PhonePanelHistoryProvider,
   usePhonePanelHistory,
@@ -147,13 +148,6 @@ function rootScreenOptions(section: RootSectionKey) {
   };
 }
 
-function PhoneDailyScreen({ navigation }: NativeStackScreenProps<DailyStackParamList, 'Daily'>) {
-  const t = useTokens();
-  useLayoutEffect(() => { navigation.setOptions({ headerRight: () => <LiquidGlassButton iconOnly accessibilityLabel="기존 데일리 기록" onPress={() => navigation.navigate('DailyHistory')}>
-    <Ionicons name="today-outline" size={t.iconSize.standard} color={t.colors.textPrimary} /></LiquidGlassButton> }); }, [navigation, t]);
-  return <CardHomeScreen onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })} />;
-}
-
 function PhoneDailyHistoryScreen({ navigation }: NativeStackScreenProps<DailyStackParamList, 'DailyHistory'>) {
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   useLayoutEffect(() => {
@@ -188,7 +182,7 @@ function DailyNavigator() {
   const t = useTokens();
   return (
     <DailyStack.Navigator screenOptions={stackScreenOptions(t)}>
-      <DailyStack.Screen name="Daily" component={PhoneDailyScreen} options={rootScreenOptions('DailyTab')} />
+      <DailyStack.Screen name="Daily" component={PhoneCardHome} options={rootScreenOptions('DailyTab')} />
       <DailyStack.Screen name="DailyHistory" component={PhoneDailyHistoryScreen} options={{ title: '데일리 기록' }} />
       <DailyStack.Screen
         name="FolderWorkspace"
@@ -260,11 +254,13 @@ export function PhoneCardDetail({ route, navigation }: { route: { params: { card
 export function PhoneFolderWorkspace({ folderPageId, folderId, navigation }: { folderPageId: string; folderId?: string; navigation: any }) {
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  const cardDisplay = useCardDisplay(folderId ?? folderPageId);
   return (
     <FolderWorkspace
       api={api}
       folderPageId={folderPageId}
       folderId={folderId}
+      cardDisplay={cardDisplay}
       active={useIsFocused()}
       onOpenSession={(sessionId) => openPhoneChat(navigation, sessionId)}
       onTitleSaved={(folderTitle) => navigation.setParams({ folderTitle: folderTitle })}

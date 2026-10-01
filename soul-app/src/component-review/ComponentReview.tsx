@@ -44,7 +44,7 @@ function Gallery() {
   const device = useDeviceType();
   const [section, setSection] = useState<Section>(() => {
     const selected = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search).get('section') : null;
-    return selected === 'cardHome' || selected === 'entryShell' ? selected : 'rows';
+    return sections.some((entry) => entry.value === selected) ? selected as Section : 'rows';
   });
   const style = useMemo(() => ({
     padding: t.cardLayout.padding, gap: t.uiSpacing.xl,

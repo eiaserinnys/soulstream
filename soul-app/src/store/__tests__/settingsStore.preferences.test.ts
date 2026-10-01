@@ -1,4 +1,5 @@
 import { useSettingsStore } from '../settingsStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 beforeEach(() => {
   useSettingsStore.setState({
@@ -11,6 +12,20 @@ beforeEach(() => {
 });
 
 describe('settingsStore user preferences', () => {
+  it('preserves separate global and folder completion preferences after storage rehydration', async () => {
+    const settings = useSettingsStore.getState();
+    expect(settings.cardIncludeCompleted ?? {}).toEqual({});
+    settings.setCardIncludeCompleted('global', true);
+    settings.setCardIncludeCompleted('folder-1', false);
+    // Exercise the same persisted storage that app restart reads.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const stored = await AsyncStorage.getItem('soul-app-settings');
+    expect(JSON.parse(stored!).state.cardIncludeCompleted).toEqual({ global: true, 'folder-1': false });
+    useSettingsStore.setState({ cardIncludeCompleted: {} });
+    await AsyncStorage.setItem('soul-app-settings', stored!);
+    await useSettingsStore.persist.rehydrate();
+    expect(useSettingsStore.getState().cardIncludeCompleted).toEqual({ global: true, 'folder-1': false });
+  });
   it('applies normalized server appearance and wallpaper snapshots', () => {
     useSettingsStore.getState().applyUserPreferences({
       appearance: 'dark',

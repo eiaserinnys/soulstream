@@ -28,21 +28,21 @@ test('폴더 행/보드의 같은 controlled 옵션은 완료만 숨기고 숨�
     const [include, setInclude] = useState(false);
     return <><CompletedCardsToggle includeCompleted={include} completedCount={1} onChange={setInclude} />
       <FolderCardList api={null} cards={cards} includeCompleted={include} onOpen={() => {}} />
-      <CardBoard api={null} cards={cards} includeCompleted={include} onIncludeCompletedChange={setInclude} onOpen={() => {}} /></>;
+      <CardBoard api={null} cards={cards} includeCompleted={include} onOpen={() => {}} /></>;
   }
   const screen = render(<Sample />);
   expect(screen.queryByTestId('card-row-done')).toBeNull();
   expect(screen.getByTestId('card-row-cancelled')).toBeTruthy();
-  expect(screen.getAllByText('완료 1개 숨김')).toHaveLength(2);
-  fireEvent.press(screen.getByLabelText('숨긴 완료 카드 보기'));
+  expect(screen.queryByTestId('card-board-column-done')).toBeNull();
+  fireEvent.press(screen.getByLabelText('완료 숨김'));
   expect(screen.getByTestId('card-row-done')).toBeTruthy();
   expect(screen.getByTestId('postit-card-done')).toBeTruthy();
-  expect(screen.getByLabelText('완료 포함').props.accessibilityState.checked).toBe(true);
+  expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(false);
 });
 
-test.each([{ items: [] }, { items: cards.filter((card) => card.status === 'done') }])('완료 0개/전부 완료의 빈 상태에도 6열이 남는다', ({ items }) => {
-  const screen = render(<CardBoard api={null} cards={items} includeCompleted={false} onIncludeCompletedChange={() => {}} onOpen={() => {}} />);
-  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(6);
+test.each([{ items: [] }, { items: cards.filter((card) => card.status === 'done') }])('완료 0개/전부 완료의 빈 상태에도 5열이 남는다', ({ items }) => {
+  const screen = render(<CardBoard api={null} cards={items} includeCompleted={false} onOpen={() => {}} />);
+  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(5);
   expect(screen.queryByTestId('postit-card-done')).toBeNull();
   expect(screen.getAllByText('카드가 없습니다.').length).toBeGreaterThanOrEqual(5);
 });
@@ -54,7 +54,7 @@ test('목록 활동 원문과 요청을 표시하고 상세는 카드 탭 전까
   const card = cardFixture({ request: '요청 원문', latestActivity: { kind: 'instruction', body: '새 지시 원문', format: 'markdown', createdAt: '2026-10-01' } });
   const screen = render(<CardBoard api={{ getCard, setCardStatus } as unknown as ApiClient} cards={[card]} onOpen={open} />);
   expect(screen.queryByText('요청 원문')).toBeNull();
-  expect(screen.getByText('새 지시 원문')).toBeTruthy();
+  expect(screen.getByText(/새 지시 원문/)).toBeTruthy();
   await waitFor(() => expect(getCard).not.toHaveBeenCalled());
   fireEvent.press(screen.getByLabelText('카드 제목 카드 상세'));
   expect(open).toHaveBeenCalledWith(card.id);

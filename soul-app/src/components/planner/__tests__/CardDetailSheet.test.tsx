@@ -53,15 +53,37 @@ test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 
   expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1', '파랑', expect.any(String));
 });
 
-test('검수 상태는 단어로만 표시하고 완료 캡만 기존 API를 부른다', async () => {
+test.each([{ nativeHeader: true }, { inline: true }])('상세 완료 성공은 store를 갱신한 뒤 기존 닫기로 복귀한다 %s', async (presentation) => {
   const reviewing = { ...detail, questions: [], card: { ...card, status: 'review' as const } };
-  const api = { getCard: jest.fn().mockResolvedValue(reviewing), setCardStatus: jest.fn().mockResolvedValue({ card, folderId: card.folderId }) };
-  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  const done = { ...card, status: 'done' as const, version: card.version + 1 };
+  const api = { getCard: jest.fn().mockResolvedValueOnce(reviewing).mockResolvedValueOnce(reviewing).mockResolvedValue({ ...reviewing, card: done }),
+    setCardStatus: jest.fn().mockResolvedValue({ card: done, folderId: card.folderId }) };
+  const onClose = jest.fn(() => expect(useCardStore.getState().rows[card.id].status).toBe('done'));
+  const screen = render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={onClose} />);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
   expect(screen.queryByLabelText('상태 변경')).toBeNull();
-  expect(screen.getByText('검수')).toBeTruthy();
+  if (!('nativeHeader' in presentation)) expect(screen.getByText('검수')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('완료')));
   expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'done', card.version, expect.any(String), undefined);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('완료 저장 중·실패 시 상세를 유지하고 중복 저장을 막는다', async () => {
+  const reviewing = { ...detail, questions: [], card: { ...card, status: 'review' as const } };
+  let reject!: (error: Error) => void;
+  const api = { getCard: jest.fn().mockResolvedValue(reviewing), setCardStatus: jest.fn(() => new Promise((_resolve, fail) => { reject = fail; })) };
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const onClose = jest.fn();
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={onClose} />);
+  await waitFor(() => expect(screen.getByLabelText('완료')).toBeTruthy());
+  await act(async () => { fireEvent.press(screen.getByLabelText('완료')); });
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByLabelText('완료'));
+  expect(api.setCardStatus).toHaveBeenCalledTimes(1);
+  await act(async () => reject(new Error('저장 실패')));
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByTestId('card-detail-container')).toBeTruthy();
+  expect(alert).toHaveBeenCalledWith('카드 변경 실패', '저장 실패');
 });
 
 test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydrate하고 트리·탐색을 보존한다', async () => {

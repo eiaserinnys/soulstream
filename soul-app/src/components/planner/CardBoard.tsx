@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, Text, View } from 'react-native';
+import { Alert, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDto, CardStatus } from '../../api/cardTypes';
 import { useDeviceType, useTokens } from '../../theme';
@@ -10,43 +10,54 @@ import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { BoardDragCard, type BoardDragEvent } from './BoardDragCard';
 import { CardStatusMenu } from './CardStatusMenu';
 import { useCardTransition } from '../../hooks/useCardTransition';
-import { BOARD_COLUMNS, boardDropStatus, boardLaneGeometry, type BoardFrame, type BoardPosition } from '../../lib/card-board-layout';
+import { boardVisibleColumns, boardDropStatus, boardLaneGeometry, boardLaneOffset, boardSnapOffsets, boardNearestLane, type BoardFrame, type BoardPosition } from '../../lib/card-board-layout';
 export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
-export function CardBoard({ api, cards, onOpen, includeCompleted = true, onIncludeCompletedChange, global = false,
+export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   phone: controlledPhone, initialPosition, onPositionChange }: {
   api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string): void;
-  includeCompleted?: boolean; onIncludeCompletedChange?(value: boolean): void; global?: boolean;
+  includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void;
 }) {
   const t = useTokens();
   const devicePhone = useDeviceType() === 'phone';
   const phone = controlledPhone ?? devicePhone;
+  const window = useWindowDimensions();
+  const columns = boardVisibleColumns(includeCompleted);
   const paper = createPostItRoles(t, 'compact');
   const frameRef = useRef<View>(null);
   const scroll = useRef<ScrollView>(null);
   const [frame, setFrame] = useState<BoardFrame>({ x: 0, y: 0, width: 0, height: 0 });
-  const geometry = boardLaneGeometry(frame.width, paper.width, t.uiSpacing.sm, phone);
-  const firstPosition = useRef(initialPosition ?? { x: phone ? geometry.stride * 4 : 0, lanes: {} });
+  const viewport = frame.width || window.width;
+  const geometry = boardLaneGeometry(viewport, paper.width, t.uiSpacing.sm, phone);
+  const offsets = columns.map((_, index) => boardLaneOffset(index, viewport, geometry, columns.length));
+  const firstPosition = useRef(initialPosition ?? { x: phone ? offsets[4] : 0, lane: phone ? 'review' as const : 'todo' as const, lanes: {} });
   const initialContentOffset = useRef({ x: firstPosition.current.x, y: 0 });
-  const previousStride = useRef(geometry.stride);
+  const previousLayout = useRef({ stride: geometry.stride, viewport, includeCompleted });
   const initialized = useRef(false);
   useEffect(() => {
     if (frame.width > 0 && !initialized.current) {
       initialized.current = true;
-      scroll.current?.scrollTo({ x: firstPosition.current.x, animated: false });
-    } else if (initialized.current && previousStride.current !== geometry.stride) {
-      // Font changes resize paper. Keep the user's selected lane, rather than reset to review.
-      const lane = Math.round(position.current.x / previousStride.current);
-      position.current.x = lane * geometry.stride;
+      position.current.x = initialPosition ? Math.min(initialPosition.x, offsets[offsets.length - 1]) : phone ? offsets[4] : 0;
+      scroll.current?.scrollTo({ x: position.current.x, animated: false });
+      onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
+    } else if (initialized.current && (previousLayout.current.stride !== geometry.stride
+      || previousLayout.current.viewport !== viewport || previousLayout.current.includeCompleted !== includeCompleted)) {
+      // Visibility/font/viewport changes keep the same lane; hidden done returns to review.
+      const lane = columns.findIndex(([status]) => status === position.current.lane);
+      const index = lane < 0 ? columns.length - 1 : lane;
+      position.current.lane = columns[index][0];
+      position.current.x = offsets[index];
       scroll.current?.scrollTo({ x: position.current.x, animated: false });
       onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
     }
-    previousStride.current = geometry.stride;
-  }, [frame.width, geometry.stride]);
+    previousLayout.current = { stride: geometry.stride, viewport, includeCompleted };
+  }, [frame.width, geometry.stride, viewport, includeCompleted]);
   const position = useRef<BoardPosition>({ ...firstPosition.current, lanes: { ...firstPosition.current.lanes } });
   const geometryRef = useRef(geometry); geometryRef.current = geometry;
+  const columnsRef = useRef(columns); columnsRef.current = columns;
+  const offsetsRef = useRef(offsets); offsetsRef.current = offsets;
   const frameLatest = useRef(frame); frameLatest.current = frame;
   const [drag, setDrag] = useState<{ card: CardDto; event: BoardDragEvent; grabX: number; grabY: number } | null>(null);
   const dragRef = useRef(drag); dragRef.current = drag;
@@ -55,12 +66,12 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true, onInclu
   const stageHeight = useRef(0);
   const action = useCardTransition(api, drag?.card.id ?? '');
   const active = cards.filter((card) => !card.archived && card.status !== 'cancelled');
-  const savePosition = () => onPositionChange?.({ x: position.current.x, lanes: { ...position.current.lanes } });
+  const savePosition = () => onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
   const moveTo = (x: number, animated: boolean) => {
-    const g = geometryRef.current;
-    const max = g.laneWidth * BOARD_COLUMNS.length + g.gap * (BOARD_COLUMNS.length - 1) + g.inset * 2 - frameLatest.current.width;
+    const max = offsetsRef.current[offsetsRef.current.length - 1];
     const bounded = Math.max(0, Math.min(max, x));
     position.current.x = bounded;
+    position.current.lane = columnsRef.current[boardNearestLane(bounded, offsetsRef.current)][0];
     scroll.current?.scrollTo({ x: bounded, animated }); savePosition();
   };
   const stopEdge = () => { if (edgeTimer.current) clearInterval(edgeTimer.current); edgeTimer.current = null; };
@@ -78,11 +89,11 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true, onInclu
   };
   const finish = () => {
     stopEdge(); dragRef.current = null; setDrag(null);
-    if (phone) moveTo(Math.round(position.current.x / geometryRef.current.stride) * geometryRef.current.stride, true);
+    if (phone) moveTo(offsetsRef.current[boardNearestLane(position.current.x, offsetsRef.current)], true);
   };
   const drop = (card: CardDto, event: BoardDragEvent) => {
     const boardFrame = { ...frameLatest.current, y: frameLatest.current.y + stageHeight.current, height: frameLatest.current.height - stageHeight.current };
-    const next = boardDropStatus(event.absoluteX, event.absoluteY, boardFrame, geometryRef.current, position.current.x, card.status);
+    const next = boardDropStatus(event.absoluteX, event.absoluteY, boardFrame, geometryRef.current, position.current.x, card.status, columnsRef.current);
     if (!next) { Alert.alert('카드 이동 취소', '다른 단계의 레인 위에서 놓아 주세요.'); return; }
     if (card.status === 'review' && next === 'running') { setMenu({ card, target: next }); return; }
     void action.transition(card, next);
@@ -95,17 +106,17 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true, onInclu
     {phone ? <ScrollView horizontal testID="card-board-stages" showsHorizontalScrollIndicator={false}
       onLayout={(event) => { stageHeight.current = event.nativeEvent.layout.height; }}
       style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: t.cardLayout.padding, gap: t.uiSpacing.xs }}>
-      {BOARD_COLUMNS.map(([status, label], index) => <GlassButton key={status} accessibilityLabel={`${label} 레인 보기`}
-        disabled={!!drag} onPress={() => moveTo(index * geometry.stride, true)}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary }}>{label}</Text></GlassButton>)}
+      {columns.map(([status, label], index) => <GlassButton key={status} accessibilityLabel={`${label} 레인 보기`}
+        disabled={!!drag} onPress={() => moveTo(offsets[index], true)}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary }}>{label}</Text></GlassButton>)}
     </ScrollView> : null}
     <ScrollView ref={scroll} horizontal testID="card-board" style={{ flex: 1 }} showsHorizontalScrollIndicator={false}
-      scrollEnabled={!drag} snapToInterval={phone ? geometry.stride : undefined} decelerationRate={phone ? 'fast' : 'normal'}
+      scrollEnabled={!drag} snapToOffsets={phone ? boardSnapOffsets(viewport, geometry, columns.length) : undefined} decelerationRate={phone ? 'fast' : 'normal'}
       disableIntervalMomentum={phone} contentOffset={initialContentOffset.current} scrollEventThrottle={16}
-      onScroll={(event) => { position.current.x = event.nativeEvent.contentOffset.x; savePosition(); }}
+      onScroll={(event) => { position.current.x = event.nativeEvent.contentOffset.x;
+        position.current.lane = columns[boardNearestLane(position.current.x, offsets)][0]; savePosition(); }}
       contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, alignItems: 'stretch', paddingTop: t.uiSpacing.sm }}>
-      {BOARD_COLUMNS.map(([status, label]) => {
+      {columns.map(([status, label]) => {
         const items = active.filter((card) => card.status === status);
-        const hidden = status === 'done' && !global && !includeCompleted;
         return <View key={status} testID={`card-board-column-${status}`} style={{ width: geometry.laneWidth, flexShrink: 0, gap: t.uiSpacing.sm }}>
           <View style={{ paddingHorizontal: t.uiSpacing.sm, minHeight: t.foundation.typography.section.lineHeight }}>
             <PlannerSectionHeader variant={phone ? 'lane' : 'board'} title={label} count={items.length}
@@ -115,12 +126,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true, onInclu
             contentOffset={{ x: 0, y: firstPosition.current.lanes[status] ?? 0 }} scrollEventThrottle={16}
             onScroll={(event) => { position.current.lanes[status] = event.nativeEvent.contentOffset.y; savePosition(); }}
             contentContainerStyle={{ gap: t.cardLayout.gap, paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs, paddingBottom: t.cardLayout.padding }}>
-            {hidden && items.length ? <View style={{ gap: t.uiSpacing.md }}>
-              <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>완료 {items.length}개 숨김</Text>
-              {onIncludeCompletedChange ? <GlassButton accessibilityLabel="숨긴 완료 카드 보기" onPress={() => onIncludeCompletedChange(true)}>
-                <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>완료 포함</Text>
-              </GlassButton> : null}
-            </View> : items.length && !hidden ? items.map((card) => <BoardDragCard key={card.id} api={api} card={card}
+            {items.length ? items.map((card) => <BoardDragCard key={card.id} api={api} card={card}
               dragging={drag?.card.id === card.id} onOpen={() => onOpen(card.id)} onMenu={() => setMenu({ card })}
               onStart={(event) => start(card, event)} onMove={(event) => { if (dragRef.current) { const value = { ...dragRef.current, event }; dragRef.current = value; setDrag(value); } }}
               onDrop={(event) => drop(card, event)} onFinish={finish} />)

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
@@ -25,6 +25,7 @@ export function PostItCard({ api, card, variant = 'full', onOpen, onMenu }: {
 }) {
   const t = useTokens();
   const roles = createPostItRoles(t, variant);
+  const [bodyLines, setBodyLines] = useState(roles.bodyLines);
   const assigned = useSessionStore((state) => card.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
@@ -40,12 +41,16 @@ export function PostItCard({ api, card, variant = 'full', onOpen, onMenu }: {
     <View testID={`postit-card-${card.id}`} style={{ width: roles.width, height: roles.height, flexShrink: 0,
       backgroundColor: roles.paper, borderRadius: roles.radius, transform: [{ rotate: `${postItRotation(card.id)}deg` }] }}>
       <Pressable testID={`postit-open-${card.id}`} onPress={onOpen} accessibilityLabel={`${card.title} 카드 상세`}
-        style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding }}>
-        <Text testID={`postit-title-${card.id}`} style={{ ...roles.title, height: roles.title.lineHeight * 2 }} numberOfLines={2}>{card.title}</Text>
-        <Text testID={`postit-label-${card.id}`} style={{ ...roles.label, marginTop: roles.gap }} numberOfLines={1}>
-          {activity?.kind === 'report' ? '마지막 보고' : '마지막 지시'}
-        </Text>
-        <Text testID={`postit-body-${card.id}`} style={{ ...roles.body, marginTop: roles.gap }} numberOfLines={roles.bodyLines}>{body}</Text>
+        style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding, paddingBottom: roles.padding + roles.footerHeight + roles.gap }}>
+        <Text testID={`postit-title-${card.id}`} style={roles.title} numberOfLines={2}>{card.title}</Text>
+        <View testID={`postit-body-area-${card.id}`} style={{ marginTop: roles.gap, flex: 1, minHeight: 0, overflow: 'hidden' }}
+          onLayout={(event) => setBodyLines(Math.max(1, Math.floor(event.nativeEvent.layout.height / roles.body.lineHeight)))}>
+          <Text testID={`postit-body-${card.id}`} style={roles.body} numberOfLines={bodyLines} ellipsizeMode="tail">
+            <Text testID={`postit-activity-chip-${card.id}`} style={{ ...roles.label, fontWeight: '600', backgroundColor: t.colors.surfaceCode }}>
+              {activity?.kind === 'report' ? '[보고]' : '[지시]'}
+            </Text>{' '}{body}
+          </Text>
+        </View>
       </Pressable>
       <View testID={`postit-footer-${card.id}`} style={{ position: 'absolute', bottom: roles.padding, left: roles.padding, right: roles.padding,
         height: roles.footerHeight, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>

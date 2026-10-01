@@ -13,6 +13,8 @@ const mockSettingsScreen = jest.fn((_props: Record<string, unknown>) => null);
 const mockFolderWorkspace = jest.fn((_props: Record<string, unknown>) => null);
 const mockOpenDailyReview = jest.fn();
 const mockOpenDailyNewFolder = jest.fn();
+const mockOpenCardCreate = jest.fn();
+const mockCardHomeProps = jest.fn();
 
 jest.mock('@react-navigation/native-stack', () => ({
   createNativeStackNavigator: require('./navigationCaptureMock').createNativeStackNavigatorCapture,
@@ -51,6 +53,7 @@ jest.mock('../../components/planner/FolderWorkspace', () => ({
 
 import { ROOT_TAB_ORDER, TabNavigator } from '../TabNavigator';
 import { ROOT_SECTION_CONFIG } from '../rootSectionConfig';
+import { useSettingsStore } from '../../store/settingsStore';
 
 function renderStackNavigators() {
   render(<TabNavigator />);
@@ -61,12 +64,16 @@ function renderStackNavigators() {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await useSettingsStore.persist.rehydrate();
   resetNavigationCapture();
   mockSettingsScreen.mockClear();
   mockFolderWorkspace.mockClear();
   mockOpenDailyReview.mockClear();
   mockOpenDailyNewFolder.mockClear();
+  mockOpenCardCreate.mockClear();
+  mockCardHomeProps.mockClear();
+  useSettingsStore.setState({ cardIncludeCompleted: {} });
 });
 
 test('6개 phone root route는 emoji 없는 shared icon+title을 단독 소유한다', () => {
@@ -111,6 +118,12 @@ test('card home header preserves daily history access with a native hit target',
   }));
   const options = navigation.setOptions.mock.calls.at(-1)?.[0];
   const header = render(React.createElement(options.headerRight));
+  const leading = render(React.createElement(options.headerLeft));
+  expect(options.headerTitleAlign).toBe('center');
+  expect(mockCardHomeProps).toHaveBeenLastCalledWith(expect.objectContaining({ externalHeader: true }));
+  fireEvent.press(leading.getByLabelText('드래프트 카드 추가'));
+  expect(mockOpenCardCreate).toHaveBeenCalledTimes(1);
+  expect(header.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
   const history = header.getByLabelText('기존 데일리 기록');
   const style = StyleSheet.flatten(history.parent?.props.style);
   expect(style.minWidth).toBeGreaterThanOrEqual(44);
@@ -212,4 +225,8 @@ function read(relativePath: string): string {
 // These route contracts isolate screen bodies, including the new card detail route.
 jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: () => null, CardDetailSheet: () => null }));
 
-jest.mock('../../screens/CardHomeScreen', () => ({ CardHomeScreen: () => null }));
+jest.mock('../../screens/CardHomeScreen', () => ({ CardHomeScreen: require('react').forwardRef((props: unknown, ref: React.Ref<unknown>) => {
+  require('react').useImperativeHandle(ref, () => ({ openCreate: mockOpenCardCreate }));
+  mockCardHomeProps(props);
+  return null;
+}) }));

@@ -7,6 +7,7 @@ import { CardBoard } from '../components/planner/CardBoard';
 import { FolderCardList } from '../components/planner/FolderCardList';
 import { CompletedCardsToggle } from '../components/planner/CompletedCardsToggle';
 import { initialCards } from './fixtures';
+import { useCardDisplay } from '../hooks/useCardDisplay';
 
 type Scenario = 'mixed' | 'none' | 'all';
 type Scope = 'folder' | 'global';
@@ -25,7 +26,7 @@ export function ReviewBoard() {
   const [scenario, setScenario] = useState<Scenario>('mixed');
   const [scope, setScope] = useState<Scope>('folder');
   const [layout, setLayout] = useState<Layout>('board');
-  const [includeCompleted, setIncludeCompleted] = useState(false);
+  const { includeCompleted, onChange: setIncludeCompleted } = useCardDisplay(scope === 'folder' ? initialCards[0].folderId : undefined);
   const [selected, setSelected] = useState('');
   const cards = scenario === 'none' ? exampleCards.filter((card) => card.status !== 'done')
     : scenario === 'all' ? exampleCards.filter((card) => card.status === 'done') : exampleCards;
@@ -39,12 +40,11 @@ export function ReviewBoard() {
       options={[{ value: 'rows', label: '행보기' }, { value: 'board', label: '보드' }]} />
     <View testID="review-board-header" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.md }}>
       <View style={{ flexGrow: 1 }}><PlannerSectionHeader title={scope === 'folder' ? '현재 폴더 · 카드' : '전체 · 보드'} /></View>
-      {scope === 'folder' ? <CompletedCardsToggle includeCompleted={includeCompleted} completedCount={completedCount} onChange={setIncludeCompleted} /> : null}
+      <CompletedCardsToggle includeCompleted={includeCompleted} completedCount={completedCount} onChange={setIncludeCompleted} />
     </View>
     {layout === 'board' ? <View testID="review-board-frame" style={{ height: height - t.hitTarget.min * 2, minHeight: t.tabletShell.folderPane.minWidth }}>
-      <CardBoard api={null} cards={cards} global={scope === 'global'} includeCompleted={scope === 'global' || includeCompleted}
-        onIncludeCompletedChange={scope === 'folder' ? setIncludeCompleted : undefined} onOpen={setSelected} />
-    </View> : <FolderCardList api={null} cards={cards} includeCompleted={scope === 'global' || includeCompleted} onOpen={setSelected} />}
+      <CardBoard api={null} cards={cards} includeCompleted={includeCompleted} onOpen={setSelected} />
+    </View> : <FolderCardList api={null} cards={cards} includeCompleted={includeCompleted} onOpen={setSelected} />}
     {selected ? <Text testID="review-board-selection" style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>선택한 카드: {selected}</Text> : null}
   </View>;
 }
