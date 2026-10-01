@@ -5,7 +5,7 @@
  * node 환경에서 실행 (jsdom 불필요).
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { InfiniteData } from "@tanstack/react-query";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import {
@@ -728,15 +728,28 @@ describe("reconcileSessionPagesForCatalog", () => {
 
 describe("filterFeedSessions", () => {
   it("24시간 윈도를 적용하지 않고 오래된 세션도 포함한다", () => {
-    const result = filterFeedSessions(
-      [
-        makeSession("new", { updatedAt: "2026-05-23T00:00:00Z" }),
-        makeSession("old", { updatedAt: "2026-05-01T00:00:00Z" }),
-      ],
-      { folders: [], sessions: {} },
-    );
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T12:00:00Z"));
+    try {
+      // 메시지가 없으면 createdAt으로 정렬하며, 두 세션 모두 현재보다 24시간 이상 오래됐다.
+      const result = filterFeedSessions(
+        [
+          makeSession("new", {
+            createdAt: "2026-05-23T00:00:00Z",
+            updatedAt: "2026-05-23T00:00:00Z",
+          }),
+          makeSession("old", {
+            createdAt: "2026-05-01T00:00:00Z",
+            updatedAt: "2026-05-01T00:00:00Z",
+          }),
+        ],
+        { folders: [], sessions: {} },
+      );
 
-    expect(result.map((s) => s.agentSessionId)).toEqual(["new", "old"]);
+      expect(result.map((s) => s.agentSessionId)).toEqual(["new", "old"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sorts loaded pages across a pagination boundary by message activity", () => {
