@@ -26,7 +26,7 @@ export function SystemEvent({ event }: Props) {
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     wrapper: {
-      alignItems: 'center',
+      alignItems: 'flex-start',
       paddingVertical: t.spacing.sm,
       paddingHorizontal: t.spacing.lg,
     },
@@ -34,7 +34,7 @@ function makeStyles(t: DesignTokens) {
       color: t.colors.textPlaceholder,
       fontSize: t.chatFontSize.meta,
       fontStyle: 'italic',
-      textAlign: 'center',
+      textAlign: 'left',
     },
   });
 }

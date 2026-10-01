@@ -4,6 +4,7 @@ import { useTokens } from '../theme';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
+import { SystemEvent } from '../components/events/SystemEvent';
 import { AttachmentImage } from '../components/AttachmentImage';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { GlassButton } from '../components/GlassSurface';
@@ -23,6 +24,7 @@ export function ReviewChat() {
   const [failure, setFailure] = useState(true);
   const [attachment, setAttachment] = useState(false);
   const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n[공개 문서](https://expo.dev)';
+  const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
   return <>
     <ReviewSection title="입력창 · 빈 입력·여러 줄·전송·첨부·비활성">
       <SettingsSegmentedControl<typeof options[number]['value']> id="review-composer-state" value={state} onChange={setState} options={options} />
@@ -47,6 +49,24 @@ export function ReviewChat() {
       <AssistantMessage session={sessions[0]} event={message('assistant_message', markdown)}
         selectionModel={selection ? { kind: 'markdown', text: markdown } : null} onSelectionDone={() => setSelection(false)} />
       <AssistantMessage session={sessions[0]} event={message('text_delta', '응답을 작성하고 있습니다…')} />
+    </ReviewSection>
+    <ReviewSection title="안내문 · 완료·실패·하위 보고">
+      <AssistantMessage session={sessions[0]} event={message('assistant_message', finalReply)} />
+      <SystemEvent event={{ id: 'public-complete', type: 'complete', data: { result: finalReply } }} />
+      <SystemEvent event={{ id: 'public-complete-usage', type: 'complete', data: {
+        result: finalReply, usage: { input_tokens: 10, output_tokens: 5 }, total_cost_usd: 0.012345,
+      } }} />
+      <SystemEvent event={{ id: 'public-result', type: 'result', data: { success: true, output: finalReply } }} />
+      <SystemEvent event={{ id: 'public-result-failure', type: 'result', data: {
+        success: false, error: '요청을 완료하지 못했습니다. 실패 내용을 확인해주세요.',
+        usage: { input_tokens: 10, output_tokens: 5 },
+      } }} />
+      <SystemEvent event={{ id: 'public-error', type: 'error', data: {
+        message: '응답 연결이 끊겼습니다. 현재 작업의 오류 내용을 확인해주세요.\n조사한 내용과 남은 작업을 확인할 수 있도록 긴 오류 문구를 표시합니다.',
+      } }} />
+      <SystemEvent event={{ id: 'public-notification', type: 'session_notification', data: {
+        text: '하위 세션에서 조사 결과를 전달했습니다. 확인한 내용과 남은 작업을 함께 보고합니다.\n긴 보고 문구도 같은 안내문 안에서 읽을 수 있습니다.',
+      } }} />
     </ReviewSection>
   </>;
 }
