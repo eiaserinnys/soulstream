@@ -49,7 +49,7 @@ describe("registerDashboardServiceWorker", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     await Promise.resolve();
     expect(update).toHaveBeenCalledTimes(3);
-    const source = { postMessage: vi.fn() };
+    const source = { state: "activated", postMessage: vi.fn() };
     listeners.get("message")!({
       data: { type: "SOULSTREAM_SW_ACTIVATED", token: "migration-ready" },
       source,
@@ -141,7 +141,7 @@ describe("registerDashboardServiceWorker", () => {
       }),
       removeEventListener: vi.fn(),
     };
-    const source = { postMessage: vi.fn() };
+    const source = { state: "activated", postMessage: vi.fn() };
     const flushPendingEdits = vi.fn(async () => true);
 
     const cleanup = await registerDashboardServiceWorker({
@@ -173,4 +173,52 @@ describe("registerDashboardServiceWorker", () => {
     });
     cleanup();
   });
+  it("waits for worker activation before approving a page without edits", async () => {
+    const harness = await updateHarness(false, true);
+    harness.message();
+    expect(harness.source.postMessage).not.toHaveBeenCalled();
+    harness.activate();
+    expect(harness.source.postMessage).toHaveBeenCalledWith({ type: "SOULSTREAM_SW_APPROVE_RELOAD", token: "ready" });
+    harness.cleanup();
+  });
+
+  it("keeps defer and the draft protected when flushing fails", async () => {
+    const harness = await updateHarness(true, false);
+    harness.message();
+    harness.activate();
+    document.querySelector<HTMLButtonElement>("[data-sw-update-action]")!.click();
+    await vi.waitFor(() => expect(harness.flush).toHaveBeenCalledTimes(1));
+    expect(harness.source.postMessage.mock.calls).toEqual([[{ type: "SOULSTREAM_SW_DEFER_RELOAD", token: "ready" }]]);
+    await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>("[data-sw-update-action]")?.disabled).toBe(false));
+    harness.cleanup();
+  });
+
+  it("waits for activation even when the user has already flushed successfully", async () => {
+    const harness = await updateHarness(true, true);
+    harness.message();
+    document.querySelector<HTMLButtonElement>("[data-sw-update-action]")!.click();
+    await vi.waitFor(() => expect(harness.flush).toHaveBeenCalledTimes(1));
+    expect(harness.source.postMessage.mock.calls).toEqual([[{ type: "SOULSTREAM_SW_DEFER_RELOAD", token: "ready" }]]);
+    harness.activate();
+    expect(harness.source.postMessage).toHaveBeenLastCalledWith({ type: "SOULSTREAM_SW_APPROVE_RELOAD", token: "ready" });
+    harness.cleanup();
+  });
+
 });
+
+
+async function updateHarness(pending: boolean, flushResult: boolean) {
+  let listener!: EventListener;
+  const source = Object.assign(new EventTarget(), { state: "activating", postMessage: vi.fn() });
+  const flush = vi.fn(async () => flushResult);
+  const cleanup = await registerDashboardServiceWorker({
+    serviceWorker: { register: vi.fn(async () => ({ update: vi.fn(async () => undefined) })),
+      addEventListener: vi.fn((type: string, next: EventListener) => { if (type === "message") listener = next; }), removeEventListener: vi.fn() },
+    document, reload: vi.fn(), setInterval: vi.fn(() => 1), clearInterval: vi.fn(), warn: vi.fn(),
+    hasPendingEdits: () => pending, flushPendingEdits: flush,
+  });
+  return { source, flush, cleanup,
+    message: () => listener({ data: { type: "SOULSTREAM_SW_ACTIVATED", token: "ready" }, source } as unknown as Event),
+    activate: () => { source.state = "activated"; source.dispatchEvent(new Event("statechange")); },
+  };
+}

@@ -53,10 +53,10 @@
       });
       await Promise.all(currentClients.map(async (client) => {
         const decision = clientDecisions.get(client.id);
-        if (decision === "defer") return;
+        // Approval messages own their navigation; activation only migrates legacy clients.
+        if (decision === "defer" || decision === "approve") return;
         if (
-          decision === "approve"
-          || (client.visibilityState === "hidden" && !await isCapable(client.id))
+          client.visibilityState === "hidden" && !await isCapable(client.id)
         ) {
           await navigateClient(client);
         }
@@ -70,6 +70,17 @@
   });
 
   async function navigateClient(client) {
+    const worker = self.registration.active;
+    if (worker.state !== "activated") {
+      const onStateChange = () => {
+        if (worker.state !== "activated") return;
+        worker.removeEventListener("statechange", onStateChange);
+        void navigateClient(client);
+      };
+      worker.addEventListener("statechange", onStateChange);
+      // Never extend activate with navigation: navigation waits for activation.
+      return;
+    }
     try {
       await client.navigate(client.url);
       clientDecisions.delete(client.id);
