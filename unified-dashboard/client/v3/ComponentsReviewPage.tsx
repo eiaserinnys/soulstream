@@ -18,6 +18,7 @@ import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { reviewCard, reviewDetail, reviewFolder, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
+import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSample";
 import { CardBoardSamples } from "./CardBoardSamples";
 
 const sections = [
@@ -219,6 +220,7 @@ export function ComponentsReviewPage() {
                 })} onSelect={setFolder} onContextMenu={() => open("폴더 메뉴")} onReorder={async () => open("폴더 순서")}/></div>
             </Sample>
             <ComponentsReviewControls/>
+            <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>
             </div>
           </section>
           <section id="components-surfaces" className="v3-detail-section">

@@ -34,7 +34,7 @@ describe("control command inventory", () => {
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(42);
+    expect(inventoryTypes).toHaveLength(44);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -66,6 +66,8 @@ describe("control command inventory", () => {
     expect(CONTROL_COMMAND_INVENTORY).toEqual([
       { type: "health_check", family: "health", policy: "health" },
       { type: "create_session", family: "session", policy: "durable_mutation" },
+      { type: "create_card_orchestration_decision", family: "session", policy: "durable_mutation" },
+      { type: "prepare_card_orchestration_decision", family: "session", policy: "bounded_result" },
       { type: "interrupt_session", family: "session", policy: "durable_mutation" },
       { type: "acknowledge_session_review", family: "session", policy: "durable_mutation" },
       { type: "subscribe_events", family: "realtime", policy: "fire_and_forget" },

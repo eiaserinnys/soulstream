@@ -12,6 +12,8 @@
  *   - interventionQueue: 세션 대화 창구가 받아들인 메시지를 전달 완료까지 보존하는 큐.
  */
 
+import type { OrchestrationPurpose } from "./task_orchestration_purpose.js";
+
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionLifecycleStatus } from "@soulstream/wire-schema";
 import type { SessionBindingWarning } from "@soulstream/page-model";
@@ -368,6 +370,8 @@ export interface Task {
 
   /** sessions.session_type 컬럼. Codex/Claude agent 세션은 "claude", LLM proxy는 "llm". */
   sessionType?: SessionType;
+  /** Durable server-owned marker for the isolated one-shot decision lifecycle. */
+  orchestrationPurpose?: OrchestrationPurpose;
 
   /** LLM proxy 메타데이터. session_created wire에 포함된다. */
   llmProvider?: string | null;

@@ -1,6 +1,11 @@
 {
   "schema_version": 2,
   "entries": {
+    "CARD_DECISION_DOCKER_IMAGE": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
+    "CARD_DECISION_CODEX_BINARY_PATH": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
+    "CARD_DECISION_CLAUDE_EXECUTABLE_PATH": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
+    "CARD_DECISION_TIMEOUT_MS": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },
+    "CODEX_HOME": { "owner": "process", "kind": "non_secret", "identity_scope": "ambient" },
     "SOULSTREAM_NODE_ID": { "owner": "node", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "SOULSTREAM_UPSTREAM_URL": { "owner": "node", "kind": "non_secret", "identity_scope": "deployment", "normalization": "url" },
     "AUTH_BEARER_TOKEN": { "owner": "auth", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },

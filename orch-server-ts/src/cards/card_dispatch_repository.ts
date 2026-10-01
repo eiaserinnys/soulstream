@@ -29,7 +29,7 @@ export class CardDispatchRepository {
     async running(): Promise<DispatchCard[]> {
         const sql = await this.resolveSql();
         return sql<DispatchCard[]> `SELECT DISTINCT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
-      JOIN sessions s ON s.card_id=c.id WHERE s.status NOT IN ('completed','error','interrupted') AND NOT c.archived AND NOT f.archived`;
+      LEFT JOIN sessions s ON s.card_id=c.id WHERE (c.status='running' OR s.status NOT IN ('completed','error','interrupted')) AND NOT c.archived AND NOT f.archived`;
     }
     async occupancy(): Promise<Record<string, number>> {
         const sql = await this.resolveSql();

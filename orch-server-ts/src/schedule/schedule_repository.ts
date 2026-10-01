@@ -39,6 +39,7 @@ interface CancelScheduleRow extends ScheduleRow {
 export class SoulstreamScheduleRepository {
   constructor(private readonly sql: SqlClient) {}
 
+  async isCardOrchestrationManaged(sessionId:string):Promise<boolean>{return (await this.sql`SELECT s.session_id FROM sessions s WHERE s.session_id=${sessionId} AND s.card_id IS NOT NULL AND EXISTS(SELECT 1 FROM system_settings WHERE setting_key='card_orchestration' AND (value->>'enabled')::boolean)`).length>0;}
   async createSchedule(params: ScheduleCreateInput): Promise<SoulstreamSchedule> {
     const createdAt = params.createdAt ?? new Date();
     const rows = await this.sql<ScheduleRow[]>`

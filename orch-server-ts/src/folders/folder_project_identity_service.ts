@@ -41,6 +41,8 @@ export class FolderProjectIdentityService {
 
   async create(input: {
     name: string;
+    /** Trusted server reservation; public create routes do not accept this field. */
+    reservedId?: string;
     sortOrder?: number;
     settings?: Record<string, unknown>;
     parentFolderId?: string | null;
@@ -57,7 +59,7 @@ export class FolderProjectIdentityService {
       await this.config.hydratePage(idempotent.pageId);
       return idempotent;
     }
-    const id = this.createId();
+    const id = input.reservedId ?? this.createId();
     assertUuid(id);
     const name = requireName(input.name);
     const pageApplication = this.mutationCore.createPage({

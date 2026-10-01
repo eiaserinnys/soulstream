@@ -29,5 +29,7 @@ export function createUpstreamCommandDispatcher(input: {
     agentProfileSource: deps.agentProfileSource,
     listRunningSessionIds: input.listRunningSessionIds,
     worktreeService: deps.worktreeService,
+    decisionRunner: deps.decisionRunner,
+    authorizeOrchestrationWorker: deps.authorizeOrchestrationWorker,
   });
 }

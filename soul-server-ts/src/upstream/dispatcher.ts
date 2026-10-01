@@ -1,3 +1,4 @@
+import type { AuthorizeOrchestrationWorker } from "./task_runtime_commands.js";
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
@@ -59,6 +60,7 @@ import { TaskRuntimeCommands } from "./task_runtime_commands.js";
 import { summarizePayloadForLog } from "./log_payload_summary.js";
 import { createWorktreeCommandFamily } from "./worktree_command_family.js";
 import type { WorktreeService } from "../worktree/worktree_service.js";
+import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
 
 export type { SendFn } from "./command_family.js";
 
@@ -82,6 +84,8 @@ export interface CommandDispatcherOptions {
   agentProfileSource?: NewSessionAgentProfileSource;
   listRunningSessionIds?: () => Promise<string[]>;
   worktreeService?: WorktreeService;
+  decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
+  authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
 }
 
 /**
@@ -123,6 +127,8 @@ export class CommandDispatcher {
       agentProfileSource,
       listRunningSessionIds,
       worktreeService,
+      decisionRunner,
+      authorizeOrchestrationWorker,
     } = options;
     this.send = send;
     this.logger = logger;
@@ -133,6 +139,8 @@ export class CommandDispatcher {
       logger,
       modelCatalog,
       agentProfileSource,
+      decisionRunner,
+      authorizeOrchestrationWorker,
     });
     const attachmentCommands = new AttachmentCommands(attachmentStore);
     const sessionListCommands = new SessionListCommands(sessionDb, nodeId);

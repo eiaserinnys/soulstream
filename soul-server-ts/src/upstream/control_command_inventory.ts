@@ -30,6 +30,8 @@ export type ControlCommandInventoryEntry = {
 export const CONTROL_COMMAND_INVENTORY = [
   entry("health_check", "health", "health"),
   entry("create_session", "session", "durable_mutation"),
+  entry("create_card_orchestration_decision", "session", "durable_mutation"),
+  entry("prepare_card_orchestration_decision", "session", "bounded_result"),
   entry("interrupt_session", "session", "durable_mutation"),
   entry("acknowledge_session_review", "session", "durable_mutation"),
   entry("subscribe_events", "realtime", "fire_and_forget"),
@@ -92,6 +94,7 @@ export function boundedResultTimeoutMs(commandType: string, fallbackMs: number):
   switch (commandType) {
     case "worktree_list":
       return 130_000;
+    case "prepare_card_orchestration_decision":
     case "provider_usage_get":
     case "claude_auth_get_usage":
     case "claude_auth_get_profile":

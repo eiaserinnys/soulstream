@@ -146,7 +146,7 @@ export class SessionCommandRouter {
   }
 
   createSession<
-    TPayload extends CreateSessionNodeCommandPayload,
+    TPayload extends CreateSessionNodeCommandPayload | RequestResponseNodeCommandPayload<"prepare_card_orchestration_decision">,
     TResponse extends NodeCommandResponse = NodeCommandResponse,
   >(
     payload: TPayload,

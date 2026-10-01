@@ -9,7 +9,8 @@
   "exports": {
     ".": "./generated/typescript/index.ts",
     "./delivery": "./src/delivery.ts",
-    "./schema": "./src/upstream.schema.json"
+    "./schema": "./src/upstream.schema.json",
+    "./card-orchestration": "./src/card_orchestration.ts"
   },
   "scripts": {
     "generate": "bash scripts/generate.sh",

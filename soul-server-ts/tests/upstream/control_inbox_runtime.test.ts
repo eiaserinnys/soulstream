@@ -30,6 +30,39 @@ async function makeStore(): Promise<ControlInboxStore> {
 }
 
 describe("ControlInboxRuntime", () => {
+  it.each([
+    ["prepare_card_orchestration_decision", false],
+    ["create_card_orchestration_decision", true],
+  ] as const)("routes %s through its declared control policy", async (type, durable) => {
+    const store = await makeStore();
+    vi.useFakeTimers();
+    const frames: Array<Record<string, unknown>> = [];
+    const work: ControlInboxDispatchWork[] = [];
+    const runtime = new ControlInboxRuntime({
+      store, nodeId: "node-a", mainHeartbeatAgeMs: () => 0,
+      postWork: (item) => work.push(item),
+    });
+    try {
+      runtime.initialize();
+      await runtime.connect(async (frame) => { frames.push(frame); });
+      const command = { type, requestId: "decision-command", agentSessionId: "decision-session" };
+      await runtime.handleCommand(command);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(work).toHaveLength(1);
+      expect(work[0]).toMatchObject({ durable, commandFamily: "session", command });
+      expect(frames.some((frame) => frame.type === "control_admission_ack")).toBe(durable);
+      expect(frames.some((frame) => frame.type === "error")).toBe(false);
+      if (durable) {
+        await runtime.handleCommand(command);
+        expect(work).toHaveLength(1);
+      }
+      expect(await runtime.handleDomainResult(work[0]!.workId, {
+        type: durable ? "session_created" : "card_orchestration_decision_prepared",
+        status: "ready",
+      })).toBe(true);
+    } finally { runtime.close(); }
+  });
+
   it("sends accepted only after the durable receipt commit and before domain execution", async () => {
     const sequence: string[] = [];
     const store = await makeStore();

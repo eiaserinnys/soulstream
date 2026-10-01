@@ -52,6 +52,7 @@ export async function hasContinuousLimitWindow(
         AND schedule.source_tool = 'ResumeAfterLimit'
         AND schedule.tool_use_id = ${schedule.toolUseId}
         AND schedule.status IN ('active', 'dispatching', 'firing', 'orphaned')
+        AND NOT (session.card_id IS NOT NULL AND EXISTS (SELECT 1 FROM system_settings WHERE setting_key='card_orchestration' AND (value->>'enabled')::boolean))
         AND session.status = 'error'
         AND session.termination_reason = 'limit_hit'
         AND session.termination_event_id = ${expectedCurrentTerminalId}

@@ -2,10 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 157개 $defs (top-level wire 81 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
+    "create_card_orchestration_decision",
+    "prepare_card_orchestration_decision",
     "interrupt_session",
     "acknowledge_session_review",
     "subscribe_events",
@@ -1323,6 +1325,26 @@
         "content_type": { "type": "string" },
         "filename": { "type": "string" },
         "size": { "type": "integer" }
+      }
+    },
+    "PrepareCardOrchestrationDecision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "requestId", "profile", "model_preset"],
+      "properties": {"type": {"const": "prepare_card_orchestration_decision"},
+        "requestId": {"type": "string"}, "profile": {"type": "string"}, "model_preset": {"type": "string"}}
+    },
+    "CreateCardOrchestrationDecision": {
+      "type": "object", "additionalProperties": false,
+      "description": "서버 저장 run 권한으로만 실행하는 도구 없는 카드 판단 명령",
+      "required": ["type", "requestId", "agentSessionId", "runId", "leaseToken", "profile", "model_preset", "folderId", "prompt", "outputSchema"],
+      "properties": {
+        "type": {"const": "create_card_orchestration_decision"},
+        "requestId": {"type": "string"}, "agentSessionId": {"type": "string"},
+        "runId": {"type": "string"}, "leaseToken": {"type": "string"},
+        "profile": {"type": "string"}, "model_preset": {"type": "string"},
+        "folderId": {"type": "string"}, "prompt": {"type": "string"},
+        "instructionsRevision": {"type": "string"},
+        "outputSchema": {"type": "object", "additionalProperties": true}
       }
     },
     "CreateSession": {
@@ -3223,6 +3245,8 @@
     { "$ref": "#/$defs/DeleteSessionAttachmentsResult" },
     { "$ref": "#/$defs/DownloadAttachmentResult" },
     { "$ref": "#/$defs/CreateSession" },
+    { "$ref": "#/$defs/CreateCardOrchestrationDecision" },
+    { "$ref": "#/$defs/PrepareCardOrchestrationDecision" },
     { "$ref": "#/$defs/Intervene" },
     { "$ref": "#/$defs/InterruptSession" },
     { "$ref": "#/$defs/AcknowledgeSessionReview" },

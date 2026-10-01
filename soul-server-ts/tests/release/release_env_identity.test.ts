@@ -137,7 +137,7 @@ describe("deployment env identity", () => {
       .filter((key) => releaseEnvAllowlistEntry(key)!.identity_scope === "ambient");
     const hashed = new Set(deploymentIdentityKeys());
 
-    expect(ambient).toEqual(["APPDATA", "HOME", "PATH", "PATHEXT", "USERPROFILE"]);
+    expect(ambient).toEqual(["APPDATA", "CODEX_HOME", "HOME", "PATH", "PATHEXT", "USERPROFILE"]);
     expect(ambient.filter((key) => hashed.has(key))).toEqual([]);
     for (const key of releaseEnvAllowlistKeys()) {
       const entry = releaseEnvAllowlistEntry(key)!;

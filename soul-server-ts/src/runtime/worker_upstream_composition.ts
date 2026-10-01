@@ -1,3 +1,4 @@
+import type { AuthorizeOrchestrationWorker } from "../upstream/task_runtime_commands.js";
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { FileAttachmentStore } from "../attachments/file_manager.js";
 import type { ClaudeAuthService } from "../auth/claude_auth.js";
@@ -16,6 +17,7 @@ import {
   type RunnerProcessComposition,
 } from "./runner_process_composition.js";
 import type { WorkerCompositionParams } from "./worker_composition_types.js";
+import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
 
 interface WorkerUpstreamCompositionParams {
   worker: WorkerCompositionParams;
@@ -33,6 +35,8 @@ interface WorkerUpstreamCompositionParams {
   runnerProcess: RunnerProcessComposition | undefined;
   runnerRecoveryCoordinator: RunnerRecoveryCoordinator | undefined;
   worktreeService?: import("../worktree/worktree_service.js").WorktreeService;
+  decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
+  authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
 }
 
 export function composeWorkerUpstreamAdapter({
@@ -51,6 +55,8 @@ export function composeWorkerUpstreamAdapter({
   runnerProcess,
   runnerRecoveryCoordinator,
   worktreeService,
+  decisionRunner,
+  authorizeOrchestrationWorker,
 }: WorkerUpstreamCompositionParams): UpstreamAdapter {
   const { env, logger, agentRegistry, agentProfileSource } = worker;
   return new UpstreamAdapter(
@@ -92,6 +98,8 @@ export function composeWorkerUpstreamAdapter({
       ),
       ...(agentProfileSource ? { agentProfileSource } : {}),
       ...(worktreeService ? { worktreeService } : {}),
+      ...(decisionRunner ? { decisionRunner } : {}),
+      ...(authorizeOrchestrationWorker ? { authorizeOrchestrationWorker } : {}),
     },
   );
 }

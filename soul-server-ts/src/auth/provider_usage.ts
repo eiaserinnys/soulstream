@@ -42,11 +42,15 @@ export interface ProviderQuota {
   resetAt: number | null;
   model: string | null;
   source: string | null;
+  purpose?: "execution" | "code_review" | "other";
 }
 
 export interface ProviderLimits {
   status: "auto" | "not_configured" | "error";
   source: string;
+  sourceKind?: "remote" | "rollout" | "unknown";
+  /** Source observation time, never the summary serialization time. */
+  observedAt?: string | null;
   weeklyTokens: number | null;
   monthlyTokens: number | null;
   sessionTokens: number | null;
@@ -712,6 +716,8 @@ export function claudeLimitsFromUsageResponse(
 ): ProviderLimits {
   const limits = emptyLimits("auto");
   limits.source = source;
+  limits.sourceKind = "remote";
+  limits.observedAt = new Date().toISOString();
   const quotas: ProviderQuota[] = [];
 
   for (const [key, entry] of Object.entries(payload)) {
@@ -810,6 +816,8 @@ export function codexLimitsFromUsageResponse(
 ): ProviderLimits {
   const limits = emptyLimits("auto");
   limits.source = source;
+  limits.sourceKind = "remote";
+  limits.observedAt = new Date().toISOString();
   limits.planType =
     optionalString(payload.plan_type) ?? optionalString(payload.plan) ?? null;
 
@@ -872,7 +880,10 @@ export function codexLimitsFromUsageResponse(
       ),
       source,
     );
-    if (reviewQuota) quotas.push(reviewQuota);
+    if (reviewQuota) {
+      reviewQuota.purpose = "code_review";
+      quotas.push(reviewQuota);
+    }
   }
 
   limits.quotas = quotas;
@@ -889,6 +900,8 @@ export function geminiLimitsFromQuotaResponse(
 ): ProviderLimits {
   const limits = emptyLimits("auto");
   limits.source = source;
+  limits.sourceKind = "remote";
+  limits.observedAt = new Date().toISOString();
   const currentTier = isRecord(tierPayload.currentTier) ? tierPayload.currentTier : {};
   const paidTier = isRecord(tierPayload.paidTier) ? tierPayload.paidTier : {};
   const plan =
@@ -976,6 +989,12 @@ function codexRuntimeLimits(
       }
       const limits = emptyLimits("auto");
       limits.source = path;
+      limits.sourceKind = "rollout";
+      const sourceTime = isRecord(item) ? optionalString(item.timestamp) : null;
+      const sourceTimeMs = sourceTime === null ? NaN : Date.parse(sourceTime);
+      limits.observedAt = Number.isFinite(sourceTimeMs) && sourceTimeMs <= Date.now()
+        ? new Date(sourceTimeMs).toISOString()
+        : null;
       limits.planType = optionalString(payload.rate_limits.plan_type) ?? null;
 
       const quotas: ProviderQuota[] = [];
@@ -1387,6 +1406,7 @@ function quotaEntry(
     resetAt: resetEpoch(values.resetAt),
     model: values.model ?? null,
     source: values.source ?? null,
+    purpose: (values.unit ?? "percent") === "percent" ? "execution" : "other",
   };
 }
 
@@ -1397,6 +1417,8 @@ function emptyLimits(
   return {
     status,
     source: "",
+    sourceKind: "unknown",
+    observedAt: null,
     weeklyTokens: null,
     monthlyTokens: null,
     sessionTokens: null,

@@ -38,6 +38,7 @@ import {
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
+import { assertGenericTaskExecution } from "./task_orchestration_purpose.js";
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
@@ -250,6 +251,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     activation?: ExecutionActivation,
   ): Promise<void> {
+    assertGenericTaskExecution(task, agent.id);
     const releaseClaim = task.runnerReleaseClaim;
     if (releaseClaim) {
       return this.startExecutionAfterRunnerReleaseClaim(
@@ -673,6 +675,7 @@ export class TaskExecutor {
     task: Task,
     registration: RunnerRegistration,
   ): Promise<boolean> {
+    assertGenericTaskExecution(task, registration.config?.agent?.id);
     if (task.executionPromise !== undefined) return false;
     if (task.runnerReleaseClaim !== undefined) return false;
     const attached = task.runner;
@@ -712,6 +715,7 @@ export class TaskExecutor {
     activation?: ExecutionActivation,
     executionSlotHeld = false,
   ): Promise<void> {
+    assertGenericTaskExecution(task, agent.id);
     if (task.runner) {
       throw new Error(
         `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
@@ -794,6 +798,7 @@ export class TaskExecutor {
     onPendingFramesReplayed?: () => void,
     terminalObservation?: RecoveredRunnerTerminalObservation,
   ): Promise<void> {
+    assertGenericTaskExecution(task, agent.id);
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
     }
@@ -846,6 +851,7 @@ export class TaskExecutor {
     mode: "adopt" | "replay" | "offline",
     onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
   ): Promise<void> {
+    assertGenericTaskExecution(task, registration.config?.agent?.id);
     const config = registration.config;
     const runner = this.runnerProcessFactory?.recover?.(
       task,

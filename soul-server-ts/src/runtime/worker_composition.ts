@@ -55,6 +55,7 @@ import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
 import { composeWorktreeService, resolveWorktreeWorkspace } from "./worktree_runtime_composition.js";
 import { listActiveTaskWorkspaceDirs } from "./task_active_workspace_dirs.js";
+import { composePurposeDecisionRunner, composeWorkerAdmissionAuthorizer } from "../card-orchestration/runtime_composition.js";
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
@@ -417,6 +418,17 @@ export async function composeWorkerRuntime(
       eventOutboxPump: eventOutboxPumpMux,
       runnerProcess,
       runnerRecoveryCoordinator,
+      authorizeOrchestrationWorker: composeWorkerAdmissionAuthorizer(orchProxyConfig, env.SOULSTREAM_NODE_ID),
+      decisionRunner: composePurposeDecisionRunner({
+        nodeId: env.SOULSTREAM_NODE_ID, logger, taskManager, persistence, modelCatalog,
+        sessionMutations, orch: orchProxyConfig, agentRegistry, agentProfileSource,
+        atom: { enabled: Boolean(env.ATOM_ENABLED), serverUrl: env.ATOM_SERVER_URL ?? "", apiKey: env.ATOM_API_KEY ?? "" },
+        settings: { claudeAuthTokenPath: env.CLAUDE_AUTH_TOKEN_PATH,
+          claudeExecutable: env.CARD_DECISION_CLAUDE_EXECUTABLE_PATH,
+          dockerImage: env.CARD_DECISION_DOCKER_IMAGE,
+          codexBinaryPath: env.CARD_DECISION_CODEX_BINARY_PATH,
+          timeoutMs: env.CARD_DECISION_TIMEOUT_MS },
+      }),
       ...(worktreeService ? { worktreeService } : {}),
     });
     return upstreamAdapter;

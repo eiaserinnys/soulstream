@@ -195,10 +195,12 @@ describe("Wave 4 delivery attempt terminology", () => {
 
   it("keeps the canonical delivery schema on attempt terminology", () => {
     const schema = readFileSync(SCHEMA_PATH, "utf8");
-    const deliverySchema = schema.slice(
-      0,
-      schema.indexOf("CREATE TABLE IF NOT EXISTS checklist_task_projection_outbox"),
-    );
+    // This contract owns delivery tables; independent orchestration leases retain their own names.
+    const deliveryTables = [...schema.matchAll(
+      /^CREATE TABLE IF NOT EXISTS (?:session_deliveries|session_delivery_notification_outbox|session_delivery_attempts) \([\s\S]*?^\);/gm,
+    )];
+    expect(deliveryTables).toHaveLength(3);
+    const deliverySchema = deliveryTables.map(([definition]) => definition).join("\n");
 
     expect(deliverySchema).not.toMatch(/\blease_owner\b|\blease_expires_at\b/);
     expect(deliverySchema).toContain("attempt_token");

@@ -31,6 +31,7 @@ export type CreateRecurringSessionInput = {
   readonly folderId: string;
   readonly callerInfo: Readonly<Record<string, unknown>>;
   readonly cardId?: string;
+  readonly orchestrationAdmission?:{runId:string;executionToken:string;cardId:string};
 };
 
 export class RecurringSessionCreateError extends Error {
@@ -70,6 +71,7 @@ export async function createRecurringSession(
     folderId: input.folderId,
     ...(input.cardId ? {cardId:input.cardId} : {}),
 
+    ...(input.orchestrationAdmission?{orchestrationAdmission:input.orchestrationAdmission}:{}),
     caller_info: { ...input.callerInfo },
   };
   const routed = options.router.createSession(command, {

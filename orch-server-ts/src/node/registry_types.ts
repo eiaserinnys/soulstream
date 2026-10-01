@@ -22,7 +22,7 @@ export type NodeRegistrationPayload = {
 };
 
 export type CreateSessionNodeCommandPayload =
-  RequestResponseNodeCommandPayload<"create_session"> & {
+  RequestResponseNodeCommandPayload<"create_session" | "create_card_orchestration_decision"> & {
     agentSessionId: string;
     prompt: string;
     profile?: string;

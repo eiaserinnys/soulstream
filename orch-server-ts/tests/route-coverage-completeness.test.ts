@@ -168,6 +168,8 @@ function createAllOptInRouteApp() {
     ephemeralLlmRoutes: inert,
     folderRoutes: inert,
     cardDispatchSettingsRoutes: inert,
+    cardOrchestrationRoutes: inert,
+    cardOrchestrationDecisionRoutes: inert,
     markdownDocumentRoutes: inert,
     nodeAgentProfileRoutes: {
       ...inert,

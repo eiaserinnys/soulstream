@@ -37,6 +37,8 @@ import type { AgentProfile } from "../agent_registry.js";
 import { toStoredReasoningEffort } from "./session_effort_storage.js";
 import { registerTaskSession } from "./task_creation_registration.js";
 
+import { assertOrchestrationCreation, ORCHESTRATION_PURPOSE_TYPE, type OrchestrationPurpose } from "./task_orchestration_purpose.js";
+
 export interface CreateTaskParams {
   agentSessionId: string;
   prompt: string;
@@ -45,6 +47,8 @@ export interface CreateTaskParams {
   agentProfileHasDbPortrait?: boolean;
   clientId?: string | null;
   sessionType?: SessionType;
+  /** Internal only: supplied after the dedicated host run/fence admission. */
+  orchestrationPurpose?: OrchestrationPurpose;
   llmProvider?: string | null;
   llmModel?: string | null;
   llmUsage?: Record<string, number> | null;
@@ -115,6 +119,7 @@ export class TaskCreation {
    * host register 실패 시 in-memory map에 task를 *남기지 않음* (실패 격리).
    */
   async createTask(params: CreateTaskParams): Promise<Task> {
+    assertOrchestrationCreation(params);
     if (
       this.deps.hasTask(params.agentSessionId)
       || this.creatingSessionIds.has(params.agentSessionId)
@@ -142,6 +147,8 @@ export class TaskCreation {
     const metadata = [
       callerMetadata,
       permissionModeMetadata,
+      ...(params.orchestrationPurpose
+        ? [{ type: ORCHESTRATION_PURPOSE_TYPE, ...params.orchestrationPurpose }] : []),
     ].filter(
       (entry): entry is Record<string, unknown> => entry !== undefined,
     );
@@ -155,6 +162,7 @@ export class TaskCreation {
       agentProfileHasDbPortrait: params.agentProfileHasDbPortrait,
       clientId: params.clientId ?? null,
       sessionType,
+      orchestrationPurpose: params.orchestrationPurpose,
       llmProvider: params.llmProvider ?? null,
       llmModel: params.llmModel ?? null,
       llmUsage: params.llmUsage ?? null,

@@ -4,9 +4,20 @@ import {
   UsageSummaryService,
   type UsageSummaryBridge,
   type UsageSummaryRegistry,
-} from "../src/index.js";
+} from "../src/usage/usage_summary_service.js";
 
 describe("UsageSummaryService", () => {
+  it("preserves source observation rather than collector time and wakes after a committed collection", async () => {
+    const response = successResponse(16);
+    Object.assign(response.data.providers.claude, { source: "claude-api", sourceKind: "remote", observedAt: "2026-07-20T09:59:00.000Z" });
+    Object.assign(response.data.providers.claude.quotas[0]!, { source: "claude-api", purpose: "execution" });
+    const onCollected = vi.fn();
+    const service = new UsageSummaryService({ registry: fakeRegistry(["node"]), bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge, pollIntervalMs: 300_000, sharedAccountGroups: [], now: () => new Date("2026-07-20T10:00:00Z"), onCollected });
+    await service.collectOnce();
+    expect(service.getSummary().nodes[0]?.providers.claude).toMatchObject({ observedAt: "2026-07-20T09:59:00.000Z", source: "claude-api", sourceKind: "remote", quotas: [{ source: "claude-api", purpose: "execution" }] });
+    expect(onCollected).toHaveBeenCalledOnce();
+    expect(onCollected.mock.calls[0]?.[0].collectedAt).toBe("2026-07-20T10:00:00.000Z");
+  });
   it("fans out to connected nodes in parallel and projects remaining percentages", async () => {
     const pending = new Map<string, (value: unknown) => void>();
     const registry = fakeRegistry(["node-b", "node-a"]);

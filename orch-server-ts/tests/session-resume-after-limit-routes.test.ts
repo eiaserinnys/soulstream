@@ -15,6 +15,15 @@ const config = parseOrchServerConfig({
 });
 
 describe("session resume-after-limit routes", () => {
+  it("preserves policy-owned card limit resumption without a reset-time schedule",async()=>{
+    const {app,dependencies}=createHarness();
+    dependencies.scheduleRepository.isCardOrchestrationManaged.mockResolvedValue(true);
+    const get=await app.inject({method:"GET",url:"/api/sessions/sess-1/resume-after-limit"});
+    expect(get.json()).toMatchObject({eligible:false,reason:"카드 배정 정책이 새 사용량을 확인한 뒤 자동으로 재개합니다."});
+    const post=await app.inject({method:"POST",url:"/api/sessions/sess-1/resume-after-limit",payload:{}});
+    expect(post.statusCode).toBe(409);expect(dependencies.scheduleRepository.createScheduleIfAbsent).not.toHaveBeenCalled();
+    await app.close();
+  });
   it("returns 403 before reading session state when access is denied", async () => {
     const { app, dependencies } = createHarness({
       accessError: new SessionResourceAccessError("SESSION_ACCESS_DENIED", "Access denied.", 403),
@@ -268,6 +277,7 @@ function createHarness(options: {
       schedules.filter((schedule) => schedule.toolUseId === toolUseId)),
     listReusableSchedulesBySourceTool: vi.fn(async () => schedules.filter((schedule) =>
       ["active", "dispatching", "firing", "orphaned"].includes(schedule.status))),
+    isCardOrchestrationManaged:vi.fn(async()=>false),
     hasContinuousLimitWindow: vi.fn(async (schedule: SoulstreamSchedule, currentTerminalId: number) =>
       schedule.toolUseId === `ResumeAfterLimit:${currentTerminalId}`
       || (options.continuousScheduleIds ?? []).includes(schedule.scheduleId)),
