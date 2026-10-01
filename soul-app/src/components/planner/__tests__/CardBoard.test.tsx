@@ -7,6 +7,7 @@ import { cardFixture } from '../../../test-support/cards';
 import { CardBoard } from '../CardBoard';
 import { FolderCardList } from '../FolderCardList';
 import { CompletedCardsToggle } from '../CompletedCardsToggle';
+import { ReviewBoardActions } from '../../../component-review/ReviewBoardActions';
 
 const cards = (['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'] as const)
   .map((status) => cardFixture({ id: status, title: status, status }));
@@ -57,4 +58,14 @@ test('목록 활동 원문과 요청을 표시하고 상세는 카드 탭 전까
   fireEvent.press(screen.getByLabelText('카드 제목 카드 상세'));
   expect(open).toHaveBeenCalledWith(card.id);
   expect(setCardStatus).not.toHaveBeenCalled();
+});
+
+test('보드의 시간과 완료 액션은 보조정보 옆 한 행이며 같은 본문 비교를 좁은 pane에도 렌더한다', () => {
+  const screen = render(<ReviewBoardActions />);
+  const actionRow = screen.getByTestId('card-compare-review-board-actions');
+  expect(actionRow.props.style.flexDirection).toBe('row');
+  expect(screen.getAllByText('같은 본문입니다. 버튼 유무에 따라 본문 시작과 카드 높이가 달라지지 않습니다.')).toHaveLength(2);
+  fireEvent.press(screen.getByLabelText('좁은 iPad pane'));
+  expect(screen.getByTestId('card-row-compare-review')).toBeTruthy();
+  expect(screen.getByTestId('card-row-compare-running')).toBeTruthy();
 });

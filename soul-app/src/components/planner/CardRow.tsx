@@ -56,30 +56,33 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
   const comment = detail?.comments?.reduce((latest, item) => !latest || item.createdAt >= latest.createdAt ? item : latest, undefined as NonNullable<typeof detail.comments>[number] | undefined);
   const preview = (report?.title || comment?.body || card.request).split('\n')[0];
   const { run, pending } = useCardActions(api);
+  const time = <Text style={styles.time} numberOfLines={1}>{formatRelativeTime(card.updatedAt)}</Text>;
+  const complete = card.status === 'review' ? <GlassButton iconOnly size={board ? 'compact' : 'card'} borderRadius={t.foundation.radius.round} accessibilityLabel="완료"
+    disabled={pending || !api} surfaceTestID={`card-${card.id}-완료-visual`} onPress={() => {
+      if (api) void run(() => api.setCardStatus(card.id, 'done', card.version, cardOperationId()));
+    }}><Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} /></GlassButton> : null;
   const identityContent = <>
       {uri ? <Image testID={`card-${card.id}-avatar`} source={{ uri, ...(jwt && uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.avatar} />
         : <View testID={`card-${card.id}-avatar`} style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarFallbackText}>{human ? assignee[0] : avatar.fallbackChar}</Text></View>}
       <View style={styles.content}>
         <View style={styles.primaryColumn}>
-          <View style={styles.titleRow}>{board ? null : <CardStatusChip card={card} title />}<Text style={styles.name} numberOfLines={1}>{card.title}</Text></View>
-          <View style={styles.identityRow}><Text style={styles.identity} numberOfLines={1}>{metadata}</Text></View>
+          <View style={styles.titleRow}>{board ? null : <CardStatusChip card={card} title />}<Text testID={board ? `card-${card.id}-board-title` : undefined} style={styles.name} numberOfLines={1}>{card.title}</Text></View>
+          <View style={[styles.identityRow, board && { minHeight: t.hitTarget.min }]}>
+            <Text style={[styles.identity, board && { flex: 1 }]} numberOfLines={1}>{metadata}</Text>
+            {board ? <View testID={`card-${card.id}-board-actions`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
+              {time}{complete}
+            </View> : null}
+          </View>
           <View style={styles.contextRow}>{board ? <CardStatusChip card={card} board /> : <Text testID={`card-${card.id}-preview`} style={styles.context} numberOfLines={1}>{preview}</Text>}</View>
         </View>
-        <View style={styles.rightRail}>
-          {card.status === 'review' ? <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round} accessibilityLabel="완료"
-            disabled={pending || !api} surfaceTestID={`card-${card.id}-완료-visual`} onPress={() => {
-              if (api) void run(() => api.setCardStatus(card.id, 'done', card.version, cardOperationId()));
-            }}><Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} /></GlassButton>
-            : null}
-          <Text style={styles.time} numberOfLines={1}>{formatRelativeTime(card.updatedAt)}</Text>
-        </View>
+        {board ? null : <View style={styles.rightRail}>{complete}{time}</View>}
       </View>
   </>;
   return <AppGlassCard testID={`card-row-${card.id}`} style={styles.cardSurface} isInteractive>
     <Pressable testID={`card-row-${card.id}-layout`} style={board ? undefined : styles.card} onPress={onOpen} accessibilityLabel={`${card.title} 카드 상세`}>
       {board ? <>
         <View style={styles.card}>{identityContent}</View>
-        <View style={{ paddingHorizontal: styles.card.paddingHorizontal, paddingBottom: styles.card.paddingVertical, gap: t.uiSpacing.md }}>
+        <View testID={`card-${card.id}-board-body`} style={{ paddingHorizontal: styles.card.paddingHorizontal, paddingBottom: styles.card.paddingVertical, gap: t.uiSpacing.md }}>
           <CardRequestView request={card.request} />
           {card.latestActivity ? <View style={{ gap: t.uiSpacing.xs }}>
             <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{card.latestActivity.kind === 'report' ? '최신 보고' : '최신 지시'}</Text>
