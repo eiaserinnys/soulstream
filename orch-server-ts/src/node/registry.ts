@@ -382,6 +382,12 @@ export class InMemoryNodeRegistry {
             nowMs,
           });
         }
+        if (message.type === "sessions_update") {
+          this.sessionCache.replaceNodeSessions({
+            nodeId, connectionId: node.connectionId,
+            sessions: Array.isArray(message.sessions) ? message.sessions : [], nowMs,
+          });
+        }
         return resolvedCommandEvents({
           nodeId,
           requestId: settlement.requestId,

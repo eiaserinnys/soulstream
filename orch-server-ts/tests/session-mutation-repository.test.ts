@@ -657,9 +657,11 @@ describe("SessionMutationRepository", () => {
     expect(statements).toContain("status = 'interrupted'");
     expect(statements).toContain("status = 'initializing'");
     expect(statements).toContain("execution_registration_id IS NULL");
+    expect(statements).toContain('session.updated_at = target."updatedAt"');
+    expect(statements).toContain('session.execution_registration_id IS NOT DISTINCT FROM target."executionRegistrationId"');
     expect(statements).toContain("status IN ('completed', 'error', 'interrupted')");
     expect(statements).toContain("termination_event_id IS NULL");
-    expect(statements.match(/updated_at <=/g)).toHaveLength(2);
+    expect(statements.match(/updated_at <=/g)).toHaveLength(1);
     expect(calls.some((call) => call.values.some(
       (value) => Array.isArray(value) && value.includes("session-live"),
     ))).toBe(true);

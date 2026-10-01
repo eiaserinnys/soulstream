@@ -1,3 +1,4 @@
+import type { NodeStartupTarget } from "../control_plane/repositories/node_startup_reconciliation.js";
 import type { NodeRegistryEvent } from "./registry.js";
 import type { SessionMutationRepository } from
   "../control_plane/repositories/session_mutation_repository.js";
@@ -23,8 +24,9 @@ type ReconciliationRepository = {
     nodeId: string,
     runningSessionIds: string[],
     updatedAt: Date,
+    targets?: NodeStartupTarget[],
   ): Promise<{ interrupted: number; restored: number; updates?: ReconciledSessionUpdate[] }>;
-} & Partial<Pick<SessionMutationRepository, "listRunningNodeIds">>;
+} & Partial<Pick<SessionMutationRepository, "listRunningNodeIds" | "captureNodeStartupTargets">>;
 
 type ReconciliationOperation = (
   repository: ReconciliationRepository,
@@ -53,7 +55,9 @@ export function createSessionReconciliationSink(input: {
   restoreLeaseGraceOnStartup?: boolean;
   disconnectGraceMs?: number;
   getConnectedNode?(nodeId: string): { connectionId: string } | undefined;
-  requestSessionInventory?(nodeId: string): Promise<void>;
+  requestSessionInventory?(nodeId: string, connectionId: string): Promise<{
+    requestId: string; runningSessionIds: string[];
+  }>;
   publishSessionUpdate?(input: {
     nodeId: string;
     agentSessionId: string;
@@ -67,6 +71,7 @@ export function createSessionReconciliationSink(input: {
   const tails = new Map<string, Promise<void>>();
   const pendingReconciliations = new Map<string, PendingReconciliation>();
   const reportedNodes = new Set<string>();
+  const inventoryRequests = new Map<string, symbol>();
   const now = input.now ?? (() => new Date());
   const restoreLeaseGraceOnStartup = input.restoreLeaseGraceOnStartup ?? false;
   const disconnectGraceMs = input.disconnectGraceMs ?? 0;
@@ -124,9 +129,32 @@ export function createSessionReconciliationSink(input: {
     }
   };
 
-  const requestInventory = (nodeId: string): void => {
+  const requestInventory = (nodeId: string, connectionId: string): void => {
     if (!input.requestSessionInventory) return;
-    void input.requestSessionInventory(nodeId).catch((error) => {
+    const token = Symbol(connectionId);
+    inventoryRequests.set(nodeId, token);
+    const isCurrent = () => !closed && inventoryRequests.get(nodeId) === token
+      && input.getConnectedNode?.(nodeId)?.connectionId === connectionId;
+    void (async () => {
+      const repository = await input.repositoryProvider();
+      if (!repository.captureNodeStartupTargets) {
+        throw new Error("server startup target snapshot is required before inventory request");
+      }
+      const targets = await repository.captureNodeStartupTargets(nodeId);
+      if (!isCurrent()) return;
+      // This Promise belongs to a pending command scoped to this connection.
+      const response = await input.requestSessionInventory!(nodeId, connectionId);
+      if (!isCurrent()) return;
+      enqueue(nodeId, async (currentRepository) => {
+        if (!isCurrent()) return;
+        inventoryRequests.delete(nodeId); // one accepted response, never replay the snapshot
+        const result = await currentRepository.reconcileNodeStartup(
+          nodeId, response.runningSessionIds, now(), targets,
+        );
+        publishUpdates(nodeId, result.updates);
+      });
+    })().catch((error) => {
+      if (inventoryRequests.get(nodeId) === token) inventoryRequests.delete(nodeId);
       input.logError(error, `runner inventory re-report failed for ${nodeId}`);
     });
   };
@@ -168,7 +196,7 @@ export function createSessionReconciliationSink(input: {
               ),
               `runner inventory re-report required for ${nodeId}`,
             );
-            requestInventory(nodeId);
+            requestInventory(nodeId, connected.connectionId);
             scheduleReconciliationDeadline(
               nodeId,
               connected.connectionId,
@@ -186,7 +214,7 @@ export function createSessionReconciliationSink(input: {
               ),
               `runner inventory watchdog exhausted for ${nodeId}`,
             );
-            await reconcileTimedOutNode(repository, nodeId);
+            // A connected node with no correlated response is not absence evidence.
             return;
           }
           input.logError(
@@ -195,7 +223,7 @@ export function createSessionReconciliationSink(input: {
             ),
             `runner inventory re-report required for ${nodeId}`,
           );
-          requestInventory(nodeId);
+          requestInventory(nodeId, connected.connectionId);
           scheduleReconciliationDeadline(
             nodeId,
             connected.connectionId,
@@ -229,7 +257,7 @@ export function createSessionReconciliationSink(input: {
       nodeId,
       connectionId,
       disconnectGraceMs,
-      0,
+      input.requestSessionInventory ? 1 : 0,
     );
   };
 
@@ -241,6 +269,10 @@ export function createSessionReconciliationSink(input: {
     if (closed) return;
     for (const event of events) {
       if (event.type === "node_registered" || event.type === "node_updated") {
+        if (event.type === "node_registered") {
+          inventoryRequests.delete(event.nodeId);
+          requestInventory(event.nodeId, event.connectionId);
+        }
         if (input.isLeaseAwareNode?.(event.nodeId) === true) {
           if (event.type === "node_registered") reportedNodes.delete(event.nodeId);
           if (!reportedNodes.has(event.nodeId)) {
@@ -252,6 +284,7 @@ export function createSessionReconciliationSink(input: {
         continue;
       }
       if (event.type === "node_unregistered") {
+        inventoryRequests.delete(event.nodeId);
         reportedNodes.delete(event.nodeId);
         if (input.isLeaseAwareNode?.(event.nodeId) === true) {
           deferDisconnect(event.nodeId, event.connectionId);
@@ -314,6 +347,7 @@ export function createSessionReconciliationSink(input: {
       clearTimeout(pending.timer);
     }
     pendingReconciliations.clear();
+    inventoryRequests.clear();
     await startPromise?.catch(() => undefined);
     await Promise.all(tails.values());
   };

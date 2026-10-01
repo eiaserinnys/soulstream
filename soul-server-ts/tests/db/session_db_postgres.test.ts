@@ -314,6 +314,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       "node-worktree",
       [],
       new Date("2026-09-22T00:01:00Z"),
+      await sessionMutations.captureNodeStartupTargets("node-worktree"),
     );
     expect(reconciled).toMatchObject({
       interrupted: 1,
