@@ -12,6 +12,11 @@ const V3DashboardLayout = lazy(() =>
     default: mod.V3DashboardLayout,
   })),
 );
+const ComponentsReviewLayout = lazy(() =>
+  import("./v3/ComponentsReviewLayout").then((mod) => ({
+    default: mod.ComponentsReviewLayout,
+  })),
+);
 
 export function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -37,7 +42,7 @@ export function App() {
 
   return (
     <Suspense fallback={null}>
-      <V3DashboardLayout componentsPage={pathname === "/components"} />
+      {pathname === "/components" ? <ComponentsReviewLayout /> : <V3DashboardLayout />}
     </Suspense>
   );
 }
