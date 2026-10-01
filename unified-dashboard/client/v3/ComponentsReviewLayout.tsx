@@ -1,5 +1,5 @@
-import { useEffect, useRef, type CSSProperties } from "react";
-import { initTheme, LiquidGlassCanvas, LiquidGlassProvider, useGlassSurface, WallpaperLayer } from "@seosoyoung/soul-ui";
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { initTheme, LiquidGlassCanvas, LiquidGlassProvider, useGlassSurface, WallpaperLayer, useAuth, useUserPreferencesSync } from "@seosoyoung/soul-ui";
 import { ComponentsReviewPage } from "./ComponentsReviewPage";
 import { V3_CARD_GAP_PX } from "./v3-layout-metrics";
 import "./v3-dashboard-styles";
@@ -7,11 +7,13 @@ import "./v3-folder-section-navigation.css";
 import "./components-review.css";
 
 // AuthGate in main.tsx owns authentication for this route and the dashboard.
-export function ComponentsReviewLayout() {
-  return <LiquidGlassProvider renderDefaultCanvas={false}><ComponentsReviewContent /></LiquidGlassProvider>;
+export function ComponentsReviewLayout({ children }: { children?: ReactNode } = {}) {
+  return <LiquidGlassProvider renderDefaultCanvas={false}><ComponentsReviewContent>{children}</ComponentsReviewContent></LiquidGlassProvider>;
 }
 
-function ComponentsReviewContent() {
+function ComponentsReviewContent({ children }: { children?: ReactNode }) {
+  const { user } = useAuth();
+  useUserPreferencesSync(user?.email);
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   useEffect(() => { initTheme(); }, []);
@@ -22,7 +24,7 @@ function ComponentsReviewContent() {
     <LiquidGlassCanvas />
     <main ref={surfaceRef} className="v3-components-main glass-strong glass-chrome"
       data-liquid-glass-webgl={webglActive ? "true" : undefined}>
-      <ComponentsReviewPage />
+      {children === undefined ? <ComponentsReviewPage /> : children}
     </main>
   </div>;
 }
