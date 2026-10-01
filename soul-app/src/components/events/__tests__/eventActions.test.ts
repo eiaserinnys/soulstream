@@ -11,6 +11,39 @@ function ev(type: SessionEvent['type'], data: Record<string, unknown>): SessionE
 }
 
 describe('eventActions', () => {
+  test.each([
+    ['complete', '턴 완료'],
+    ['result', '세션 완료'],
+  ] as const)('%s는 수치가 없으면 답변 본문 대신 고정 라벨을 표시한다', (type, label) => {
+    expect(buildSystemEventText(ev(type, {
+      success: true,
+      message: '이미 표시된 안내',
+      content: '이미 표시된 본문',
+      result: '이미 표시된 최종 답변',
+      output: '이미 표시된 출력',
+    }))).toBe(label);
+  });
+
+  test.each([undefined, { input_tokens: 10, output_tokens: 5 }])(
+    '실패 result는 수치 요약보다 오류 본문을 우선한다 (usage: %j)',
+    (usage) => {
+      expect(buildSystemEventText(ev('result', {
+        success: false,
+        error: '응답 생성에 실패했습니다.',
+        output: '다른 출력',
+        usage,
+        total_cost_usd: 0.01,
+      }))).toBe('오류: 응답 생성에 실패했습니다.');
+    },
+  );
+
+  test('실패 result는 실제 output을 보존하고 빈 본문이면 오류 라벨을 표시한다', () => {
+    expect(buildSystemEventText(ev('result', {
+      success: false, output: '사용량 한도에 도달했습니다.',
+    }))).toBe('오류: 사용량 한도에 도달했습니다.');
+    expect(buildSystemEventText(ev('result', { success: false }))).toBe('오류');
+  });
+
   test('토큰 사용량을 dashboard와 같은 형식으로 요약한다', () => {
     expect(
       formatTokenUsage({

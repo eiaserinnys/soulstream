@@ -139,12 +139,13 @@ export function buildUsageSummary(event: SessionEvent): string | null {
 export function buildSystemEventText(event: SessionEvent): string {
   const d = event.data as UnknownRecord;
 
+  if (event.type === 'result' && d.success === false) {
+    const message = stringField(d, 'error', 'message', 'content', 'result', 'output');
+    return message ? `오류: ${message}` : '오류';
+  }
+
   if (event.type === 'complete' || event.type === 'result') {
-    const fallback =
-      stringField(d, 'message', 'content', 'result', 'output') ||
-      EVENT_LABELS[event.type] ||
-      event.type;
-    return buildUsageSummary(event) ?? fallback;
+    return buildUsageSummary(event) ?? EVENT_LABELS[event.type] ?? event.type;
   }
 
   if (event.type === 'context_usage') {
