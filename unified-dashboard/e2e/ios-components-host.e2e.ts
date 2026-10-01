@@ -2,9 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
+import { DEFAULT_USER_PREFERENCES } from "../../packages/soul-ui/src/lib/user-preferences";
 
 // These are web host viewports, not inferred iPhone/iPad logical resolutions.
-const output = path.resolve("../../.local/artifacts/20261001-ios-components-host");
+const output = path.resolve("../../../.local/artifacts/20261001-ios-components-host");
 const bundleIndex = "/assets/ios-components/index.html";
 // Public test content only. This fixture is never shipped as an app sample.
 const fixture = '<!doctype html><html lang="ko"><meta charset="utf-8"><title>공개 호스트 검증 fixture</title><body><button onclick="this.textContent=\'로컬 조작 확인\'">호스트 fixture 조작</button></body></html>';
@@ -27,6 +28,13 @@ async function prepare(page: Page, width: number) {
     body: JSON.stringify({ authEnabled: true, devModeEnabled: false }) }));
   await page.route("**/api/auth/status", route => route.fulfill({ contentType: "application/json",
     body: JSON.stringify({ authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } }) }));
+  const preferences = { ...DEFAULT_USER_PREFERENCES, appearance: "dark",
+    glass: { ...DEFAULT_USER_PREFERENCES.glass, enabled: false } };
+  await page.route("**/api/user/preferences", route => route.fulfill({
+    status: route.request().method() === "GET" ? 200 : 405,
+    contentType: "application/json", body: JSON.stringify({ email: "qa@example.test", preferences,
+      hasBackground: false, backgroundUrl: null, updatedAt: null }),
+  }));
 }
 
 async function capture(page: Page, name: string) {
@@ -46,10 +54,11 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("components-review")).toBeVisible();
     const before = await capture(page, `components-before-${width}`);
 
-    const reads: string[] = [], writes: string[] = [], errors: string[] = [];
+    const reads: string[] = [], writes: string[] = [], errors: string[] = [], preferencesReads: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
     page.on("request", request => {
       const pathname = new URL(request.url()).pathname;
+      if (pathname === "/api/user/preferences" && request.method() === "GET") preferencesReads.push(pathname);
       if (/^\/api\/(planner|sessions|folders|pages|cards|catalog)(\/|$)/.test(pathname)
         || /^\/api\/nodes(\/stream)?$/.test(pathname)) reads.push(pathname);
       if (pathname.startsWith("/api/") && !["GET", "HEAD"].includes(request.method())
@@ -95,15 +104,17 @@ for (const width of [1440, 390]) {
     expect(metrics.frame.y).toBeGreaterThanOrEqual(metrics.notice.bottom);
     expect(metrics.frame.height).toBeGreaterThan(0);
     await capture(page, `fixture-${width}`);
-    writeFileSync(path.join(output, `metrics-${width}.json`), JSON.stringify({ metrics, reads, writes, errors }, null, 2));
+    await page.clock.runFor(500);
+    writeFileSync(path.join(output, `metrics-${width}.json`), JSON.stringify({ metrics, reads, writes, errors, preferencesReads }, null, 2));
     expect(reads).toEqual([]); expect(writes).toEqual([]); expect(errors).toEqual([]);
+    expect(preferencesReads.length).toBeGreaterThan(0);
     await review.getByRole("button", { name: "컴포넌트 검수로 돌아가기" }).click();
     await expect(page).toHaveURL(/\/components$/);
     await expect(page.getByTestId("components-review")).toBeVisible();
     const after = await capture(page, `components-after-${width}`);
     expect(after.equals(before)).toBe(true);
     await page.goto("/");
-    await expect(page.locator(".v3-shell")).toBeVisible();
+    await expect(page.locator(".v3-shell[data-mobile-tab]")).toBeVisible();
     await expect(page.getByTestId("ios-components-review")).toHaveCount(0);
     await expect(page.getByTestId("components-review")).toHaveCount(0);
     await capture(page, `dashboard-${width}`);
