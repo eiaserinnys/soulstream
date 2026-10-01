@@ -40,7 +40,7 @@ export function PostItCard({ api, card, variant = 'full', onOpen }: {
     <View testID={`postit-card-${card.id}`} style={{ width: roles.width, height: roles.height, flexShrink: 0,
       backgroundColor: roles.paper, borderRadius: roles.radius, transform: [{ rotate: `${postItRotation(card.id)}deg` }] }}>
       <Pressable testID={`postit-open-${card.id}`} onPress={onOpen} accessibilityLabel={`${card.title} 카드 상세`}
-        style={{ flex: 1, padding: roles.padding }}>
+        style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding }}>
         <Text testID={`postit-title-${card.id}`} style={{ ...roles.title, height: roles.title.lineHeight * 2 }} numberOfLines={2}>{card.title}</Text>
         <Text testID={`postit-label-${card.id}`} style={{ ...roles.label, marginTop: roles.gap }} numberOfLines={1}>
           {activity?.kind === 'report' ? '마지막 보고' : '마지막 지시'}
@@ -50,7 +50,7 @@ export function PostItCard({ api, card, variant = 'full', onOpen }: {
       <View testID={`postit-footer-${card.id}`} style={{ position: 'absolute', bottom: roles.padding, left: roles.padding, right: roles.padding,
         height: roles.footerHeight, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
         <Pressable accessibilityLabel={`${card.title} 담당과 상태 상세`} onPress={onOpen}
-          style={{ flex: 1, minWidth: 0, minHeight: roles.footerHeight, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
+          style={{ flex: 1, minWidth: 0, minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
           {avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
             style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round }} />
             : <Text style={roles.label}>{card.assigneeKind === 'human' ? '👤' : card.assigneeKind ? '🤖' : '·'}</Text>}
