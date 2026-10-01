@@ -11,9 +11,9 @@ export function CardComposer({text,onChangeText,onSend,placeholder,inputLabel,la
  text:string;onChangeText(text:string):void;onSend():void;placeholder:string;inputLabel?:string;label:string;disabled:boolean;pending:boolean;
  files:UploadedFile[];onAddFiles?(files:FileList|File[]):void;onRemoveFile(id:string):void;onAttachUnavailable?():void;
 }) {
- const {chatTypographyStyle}=useChatTypography();
+ const {chatFontSize,chatTypographyStyle}=useChatTypography();
  const textarea=useRef<HTMLTextAreaElement>(null),fileInput=useRef<HTMLInputElement>(null);
- useTextareaAutoHeight(textarea,text);
+ useTextareaAutoHeight(textarea,text,chatFontSize);
  return <div className="v3-chat-surface shrink-0 pt-2" style={chatTypographyStyle} data-testid="card-composer"
   onDragOver={event=>{if(onAddFiles&&!pending&&event.dataTransfer.types.includes("Files"))event.preventDefault();}}
   onDrop={event=>{if(onAddFiles&&!pending&&event.dataTransfer.files.length){event.preventDefault();onAddFiles(event.dataTransfer.files);}}}>

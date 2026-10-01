@@ -57,13 +57,14 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
     return (
       <>
         <div className="flex min-w-0 flex-1 items-end gap-2">
-          <span
+          {modeIcon ? <span
+            data-slot="chat-input-mode"
             className="mb-2 flex h-5 min-w-5 shrink-0 items-center justify-center text-xs text-muted-foreground"
             title={modeLabel}
             aria-hidden="true"
           >
             {modeIcon}
-          </span>
+          </span> : null}
           <textarea
             data-slot="chat-input-body"
             aria-label={inputLabel}

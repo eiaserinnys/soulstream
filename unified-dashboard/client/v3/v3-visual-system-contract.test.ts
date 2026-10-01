@@ -26,12 +26,12 @@ describe("PR-CL v3 visual system contract", () => {
   });
 
   it("fixes the card grids, section rhythm, and semantic progress roles", () => {
-    const css = read("./v3-visual-system.css");
+    const css = read("./v3-visual-system.css") + read("./v3-project-star.css");
 
     expect(css).toMatch(/\.v3-task-list[^{]*\{[^}]*gap:\s*var\(--v3-space-1\)/s);
     expect(css).toMatch(/\.v3-session-list[^{]*\{[^}]*gap:\s*var\(--v3-space-1\)/s);
     expect(css).toContain('grid-template-columns: minmax(0, 1fr) var(--v3-task-state-column) var(--v3-action-size)');
-    expect(css).toContain('grid-template-columns: var(--v3-session-avatar-size) minmax(0, 1fr) var(--v3-session-meta-column)');
+    expect(read('./v3-run-history.css')).toContain('grid-template-columns: auto minmax(0, 1fr) fit-content(40%)');
     expect(css).toContain('grid-template-columns: var(--v3-tree-toggle-column) var(--v3-tree-drag-column) var(--v3-tree-icon-column) minmax(0, 1fr)');
     expect(css).toContain('padding-left: calc(var(--v3-project-depth, 0) * var(--v3-tree-indent-step))');
     expect(css).toMatch(/\.v3-progress > i[^{]*\{[^}]*background:\s*var\(--v3-accent\)/s);
@@ -63,8 +63,8 @@ describe("PR-CL v3 visual system contract", () => {
     expect(css).toMatch(/\[data-slot="chat-message-bubble"\][^{]*\{[^}]*max-width:\s*88%[^}]*padding:\s*14px 16px/s);
     expect(css).toMatch(/\[data-slot="chat-tool-row"\][^{]*\{[^}]*padding-block:\s*4px/s);
     expect(css).toMatch(/\[data-slot="tool-call-group-toggle"\][^{]*\{[^}]*font:\s*var\(--v3-type-meta\) var\(--v3-font-family\)/s);
-    expect(css).toContain(':is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] h1');
-    expect(css).toContain(':is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] h4');
+    expect(css).not.toContain(':is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] h1');
+    expect(css).not.toContain(':is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] h4');
     expect(css).toContain('font-size: var(--chat-font-size)');
     expect(css).toContain('line-height: var(--chat-line-height)');
   });

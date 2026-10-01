@@ -33,7 +33,6 @@ import {
   buildFolderContextMenuActions,
 } from "./context-menu-model";
 import { starredFolderPage, type StarredPlannerFolder } from "./planner-data";
-import "./v3-project-star.css";
 
 export interface PlannerDateNavItem {
   date: string;

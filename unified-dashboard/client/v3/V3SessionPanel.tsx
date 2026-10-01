@@ -32,7 +32,6 @@ import {
 } from "./v3-session-panel-model";
 import { RichSessionRow } from "./RichSessionRow";
 import type { SessionNodeConnectivity } from "./session-node-connectivity";
-import "./v3-session-panel.css";
 
 interface V3SessionPanelProps {
   sessions: readonly SessionSummary[];

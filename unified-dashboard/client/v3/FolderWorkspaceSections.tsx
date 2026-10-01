@@ -131,7 +131,7 @@ export function FolderWorkspaceSections({
         <div className="v3-section-head">
           <h2>하위 폴더</h2><span>{children.length}개</span>
           <span className="v3-spacer" />
-          <DashboardIconCap label="새 폴더" onClick={onCreateSubfolder}>
+          <DashboardIconCap size="small" label="새 폴더" onClick={onCreateSubfolder}>
             <FolderPlus className="h-4 w-4" aria-hidden="true" />
           </DashboardIconCap>
         </div>

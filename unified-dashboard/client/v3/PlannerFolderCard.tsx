@@ -20,6 +20,7 @@ import {
   type SessionNodeConnectivity,
 } from "./session-node-connectivity";
 import "./v3-content-boundary.css";
+import { StatusChip } from "./StatusChip";
 
 type PlannerFolderCardProps = {
   task: PlannerFolder;
@@ -87,9 +88,7 @@ export function PlannerFolderCardView({
     >
       <div className="v3-task-main">
         <div className="v3-task-kicker">
-          {navigationLabel ? <span className="v3-status-chip">{navigationLabel}</span> : <span className={`v3-status-chip v3-status-chip--${task.status}`}>
-            <span aria-hidden="true">{status.icon}</span> {status.label}
-          </span>}
+          <StatusChip label={navigationLabel ?? (task.status === "in_progress" || task.status === "review" ? `카드 집계 · ${status.label}` : `폴더 ${task.status === "open" ? "열림" : status.label}`)} tone={navigationLabel ? undefined : task.status}/>
         </div>
         <h3
           className="v3-text-clamp-2"
@@ -108,10 +107,7 @@ export function PlannerFolderCardView({
         ) : null}
       </div>
       {showRun && run ? <div className="v3-task-state">
-          <span className="v3-run-line">
-            {`세션 #${run.number} ${runState}`}
-            {runStatus === "running" ? <i aria-label="실행 중" /> : null}
-          </span>
+          <StatusChip label={`세션 #${run.number} ${runState}`} tone={runStatus ?? undefined}/>
       </div> : null}
       <div className="v3-task-star-slot">
         {onRename ? <DashboardIconCap

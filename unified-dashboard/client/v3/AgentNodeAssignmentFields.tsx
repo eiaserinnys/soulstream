@@ -4,6 +4,7 @@ import type {
   ModelPresetAvailability,
 } from "@seosoyoung/soul-ui";
 
+import { AgentSelectionField } from "./AgentSelectionField";
 import { NodeModelPresetSelect } from "../components/NodeModelPresetSelect";
 import type { NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import { useOrchestratorStore } from "../store/orchestrator-store";
@@ -52,7 +53,6 @@ export function AgentNodeAssignmentFields({
   );
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loadedNodeId, setLoadedNodeId] = useState<string | null>(null);
-  const agentSelectId = useId();
   const nodeSelectId = useId();
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -115,26 +115,11 @@ export function AgentNodeAssignmentFields({
     ? [{ id: agentId, name: agentId } as AgentInfo, ...agents]
     : agents;
 
-  const agentField = (
-    <div className="v3-assignment-field">
-      <label htmlFor={agentSelectId}>
-        {presentation === "session" ? "에이전트" : "실행 에이전트"}
-      </label>
-      <select
-        id={agentSelectId}
-        value={agentId}
-        aria-label={presentation === "session" ? "에이전트 선택" : "기본 실행 에이전트"}
-        disabled={disabled || !nodeId}
-        onChange={(event) => {
-          onAgentIdChange(event.target.value);
-          onAgentInfoChange?.(agentOptions.find((agent) => agent.id === event.target.value) ?? null);
-        }}
-      >
-        <option value="">미지정</option>
-        {agentOptions.map((agent) => <option key={agent.id} value={agent.id}>{agent.name ?? agent.id}</option>)}
-      </select>
-    </div>
-  );
+  const agentField = <AgentSelectionField agents={agentOptions} value={agentId}
+    presentation={presentation} disabled={disabled || !nodeId} onChange={value => {
+      onAgentIdChange(value);
+      onAgentInfoChange?.(agentOptions.find(agent => agent.id === value) ?? null);
+    }} />;
   const nodeField = (
     <div className="v3-assignment-field">
       <label htmlFor={nodeSelectId}>

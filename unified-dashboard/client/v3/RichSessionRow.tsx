@@ -6,6 +6,7 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { RunRowFrame } from "./RunRowFrame";
+import { StatusChip } from "./StatusChip";
 
 import { singleLinePreview } from "./session-preview";
 import { sessionPanelTitle } from "./v3-session-panel-model";
@@ -64,7 +65,7 @@ export function RichSessionRow({
     agentLine={<><span>{failed ? "세션 상세 없음":session.agentName??session.agentId??"에이전트 미상"}</span>{size==="small"&&!failed?<span>{session.nodeId??"노드 미상"}</span>:null}{modelLabel?<span title={modelLabel}>{modelLabel}</span>:null}{size!=="small"&&!failed?<span>{session.nodeId??"노드 미상"}</span>:null}</>}
     affiliation={affiliation?<span className="v3-run-affiliation" title={affiliation}>{affiliation}</span>:null}
     preview={visiblePreview}
-    trailing={<><span className={`v3-run-status-badge v3-run-status-badge--${presentationStatus}`}><span className={`v3-run-status v3-run-status--${presentationStatus}`} aria-hidden="true"/>{status}</span><time>{failed?"":formatRelativeSessionTime(session)}</time></>}
+    trailing={<><StatusChip label={`세션 ${status}`} tone={presentationStatus}/><time>{failed?"":formatRelativeSessionTime(session)}</time></>}
     actions={actions}
   />;
 }

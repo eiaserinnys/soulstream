@@ -12,6 +12,8 @@ import { FolderPicker } from "./FolderPicker";
 import { FolderTitleEditor } from "./FolderTitleEditor";
 import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 import { FolderTodayToggle } from "./FolderTodayToggle";
+import { ComponentsReviewControls } from "./ComponentsReviewControls";
+import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { reviewCard, reviewDetail, reviewFolder, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
 
@@ -20,6 +22,7 @@ const sections = [
   { id: "heads", title: "머리·캡", icon: Layers },
   { id: "bubbles", title: "말풍선", icon: MessageSquare },
   { id: "input", title: "입력창", icon: SendHorizontal },
+  { id: "controls", title: "선택·설정", icon: SquarePen },
   { id: "surfaces", title: "패널 표면", icon: SquarePen },
 ];
 
@@ -43,6 +46,7 @@ export function ComponentsReviewPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [description, setDescription] = useState("폴더 설명을 누르면 기존 편집기가 열립니다.");
   const [comments, setComments] = useState(reviewDetail.comments ?? []);
+  const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(() => new Set());
   const open = (label: string) => setNotice(`${label} 샘플을 열었습니다.`);
   const folderStar = { starred, pending: false, error: null, toggle: async () => setStarred(value => !value) };
   const send = () => {
@@ -89,6 +93,11 @@ export function ComponentsReviewPage() {
               <Sample name="RichSessionRow" state="small · 긴 한국어 제목">
                 <div className="v3-run-list"><RichSessionRow size="small" session={{ ...reviewSession, agentSessionId: "components-small", displayName: reviewTitle }} onOpen={() => open("small 세션")}/></div>
               </Sample>
+              <Sample name="RichSessionRow" state="긴 오프라인 상태 · 미리보기 유무">
+                <div className="v3-run-list">{(["default", "small"] as const).map(size => <RichSessionRow key={size} size={size}
+                  nodeOffline session={{ ...reviewSession, agentSessionId: `components-offline-${size}`, displayName: reviewTitle }}
+                  onOpen={() => open("오프라인 세션")}/>)}</div>
+              </Sample>
               <Sample name="CardRowView / RunRowFrame" state="기본 · 여러 항목 · 긴 한국어 제목">
                 <div className="v3-run-list">{[reviewCard.title, reviewTitle].map((label, index) => <CardRowView key={label}
                   card={{ ...reviewCard, id: `components-card-${index}`, title: label }} assignee={reviewSession} detail={reviewDetail} onOpen={() => open("카드")}/>)}</div>
@@ -111,9 +120,11 @@ export function ComponentsReviewPage() {
             </div>
           </section>
           <section id="components-heads" className="v3-detail-section">
-            <div className="v3-detail-section-head"><h3>섹션 머리와 캡</h3><span>DashboardIconCap</span><span className="v3-spacer"/>
-              <DashboardIconCap label="샘플 항목 추가" onClick={() => open("항목 추가")}><Plus className="h-4 w-4"/></DashboardIconCap>
+            <p className="v3-components-label">섹션 머리 · 실제 다음 항목 · small 캡</p>
+            <div className="v3-detail-section-head"><h3>섹션 머리와 캡</h3><span className="v3-spacer"/>
+              <DashboardIconCap size="small" label="샘플 항목 추가" onClick={() => open("항목 추가")}><Plus className="h-4 w-4"/></DashboardIconCap>
             </div>
+            <div className="v3-run-list"><RichSessionRow size="small" session={reviewSession} onOpen={() => open("섹션 항목")}/></div>
             <Sample name="FolderTodayToggle / DashboardIconCap" state="기본 · 선택 · 포커스">
               <div className="v3-folder-header-actions">
                 <FolderTodayToggle inToday={inToday} onToggle={async () => setInToday(value => !value)}/>
@@ -155,9 +166,19 @@ export function ComponentsReviewPage() {
               </div>
             </Sample>
           </section>
+          <section id="components-controls" className="v3-detail-section">
+            <div className="v3-detail-section-head"><h3>선택과 설정</h3></div>
+            <Sample name="ProjectNavigationTree / FolderPicker" state="같은 폴더 이름 영역 · 로컬 선택">
+              <div className="v3-nav-list"><ProjectNavigationTree folders={reviewFolders} selectedFolderId={folder.id}
+                isExpanded={id => expandedFolders.has(id)} onToggleExpanded={id => setExpandedFolders(current => {
+                  const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next;
+                })} onSelect={setFolder} onContextMenu={() => open("폴더 메뉴")} onReorder={async () => open("폴더 순서")}/></div>
+            </Sample>
+            <ComponentsReviewControls/>
+          </section>
           <section id="components-surfaces" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>패널 표면</h3><span className="v3-spacer"/>
-              <DashboardIconCap label="샘플 패널 열기" onClick={() => setPanelOpen(true)}><Layers className="h-4 w-4"/></DashboardIconCap>
+              <DashboardIconCap size="small" label="샘플 패널 열기" onClick={() => setPanelOpen(true)}><Layers className="h-4 w-4"/></DashboardIconCap>
             </div>
             <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">
               <FolderDescriptionPanel markdown={description} onSave={async body => { setDescription(body); open("설명 저장"); }}/>
@@ -166,6 +187,10 @@ export function ComponentsReviewPage() {
                 <DialogPanel><FolderDescriptionPanel markdown={documentBody} onSave={async body => { setDocumentBody(body); open("패널 저장"); }}/></DialogPanel>
               </DialogPopup></Dialog>
             </Sample>
+            {(["compact", "daily"] as const).map(variant => <Sample key={variant} name="FolderDescriptionPanel" state={`${variant} · 동일 편집 표면`}>
+              <FolderDescriptionPanel variant={variant} markdown={description} ariaLabel={`${variant} 설명`}
+                onSave={async body => setDescription(body)}/>
+            </Sample>)}
           </section>
         </div>
       </div>

@@ -260,6 +260,7 @@ export function FolderInlineBoard({
         <span className="v3-spacer" />
         {items.length > COLLAPSED_BOARD_ITEM_LIMIT ? (
           <DashboardIconCap
+            size="small"
             label={boardExpanded ? "보드 접기" : "보드 전체 펼치기"}
             aria-expanded={boardExpanded}
             onClick={() => setBoardExpanded((expanded) => !expanded)}
@@ -268,6 +269,7 @@ export function FolderInlineBoard({
           </DashboardIconCap>
         ) : null}
         <DashboardIconCap
+          size="small"
           label="마크다운 추가"
           disabled={!boardSync.runtime || !boardSync.hasSynced}
           onClick={createMarkdown}

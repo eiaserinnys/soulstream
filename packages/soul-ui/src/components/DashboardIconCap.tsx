@@ -8,12 +8,14 @@ export interface DashboardIconCapProps
   extends Omit<ComponentPropsWithoutRef<"button">, "aria-label" | "title"> {
   label: string;
   tooltip?: string;
+  size?: "default" | "small";
 }
 
 /** v1 글로벌 툴바의 설정·테마 버튼과 동일한 아이콘 액션 정본. */
 export function DashboardIconCap({
   label,
   tooltip,
+  size = "default",
   className,
   children,
   type = "button",
@@ -30,6 +32,7 @@ export function DashboardIconCap({
       type={type}
       className={cn(
         "dashboard-icon-cap border border-glass-border glass-strong glass-chrome lg-rim",
+        size === "small" && "dashboard-icon-cap--small",
         className,
       )}
       data-slot="dashboard-icon-cap"

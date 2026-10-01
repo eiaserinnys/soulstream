@@ -2,6 +2,7 @@ import type { HTMLAttributes, ReactNode } from "react";
 import { DashboardIconCap, DisclosureActionIcon } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 import { Pencil } from "lucide-react";
+import "./v3-context-menus.css";
 
 /** The inline board's existing document presentation, without data access. */
 export function InlineMarkdownCard({ title, expanded, onToggle, onRename, rowProps, renameForm, error, children }: {
@@ -18,11 +19,11 @@ export function InlineMarkdownCard({ title, expanded, onToggle, onRename, rowPro
     <div className="v3-inline-board-row" tabIndex={0} aria-label={`${title} 문서 작업`} {...rowProps}>
       {renameForm ?? <div className="v3-inline-board-label"><span>📄 {title}</span></div>}
       {!renameForm ? <>
-        <DashboardIconCap label={`${title} ${expanded ? "접기" : "펼치기"}`} className="v3-inline-board-expand"
+        <DashboardIconCap size="small" label={`${title} ${expanded ? "접기" : "펼치기"}`} className="v3-inline-board-expand"
           aria-expanded={expanded} onClick={onToggle}>
           <DisclosureActionIcon expanded={expanded} className="h-4 w-4" />
         </DashboardIconCap>
-        <DashboardIconCap label={`${title} 이름 수정`} className="v3-inline-board-rename-button" onClick={onRename}>
+        <DashboardIconCap size="small" label={`${title} 이름 수정`} className="v3-inline-board-rename-button" onClick={onRename}>
           <Pencil className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </> : null}

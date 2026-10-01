@@ -201,13 +201,7 @@
 
 [data-slot="chat-body"],
 [data-slot="chat-body"] p,
-[data-slot="chat-body"] h1,
-[data-slot="chat-body"] h2,
-[data-slot="chat-body"] h3,
-[data-slot="chat-body"] h4,
 [data-slot="chat-body"] li,
-[data-slot="chat-body"] pre,
-[data-slot="chat-body"] code,
 [data-slot="chat-body"] table,
 [data-slot="chat-tool-body"],
 [data-slot="chat-input-body"] {
@@ -460,6 +454,13 @@ pre[data-markdown-code-layout="document"] {
   .dashboard-icon-cap:hover,
   .dashboard-toolbar-search:hover {
     color: var(--foreground);
+  }
+
+  .dashboard-icon-cap--small {
+    width: calc(var(--spacing) * 8);
+    height: calc(var(--spacing) * 8);
+    flex-shrink: 0;
+    border-radius: 50%;
   }
 
   .dashboard-icon-cap:focus-visible {

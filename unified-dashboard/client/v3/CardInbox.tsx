@@ -13,7 +13,7 @@ export function CardInbox({folders}:{folders:readonly CatalogFolder[]}) {
  const [adding,setAdding]=useState(false);
  const empty=!groups.attention.length&&!groups.running.length&&!groups.queued.length;
  return <div className="v3-card-inbox">{(["attention","running","queued"] as const).filter(group=>group==="attention"||groups[group].length>0).map(group=><section key={group} data-card-group={group}>
-  <div className="v3-section-head"><h2>{{attention:"확인할 것",running:"진행 중",queued:"대기열"}[group]}</h2><span>{groups[group].length}</span>{group==="attention"?<DashboardIconCap label="카드 추가" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>:null}</div>
+  <div className="v3-section-head"><h2>{{attention:"확인할 것",running:"진행 중",queued:"대기열"}[group]}</h2><span>{groups[group].length}</span>{group==="attention"?<DashboardIconCap size="small" label="카드 추가" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>:null}</div>
   {group==="attention"&&adding?<CardCreateForm folders={folders} onClose={()=>setAdding(false)}/>:null}
   {group==="attention"&&empty?<div className="v3-card-inbox-empty"><strong>지금은 확인할 것이 없습니다</strong><span>아래에서 새 세션을 시작하세요.</span></div>:null}
   <div className="v3-task-list">{group==="queued"?<CardQueue cards={groups.queued} renderRow={(card,handle)=><CardRow card={card} handle={handle} folderLabel={folders.find(f=>f.id===card.folderId)?.name??""}/>}/>:groups[group].map(card=><CardRow key={card.id} card={card} folderLabel={folders.find(f=>f.id===card.folderId)?.name??""}/>)}</div>

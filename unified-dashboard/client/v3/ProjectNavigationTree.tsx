@@ -1,3 +1,4 @@
+import "./v3-project-star.css";
 import type { CSSProperties, MouseEvent } from "react";
 import {
   DashboardDndProvider,
