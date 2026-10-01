@@ -1,0 +1,19 @@
+.v3-components-samples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-6);
+}
+
+.v3-components-sample {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--v3-space-3);
+}
+
+.v3-components-label {
+  margin: 0;
+  font: var(--v3-type-body) var(--v3-font-family);
+  color: var(--v3-text-secondary);
+  overflow-wrap: anywhere;
+}

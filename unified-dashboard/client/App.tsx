@@ -37,7 +37,7 @@ export function App() {
 
   return (
     <Suspense fallback={null}>
-      <V3DashboardLayout />
+      <V3DashboardLayout componentsPage={pathname === "/components"} />
     </Suspense>
   );
 }

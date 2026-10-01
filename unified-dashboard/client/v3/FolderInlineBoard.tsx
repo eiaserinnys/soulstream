@@ -16,7 +16,7 @@ import {
 } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
-import { Check, FilePlus2, Pencil, X } from "lucide-react";
+import { Check, FilePlus2, X } from "lucide-react";
 
 import {
   fetchInlineCustomView,
@@ -24,6 +24,7 @@ import {
   fetchFolderBoardItems,
   saveInlineMarkdown,
 } from "./folder-inline-board-api";
+import { InlineMarkdownCard } from "./InlineMarkdownCard";
 import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 import { FolderDocumentContextMenu, type FolderDocumentContextTarget } from "./FolderDocumentContextMenu";
 import { documentContextMenuTargetForKey } from "./document-context-menu-keyboard";
@@ -284,17 +285,16 @@ export function FolderInlineBoard({
             const title = metadataText(item, "title") || "제목 없는 문서";
             const activeRename = renameState?.documentId === item.itemId ? renameState : null;
             return (
-              <LiquidGlassCard key={item.id} webglSurface cornerRadius={14} className="v3-inline-board-item" data-board-kind="markdown">
-                <div
-                  className="v3-inline-board-row"
-                  tabIndex={0}
-                  aria-label={`${title} 문서 작업`}
-                  onContextMenu={(event) => {
+              <InlineMarkdownCard key={item.id} title={title} expanded={expanded}
+                onToggle={() => setExpandedId(expanded ? null : item.id)}
+                onRename={() => beginRename(item)}
+                rowProps={{
+                  onContextMenu: (event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     setDocumentContext({ item, target: { x: event.clientX, y: event.clientY } });
-                  }}
-                  onKeyDown={(event) => {
+                  },
+                  onKeyDown: (event) => {
                     const target = documentContextMenuTargetForKey(
                       { key: event.key, shiftKey: event.shiftKey },
                       event.currentTarget.getBoundingClientRect(),
@@ -303,9 +303,9 @@ export function FolderInlineBoard({
                     event.preventDefault();
                     event.stopPropagation();
                     setDocumentContext({ item, target });
-                  }}
-                >
-                  {activeRename ? (
+                  },
+                }}
+                renameForm={activeRename ? (
                     <form className="v3-inline-board-rename" onSubmit={(event) => { void commitRename(event); }}>
                       <span aria-hidden="true">📄</span>
                       <input
@@ -338,28 +338,11 @@ export function FolderInlineBoard({
                         </DashboardIconCap>
                       </div>
                     </form>
-                  ) : (
-                    <div className="v3-inline-board-label"><span>📄 {title}</span></div>
-                  )}
-                  {!activeRename ? (
-                    <>
-                      <DashboardIconCap
-                        label={`${title} ${expanded ? "접기" : "펼치기"}`}
-                        className="v3-inline-board-expand"
-                        aria-expanded={expanded}
-                        onClick={() => setExpandedId(expanded ? null : item.id)}
-                      >
-                        <DisclosureActionIcon expanded={expanded} className="h-4 w-4" />
-                      </DashboardIconCap>
-                      <DashboardIconCap label={`${title} 이름 수정`} className="v3-inline-board-rename-button" onClick={() => beginRename(item)}>
-                        <Pencil className="h-4 w-4" aria-hidden="true" />
-                      </DashboardIconCap>
-                    </>
-                  ) : null}
-                </div>
-                {activeRename?.error ? <p className="v3-inline-board-error" role="alert">{activeRename.error}</p> : null}
+                ) : undefined}
+                error={activeRename?.error}
+              >
                 {expanded ? <InlineMarkdown documentId={item.itemId} invalidationKey={pageInvalidationKey} /> : null}
-              </LiquidGlassCard>
+              </InlineMarkdownCard>
             );
           }
           if (item.itemType === "custom_view") {
