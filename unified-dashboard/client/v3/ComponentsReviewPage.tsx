@@ -17,6 +17,7 @@ import { ComponentsReviewControls } from "./ComponentsReviewControls";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { reviewCard, reviewDetail, reviewFolder, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
+import { PostItCardSamples } from "./PostItCardSamples";
 
 const sections = [
   { id: "rows", title: "목록 행", icon: Folder },
@@ -107,6 +108,9 @@ export function ComponentsReviewPage() {
                   completion={{pending:false,onComplete:()=>open("완료 비교")}}/>)}
                 <CardRowView card={{...reviewCard, title: "상태별 같은 카드", request: "", id: "compare-no-preview"}}
                   assignee={reviewSession} onOpen={() => open("카드 비교")}/>
+              </Sample>
+              <Sample name="PostItCardView / PostItGrid" state="320×280 · 긴 제목 · 빈 본문 · 담당 없음 · 모든 상태 · 고정 회전">
+                <PostItCardSamples onOpen={open}/>
               </Sample>
               <Sample name="PlannerFolderCardView" state="하위 폴더 · 관리 캡">
                 <div className="v3-task-list"><PlannerFolderCardView {...folderProps} task={reviewFolder("폴더 카드 기본", "components-folder-card")}

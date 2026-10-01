@@ -20,11 +20,12 @@ export class CardControlPlaneService {
   listFolders(params: Parameters<CardRepository["listFolders"]>[0]) { return this.repo.listFolders(params); }
   listOperations(folderId: string,limit?: number,offset?: number) { return this.repo.listOperations(folderId,limit,offset); }
   listCards(params: Parameters<CardRepository["listCards"]>[0]={}) { return this.repo.listCards(params); }
+  projectCards(cards: readonly CardRow[]) { return this.repo.projectCards(cards); }
   async getCard(cardId: string) {
     const card=await this.repo.getCard(cardId);
     if (!card) return null;
     const [reports,questions,comments,sessions]=await Promise.all([this.repo.listReports(cardId),this.repo.listQuestions(cardId),this.repo.listComments(cardId),this.repo.listSessions(cardId)]);
-    return { card,reports,questions,comments,sessions };
+    return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions };
   }
   listReports(cardId: string) { return this.repo.listReports(cardId); }
   setFolderStatus(params: FolderActorParams & { folderId: string; expectedVersion: number; status: FolderStatus; reason?: string | null; idempotencyKey?: string | null }) {

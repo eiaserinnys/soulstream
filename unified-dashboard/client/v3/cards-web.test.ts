@@ -35,14 +35,27 @@ describe("card web contracts", () => {
     await cardRequest(path, method, body);
     expect(fetch).toHaveBeenCalledWith(path, expect.objectContaining({method, credentials:"same-origin", body:JSON.stringify(body)}));
   });
+  it("keeps additive activity from folder lists and replaces it with authoritative mutation detail", async () => {
+    const activity={kind:"instruction",format:"markdown",body:"목록 원문",createdAt:"2026-10-01T07:00:00Z"};
+    const fetch=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({cards:[card("c","review",{latestActivity:activity})]})))
+      .mockResolvedValueOnce(new Response(JSON.stringify({card:card("c","done")})))
+      .mockResolvedValueOnce(new Response(JSON.stringify({card:card("c","done",{latestActivity:null}),reports:[],questions:[],sessions:[]})));
+    vi.stubGlobal("fetch",fetch);
+    await useCardStore.getState().loadFolder("folder");
+    expect(useCardStore.getState().byId.c.latestActivity).toEqual(activity);
+    await useCardStore.getState().mutate("c","/status",{status:"done",expectedVersion:2});
+    expect(useCardStore.getState().byId.c.latestActivity).toBeNull();
+    expect(fetch.mock.calls.map(call=>call[0])).toEqual(["/api/cards?folderId=folder","/api/cards/c/status","/api/cards/c"]);
+  });
   it("refreshes only the card named by the wire event, including reports and questions", async () => {
-    const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({card:card("changed","review"),reports:[{id:"r"}],questions:[{id:"q"}],sessions:[]})));
+    const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({card:card("changed","review",{latestActivity:{kind:"report",format:"html",body:"<p>신선한 보고</p>",createdAt:"2026-10-01T07:00:00Z"}}),reports:[{id:"r"}],questions:[{id:"q"}],sessions:[]})));
     vi.stubGlobal("fetch",fetch);
     useCardStore.setState({byId:{other:card("other","running") as never}});
     await useCardStore.getState().handleCardUpdated({cardId:"changed",folderId:"folder"});
     expect(fetch.mock.calls.map(c=>c[0])).toEqual(["/api/cards/changed"]);
     expect(useCardStore.getState().byId.other.status).toBe("running");
     expect(useCardStore.getState().byId.changed.status).toBe("review");
+    expect(useCardStore.getState().byId.changed.latestActivity?.body).toBe("<p>신선한 보고</p>");
     expect(useCardStore.getState().details.changed.reports).toHaveLength(1);
   });
 });
