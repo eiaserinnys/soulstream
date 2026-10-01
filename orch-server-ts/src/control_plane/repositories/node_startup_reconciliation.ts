@@ -122,4 +122,3 @@ export function mapReconciledSessionRow(row: ReconciledSessionRow) {
     updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at),
   };
 }
-
