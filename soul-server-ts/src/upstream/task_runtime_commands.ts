@@ -18,6 +18,12 @@ import type { CallerInfo, SessionCreationWarning, Task } from "../task/task_mode
 import type { DeliveryIntent } from "../task/delivery_contract.js";
 import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
+import type { PurposeDecisionCommand, PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
+
+export interface OrchestrationWorkerAdmission {
+  cardId: string; runId: string; executionToken: string;
+}
+export type AuthorizeOrchestrationWorker = (request: OrchestrationWorkerAdmission & { sessionId: string }) => Promise<boolean>;
 
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
@@ -26,9 +32,12 @@ interface TaskRuntimeCommandsDeps {
   logger: Logger;
   modelCatalog?: Pick<ModelCatalog, "resolve">;
   agentProfileSource?: NewSessionAgentProfileSource;
+  decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
+  authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
 }
 
 export interface CreateSessionRuntimeParams {
+  orchestrationAdmission?: OrchestrationWorkerAdmission;
   agentSessionId: string;
   prompt: string;
   profileId: string;
@@ -55,6 +64,7 @@ export interface CreateSessionRuntimeParams {
 }
 
 export interface InterveneRuntimeParams {
+  orchestrationAdmission?: OrchestrationWorkerAdmission;
   agentSessionId: string;
   text: string;
   user?: string;
@@ -160,6 +170,20 @@ export class UnknownAgentProfileError extends Error {
 export class TaskRuntimeCommands {
   constructor(private readonly deps: TaskRuntimeCommandsDeps) {}
 
+  createDecisionSession(params: PurposeDecisionCommand): Promise<Task> {
+    if (!this.deps.decisionRunner) throw new Error("Dedicated decision runtime unavailable");
+    return this.deps.decisionRunner.create(params);
+  }
+
+  prepareDecisionSession(params: Pick<PurposeDecisionCommand, "profileId" | "modelPreset">) {
+    if (!this.deps.decisionRunner) return Promise.resolve({ status: "unavailable" as const, reason: "decision_runtime_unavailable" });
+    return this.deps.decisionRunner.prepare(params);
+  }
+
+  cancelDecisionSession(sessionId: string): boolean {
+    return this.deps.decisionRunner?.cancel(sessionId) ?? false;
+  }
+
   async createSession(params: CreateSessionRuntimeParams): Promise<Task> {
     const resolvedAgent = await this.resolveNewSessionAgent(params.profileId);
     const agent = resolvedAgent.profile;
@@ -169,6 +193,7 @@ export class TaskRuntimeCommands {
       this.deps.modelCatalog,
     );
     const prompt = appendAttachmentPathNotes(params.prompt, params.attachmentPaths);
+    await this.authorizeWorker(params.agentSessionId, params.orchestrationAdmission, params.cardId ?? null);
     const task = await this.deps.taskManager.createTask({
       agentSessionId: params.agentSessionId,
       prompt,
@@ -215,6 +240,7 @@ export class TaskRuntimeCommands {
   }
 
   async intervene(params: InterveneRuntimeParams): Promise<AddInterventionResult> {
+    await this.authorizeWorker(params.agentSessionId, params.orchestrationAdmission);
     return await this.deps.taskManager.addIntervention(
       {
         agentSessionId: params.agentSessionId,
@@ -238,6 +264,19 @@ export class TaskRuntimeCommands {
       },
       (task, activation) => this.startResumedTask(task, activation),
     );
+  }
+
+  private async authorizeWorker(sessionId: string, marker?: OrchestrationWorkerAdmission, cardId?: string | null): Promise<void> {
+    if (marker === undefined) return;
+    if (!marker || typeof marker.runId !== "string" || !marker.runId
+      || typeof marker.executionToken !== "string" || !marker.executionToken
+      || typeof marker.cardId !== "string" || !marker.cardId
+      || (cardId !== undefined && marker.cardId !== cardId)
+      || !this.deps.authorizeOrchestrationWorker
+      || !await this.deps.authorizeOrchestrationWorker({ sessionId, cardId: marker.cardId,
+        runId: marker.runId, executionToken: marker.executionToken })) {
+      throw new Error("Worker admission denied");
+    }
   }
 
   private requireAgent(profileId: string): AgentProfile {

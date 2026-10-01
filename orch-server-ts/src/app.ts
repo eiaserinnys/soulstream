@@ -1,3 +1,5 @@
+import { registerCardOrchestrationRoutes, type CardOrchestrationRouteOptions } from "./cards/card_orchestration_routes.js";
+import { registerCardOrchestrationDecisionRoutes, type CardOrchestrationDecisionRouteOptions } from "./cards/card_orchestration_decision_routes.js";
 import { registerR2SettingsRoutes, type R2SettingsProvider } from "./admin/r2_settings_routes.js";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerCardDispatchSettingsRoutes, type CardDispatchSettingsRouteOptions } from "./cards/card_dispatch_settings_routes.js";
@@ -185,6 +187,8 @@ export type CreateAppOptions = {
   attachmentRoutes?: AttachmentRouteOptions;
   folderRoutes?: FolderRouteOptions;
   cardDispatchSettingsRoutes?:CardDispatchSettingsRouteOptions;
+  cardOrchestrationRoutes?:CardOrchestrationRouteOptions;
+  cardOrchestrationDecisionRoutes?:CardOrchestrationDecisionRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   agentProfileRoutes?: AgentProfileRouteOptions;
@@ -350,6 +354,8 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerUserPreferencesRoutes(app, options.userPreferencesRoutes);
   }
   if (options.cardDispatchSettingsRoutes) registerCardDispatchSettingsRoutes(app,options.cardDispatchSettingsRoutes);
+  if (options.cardOrchestrationRoutes) registerCardOrchestrationRoutes(app,options.cardOrchestrationRoutes);
+  if (options.cardOrchestrationDecisionRoutes) registerCardOrchestrationDecisionRoutes(app,options.cardOrchestrationDecisionRoutes);
   if (options.folderRoutes !== undefined) {
     registerFolderRoutes(app, {
       ...options.folderRoutes,

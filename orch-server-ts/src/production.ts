@@ -78,6 +78,7 @@ import {
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
 import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.js";
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
+import { createCardOrchestrationAccess } from "./cards/card_orchestration_access.js";
 import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
 import type { CardDispatcher } from "./cards/card_dispatcher.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
@@ -463,6 +464,7 @@ export async function createLiveProductionApplication(
     bridge: runtimeServices.sessionBridge,
     pollIntervalMs: config.usage_summary_poll_interval_seconds * 1_000,
     sharedAccountGroups: config.usage_summary_shared_accounts,
+    onCollected: () => { void cardDispatcher?.dispatch(); },
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
   try {
@@ -501,9 +503,23 @@ export async function createLiveProductionApplication(
       processEnv: ephemeralProcessEnv,
     }),
   };
+  const orchestrationAccess = createCardOrchestrationAccess({
+    getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
+    listFolders: async () => providers.folderRoutes.provider.listFolders(),
+    findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
+  });
   const cardDispatchRuntime=await createCardDispatchRuntime({sqlResolver,router:runtimeServices.sessionRouter,bridge:runtimeServices.sessionBridge,
     availability:providers.modelPresetAvailability,notifier:pushNotifier,admin:providers.adminUsersRoutes.provider,
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
+    usageSnapshot: () => usageSummaryService.getSummary(),
+    validateFolder: orchestrationAccess.validateFolder,
+    ensureSystemFolder: async input => {
+      if (!folderProjectIdentityService) throw new Error("Folder identity service is unavailable");
+      await folderProjectIdentityService.create({
+        name: "⚙️ 작업 배정 · 시스템",reservedId:input.reservedId,parentFolderId:input.parentFolderId,
+        actor:{actorKind:"system",actorSessionId:null,actorUserId:null},idempotencyKey:input.idempotencyKey,
+      });
+    },
     onFolderHeaderUpdated:()=>broadcastCatalogSnapshot(providers.folderRoutes.provider,runtimeServices.sessionBroadcaster)});
   cardDispatcher=cardDispatchRuntime.dispatcher;
   const recurringJobService = new RecurringJobService({
@@ -576,6 +592,17 @@ export async function createLiveProductionApplication(
     recurringJobRoutes: recurringJobWiring.routes,
     recurringJobHostRoutes: recurringJobWiring.hostRoutes,
     cardDispatchSettingsRoutes:cardDispatchRuntime.settingsRoutes,
+    cardOrchestrationRoutes: {
+      ...providers.adminUsersRoutes.provider,
+      ...cardDispatchRuntime.orchestrationSettingsRoutes,
+      ...orchestrationAccess,
+      authBearerToken: config.auth_bearer_token,environment:config.environment,
+    },
+    cardOrchestrationDecisionRoutes: {
+      authBearerToken:config.auth_bearer_token,environment:config.environment,
+      authorizeDecision:cardDispatchRuntime.authorizeDecision,
+      authorizeWorker:cardDispatchRuntime.authorizeWorker,
+    },
   });
   logPushNotification = (event) => {
     app.log.info(
@@ -658,8 +685,8 @@ export async function createLiveProductionApplication(
       await maintenanceService.stop();
       await sessionReconciliation.close();
       await recurringJobScheduler?.stop();
-      await cardDispatchRuntime.dispatcher.drain();
       await usageSummaryService.stop();
+      await cardDispatchRuntime.dispatcher.drain();
       await turnSummaryPipeline?.drain();
       await pushNotifier.close();
       await dbCatalogRepository.close();

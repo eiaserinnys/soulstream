@@ -1,3 +1,4 @@
+import type { OrchestrationWorkerAdmission } from "./task_runtime_commands.js";
 import type { Logger } from "pino";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
@@ -24,6 +25,7 @@ import { UnsupportedReasoningEffortError } from "../task/task_reasoning_effort.j
 
 interface CreateSessionCmd extends CommandLike {
   type: "create_session";
+  orchestrationAdmission?: OrchestrationWorkerAdmission;
   agentSessionId: string;
   prompt: string;
   profile?: string;
@@ -64,6 +66,25 @@ interface InterruptSessionCmd extends CommandLike {
   session_id?: string;
 }
 
+interface CreateCardOrchestrationDecisionCmd extends CommandLike {
+  type: "create_card_orchestration_decision";
+  agentSessionId: string;
+  runId: string;
+  leaseToken: string;
+  profile: string;
+  model_preset: string;
+  folderId: string;
+  prompt: string;
+  instructionsRevision: string;
+  outputSchema: Record<string, unknown>;
+}
+
+interface PrepareCardOrchestrationDecisionCmd extends CommandLike {
+  type: "prepare_card_orchestration_decision";
+  profile: string;
+  model_preset: string;
+}
+
 interface SubscribeEventsCmd extends CommandLike {
   type: "subscribe_events";
   agentSessionId?: string;
@@ -94,6 +115,8 @@ export function createSessionCommandFamily(
 ): CommandHandlerMap {
   return {
     create_session: (cmd) => handleCreateSession(deps, cmd as CreateSessionCmd),
+    create_card_orchestration_decision: (cmd) => handleCreateDecision(deps, cmd as CreateCardOrchestrationDecisionCmd),
+    prepare_card_orchestration_decision: (cmd) => handlePrepareDecision(deps, cmd as PrepareCardOrchestrationDecisionCmd),
     interrupt_session: (cmd) =>
       handleInterruptSession(deps, cmd as InterruptSessionCmd),
     acknowledge_session_review: (cmd) =>
@@ -104,6 +127,28 @@ export function createSessionCommandFamily(
     list_runner_inventory: (cmd) =>
       handleListRunnerInventory(deps, cmd as ListRunnerInventoryCmd),
   };
+}
+
+async function handlePrepareDecision(deps: SessionCommandFamilyDeps, cmd: PrepareCardOrchestrationDecisionCmd): Promise<void> {
+  const requestId = commandRequestId(cmd);
+  if (!requestId || !cmd.profile || !cmd.model_preset) throw new CommandDispatchError("Decision prepare requires requestId, profile and model preset");
+  const result = await deps.taskRuntimeCommands.prepareDecisionSession({ profileId: cmd.profile, modelPreset: cmd.model_preset });
+  await deps.send({ type: "card_orchestration_decision_prepared", requestId, ...result });
+}
+
+async function handleCreateDecision(deps: SessionCommandFamilyDeps, cmd: CreateCardOrchestrationDecisionCmd): Promise<void> {
+  if (!cmd.agentSessionId || !cmd.runId || !cmd.leaseToken || !cmd.profile || !cmd.model_preset
+    || !cmd.folderId || !cmd.prompt || !cmd.instructionsRevision
+    || !cmd.outputSchema || typeof cmd.outputSchema !== "object" || Array.isArray(cmd.outputSchema)) {
+    throw new CommandDispatchError("Decision command requires canonical run, profile, preset, folder and schema");
+  }
+  const task = await deps.taskRuntimeCommands.createDecisionSession({
+    agentSessionId: cmd.agentSessionId, runId: cmd.runId, leaseToken: cmd.leaseToken,
+    profileId: cmd.profile, modelPreset: cmd.model_preset, folderId: cmd.folderId,
+    prompt: cmd.prompt, instructionsRevision: cmd.instructionsRevision, outputSchema: cmd.outputSchema,
+  });
+  const requestId = commandRequestId(cmd);
+  if (requestId) await deps.send(buildSessionCreatedAck({ requestId, agentSessionId: task.agentSessionId }));
 }
 
 async function handleAcknowledgeSessionReview(
@@ -170,6 +215,7 @@ async function handleCreateSession(
   try {
     task = await deps.taskRuntimeCommands.createSession({
       agentSessionId: cmd.agentSessionId,
+      orchestrationAdmission: cmd.orchestrationAdmission,
       prompt: cmd.prompt,
       profileId,
       callerSessionId: cmd.caller_session_id ?? null,
@@ -229,6 +275,7 @@ async function handleInterruptSession(
     throw new CommandDispatchError("interrupt_session requires agentSessionId");
   }
 
+  deps.taskRuntimeCommands.cancelDecisionSession(sessionId);
   const interrupted = await deps.taskManager.cancelTask(sessionId);
   const requestId = cmd.requestId ?? cmd.request_id ?? "";
   if (!requestId) return;

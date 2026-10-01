@@ -1,3 +1,5 @@
+import { cardOrchestrationRouteAuthRequirements } from "../cards/card_orchestration_routes.js";
+import { cardOrchestrationDecisionRouteAuthRequirements } from "../cards/card_orchestration_decision_routes.js";
 import { r2SettingsRouteAuthRequirements } from "../admin/r2_settings_routes.js";
 import { adminUsersRouteAuthRequirements } from "../admin/admin_users_routes.js";
 import { cardDispatchSettingsRouteAuthRequirements } from "../cards/card_dispatch_settings_routes.js";
@@ -42,6 +44,7 @@ import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
+  {owner:"cards.orchestration",authRequirements:{...cardOrchestrationRouteAuthRequirements,...cardOrchestrationDecisionRouteAuthRequirements}},
   { owner: "admin.users", authRequirements: { ...adminUsersRouteAuthRequirements, ...r2SettingsRouteAuthRequirements } },
   { owner: "atom", authRequirements: atomRouteAuthRequirements },
   { owner: "attachments", authRequirements: attachmentRouteAuthRequirements },
@@ -91,6 +94,11 @@ export const routeCoverageOwners = [
 // The route inventory fixture describes the retired Python server. New TS-only
 // routes must be listed explicitly instead of being backfilled into that fixture.
 export const tsOnlyRouteKeys = [
+  "GET /api/settings/card-orchestration",
+  "PUT /api/settings/card-orchestration",
+  "POST /api/card-orchestration/host/{operation}",
+  "POST /api/card-orchestration/decision/authorize",
+  "POST /api/card-orchestration/worker/authorize",
   "WEBSOCKET /ws/node/control",
   "WEBSOCKET /yjs/{folderId}",
   "GET /api/nodes/{node_id}/model-presets",

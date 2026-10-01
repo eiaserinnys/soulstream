@@ -1,3 +1,4 @@
+import type { OrchestrationWorkerAdmission } from "./task_runtime_commands.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo } from "../task/task_models.js";
 import type { DeliveryIntent } from "../task/delivery_contract.js";
@@ -20,6 +21,7 @@ import {
 
 interface InterveneCmd extends CommandLike {
   type: "intervene";
+  orchestrationAdmission?: OrchestrationWorkerAdmission;
   agentSessionId?: string;
   session_id?: string;
   text: string;
@@ -127,6 +129,7 @@ async function handleIntervene(
   try {
     result = await deps.taskRuntimeCommands.intervene({
       agentSessionId: sessionId,
+      orchestrationAdmission: cmd.orchestrationAdmission,
       text: cmd.text,
       user: cmd.user,
       callerInfo: cmd.caller_info,

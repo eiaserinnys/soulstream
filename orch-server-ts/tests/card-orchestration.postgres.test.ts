@@ -1,0 +1,347 @@
+import { readFile } from "node:fs/promises";
+import { beforeAll, afterAll, beforeEach, describe, it, expect } from "vitest";
+import {
+  createPagePostgresHarness,
+  type PagePostgresHarness,
+} from "./page/page_postgres_harness.js";
+import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { CardOrchestrationRepository,type OrchestrationRun } from "../src/cards/card_orchestration_repository.js";
+import {hasContinuousLimitWindow} from "../src/schedule/resume_after_limit_continuity.js";
+import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
+// Existing disposable harness; no DATABASE_URL or production schema is used.
+describe("durable card orchestration admissions", () => {
+  let h: PagePostgresHarness,
+    repo: CardOrchestrationRepository,
+    cards: CardControlPlaneService;
+  const target = {
+    agentId: "ariella-orchestrator",
+    nodeId: "eiaserinnys",
+    modelPreset: "claude-opus",
+    minimumRemainingPercent: 15,
+  };
+  const actor = {
+    actorKind: "user" as const,
+    actorSessionId: null,
+    actorUserId: "director@example.com",
+  };
+  beforeAll(async () => {
+    h = await createPagePostgresHarness();
+    await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
+    await h.sql`INSERT INTO system_settings VALUES('card_dispatch','{"nodeConcurrency":{"default":1}}',1,NOW(),'migration')`;
+    await h.sql.unsafe(
+      await readFile(
+        new URL(
+          "../../packages/db-schema/sql/migrations/113_card_orchestration.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    await h.sql`INSERT INTO folders(id,name) VALUES('orchestration-folder','실험')`;
+    await h.sql`ALTER TABLE sessions ADD COLUMN termination_event_id BIGINT,ADD COLUMN termination_reason TEXT`;
+    await h.sql`CREATE TABLE soulstream_schedules(schedule_id TEXT PRIMARY KEY,session_id TEXT,source_tool TEXT,tool_use_id TEXT,status TEXT)`;
+    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    repo = new CardOrchestrationRepository(async () => sql);
+    cards = new CardControlPlaneService(sql, { appendEventTx: async () => 1 });
+  }, 60000);
+  afterAll(async () => h?.cleanup());
+  beforeEach(async () => {
+    await h.sql`DELETE FROM card_orchestration_dispatches`;
+    await h.sql`DELETE FROM card_orchestration_runs`;
+    await h.sql`UPDATE card_orchestration_state SET last_decision_input_hash=NULL,provision_id=NULL,provision_request=NULL,resolved_folder_id=NULL`;
+    await h.sql`DELETE FROM folder_operations`;
+    await h.sql`DELETE FROM card_questions`;
+    await h.sql`DELETE FROM card_reports`;
+    await h.sql`DELETE FROM cards`;
+    await h.sql`UPDATE system_settings SET value='{"enabled":true,"candidates":[],"usageMaxAgeMs":300000,"sessionFolderId":null,"systemFolderParentId":null}',version=1 WHERE setting_key='card_orchestration'`;
+  });
+  async function make() {
+    return (
+      await cards.createCard({
+        ...actor,
+        folderId: "orchestration-folder",
+        title: "작업",
+        request: "실행",
+        queue: true,
+        assignee: { kind: "agent", agentId: "roselin" },
+      })
+    ).operation.target_id;
+  }
+  async function run(ids: string[]) {
+    const snapshot = await Promise.all(
+      ids.map(async (id) => ({
+        cardId: id,
+        cardVersion: (await cards.getCard(id))!.card.version,
+      })),
+    );
+    const r = (await repo.claim({
+      inputHash: "logical",
+      policyVersion: 1,
+      snapshot,
+      target,
+    }))!;
+    await repo.prepareLaunch(r);
+    await repo.decide(
+      r,
+      {
+        decisions: snapshot.map((c) => ({
+          ...c,
+          action: "run" as const,
+          reason: "준비됨",
+        })),
+      },
+      1,
+      "instructions-sha",
+    );
+    return { ...r, state: "decided" as const };
+  }
+  function admission(r: OrchestrationRun, id: string):import("../src/cards/card_control_plane_service.js").PolicyAdmission {
+    return {
+      runId: r.id,
+      leaseToken: r.lease_token,
+      workerInput: {
+        agentId: "roselin",
+        configuredModelPreset: null,
+        folderId: "orchestration-folder",
+        cardId: id,
+        nodeId: "eiaserinnys",
+      },
+    };
+  }
+  it("claims once concurrently and recovers the same session with a fenced lease", async () => {
+    const input = {
+      inputHash: "logical",
+      policyVersion: 1,
+      snapshot: [],
+      target,
+    };
+    const other = new CardOrchestrationRepository(async () =>
+      createBoardYjsSqlAdapter(h.peerLiveSql),
+    );
+    const claims = await Promise.all([repo.claim(input), other.claim(input)]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    const initial = claims.find(Boolean)!;
+    await h.sql`UPDATE card_orchestration_runs SET lease_expires_at=NOW()-INTERVAL '1 second' WHERE id=${initial.id}`;
+    const recovered = (await other.claim(input))!;
+    expect(recovered.session_id).toBe(initial.session_id);
+    expect(recovered.execution_token).toBe(initial.execution_token);
+    expect(recovered.lease_token).not.toBe(initial.lease_token);
+    expect(await repo.prepareLaunch(initial)).toBe(false);
+    expect(await other.prepareLaunch(recovered)).toBe(true);
+    const auth = {
+      runId: recovered.id,
+      sessionId: recovered.session_id,
+      executionToken: recovered.execution_token,
+      nodeId: target.nodeId,
+    };
+    expect(await other.authorize(auth)).toBe(true);
+    expect(await repo.authorize(auth)).toBe(false);
+  });
+  it("atomically admits only one of concurrent cards into one node slot", async () => {
+    const ids = await Promise.all([make(), make()]),
+      r = await run(ids);
+    const results = await Promise.allSettled(
+      ids.map(async (id) =>
+        cards.recordDispatch({
+          cardId: id,
+          expectedVersion: 1,
+          sessionId: `worker-${id}`,
+          nodeId: target.nodeId,
+          admission: admission(r, id),
+        }),
+      ),
+    );
+    expect(results.filter((v) => v.status === "fulfilled")).toHaveLength(1);
+    expect(
+      await h.sql`SELECT * FROM card_orchestration_dispatches`,
+    ).toHaveLength(1);
+    expect(
+      await h.sql`SELECT * FROM cards WHERE status='running'`,
+    ).toHaveLength(1);
+  });
+  it("rejects enabled FIFO bypass and stale card or policy versions", async () => {
+    const id = await make(),
+      r = await run([id]);
+    await expect(
+      cards.recordDispatch({
+        cardId: id,
+        expectedVersion: 1,
+        sessionId: "bypass",
+        nodeId: target.nodeId,
+      }),
+    ).rejects.toThrow("fenced");
+    await cards.patchCard({
+      ...actor,
+      cardId: id,
+      expectedVersion: 1,
+      title: "바뀜",
+    });
+    await expect(
+      cards.recordDispatch({
+        cardId: id,
+        expectedVersion: 1,
+        sessionId: "stale-card",
+        nodeId: target.nodeId,
+        admission: admission(r, id),
+      }),
+    ).rejects.toThrow();
+    await h.sql`UPDATE system_settings SET version=2 WHERE setting_key='card_orchestration'`;
+    await expect(
+      cards.recordDispatch({
+        cardId: id,
+        expectedVersion: 2,
+        sessionId: "stale-policy",
+        nodeId: target.nodeId,
+        admission: admission(r, id),
+      }),
+    ).rejects.toThrow("Stale");
+    expect(
+      await h.sql`SELECT * FROM card_orchestration_dispatches`,
+    ).toHaveLength(0);
+  });
+  it("persists completed input dedup and one lazy folder reservation across clients", async () => {
+    const input = {
+        inputHash: "defer",
+        policyVersion: 1,
+        snapshot: [],
+        target,
+      },
+      r = (await repo.claim(input))!;
+    await repo.finish(r, "completed", "all_deferred");
+    const restarted = new CardOrchestrationRepository(async () =>
+      createBoardYjsSqlAdapter(h.peerLiveSql),
+    );
+    expect(await restarted.claim(input)).toBeNull();
+    expect(await restarted.isDuplicate("defer")).toBe(true);
+    const reservations = await Promise.all([
+      repo.reserveFolder(null),
+      restarted.reserveFolder(null),
+    ]);
+    expect(reservations[0].provision_id).toBe(reservations[1].provision_id);
+    expect(reservations[0].provision_id).toBeTruthy();
+  });
+  it("permits repeated limit resumes on the same session and ignores its old terminal row", async () => {
+    const id = await make(),
+      r = await run([id]),
+      sid = "worker-resume";
+    await cards.recordDispatch({
+      cardId: id,
+      expectedVersion: 1,
+      sessionId: sid,
+      nodeId: target.nodeId,
+      admission: admission(r, id),
+    });
+    await repo.claimWorker(sid);
+    const d = (await repo.pendingWorkers())[0]!;
+    expect(
+      await repo.authorizeWorker({
+        runId: r.id,
+        sessionId: sid,
+        executionToken: d.launch_token,
+        nodeId: target.nodeId,
+        cardId: id,
+      }),
+    ).toBe(true);
+    await h.sql`INSERT INTO sessions(session_id,card_id,node_id,status,termination_event_id) VALUES(${sid},${id},${target.nodeId},'error',1)`;
+    await repo.workerState(sid, "running");
+    await repo.finish(r, "completed", "applied");
+    for (const terminal of [1, 2]) {
+      const detail = (await cards.getCard(id))!;
+      await cards.setCardStatus({
+        ...actor,
+        cardId: id,
+        expectedVersion: detail.card.version,
+        status: "blocked",
+        blockedKind: "limit",
+      });
+      const version = (await cards.getCard(id))!.card.version;
+      const next = (await repo.claim({
+        inputHash: `resume-${terminal}`,
+        policyVersion: 1,
+        snapshot: [{ cardId: id, cardVersion: version }],
+        target,
+      }))!;
+      await repo.prepareLaunch(next);
+      await repo.decide(
+        next,
+        {
+          decisions: [
+            {
+              cardId: id,
+              cardVersion: version,
+              action: "run",
+              reason: "fresh quota",
+            },
+          ],
+        },
+        terminal,
+        "revision",
+      );
+      const marker = admission(next, id);
+      marker.workerInput = {
+        ...marker.workerInput,
+        resume: true,
+        priorTerminationEventId: terminal,
+      };
+      await cards.resumeDispatchedCard({
+        cardId: id,
+        expectedVersion: version,
+        sessionId: sid,
+        nodeId: target.nodeId,
+        admission: marker,
+      });
+      await repo.claimWorker(sid);
+      expect(await repo.workerObserved(sid)).toBe(false);
+      await h.sql`UPDATE sessions SET termination_event_id=${terminal + 1},status='error' WHERE session_id=${sid}`;
+      expect(await repo.workerObserved(sid)).toBe(true);
+      await repo.workerState(sid, "running");
+      await repo.finish(next, "completed", "resumed");
+    }
+    expect(
+      await h.sql`SELECT * FROM card_orchestration_dispatches WHERE session_id=${sid}`,
+    ).toHaveLength(3);
+  });
+  it("fences a worker command that arrives after its launch deadline", async () => {
+    const id = await make(),
+      r = await run([id]),
+      sid = "missed-worker";
+    await cards.recordDispatch({
+      cardId: id,
+      expectedVersion: 1,
+      sessionId: sid,
+      nodeId: target.nodeId,
+      admission: admission(r, id),
+    });
+    await repo.claimWorker(sid);
+    const d = (await repo.pendingWorkers())[0]!;
+    await h.sql`UPDATE card_orchestration_dispatches SET launch_deadline=NOW()-INTERVAL '1 second' WHERE session_id=${sid}`;
+    expect(
+      await repo.authorizeWorker({
+        runId: r.id,
+        sessionId: sid,
+        executionToken: d.launch_token,
+        nodeId: target.nodeId,
+        cardId: id,
+      }),
+    ).toBe(false);
+    expect((await repo.pendingWorkers())[0]).toMatchObject({
+      expired: true,
+      launch_accepted: false,
+    });
+  });
+  it("denies the existing reset-time automatic schedule only for policy-owned cards",async()=>{
+    const id=await make(),sid='automatic-resume';
+    await h.sql`INSERT INTO sessions(session_id,card_id,status,termination_event_id,termination_reason) VALUES(${sid},${id},'error',1,'limit_hit')`;
+    await h.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES(${sid},1,'session_ended','{"termination_reason":"limit_hit"}')`;
+    const identity={scheduleId:`resume-after-limit:${sid}:1:0`,sessionId:sid,sourceTool:'ResumeAfterLimit',toolUseId:'ResumeAfterLimit:1'};
+    await h.sql`INSERT INTO soulstream_schedules VALUES(${identity.scheduleId},${sid},${identity.sourceTool},${identity.toolUseId},'firing')`;
+    const sql=createBoardYjsSqlAdapter(h.liveSql);
+    expect(await hasContinuousLimitWindow(sql,identity,1)).toBe(false);
+    await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','false') WHERE setting_key='card_orchestration'`;
+    expect(await hasContinuousLimitWindow(sql,identity,1)).toBe(true);
+    await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','true') WHERE setting_key='card_orchestration'`;
+    await h.sql`UPDATE sessions SET card_id=NULL WHERE session_id=${sid}`;
+    expect(await hasContinuousLimitWindow(sql,identity,1)).toBe(true);
+  });
+
+});

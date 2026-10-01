@@ -4,8 +4,10 @@ import { CardRepository } from "./control_plane/card_repository.js";
 import { CardMutationCore } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
+import {assertPolicyAdmission} from "./card_orchestration_repository.js";
 import { assertCardTransition } from "./card_status.js";
 
+export type PolicyAdmission = {runId:string;leaseToken:string;workerInput:Record<string,unknown>};
 export type CardMutationParams = FolderActorParams & { cardId: string; expectedVersion?: number; idempotencyKey?: string | null; reason?: string | null };
 export type CardMutationChange = {result:CardMutationResult;previousStatus?:CardStatus};
 export class CardControlPlaneService {
@@ -129,19 +131,27 @@ export class CardControlPlaneService {
       if (!open.length) await this.patch(sql,card,{ status:"running",blocked_kind:null,blocked_detail:null },params,eventId);
     });
   }
-  recordDispatch(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string}) {
+  recordDispatch(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
     return this.mutateCard(actor,"dispatch_card",{session_id:params.sessionId,node_id:params.nodeId},async(sql,card,eventId)=>{
       if (card.status !== "queued") throw invalid("Only queued cards may dispatch");
+      await this.checkAdmission(sql,params);
       await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
     });
   }
-  resumeDispatchedCard(params:{cardId:string;expectedVersion:number;sessionId:string}) {
+  resumeDispatchedCard(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId?:string;admission?:PolicyAdmission}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
     return this.mutateCard(actor,"resume_card",{session_id:params.sessionId},async(sql,card,eventId)=>{
       if (card.status !== "blocked" || card.blocked_kind !== "limit") throw invalid("Only limit-blocked cards may resume");
+      await this.checkAdmission(sql,{...params,nodeId:params.nodeId??card.node_id??"eiaserinnys"});
       await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
     });
+  }
+  private async checkAdmission(sql:RepositorySql,params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {
+    const enabled=(await sql<{enabled:boolean}[]>`SELECT (value->>'enabled')::boolean AS enabled FROM system_settings WHERE setting_key='card_orchestration'`)[0]?.enabled===true;
+    if(!enabled){if(params.admission)throw invalid("Orchestration policy is disabled");return;}
+    if(!params.admission)throw invalid("Enabled orchestration requires a fenced decision admission");
+    await assertPolicyAdmission(sql,{...params,cardVersion:params.expectedVersion,...params.admission});
   }
   noteMissingAssignee(params:{cardId:string;expectedVersion:number}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};

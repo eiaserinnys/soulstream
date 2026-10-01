@@ -33,7 +33,7 @@ export type SessionResumeAfterLimitRouteOptions = {
   scheduleRepositoryProvider: () => Promise<Pick<
     SoulstreamScheduleRepository,
     "listSchedulesBySourceToolUseId" | "listReusableSchedulesBySourceTool"
-      | "hasContinuousLimitWindow" | "createScheduleIfAbsent"
+      | "hasContinuousLimitWindow" | "createScheduleIfAbsent" | "isCardOrchestrationManaged"
   >>;
   now?: () => Date;
 };
@@ -150,6 +150,8 @@ async function resolveEligibility(
     return { ok: false, status: 404, code: "SESSION_NOT_FOUND", message: "Session not found." };
   }
 
+  const policyRepository=await dependencies.scheduleRepositoryProvider();
+  if(await policyRepository.isCardOrchestrationManaged(sessionId))return ineligible("카드 배정 정책이 새 사용량을 확인한 뒤 자동으로 재개합니다.");
   const terminalEventId = positiveEventId(session.termination_event_id);
   if (!isUsageLimitTermination(session) || terminalEventId === null) {
     return ineligible("현재 세션이 사용량 제한으로 중단된 상태가 아닙니다.");

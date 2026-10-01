@@ -69,6 +69,14 @@ function hangingFetch(): typeof fetch {
 }
 
 describe("ProviderUsageService", () => {
+  it("timestamps remote quota observations and marks code review separately from execution", () => {
+    const before = Date.now();
+    const limits = codexLimitsFromUsageResponse({ rate_limit: { primary_window: { used_percent: 85, limit_window_seconds: 18000 } }, code_review_rate_limit: { primary_window: { used_percent: 100 } } });
+    expect(limits).toMatchObject({ sourceKind: "remote", source: "codex-usage-api" });
+    expect(Date.parse(limits.observedAt!)).toBeGreaterThanOrEqual(before);
+    expect(limits.quotas.map(q => q.purpose)).toEqual(["execution", "code_review"]);
+    expect(claudeLimitsFromUsageResponse({ five_hour: { utilization: 10 } })).toMatchObject({ sourceKind: "remote", quotas: [{ purpose: "execution" }] });
+  });
   it("reduces telemetry endpoints to host and path", () => {
     expect(
       providerUsageEndpoint(
@@ -808,6 +816,8 @@ describe("ProviderUsageService", () => {
         shortUsedPercent: 21,
         weeklyUsedPercent: 34,
         sessionTokens: 262144,
+        sourceKind: "rollout",
+        observedAt: null,
       });
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -822,6 +832,7 @@ describe("ProviderUsageService", () => {
       await writeFile(
         join(sessionDir, "rollout-live-shape.jsonl"),
         `${JSON.stringify({
+          timestamp: "2026-07-20T12:00:00.000Z",
           payload: {
             type: "token_count",
             rate_limits: {
@@ -844,6 +855,8 @@ describe("ProviderUsageService", () => {
       const result = await service.fetchUsage("req-live", "provider_usage_get", "codex");
 
       expect(result.data).toMatchObject({
+        sourceKind: "rollout",
+        observedAt: "2026-07-20T12:00:00.000Z",
         shortUsedPercent: null,
         weeklyUsedPercent: 80,
         weeklyResetAt: 1784951882,

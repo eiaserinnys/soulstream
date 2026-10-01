@@ -21,6 +21,7 @@ import {
   extractClaudeBackendRolloverState,
   extractClaudePermissionModeFromMetadata,
 } from "./task_metadata.js";
+import { ORCHESTRATION_PROFILE_ID, orchestrationPurposeFromMetadata } from "./task_orchestration_purpose.js";
 import { readStoredReasoningEffort } from "./session_effort_storage.js";
 
 function completedAtFromRow(row: SessionRow, status: TaskStatus): Date | undefined {
@@ -90,6 +91,13 @@ export function hydrateEvictedTaskFromSessionRow(
   const metadata = Array.isArray(row.metadata)
     ? (row.metadata as Array<Record<string, unknown>>)
     : [];
+  const orchestrationPurpose = orchestrationPurposeFromMetadata(metadata);
+  if (orchestrationPurpose === null
+    || (row.agent_id === ORCHESTRATION_PROFILE_ID && orchestrationPurpose === undefined)
+    || (orchestrationPurpose !== undefined && row.session_type !== "llm")) {
+    logger.warn({ sessionId: row.session_id }, "loadEvictedTask: invalid card orchestration purpose");
+    return null;
+  }
   const agentsRunState = extractAgentsRunStateFromMetadata(metadata);
   const agentsSessionItems = extractAgentsSessionItemsFromMetadata(metadata);
   const claudePermissionMode = extractClaudePermissionModeFromMetadata(metadata);
@@ -136,6 +144,7 @@ export function hydrateEvictedTaskFromSessionRow(
     callerInfo: extractCallerInfoFromMetadata(row.metadata),
     notifyCompletion: row.notify_completion !== false,
     metadata,
+    orchestrationPurpose,
     agentsRunState: agentsRunState?.serialized,
     agentsRunStateSchemaVersion: agentsRunState?.schemaVersion,
     agentsPendingApprovalId: agentsRunState?.pendingApprovalId,

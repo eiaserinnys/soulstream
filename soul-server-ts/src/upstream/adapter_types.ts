@@ -1,3 +1,4 @@
+import type { AuthorizeOrchestrationWorker } from "./task_runtime_commands.js";
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import type { AgentRegistry } from "../agent_registry.js";
@@ -13,6 +14,7 @@ import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js
 import type { EventOutboxPumpTransport } from "./event_outbox_pump.js";
 import type { ReleaseActivationState } from "../release/release_activation_state.js";
 import type { WorktreeService } from "../worktree/worktree_service.js";
+import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
 
 export interface UpstreamConfig {
   url: string;
@@ -49,6 +51,8 @@ export interface UpstreamDependencies {
   waitForRunnerReconciliation?: () => Promise<void>;
   reconnectPolicy?: ReconnectPolicyBoundary;
   worktreeService?: WorktreeService;
+  decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
+  authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
 }
 
 export interface ReconnectPolicyBoundary {

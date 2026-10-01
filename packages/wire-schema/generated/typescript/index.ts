@@ -41,6 +41,8 @@ export type SoulstreamUpstreamProtocol =
   | DeleteSessionAttachmentsResult
   | DownloadAttachmentResult
   | CreateSession
+  | CreateCardOrchestrationDecision
+  | PrepareCardOrchestrationDecision
   | Intervene
   | InterruptSession
   | AcknowledgeSessionReview
@@ -1766,6 +1768,30 @@ export interface CallerInfo {
   [k: string]: unknown;
 }
 /**
+ * 서버 저장 run 권한으로만 실행하는 도구 없는 카드 판단 명령
+ */
+export interface CreateCardOrchestrationDecision {
+  type: "create_card_orchestration_decision";
+  requestId: string;
+  agentSessionId: string;
+  runId: string;
+  leaseToken: string;
+  profile: string;
+  model_preset: string;
+  folderId: string;
+  prompt: string;
+  instructionsRevision?: string;
+  outputSchema: {
+    [k: string]: unknown;
+  };
+}
+export interface PrepareCardOrchestrationDecision {
+  type: "prepare_card_orchestration_decision";
+  requestId: string;
+  profile: string;
+  model_preset: string;
+}
+/**
  * orch→노드: 개입 명령. attachment_paths/caller_info 포함.
  */
 export interface Intervene {
@@ -2801,6 +2827,8 @@ export type BoardItemType = (typeof BOARD_ITEM_TYPES)[number];
 export const CONTROL_COMMAND_TYPES = [
   "health_check",
   "create_session",
+  "create_card_orchestration_decision",
+  "prepare_card_orchestration_decision",
   "interrupt_session",
   "acknowledge_session_review",
   "subscribe_events",

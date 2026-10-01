@@ -14,6 +14,7 @@ import {
   type SessionMutationHost,
 } from "../control_plane/persistence_host_clients.js";
 
+import { assertGenericTaskExecution, assertOrchestrationCreation, isOrchestrationDecisionTask } from "./task_orchestration_purpose.js";
 import type { Task } from "./task_models.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
@@ -260,6 +261,7 @@ export class TaskManager {
     const canonicalParams = agent && resolvedParams.profileId !== agent.id
       ? { ...resolvedParams, profileId: agent.id }
       : resolvedParams;
+    assertOrchestrationCreation(canonicalParams);
     // Reasoning effort is decided exactly once, here, so every creation entry
     // point (REST, cross-node WS, local MCP, remote MCP) shares one validator.
     // Callers must not pre-resolve or pre-validate it.
@@ -299,7 +301,7 @@ export class TaskManager {
     terminalEventId: Task["terminalEventId"];
   } | null> {
     const task = this.tasks.get(sessionId) ?? await this.loadEvictedTask(sessionId);
-    if (!task) return null;
+    if (!task || isOrchestrationDecisionTask(task)) return null;
     return {
       status: task.status,
       terminationReason: task.terminationReason,
@@ -308,7 +310,8 @@ export class TaskManager {
   }
 
   async hydrateRunnerRecoveryTask(sessionId: string): Promise<Task | null> {
-    return await this.runnerRecovery.hydrate(sessionId);
+    const task = await this.runnerRecovery.hydrate(sessionId);
+    return task && isOrchestrationDecisionTask(task) ? null : task;
   }
 
   async markRunnerFailure(
@@ -322,6 +325,7 @@ export class TaskManager {
     task: Task,
     onResume: StartExecutionCallback,
   ): Promise<boolean> {
+    if (isOrchestrationDecisionTask(task)) return false;
     return await this.autoResumeTransition.resumeQueuedAfterTerminal(task, onResume);
   }
 
@@ -531,6 +535,8 @@ export class TaskManager {
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
+    const task = await this.resolveNotificationTask(params.agentSessionId);
+    if (task) assertGenericTaskExecution(task);
     return await this.interventionRoute.addIntervention(params, onResume);
   }
 

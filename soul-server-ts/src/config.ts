@@ -61,6 +61,11 @@ export const EnvSchema = z
      * eias-linegames 운영 환경은 app-server를 명시 설정해 사용 중이다.
      */
     CODEX_ADAPTER_MODE: z.enum(["sdk", "app-server"]).default("sdk"),
+    /** Dedicated decision executor; absent Codex isolation config means unavailable. */
+    CARD_DECISION_DOCKER_IMAGE: z.string().regex(/^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$/).optional(),
+    CARD_DECISION_CODEX_BINARY_PATH: z.string().refine(isAbsolute, "Native Codex path must be absolute").optional(),
+    CARD_DECISION_CLAUDE_EXECUTABLE_PATH: z.string().refine(isAbsolute, "Claude executable path must be absolute").optional(),
+    CARD_DECISION_TIMEOUT_MS: z.coerce.number().int().positive().default(300000),
     /** JSON-RPC deadline for ordinary Codex app-server requests. */
     CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive()
       .default(DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS),

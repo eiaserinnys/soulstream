@@ -21,6 +21,7 @@ export type CardLaunch = {
     agentId: string;
     modelPreset: string | null;
     folderId: string;
+    orchestrationAdmission?:{runId:string;executionToken:string;cardId:string};
 };
 export type CardNotification = {
     nodeId: string;
@@ -35,10 +36,11 @@ export type CardDispatcherOptions = {
     cards: () => Promise<CardControlPlaneService>;
     resolveTarget: (card: CardRow, modelPreset?: string | null) => CardTarget;
     launch: (input: CardLaunch) => Promise<unknown>;
-    sendMessage: (sessionId: string, text: string) => Promise<void>;
+    sendMessage: (sessionId: string, text: string, admission?:{runId:string;executionToken:string;cardId:string}) => Promise<void>;
     notify: (input: CardNotification) => Promise<unknown>;
     warn: (message: string) => void;
     now?: () => number;
+    orchestration?: {enabled:()=>Promise<boolean>;kick:()=>Promise<void>;ownsSession:(id:string)=>Promise<boolean>;decisionEnded?:(id:string)=>Promise<void>};
 };
 /** One selection seam; the director's global queue is the only scheduling policy. */
 export function pickNextCard(cards: readonly DispatchCard[], occupancy: Record<string, number>, concurrency: Record<string, number>, resolveNode: (card: DispatchCard) => string): DispatchCard | undefined {
@@ -58,7 +60,7 @@ export class CardDispatcher {
         await previous;
     } while (previous !== this.pending); }
     dispatch(): Promise<void> { return this.enqueue(() => this.dispatchOnce()); }
-    checkLimits(): Promise<void> { return this.enqueue(async () => { await this.resumeLimits(); await this.dispatchOnce(); }); }
+    checkLimits(): Promise<void> { return this.enqueue(async () => { if (await this.options.orchestration?.enabled()) { await this.options.orchestration!.kick(); return; } await this.resumeLimits(); await this.dispatchOnce(); }); }
     async tick(): Promise<void> {
         const now = this.options.now?.() ?? Date.now();
         if (now - this.lastLimitCheck < 60000)
@@ -79,6 +81,7 @@ export class CardDispatcher {
     }
     sessionEnded(sessionId: string): Promise<void> {
         return this.enqueue(async () => {
+            if (await this.options.orchestration?.ownsSession(sessionId)) { await this.options.orchestration?.decisionEnded?.(sessionId); return; }
             await this.reconcileTerminal(sessionId);
             await this.dispatchOnce();
         });
@@ -134,7 +137,7 @@ export class CardDispatcher {
             else
                 await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
         }
-        if (card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question")
+        if (card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
             await this.dispatchOnce();
     }
     private async notify(card: CardRow, kind: "question" | "review", question?: string): Promise<void> {
@@ -181,6 +184,7 @@ export class CardDispatcher {
         }
     }
     private async dispatchOnce(): Promise<void> {
+        if (await this.options.orchestration?.enabled()) { await this.options.orchestration!.kick(); return; }
         const cards = await this.options.cards();
         const settings = await this.options.repository.settings();
         let queue = await this.options.repository.queued();

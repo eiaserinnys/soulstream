@@ -83,10 +83,8 @@ export class ModelPresetAvailabilityService {
     );
   }
 
-  resolveForNode(
-    nodeId: string,
-    presetId: string,
-  ): ModelPresetAvailability {
+  /** Validated node advertisement, independent of permissive manual usage fallback. */
+  resolveStaticForNode(nodeId: string, presetId: string): StaticModelPreset {
     const node = this.registry.getConnectedNode(nodeId);
     const preset = node
       ? staticPresets(node).find((candidate) => candidate.id === presetId)
@@ -97,6 +95,14 @@ export class ModelPresetAvailabilityService {
         `Model preset '${presetId}' is not advertised by node ${nodeId}`,
       );
     }
+    return preset;
+  }
+
+  resolveForNode(
+    nodeId: string,
+    presetId: string,
+  ): ModelPresetAvailability {
+    const preset = this.resolveStaticForNode(nodeId, presetId);
     return resolvePresetAvailability(
       nodeId,
       preset,

@@ -24,10 +24,15 @@ export type UsageSummaryQuota = {
   readonly model: string | null;
   readonly remainingPercent: number | null;
   readonly resetAt: number | null;
+  readonly source?: string | null;
+  readonly purpose?: "execution" | "code_review" | "other";
 };
 
 export type UsageSummaryProvider = {
   readonly status: "auto" | "not_configured" | "error";
+  readonly source?: string | null;
+  readonly sourceKind?: "remote" | "rollout" | "unknown";
+  readonly observedAt?: string | null;
   readonly weeklyRemainingPercent: number | null;
   readonly weeklyResetAt: number | null;
   readonly shortRemainingPercent: number | null;
@@ -72,6 +77,8 @@ export type UsageSummaryServiceOptions = {
   readonly nodeTimeoutMs?: number;
   readonly now?: () => Date;
   readonly onWarning?: (message: string, error?: unknown) => void;
+  /** Called after collection is committed; reuse this poller to wake policy admission. */
+  readonly onCollected?: (snapshot: UsageSummarySnapshot) => void;
 };
 
 type ProviderUsageCommandPayload = RequestResponseNodeCommandPayload<"provider_usage_get">;
@@ -88,6 +95,9 @@ type ProviderUsageSnapshot = {
 
 type ProviderLimits = {
   readonly status: "auto" | "not_configured" | "error";
+  readonly source?: string | null;
+  readonly sourceKind?: "remote" | "rollout" | "unknown";
+  readonly observedAt?: string | null;
   readonly weeklyUsedPercent: number | null;
   readonly weeklyResetAt: number | null;
   readonly shortUsedPercent: number | null;
@@ -102,6 +112,8 @@ type ProviderQuota = {
   readonly model: string | null;
   readonly remainingPercent: number | null;
   readonly resetAt: number | null;
+  readonly source?: string | null;
+  readonly purpose?: "execution" | "code_review" | "other";
 };
 
 type MutableNodeState = {
@@ -118,6 +130,7 @@ export class UsageSummaryService {
   private readonly sharedAccountGroups: readonly UsageSummarySharedAccountGroup[];
   private readonly nodeTimeoutMs: number;
   private readonly now: () => Date;
+  private readonly onCollected: UsageSummaryServiceOptions["onCollected"];
   private readonly onWarning: (message: string, error?: unknown) => void;
   private readonly nodes = new Map<string, MutableNodeState>();
   private collectedAt: string | null = null;
@@ -134,6 +147,7 @@ export class UsageSummaryService {
     this.sharedAccountGroups = options.sharedAccountGroups;
     this.nodeTimeoutMs = nodeTimeoutMs;
     this.now = options.now ?? (() => new Date());
+    this.onCollected = options.onCollected;
     this.onWarning = options.onWarning ?? (() => undefined);
   }
 
@@ -238,6 +252,11 @@ export class UsageSummaryService {
       }
     }));
     this.collectedAt = this.now().toISOString();
+    try {
+      this.onCollected?.(this.getSummary());
+    } catch (error) {
+      this.onWarning("Usage collection listener failed", error);
+    }
   }
 
   private createProviderRequests(
@@ -347,6 +366,9 @@ function summarizeNode(state: MutableNodeState): UsageSummaryNode {
 function summarizeProvider(limits: ProviderLimits): UsageSummaryProvider {
   return {
     status: limits.status,
+    source: limits.source ?? null,
+    sourceKind: limits.sourceKind ?? "unknown",
+    observedAt: limits.observedAt ?? null,
     weeklyRemainingPercent: remainingPercent(limits.weeklyUsedPercent),
     weeklyResetAt: limits.weeklyResetAt,
     shortRemainingPercent: remainingPercent(limits.shortUsedPercent),
@@ -381,6 +403,10 @@ function parseProviderLimits(value: unknown, provider: string): ProviderLimits {
   if (!Array.isArray(record.quotas)) throw new Error(`${provider} limits quotas must be an array`);
   return {
     status,
+    source: typeof record.source === "string" ? record.source : null,
+    sourceKind: record.sourceKind === "remote" || record.sourceKind === "rollout"
+      ? record.sourceKind : "unknown",
+    observedAt: typeof record.observedAt === "string" ? record.observedAt : null,
     weeklyUsedPercent: nullableNumber(record.weeklyUsedPercent, `${provider}.weeklyUsedPercent`),
     weeklyResetAt: nullableNumber(record.weeklyResetAt, `${provider}.weeklyResetAt`),
     shortUsedPercent: nullableNumber(record.shortUsedPercent, `${provider}.shortUsedPercent`),
@@ -392,6 +418,9 @@ function parseProviderLimits(value: unknown, provider: string): ProviderLimits {
 function parseQuota(value: unknown, provider: string, index: number): ProviderQuota {
   const record = requiredRecord(value, `${provider}.quotas[${index}]`);
   return {
+    source: typeof record.source === "string" ? record.source : null,
+    purpose: record.purpose === "execution" || record.purpose === "code_review"
+      ? record.purpose : "other",
     id: requiredString(record.id, `${provider}.quotas[${index}].id`),
     label: requiredString(record.label, `${provider}.quotas[${index}].label`),
     window: nullableString(record.window, `${provider}.quotas[${index}].window`),
