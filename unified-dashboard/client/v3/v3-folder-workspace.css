@@ -232,15 +232,7 @@
   font-size: var(--font-size-xs);
 }
 
-.v3-folder-cards {
-  width: 100%;
-  max-height: min(348px, 44dvh);
-}
 
-.v3-folder-cards > [data-testid="task-card"] {
-  height: auto;
-  max-height: inherit;
-}
 
 .v3-description-preview {
   position: relative;

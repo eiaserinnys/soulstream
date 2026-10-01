@@ -20,7 +20,7 @@ describe("card final UX",()=>{
   for(const text of ["지시","질문","답","보고","커멘트","대화에서","추가 지시"])expect(html).toContain(text);
   expect(html.match(/data-slot="chat-message-row"/g)).toHaveLength(6);
   expect(html.indexOf("옛 보고")).toBeLessThan(html.indexOf("새 보고"));
-  expect(html).toContain('sandbox="allow-scripts"');
+  expect(html).not.toContain('sandbox="allow-scripts"');
   expect(html).not.toContain('data-report-id="new" open');
   expect(html).toContain('aria-label="커멘트"');
   expect(html).not.toContain('aria-label="카드 섹션"');
@@ -50,7 +50,7 @@ describe("card final UX",()=>{
   expect(preview).toContain('class="v3-card-three-lines"');
   expect(preview).toContain("첫째 결론");expect(preview).toContain("둘째 결론");
   expect(preview).not.toContain("hiddenScript");expect(preview).not.toContain("color: red");
-  expect(html).toContain('sandbox="allow-scripts"');
+  expect(html).not.toContain('sandbox="allow-scripts"');
  });
  it("preserves attachment markdown conversion",()=>{
   expect(cardRequestMarkdown("첨부: 참고.png(https://example.test/file?path=png)")).toBe("첨부: ![참고.png](https://example.test/file?path=png)");

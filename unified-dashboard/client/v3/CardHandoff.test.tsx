@@ -16,7 +16,7 @@ vi.mock("@seosoyoung/soul-ui", () => ({
   PopoverPopup: ({ children }: HTMLAttributes<HTMLDivElement>) => children,
 }));
 vi.mock("@seosoyoung/soul-ui/components/LiquidGlassCard", () => ({LiquidGlassCard: ({webglSurface, ...props}: HTMLAttributes<HTMLDivElement> & {webglSurface: boolean}) => createElement("div", props)}));
-vi.mock("@seosoyoung/soul-ui/components/chat/ChatInputEditor", () => ({ChatSendButton: ({label,onSend,disabled}: {label:string;onSend():void;disabled:boolean})=>createElement("button",{"aria-label":label,onClick:onSend,disabled})}));
+
 vi.mock("./CardExecutionPicker", () => ({ CardExecutionPicker: () => null }));
 const sessionCreate=vi.hoisted(()=>vi.fn().mockResolvedValue({agentSessionId:"new"}));
 vi.mock("../lib/session-create",()=>({createDashboardSession:sessionCreate}));
@@ -28,33 +28,27 @@ vi.mock("./FolderPicker", () => ({ FolderPicker: ({folders,onSelect}:any) => cre
 vi.mock("./use-folder-picker-stars", () => ({ useFolderPickerStars: () => ({ folderIds: [] }) }));
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); uploadFiles.files=[]; sessionCreate.mockClear(); });
 
-it("submits with Enter, and preserves Shift+Enter and Korean composition for editing", () => {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
+it("inherits Enter newline and Ctrl/Cmd+Enter submission from ChatInputEditor", async () => {
+  localStorage.setItem("cards-p1-handoff",JSON.stringify({folderId:"f",nodeId:"n",agentId:"a",modelPreset:"sol"}));
+  const container=document.createElement("div");document.body.append(container);const root=createRoot(container);
   try {
-    flushSync(() => root.render(createElement(CardHandoff, { folders: [] })));
-    const textbox = container.querySelector("textarea");
-    expect(textbox, "handoff must accept multiline requests").not.toBeNull();
-    expect(textbox!.rows, "starts with three lines").toBe(3);
-    expect(container.querySelectorAll("select")).toHaveLength(0);
-    expect(container.querySelector('button[aria-label="세션 시작"]')).not.toBeNull();
-    expect(container.querySelector("button[aria-label=첨부]")).not.toBeNull();
-    const submit = vi.fn();
-    textbox!.form!.requestSubmit = submit;
-    const key = (options: KeyboardEventInit) => {
-      const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, ...options });
-      textbox!.dispatchEvent(event);
-      return event;
-    };
-    expect(key({ shiftKey: true }).defaultPrevented).toBe(false);
-    expect(key({ isComposing: true }).defaultPrevented).toBe(false);
-    expect(submit).not.toHaveBeenCalled();
-    expect(key({}).defaultPrevented).toBe(true);
-    expect(submit).toHaveBeenCalledOnce();
-  } finally {
-    flushSync(() => root.unmount());
-  }
+    flushSync(()=>root.render(createElement(CardHandoff,{folders:[]})));
+    const textbox=container.querySelector("textarea")!;
+    expect(textbox.rows).toBe(1);
+    expect(container.querySelector('button[title="Attach files"]')).not.toBeNull();
+    // Native textarea events, as in the existing editor keyboard tests.
+    const edit=(text:string)=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(textbox,text);flushSync(()=>textbox.dispatchEvent(new Event("input",{bubbles:true})));};
+    const key=(options:KeyboardEventInit={})=>{const event=new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true,...options});flushSync(()=>textbox.dispatchEvent(event));return event;};
+    edit("첫 줄");
+    expect(key().defaultPrevented).toBe(false);expect(sessionCreate).not.toHaveBeenCalled();
+    expect(key({shiftKey:true}).defaultPrevented).toBe(false);
+    expect(container.querySelector("form")).toBeNull();
+    expect(key({ctrlKey:true}).defaultPrevented).toBe(true);
+    await vi.waitFor(()=>expect(sessionCreate).toHaveBeenCalledTimes(1));
+    await vi.waitFor(()=>expect(textbox.value).toBe(""));
+    edit("다음 줄");expect(key({metaKey:true}).defaultPrevented).toBe(true);
+    await vi.waitFor(()=>expect(sessionCreate).toHaveBeenCalledTimes(2));
+  } finally {flushSync(()=>root.unmount());}
 });
 
 it("creates a session with the selected folder and execution fields, without creating a card", async () => {

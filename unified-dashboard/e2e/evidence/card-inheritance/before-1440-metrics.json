@@ -1,0 +1,334 @@
+{
+  "cardRow": {
+    "self": {
+      "x": 341,
+      "y": 326,
+      "w": 638,
+      "h": 58,
+      "padding": "8px",
+      "gap": "12px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "14px",
+      "marginLeft": "0px"
+    },
+    "open": {
+      "x": 350,
+      "y": 335,
+      "w": 608,
+      "h": 40,
+      "padding": "0px",
+      "gap": "12px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "14px",
+      "marginLeft": "0px"
+    },
+    "avatar": {
+      "x": 350,
+      "y": 335,
+      "w": 40,
+      "h": 40,
+      "padding": "0px",
+      "gap": "normal",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "50%",
+      "marginLeft": "0px"
+    },
+    "title": {
+      "x": 449.34375,
+      "y": 335,
+      "w": 508.65625,
+      "h": 20,
+      "padding": "0px",
+      "gap": "normal",
+      "fontSize": "14px",
+      "lineHeight": "20px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "agent": null,
+    "copy": {
+      "x": 402,
+      "y": 335,
+      "w": 556,
+      "h": 40,
+      "padding": "0px",
+      "gap": "2px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "body": null,
+    "send": null
+  },
+  "handoff": {
+    "self": {
+      "x": 341,
+      "y": 827,
+      "w": 638,
+      "h": 132,
+      "padding": "12px",
+      "gap": "8px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "16px",
+      "marginLeft": "0px"
+    },
+    "open": null,
+    "avatar": null,
+    "title": null,
+    "agent": null,
+    "copy": null,
+    "body": null,
+    "send": {
+      "x": 934,
+      "y": 914,
+      "w": 32,
+      "h": 32,
+      "padding": "0px",
+      "gap": "8px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "3.35544e+07px",
+      "marginLeft": "0px"
+    }
+  },
+  "smallRow": {
+    "self": {
+      "x": 341,
+      "y": 189,
+      "w": 638,
+      "h": 36,
+      "padding": "0px",
+      "gap": "6px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "14px",
+      "marginLeft": "0px"
+    },
+    "open": {
+      "x": 341,
+      "y": 191,
+      "w": 638,
+      "h": 32,
+      "padding": "2px 0px",
+      "gap": "8px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "14px",
+      "marginLeft": "0px"
+    },
+    "avatar": {
+      "x": 341,
+      "y": 193,
+      "w": 28,
+      "h": 28,
+      "padding": "0px",
+      "gap": "normal",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "50%",
+      "marginLeft": "0px"
+    },
+    "title": {
+      "x": 377,
+      "y": 194,
+      "w": 39.6875,
+      "h": 14,
+      "padding": "0px",
+      "gap": "normal",
+      "fontSize": "14px",
+      "lineHeight": "14px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "agent": {
+      "x": 377,
+      "y": 208,
+      "w": 530,
+      "h": 12,
+      "padding": "0px",
+      "gap": "6px",
+      "fontSize": "12px",
+      "lineHeight": "12px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "copy": {
+      "x": 377,
+      "y": 194,
+      "w": 530,
+      "h": 26,
+      "padding": "0px",
+      "gap": "0px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "body": null,
+    "send": null
+  },
+  "commentInput": {
+    "self": {
+      "x": 341,
+      "y": 917,
+      "w": 638,
+      "h": 42,
+      "padding": "4px 8px",
+      "gap": "8px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "16px",
+      "marginLeft": "0px"
+    },
+    "open": null,
+    "avatar": null,
+    "title": null,
+    "agent": null,
+    "copy": null,
+    "body": null,
+    "send": null
+  },
+  "cardBubble": {
+    "padding": "12px",
+    "radius": "16px 16px 16px 5px",
+    "font": "14px"
+  },
+  "folderRow": {
+    "self": {
+      "x": 437,
+      "y": 544.40625,
+      "w": 536,
+      "h": 87.6875,
+      "padding": "0px",
+      "gap": "6px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "14px",
+      "marginLeft": "0px"
+    },
+    "open": {
+      "x": 438,
+      "y": 545.40625,
+      "w": 534,
+      "h": 85.6875,
+      "padding": "10px",
+      "gap": "8px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "14px",
+      "marginLeft": "0px"
+    },
+    "avatar": {
+      "x": 448,
+      "y": 555.40625,
+      "w": 28,
+      "h": 28,
+      "padding": "0px",
+      "gap": "normal",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "9px",
+      "marginLeft": "0px"
+    },
+    "title": {
+      "x": 484,
+      "y": 556.40625,
+      "w": 39.6875,
+      "h": 20,
+      "padding": "0px",
+      "gap": "normal",
+      "fontSize": "14px",
+      "lineHeight": "20px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "agent": {
+      "x": 484,
+      "y": 579.40625,
+      "w": 406,
+      "h": 18,
+      "padding": "0px",
+      "gap": "6px",
+      "fontSize": "12px",
+      "lineHeight": "18px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "copy": {
+      "x": 484,
+      "y": 555.40625,
+      "w": 406,
+      "h": 65.6875,
+      "padding": "0px",
+      "gap": "2px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "body": null,
+    "send": null
+  },
+  "folderIndent": {
+    "marginLeft": "16px",
+    "paddingLeft": "10px"
+  },
+  "smallIndent": {
+    "marginLeft": "8px",
+    "paddingLeft": "10px"
+  },
+  "chatInput": {
+    "self": {
+      "x": 1016.1875,
+      "y": 915,
+      "w": 394.8125,
+      "h": 56,
+      "padding": "8px",
+      "gap": "8px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "25px",
+      "marginLeft": "0px"
+    },
+    "open": null,
+    "avatar": null,
+    "title": null,
+    "agent": null,
+    "copy": null,
+    "body": {
+      "x": 1093.1875,
+      "y": 924,
+      "w": 268.8125,
+      "h": 38,
+      "padding": "8px 0px",
+      "gap": "normal",
+      "fontSize": "14px",
+      "lineHeight": "22px",
+      "borderRadius": "0px",
+      "marginLeft": "0px"
+    },
+    "send": {
+      "x": 1370,
+      "y": 930,
+      "w": 32,
+      "h": 32,
+      "padding": "0px",
+      "gap": "8px",
+      "fontSize": "16px",
+      "lineHeight": "24px",
+      "borderRadius": "3.35544e+07px",
+      "marginLeft": "0px"
+    }
+  },
+  "chatBubble": {
+    "padding": "14px 16px",
+    "radius": "17px 17px 17px 7px",
+    "font": "14px"
+  },
+  "writes": []
+}

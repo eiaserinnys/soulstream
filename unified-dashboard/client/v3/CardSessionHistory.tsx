@@ -36,7 +36,7 @@ export function CardSessionHistory({ sessionIds, onOpenSession, collapsedLimit }
   return <>
     <div className="v3-detail-section-head"><h3>세션</h3><span>{sessionIds.length}회</span></div>
     {sessionIds.length === 0 ? <p className="v3-detail-empty">아직 세션이 없습니다.</p> : null}
-    <SessionRunList tree={visibleTree} activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
+    <SessionRunList size="small" tree={visibleTree} activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
     {!expanded && collapsedLimit && sessionIds.length > collapsedLimit ? <button type="button" className="v3-card-more" onClick={()=>setExpanded(true)}>{sessionIds.length-collapsedLimit}개 더</button> : null}
   </>;
 }

@@ -14,8 +14,10 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
+import { MarkdownImage } from "./MarkdownImage";
 
 interface MarkdownContentProps {
+  onImageClick?(src:string,alt:string):void;
   content: string;
   compact?: boolean;
   linkTone?: "default" | "onUserBubble";
@@ -124,14 +126,8 @@ const components: Components = {
   ),
 
   // 이미지
-  img: ({ src, alt }) => (
-    <img
-      src={src}
-      alt={alt ?? ""}
-      className="max-w-full rounded my-1.5"
-      loading="lazy"
-    />
-  ),
+  img: ({ src, alt }) => <MarkdownImage src={src} alt={alt??""}/>,
+
 
   // 구분선
   hr: () => <hr className="border-border my-3" />,
@@ -317,6 +313,7 @@ function createCopyableBlockquote(compact: boolean): NonNullable<Components["blo
 
 export function MarkdownContent({
   content,
+  onImageClick,
   compact = false,
   linkTone = "default",
   enableBlockquoteCopy = false,
@@ -333,10 +330,11 @@ export function MarkdownContent({
     const layoutComponents = codeBlockLayout === "document"
       ? { ...baseComponents, pre: documentCodeBlock }
       : baseComponents;
+    const imageComponents = onImageClick ? { ...layoutComponents, img: ({src,alt}: {src?:string;alt?:string}) => <MarkdownImage src={src} alt={alt??""} onOpen={onImageClick}/> } : layoutComponents;
     return enableBlockquoteCopy
-      ? { ...layoutComponents, blockquote: createCopyableBlockquote(compact) }
-      : layoutComponents;
-  }, [codeBlockLayout, compact, enableBlockquoteCopy, linkTone]);
+      ? { ...imageComponents, blockquote: createCopyableBlockquote(compact) }
+      : imageComponents;
+  }, [codeBlockLayout, compact, enableBlockquoteCopy, linkTone, onImageClick]);
 
   return (
     <ReactMarkdown

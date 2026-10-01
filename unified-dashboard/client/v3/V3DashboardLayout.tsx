@@ -1,5 +1,4 @@
-import { WorkspaceSessionColumn } from "./WorkspaceSessionColumn";
-import { CardDetailPane } from "./CardDetailPane";
+import { CardWorkspace } from "./CardWorkspace";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
@@ -79,6 +78,11 @@ function V3DashboardContent() {
   const [mobileTab, setMobileTab] = useState<MobilePlannerTab>("today");
   const [selectedFolderSnapshot, setSelectedFolderSnapshot] = useState<PlannerFolder | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const closeCardWorkspace = useCallback(() => {
+    cardNavigation.close();
+    setChatOpen(false);
+    setMobileTab(selectedFolderId ? "projects" : "today");
+  }, [cardNavigation.close, selectedFolderId]);
   const [boardOverlayOpen, setBoardOverlayOpen] = useState(false);
   const [markdownDocumentsRevision, setMarkdownDocumentsRevision] = useState(0);
   const [detailChatVisible, setDetailChatVisible] = useState(false);
@@ -418,7 +422,7 @@ function V3DashboardContent() {
         return;
       }
       if (event.key !== "Escape") return;
-      if (cardNavigation.cardId) { cardNavigation.close(); event.preventDefault(); }
+      if (cardNavigation.cardId) { closeCardWorkspace(); event.preventDefault(); }
       else if (childFolderDialog) setChildFolderDialog(null);
       else if (mobileMode && mobileTab === "chat" && chatOpen) {
         event.preventDefault();
@@ -439,7 +443,7 @@ function V3DashboardContent() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSessionKey, applyMobileState, cardNavigation.cardId, cardNavigation.close, chatOpen, childFolderDialog, clearProject, closeWorkspace, mobileMode, mobileTab, selectedDate, selectedFolderId, selectedProjectId, today, workspaceOpen]);
+  }, [activeSessionKey, applyMobileState, cardNavigation.cardId, closeCardWorkspace, chatOpen, childFolderDialog, clearProject, closeWorkspace, mobileMode, mobileTab, selectedDate, selectedFolderId, selectedProjectId, today, workspaceOpen]);
   const openFolder = (task: PlannerFolder) => {
     clearSessionPanelFocus();
     setActiveSessionSummary(null);
@@ -538,7 +542,7 @@ function V3DashboardContent() {
     ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title)
     : Promise.reject(new Error("연결된 폴더가 없습니다"));
   return (
-    <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} data-card-chat-open={cardChatVisible ? "true" : "false"} data-mobile-project-open={selectedFolderId ? "true" : "false"} style={shellStyle}>
+    <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} data-mobile-project-open={selectedFolderId ? "true" : "false"} style={shellStyle}>
       <WallpaperLayer />
       <LiquidGlassCanvas />
       <V3GlobalToolbar
@@ -566,7 +570,7 @@ function V3DashboardContent() {
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
           <div ref={plannerScrollRef} className="v3-planner-scroll" data-testid="v3-planner-scroll">
-            {cardNavigation.cardId ? <CardDetailPane cardId={cardNavigation.cardId} folders={catalog?.folders ?? []} focus={cardNavigation.focus} onClose={cardNavigation.close} scrollContainerRef={plannerScrollRef} onOpenSession={openSession} /> : selectedFolderId ? (workspaceFolderEntry && selectedFolder ? <FolderDetailPane
+            {selectedFolderId ? (workspaceFolderEntry && selectedFolder ? <FolderDetailPane
               placement="inline"
               scrollContainerRef={plannerScrollRef}
               task={workspaceFolderEntry}
@@ -613,27 +617,14 @@ function V3DashboardContent() {
           </div>
         </div>
       </main>
-      {cardChatVisible ? <WorkspaceSessionColumn
-        activeSession={activeSession}
-        chatClassName="v3-session-panel v3-card-session-chat"
-        chatTestId="v3-card-session-chat"
-        resizeClassName="v3-session-panel-resize"
-        resizeTestId="v3-session-panel-resize-handle"
-        onResize={sessionPanel.resize}
-        onClose={() => { setChatOpen(false); if (mobileMode) setMobileTab(selectedFolderId ? "projects" : "today"); }}
-        chatInputDisabled={chatInputDisabled}
-        fileUploadUrl={fileUploadUrl}
-        historyEnabled={historyEnabled}
-        sessionStreamActive={detailActive}
-        sessionConnectionStatus={sessionConnectionStatus}
-        reconnectSession={reconnectSession}
-        onAcknowledgedReview={acknowledgeReview}
-      /> : <>
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
         <DragHandle onDrag={sessionPanel.resize} widthPx={V3_PANEL_GAP_PX} />
       </div>
       <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
-      </>}
+      {cardNavigation.cardId ? <CardWorkspace cardId={cardNavigation.cardId} folders={catalog?.folders??[]} onClose={closeCardWorkspace} onOpenSession={openSession}
+        mobileMode={mobileMode} mobileTab={mobileTab} activeSession={chatOpen?activeSession:undefined}
+        chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}
+        sessionStreamActive={detailActive} sessionConnectionStatus={sessionConnectionStatus} reconnectSession={reconnectSession} onAcknowledgedReview={acknowledgeReview}/> : null}
       {!cardNavigation.cardId && ((chatOpen && activeSession) || (boardOverlayOpen && workspaceFolderEntry)) ? (
         <FolderWorkspace
           task={workspaceFolderEntry}

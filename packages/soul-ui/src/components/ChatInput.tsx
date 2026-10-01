@@ -24,7 +24,7 @@ import { useUiEventTracker } from "../lib/ui-events";
 import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
 import { SuggestionChip } from "./SuggestionChip";
 import { Button } from "./ui/button";
-import { useGlassSurface } from "./LiquidGlassProvider";
+import { ChatInputComposer } from "./chat/ChatInputComposer";
 import { mergePendingTextIntoComposer, type PendingChatSendActions } from "./chat/pending-chat-send";
 import type { PendingChatSend } from "../stores/dashboard-store-types";
 
@@ -97,8 +97,6 @@ export function ChatInput({
   const [interruptError, setInterruptError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
-  const composerWebglActive = useGlassSurface(composerRef, { enabled: true });
 
   // 파일 업로드 훅 — activeSessionKey를 sessionId로 사용 (fileUploadUrl 없으면 noop)
   const {
@@ -335,12 +333,7 @@ export function ChatInput({
         />
       )}
 
-      <div
-        ref={composerRef}
-        data-slot="chat-input-composer"
-        className="relative flex items-end gap-2 rounded-[25px] border border-glass-border glass-strong glass-shadow-md px-2 py-2 ring-ring/50 transition-shadow has-focus-visible:ring-[3px]"
-        data-liquid-glass-webgl={composerWebglActive ? "true" : undefined}
-      >
+      <ChatInputComposer>
         {showInterrupt && (
           <Button
             variant="destructive-outline"
@@ -373,7 +366,7 @@ export function ChatInput({
           disabled={isDisabled}
           textareaDisabled={textareaDisabled}
         />
-      </div>
+      </ChatInputComposer>
 
       {(error || interruptError) && (
         <div className="chat-tone-danger rounded px-2 py-1 text-xs">

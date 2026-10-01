@@ -5,7 +5,7 @@ import {
   STATUS_CONFIG,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
+import { RunRowFrame } from "./RunRowFrame";
 
 import { singleLinePreview } from "./session-preview";
 import { sessionPanelTitle } from "./v3-session-panel-model";
@@ -21,9 +21,11 @@ export function RichSessionRow({
   preview,
   actions,
   onOpen,
+  size = "default",
   onContextMenu,
 }: {
   session: SessionSummary;
+  size?: "default" | "small";
   runNumber?: number | null;
   failed?: boolean;
   nodeOffline?: boolean;
@@ -50,43 +52,21 @@ export function RichSessionRow({
       120,
     ) ?? "아직 표시할 메시지가 없습니다.";
 
-  return (
-    <LiquidGlassCard
-      webglSurface
-      cornerRadius={14}
-      className={`v3-run-row${active ? " is-active" : ""}${failed ? " v3-run-row--failed" : ""}${nodeOffline ? " v3-run-row--offline" : ""}`}
-      data-load-state={failed ? "failed" : "ready"}
-      data-session-id={failed ? undefined : session.agentSessionId}
-      onContextMenu={failed || !onContextMenu ? undefined : (event) => onContextMenu(session, event)}
-    >
-      <button type="button" className="v3-run-open" disabled={failed} onClick={() => onOpen(session)}>
-        <span className="v3-run-avatar">
-          <ProfileAvatar role="assistant" hasPortrait={Boolean(portraitUrl)} portraitUrl={portraitUrl} fallbackEmoji="🤖" />
-        </span>
-        <span className="v3-run-copy">
-          <span className="v3-run-title-line">
-            <strong>{title}</strong>
-            {!failed && runNumber !== null ? <span className="v3-run-number">세션 #{runNumber}</span> : null}
-          </span>
-          <span className="v3-run-agent-line">
-            <span>{failed ? "세션 상세 없음" : session.agentName ?? session.agentId ?? "에이전트 미상"}</span>
-            {modelLabel ? <span title={modelLabel}>{modelLabel}</span> : null}
-            {!failed ? <span>{session.nodeId ?? "노드 미상"}</span> : null}
-          </span>
-          {affiliation ? <span className="v3-run-affiliation" title={affiliation}>{affiliation}</span> : null}
-          <small>{visiblePreview}</small>
-        </span>
-        <span className="v3-run-trailing">
-          <span className={`v3-run-status-badge v3-run-status-badge--${presentationStatus}`}>
-            <span className={`v3-run-status v3-run-status--${presentationStatus}`} aria-hidden="true" />
-            {status}
-          </span>
-          <time>{failed ? "" : formatRelativeSessionTime(session)}</time>
-        </span>
-      </button>
-      {actions ? <div className="v3-run-row-actions">{actions}</div> : null}
-    </LiquidGlassCard>
-  );
+  return <RunRowFrame
+    size={size}
+    className={`${active ? "is-active" : ""}${failed ? " v3-run-row--failed" : ""}${nodeOffline ? " v3-run-row--offline" : ""}`.trim()}
+    data-load-state={failed ? "failed" : "ready"}
+    data-session-id={failed ? undefined : session.agentSessionId}
+    onContextMenu={failed || !onContextMenu ? undefined : event=>onContextMenu(session,event)}
+    disabled={failed} onOpen={()=>onOpen(session)}
+    avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portraitUrl)} portraitUrl={portraitUrl} fallbackEmoji="🤖"/>}
+    title={<><strong>{title}</strong>{!failed && runNumber!==null ? <span className="v3-run-number">세션 #{runNumber}</span>:null}</>}
+    agentLine={<><span>{failed ? "세션 상세 없음":session.agentName??session.agentId??"에이전트 미상"}</span>{size==="small"&&!failed?<span>{session.nodeId??"노드 미상"}</span>:null}{modelLabel?<span title={modelLabel}>{modelLabel}</span>:null}{size!=="small"&&!failed?<span>{session.nodeId??"노드 미상"}</span>:null}</>}
+    affiliation={affiliation?<span className="v3-run-affiliation" title={affiliation}>{affiliation}</span>:null}
+    preview={visiblePreview}
+    trailing={<><span className={`v3-run-status-badge v3-run-status-badge--${presentationStatus}`}><span className={`v3-run-status v3-run-status--${presentationStatus}`} aria-hidden="true"/>{status}</span><time>{failed?"":formatRelativeSessionTime(session)}</time></>}
+    actions={actions}
+  />;
 }
 
 export function sessionModelLabel(

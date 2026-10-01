@@ -1,4 +1,5 @@
-import { memo, useRef, type ReactNode } from "react";
+import { cn } from "../../lib/cn";
+import { memo, useRef, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { ProfileAvatar } from "../ProfileAvatar";
@@ -7,7 +8,7 @@ import { useGlassSurface } from "../LiquidGlassProvider";
 import type { LlmContext } from "./hooks";
 
 /** text 노드: 일반 텍스트 표시 */
-export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext, header, children, portraitUrl }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null }) {
+export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext, header, children, portraitUrl, bubbleProps }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement> }) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const webglActive = useGlassSurface(bubbleRef, { enabled: true });
   const activeSession = useDashboardStore((s) => s.activeSessionSummary);
@@ -40,8 +41,9 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
       />
       <div
         ref={bubbleRef}
+        {...bubbleProps}
         data-slot="chat-message-bubble"
-        className="max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"
+        className={cn("max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]", bubbleProps?.className)}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         {header ?? <div className="mb-1 flex items-baseline gap-1.5">
