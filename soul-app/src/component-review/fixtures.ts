@@ -58,7 +58,8 @@ export function createReviewApi(state: FixtureState = 'normal') {
     if (state === 'loading') return new Promise(() => {});
     return value;
   };
-  const api: Pick<ApiClient, 'getCard' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+  const api: Pick<ApiClient, 'listCards' | 'getCard' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+    listCards: async (folderId) => read({ cards: state === 'empty' ? [] : [...cards.values()].filter((card) => !folderId || card.folderId === folderId) }),
     getCard: async (id) => {
       const card = cards.get(id);
       if (!card) throw new Error('알 수 없는 공개 예시 카드');
