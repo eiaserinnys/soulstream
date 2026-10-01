@@ -4,6 +4,7 @@ import {
   buildFolderTreeOptions,
   compareFoldersByName,
   getFolderNameSortKey,
+  getFolderNamePresentation,
 } from "./folder-tree-options";
 import type { CatalogFolder } from "../shared/types";
 
@@ -15,6 +16,17 @@ function folder(
 ): CatalogFolder {
   return { status: "open", version: 1, archived: false,  id, name, parentFolderId, sortOrder };
 }
+
+describe("folder name presentation", () => {
+  it.each(["⚙️", "👩‍💻", "👧🏻", "🇰🇷"])("keeps %s intact in the existing icon slot", icon => {
+    const name = `${icon} 이름 ✨ 그대로`;
+    expect(getFolderNamePresentation(name)).toEqual({ icon, text: "이름 ✨ 그대로" });
+    expect(name).toBe(`${icon} 이름 ✨ 그대로`);
+  });
+  it("keeps plain names and middle emoji in the title", () => {
+    expect(getFolderNamePresentation("이름 ✨ 그대로")).toEqual({ icon: null, text: "이름 ✨ 그대로" });
+  });
+});
 
 describe("getFolderNameSortKey", () => {
   it("skips leading emoji clusters and following spaces", () => {

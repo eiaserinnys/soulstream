@@ -1,7 +1,7 @@
 import "./v3-project-star.css";
 import { useId, useMemo, useState, type CSSProperties } from "react";
 import { Button, DisclosureActionIcon, Input, type CatalogFolder } from "@seosoyoung/soul-ui";
-import { Folder } from "lucide-react";
+import { FolderNameRowContent } from "./FolderNameRowContent";
 import { buildProjectFolderTree, type ProjectFolderTreeNode } from "./project-folders";
 import { V3_CARD_GAP_PX } from "./v3-layout-metrics";
 import "./folder-picker.css";
@@ -51,10 +51,8 @@ export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, sel
           onClick={() => toggle(node.folder.id)}><DisclosureActionIcon expanded={isExpanded} /></button>
           : <span className="v3-project-tree-toggle-spacer" />}
         <span className="v3-folder-picker-drag-spacer" aria-hidden="true" />
-        <span className="v3-project-tree-icon" aria-hidden="true"><Folder /></span>
-        <button type="button" className="v3-project-nav-link" disabled={disabled} aria-disabled={disabled} onClick={() => onSelect(node.folder)}>
-          <span>{node.folder.name}</span>
-        </button>
+        <FolderNameRowContent name={node.folder.name} level={depth + 1} active={selected}
+          disabled={disabled} onSelect={() => onSelect(node.folder)}/>
       </div>
       {isExpanded ? <div role="group">{node.children.map((child) => renderNode(child, depth + 1))}</div> : null}
     </div>;

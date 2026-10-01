@@ -193,14 +193,6 @@
 .v3-project-star-error {
   color: var(--destructive-foreground) !important;
 }
-
-.v3-task-star-toggle {
-  color: var(--warning);
-  cursor: pointer;
-  font-size: 17px;
-}
-
-.v3-task-star-toggle:hover,
 .v3-task-detail-star:hover {
   color: var(--warning-foreground);
 }

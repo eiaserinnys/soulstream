@@ -41,7 +41,8 @@ describe("FolderDescriptionPanel content-sized editor interactions", () => {
       scrollHeight = 164;
       setTextareaValue(textarea, "첫 줄\n둘째 줄\n셋째 줄");
       await vi.waitFor(() => expect(textarea.style.height).toBe("120px"));
-      expect(textarea.closest('[data-slot="chat-input-composer"]')).not.toBeNull();
+      expect(textarea.closest('[data-slot="chat-input-composer"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="폴더 설명 저장"]')).not.toBeNull();
       style.remove();
     });
   }

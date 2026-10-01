@@ -52,30 +52,7 @@
   border-radius: 10px;
 }
 
-.v3-session-row .v3-run-agent-line span {
-  min-width: 0;
-}
 
-.v3-session-row .v3-run-trailing {
-  min-width: 0;
-}
-
-.v3-session-row .v3-run-trailing > * {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v3-session-row .v3-run-row-actions {
-  min-width: 0;
-  padding-right: 6px;
-}
-
-.v3-session-row.is-active .v3-run-row {
-  border-color: color-mix(in srgb, var(--primary) 34%, var(--glass-border));
-  background: color-mix(in srgb, var(--accent) 56%, transparent);
-}
 
 .v3-session-panel-error { margin: 12px 8px 0; color: var(--destructive); font-size: var(--font-size-xs); }
 

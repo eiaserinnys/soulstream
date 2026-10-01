@@ -581,21 +581,10 @@
   font: inherit;
 }
 
-.v3-succession-assignment .v3-model-preset-trigger {
-  min-height: 0;
-  border-color: var(--border);
-  border-radius: 8px;
-  padding: 7px 9px;
-  color: var(--foreground);
-  background: var(--background);
-  box-shadow: none;
-  font: inherit;
-  font-size: var(--font-size-xs);
-}
-
-.v3-succession-assignment .v3-model-preset-trigger:focus-visible {
-  border-color: var(--info);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);
+.v3-succession-assignment .v3-catalog-select-trigger {
+  min-height: calc(var(--spacing) * 9);
+  padding: var(--v3-space-2) var(--v3-space-3);
+  font: var(--v3-type-body) var(--v3-font-family);
 }
 
 .v3-succession-assignment .v3-model-preset-field {

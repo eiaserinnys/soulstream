@@ -31,6 +31,7 @@ export const reviewDetail: CardDetail = {
 
 export const reviewFolders: CatalogFolder[] = [
   { id: "components-folder", name: "검수 폴더", parentFolderId: null, sortOrder: 0, status: "open", version: 1, archived: false },
+  { id: "components-emoji", name: "👩‍💻 검수 폴더", parentFolderId: null, sortOrder: 2, status: "open", version: 1, archived: false },
   { id: "components-child", name: reviewTitle, parentFolderId: "components-folder", sortOrder: 1, status: "open", version: 1, archived: false },
 ];
 

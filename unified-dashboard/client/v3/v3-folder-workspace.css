@@ -86,7 +86,7 @@
   flex: none;
   align-items: center;
   flex-wrap: nowrap;
-  gap: var(--v3-space-3);
+  gap: var(--v3-space-1);
 }
 
 .v3-inline-folder-header {
@@ -217,7 +217,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: var(--v3-space-2);
 }
 
 .v3-detail-section-head h3 {
@@ -233,99 +233,42 @@
 
 
 
-.v3-description-preview {
-  position: relative;
-  display: flex;
+/* Both modes share one surface. The body grows; the small action keeps its seat. */
+.v3-description-shell { width: 100%; min-width: 0; max-width: 100%; }
+.v3-description-preview,
+.v3-description-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--v3-space-2);
   width: 100%;
-  min-height: 92px;
-  align-items: flex-start;
-  justify-content: flex-start;
-  flex-direction: column;
+  min-width: 0;
   border: 1px solid transparent;
-  border-radius: 11px;
-  padding: 12px 12px 44px;
+  border-radius: var(--v3-space-3);
+  padding: var(--v3-space-3);
   color: var(--foreground);
   background: color-mix(in srgb, var(--muted) 72%, transparent);
   text-align: left;
-  line-height: 1.65;
 }
-
-.v3-description-shell {
-  width: 100%;
-}
-
-.v3-description-shell > .v3-description-editor {
-  width: 100%;
-  min-height: inherit;
-}
-
-.v3-description-preview:hover {
-  border-color: var(--glass-border);
-  background: var(--muted);
-}
-
+.v3-description-editor:focus-within { box-shadow: 0 0 0 var(--v3-space-1) color-mix(in srgb, var(--ring) 24%, transparent); }
 .v3-description-content {
-  display: block;
-  width: 100%;
-  border: 0;
-  padding: 0;
-  color: inherit;
-  background: transparent;
-  text-align: left;
-  cursor: text;
+  display: block; min-width: 0; width: 100%; border: 0; padding: 0;
+  color: inherit; background: transparent; text-align: left; cursor: text;
 }
-
-.v3-description-actions {
-  position: absolute;
-  right: 8px;
-  bottom: 7px;
-  display: flex;
-  gap: 2px;
-}
-
-.v3-description-empty,
-.v3-detail-empty {
-  color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
-}
-
-.v3-description-editor {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-}
-
+.v3-description-content p { margin: 0; }
+.v3-description-content:focus-visible, .v3-description-editor textarea:focus-visible { outline: none; box-shadow: none; }
+.v3-description-actions { display: flex; align-items: center; gap: var(--v3-space-1); }
 .v3-description-editor textarea {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: var(--v3-space-8);
+  display: block; box-sizing: border-box; width: 100%; min-width: 0;
+  min-height: calc(var(--spacing) * 8);
   max-height: min(calc(var(--v3-control-height) * 6), 50dvh);
-  resize: none;
-  border: 0;
-  padding: var(--v3-space-2) 0;
-  outline: none;
-  color: var(--foreground);
-  background: transparent;
-  overflow-y: auto;
-  scrollbar-width: none;
+  resize: none; border: 0; padding: 0; outline: none;
+  color: var(--foreground); background: transparent;
+  overflow-y: auto; scrollbar-width: none;
 }
 .v3-description-editor textarea::-webkit-scrollbar { display: none; }
-.v3-description-shell, .v3-description-editor { min-width: 0; max-width: 100%; }
-
-.v3-description-editor > div {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 7px;
-}
-
-.v3-description-preview[data-editor-variant="compact"],
-.v3-description-preview[data-editor-variant="daily"] {
-  min-height: 82px;
-  padding: 9px 10px 38px;
-}
+.v3-description-empty { color: var(--muted-foreground); font: inherit; }
+.v3-detail-empty { color: var(--muted-foreground); font: var(--v3-type-meta) var(--v3-font-family); }
 
 .v3-information-context-head {
   margin-top: 18px;

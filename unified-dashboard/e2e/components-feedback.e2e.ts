@@ -106,12 +106,13 @@ for (const width of [1440, 390]) {
     await editor.pressSequentially("마지막 커서 줄");
     await capture(page, `components-${width}-description`);
     const editing = await metrics(page);
-    await page.getByRole("button", { name: "완료", exact: true }).click();
+    await page.getByRole("button", { name: "폴더 설명 저장", exact: true }).click();
     await expect(editor).toHaveCount(0);
 
     const controls = page.getByTestId("components-review-controls");
-    await controls.getByLabel("에이전트 선택", { exact: true }).selectOption("seosoyoung");
-    await expect(controls.getByLabel("에이전트 선택", { exact: true })).toHaveValue("seosoyoung");
+    await controls.getByRole("combobox", { name: "에이전트 선택", exact: true }).click();
+    await page.getByRole("option", { name: "서소영", exact: true }).click();
+    await expect(controls.getByRole("combobox", { name: "에이전트 선택", exact: true })).toContainText("서소영");
     await expect(controls.getByLabel("기본 실행 에이전트")).toBeDisabled();
     await controls.getByRole("combobox", { name: "모델 선택" }).click();
     await expect(page.getByRole("option", { name: /사용 불가 샘플/ })).toHaveAttribute("aria-disabled", "true");
@@ -172,7 +173,7 @@ for (const width of [1440, 390]) {
       expect.soft(row.self!.h).toBeCloseTo(row.self!.bt + row.self!.bb + row.open!.pt + row.open!.pb
         + Math.max(row.copy!.h, row.trailing!.h), 0);
     }
-    expect.soft(initial.folder!.pt).toBe(initial.rows[0].open!.pt);
+    expect.soft(initial.folder!.pt).toBe(0);
     expect.soft(initial.document!.pt).toBe(initial.rows[0].open!.pt);
     expect.soft(initial.caps).toHaveLength(2);
     for (const cap of initial.caps) { expect.soft(cap!.w).toBe(32); expect.soft(cap!.h).toBe(32); }
@@ -181,7 +182,7 @@ for (const width of [1440, 390]) {
     expect.soft(initial.chips.some(chip => chip.text?.includes("세션 #1 실행 중"))).toBe(true);
     expect.soft(initial.headTitle!.font).toBe("16px");
     expect.soft(initial.headItem).not.toBeNull();
-    if (initial.headItem) expect.soft(initial.headItem.y - initial.head!.bottom).toBe(12);
+    if (initial.headItem) expect.soft(initial.headItem.y - initial.head!.bottom).toBe(8);
     expect.soft(initial.input!.font).toBe("17px");
     expect.soft(initial.body!.font).toBe(initial.input!.font);
     expect.soft(initial.body!.line).toBe(initial.input!.line);

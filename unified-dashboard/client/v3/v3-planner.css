@@ -29,8 +29,7 @@
   .v3-shell input,
   .v3-shell select,
   .v3-shell textarea
-):focus-visible,
-.v3-task-card:focus-visible {
+):focus-visible{
   outline: none;
   box-shadow:
     0 0 0 2px var(--background),
@@ -342,16 +341,6 @@
   font-weight: 800;
   letter-spacing: .06em;
   text-transform: uppercase;
-}
-
-.v3-daily-memo .v3-description-preview {
-  border-color: transparent;
-  background: transparent;
-}
-
-.v3-daily-memo .v3-description-preview:hover {
-  border-color: var(--glass-border);
-  background: color-mix(in srgb, var(--muted) 62%, transparent);
 }
 
 .v3-daily-memo .v3-description-editor {

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, DashboardIconCap, MarkdownContent } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, MarkdownContent } from "@seosoyoung/soul-ui";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
-import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
 import { Check, Pencil } from "lucide-react";
 
 export function FolderDescriptionPanel({
@@ -70,7 +69,7 @@ export function FolderDescriptionPanel({
     >
       {editing ? (
         <div className="v3-description-editor" data-editor-variant={variant}>
-          <ChatInputComposer><textarea
+          <textarea
             data-slot="chat-input-body"
             rows={1}
             ref={editorRef}
@@ -85,23 +84,14 @@ export function FolderDescriptionPanel({
                 void finish();
               }
             }}
-          /></ChatInputComposer>
-          <div>
-            {variant === "daily" ? (
-              <DashboardIconCap
-                label={saving ? `${ariaLabel} 저장 중` : `${ariaLabel} 저장`}
-                disabled={saving}
-                aria-busy={saving || undefined}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => { void finish(); }}
-              >
-                <Check className="h-4 w-4" aria-hidden="true" />
-              </DashboardIconCap>
-            ) : (
-              <Button variant="secondary" disabled={saving} onMouseDown={(event) => event.preventDefault()} onClick={() => { void finish(); }}>
-                {saving ? "저장 중…" : "완료"}
-              </Button>
-            )}
+          />
+          <div className="v3-description-actions">
+            <DashboardIconCap size="small"
+              label={saving ? `${ariaLabel} 저장 중` : `${ariaLabel} 저장`}
+              disabled={saving} aria-busy={saving || undefined}
+              onMouseDown={event => event.preventDefault()} onClick={() => { void finish(); }}>
+              <Check className="h-4 w-4" aria-hidden="true" />
+            </DashboardIconCap>
           </div>
         </div>
       ) : (
@@ -120,7 +110,7 @@ export function FolderDescriptionPanel({
             {markdown ? <MarkdownContent content={markdown} codeBlockLayout="document" /> : <span className="v3-description-empty">{emptyText}</span>}
           </button>
           <div className="v3-description-actions">
-            <DashboardIconCap label={`${ariaLabel} 편집`} onClick={() => changeEditing(true)}>
+            <DashboardIconCap size="small" label={`${ariaLabel} 편집`} onClick={() => changeEditing(true)}>
               <Pencil className="h-4 w-4" aria-hidden="true" />
             </DashboardIconCap>
           </div>
