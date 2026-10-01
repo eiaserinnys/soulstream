@@ -1,17 +1,7 @@
-/**
- * ExecutionContextBuilder — B-6 풀세트, Python `service/execution_context_builder.py` 정본 이식.
- *
- * codex task 첫 turn 진입 전에 다음을 조립:
- * 폴더·agent atom·page·cogito·profile을 조회하고 PreparedContext로 조립한다.
- *
- * 호출자(task_executor)는 codex SDK가 turn-level systemPrompt를 지원하지 않으므로 (분석 캐시
- * `20260517-2338-codex-ts-context-builder-B-6.md` §B), `composeFirstTurnPrompt` helper로
- * 합성 prompt를 만들어 engine.execute에 넘긴다.
- *
- * 신규 task와 compact 후 첫 사용자 메시지는 system prompt + context items 전체를 조립한다.
- * 일반 auto-resume·intervention turn은 매턴 갱신이 필요한 running_sessions와 짧은 delta만
- * user prompt 말미에 붙인다.
+/** Builds full startup/compaction context and per-input live session/card snapshots.
+ * Context data remains in the input; agent and folder instructions form the system prompt.
  */
+import { fetchAssignedCardContextItem, type AssignedCardContextCapture } from "./assigned_card_context.js";
 import type { Logger } from "pino";
 import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -90,6 +80,7 @@ export interface PreparedContext {
 }
 
 export interface FollowupContextOptions {
+  inputId?: string | null;
   includeFullContext?: boolean;
   includeClaudeSessionIdUpdate?: boolean;
   previousCallerInfo?: CallerInfo;
@@ -113,8 +104,8 @@ export interface ContextBuilderConfig {
   nodeId: string;
   atom: AtomConfig;
   cogito?: CogitoContextConfig;
+  captureAssignedCardContext?: (capture: AssignedCardContextCapture) => Promise<void>;
 }
-
 export class ExecutionContextBuilder {
   constructor(
     private readonly db: SessionDB,
@@ -134,7 +125,7 @@ export class ExecutionContextBuilder {
       const taskForContext = options.currentCallerInfo
         ? { ...task, callerInfo: options.currentCallerInfo }
         : task;
-      const ctx = await this.build(taskForContext, agent);
+      const ctx = await this.build(taskForContext, agent, options.inputId);
       return {
         effectiveSystemPrompt: ctx.effectiveSystemPrompt,
         contextItems: ctx.combinedContextItems,
@@ -165,7 +156,18 @@ export class ExecutionContextBuilder {
     if (runningSessionsItem) {
       contextItems.push(runningSessionsItem);
     }
+    contextItems.push(await this.buildAssignedCardContext(task, options.inputId));
     return { contextItems };
+  }
+
+  buildAssignedCardContext(task: Task, inputId?: string | null) {
+    return fetchAssignedCardContextItem(this.db,this.logger,task.agentSessionId,
+      this.cfg.captureAssignedCardContext ? snapshot=>this.cfg.captureAssignedCardContext!({
+        source: "prepared_model_input", sessionId: task.agentSessionId,
+        registrationId: task.executionRegistration?.registrationId ?? null,
+        executionCommandId: task.executionRegistration?.executionCommandId ?? null,
+        inputId: inputId ?? null, snapshot,
+      }) : undefined);
   }
 
   async buildBackendRolloverContext(
@@ -181,7 +183,6 @@ export class ExecutionContextBuilder {
     });
   }
 
-  /** Legacy wrapper for the shared follow-up context path. */
   async buildResumeContextItems(task: Task, agent: AgentProfile): Promise<ContextItem[]> {
     const ctx = await this.buildFollowupContext(task, agent, {
       includeClaudeSessionIdUpdate: Boolean(task.codexThreadId),
@@ -213,13 +214,10 @@ export class ExecutionContextBuilder {
   }
 
   /**
-   * Python `build(task, claude_runner)` 정본.
    *
    * 호출 시점은 task_executor의 *신규 첫 turn 진입 전* (interventionQueue 비어있을 때).
-   * Auto-resume·intervention turn은 본 helper 호출 안 함 — Python `_resolve_folder` L100
-   * (`task.resume_session_id is None`) 정합.
    */
-  async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
+  async build(task: Task, agent: AgentProfile, inputId?: string | null): Promise<PreparedContext> {
     const resumeContext = await loadInitialResumeContext(
       this.db,
       this.logger,
@@ -291,6 +289,7 @@ export class ExecutionContextBuilder {
       pageContextItem,
       boardWorkspaceItem,
       runningSessionsItem,
+      assignedCardItem: await this.buildAssignedCardContext(task, inputId),
       predecessorSummaryItem,
       cogitoContextItem,
       workingDir,
@@ -420,6 +419,7 @@ export class ExecutionContextBuilder {
     pageContextItem: ContextItem | null;
     boardWorkspaceItem: ContextItem | null;
     runningSessionsItem: ContextItem | null;
+    assignedCardItem: ContextItem;
     predecessorSummaryItem: ContextItem | null;
     cogitoContextItem: ContextItem | null;
     workingDir?: string;
@@ -476,8 +476,9 @@ export class ExecutionContextBuilder {
         content: args.taskAtomMarkdown,
       });
     }
-    combinedContextItems.push(...withoutSessionContextSourceMarkers(args.task.contextItems));
+    combinedContextItems.push(...withoutSessionContextSourceMarkers(args.task.contextItems).filter(item=>item.key !== "assigned_cards"));
 
+    combinedContextItems.push(args.assignedCardItem);
     const assembledPrompt = assemblePrompt(args.task.prompt, undefined);
 
     return {

@@ -315,6 +315,8 @@ export class SessionDB {
     return await this.requireSessionDataHost().streamEventsRaw(sessionId, afterId);
   }
 
+  getAssignedCardContext(sessionId: string) { return this.requireFolderHost().getAssignedCardContext(sessionId); }
+
   configureFolderHost(host: FolderHostClient): void {
     this.folderHost = host;
   }

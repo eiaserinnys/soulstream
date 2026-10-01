@@ -911,3 +911,26 @@ describe("RunningInterventionTransition", () => {
   });
 
 });
+
+
+describe("active intervention assigned cards",()=>{
+  it.each(["claude","codex"] as const)("refreshes %s machine input and never publishes snapshot as a reminder event",async backendId=>{
+    const intervene=vi.fn().mockResolvedValue({status:"delivered",mechanism:"active_turn"});
+    const injectAtToolBoundary=vi.fn().mockResolvedValue({status:"delivered",mechanism:"active_turn"});
+    let state="running";
+    const assignedCardContext=vi.fn(async()=>({key:"assigned_cards",content:{status:"ok",cards:[{id:"c",status:state}]}}));
+    const broadcaster=makeBroadcaster();
+    const subject=new RunningInterventionTransition({logger:silentLogger,broadcaster,assignedCardContext,persistence:makeEventPersistenceTestDouble().persistence});
+    const task=makeRunningTask({runner:createInProcessTaskRunnerRuntime({backendId,workspaceDir:"/tmp/active",async *execute(){},intervene,injectAtToolBoundary} as never)});
+    for(const expected of ["running","review"]){state=expected;await subject.deliver(task,{text:"하위 보고",user:"agent",deliveryId:"active-input-segment",callerInfo:{source:"agent"},context:[{key:"assigned_cards",content:"stale"}]});}
+    const calls=backendId==="claude" ? injectAtToolBoundary.mock.calls : intervene.mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[1]![0].prompt).toContain('"status": "review"');
+    expect(calls[1]![0].prompt).not.toContain("stale");
+    expect(calls[1]![0].prompt.match(/<assigned_cards>/g)).toHaveLength(1);
+    expect(assignedCardContext).toHaveBeenCalledTimes(2);
+    expect(assignedCardContext).toHaveBeenLastCalledWith(task,"active-input-segment");
+    expect(task.interventionQueue).toHaveLength(0);
+    expect(JSON.stringify((broadcaster.emitEventEnvelope as ReturnType<typeof vi.fn>).mock.calls)).not.toContain('"status":"review"');
+  });
+});

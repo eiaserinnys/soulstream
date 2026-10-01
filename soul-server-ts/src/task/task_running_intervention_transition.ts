@@ -1,3 +1,4 @@
+import { formatContextItems, type ContextItem } from "../context/prompt_assembler.js";
 import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -49,6 +50,7 @@ export interface RunningInterventionTransitionDeps {
   broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence?: EventPersistence;
+  assignedCardContext?: (task: Task, inputId?: string | null) => Promise<ContextItem>;
 }
 
 /**
@@ -181,7 +183,11 @@ export class RunningInterventionTransition {
         message: "Task runner engine is unavailable",
       };
     }
-    const composed = composeInterventionTurnPrompt([message]);
+    const composed = composeInterventionTurnPrompt([{...message,context:message.context?.filter(item=>item.key !== "assigned_cards")}]);
+    if (this.deps.assignedCardContext) {
+      const current = await this.deps.assignedCardContext(task, message.deliveryId ?? null);
+      composed.prompt += `\n\n${formatContextItems([current])}`;
+    }
     const inputUuid = message.deliveryId
       ? buildDeliveryInputUuid(message.deliveryId)
       : undefined;

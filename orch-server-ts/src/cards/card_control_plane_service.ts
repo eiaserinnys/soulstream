@@ -1,3 +1,4 @@
+import { readAssignedCardContext } from "./assigned_card_context.js";
 import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
 import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
@@ -10,15 +11,16 @@ import { assertCardTransition } from "./card_status.js";
 
 export type PolicyAdmission = {runId:string;leaseToken:string;workerInput:Record<string,unknown>};
 export type CardMutationParams = FolderActorParams & { cardId: string; expectedVersion?: number; idempotencyKey?: string | null; reason?: string | null };
-export type CardMutationChange = {result:CardMutationResult;previousStatus?:CardStatus};
+export type CardMutationChange = {result:CardMutationResult;previousStatus?:CardStatus;previousAssigneeSessionId?:string | null;committedCard?:CardRow};
 export class CardControlPlaneService {
   private readonly repo: CardRepository;
   private readonly core: CardMutationCore;
-  constructor(sql: SqlClient, db: FolderDbPort, private readonly broadcaster?: FolderBroadcasterPort,
+  constructor(private readonly repoSql: SqlClient, db: FolderDbPort, private readonly broadcaster?: FolderBroadcasterPort,
     private readonly onMutation?: (change:CardMutationChange)=>void) {
-    this.repo=new CardRepository(sql);
+    this.repo=new CardRepository(repoSql);
     this.core=new CardMutationCore(db,this.repo,broadcaster);
   }
+  getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
   getFolder(folderId: string) { return this.repo.getSnapshot(folderId); }
   listFolders(params: Parameters<CardRepository["listFolders"]>[0]) { return this.repo.listFolders(params); }
   listOperations(folderId: string,limit?: number,offset?: number) { return this.repo.listOperations(folderId,limit,offset); }
@@ -181,15 +183,19 @@ export class CardControlPlaneService {
     const card=await this.repo.getCard(params.cardId);
     if (!card) throw Object.assign(new Error("Card not found"),{ statusCode:404 });
     const clean=Object.fromEntries(Object.entries(payload).filter(([,v])=>v !== undefined));
+    let previousStatus:CardStatus | undefined,previousAssigneeSessionId:string | null | undefined,committedCard:CardRow | undefined;
     const result=await this.core.mutate({ folderId:card.folder_id,targetKind:"card",targetId:card.id,operationType,actor:params,
       idempotencyKey:params.idempotencyKey,reason:params.reason,payload:clean,
       apply:async (sql,eventId) => {
         const locked=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id} FOR UPDATE`)[0];
         if (!locked) throw Object.assign(new Error("Card not found"),{ statusCode:404 });
         if (params.expectedVersion !== undefined && locked.version !== params.expectedVersion) throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version);
+        previousStatus=locked.status;
+        previousAssigneeSessionId=locked.assignee_session_id;
         await apply(sql,locked,eventId,clean);
+        committedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
       } });
-    if (!result.idempotent) this.onMutation?.({result,previousStatus:card.status});
+    if (!result.idempotent) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});
     return result;
   }
   private async patch(sql:RepositorySql,card:CardRow,fields:Record<string,unknown>,actor:FolderActorParams,eventId:number | null) {

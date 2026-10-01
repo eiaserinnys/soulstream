@@ -20,6 +20,20 @@ afterEach(async () => {
 });
 
 describe("control-plane host routes", () => {
+  it("limits assigned-card reads to the service bearer and passes only the execution session scope", async()=>{
+    const snapshot={capturedAt:"2026-10-02T00:00:00Z",total:0,omitted:0,cards:[]};
+    const getAssignedCardContext=vi.fn(async()=>snapshot),app=Fastify();apps.push(app);
+    registerFolderControlPlaneHostRoute(app,{
+      authBearerToken:token,environment:"production",serviceProvider:async()=>({}) as FolderControlPlaneService,
+      cardServiceProvider:async()=>({getAssignedCardContext}) as unknown as CardControlPlaneService,
+    });
+    const url="/api/folders/host/get_assigned_card_context";
+    expect((await app.inject({method:"POST",url,payload:{session_id:"owner"}})).statusCode).toBe(401);
+    expect(getAssignedCardContext).not.toHaveBeenCalled();
+    const response=await app.inject({method:"POST",url,headers:{authorization:`Bearer ${token}`},payload:{session_id:"owner",folder_id:"foreign"}});
+    expect(response.statusCode).toBe(200);expect(response.json()).toEqual(snapshot);
+    expect(getAssignedCardContext).toHaveBeenCalledOnce();expect(getAssignedCardContext).toHaveBeenCalledWith("owner");
+  });
   it("passes an HTTP disconnect through as the event-search cancellation signal", async () => {
     let searchSignal: AbortSignal | undefined;
     let markStarted!: () => void;

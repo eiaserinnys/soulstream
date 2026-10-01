@@ -21,6 +21,7 @@ export interface FolderControlPlaneHostRouteOptions {
 const operations = new Set([
   "assign_session",
   "get_default",
+  "get_assigned_card_context",
   "get_folder",
   "get_all",
   "get_catalog",
@@ -85,6 +86,7 @@ async function dispatch(
 async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, operation: string, body: Record<string, unknown>) {
   if (!options.cardServiceProvider) throw new Error("Card service is not configured");
   const service = await options.cardServiceProvider();
+  if (operation === "get_assigned_card_context") return service.getAssignedCardContext(requiredString(body,"session_id"));
   if (operation === "get_folder") return await readFolderSnapshot(service, requiredString(body, "folder_id"), body.card_id as string | undefined, body.view as string | undefined);
   if (operation === "list_child_folders" || operation === "list_folder_operations") {
     const limit = z.number().int().min(1).max(200).parse(body.limit ?? 50);

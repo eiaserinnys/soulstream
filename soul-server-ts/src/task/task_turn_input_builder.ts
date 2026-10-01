@@ -31,6 +31,8 @@ const CLAUDE_ROLLOVER_HISTORY_BLOCK_MAX_CHARS = 14_000;
 
 export interface TaskTurnInput {
   prompt: string;
+  /** Original initial user text, before dynamic context assembly; only for rollover replay. */
+  originalPrompt?: string;
   imageAttachmentPaths: string[];
   systemPrompt?: string;
   inputUuid?: string;
@@ -80,6 +82,9 @@ export class TaskTurnInputBuilder {
     const firstIntervention = interventions[0];
     if (!firstIntervention) throw new Error("follow-up turn requires an intervention");
     const currentCallerInfo = interventions.at(-1)?.callerInfo ?? task.callerInfo;
+    const inputUuid = firstIntervention.deliveryId
+      ? buildDeliveryInputUuid(firstIntervention.deliveryId)
+      : undefined;
     const includeFullContext = task.needsFullContextReinjection === true;
     const includeClaudeSessionIdUpdate =
       Boolean(task.codexThreadId) &&
@@ -89,6 +94,7 @@ export class TaskTurnInputBuilder {
       includeClaudeSessionIdUpdate,
       previousCallerInfo: task.lastInjectedCallerInfo,
       currentCallerInfo,
+      inputId: inputUuid ?? null,
     });
     if (includeFullContext) {
       task.needsFullContextReinjection = false;
@@ -98,15 +104,12 @@ export class TaskTurnInputBuilder {
       this.recordFollowupContextInjection(task, currentCallerInfo);
     }
 
-    const composed = composeInterventionTurnPrompt(interventions);
+    const composed = composeInterventionTurnPrompt(interventions.map(message=>({...message,context:message.context?.filter(item=>item.key !== "assigned_cards")})));
     const prompt = appendContextBlock(composed.prompt, ctx?.contextItems ?? []);
     const systemPrompt =
       effectiveTaskBackend(task, agent) === "claude" && includeFullContext
         ? ctx?.effectiveSystemPrompt
         : undefined;
-    const inputUuid = firstIntervention.deliveryId
-      ? buildDeliveryInputUuid(firstIntervention.deliveryId)
-      : undefined;
     const runnerInterventionIds = interventions
       .map((message) => message.runnerInterventionId)
       .filter((id): id is string => id !== undefined);
@@ -139,13 +142,15 @@ export class TaskTurnInputBuilder {
     this.recordFollowupContextInjection(task, currentCallerInfo);
 
     const replayBase = failedInput.interventions
-      ? composeInterventionTurnPrompt(failedInput.interventions)
+      ? composeInterventionTurnPrompt(failedInput.interventions.map(message=>({...message,context:message.context?.filter(item=>item.key !== "assigned_cards")})))
       : {
-          prompt: failedInput.prompt,
+          // Rebuild from original user text, not the assembled input. No user text is parsed or removed.
+          prompt: failedInput.originalPrompt ?? failedInput.prompt,
           imageAttachmentPaths: failedInput.imageAttachmentPaths,
         };
     return {
       prompt: buildBoundedBackendRolloverPrompt(replayBase.prompt, ctx),
+      originalPrompt: replayBase.prompt,
       imageAttachmentPaths: replayBase.imageAttachmentPaths,
       ...(ctx.effectiveSystemPrompt !== undefined
         ? {
@@ -231,6 +236,7 @@ export class TaskTurnInputBuilder {
     if (!ctx) {
       return {
         prompt: task.prompt,
+        originalPrompt: task.prompt,
         imageAttachmentPaths,
         turnOrigin: { kind: "initial_prompt" },
       };
@@ -238,6 +244,7 @@ export class TaskTurnInputBuilder {
 
     if (effectiveTaskBackend(task, agent) === "claude") {
       return {
+        originalPrompt: task.prompt,
         prompt: composeFirstTurnPrompt({
           effectiveSystemPrompt: undefined,
           combinedContextItems: ctx.combinedContextItems,
@@ -252,6 +259,7 @@ export class TaskTurnInputBuilder {
     }
 
     return {
+      originalPrompt: task.prompt,
       prompt: composeFirstTurnPrompt({
         ...ctx,
       assembledPrompt: task.prompt,
@@ -347,11 +355,13 @@ function buildBoundedBackendRolloverPrompt(
     CLAUDE_ROLLOVER_REPLAY_INPUT_MAX_CHARS,
     "replayed input",
   );
-  const contextBlock = truncateWithNotice(
-    formatContextItems(context.contextItems),
-    CLAUDE_ROLLOVER_CONTEXT_MAX_CHARS,
+  const assignedBlock = formatContextItems(context.contextItems.filter(item=>item.key === "assigned_cards"));
+  const remainingContext = truncateWithNotice(
+    formatContextItems(context.contextItems.filter(item=>item.key !== "assigned_cards")),
+    CLAUDE_ROLLOVER_CONTEXT_MAX_CHARS - assignedBlock.length - (assignedBlock ? 2 : 0),
     "dynamic context",
   );
+  const contextBlock = [remainingContext, assignedBlock].filter(Boolean).join("\n\n");
   const sections = [
     notice,
     history,
