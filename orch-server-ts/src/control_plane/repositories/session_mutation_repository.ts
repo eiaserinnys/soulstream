@@ -1,3 +1,7 @@
+import {
+  captureNodeStartupTargets, reconcileNodeStartup, mapReconciledSessionRow,
+  type NodeStartupTarget, type ReconciledSessionRow,
+} from "./node_startup_reconciliation.js";
 import { sanitizePgText } from "../../node/pg_text_sanitizer.js";
 import type { SqlClient } from "../control_plane_types.js";
 import type { SessionDeletionPort } from "../../session/session_deletion_service.js";
@@ -361,92 +365,15 @@ export class SessionMutationRepository {
       .filter((nodeId) => typeof nodeId === "string" && nodeId.length > 0);
   }
 
-  async reconcileNodeStartup(
-    nodeId: string,
-    runningSessionIds: string[],
-    updatedAt: Date,
-  ): Promise<{
-    interrupted: number;
-    restored: number;
-    updates: Array<{
-      sessionId: string;
-      status: "interrupted" | "running";
-      terminationReason: string | null;
-      terminationDetail: string | null;
-      reviewState: string;
-      updatedAt: Date;
-    }>;
-  }> {
-    return await this.sql.begin(async (sql) => {
-      const interruptedRows = await sql<Array<ReconciledSessionRow>>`
-        UPDATE sessions
-        SET status = 'interrupted', was_running_at_shutdown = TRUE,
-            termination_reason = 'killed', termination_detail = 'startup_reconciliation',
-            review_state = CASE
-              WHEN review_required THEN 'needs_review'
-              ELSE 'acknowledged'
-            END,
-            updated_at = ${updatedAt}
-      WHERE node_id = ${nodeId}
-          AND updated_at <= ${updatedAt}
-          AND NOT (session_id = ANY(${sql.array(runningSessionIds)}::text[]))
-          AND (
-            status = 'running'
-            OR (
-              status = 'initializing'
-              AND execution_registration_id IS NULL
-            )
-          )
-        RETURNING session_id, status, termination_reason, termination_detail,
-                  review_state, updated_at
-      `;
-      await sql`
-        SELECT id FROM worktrees
-        WHERE id IN (
-          SELECT worktree_id FROM sessions
-          WHERE node_id = ${nodeId}
-            AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
-            AND worktree_id IS NOT NULL
-        )
-        FOR UPDATE
-      `;
-      const restoredRows = await sql<Array<ReconciledSessionRow>>`
-        UPDATE sessions
-        SET status = 'running', was_running_at_shutdown = FALSE,
-            termination_reason = NULL, termination_detail = NULL,
-            review_state = 'not_required',
-            updated_at = ${updatedAt}
-        WHERE node_id = ${nodeId}
-          AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
-          AND status IN ('completed', 'error', 'interrupted')
-          AND termination_event_id IS NULL
-          AND updated_at <= ${updatedAt}
-          AND (
-            worktree_id IS NULL
-            OR (
-              EXISTS (
-                SELECT 1 FROM worktrees
-                WHERE worktrees.id = sessions.worktree_id
-                  AND worktrees.state = 'ready'
-                  AND (NOT worktrees.setup_required OR worktrees.setup_status = 'ready')
-              )
-              AND NOT EXISTS (
-                SELECT 1 FROM sessions AS active
-                WHERE active.worktree_id = sessions.worktree_id
-                  AND active.session_id <> sessions.session_id
-                  AND active.status IN ('initializing', 'running')
-              )
-            )
-          )
-        RETURNING session_id, status, termination_reason, termination_detail,
-                  review_state, updated_at
-      `;
-      return {
-        interrupted: interruptedRows.length,
-        restored: restoredRows.length,
-        updates: [...interruptedRows, ...restoredRows].map(mapReconciledSessionRow),
-      };
-    });
+  captureNodeStartupTargets(nodeId: string): Promise<NodeStartupTarget[]> {
+    return captureNodeStartupTargets(this.sql, nodeId);
+  }
+
+  reconcileNodeStartup(
+    nodeId: string, runningSessionIds: string[], updatedAt: Date,
+    targets: NodeStartupTarget[] = [],
+  ) {
+    return reconcileNodeStartup(this.sql, nodeId, runningSessionIds, updatedAt, targets);
   }
 
   private async idempotent<T>(
@@ -463,26 +390,6 @@ export class SessionMutationRepository {
       options,
     );
   }
-}
-
-type ReconciledSessionRow = {
-  session_id: string;
-  status: "interrupted" | "running";
-  termination_reason: string | null;
-  termination_detail: string | null;
-  review_state: string;
-  updated_at: Date | string;
-};
-
-function mapReconciledSessionRow(row: ReconciledSessionRow) {
-  return {
-    sessionId: row.session_id,
-    status: row.status,
-    terminationReason: row.termination_reason,
-    terminationDetail: row.termination_detail,
-    reviewState: row.review_state,
-    updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at),
-  };
 }
 
 const TRANSITION_FIELD_KEYS = new Set<keyof SessionTransitionFields>([

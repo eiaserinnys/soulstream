@@ -22,5 +22,8 @@ export function resolvedCommandEvents(params: {
       data: params.response,
     });
   }
+  if (params.response.type === "sessions_update") {
+    events.push({ type: "node_session_sessions_update", nodeId: params.nodeId, data: params.response });
+  }
   return events;
 }

@@ -312,15 +312,23 @@ export async function createLiveProductionApplication(
     restoreLeaseGraceOnStartup: config.soul_runner_process_enabled,
     disconnectGraceMs: config.soul_runner_lease_timeout_ms,
     getConnectedNode: (nodeId) => registry.getConnectedNode(nodeId),
-    requestSessionInventory: async (nodeId) => {
+    requestSessionInventory: async (nodeId, connectionId) => {
       const node = registry.getConnectedNode(nodeId);
-      if (!node) throw new Error(`node disconnected before inventory request: ${nodeId}`);
-      await runtimeServices.sessionBridge.sendFireAndForgetCommand({
-        node,
-        command: registry.createFireAndForgetCommand(nodeId, {
-          type: runnerInventoryCommandType(node.capabilities),
-        }),
+      if (!node || node.connectionId !== connectionId) {
+        throw new Error(`node connection changed before inventory request: ${nodeId}`);
+      }
+      const command = registry.createCommand(nodeId, {
+        type: runnerInventoryCommandType(node.capabilities),
       });
+      const response = await runtimeServices.sessionBridge.sendPendingCommand({ node, command });
+      const runningSessionIds = response.running_session_ids;
+      if (response.requestId !== command.requestId
+        || (response.type !== "runner_inventory" && response.type !== "sessions_update")
+        || !Array.isArray(runningSessionIds)
+        || !runningSessionIds.every((value): value is string => typeof value === "string")) {
+        throw new Error(`invalid inventory response for ${nodeId}/${command.requestId}`);
+      }
+      return { requestId: command.requestId, runningSessionIds };
     },
     publishSessionUpdate: (update) => publishReconciledSessionUpdate(update),
   });
