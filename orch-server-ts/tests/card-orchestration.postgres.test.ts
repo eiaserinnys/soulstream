@@ -255,6 +255,10 @@ describe("durable card orchestration admissions", () => {
         blockedKind: "limit",
       });
       const version = (await cards.getCard(id))!.card.version;
+      await expect(cards.resumeDispatchedCard({
+        cardId: id, expectedVersion: version, sessionId: sid, nodeId: target.nodeId,
+      })).rejects.toThrow("fenced");
+      expect((await cards.getCard(id))!.card.status).toBe("blocked");
       const next = (await repo.claim({
         inputHash: `resume-${terminal}`,
         policyVersion: 1,

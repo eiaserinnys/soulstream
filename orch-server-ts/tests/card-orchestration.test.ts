@@ -94,7 +94,8 @@ describe("server owns card orchestration admission", () => {
       orchestration: { enabled: policy, kick, ownsSession: async () => false },
     });
     await d.checkLimits();
-    expect(kick).toHaveBeenCalledOnce();
+    await d.dispatch();
+    expect(kick).toHaveBeenCalledTimes(2);
     expect(queued).not.toHaveBeenCalled();
     expect(limited).not.toHaveBeenCalled();
   });
