@@ -51,10 +51,13 @@ export const fixtureOptions = [
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
-export function createReviewApi(state: FixtureState = 'normal', options: { home?: boolean; emptyReview?: boolean; failWrites?: boolean } = {}) {
+export function createReviewApi(state: FixtureState = 'normal', options: { home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only' } = {}) {
   const cards = new Map(initialCards.map((card) => [card.id, { ...card }]));
   if (options.home) for (let index = 1; index <= 4; index++) cards.set(`public-review-${index}`, { ...makeCard('review'), id: `public-review-${index}`, title: `검수할 공개 예시 ${index}`, latestActivity: { kind: 'report', body: '같은 제목과 본문으로 카드 크기와 읽기 흐름을 확인합니다.', format: 'markdown', createdAt: time } });
   if (options.emptyReview) for (const [id, card] of cards) if (card.status === 'review') cards.delete(id);
+  if (options.completed) for (const [id, card] of cards) {
+    if (options.completed === 'none' ? card.status === 'done' : card.status !== 'done') cards.delete(id);
+  }
   const read = async <T,>(value: T): Promise<T> => {
     if (state === 'error') throw new Error('공개 예시: 목록을 불러오지 못했습니다.');
     if (state === 'loading') return new Promise(() => {});

@@ -60,6 +60,8 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const [otherExpanded, setOtherExpanded] = useState(false);
   const [sessionsExpanded, setSessionsExpanded] = useState(false);
   const scroll = useRef<ScrollView>(null);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const card = detail?.card;
   const timelineStamp = detail ? `${detail.questions.length}:${detail.reports.length}:${detail.comments?.length ?? 0}` : '';
   const scrollStamp = useRef('');
@@ -79,9 +81,11 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
     if (card?.assigneeSessionId && nodeId) attachments.pickAttachment();
     else Alert.alert('곧 지원', '담당 세션이 연결되면 첨부를 올릴 수 있습니다.');
   };
-  const status = (next: CardStatus, reason?: string) => {
+  const status = async (next: CardStatus, reason?: string) => {
     if (!api || !card) return Promise.resolve(false);
-    return statusAction.transition(card, next, reason);
+    const ok = await statusAction.transition(card, next, reason);
+    if (ok && next === 'done' && active.current) onClose();
+    return ok;
   };
   const send = async () => {
     if (!api || !card || !text.trim() || locked) return;

@@ -1,22 +1,19 @@
 import React from 'react';
-import { Text, View } from 'react-native';
-import { AppGlassPressable } from '../AppGlassCard';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { LiquidGlassButton } from '../LiquidGlassButton';
 import { useTokens } from '../../theme';
 
 /** Controlled view option; no persistence or card mutation. */
-export function CompletedCardsToggle({ includeCompleted, completedCount, onChange }: {
-  includeCompleted: boolean; completedCount: number; onChange(value: boolean): void;
+export function CompletedCardsToggle({ includeCompleted, onChange }: {
+  includeCompleted: boolean; completedCount?: number; onChange(value: boolean): void;
 }) {
   const t = useTokens();
-  return <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.spacing.sm }}>
-    <AppGlassPressable testID={`completed-cards-toggle-${includeCompleted ? 'on' : 'off'}`} role={includeCompleted ? 'glassDense' : 'glassSoft'}
-      accessibilityRole="checkbox" accessibilityLabel="완료 포함" accessibilityState={{ checked: includeCompleted }}
-      contentStyle={{ minHeight: t.hitTarget.min, paddingHorizontal: t.spacing.sm, alignItems: 'center', justifyContent: 'center' }}
-      onPress={() => onChange(!includeCompleted)}>
-      <Text style={{ ...t.foundation.typography.body, color: includeCompleted ? t.colors.textPrimary : t.colors.textSecondary }}>
-        {includeCompleted ? '✓ ' : ''}완료 포함
-      </Text>
-    </AppGlassPressable>
-    {!includeCompleted && completedCount > 0 ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>완료 {completedCount}개 숨김</Text> : null}
-  </View>;
+  const hideCompleted = !includeCompleted;
+  return <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+    testID={`completed-cards-toggle-${hideCompleted ? 'on' : 'off'}`}
+    accessibilityLabel="완료 숨김" accessibilityState={{ selected: hideCompleted }} aria-pressed={hideCompleted}
+    onPress={() => onChange(!includeCompleted)}>
+    <Ionicons name={hideCompleted ? 'eye-off-outline' : 'eye-outline'} size={t.iconSize.standard}
+      color={hideCompleted ? t.colors.accent : t.colors.textPrimary} />
+  </LiquidGlassButton>;
 }

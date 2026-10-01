@@ -24,6 +24,8 @@ export type {
 };
 
 interface SettingsState {
+  cardIncludeCompleted: Record<string, boolean>;
+  setCardIncludeCompleted: (scope: string, includeCompleted: boolean) => void;
   cardAssignments: Record<string, CardAssignment>;
   setCardAssignment: (serverUrl: string, assignment: CardAssignment) => void;
   serverUrl: string;
@@ -44,6 +46,10 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
+      cardIncludeCompleted: {},
+      setCardIncludeCompleted: (scope, includeCompleted) => set((state) => ({
+        cardIncludeCompleted: { ...state.cardIncludeCompleted, [scope]: includeCompleted },
+      })),
       cardAssignments: {},
       setCardAssignment: (serverUrl, assignment) => set((state) => ({
         cardAssignments: { ...state.cardAssignments, [serverUrl]: assignment },

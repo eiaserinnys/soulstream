@@ -21,8 +21,10 @@ import { SessionSearchField } from '../search/SessionSearchField';
 import { useSearchStore } from '../../store/searchStore';
 import { recordUiUsageEvent } from '../../lib/ui-usage-events';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
-import { CardBoardWorkspace } from '../planner/CardBoardWorkspace';
+import { CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../planner/CardBoardWorkspace';
+import { CompletedCardsToggle } from '../planner/CompletedCardsToggle';
 import { useAuthScopeGeneration } from '../../lib/auth-scope';
+import { useCardDisplay } from '../../hooks/useCardDisplay';
 
 export function MainListPane({
   onMenuPress,
@@ -36,6 +38,7 @@ export function MainListPane({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
+  const boardRef = useRef<CardBoardWorkspaceHandle>(null);
   const insets = useSafeAreaInsets();
   const activeSection = useUIStore((state) => state.activeSection);
   const [views, setViews] = useState<Record<string, 'existing' | 'board'>>({ global: 'board' });
@@ -45,9 +48,7 @@ export function MainListPane({
   const view = views[viewKey] ?? (viewKey === 'global' ? 'board' : 'existing');
   const [visited, setVisited] = useState<Record<string, boolean>>({ global: true });
   const setView = (value: 'existing' | 'board') => { setViews((old) => ({ ...old, [viewKey]: value })); if (value === 'board') setVisited((old) => ({ ...old, [viewKey]: true })); };
-  const [completed, setCompleted] = useState({ owner: displayOwner, includeCompleted: false });
-  const cardDisplay = { includeCompleted: completed.owner === displayOwner && completed.includeCompleted,
-    onChange: (includeCompleted: boolean) => setCompleted({ owner: displayOwner, includeCompleted }) };
+  const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const folders = useSessionStore((state) => state.catalog.folders);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
@@ -82,6 +83,10 @@ export function MainListPane({
             <Ionicons name="menu" color={t.colors.textPrimary} size={t.iconSize.navigation} />
           </LiquidGlassButton>
         ) : null}
+        {view === 'board' && !showSearch ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+          accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
+          <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+        </LiquidGlassButton> : null}
         <View testID="tablet-main-title" style={styles.title}>
           {showSearch ? (
             <SessionSearchField
@@ -101,6 +106,16 @@ export function MainListPane({
             />
           )}
         </View>
+        {view === 'board' && !showSearch ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs }}>
+          <CompletedCardsToggle {...cardDisplay} />
+          {activeSection.kind === 'daily' ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+            accessibilityLabel="기존 데일리 기록" onPress={() => setView('existing')}>
+            <Ionicons name="today-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+          </LiquidGlassButton> : null}
+          <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="보드 확대" onPress={() => boardRef.current?.openExpanded()}>
+            <Ionicons name="expand-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+          </LiquidGlassButton>
+        </View> : null}
         {activeSection.kind === 'daily' && !showSearch && view === 'existing' ? (
           <DailyHeaderActions
             onOpenReview={() => dailyRef.current?.openReview()}
@@ -114,7 +129,7 @@ export function MainListPane({
       </View> : null}
       <View style={styles.body}>
         {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>
-          <CardBoardWorkspace key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
+          <CardBoardWorkspace ref={boardRef} externalHeader key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
             cardDisplay={cardDisplay} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
         </View> : null}
         {view === 'existing' && activeSection.kind === 'daily' ? (

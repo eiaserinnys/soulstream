@@ -6,7 +6,7 @@ import { cardFixture } from '../../../test-support/cards';
 import { PostItCard, postItRotation } from '../PostItCard';
 import { postItActivityText } from '../../../lib/postit-activity';
 
-test('같은 공통 포스트잇 full/compact는 비율·글자·조작최소를 유지하고 compact본문만2줄이다', () => {
+test('full/compact는 비율·글자·조작최소를 유지하고 라벨 줄 대신 본문을 더 보여준다', () => {
   const card = cardFixture({ latestActivity: { kind: 'report', format: 'markdown', body: '보고 원문\n두 번째 줄\n세 번째 줄', createdAt: '' } });
   const screen = render(<PostItCard api={null} card={card} onOpen={() => {}} />);
   const full = screen.getByTestId('postit-card-card-1').props.style;
@@ -18,8 +18,33 @@ test('같은 공통 포스트잇 full/compact는 비율·글자·조작최소를
   expect(compact.width / compact.height).toBeCloseTo(320 / 280);
   expect(compact.transform).toEqual([{ rotate: `${postItRotation(card.id)}deg` }]);
   expect(screen.getByTestId('postit-body-card-1').props.style.fontSize).toBe(font);
-  expect(screen.getByTestId('postit-body-card-1').props.numberOfLines).toBe(2);
-  expect(screen.getByText('마지막 보고').props.style.fontSize).toBeGreaterThanOrEqual(13);
+  expect(screen.getByTestId('postit-body-card-1').props.numberOfLines).toBeGreaterThan(2);
+  expect(screen.queryByText('마지막 보고')).toBeNull();
+  const chip = screen.getByText('[보고]');
+  expect(chip.props.style.fontSize).toBeGreaterThanOrEqual(13);
+  expect(screen.getByTestId('postit-body-card-1').findAllByProps({ testID: 'postit-activity-chip-card-1' }).length).toBeGreaterThan(0);
+});
+
+test.each(['report', 'instruction'] as const)('인라인 %s 칩은 본문 Text 안에 두고 footer 위 여유를 지킨다', (kind) => {
+  const card = cardFixture({ latestActivity: { kind, format: 'markdown', body: '같은 본문 첫 줄\n둘째 줄도 전체 폭을 씁니다.', createdAt: '' } });
+  for (const variant of ['full', 'compact'] as const) {
+    const screen = render(<PostItCard api={null} card={card} variant={variant} onOpen={() => {}} />);
+    const body = screen.getByTestId('postit-body-card-1');
+    expect(screen.getByText(kind === 'report' ? '[보고]' : '[지시]')).toBeTruthy();
+    expect(body.findAllByProps({ testID: 'postit-activity-chip-card-1' }).length).toBeGreaterThan(0);
+    const title = screen.getByTestId('postit-title-card-1').props.style;
+    const footer = screen.getByTestId('postit-footer-card-1').props.style;
+    const content = screen.getByTestId('postit-open-card-1').props.style;
+    expect(title.height).toBeUndefined();
+    expect(title.minHeight).toBeUndefined();
+    expect(content.paddingBottom).toBeGreaterThan(content.padding + footer.height);
+    const area = screen.getByTestId('postit-body-area-card-1');
+    expect(area.props.style.flex).toBe(1);
+    expect(body.props.style.flex).toBeUndefined();
+    fireEvent(area, 'layout', { nativeEvent: { layout: { height: body.props.style.lineHeight * 4.5 } } });
+    expect(screen.getByTestId('postit-body-card-1').props.numberOfLines).toBe(4);
+    screen.unmount();
+  }
 });
 
 test('포스트잇 mount는 상세를 읽지 않고 카드 탭은 기존 상세로 전달한다', () => {

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   View,
   type AccessibilityRole,
+  type AccessibilityState,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -260,6 +261,8 @@ export interface GlassButtonProps {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   accessibilityRole?: AccessibilityRole;
+  accessibilityState?: AccessibilityState;
+  'aria-pressed'?: boolean;
   variant?: 'primary' | 'secondary';
   size?: 'standard' | 'compact' | 'card';
   iconOnly?: boolean;
@@ -279,6 +282,8 @@ export function GlassButton({
   accessibilityLabel,
   accessibilityHint,
   accessibilityRole = 'button',
+  accessibilityState,
+  'aria-pressed': ariaPressed,
   variant = 'secondary',
   size = 'standard',
   iconOnly = false,
@@ -307,7 +312,7 @@ export function GlassButton({
     const visualStyle: ViewStyle = { width: visualSize, height: visualSize, borderRadius: resolvedRadius,
       alignItems: 'center', justifyContent: 'center' };
     return <CompactTouchTarget testID={testID} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
-      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: !!disabled }}>
+      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
       {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: primitive.backgroundColor }]}>{children}</View>
         : <GlassSurfaceImpl role={primitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle]}>{children}</GlassSurfaceImpl>}
     </CompactTouchTarget>;
@@ -326,7 +331,8 @@ export function GlassButton({
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled: !!disabled }}
+      accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
+      {...(Platform.OS === 'web' && ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
       style={({ pressed }) => [
         styles.buttonInner,
         {
