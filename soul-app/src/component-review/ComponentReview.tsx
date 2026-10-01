@@ -13,6 +13,8 @@ import { ReviewSettings } from './ReviewSettings';
 import { ReviewSurfaces } from './ReviewSurfaces';
 import { ReviewBoard } from './ReviewBoard';
 import { ReviewBoardActions } from './ReviewBoardActions';
+import { ReviewPostIt } from './ReviewPostIt';
+import { ReviewBoardWorkspace } from './ReviewBoardWorkspace';
 import { folders } from './fixtures';
 
 const sections = [
@@ -21,6 +23,8 @@ const sections = [
   { value: 'surfaces', label: '표면' },
   { value: 'board', label: '보드' },
   { value: 'boardActions', label: '보드 액션' },
+  { value: 'postit', label: '포스트잇' },
+  { value: 'boardConnected', label: '보드 연결' },
 ] as const;
 type Section = typeof sections[number]['value'];
 
@@ -57,7 +61,8 @@ function Gallery() {
     <SettingsSegmentedControl<Section> id="review-section" value={section} onChange={setSection} options={sections} />
     {section === 'rows' ? <ReviewRows /> : section === 'chat' ? <ReviewChat />
       : section === 'project' ? <ReviewProject /> : section === 'settings' ? <ReviewSettings />
-        : section === 'board' ? <ReviewBoard /> : section === 'boardActions' ? <ReviewBoardActions /> : <ReviewSurfaces />}
+        : section === 'board' ? <ReviewBoard /> : section === 'boardActions' ? <ReviewBoardActions />
+          : section === 'postit' ? <ReviewPostIt /> : section === 'boardConnected' ? <ReviewBoardWorkspace /> : <ReviewSurfaces />}
   </ScrollView>;
 }
 

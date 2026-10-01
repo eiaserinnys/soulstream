@@ -33,6 +33,10 @@ import { FolderWorkspaceSections } from './FolderWorkspaceSections';
 import { PlannerForegroundCard } from './PlannerForegroundCard';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { folderPage, folderWorkspaceSummary } from './folderWorkspaceModel';
+import type { FolderCardDisplay } from './CardBoardWorkspace';
+
+// Existing workspace exceeds 500 lines; this change only forwards the iPad board's controlled view option.
+// Splitting unrelated title/description save lifecycles belongs to a separate change.
 
 export function FolderWorkspace({
   api,
@@ -43,6 +47,7 @@ export function FolderWorkspace({
   onClose,
   onTitleSaved,
   onOpenFolder,
+  cardDisplay,
 }: {
   api: ApiClient | null;
   folderPageId: string;
@@ -52,6 +57,7 @@ export function FolderWorkspace({
   onClose?: () => void;
   onTitleSaved?: (title: string) => void;
   onOpenFolder?: (folderId: string, pageId: string, name: string) => void;
+  cardDisplay?: FolderCardDisplay;
 }) {
   const t = useTokens();
   const tablet = useDeviceType() !== 'phone';
@@ -488,7 +494,7 @@ export function FolderWorkspace({
             </>
           )}
         </View>
-        <FolderCards api={api} folderId={folderSummary.folderId} active={active} onOpenSession={onOpenSession} />
+        <FolderCards api={api} folderId={folderSummary.folderId} active={active} onOpenSession={onOpenSession} cardDisplay={cardDisplay} />
         {folder ? (
           <FolderWorkspaceSections
             api={api}

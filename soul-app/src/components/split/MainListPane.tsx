@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +20,9 @@ import { TabletPaneHeader } from './TabletPaneHeader';
 import { SessionSearchField } from '../search/SessionSearchField';
 import { useSearchStore } from '../../store/searchStore';
 import { recordUiUsageEvent } from '../../lib/ui-usage-events';
+import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
+import { CardBoardWorkspace } from '../planner/CardBoardWorkspace';
+import { useAuthScopeGeneration } from '../../lib/auth-scope';
 
 export function MainListPane({
   onMenuPress,
@@ -35,6 +38,12 @@ export function MainListPane({
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   const insets = useSafeAreaInsets();
   const activeSection = useUIStore((state) => state.activeSection);
+  const [view, setView] = useState<'existing' | 'board'>('existing');
+  const scope = useAuthScopeGeneration();
+  const displayOwner = `${scope}:${activeSection.kind === 'project' ? activeSection.folderId : 'global'}`;
+  const [completed, setCompleted] = useState({ owner: displayOwner, includeCompleted: false });
+  const cardDisplay = { includeCompleted: completed.owner === displayOwner && completed.includeCompleted,
+    onChange: (includeCompleted: boolean) => setCompleted({ owner: displayOwner, includeCompleted }) };
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const folders = useSessionStore((state) => state.catalog.folders);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
@@ -88,15 +97,21 @@ export function MainListPane({
             />
           )}
         </View>
-        {activeSection.kind === 'daily' && !showSearch ? (
+        {activeSection.kind === 'daily' && !showSearch && view === 'existing' ? (
           <DailyHeaderActions
             onOpenReview={() => dailyRef.current?.openReview()}
             onOpenNewFolder={() => dailyRef.current?.openNewFolder()}
           />
         ) : null}
       </TabletPaneHeader>
+      {!showSearch ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
+        <SettingsSegmentedControl<'existing' | 'board'> id="tablet-card-view" value={view} onChange={setView}
+          options={[{ value: 'existing', label: '기존 보기' }, { value: 'board', label: '보드' }]} />
+      </View> : null}
       <View style={styles.body}>
-        {activeSection.kind === 'daily' ? (
+        {view === 'board' ? <CardBoardWorkspace api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
+          cardDisplay={cardDisplay} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} /> : null}
+        {view === 'existing' && activeSection.kind === 'daily' ? (
           <DailyPlannerScreen
             ref={dailyRef}
             date={activeSection.date}
@@ -114,11 +129,12 @@ export function MainListPane({
             onOpenFolder={openPlannerFolderWorkspace}
           />
         ) : null}
-        {activeSection.kind === 'project' ? (
+        {view === 'existing' && activeSection.kind === 'project' ? (
           <FolderWorkspace
             api={api}
             folderId={activeSection.folderId}
             folderPageId={activeSection.projectPageId}
+            cardDisplay={cardDisplay}
             onOpenFolder={(folderId, projectPageId) => setActiveSection({
               kind: 'project', folderId, projectPageId,
             })}
