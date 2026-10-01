@@ -21,19 +21,7 @@ import {
 } from "./session-node-connectivity";
 import "./v3-content-boundary.css";
 
-export function PlannerFolderCard({
-  task,
-  sessions,
-  nodeConnectivity,
-  isInToday,
-  onOpen,
-  onComplete,
-  onToggleToday,
-  onMoveToParent,
-  navigationLabel,
-  onRename,
-  onArchive,
-}: {
+type PlannerFolderCardProps = {
   task: PlannerFolder;
   sessions: readonly SessionSummary[];
   nodeConnectivity: SessionNodeConnectivity;
@@ -45,9 +33,29 @@ export function PlannerFolderCard({
   navigationLabel?: string;
   onRename?(): void;
   onArchive?(): void;
-}) {
+};
+
+export function PlannerFolderCard(props: PlannerFolderCardProps) {
+  const folderStar = useFolderStar(props.task.page);
+  return <PlannerFolderCardView {...props} folderStar={folderStar} />;
+}
+
+/** Same operational markup, with state and mutation callbacks supplied by its owner. */
+export function PlannerFolderCardView({
+  task,
+  sessions,
+  nodeConnectivity,
+  isInToday,
+  onOpen,
+  onComplete,
+  onToggleToday,
+  onMoveToParent,
+  navigationLabel,
+  onRename,
+  onArchive,
+  folderStar,
+}: PlannerFolderCardProps & { folderStar: ReturnType<typeof useFolderStar> }) {
   const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
-  const folderStar = useFolderStar(task.page);
   const status = plannerStatusPresentation(task.status);
   const run = latestRun(task.sessionIds, sessions);
   const runStatus = run ? sessionPresentationStatus(run.session, nodeConnectivity) : null;

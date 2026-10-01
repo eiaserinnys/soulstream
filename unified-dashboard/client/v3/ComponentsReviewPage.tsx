@@ -1,0 +1,174 @@
+import { useState, type ReactNode } from "react";
+import { DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
+import type { UploadedFile } from "@seosoyoung/soul-ui/hooks/useFileUpload";
+import { ArrowLeft, Folder, Layers, MessageSquare, Plus, RotateCcw, SendHorizontal, SquarePen, Star } from "lucide-react";
+import { CardRowView } from "./CardRow";
+import { RichSessionRow } from "./RichSessionRow";
+import { PlannerFolderCardView } from "./PlannerFolderCard";
+import { InlineMarkdownCard } from "./InlineMarkdownCard";
+import { CardTimeline } from "./CardTimeline";
+import { CardComposer } from "./CardComposer";
+import { FolderPicker } from "./FolderPicker";
+import { FolderTitleEditor } from "./FolderTitleEditor";
+import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
+import { FolderTodayToggle } from "./FolderTodayToggle";
+import { reviewCard, reviewDetail, reviewFolder, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
+import "./components-review.css";
+
+const sections = [
+  { id: "rows", title: "목록 행", icon: Folder },
+  { id: "heads", title: "머리·캡", icon: Layers },
+  { id: "bubbles", title: "말풍선", icon: MessageSquare },
+  { id: "input", title: "입력창", icon: SendHorizontal },
+  { id: "surfaces", title: "패널 표면", icon: SquarePen },
+];
+
+function Sample({ name, state, children }: { name: string; state: string; children: ReactNode }) {
+  return <div className="v3-components-sample" data-component={name}>
+    <p className="v3-components-label">{name} · {state}</p>{children}
+  </div>;
+}
+
+export function ComponentsReviewPage() {
+  const [title, setTitle] = useState("컴포넌트 검수");
+  const [notice, setNotice] = useState("샘플을 눌러 비교합니다. 입력과 버튼은 이 페이지 안에서만 동작합니다.");
+  const [starred, setStarred] = useState(false);
+  const [inToday, setInToday] = useState(false);
+  const [documentExpanded, setDocumentExpanded] = useState(false);
+  const [documentBody, setDocumentBody] = useState("# 문서 샘플\n\n운영 문서 행과 같은 표시와 여백을 사용합니다.");
+  const [request, setRequest] = useState("");
+  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folder, setFolder] = useState(reviewFolders[0]);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [description, setDescription] = useState("폴더 설명을 누르면 기존 편집기가 열립니다.");
+  const [comments, setComments] = useState(reviewDetail.comments ?? []);
+  const open = (label: string) => setNotice(`${label} 샘플을 열었습니다.`);
+  const folderStar = { starred, pending: false, error: null, toggle: async () => setStarred(value => !value) };
+  const send = () => {
+    if (!request.trim()) return;
+    setComments(current => [...current, { id: `components-comment-${current.length}`, cardId: reviewCard.id,
+      authorKind: "user", authorId: "sample", sessionId: null, kind: "comment", body: request,
+      createdAt: new Date().toISOString() }]);
+    setRequest(""); setFiles([]); setNotice("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
+  };
+  const reset = () => {
+    setStarred(false); setInToday(false); setDocumentExpanded(false); setRequest(""); setFiles([]);
+    setFolder(reviewFolders[0]); setComments([]); setNotice("샘플 상태를 초기화했습니다.");
+  };
+  const folderProps = {
+    sessions: [reviewSession], nodeConnectivity: { ready: true, connectedNodeIds: new Set(["eiaserinnys"]) },
+    isInToday: inToday, folderStar, onComplete: async () => open("폴더 완료"),
+    onToggleToday: async () => setInToday(value => !value), onMoveToParent: () => open("상위 폴더 이동"),
+  };
+
+  return <article className="v3-detail-pane v3-detail-pane--inline" data-testid="components-review">
+    <header className="v3-folder-header v3-inline-folder-header">
+      <DashboardIconCap label="대시보드로 돌아가기" onClick={() => window.location.assign("/")}><ArrowLeft className="h-4 w-4" /></DashboardIconCap>
+      <FolderTitleEditor title={title} headingLevel={1} onRename={async next => setTitle(next)} />
+      <div className="v3-folder-header-actions">
+        <DashboardIconCap label="샘플 상태 초기화" onClick={reset}><RotateCcw className="h-4 w-4" /></DashboardIconCap>
+      </div>
+    </header>
+    <div className="v3-detail-scroll">
+      <div className="v3-task-detail-layout">
+        <nav className="v3-task-section-nav" aria-label="검수 섹션">
+          {sections.map(({ id, title: label, icon: Icon }) => <button key={id} type="button" className="v3-task-section-anchor"
+            onClick={() => document.getElementById(`components-${id}`)?.scrollIntoView({ block: "start" })}>
+            <Icon className="h-4 w-4" /><span>{label}</span>
+          </button>)}
+        </nav>
+        <div className="v3-task-detail-content">
+          <p role="status" className="v3-components-label">{notice}</p>
+          <section id="components-rows" className="v3-detail-section">
+            <div className="v3-detail-section-head"><h3>목록 행</h3></div>
+            <div className="v3-components-samples">
+              <Sample name="RichSessionRow / RunRowFrame" state="기본 · 행 클릭 · 포커스">
+                <div className="v3-run-list"><RichSessionRow session={reviewSession} onOpen={() => open("세션")}/></div>
+              </Sample>
+              <Sample name="RichSessionRow" state="small · 긴 한국어 제목">
+                <div className="v3-run-list"><RichSessionRow size="small" session={{ ...reviewSession, agentSessionId: "components-small", displayName: reviewTitle }} onOpen={() => open("small 세션")}/></div>
+              </Sample>
+              <Sample name="CardRowView / RunRowFrame" state="기본 · 여러 항목 · 긴 한국어 제목">
+                <div className="v3-run-list">{[reviewCard.title, reviewTitle].map((label, index) => <CardRowView key={label}
+                  card={{ ...reviewCard, id: `components-card-${index}`, title: label }} assignee={reviewSession} detail={reviewDetail} onOpen={() => open("카드")}/>)}</div>
+              </Sample>
+              <Sample name="PlannerFolderCardView" state="하위 폴더 · 관리 캡">
+                <div className="v3-task-list"><PlannerFolderCardView {...folderProps} task={reviewFolder("폴더 카드 기본", "components-folder-card")}
+                  onOpen={() => open("폴더")} onRename={() => open("폴더 관리")} onArchive={() => open("폴더 보관")}/></div>
+              </Sample>
+              <Sample name="PlannerFolderCardView" state="상위 폴더 · 긴 한국어 제목">
+                <div className="v3-task-list"><PlannerFolderCardView {...folderProps} navigationLabel="상위 폴더"
+                  task={reviewFolder(reviewTitle, "components-parent")} onOpen={() => open("상위 폴더")}/></div>
+              </Sample>
+              <Sample name="InlineMarkdownCard" state="문서 행 · 펼치기 · 본문 편집">
+                <div className="v3-inline-board-list"><InlineMarkdownCard title={reviewTitle} expanded={documentExpanded}
+                  onToggle={() => setDocumentExpanded(value => !value)} onRename={() => open("문서 이름 수정")}>
+                  {documentExpanded ? <div className="v3-inline-markdown"><FolderDescriptionPanel variant="inline" markdown={documentBody}
+                    ariaLabel="검수 문서" onSave={async body => setDocumentBody(body)}/></div> : null}
+                </InlineMarkdownCard></div>
+              </Sample>
+            </div>
+          </section>
+          <section id="components-heads" className="v3-detail-section">
+            <div className="v3-detail-section-head"><h3>섹션 머리와 캡</h3><span>DashboardIconCap</span><span className="v3-spacer"/>
+              <DashboardIconCap label="샘플 항목 추가" onClick={() => open("항목 추가")}><Plus className="h-4 w-4"/></DashboardIconCap>
+            </div>
+            <Sample name="FolderTodayToggle / DashboardIconCap" state="기본 · 선택 · 포커스">
+              <div className="v3-folder-header-actions">
+                <FolderTodayToggle inToday={inToday} onToggle={async () => setInToday(value => !value)}/>
+                <DashboardIconCap label="샘플 별표" aria-pressed={starred} onClick={() => setStarred(value => !value)}>
+                  <Star className="h-4 w-4" fill={starred ? "currentColor" : "none"}/>
+                </DashboardIconCap>
+                <DashboardIconCap label="비활성 샘플" disabled><Plus className="h-4 w-4"/></DashboardIconCap>
+              </div>
+            </Sample>
+          </section>
+          <section id="components-bubbles" className="v3-detail-section">
+            <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
+            <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">
+              <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
+                onAnswer={() => open("질문 응답")} pending={false}/>
+            </Sample>
+          </section>
+          <section id="components-input" className="v3-detail-section">
+            <div className="v3-detail-section-head"><h3>입력창</h3></div>
+            <Sample name="CardComposer / ChatInputComposer / ChatInputEditor" state="한 줄 → 여러 줄 · 전송 · 로컬 첨부">
+              <div className="v3-card-handoff">
+                <CardComposer text={request} onChangeText={setRequest} onSend={send} placeholder="샘플 메시지" inputLabel="검수 메시지"
+                  label="샘플 전송" disabled={!request.trim()} pending={false} files={files}
+                  onAddFiles={incoming => {
+                    const added = Array.from(incoming).map(file => ({ id: crypto.randomUUID(), file, path: null, status: "done" as const }));
+                    setFiles(current => [...current, ...added]);
+                  }} onRemoveFile={id => setFiles(current => current.filter(file => file.id !== id))}/>
+                <div className="v3-card-handoff-controls">
+                  <Popover open={folderOpen} onOpenChange={setFolderOpen}>
+                    <PopoverTrigger className="v3-card-handoff-chip v3-card-handoff-folder rounded-full" aria-label="샘플 폴더 선택">
+                      <span>📁 {folder.name}</span><span aria-hidden="true">▾</span>
+                    </PopoverTrigger>
+                    <PopoverPopup side="top" align="start" className="v3-shell v3-card-folder-picker">
+                      <FolderPicker folders={reviewFolders} starredFolderIds={reviewFolders.map(item => item.id)} disabledFolderIds={new Set()}
+                        selectedFolderId={folder.id} pending={false} onSelect={next => { setFolder(next); setFolderOpen(false); }}/>
+                    </PopoverPopup>
+                  </Popover>
+                </div>
+              </div>
+            </Sample>
+          </section>
+          <section id="components-surfaces" className="v3-detail-section">
+            <div className="v3-detail-section-head"><h3>패널 표면</h3><span className="v3-spacer"/>
+              <DashboardIconCap label="샘플 패널 열기" onClick={() => setPanelOpen(true)}><Layers className="h-4 w-4"/></DashboardIconCap>
+            </div>
+            <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">
+              <FolderDescriptionPanel markdown={description} onSave={async body => { setDescription(body); open("설명 저장"); }}/>
+              <Dialog open={panelOpen} onOpenChange={setPanelOpen}><DialogPopup>
+                <DialogHeader><DialogTitle>패널 표면 샘플</DialogTitle></DialogHeader>
+                <DialogPanel><FolderDescriptionPanel markdown={documentBody} onSave={async body => { setDocumentBody(body); open("패널 저장"); }}/></DialogPanel>
+              </DialogPopup></Dialog>
+            </Sample>
+          </section>
+        </div>
+      </div>
+    </div>
+  </article>;
+}
