@@ -107,8 +107,29 @@ describe("FolderInlineBoard document context menu", () => {
   });
 
   it("moves the same board item to another task and removes the source row only after success", async () => {
+    useDashboardStore.getState().setCatalog({
+      folders: [{
+        status: "open" as const,
+        version: 1,
+        archived: false,
+        id: "task-2",
+        name: "옮길 폴더",
+        parentFolderId: null,
+        projectPageId: "page-2",
+        sortOrder: 0,
+      }],
+      sessions: {},
+      sessionList: [],
+      boardItems: [documentItem],
+    });
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url === "/api/planner/starred-folders" && (init?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify({ items: [], nextCursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.startsWith("/api/board-items?")) {
         return new Response(JSON.stringify({ boardItems: [documentItem] }), {
           status: 200,
@@ -156,12 +177,19 @@ describe("FolderInlineBoard document context menu", () => {
       .find((item) => item.textContent?.trim() === "다른 폴더로 이동");
     expect(moveAction).not.toBeUndefined();
     flushSync(() => moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    const targetAction = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+    const findTargetAction = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("옮길 폴더"));
-    expect(targetAction).not.toBeUndefined();
+    await vi.waitFor(() => expect(findTargetAction()).not.toBeUndefined());
+    const targetAction = findTargetAction();
+    const findConfirmAction = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "이동");
+    expect(findConfirmAction()).not.toBeUndefined();
     flushSync(() => {
       targetAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    await vi.waitFor(() => expect(findConfirmAction()?.disabled).toBe(false));
+    const confirmAction = findConfirmAction();
+    flushSync(() => confirmAction!.click());
     for (let attempt = 0; attempt < 5 && container.querySelector(".v3-inline-board-row"); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
       flushSync(() => undefined);
