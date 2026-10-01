@@ -127,6 +127,17 @@ async function finishJudgement(h: ReturnType<typeof harness>) {
 }
 
 describe("card orchestration logical-input cost and durable replay", () => {
+  it("keeps accepted but unstarted cards pending across duplicate ticks and restart", async () => {
+    const state=durableState();
+    for (const h of [harness(state),harness(state)]) {
+      h.repository.pendingWorkers.mockImplementation(async()=>[{card_id:state.cards[0]!.id}] as never);
+      await h.coordinator.kick();
+      await h.coordinator.kick();
+      expect(h.launchDecision).not.toHaveBeenCalled();
+      expect(h.recordDispatch).not.toHaveBeenCalled();
+      expect(h.state.cards[0]!.status).toBe("queued");
+    }
+  });
   it("calls the model once for repeated unchanged polls and sufficient quota observation refreshes", async () => {
     const h = harness();
     await finishJudgement(h);

@@ -8,6 +8,7 @@ import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardOrchestrationRepository,type OrchestrationRun } from "../src/cards/card_orchestration_repository.js";
 import {hasContinuousLimitWindow} from "../src/schedule/resume_after_limit_continuity.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
+import { appendCardEventTx, prepareCardWorkSchema, recordWorkReceipt, consumeCardDelivery } from "./card-work-postgres-fixture.js";
 // Existing disposable harness; no DATABASE_URL or production schema is used.
 describe("durable card orchestration admissions", () => {
   let h: PagePostgresHarness,
@@ -26,6 +27,7 @@ describe("durable card orchestration admissions", () => {
   };
   beforeAll(async () => {
     h = await createPagePostgresHarness();
+    await prepareCardWorkSchema(h);
     await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql`INSERT INTO system_settings VALUES('card_dispatch','{"nodeConcurrency":{"default":1}}',1,NOW(),'migration')`;
     await h.sql.unsafe(
@@ -38,11 +40,10 @@ describe("durable card orchestration admissions", () => {
       ),
     );
     await h.sql`INSERT INTO folders(id,name) VALUES('orchestration-folder','실험')`;
-    await h.sql`ALTER TABLE sessions ADD COLUMN termination_event_id BIGINT,ADD COLUMN termination_reason TEXT`;
     await h.sql`CREATE TABLE soulstream_schedules(schedule_id TEXT PRIMARY KEY,session_id TEXT,source_tool TEXT,tool_use_id TEXT,status TEXT)`;
     const sql = createBoardYjsSqlAdapter(h.liveSql);
     repo = new CardOrchestrationRepository(async () => sql);
-    cards = new CardControlPlaneService(sql, { appendEventTx: async () => 1 });
+    cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
   }, 60000);
   afterAll(async () => h?.cleanup());
   beforeEach(async () => {
@@ -101,6 +102,7 @@ describe("durable card orchestration admissions", () => {
       leaseToken: r.lease_token,
       workerInput: {
         agentId: "roselin",
+        modelPreset: "worker-model",
         configuredModelPreset: null,
         folderId: "orchestration-folder",
         cardId: id,
@@ -156,8 +158,9 @@ describe("durable card orchestration admissions", () => {
       await h.sql`SELECT * FROM card_orchestration_dispatches`,
     ).toHaveLength(1);
     expect(
-      await h.sql`SELECT * FROM cards WHERE status='running'`,
+      await h.sql`SELECT * FROM cards WHERE status='queued' AND assignee_kind='agent' AND assignee_session_id IS NULL AND version=2`,
     ).toHaveLength(1);
+    expect(await h.sql`SELECT * FROM sessions WHERE session_id LIKE 'worker-%'`).toHaveLength(0);
   });
   it("rejects enabled FIFO bypass and stale card or policy versions", async () => {
     const id = await make(),
@@ -242,8 +245,19 @@ describe("durable card orchestration admissions", () => {
         cardId: id,
       }),
     ).toBe(true);
-    await h.sql`INSERT INTO sessions(session_id,card_id,node_id,status,termination_event_id) VALUES(${sid},${id},${target.nodeId},'error',1)`;
-    await repo.workerState(sid, "running");
+    await h.sql`INSERT INTO sessions(session_id,card_id,node_id,agent_id,model_preset,status) VALUES(${sid},${id},${target.nodeId},'roselin','worker-model','running')`;
+    const execution={registrationId:"first",executionCommandId:"first-command"};
+    await recordWorkReceipt(h,sid,"running",execution);
+    // A different live worker with the same profile/preset has no right to consume this admission.
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status) VALUES('wrong-worker',${target.nodeId},'roselin','worker-model','running')`;
+    const wrong={registrationId:"wrong",executionCommandId:"wrong-command"};
+    await recordWorkReceipt(h,"wrong-worker","running",wrong);
+    await expect(cards.startCardWork({actorKind:"agent",actorSessionId:"wrong-worker",cardId:id,expectedVersion:2,idempotencyKey:"wrong-start",execution:wrong})).rejects.toThrow("admission");
+    expect((await cards.getCard(id))?.card).toMatchObject({status:"queued",assignee_kind:"agent",assignee_session_id:null,version:2});
+    const start={actorKind:"agent" as const,actorSessionId:sid,cardId:id,expectedVersion:2,idempotencyKey:"first-start",execution};
+    await cards.startCardWork(start);
+    expect((await cards.startCardWork(start)).idempotent).toBe(true);
+    expect((await cards.getCard(id))?.card).toMatchObject({status:"running",assignee_kind:"session",assignee_session_id:sid,version:3});
     await repo.finish(r, "completed", "applied");
     for (const terminal of [1, 2]) {
       const detail = (await cards.getCard(id))!;
@@ -285,6 +299,8 @@ describe("durable card orchestration admissions", () => {
       marker.workerInput = {
         ...marker.workerInput,
         resume: true,
+        existingSession:true,
+        deliveryId:`resume-delivery-${terminal}`,
         priorTerminationEventId: terminal,
       };
       await cards.resumeDispatchedCard({
@@ -296,9 +312,15 @@ describe("durable card orchestration admissions", () => {
       });
       await repo.claimWorker(sid);
       expect(await repo.workerObserved(sid)).toBe(false);
-      await h.sql`UPDATE sessions SET termination_event_id=${terminal + 1},status='error' WHERE session_id=${sid}`;
+      await recordWorkReceipt(h,sid,"error",null,"limit_hit");
+      expect(await repo.workerObserved(sid)).toBe(false);
+      const current=(await repo.pendingWorkers())[0]!;
+      expect(await repo.authorizeWorker({runId:next.id,sessionId:sid,executionToken:current.launch_token,nodeId:target.nodeId,cardId:id})).toBe(true);
+      const execution={registrationId:`resume-${terminal}`,executionCommandId:`resume-command-${terminal}`};
+      await recordWorkReceipt(h,sid,"running",execution);
+      await consumeCardDelivery(h,`resume-delivery-${terminal}`,sid);
+      await cards.startCardWork({actorKind:"agent",actorSessionId:sid,cardId:id,expectedVersion:version+1,idempotencyKey:`resume-start-${terminal}`,execution});
       expect(await repo.workerObserved(sid)).toBe(true);
-      await repo.workerState(sid, "running");
       await repo.finish(next, "completed", "resumed");
     }
     expect(
@@ -332,6 +354,11 @@ describe("durable card orchestration admissions", () => {
       expired: true,
       launch_accepted: false,
     });
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status) VALUES(${sid},${target.nodeId},'roselin','worker-model','running')`;
+    const execution={registrationId:"expired-worker",executionCommandId:"expired-command"};
+    await recordWorkReceipt(h,sid,"running",execution);
+    await expect(cards.startCardWork({actorKind:"agent",actorSessionId:sid,cardId:id,expectedVersion:2,idempotencyKey:"expired-start",execution})).rejects.toThrow("admission");
+    expect((await cards.getCard(id))?.card).toMatchObject({status:"queued",assignee_kind:"agent",assignee_session_id:null,version:2});
   });
   it("denies the existing reset-time automatic schedule only for policy-owned cards",async()=>{
     const id=await make(),sid='automatic-resume';

@@ -7,6 +7,8 @@ import type { CardControlPlaneService, CardMutationChange } from "./card_control
 import type { CardDispatchRepository, DispatchCard } from "./card_dispatch_repository.js";
 import type { CardRow } from "./control_plane/card_types.js";
 export type CardTarget = {
+    sessionId?: string;
+    capacityClaimed?: boolean;
     nodeId: string;
     agentId: string;
     modelPreset: string | null;
@@ -82,6 +84,13 @@ export class CardDispatcher {
     sessionEnded(sessionId: string): Promise<void> {
         return this.enqueue(async () => {
             if (await this.options.orchestration?.ownsSession(sessionId)) { await this.options.orchestration?.decisionEnded?.(sessionId); return; }
+            for (const work of await this.options.repository.endedWork(sessionId)) {
+              const limited=isUsageLimitTermination(work.terminal_session);
+              if (work.reported && !limited) continue;
+              const cards=await this.options.cards(),detail=await cards.getCard(work.card_id);
+              if (detail?.card.status === "running" && detail.card.assignee_session_id === sessionId)
+                await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId:work.card_id,expectedVersion:detail.card.version,status:"blocked",blockedKind:limited ? "limit" : "no_report",blockedDetail:limited ? "세션 사용량 한도" : "해당 작업 실행이 보고·검수·질문 없이 끝남"});
+            }
             await this.reconcileTerminal(sessionId);
             await this.dispatchOnce();
         });
@@ -157,6 +166,7 @@ export class CardDispatcher {
         const detail = await cards.getCard(session.card_id);
         if (!detail || detail.card.status !== "running")
             return;
+        if (await this.options.repository.hasExplicitWork(session.card_id)) return;
         // A superseded session must not terminate the newer run of the same card.
         if ((await this.options.repository.latestSession(session.card_id))?.session_id !== sessionId)
             return;

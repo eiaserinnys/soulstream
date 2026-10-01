@@ -33,6 +33,7 @@ export interface CoordinatorOptions {
     card: DispatchCard,
     modelPreset?: string | null,
   ) => CardTarget;
+  resolveSessionTarget?: (card: DispatchCard) => Promise<CardTarget>;
   selectOrchestrator: (
     candidates: readonly OrchestrationCandidate[],
   ) => Promise<{
@@ -120,16 +121,20 @@ export class CardOrchestrationCoordinator {
       this.options.dispatch.limited(),
       this.options.dispatch.running(),
     ]);
+    const targets = new Map<string, CardTarget>();
+    for (const c of [...queue,...limited]) targets.set(c.id,await this.resolve(c));
+    // Accepted delivery can wait across ticks/restarts until the owner explicitly starts.
+    const pending = new Set((await this.options.repository.pendingWorkers()).map(d=>d.card_id));
     const eligible = selectEligibleCards(
-      [...queue, ...limited],
+      [...queue, ...limited].filter(c=>!pending.has(c.id)),
       occupancy,
       capacity,
-      (c) => this.options.resolveTarget(c),
+      (c) => targets.get(c.id)!,
     );
     if (!eligible.length) {
       await this.options.repository.note(
         "skipped",
-        queue.length || limited.length ? "no_eligible_capacity" : "empty_queue",
+        queue.length || limited.length ? [...targets.values()].filter(t=>!t.available).map(t=>t.reason).join("; ") || "no_eligible_capacity" : "empty_queue",
       );
       return;
     }
@@ -143,7 +148,7 @@ export class CardOrchestrationCoordinator {
         detail.questions.some((q) => q.answer === null)
       )
         continue;
-      const target = this.options.resolveTarget(card);
+      const target = await this.resolve(card);
       snapshot.push({
         cardId: card.id,
         cardVersion: card.version,
@@ -384,14 +389,14 @@ export class CardOrchestrationCoordinator {
         ...detail.card,
         folder_name: String(snap.folderName),
       } as DispatchCard;
-      const target = this.options.resolveTarget(card);
+      const target = await this.resolve(card);
       if (!target.available) continue;
       const latestSession =
         card.status === "blocked" && card.blocked_kind === "limit"
           ? await this.options.dispatch.latestSession(card.id)
           : null;
       const resume = !!latestSession && isUsageLimitTermination(latestSession);
-      const sessionId = resume ? latestSession!.session_id : randomUUID();
+      const sessionId = target.sessionId ?? (resume ? latestSession!.session_id : randomUUID());
       const input: Record<string, unknown> = {
         sessionId,
         cardId: card.id,
@@ -401,6 +406,8 @@ export class CardOrchestrationCoordinator {
         modelPreset: target.modelPreset,
         configuredModelPreset: card.model_preset,
         resume,
+        existingSession: !!target.sessionId || resume,
+        ...((target.sessionId || resume) ? {deliveryId: `card-admission:${run.id}:${card.id}`} : {}),
         priorTerminationEventId: latestSession?.termination_event_id ?? null,
         prompt: buildCardPrompt({
           cardId: card.id,
@@ -432,6 +439,7 @@ export class CardOrchestrationCoordinator {
             })),
         }),
       };
+      input.prompt = `${String(input.prompt)}\n배정 승인 카드: ${card.id}. 작업을 실제 시작할 때 get_card로 최신 version을 읽고 start_card_work(card_id, expected_version, idempotency_key)를 호출합니다. queued 카드는 이 admission과 현재 실행의 전달 소비가 확인된 경우에만 착수할 수 있습니다. 전달을 읽기만 한 상태는 착수가 아닙니다.`;
       const admission = {
         runId: run.id,
         leaseToken: run.lease_token,
@@ -469,6 +477,13 @@ export class CardOrchestrationCoordinator {
     );
     this.owned = null;
     this.dirty = true;
+  }
+  private async resolve(card: DispatchCard): Promise<CardTarget> {
+    if (card.assignee_kind === "session") {
+      if (!this.options.resolveSessionTarget) return {nodeId:"",agentId:"",modelPreset:null,available:false,reason:"session_target_resolver_unavailable"};
+      return this.options.resolveSessionTarget(card);
+    }
+    return this.options.resolveTarget(card);
   }
   private async reconcileWorkers() {
     await new CardOrchestrationWorkers(this.options).reconcile();

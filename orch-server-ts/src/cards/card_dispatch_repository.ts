@@ -1,3 +1,6 @@
+import { cardCapacitySessions } from "./card_capacity.js";
+import { endedCardWork } from "./card_work_lifecycle.js";
+import type { CardOwnerSession } from "./card_session_target.js";
 import type { CardRow, SqlClient } from "./control_plane/card_types.js";
 import { readCardDispatchSettings } from "./card_dispatch_settings.js";
 export type DispatchCard = CardRow & {
@@ -33,6 +36,13 @@ export class CardDispatchRepository {
     }
     async occupancy(): Promise<Record<string, number>> {
         const sql = await this.resolveSql();
+        // Disabled-policy legacy fixtures do not need the orchestration ledger.
+        const enabled=(await sql`SELECT (value->>'enabled')::boolean AS enabled FROM system_settings WHERE setting_key='card_orchestration'`)[0]?.enabled===true;
+        if (enabled) {
+          const rows=await cardCapacitySessions(sql), result:Record<string,number>={};
+          for (const row of rows) result[row.node_id]=(result[row.node_id]??0)+1;
+          return result;
+        }
         // Dispatch provenance uses the existing immutable operation ledger. Manually created sessions have no marker.
         const rows = await sql<{
             node_id: string;
@@ -48,6 +58,18 @@ export class CardDispatchRepository {
           AND r.operation_type='resume_card' AND r.payload_json->>'session_id'=s.session_id AND r.created_at>s.updated_at))
       GROUP BY op.payload_json->>'node_id'`;
         return Object.fromEntries(rows.map(row => [row.node_id, row.count]));
+    }
+    async ownerSession(id:string):Promise<CardOwnerSession | null> {
+        return (await (await this.resolveSql())<CardOwnerSession[]>`SELECT session_id,node_id,agent_id,model_preset,status,metadata FROM sessions WHERE session_id=${id}`)[0]??null;
+    }
+    async capacitySessionIds() { return new Set((await cardCapacitySessions(await this.resolveSql())).map(r=>r.session_id)); }
+    async hasExplicitWork(cardId:string) {
+      return (await (await this.resolveSql())`SELECT id FROM folder_operations WHERE target_id=${cardId} AND operation_type='start_card_work' LIMIT 1`).length>0;
+    }
+    async endedWork(id:string) {
+      const sql=await this.resolveSql();
+      if (!(await sql`SELECT id FROM folder_operations WHERE operation_type='start_card_work' AND actor_session_id=${id} LIMIT 1`).length) return [];
+      return endedCardWork(sql,id);
     }
     async session(sessionId: string): Promise<CardSession | null> {
         const sql = await this.resolveSql();

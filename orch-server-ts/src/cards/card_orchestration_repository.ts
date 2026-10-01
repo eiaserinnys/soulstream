@@ -1,3 +1,4 @@
+import { cardCapacitySessions } from "./card_capacity.js";
 import { randomUUID } from "node:crypto";
 import type {
   CandidateSnapshot,
@@ -297,17 +298,16 @@ export class CardOrchestrationRepository {
     const sql = await this.resolveSql();
     return (
       (
-        await sql`UPDATE card_orchestration_dispatches d SET launch_accepted=TRUE,updated_at=NOW() FROM cards c,system_settings p,card_orchestration_runs r WHERE p.setting_key='card_orchestration' AND (p.value->>'enabled')::boolean AND r.id=d.run_id AND r.policy_version=p.version AND d.run_id=${input.runId} AND d.session_id=${input.sessionId} AND d.card_id=${input.cardId} AND d.node_id=${input.nodeId} AND d.launch_token=${input.executionToken} AND d.state='launching' AND d.launch_deadline>NOW() AND NOT d.launch_accepted AND c.id=d.card_id AND c.status='running' RETURNING d.session_id`
+        await sql`UPDATE card_orchestration_dispatches d SET launch_accepted=TRUE,updated_at=NOW() FROM cards c,system_settings p,card_orchestration_runs r WHERE p.setting_key='card_orchestration' AND (p.value->>'enabled')::boolean AND r.id=d.run_id AND r.policy_version=p.version AND d.run_id=${input.runId} AND d.session_id=${input.sessionId} AND d.card_id=${input.cardId} AND d.node_id=${input.nodeId} AND d.launch_token=${input.executionToken} AND d.state='launching' AND d.launch_deadline>NOW() AND NOT d.launch_accepted AND c.id=d.card_id AND c.status='queued'
+          AND (c.assignee_kind='session' AND c.assignee_session_id=d.session_id OR c.assignee_kind='agent' AND c.assignee_agent_id=d.input->>'agentId') RETURNING d.session_id`
       ).length > 0
     );
   }
-  async workerObserved(id: string) {
-    const sql = await this.resolveSql();
-    return (
-      (
-        await sql`SELECT s.session_id FROM sessions s JOIN card_orchestration_dispatches d ON d.session_id=s.session_id AND d.state IN ('admitted','launching') WHERE s.session_id=${id} AND (COALESCE((d.input->>'resume')::boolean,FALSE)=FALSE OR s.status NOT IN ('completed','error','interrupted') OR s.termination_event_id IS DISTINCT FROM (d.input->>'priorTerminationEventId')::bigint)`
-      ).length > 0
-    );
+  async workerObserved(id: string, runId?:string, cardId?:string) {
+    const sql=await this.resolveSql();
+    const rows=await sql`SELECT state FROM card_orchestration_dispatches WHERE session_id=${id}
+      AND (${runId??null}::text IS NULL OR run_id=${runId??null}) AND (${cardId??null}::text IS NULL OR card_id=${cardId??null}) ORDER BY created_at DESC LIMIT 1`;
+    return rows[0]?.state === "running";
   }
 }
 /** Card lock, run fencing and node capacity admission are in the same mutation transaction. */
@@ -352,15 +352,17 @@ export async function assertPolicyAdmission(
     >`SELECT COALESCE((value->'nodeConcurrency'->>${input.nodeId})::int,(value->'nodeConcurrency'->>'default')::int) AS limit FROM system_settings WHERE setting_key='card_dispatch' FOR SHARE`
   )[0]?.limit;
   if (capacity === undefined) throw new Error("Missing node capacity");
-  const used =
-    (
-      await sql<
-        { count: number }[]
-      >`SELECT count(*)::int AS count FROM folder_operations op JOIN cards c ON c.id=op.target_id LEFT JOIN sessions s ON s.session_id=op.payload_json->>'session_id' AND s.card_id=c.id WHERE op.operation_type='dispatch_card' AND op.payload_json->>'node_id'=${input.nodeId} AND (s.status NOT IN ('completed','error','interrupted') OR s.session_id IS NULL AND c.status='running' AND op.id=(SELECT latest.id FROM folder_operations latest WHERE latest.target_id=c.id AND latest.operation_type='dispatch_card' ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1) OR c.status='running' AND EXISTS(SELECT 1 FROM folder_operations r WHERE r.target_id=c.id AND r.operation_type='resume_card' AND r.payload_json->>'session_id'=s.session_id AND r.created_at>s.updated_at))`
-    )[0]?.count ?? 0;
-  if (used >= capacity) throw new Error("Node capacity is full");
+  const occupied=await cardCapacitySessions(sql);
+  if (occupied.filter(r=>r.node_id===input.nodeId).length >= capacity && !occupied.some(r=>r.session_id===input.sessionId && r.node_id===input.nodeId)) throw new Error("Node capacity is full");
   const valid =
-    await sql`SELECT c.id FROM cards c JOIN folders f ON f.id=c.folder_id WHERE c.id=${input.cardId} AND NOT c.archived AND NOT f.archived AND c.assignee_kind<>'human' AND c.assignee_agent_id=${String(input.workerInput.agentId)} AND COALESCE(c.node_id,'eiaserinnys')=${input.nodeId} AND c.model_preset IS NOT DISTINCT FROM ${input.workerInput.configuredModelPreset ?? null} AND NOT EXISTS(SELECT 1 FROM card_questions q WHERE q.card_id=c.id AND q.answer IS NULL)`;
+    await sql`SELECT c.id FROM cards c JOIN folders f ON f.id=c.folder_id
+      LEFT JOIN sessions owner ON owner.session_id=c.assignee_session_id
+      WHERE c.id=${input.cardId} AND NOT c.archived AND NOT f.archived
+      AND ((c.assignee_kind='agent' AND c.assignee_agent_id=${String(input.workerInput.agentId)} AND COALESCE(c.node_id,'eiaserinnys')=${input.nodeId}
+        AND c.model_preset IS NOT DISTINCT FROM ${input.workerInput.configuredModelPreset ?? null})
+      OR (c.assignee_kind='session' AND owner.session_id=${input.sessionId} AND owner.node_id=${input.nodeId}
+        AND owner.agent_id=${String(input.workerInput.agentId)} AND owner.model_preset IS NOT DISTINCT FROM ${input.workerInput.modelPreset ?? null}))
+      AND NOT EXISTS(SELECT 1 FROM card_questions q WHERE q.card_id=c.id AND q.answer IS NULL)`;
   if (!valid.length) throw new Error("Card is no longer eligible");
-  await sql`INSERT INTO card_orchestration_dispatches(run_id,card_id,session_id,node_id,input,launch_token,state) VALUES(${input.runId},${input.cardId},${input.sessionId},${input.nodeId},${sql.json(input.workerInput)},${randomUUID()},'admitted')`;
+  await sql`INSERT INTO card_orchestration_dispatches(run_id,card_id,session_id,node_id,input,launch_token,state) VALUES(${input.runId},${input.cardId},${input.sessionId},${input.nodeId},${sql.json({...input.workerInput,admittedCardVersion:input.cardVersion+1})},${randomUUID()},'admitted')`;
 }

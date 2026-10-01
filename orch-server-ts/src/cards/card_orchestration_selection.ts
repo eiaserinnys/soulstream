@@ -20,20 +20,20 @@ export function validateDecisionSnapshot(
   return parsed;
 }
 export function selectEligibleCards<
-  T extends Pick<DispatchCard, "id" | "assignee_kind" | "assignee_agent_id">,
+  T extends Pick<DispatchCard, "id" | "assignee_kind" | "assignee_agent_id" | "assignee_session_id">,
 >(
   cards: readonly T[],
   occupancy: Record<string, number>,
   concurrency: Record<string, number>,
-  resolve: (card: T) => { nodeId: string; available: boolean },
+  resolve: (card: T) => { nodeId: string; available: boolean; capacityClaimed?: boolean },
 ): T[] {
   return cards.filter((card) => {
-    if (card.assignee_kind === "human" || !card.assignee_agent_id) return false;
+    if (card.assignee_kind === "session" ? !card.assignee_session_id : card.assignee_kind === "human" || !card.assignee_agent_id) return false;
     const target = resolve(card);
     return (
       target.available &&
-      (occupancy[target.nodeId] ?? 0) <
-        (concurrency[target.nodeId] ?? concurrency.default!)
+      (target.capacityClaimed || (occupancy[target.nodeId] ?? 0) <
+        (concurrency[target.nodeId] ?? concurrency.default!))
     );
   });
 }

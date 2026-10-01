@@ -13,15 +13,15 @@ import { makeTaskCreationHarness } from "../task/task_creation_harness.js";
 // Reuses folder.test.ts tool registration and task_creation.test.ts creation harness;
 // direct callbacks isolate the new card wire contract without opening an MCP server.
 const names = ["create_card", "list_cards", "get_card", "update_card_brief", "add_card_report", "add_card_comment",
-  "request_card_review", "ask_card_question", "move_card"];
+  "request_card_review", "ask_card_question", "move_card", "start_card_work"];
 const logger = pino({ level: "silent" });
 const card = { id: "card-1", folderId: "folder-1", title: "카드", status: "running", version: 3 };
 const detail = { card, reports: [{ title: "보고" }], questions: [], comments: [{ body: "지시 요점", kind: "spoken" }], sessions: [] };
-function harness() {
+function harness(task?:Record<string,unknown>) {
   const entries = new Map<string, { config: { inputSchema: z.ZodRawShape }; callback: (input: unknown) => Promise<any> }>();
   const service = new FolderService({ orch: { baseUrl: "https://orch.test", headers: { authorization: "Bearer test-service" } }, logger });
   registerFolderTools({ registerTool: (name: string, config: any, callback: any) => entries.set(name, { config, callback }) } as unknown as McpServer,
-    { folderService: service } as McpRuntime);
+    { folderService: service,taskManager:{getTask:()=>task} } as unknown as McpRuntime);
   return { entries, call: async (name: string, input: object) => {
     const entry = entries.get(name)!;
     return entry.callback(z.object(entry.config.inputSchema).parse({ caller_session_id: "session-1", ...input }));
@@ -29,7 +29,7 @@ function harness() {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("card MCP contract", () => {
-  it("registers nine card tools and removes every checklist item/section tool", () => {
+  it("registers explicit card work alongside existing card tools and removes every checklist item/section tool", () => {
     const { entries } = harness();
     expect([...entries.keys()]).toEqual(expect.arrayContaining(names));
     expect([...entries.keys()].filter(n => /checklist_(item|section)|set_card_status|list_my_turn_items/.test(n))).toEqual([]);
@@ -69,6 +69,26 @@ describe("card MCP contract", () => {
     const result = await harness().call("request_card_review", { card_id: "card-1" });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).toContain("보고 없이 검수 요청 불가");
+  });
+  it("derives work execution only from runtime and preserves supplied CAS/idempotency", async () => {
+    const fetch=vi.fn(async()=>new Response(JSON.stringify({card}),{status:200}));
+    vi.stubGlobal("fetch",fetch);
+    const runtimeIdentity={registrationId:"runtime-registration",executionCommandId:"runtime-command"};
+    const h=harness({executionRegistration:runtimeIdentity});
+    const result=await h.call("start_card_work",{card_id:"card-1",expected_version:3,idempotency_key:"stable",turnId:"attacker",execution:{registrationId:"attacker"}});
+    expect(result.isError).not.toBe(true);
+    const [url,init]=fetch.mock.calls[0]! as unknown as [string,RequestInit];
+    expect(url).toBe("https://orch.test/api/cards/card-1/start-work");
+    expect(JSON.parse(String(init.body))).toEqual({expectedVersion:3,idempotencyKey:"stable",execution:runtimeIdentity});
+    expect(h.entries.get("start_card_work")!.config.inputSchema).not.toHaveProperty("execution");
+    expect(h.entries.get("start_card_work")!.config.inputSchema).not.toHaveProperty("turnId");
+  });
+  it("denies a purpose execution or missing runtime identity before HTTP", async () => {
+    const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+    for (const task of [undefined,{executionRegistration:{registrationId:"reg",executionCommandId:"cmd"},orchestrationPurpose:{type:"card_orchestration_decision"}}]) {
+      expect((await harness(task).call("start_card_work",{card_id:"card-1",expected_version:3,idempotency_key:"denied"})).isError).toBe(true);
+    }
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("injects the same card context for agent and browser sessions using sessions.card_id", async () => {
     const snapshots: unknown[] = [];

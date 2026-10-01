@@ -87,6 +87,12 @@ export class FolderService {
     return this.cardMutation(params, "POST", "/comments", { body: params.text, kind: "spoken" });
   }
 
+  async startCardWork(params: FolderActorParams & { cardId: string; expectedVersion: number; idempotencyKey: string; reason?: string; execution: {registrationId:string;executionCommandId:string} }) {
+    return this.cardRequest("POST", `/api/cards/${encodeURIComponent(params.cardId)}/start-work`, {
+      expectedVersion:params.expectedVersion,idempotencyKey:params.idempotencyKey,reason:params.reason,execution:params.execution,
+    },params.actorSessionId ?? undefined);
+  }
+
   async requestCardReview(params: FolderActorParams & { cardId: string }) {
     return this.cardMutation(params, "POST", "/status", { status: "review" }, true);
   }

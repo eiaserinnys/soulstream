@@ -1,3 +1,4 @@
+import { resolveCardSessionTarget } from "./card_session_target.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
 import type { SessionCommandRouter } from "../session/session_command_router.js";
@@ -99,9 +100,10 @@ export async function createCardDispatchRuntime(options: {
         },
         { ...input, callerInfo: { source: "system" } },
       ),
-    sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string}) => {
+    sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string;deliveryId?:string}) => {
       const parsed = intervenePayload(sessionId, {
         text,
+        ...(admission?.deliveryId ? {delivery_id:admission.deliveryId,delivery_intent:"durable_next_turn",source:"card_orchestration",relation_key:admission.deliveryId,completion_id:admission.deliveryId} : {}),
         caller_info: { source: "system" },
       });
       if (!parsed.ok) throw new Error(parsed.message);
@@ -177,6 +179,17 @@ export async function createCardDispatchRuntime(options: {
     dispatch: legacyOptions.repository,
     settings: orchestrationSettings,
     resolveTarget: legacyOptions.resolveTarget,
+    resolveSessionTarget:async card=>{
+      const resolved=await resolveCardSessionTarget(card,id=>legacyOptions.repository.ownerSession(id),identity=>{
+        try {
+          options.router.selectNodeForCreate({nodeId:identity.nodeId,profileId:identity.agentId,modelPresetId:identity.modelPreset});
+          const preset=options.availability.resolveStaticForNode(identity.nodeId,identity.modelPreset);
+          return strictOrchestrationUsage(identity.nodeId,preset,options.usageSnapshot(),new Date(),15);
+        } catch(error) {return {available:false,reason:String(error)};}
+      });
+      return {nodeId:resolved.nodeId??"",agentId:resolved.agentId??"",modelPreset:resolved.modelPreset??null,available:resolved.available,reason:resolved.reason,
+        ...(resolved.sessionId?{sessionId:resolved.sessionId,capacityClaimed:(await legacyOptions.repository.capacitySessionIds()).has(resolved.sessionId)}:{})};
+    },
     selectOrchestrator,
     ensureFolder: async (settings) => {
       const explicit = settings.policy.sessionFolderId;

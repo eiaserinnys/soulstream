@@ -9,6 +9,7 @@ import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 
 const mutations:readonly ["POST" | "PATCH",string,CardOperation][]=[
   ["POST","/api/cards","create_card"],["PATCH","/api/cards/:id","update_card"],
+  ["POST","/api/cards/:id/start-work","start_card_work"],
   ["POST","/api/cards/:id/status","set_card_status"],["POST","/api/cards/:id/move","move_card"],
   ["POST","/api/cards/:id/queue-position","reorder_card_queue"],["POST","/api/cards/:id/reports","add_card_report"],
   ["POST","/api/cards/:id/comments","add_card_comment"],
@@ -58,6 +59,7 @@ export function registerCardRoutes(app:FastifyInstance,options:FolderRouteOption
           if (!verification.ok) throw Object.assign(new Error("Trusted service authorization required"),{ statusCode:verification.statusCode });
           actor={ actorKind:"agent" as const,actorSessionId:sessionId };
         } else actor=await dashboardFolderActor(request,options);
+        if (operation === "start_card_work" && actor.actorKind !== "agent") throw Object.assign(new Error("Trusted assignee session required"),{statusCode:403});
         const result=await executeCardOperation(service,operation,operation === "answer_card_question" ? { ...body,questionId:request.params.qid } : body,request.params.id,actor);
         return reply.code(operation === "create_card" || operation === "add_card_report" || operation === "add_card_comment" || operation === "ask_card_question" ? 201 : 200).send(result);
       } catch(error) { return folderOperationError(reply,error); }
