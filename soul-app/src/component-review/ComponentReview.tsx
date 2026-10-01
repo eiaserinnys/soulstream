@@ -11,12 +11,14 @@ import { ReviewChat } from './ReviewChat';
 import { ReviewProject } from './ReviewProject';
 import { ReviewSettings } from './ReviewSettings';
 import { ReviewSurfaces } from './ReviewSurfaces';
+import { ReviewBoard } from './ReviewBoard';
 import { folders } from './fixtures';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
   { value: 'project', label: '프로젝트' }, { value: 'settings', label: '선택·설정' },
   { value: 'surfaces', label: '표면' },
+  { value: 'board', label: '보드' },
 ] as const;
 type Section = typeof sections[number]['value'];
 
@@ -52,7 +54,8 @@ function Gallery() {
     </View>
     <SettingsSegmentedControl<Section> id="review-section" value={section} onChange={setSection} options={sections} />
     {section === 'rows' ? <ReviewRows /> : section === 'chat' ? <ReviewChat />
-      : section === 'project' ? <ReviewProject /> : section === 'settings' ? <ReviewSettings /> : <ReviewSurfaces />}
+      : section === 'project' ? <ReviewProject /> : section === 'settings' ? <ReviewSettings />
+        : section === 'board' ? <ReviewBoard /> : <ReviewSurfaces />}
   </ScrollView>;
 }
 
