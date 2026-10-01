@@ -103,6 +103,7 @@ async function waitForPostgres(sql: SqlClient): Promise<void> {
 
 
 async function createMinimalScheduleSchema(sql: SqlClient): Promise<void> {
+  await sql`CREATE TABLE system_settings (setting_key TEXT PRIMARY KEY, value JSONB NOT NULL)`;
   await sql`
     CREATE TABLE sessions (
       session_id TEXT PRIMARY KEY,
@@ -119,6 +120,7 @@ async function createMinimalScheduleSchema(sql: SqlClient): Promise<void> {
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       agent_id TEXT,
       caller_session_id TEXT,
+      card_id TEXT,
       termination_reason TEXT,
       termination_event_id INTEGER
     )
