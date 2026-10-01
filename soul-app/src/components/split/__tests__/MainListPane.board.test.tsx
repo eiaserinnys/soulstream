@@ -26,20 +26,22 @@ beforeEach(() => {
 test('기존 데일리는 유지하고 보드는 오늘 피드 대신 전체 인증 목록을 읽는다', async () => {
   useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
   const screen = render(<MainListPane />);
-  expect(screen.getByText('기존 데일리')).toBeTruthy();
-  expect(mockList).not.toHaveBeenCalled();
-  await act(async () => fireEvent.press(screen.getByLabelText('보드')));
+  expect(screen.queryByText('기존 데일리')).toBeNull();
   await waitFor(() => expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   expect(mockList).toHaveBeenCalledWith(undefined);
   expect(screen.getByTestId('postit-card-draft')).toBeTruthy();
   expect(screen.queryByLabelText('완료 포함')).toBeNull();
+  await act(async () => fireEvent.press(screen.getByLabelText('데일리 기록')));
+  expect(screen.getByText('기존 데일리')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
+  expect(mockList).toHaveBeenCalledTimes(1);
 });
 
 test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮겨도 폴더 옵션을 전파하지 않는다', async () => {
   useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } });
   const screen = render(<MainListPane />);
   expect(screen.getByText('false')).toBeTruthy();
-  await act(async () => fireEvent.press(screen.getByLabelText('보드')));
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await waitFor(() => expect(mockList).toHaveBeenCalledWith('folder-1'));
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
   await act(async () => fireEvent.press(screen.getByLabelText('숨긴 완료 카드 보기')));
@@ -47,7 +49,7 @@ test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮
   await act(async () => fireEvent.press(screen.getByLabelText('기존 보기')));
   expect(screen.getByText('true')).toBeTruthy();
   await act(async () => useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } }));
-  await act(async () => fireEvent.press(screen.getByLabelText('보드')));
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await waitFor(() => expect(mockList).toHaveBeenCalledWith(undefined));
   expect(screen.getByTestId('postit-card-card-1')).toBeTruthy();
 });
@@ -56,7 +58,7 @@ test('보드 카드 탭은 기존 카드 오버레이를 열고 목록 오류는
   useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' }, selectedCardId: null });
   mockList.mockRejectedValueOnce(new Error('목록 조회 실패'));
   const screen = render(<MainListPane />);
-  await act(async () => fireEvent.press(screen.getByLabelText('보드')));
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await waitFor(() => expect(screen.getByText('목록 조회 실패')).toBeTruthy());
   await act(async () => fireEvent.press(screen.getByLabelText('보드 다시 조회')));
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
@@ -69,8 +71,8 @@ test('상태 저장 후 상세 row가 합쳐져도 인증 목록의 최신 활�
   mockList.mockResolvedValue({ cards: [card] });
   useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
   const screen = render(<MainListPane />);
-  await act(async () => fireEvent.press(screen.getByLabelText('보드')));
-  expect(screen.getByText('최신 보고 원문')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
+  await waitFor(() => expect(screen.getByText('최신 보고 원문')).toBeTruthy());
   const { latestActivity: _activity, ...detailRow } = card;
   await act(async () => useCardStore.getState().putCard({ ...detailRow, version: card.version + 1, status: 'done' }));
   expect(screen.getByText('최신 보고 원문')).toBeTruthy();

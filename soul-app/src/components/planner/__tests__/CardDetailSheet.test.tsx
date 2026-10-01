@@ -54,7 +54,7 @@ test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 
 });
 
 test('검수 상태는 단어로만 표시하고 완료 캡만 기존 API를 부른다', async () => {
-  const reviewing = { ...detail, card: { ...card, status: 'review' as const } };
+  const reviewing = { ...detail, questions: [], card: { ...card, status: 'review' as const } };
   const api = { getCard: jest.fn().mockResolvedValue(reviewing), setCardStatus: jest.fn().mockResolvedValue({ card, folderId: card.folderId }) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());

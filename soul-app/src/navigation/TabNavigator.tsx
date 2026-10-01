@@ -43,6 +43,7 @@ import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { ROOT_SECTION_CONFIG, type RootSectionKey } from './rootSectionConfig';
 import { RootSectionHeaderTitle } from '../components/navigation/RootSectionHeaderTitle';
 import { DailyHeaderActions } from '../components/planner/DailyHeaderActions';
+import { CardHomeScreen } from '../screens/CardHomeScreen';
 import {
   PhonePanelHistoryProvider,
   usePhonePanelHistory,
@@ -86,6 +87,7 @@ export type RootTabParamList = {
 
 export type DailyStackParamList = {
   Daily: undefined;
+  DailyHistory: undefined;
   FolderWorkspace: { folderPageId: string; folderTitle: string; folderId?: string };
   CardDetail: { cardId: string };
 };
@@ -146,6 +148,13 @@ function rootScreenOptions(section: RootSectionKey) {
 }
 
 function PhoneDailyScreen({ navigation }: NativeStackScreenProps<DailyStackParamList, 'Daily'>) {
+  const t = useTokens();
+  useLayoutEffect(() => { navigation.setOptions({ headerRight: () => <LiquidGlassButton iconOnly accessibilityLabel="기존 데일리 기록" onPress={() => navigation.navigate('DailyHistory')}>
+    <Ionicons name="today-outline" size={t.iconSize.standard} color={t.colors.textPrimary} /></LiquidGlassButton> }); }, [navigation, t]);
+  return <CardHomeScreen onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })} />;
+}
+
+function PhoneDailyHistoryScreen({ navigation }: NativeStackScreenProps<DailyStackParamList, 'DailyHistory'>) {
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -180,6 +189,7 @@ function DailyNavigator() {
   return (
     <DailyStack.Navigator screenOptions={stackScreenOptions(t)}>
       <DailyStack.Screen name="Daily" component={PhoneDailyScreen} options={rootScreenOptions('DailyTab')} />
+      <DailyStack.Screen name="DailyHistory" component={PhoneDailyHistoryScreen} options={{ title: '데일리 기록' }} />
       <DailyStack.Screen
         name="FolderWorkspace"
         component={PhoneDailyFolderWorkspace}

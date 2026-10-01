@@ -6,7 +6,7 @@ import type { CardDto } from '../../api/cardTypes';
 import { useTokens } from '../../theme';
 import { createPostItRoles, type PostItVariant } from '../../theme/postItRoles';
 import { postItActivityText } from '../../lib/postit-activity';
-import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
+import { useCardTransition } from '../../hooks/useCardTransition';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
@@ -20,8 +20,8 @@ export function postItRotation(id: string) {
 }
 
 /** Shared paper presentation. Compact changes paper tracks, never scales text or touch targets. */
-export function PostItCard({ api, card, variant = 'full', onOpen }: {
-  api: ApiClient | null; card: CardDto; variant?: PostItVariant; onOpen(): void;
+export function PostItCard({ api, card, variant = 'full', onOpen, onMenu }: {
+  api: ApiClient | null; card: CardDto; variant?: PostItVariant; onOpen(): void; onMenu?(): void;
 }) {
   const t = useTokens();
   const roles = createPostItRoles(t, variant);
@@ -33,7 +33,7 @@ export function PostItCard({ api, card, variant = 'full', onOpen }: {
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
   const name = card.assigneeKind === 'human' ? card.assigneeUserId ?? '사용자'
     : card.assigneeKind ? resolveSessionAgentLabel(identity) : '담당 미지정';
-  const { run, pending } = useCardActions(api);
+  const { transition, pending } = useCardTransition(api, card.id);
   const activity = card.latestActivity;
   const body = activity ? postItActivityText(activity) : card.request || '아직 지시나 보고가 없습니다.';
   return <AppGlassCard role="canvas" cornerRadius={roles.radius}>
@@ -57,9 +57,11 @@ export function PostItCard({ api, card, variant = 'full', onOpen }: {
           <Text style={{ ...roles.label, flex: 1, minWidth: 0 }} numberOfLines={1}>{name}</Text>
           <CardStatusChip card={card} board />
         </Pressable>
-        {card.status === 'review' ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={pending || !api}
+        {onMenu ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={pending || !api}
+          accessibilityLabel={`${card.title} 상태 메뉴`} onPress={onMenu}><Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textSecondary} /></GlassButton>
+          : card.status === 'review' ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={pending || !api}
           accessibilityLabel="완료" surfaceTestID={`postit-complete-${card.id}`} onPress={() => {
-            if (api) void run(() => api.setCardStatus(card.id, 'done', card.version, cardOperationId()));
+            void transition(card, 'done');
           }}><Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} /></GlassButton> : null}
       </View>
     </View>

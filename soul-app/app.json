@@ -64,6 +64,7 @@
       ],
       "./plugins/withReactNativeTurboModuleExceptionFix",
       "./plugins/withExtensionStoragePod",
+      "./plugins/withNativePointerEvents",
       "expo-web-browser",
       "expo-notifications",
       [

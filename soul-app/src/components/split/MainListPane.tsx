@@ -38,9 +38,13 @@ export function MainListPane({
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   const insets = useSafeAreaInsets();
   const activeSection = useUIStore((state) => state.activeSection);
-  const [view, setView] = useState<'existing' | 'board'>('existing');
+  const [views, setViews] = useState<Record<string, 'existing' | 'board'>>({ global: 'board' });
   const scope = useAuthScopeGeneration();
   const displayOwner = `${scope}:${activeSection.kind === 'project' ? activeSection.folderId : 'global'}`;
+  const viewKey = activeSection.kind === 'project' ? activeSection.folderId : 'global';
+  const view = views[viewKey] ?? (viewKey === 'global' ? 'board' : 'existing');
+  const [visited, setVisited] = useState<Record<string, boolean>>({ global: true });
+  const setView = (value: 'existing' | 'board') => { setViews((old) => ({ ...old, [viewKey]: value })); if (value === 'board') setVisited((old) => ({ ...old, [viewKey]: true })); };
   const [completed, setCompleted] = useState({ owner: displayOwner, includeCompleted: false });
   const cardDisplay = { includeCompleted: completed.owner === displayOwner && completed.includeCompleted,
     onChange: (includeCompleted: boolean) => setCompleted({ owner: displayOwner, includeCompleted }) };
@@ -52,7 +56,7 @@ export function MainListPane({
   const searchFocusRequestId = useSearchStore((state) => state.focusRequestId);
   const searchInputRef = useRef<TextInput>(null);
   const title = activeSection.kind === 'daily'
-    ? '데일리'
+    ? view === 'board' ? '카드' : '데일리 기록'
     : folders.find((folder) => folder.id === activeSection.folderId)?.name ?? '프로젝트';
   useEffect(() => {
     if (showSearch && searchFocusRequestId > 0) {
@@ -106,11 +110,13 @@ export function MainListPane({
       </TabletPaneHeader>
       {!showSearch ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
         <SettingsSegmentedControl<'existing' | 'board'> id="tablet-card-view" value={view} onChange={setView}
-          options={[{ value: 'existing', label: '기존 보기' }, { value: 'board', label: '보드' }]} />
+          options={[{ value: 'existing', label: activeSection.kind === 'daily' ? '데일리 기록' : '기존 보기' }, { value: 'board', label: '카드 보드' }]} />
       </View> : null}
       <View style={styles.body}>
-        {view === 'board' ? <CardBoardWorkspace api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
-          cardDisplay={cardDisplay} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} /> : null}
+        {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>
+          <CardBoardWorkspace key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
+            cardDisplay={cardDisplay} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
+        </View> : null}
         {view === 'existing' && activeSection.kind === 'daily' ? (
           <DailyPlannerScreen
             ref={dailyRef}

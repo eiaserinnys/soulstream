@@ -11,12 +11,12 @@ import { GlassButton } from '../GlassSurface';
 import { FolderSelectionSheet } from './FolderSelectionSheet';
 import { cardStyles } from './Card.styles';
 
-export function CardCreateSheet({ api, onClose }: { api: ApiClient | null; onClose(): void }) {
+export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { api: ApiClient | null; onClose(): void; folderId?: string }) {
   const t = useTokens();
   const styles = useMemo(() => cardStyles(t), [t]);
   const remembered = useSettingsStore((state) => state.cardAssignments[state.serverUrl]);
   const folders = useSessionStore((state) => state.catalog.folders);
-  const [folderId, setFolderId] = useState(remembered?.folderId ?? '');
+  const [folderId, setFolderId] = useState(initialFolderId ?? remembered?.folderId ?? '');
   const [title, setTitle] = useState('');
   const [request, setRequest] = useState('');
   const [selecting, setSelecting] = useState(false);

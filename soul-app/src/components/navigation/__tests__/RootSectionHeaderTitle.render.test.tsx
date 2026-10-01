@@ -25,7 +25,7 @@ test.each([
   const icon = screen.getByTestId('root-header-icon-DailyTab');
   expect(StyleSheet.flatten(root.props.style)).toMatchObject({ minHeight });
   expect(StyleSheet.flatten(root.props.style)).not.toHaveProperty('height');
-  expect(title.props.children).toBe('데일리');
+  expect(title.props.children).toBe('카드');
   expect(title.props.numberOfLines).toBe(1);
   expect(title.props.ellipsizeMode).toBe('tail');
   expect(title.props.maxFontSizeMultiplier).toBe(2);

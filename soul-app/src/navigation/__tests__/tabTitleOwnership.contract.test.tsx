@@ -75,7 +75,7 @@ test('6개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
   const roots = stacks.map((capture) => capture.screens[0]);
 
   expect(roots.map((screen) => [screen.name, screen.options.title])).toEqual([
-    ['Daily', '데일리'],
+    ['Daily', '카드'],
     ['Starred', '중요 작업'],
     ['ProjectList', '프로젝트'],
     ['Feed', '피드'],
@@ -102,27 +102,22 @@ test('6개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
   }
 });
 
-test('Daily phone root header는 44pt icon-only 액션 두 개만 제공한다', () => {
+test('card home header preserves daily history access with a native hit target', () => {
   renderStackNavigators();
   const dailyScreen = getNativeStackCaptures()[0]!.screens[0]!;
   const navigation = { setOptions: jest.fn(), navigate: jest.fn() };
   render(React.createElement(dailyScreen.component, {
-    route: { key: 'daily', name: 'Daily' },
-    navigation,
+    route: { key: 'daily', name: 'Daily' }, navigation,
   }));
   const options = navigation.setOptions.mock.calls.at(-1)?.[0];
   const header = render(React.createElement(options.headerRight));
-  const review = header.getByLabelText('오늘 작업 검토');
-  const create = header.getByLabelText('새 작업');
-  for (const action of [review, create]) {
-    const style = StyleSheet.flatten(action.props.style);
-    expect(style.minWidth).toBeGreaterThanOrEqual(44);
-    expect(style.minHeight).toBeGreaterThanOrEqual(44);
-  }
-  fireEvent.press(review);
-  fireEvent.press(create);
-  expect(mockOpenDailyReview).toHaveBeenCalledTimes(1);
-  expect(mockOpenDailyNewFolder).toHaveBeenCalledTimes(1);
+  const history = header.getByLabelText('기존 데일리 기록');
+  const style = StyleSheet.flatten(history.parent?.props.style);
+  expect(style.minWidth).toBeGreaterThanOrEqual(44);
+  expect(style.minHeight).toBeGreaterThanOrEqual(44);
+  fireEvent.press(history);
+  expect(navigation.navigate).toHaveBeenCalledWith('DailyHistory');
+  expect(getNativeStackCaptures()[0]!.screens.some((screen) => screen.name === 'DailyHistory')).toBe(true);
 });
 
 test('Feed phone root는 native title을 보존하되 large title과 toolbar 검색 통합을 허용하지 않는다', () => {
@@ -216,3 +211,5 @@ function read(relativePath: string): string {
 
 // These route contracts isolate screen bodies, including the new card detail route.
 jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: () => null, CardDetailSheet: () => null }));
+
+jest.mock('../../screens/CardHomeScreen', () => ({ CardHomeScreen: () => null }));

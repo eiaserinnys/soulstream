@@ -51,23 +51,32 @@ export const fixtureOptions = [
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
-export function createReviewApi(state: FixtureState = 'normal') {
+export function createReviewApi(state: FixtureState = 'normal', options: { home?: boolean; emptyReview?: boolean; failWrites?: boolean } = {}) {
   const cards = new Map(initialCards.map((card) => [card.id, { ...card }]));
+  if (options.home) for (let index = 1; index <= 4; index++) cards.set(`public-review-${index}`, { ...makeCard('review'), id: `public-review-${index}`, title: `검수할 공개 예시 ${index}`, latestActivity: { kind: 'report', body: '같은 제목과 본문으로 카드 크기와 읽기 흐름을 확인합니다.', format: 'markdown', createdAt: time } });
+  if (options.emptyReview) for (const [id, card] of cards) if (card.status === 'review') cards.delete(id);
   const read = async <T,>(value: T): Promise<T> => {
     if (state === 'error') throw new Error('공개 예시: 목록을 불러오지 못했습니다.');
     if (state === 'loading') return new Promise(() => {});
     return value;
   };
-  const api: Pick<ApiClient, 'listCards' | 'getCard' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+  const api: Pick<ApiClient, 'listCards' | 'getCard' | 'createCard' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
     listCards: async (folderId) => read({ cards: state === 'empty' ? [] : [...cards.values()].filter((card) => !folderId || card.folderId === folderId) }),
     getCard: async (id) => {
       const card = cards.get(id);
       if (!card) throw new Error('알 수 없는 공개 예시 카드');
-      return { card, reports: [], comments: [], questions: [], sessions: [] };
+      return { card, reports: card.status === 'review' || card.status === 'done' ? [{ id: `report-${id}`, cardId: id, title: '공개 보고', format: 'markdown', body: '변경을 확인해 주세요.', createdAt: time }] : [], comments: [], questions: card.blockedKind === 'question' ? [{ id: 'public-question', cardId: id, sessionId: 'public-session', text: '공개 질문입니다.', options: null, answer: null, askedAt: time }] : [], sessions: [] };
     },
-    setCardStatus: async (id, status) => {
+    createCard: async (body) => {
+      if (options.failWrites) throw new Error('공개 예시: 저장 실패');
+      const card = { ...makeCard('todo'), id: `public-draft-${cards.size}`, title: body.title, request: body.request, folderId: body.folderId };
+      cards.set(card.id, card); return { card, folderId: card.folderId };
+    },
+    setCardStatus: async (id, status, expectedVersion) => {
+      if (options.failWrites) throw new Error('공개 예시: 저장 실패');
       const current = cards.get(id);
       if (!current) throw new Error('알 수 없는 공개 예시 카드');
+      if (current.version !== expectedVersion) throw new Error('공개 예시: 버전 충돌');
       const card = { ...current, status, version: current.version + 1 };
       cards.set(id, card);
       return { folderId: card.folderId, card };
