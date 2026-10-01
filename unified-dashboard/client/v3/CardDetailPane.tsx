@@ -48,14 +48,14 @@ export function CardDetailPane({cardId,onClose,onOpenSession}: {cardId:string;fo
  };
  if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;
  return <article ref={surface} className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim" data-liquid-glass-webgl={webglActive?"true":undefined} data-testid="card-detail">
-  <header className="v3-folder-header v3-workspace-toolbar">
+  <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
    <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
    <CardStatusChip card={card}/>
    <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
    <div className="v3-folder-header-actions"><DashboardIconCap label="완료" disabled={pending||card.status!=="review"} onClick={()=>void complete()}><Check className="h-4 w-4"/></DashboardIconCap></div>
   </header>
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
-  <div className="v3-detail-scroll v3-card-panel-scroll" ref={scroll}>
+  <div className="v3-detail-scroll v3-card-panel-scroll v3-detail-gutter" ref={scroll}>
    <div className="v3-task-detail-content">
    <section className="v3-detail-section"><div className="v3-task-default-values"><span>{agentName??"담당 미지정"}</span>{nodeId?<span>{nodeId}</span>:null}{model?<span>{model}</span>:null}</div></section>
    <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} onOpenSession={onOpenSession}/></section>
