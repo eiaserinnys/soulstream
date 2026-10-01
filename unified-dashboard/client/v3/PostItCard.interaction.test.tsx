@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { useCardNavigation } from "./card-navigation";
+import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { PostItCard } from "./PostItCard";
 import { reviewCard } from "./components-review-fixtures";
 
@@ -34,4 +35,13 @@ it("keeps the review action independent, pending-disabled, and retryable after f
   await act(async()=>{reject(new Error("저장 실패"));await Promise.resolve();});
   expect(button.disabled).toBe(false);
   await act(async()=>{button.click();await Promise.resolve();});expect(mutate).toHaveBeenCalledTimes(2);
+});
+
+it.each([14,17,18] as const)("updates card and grid proportions from chat preference %i", async fontSize => {
+  await act(()=>useDashboardStore.setState({chatFontSize:fontSize}));
+  await act(()=>root.render(<PostItCard card={reviewCard}/>));
+  const card=element.querySelector<HTMLElement>(".v3-postit-card")!;
+  expect(card.style.getPropertyValue("--postit-scale")).toBe(String(fontSize/17));
+  expect(card.style.getPropertyValue("--postit-font-size")).toBe(`${fontSize}px`);
+  await act(()=>useDashboardStore.setState({chatFontSize:14}));
 });

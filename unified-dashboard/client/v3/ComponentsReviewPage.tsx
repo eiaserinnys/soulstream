@@ -109,7 +109,7 @@ export function ComponentsReviewPage() {
                 <CardRowView card={{...reviewCard, title: "상태별 같은 카드", request: "", id: "compare-no-preview"}}
                   assignee={reviewSession} onOpen={() => open("카드 비교")}/>
               </Sample>
-              <Sample name="PostItCardView / PostItGrid" state="320×280 · 긴 제목 · 빈 본문 · 담당 없음 · 모든 상태 · 고정 회전">
+              <Sample name="PostItCardView / PostItGrid" state="채팅 글자 비율 · 상태 변경 · 사유 입력 · 질문 · 로컬 샘플">
                 <PostItCardSamples onOpen={open}/>
               </Sample>
               <Sample name="PlannerFolderCardView" state="하위 폴더 · 관리 캡">

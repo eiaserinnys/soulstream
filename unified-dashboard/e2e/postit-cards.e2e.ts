@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
+import { DEFAULT_CHAT_FONT_SIZE } from "../../packages/soul-ui/src/lib/chat-typography";
 import { reviewCard } from "../client/v3/components-review-fixtures";
 
 const output=path.resolve("../../../.local/artifacts/20261001-postit-product");
@@ -75,7 +76,7 @@ for(const width of [390,1440,1920]) test(`main and folder at ${width}`,async({pa
     if(!finishOnly) {
     expect(state.detailReads).toHaveLength(0);
     const metrics=await geometry(page);expect(metrics.length).toBe(6);
-    metrics.forEach(card=>{expect(card.width).toBe(320);expect(card.height).toBe(280);expect(card.bodyFont).toBe("17px");expect(card.bodyHeight).toBe("25px");expect(card.footerTrack).toBe(226);if(card.action)expect(card.action).toBe(32);});
+    metrics.forEach(card=>{expect(card.width).toBe(Math.round(320*DEFAULT_CHAT_FONT_SIZE/17));expect(card.height).toBe(Math.round(280*DEFAULT_CHAT_FONT_SIZE/17));expect(card.bodyFont).toBe(`${DEFAULT_CHAT_FONT_SIZE}px`);expect(parseFloat(card.bodyHeight)).toBeCloseTo(25*DEFAULT_CHAT_FONT_SIZE/17,2);expect(card.footerTrack).toBeGreaterThan(card.bodyTrack);if(card.action)expect(card.action).toBe(32);});
     expect(state.external).toEqual([]);
     const rotations=metrics.map(card=>card.transform);
     await page.reload();await expect(page.locator(".v3-postit-card").first()).toBeVisible();
@@ -110,7 +111,7 @@ for(const width of [390,1440,1920]) test(`main and folder at ${width}`,async({pa
   if(folderOnly)expect(state.mutations).toHaveLength(0);
   await capture(page,`folder-${width}`);
   if(phase!=="before") {
-    const metrics=await geometry(page);metrics.forEach(card=>{expect(card.width).toBe(320);expect(card.height).toBe(280);expect(card.footerTrack).toBe(226);});
+    const metrics=await geometry(page);metrics.forEach(card=>{expect(card.width).toBe(Math.round(320*DEFAULT_CHAT_FONT_SIZE/17));expect(card.height).toBe(Math.round(280*DEFAULT_CHAT_FONT_SIZE/17));expect(card.footerTrack).toBeGreaterThan(card.bodyTrack);});
     writeFileSync(path.join(output,`metrics-${width}.json`),JSON.stringify(metrics,null,2));
   }
 });
