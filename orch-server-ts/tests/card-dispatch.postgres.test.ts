@@ -94,11 +94,12 @@ describe("card dispatch and session lifecycle", () => {
         expect((await cards.getCard(first))!.card.status).toBe('running');
         expect((await cards.getCard(second))!.card.status).toBe('queued');
     });
-    it("blocks a running card with no_report when its session ends without a report and frees the slot", async () => {
+    it.each(["completed","interrupted","error"])("keeps running work after %s while releasing the execution capacity", async status => {
         const { id, sessionId } = await start();
         const next = await make('次', true);
-        await terminal(sessionId);
-        expect((await cards.getCard(id))!.card).toMatchObject({ status: 'blocked', blocked_kind: 'no_report', blocked_detail: '세션이 보고 없이 끝남' });
+        await h.sql`UPDATE sessions SET status=${status} WHERE session_id=${sessionId}`;
+        await dispatcher.sessionEnded(sessionId);
+        expect((await cards.getCard(id))!.card).toMatchObject({ status: 'running', blocked_kind: null });
         expect((await cards.getCard(next))!.card.status).toBe('running');
     });
     it("releases a failed creation reservation when the director retries the card", async () => {

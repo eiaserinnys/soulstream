@@ -22,6 +22,7 @@ describe("card comments HTTP, storage, and delivery", () => {
 
   beforeAll(async () => {
     h = await createPagePostgresHarness();
+    await h.sql`ALTER TABLE sessions ADD COLUMN model_preset TEXT, ADD COLUMN metadata JSONB`;
     await h.sql`INSERT INTO folders(id,name) VALUES ('comment-folder','커멘트')`;
     const sql = createBoardYjsSqlAdapter(h.liveSql);
     cards = new CardControlPlaneService(sql, {
@@ -61,6 +62,57 @@ describe("card comments HTTP, storage, and delivery", () => {
     return created.operation.target_id;
   }
 
+  it("sends actual external state changes once to the captured owner, excluding same state, own changes and done",async()=>{
+    const cardId=await makeCard(),otherId=await makeCard("다른 카드");
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running'),('other','running')`;
+    await h.sql`UPDATE cards SET assignee_session_id='owner',assignee_kind='session' WHERE id=${cardId}`;
+    await h.sql`UPDATE cards SET assignee_session_id='other',assignee_kind='session' WHERE id=${otherId}`;
+    const input={...human,cardId,status:"running" as const,idempotencyKey:key()};
+    await cards.setCardStatus(input);await dispatcher.drain();
+    expect(messages).toHaveBeenCalledOnce();expect(messages.mock.calls[0]).toEqual([
+      'owner',expect.stringContaining('할 일→실행 중'),undefined,expect.objectContaining({deliveryId:expect.stringContaining(':state:')}),
+    ]);
+    await cards.setCardStatus(input);await dispatcher.drain();
+    await cards.setCardStatus({...human,cardId,status:'running'});await dispatcher.drain();
+    await cards.setCardStatus({...human,actorSessionId:'owner',cardId,status:'todo'});await dispatcher.drain();
+    await cards.setCardStatus({...human,cardId,status:'done'});await dispatcher.drain();
+    expect(messages).toHaveBeenCalledOnce();
+    expect((await cards.getCard(otherId))?.card.status).toBe('todo');
+  });
+
+  it("delivers a question answer and its status change in one existing owner input",async()=>{
+    const cardId=await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running')`;
+    await h.sql`UPDATE cards SET status='running',assignee_kind='session',assignee_session_id='owner' WHERE id=${cardId}`;
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'owner',cardId,text:'어떻게 진행합니까?'});await dispatcher.drain();
+    messages.mockClear();
+    const question=(await cards.getCard(cardId))!.questions[0]!;
+    const answer={...human,cardId,questionId:String(question.id),answer:'원래 흐름으로 진행합니다',idempotencyKey:key()};
+    await cards.answerQuestion(answer);await dispatcher.drain();
+    await cards.answerQuestion(answer);await dispatcher.drain();
+    expect(messages).toHaveBeenCalledOnce();
+    expect(messages.mock.calls[0]).toEqual(['owner',expect.stringContaining('원래 흐름으로 진행합니다'),undefined,expect.objectContaining({deliveryId:expect.stringContaining(':state:')})]);
+  });
+
+  it("retains a distinct question recipient and leaves unanswered questions blocked",async()=>{
+    const cardId=await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('old-owner','running'),('new-owner','running')`;
+    await h.sql`UPDATE cards SET status='running',assignee_kind='session',assignee_session_id='old-owner' WHERE id=${cardId}`;
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'old-owner',cardId,text:'이전 담당 질문'});await dispatcher.drain();
+    const question=(await cards.getCard(cardId))!.questions[0]!;
+    await h.sql`INSERT INTO card_questions(id,card_id,session_id,text) VALUES ('remaining',${cardId},'old-owner','남은 질문')`;
+    await h.sql`UPDATE cards SET assignee_session_id='new-owner' WHERE id=${cardId}`;
+    messages.mockClear();
+    await cards.answerQuestion({...human,cardId,questionId:String(question.id),answer:'첫 답'});await dispatcher.drain();
+    expect((await cards.getCard(cardId))?.card).toMatchObject({status:'blocked',blocked_kind:'question'});expect(messages).not.toHaveBeenCalled();
+    const answer={...human,cardId,questionId:'remaining',answer:'마지막 답',idempotencyKey:key()};
+    await cards.answerQuestion(answer);await dispatcher.drain();await cards.answerQuestion(answer);await dispatcher.drain();
+    expect(messages).toHaveBeenCalledTimes(2);
+    expect(messages.mock.calls.map(c=>c[0])).toEqual(['new-owner','old-owner']);
+    expect(messages.mock.calls[1]![1]).toContain('마지막 답');
+    expect((await cards.getCard(cardId))?.card.status).toBe('running');
+  });
+
   function app() {
     const server = Fastify();
     registerCardRoutes(server, {
@@ -76,10 +128,10 @@ describe("card comments HTTP, storage, and delivery", () => {
 
   it.each([
     { target: "assigned", actor: "self", kind: "spoken", expected: 0 },
-    { target: "assigned", actor: "self", kind: "comment", expected: 1 },
+    { target: "assigned", actor: "self", kind: "comment", expected: 0 },
     { target: "assigned", actor: "other", kind: "spoken", expected: 1 },
     { target: "fallback", actor: "self", kind: "spoken", expected: 0 },
-    { target: "fallback", actor: "self", kind: "comment", expected: 1 },
+    { target: "fallback", actor: "self", kind: "comment", expected: 0 },
     { target: "fallback", actor: "other", kind: "spoken", expected: 1 },
   ] as const)("delivers $actor $kind to $target exactly $expected times, including idempotent replay", async ({ target, actor, kind, expected }) => {
     const cardId = await makeCard();
@@ -102,7 +154,7 @@ describe("card comments HTTP, storage, and delivery", () => {
     expect(retried.id).toBe(posted.id);
     await dispatcher.drain();
     expect(messages).toHaveBeenCalledTimes(expected);
-    if (expected) expect(messages).toHaveBeenCalledWith("target-session", "[카드 커멘트] 「커멘트 대상」\n옮겨 적은 사용자 지시");
+    if (expected) expect(messages).toHaveBeenCalledWith("target-session", expect.stringContaining(input.body),undefined,expect.objectContaining({deliveryId:expect.stringContaining(":comment:"),actorKind:input.actorKind,actorSessionId:input.actorSessionId}));
     const detail = (await cards.getCard(cardId))!;
     expect(detail.comments).toEqual([expect.objectContaining({
       id: posted.id, author_kind: "user", session_id: input.actorSessionId, kind, body: input.body,
@@ -129,7 +181,7 @@ describe("card comments HTTP, storage, and delivery", () => {
       expect(retried.json().id).toBe(posted.json().id);
       await dispatcher.drain();
       expect(messages).toHaveBeenCalledTimes(1);
-      expect(messages).toHaveBeenCalledWith("assigned-session", "[카드 커멘트] 「커멘트 대상」\n고정된 지시");
+      expect(messages).toHaveBeenCalledWith("assigned-session", expect.stringContaining("사용자가 카드 「커멘트 대상」"),undefined,expect.objectContaining({deliveryId:expect.stringContaining(":comment:")}));
       const detail = await server.inject(`/api/cards/${cardId}`);
       expect(detail.json().comments).toEqual([expect.objectContaining({ body: "고정된 지시", authorKind: "user", kind: "comment" })]);
       const stored = await h.sql<{ delivered_at: Date | null }[]>`SELECT delivered_at FROM card_comments WHERE card_id=${cardId}`;
@@ -152,7 +204,7 @@ describe("card comments HTTP, storage, and delivery", () => {
       expect(posted.statusCode).toBe(201);
       await dispatcher.drain();
       expect(messages).toHaveBeenCalledTimes(1);
-      expect(messages).toHaveBeenCalledWith("latest-dispatch", "[카드 커멘트] 「최근 dispatch」\n이어 진행");
+      expect(messages).toHaveBeenCalledWith("latest-dispatch", expect.stringContaining("사용자가 카드 「최근 dispatch」"),undefined,expect.objectContaining({deliveryId:expect.stringContaining(":comment:")}));
       const stored = await h.sql<{ delivered_at: Date | null }[]>`SELECT delivered_at FROM card_comments WHERE card_id=${cardId}`;
       expect(stored[0]!.delivered_at).toBeInstanceOf(Date);
     } finally { await server.close(); }

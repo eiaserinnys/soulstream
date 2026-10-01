@@ -1,4 +1,7 @@
 import { resolveCardSessionTarget } from "./card_session_target.js";
+import { sendCardChangeOnce } from "./card_change_delivery.js";
+import { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
+import type { SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
 import type { SessionCommandRouter } from "../session/session_command_router.js";
@@ -100,16 +103,24 @@ export async function createCardDispatchRuntime(options: {
         },
         { ...input, callerInfo: { source: "system" } },
       ),
-    sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string;deliveryId?:string}) => {
+    sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string;deliveryId?:string}, changeDelivery?:import("./card_change_notification.js").CardChangeDelivery) => {
       const parsed = intervenePayload(sessionId, {
         text,
         ...(admission?.deliveryId ? {delivery_id:admission.deliveryId,delivery_intent:"durable_next_turn",source:"card_orchestration",relation_key:admission.deliveryId,completion_id:admission.deliveryId} : {}),
-        caller_info: { source: "system" },
+        ...(changeDelivery ? {delivery_id:changeDelivery.deliveryId,delivery_intent:"durable_next_turn",source:"card_change",
+          relation_key:changeDelivery.deliveryId,completion_id:changeDelivery.deliveryId} : {}),
+        caller_info: changeDelivery ? { source:changeDelivery.actorKind === "user" ? "browser" : changeDelivery.actorKind === "agent" ? "agent" : "system",
+          ...(changeDelivery.actorSessionId ? {session_id:changeDelivery.actorSessionId} : {}) } : { source: "system" },
       });
       if (!parsed.ok) throw new Error(parsed.message);
-      const response = await options.bridge.sendPendingCommand(
-        await options.router.routeExistingSessionPendingCommand({...parsed.value,...(admission?{orchestrationAdmission:admission}:{})}),
+      const send = async (payload: typeof parsed.value) => options.bridge.sendPendingCommand(
+        await options.router.routeExistingSessionPendingCommand({...payload,...(admission?{orchestrationAdmission:admission}:{})}),
       );
+      if (changeDelivery) {
+        const repository = new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient);
+        return sendCardChangeOnce(repository, parsed.value, send);
+      }
+      const response = await send(parsed.value);
       if (response.status === "error" || response.type === "error")
         throw new Error(String(response.message ?? response.code));
     },

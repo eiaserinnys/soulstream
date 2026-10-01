@@ -86,10 +86,11 @@ describe("explicit manual card work", () => {
     expect((await repo.pendingWorkers()).filter(d=>d.card_id===second)).toHaveLength(1);
     await repo.finish(next,"completed","admitted");
   });
-  it("binds termination to declared execution and leaves other cards alone", async () => {
+  it.each([true,false])("keeps declared work running while waiting for delegated reports, policy=%s", async enabled => {
+    await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}',${h.sql.json(enabled)}) WHERE setting_key='card_orchestration'`;
     const id=await make(), untouched=await make(),reported=await make();
-    await cards.startCardWork(declaration(id,"end-work"));
-    await cards.startCardWork(declaration(reported,"reported-work"));
+    await cards.startCardWork(declaration(id,`end-work-${enabled}`));
+    await cards.startCardWork(declaration(reported,`reported-work-${enabled}`));
     await cards.addReport({actorKind:"agent",actorSessionId:"owner",cardId:reported,title:"보고",body:"증거",format:"markdown"});
     await recordWorkReceipt(h,"owner","completed",null);
     const ended=await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner");
@@ -99,19 +100,20 @@ describe("explicit manual card work", () => {
     const dispatcher=new CardDispatcher({repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>warnings.push(m),
-      orchestration:{enabled:async()=>true,ownsSession:async()=>false,kick:async()=>{}}});
+      orchestration:{enabled:async()=>enabled,ownsSession:async()=>false,kick:async()=>{}}});
     await dispatcher.sessionEnded("owner");
-    expect((await cards.getCard(id))?.card).toMatchObject({status:"blocked",blocked_kind:"no_report"});
+    expect((await cards.getCard(id))?.card).toMatchObject({status:"running",blocked_kind:null});
     expect((await cards.getCard(untouched))?.card.status).toBe("todo");
     expect((await cards.getCard(reported))?.card.status).toBe("running");
     expect(warnings).toEqual([]);
-    execution={registrationId:"new-reg",executionCommandId:"new-command"};
+    execution={registrationId:`new-reg-${enabled}`,executionCommandId:`new-command-${enabled}`};
     await recordWorkReceipt(h,"owner","running",execution);
     const fresh=await make();
-    await cards.startCardWork({...declaration(fresh,"later-work"),execution:{registrationId:"new-reg",executionCommandId:"new-command"}});
+    await cards.startCardWork({...declaration(fresh,`later-work-${enabled}`),execution:{...execution}});
     expect((await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner")).map(r=>r.card_id)).not.toContain(fresh);
   });
   it("classifies quota termination from the declared execution's canonical receipt",async()=>{
+    await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','true') WHERE setting_key='card_orchestration'`;
     const id=await make();
     await cards.startCardWork(declaration(id,"limited-work"));
     await recordWorkReceipt(h,"owner","error",null,"limit_hit");
