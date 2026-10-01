@@ -1,0 +1,26 @@
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+import React from 'react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { CardStatusMenu } from '../CardStatusMenu';
+import { cardFixture } from '../../../test-support/cards';
+
+test('menu reason and failure stay visible, successful explicit move closes only after save', async () => {
+  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const card = cardFixture({ status: 'review', version: 9 });
+  const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }),
+    setCardStatus: jest.fn().mockRejectedValueOnce(new Error('저장 실패')).mockResolvedValue({ card: { ...card, status: 'running', version: 10 } }) };
+  const close = jest.fn();
+  const screen = render(<CardStatusMenu api={api as any} card={card} onClose={close} />);
+  await waitFor(() => expect(screen.getByLabelText('실행 중로 이동')).toBeTruthy());
+  await act(async () => fireEvent.press(screen.getByLabelText('실행 중로 이동')));
+  fireEvent.changeText(screen.getByLabelText('재실행 사유'), '다시 확인합니다');
+  await act(async () => fireEvent.press(screen.getByLabelText('사유와 함께 실행 중으로 이동')));
+  expect(close).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('재실행 사유').props.value).toBe('다시 확인합니다');
+  expect(screen.getByText('저장 실패')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('사유와 함께 실행 중으로 이동')));
+  expect(api.setCardStatus).toHaveBeenLastCalledWith(card.id, 'running', 9, expect.any(String), '다시 확인합니다');
+  expect(close).toHaveBeenCalledTimes(1);
+  jest.restoreAllMocks();
+});

@@ -14,7 +14,7 @@ export interface RootSectionDefinition {
 }
 
 export const ROOT_SECTION_CONFIG: Record<RootSectionKey, RootSectionDefinition> = {
-  DailyTab: { title: '데일리', icon: 'today-outline' },
+  DailyTab: { title: '카드', icon: 'grid-outline' },
   StarredTab: { title: '중요 작업', icon: 'star-outline' },
   ProjectTab: { title: '프로젝트', icon: 'folder-outline' },
   FeedTab: { title: '피드', icon: 'reader-outline' },

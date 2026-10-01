@@ -41,7 +41,7 @@ import { SidebarPane } from '../SidebarPane';
 test('iPad 사이드바 chrome은 단색 시스템 아이콘과 하나의 section-title 역할을 쓴다', () => {
   useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
   const screen = render(<SidebarPane active={false} />);
-  const labels = ['데일리', '중요 작업', '프로젝트'].map(
+  const labels = ['카드', '중요 작업', '프로젝트'].map(
     (label) => screen.getByText(label),
   );
   const styles = labels.map((label) => StyleSheet.flatten(label.props.style));

@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Image, Platform, ScrollView, Text, View } fro
 import type { ApiClient } from '../../api/client';
 import type { CardStatus } from '../../api/cardTypes';
 import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
+import { useCardTransition } from '../../hooks/useCardTransition';
 import { useCardComments } from '../../hooks/useCardComments';
 import { useCardDetail } from '../../hooks/useCardDetail';
 import { useUIStore } from '../../store/uiStore';
@@ -52,6 +53,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const chatStyles = useMemo(() => makeChatStyles(t), [t]);
   const { detail, error } = useCardDetail(api, cardId);
   const { run, pending } = useCardActions(api);
+  const statusAction = useCardTransition(api, cardId);
   const comments = useCardComments(api, cardId);
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [text, setText] = useState('');
@@ -72,14 +74,14 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const mapUploadedPath = React.useCallback((path: string, uploadNode: string) => buildAttachmentUri(serverUrl, uploadNode, path)!, [serverUrl]);
   const attachments = useChatAttachments({ api, sessionId: card?.assigneeSessionId ?? undefined, nodeId: nodeId ?? undefined,
     disabled: pending || comments.pending, mapUploadedPath });
-  const locked = pending || comments.pending || attachments.uploading;
+  const locked = pending || statusAction.pending || comments.pending || attachments.uploading;
   const pickAttachment = () => {
     if (card?.assigneeSessionId && nodeId) attachments.pickAttachment();
     else Alert.alert('곧 지원', '담당 세션이 연결되면 첨부를 올릴 수 있습니다.');
   };
   const status = (next: CardStatus, reason?: string) => {
     if (!api || !card) return Promise.resolve(false);
-    return run(() => api.setCardStatus(card.id, next, card.version, cardOperationId(), reason));
+    return statusAction.transition(card, next, reason);
   };
   const send = async () => {
     if (!api || !card || !text.trim() || locked) return;

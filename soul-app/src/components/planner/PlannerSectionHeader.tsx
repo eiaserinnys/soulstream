@@ -20,7 +20,7 @@ export function PlannerSectionHeader({
   count?: number;
   testID?: string;
   countTestID?: string;
-  variant?: 'default' | 'board';
+  variant?: 'default' | 'board' | 'lane';
   actionLabel?: string;
   onAction?: () => void;
   extraAction?: { label: string; onPress(): void };
@@ -31,6 +31,9 @@ export function PlannerSectionHeader({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const board = variant === 'board';
+  if (variant === 'lane') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={styles.title}>
+    {title + ' '}<Text testID={countTestID}>{`${count ?? 0}개`}</Text>
+  </Text>;
   if (onToggle) return (
     <TouchableOpacity testID={testID} accessibilityRole="button"
       accessibilityLabel={`${title} ${expanded ? '접기' : '펼치기'}`}

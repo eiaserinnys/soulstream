@@ -51,6 +51,7 @@ beforeEach(() => {
 test.each([1, 2])('iPad fontScale %s custom headers keep one-line tail, semantic baseline, action and inset', (fontScale) => {
   mockDimensions = { ...mockDimensions, fontScale };
   const main = render(<MainListPane onMenuPress={jest.fn()} />);
+  fireEvent.press(main.getByLabelText('데일리 기록'));
   const mainHeader = StyleSheet.flatten(main.getByTestId('tablet-main-header').props.style);
   const mainTitle = main.getByTestId('root-header-title-DailyTab');
   const mainIcon = main.getByTestId('root-header-icon-DailyTab');

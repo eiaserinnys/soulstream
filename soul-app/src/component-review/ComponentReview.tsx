@@ -15,6 +15,8 @@ import { ReviewBoard } from './ReviewBoard';
 import { ReviewBoardActions } from './ReviewBoardActions';
 import { ReviewPostIt } from './ReviewPostIt';
 import { ReviewBoardWorkspace } from './ReviewBoardWorkspace';
+import { ReviewCardHome } from './ReviewCardHome';
+import { ReviewEntryShell } from './ReviewEntryShell';
 import { folders } from './fixtures';
 
 const sections = [
@@ -25,23 +27,31 @@ const sections = [
   { value: 'boardActions', label: '보드 액션' },
   { value: 'postit', label: '포스트잇' },
   { value: 'boardConnected', label: '보드 연결' },
+  { value: 'cardHome', label: '카드 홈' },
+  { value: 'entryShell', label: '앱 홈 조합' },
 ] as const;
 type Section = typeof sections[number]['value'];
 
 export function initializeReview() {
-  useSettingsStore.setState({ serverUrl: '', nodeId: 'public-node', appearance: 'light' });
-  useSessionStore.setState({ catalog: { folders, sessions: {} } });
+  const entryShell = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'entryShell';
+  useSettingsStore.setState({ serverUrl: entryShell ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: 'light' });
+  useSessionStore.setState({ catalog: { folders, sessions: {} }, catalogLoadState: 'ready' });
 }
 
 function Gallery() {
   const t = useTokens();
   const { width, height } = useWindowDimensions();
   const device = useDeviceType();
-  const [section, setSection] = useState<Section>('rows');
+  const [section, setSection] = useState<Section>(() => {
+    const selected = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search).get('section') : null;
+    return selected === 'cardHome' || selected === 'entryShell' ? selected : 'rows';
+  });
   const style = useMemo(() => ({
     padding: t.cardLayout.padding, gap: t.uiSpacing.xl,
     backgroundColor: t.colors.background,
   }), [t]);
+  if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
+  if (section === 'entryShell') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewEntryShell /></View>;
   return <ScrollView testID="component-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={style} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
     <View style={{ gap: t.spacing.sm }}>
@@ -58,7 +68,10 @@ function Gallery() {
         웹 유리 표면은 앱의 대체 표현입니다. iOS 유리 효과와 키보드는 실제 앱에서 확인합니다.
       </Text>
     </View>
-    <SettingsSegmentedControl<Section> id="review-section" value={section} onChange={setSection} options={sections} />
+    <SettingsSegmentedControl<Section> id="review-section" value={section} onChange={(next) => {
+      if (next === 'entryShell') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
+      setSection(next);
+    }} options={sections} />
     {section === 'rows' ? <ReviewRows /> : section === 'chat' ? <ReviewChat />
       : section === 'project' ? <ReviewProject /> : section === 'settings' ? <ReviewSettings />
         : section === 'board' ? <ReviewBoard /> : section === 'boardActions' ? <ReviewBoardActions />

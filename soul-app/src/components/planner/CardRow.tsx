@@ -4,7 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
 import { CARD_STATUS_LABEL } from '../../lib/card-presentation';
-import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
+import { useCardTransition } from '../../hooks/useCardTransition';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
@@ -55,11 +55,11 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
   const report = detail?.reports.reduce((latest, item) => !latest || item.createdAt >= latest.createdAt ? item : latest, undefined as typeof detail.reports[number] | undefined);
   const comment = detail?.comments?.reduce((latest, item) => !latest || item.createdAt >= latest.createdAt ? item : latest, undefined as NonNullable<typeof detail.comments>[number] | undefined);
   const preview = (report?.title || comment?.body || card.request).split('\n')[0];
-  const { run, pending } = useCardActions(api);
+  const { transition, pending } = useCardTransition(api, card.id);
   const time = <Text style={styles.time} numberOfLines={1}>{formatRelativeTime(card.updatedAt)}</Text>;
   const complete = card.status === 'review' ? <GlassButton iconOnly size={board ? 'compact' : 'card'} borderRadius={t.foundation.radius.round} accessibilityLabel="완료"
     disabled={pending || !api} surfaceTestID={`card-${card.id}-완료-visual`} onPress={() => {
-      if (api) void run(() => api.setCardStatus(card.id, 'done', card.version, cardOperationId()));
+      void transition(card, 'done');
     }}><Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} /></GlassButton> : null;
   const identityContent = <>
       {uri ? <Image testID={`card-${card.id}-avatar`} source={{ uri, ...(jwt && uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.avatar} />

@@ -37,14 +37,14 @@ test('ID 기울기는 기존 웹과 같은5개이며 HTML보고는 실행하지 
 
 test('완료는 기존 version/opId 계약을 쓰고 실패하면 알리고 카드를 유지한다', async () => {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-  const api = { getCard: jest.fn(), setCardStatus: jest.fn().mockRejectedValue(new Error('변경 실패')) };
   const card = cardFixture({ status: 'review' });
+  const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }), setCardStatus: jest.fn().mockRejectedValue(new Error('변경 실패')) };
   const screen = render(<PostItCard api={api as any} card={card} variant="compact" onOpen={() => {}} />);
   expect(api.getCard).not.toHaveBeenCalled();
   await act(async () => fireEvent.press(screen.getByLabelText('완료')));
-  expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'done', card.version, expect.stringMatching(/^soul-app-card-/));
+  expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'done', card.version, expect.stringMatching(/^soul-app-card-/), undefined);
   expect(alert).toHaveBeenCalledWith('카드 변경 실패', '변경 실패');
   expect(screen.getByText('검수 대기')).toBeTruthy();
-  expect(api.getCard).not.toHaveBeenCalled();
+  expect(api.getCard).toHaveBeenCalledTimes(1);
   alert.mockRestore();
 });

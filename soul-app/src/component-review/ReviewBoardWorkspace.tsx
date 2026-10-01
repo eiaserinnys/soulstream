@@ -17,7 +17,7 @@ export function ReviewBoardWorkspace() {
     <SettingsSegmentedControl<'folder' | 'global'> id="board-connected-scope" value={scope} onChange={setScope}
       options={[{ value: 'folder', label: '현재 폴더' }, { value: 'global', label: '전체' }]} />
     <View testID="review-board-connected-frame" style={{ height: height - t.hitTarget.min * 2 }}>
-      <CardBoardWorkspace api={api} folderId={scope === 'folder' ? initialCards[0].folderId : undefined}
+      <CardBoardWorkspace key={scope} api={api} folderId={scope === 'folder' ? initialCards[0].folderId : undefined}
         cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} onOpen={setSelected} />
     </View>
     {selected ? <Text testID="review-board-connected-selection" style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>선택한 카드: {selected}</Text> : null}
