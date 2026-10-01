@@ -13,7 +13,7 @@ import {
 
 const ROOT = join(__dirname, '../..');
 const DIRECT_FILES = [
-  'components/SessionCard.tsx',
+  'components/SessionCardView.tsx',
   'components/SessionCardById.tsx',
   'components/chat/AttachmentChips.tsx',
   'components/chat/ChatBody.tsx',

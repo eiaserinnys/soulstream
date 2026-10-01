@@ -59,7 +59,7 @@ describe('N5 production coverage closure', () => {
 
   test('seven navigator factories and one AnimatedPressable adapter stay non-surface ledger entries', () => {
     const navigation = read('navigation/TabNavigator.tsx');
-    const sessionCard = read('components/SessionCard.tsx');
+    const sessionCard = read('components/SessionCardView.tsx');
     expect(navigation.match(/=\s*createNativeStackNavigator</g) ?? []).toHaveLength(6);
     expect(navigation.match(/=\s*createBottomTabNavigator</g) ?? []).toHaveLength(1);
     expect(sessionCard.match(/Animated\.createAnimatedComponent\(Pressable\)/g) ?? [])
