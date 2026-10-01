@@ -11,7 +11,7 @@ import { sessionPanelTitle } from "./v3-session-panel-model";
 import { SessionStreamStatus } from "./SessionStreamStatus";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
 
-/** The folder board's resize handle and session column, shared with inline cards. */
+/** The folder board's resize handle and session column, shared with card overlays. */
 export function WorkspaceSessionColumn({
   activeSession, chatClassName, chatTestId, resizeClassName, resizeTestId,
   onResize, onResizeKeyDown, onClose, chatInputDisabled, fileUploadUrl,

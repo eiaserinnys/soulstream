@@ -16,7 +16,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type CSSProperties } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
@@ -43,7 +43,7 @@ import {
   shouldScrollToBottomOnTreeChange,
 } from "./ChatView.follow-helpers";
 import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
-import { resolveChatTypography } from "../../lib/chat-typography";
+import { useChatTypography } from "./useChatTypography";
 import { buildChatTimelineItems } from "./ChatView.thinking-indicator";
 import { ChatHistoryStatus } from "./ChatHistoryStatus";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
@@ -126,12 +126,7 @@ export function ChatView({
    * 같은 set() 안에서 tree와 함께 갱신되므로 1렌더 사이클 정합이 보장된다.
    */
   const chatPrependedCount = useDashboardStore((s) => s.chatPrependedCount);
-  const chatFontSize = useDashboardStore((s) => s.chatFontSize);
-  const chatTypography = resolveChatTypography(chatFontSize);
-  const chatTypographyStyle = {
-    "--chat-font-size": `${chatTypography.fontSize}px`,
-    "--chat-line-height": `${chatTypography.lineHeight}px`,
-  } as CSSProperties;
+  const {chatFontSize,chatTypographyStyle}=useChatTypography();
   const llmContext = useLlmContext();
 
   // eslint-disable-next-line react-hooks/exhaustive-deps

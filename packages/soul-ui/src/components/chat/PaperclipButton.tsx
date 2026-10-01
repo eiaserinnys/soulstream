@@ -7,12 +7,14 @@ import { Paperclip } from "lucide-react";
 
 interface PaperclipButtonProps {
   onClick: () => void;
+  disabled?: boolean;
 }
 
-export function PaperclipButton({ onClick }: PaperclipButtonProps) {
+export function PaperclipButton({ onClick, disabled }: PaperclipButtonProps) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       className="self-end h-9 sm:h-8 px-2 flex items-center justify-center rounded border border-border text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors"
       title="Attach files"

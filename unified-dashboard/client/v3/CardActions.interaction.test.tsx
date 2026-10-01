@@ -36,11 +36,11 @@ describe("display-only card status and completion action",()=>{
   expect(container.querySelectorAll('button')).toHaveLength(1);await click(action);
   expect(mutate).toHaveBeenCalledWith("c","/status",{status:"done",expectedVersion:7});
  });
- it.each([false,true])("keeps row opening on the title and status display-only (folder metadata=%s)",async folderLabel=>{
+ it.each([false,true])("opens the whole row, including its display-only status word (folder metadata=%s)",async folderLabel=>{
   const open=vi.fn();useCardNavigation.setState({open});
   await act(()=>root.render(<CardRowView card={card("running")} folderLabel={folderLabel?"폴더":undefined}/>));
-  await click(container.querySelector('.v3-status-chip')! as HTMLElement);expect(open).not.toHaveBeenCalled();
-  await click(container.querySelector('[aria-label="카드 카드 제목 열기"]')!);expect(open).toHaveBeenCalledWith("c","inline");
+  await click(container.querySelector('.v3-card-status--running')! as HTMLElement);expect(open).toHaveBeenCalledWith("c","overlay");expect(mutate).not.toHaveBeenCalled();
+  await click(container.querySelector('[aria-label="카드 카드 제목 열기"]')!);expect(open).toHaveBeenCalledWith("c","overlay");
  });
 });
 it("uses the same row structure for today and folder metadata, with one review action",()=>{

@@ -1,0 +1,38 @@
+{
+  "folder-row-1440": {
+    "rectangle": [
+      437,
+      544,
+      973,
+      632
+    ],
+    "differenceBounds": null
+  },
+  "chat-1440": {
+    "rectangle": [
+      1003,
+      16,
+      1424,
+      984
+    ],
+    "differenceBounds": null
+  },
+  "folder-row-390": {
+    "rectangle": [
+      39,
+      505,
+      345,
+      592
+    ],
+    "differenceBounds": null
+  },
+  "chat-390": {
+    "rectangle": [
+      0,
+      0,
+      390,
+      1000
+    ],
+    "differenceBounds": null
+  }
+}

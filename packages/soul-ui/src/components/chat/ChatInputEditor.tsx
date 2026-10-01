@@ -7,12 +7,14 @@
  * 상태를 소유하지 않는 프레젠테이션 컴포넌트 — 모든 값은 props로 전달받는다.
  */
 
-import { forwardRef, type KeyboardEvent } from "react";
+import { forwardRef, type KeyboardEvent, type ClipboardEventHandler } from "react";
 import { SendHorizontal } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { Button, type ButtonVariant } from "../ui/button";
 
 interface ChatInputEditorProps {
+  inputLabel?: string;
+  onPaste?: ClipboardEventHandler<HTMLTextAreaElement>;
   text: string;
   onChangeText: (value: string) => void;
   onSend: () => void;
@@ -30,6 +32,8 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
   function ChatInputEditor(
     {
       text,
+      inputLabel,
+      onPaste,
       onChangeText,
       onSend,
       placeholder,
@@ -62,6 +66,8 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
           </span>
           <textarea
             data-slot="chat-input-body"
+            aria-label={inputLabel}
+            onPaste={onPaste}
             ref={ref}
             value={text}
             onChange={(e) => onChangeText(e.target.value)}

@@ -19,8 +19,7 @@
     display: none;
   }
 
-  .v3-planner,
-  .v3-card-session-chat {
+  .v3-planner {
     width: calc(100% - 28px);
     min-height: 0;
     height: calc(100dvh - 146px);

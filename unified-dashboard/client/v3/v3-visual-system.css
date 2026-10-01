@@ -133,18 +133,18 @@
   letter-spacing: 0;
 }
 
-.v3-chat-pane [data-slot="chat-body"],
-.v3-chat-pane [data-slot="chat-body"] p,
-.v3-chat-pane [data-slot="chat-body"] h1,
-.v3-chat-pane [data-slot="chat-body"] h2,
-.v3-chat-pane [data-slot="chat-body"] h3,
-.v3-chat-pane [data-slot="chat-body"] h4,
-.v3-chat-pane [data-slot="chat-body"] li,
-.v3-chat-pane [data-slot="chat-body"] pre,
-.v3-chat-pane [data-slot="chat-body"] code,
-.v3-chat-pane [data-slot="chat-body"] table,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"],
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] p,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] h1,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] h2,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] h3,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] h4,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] li,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] pre,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] code,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] table,
 .v3-chat-pane [data-slot="chat-tool-body"],
-.v3-chat-pane [data-slot="chat-input-body"] {
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-input-body"] {
   font-family: var(--v3-font-family);
   font-size: var(--chat-font-size);
   font-weight: 450;
@@ -417,11 +417,11 @@
   gap: var(--v3-space-3);
 }
 
-.v3-chat-pane [data-slot="chat-message-row"] {
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-message-row"] {
   padding-block: 6px;
 }
 
-.v3-chat-pane [data-slot="chat-message-bubble"] {
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-message-bubble"] {
   max-width: 88%;
   padding: 14px 16px;
 }
@@ -434,16 +434,16 @@
   font: var(--v3-type-meta) var(--v3-font-family);
 }
 
-.v3-chat-pane [data-slot="chat-input-composer"] {
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-input-composer"] {
   min-height: var(--v3-control-height);
 }
 
-.v3-chat-pane [data-testid="send-button"]:not(:disabled) {
+:is(.v3-chat-pane, .v3-chat-surface) [data-testid="send-button"]:not(:disabled) {
   color: var(--primary-foreground);
   background: var(--v3-accent);
 }
 
-.v3-chat-pane [data-testid="send-button"]:disabled {
+:is(.v3-chat-pane, .v3-chat-surface) [data-testid="send-button"]:disabled {
   color: var(--v3-text-disabled);
   background: var(--muted);
 }
@@ -517,8 +517,7 @@
     font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
-  .v3-planner,
-  .v3-card-session-chat {
+  .v3-planner {
     width: calc(100% - 28px);
     height: calc(100dvh - 146px);
     margin: 72px auto 12px;

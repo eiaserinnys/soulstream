@@ -248,3 +248,6 @@
   background: var(--border);
   content: "";
 }
+
+/* Two text lines retain every default dimension; only the height floor is released. */
+.v3-run-row--small { min-height: 0; }

@@ -4,7 +4,8 @@ import type { RunTreeNode } from "./folder-workspace-run-model";
 import { RichSessionRow } from "./RichSessionRow";
 import "./v3-run-history.css";
 
-export function SessionRunList({ tree, activeSessionId, onOpenSession, onContextMenu }: {
+export function SessionRunList({ tree, activeSessionId, onOpenSession, onContextMenu, size="default" }: {
+  size?: "default"|"small";
   tree: readonly RunTreeNode[];
   activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
@@ -12,17 +13,19 @@ export function SessionRunList({ tree, activeSessionId, onOpenSession, onContext
 }) {
   return <div className="v3-run-list">
     {tree.map(node => <RunNode key={node.session.agentSessionId} node={node} depth={0}
-      activeSessionId={activeSessionId} onOpenSession={onOpenSession} onContextMenu={onContextMenu} />)}
+      activeSessionId={activeSessionId} onOpenSession={onOpenSession} onContextMenu={onContextMenu} size={size} />)}
   </div>;
 }
 
 function RunNode({
   node,
+  size,
   depth,
   activeSessionId,
   onOpenSession,
   onContextMenu,
 }: {
+  size: "default"|"small";
   node: RunTreeNode;
   depth: number;
   activeSessionId: string | null;
@@ -49,6 +52,7 @@ function RunNode({
     <div className={depth > 0 ? "v3-run-children" : undefined}>
       <RichSessionRow
         session={session}
+        size={size}
         runNumber={node.runNumber}
         failed={failed}
         active={!failed && session.agentSessionId === activeSessionId}
@@ -59,6 +63,7 @@ function RunNode({
         <RunNode
           key={child.session.agentSessionId}
           node={child}
+          size={size}
           depth={depth + 1}
           activeSessionId={activeSessionId}
           onOpenSession={onOpenSession}
