@@ -42,7 +42,7 @@ const NEEDS_ROOT = new Set([
   "complete", "error", "result", "compact", "input_request",
   "tool_approval_requested", "agent_updated", "handoff_requested", "handoff_occurred",
   "guardrail_tripwire", "assistant_message", "assistant_error", "away_summary",
-  "turn_summary",
+  "turn_summary", "debug",
 ]);
 
 /** Legacy text events remain supported; exact id=0 metadata enables dedupe. */

@@ -34,6 +34,7 @@ import type {
   TextNode,
 } from "@shared/types";
 import { formatRetryingErrorHistory } from "@shared/sse-events";
+import { isJevCardObservation } from "../../../wire-schema/src/card_observation";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
 import { TRUNCATE_THRESHOLD } from "./event-update";
@@ -369,6 +370,16 @@ export function createNodeFromEvent(
         completed: true,
         parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
+      });
+    }
+
+    case "debug": {
+      if (!isJevCardObservation(event)) return null;
+      return makeNode(`card-observation-${eventId}`, "card_observation", event.content, {
+        completed: true,
+        observation: event,
+        finalResponseEventId: event.final_response_event_id,
+        timestamp: event.timestamp,
       });
     }
 

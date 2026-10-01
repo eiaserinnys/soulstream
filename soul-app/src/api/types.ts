@@ -236,6 +236,7 @@ export type SessionEventType =
   | 'user_message'
   | 'assistant_message'
   | 'turn_summary'
+  | 'debug'
   | 'intervention_sent'
   | 'session_notification'
   | 'system'

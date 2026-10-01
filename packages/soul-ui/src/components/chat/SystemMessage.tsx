@@ -17,7 +17,7 @@ export const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMes
       <span className="w-8 shrink-0" />
       <div className={cn(
         "flex-1 min-w-0 text-xs px-2 py-1 rounded text-left",
-        isTurnSummary && "whitespace-pre-line",
+        (isTurnSummary || msg.observation) && "whitespace-pre-line",
         hasCaptionStats && "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1",
         isRetrying
           ? "chat-tone-warning"

@@ -146,7 +146,12 @@ export interface SystemMessageEvent {
 
 export interface DebugEvent {
   type: "debug";
-  message: string;
+  message?: string;
+  kind?: string;
+  content?: string;
+  complete_event_id?: number;
+  final_response_event_id?: number;
+  details?: string[];
   timestamp?: number;
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;

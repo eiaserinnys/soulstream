@@ -1,4 +1,5 @@
 import type { SessionEvent } from '../../api/types';
+import { isJevCardObservation } from '../../../../packages/wire-schema/src/card_observation';
 import type {
   ChatRenderItem,
   TurnSummaryRenderItem,
@@ -86,7 +87,7 @@ export function placeTurnSummaries(
   const legacyAtEnd: ChatRenderItem[] = [];
   const seenSummaryIds = new Set<number>();
   const summaries = events
-    .filter((event) => event.type === 'turn_summary')
+    .filter((event) => event.type === 'turn_summary' || isJevCardObservation({ ...event.data, type: event.type }))
     .map((event, sourceIndex) => ({
       event,
       sourceIndex,
@@ -102,6 +103,10 @@ export function placeTurnSummaries(
     if (seenSummaryIds.has(eventId)) continue;
     seenSummaryIds.add(eventId);
 
+    const observation = isJevCardObservation({ ...event.data, type: event.type });
+    if (observation && summaries.some(item => item.eventId !== null && item.eventId > eventId
+      && item.event.type === 'debug' && item.event.data?.kind === 'jev_card_observation'
+      && item.event.data.complete_event_id === event.data?.complete_event_id)) continue;
     const content =
       typeof event.data?.content === 'string'
         ? event.data.content.trim()
@@ -114,7 +119,7 @@ export function placeTurnSummaries(
     const finalAnchor = positivePayloadEventId(
       event.data?.final_response_event_id,
     );
-    const parentAnchor = positivePayloadEventId(event.data?.parent_event_id);
+    const parentAnchor = observation ? null : positivePayloadEventId(event.data?.parent_event_id);
     const finalIndex =
       finalAnchor === null ? undefined : itemIndexByEventId.get(finalAnchor);
     const parentIndex =
@@ -132,6 +137,7 @@ export function placeTurnSummaries(
         kind: 'turn-summary',
         event,
         content,
+        ...(observation ? { details: event.data?.details as string[] } : {}),
         anchorEventId,
         key: `turn-summary-${event.id}`,
       };
