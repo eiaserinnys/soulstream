@@ -1,0 +1,89 @@
+{
+  "expo": {
+    "name": "Soulstream",
+    "slug": "soul-app",
+    "version": "1.0.0",
+    "scheme": "soulstream",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "me.eiaserinnys.soulstream",
+      "appleTeamId": "8R37GV2T7V",
+      "buildNumber": "51",
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.me.eiaserinnys.soulstream"
+        ]
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Soulstream uses the microphone for realtime voice sessions.",
+        "UISupportedInterfaceOrientations": [
+          "UIInterfaceOrientationPortrait"
+        ],
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ]
+      }
+    },
+    "android": {
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ebd6a3"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3a6b83e0-d367-4571-8802-df633a68908a"
+      },
+      "iosOauthClientId": "1035574355261-ps4imehqnd5l6bi6l3pu8liuno0f2nd6.apps.googleusercontent.com"
+    },
+    "owner": "eiaserinnys",
+    "plugins": [
+      "@bacons/apple-targets",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true,
+            "deploymentTarget": "16.4"
+          }
+        }
+      ],
+      "./plugins/withReactNativeTurboModuleExceptionFix",
+      "./plugins/withExtensionStoragePod",
+      "expo-web-browser",
+      "expo-notifications",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "녹음 기능을 사용하려면 마이크 접근 권한이 필요합니다."
+        }
+      ],
+      "expo-asset",
+      "expo-secure-store",
+      "expo-font",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#ebd6a3"
+        }
+      ]
+    ]
+  }
+}

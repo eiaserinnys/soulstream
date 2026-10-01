@@ -1,0 +1,43 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "submit": {
+    "preview": {
+      "ios": {
+        "ascAppId": "6761770053"
+      }
+    },
+    "production": {
+      "ios": {
+        "ascAppId": "6761770053"
+      }
+    }
+  },
+  "build": {
+    "development": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      }
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "observe-verification": {
+      "extends": "production",
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SESSION_DIAGNOSTICS_VERIFY": "1"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "uploadSourceMaps": true,
+      "buildArtifactPaths": [
+        "ios/build/*.dSYM.zip"
+      ]
+    }
+  }
+}

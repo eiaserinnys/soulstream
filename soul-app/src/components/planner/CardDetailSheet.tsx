@@ -1,0 +1,152 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Platform, ScrollView, Text, View } from 'react-native';
+import type { ApiClient } from '../../api/client';
+import type { CardStatus } from '../../api/cardTypes';
+import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
+import { useCardComments } from '../../hooks/useCardComments';
+import { useCardDetail } from '../../hooks/useCardDetail';
+import { useUIStore } from '../../store/uiStore';
+import { useSessionStore } from '../../store/sessionStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import { useAuthStore } from '../../store/authStore';
+import { resolveSessionCardAvatar, resolveSessionAgentLabel } from '../sessionCardDisplay';
+import { useDeviceType, useTokens } from '../../theme';
+import { GlassButton } from '../GlassSurface';
+import { NavigationContext } from '@react-navigation/native';
+import { ChatComposer } from '../chat/ChatComposer';
+import { AttachmentChips } from '../chat/AttachmentChips';
+import { makeStyles as makeChatStyles } from '../chat/ChatBody.styles';
+import { useChatAttachments } from '../../hooks/useChatAttachments';
+import { buildAttachmentUri } from '../events/UserMessage';
+import { makeFolderWorkspaceStyles } from './FolderWorkspace.styles';
+import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
+import { CompactTouchTarget } from '../CompactTouchTarget';
+import { FolderSessionHistory } from './FolderSessionHistory';
+import { PlannerSectionHeader } from './PlannerSectionHeader';
+import { PlannerMarkdownText } from './PlannerMarkdownText';
+import { CardAssignmentSheet } from './CardAssignmentSheet';
+import { CardStatusChip } from './CardRow';
+import { CardTimeline } from './CardTimeline';
+import { cardDetailStyles } from './CardDetail.styles';
+
+export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
+  api: ApiClient | null; cardId: string | null; onClose(): void; onOpenSession?(id: string): void;
+}) {
+  const tablet = useDeviceType() !== 'phone';
+  const navigation = React.useContext(NavigationContext);
+  useEffect(() => {
+    if (!cardId) return;
+    if (tablet) useUIStore.getState().openCardOverlay(cardId);
+    else navigation?.navigate('CardDetail', { cardId });
+    onClose();
+  }, [tablet, cardId, navigation, onClose]);
+  return null;
+}
+
+export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline = false, nativeHeader = false }: {
+  api: ApiClient | null; cardId: string; onClose(): void; onOpenSession?(id: string): void; inline?: boolean; nativeHeader?: boolean;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => cardDetailStyles(t), [t]);
+  const folderStyles = useMemo(() => makeFolderWorkspaceStyles(t), [t]);
+  const chatStyles = useMemo(() => makeChatStyles(t), [t]);
+  const { detail, error } = useCardDetail(api, cardId);
+  const { run, pending } = useCardActions(api);
+  const comments = useCardComments(api, cardId);
+  const [assignmentOpen, setAssignmentOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [otherExpanded, setOtherExpanded] = useState(false);
+  const [sessionsExpanded, setSessionsExpanded] = useState(false);
+  const scroll = useRef<ScrollView>(null);
+  const card = detail?.card;
+  const timelineStamp = detail ? `${detail.questions.length}:${detail.reports.length}:${detail.comments?.length ?? 0}` : '';
+  const scrollStamp = useRef('');
+  const assigned = useSessionStore((state) => card?.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined)
+    ?? detail?.sessions.find((session) => session.agentSessionId === card?.assigneeSessionId);
+  const serverUrl = useSettingsStore((state) => state.serverUrl);
+  const jwt = useAuthStore((state) => state.jwt);
+  const agent = assigned ?? { agentSessionId: card?.id ?? '', agentId: card?.assigneeAgentId, agentPortraitUrl: null };
+  const nodeId = assigned?.nodeId ?? card?.nodeId;
+  const identity = { ...agent, agentPortraitUrl: agent.agentPortraitUrl ?? (agent.agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agent.agentId}/portrait` : null) };
+  const avatar = resolveSessionCardAvatar(identity, serverUrl);
+  const mapUploadedPath = React.useCallback((path: string, uploadNode: string) => buildAttachmentUri(serverUrl, uploadNode, path)!, [serverUrl]);
+  const attachments = useChatAttachments({ api, sessionId: card?.assigneeSessionId ?? undefined, nodeId: nodeId ?? undefined,
+    disabled: pending || comments.pending, mapUploadedPath });
+  const locked = pending || comments.pending || attachments.uploading;
+  const pickAttachment = () => {
+    if (card?.assigneeSessionId && nodeId) attachments.pickAttachment();
+    else Alert.alert('곧 지원', '담당 세션이 연결되면 첨부를 올릴 수 있습니다.');
+  };
+  const status = (next: CardStatus, reason?: string) => {
+    if (!api || !card) return Promise.resolve(false);
+    return run(() => api.setCardStatus(card.id, next, card.version, cardOperationId(), reason));
+  };
+  const send = async () => {
+    if (!api || !card || !text.trim() || locked) return;
+    const body = [text.trim(), ...attachments.attachments.map((item) => `${/\.(png|jpe?g|gif|webp|heic)$/i.test(item.name) ? '!' : ''}[${item.name}](${item.path})`)].join('\n\n');
+    const question = [...(detail?.questions ?? [])].reverse().find((item) => item.answer === null);
+    const ok = question
+      ? await run(() => api.answerCardQuestion(card.id, question.id, body, cardOperationId()))
+      : await comments.send(body);
+    if (ok) { setText(''); attachments.clearAttachments(); }
+  };
+  const openSession = (id: string) => {
+    if (!inline) onClose();
+    if (onOpenSession) onOpenSession(id);
+    else useUIStore.getState().openSessionAtEvent(id);
+  };
+  const sessionIds = [...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId] : []), ...(detail?.sessions ?? []).map((session) => session.agentSessionId)])];
+  return <AppKeyboardAvoidingView testID="card-detail-container" behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={folderStyles.container}>
+    <View testID="card-detail-header" style={styles.header}>
+      {!nativeHeader && <View style={styles.headerRow}>
+        <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose}><Text style={styles.glyph}>‹</Text></GlassButton>
+        <Text style={styles.heading} numberOfLines={1}>{card?.title ?? '카드'}</Text>
+        {card ? <CardStatusChip card={card} /> : null}
+      </View>}
+      {card ? <View style={styles.headerRow}>
+        <View style={styles.chips}>
+          <CompactTouchTarget accessibilityRole="button" accessibilityLabel="담당 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}>{avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.chipAvatar} /> : <Text style={styles.chipText}>{avatar.fallbackChar}</Text>}
+            <Text style={styles.chipText} numberOfLines={1}>{card.assigneeKind === 'human' ? card.assigneeUserId : resolveSessionAgentLabel(identity)}</Text></CompactTouchTarget>
+          <CompactTouchTarget accessibilityRole="button" accessibilityLabel="노드 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{nodeId ?? '노드 미지정'}</Text></CompactTouchTarget>
+          <CompactTouchTarget accessibilityRole="button" accessibilityLabel="모델 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{assigned?.modelPreset ?? card.modelPreset ?? '기본 모델'}</Text></CompactTouchTarget>
+        </View>
+        {card.status === 'review' ? <CompactTouchTarget accessibilityRole="button" accessibilityLabel="완료" accessibilityState={{ disabled: locked || !api || card.status !== 'review' }} disabled={locked || !api || card.status !== 'review'}
+          surfaceStyle={[styles.done, (locked || !api || card.status !== 'review') && styles.disabled]} onPress={() => { void status('done'); }}><Text style={styles.doneText}>완료</Text></CompactTouchTarget> : null}
+      </View> : null}
+    </View>
+    <ScrollView testID="card-detail-scroll" ref={scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"
+      onContentSizeChange={() => { if (timelineStamp && scrollStamp.current !== timelineStamp) { scrollStamp.current = timelineStamp; scroll.current?.scrollToEnd({ animated: false }); } }}>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {!detail ? <ActivityIndicator color={t.colors.accent} /> : null}
+      {detail ? <View testID="card-sessions" style={styles.sessions}>
+        <FolderSessionHistory api={api} small sessionIds={sessionsExpanded ? sessionIds : sessionIds.slice(0, 3)} onOpenSession={openSession} />
+        {sessionIds.length > 3 ? <CompactTouchTarget accessibilityRole="button" onPress={() => setSessionsExpanded((old) => !old)}><Text style={styles.link}>{sessionsExpanded ? '접기' : `${sessionIds.length - 3}개 더`}</Text></CompactTouchTarget> : null}
+      </View> : null}
+      {detail ? <CardTimeline detail={detail} onChooseAnswer={setText} /> : null}
+      {detail ? <View testID="card-other">
+        <PlannerSectionHeader title="그 밖에" expanded={otherExpanded} onToggle={() => setOtherExpanded((old) => !old)} />
+        {otherExpanded ? <PlannerMarkdownText markdown={detail.card.brief || '아직 경과가 없습니다.'} variant="card" /> : null}
+      </View> : null}
+    </ScrollView>
+    <View testID="card-comment-composer">
+      <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={locked}
+        styles={chatStyles} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
+      <ChatComposer input={text} onChangeInput={setText} placeholder="커멘트" inputAccessibilityLabel="커멘트" sendAccessibilityLabel="커멘트 보내기"
+        onPickAttachment={pickAttachment} onSend={() => { void send(); }} uploading={attachments.uploading} sending={comments.pending || pending}
+        disabled={locked || !api} voiceControls={null} />
+    </View>
+    {assignmentOpen && card ? <CardAssignmentSheet api={api} mode="edit" value={{ folderId: card.folderId, nodeId: card.nodeId,
+      agentId: card.assigneeAgentId, modelPreset: card.modelPreset }} onClose={() => setAssignmentOpen(false)} onSave={async (next) => {
+        if (!api) return;
+        let version = card.version;
+        if (next.folderId !== card.folderId) {
+          const ok = await run(async () => { const result = await api.moveCard(card.id, next.folderId, version, cardOperationId()); if (!result.card) throw new Error('이동한 카드를 찾을 수 없습니다.'); version = result.card.version; return result; });
+          if (!ok) throw new Error('폴더 이동을 저장하지 못했습니다.');
+        }
+        if (next.agentId !== card.assigneeAgentId || next.nodeId !== card.nodeId || next.modelPreset !== card.modelPreset) {
+          const ok = await run(() => api.updateCard(card.id, { ...(next.agentId !== card.assigneeAgentId ? { assignee: { kind: 'agent', agentId: next.agentId } } : {}), nodeId: next.nodeId, modelPreset: next.modelPreset }, version, cardOperationId()));
+          if (!ok) throw new Error('담당 변경을 저장하지 못했습니다.');
+        }
+      }} /> : null}
+  </AppKeyboardAvoidingView>;
+}

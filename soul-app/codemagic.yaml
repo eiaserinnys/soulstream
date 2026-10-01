@@ -1,0 +1,79 @@
+# Unverified alternative reference; production builds use EAS.
+# Kept below the repository root to avoid automatic discovery/activation.
+workflows:
+  ios-testflight:
+    name: iOS TestFlight (Soulstream)
+    working_directory: soul-app
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    # App Store Connect API 키. Codemagic Teams → Integrations → Apple Developer Portal에
+    # 등록된 통합 이름. 사용자가 Codemagic UI에서 .p8/Issuer ID/Key ID 업로드하며 지정한
+    # 통합 이름으로 아래 값을 맞춰야 한다 (현재는 "SoulstreamAPIKey" 가정 — 실제 등록 후 교체).
+    integrations:
+      app_store_connect: SoulstreamAPIKey
+
+    environment:
+      ios_signing:
+        # Codemagic이 App Store Connect API로 distribution cert/profile을 자동 생성·관리.
+        # EAS가 만들어둔 cert와 별개로 새 cert가 발급되며, 한 번 만들어지면 재사용된다.
+        distribution_type: app_store
+        bundle_identifier: me.eiaserinnys.soulstream
+      vars:
+        APP_STORE_APPLE_ID: "6761770053"
+        BUNDLE_ID: "me.eiaserinnys.soulstream"
+        XCODE_WORKSPACE: "ios"
+      node: 20.18.0
+      xcode: latest
+      cocoapods: default
+
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          set -e
+          NODE_ENV=development npm ci --include=dev --no-audit --no-fund
+
+      # Build-number coordination with EAS remote versioning is unverified.
+      - name: Expo prebuild (generate ios/ from app.json)
+        script: |
+          set -e
+          # ios/ 는 .gitignore되어 있으므로 매 빌드마다 새로 생성한다.
+          # --clean: 이전 prebuild 산출물 완전 제거 후 재생성.
+          npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods dependencies
+        script: |
+          set -e
+          cd ios && pod install
+
+      - name: Set up provisioning profile
+        script: |
+          set -e
+          xcode-project use-profiles
+
+      - name: Build IPA
+        script: |
+          set -e
+          # expo prebuild가 만든 workspace/scheme 이름은 app.json의 expo.name에서 파생되며
+          # ("Soulstream" → ios/Soulstream.xcworkspace) 보통 그대로지만 동적 검색으로 안전 확보.
+          WORKSPACE=$(find ios -maxdepth 2 -name "*.xcworkspace" -not -path "*/Pods/*" | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          xcode-project build-ipa \
+            --workspace "$WORKSPACE" \
+            --scheme "$SCHEME"
+
+    artifacts:
+      - soul-app/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+
+    publishing:
+      app_store_connect:
+        # auth: integration → environment.integrations.app_store_connect를 자동 사용
+        auth: integration
+        submit_to_testflight: true
+        # Internal Testing 그룹에 자동 배포. Codemagic이 처음 빌드 시 그룹이 없으면
+        # App Store Connect에서 "Internal Testing" 이름으로 미리 만들어둘 것.
+        beta_groups:
+          - Internal Testing

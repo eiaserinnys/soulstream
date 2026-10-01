@@ -1,0 +1,1 @@
+export const RUNTIME_STRIP_DETAILS_MAX_HEIGHT = 240;

@@ -1,0 +1,31 @@
+# EAS uploads the Git root; this app has no dependency on the pnpm workspace.
+/*
+!/soul-app
+
+# .easignore replaces all .gitignore files, including soul-app/.gitignore.
+node_modules/
+.expo/
+dist/
+build/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+.env*
+credentials.json
+*.tsbuildinfo
+coverage/
+.local/
+/soul-app/ios/
+/soul-app/android/
