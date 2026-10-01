@@ -1,6 +1,7 @@
 .v3-shell.v3-components-page {
   display: block;
   height: 100dvh;
+  padding-bottom: 0;
 }
 
 .v3-components-main {
