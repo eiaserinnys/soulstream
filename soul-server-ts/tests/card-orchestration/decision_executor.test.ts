@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { DecisionExecutor, claudeDecisionOptions } from '../../src/card-orchestration/decision_executor.js';
 import { DockerDecisionIsolation } from '../../src/card-orchestration/docker_isolation.js';
 
-const image = 'node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5';
+const image = process.env.CARD_DECISION_TEST_IMAGE ?? 'node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5';
 const request = { sessionId: 'a3a2a2bb-e18f-4d86-8b6a-c8264c54d35e', runId: '3f29dd17-a3b4-45ed-9ce0-88a45d7161f2', backend: 'claude' as const, model: 'test-model', prompt: 'decide', outputSchema: { type: 'object' }, signal: new AbortController().signal };
 
 describe('dedicated decision executor', () => {
@@ -37,7 +37,8 @@ describe('dedicated decision executor', () => {
     expect(credential).not.toHaveBeenCalled();
   });
 
-  it('real container cannot read shared FS, host HOME/config/secret, parent env or host proc', async () => {
+  // Explicit host fixture: generic CI/unit tests do not install a decision image.
+  it.skipIf(!process.env.CARD_DECISION_TEST_IMAGE)('real container cannot read shared FS, host HOME/config/secret, parent env or host proc', async () => {
     const sentinel = await mkdtemp(join(tmpdir(), 'decision-host-trap-'));
     const stage = await mkdtemp(join(tmpdir(), 'decision-stage-'));
     const previousSecret = process.env.CARD_ORCHESTRATION_SENTINEL_SECRET;

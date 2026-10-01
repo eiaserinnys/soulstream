@@ -33,7 +33,8 @@ describe('inference-only broker', () => {
     } finally { await broker.close(); await rm(directory, { recursive: true, force: true }); }
   });
 
-  it('runs the actual installed Codex in OS isolation with fake broker inference and structured JSON output', async () => {
+  // Native CLI integration requires operator-prepared fixtures; never read production auth.
+  it.skipIf(!process.env.CARD_DECISION_TEST_IMAGE || !process.env.CARD_DECISION_TEST_CODEX_BINARY_PATH)('runs the actual installed Codex in OS isolation with fake broker inference and structured JSON output', async () => {
     const output = '{"order":[],"reason":"no eligible work"}';
     const message = { id: 'msg_test', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: output, annotations: [] }] };
     const response = { id: 'resp_test', object: 'response', created_at: 1, model: 'test-model', status: 'completed', output: [message], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } };
@@ -55,8 +56,8 @@ describe('inference-only broker', () => {
       })() };
     });
     const executor = new DecisionExecutor({ claudeExecutable: '/not-used', credential: async () => credential,
-      codex: { image: 'node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5',
-        binaryPath: '/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex', timeoutMs: 30000 }, inferenceForward: forward });
+      codex: { image: process.env.CARD_DECISION_TEST_IMAGE!,
+        binaryPath: process.env.CARD_DECISION_TEST_CODEX_BINARY_PATH!, timeoutMs: 30000 }, inferenceForward: forward });
     const result = await executor.execute({ sessionId: 'visible', runId: 'run', backend: 'codex', model: 'test-model', prompt: 'Return the structured decision.',
       outputSchema: { type: 'object', properties: { order: { type: 'array', items: { type: 'string' } }, reason: { type: 'string' } }, required: ['order', 'reason'], additionalProperties: false }, signal });
     expect(result).toEqual({ status: 'ready', output: JSON.parse(output) });
