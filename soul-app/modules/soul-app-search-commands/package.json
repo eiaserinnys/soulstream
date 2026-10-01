@@ -1,0 +1,12 @@
+{
+  "name": "soul-app-search-commands",
+  "version": "1.0.0",
+  "description": "Native iPad keyboard commands for Soulstream search",
+  "main": "src/index.tsx",
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

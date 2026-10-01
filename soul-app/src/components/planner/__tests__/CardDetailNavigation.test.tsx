@@ -1,0 +1,30 @@
+import React from 'react';
+import { render } from '@testing-library/react-native';
+import { NavigationContext } from '@react-navigation/native';
+import { CardDetailSheet } from '../CardDetailSheet';
+import { useUIStore } from '../../../store/uiStore';
+import { useDeviceType } from '../../../theme';
+jest.mock('../../../theme/useDeviceType', () => ({ ...jest.requireActual('../../../theme/useDeviceType'), useDeviceType: jest.fn(() => 'phone') }));
+jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jest.fn(), launchImageLibraryAsync: jest.fn() }));
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('../../events/CopyableAssistantMarkdown', () => ({ CopyableAssistantMarkdown: () => null }));
+jest.mock('react-native-webview', () => ({ WebView: 'WebView' }));
+test('아이폰 카드 상세는 폴더와 같은 stack 화면으로 열고 시트를 렌더하지 않는다', () => {
+  jest.mocked(useDeviceType).mockReturnValue('phone');
+  const navigation = { navigate: jest.fn() };
+  const close = jest.fn();
+  const screen = render(<NavigationContext.Provider value={navigation as any}><CardDetailSheet api={null} cardId="card-1" onClose={close} /></NavigationContext.Provider>);
+  expect(navigation.navigate).toHaveBeenCalledWith('CardDetail', { cardId: 'card-1' });
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(screen.toJSON()).toBeNull();
+});
+test('태블릿 카드 진입은 기존 overlay 경로를 유지한다', () => {
+  jest.mocked(useDeviceType).mockReturnValue('tabletLandscape');
+  const navigation = { navigate: jest.fn() };
+  const open = jest.spyOn(useUIStore.getState(), 'openCardOverlay');
+  render(<NavigationContext.Provider value={navigation as any}><CardDetailSheet api={null} cardId="card-1" onClose={jest.fn()} /></NavigationContext.Provider>);
+  expect(open).toHaveBeenCalledWith('card-1');
+  expect(navigation.navigate).not.toHaveBeenCalled();
+  open.mockRestore();
+});

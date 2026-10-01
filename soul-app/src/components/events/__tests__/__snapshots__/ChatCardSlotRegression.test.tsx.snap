@@ -1,0 +1,138 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`카드 슬롯을 쓰지 않는 채팅은 기존 말풍선·본문·아바타 렌더를 보존한다 1`] = `
+[
+  <View
+    style={
+      {
+        "alignItems": "flex-start",
+        "flexDirection": "row",
+        "gap": 12,
+        "justifyContent": "flex-end",
+        "marginHorizontal": 16,
+        "marginVertical": 6,
+      }
+    }
+  >
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#0a84ff",
+            "borderBottomRightRadius": 4,
+            "borderRadius": 16,
+            "flexShrink": 1,
+            "maxWidth": "86%",
+            "paddingHorizontal": 16,
+            "paddingVertical": 14,
+          },
+          false,
+        ]
+      }
+      testID="user-message-bubble"
+    >
+      <Text
+        selectable={false}
+        style={
+          {
+            "color": "#07111f",
+            "fontSize": 18,
+            "lineHeight": 23.400000000000002,
+          }
+        }
+        testID="user-message-text"
+      >
+        사용자 메시지
+      </Text>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#d1d1d6",
+            "borderRadius": 16,
+            "height": 32,
+            "marginTop": 2,
+            "width": 32,
+          },
+          {
+            "alignItems": "center",
+            "justifyContent": "center",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          {
+            "color": "#53575d",
+            "fontSize": 15,
+            "fontWeight": "600",
+          }
+        }
+      >
+        디
+      </Text>
+    </View>
+  </View>,
+  <View
+    style={
+      {
+        "alignItems": "flex-start",
+        "flexDirection": "row",
+        "gap": 12,
+        "marginHorizontal": 16,
+        "marginVertical": 6,
+      }
+    }
+  >
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#d1d1d6",
+            "borderRadius": 16,
+            "height": 32,
+            "marginTop": 2,
+            "width": 32,
+          },
+          {
+            "alignItems": "center",
+            "justifyContent": "center",
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          {
+            "color": "#53575d",
+            "fontSize": 15,
+            "fontWeight": "600",
+          }
+        }
+      >
+        로
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "rgba(216, 227, 238, 0.76)",
+          "borderBottomLeftRadius": 4,
+          "borderRadius": 14,
+          "flexShrink": 1,
+          "maxWidth": "86%",
+          "paddingHorizontal": 16,
+          "paddingVertical": 14,
+        }
+      }
+      testID="assistant-message-bubble"
+    >
+      <Text>
+        에이전트 메시지
+      </Text>
+    </View>
+  </View>,
+]
+`;

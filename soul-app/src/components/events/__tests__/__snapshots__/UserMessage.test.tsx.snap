@@ -1,0 +1,44 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`채팅 말풍선과 첨부의 시각 속성 snapshot은 불변이다 1`] = `
+{
+  "bubble": {
+    "backgroundColor": "#0a84ff",
+    "borderBottomRightRadius": 4,
+    "borderRadius": 16,
+    "flexShrink": 1,
+    "maxWidth": "86%",
+    "paddingHorizontal": 16,
+    "paddingVertical": 14,
+  },
+  "images": [
+    {
+      "accessibilityLabel": "첨부 이미지 1",
+      "resizeMode": "cover",
+      "source": {
+        "uri": "https://chat.test/api/attachments/files?nodeId=node-1&path=%2Ftmp%2Fone.png",
+      },
+      "style": {
+        "backgroundColor": "#d1d1d6",
+        "borderRadius": 12,
+        "height": 200,
+        "width": 200,
+      },
+    },
+    {
+      "accessibilityLabel": "첨부 이미지 2",
+      "resizeMode": "cover",
+      "source": {
+        "uri": "https://chat.test/api/attachments/files?nodeId=node-1&path=%2Ftmp%2Ftwo.png",
+      },
+      "style": {
+        "backgroundColor": "#d1d1d6",
+        "borderRadius": 12,
+        "height": 200,
+        "width": 200,
+      },
+    },
+  ],
+  "text": "사진 두 장",
+}
+`;

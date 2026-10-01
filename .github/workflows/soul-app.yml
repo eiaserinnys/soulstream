@@ -1,0 +1,41 @@
+name: Soul app validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'soul-app/**'
+      - '.easignore'
+      - '.github/workflows/soul-app.yml'
+  pull_request:
+    paths:
+      - 'soul-app/**'
+      - '.easignore'
+      - '.github/workflows/soul-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: soul-app
+    env:
+      NODE_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: soul-app/package-lock.json
+      - name: Install independent app dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+      - name: Typecheck app
+        run: npx --no-install tsc --noEmit
+      - name: Test app
+        run: npm test -- --ci --maxWorkers=2 --testTimeout=60000

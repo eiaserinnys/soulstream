@@ -1,0 +1,267 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ChatComposer 기존 채팅 입력 렌더 snapshot은 불변이다 1`] = `
+<View
+  style={
+    [
+      {
+        "paddingHorizontal": 16,
+        "paddingVertical": 12,
+      },
+      {
+        "paddingBottom": 12,
+      },
+    ]
+  }
+>
+  <View
+    style={
+      [
+        {
+          "backgroundColor": "transparent",
+        },
+        [
+          [
+            {
+              "overflow": "hidden",
+            },
+            {},
+            {
+              "borderRadius": 22,
+              "minHeight": 56,
+              "paddingHorizontal": 6,
+              "paddingVertical": 4,
+            },
+            {
+              "borderBottomLeftRadius": 14,
+              "borderBottomRightRadius": 14,
+              "borderRadius": 14,
+              "borderTopLeftRadius": 14,
+              "borderTopRightRadius": 14,
+            },
+          ],
+          {
+            "backgroundColor": "rgba(216, 227, 238, 0.76)",
+          },
+        ],
+      ]
+    }
+    testID="chat-composer-box"
+  >
+    <ViewManagerAdapter_ExpoBlur
+      blurMethod="none"
+      blurReductionFactor={4}
+      intensity={48}
+      style={
+        {
+          "bottom": 0,
+          "left": 0,
+          "position": "absolute",
+          "right": 0,
+          "top": 0,
+        }
+      }
+      tint="light"
+    />
+    <View
+      style={
+        {
+          "alignItems": "flex-end",
+          "flexDirection": "row",
+          "gap": 6,
+          "minHeight": 48,
+        }
+      }
+      testID="chat-composer-content-row"
+    >
+      <View
+        accessibilityLabel="첨부 추가"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "flexShrink": 0,
+            "justifyContent": "center",
+            "minHeight": 48,
+            "minWidth": 48,
+            "opacity": 1,
+          }
+        }
+        testID="chat-composer-attach-button"
+      >
+        <View
+          style={
+            [
+              {
+                "alignItems": "center",
+                "justifyContent": "center",
+              },
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderRadius": 20,
+                  "height": 40,
+                  "width": 40,
+                },
+                false,
+              ],
+            ]
+          }
+          testID="chat-composer-attach-visual"
+        >
+          <Ionicons
+            color="#53575d"
+            name="add"
+            size={26}
+          />
+        </View>
+      </View>
+      <TextInput
+        accessibilityState={
+          {
+            "disabled": false,
+          }
+        }
+        autoCorrect={false}
+        editable={true}
+        maxLength={4000}
+        multiline={true}
+        onChangeText={[MockFunction]}
+        onContentSizeChange={[Function]}
+        placeholder="메시지 입력..."
+        placeholderTextColor="#666b70"
+        spellCheck={false}
+        style={
+          {
+            "color": "#000000",
+            "flex": 1,
+            "fontSize": 18,
+            "lineHeight": 23.400000000000002,
+            "maxHeight": 128,
+            "minHeight": 48,
+            "paddingHorizontal": 8,
+            "paddingVertical": 10,
+          }
+        }
+        testID="chat-composer-text-input"
+        textAlignVertical="center"
+        value="hello"
+      />
+      <View
+        style={
+          {
+            "flexShrink": 0,
+            "justifyContent": "center",
+            "minHeight": 48,
+          }
+        }
+        testID="chat-composer-voice-slot"
+      >
+        <Text
+          testID="voice-control"
+        >
+          mic
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="메시지 보내기"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "flexShrink": 0,
+            "justifyContent": "center",
+            "minHeight": 48,
+            "minWidth": 48,
+            "opacity": 1,
+          }
+        }
+        testID="chat-composer-send-button"
+      >
+        <View
+          style={
+            [
+              {
+                "alignItems": "center",
+                "justifyContent": "center",
+              },
+              [
+                {
+                  "alignItems": "center",
+                  "backgroundColor": "#0a84ff",
+                  "borderRadius": 20,
+                  "height": 40,
+                  "justifyContent": "center",
+                  "width": 40,
+                },
+                false,
+              ],
+            ]
+          }
+          testID="chat-composer-send-visual"
+        >
+          <Ionicons
+            color="#07111f"
+            name="send"
+            size={18}
+          />
+        </View>
+      </View>
+    </View>
+  </View>
+</View>
+`;

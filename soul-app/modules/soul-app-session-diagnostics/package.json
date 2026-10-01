@@ -1,0 +1,8 @@
+{
+  "name": "soul-app-session-diagnostics",
+  "version": "1.0.0",
+  "description": "Bounded native lifecycle and MetricKit diagnostics for Soul App",
+  "license": "UNLICENSED",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}
