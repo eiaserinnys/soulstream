@@ -1,0 +1,28 @@
+.v3-detail-pane.v3-ios-components-review {
+  height: 100%;
+  overflow: hidden;
+}
+
+.v3-ios-components-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-ios-components-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+  padding-top: var(--v3-space-6);
+}
+
+.v3-ios-components-frame {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+}

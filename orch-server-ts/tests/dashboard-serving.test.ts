@@ -18,6 +18,56 @@ afterEach(async () => {
 });
 
 describe("dashboard static serving", () => {
+  it("serves the iOS bundle index with revalidation and hashed scripts and fonts as immutable", async () => {
+    const dashboardDir = await createDashboardDirectory();
+    const bundleDir = join(dashboardDir, "assets", "ios-components");
+    await mkdir(join(bundleDir, "assets"), { recursive: true });
+    await writeFile(join(bundleDir, "index.html"), "<html>public-app-samples</html>");
+    await writeFile(join(bundleDir, "assets", "app-a123.js"), "console.log('samples')");
+    await writeFile(join(bundleDir, "assets", "icons-a123.ttf"), "font-fixture");
+    const app = Fastify();
+    await registerDashboardServing(app, { dashboardDir });
+
+    const index = await app.inject("/assets/ios-components/index.html");
+    expect(index.statusCode).toBe(200);
+    expect(index.body).toBe("<html>public-app-samples</html>");
+    expect(index.headers["content-type"]).toMatch(/^text\/html/);
+    expect(index.headers["cache-control"]).toBe("no-cache");
+    const head = await app.inject({ method: "HEAD", url: "/assets/ios-components/index.html" });
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe("");
+    expect(head.headers["cache-control"]).toBe("no-cache");
+    for (const [file, mime] of [["app-a123.js", "text/javascript"], ["icons-a123.ttf", "font/ttf"]]) {
+      const asset = await app.inject(`/assets/ios-components/assets/${file}`);
+      expect(asset.statusCode).toBe(200);
+      expect(asset.headers["content-type"]).toContain(mime);
+      expect(asset.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+    }
+    for (const file of ["missing.js", "missing.ttf"]) {
+      const missing = await app.inject(`/assets/ios-components/assets/${file}`);
+      expect(missing.statusCode).toBe(404);
+      expect(missing.body).not.toContain("<html>");
+    }
+    for (const route of ["/components/ios", "/components/ios/", "/components", "/"]) {
+      const entry = await app.inject(route);
+      expect(entry.statusCode).toBe(200);
+      expect(entry.body).toBe("<html>dashboard-index</html>");
+    }
+    await app.close();
+  });
+
+  it("returns 404 for an absent bundle index instead of the dashboard HTML", async () => {
+    const dashboardDir = await createDashboardDirectory();
+    const app = Fastify();
+    await registerDashboardServing(app, { dashboardDir });
+    for (const method of ["GET", "HEAD"] as const) {
+      const missing = await app.inject({ method, url: "/assets/ios-components/index.html" });
+      expect(missing.statusCode).toBe(404);
+      expect(missing.body).not.toContain("dashboard-index");
+    }
+    await app.close();
+  });
+
   it("serves assets and root files before the SPA fallback without masking API paths", async () => {
     const dashboardDir = await createDashboardDirectory();
     const app = Fastify();

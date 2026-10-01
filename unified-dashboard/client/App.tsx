@@ -17,6 +17,11 @@ const ComponentsReviewLayout = lazy(() =>
     default: mod.ComponentsReviewLayout,
   })),
 );
+const IosComponentsReviewPage = lazy(() =>
+  import("./v3/IosComponentsReviewPage").then((mod) => ({
+    default: mod.IosComponentsReviewPage,
+  })),
+);
 
 export function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -42,7 +47,9 @@ export function App() {
 
   return (
     <Suspense fallback={null}>
-      {pathname === "/components" ? <ComponentsReviewLayout /> : <V3DashboardLayout />}
+      {pathname === "/components/ios" || pathname === "/components/ios/"
+        ? <IosComponentsReviewPage />
+        : pathname === "/components" ? <ComponentsReviewLayout /> : <V3DashboardLayout />}
     </Suspense>
   );
 }

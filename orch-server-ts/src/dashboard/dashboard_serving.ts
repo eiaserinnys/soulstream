@@ -44,13 +44,16 @@ export async function registerDashboardServing(
   }
 
   const assetsRoot = resolve(dashboardRoot, "assets");
+  const iosComponentsIndex = resolve(assetsRoot, "ios-components", "index.html");
   if (await isDirectory(assetsRoot)) {
     app.get("/assets/*", async (request, reply) => {
       const filePath = safeFilePath(assetsRoot, wildcardPath(request));
       if (filePath === undefined || !(await isFile(filePath))) {
         return sendNotFound(reply);
       }
-      return sendFile(reply, filePath, DASHBOARD_ASSET_CACHE_CONTROL);
+      return sendFile(reply, filePath, filePath === iosComponentsIndex
+        ? DASHBOARD_INDEX_CACHE_CONTROL
+        : DASHBOARD_ASSET_CACHE_CONTROL);
     });
   }
 
@@ -163,6 +166,7 @@ const MIME_TYPES: Readonly<Record<string, string>> = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".txt": "text/plain; charset=utf-8",
+  ".ttf": "font/ttf",
   ".webmanifest": "application/manifest+json; charset=utf-8",
   ".wasm": "application/wasm",
   ".webp": "image/webp",

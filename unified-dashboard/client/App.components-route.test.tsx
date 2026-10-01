@@ -10,6 +10,9 @@ vi.mock("./v3/V3DashboardLayout", () => ({
 vi.mock("./v3/ComponentsReviewLayout", () => ({
   ComponentsReviewLayout: () => <main data-testid="standalone-review" />,
 }));
+vi.mock("./v3/IosComponentsReviewPage", () => ({
+  IosComponentsReviewPage: () => <main data-testid="ios-review" />,
+}));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -34,4 +37,19 @@ it("opens /components independently and restores the dashboard on navigation", a
   flushSync(() => window.dispatchEvent(new PopStateEvent("popstate")));
   await vi.waitFor(() => expect(container.querySelector('[data-testid="dashboard"]')).not.toBeNull());
   expect(container.querySelector('[data-testid="standalone-review"]')).toBeNull();
+});
+
+it.each(["/components/ios", "/components/ios/"])("opens %s independently on direct entry", async pathname => {
+  window.history.replaceState(null, "", pathname);
+  flushSync(() => root.render(<App />));
+  await vi.waitFor(() => expect(container.querySelector('[data-testid="ios-review"]')).not.toBeNull());
+  expect(container.querySelector('[data-testid="dashboard"]')).toBeNull();
+  expect(container.querySelector('[data-testid="standalone-review"]')).toBeNull();
+});
+
+it("keeps other components paths on the existing dashboard route", async () => {
+  window.history.replaceState(null, "", "/components/ios/other");
+  flushSync(() => root.render(<App />));
+  await vi.waitFor(() => expect(container.querySelector('[data-testid="dashboard"]')).not.toBeNull());
+  expect(container.querySelector('[data-testid="ios-review"]')).toBeNull();
 });
