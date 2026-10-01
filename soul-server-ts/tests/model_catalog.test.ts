@@ -33,7 +33,8 @@ describe("ModelCatalog", () => {
     // 260906: codex-6-astra added, and codex-5.6-lunar corrected to the id the
     // live node catalogs actually use (codex-5.6-luna).
     // 261001: the GPT-6 presets the live node catalogs already carry
-    // (codex-6.1-sol, codex-6-sol, codex-6-luna) added.
+    // (codex-6.1-sol, codex-6-sol, codex-6-luna) added, and codex-5.3-spark
+    // dropped because the vendor no longer serves it to ChatGPT accounts.
     expect(catalog.list().map((preset) => preset.id)).toEqual([
       "claude-sonnet",
       "claude-opus",
@@ -45,7 +46,6 @@ describe("ModelCatalog", () => {
       "codex-5.6-sol",
       "codex-5.6-luna",
       "codex-5.6-terra",
-      "codex-5.3-spark",
       "kimi-2",
       "kimi-3",
     ]);
@@ -68,7 +68,6 @@ describe("ModelCatalog", () => {
       "codex-5.6-sol",
       "codex-5.6-luna",
       "codex-5.6-terra",
-      "codex-5.3-spark",
     ]) {
       expect(byId.get(id)?.default_effort, id).toBe("xhigh");
     }

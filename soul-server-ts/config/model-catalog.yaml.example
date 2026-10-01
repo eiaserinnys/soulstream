@@ -34,8 +34,13 @@
 #   두 필드를 모두 생략하면 그 preset은 effort 선택 UI 없이 "자동(백엔드 기본값)"으로
 #   표시된다. 벤더가 effort를 지원하지 않는 preset은 반드시 이 상태로 둔다 —
 #   지원하지도 않는 값을 화면에만 띄우지 않기 위해서다.
-#   아래 값은 260906 eiaserinnys 실측 기준이다. 노드마다 CLI/SDK 버전이 다르면
-#   광고 목록도 다를 수 있으므로 노드별로 재조회한다.
+#   아래 값은 261001 eiaserinnys 실측 기준이다(claude 2.1.286, codex 0.159.2).
+#   노드마다 CLI/SDK 버전이 다르면 광고 목록도 다를 수 있으므로 노드별로 재조회한다.
+#
+# 무엇을 싣는가
+#   벤더가 지금 광고하는 모델 가운데 현 세대이거나 실제로 쓰고 있는 것만 싣는다.
+#   광고는 되지만 싣지 않은 것(261001): 구세대 Claude 고정 버전들, Haiku 4.5,
+#   gpt-5.5. 쓰게 되면 그때 실측값으로 추가한다.
 
 presets:
   - id: claude-sonnet
@@ -104,12 +109,10 @@ presets:
     model: gpt-5.6-terra
     supported_efforts: [low, medium, high, xhigh, max, ultra]
     default_effort: xhigh
-  - id: codex-5.3-spark
-    label: Codex - 5.3 Spark
-    backend: codex
-    model: gpt-5.3-codex-spark
-    supported_efforts: [low, medium, high, xhigh]
-    default_effort: xhigh
+  # 261001: codex-5.3-spark를 뺐다. codex 0.159.2의 model/list에 없고, 실제로
+  # 띄우면 "not supported when using Codex with a ChatGPT account"(400)로 거절된다.
+  # 벤더가 거둬들인 모델은 목록에 남기지 않는다. 고를 수 있는데 실패하는 편이
+  # 목록에 없는 것보다 나쁘다.
   # Kimi 두 preset은 effort를 선언하지 않는다. 벤더의 Anthropic 호환 엔드포인트가
   # 공식 필드 `output_config.effort`를 검증하지 않고 무시한다(260906 실측: 잘못된
   # 값에도 200 응답). 지원 근거가 생기면 그때 두 필드를 추가한다.
