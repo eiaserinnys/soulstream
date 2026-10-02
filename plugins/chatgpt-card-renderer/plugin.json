@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "soulstream-card-renderer",
+  "version": "0.2.0",
+  "description": "Render an already-retrieved Soulstream card snapshot without changing its backend.",
+  "repository": "https://github.com/eiaserinnys/soulstream",
+  "keywords": ["soulstream", "cards", "read-only", "mcp-apps"]
+}

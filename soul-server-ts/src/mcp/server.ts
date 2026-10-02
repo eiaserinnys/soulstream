@@ -17,6 +17,9 @@ import { registerPageTools } from "./tools/page.js";
 import { registerCardOrchestrationTools } from "./tools/card_orchestration.js";
 import { registerRecurringJobTools } from "./tools/recurring_jobs.js";
 import { registerReflectTools } from "./tools/reflect.js";
+import { registerLiveCardView } from "./tools/live_card_view.js";
+import { getFolderService } from "./tools/folder_tool_shared.js";
+import { resolveEffectiveCallerSessionId } from "./tools/caller_session.js";
 import { registerFolderTools } from "./tools/folder.js";
 import { registerSessionMgmtTools } from "./tools/session_mgmt.js";
 import { registerSessionQueryTools } from "./tools/session_query.js";
@@ -38,6 +41,10 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerAgentConfigTools(guardedServer, runtime);
   registerMultiNodeTools(guardedServer, runtime);
   registerFolderTools(guardedServer, runtime);
+  registerLiveCardView(guardedServer, query => getFolderService(runtime).listCards({
+    folderId: query.folder_id,
+    actorSessionId: resolveEffectiveCallerSessionId(undefined),
+  }));
   registerCustomViewTools(guardedServer, runtime);
   registerPageTools(guardedServer, runtime);
   registerWorktreeTools(guardedServer, runtime);
