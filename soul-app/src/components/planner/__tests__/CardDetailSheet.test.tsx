@@ -71,7 +71,7 @@ test.each([{ nativeHeader: true }, { inline: true }])('상세 완료 성공은 s
   const onClose = jest.fn(() => expect(useCardStore.getState().rows[card.id].status).toBe('done'));
   const screen = render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={onClose} />);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
-  expect(screen.queryByLabelText('상태 변경')).toBeNull();
+  expect(screen.getByLabelText('상태 변경')).toBeTruthy();
   if (!('nativeHeader' in presentation)) expect(screen.getByText('검수')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('완료')));
   expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'done', card.version, expect.any(String), undefined);
@@ -165,4 +165,16 @@ test('카드 생성은 요청 본문만 복원하고 제목은 기존 빈 값으
   expect(api.createCard).toHaveBeenCalledWith(expect.objectContaining({ title: '제출 제목', request: '이어 쓸 긴 요청',
     nodeId: 'node-1', assignee: { kind: 'agent', agentId: 'roselin' }, modelPreset: 'sol', queue: false, attachments: [] }));
   expect(useDraftStore.getState().drafts).toEqual({});
+});
+
+
+test.each([{nativeHeader:true},{inline:true}])('완료 상세에서도 기존 메뉴로 사유 없이 재착수한다 %s',async presentation=>{
+  const completed={...detail,card:{...card,status:'done' as const},reports:[],questions:[]};
+  const api={getCard:jest.fn().mockResolvedValue(completed),setCardStatus:jest.fn().mockResolvedValue({card:{...completed.card,status:'running'}})};
+  const screen=render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={jest.fn()}/>);
+  await waitFor(()=>expect(screen.getByLabelText('상태 변경')).toBeTruthy());
+  await act(async()=>fireEvent.press(screen.getByLabelText('상태 변경')));
+  await waitFor(()=>expect(screen.getByLabelText('실행 중로 이동')).toBeTruthy());
+  await act(async()=>fireEvent.press(screen.getByLabelText('실행 중로 이동')));
+  expect(api.setCardStatus).toHaveBeenCalledWith(card.id,'running',card.version,expect.any(String),undefined);
 });

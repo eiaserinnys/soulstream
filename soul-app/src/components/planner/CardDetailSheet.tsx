@@ -28,6 +28,7 @@ import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { PlannerMarkdownText } from './PlannerMarkdownText';
 import { CardAssignmentSheet } from './CardAssignmentSheet';
 import { CardStatusChip } from './CardRow';
+import { CardStatusMenu } from './CardStatusMenu';
 import { CardTimeline } from './CardTimeline';
 import { cardDetailStyles } from './CardDetail.styles';
 
@@ -57,6 +58,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const statusAction = useCardTransition(api, cardId);
   const comments = useCardComments(api, cardId);
   const [assignmentOpen, setAssignmentOpen] = useState(false);
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const draft = usePersistentDraft('card-comment', [cardId], '');
   const { value: text, setValue: setText } = draft;
   const [otherExpanded, setOtherExpanded] = useState(false);
@@ -104,22 +106,23 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
     else useUIStore.getState().openSessionAtEvent(id);
   };
   const sessionIds = [...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId] : []), ...(detail?.sessions ?? []).map((session) => session.agentSessionId)])];
-  return <AppKeyboardAvoidingView testID="card-detail-container" behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={folderStyles.container}>
+  return <><AppKeyboardAvoidingView testID="card-detail-container" behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={folderStyles.container}>
     <View testID="card-detail-header" style={styles.header}>
       {!nativeHeader && <View style={styles.headerRow}>
         <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose}><Text style={styles.glyph}>‹</Text></GlassButton>
         <Text style={styles.heading} numberOfLines={1}>{card?.title ?? '카드'}</Text>
-        {card ? <CardStatusChip card={card} /> : null}
+        {card ? <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api} onPress={() => setStatusMenuOpen(true)}><CardStatusChip card={card} /></CompactTouchTarget> : null}
       </View>}
       {card ? <View style={styles.headerRow}>
         <View style={styles.chips}>
+          {nativeHeader ? <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api} onPress={() => setStatusMenuOpen(true)}><CardStatusChip card={card} /></CompactTouchTarget> : null}
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="담당 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}>{avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.chipAvatar} /> : <Text style={styles.chipText}>{avatar.fallbackChar}</Text>}
             <Text style={styles.chipText} numberOfLines={1}>{card.assigneeKind === 'human' ? card.assigneeUserId : resolveSessionAgentLabel(identity)}</Text></CompactTouchTarget>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="노드 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{nodeId ?? '노드 미지정'}</Text></CompactTouchTarget>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="모델 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{assigned?.modelPreset ?? card.modelPreset ?? '기본 모델'}</Text></CompactTouchTarget>
         </View>
-        {card.status === 'review' ? <CompactTouchTarget accessibilityRole="button" accessibilityLabel="완료" accessibilityState={{ disabled: locked || !api || card.status !== 'review' }} disabled={locked || !api || card.status !== 'review'}
-          surfaceStyle={[styles.done, (locked || !api || card.status !== 'review') && styles.disabled]} onPress={() => { void status('done'); }}><Text style={styles.doneText}>완료</Text></CompactTouchTarget> : null}
+        <CompactTouchTarget accessibilityRole="button" accessibilityLabel="완료" accessibilityState={{ disabled: locked || !api }} disabled={locked || !api}
+          surfaceStyle={[styles.done, (locked || !api) && styles.disabled]} onPress={() => { void status('done'); }}><Text style={styles.doneText}>완료</Text></CompactTouchTarget>
       </View> : null}
     </View>
     <ScrollView testID="card-detail-scroll" ref={scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"
@@ -156,5 +159,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
           if (!ok) throw new Error('담당 변경을 저장하지 못했습니다.');
         }
       }} /> : null}
-  </AppKeyboardAvoidingView>;
+  </AppKeyboardAvoidingView>
+    {statusMenuOpen && card ? <CardStatusMenu api={api} card={card} onClose={() => setStatusMenuOpen(false)} /> : null}
+  </>;
 }

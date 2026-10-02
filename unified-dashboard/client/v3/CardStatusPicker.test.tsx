@@ -17,29 +17,25 @@ async function render(load=vi.fn().mockResolvedValue(detail()),change=vi.fn().mo
  await act(()=>root.render(<CardStatusPicker card={reviewCard} control={{load,change,pending:false}} onOpen={onOpen}/>));
  return {load,change,onOpen};
 }
-it("loads only on explicit opens, gates missing reports, and does not mutate the current status",async()=>{
+it("loads only on explicit opens and allows reportless review",async()=>{
  const d=detail();d.reports=[];const c=await render(vi.fn().mockResolvedValue(d));
  expect(c.load).not.toHaveBeenCalled();await click("카드 상태 변경");expect(c.load).toHaveBeenCalledTimes(1);
- expect(button("검수 대기").disabled).toBe(true);expect(document.body.textContent).not.toContain("보고가 필요합니다");expect(document.body.textContent).not.toContain("대기: 담당 에이전트");
+ expect(button("검수 대기").disabled).toBe(false);expect(document.body.textContent).not.toContain("보고가 필요합니다");expect(document.body.textContent).not.toContain("대기: 담당 에이전트");
  await click("드래프트");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
-it("allows changes with unanswered questions and still requests a review restart reason",async()=>{
- const d=detail();d.questions=[{id:"q",text:"질문",options:null,answer:null,askedAt:"",answeredAt:null}];
+it("allows every state with unanswered questions, without a restart reason",async()=>{
+ const d=detail();d.reports=[];d.questions=[{id:"q",text:"질문",options:null,answer:null,askedAt:"",answeredAt:null}];
  const c=await render(vi.fn().mockResolvedValue(d));await click("카드 상태 변경");
- for(const label of ["드래프트","대기","실행 중","검수 대기","완료","취소"])expect(button(label).disabled).toBe(false);
- expect(document.body.textContent).not.toContain("질문에 답한 뒤 변경할 수 있습니다");
- await click("실행 중");expect(button("확인").disabled).toBe(true);expect(c.change).not.toHaveBeenCalled();
- await click("취소");await click("완료");expect(c.change).toHaveBeenCalledWith(d.card,"done",undefined);expect(c.onOpen).not.toHaveBeenCalled();
+ for(const label of ["드래프트","대기","실행 중","막힘","검수 대기","완료","취소"])expect(button(label).disabled).toBe(false);
+ await click("실행 중");expect(c.change).toHaveBeenCalledWith(d.card,"running",undefined);
+ expect(document.querySelector('input[aria-label="다시 실행할 사유"]')).toBeNull();
 });
-it("requires a reason, cancels without writes, and preserves the draft on failure until explicit refresh",async()=>{
- const change=vi.fn().mockRejectedValue(new Error("version conflict")),c=await render(undefined,change);
- await click("카드 상태 변경");await click("실행 중");expect(button("확인").disabled).toBe(true);
- await click("취소");expect(change).not.toHaveBeenCalled();await click("실행 중");
- const input=document.querySelector<HTMLInputElement>('input[aria-label="다시 실행할 사유"]')!;
- await act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(input,"수정 요청");input.dispatchEvent(new Event("input",{bubbles:true}));});
- await click("확인");expect(change).toHaveBeenCalledWith(expect.objectContaining({version:7}),"running","수정 요청");
- expect(input.value).toBe("수정 요청");expect(document.body.textContent).toContain("version conflict");expect(button("확인").disabled).toBe(true);
- await click("갱신 후 재시도");expect(c.load).toHaveBeenCalledTimes(2);expect(input.value).toBe("수정 요청");
+it("shows a write conflict until explicit refresh and retries the selected state",async()=>{
+ const change=vi.fn().mockRejectedValueOnce(new Error("version conflict")).mockResolvedValue(undefined),c=await render(undefined,change);
+ await click("카드 상태 변경");await click("실행 중");
+ expect(change).toHaveBeenCalledWith(expect.objectContaining({version:7}),"running",undefined);
+ expect(document.body.textContent).toContain("version conflict");expect(button("실행 중").disabled).toBe(true);
+ await click("갱신 후 재시도");expect(c.load).toHaveBeenCalledTimes(2);await click("실행 중");expect(change).toHaveBeenCalledTimes(2);
 });
 it("keeps loading and failures unselectable, ignores closed late responses, and refreshes on reopening",async()=>{
  let resolve!:(d:CardDetail)=>void;const load=vi.fn().mockReturnValueOnce(new Promise<CardDetail>(done=>{resolve=done;})).mockRejectedValueOnce(new Error("읽기 실패")).mockResolvedValue(detail());

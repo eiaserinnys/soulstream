@@ -82,3 +82,14 @@ it("shows structured request attachments and opens the existing image viewer",as
  expect(container.querySelector<HTMLAnchorElement>('a[href*="nodeId=other"]')?.textContent).toContain("설명.pdf");
  await act(()=>image.click());expect(document.querySelector('[role="dialog"] img')?.getAttribute('alt')).toBe('첨부 이미지.png');
 });
+
+it("reopens a completed detail through the existing status menu without reports",async()=>{
+ const completed={...card,status:"done" as const,version:8};const current={...detail,card:completed,reports:[]};
+ const loadCard=vi.fn().mockResolvedValue(current),mutate=vi.fn().mockResolvedValue(undefined);
+ useCardStore.setState({byId:{inherit:completed},details:{inherit:current},loadCard,mutate});
+ await act(()=>root.render(<CardDetailPane cardId="inherit" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()}/>));
+ await act(async()=>container.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]')!.click());
+ const move=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(button=>button.textContent==="실행 중")!;
+ await act(async()=>move.click());
+ expect(mutate).toHaveBeenCalledWith("inherit","/status",{status:"running",expectedVersion:8});
+});

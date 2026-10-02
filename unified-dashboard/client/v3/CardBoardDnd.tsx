@@ -39,7 +39,7 @@ export function CardBoardDnd({children,cards,renderCard}:{children:ReactNode;car
   const overlay=<DragOverlay className="v3-card-board-drag-overlay" dropAnimation={null}>{activeCard?renderCard(activeCard,null,true):null}</DragOverlay>;
   return <CardBoardTransitionContext.Provider value={transitions}>
     <DndContext sensors={sensors} collisionDetection={collisions}
-      accessibility={{screenReaderInstructions:{draggable:"스페이스로 카드를 잡고 좌우 화살표로 단계를 선택합니다. 스페이스로 옮기고 Escape로 취소합니다. 막힘 단계는 직접 선택할 수 없습니다."}}}
+      accessibility={{screenReaderInstructions:{draggable:"스페이스로 카드를 잡고 좌우 화살표로 단계를 선택합니다. 스페이스로 옮기고 Escape로 취소합니다."}}}
       autoScroll={{canScroll:element=>element.classList.contains("v3-card-board")||element.classList.contains("v3-card-board-lane")}}
       onDragStart={({active,activatorEvent})=>{
         overlayHost.current=(activatorEvent.target as HTMLElement).closest(".v3-shell");
@@ -58,8 +58,8 @@ export function CardBoardDnd({children,cards,renderCard}:{children:ReactNode;car
 }
 export function CardBoardLane({status,label,children,style}:{status:CardStatus;label:string;children:ReactNode;style?:CSSProperties}) {
   const {setNodeRef,isOver}=useDroppable({id:`lane-${status}`,data:{status}});
-  return <section ref={setNodeRef} style={style} className={`v3-card-board-column${isOver?status==="blocked"?" is-drop-unavailable":" is-drop-target":""}`}
-    data-board-column={status} aria-label={label} aria-description={status==="blocked"?"막힘 단계로 직접 옮길 수 없습니다":undefined}>
+  return <section ref={setNodeRef} style={style} className={`v3-card-board-column${isOver?" is-drop-target":""}`}
+    data-board-column={status} aria-label={label}>
     {children}
   </section>;
 }

@@ -1,6 +1,5 @@
-import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDetail, CardDto, CardStatus } from '../../api/cardTypes';
 import { captureAuthScope } from '../../lib/auth-scope';
@@ -12,16 +11,13 @@ import { AppModalSurface } from '../AppModalSurface';
 import { GlassButton } from '../GlassSurface';
 import { cardStyles } from './Card.styles';
 
-export function CardStatusMenu({ api, card, initialTarget, onClose }: {
-  api: ApiClient | null; card: CardDto; initialTarget?: CardStatus; onClose(): void;
+export function CardStatusMenu({ api, card, onClose }: {
+  api: ApiClient | null; card: CardDto; onClose(): void;
 }) {
   const t = useTokens();
   const styles = cardStyles(t);
   const [detail, setDetail] = useState<CardDetail | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
-  const [target, setTarget] = useState<CardStatus | undefined>(initialTarget);
-  const draft = usePersistentDraft('card-reason', [card.id], '');
-  const { value: reason, setValue: setReason } = draft;
   const active = useRef(true);
   const { transition, pending, error } = useCardTransition(api, card.id);
   const read = async () => {
@@ -33,10 +29,8 @@ export function CardStatusMenu({ api, card, initialTarget, onClose }: {
   };
   useEffect(() => { active.current = true; void read(); return () => { active.current = false; }; }, [api, card.id]);
   const move = async (next: CardStatus) => {
-    if (!detail || !active.current || !draft.ready) return;
-    if (detail.card.status === 'review' && next === 'running' && !reason.trim()) { setTarget(next); return; }
-    const ok = await transition(detail.card, next, reason, () => active.current);
-    if (ok) draft.clearIfMatches(reason);
+    if (!detail || !active.current) return;
+    const ok = await transition(detail.card, next, undefined, () => active.current);
     if (ok && active.current) onClose();
   };
   return <AppModalSurface visible modalId="modal_card_assignment" variant="compact" onRequestClose={() => { active.current = false; onClose(); }}>
@@ -45,20 +39,14 @@ export function CardStatusMenu({ api, card, initialTarget, onClose }: {
       {!detail && !readError ? <ActivityIndicator color={t.colors.accent} /> : null}
       {readError || error ? <Text accessibilityRole="alert" style={styles.error}>{readError ?? error}</Text> : null}
       {readError || error ? <GlassButton accessibilityLabel="상태 다시 조회" onPress={() => { void read(); }}><Text style={styles.body}>다시 조회</Text></GlassButton> : null}
-      {detail ? BOARD_COLUMNS.map(([next, label]) => {
-        const needsReason = detail.card.status === 'review' && next === 'running';
-        const problem = cardTransitionProblem(detail, next, needsReason ? reason || '사유 입력 예정' : undefined);
+      {detail ? ([...BOARD_COLUMNS, ['cancelled', '취소']] as const).map(([next, label]) => {
+        const problem = cardTransitionProblem(detail, next);
         return <View key={next} style={{ gap: t.uiSpacing.xs }}>
           <GlassButton accessibilityLabel={`${label}로 이동`} disabled={pending || !!problem} onPress={() => { void move(next); }}>
             <Text style={styles.body}>{label}</Text>
           </GlassButton>
         </View>;
       }) : null}
-      {target === 'running' && detail?.card.status === 'review' ? <View style={{ gap: t.uiSpacing.sm }}>
-        <Text style={styles.body}>재실행 사유</Text>
-        <TextInput accessibilityLabel="재실행 사유" value={reason} onChangeText={setReason} multiline editable={!pending && draft.ready} style={styles.input} />
-        <GlassButton accessibilityLabel="사유와 함께 실행 중으로 이동" disabled={pending || !reason.trim()} onPress={() => { void move('running'); }}><Text style={styles.body}>이동</Text></GlassButton>
-      </View> : null}
       <GlassButton accessibilityLabel="상태 메뉴 닫기" onPress={() => { active.current = false; onClose(); }}><Text style={styles.body}>닫기</Text></GlassButton>
     </ScrollView>
   </AppModalSurface>;

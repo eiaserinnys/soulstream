@@ -4,17 +4,16 @@ import { cardTransitionProblem, performCardTransition } from '../card-transition
 
 const detail = (overrides: Partial<CardDetail> = {}): CardDetail => ({ card: cardFixture(), reports: [], questions: [], sessions: [], ...overrides });
 
-test('보고·재실행 사유와 지원하지 않는 막힘 전이를 표시한다', () => {
-  expect(cardTransitionProblem(detail(), 'review')).toMatch('보고');
-  expect(cardTransitionProblem(detail({ card: cardFixture({ status: 'review' }) }), 'running')).toMatch('사유');
-  expect(cardTransitionProblem(detail(), 'blocked')).toMatch('질문');
-  expect(cardTransitionProblem(detail(), 'queued')).toBeNull();
-  expect(cardTransitionProblem(detail({ card: cardFixture({ status: 'review' }) }), 'done')).toBeNull();
+test('보고 없이 보관·완료 카드도 사유 없이 이동한다', () => {
+  const archived = detail({ card: cardFixture({ status: 'done', archived: true }) });
+  for (const next of ['todo', 'queued', 'running', 'blocked', 'review', 'cancelled'] as const)
+    expect(cardTransitionProblem(archived, next)).toBeNull();
+  expect(cardTransitionProblem(detail({card:cardFixture({status:'review'})}), 'running')).toBeNull();
 });
 
 test.each(['todo', 'queued', 'running', 'review', 'done', 'cancelled'] as const)('미답 질문이 있어도 %s 상태를 저장한다', async (next) => {
   const source = cardFixture({ status: 'blocked', blockedKind: 'question' });
-  const latest = detail({ card: source, reports: [{ id: 'report' } as any], questions: [{ answer: null } as any] });
+  const latest = detail({ card: source, reports: [], questions: [{ answer: null } as any] });
   const api = { getCard: jest.fn().mockResolvedValue(latest), setCardStatus: jest.fn().mockResolvedValue({ card: { ...source, status: next } }) };
   expect(cardTransitionProblem(latest, next)).toBeNull();
   await performCardTransition(api as any, source, next, `question-${next}`);

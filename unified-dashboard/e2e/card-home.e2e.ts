@@ -90,7 +90,7 @@ test("keyboard and pointer lane moves share latest guards and awaited fixture wr
  await page.mouse.move(source!.x+source!.width/2,source!.y+source!.height/2);await page.mouse.down();await page.mouse.move(target!.x+target!.width/2,target!.y+100,{steps:15});await page.mouse.up();
  await expect(board.locator('[data-board-column="done"] [data-card-id="home-4-0"]')).toHaveCount(1);
  await expect(board.locator('[data-board-column="review"] [data-card-id="home-4-0"]')).toHaveCount(0);expect(state.writes).toHaveLength(2);writeFileSync(path.join(output,"pointer-saved.json"),JSON.stringify(state.writes,null,2));
- // Shift+F10 is the same menu as right click; the reason stays after a failed save.
+ // Shift+F10 opens the same status menu as right click.
  const done=board.locator('[data-card-id="home-4-0"]');await done.locator(".v3-postit-open").focus();await page.keyboard.press("Shift+F10");await expect(page.locator("[data-card-status-picker]")).toBeVisible();await page.keyboard.press("Escape");
  await expect(page.locator("[data-card-status-picker]")).toHaveCount(0);await expect(page.getByRole("dialog",{name:"전체 카드 보드"})).toBeVisible();await expect(page.getByTestId("card-detail")).toHaveCount(0);
  await page.keyboard.press("Escape");await expect(page.getByRole("dialog",{name:"전체 카드 보드"})).toHaveCount(0);await expect(page.getByRole("button",{name:"보드 확대",exact:true})).toBeFocused();
@@ -112,11 +112,11 @@ test("actual component samples support keyboard moves and expansion without API 
 });
 
 
-test("Escape owns only the current reason/menu or drag; outside drops and cancel write zero",async({page})=>{
+test("Escape owns only the current menu or drag; outside drops and cancel write zero",async({page})=>{
  await page.setViewportSize({width:1210,height:834});const state=await fixture(page);
  await page.getByRole("button",{name:"보드 확대",exact:true}).click();const dialog=page.getByRole("dialog",{name:"전체 카드 보드"}),board=dialog.locator(".v3-card-board");
  const review=board.locator('[data-card-id="home-4-0"]');await review.scrollIntoViewIfNeeded();await review.click({button:"right"});
- const picker=page.locator("[data-card-status-picker]");await picker.getByRole("button",{name:"실행 중",exact:true}).click();await picker.getByRole("textbox",{name:"다시 실행할 사유"}).fill("입력 중 취소");
+ const picker=page.locator("[data-card-status-picker]");await expect(picker.getByRole("button",{name:"실행 중",exact:true})).toBeEnabled();
  await page.keyboard.press("Escape");await expect(picker).toHaveCount(0);await expect(dialog).toBeVisible();expect(state.writes).toHaveLength(0);await expect(page.getByTestId("card-detail")).toHaveCount(0);
  await board.evaluate(el=>el.scrollLeft=0);const grip=board.locator('[data-card-id="home-0-0"]').getByRole("button",{name:`${reviewTitle} 단계 이동`,exact:true});await grip.focus();await page.keyboard.press("Space");await expect(board.locator(".is-dragging")).toHaveCount(1);
  await page.keyboard.press("ArrowRight");await expect(dialog.locator('[data-board-column="queued"]')).toHaveClass(/is-drop-target/);await page.keyboard.press("Escape");await expect(board.locator(".is-dragging")).toHaveCount(0);await expect(dialog).toBeVisible();expect(state.writes).toHaveLength(0);
@@ -156,17 +156,16 @@ test("pointer edge scrolling reaches the last lane and commits once",async({page
  await expect(state.board.locator('[data-board-column="done"] [data-card-id="home-0-0"]')).toHaveCount(1);expect(state.writes).toHaveLength(1);await expect(page.getByTestId("card-detail")).toHaveCount(0);writeFileSync(path.join(output,"edge-scroll.json"),JSON.stringify({scrollLeft:await state.board.evaluate(el=>el.scrollLeft),writes:state.writes},null,2));
 });
 
-test("pending and failed status saves retain the reason and block duplicate writes",async({page})=>{
- await page.setViewportSize({width:1440,height:1000});const state=await fixture(page),review=state.board.locator('[data-card-id="home-4-0"]');await review.scrollIntoViewIfNeeded();await review.click({button:"right"});const picker=page.locator('[data-card-status-picker]');await picker.getByRole("button",{name:"실행 중",exact:true}).click();const reason=picker.getByRole("textbox",{name:"다시 실행할 사유"});await reason.fill("보고를 보완합니다");
- state.setFailure(true);state.setDelay(true);const save=picker.getByRole("button",{name:"확인",exact:true});await save.click();await expect(save).toBeDisabled();expect(state.writes).toHaveLength(1);await expect(state.board.locator('[data-board-column="review"] [data-card-id="home-4-0"]')).toHaveCount(1);
- await expect(picker.getByRole("alert")).toContainText("fixture version conflict");await expect(reason).toHaveValue("보고를 보완합니다");state.setFailure(false);state.setDelay(false);await picker.getByRole("button",{name:"갱신 후 재시도"}).click();await expect(save).toBeEnabled();await save.click();
- await expect(state.board.locator('[data-board-column="running"] [data-card-id="home-4-0"]')).toHaveCount(1);expect(state.writes).toHaveLength(2);expect(state.writes[1].body).toMatchObject({status:"running",reason:"보고를 보완합니다",expectedVersion:reviewCard.version});writeFileSync(path.join(output,"reason-failure.json"),JSON.stringify(state.writes,null,2));
+test("pending and failed status saves block duplicates and retry without a reason",async({page})=>{
+ await page.setViewportSize({width:1440,height:1000});const state=await fixture(page),review=state.board.locator('[data-card-id="home-4-0"]');await review.scrollIntoViewIfNeeded();await review.click({button:"right"});const picker=page.locator('[data-card-status-picker]');
+ state.setFailure(true);state.setDelay(true);const save=picker.getByRole("button",{name:"실행 중",exact:true});await save.click();await expect(save).toBeDisabled();expect(state.writes).toHaveLength(1);
+ await expect(picker.getByRole("alert")).toContainText("fixture version conflict");state.setFailure(false);state.setDelay(false);await picker.getByRole("button",{name:"갱신 후 재시도"}).click();await expect(save).toBeEnabled();await save.click();
+ await expect(state.board.locator('[data-board-column="running"] [data-card-id="home-4-0"]')).toHaveCount(1);expect(state.writes).toHaveLength(2);expect(state.writes[1].body).toMatchObject({status:"running",expectedVersion:reviewCard.version});expect(state.writes[1].body).not.toHaveProperty("reason");
 });
-
 
 test.describe("touch alternative",()=>{
  test.use({hasTouch:true,viewport:{width:390,height:844}});
- test("the existing status chip exposes the same guarded transition",async({page})=>{
+ test("the existing status chip exposes the same free transition",async({page})=>{
   const state=await fixture(page),review=state.board.locator('[data-card-id="home-4-0"]');await review.scrollIntoViewIfNeeded();await review.getByRole("button",{name:"카드 상태 변경",exact:true}).tap();
   await page.locator('[data-card-status-picker]').getByRole("button",{name:"완료",exact:true}).tap();await expect(state.board.locator('[data-board-column="done"] [data-card-id="home-4-0"]')).toHaveCount(1);expect(state.writes).toHaveLength(1);expect(state.writes[0].body).toMatchObject({status:"done",expectedVersion:reviewCard.version});await expect(page.getByTestId("card-detail")).toHaveCount(0);writeFileSync(path.join(output,"touch-menu.json"),JSON.stringify(state.writes,null,2));
  });

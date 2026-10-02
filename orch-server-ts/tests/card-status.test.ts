@@ -1,39 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { assertCardTransition } from "../src/cards/card_status.js";
-
-describe("card state authority", () => {
-  it("rejects agent done even with a report", () => {
-    expect(() => assertCardTransition("running", "done", "agent", 1, null)).toThrow(/human/i);
-  });
-  it("rejects review without a report for every actor", () => {
-    for (const actor of ["agent", "user", "system"] as const) {
-      expect(() => assertCardTransition("running", "review", actor, 0, null)).toThrow(/report/i);
-    }
-  });
-  it("allows agent review with evidence and question blocking", () => {
-    expect(() => assertCardTransition("running", "review", "agent", 1, null)).not.toThrow();
-    expect(() => assertCardTransition("running", "blocked", "agent", 0, "question")).not.toThrow();
-  });
-  it("allows evidence-backed review from every nonterminal state for agent and llm", () => {
-    for (const actor of ["agent", "llm"] as const) {
-      for (const from of ["todo", "queued", "running", "blocked", "review"] as const) {
-        expect(() => assertCardTransition(from, "review", actor, 1, null)).not.toThrow();
-        expect(() => assertCardTransition(from, "review", actor, 0, null)).toThrow(/report/i);
-      }
-      for (const from of ["done", "cancelled"] as const) {
-        expect(() => assertCardTransition(from, "review", actor, 1, null)).toThrow();
-      }
-    }
-  });
-  it("rejects other agent transitions and non-question blocking", () => {
-    for (const status of ["todo", "queued", "running", "cancelled"] as const) {
-      expect(() => assertCardTransition("running", status, "agent", 1, null)).toThrow();
-    }
-    expect(() => assertCardTransition("todo", "blocked", "agent", 1, "question")).toThrow();
-    expect(() => assertCardTransition("running", "blocked", "agent", 1, "limit")).toThrow();
-  });
-  it("allows human completion and requires a blocked kind", () => {
-    expect(() => assertCardTransition("review", "done", "user", 1, null)).not.toThrow();
-    expect(() => assertCardTransition("queued", "blocked", "system", 0, null)).toThrow();
-  });
+import { expect, it } from "vitest";
+import { cardOperationSchemas } from "../src/cards/card_operations.js";
+it("accepts all card states and optional block/restart detail, but rejects invalid data",()=>{
+ const input={expectedVersion:1,idempotencyKey:"status"};
+ for(const status of ["todo","queued","blocked","running","review","done","cancelled"])
+  expect(cardOperationSchemas.set_card_status.parse({...input,status})).toMatchObject({status});
+ expect(cardOperationSchemas.set_card_status.safeParse({...input,status:"archived"}).success).toBe(false);
+ expect(cardOperationSchemas.set_card_status.safeParse({...input,status:"blocked",blockedKind:"manual"}).success).toBe(false);
+ expect(cardOperationSchemas.set_card_status.safeParse({...input,status:"todo",expectedVersion:0}).success).toBe(false);
 });

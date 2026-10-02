@@ -152,14 +152,6 @@ export class CardDispatcher {
                     await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: latest.card.version });
             }
         }
-        if (op.operation_type === "set_card_status" && op.actor_kind === "user" && previousStatus === "review" && payload.status === "running") {
-            const session = await this.options.repository.latestSession(card.id);
-            if (session && !isTerminalSessionStatus(session.status)) {
-                if (!change.previousAssigneeSessionId) await this.deliver(card,session.session_id, `검수 반려: ${op.reason}. 고친 뒤 새 보고를 올리고 다시 검수를 요청한다.`);
-            }
-            else
-                await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
-        }
         if (card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
             await this.dispatchOnce();
     }
