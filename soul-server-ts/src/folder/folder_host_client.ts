@@ -17,6 +17,9 @@ export class FolderHostClient {
     this.transport = new PersistenceHostTransport(config);
   }
 
+  getAssignedCardContext(sessionId: string): Promise<import("../context/assigned_card_context.js").AssignedCardContext> {
+    return this.request("get_assigned_card_context", { session_id: sessionId });
+  }
   async assignSessionToFolder(sessionId: string, folderId: string | null): Promise<void> {
     await this.request("assign_session", { session_id: sessionId, folder_id: folderId });
   }

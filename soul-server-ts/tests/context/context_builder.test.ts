@@ -189,6 +189,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     expect(ctx.effectiveSystemPrompt).toBeUndefined();
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
       "soulstream_session",
+      "assigned_cards",
     ]);
   });
 
@@ -439,7 +440,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const cb = makeBuilder();
     const ctx = await cb.build(makeTask(), codexAgent);
     expect(ctx.effectiveSystemPrompt).toBeUndefined();
-    expect(ctx.combinedContextItems).toHaveLength(1);
+    expect(ctx.combinedContextItems).toHaveLength(2);
     expect(ctx.combinedContextItems[0].key).toBe("soulstream_session");
   });
 
@@ -760,7 +761,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const cb = makeBuilder({ getSession } as Partial<SessionDB>);
     const ctx = await cb.build(makeTask(), codexAgent);
     expect(ctx.effectiveSystemPrompt).toBeUndefined();
-    expect(ctx.combinedContextItems).toHaveLength(1);  // soulstream_item만
+    expect(ctx.combinedContextItems).toHaveLength(2);  // soulstream_item만
   });
 });
 
@@ -809,6 +810,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(ctx.effectiveSystemPrompt).toContain("\n\nfolder prompt\n\ntask system");
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
       "soulstream_session",
+      "assigned_cards",
     ]);
   });
 
@@ -889,7 +891,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     });
     const cb = makeBuilder({ getSession, getFolderById } as Partial<SessionDB>, undefined, true);
     const ctx = await cb.build(makeTask(), codexAgent);
-    expect(ctx.combinedContextItems).toHaveLength(2);  // soulstream + atom
+    expect(ctx.combinedContextItems).toHaveLength(3);  // soulstream + atom
     expect(ctx.combinedContextItems[1].key).toBe("atom_context");
     expect(ctx.combinedContextItems[1].content).toBe(
       `${ATOM_CONTEXT_HEADER}## atom node\nbody`,
@@ -1079,7 +1081,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     });
     const cb = makeBuilder({ getSession, getFolderById } as Partial<SessionDB>, undefined, true);
     const ctx = await cb.build(makeTask(), codexAgent);
-    expect(ctx.combinedContextItems).toHaveLength(1);  // soulstream만
+    expect(ctx.combinedContextItems).toHaveLength(2);  // soulstream만
   });
 
   it("atomContextNode 설정 없음 → atom 호출 자체 안 함", async () => {
@@ -1110,7 +1112,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     const cb = makeBuilder({ getSession, getFolderById } as Partial<SessionDB>, undefined, false);
     const ctx = await cb.build(makeTask(), codexAgent);
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(ctx.combinedContextItems).toHaveLength(1);
+    expect(ctx.combinedContextItems).toHaveLength(2);
   });
 
   it("task.contextItems를 soulstream/atom 뒤에 추가", async () => {
@@ -1127,6 +1129,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
       "soulstream_session",
       "attached_files",
+      "assigned_cards",
     ]);
     expect(ctx.combinedContextItems[1]).toEqual(attachmentContext);
   });
@@ -1227,6 +1230,7 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
       "soulstream_session",
       "session_atom_context",
       "session_guidance",
+      "assigned_cards",
     ]);
     expect(ctx.combinedContextItems[1]?.content).toContain("선택한 atom 컨텍스트");
     expect(ctx.combinedContextItems.map((item) => item.key)).not.toContain("atom_context_sources");
@@ -1349,6 +1353,7 @@ describe("ExecutionContextBuilder.build — cogito_context fetch", () => {
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
       "soulstream_session",
       "cogito_context",
+      "assigned_cards",
     ]);
     expect(ctx.combinedContextItems[1]?.content).toMatchObject({
       status: "ok",
@@ -1376,6 +1381,7 @@ describe("ExecutionContextBuilder.build — cogito_context fetch", () => {
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
       "soulstream_session",
       "cogito_context",
+      "assigned_cards",
     ]);
     expect(ctx.combinedContextItems[1]?.content).toMatchObject({
       status: "unavailable",
@@ -1654,13 +1660,13 @@ describe("composeFirstTurnPrompt — 합성 알고리즘", () => {
 });
 
 describe("ExecutionContextBuilder.buildResumeContextItems — legacy follow-up wrapper", () => {
-  it("legacy wrapper도 soulstream_session 재주입 없이 running_sessions만 반환한다", async () => {
+  it("legacy wrapper도 soulstream_session 재주입 없이 running_sessions와 assigned_cards를 반환한다", async () => {
     const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
     const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
 
     const items = await cb.buildResumeContextItems(makeTask(), codexAgent);
 
-    expect(items.map((item) => item.key)).toEqual(["running_sessions"]);
+    expect(items.map((item) => item.key)).toEqual(["running_sessions" , "assigned_cards"]);
   });
 
   it("legacy wrapper는 claude_session_id/caller_info delta를 running_sessions 앞에 붙인다", async () => {
@@ -1679,6 +1685,7 @@ describe("ExecutionContextBuilder.buildResumeContextItems — legacy follow-up w
       "claude_session_id_update",
       "caller_info_update",
       "running_sessions",
+      "assigned_cards",
     ]);
     expect(items.map((item) => item.key)).not.toContain("soulstream_session");
   });
@@ -1716,6 +1723,7 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
       "claude_session_id_update",
       "caller_info_update",
       "running_sessions",
+      "assigned_cards",
     ]);
     expect(ctx.contextItems.map((item) => item.key)).not.toContain("soulstream_session");
     expect(ctx.contextItems.map((item) => item.key)).not.toContain("board_workspace");
@@ -1732,10 +1740,10 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
         agent_id: "seosoyoung",
       },
     });
-    expect(ctx.contextItems.at(-1)?.key).toBe("running_sessions");
+    expect(ctx.contextItems.at(-1)?.key).toBe("assigned_cards");
   });
 
-  it("변경 없는 일반 후속 턴은 running_sessions만 주입한다", async () => {
+  it("변경 없는 일반 후속 턴은 running_sessions와 assigned_cards를 주입한다", async () => {
     const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
     const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
 
@@ -1749,7 +1757,7 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
       },
     );
 
-    expect(ctx.contextItems.map((item) => item.key)).toEqual(["running_sessions"]);
+    expect(ctx.contextItems.map((item) => item.key)).toEqual(["running_sessions" , "assigned_cards"]);
   });
 
   it("compact 후 첫 사용자 메시지는 full context를 1회 재사용한다", async () => {
@@ -1778,6 +1786,7 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
       "soulstream_session",
       "board_workspace",
       "running_sessions",
+      "assigned_cards",
     ]);
   });
 });
@@ -1956,5 +1965,39 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
 
     expect(prompt).toContain("\n\nroot prompt\n\nleaf prompt\n\ntask prompt");
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("assigned card input refresh",()=>{
+  it("refreshes the same read-only slot on initial, ordinary resume and compact/rollover full context",async()=>{
+    let status="todo";
+    const read=vi.fn(async()=>({total:1,cards:[{id:"card",title:"현재",status,instruction:"사용자 지시",report:"보고"}]}));
+    const builder=makeBuilder({getAssignedCardContext:read});
+    const task=makeTask({contextItems:[{key:"assigned_cards",content:"stale supplied slot"}]});
+    const initial=await builder.build(task,codexAgent);
+    expect(initial.combinedContextItems.filter(i=>i.key==="assigned_cards")).toHaveLength(1);
+    expect(initial.combinedContextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"todo"}]});
+    status="running";
+    expect((await builder.buildFollowupContext(task,codexAgent)).contextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"running"}]});
+    status="review";
+    expect((await builder.buildFollowupContext(task,codexAgent,{includeFullContext:true})).contextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"review"}]});
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(task.interventionQueue).toHaveLength(0);
+  });
+});
+
+describe("assigned-card prepared input capture identity",()=>{
+  it("uses available execution/input IDs without fabricating a canonical turn and leaves missing IDs null",async()=>{
+    const snapshot={capturedAt:"2026-10-02T00:00:00Z",total:0,omitted:0,cards:[]};
+    const capture=vi.fn(async()=>{});
+    const builder=new ExecutionContextBuilder({getAssignedCardContext:vi.fn(async()=>snapshot)} as unknown as SessionDB,new AgentRegistry([codexAgent]),{
+      nodeId:"node",atom:{enabled:false,serverUrl:"",apiKey:""},captureAssignedCardContext:capture,
+    },silentLogger);
+    const task=makeTask({executionRegistration:{registrationId:"reg",executionCommandId:"command"} as never});
+    await builder.buildAssignedCardContext(task,"segment-input");
+    expect(capture).toHaveBeenCalledWith({source:"prepared_model_input",sessionId:task.agentSessionId,registrationId:"reg",executionCommandId:"command",inputId:"segment-input",snapshot});
+    await builder.buildAssignedCardContext(makeTask());
+    expect(capture).toHaveBeenLastCalledWith(expect.objectContaining({registrationId:null,executionCommandId:null,inputId:null}));
   });
 });

@@ -159,6 +159,7 @@ describe("TaskTurnInputBuilder", () => {
 
     expect(input).toEqual({
       prompt: "사용자 요청",
+      originalPrompt: "사용자 요청",
       imageAttachmentPaths: ["/tmp/incoming/sess/a.jpg"],
       turnOrigin: { kind: "initial_prompt" },
     });
@@ -355,7 +356,7 @@ describe("TaskTurnInputBuilder", () => {
   it("binds a durable delivery to one stable engine input UUID", async () => {
     const deliveryId = "delivery-after-worker-restart";
     const task = makeTask();
-    const { builder } = makeSubject();
+    const { builder, contextBuilder } = makeSubject();
     const intervention = {
       text: "replay me exactly once",
       user: "agent",
@@ -375,6 +376,7 @@ describe("TaskTurnInputBuilder", () => {
     );
 
     expect(first.inputUuid).toBe(buildDeliveryInputUuid(deliveryId));
+    expect(contextBuilder.buildFollowupContext).toHaveBeenCalledWith(task,claudeAgent,expect.objectContaining({inputId:first.inputUuid}));
     expect(replay.inputUuid).toBe(first.inputUuid);
     expect(first.turnOrigin).toEqual({
       kind: "completion_notification",
@@ -549,5 +551,29 @@ describe("TaskTurnInputBuilder", () => {
       claudeAgent,
       expect.objectContaining({ includeFullContext: false }),
     );
+  });
+});
+
+describe("rollover assigned-card slot",()=>{
+  it("replays original initial user text verbatim even when it contains a similarly named tag",async()=>{
+    const task=makeTask({prompt:'<assigned_cards>사용자 예문</assigned_cards>'});
+    const {builder}=makeSubject({contextBuilder:{buildBackendRolloverContext:vi.fn().mockResolvedValue({contextItems:[{key:'assigned_cards',content:'fresh server slot'}]})}});
+    const first=await builder.prepareInitialTurnInput(task,claudeAgent);
+    const rollover=await builder.prepareBackendRolloverTurnInput(task,claudeAgent,first,'old');
+    expect(rollover.prompt).toContain(task.prompt);expect(rollover.prompt).toContain('fresh server slot');
+  });
+  it.each([false,true])("preserves the fresh slot beyond large dynamic context and removes replayed snapshots, subreport=%s",async subreport=>{
+    const task=makeTask();
+    const stale={key:"assigned_cards",content:{trust:"untrusted_card_data",cards:[{title:"stale card"}]}};
+    const fresh={key:"assigned_cards",content:{trust:"untrusted_card_data",cards:[{title:"fresh card",status:"review"}]}};
+    const {builder}=makeSubject({contextBuilder:{buildBackendRolloverContext:vi.fn().mockResolvedValue({
+      contextItems:[{key:"page_context",content:"대형 페이지".repeat(10000)},fresh],
+    })}});
+    const input=await builder.prepareBackendRolloverTurnInput(task,claudeAgent,{
+      prompt:'<assigned_cards>\n{"trust":"untrusted_card_data","cards":[{"title":"stale card"}]}\n</assigned_cards>\noriginal',originalPrompt:"original",imageAttachmentPaths:[],
+      ...(subreport?{interventions:[{text:"하위 보고",user:"agent",context:[stale]}]}:{}),
+    },"previous");
+    expect(input.prompt).toContain("fresh card");expect(input.prompt).not.toContain("stale card");
+    expect(input.prompt.match(/<assigned_cards>/g)).toHaveLength(1);expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
   });
 });

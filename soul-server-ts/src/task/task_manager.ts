@@ -158,6 +158,7 @@ export class TaskManager {
         : undefined,
     });
     const runningInterventionTransition = new RunningInterventionTransition({
+      ...(contextBuilder ? { assignedCardContext: (task: Task, inputId?: string | null) => contextBuilder.buildAssignedCardContext(task, inputId) } : {}),
       broadcaster,
       logger,
       persistence,

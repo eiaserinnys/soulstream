@@ -41,7 +41,7 @@ export class TaskInitialMessagePublisher {
       text: task.prompt,
       callerInfo: task.callerInfo,
       attachmentPaths: task.attachmentPaths,
-      contextItems: ctx ? ctx.combinedContextItems : task.contextItems,
+      contextItems: (ctx ? ctx.combinedContextItems : task.contextItems)?.filter(item=>item.key !== "assigned_cards"),
     });
     await persistUserMessageEvent(task, event, this.deps);
     if (!task.executionRegistration) {

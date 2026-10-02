@@ -144,7 +144,7 @@ export class ProductionFullSliceHarness {
     return harness;
   }
 
-  async run(): Promise<FullSliceObservation> {
+  async run(beforeActiveIntervention?: (sessionId: string) => Promise<void>): Promise<FullSliceObservation> {
     this.orch = await createProductionOrchestrator({
       config: loadOrchServerEnvironment({
         HOST: "127.0.0.1",
@@ -247,6 +247,7 @@ export class ProductionFullSliceHarness {
       successor = await this.waitForDifferentRunnerIdentity(first.registrationId);
       await this.release("resume");
     } else if (this.isActiveIntervention) {
+      await beforeActiveIntervention?.(this.sessionId);
       const interveneAck = await this.publicCommand(
         "intervene",
         `/api/sessions/${this.sessionId}/intervene`,

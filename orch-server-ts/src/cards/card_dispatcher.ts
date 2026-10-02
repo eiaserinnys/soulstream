@@ -1,3 +1,4 @@
+import { buildCardChangeNotification, type CardChangeDelivery } from "./card_change_notification.js";
 import { randomUUID } from "node:crypto";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import { isTerminalSessionStatus } from "../session/session_status.js";
@@ -38,7 +39,7 @@ export type CardDispatcherOptions = {
     cards: () => Promise<CardControlPlaneService>;
     resolveTarget: (card: CardRow, modelPreset?: string | null) => CardTarget;
     launch: (input: CardLaunch) => Promise<unknown>;
-    sendMessage: (sessionId: string, text: string, admission?:{runId:string;executionToken:string;cardId:string}) => Promise<void>;
+    sendMessage: (sessionId: string, text: string, admission?:{runId:string;executionToken:string;cardId:string}, changeDelivery?:CardChangeDelivery) => Promise<void>;
     notify: (input: CardNotification) => Promise<unknown>;
     warn: (message: string) => void;
     now?: () => number;
@@ -86,10 +87,10 @@ export class CardDispatcher {
             if (await this.options.orchestration?.ownsSession(sessionId)) { await this.options.orchestration?.decisionEnded?.(sessionId); return; }
             for (const work of await this.options.repository.endedWork(sessionId)) {
               const limited=isUsageLimitTermination(work.terminal_session);
-              if (work.reported && !limited) continue;
+              if (!limited) continue;
               const cards=await this.options.cards(),detail=await cards.getCard(work.card_id);
               if (detail?.card.status === "running" && detail.card.assignee_session_id === sessionId)
-                await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId:work.card_id,expectedVersion:detail.card.version,status:"blocked",blockedKind:limited ? "limit" : "no_report",blockedDetail:limited ? "세션 사용량 한도" : "해당 작업 실행이 보고·검수·질문 없이 끝남"});
+                await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId:work.card_id,expectedVersion:detail.card.version,status:"blocked",blockedKind:"limit",blockedDetail:"세션 사용량 한도"});
             }
             await this.reconcileTerminal(sessionId);
             await this.dispatchOnce();
@@ -100,7 +101,8 @@ export class CardDispatcher {
             return;
         void this.enqueue(() => this.handleMutation(change));
     }
-    private async handleMutation({ result, previousStatus }: CardMutationChange): Promise<void> {
+    private async handleMutation(change: CardMutationChange): Promise<void> {
+        const {result,previousStatus}=change;
         const op = result.operation;
         const cards = await this.options.cards();
         const detail = await cards.getCard(op.target_id);
@@ -108,20 +110,17 @@ export class CardDispatcher {
             return;
         const card = detail.card;
         const payload = op.payload_json;
-        if (op.operation_type === "add_card_comment") {
-            const commentId=String(payload.comment_id ?? "");
-            const comment=detail.comments.find(item => item.id === commentId);
-            const sessionId=card.assignee_session_id ?? await this.options.repository.latestDispatchedSessionId(card.id);
-            // The target already received direction that it recorded from the conversation.
-            if (comment && sessionId && !(comment.kind === "spoken" && comment.session_id === sessionId)) {
-                try {
-                    await this.options.sendMessage(sessionId, `[카드 커멘트] 「${card.title}」\n${String(comment.body)}`);
-                    await cards.markCommentDelivered(card.id, commentId);
-                }
-                catch (error) {
-                    this.options.warn(`card ${card.id} comment delivery failed: ${String(error)}`);
-                }
-            }
+        const commentId=String(payload.comment_id ?? "");
+        const comment=op.operation_type === "add_card_comment" ? detail.comments.find(item=>item.id === commentId) : undefined;
+        const fallback=comment && !change.previousAssigneeSessionId ? await this.options.repository.latestDispatchedSessionId(card.id) : null;
+        const notification=buildCardChangeNotification(change,comment,fallback);
+        const answeredQuestion=op.operation_type === "answer_card_question" ? detail.questions.find(q=>q.id === payload.question_id) : undefined;
+        const mergeAnswer=notification && answeredQuestion?.session_id === notification.sessionId;
+        if (notification && !mergeAnswer) {
+          try {
+            await this.options.sendMessage(notification.sessionId,notification.text,undefined,notification);
+            if (comment) await cards.markCommentDelivered(card.id,commentId);
+          } catch (error) { this.options.warn(`card ${card.id} change delivery failed: ${String(error)}`); }
         }
         if (op.operation_type === "ask_card_question" || op.operation_type === "set_card_status"
             && previousStatus !== "blocked" && payload.status === "blocked" && payload.blocked_kind === "question") {
@@ -130,10 +129,12 @@ export class CardDispatcher {
         if (op.operation_type === "set_card_status" && previousStatus !== "review" && payload.status === "review")
             await this.notify(card, "review");
         if (op.operation_type === "answer_card_question" && card.status === "running") {
-            const q = detail.questions.find(q => q.id === payload.question_id);
-            const session = q && typeof q.session_id === "string" ? await this.options.repository.session(q.session_id) : null;
-            if (session && !isTerminalSessionStatus(session.status)) {
-                await this.options.sendMessage(session.session_id, `질문에 답이 왔다: ${String(q!.text)} → ${String(q!.answer)}. 이어서 진행한다.`);
+            const q = answeredQuestion;
+            const session = q && typeof q.session_id === "string" ? await this.options.repository.ownerSession(q.session_id) : null;
+            if (session?.status && !isTerminalSessionStatus(session.status)) {
+                const answer=`질문에 답이 왔다: ${String(q!.text)} → ${String(q!.answer)}. 이어서 진행한다.`;
+                if (mergeAnswer) await this.options.sendMessage(String(q!.session_id),`${notification!.text}\n${answer}`,undefined,notification!);
+                else await this.options.sendMessage(String(q!.session_id),answer);
             }
             else
                 await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
@@ -141,7 +142,7 @@ export class CardDispatcher {
         if (op.operation_type === "set_card_status" && op.actor_kind === "user" && previousStatus === "review" && payload.status === "running") {
             const session = await this.options.repository.latestSession(card.id);
             if (session && !isTerminalSessionStatus(session.status)) {
-                await this.options.sendMessage(session.session_id, `검수 반려: ${op.reason}. 고친 뒤 새 보고를 올리고 다시 검수를 요청한다.`);
+                if (!change.previousAssigneeSessionId) await this.options.sendMessage(session.session_id, `검수 반려: ${op.reason}. 고친 뒤 새 보고를 올리고 다시 검수를 요청한다.`);
             }
             else
                 await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
@@ -170,9 +171,9 @@ export class CardDispatcher {
         // A superseded session must not terminate the newer run of the same card.
         if ((await this.options.repository.latestSession(session.card_id))?.session_id !== sessionId)
             return;
-        const limited = isUsageLimitTermination(session);
+        if (!isUsageLimitTermination(session)) return;
         await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: session.card_id, expectedVersion: detail.card.version,
-            status: "blocked", blockedKind: limited ? "limit" : "no_report", blockedDetail: limited ? "세션 사용량 한도" : "세션이 보고 없이 끝남" });
+            status: "blocked", blockedKind: "limit", blockedDetail: "세션 사용량 한도" });
     }
     private async resumeLimits(): Promise<void> {
         const cards = await this.options.cards();
