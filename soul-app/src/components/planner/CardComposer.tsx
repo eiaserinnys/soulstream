@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
@@ -32,14 +33,15 @@ function FolderCardComposer({ api, folderId, onCreated }: { api: ApiClient | nul
   const [assignment, setAssignment] = useState<CardAssignment | null>(null);
   const value = assignment ?? { folderId: folderId ?? remembered?.folderId ?? '', nodeId: remembered?.nodeId ?? settings.nodeId,
     agentId: folderId && folderId !== remembered?.folderId ? null : remembered?.agentId ?? null, modelPreset: folderId && folderId !== remembered?.folderId ? null : remembered?.modelPreset ?? null };
-  const [text, setText] = useState('');
+  const draft = usePersistentDraft('folder-compose', [folderId ?? 'all'], '');
+  const { value: text, setValue: setText } = draft;
   const [selecting, setSelecting] = useState(false);
   const { run, pending } = useCardActions(api);
   const [uploadId, setUploadId] = useState(() => Crypto.randomUUID());
   const mapUploadedPath = React.useCallback((path: string, nodeId: string) => cardAttachmentUrl(settings.serverUrl, nodeId, path), [settings.serverUrl]);
   const attachments = useChatAttachments({ api, sessionId: uploadId, nodeId: value.nodeId ?? settings.nodeId ?? undefined,
     disabled: pending, mapUploadedPath });
-  const locked = pending || attachments.uploading;
+  const locked = pending || attachments.uploading || !draft.ready;
   const submit = async () => {
     if (!api || !text.trim() || locked) return;
     if (!value.folderId || !value.agentId) { setSelecting(true); return; }
@@ -47,14 +49,14 @@ function FolderCardComposer({ api, folderId, onCreated }: { api: ApiClient | nul
     if (await run(() => api.createCard({ folderId: value.folderId, title: request.trim().split('\n')[0], request, queue: true,
       assignee: { kind: 'agent', agentId: value.agentId }, nodeId: value.nodeId, modelPreset: value.modelPreset, idempotencyKey: cardOperationId() }))) {
       settings.setCardAssignment(settings.serverUrl, value);
-      setText(''); attachments.clearAttachments(); setUploadId(Crypto.randomUUID()); onCreated?.();
+      draft.clearIfMatches(text); attachments.clearAttachments(); setUploadId(Crypto.randomUUID()); onCreated?.();
     }
   };
   return <>
     <PlannerForegroundCard testID="card-composer">
       <ChatComposer input={text} onChangeInput={setText} placeholder="한 줄로 맡기기" inputAccessibilityLabel="맡길 일"
         sendAccessibilityLabel="카드 맡기기" onPickAttachment={attachments.pickAttachment} onSend={() => { void submit(); }}
-        uploading={attachments.uploading} sending={pending} disabled={pending || !api} sendDisabled={attachments.uploading} voiceControls={null} />
+        uploading={attachments.uploading} sending={pending} disabled={pending || !api || !draft.ready} sendDisabled={attachments.uploading} voiceControls={null} />
       <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={locked}
         styles={chatStyles} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
       <View style={styles.padded}>

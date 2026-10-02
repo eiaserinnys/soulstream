@@ -1,3 +1,7 @@
+import { usePersistentDraft } from '../../../hooks/usePersistentDraft';
+import { useDraftStore } from '../../../store/draftStore';
+import { useAuthStore } from '../../../store/authStore';
+import { useSettingsStore } from '../../../store/settingsStore';
 /**
  * useChatSendFlow 훅 단위 테스트.
  *
@@ -640,3 +644,26 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+
+test('optimistic chat clearing keeps the persisted text until confirmation and preserves later typing', async () => {
+  await useAuthStore.persist.rehydrate(); await useSettingsStore.persist.rehydrate(); await useDraftStore.persist.rehydrate();
+  useAuthStore.setState({ jwt: `header.${Buffer.from(JSON.stringify({ email: 'chat@example.com' })).toString('base64url')}.signature` });
+  useSettingsStore.setState({ serverUrl: 'https://chat.example' });
+  useDraftStore.setState({ drafts: {} }); reset();
+  let confirm!: (value: unknown) => void;
+  const api = makeApi({ intervene: jest.fn(() => new Promise(resolve => { confirm = resolve; })) });
+  const hook = renderHook(() => {
+    const draft = usePersistentDraft('chat', ['node-1', SID], '');
+    return { draft, send: useChatSendFlow({ api: api as any, sessionId: SID, session: makeSession(), attachments: [],
+      clearAttachments: jest.fn(), scrollToBottom: jest.fn(), onSendConfirmed: draft.clearIfMatches }) };
+  });
+  act(() => hook.result.current.draft.setValue('전송할 원문'));
+  const clearVisible = jest.fn(); let sending!: Promise<void>;
+  act(() => { sending = hook.result.current.send.handleSend('전송할 원문', clearVisible); });
+  expect(clearVisible).toHaveBeenCalled();
+  expect(hook.result.current.draft.value).toBe('전송할 원문');
+  act(() => hook.result.current.draft.setValue('새 입력'));
+  await act(async () => { confirm({ delivered: true, outcome: 'delivered' }); await sending; });
+  expect(hook.result.current.draft.value).toBe('새 입력');
+  act(() => reset());
+});

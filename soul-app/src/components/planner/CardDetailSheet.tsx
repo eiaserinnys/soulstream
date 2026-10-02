@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Platform, ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
@@ -56,7 +57,8 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const statusAction = useCardTransition(api, cardId);
   const comments = useCardComments(api, cardId);
   const [assignmentOpen, setAssignmentOpen] = useState(false);
-  const [text, setText] = useState('');
+  const draft = usePersistentDraft('card-comment', [cardId], '');
+  const { value: text, setValue: setText } = draft;
   const [otherExpanded, setOtherExpanded] = useState(false);
   const [sessionsExpanded, setSessionsExpanded] = useState(false);
   const scroll = useRef<ScrollView>(null);
@@ -76,7 +78,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const mapUploadedPath = React.useCallback((path: string, uploadNode: string) => buildAttachmentUri(serverUrl, uploadNode, path)!, [serverUrl]);
   const attachments = useChatAttachments({ api, sessionId: card?.assigneeSessionId ?? undefined, nodeId: nodeId ?? undefined,
     disabled: pending || comments.pending, mapUploadedPath });
-  const locked = pending || statusAction.pending || comments.pending || attachments.uploading;
+  const locked = pending || statusAction.pending || comments.pending || attachments.uploading || !draft.ready;
   const pickAttachment = () => {
     if (card?.assigneeSessionId && nodeId) attachments.pickAttachment();
     else Alert.alert('곧 지원', '담당 세션이 연결되면 첨부를 올릴 수 있습니다.');
@@ -94,7 +96,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
     const ok = question
       ? await run(() => api.answerCardQuestion(card.id, question.id, body, cardOperationId()))
       : await comments.send(body);
-    if (ok) { setText(''); attachments.clearAttachments(); }
+    if (ok) { draft.clearIfMatches(text); attachments.clearAttachments(); }
   };
   const openSession = (id: string) => {
     if (!inline) onClose();

@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
@@ -126,7 +127,8 @@ function SessionSuccessionSheetContent({
   );
   const [includeFolderContext, setIncludeFolderContext] = useState(true);
   const [inheritPredecessor, setInheritPredecessor] = useState(Boolean(predecessor));
-  const [initialInstruction, setInitialInstruction] = useState(INITIAL_SESSION_PROMPT);
+  const instructionDraft = usePersistentDraft('session-succession', [predecessor?.agentSessionId ?? folder.folderId], INITIAL_SESSION_PROMPT);
+  const { value: initialInstruction, setValue: setInitialInstruction } = instructionDraft;
   const [attachmentSessionId, setAttachmentSessionId] = useState(() => pendingId('attachment'));
   const [submitting, setSubmitting] = useState(false);
   // null = follow the selected preset's advertised default.
@@ -165,7 +167,6 @@ function SessionSuccessionSheetContent({
     if (!opening) return;
     setIncludeFolderContext(true);
     setInheritPredecessor(Boolean(openingPredecessor.current));
-    setInitialInstruction(INITIAL_SESSION_PROMPT);
     setAttachmentSessionId(pendingId('attachment'));
     clearAttachments();
   }, [clearAttachments, visible]);
@@ -265,7 +266,8 @@ function SessionSuccessionSheetContent({
 
   const submit = async () => {
     if (
-      !selection.effectiveNodeId
+      !instructionDraft.ready
+      || !selection.effectiveNodeId
       || !selection.agentId
       || selection.modelPresetSelectionInvalid
       || effortUnsupported
@@ -293,6 +295,7 @@ function SessionSuccessionSheetContent({
           : {}),
       });
       if (!response.agentSessionId) throw new Error('세션 생성 응답에 ID가 없습니다.');
+      instructionDraft.clearIfMatches(initialInstruction);
       onCreated(response.agentSessionId);
       closeSheet();
     } catch (error) {
@@ -307,7 +310,7 @@ function SessionSuccessionSheetContent({
     onClose();
   };
   const canSubmit = Boolean(
-    selection.effectiveNodeId
+    instructionDraft.ready && selection.effectiveNodeId
       && selection.agentId
       && !selection.modelPresetSelectionInvalid
       && !effortUnsupported
@@ -423,7 +426,7 @@ function SessionSuccessionSheetContent({
                   disabled={submitting || !selection.effectiveNodeId}
                   onPress={pickAttachment}
                 />
-                <GrowingMultilineInput
+                <GrowingMultilineInput editable={instructionDraft.ready && !submitting}
                   testID="succession-initial-instruction"
                   value={initialInstruction}
                   onChangeText={setInitialInstruction}

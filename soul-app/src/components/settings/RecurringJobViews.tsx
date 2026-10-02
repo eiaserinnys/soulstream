@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -101,6 +102,7 @@ export function RecurringJobEditor({
   const styles = useMemo(() => makeStyles(t), [t]);
   const [job, setJob] = useState<RecurringJobDto | null>(null);
   const [draft, setDraft] = useState<EditorDraft>(emptyDraft());
+  const promptDraft = usePersistentDraft('recurring-prompt', [jobId ?? 'new'], draft.prompt);
   const [nodes, setNodes] = useState<Array<{ nodeId: string }>>([]);
   const [agents, setAgents] = useState<Array<{ id: string; name: string | null }>>([]);
   const [presets, setPresets] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
@@ -170,14 +172,16 @@ export function RecurringJobEditor({
     } catch (cause) { setError(errorMessage(cause)); } finally { setSaving(false); }
   };
   const save = async () => {
+    if (!promptDraft.ready) return;
     setSaving(true); setError(null);
     try {
-      const write = writeFromDraft(draft);
+      const submittedPrompt = promptDraft.value;
+      const write = writeFromDraft({ ...draft, prompt: submittedPrompt });
       const api = createApiClient(serverUrl);
       const saved = job
         ? (await api.updateRecurringJob(job.job_id, { ...write, expected_version: job.version })).job
         : (await api.createRecurringJob({ ...write, idempotency_key: idempotency('create') })).job;
-      setJob(saved); setDraft(draftFromJob(saved)); onDone(saved);
+      setJob(saved); setDraft(draftFromJob(saved)); promptDraft.clearIfMatches(submittedPrompt); onDone(saved);
     } catch (cause) {
       if (isVersionConflict(cause) && job) {
         const refreshed = await loadExisting({ preserveDraft: true });
@@ -220,7 +224,7 @@ export function RecurringJobEditor({
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     <Text style={styles.heading}>{job ? job.name : '새 반복 작업'}</Text>
     <Input label="작업 이름" value={draft.name} onChangeText={(name) => update({ name })} />
-    <Input label="작업 내용" value={draft.prompt} multiline onChangeText={(prompt) => update({ prompt })} />
+    <Input label="작업 내용" value={promptDraft.value} multiline editable={promptDraft.ready} onChangeText={promptDraft.setValue} />
     <Input label="시간대" value={draft.timezone} onChangeText={(timezone) => update({ timezone })} />
     <RecurringSchedulePicker value={draft.schedule} onChange={(schedule) => update({ schedule })} />
     <Text style={styles.label}>생성·저장 후 자동 실행</Text><OptionRow selected={draft.enabled ? 'enabled' : 'paused'} options={[{ id: 'enabled', label: '실행' }, { id: 'paused', label: '일시정지' }]} onSelect={(state) => update({ enabled: state === 'enabled' })} emptyLabel="" />

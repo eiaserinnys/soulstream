@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 // Existing title/description editing stays together; this change extracts the virtual scroll owner.
 // The remaining 500+ line coordinator is preserved to avoid changing unrelated editing behavior.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -115,6 +116,9 @@ export function FolderWorkspace({
   const descriptionDraft = useRef(description);
   const titleServer = useRef(title);
   const descriptionServer = useRef(description);
+  const persistentDescription = usePersistentDraft('folder-description',
+    [folder?.id ?? folderId ?? folderSummary?.folderId ?? folderPageId], descriptionServer.current);
+  if (persistentDescription.ready && draftOwner.current === draftOwnerKey) descriptionDraft.current = persistentDescription.value;
   const nextDescriptionSaveToken = useRef(0);
   const latestDescriptionSaveAttempt = useRef<TabletMarkdownSaveAttempt | null>(null);
   const mounted = useRef(true);
@@ -201,6 +205,12 @@ export function FolderWorkspace({
   }, [draftOwnerKey, scopeGeneration, folderSummary, folderPageId]);
 
   useEffect(() => {
+    if (!persistentDescription.ready) return;
+    descriptionDraft.current = persistentDescription.value;
+    setDescription(persistentDescription.value);
+  }, [persistentDescription.key, persistentDescription.value, persistentDescription.ready]);
+
+  useEffect(() => {
     if (!folderSummary || !tablet) return undefined;
     return plannerFolderTitleSaveCoordinator.bind({
       scopeGeneration,
@@ -233,7 +243,7 @@ export function FolderWorkspace({
   const ownsDraft = draftOwner.current === draftOwnerKey;
   const visibleTitle = ownsDraft ? title : folderSummary.page.title;
   const currentServerDescription = plannerDescriptionText(folderSummary.blocks);
-  const visibleDescription = ownsDraft ? description : currentServerDescription;
+  const visibleDescription = ownsDraft ? persistentDescription.value : currentServerDescription;
   const visibleServerDescription = ownsDraft
     ? descriptionServer.current
     : currentServerDescription;
@@ -251,6 +261,7 @@ export function FolderWorkspace({
     setEditingPhoneTitle(false);
   };
   const save = async () => {
+    if (!persistentDescription.ready) return;
     const submittedOwner = draftOwner.current;
     const submittedTitle = titleDraft.current.trim();
     const submittedDescription = descriptionDraft.current;
@@ -263,6 +274,7 @@ export function FolderWorkspace({
       }
       if (submittedDescription !== descriptionServer.current) {
         await actions.saveFolderDescription(folderSummary, submittedDescription);
+        persistentDescription.clearIfMatches(submittedDescription);
         if (draftOwner.current === submittedOwner) {
           applyCanonicalDescription(submittedDescription);
         }
@@ -342,7 +354,7 @@ export function FolderWorkspace({
     };
     nextDescriptionSaveToken.current = attempt.token;
     latestDescriptionSaveAttempt.current = attempt;
-    if (submittedDescription === descriptionServer.current) return;
+    if (!persistentDescription.ready || submittedDescription === descriptionServer.current) return;
     const submittedFolderPageId = folderSummary.page.id;
     const ownsAttempt = () => {
       const latest = latestDescriptionSaveAttempt.current;
@@ -353,6 +365,7 @@ export function FolderWorkspace({
     };
     try {
       await actions.saveFolderDescription(folderSummary, submittedDescription);
+      persistentDescription.clearIfMatches(submittedDescription);
       if (ownsAttempt()) applyCanonicalDescription(submittedDescription);
     } catch (error) {
       if (ownsAttempt()) {
@@ -456,7 +469,7 @@ export function FolderWorkspace({
         <View style={styles.sectionGroup}>
           <PlannerSectionHeader title="설명" testID="planner-section-header-description" />
           {tablet ? (
-            <TabletMarkdownEditor
+            <TabletMarkdownEditor ready={persistentDescription.ready}
               testID="task-description"
               ownerKey={draftOwnerKey}
               value={visibleServerDescription}
@@ -464,10 +477,12 @@ export function FolderWorkspace({
               onChangeDraft={(value) => {
                 descriptionDraft.current = value;
                 setDescription(value);
+                persistentDescription.setValue(value);
               }}
               onCancel={() => {
                 descriptionDraft.current = descriptionServer.current;
                 setDescription(descriptionServer.current);
+                persistentDescription.clear();
               }}
               onSave={saveTabletDescription}
               emptyText="폴더 설명이 없습니다."
@@ -477,11 +492,13 @@ export function FolderWorkspace({
               <PlannerForegroundCard testID="task-workspace-description-panel"
                 glassTestID="folder-description-glass" foregroundTestID="folder-description-foreground">
                 <TextInput
+                  editable={persistentDescription.ready}
                   testID="folder-description-input"
                   value={visibleDescription}
                   onChangeText={(value) => {
                     descriptionDraft.current = value;
                     setDescription(value);
+                    persistentDescription.setValue(value);
                   }}
                   multiline
                   placeholder="폴더 설명"
@@ -489,7 +506,7 @@ export function FolderWorkspace({
                   style={styles.description}
                 />
               </PlannerForegroundCard>
-              <TouchableOpacity testID="task-workspace-save-action" style={styles.action} onPress={save} disabled={saving}>
+              <TouchableOpacity testID="task-workspace-save-action" style={styles.action} onPress={save} disabled={saving || !persistentDescription.ready}>
                 <Text style={styles.primaryAction}>{saving ? '저장 중…' : '변경사항 저장'}</Text>
               </TouchableOpacity>
             </>

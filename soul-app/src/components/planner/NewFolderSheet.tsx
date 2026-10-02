@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
@@ -60,7 +61,10 @@ export function NewFolderSheet({
   const options = useMemo(() => projectOptionsFromFolders(folders), [folders]);
   const scopeGeneration = useAuthScopeGeneration();
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const descriptionDraft = usePersistentDraft('folder-create-description', [defaultProjectPageId ?? 'root'], '');
+  const { value: description, setValue: setDescription } = descriptionDraft;
+  const guidanceDraft = usePersistentDraft('folder-create-guidance', [defaultProjectPageId ?? 'root'], '');
+  const ready = descriptionDraft.ready && guidanceDraft.ready;
   const [projectPageId, setProjectPageId] = useState('');
   const [mountToday, setMountToday] = useState(true);
   const [initialContext, setInitialContext] = useState<InitialFolderContext>(emptyInitialFolderContext);
@@ -87,7 +91,6 @@ export function NewFolderSheet({
     if (!visible || (!opening && !scopeChanged)) return;
     const defaults = openingDefaults.current;
     setTitle('');
-    setDescription('');
     setProjectPageId(defaults.defaultProjectPageId ?? defaults.firstProjectPageId);
     setMountToday(true);
     setInitialContext(emptyInitialFolderContext());
@@ -101,7 +104,7 @@ export function NewFolderSheet({
   const visibleProjectPageId = ownsDraft ? projectPageId : '';
   const visibleTitle = ownsDraft ? title : '';
   const visibleDescription = ownsDraft ? description : '';
-  const visibleInitialContext = ownsDraft ? initialContext : emptyInitialFolderContext();
+  const visibleInitialContext = ownsDraft ? { ...initialContext, guidance: guidanceDraft.value } : emptyInitialFolderContext();
   const selectedProject = options.find((option) => option.projectPageId === visibleProjectPageId);
   const projectContext = usePlannerPageDetail(api, visibleProjectPageId || null, visible);
   const contextPresentation = buildPlannerContextPresentation({
@@ -121,7 +124,10 @@ export function NewFolderSheet({
   };
 
   const submit = async () => {
+    if (!ready) return;
     const scope = captureAuthScope();
+    const submittedDescription = description;
+    const submittedGuidance = guidanceDraft.value;
     const submittedGeneration = scopeGeneration;
     setError(null);
     try {
@@ -136,6 +142,8 @@ export function NewFolderSheet({
       setSubmitting(true);
       await onSubmit(input);
       if (isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration) {
+        descriptionDraft.clearIfMatches(submittedDescription);
+        guidanceDraft.clearIfMatches(submittedGuidance);
         onClose();
       }
     } catch (cause) {
@@ -150,7 +158,7 @@ export function NewFolderSheet({
   };
 
   const canSubmit = Boolean(
-    visibleTitle.trim() && visibleProjectPageId && !assignmentIncomplete && !submitting,
+    ready && visibleTitle.trim() && visibleProjectPageId && !assignmentIncomplete && !submitting,
   );
   const addAtomReference = (reference: InitialFolderAtomReference) => {
     setInitialContext((current) => ({
@@ -218,6 +226,7 @@ export function NewFolderSheet({
               <Text style={styles.label}>설명</Text>
               <View style={styles.field}>
                 <TextInput
+                  editable={ready && !submitting}
                   value={visibleDescription}
                   onChangeText={setDescription}
                   placeholder="목표와 완료 조건을 적어두세요."
@@ -264,9 +273,9 @@ export function NewFolderSheet({
                 visible={visible && ownsDraft}
                 api={api}
                 value={visibleInitialContext}
-                disabled={submitting}
+                disabled={submitting || !ready}
                 assignmentIncomplete={assignmentIncomplete}
-                onChange={setInitialContext}
+                onChange={(value) => { setInitialContext(value); guidanceDraft.setValue(value.guidance); }}
                 onAssignmentIncompleteChange={setAssignmentIncomplete}
                 onOpenAtomPicker={() => setAtomPickerOpen(true)}
               />
