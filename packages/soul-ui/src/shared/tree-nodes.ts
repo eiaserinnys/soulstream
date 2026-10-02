@@ -6,6 +6,7 @@
  */
 
 import type { CallerInfo, ContextItem, InputRequestQuestion } from "./sse-events";
+import type { JevCardObservation } from "../../../wire-schema/src/card_observation";
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
 export type EventTreeNodeType = EventTreeNode["type"];
@@ -248,6 +249,12 @@ export interface TurnSummaryNode extends BaseNode {
   summaryParentEventId?: number;
 }
 
+export interface CardObservationNode extends BaseNode {
+  type: "card_observation";
+  observation: JevCardObservation;
+  finalResponseEventId: number;
+}
+
 /** Claude API 에러 노드 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorNode extends BaseNode {
   type: "assistant_error";
@@ -275,4 +282,5 @@ export type EventTreeNode =
   | AssistantMessageNode
   | AssistantErrorNode
   | AwaySummaryNode
-  | TurnSummaryNode;
+  | TurnSummaryNode
+  | CardObservationNode;

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
+import { SystemMessage } from "@seosoyoung/soul-ui/components/chat/SystemMessage";
 import { FolderPanelHeader, SessionPanelHeader } from "./WorkspacePanelHeaders";
 import { DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
 import type { UploadedFile } from "@seosoyoung/soul-ui/hooks/useFileUpload";
@@ -190,6 +191,15 @@ export function ComponentsReviewPage() {
             <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
                 onAnswer={() => open("질문 응답")} pending={false}/>
+            </Sample>
+            <Sample name="SystemMessage / 기존 caption" state="같은 배치 · 기존 요약과 요청한 Jev 판정 한 줄">
+              <div data-testid="jev-caption-comparison">
+                <AssistantMessage msg={{id:"jev-sample-answer",role:"assistant",treeNodeId:"jev-sample-answer",treeNodeType:"assistant_message",content:"구현을 맡겼습니다. 다른 작업 결과를 기다립니다."}}/>
+                <SystemMessage msg={{id:"jev-sample-summary",role:"system",treeNodeId:"jev-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
+                <SystemMessage msg={{id:"jev-sample-observation",role:"system",treeNodeId:"jev-sample-observation",treeNodeType:"card_observation",content:"Jev · 위임 대기 — 다른 작업 결과를 기다리는 상태로 분류"}}/>
+                <SystemMessage msg={{id:"jev-sample-limited",role:"system",treeNodeId:"jev-sample-limited",treeNodeType:"card_observation",content:"Jev · 완료 가능 · 관측 범위 제한"}}/>
+                <SystemMessage msg={{id:"jev-sample-error",role:"system",treeNodeId:"jev-sample-error",treeNodeType:"card_observation",content:"Jev · 미평가 — 평가 요청 실패"}}/>
+              </div>
             </Sample>
           </section>
           <section id="components-input" className="v3-detail-section">

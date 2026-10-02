@@ -255,6 +255,7 @@ async function readTimelinePage(
       FROM events
       WHERE session_id = ${sessionId}
         AND event_type = ANY(${eventTypes}::text[])
+        AND (event_type <> 'debug' OR payload->>'kind'='jev_card_observation')
       ORDER BY created_at DESC, id DESC
       LIMIT ${limit + 1}
     `;
@@ -265,6 +266,7 @@ async function readTimelinePage(
       FROM events
       WHERE session_id = ${sessionId}
         AND event_type = ANY(${eventTypes}::text[])
+        AND (event_type <> 'debug' OR payload->>'kind'='jev_card_observation')
         AND created_at < ${cursor.timestamp}
       ORDER BY created_at DESC, id DESC
       LIMIT ${limit + 1}
@@ -275,6 +277,7 @@ async function readTimelinePage(
     FROM events
     WHERE session_id = ${sessionId}
       AND event_type = ANY(${eventTypes}::text[])
+        AND (event_type <> 'debug' OR payload->>'kind'='jev_card_observation')
       AND (
         created_at < ${cursor.timestamp}
         OR (created_at = ${cursor.timestamp} AND id < ${cursor.id})

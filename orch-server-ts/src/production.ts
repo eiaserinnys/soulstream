@@ -1,3 +1,4 @@
+import { createLiveJevCardObservation } from "./cards/live_jev_card_observation.js";
 import type { SqlClient } from "./control_plane/control_plane_types.js";
 // 500줄 예외: 프로덕션 composition root의 단일 조립 순서를 한 파일에서 검증한다.
 // 도메인 동작은 각 service/repository 모듈에 있고, 이 파일은 연결만 소유한다.
@@ -336,6 +337,7 @@ export async function createLiveProductionApplication(
   let pageYjsService: PageYjsService | undefined;
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;
   let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
+  let cardObservation: ReturnType<typeof createLiveJevCardObservation> | undefined;
   let recurringJobScheduler: RecurringJobScheduler | undefined;
   let cardDispatcher: CardDispatcher | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
@@ -362,6 +364,7 @@ export async function createLiveProductionApplication(
       sessionReconciliation,
       (events) => pushNotifier.accept(events),
       (events) => turnSummaryPipeline?.accept(events),
+      (events) => cardObservation?.accept(events),
       (events) => recurringJobScheduler?.accept(events),
       (events) => cardDispatcher?.accept(events),
     ],
@@ -631,6 +634,8 @@ export async function createLiveProductionApplication(
     warn: context.warn,
     overrides,
   });
+  cardObservation = createLiveJevCardObservation({ sqlResolver, apiKey: config.typesafe_api_key || null,
+    eventHub: runtimeServices.sessionEventHub, log: fields => app.log.info({ jevCardObservation: fields }, "Jev card observation") });
   const maintenanceService = new OrchestratorMaintenanceService({
     sessionCache: registry.sessionCache,
     pushNotifier,
@@ -696,6 +701,7 @@ export async function createLiveProductionApplication(
       await usageSummaryService.stop();
       await cardDispatchRuntime.dispatcher.drain();
       await turnSummaryPipeline?.drain();
+      await cardObservation?.drain();
       await pushNotifier.close();
       await dbCatalogRepository.close();
     },

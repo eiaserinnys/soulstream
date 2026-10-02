@@ -2757,6 +2757,7 @@ export const SESSION_TIMELINE_EVENT_TYPES = [
   "session_notification",
   "assistant_message",
   "turn_summary",
+  "debug",
   "thinking",
   "tool_start",
   "tool_result",

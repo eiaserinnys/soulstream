@@ -43,7 +43,7 @@ export function groupMessages(messages: ChatMessage[]): MessageOrGroup[] {
   flushTools();
   const result: MessageOrGroup[] = [];
   for (const item of base) {
-    const summary = item.type === "single" && item.msg.treeNodeType === "turn_summary"
+    const summary = item.type === "single" && (item.msg.treeNodeType === "turn_summary" || item.msg.treeNodeType === "card_observation")
       ? item.msg
       : null;
     if (summary === null || result.length === 0) {
