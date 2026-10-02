@@ -12,6 +12,8 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { buildServer } from "../../src/server.js";
 import { buildMcpServer } from "../../src/mcp/server.js";
 import * as canonicalServer from "../../src/mcp/server.js";
+import { LIVE_CARD_RESOURCE } from "../../src/mcp/tools/live_card_view.js";
+import { widgetHtml } from "../../../plugins/chatgpt-card-renderer/src/widget-html.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
 import { ExternalEventsService, credentialOwner } from "../../src/external_events/service.js";
 import { withMcpRequestContext, INTERNAL_MCP_PRINCIPAL } from "../../src/mcp/request_context.js";
@@ -23,6 +25,23 @@ const subscription = { name: "soulstream.message.created", arguments: { recipien
   delivery: { mode: "webhook", url: "https://receiver.example/events", secret } };
 const cleanup: (() => Promise<unknown>)[] = [];
 const canonicalBuildMcpServer = buildMcpServer;
+async function expectLiveCards(client: Client | ModernClient) {
+  expect((await client.listResources()).resources).toEqual(expect.arrayContaining([
+    expect.objectContaining({ uri: LIVE_CARD_RESOURCE }),
+  ]));
+  expect(await client.readResource({ uri: LIVE_CARD_RESOURCE })).toMatchObject({ contents: [{
+    uri: LIVE_CARD_RESOURCE, mimeType: "text/html;profile=mcp-app", text: widgetHtml,
+    _meta: { ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } } },
+  }] });
+  expect((await client.listTools()).tools).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: "show_live_card_view", _meta: {
+      ui: { resourceUri: LIVE_CARD_RESOURCE }, "openai/outputTemplate": LIVE_CARD_RESOURCE,
+    } }),
+    expect.objectContaining({ name: "list_live_cards", _meta: {
+      ui: { visibility: ["app", "model"] }, "openai/widgetAccessible": true,
+    } }),
+  ]));
+}
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 async function runtime() {
   const dir = await mkdtemp(join(tmpdir(), "mcp-events-wire-"));
@@ -48,10 +67,10 @@ async function web() {
 }
 describe("dedicated MCP2 ingress with SDK1 canonical tool bridge", () => {
   it.each(["modern", "legacy"] as const)("%s preserves canonical resources, templates and UI metadata", async era => {
-    const uri = "ui://soulstream/live-cards-v2.html";
+    const uri = "ui://test-fixtures/external-events/cards.html";
     const ui = { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } };
-    // Main integration is caller-owned. Register a resource via the same public
-    // SDK1 API to test the bridge without importing or changing PR1106.
+    // Keep the fixture distinct from the real resource; both use the canonical
+    // SDK1 registry and the same bridge.
     const factory = vi.spyOn(canonicalServer, "buildMcpServer").mockImplementation(runtime => {
       const server = canonicalBuildMcpServer(runtime);
       server.registerResource("live-card-fixture", uri, { _meta: { ui } }, async () => ({
@@ -71,7 +90,8 @@ describe("dedicated MCP2 ingress with SDK1 canonical tool bridge", () => {
     await client.connect(era === "modern" ? new ModernTransport(url, options) : new StreamableHTTPClientTransport(url, options));
     cleanup.push(() => client.close());
     expect(client.getServerCapabilities()).toMatchObject({ resources: {} });
-    expect(await client.listResources()).toMatchObject({ resources: [{ uri, _meta: { ui } }] });
+    await expectLiveCards(client);
+    expect((await client.listResources()).resources).toEqual(expect.arrayContaining([expect.objectContaining({ uri, _meta: { ui } })]));
     expect(await client.readResource({ uri })).toMatchObject({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: "<html>cards</html>", _meta: { ui } }] });
     expect(await client.listResourceTemplates()).toMatchObject({ resourceTemplates: [{ uriTemplate: "ui://soulstream/cards/{name}", _meta: { ui } }] });
     expect(await client.readResource({ uri: "ui://soulstream/cards/test" })).toMatchObject({ contents: [{ text: "template cards", _meta: { ui } }] });
@@ -90,9 +110,9 @@ describe("dedicated MCP2 ingress with SDK1 canonical tool bridge", () => {
     expect(tools.tools.some(tool => tool.name === "reflect_refresh")).toBe(true);
     expect(tools.tools.some(tool => tool.name === "send_to_external_llm")).toBe(false);
     expect((await client.callTool({ name: "reflect_refresh", arguments: {} })).isError).not.toBe(true);
-    expect(await client.listResources()).toMatchObject({ resources: [] });
+    await expectLiveCards(client);
     expect(await client.listResourceTemplates()).toMatchObject({ resourceTemplates: [] });
-    await expect(client.readResource({ uri: "ui://missing/resource" })).rejects.toThrow("Resource not found");
+    await expect(client.readResource({ uri: "ui://missing/resource" })).rejects.toMatchObject({ code: -32602 });
     const resultSchema = z.object({}).passthrough();
     expect(await client.request({ method: "events/list", params: {} }, resultSchema)).toMatchObject({ events: [{ name: subscription.name }] });
     const created = await client.request({ method: "events/subscribe", params: subscription }, resultSchema);
@@ -112,9 +132,9 @@ describe("dedicated MCP2 ingress with SDK1 canonical tool bridge", () => {
       expect((await client.listTools()).tools.some(tool => tool.name === "reflect_refresh")).toBe(true);
       expect((await client.callTool({ name: "reflect_refresh", arguments: {} })).isError).not.toBe(true);
       if (path === "/dot") {
-        expect(await client.listResources()).toMatchObject({ resources: [] });
+        await expectLiveCards(client);
         expect(await client.listResourceTemplates()).toMatchObject({ resourceTemplates: [] });
-        await expect(client.readResource({ uri: "ui://missing/resource" })).rejects.toThrow("Resource not found");
+        await expect(client.readResource({ uri: "ui://missing/resource" })).rejects.toMatchObject({ code: -32602 });
       }
       await expect(client.request({ method: "events/list", params: {} }, z.object({}).passthrough())).rejects.toThrow();
     }
