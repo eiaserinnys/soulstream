@@ -25,9 +25,11 @@ import type {
   ContextItem,
   TokenUsage,
   TurnSummaryNode,
+  AssignedCardContextNode,
 } from "@shared/types";
 import { extractNodeEventId } from "./event-tree-id";
 import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
+import { placeAssignedCardContextsAtInputAnchors } from "./assigned-card-context-projection";
 import { formatRateLimitNotice } from "@shared/rate-limit-notice";
 
 export { extractEventId } from "./event-tree-id";
@@ -114,6 +116,10 @@ export interface ChatMessage {
   summaryFinalResponseEventId?: number;
   summaryParentEventId?: number;
   observation?: import("../../../wire-schema/src/card_observation").JevCardObservation;
+  /** user/intervention 입력과 준비 스냅샷을 결합하는 동일 input UUID. */
+  inputId?: string;
+  /** assigned_card_context 전용 exact anchor. */
+  preparedInputId?: string;
 }
 
 /**
@@ -190,6 +196,8 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.eventId === b.eventId &&
     a.summaryFinalResponseEventId === b.summaryFinalResponseEventId &&
     a.summaryParentEventId === b.summaryParentEventId
+    && a.inputId === b.inputId
+    && a.preparedInputId === b.preparedInputId
   );
 }
 
@@ -209,7 +217,9 @@ export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
 
   const messages: ChatMessage[] = [];
   collectMessages(root, messages, {});
-  return placeTurnSummariesAtResponseAnchors(messages);
+  return placeTurnSummariesAtResponseAnchors(
+    placeAssignedCardContextsAtInputAnchors(messages),
+  );
 }
 
 /** 캐시 조회·갱신 후 reference를 반환한다. */
@@ -301,6 +311,7 @@ function nodeToMessage(
         contextItems: n.context,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
+        inputId: n.inputId,
       };
     }
 
@@ -350,6 +361,7 @@ function nodeToMessage(
         contextItems: n.context,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
+        inputId: n.inputId,
       };
     }
 
@@ -500,6 +512,19 @@ function nodeToMessage(
         treeNodeId: node.id, treeNodeType: node.type,
         summaryFinalResponseEventId: node.finalResponseEventId,
         observation: node.observation,
+      };
+    }
+
+    case "assigned_card_context": {
+      const n = node as AssignedCardContextNode;
+      return {
+        id: n.id,
+        role: "system",
+        content: n.content,
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        preparedInputId: n.preparedInputId,
       };
     }
 

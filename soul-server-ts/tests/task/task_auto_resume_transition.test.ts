@@ -13,6 +13,7 @@ import type { Task } from "../../src/task/task_models.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
@@ -230,6 +231,7 @@ describe("AutoResumeTransition", () => {
         text: "resume text",
         caller_info: callerInfo,
         attachments: ["/tmp/a.png"],
+        input_id: buildDeliveryInputUuid("resume-delivery"),
       });
       expect(effect).toBeUndefined();
       expect((event as Record<string, unknown>)._event_id).toBeUndefined();
@@ -300,6 +302,7 @@ describe("AutoResumeTransition", () => {
         user: "alice",
         callerInfo,
         attachmentPaths: ["/tmp/a.png"],
+        deliveryId: "resume-delivery",
       }, onResume),
     ).resolves.toEqual({ autoResumed: true });
 

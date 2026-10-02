@@ -13,12 +13,12 @@ type SqlCall = {
 };
 
 describe("live DB session history provider", () => {
-  it("reloads only public Jev debug observations and preserves their original response anchor", async () => {
+  it("reloads only public Jev and prepared-card debug observations", async () => {
     const payload={type:"debug",kind:"jev_card_observation",complete_event_id:10,final_response_event_id:9,content:"Jev · 위임 대기",details:[]};
     const harness=createSqlHarness(text=>{
       if(text.includes("SELECT EXISTS")) return [{exists:true}];
       if(text.includes("event_type = ANY")) {
-        expect(text).toContain("event_type <> 'debug' OR payload->>'kind'='jev_card_observation'");
+        expect(text).toContain("payload->>'kind' IN ('jev_card_observation', 'assigned_card_context_snapshot')");
         return [{id:40,event_type:"debug",payload,created_at:new Date("2026-10-02T00:00:00Z")}];
       }
       return [];

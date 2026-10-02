@@ -138,6 +138,21 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/screen.png"]);
   });
 
+  it("binds the initial public message, prepared context, and engine input to one registered input UUID", async () => {
+    const task = makeTask({ executionRegistration: {
+      registrationId: "registration-initial",
+      executionCommandId: "command:initial",
+    } });
+    const { builder, contextBuilder, initialMessagePublisher } = makeSubject();
+
+    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+    const inputUuid = buildDeliveryInputUuid("command:initial");
+
+    expect(contextBuilder.build).toHaveBeenCalledWith(task, claudeAgent, inputUuid);
+    expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(task, expect.any(Object), inputUuid);
+    expect(input.inputUuid).toBe(inputUuid);
+  });
+
   it("prepares a new Codex turn by prepending systemPrompt into the prompt body", async () => {
     const { builder } = makeSubject();
 

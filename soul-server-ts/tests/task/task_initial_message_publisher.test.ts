@@ -96,7 +96,7 @@ describe("TaskInitialMessagePublisher", () => {
       effectiveSystemPrompt: "system prompt",
       combinedContextItems: [{ key: "atom_context", label: "atom", content: "# tree" }],
       assembledPrompt: "사용자 요청",
-    });
+    }, "initial-input-id");
 
     expect(enqueueEvent.mock.calls.map((c) => (c[1] as { type: string }).type)).toEqual([
       "system_message",
@@ -111,6 +111,7 @@ describe("TaskInitialMessagePublisher", () => {
       user: "로젤린",
       text: "사용자 요청",
       timestamp: 1779505200,
+      input_id: "initial-input-id",
       caller_info: task.callerInfo,
       attachments: ["/tmp/incoming/sess/a.png"],
       context: [{ key: "atom_context", label: "atom", content: "# tree" }],
