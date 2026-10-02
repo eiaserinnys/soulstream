@@ -118,7 +118,9 @@ export class CardDispatcher {
         const fallback=comment && !change.previousAssigneeSessionId ? await this.options.repository.latestDispatchedSessionId(card.id) : null;
         const notification=buildCardChangeNotification(change,comment,fallback);
         const answeredQuestion=op.operation_type === "answer_card_question" ? detail.questions.find(q=>q.id === payload.question_id) : undefined;
-        const mergeAnswer=notification && answeredQuestion?.session_id === notification.sessionId;
+        const questionSession=answeredQuestion && typeof answeredQuestion.session_id === "string"
+            ? await this.options.repository.ownerSession(answeredQuestion.session_id) : null;
+        const mergeAnswer=notification && questionSession && answeredQuestion?.session_id === notification.sessionId;
         if (notification && !mergeAnswer) {
           try {
             await this.deliver(card,notification.sessionId,notification.text,notification);
@@ -131,16 +133,24 @@ export class CardDispatcher {
         }
         if (op.operation_type === "set_card_status" && previousStatus !== "review" && payload.status === "review")
             await this.notify(card, "review");
-        if (op.operation_type === "answer_card_question" && card.status === "running") {
+        if (op.operation_type === "answer_card_question") {
             const q = answeredQuestion;
-            const session = q && typeof q.session_id === "string" ? await this.options.repository.ownerSession(q.session_id) : null;
-            if (session?.status && !isTerminalSessionStatus(session.status)) {
-                const answer=`질문에 답이 왔다: ${String(q!.text)} → ${String(q!.answer)}. 이어서 진행한다.`;
-                if (mergeAnswer) await this.deliver(card,String(q!.session_id),`${notification!.text}\n${answer}`,notification!);
-                else await this.deliver(card,String(q!.session_id),answer);
+            const autoResumed=previousStatus === "blocked" && change.committedCard?.status === "running";
+            const resumeCurrent=autoResumed && card.status === "running" && card.version === change.committedCard!.version;
+            if (questionSession) {
+                const answer=`질문에 답이 왔습니다: ${String(q!.text)} → ${String(q!.answer)}. ` + (resumeCurrent
+                    ? "질문 대기가 해제됐습니다. 이어서 진행합니다."
+                    : `현재 카드 상태는 ${card.status} 입니다. 답변 수신만으로 카드 상태를 바꾸거나 완료된 작업을 재착수하지 않습니다.`);
+                try {
+                    if (mergeAnswer) await this.deliver(card,String(q!.session_id),`${notification!.text}\n${answer}`,notification!);
+                    else await this.deliver(card,String(q!.session_id),answer);
+                } catch (error) { this.options.warn(`card ${card.id} answer delivery failed: ${String(error)}`); }
             }
-            else
-                await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
+            if (autoResumed && (!questionSession?.status || isTerminalSessionStatus(questionSession.status))) {
+                const latest=await cards.getCard(card.id);
+                if (latest?.card.status === "running" && latest.card.version === change.committedCard!.version)
+                    await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: latest.card.version });
+            }
         }
         if (op.operation_type === "set_card_status" && op.actor_kind === "user" && previousStatus === "review" && payload.status === "running") {
             const session = await this.options.repository.latestSession(card.id);

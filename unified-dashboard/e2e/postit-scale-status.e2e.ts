@@ -58,6 +58,19 @@ function assertScale(item:Awaited<ReturnType<typeof metrics>>[number],fontSize:n
  if(item.action)expect(item.action).toBeGreaterThanOrEqual(32);if(item.trigger)expect(item.trigger).toBeGreaterThanOrEqual(32);
 }
 async function capture(page:Page,name:string) {await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(output,`${name}.png`),animations:"disabled"});}
+test('unanswered question card completion saves once',async({page})=>{
+ const state=await prepare(page,390,14);await page.goto('/');
+ const card=page.locator('.v3-postit-card[data-card-id="scale-2"]');await expect(card).toBeVisible();
+ await card.getByRole('button',{name:'카드 상태 변경'}).click();
+ const popup=page.locator('[data-card-status-picker][data-open]');await expect(popup).toBeVisible();
+ await expect(popup).not.toContainText('질문에 답한 뒤 변경할 수 있습니다');
+ await expect(popup.getByRole('button',{name:'완료',exact:true})).toBeEnabled();
+ await capture(page,'question-completion-before-390');
+ await popup.getByRole('button',{name:'완료',exact:true}).click();await expect(card).toHaveCount(0);
+ expect(state.writes).toHaveLength(1);expect(state.writes[0]).toMatchObject({status:'done',expectedVersion:7});
+ expect(state.cards.find(card=>card.id==='scale-2')!.status).toBe('done');
+ await capture(page,'question-completion-after-390');
+});
 for(const width of [390,1440])for(const fontSize of [14,17,18] as const)test(`main folder and components ${width} font ${fontSize}`,async({page})=>{
  const state=await prepare(page,width,fontSize);await page.goto("/");const first=page.locator(".v3-postit-card").first();await expect(first).toBeVisible();
  await expect(first.locator(".v3-postit-body")).toHaveCSS("font-size",`${fontSize}px`);

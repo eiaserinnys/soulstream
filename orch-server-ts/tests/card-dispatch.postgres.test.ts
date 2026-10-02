@@ -188,7 +188,7 @@ describe("card dispatch and session lifecycle", () => {
         const q = (await cards.getCard(id))!.questions[0]!;
         await cards.answerQuestion({ ...human, cardId: id, questionId: String(q.id), answer: '진행', idempotencyKey: key() });
         await dispatcher.drain();
-        expect(messages).toHaveBeenCalledWith(sessionId, '질문에 답이 왔다: 진행? → 진행. 이어서 진행한다.');
+        expect(messages).toHaveBeenCalledWith(sessionId, '질문에 답이 왔습니다: 진행? → 진행. 질문 대기가 해제됐습니다. 이어서 진행합니다.');
         expect((await cards.getCard(id))!.card.status).toBe('running');
         expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'question', title: '작업', question: '진행?' }));
     });
@@ -221,6 +221,46 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.drain();
         expect(launch).toHaveBeenCalledTimes(2);
         expect(launch.mock.calls[1]![0]).toHaveProperty('prompt', expect.stringContaining('방향? → A'));
+        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('방향? → A'));
+    });
+    it("delivers a late answer with attachments to a live session after completion without changing status", async () => {
+        const {id,sessionId}=await start();
+        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'뒤늦은 질문',idempotencyKey:key()});
+        await dispatcher.drain();
+        await cards.setCardStatus({...human,cardId:id,status:'done',idempotencyKey:key()});await dispatcher.drain();
+        const attachments=[{nodeId:'eiaserinnys',path:'/incoming/upload/answer.png',name:'답변.png',mimeType:'image/png'}];
+        await h.sql`UPDATE cards SET attachments=${h.sql.json(attachments)} WHERE id=${id}`;
+        const detail=(await cards.getCard(id))!;messages.mockClear();
+        await cards.answerQuestion({...human,cardId:id,questionId:String(detail.questions[0]!.id),answer:'저장할 답',idempotencyKey:key()});await dispatcher.drain();
+        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('뒤늦은 질문 → 저장할 답'),undefined,undefined,attachments);
+        expect(messages.mock.calls[0]![1]).toContain('현재 카드 상태는 done 입니다');
+        expect(messages.mock.calls[0]![1]).toContain('답변 수신만으로 카드 상태를 바꾸거나 완료된 작업을 재착수하지 않습니다');
+        expect((await cards.getCard(id))!.card).toMatchObject({status:'done',version:detail.card.version});
+        expect((await cards.getCard(id))!.questions[0]!.answer).toBe('저장할 답');expect(launch).toHaveBeenCalledOnce();
+    });
+    it.each(['review','running'] as const)("delivers a late answer to a finished session and preserves explicitly selected %s", async status => {
+        const {id,sessionId}=await start();
+        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'늦은 질문',idempotencyKey:key()});await dispatcher.drain();
+        await terminal(sessionId);
+        if(status==='review')await cards.addReport({...human,cardId:id,title:'보고',format:'markdown',body:'결과',idempotencyKey:key()});
+        await cards.setCardStatus({...human,cardId:id,status,idempotencyKey:key()});await dispatcher.drain();
+        const detail=(await cards.getCard(id))!;messages.mockClear();
+        await cards.answerQuestion({...human,cardId:id,questionId:String(detail.questions[0]!.id),answer:'늦은 답',idempotencyKey:key()});await dispatcher.drain();
+        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('늦은 질문 → 늦은 답'));
+        expect(messages.mock.calls[0]![1]).toContain(`현재 카드 상태는 ${status} 입니다`);
+        expect((await cards.getCard(id))!.card).toMatchObject({status,version:detail.card.version});
+        expect(launch).toHaveBeenCalledOnce();
+    });
+    it.each(['completion','version change'])("does not requeue an automatic answer resume superseded by %s during delivery",async change=>{
+        const {id,sessionId}=await start();
+        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'재개?',idempotencyKey:key()});await dispatcher.drain();await terminal(sessionId);
+        messages.mockImplementationOnce(async()=>{
+            if(change==='completion')await cards.setCardStatus({...human,cardId:id,status:'done',idempotencyKey:key()});
+            else await cards.patchCard({...human,cardId:id,brief:'새 요청',idempotencyKey:key()});
+        });
+        const q=(await cards.getCard(id))!.questions[0]!;
+        await cards.answerQuestion({...human,cardId:id,questionId:String(q.id),answer:'예',idempotencyKey:key()});await dispatcher.drain();
+        expect((await cards.getCard(id))!.card.status).toBe(change==='completion'?'done':'running');expect(launch).toHaveBeenCalledOnce();expect(warn).not.toHaveBeenCalled();
     });
     it("blocks unavailable presets and resumes the same limit-hit session when available", async () => {
         available = false;
