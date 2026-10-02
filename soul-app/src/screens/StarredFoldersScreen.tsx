@@ -1,5 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import type { ApiClient } from '../api/client';
+import { AutomaticRefreshIndicator } from '../components/AutomaticRefreshIndicator';
 import { createApiClient } from '../api/client';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { StarredFolderList } from '../components/planner/StarredFolderList';
@@ -16,13 +18,27 @@ export function StarredFoldersScreen({
   active?: boolean;
   onOpenFolder?: (folder: PlannerFolder) => void;
 }) {
-  const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  return <StarredFoldersWorkspace api={api} active={active} onOpenFolder={onOpenFolder} />;
+}
+
+/** Same production content with an explicit API, also used by the local review fixture. */
+export function StarredFoldersWorkspace({ api, active = true, onOpenFolder }: {
+  api: ApiClient | null; active?: boolean; onOpenFolder?: (folder: PlannerFolder) => void;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const starred = usePlannerStarred(api, active);
   const menus = usePlannerContextMenus(api);
   const [dragging, setDragging] = useState(false);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const handlePullRefresh = useCallback(async () => {
+    if (pullRefreshing) return;
+    setPullRefreshing(true);
+    try { await starred.refresh(); }
+    finally { setPullRefreshing(false); }
+  }, [pullRefreshing, starred.refresh]);
   const moveFolderOrder = useCallback(async (sourcePageId: string, beforePageId: string | null) => {
     try {
       await starred.moveFolderOrder(sourcePageId, beforePageId);
@@ -35,13 +51,14 @@ export function StarredFoldersScreen({
   }, [starred.moveFolderOrder]);
 
   return (
+    <View testID="starred-refresh-frame" style={styles.frame}>
     <ScrollView
       testID="starred-task-scroll"
       style={styles.container}
       contentContainerStyle={styles.content}
       scrollEnabled={!dragging && !starred.reordering}
       refreshControl={(
-        <RefreshControl refreshing={starred.loading} onRefresh={starred.refresh} />
+        <RefreshControl refreshing={pullRefreshing} onRefresh={handlePullRefresh} />
       )}
     >
       <StarredFolderList
@@ -59,6 +76,8 @@ export function StarredFoldersScreen({
         reordering={starred.reordering}
       />
     </ScrollView>
+    {starred.loading && !pullRefreshing ? <AutomaticRefreshIndicator testID="starred-auto-progress" style={{ top: 0, right: 0 }} /> : null}
+    </View>
   );
 }
 
@@ -66,7 +85,8 @@ function makeStyles(t: DesignTokens) {
   const roles = createSurfaceRoles(t);
   const planner = createPlannerVisualRoles(t);
   return StyleSheet.create({
+    frame: { flex: 1, position: 'relative', paddingTop: t.uiSpacing.xl, ...roles.canvas.tokenStyle },
     container: { flex: 1, ...roles.canvas.tokenStyle },
-    content: { padding: planner.pageInset },
+    content: { paddingHorizontal: planner.pageInset, paddingBottom: planner.pageInset },
   });
 }

@@ -8,7 +8,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, RefreshControl, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AutomaticRefreshIndicator } from '../components/AutomaticRefreshIndicator';
 import { createApiClient } from '../api/client';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { DailyMemo } from '../components/planner/DailyMemo';
@@ -147,9 +148,8 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
         </GlassButton>
         </View>
         {loading && !pullRefreshing ? (
-          <ActivityIndicator
+          <AutomaticRefreshIndicator
             testID="daily-auto-progress"
-            color={t.colors.accent}
             style={styles.autoProgress}
           />
         ) : null}

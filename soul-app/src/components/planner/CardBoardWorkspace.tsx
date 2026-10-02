@@ -1,5 +1,6 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Platform, Text, View } from 'react-native';
+import { AccessibilityInfo, Platform, Text, View } from 'react-native';
+import { AutomaticRefreshIndicator } from '../AutomaticRefreshIndicator';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import type { ApiClient } from '../../api/client';
 import { useCardList } from '../../hooks/useCardList';
@@ -76,23 +77,24 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
       <Ionicons name={expanded ? 'close-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton> : null}
   </View>;
-  return <View testID="card-board-workspace" style={{ flex: 1, paddingHorizontal: phone ? 0 : t.cardLayout.padding, paddingVertical: t.cardLayout.padding, gap: t.uiSpacing.md }}>
+  return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: phone ? 0 : t.cardLayout.padding, paddingTop: t.uiSpacing.xl, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
     {externalHeader ? null : heading}
-    {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
     {error ? <View style={{ gap: t.uiSpacing.sm }}>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.error }}>{error}</Text>
       <GlassButton accessibilityLabel="보드 다시 조회" onPress={refresh}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text></GlassButton>
     </View> : null}
     {board()}
+    {loading && !expanded ? <AutomaticRefreshIndicator testID="card-board-auto-progress" style={{ top: 0, right: 0 }} /> : null}
     {adding ? <CardCreateSheet api={api} folderId={folderId} onClose={() => setAdding(false)} /> : null}
     {expanded ? <AppModalSurface visible modalId="modal_card_detail" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => {
       if (useUIStore.getState().folderOverlayVisible) useUIStore.getState().closeFolderOverlay();
       else setExpanded(null);
     }}>
-      <GestureHandlerRootView style={{ flex: 1 }}><View testID="card-board-expanded" style={{ flex: 1, padding: t.cardLayout.padding, gap: t.uiSpacing.md }}>
+      <GestureHandlerRootView style={{ flex: 1 }}><View testID="card-board-expanded" style={{ flex: 1, position: 'relative', paddingHorizontal: t.cardLayout.padding, paddingTop: t.uiSpacing.xl, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
         <View style={{ flex: 1, gap: t.uiSpacing.md }} pointerEvents={detailVisible ? 'none' : 'auto'} accessibilityElementsHidden={detailVisible} importantForAccessibility={detailVisible ? 'no-hide-descendants' : 'auto'}>
           {heading}{board(expanded, true)}
         </View>
+        {loading ? <AutomaticRefreshIndicator testID="card-board-expanded-auto-progress" style={{ top: 0, right: 0 }} /> : null}
         <FolderWorkspaceReadOverlay host="board" />
       </View></GestureHandlerRootView>
     </AppModalSurface> : null}

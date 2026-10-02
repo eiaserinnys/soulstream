@@ -2,10 +2,11 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('react-native-gesture-handler', () => ({ ...jest.requireActual('react-native-gesture-handler'), GestureHandlerRootView: require('react-native').View }));
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
-jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: mockCards, loading: false, error: null, refresh: jest.fn() }) }));
+jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: mockCards, loading: mockLoading, error: null, refresh: jest.fn() }) }));
 jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:false,error:null})}));
 import React, { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
+import { ActivityIndicator, StyleSheet } from 'react-native';
 import { CardBoardWorkspace } from '../CardBoardWorkspace';
 import { cardFixture } from '../../../test-support/cards';
 import { useUIStore } from '../../../store/uiStore';
@@ -13,11 +14,48 @@ jest.mock('../FolderWorkspaceReadOverlay', () => ({ FolderWorkspaceReadOverlay: 
 
 let mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })];
 let mockDevice = 'tablet';
-beforeEach(() => { mockDevice = 'tablet'; });
+let mockLoading = false;
+beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; });
 function Sample({ folderId }: { folderId?: string }) {
   const [includeCompleted, onChange] = useState(false);
   return <CardBoardWorkspace api={null} folderId={folderId} cardDisplay={{ includeCompleted, onChange }} onOpen={() => {}} />;
 }
+
+test.each([
+  { device: 'phone', externalHeader: true, expanded: false },
+  { device: 'phone', externalHeader: false, expanded: false },
+  { device: 'tablet', externalHeader: false, expanded: false },
+  { device: 'tablet', externalHeader: true, expanded: false },
+  { device: 'tablet', externalHeader: false, expanded: true },
+])('자동 갱신 $device external=$externalHeader expanded=$expanded는 보드를 유지하고 구석에만 표시한다', ({ device, externalHeader, expanded }) => {
+  mockDevice = device;
+  mockCards = [cardFixture({ id: 'todo' })];
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const props = { api: null, externalHeader, cardDisplay: { includeCompleted: false, onChange: jest.fn() }, onOpen: jest.fn() };
+  const screen = render(<CardBoardWorkspace ref={ref} {...props} />);
+  if (expanded) act(() => ref.current!.openExpanded());
+  const host = expanded ? within(screen.getByTestId('card-board-expanded')) : screen;
+  const board = host.getByTestId('card-board');
+  fireEvent.scroll(board, { nativeEvent: { contentOffset: { x: 140, y: 0 } } });
+  const parent = board.parent;
+  const frameStyle = StyleSheet.flatten(host.getByTestId('card-board-frame').props.style);
+  mockLoading = true;
+  screen.rerender(<CardBoardWorkspace ref={ref} {...props} />);
+  const spinner = host.getByLabelText('자동 갱신 중');
+  expect(StyleSheet.flatten(spinner.props.style).position).toBe('absolute');
+  expect(spinner.props.pointerEvents).toBe('none');
+  expect(spinner.props.accessibilityRole).toBe('progressbar');
+  expect(host.getByTestId('card-board')).toBe(board);
+  expect(board.parent).toBe(parent);
+  expect(StyleSheet.flatten(host.getByTestId('card-board-frame').props.style)).toEqual(frameStyle);
+  for (const indicator of screen.UNSAFE_getAllByType(ActivityIndicator)) {
+    expect(StyleSheet.flatten(indicator.props.style).position).toBe('absolute');
+  }
+  mockLoading = false;
+  screen.rerender(<CardBoardWorkspace ref={ref} {...props} />);
+  expect(host.queryByLabelText('자동 갱신 중')).toBeNull();
+  expect(host.getByTestId('card-board')).toBe(board);
+});
 
 test.each([undefined, 'folder-1'])('전체/폴더 %s: 기본 완료 숨김은 완료 레인을 제외하고 상단 원형 액션으로 해제한다', (folderId) => {
   mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })];
