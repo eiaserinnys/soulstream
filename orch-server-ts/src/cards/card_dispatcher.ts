@@ -225,7 +225,7 @@ export class CardDispatcher {
             const running = await this.options.repository.running();
             const prompt = buildCardPrompt({ cardId: card.id, title: card.title, folderName: card.folder_name, request: card.request,
                 brief: [card.brief, answers].filter(Boolean).join("\n"), reason: await this.options.repository.rejectionReason(card.id),
-                comments: detail.comments.map(comment => ({ createdAt: comment.created_at as Date | string, body: String(comment.body) })),
+                comments: detail.comments.filter(comment => comment.author_kind === "user").map(comment => ({ createdAt: comment.created_at as Date | string, body: String(comment.body) })),
                 running: running.filter(c => c.id !== card.id).map(c => ({ title: c.title, folderName: c.folder_name })),
                 queued: queue.map(c => ({ title: c.title, folderName: c.folder_name })) });
             const sessionId = randomUUID();

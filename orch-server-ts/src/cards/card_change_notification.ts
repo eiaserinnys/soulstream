@@ -15,7 +15,7 @@ export function buildCardChangeNotification(change:CardMutationChange,comment?:R
   const target=`카드 「${card.title}」(${card.id})`;
   let text:string;
   if (kind === "comment") {
-    if (!comment || comment.delivered_at) return null;
+    if (!comment || comment.author_kind !== "user" || comment.delivered_at) return null;
     text=`${actor}가 ${target}에 커멘트를 남겼습니다: ${String(comment.body)}`;
   } else {
     if (!previousStatus || previousStatus === card.status) return null;
