@@ -31,6 +31,17 @@ describe("MCP service host boundary", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().isError).toBe(true);
   });
+  it.each([
+    ["get_page", { page_id: "page" }, "page service is not configured"],
+    ["search_skills", { query: "skill" }, "skill search is not configured"],
+  ])("returns an explicit error when %s dependencies are absent", async (tool, args, message) => {
+    const app = Fastify(); apps.push(app);
+    registerMcpHostRoutes(app, { authBearerToken: "token", cards, folders: { authBearerToken: "token", serviceProvider: vi.fn() } });
+    const response = await app.inject({ method: "POST", url: `/api/mcp/host/${tool}`, headers: { authorization: "Bearer token" },
+      payload: { args, context: { principal: "internal", caller_session_id: null, node_id: "node" } } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ isError: true, content: [{ type: "text", text: message }], structuredContent: { error: message } });
+  });
   it("requires worker execution context before starting card work", async () => {
     const app = Fastify(); apps.push(app);
     const cardServiceProvider = vi.fn();

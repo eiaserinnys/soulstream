@@ -30,7 +30,7 @@ export function registerOrchestratorTools(
             node_id: runtime.nodeId,
             ...extra,
           },
-        });
+        }, { timeoutMs: definition.timeoutMs });
         if (response.status !== 200) return errorResult((await readOrchErrorEnvelope(response)).message);
         return await response.json() as CallToolResult;
       } catch (error) {

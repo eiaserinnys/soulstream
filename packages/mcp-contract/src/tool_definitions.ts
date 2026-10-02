@@ -31,6 +31,8 @@ export interface McpToolDefinition {
   audience: "all" | "internal";
   /** Input schema shown to and enforced for external callers when it differs from `config.inputSchema`. */
   externalInputSchema?: z.ZodRawShape;
+  /** Forward timeout for the worker-to-orchestrator call when the default is too short. */
+  timeoutMs?: number;
 }
 
 export const mcpTools = {

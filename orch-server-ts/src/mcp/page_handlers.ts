@@ -63,7 +63,9 @@ function mutationActor(args: Args, context: McpCallContext) {
   return { actor_kind: "agent" as const, actor_session_id: session };
 }
 async function request(options: McpHostOptions, operation: string, input: Args) {
-  const response = await executePageHostOperation(operation, JSON.parse(JSON.stringify(input)), options.pages!.service, options.pages!.logger);
+  const pages = options.pages;
+  if (!pages) throw new Error("page service is not configured");
+  const response = await executePageHostOperation(operation, JSON.parse(JSON.stringify(input)), pages.service, pages.logger);
   // Retain the legacy host client's JSON boundary and its exact error envelope.
   const text = JSON.stringify(response.body);
   if (response.status !== 200) {

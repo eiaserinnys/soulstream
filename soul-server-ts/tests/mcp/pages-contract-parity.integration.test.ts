@@ -16,6 +16,8 @@ import { PageYjsHostClient } from "../../src/page/page_host_client.js";
 import { FolderService } from "../../src/folder/folder_service.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
 import { createGuardedMcpServer } from "../../src/mcp/tool_access.js";
+import { skillTools as skillDefinitions } from "@soulstream/mcp-contract";
+import * as hostTransport from "../../src/control_plane/persistence_host_transport.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import * as pageTools from "../../src/mcp/tools/page.js";
 import * as liveTools from "../../src/mcp/tools/live_card_view.js";
@@ -168,6 +170,17 @@ describe("pages/live/skills legacy and MCP host parity", () => {
   it("enforces external deletion on raw host calls", async () => {
     const response = await app.inject({ method: "POST", url: "/api/mcp/host/batch_page_operations", headers: { authorization: "Bearer token" }, payload: { args: { ...batch, operations: [{ op: "delete_block_subtree", block_id: "seed-block" }] }, context: { principal: "external", caller_session_id: "spoofed", node_id: "test" } } });
     expect(response.statusCode).toBe(200); expect(response.json().isError).toBe(true);
+  });
+  it("uses the catalog definition forwarding timeout", async () => {
+    query = "";
+    await seed();
+    const request = vi.spyOn(hostTransport, "fetchOrchResponse");
+    try {
+      const result = await call(false, "search_skills", { query: "skill-1" }, internal);
+      expect(result.isError).not.toBe(true);
+      expect(skillDefinitions.search_skills.timeoutMs).toBe(190000);
+      expect(request).toHaveBeenCalledWith(runtime.orch, "POST", "/api/mcp/host/search_skills", expect.anything(), { timeoutMs: 190000 });
+    } finally { request.mockRestore(); }
   });
 });
 

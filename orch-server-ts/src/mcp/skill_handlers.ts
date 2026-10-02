@@ -5,18 +5,20 @@ import type { McpToolHandler } from "./types.js";
 
 export const skillHandlers = {
   search_skills: async (options, { query, limit }) => {
-      const nodeId = options.skills!.nodeId;
+      const skills = options.skills;
+      if (!skills || !skills.logger) return errorResult("skill search is not configured");
+      const nodeId = skills.nodeId;
       let catalog;
       try {
         catalog = await loadSkillCatalog({
           nodeId,
           atom: {
-            enabled: options.skills!.enabled,
-            serverUrl: options.skills!.serverUrl,
-            apiKey: options.skills!.apiKey,
+            enabled: skills.enabled,
+            serverUrl: skills.serverUrl,
+            apiKey: skills.apiKey,
           },
-          logger: options.skills!.logger!,
-          httpClient: options.skills!.httpClient,
+          logger: skills.logger,
+          httpClient: skills.httpClient,
         });
       } catch {
         return errorResult("Failed to load skill catalog");
@@ -38,7 +40,7 @@ export const skillHandlers = {
         });
       }
 
-      const apiKey = options.skills!.typesafeApiKey;
+      const apiKey = skills.typesafeApiKey;
       if (!apiKey) return errorResult("TYPESAFE_API_KEY is not configured");
 
       try {
