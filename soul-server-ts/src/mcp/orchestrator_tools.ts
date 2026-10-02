@@ -47,6 +47,11 @@ export async function forwardOrchestratorTool(
       ...extra,
     },
   }, { timeoutMs: definition.timeoutMs, signal });
-  if (response.status !== 200) return errorResult((await readOrchErrorEnvelope(response)).message);
+  if (response.status !== 200) {
+    const detail = await readOrchErrorEnvelope(response);
+    return errorResult(definition.name === "search_sessions"
+      ? `orch GET /cogito/search failed: ${response.status} ${response.statusText} ${detail.message}`
+      : detail.message);
+  }
   return await response.json() as CallToolResult;
 }

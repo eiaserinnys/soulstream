@@ -202,6 +202,7 @@ describe("search_sessions", () => {
     const result = await call({ query: "retry" });
 
     expect(result.isError).toBe(true);
+    expect(result.structuredContent?.error).toContain("503");
     expect(result.structuredContent?.error).toContain("orch unavailable");
   });
 
