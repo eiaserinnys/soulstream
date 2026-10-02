@@ -19,6 +19,13 @@ test('다운로드 URL은 path의 확장자로 이미지 여부를 판단한다'
   expect(parseCardRequest(`첨부: 사진(${url})`).attachments[0]).toEqual({ name: '사진', url, image: true });
 });
 
+test('웹이 저장한 상대 URL 끝 첨부를 원문에서 분리한다', () => {
+  const url = '/api/attachments/files?nodeId=n&path=%2Ftmp%2Fphoto.png';
+  expect(parseCardRequest(`본문\n\n![사진](${url})`, 'https://cards.test')).toEqual({
+    text: '본문', attachments: [{ name: '사진', url, image: true }],
+  });
+});
+
 
 test('커멘트에 저장한 마크다운 이미지·파일 첨부를 빈 줄 사이에서도 읽는다', () => {
   expect(parseCardRequest('본문\n\n![사진](https://files.test/photo.png)\n\n[자료](https://files.test/file.pdf)')).toEqual({

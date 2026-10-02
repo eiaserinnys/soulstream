@@ -1,0 +1,8 @@
+{
+  "expo": {
+    "name": "Soulstream 카드 이미지 검수",
+    "slug": "soul-app-card-image-review",
+    "web": { "bundler": "metro", "output": "single" },
+    "experiments": { "baseUrl": "/assets/card-image-review" }
+  }
+}

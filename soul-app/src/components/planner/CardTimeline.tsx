@@ -12,6 +12,10 @@ import { AttachmentImage } from '../AttachmentImage';
 import { CardRequestView } from './CardRequestView';
 import { CardReportView } from './CardReportView';
 import { cardDetailStyles } from './CardDetail.styles';
+import { cardImageSource } from '../../lib/card-image-source';
+import { segmentCardReportImages } from '../../lib/card-report-images';
+import { useAuthStore } from '../../store/authStore';
+import { useSettingsStore } from '../../store/settingsStore';
 
 type Entry = { id: string; kind: string; user: boolean; body: string; at: string; sessionId?: string | null;
   spoken?: boolean; report?: CardReport; question?: CardQuestion; attachments?: CardAttachment[] };
@@ -59,13 +63,16 @@ function TimelineBody({ entry, expanded, onChooseAnswer }: { entry: Entry; expan
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const report = entry.report;
+  const jwt = useAuthStore((state) => state.jwt);
+  const serverUrl = useSettingsStore((state) => state.serverUrl);
   const preview = report ? reportSummary(report) : entry.body;
   const fold = report || entry.kind === '지시';
-  const gallery = report ? reportImages(report).map((uri) => ({ uri })) : [];
+  const gallery = report ? reportImages(report).map((uri) => cardImageSource(uri, serverUrl, jwt)) : [];
   const images = gallery.slice(0, 2);
+  const expandedMarkdown = expanded && report?.format === 'markdown';
   return <View style={styles.bodyStack}>
-    {!fold || (expanded && entry.kind === '지시') ? <CardRequestView request={entry.body} attachments={entry.attachments} /> : <Text style={styles.body} numberOfLines={fold && !expanded ? 3 : undefined}>{preview}</Text>}
-    {images.length ? <View style={styles.thumbnails}>{images.map((source, index) => <AttachmentImage key={source.uri}
+    {!fold || (expanded && entry.kind === '지시') ? <CardRequestView request={entry.body} attachments={entry.attachments} /> : !expandedMarkdown ? <Text style={styles.body} numberOfLines={fold && !expanded ? 3 : undefined}>{preview}</Text> : null}
+    {images.length && !expandedMarkdown ? <View style={styles.thumbnails}>{images.map((source, index) => <AttachmentImage key={source.uri}
       testID={`card-report-thumbnail-${report!.id}-${index}`} source={source} sources={gallery} index={index} accessibilityLabel={`보고 캡처 ${index + 1}`} />)}</View> : null}
     {fold ? <Text style={styles.meta}>{expanded ? '접기' : report ? '자세히' : '더 보기'}</Text> : null}
     {expanded && report ? <CardReportView report={report} /> : null}
@@ -77,11 +84,11 @@ function TimelineBody({ entry, expanded, onChooseAnswer }: { entry: Entry; expan
 export function reportImages(report: CardReport): string[] {
   return report.format === 'html'
     ? [...report.body.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["']/gi)].map((match) => match[1])
-    : [...report.body.matchAll(/!\[[^\]]*\]\((https?:\/\/[^\s)]+)(?:\s+"[^"]*")?\)/g)].map((match) => match[1]);
+    : segmentCardReportImages(report.body).flatMap((part) => part.kind === 'image' ? [part.url] : []);
 }
 export function reportSummary(report: CardReport): string {
   const text = report.format === 'html'
     ? report.body.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<\/(p|div|h[1-6])>/gi, '\n\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
-    : report.body;
+    : segmentCardReportImages(report.body).flatMap((part) => part.kind === 'markdown' ? [part.markdown] : []).join('\n');
   return text.trim().replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim();
 }

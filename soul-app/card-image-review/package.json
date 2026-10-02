@@ -1,0 +1,5 @@
+{
+  "name": "soul-app-card-image-review",
+  "private": true,
+  "main": "../card-image-review-entry.tsx"
+}
