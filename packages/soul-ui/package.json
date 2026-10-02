@@ -54,7 +54,9 @@
     "y-codemirror.next": "^0.3.5",
     "y-protocols": "1.0.6",
     "yjs": "13.6.27",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "parse5": "7.3.0",
+    "marked": "15.0.12"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

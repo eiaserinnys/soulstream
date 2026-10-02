@@ -6,12 +6,12 @@ A read-only MCP Apps card UI, with two modes: an authenticated **live view** ser
 
 1. Call `show_live_card_view` on the existing authenticated Soulstream MCP connection. No card array is needed. Optional `folder_id` scopes the view; omitted means all cards visible through that existing connection. `limit` defaults to 100 and cannot exceed 100.
 2. The thin registration in `soul-server-ts/src/mcp/tools/live_card_view.ts` reads through the same guarded MCP server, caller request context, and `FolderService.listCards` path used by `list_cards`. It neither copies tokens nor creates new permissions.
-3. Soulstream returns the actual card projection and the plugin-owned HTML as `ui://soulstream/live-cards-v2.html`.
+3. Soulstream returns the actual card projection and the plugin-owned HTML as `ui://soulstream/live-cards-v3.html`.
 4. The iframe calls `list_live_cards` through the same host MCP bridge for manual and 30-second automatic refresh. It never calls the backend directly and never receives credentials.
 
-Presentation and the dependency-free card projection remain in this plugin folder. The small Soulstream registration is required because only the authenticated source can safely perform repeated reads. The standalone public snapshot renderer does **not** gain private backend access.
+Presentation and the bounded card projection remain in this plugin folder. The small Soulstream registration is required because only the authenticated source can safely perform repeated reads. The standalone public snapshot renderer does **not** gain private backend access.
 
-The widget shows Korean status badges, optional assignees/update times, last successful sync time, and a local status filter. Hidden documents pause polling; visibility restores a refresh. Only one refresh is in flight. A new model-supplied view invalidates old in-flight results. Requests time out after 10 seconds. Teardown removes timers/listeners and clears data. A failed refresh is shown as an error, never converted to an empty-success response; stale data is labeled, and known authorization failures clear it.
+The widget shows five vertical status groups, tag-free read-only PostIt cards and optional assignees/latest text excerpts, last successful sync time, and a local status filter. Hidden documents pause polling; visibility restores a refresh. Only one refresh is in flight. A new model-supplied view invalidates old in-flight results. Requests time out after 10 seconds. Teardown removes timers/listeners and clears data. A failed refresh is shown as an error, never converted to an empty-success response; stale data is labeled, and known authorization failures clear it.
 
 A query returns at most 100 cards but reports the full returned-source count and truncation. It is not a streaming subscription. Backend retrieval currently uses the existing unpaginated card-list API. UI visibility notifications depend on the host correctly marking hidden frames.
 
@@ -30,7 +30,7 @@ A query returns at most 100 cards but reports the full returned-source count and
 
 ## Local development
 
-Requires Node.js 24. This folder is intentionally independent of the production pnpm workspace.
+Requires Node.js 24. The plugin uses its own npm dependencies. Widget building reuses canonical presentation/CSS and the shared preview helper from the surrounding Soulstream checkout; install the Soulstream soul-ui workspace dependencies too.
 
 ```sh
 npm ci --ignore-scripts
@@ -41,7 +41,7 @@ npm start
 
 Open http://127.0.0.1:8787/preview for **fictional example cards**. The local MCP endpoint is http://127.0.0.1:8787/mcp. The process binds to loopback by default. Use `HOST` and `PORT` only in a separately reviewed deployment. The preview route does not fetch real data.
 
-`npm run build:widget` regenerates `src/widget-html.ts` after edits to `public/cards.html`. All HTML/CSS/JavaScript is embedded; the widget makes no network requests.
+`npm run build:widget` regenerates `src/widget-html.ts` from `public/cards.template.html`, the React client, and canonical Soulstream CSS. All HTML/CSS/JavaScript is embedded; the widget makes no network requests.
 
 ## Plugin files and installation gap
 
@@ -70,11 +70,17 @@ The server code does not implement production OAuth, TLS, rate limiting, or pers
 
 ## Data contract and privacy
 
-`render_soulstream_cards` accepts `{ cards: [...] }`, at most 100 cards. Each card has `id`, `title`, `status`, optional `assignee` and optional ISO `updatedAt` (or null). Defaults for missing assignee/date are empty/null. Unknown extra card fields are rejected. No original request text, reports, briefs, credentials, or session history should be passed. String lengths and array sizes are bounded; the HTTP boundary also limits request bodies to 128 KiB.
+`render_soulstream_cards` accepts `{ cards: [...] }`, at most 100 cards. Each card has `id`, `title`, `status`, optional `assignee` and optional ISO `updatedAt` (or null). An optional `preview: {kind: "instruction" | "report", text}` carries at most 500 plain-text characters from the latest activity; old snapshot inputs remain valid. Defaults for missing assignee/date are empty/null. Unknown extra card fields are rejected. No full request/report bodies, activity timestamps, briefs, credentials, attachments or session history should be passed. Only the authorized bounded latest excerpt is transmitted. String lengths and array sizes are bounded; the HTTP boundary also limits request bodies to 128 KiB.
 
-Card fields are transmitted to the **renderer operator**, even though that service does not query Soulstream. Use a trusted destination and obtain appropriate permission before sending private data. The code itself does not log or persist request bodies; infrastructure can, so its configuration matters. Model-passed values are untrusted, schema-validated, and rendered with `textContent`. This renderer cannot cryptographically establish their provenance.
+Card fields are transmitted to the **renderer operator**, even though that service does not query Soulstream. Use a trusted destination and obtain appropriate permission before sending private data. The code itself does not log or persist request bodies; infrastructure can, so its configuration matters. Model-passed values are untrusted, schema-validated, and rendered as escaped React text nodes. This renderer cannot cryptographically establish their provenance.
 
 `total` counts only the cards supplied to the renderer; it is not a claim about the whole Soulstream board. For more than 100 cards, select an intentional subset or separate batches, preserving their real IDs and titles. `normalizeCards` is an optional local projection helper for the current `{ cards: [...] }` response shape; the renderer does not invoke it to access any backend.
+
+## Shared presentation
+
+`PostItCardPresentation` is the pure paper/grid used by the dashboard wrapper and iframe. The wrapper supplies existing typography, navigation and controls; iframe cards use `readOnly` and `showStatus=false` with no fake open action, mutations, drag handles or portrait requests. The actual five-group combination is registered in the component review window. Groups retain source order: review+blocked, running, queued+unknown, todo, done+cancelled. Unknown and cancelled cards have explanatory body-adjacent text. Empty groups are hidden. The local filter uses these same five groups.
+
+The single embedded HTML includes React, Base UI controls, generated Tailwind CSS and canonical PostIt/section tokens. No CDN or CSP extension is needed. Build inspection rejects dashboard store/API/router dependencies. Live resource is v3; standalone snapshot resource is separately `ui://soulstream/cards-v3.html`. The standalone service is not a deployment target for this UI change.
 
 ## Validation
 

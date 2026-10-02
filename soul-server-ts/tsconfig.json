@@ -16,7 +16,8 @@
     "resolveJsonModule": true,
     "declaration": false,
     "sourceMap": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src/**/*"

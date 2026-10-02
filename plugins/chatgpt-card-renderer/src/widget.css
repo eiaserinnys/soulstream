@@ -1,0 +1,15 @@
+@import 'tailwindcss' source(none);
+@import '../../../packages/soul-ui/src/styles/globals.css';
+@import '../../../unified-dashboard/client/v3/v3-folder-workspace.css';
+@import '../../../unified-dashboard/client/v3/v3-visual-system.css';
+@import '../../../unified-dashboard/client/v3/v3-cards.css';
+@import '../../../unified-dashboard/client/v3/v3-context-succession.css';
+@import '../../../unified-dashboard/client/v3/v3-postit-cards.css';
+@source '../../../packages/soul-ui/src/components/ui';
+@source '../../../unified-dashboard/client/components/CatalogSelectionField.tsx';
+@source '../../../unified-dashboard/client/v3/ReadOnlyCardList.tsx';
+@source './widget-client.tsx';
+
+/* The registered inbox keeps its inset, section spacing and card tracks. */
+.widget-shell { --v3-card-gap: var(--spacing); color: var(--foreground); background: var(--background); }
+html { scrollbar-width: thin; scrollbar-color: var(--v3-text-tertiary) transparent; }
