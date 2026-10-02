@@ -54,6 +54,12 @@ test.each([
 
 test('프로젝트 계층은 기본 접힘이고 disclosure로 부모 바로 아래에 자식을 연다', () => {
   const screen = render(<ProjectListScreen />);
+  expect(screen.queryByTestId('project-list-glass-background')).toBeNull();
+  expect(StyleSheet.flatten(screen.getByTestId('project-list-scroll').props.style))
+    .toMatchObject({ position: 'absolute', height: 0 });
+  fireEvent(screen.getByTestId('project-list-root'), 'layout', {
+    nativeEvent: { layout: { height: 200 } },
+  });
   const rootChildren = screen.getByTestId('project-list-root').children
     .filter((child: any) => typeof child !== 'string')
     .map((child: any) => child.props.testID);
@@ -107,7 +113,7 @@ test('프로젝트 고정 글래스는 짧은 콘텐츠 높이를 쓰고 긴 콘
     contentHeight: 128,
     viewportHeight: 0,
     verticalInset: 16,
-  })).toBe(128);
+  })).toBe(0);
   expect(resolveProjectGlassPanelHeight({
     hasRows: true,
     contentHeight: 128,

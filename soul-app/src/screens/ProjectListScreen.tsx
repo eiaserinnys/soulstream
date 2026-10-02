@@ -85,7 +85,7 @@ export function ProjectListScreen({
       onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}
     >
       {/* Native GlassView는 ScrollView 안에서 이동·clip하지 않도록 고정 sibling으로 둔다. */}
-      {rows.length > 0 ? (
+      {rows.length > 0 && panelHeight > 0 ? (
         <AppGlassCard
           role="glassCard"
           testID="project-list-glass-background"
@@ -180,7 +180,7 @@ export function resolveProjectGlassPanelHeight({
 }): number {
   if (!hasRows) return 0;
   const safeContentHeight = Math.max(0, contentHeight);
-  if (viewportHeight <= 0) return safeContentHeight;
+  if (viewportHeight <= 0) return 0;
   const availableHeight = Math.max(0, viewportHeight - verticalInset * 2);
   return Math.min(safeContentHeight, availableHeight);
 }
