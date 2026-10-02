@@ -42,20 +42,28 @@ describe("explicit manual card work", () => {
     const replay = await cards.startCardWork(declaration(id, "todo-start"));
     expect(replay.idempotent).toBe(true);
   });
-  it("requires a reason for review work", async () => {
-    const id = await make("review");
-    await expect(cards.startCardWork(declaration(id, "review-empty"))).rejects.toThrow("reason");
-    await cards.startCardWork(declaration(id, "review-reason", "검수 커멘트 반영"));
-    expect((await cards.getCard(id))?.card.status).toBe("running");
+  it.each(["review","queued","blocked","done","cancelled","running"])("starts manual %s without report, reason or admission",async status=>{
+    const id=await make(status);
+    await cards.startCardWork(declaration(id,`manual-${status}`));
+    expect((await cards.getCard(id))!.card).toMatchObject({status:"running",completed_kind:null,completed_at:null});
   });
-  it.each(["queued", "blocked", "done", "cancelled"])("rejects unfenced %s", async status => {
-    const id = await make(status);
-    await expect(cards.startCardWork(declaration(id, `denied-${status}`))).rejects.toThrow();
-    expect((await cards.getCard(id))?.card.status).toBe(status);
-  });
-  it("rejects running work without an identical declaration replay", async () => {
-    const id=await make("running");
-    await expect(cards.startCardWork(declaration(id,"undeclared-running"))).rejects.toThrow("replay");
+  it("allows a manual owner execution while its automatic delivery is still pending",async()=>{
+    const id=await make("queued","session","other"),identity={registrationId:"other-reg",executionCommandId:"other-command"};
+    await recordWorkReceipt(h,"other","running",identity);
+    const r=(await repo.claim({inputHash:id,policyVersion:1,snapshot:[{cardId:id,cardVersion:1}],target:{agentId:"judge",nodeId:"node",modelPreset:"model",minimumRemainingPercent:15}}))!;
+    await repo.prepareLaunch(r);
+    await repo.decide(r,{decisions:[{cardId:id,cardVersion:1,action:"run",reason:"자동"}]},1,"revision");
+    await cards.recordDispatch({cardId:id,expectedVersion:1,sessionId:"other",nodeId:"node",admission:{runId:r.id,leaseToken:r.lease_token,workerInput:{agentId:"profile",modelPreset:"model",existingSession:true,deliveryId:"pending-other"}}});
+    await repo.claimWorker("other");
+    const d=(await repo.pendingWorkers()).find(d=>d.card_id===id)!;
+    await repo.authorizeWorker({runId:r.id,sessionId:"other",executionToken:d.launch_token,nodeId:"node",cardId:id});
+    await cards.startCardWork({actorKind:"agent",actorSessionId:"other",cardId:id,expectedVersion:2,idempotencyKey:"manual-pending",execution:identity});
+    expect((await cards.getCard(id))!.card.status).toBe("running");
+    expect((await h.sql`SELECT state,input FROM card_orchestration_dispatches WHERE card_id=${id}`)[0]).toMatchObject({state:"launching"});
+    expect(await repo.workerObserved("other",r.id,id)).toBe(false);
+    await repo.workerState("other","rejected","superseded by manual work");
+    await repo.finish(r,"completed","manual write");
+    await h.sql`DELETE FROM cards WHERE id=${id}`;
   });
   it("consumption alone keeps queued; only admission-correlated owner declaration starts it", async () => {
     const id=await make("queued");
@@ -69,7 +77,11 @@ describe("explicit manual card work", () => {
     expect(await repo.authorizeWorker({runId:r.id,sessionId:"owner",executionToken:d.launch_token,nodeId:"node",cardId:id})).toBe(true);
     expect(await repo.workerObserved("owner",r.id,id)).toBe(false);
     const request={...declaration(id,"auto-start"),expectedVersion:2};
-    await expect(cards.startCardWork(request)).rejects.toThrow("consumed");
+    // A prior execution with an unconsumed automatic instruction may still start manually.
+    // Its write must not consume the pending automatic dispatch.
+    const manual=await make("queued");
+    await cards.startCardWork(declaration(manual,"manual-while-admitted"));
+    expect((await cards.getCard(manual))!.card.status).toBe("running");
     await consumeCardDelivery(h,"delivery","owner");
     expect((await cards.getCard(id))?.card.status).toBe("queued");
     await cards.startCardWork(request);
@@ -137,17 +149,19 @@ describe("explicit manual card work", () => {
     expect(detail.card).toMatchObject({status:"running",blocked_kind:null,blocked_detail:null});
     expect(detail.questions[0]!.answer).toBeNull();
   });
-  it.each(["limit","no_report"])("still rejects explicit work blocked by %s",async kind=>{
+  it.each(["limit","no_report"])("starts explicit work blocked by %s",async kind=>{
     const id=await make("blocked");
     await h.sql`UPDATE cards SET blocked_kind=${kind} WHERE id=${id}`;
-    await expect(cards.startCardWork(declaration(id,`blocked-${kind}`))).rejects.toThrow("state");
+    await cards.startCardWork(declaration(id,`blocked-${kind}`));
+    expect((await cards.getCard(id))!.card).toMatchObject({status:"running",blocked_kind:null});
   });
-  it("rejects another assignee, archived work and stale execution", async () => {
+  it("rejects another assignee and stale execution while allowing archive", async () => {
     const other = await make("todo", "session", "other");
     await expect(cards.startCardWork(declaration(other, "other"))).rejects.toThrow("assignee");
     const archived = await make();
     await h.sql`UPDATE cards SET archived=TRUE WHERE id=${archived}`;
-    await expect(cards.startCardWork(declaration(archived, "archived"))).rejects.toThrow("archived");
+    await cards.startCardWork(declaration(archived, "archived"));
+    expect((await cards.getCard(archived))!.card).toMatchObject({status:"running",archived:true});
     const id = await make();
     await expect(cards.startCardWork({...declaration(id,"stale"),execution:{registrationId:"old",executionCommandId:"old"}})).rejects.toThrow("execution");
   });

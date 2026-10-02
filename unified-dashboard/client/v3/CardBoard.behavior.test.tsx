@@ -9,10 +9,10 @@ import { reviewCard } from "./components-review-fixtures";
 let element:HTMLDivElement,root:Root;
 beforeEach(()=>{vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){}});element=document.createElement("div");document.body.append(element);root=createRoot(element);});
 afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllGlobals();});
-it("offers isolated drag handles and an explicitly unavailable blocked lane",async()=>{
+it("offers isolated drag handles and a selectable blocked lane",async()=>{
  await act(()=>root.render(<CardBoard cards={[reviewCard]} renderCard={(card,handle)=><article>{card.title}{handle}</article>}/>));
  expect(element.querySelector('[aria-label="'+reviewCard.title+' 단계 이동"]')).not.toBeNull();
- expect(element.querySelector('[data-board-column="blocked"]')?.getAttribute("aria-description")).toContain("옮길 수 없습니다");
+ expect(element.querySelector('[data-board-column="blocked"]')?.getAttribute("aria-description")).toBeNull();
 });
 it("expands the actual board and restores horizontal and lane scroll and focus",async()=>{
  await act(()=>root.render(<CardBoardWorkspace title="전체 카드" cards={[reviewCard]} renderCard={card=><article>{card.title}</article>}/>));

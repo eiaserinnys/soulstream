@@ -50,16 +50,13 @@ it("removes folder move-outs and updates visible status without exposing cached 
  expect(element.querySelector('[data-card-id="incoming"]')).toBeNull();expect(element.querySelector('[data-board-column="done"]')).toBeNull();
 });
 
-it("keeps an open reason draft and expanded board through an SSE list refetch failure",async()=>{
+it("keeps an open status menu and expanded board through an SSE list refetch failure",async()=>{
  let fail=false;const card={...reviewCard,status:"review" as const};
  vi.stubGlobal("fetch",vi.fn(async(url:string)=>{if(url===`/api/cards/${card.id}`)return new Response(JSON.stringify({...reviewDetail,card}));if(fail)throw new Error("connection lost");return response([card]);}));
  await act(async()=>root.render(<CardInboxBoard/>));
  await act(()=>element.querySelector<HTMLButtonElement>('button[aria-label="보드 확대"]')!.click());
  await act(async()=>{element.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]')!.click();});
- await act(()=>{[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(button=>button.textContent==="실행 중")!.click();});
- const input=document.querySelector<HTMLInputElement>('input[aria-label="다시 실행할 사유"]')!;
- await act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(input,"입력 중인 사유");input.dispatchEvent(new Event("input",{bubbles:true}));});
  fail=true;await act(async()=>event());
- expect(document.querySelector<HTMLInputElement>('input[aria-label="다시 실행할 사유"]')?.value).toBe("입력 중인 사유");
+ expect(document.querySelector('[data-card-status-picker]')).not.toBeNull();
  expect(element.querySelector('[data-card-board-expanded="true"]')).not.toBeNull();
 });

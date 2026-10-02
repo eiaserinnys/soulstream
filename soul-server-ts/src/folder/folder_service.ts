@@ -94,6 +94,12 @@ export class FolderService {
     },params.actorSessionId ?? undefined);
   }
 
+  async setCardStatus(params: FolderActorParams & { cardId: string; status: CardStatus; expectedVersion: number; idempotencyKey: string; reason?: string }) {
+    return this.cardRequest("POST", `/api/cards/${encodeURIComponent(params.cardId)}/status`, {
+      status:params.status,expectedVersion:params.expectedVersion,idempotencyKey:params.idempotencyKey,reason:params.reason,
+    },params.actorSessionId ?? undefined);
+  }
+
   async requestCardReview(params: FolderActorParams & { cardId: string }) {
     return this.cardMutation(params, "POST", "/status", { status: "review" }, true);
   }

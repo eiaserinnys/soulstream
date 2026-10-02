@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
-import type { CardDto, CardStatus } from '../../api/cardTypes';
+import type { CardDto } from '../../api/cardTypes';
 import { useDeviceType, useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { PostItCard } from './PostItCard';
@@ -66,7 +66,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const [drag, setDrag] = useState<{ card: CardDto; event: BoardDragEvent; grabX: number; grabY: number } | null>(null);
   const dragRef = useRef(drag); dragRef.current = drag;
   const edgeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [menu, setMenu] = useState<{ card: CardDto; target?: CardStatus } | null>(null);
+  const [menu, setMenu] = useState<{ card: CardDto; } | null>(null);
   const completedList=useRef<FlatList<CardDto>>(null);
   useEffect(()=>{completedList.current?.scrollToOffset({offset:0,animated:false});},[completed?.resetKey]);
   const stageHeight = useRef(0);
@@ -102,7 +102,6 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
     const boardFrame = { ...frameLatest.current, y: frameLatest.current.y + stageHeight.current, height: frameLatest.current.height - stageHeight.current };
     const next = boardDropStatus(event.absoluteX, event.absoluteY, boardFrame, geometryRef.current, position.current.x, card.status, columnsRef.current);
     if (!next) { Alert.alert('카드 이동 취소', '다른 단계의 레인 위에서 놓아 주세요.'); return; }
-    if (card.status === 'review' && next === 'running') { setMenu({ card, target: next }); return; }
     void action.transition(card, next);
   };
   return <View ref={frameRef} {...pan.handlers} testID="card-board-frame" style={{ flex: 1 }} onLayout={(event) => {
@@ -165,6 +164,6 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       left: drag.event.absoluteX - drag.grabX - frame.x, top: drag.event.absoluteY - drag.grabY - frame.y }}>
       <PostItCard api={null} card={drag.card} variant="compact" onOpen={() => {}} />
     </View> : null}
-    {menu ? <CardStatusMenu api={api} card={menu.card} initialTarget={menu.target} onClose={() => setMenu(null)} /> : null}
+    {menu ? <CardStatusMenu api={api} card={menu.card} onClose={() => setMenu(null)} /> : null}
   </View>;
 }

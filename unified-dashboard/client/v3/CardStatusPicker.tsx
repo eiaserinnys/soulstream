@@ -1,22 +1,22 @@
 import { useEffect, useImperativeHandle, type Ref } from "react";
-import { Button, Input, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
-import type { CardDetail, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import { Button, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
+import type { CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import { cardStatusLabel } from "./CardActions";
 import { StatusChip } from "./StatusChip";
 import "./v3-card-status-picker.css";
 
 export type { CardStatusControl } from "./card-status-coordinator";
-import { cardStatusChoices, cardTransitionError, useCardStatusCoordinator, type CardStatusControl } from "./card-status-coordinator";
+import { cardStatusChoices, useCardStatusCoordinator, type CardStatusControl } from "./card-status-coordinator";
 import { useCardBoardTransitions } from "./card-board-transitions";
 import { useCardBoardLayer } from "./card-board-layer";
 export interface CardStatusHandle { request(status?:CardStatus):void; }
 
-/** The existing status popup hosts all transition entry points and reason drafts. */
+/** The existing status popup hosts all transition entry points. */
 export function CardStatusPicker({card,control,onOpen,ref,onBusyChange}: {
   card:CardRow;control:CardStatusControl;onOpen():void;ref?:Ref<CardStatusHandle>;onBusyChange?(busy:boolean):void;
 }) {
   const state=useCardStatusCoordinator(card,control);
-  const {open,changeOpen,detail,loading,busy,error,reasonStep,setReasonStep,draft,setDraft,refresh,unavailable,change}=state;
+  const {open,changeOpen,detail,loading,busy,error,refresh,unavailable,change}=state;
   const layer=useCardBoardLayer();
   useEffect(()=>{if(open)return layer?.claim();},[layer,open]);
   useImperativeHandle(ref,()=>({request:status=>{void state.request(status);}}));
@@ -36,15 +36,9 @@ export function CardStatusPicker({card,control,onOpen,ref,onBusyChange}: {
       <div className="v3-card-status-picker-content">
         {loading ? <p role="status">불러오는 중…</p> : null}
         {error ? <><p role="alert">{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? "갱신 후 재시도" : "다시 불러오기"}</Button></> : null}
-        {reasonStep ? <form onSubmit={event => {event.preventDefault(); void change("running", draft.trim());}}>
-          <Input aria-label="다시 실행할 사유" placeholder="다시 실행할 사유" value={draft} disabled={busy} onChange={event => setDraft(event.target.value)}/>
-          <div className="v3-card-status-picker-actions">
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setReasonStep(false)}>취소</Button>
-            <Button size="sm" type="submit" disabled={unavailable || !draft.trim()}>확인</Button>
-          </div>
-        </form> : <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"
-          aria-pressed={status === (detail?.card.status ?? card.status)} title={detail ? cardTransitionError(detail,status) ?? undefined : undefined} disabled={unavailable || status === "review" && !detail?.reports.length}
-          onClick={() => void change(status)}>{cardStatusLabel({...card, status})}</Button>)}</div>}
+        <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"
+          aria-pressed={status === (detail?.card.status ?? card.status)} disabled={unavailable}
+          onClick={() => void change(status)}>{cardStatusLabel({...card, status,blockedKind:null,blockedDetail:null})}</Button>)}</div>
       </div>
     </PopoverPopup>
   </Popover>;

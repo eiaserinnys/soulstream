@@ -44,8 +44,18 @@ export function registerCardTools(server: McpServer, runtime: McpRuntime): void 
       throw new Error("caller_session_id must match the authenticated request session header");
     return getFolderService(runtime).addCardComment({ ...agent(input.caller_session_id), cardId: input.card_id, text: input.text, mode: input.mode });
   }));
+  server.registerTool("set_card_status", {
+    description: "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다.",
+    inputSchema: {...scope,status:z.enum(CARD_STATUSES),expected_version:z.number().int().positive(),idempotency_key:id,reason:z.string().optional()},
+  }, async input => run(() => {
+    const header = getCurrentMcpCallerSessionId();
+    if (header && input.caller_session_id && input.caller_session_id.trim() !== header)
+      throw new Error("caller_session_id must match the authenticated request session header");
+    return getFolderService(runtime).setCardStatus({...agent(header ?? input.caller_session_id),cardId:input.card_id,status:input.status,
+      expectedVersion:input.expected_version,idempotencyKey:input.idempotency_key,reason:input.reason});
+  }));
   server.registerTool("start_card_work", {
-    description: "현재 담당 카드의 작업 착수를 명시합니다. todo/review/blocked(question)는 담당 선언, queued는 유효 자동배정 승인과 해당 실행의 전달 소비가 필요합니다. 검수 재착수에는 reason을 씁니다. 미답 질문은 착수를 막지 않습니다.",
+    description: "현재 담당 카드의 작업 착수를 명시합니다. 수동 착수는 모든 상태에서 가능하며 사유는 선택입니다. 실제 자동배정 실행일 때만 배정 승인과 해당 실행의 전달 소비를 확인합니다. 실행 신원은 런타임에서 제공합니다.",
     inputSchema: {...scope,expected_version:z.number().int().positive(),idempotency_key:id,reason:id.optional()},
   }, async input => run(async () => {
     const header = getCurrentMcpCallerSessionId();
@@ -57,7 +67,7 @@ export function registerCardTools(server: McpServer, runtime: McpRuntime): void 
       idempotencyKey:input.idempotency_key,reason:input.reason,execution:{...task.executionRegistration}});
   }));
   server.registerTool("request_card_review", {
-    description: "카드 검수를 요청하며 보고가 없으면 서버가 거부한다.", inputSchema: scope,
+    description: "카드 상태를 검수 대기로 변경한다. 보고와 미답 질문은 상태 변경을 막지 않는다.", inputSchema: scope,
   }, async input => run(() => getFolderService(runtime).requestCardReview({ ...agent(input.caller_session_id), cardId: input.card_id })));
   server.registerTool("ask_card_question", {
     description: "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다.",

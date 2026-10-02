@@ -160,11 +160,11 @@ test('보고 미리보기는 HTML과 markdown의 전체 문단을 유지한 채 
   expect(StyleSheet.flatten(screen.getByLabelText('커멘트').props.style).minHeight).toBe(48);
 });
 
-test('검수 전 카드에는 완료 동작과 상태 메뉴를 노출하지 않는다', async () => {
+test('검수 전 카드에도 완료 동작과 상태 메뉴를 노출한다', async () => {
   const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue({ ...detail, card: { ...card, status: 'todo' } }) } as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('할 일')).toBeTruthy());
-  expect(screen.queryByLabelText('완료')).toBeNull();
-  expect(screen.queryByLabelText('상태 변경')).toBeNull();
+  expect(screen.getByLabelText('완료')).toBeTruthy();
+  expect(screen.getByLabelText('상태 변경')).toBeTruthy();
 });
 
 

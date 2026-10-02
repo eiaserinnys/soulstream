@@ -29,12 +29,12 @@ describe("card final UX",()=>{
   expect(html).not.toContain('aria-label="카드 섹션"');
 
  });
- it.each(["review","running","todo","queued"])("has only one completion button, enabled only for review (%s)",status=>{
+ it.each(["review","running","todo","queued"])("has only one completion button, enabled for every state (%s)",status=>{
   seed(status);const html=renderPane();
   expect(html).toMatch(/<button[^>]*aria-label="완료"/);
   expect(html).not.toContain('aria-label="반려"');expect(html).not.toContain('aria-label="맡기기"');
   const button=html.match(/<button[^>]*aria-label="완료"[^>]*>/)![0];
-  expect(button.includes('disabled=""')).toBe(status!=="review");
+  expect(button.includes('disabled=""')).toBe(false);
  });
  it("shows the first three linked sessions and a remaining count using the folder tree",()=>{
   seed();lookup.sessions=Array.from({length:5},(_,i)=>({agentSessionId:`s${i}`,callerSessionId:i?"s0":undefined,displayName:`세션 ${i}`,status:"completed",eventCount:2,createdAt:"2026-09-30",updatedAt:"2026-09-30"}));

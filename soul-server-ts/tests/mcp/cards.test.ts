@@ -14,7 +14,7 @@ import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 // Reuses folder.test.ts tool registration and task_creation.test.ts creation harness;
 // direct callbacks isolate the new card wire contract without opening an MCP server.
 const names = ["create_card", "list_cards", "get_card", "update_card_brief", "add_card_report", "add_card_comment",
-  "request_card_review", "ask_card_question", "move_card", "start_card_work"];
+  "request_card_review", "ask_card_question", "move_card", "start_card_work", "set_card_status"];
 const logger = pino({ level: "silent" });
 const attachments=[{nodeId:"node",path:"/incoming/upload/image.png",name:"image.png",mimeType:"image/png"}];
 const card = { id: "card-1", folderId: "folder-1", title: "카드", status: "running", version: 3, attachments };
@@ -34,7 +34,7 @@ describe("card MCP contract", () => {
   it("registers explicit card work alongside existing card tools and removes every checklist item/section tool", () => {
     const { entries } = harness();
     expect([...entries.keys()]).toEqual(expect.arrayContaining(names));
-    expect([...entries.keys()].filter(n => /checklist_(item|section)|set_card_status|list_my_turn_items/.test(n))).toEqual([]);
+    expect([...entries.keys()].filter(n => /checklist_(item|section)|list_my_turn_items/.test(n))).toEqual([]);
     expect(entries.has("set_folder_checklist_enabled")).toBe(false);
   });
   it("calls every card HTTP with the service bearer, agent actor, CAS and camelCase body", async () => {
@@ -48,6 +48,7 @@ describe("card MCP contract", () => {
       ["update_card_brief", { card_id: "card-1", brief: "경과" }, "PATCH", "/api/cards/card-1", { brief: "경과", expectedVersion: 3 }],
       ["add_card_report", { card_id: "card-1", title: "보고", format: "html", body: "<p>결과</p>" }, "POST", "/api/cards/card-1/reports", { title: "보고", format: "html", body: "<p>결과</p>" }],
       ["add_card_comment", { card_id: "card-1", text: "회의에서 받은 요청" }, "POST", "/api/cards/card-1/comments", { body: "회의에서 받은 요청", mode: "spoken" }],
+      ["set_card_status", { card_id: "card-1", status: "done", expected_version: 3, idempotency_key: "status-write" }, "POST", "/api/cards/card-1/status", { status: "done", expectedVersion: 3, idempotencyKey: "status-write" }],
       ["request_card_review", { card_id: "card-1" }, "POST", "/api/cards/card-1/status", { status: "review", expectedVersion: 3 }],
       ["ask_card_question", { card_id: "card-1", text: "질문", options: ["하나", "둘"] }, "POST", "/api/cards/card-1/questions", { text: "질문", options: ["하나", "둘"] }],
       ["move_card", { card_id: "card-1", folder_id: "folder-2", after_card_id: "card-2" }, "POST", "/api/cards/card-1/move", { folderId: "folder-2", afterCardId: "card-2", expectedVersion: 3 }],
@@ -88,13 +89,27 @@ describe("card MCP contract", () => {
     }
     expect(fetch).not.toHaveBeenCalled();
   });
-  it("returns the orch rejection when review has no report", async () => {
+  it("rejects status actor impersonation and external callers before HTTP", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const h = harness();
+    for (const context of [
+      { callerSessionId: "authenticated-session" },
+      { principal: { authority: "external" as const, source: "llm", displayName: "External LLM" } },
+    ]) {
+      const result = await withMcpRequestContext(context, () => h.call("set_card_status", {
+        card_id: "card-1", status: "done", expected_version: 3, idempotency_key: "direct-status",
+      }));
+      expect(result.isError).toBe(true);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("returns a server conflict without hiding it", async () => {
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => init.method === "GET"
       ? new Response(JSON.stringify(detail))
-      : new Response(JSON.stringify({ detail: { error: { message: "보고 없이 검수 요청 불가" } } }), { status: 422 })));
+      : new Response(JSON.stringify({ detail: { error: { message: "낡은 카드 버전" } } }), { status: 409 })));
     const result = await harness().call("request_card_review", { card_id: "card-1" });
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result)).toContain("보고 없이 검수 요청 불가");
+    expect(JSON.stringify(result)).toContain("낡은 카드 버전");
   });
   it("derives work execution only from runtime and preserves supplied CAS/idempotency", async () => {
     const fetch=vi.fn(async()=>new Response(JSON.stringify({card}),{status:200}));

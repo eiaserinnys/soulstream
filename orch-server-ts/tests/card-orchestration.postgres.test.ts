@@ -260,7 +260,7 @@ describe("durable card orchestration admissions", () => {
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status) VALUES('wrong-worker',${target.nodeId},'roselin','worker-model','running')`;
     const wrong={registrationId:"wrong",executionCommandId:"wrong-command"};
     await recordWorkReceipt(h,"wrong-worker","running",wrong);
-    await expect(cards.startCardWork({actorKind:"agent",actorSessionId:"wrong-worker",cardId:id,expectedVersion:2,idempotencyKey:"wrong-start",execution:wrong})).rejects.toThrow("admission");
+    await expect(cards.startCardWork({actorKind:"agent",actorSessionId:"wrong-worker",cardId:id,expectedVersion:2,idempotencyKey:"wrong-start",execution:wrong})).rejects.toThrow("assignee");
     expect((await cards.getCard(id))?.card).toMatchObject({status:"queued",assignee_kind:"agent",assignee_session_id:null,version:2});
     const start={actorKind:"agent" as const,actorSessionId:sid,cardId:id,expectedVersion:2,idempotencyKey:"first-start",execution};
     await cards.startCardWork(start);

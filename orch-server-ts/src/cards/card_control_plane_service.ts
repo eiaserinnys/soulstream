@@ -9,7 +9,6 @@ import { CardMutationCore } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
 import {assertPolicyAdmission} from "./card_orchestration_repository.js";
-import { assertCardTransition } from "./card_status.js";
 
 export type PolicyAdmission = {runId:string;leaseToken:string;workerInput:Record<string,unknown>};
 export type CardMutationParams = FolderActorParams & { cardId: string; expectedVersion?: number; idempotencyKey?: string | null; reason?: string | null };
@@ -68,13 +67,12 @@ export class CardControlPlaneService {
   }
   async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null }) {
     return this.mutateCard(params,"set_card_status",{ status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null },async (sql,card,eventId) => {
-      const counts=await sql<{ count:number }[]>`SELECT count(*)::int AS count FROM card_reports WHERE card_id=${card.id}`;
-      assertCardTransition(card.status,params.status,params.actorKind ?? "agent",counts[0]?.count ?? 0,params.blockedKind ?? null);
-      if (card.status === "review" && params.status === "running" && params.actorKind === "user" && !params.reason?.trim()) throw invalid("Review rejection requires a reason");
+      if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId))
+        throw Object.assign(new Error("Only the assignee session may change card status"), {statusCode:403});
       await this.patch(sql,card,{ status:params.status,
-        blocked_kind:params.status === "blocked" ? params.blockedKind : null,blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
-        queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id) : params.blockedKind === "limit" ? card.queue_position_key : null,
-        completed_kind:params.status === "done" ? "user" : null,completed_session_id:params.status === "done" ? params.actorSessionId : null,
+        blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
+        queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id) : params.status === "blocked" && params.blockedKind === "limit" ? card.queue_position_key : null,
+        completed_kind:params.status === "done" ? params.actorKind === "system" ? null : params.actorKind ?? "agent" : null,completed_session_id:params.status === "done" ? params.actorSessionId : null,
         completed_event_id:params.status === "done" ? eventId : null,completed_user_id:params.status === "done" ? params.actorUserId ?? null : null,
         completed_at:params.status === "done" ? new Date() : null },params,eventId);
     });
@@ -82,16 +80,13 @@ export class CardControlPlaneService {
   async startCardWork(params: CardMutationParams & { execution: CardWorkExecution }) {
     if (params.actorKind !== "agent" || !params.actorSessionId) throw invalidWork("Only the assignee session may start work");
     return this.mutateCard(params,"start_card_work",{execution:params.execution},async(sql,card,eventId)=>{
-      if (card.archived) throw invalidWork("Cannot start archived work");
-      if (card.assignee_session_id !== params.actorSessionId && !(card.status === "queued" && card.assignee_kind === "agent"))
-        throw invalidWork("Only the assignee session may start work");
-      const questionWaiting=card.status === "blocked" && card.blocked_kind === "question";
-      if (!["todo","review","queued"].includes(card.status) && !questionWaiting) throw invalidWork("Cannot start this state; running requires replay of the same declaration");
-      if (card.status === "review" && !params.reason?.trim()) throw invalidWork("Review work requires a reason");
       await validateWorkExecution(sql,params.actorSessionId!,params.execution);
-      if (card.status === "queued") await acceptQueuedWork(sql,card,params.actorSessionId!,params.execution);
+      const dispatch = await acceptQueuedWork(sql,card,params.actorSessionId!,params.execution);
+      if (card.assignee_session_id !== params.actorSessionId && !dispatch)
+        throw invalidWork("Only the assignee session may start work");
       await this.patch(sql,card,{status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
-        ...(card.status === "queued" ? {assignee_kind:"session",assignee_session_id:params.actorSessionId,assignee_agent_id:null} : {})},params,eventId);
+        completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null,
+        ...(dispatch ? {assignee_kind:"session",assignee_session_id:params.actorSessionId,assignee_agent_id:null} : {})},params,eventId);
     });
   }
   async moveCard(params: CardMutationParams & { folderId:string; afterCardId?:string | null }) {
@@ -138,10 +133,10 @@ export class CardControlPlaneService {
   markCommentDelivered(cardId:string,commentId:string) { return this.repo.markCommentDelivered(cardId,commentId); }
   async askQuestion(params: CardMutationParams & { text:string; options?:string[] | null }) {
     return this.mutateCard(params,"ask_card_question",{ text:params.text,options:params.options ?? null },async (sql,card,eventId) => {
-      assertCardTransition(card.status,"blocked",params.actorKind ?? "agent",0,"question");
       await sql`INSERT INTO card_questions(id,card_id,session_id,text,options)
         VALUES(${randomUUID()},${card.id},${params.actorSessionId},${params.text},${sql.json(params.options ?? null)})`;
-      await this.patch(sql,card,{ status:"blocked",blocked_kind:"question",blocked_detail:params.text,queue_position_key:null },params,eventId);
+      await this.patch(sql,card,{ status:"blocked",blocked_kind:"question",blocked_detail:params.text,queue_position_key:null,
+        completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null },params,eventId);
     });
   }
   async answerQuestion(params: CardMutationParams & { questionId:string; answer:string }) {

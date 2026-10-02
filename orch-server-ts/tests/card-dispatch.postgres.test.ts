@@ -192,24 +192,23 @@ describe("card dispatch and session lifecycle", () => {
         expect((await cards.getCard(id))!.card.status).toBe('running');
         expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'question', title: '작업', question: '진행?' }));
     });
-    it("resumes a rejected review or requeues a finished session and requires a reason", async () => {
+    it("keeps manually selected running even when the session has finished", async () => {
         const { id, sessionId } = await start();
         await cards.addReport({ ...human, cardId: id, title: '보고', format: 'markdown', body: '증거', idempotencyKey: key() });
         await cards.setCardStatus({ ...human, cardId: id, status: 'review', idempotencyKey: key() });
         await dispatcher.drain();
         expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'review', title: '작업' }));
-        await expect(cards.setCardStatus({ ...human, cardId: id, status: 'running', idempotencyKey: key() })).rejects.toThrow(/reason|사유/);
-        await cards.setCardStatus({ ...human, cardId: id, status: 'running', reason: '수정', idempotencyKey: key() });
+        await cards.setCardStatus({ ...human, cardId: id, status: 'running', idempotencyKey: key() });
         await dispatcher.drain();
-        expect(messages).toHaveBeenCalledWith(sessionId, '검수 반려: 수정. 고친 뒤 새 보고를 올리고 다시 검수를 요청한다.');
+        expect(messages.mock.calls.some(call=>String(call[1]).includes("검수 반려"))).toBe(false);
         await cards.setCardStatus({ ...human, cardId: id, status: 'review', idempotencyKey: key() });
         await dispatcher.drain();
         await terminal(sessionId);
         available = false;
         await h.sql `UPDATE system_settings SET value='{"nodeConcurrency":{"default":0}}'`;
-        await cards.setCardStatus({ ...human, cardId: id, status: 'running', reason: '재작업', idempotencyKey: key() });
+        await cards.setCardStatus({ ...human, cardId: id, status: 'running', idempotencyKey: key() });
         await dispatcher.drain();
-        expect((await cards.getCard(id))!.card.status).toBe('queued');
+        expect((await cards.getCard(id))!.card.status).toBe('running');
     });
     it("requeues answered questions from finished sessions and includes the answer in the next prompt", async () => {
         const { id, sessionId } = await start();

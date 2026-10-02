@@ -35,13 +35,13 @@ describe("cards storage, HTTP and planner", () => {
   },60_000);
   afterAll(async () => { await h?.cleanup(); });
 
-  it("rejects agent done and reportless review, then accepts evidence and human completion", async () => {
-    const made=await cards.createCard({ ...human,folderId:'cards-a',title:'검증',request:'고정 원문',idempotencyKey:key() });
+  it("accepts assigned agent completion and reportless review, with independent reports", async () => {
+    const made=await cards.createCard({ ...human,folderId:'cards-a',title:'검증',request:'고정 원문',assignee:{kind:'session',sessionId:agent.actorSessionId},idempotencyKey:key() });
     let c=made.snapshot.cards.find(x=>x.id === made.operation.target_id)!;
     await cards.setCardStatus({ ...human,cardId:c.id,status:'running',expectedVersion:c.version,idempotencyKey:key() });
-    await expect(cards.setCardStatus({ ...agent,cardId:c.id,status:'done',idempotencyKey:key() })).rejects.toThrow(/human/i);
-    await expect(cards.setCardStatus({ ...agent,cardId:c.id,status:'review',idempotencyKey:key() })).rejects.toThrow(/report/i);
-    expect((await cards.getCard(c.id))!.card.status).toBe('running');
+    await cards.setCardStatus({ ...agent,cardId:c.id,status:'done',idempotencyKey:key() });
+    await cards.setCardStatus({ ...agent,cardId:c.id,status:'review',idempotencyKey:key() });
+    expect((await cards.getCard(c.id))!.card.status).toBe('review');
     const reportKey=key();
     await cards.addReport({ ...agent,cardId:c.id,title:'첫 증거',format:'markdown',body:'증거',idempotencyKey:reportKey });
     expect((await cards.addReport({ ...agent,cardId:c.id,title:'첫 증거',format:'markdown',body:'증거',idempotencyKey:reportKey })).idempotent).toBe(true);
@@ -124,9 +124,8 @@ describe("cards storage, HTTP and planner", () => {
       payload:{status:'review',expectedVersion:before.version,idempotencyKey:key()}});
     try {
       const reportless=await review();
-      expect(reportless.statusCode).toBe(422);
-      expect(reportless.json().detail.error.message).toMatch(/report/i);
-      expect((await cards.getCard(id))!.card).toMatchObject({status:expectedStatus,version:before.version});
+      expect(reportless.statusCode).toBe(200);
+      expect((await cards.getCard(id))!.card).toMatchObject({status:"review",version:before.version+1});
       await cards.addReport({ ...agent,cardId:id,title:'최종 보고',format:'markdown',body:'작업 증거',idempotencyKey:key() });
       before=(await cards.getCard(id))!.card;
       const accepted=await review();
@@ -183,8 +182,8 @@ describe("cards storage, HTTP and planner", () => {
       const statusPayload={status:'running',expectedVersion:1,idempotencyKey:key()};
       expect((await app.inject({method:'POST',url:`/api/cards/${id}/status`,payload:statusPayload})).statusCode).toBe(200);
       const headers={ authorization:'Bearer service-test','x-soulstream-agent-session-id':'card-agent' };
-      expect((await app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,payload:{status:'done',expectedVersion:2,idempotencyKey:key()}})).statusCode).toBe(422);
-      expect((await app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,payload:{status:'review',expectedVersion:2,idempotencyKey:key()}})).statusCode).toBe(422);
+      expect((await app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,payload:{status:'done',expectedVersion:2,idempotencyKey:key()}})).statusCode).toBe(403);
+      expect((await app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,payload:{status:'review',expectedVersion:2,idempotencyKey:key()}})).statusCode).toBe(403);
       expect((await app.inject({method:'PATCH',url:`/api/cards/${id}`,payload:{request:'수정',expectedVersion:2,idempotencyKey:key()}})).statusCode).toBe(422);
       expect((await app.inject({method:'POST',url:`/api/cards/${id}/move`,payload:{folderId:'cards-b',expectedVersion:2,idempotencyKey:key()}})).statusCode).toBe(403);
       expect((await app.inject(`/api/cards/${id}`)).json()).toMatchObject({card:{id,folderId:'cards-a',request:'원문'},reports:[],questions:[],sessions:[]});
@@ -228,9 +227,8 @@ describe("cards storage, HTTP and planner", () => {
       const rejected=await app.inject({method:'POST',url:`/api/cards/${id}/status`,payload:{
         status:'review',expectedVersion:response.json().card.version,idempotencyKey:key(),
       }});
-      expect(rejected.statusCode).toBe(422);
-      expect(rejected.json().detail.error.message).toMatch(/report/i);
-      expect((await read()).json().card.status).toBe('cancelled');
+      expect(rejected.statusCode).toBe(200);
+      expect((await read()).json().card.status).toBe('review');
     } finally {await app.close();}
   });
 
@@ -242,7 +240,7 @@ describe("cards storage, HTTP and planner", () => {
       ('attention-report','cards-a','z3','No report','blocked','no_report'),('attention-limit','cards-a','z4','Limit','blocked','limit')`;
     const planner=new PlannerRepository(createLiveDbSqlResolver({ sql:h.liveSql }));
     const today=(await planner.getToday('2026-09-30'))!;
-    expect(today.attention.map(c=>c.id).sort()).toEqual(['attention-limit','attention-question','attention-report','attention-review']);
+    expect(today.attention.filter(c=>typeof c.id === 'string' && c.id.startsWith('attention-')).map(c=>c.id).sort()).toEqual(['attention-limit','attention-question','attention-report','attention-review']);
     expect(today.running.length).toBeGreaterThan(0);
     expect(today.queued.map(c=>c.title)).toEqual(['둘째','첫']);
     expect((await planner.getFolder('cards-a',{limit:10}))!).toHaveProperty('cards');

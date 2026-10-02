@@ -3,7 +3,7 @@ import { DashboardIconCap, MarkdownContent, useAuth, useDashboardStore, useGlass
 import { ArrowLeft, Check } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { cardMutationKey } from "@seosoyoung/soul-ui/cards/card-api";
-import { CardStatusChip } from "./CardActions";
+import { CardStatusPicker } from "./CardStatusPicker";
 import { FolderTitleEditor } from "./FolderTitleEditor";
 import { CardSessionHistory } from "./CardSessionHistory";
 import { DetailTabs } from "./DetailTabs";
@@ -49,7 +49,7 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
   } catch {return false;} finally {setPending(false);}
  };
  const complete=async()=>{
-  if(!card || card.status!=="review" || pending)return;
+  if(!card || pending)return;
   if(sampleDetail)return;
   setPending(true);
   try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});onClose();}
@@ -59,9 +59,12 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
  return <article ref={surface} className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim" data-liquid-glass-webgl={webglActive?"true":undefined} data-testid="card-detail">
   <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
    <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
-   <CardStatusChip card={card}/>
+   <CardStatusPicker card={card} onOpen={()=>{}} control={{pending,
+    load:()=>sampleDetail ? Promise.resolve(sampleDetail) : useCardStore.getState().loadCard(cardId),
+    change:async(latest,status,reason)=>{if(!sampleDetail)await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
+   }}/>
    <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{if(!sampleDetail)await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
-   <div className="v3-folder-header-actions"><DashboardIconCap label="완료" disabled={pending||card.status!=="review"} onClick={()=>void complete()}><Check className="h-4 w-4"/></DashboardIconCap></div>
+   <div className="v3-folder-header-actions"><DashboardIconCap label="완료" disabled={pending} onClick={()=>void complete()}><Check className="h-4 w-4"/></DashboardIconCap></div>
   </header>
   <div className="v3-detail-gutter v3-task-detail-content v3-card-context">
    <section className="v3-detail-section"><div className="v3-task-default-values"><span>{agentName??"담당 미지정"}</span>{nodeId?<span>{nodeId}</span>:null}{model?<span>{model}</span>:null}</div></section>

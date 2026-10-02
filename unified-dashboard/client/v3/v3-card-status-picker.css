@@ -2,5 +2,3 @@
 .v3-card-status-picker-content p { margin: 0; }
 .v3-card-status-picker-content [role="alert"] { color: var(--v3-error); }
 .v3-card-status-picker-content [data-slot="button"] { min-height: var(--v3-space-8); font: var(--v3-type-body) var(--v3-font-family); }
-.v3-card-status-picker-content [data-slot="input-control"] { font: var(--v3-type-body) var(--v3-font-family); }
-.v3-card-status-picker-actions { display: flex; justify-content: flex-end; gap: var(--v3-space-2); margin-top: var(--v3-space-2); }
