@@ -131,7 +131,7 @@ export function createLiveDashboardAccessProvider(
         accessEmail: context?.accessEmail,
       });
       if (identity.mode === "service_token" && identity.accessEmail === null) {
-        return unrestrictedAccess();
+        return serviceTokenAccessWithoutEmail();
       }
       const email = identity.mode === "service_token"
         ? identity.accessEmail
@@ -271,6 +271,11 @@ function accessPayload(access: DashboardAccess): DashboardAccess {
 
 function unrestrictedAccess(): DashboardAccess {
   return { restricted: false, allowedFolderIds: [] };
+}
+
+/** Access for the worker service identity, which supplies no access email. */
+export function serviceTokenAccessWithoutEmail(): DashboardAccess {
+  return unrestrictedAccess();
 }
 
 function restrictedAccess(allowedFolderIds: readonly string[]): DashboardAccess {

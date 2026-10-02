@@ -2,7 +2,7 @@ import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { registerFolderTools } from "../../src/mcp/tools/folder.js";
+import { registerCardToolsLegacy } from "../../src/mcp/tools/card_tools.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { FolderService } from "../../src/folder/folder_service.js";
 import { resolvePrimarySessionFolderContext } from "../../src/context/session_folder_context.js";
@@ -22,7 +22,8 @@ const detail = { card, reports: [{ title: "보고" }], questions: [], comments: 
 function harness(task?:Record<string,unknown>) {
   const entries = new Map<string, { config: { inputSchema: z.ZodRawShape }; callback: (input: unknown) => Promise<any> }>();
   const service = new FolderService({ orch: { baseUrl: "https://orch.test", headers: { authorization: "Bearer test-service" } }, logger });
-  registerFolderTools({ registerTool: (name: string, config: any, callback: any) => entries.set(name, { config, callback }) } as unknown as McpServer,
+  // Preserve the pre-migration HTTP contract as the legacy oracle; roundtrip tests exercise production forwarding.
+  registerCardToolsLegacy({ registerTool: (name: string, config: any, callback: any) => entries.set(name, { config, callback }) } as unknown as McpServer,
     { folderService: service,taskManager:{getTask:()=>task} } as unknown as McpRuntime);
   return { entries, call: async (name: string, input: object) => {
     const entry = entries.get(name)!;

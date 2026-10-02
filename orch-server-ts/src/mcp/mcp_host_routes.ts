@@ -8,7 +8,8 @@ export const mcpHostRouteAuthRequirements = { "POST /api/mcp/host/:tool": true }
 
 const requestSchema = z.object({
   args: z.record(z.string(), z.unknown()),
-  context: z.object({ principal: z.enum(["internal", "external"]), caller_session_id: z.string().nullable(), node_id: z.string().min(1) }),
+  context: z.object({ principal: z.enum(["internal", "external"]), caller_session_id: z.string().nullable(), node_id: z.string().min(1),
+    execution: z.object({ registrationId: z.string().min(1), executionCommandId: z.string().min(1) }).strict().optional() }),
 });
 
 export function registerMcpHostRoutes(app: FastifyInstance, options: McpHostOptions): void {
@@ -22,6 +23,7 @@ export function registerMcpHostRoutes(app: FastifyInstance, options: McpHostOpti
     const { args, context } = parsed.data;
     return reply.send(await executeMcpTool(options, definition.name, args, {
       principal: context.principal, callerSessionId: context.caller_session_id, nodeId: context.node_id,
+      execution: context.execution,
     }));
   });
 }

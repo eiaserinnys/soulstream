@@ -1,3 +1,4 @@
+import { readOrchErrorEnvelopeText, type OrchErrorEnvelope } from "@soulstream/mcp-contract";
 import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
@@ -9,11 +10,7 @@ export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
 export const ORCH_HOST_REQUEST_TIMEOUT_MS = 10_000;
 export const ORCH_NODE_COMMAND_TIMEOUT_MS = 35_000;
 
-export interface OrchErrorEnvelope {
-  message: string;
-  code: string | null;
-  details: Record<string, unknown>;
-}
+export type { OrchErrorEnvelope } from "@soulstream/mcp-contract";
 
 export async function fetchOrchResponse(
   orch: Pick<OrchProxyConfig, "baseUrl" | "headers">,
@@ -44,34 +41,8 @@ export async function fetchOrchResponse(
   });
 }
 
-export async function readOrchErrorEnvelope(
-  response: Response,
-): Promise<OrchErrorEnvelope> {
-  const text = await response.text();
-  const fallback = text || `${response.status} ${response.statusText}`;
-  if (!text) return { message: fallback, code: null, details: {} };
-  try {
-    const payload: unknown = JSON.parse(text);
-    if (!isRecord(payload)) return { message: fallback, code: null, details: {} };
-    const detail = payload.detail;
-    if (typeof detail === "string") {
-      return { message: detail, code: null, details: {} };
-    }
-    const envelope = isRecord(detail) ? detail : payload;
-    const error = isRecord(envelope.error) ? envelope.error : envelope;
-    const details = isRecord(error.details) ? error.details : {};
-    return {
-      message: typeof error.message === "string" ? error.message : fallback,
-      code: typeof error.code === "string" ? error.code : null,
-      details,
-    };
-  } catch {
-    return { message: fallback, code: null, details: {} };
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+export async function readOrchErrorEnvelope(response: Response): Promise<OrchErrorEnvelope> {
+  return readOrchErrorEnvelopeText(response, await response.text());
 }
 
 const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
