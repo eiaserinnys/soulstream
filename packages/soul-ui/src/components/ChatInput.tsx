@@ -285,7 +285,8 @@ export function ChatInput({
 
   if (!activeSessionKey) return null;
 
-  const fileUploadDisabled = effectiveFileUploadUrl ? isUploading : false;
+  const uploadError = files.find(file => file.status === "error")?.errorMessage;
+  const fileUploadDisabled = effectiveFileUploadUrl ? isUploading || files.some(file => file.status === "error") : false;
   const isDisabled = sending || pendingChatSend !== undefined || !text.trim() || additionalDisabled || fileUploadDisabled;
   const textareaDisabled = additionalDisabled;
   const showInterrupt = status === "running";
@@ -370,9 +371,9 @@ export function ChatInput({
         />
       </ChatInputComposer>
 
-      {(error || interruptError) && (
+      {(error || interruptError || uploadError) && (
         <div className="chat-tone-danger rounded px-2 py-1 text-xs">
-          {error || interruptError}
+          {error || interruptError || uploadError}
         </div>
       )}
 

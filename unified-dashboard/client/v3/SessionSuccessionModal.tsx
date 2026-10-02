@@ -135,7 +135,7 @@ export function SessionSuccessionModal({
     cancel,
     resetLocal,
     uploadedPaths,
-  } = useFileUpload({ uploadUrl, sessionId: pendingSessionId });
+  } = useFileUpload({ uploadUrl, sessionId: pendingSessionId, folderId });
   const contextSelection = useMemo(() => buildSessionContextSelection({
     inheritCard,
     folderPageId,
@@ -245,11 +245,11 @@ export function SessionSuccessionModal({
           <DialogTitle>새 세션</DialogTitle>
         </DialogHeader>
         <DialogPanel className="v3-succession-body" scrollFade={false}>
-          {error ? (
+          {(error || files.find(file => file.status === "error")?.errorMessage) ? (
             <V3ErrorNotice
               className="v3-succession-error"
-              message="새 세션을 시작하지 못했습니다."
-              detail={error}
+              message={error ? "새 세션을 시작하지 못했습니다." : "첨부를 업로드하지 못했습니다."}
+              detail={error || files.find(file => file.status === "error")?.errorMessage}
             />
           ) : null}
           <div className="v3-succession-context-editor">

@@ -282,6 +282,7 @@ def test_schema_has_all_message_types() -> None:
         "RealtimeResolveToolApproval",
         "ListSessions",
         "ListRunnerInventory",
+        "ImportAttachmentFromUrl",
         "UploadAttachment",
         "UploadAttachmentStart",
         "UploadAttachmentChunk",
@@ -324,7 +325,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 81
+    assert len(wire_types) == 82
 
     sse_types = {
         "SSEEventInit",
@@ -595,6 +596,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "RealtimeResolveToolApproval",
         "ListSessions",
         "ListRunnerInventory",
+        "ImportAttachmentFromUrl",
         "UploadAttachment",
         "UploadAttachmentStart",
         "UploadAttachmentChunk",

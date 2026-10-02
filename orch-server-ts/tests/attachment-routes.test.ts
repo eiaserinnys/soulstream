@@ -175,6 +175,9 @@ describe("attachment route harness", () => {
 
   it("registers Python auth contract rows for route inventory order 86-88", () => {
     expect(attachmentRouteAuthRequirements).toEqual({
+      "POST /api/attachments/sessions/multipart/init": true,
+      "POST /api/attachments/sessions/multipart/complete": true,
+      "POST /api/attachments/sessions/multipart/abort": true,
       "POST /api/attachments/sessions": true,
       "DELETE /api/attachments/sessions/:session_id": true,
       "GET /api/attachments/files": true,

@@ -10,12 +10,14 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { uploadSessionFile } from "./uploadSessionFile";
 
 export interface UploadedFile {
   id: string;
   file: File;
   path: string | null;
   status: "uploading" | "done" | "error";
+  errorMessage?: string;
 }
 
 export interface UseFileUploadOptions {
@@ -23,6 +25,7 @@ export interface UseFileUploadOptions {
   uploadUrl: string;
   /** 세션 ID — 프론트엔드에서 미리 생성한 UUID */
   sessionId: string;
+  folderId?: string | null;
 }
 
 export interface UseFileUploadReturn {
@@ -39,6 +42,7 @@ export interface UseFileUploadReturn {
 export function useFileUpload({
   uploadUrl,
   sessionId,
+  folderId,
 }: UseFileUploadOptions): UseFileUploadReturn {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -69,22 +73,8 @@ export function useFileUpload({
         const controller = new AbortController();
         abortControllersRef.current.set(entry.id, controller);
 
-        const formData = new FormData();
-        formData.append("file", entry.file);
-        formData.append("session_id", sessionId);
-
-        fetch(uploadUrl, {
-          method: "POST",
-          body: formData,
-          signal: controller.signal,
-        })
-          .then(async (res) => {
-            if (!res.ok) {
-              throw new Error(`Upload failed: ${res.status}`);
-            }
-            const data = await res.json();
-            const serverPath: string = data.path ?? data.file_path ?? null;
-
+        uploadSessionFile({ file: entry.file, uploadUrl, sessionId, folderId, signal: controller.signal })
+          .then((serverPath) => {
             setFiles((prev) =>
               prev.map((f) =>
                 f.id === entry.id
@@ -100,7 +90,7 @@ export function useFileUpload({
             }
             setFiles((prev) =>
               prev.map((f) =>
-                f.id === entry.id ? { ...f, status: "error" } : f,
+                f.id === entry.id ? { ...f, status: "error", errorMessage: err instanceof Error ? err.message : "첨부 업로드 실패" } : f,
               ),
             );
           })
@@ -109,7 +99,7 @@ export function useFileUpload({
           });
       }
     },
-    [uploadUrl, sessionId],
+    [uploadUrl, sessionId, folderId],
   );
 
   const removeFile = useCallback((id: string) => {

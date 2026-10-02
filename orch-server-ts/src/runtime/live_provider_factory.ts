@@ -1,5 +1,7 @@
 import type { AdminUsersRouteOptions } from "../admin/admin_users_routes.js";
 import type { AtomRouteOptions } from "../atom/atom_routes.js";
+import { createLiveMultipartAttachmentOptions } from "./live_multipart_attachment_provider.js";
+import type { MultipartAttachmentOptions } from "../attachments/multipart_attachment_routes.js";
 import type { AttachmentRouteOptions } from "../attachments/attachment_routes.js";
 import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
@@ -114,7 +116,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly atomRoutes: AtomRouteOptions;
   readonly attachmentRoutes: Pick<
     AttachmentRouteOptions,
-    "provider" | "accessProvider" | "transport"
+    "provider" | "accessProvider" | "transport" | "multipart"
   >;
   readonly authRoutes: Pick<
     AuthRouteOptions,
@@ -167,6 +169,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly uiEventRepository: UiEventRepository;
   readonly inventory?: readonly LiveProviderWiringInventoryEntry[];
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
+  readonly resolveAttachmentStorage?: MultipartAttachmentOptions["resolveStorage"];
 };
 
 export function createLiveOrchestratorProviderBundle(
@@ -276,7 +279,16 @@ export function createLiveOrchestratorProviderBundle(
       configProvider: configProviders.atomRoutes.configProvider,
       httpClient: createLiveAtomHttpClient(),
     },
-    attachmentRoutes: attachmentProviders,
+    attachmentRoutes: {
+      ...attachmentProviders,
+      ...(options.resolveAttachmentStorage ? { multipart: createLiveMultipartAttachmentOptions({
+        resolveStorage: options.resolveAttachmentStorage, configProvider: options.dependencies.configProvider,
+        resolveEmail: authenticatedUserResolvers.resolveEmail,
+        repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
+        access: sessionResourceAccessProvider, registry: options.runtimeServices.registry,
+        bridge: options.runtimeServices.sessionBridge,
+      }) } : {}),
+    },
     authRoutes: {
       configProvider: configProviders.authRoutes.configProvider,
       httpClient: createLiveAuthHttpClient(),

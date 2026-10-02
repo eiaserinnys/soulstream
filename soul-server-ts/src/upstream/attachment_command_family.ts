@@ -1,3 +1,4 @@
+import type { ImportAttachmentFromUrl } from "@soulstream/wire-schema";
 import {
   CommandDispatchError,
   commandRequestId,
@@ -63,6 +64,20 @@ export function createAttachmentCommandFamily(
   deps: AttachmentCommandFamilyDeps,
 ): CommandHandlerMap {
   return {
+    import_attachment_from_url: async (cmd) => {
+      const requestId = commandRequestId(cmd);
+      const message = cmd as ImportAttachmentFromUrl;
+      try {
+        const ack = await deps.attachmentCommands.importFromUrl({ requestId,
+          uploadId: message.upload_id, sessionId: message.session_id,
+          filename: message.filename, contentType: message.content_type,
+          expectedSize: message.expected_size, downloadUrl: message.download_url });
+        if (requestId) await deps.send(ack);
+      } catch (error) {
+        if (error instanceof AttachmentCommandError) throw new CommandDispatchError(error.message);
+        throw error;
+      }
+    },
     upload_attachment: (cmd) => handleUploadAttachment(deps, cmd as UploadAttachmentCmd),
     upload_attachment_start: (cmd) =>
       handleUploadAttachmentStart(deps, cmd as UploadAttachmentStartCmd),

@@ -107,10 +107,7 @@ export function intervenePayload(
     return { ok: false, message: "text is required" };
   }
   const user = optionalString(body.user) ?? "";
-  const attachmentPaths = optionalStringArrayAlias(body, [
-    "attachmentPaths",
-    "attachment_paths",
-  ]);
+  const attachmentPaths = parseAttachmentPaths(body);
   if (!attachmentPaths.ok) return attachmentPaths;
   const contextItems = optionalObjectArrayAlias(body, [
     "context_items",
@@ -330,6 +327,10 @@ function optionalObject(
   return isJsonObject(value)
     ? { ok: true, value }
     : { ok: false, message: `${field} must be a JSON object` };
+}
+
+export function parseAttachmentPaths(body: JsonObject) {
+  return optionalStringArrayAlias(body, ["attachmentPaths", "attachment_paths"]);
 }
 
 function optionalStringArrayAlias(

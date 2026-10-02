@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { registerMultipartAttachmentRoutes, multipartAttachmentRouteAuthRequirements, type MultipartAttachmentOptions } from "./multipart_attachment_routes.js";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -98,6 +99,7 @@ export type AttachmentTransport = {
 };
 
 export type AttachmentRouteOptions = {
+  multipart?: MultipartAttachmentOptions;
   provider: AttachmentRouteProvider;
   accessProvider: AttachmentAccessProvider;
   transport: AttachmentTransport;
@@ -137,6 +139,7 @@ type Validation<T> =
   | { ok: false; message: string; statusCode?: number };
 
 export const attachmentRouteAuthRequirements = {
+  ...multipartAttachmentRouteAuthRequirements,
   "POST /api/attachments/sessions": true,
   "DELETE /api/attachments/sessions/:session_id": true,
   "GET /api/attachments/files": true,
@@ -147,6 +150,7 @@ export function registerAttachmentRoutes(
   options: AttachmentRouteOptions,
 ): void {
   registerMultipartFormParser(app);
+  if (options.multipart) registerMultipartAttachmentRoutes(app, options.multipart);
 
   app.post<{ Params: UploadParams }>("/api/attachments/sessions", async (request, reply) => {
     const nodeId = requiredQueryString(request, "nodeId");

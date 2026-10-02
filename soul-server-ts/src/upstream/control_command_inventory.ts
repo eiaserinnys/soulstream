@@ -50,6 +50,7 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("realtime_create_call", "realtime", "durable_mutation"),
   entry("realtime_event", "realtime", "durable_mutation"),
   entry("realtime_resolve_tool_approval", "realtime", "durable_mutation"),
+  entry("import_attachment_from_url", "attachment", "durable_mutation"),
   entry("upload_attachment", "attachment", "durable_mutation"),
   entry("upload_attachment_start", "attachment", "durable_mutation"),
   entry("upload_attachment_chunk", "attachment", "durable_mutation"),

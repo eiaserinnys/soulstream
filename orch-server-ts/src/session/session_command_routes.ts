@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import { parseAttachmentPaths } from "./session_action_command_payloads.js";
 import { isUuid } from "../http/uuid.js";
 
 import {
@@ -132,6 +133,8 @@ export function registerSessionCommandRoutes(
         );
       }
     }
+    const attachmentPaths = parseAttachmentPaths(body);
+    if (!attachmentPaths.ok) return badRequest(reply, attachmentPaths.message);
     const resolvedPrompt = resolveCreateSessionPrompt(body);
     if ("error" in resolvedPrompt) return badRequest(reply, resolvedPrompt.error);
     const { prompt } = resolvedPrompt;
@@ -303,16 +306,20 @@ function createSessionPayload(
     agentSessionId: requestedSessionId,
     agentId,
     profile,
+    attachmentPaths: _attachmentPaths,
+    attachment_paths: _attachmentPathsSnake,
     ...rest
   } = body;
   const agentSessionId = isPageAnchor(rest.pageAnchor) && isUuid(requestedSessionId, 4)
     ? requestedSessionId
     : randomUUID();
   const canonicalProfile = firstNonEmptyString(profile, agentId);
+  const attachments = parseAttachmentPaths(body);
   return {
     ...rest,
     ...(canonicalProfile === undefined ? {} : { profile: canonicalProfile }),
     type: "create_session",
+    ...(attachments.ok && attachments.value?.length ? { attachment_paths: attachments.value } : {}),
     prompt,
     agentSessionId,
   };

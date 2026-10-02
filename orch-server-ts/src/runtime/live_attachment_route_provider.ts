@@ -182,7 +182,7 @@ async function abortUploadBestEffort(
   }
 }
 
-async function sendAttachmentCommand<
+export async function sendAttachmentCommand<
   TPayload extends RequestResponseNodeCommandPayload,
   TResponse extends NodeCommandResponse = NodeCommandResponse,
 >(

@@ -9,6 +9,7 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { submitIntervention } from "./submitIntervention";
+import { submitResume } from "./submitResume";
 
 describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
   let originalFetch: typeof globalThis.fetch;
@@ -52,6 +53,15 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
       "with attachment\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
     );
     expect(body.attachmentPaths).toEqual(["/tmp/a.png"]);
+  });
+  it("completed-session resume delivers both local path notes and structured attachments", async () => {
+    await submitResume({ sessionKey: "completed-session", text: "자료 확인",
+      attachmentPaths: ["/incoming/completed-session/large.zip"] });
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/sessions/completed-session/intervene");
+    const body = JSON.parse(options.body);
+    expect(body.text).toContain("[첨부 파일 로컬 경로: /incoming/completed-session/large.zip]");
+    expect(body.attachmentPaths).toEqual(["/incoming/completed-session/large.zip"]);
   });
 
   it("기존 body 페이로드(text, user)는 회귀 보존", async () => {

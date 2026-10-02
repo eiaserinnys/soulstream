@@ -48,6 +48,11 @@ export type LiveBoardAssetStorage = {
   }) => Promise<string> | string;
 };
 
+export type AttachmentR2Storage = LiveBoardAssetStorage & {
+  deleteObject(input: { storageKey: string }): Promise<void>;
+  abortMultipartUpload(input: { storageKey: string; uploadId: string }): Promise<void>;
+};
+
 export type R2BoardAssetStorageConfig = {
   readonly accessKeyId: string;
   readonly secretAccessKey: string;
@@ -66,8 +71,15 @@ export async function checkR2Bucket(config: R2BoardAssetStorageConfig): Promise<
 
 export function createR2BoardAssetStorage(
   config: R2BoardAssetStorageConfig,
-): LiveBoardAssetStorage {
+): AttachmentR2Storage {
   return {
+    async deleteObject(input) {
+      await assertR2Ok(await signedFetch(config, { method: "DELETE", storageKey: input.storageKey }), "delete object");
+    },
+    async abortMultipartUpload(input) {
+      await assertR2Ok(await signedFetch(config, { method: "DELETE", storageKey: input.storageKey,
+        query: { uploadId: input.uploadId } }), "abort multipart upload");
+    },
     createPresignedPutUrl(input) {
       return presign(config, {
         method: "PUT",
