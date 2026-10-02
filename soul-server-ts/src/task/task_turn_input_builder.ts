@@ -50,7 +50,7 @@ export interface TaskTurnInputBuilderDeps {
 }
 
 export interface TaskInitialMessagePublisherPort {
-  publishInitialMessages(task: Task, ctx?: PreparedContext): Promise<void>;
+  publishInitialMessages(task: Task, ctx?: PreparedContext, inputId?: string): Promise<void>;
 }
 
 export class TaskTurnInputBuilder {
@@ -67,11 +67,18 @@ export class TaskTurnInputBuilder {
 
     if (task.creationEffects) await task.creationEffects;
 
-    const ctx = await this.buildContext(task, agent);
-    await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
+    const inputUuid = task.executionRegistration
+      ? buildDeliveryInputUuid(task.executionRegistration.executionCommandId)
+      : undefined;
+    const ctx = await this.buildContext(task, agent, inputUuid);
+    if (inputUuid) {
+      await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx, inputUuid);
+    } else {
+      await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
+    }
     this.recordInitialContextInjection(task);
 
-    return this.prepareNewTaskTurnInput(task, agent, ctx);
+    return this.prepareNewTaskTurnInput(task, agent, ctx, inputUuid);
   }
 
   async prepareFollowupTurnInput(
@@ -210,13 +217,16 @@ export class TaskTurnInputBuilder {
   private async buildContext(
     task: Task,
     agent: AgentProfile,
+    inputId?: string,
   ): Promise<PreparedContext | undefined> {
     if (!this.deps.contextBuilder) {
       return undefined;
     }
 
     try {
-      return await this.deps.contextBuilder.build(task, agent);
+      return inputId
+        ? await this.deps.contextBuilder.build(task, agent, inputId)
+        : await this.deps.contextBuilder.build(task, agent);
     } catch (err) {
       if (isSessionDataHostError(err)) throw err;
       this.deps.logger.warn(
@@ -231,6 +241,7 @@ export class TaskTurnInputBuilder {
     task: Task,
     agent: AgentProfile,
     ctx: PreparedContext | undefined,
+    inputUuid?: string,
   ): TaskTurnInput {
     const imageAttachmentPaths = splitAttachmentPaths(task.attachmentPaths).imagePaths;
     if (!ctx) {
@@ -238,6 +249,7 @@ export class TaskTurnInputBuilder {
         prompt: task.prompt,
         originalPrompt: task.prompt,
         imageAttachmentPaths,
+        ...(inputUuid ? { inputUuid } : {}),
         turnOrigin: { kind: "initial_prompt" },
       };
     }
@@ -251,6 +263,7 @@ export class TaskTurnInputBuilder {
           assembledPrompt: task.prompt,
         }),
         imageAttachmentPaths,
+        ...(inputUuid ? { inputUuid } : {}),
         ...(ctx.effectiveSystemPrompt !== undefined
           ? { systemPrompt: ctx.effectiveSystemPrompt }
           : {}),
@@ -265,6 +278,7 @@ export class TaskTurnInputBuilder {
       assembledPrompt: task.prompt,
       }),
       imageAttachmentPaths,
+      ...(inputUuid ? { inputUuid } : {}),
       turnOrigin: { kind: "initial_prompt" },
     };
   }

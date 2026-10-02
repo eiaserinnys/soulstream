@@ -15,6 +15,21 @@ function isJevCardObservation(value: unknown): boolean {
     && event.details.every(line=>typeof line === 'string');
 }
 
+function assignedCardPreparedInputId(event: SessionEvent): string | null {
+  if (event.type !== 'debug' || event.data?.kind !== 'assigned_card_context_snapshot') return null;
+  if (typeof event.data?.content !== 'string' || event.data.content.trim().length === 0) return null;
+  const capture = event.data?.capture;
+  if (!capture || typeof capture !== 'object') return null;
+  const value = capture as Record<string, unknown>;
+  return value.source === 'prepared_model_input'
+    && value.identityMissing === false
+    && typeof value.registrationId === 'string' && value.registrationId.length > 0
+    && typeof value.executionCommandId === 'string' && value.executionCommandId.length > 0
+    && typeof value.inputId === 'string' && value.inputId.length > 0
+    ? value.inputId
+    : null;
+}
+
 function positiveEventId(value: unknown): number | null {
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? value : null;
@@ -62,6 +77,7 @@ interface IndexedTurnSummary {
   event: SessionEvent;
   sourceIndex: number;
   eventId: number | null;
+  preparedInputId: string | null;
 }
 
 /**
@@ -86,10 +102,17 @@ export function placeTurnSummaries(
   events: SessionEvent[],
 ): ChatRenderItem[] {
   const itemIndexByEventId = new Map<number, number>();
+  const itemIndexByInputId = new Map<string, number>();
   baseItems.forEach((item, index) => {
     for (const eventId of renderItemEventIds(item)) {
       itemIndexByEventId.set(eventId, index);
     }
+    if (
+      item.kind === 'event'
+      && (item.event.type === 'user_message' || item.event.type === 'intervention_sent')
+      && typeof item.event.data?.input_id === 'string'
+      && item.event.data.input_id.length > 0
+    ) itemIndexByInputId.set(item.event.data.input_id, index);
   });
 
   const afterItemIndex = new Map<number, TurnSummaryRenderItem[]>();
@@ -97,32 +120,65 @@ export function placeTurnSummaries(
   const legacyAtEnd: ChatRenderItem[] = [];
   const seenSummaryIds = new Set<number>();
   const summaries = events
-    .filter((event) => event.type === 'turn_summary' || isJevCardObservation({ ...event.data, type: event.type }))
+    .filter((event) => event.type === 'turn_summary'
+      || isJevCardObservation({ ...event.data, type: event.type })
+      || assignedCardPreparedInputId(event) !== null)
     .map((event, sourceIndex) => ({
       event,
       sourceIndex,
       eventId: positiveEventId(event.id),
+      preparedInputId: assignedCardPreparedInputId(event),
     }))
     .sort(compareTurnSummaries);
 
-  for (const { event, eventId } of summaries) {
+  const latestAssignedByInputId = new Map<string, number>();
+  for (const summary of summaries) {
+    if (summary.preparedInputId === null || summary.eventId === null) continue;
+    latestAssignedByInputId.set(
+      summary.preparedInputId,
+      Math.max(latestAssignedByInputId.get(summary.preparedInputId) ?? 0, summary.eventId),
+    );
+  }
+
+  for (const { event, eventId, preparedInputId } of summaries) {
     if (eventId === null) {
       warnInvalidTurnSummary(event, 'event id is invalid');
       continue;
     }
     if (seenSummaryIds.has(eventId)) continue;
     seenSummaryIds.add(eventId);
+    if (
+      preparedInputId !== null
+      && latestAssignedByInputId.get(preparedInputId) !== eventId
+    ) continue;
 
     const observation = isJevCardObservation({ ...event.data, type: event.type });
     if (observation && summaries.some(item => item.eventId !== null && item.eventId > eventId
       && item.event.type === 'debug' && item.event.data?.kind === 'jev_card_observation'
       && item.event.data.complete_event_id === event.data?.complete_event_id)) continue;
-    const content =
+    const rawContent =
       typeof event.data?.content === 'string'
-        ? event.data.content.trim()
+        ? event.data.content
         : '';
-    if (!content) {
+    if (!rawContent.trim()) {
       warnInvalidTurnSummary(event, 'content is missing');
+      continue;
+    }
+    const content = preparedInputId === null ? rawContent.trim() : rawContent;
+
+    if (preparedInputId !== null) {
+      const anchorIndex = itemIndexByInputId.get(preparedInputId);
+      if (anchorIndex === undefined) continue;
+      const anchor = baseItems[anchorIndex];
+      if (!anchor || anchor.kind !== 'event') continue;
+      const anchorEventId = positiveEventId(anchor.event.id);
+      if (anchorEventId === null) continue;
+      const bucket = afterItemIndex.get(anchorIndex) ?? [];
+      bucket.push({
+        kind: 'turn-summary', event, content, anchorEventId,
+        key: `turn-summary-${event.id}`,
+      });
+      afterItemIndex.set(anchorIndex, bucket);
       continue;
     }
 

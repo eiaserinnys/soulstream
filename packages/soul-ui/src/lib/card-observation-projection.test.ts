@@ -10,11 +10,14 @@ it('turn observation and ordinary summary coexist at the old response, even afte
  {treeNodeId:'observation',treeNodeType:'card_observation',eventId:40,summaryFinalResponseEventId:9} ];
  expect(placeTurnSummariesAtResponseAnchors(items).map(i=>i.treeNodeId)).toEqual(['answer9','summary','observation','answer19']);
 });
-it('durable debug observation becomes a separate node; hidden snapshots do not become chat', () => {
+it('durable debug observations become typed chat nodes without entering model history', () => {
  const node = createNodeFromEvent(observation as SoulSSEEvent,40);
  expect(node?.type).toBe('card_observation');
- const hidden = createNodeFromEvent({type:'debug',kind:'assigned_card_context_snapshot'} as unknown as SoulSSEEvent,41);
- expect(hidden).toBeNull();
- const root={id:'root',type:'session',children:[node!],content:'',completed:false} as EventTreeNode;
- expect(buildLlmHistory(root)).toEqual([]);
+ const input = createNodeFromEvent({type:'user_message',text:'외부 카드 알림',input_id:'input-1'} as SoulSSEEvent,39);
+ const snapshot = createNodeFromEvent({type:'debug',kind:'assigned_card_context_snapshot',content:'담당 카드 입력 준비',timestamp:1,capture:{source:'prepared_model_input',sessionId:'s',registrationId:'r',executionCommandId:'e',inputId:'input-1',identityMissing:false,snapshot:{total:1,omitted:0,capturedAt:'2026-10-02T00:00:00Z',cards:[]}}} as unknown as SoulSSEEvent,41);
+ expect(snapshot?.type).toBe('assigned_card_context');
+ const invalid = createNodeFromEvent({type:'debug',kind:'assigned_card_context_snapshot',content:'숨김',timestamp:1,capture:{source:'prepared_model_input',sessionId:'s',registrationId:null,executionCommandId:'e',inputId:null,identityMissing:true,snapshot:{total:0,omitted:0,capturedAt:'2026-10-02T00:00:00Z',cards:[]}}} as unknown as SoulSSEEvent,42);
+ expect(invalid).toBeNull();
+ const root={id:'root',type:'session',children:[input!,node!,snapshot!],content:'',completed:false} as EventTreeNode;
+ expect(buildLlmHistory(root)).toEqual([{role:'user',content:'외부 카드 알림'}]);
 });

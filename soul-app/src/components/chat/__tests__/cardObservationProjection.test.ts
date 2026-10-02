@@ -9,10 +9,14 @@ it('attaches late results to their own answer and coexists with summary on iPhon
  expect((result[0] as any).summaries.map((s:any)=>s.content)).toEqual(['요약','Jev · 위임 대기']);
  expect((result[1] as any).summaries).toHaveLength(1);
 });
-it('hides snapshots and superseded reservations, and restores the same anchors after reload',()=>{
- const events=[observation('25',10,9),observation('40',10,9),{id:'24',type:'debug',data:{kind:'assigned_card_context_snapshot'}} as SessionEvent];
- const before=placeTurnSummaries(base,events);
- const reload=placeTurnSummaries(JSON.parse(JSON.stringify(base)),JSON.parse(JSON.stringify(events)));
+it('anchors the latest prepared card snapshot to its exact input after late arrival and reload',()=>{
+ const input: SessionEvent={id:'5',type:'user_message',data:{text:'시작',input_id:'initial-input'}};
+ const snapshot=(id:string,inputId:unknown):SessionEvent=>({id,type:'debug',data:{kind:'assigned_card_context_snapshot',content:'담당 카드 입력 준비\n지시: 확인',capture:{source:'prepared_model_input',registrationId:'r',executionCommandId:'e',inputId,identityMissing:false}}});
+ const inputBase: ChatRenderItem[]=[{kind:'event',event:input,key:'input5'},...base];
+ const events=[input,observation('25',10,9),observation('40',10,9),snapshot('41','initial-input'),snapshot('42','initial-input'),snapshot('43',null),snapshot('44','unloaded')];
+ const before=placeTurnSummaries(inputBase,events);
+ const reload=placeTurnSummaries(JSON.parse(JSON.stringify(inputBase)),JSON.parse(JSON.stringify(events)));
  expect(before).toEqual(reload);
- expect((before[0] as any).summaries.map((s:any)=>s.event.id)).toEqual(['40']);
+ expect((before[0] as any).summaries.map((s:any)=>s.event.id)).toEqual(['42']);
+ expect((before[1] as any).summaries.map((s:any)=>s.event.id)).toEqual(['40']);
 });

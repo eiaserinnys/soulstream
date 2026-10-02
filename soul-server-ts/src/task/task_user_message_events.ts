@@ -14,6 +14,7 @@ export interface UserMessageEventPublisherDeps {
 
 export interface UserMessageEventInput {
   text: string;
+  inputId?: string;
   user?: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
@@ -32,6 +33,9 @@ export function buildUserMessageEvent(input: UserMessageEventInput): Record<stri
     text: input.text,
     timestamp: Date.now() / 1000,
   };
+  if (input.inputId) {
+    event.input_id = input.inputId;
+  }
   if (input.callerInfo) {
     event.caller_info = input.callerInfo;
   }

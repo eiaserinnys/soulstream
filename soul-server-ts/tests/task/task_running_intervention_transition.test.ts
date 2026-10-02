@@ -6,6 +6,7 @@ import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine
 import { createInProcessTaskRunnerRuntime, createTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskDeliveryConsumption } from "../../src/task/task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "../../src/task/task_delivery_turn_receipt.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -929,7 +930,8 @@ describe("active intervention assigned cards",()=>{
     expect(calls[1]![0].prompt).not.toContain("stale");
     expect(calls[1]![0].prompt.match(/<assigned_cards>/g)).toHaveLength(1);
     expect(assignedCardContext).toHaveBeenCalledTimes(2);
-    expect(assignedCardContext).toHaveBeenLastCalledWith(task,"active-input-segment");
+    expect(assignedCardContext).toHaveBeenLastCalledWith(task,buildDeliveryInputUuid("active-input-segment"));
+    expect(calls[1]![0].inputUuid).toBe(buildDeliveryInputUuid("active-input-segment"));
     expect(task.interventionQueue).toHaveLength(0);
     expect(JSON.stringify((broadcaster.emitEventEnvelope as ReturnType<typeof vi.fn>).mock.calls)).not.toContain('"status":"review"');
   });
