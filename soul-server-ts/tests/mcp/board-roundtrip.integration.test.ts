@@ -60,7 +60,6 @@ const cases: readonly [string, string, Record<string, unknown>, boolean?, McpReq
   ["create missing folder", "create_custom_view", { ...view, folder_id: "missing" }, true],
   ["patch view", "patch_custom_view", patch],
   ["patch null title", "patch_custom_view", { ...patch, title: null }],
-  ["patch revision conflict", "patch_custom_view", { ...patch, expected_revision: 999 }, true],
   ["patch missing", "patch_custom_view", { ...patch, custom_view_id: "missing" }, true],
   ["get view", "get_custom_view", { custom_view_id: "cv-1" }],
   ["get missing view returns null", "get_custom_view", { custom_view_id: "missing" }],
@@ -98,6 +97,30 @@ describe("folder-board-custom-view MCP old/new parity", () => {
       expect(items(next).find(item => item.agent_session_id === "remote")?.agent?.name).toBe("다른 노드 이름");
       if (name === "browse_folder") expect(items(next).find(item => item.agent_session_id === "header-session")?.agent?.name).toBe("로젤린");
     } finally { h.distinguishRemoteNames(false); }
+  });
+  it("queries agent profiles once per node within each tool call", async () => {
+    await h.seed(); h.listAgentProfiles.mockClear();
+    const args = { folder_id: "00000000-0000-4000-8000-000000000001" };
+    const first = await h.call(false, "browse_folder", args, context);
+    expect(first.isError).not.toBe(true);
+    const sessions = (first.structuredContent as { items: { type: string; node_id?: string }[] }).items.filter(item => item.type === "session");
+    expect(sessions.filter(item => item.node_id === "test-node").length).toBeGreaterThan(1);
+    expect(h.listAgentProfiles.mock.calls.map(([nodeId]) => nodeId).sort()).toEqual(["other-node", "test-node"]);
+    await h.call(false, "browse_folder", args, context);
+    expect(h.listAgentProfiles.mock.calls.map(([nodeId]) => nodeId).sort()).toEqual(["other-node", "other-node", "test-node", "test-node"]);
+  });
+  it("records the legacy revision conflict and reports the actual revision on the new path", async () => {
+    const args = { ...patch, expected_revision: 999 };
+    await h.seed(); const old = await h.call(true, "patch_custom_view", args, context);
+    const oldMessage = "custom view revision conflict for cv-1: expected 999, actual 999";
+    expect(old.isError).toBe(true);
+    expect(old.content).toEqual([{ type: "text", text: oldMessage }]);
+    expect(old.structuredContent).toEqual({ error: oldMessage });
+    await h.seed(); const next = await h.call(false, "patch_custom_view", args, context);
+    const actualMessage = "custom view revision conflict for cv-1: expected 999, actual 1";
+    expect(next.isError).toBe(true);
+    expect(next.content).toEqual([{ type: "text", text: actualMessage }]);
+    expect(next.structuredContent).toEqual({ error: actualMessage });
   });
   it("includes archived views only when requested", async () => {
     await h.seed(); await h.h.sql`UPDATE board_custom_views SET archived=TRUE WHERE id='cv-1'`;

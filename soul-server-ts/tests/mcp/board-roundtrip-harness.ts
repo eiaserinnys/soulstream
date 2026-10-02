@@ -68,6 +68,7 @@ export async function createBoardRoundtripHarness() {
   const host = { authBearerToken: "service-token", projectionHost, createService: () => board };
   const events: unknown[] = [];
   let distinguishRemote = false;
+  const listAgentProfiles = vi.fn(async (nodeId: string) => ({ roselin: { name: distinguishRemote && nodeId === "other-node" ? "다른 노드 이름" : "로젤린" } }));
   const oldBroadcaster = {
     emitCatalogUpdated: async (folders: unknown, sessions: unknown, items: unknown) => {
       events.push({ type: "catalog_updated", folders, sessions_delta: sessions, board_items_delta: items, nodeId: "test-node" });
@@ -84,7 +85,7 @@ export async function createBoardRoundtripHarness() {
     cards: { cardServiceProvider: folders.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
     board: { host: { ...host, get service() { return board; } }, getSession: id => sessionReads.getSession(id),
-      listAgentProfiles: async nodeId => ({ roselin: { name: distinguishRemote && nodeId === "other-node" ? "다른 노드 이름" : "로젤린" } }),
+      listAgentProfiles,
       broadcaster: { append: (event: unknown) => { events.push(event); } },
     },
   } as never);
@@ -149,7 +150,7 @@ export async function createBoardRoundtripHarness() {
       return await withMcpRequestContext(context, () => client.callTool({ name, arguments: input }));
     } finally { await client.close(); await server.close(); }
   }
-  return { seed, call, events, h, projectionHost,
+  return { seed, call, events, h, projectionHost, listAgentProfiles,
     distinguishRemoteNames(value: boolean) { distinguishRemote = value; },
     async cleanup() { await board.close(); await app.close(); await h.cleanup(); } };
 }

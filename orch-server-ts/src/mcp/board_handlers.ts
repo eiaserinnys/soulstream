@@ -265,10 +265,19 @@ async function run(fn: () => Promise<unknown>) {
   try { return jsonResult(await fn()); } catch (error) { return errorResult(error instanceof Error ? error.message : String(error)); }
 }
 async function serializeItems(items: FolderBrowseItem[], options: McpHostOptions, context: McpCallContext) {
+  const profilesByNode = new Map<string, ReturnType<McpHostOptions["board"]["listAgentProfiles"]>>();
   return Promise.all(items.map(async item => {
     const base = { type: item.type, board_item_id: item.boardItemId, archived: item.archived, updated_at: item.updatedAt };
     if (item.type === "session") {
-      const profiles = item.agentId && item.nodeId ? await options.board.listAgentProfiles(item.nodeId) : undefined;
+      let profiles: Awaited<ReturnType<McpHostOptions["board"]["listAgentProfiles"]>> = undefined;
+      if (item.agentId && item.nodeId) {
+        let pending = profilesByNode.get(item.nodeId);
+        if (!pending) {
+          pending = options.board.listAgentProfiles(item.nodeId);
+          profilesByNode.set(item.nodeId, pending);
+        }
+        profiles = await pending;
+      }
       const agent = item.agentId ? profiles?.[item.agentId] : undefined;
       return { ...base, agent_session_id: item.agentSessionId, display_name: item.displayName, status: item.status,
         agent: item.agentId ? { id: item.agentId, name: typeof agent?.name === "string" ? agent.name : item.agentId } : null,

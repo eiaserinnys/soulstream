@@ -26,11 +26,7 @@ export function createBoardLocalPorts(options: McpHostOptions) {
       return wire(await dispatchBoardYjsHostOperation(operation, parsed.data, { ...options.board.host, service })) as T;
     }
     catch (error) {
-      if (operation === "patch-custom-view-record" && error instanceof CustomViewRevisionConflictError) {
-        // Legacy host puts actualRevision beside message, but its envelope reader only reads details.
-        // The worker consequently reports expectedRevision as actual; preserve that error text here.
-        throw new CustomViewRevisionConflictError(error.customViewId, error.expectedRevision, error.expectedRevision);
-      }
+      if (operation === "patch-custom-view-record" && error instanceof CustomViewRevisionConflictError) throw error;
       throw new Error(`board Yjs host proxy ${operation} failed: ${error instanceof Error ? error.message : "Board Yjs host operation failed"}`);
     }
   }
