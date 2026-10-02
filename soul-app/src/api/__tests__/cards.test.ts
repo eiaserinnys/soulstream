@@ -19,6 +19,24 @@ const response = (body: unknown) => ({ ok: true, status: 200, headers: new Heade
   json: async () => body, text: async () => JSON.stringify(body) } as Response);
 beforeEach(() => useAuthStore.setState({ jwt: 'test-jwt' }));
 afterEach(() => jest.restoreAllMocks());
+test('active and completed queries retain separate contracts', async () => {
+  const fetch=jest.spyOn(global,'fetch').mockResolvedValue(response({cards:[],nextCursor:null}));
+  const api=createApiClient('https://cards.test');
+  await api.listCards('folder-1',{includeCompleted:false});
+  await api.listCompletedCards({folderId:'folder-1',q:'요청',limit:60,cursor:'next'});
+  expect(String(fetch.mock.calls[0][0])).toContain('includeCompleted=false');
+  const query=new URL(String(fetch.mock.calls[1][0])).searchParams;
+  expect(Object.fromEntries(query)).toEqual({status:'done',folderId:'folder-1',q:'요청',limit:'60',cursor:'next'});
+});
+
+test('aggregate and snapshot exclude done with an explicit false query while omitted keeps compatibility',async()=>{
+  const fetch=jest.spyOn(global,'fetch').mockResolvedValue(response({folder:{id:'folder-1'},page:{id:'page',title:'폴더',daily_date:null,version:1,archived:false,metadata:{},created_at:'',updated_at:''},blocks:[],cards:[],subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}}));
+  const api=createApiClient('https://cards.test');
+  await api.getFolderSnapshot('folder-1',{includeCompleted:false});
+  await api.getPlannerFolder('folder-1',{includeCompleted:false});
+  await api.getPlannerFolder('folder-1');
+  expect(fetch.mock.calls.map(([url])=>url)).toEqual(['https://cards.test/api/folders/folder-1?includeCompleted=false','https://cards.test/api/planner/folders/folder-1?includeCompleted=false','https://cards.test/api/planner/folders/folder-1']);
+});
 
 test('카드 상세/목록은 서버 camelCase 행과 세션 연결을 보존한다', async () => {
   const fetch = jest.spyOn(global, 'fetch').mockResolvedValueOnce(response(detail))

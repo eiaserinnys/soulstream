@@ -3,6 +3,7 @@ jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('react-native-gesture-handler', () => ({ ...jest.requireActual('react-native-gesture-handler'), GestureHandlerRootView: require('react-native').View }));
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
 jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: mockCards, loading: false, error: null, refresh: jest.fn() }) }));
+jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:false,error:null})}));
 import React, { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { CardBoardWorkspace } from '../CardBoardWorkspace';

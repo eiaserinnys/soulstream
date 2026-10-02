@@ -343,7 +343,7 @@ test('cache miss linked session은 folderId로 폴더 aggregate를 읽어 업무
     folderId: 'task-1', sessionIds: ['linked-cold'],
   });
   expect(mockApi.getSessionsByIds).toHaveBeenCalledWith(['linked-cold']);
-  expect(mockApi.getPlannerFolder).toHaveBeenCalledWith('task-1');
+  expect(mockApi.getPlannerFolder).toHaveBeenCalledWith('task-1',{includeCompleted:false});
   expect(mockApi.getSessionBoardItems).not.toHaveBeenCalled();
   expect(mockApi.getCatalog).not.toHaveBeenCalled();
 });

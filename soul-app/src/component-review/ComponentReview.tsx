@@ -16,6 +16,7 @@ import { ReviewBoardActions } from './ReviewBoardActions';
 import { ReviewPostIt } from './ReviewPostIt';
 import { ReviewBoardWorkspace } from './ReviewBoardWorkspace';
 import { ReviewCardHome } from './ReviewCardHome';
+import {ReviewFolderWorkspace} from './ReviewFolderWorkspace';
 import { ReviewEntryShell } from './ReviewEntryShell';
 import { folders } from './fixtures';
 
@@ -28,6 +29,7 @@ const sections = [
   { value: 'postit', label: '포스트잇' },
   { value: 'boardConnected', label: '보드 연결' },
   { value: 'cardHome', label: '카드 홈' },
+  {value:'folderWorkspace',label:'폴더 카드'},
   { value: 'entryShell', label: '앱 홈 조합' },
 ] as const;
 type Section = typeof sections[number]['value'];
@@ -51,6 +53,9 @@ function Gallery() {
     backgroundColor: t.colors.background,
   }), [t]);
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
+  if (section === 'boardConnected') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoardWorkspace/></View>;
+  if (section === 'board') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoard/></View>;
+  if(section==='folderWorkspace')return <View style={{flex:1,backgroundColor:t.colors.background}}><ReviewFolderWorkspace/></View>;
   if (section === 'entryShell') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewEntryShell /></View>;
   return <ScrollView testID="component-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={style} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -74,8 +79,8 @@ function Gallery() {
     }} options={sections} />
     {section === 'rows' ? <ReviewRows /> : section === 'chat' ? <ReviewChat />
       : section === 'project' ? <ReviewProject /> : section === 'settings' ? <ReviewSettings />
-        : section === 'board' ? <ReviewBoard /> : section === 'boardActions' ? <ReviewBoardActions />
-          : section === 'postit' ? <ReviewPostIt /> : section === 'boardConnected' ? <ReviewBoardWorkspace /> : <ReviewSurfaces />}
+        : section === 'boardActions' ? <ReviewBoardActions />
+          : section === 'postit' ? <ReviewPostIt /> : <ReviewSurfaces />}
   </ScrollView>;
 }
 

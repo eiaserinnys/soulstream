@@ -10,15 +10,15 @@ import { useCardDisplay } from '../hooks/useCardDisplay';
 export function ReviewBoardWorkspace() {
   const t = useTokens();
   const { height } = useWindowDimensions();
-  const api = useMemo(() => createReviewApi(), []);
+  const api = useMemo(() => createReviewApi('normal',{manyCompleted:true}), []);
   const [scope, setScope] = useState<'folder' | 'global'>('folder');
   const folderId = scope === 'folder' ? initialCards[0].folderId : undefined;
   const cardDisplay = useCardDisplay(folderId);
   const [selected, setSelected] = useState('');
-  return <View style={{ gap: t.uiSpacing.md }}>
+  return <View style={{ flex:1,gap: t.uiSpacing.md }}>
     <SettingsSegmentedControl<'folder' | 'global'> id="board-connected-scope" value={scope} onChange={setScope}
       options={[{ value: 'folder', label: '현재 폴더' }, { value: 'global', label: '전체' }]} />
-    <View testID="review-board-connected-frame" style={{ height: height - t.hitTarget.min * 2 }}>
+    <View testID="review-board-connected-frame" style={{flex:1}}>
       <CardBoardWorkspace key={scope} api={api} folderId={folderId}
         cardDisplay={cardDisplay} onOpen={setSelected} />
     </View>

@@ -23,7 +23,7 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
       while(active&&dirty){
         dirty=false;const started=currentRevision();
         try {
-          const path=folderId?`/api/cards?${new URLSearchParams({folderId})}`:"/api/cards";
+          const path=`/api/cards?${new URLSearchParams({includeCompleted:"false",...(folderId?{folderId}:{})})}`;
           const {cards}=await cardRequest<{cards:CardRow[]}>(path);
           if(!active)break;
           // SSE during the request invalidates the response before it can overwrite new data.
@@ -54,6 +54,6 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
     refresh.current();
   },[createdKey,folderId]);
   const ids=membership&&membership.scope===folderId?membership.ids:null;
-  return {cards:(ids??[]).map(id=>byId[id]).filter((card):card is CardRow=>Boolean(card)&&(!folderId||card.folderId===folderId)),
+  return {cards:(ids??[]).map(id=>byId[id]).filter((card):card is CardRow=>Boolean(card)&&card.status!=="done"&&(!folderId||card.folderId===folderId)),
     loading:ids===null,error,retry:()=>refresh.current()};
 }

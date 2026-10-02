@@ -117,9 +117,10 @@ test('card home header preserves daily history access with a native hit target',
     route: { key: 'daily', name: 'Daily' }, navigation,
   }));
   const options = navigation.setOptions.mock.calls.at(-1)?.[0];
-  // Keep both header slots in one mounted tree so event targets remain attached.
-  const header = render(<>{React.createElement(options.headerLeft)}{React.createElement(options.headerRight)}</>);
-  expect(options.headerTitleAlign).toBe('center');
+  // The title owns the left slot; completion and circular actions share the right slot.
+  expect(options.headerLeft()).toBeNull();
+  const header = render(React.createElement(options.headerRight));
+  expect(options.headerTitleAlign).toBe('left');
   expect(mockCardHomeProps).toHaveBeenLastCalledWith(expect.objectContaining({ externalHeader: true }));
   fireEvent.press(header.getByLabelText('드래프트 카드 추가'));
   expect(mockOpenCardCreate).toHaveBeenCalledTimes(1);

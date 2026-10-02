@@ -22,6 +22,7 @@ export interface CardDto {
   version: number;
   createdAt: string;
   updatedAt: string;
+  completedAt?: string | null;
   latestActivity?: { kind: 'instruction' | 'report'; body: string; format: 'markdown' | 'html'; createdAt: string } | null;
 }
 export interface CardReport {

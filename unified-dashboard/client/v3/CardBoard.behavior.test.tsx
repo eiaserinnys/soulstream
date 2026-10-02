@@ -7,8 +7,8 @@ import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { reviewCard } from "./components-review-fixtures";
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 let element:HTMLDivElement,root:Root;
-beforeEach(()=>{element=document.createElement("div");document.body.append(element);root=createRoot(element);});
-afterEach(async()=>{await act(()=>root.unmount());element.remove();});
+beforeEach(()=>{vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){}});element=document.createElement("div");document.body.append(element);root=createRoot(element);});
+afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllGlobals();});
 it("offers isolated drag handles and an explicitly unavailable blocked lane",async()=>{
  await act(()=>root.render(<CardBoard cards={[reviewCard]} renderCard={(card,handle)=><article>{card.title}{handle}</article>}/>));
  expect(element.querySelector('[aria-label="'+reviewCard.title+' 단계 이동"]')).not.toBeNull();

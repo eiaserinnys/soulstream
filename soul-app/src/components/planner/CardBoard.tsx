@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, FlatList, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDto, CardStatus } from '../../api/cardTypes';
 import { useDeviceType, useTokens } from '../../theme';
@@ -11,15 +11,18 @@ import { BoardDragCard, type BoardDragEvent } from './BoardDragCard';
 import { CardStatusMenu } from './CardStatusMenu';
 import { useBoardPointerPan } from './useBoardPointerPan';
 import { useCardTransition } from '../../hooks/useCardTransition';
+import type { CompletedBrowser } from '../../hooks/useCompletedCards';
+import { CompletedCardFilters } from './CompletedCardFilters';
 import { boardVisibleColumns, boardDropStatus, boardLaneGeometry, boardLaneOffset, boardSnapOffsets, boardNearestLane, type BoardFrame, type BoardPosition } from '../../lib/card-board-layout';
 export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
 export function CardBoard({ api, cards, onOpen, includeCompleted = true,
-  phone: controlledPhone, initialPosition, onPositionChange }: {
+  phone: controlledPhone, initialPosition, onPositionChange,completed }: {
   api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string, target?: number): void;
   includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void;
+  completed?:CompletedBrowser;
 }) {
   const t = useTokens();
   const devicePhone = useDeviceType() === 'phone';
@@ -31,7 +34,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const scroll = useRef<ScrollView>(null);
   const [frame, setFrame] = useState<BoardFrame>({ x: 0, y: 0, width: 0, height: 0 });
   const viewport = frame.width || window.width;
-  const geometry = boardLaneGeometry(viewport, paper.width, t.uiSpacing.sm, phone);
+  const geometry = boardLaneGeometry(viewport, paper.width, t.uiSpacing.sm, phone,columns,paper.gap);
   const offsets = columns.map((_, index) => boardLaneOffset(index, viewport, geometry, columns.length));
   const firstPosition = useRef(initialPosition ?? { x: phone ? offsets[4] : 0, lane: phone ? 'review' as const : 'todo' as const, lanes: {} });
   const initialContentOffset = useRef({ x: firstPosition.current.x, y: 0 });
@@ -64,6 +67,8 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const dragRef = useRef(drag); dragRef.current = drag;
   const edgeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [menu, setMenu] = useState<{ card: CardDto; target?: CardStatus } | null>(null);
+  const completedList=useRef<FlatList<CardDto>>(null);
+  useEffect(()=>{completedList.current?.scrollToOffset({offset:0,animated:false});},[completed?.resetKey]);
   const stageHeight = useRef(0);
   const action = useCardTransition(api, drag?.card.id ?? '');
   const active = cards.filter((card) => !card.archived && card.status !== 'cancelled');
@@ -117,14 +122,29 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       onScroll={(event) => { position.current.x = event.nativeEvent.contentOffset.x;
         position.current.lane = columns[boardNearestLane(position.current.x, offsets)][0]; savePosition(); }}
       contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, alignItems: 'stretch', paddingTop: t.uiSpacing.sm }}>
-      {columns.map(([status, label]) => {
+      {columns.map(([status, label],laneIndex) => {
         const items = active.filter((card) => card.status === status);
-        return <View key={status} testID={`card-board-column-${status}`} style={{ width: geometry.laneWidth, flexShrink: 0, gap: t.uiSpacing.sm }}>
+        const renderItem=(card:CardDto)=><BoardDragCard api={api} card={card}
+          dragging={drag?.card.id === card.id} onOpen={(target)=>{if(pan.canPress()){if(target===undefined)onOpen(card.id);else onOpen(card.id,target);}}}
+          onMenu={()=>{if(pan.canPress())setMenu({card});}} onStart={event=>start(card,event)}
+          onMove={event=>{if(dragRef.current){const value={...dragRef.current,event};dragRef.current=value;setDrag(value);}}}
+          onDrop={event=>drop(card,event)} onFinish={finish}/>;
+        return <View key={status} testID={`card-board-column-${status}`} style={{ width: geometry.lanes[laneIndex].width, flexShrink: 0, gap: t.uiSpacing.sm }}>
           <View style={{ paddingHorizontal: t.uiSpacing.sm, minHeight: t.foundation.typography.section.lineHeight }}>
-            <PlannerSectionHeader variant={phone ? 'lane' : 'board'} title={label} count={items.length}
+            <PlannerSectionHeader variant={phone ? 'lane' : 'board'} title={label} count={items.length} countSuffix={status==='done'?'개 표시':undefined}
               testID={phone ? `card-board-lane-heading-${status}` : undefined} countTestID={`card-board-count-${status}`} />
           </View>
-          <ScrollView testID={`card-board-scroll-${status}`} scrollEnabled={!drag} style={{ flex: 1 }} showsVerticalScrollIndicator={false}
+          {status==='done'?<>
+            {completed?<View style={{paddingHorizontal:t.uiSpacing.sm}}><CompletedCardFilters browser={completed}/></View>:null}
+            <FlatList ref={completedList} key={geometry.completedColumns} testID="card-board-scroll-done" style={{flex:1}}
+              data={items} numColumns={geometry.completedColumns} keyExtractor={card=>card.id} renderItem={({item})=><View style={{width:paper.width,marginBottom:paper.gap}}>{renderItem(item)}</View>}
+              columnWrapperStyle={geometry.completedColumns>1?{gap:paper.gap}:undefined}
+              contentContainerStyle={{paddingHorizontal:t.uiSpacing.sm,paddingTop:t.uiSpacing.xs,paddingBottom:t.cardLayout.padding}}
+              windowSize={5} initialNumToRender={geometry.completedColumns*2} maxToRenderPerBatch={geometry.completedColumns*2}
+              onEndReached={completed?.loadMore} onEndReachedThreshold={0.5} showsVerticalScrollIndicator={false} scrollEnabled={!drag}
+              onScroll={event=>{position.current.lanes.done=event.nativeEvent.contentOffset.y;savePosition();}}
+              ListEmptyComponent={<Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{completed?.loading?'완료 카드를 불러오는 중…':'선택한 기간에 완료 카드가 없습니다'}</Text>}/>
+          </>:<ScrollView testID={`card-board-scroll-${status}`} scrollEnabled={!drag} style={{ flex: 1 }} showsVerticalScrollIndicator={false}
             contentOffset={{ x: 0, y: firstPosition.current.lanes[status] ?? 0 }} scrollEventThrottle={16}
             onScroll={(event) => { position.current.lanes[status] = event.nativeEvent.contentOffset.y; savePosition(); }}
             contentContainerStyle={{ gap: t.cardLayout.gap, paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs, paddingBottom: t.cardLayout.padding }}>
@@ -137,7 +157,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
               onStart={(event) => start(card, event)} onMove={(event) => { if (dragRef.current) { const value = { ...dragRef.current, event }; dragRef.current = value; setDrag(value); } }}
               onDrop={(event) => drop(card, event)} onFinish={finish} />)
               : <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>}
-          </ScrollView>
+          </ScrollView>}
         </View>;
       })}
     </ScrollView>

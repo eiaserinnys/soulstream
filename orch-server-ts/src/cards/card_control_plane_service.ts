@@ -22,10 +22,11 @@ export class CardControlPlaneService {
     this.core=new CardMutationCore(db,this.repo,broadcaster);
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
-  getFolder(folderId: string) { return this.repo.getSnapshot(folderId); }
+  getFolder(folderId: string, includeCompleted = true) { return this.repo.getSnapshot(folderId, includeCompleted); }
   listFolders(params: Parameters<CardRepository["listFolders"]>[0]) { return this.repo.listFolders(params); }
   listOperations(folderId: string,limit?: number,offset?: number) { return this.repo.listOperations(folderId,limit,offset); }
   listCards(params: Parameters<CardRepository["listCards"]>[0]={}) { return this.repo.listCards(params); }
+  listCompletedCards(params: Parameters<CardRepository["listCompletedCards"]>[0]) { return this.repo.listCompletedCards(params); }
   projectCards(cards: readonly CardRow[]) { return this.repo.projectCards(cards); }
   async getCard(cardId: string) {
     const card=await this.repo.getCard(cardId);

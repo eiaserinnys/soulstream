@@ -23,9 +23,10 @@ jest.mock('react-native-webview', () => {
   };
 });
 jest.mock('../../../hooks/usePlannerFolder', () => ({
-  usePlannerFolder: () => ({ data: null, loading: false, error: null }),
+  usePlannerFolder: jest.fn(() => ({ data: null, loading: false, error: null })),
 }));
 
+import {usePlannerFolder} from '../../../hooks/usePlannerFolder';
 import { FolderBoardContent } from '../FolderBoardContent';
 
 test('웹 업무 보드와 같은 markdown, Flux custom_view, asset을 실제 내용으로 렌더한다', async () => {
@@ -70,6 +71,7 @@ test('웹 업무 보드와 같은 markdown, Flux custom_view, asset을 실제 �
   expect(screen.getByTestId('task-board-custom-view').props.accessibilityLabel).toContain('실제 Flux');
   expect(StyleSheet.flatten(screen.getByTestId('task-board-custom-view').props.style).width).toBe('100%');
   expect(api.getFolderBoardItems).toHaveBeenCalledWith('task-1');
+  expect(usePlannerFolder).toHaveBeenCalledWith(api,'task-1',true,false);
 });
 
 test('콜드 스타트 자산에 읽기 URL이 없으면 성공한 척하지 않고 명시적 오류를 표시한다', async () => {

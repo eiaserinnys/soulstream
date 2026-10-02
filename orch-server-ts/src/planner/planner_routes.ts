@@ -50,7 +50,8 @@ const dailyHistoryQuery = z.object({
   before: date,
   limit: pageLimit(PLANNER_READ_PAGE_LIMITS.dailyHistory),
 });
-const folderQuery = z.object({ limit: pageLimit(PLANNER_READ_PAGE_LIMITS.folder) });
+const folderQuery = z.object({ limit: pageLimit(PLANNER_READ_PAGE_LIMITS.folder),
+  includeCompleted: z.enum(["true","false"]).default("true").transform(value=>value === "true") });
 const folderSliceQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.folder);
 
 export function registerPlannerRoutes(

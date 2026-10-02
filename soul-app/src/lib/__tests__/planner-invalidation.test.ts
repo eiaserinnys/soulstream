@@ -12,6 +12,7 @@ test.each([
   ['metadata_updated', 'metadata_updated'],
   ['catalog_updated', 'catalog'],
   ['folder_updated', 'folder'],
+  ['card_updated', 'folder'],
   ['custom_view_updated', 'custom_view'],
   ['replay_gap', 'replay'],
   ['session_list', null],

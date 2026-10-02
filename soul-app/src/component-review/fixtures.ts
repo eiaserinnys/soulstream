@@ -36,7 +36,7 @@ export function makeCard(status: CardStatus): CardDto {
     blockedKind: status === 'blocked' ? 'question' : null, blockedDetail: null,
     assigneeKind: 'agent', assigneeAgentId: 'public-agent', assigneeSessionId: null,
     assigneeUserId: null, nodeId: null, modelPreset: '예시 모델',
-    archived: false, version: 1, createdAt: time, updatedAt: time };
+    archived: false, version: 1, createdAt: time, updatedAt: time,completedAt:status==='done'?new Date().toISOString():null };
 }
 export const initialCards = (['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'] as const).map(makeCard);
 export const starredFolders: PlannerFolder[] = folders.map((folder) => ({
@@ -51,8 +51,9 @@ export const fixtureOptions = [
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
-export function createReviewApi(state: FixtureState = 'normal', options: { home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only' } = {}) {
+export function createReviewApi(state: FixtureState = 'normal', options: { home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean } = {}) {
   const cards = new Map(initialCards.map((card) => [card.id, { ...card }]));
+  if(options.manyCompleted)for(let index=0;index<1000;index++)cards.set(`completed-${index}`,{...makeCard('done'),id:`completed-${index}`,title:index%10===0?'검색할 긴 완료 카드 제목입니다. 같은 폭과 본문을 유지합니다.':'완료 카드 '+index,completedAt:new Date(Date.now()-index*10*60*1000).toISOString()});
   if (options.home) for (let index = 1; index <= 4; index++) cards.set(`public-review-${index}`, { ...makeCard('review'), id: `public-review-${index}`, title: `검수할 공개 예시 ${index}`, latestActivity: { kind: 'report', body: '같은 제목과 본문으로 카드 크기와 읽기 흐름을 확인합니다.', format: 'markdown', createdAt: time } });
   if (options.emptyReview) for (const [id, card] of cards) if (card.status === 'review') cards.delete(id);
   if (options.completed) for (const [id, card] of cards) {
@@ -63,8 +64,20 @@ export function createReviewApi(state: FixtureState = 'normal', options: { home?
     if (state === 'loading') return new Promise(() => {});
     return value;
   };
-  const api: Pick<ApiClient, 'listCards' | 'getCard' | 'createCard' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
-    listCards: async (folderId) => read({ cards: state === 'empty' ? [] : [...cards.values()].filter((card) => !folderId || card.folderId === folderId) }),
+  const api: Pick<ApiClient, 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+    getPage:async id=>read({page:{...starredFolders[0].page,id},blocks:[],stateVector:''}),
+    getPlannerFolder:async (id,query)=>read({folder:{...folders[0],id,projectPageId:'public-page'},page:{...starredFolders[0].page,id:'public-page'},blocks:[],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done')),subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}}),
+    getFolderSnapshot:async (id,query)=>read({folder:folders[0],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done'))}),
+    getPlannerToday:async()=>read({daily:{page:starredFolders[0].page,blocks:[],stateVector:''},attention:[],running:[],queued:[],projects:[],memoBlocks:[],folders:[],reviewSessionIds:[]}),
+    getPlannerFolderSessions:async()=>read({items:[],nextCursor:null}),
+    getPlannerFolderSubfolders:async()=>read({items:[],nextCursor:null}),
+    getFolderBoardItems:async()=>read([]),
+    listCards: async (folderId,query) => read({ cards: state === 'empty' ? [] : [...cards.values()].filter((card) => (!folderId || card.folderId === folderId)&&(query?.includeCompleted!==false||card.status!=='done')) }),
+    listCompletedCards:async params=>{
+      const filtered=state==='empty'?[]:[...cards.values()].filter(card=>card.status==='done'&&(!params.folderId||card.folderId===params.folderId)&&(!params.completedFrom||card.completedAt!>=params.completedFrom)&&(!params.completedBefore||card.completedAt!<params.completedBefore)&&(`${card.title} ${card.request}`.toLocaleLowerCase().includes((params.q??'').toLocaleLowerCase()))).sort((a,b)=>(b.completedAt??'').localeCompare(a.completedAt??'')||b.id.localeCompare(a.id));
+      const offset=Number(params.cursor??0),limit=params.limit??60;
+      return read({cards:filtered.slice(offset,offset+limit),nextCursor:offset+limit<filtered.length?String(offset+limit):null});
+    },
     getCard: async (id) => {
       const card = cards.get(id);
       if (!card) throw new Error('알 수 없는 공개 예시 카드');
@@ -80,7 +93,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { home?
       const current = cards.get(id);
       if (!current) throw new Error('알 수 없는 공개 예시 카드');
       if (current.version !== expectedVersion) throw new Error('공개 예시: 버전 충돌');
-      const card = { ...current, status, version: current.version + 1 };
+      const card = { ...current, status, version: current.version + 1,completedAt:status==='done'?new Date().toISOString():null };
       cards.set(id, card);
       return { folderId: card.folderId, card };
     },

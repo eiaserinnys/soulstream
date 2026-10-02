@@ -19,6 +19,7 @@ export const SessionSearchField = forwardRef<TextInput, {
   onFocus?: TextInputProps['onFocus'];
   placeholder?: string;
   testID?: string;
+  accessibilityLabel?: string;
 }>(function SessionSearchField({
   value,
   onChangeText,
@@ -29,6 +30,7 @@ export const SessionSearchField = forwardRef<TextInput, {
   onFocus,
   placeholder = '세션 및 대화 검색',
   testID = 'session-search-input',
+  accessibilityLabel = '세션 및 대화 검색',
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -43,7 +45,7 @@ export const SessionSearchField = forwardRef<TextInput, {
         <TextInput
           ref={ref}
           testID={testID}
-          accessibilityLabel="세션 및 대화 검색"
+          accessibilityLabel={accessibilityLabel}
           value={value}
           autoFocus={autoFocus}
           autoCorrect={false}

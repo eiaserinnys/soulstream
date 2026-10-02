@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCenter, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type KeyboardCoordinateGetter } from "@dnd-kit/core";
 import { DashboardIconCap } from "@seosoyoung/soul-ui";
@@ -56,9 +56,9 @@ export function CardBoardDnd({children,cards,renderCard}:{children:ReactNode;car
     </DndContext>
   </CardBoardTransitionContext.Provider>;
 }
-export function CardBoardLane({status,label,children}:{status:CardStatus;label:string;children:ReactNode}) {
+export function CardBoardLane({status,label,children,style}:{status:CardStatus;label:string;children:ReactNode;style?:CSSProperties}) {
   const {setNodeRef,isOver}=useDroppable({id:`lane-${status}`,data:{status}});
-  return <section ref={setNodeRef} className={`v3-card-board-column${isOver?status==="blocked"?" is-drop-unavailable":" is-drop-target":""}`}
+  return <section ref={setNodeRef} style={style} className={`v3-card-board-column${isOver?status==="blocked"?" is-drop-unavailable":" is-drop-target":""}`}
     data-board-column={status} aria-label={label} aria-description={status==="blocked"?"막힘 단계로 직접 옮길 수 없습니다":undefined}>
     {children}
   </section>;

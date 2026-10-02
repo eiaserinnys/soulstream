@@ -21,6 +21,13 @@ function setup(loggedIn = true) {
   return { app, provider, moveStarredFolder, onPageUpdated, getDailyPage };
 }
 describe("folder planner HTTP", () => {
+  it("parses completed exclusion explicitly and preserves omitted/true defaults", async () => {
+    const { app, provider } = setup();
+    for (const value of [undefined, "true", "false"]) {
+      await app.inject(`/api/planner/folders/f${value === undefined ? "" : `?includeCompleted=${value}`}`);
+      expect(provider.getFolder).toHaveBeenLastCalledWith("f", expect.objectContaining({includeCompleted:value !== "false"}));
+    }
+  });
   it.each([
     ["/today?date=2026-09-30", "getToday"], ["/starred-folders", "getStarredFolders"],
     ["/daily-history?before=2026-09-30", "getDailyHistory"], ["/folders/f", "getFolder"],

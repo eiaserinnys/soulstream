@@ -1,3 +1,5 @@
+// Existing title/description editing stays together; this change extracts the virtual scroll owner.
+// The remaining 500+ line coordinator is preserved to avoid changing unrelated editing behavior.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -18,6 +20,7 @@ import { SessionSuccessionHost } from './SessionSuccessionHost';
 import { TabletPaneHeader } from '../split/TabletPaneHeader';
 import { FolderSessionHistory } from './FolderSessionHistory';
 import { FolderCards } from './FolderCards';
+import { FolderWorkspaceList } from './FolderWorkspaceList';
 import { AppGlassCard } from '../AppGlassCard';
 import { FolderBoardContent } from './FolderBoardContent';
 import { TabletMarkdownEditor, type TabletMarkdownSaveAttempt } from './TabletMarkdownEditor';
@@ -396,11 +399,9 @@ export function FolderWorkspace({
           ) : null}
         </TabletPaneHeader>
       ) : null}
-      <ScrollView
-        testID="task-workspace-scroll"
+      <FolderWorkspaceList api={api} folderId={folderSummary.folderId} active={active} cardDisplay={cardDisplay} onOpenSession={onOpenSession}
         contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+        header={<>
         {pageDetail.error ? <Text style={styles.error}>{pageDetail.error}</Text> : null}
         <FolderWorkspaceDetails
           api={api}
@@ -494,7 +495,9 @@ export function FolderWorkspace({
             </>
           )}
         </View>
-        <FolderCards api={api} folderId={folderSummary.folderId} active={active} onOpenSession={onOpenSession} cardDisplay={cardDisplay} />
+        <FolderCards api={api} folderId={folderSummary.folderId} active={active} onOpenSession={onOpenSession} cardDisplay={cardDisplay} virtualHost/>
+        </>}
+        footer={<>
         {folder ? (
           <FolderWorkspaceSections
             api={api}
@@ -526,7 +529,7 @@ export function FolderWorkspace({
             })}
           />
         </View>
-      </ScrollView>
+        </>}/>
       <SessionSuccessionHost
         api={api}
         request={ownsDraft && successionId !== undefined

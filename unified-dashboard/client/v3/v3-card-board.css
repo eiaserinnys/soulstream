@@ -38,6 +38,7 @@
 .v3-card-completion-hidden { font: var(--v3-type-meta) var(--v3-font-family); color: var(--v3-text-secondary); }
 .v3-card-board-sample .v3-detail-section-head { flex-wrap: wrap; }
 .v3-folder-card-head { flex-wrap: wrap; }
+.v3-folder-card-head > .v3-card-actions { margin-inline-start: auto; }
 .v3-postit-size-comparison { display: flex; flex-wrap: wrap; align-items: start; gap: var(--v3-space-6); margin-bottom: var(--v3-space-6); }
 .v3-postit-size-comparison > div { display: flex; flex-direction: column; gap: var(--v3-space-3); }
 .v3-card-board-item { position: relative; }
@@ -72,3 +73,16 @@
 .v3-postit-card--two-actions .v3-postit-title { padding-right: calc(var(--v3-space-8) * 2 + var(--postit-gap-2) * 2); }
 
 .v3-card-board.is-panning, .v3-card-board.is-panning * { cursor: grabbing; user-select: none; }
+
+.v3-completed-measure { position: absolute; visibility: hidden; pointer-events: none; width: var(--postit-width); height: var(--v3-space-1); column-gap: calc(var(--v3-space-6) * var(--postit-scale)); }
+.v3-completed-controls { display: flex; flex-direction: column; gap: var(--v3-space-2); padding: var(--v3-space-1); margin-bottom: var(--v3-space-3); }
+.v3-completed-periods, .v3-completed-dates { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); }
+.v3-completed-periods button { font: var(--v3-type-body) var(--v3-font-family); }
+.v3-completed-periods button[aria-pressed="true"] { background: var(--v3-glass-panel); color: var(--v3-accent); }
+.v3-completed-dates > input { flex: 1; min-width: 0; }
+.v3-card-board-lane.v3-completed-viewport { display: block; overflow: hidden; }
+.v3-completed-grid { display: grid; grid-template-columns: repeat(auto-fill,var(--postit-width)); gap: calc(var(--v3-space-6) * var(--postit-scale)); padding-block: var(--v3-space-1); }
+.v3-completed-grid-item { width: var(--postit-width); }
+.v3-completed-viewport > div { scrollbar-width: none; }
+.v3-completed-viewport > div::-webkit-scrollbar { display: none; }
+.v3-postit-grid.v3-completed-collection { display: block; max-width: calc(var(--postit-width) * 3 + var(--v3-space-6) * var(--postit-scale) * 2 + var(--v3-space-2)); min-width: 0; width: 100%; }

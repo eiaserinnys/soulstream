@@ -9,6 +9,7 @@ export interface CardRow {
   assigneeAgentId: string | null; assigneeUserId: string | null; assigneeSessionId: string | null;
   nodeId: string | null; modelPreset: string | null; version: number; archived: boolean;
   createdAt: string; updatedAt: string;
+  completedAt?: string | null;
   latestActivity?: CardActivity | null;
 }
 export interface CardReport { id: string; title: string; format: "markdown" | "html"; body: string; createdAt: string; sessionId: string | null }

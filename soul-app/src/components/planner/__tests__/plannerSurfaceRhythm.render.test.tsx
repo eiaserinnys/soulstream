@@ -135,7 +135,8 @@ test.each([
     )).toMatchObject({ width: actionSize, height: actionSize });
 
     expect(screen.getByText('검증')).toBeTruthy();
-    expect(screen.getByText('카드 추가')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByLabelText('카드 추가').props.style))
+      .toMatchObject({ minHeight: actionSize, height: actionSize, width: actionSize });
     const cardRow = screen.getByTestId('card-row-card-1');
     expect(cardRow.findAll((node) => StyleSheet.flatten(node.props.style)?.minHeight === 112).length).toBeGreaterThan(0);
   },

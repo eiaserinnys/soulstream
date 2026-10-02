@@ -10,7 +10,7 @@ import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { reviewCard, reviewDetail } from "./components-review-fixtures";
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 let element:HTMLDivElement,root:Root;
-beforeEach(()=>{resetV3InvalidationForTest();useCardStore.getState().reset();element=document.createElement("div");document.body.append(element);root=createRoot(element);});
+beforeEach(()=>{vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});resetV3InvalidationForTest();useCardStore.getState().reset();element=document.createElement("div");document.body.append(element);root=createRoot(element);});
 afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllGlobals();});
 const row=(id:string)=>({...reviewCard,id,status:"todo" as const});
 const response=(cards:typeof reviewCard[])=>new Response(JSON.stringify({cards}),{status:200});
@@ -37,7 +37,7 @@ it("does not publish a pre-event initial list or an old folder response into the
  await act(async()=>resolve[1](response([{...row("wrong-scope"),folderId:"first"}])));
  await act(async()=>resolve[2](response([{...row("current"),folderId:"second"},{...row("done"),folderId:"second",status:"done"}])));
  expect(element.querySelector('[data-card-id="wrong-scope"]')).toBeNull();expect(element.querySelector('[data-card-id="current"]')).not.toBeNull();
- expect(element.querySelector('[data-card-id="done"]')).toBeNull();expect(element.textContent).toContain("완료 1개 숨김");
+ expect(element.querySelector('[data-card-id="done"]')).toBeNull();expect(element.querySelector('[data-board-column="done"]')).toBeNull();
 });
 it("removes folder move-outs and updates visible status without exposing cached cards outside the list",async()=>{
  let rows:CardRow[]=[row("moving")];vi.stubGlobal("fetch",vi.fn(async()=>response(rows)));
@@ -47,7 +47,7 @@ it("removes folder move-outs and updates visible status without exposing cached 
  expect(element.querySelector('[data-card-id="moving"]')).toBeNull();expect(element.querySelector('[data-card-id="incoming"][data-card-status="review"]')).not.toBeNull();
  expect(element.querySelector('[data-card-id="unlisted"]')).toBeNull();
  rows=[{...row("incoming"),status:"done",version:reviewCard.version+1}];await act(async()=>event());
- expect(element.querySelector('[data-card-id="incoming"]')).toBeNull();expect(element.textContent).toContain("완료 1개 숨김");
+ expect(element.querySelector('[data-card-id="incoming"]')).toBeNull();expect(element.querySelector('[data-board-column="done"]')).toBeNull();
 });
 
 it("keeps an open reason draft and expanded board through an SSE list refetch failure",async()=>{

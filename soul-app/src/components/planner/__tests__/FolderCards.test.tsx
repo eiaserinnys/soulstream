@@ -17,6 +17,6 @@ test('같은 카드 행과 상태를 보여주고 탭은 상세, 카드 추가�
   expect(screen.getByText('진행 카드')).toBeTruthy();
   fireEvent.press(screen.getByText('카드 제목'));
   expect(screen.getByText('상세 card-1')).toBeTruthy();
-  fireEvent.press(screen.getByText('카드 추가'));
+  fireEvent.press(screen.getByLabelText('카드 추가'));
   expect(screen.getByLabelText('맡길 일')).toBeTruthy();
 });

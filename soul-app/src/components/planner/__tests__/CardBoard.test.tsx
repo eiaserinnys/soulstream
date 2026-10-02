@@ -20,7 +20,7 @@ test('6열 순서와 개수를 유지하고 보관·취소는 보드에서 제�
   expect(screen.getAllByText('검수 대기')).toHaveLength(2);
   expect(screen.queryByTestId('postit-card-cancelled')).toBeNull();
   expect(screen.queryByTestId('postit-card-archived')).toBeNull();
-  expect(screen.getByTestId('card-board-count-done').props.children).toBe(1);
+  expect(screen.getByTestId('card-board-count-done').props.children).toBe('1개 표시');
 });
 
 test('폴더 행/보드의 같은 controlled 옵션은 완료만 숨기고 숨김 열 액션으로 켜진다', () => {

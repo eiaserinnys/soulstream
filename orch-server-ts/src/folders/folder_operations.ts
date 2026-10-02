@@ -72,9 +72,9 @@ export async function executeFolderOperation(
   return serializeCardMutation(result);
 }
 
-export async function readFolderSnapshot(service: CardControlPlaneService, folderId: string, cardId?: string, view?: string) {
+export async function readFolderSnapshot(service: CardControlPlaneService, folderId: string, cardId?: string, view?: string, includeCompleted = true) {
   z.enum(["full", "outline"]).parse(view ?? "full");
-  const snapshot = await service.getFolder(folderId);
+  const snapshot = await service.getFolder(folderId,includeCompleted);
   if (!snapshot) throw Object.assign(new Error("Folder not found"), { statusCode: 404 });
   return serializeFolderSnapshot(snapshot, cardId, view === "outline");
 }

@@ -256,7 +256,7 @@ test('태블릿 header와 phone content가 같은 중요·오늘 토글 정본�
   mockDeviceType = 'phone';
   const phoneScreen = render(<FolderWorkspace api={api} folderPageId="task-1" />);
   const scrollJson = findJsonByTestId(phoneScreen.toJSON(), 'task-workspace-scroll');
-  expect(scrollJson.children[0].children[0].props.testID).toBe('task-workspace-details-group');
+  expect(findJsonByTestId(scrollJson, 'task-workspace-details-group')).toBeTruthy();
   expect(phoneScreen.getByTestId('task-workspace-toggle-actions')).toBeTruthy();
   await waitFor(() => expect(
     phoneScreen.getByLabelText('오늘 데일리에서 제거').props.accessibilityState.disabled,
@@ -316,7 +316,7 @@ test('phone 기본 읽기는 native title만 소유하고 명시적 편집에서
 
   expect(screen.queryByTestId('task-workspace-title-heading')).toBeNull();
   const scrollJson = findJsonByTestId(screen.toJSON(), 'task-workspace-scroll');
-  expect(scrollJson.children[0].children[0].props.testID).toBe('task-workspace-details-group');
+  expect(findJsonByTestId(scrollJson, 'task-workspace-details-group')).toBeTruthy();
   expect(screen.getAllByTestId('task-workspace-context-empty')).toHaveLength(1);
   expect(StyleSheet.flatten(
     screen.getByTestId('task-workspace-scroll').props.contentContainerStyle,

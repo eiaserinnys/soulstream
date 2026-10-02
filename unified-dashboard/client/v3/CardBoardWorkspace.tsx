@@ -14,15 +14,14 @@ export function CardBoardWorkspace({title,actions,...boardProps}:ComponentProps<
   const root=useRef<HTMLDivElement>(null);
   const nestedLayers=useRef(0);
   const layer=useMemo(()=>({claim(){nestedLayers.current++;return ()=>{nestedLayers.current--;};}}),[]);
-  const snapshot=useRef<{focus:HTMLElement|null;horizontal:number;vertical:number[];completion?:boolean}|null>(null);
+  const snapshot=useRef<{focus:HTMLElement|null;horizontal:number;vertical:number[]}|null>(null);
   const expand=()=>{
     const board=root.current!.querySelector<HTMLElement>(".v3-card-board")!;
     snapshot.current={focus:document.activeElement as HTMLElement,horizontal:board.scrollLeft,
-      vertical:[...board.querySelectorAll<HTMLElement>(".v3-card-board-lane")].map(lane=>lane.scrollTop),completion:boardProps.completion?.includeCompleted};
+      vertical:[...board.querySelectorAll<HTMLElement>(".v3-card-board-lane")].map(lane=>lane.scrollTop)};
     setExpanded(true);
   };
   const collapse=()=>{
-    if(snapshot.current?.completion!==undefined)boardProps.completion?.onChange(snapshot.current.completion);
     setExpanded(false);
   };
   useLayoutEffect(()=>{
@@ -50,9 +49,10 @@ export function CardBoardWorkspace({title,actions,...boardProps}:ComponentProps<
         else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
       }
     }}>
-    <div className="v3-detail-section-head v3-folder-card-head"><h3>{title}</h3><span>{boardProps.cards.filter(card=>!card.archived&&card.status!=="cancelled"&&(boardProps.completion?.includeCompleted!==false||card.status!=="done")).length}개</span>
+    <div className="v3-detail-section-head v3-folder-card-head"><h3>{title}</h3><span>{boardProps.cards.filter(card=>!card.archived&&card.status!=="cancelled"&&(boardProps.completion?.includeCompleted!==false||card.status!=="done")).length}개 표시</span>
+      <span className="v3-spacer"/>
       {boardProps.completion?<CardCompletionFilter {...boardProps.completion} hiddenCount={boardProps.cards.filter(card=>!card.archived&&card.status==="done").length}/>:null}
-      <span className="v3-spacer"/><div className="v3-card-actions">{expanded?null:actions}
+      <div className="v3-card-actions">{expanded?null:actions}
         {expanded?<DashboardIconCap size="small" label="확대 닫기" onClick={collapse}><X className="h-4 w-4"/></DashboardIconCap>
           :<DashboardIconCap size="small" label="보드 확대" onClick={expand}><Maximize2 className="h-4 w-4"/></DashboardIconCap>}
       </div>

@@ -35,7 +35,7 @@ export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assig
     let current = true;
     setPending(true);
     setError(null);
-    void api.getPlannerFolder(pickedFolderId).then(async (detail) => {
+    void api.getPlannerFolder(pickedFolderId,{includeCompleted:false}).then(async (detail) => {
       const parent = folders.find((folder) => folder.id === detail.folder.parentFolderId);
       const inherited = parent?.projectPageId ? await api.getPage(parent.projectPageId) : null;
       const { assignment } = buildPlannerContextPresentation({ projectName: parent?.name ?? '폴더',

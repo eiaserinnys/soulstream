@@ -15,6 +15,6 @@ it("keeps six columns in order, excludes archived and cancelled, and hides only 
   expect([...full.matchAll(/data-board-column="([^"]+)"/g)].map(match => match[1])).toEqual(["todo","queued","running","blocked","review","done"]);
   expect(full).toContain("드래프트"); expect(full).toContain("검수 대기");
   expect(full).not.toContain('data-sample="cancelled"'); expect(full).not.toContain('data-sample="archived"');
-  expect(render(false)).toContain("완료 1개 숨김"); expect(render(false)).not.toContain('data-sample="done"');
+  expect(render(false)).not.toContain('data-board-column="done"'); expect(render(false)).not.toContain('data-sample="done"');
   expect(render(true)).toContain('data-sample="done"'); expect(full).toContain('data-sample="done"');
 });

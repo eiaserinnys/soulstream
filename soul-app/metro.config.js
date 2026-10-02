@@ -1,6 +1,7 @@
 const { getDefaultConfig } = require("expo/metro-config");
 
 const config = getDefaultConfig(__dirname);
+config.watchFolders = [...(config.watchFolders ?? []), require('node:path').resolve(__dirname, '../packages/soul-ui/src/cards')];
 
 // react-native-webrtc@124.0.7 still imports event-target-shim/index even though
 // event-target-shim@6 only exports its package root. Resolve that one legacy

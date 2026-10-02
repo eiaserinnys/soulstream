@@ -83,10 +83,6 @@ export function MainListPane({
             <Ionicons name="menu" color={t.colors.textPrimary} size={t.iconSize.navigation} />
           </LiquidGlassButton>
         ) : null}
-        {view === 'board' && !showSearch ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
-          accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
-          <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
-        </LiquidGlassButton> : null}
         <View testID="tablet-main-title" style={styles.title}>
           {showSearch ? (
             <SessionSearchField
@@ -106,8 +102,12 @@ export function MainListPane({
             />
           )}
         </View>
-        {view === 'board' && !showSearch ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs }}>
+        {view === 'board' && !showSearch ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
           <CompletedCardsToggle {...cardDisplay} />
+          <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+          accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
+          <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+        </LiquidGlassButton>
           {activeSection.kind === 'daily' ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
             accessibilityLabel="기존 데일리 기록" onPress={() => setView('existing')}>
             <Ionicons name="today-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />

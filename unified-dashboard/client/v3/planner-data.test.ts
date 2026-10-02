@@ -55,7 +55,7 @@ describe("unified folder planner API", () => {
       sessions: { items: [{ agentSessionId: "session-a" }], nextCursor: "session-next" },
     });
     expect(result).not.toHaveProperty("documents");
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/folders/folder-a");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/folders/folder-a?includeCompleted=false");
   });
 
   it("uses one cursor route per folder collection", async () => {
@@ -80,6 +80,8 @@ describe("unified folder planner API", () => {
       const result = await loadPlannerFolderById(api, "folder-a");
       expect(result).toMatchObject({ folderId: "folder-a", page: { id: "folder-a-page" } });
       expect(fetcher).toHaveBeenCalledWith("/api/planner/folders/folder-a", expect.any(Object));
+      await loadPlannerFolderById(api,"folder-a",{includeCompleted:false});
+      expect(fetcher).toHaveBeenLastCalledWith("/api/planner/folders/folder-a?includeCompleted=false",expect.any(Object));
     } finally {
       vi.unstubAllGlobals();
     }

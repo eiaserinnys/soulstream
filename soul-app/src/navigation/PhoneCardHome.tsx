@@ -16,12 +16,13 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
   const cardDisplay = useCardDisplay();
   useLayoutEffect(() => { navigation.setOptions({
-    headerTitleAlign: 'center',
-    headerLeft: () => <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
-      <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
-    </LiquidGlassButton>,
-    headerRight: () => <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs }}>
+    headerTitleAlign: 'left',
+    headerLeft: () => null,
+    headerRight: () => <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
       <CompletedCardsToggle {...cardDisplay} />
+      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
+      <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+    </LiquidGlassButton>
       <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="기존 데일리 기록" onPress={() => navigation.navigate('DailyHistory')}>
         <Ionicons name="today-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
       </LiquidGlassButton>
