@@ -1,4 +1,5 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('../../api/client', () => ({ createApiClient: () => mockApi }));
 import React from 'react';

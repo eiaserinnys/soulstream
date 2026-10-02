@@ -129,7 +129,11 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
             onScroll={(event) => { position.current.lanes[status] = event.nativeEvent.contentOffset.y; savePosition(); }}
             contentContainerStyle={{ gap: t.cardLayout.gap, paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs, paddingBottom: t.cardLayout.padding }}>
             {items.length ? items.map((card) => <BoardDragCard key={card.id} api={api} card={card}
-              dragging={drag?.card.id === card.id} onOpen={(target) => { if (pan.canPress()) onOpen(card.id, target); }} onMenu={() => { if (pan.canPress()) setMenu({ card }); }}
+              dragging={drag?.card.id === card.id} onOpen={(target) => {
+                if (!pan.canPress()) return;
+                if (target === undefined) onOpen(card.id);
+                else onOpen(card.id, target);
+              }} onMenu={() => { if (pan.canPress()) setMenu({ card }); }}
               onStart={(event) => start(card, event)} onMove={(event) => { if (dragRef.current) { const value = { ...dragRef.current, event }; dragRef.current = value; setDrag(value); } }}
               onDrop={(event) => drop(card, event)} onFinish={finish} />)
               : <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>}
