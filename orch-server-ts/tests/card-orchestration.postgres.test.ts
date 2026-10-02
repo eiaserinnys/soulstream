@@ -1,11 +1,17 @@
 import { readFile } from "node:fs/promises";
-import { beforeAll, afterAll, beforeEach, describe, it, expect } from "vitest";
+import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   createPagePostgresHarness,
   type PagePostgresHarness,
 } from "./page/page_postgres_harness.js";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardOrchestrationRepository,type OrchestrationRun } from "../src/cards/card_orchestration_repository.js";
+import { CardOrchestrationCoordinator } from "../src/cards/card_orchestration_coordinator.js";
+import {
+  readCardOrchestrationSettings,
+  updateCardOrchestrationSettings,
+} from "../src/cards/card_orchestration_settings.js";
+import type { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import {hasContinuousLimitWindow} from "../src/schedule/resume_after_limit_continuity.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { appendCardEventTx, prepareCardWorkSchema, recordWorkReceipt, consumeCardDelivery } from "./card-work-postgres-fixture.js";
@@ -13,7 +19,8 @@ import { appendCardEventTx, prepareCardWorkSchema, recordWorkReceipt, consumeCar
 describe("durable card orchestration admissions", () => {
   let h: PagePostgresHarness,
     repo: CardOrchestrationRepository,
-    cards: CardControlPlaneService;
+    cards: CardControlPlaneService,
+    settingsSql: ReturnType<typeof createBoardYjsSqlAdapter>;
   const target = {
     agentId: "ariella-orchestrator",
     nodeId: "eiaserinnys",
@@ -28,7 +35,7 @@ describe("durable card orchestration admissions", () => {
   beforeAll(async () => {
     h = await createPagePostgresHarness();
     await prepareCardWorkSchema(h);
-    await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
+    await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version BIGINT NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql`INSERT INTO system_settings VALUES('card_dispatch','{"nodeConcurrency":{"default":1}}',1,NOW(),'migration')`;
     await h.sql.unsafe(
       await readFile(
@@ -42,6 +49,7 @@ describe("durable card orchestration admissions", () => {
     await h.sql`INSERT INTO folders(id,name) VALUES('orchestration-folder','실험')`;
     await h.sql`CREATE TABLE soulstream_schedules(schedule_id TEXT PRIMARY KEY,session_id TEXT,source_tool TEXT,tool_use_id TEXT,status TEXT)`;
     const sql = createBoardYjsSqlAdapter(h.liveSql);
+    settingsSql = sql;
     repo = new CardOrchestrationRepository(async () => sql);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
   }, 60000);
@@ -110,6 +118,69 @@ describe("durable card orchestration admissions", () => {
       },
     };
   }
+  function coordinator() {
+    const launchDecision = vi.fn(async () => undefined);
+    const ensureFolder = vi.fn(async () => "orchestration-folder");
+    const warn = vi.fn();
+    return {
+      launchDecision,
+      ensureFolder,
+      warn,
+      value: new CardOrchestrationCoordinator({
+        repository: repo,
+        cards: async () => cards,
+        dispatch: {} as CardDispatchRepository,
+        settings: async () => readCardOrchestrationSettings(settingsSql),
+        resolveTarget: () => ({ ...target, available: true, reason: null }),
+        selectOrchestrator: async () => ({
+          candidate: target,
+          reason: null,
+        }),
+        ensureFolder,
+        launchDecision,
+        launchWorker: async () => undefined,
+        sendMessage: async () => undefined,
+        warn,
+      }),
+    };
+  }
+  it("normalizes real PostgreSQL BIGINT versions and launches the same policy version", async () => {
+    const rawBefore = await h.sql`SELECT version FROM system_settings WHERE setting_key='card_orchestration'`;
+    expect(rawBefore[0]?.version).toBe("1");
+    expect((await readCardOrchestrationSettings(settingsSql)).version).toBe(1);
+
+    const saved = await updateCardOrchestrationSettings(settingsSql, {
+      policy: { enabled: true, candidates: [target], usageMaxAgeMs: 300000, sessionFolderId: null, systemFolderParentId: null },
+      expectedVersion: 1,
+      updatedBy: "admin@example.com",
+    });
+    expect(saved.version).toBe(2);
+    expect((await h.sql`SELECT version FROM system_settings WHERE setting_key='card_orchestration'`)[0]?.version).toBe("2");
+
+    const run = (await repo.claim({ inputHash: "same-policy", policyVersion: saved.version, snapshot: [], target }))!;
+    await h.sql`UPDATE card_orchestration_runs SET lease_expires_at=NOW()-INTERVAL '1 second' WHERE id=${run.id}`;
+    const c = coordinator();
+    await c.value.kick();
+    expect(c.launchDecision).toHaveBeenCalledTimes(1);
+    expect(c.ensureFolder).toHaveBeenCalledTimes(1);
+    expect(c.warn).not.toHaveBeenCalled();
+    expect((await h.sql`SELECT state,reason FROM card_orchestration_runs WHERE id=${run.id}`)[0]).toEqual({ state: "judging", reason: null });
+  });
+  it("keeps cancelling a run whose policy version is genuinely stale", async () => {
+    const run = (await repo.claim({ inputHash: "stale-policy", policyVersion: 1, snapshot: [], target }))!;
+    await updateCardOrchestrationSettings(settingsSql, {
+      policy: { enabled: true, candidates: [target], usageMaxAgeMs: 300000, sessionFolderId: null, systemFolderParentId: null },
+      expectedVersion: 1,
+      updatedBy: "admin@example.com",
+    });
+    await h.sql`UPDATE card_orchestration_runs SET lease_expires_at=NOW()-INTERVAL '1 second' WHERE id=${run.id}`;
+    const c = coordinator();
+    await c.value.kick();
+    expect(c.launchDecision).not.toHaveBeenCalled();
+    expect(c.ensureFolder).not.toHaveBeenCalled();
+    expect(c.warn).not.toHaveBeenCalled();
+    expect((await h.sql`SELECT state,reason FROM card_orchestration_runs WHERE id=${run.id}`)[0]).toEqual({ state: "cancelled", reason: "policy_changed" });
+  });
   it("admits an explicitly queued card despite an unanswered question",async()=>{
     const id=await make();
     await h.sql`INSERT INTO card_questions(id,card_id,text) VALUES('unanswered',${id},'판단')`;

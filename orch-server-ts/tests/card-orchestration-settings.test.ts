@@ -5,7 +5,10 @@ import {
   parseOrchestrationDecision,
 } from "../../packages/wire-schema/src/card_orchestration.js";
 import { registerCardOrchestrationRoutes } from "../src/cards/card_orchestration_routes.js";
-import { updateCardOrchestrationSettings } from "../src/cards/card_orchestration_settings.js";
+import {
+  readCardOrchestrationSettings,
+  updateCardOrchestrationSettings,
+} from "../src/cards/card_orchestration_settings.js";
 const policy = {
   enabled: true,
   candidates: [
@@ -203,6 +206,28 @@ describe("card orchestration policy boundary", () => {
         updatedBy: "admin",
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+  it("rejects invalid or unsafe stored versions", async () => {
+    for (const version of [
+      "0",
+      "3.0",
+      "9007199254740992",
+      9_007_199_254_740_992,
+      null,
+    ]) {
+      const sql: any = vi.fn(async () => [
+        {
+          value: policy,
+          version,
+          updated_at: new Date(),
+          updated_by: "admin",
+        },
+      ]);
+      await expect(readCardOrchestrationSettings(sql)).rejects.toMatchObject({
+        statusCode: 503,
+        code: "CARD_ORCHESTRATION_UNAVAILABLE",
+      });
+    }
   });
 });
 it("never resolves callers without shared service authentication and returns optional status", async () => {

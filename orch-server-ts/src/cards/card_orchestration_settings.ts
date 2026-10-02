@@ -6,7 +6,7 @@ import type { SqlClient } from "./control_plane/card_types.js";
 export type { OrchestrationSettings };
 type Row = {
   value: unknown;
-  version: number;
+  version: unknown;
   updated_at: Date;
   updated_by: string;
 };
@@ -73,7 +73,7 @@ function parseRow(row: Row): OrchestrationSettings {
     return {
       key: "card_orchestration",
       policy: parseOrchestrationPolicy(row.value),
-      version: row.version,
+      version: parseCardOrchestrationVersion(row.version),
       updatedAt: new Date(row.updated_at).toISOString(),
       updatedBy: row.updated_by,
     };
@@ -84,4 +84,18 @@ function parseRow(row: Row): OrchestrationSettings {
       "Stored card_orchestration policy is invalid",
     );
   }
+}
+
+export function parseCardOrchestrationVersion(value: unknown): number {
+  const version =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^[1-9]\d*$/.test(value)
+        ? Number(value)
+        : Number.NaN;
+  if (!Number.isSafeInteger(version) || version < 1)
+    throw new TypeError(
+      "card_orchestration version must be a positive safe integer",
+    );
+  return version;
 }

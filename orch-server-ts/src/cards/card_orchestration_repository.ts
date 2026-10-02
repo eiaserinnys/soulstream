@@ -6,6 +6,7 @@ import type {
   OrchestrationDecision,
 } from "@soulstream/wire-schema/card-orchestration";
 import type { SqlClient, RepositorySql } from "./control_plane/card_types.js";
+import { parseCardOrchestrationVersion } from "./card_orchestration_settings.js";
 export type OrchestrationRun = {
   id: string;
   policy_version: number;
@@ -325,10 +326,11 @@ export async function assertPolicyAdmission(
 ) {
   const policy = (
     await sql<
-      { version: number; enabled: boolean }[]
+      { version: unknown; enabled: boolean }[]
     >`SELECT version,(value->>'enabled')::boolean AS enabled FROM system_settings WHERE setting_key='card_orchestration' FOR SHARE`
   )[0];
   if (!policy?.enabled) throw new Error("Orchestration policy is disabled");
+  const policyVersion = parseCardOrchestrationVersion(policy.version);
   const run = (
     await sql<
       OrchestrationRun[]
@@ -336,7 +338,7 @@ export async function assertPolicyAdmission(
   )[0];
   if (
     !run ||
-    run.policy_version !== policy.version ||
+    run.policy_version !== policyVersion ||
     !run.decision?.decisions.some(
       (d) =>
         d.cardId === input.cardId &&
