@@ -1,6 +1,9 @@
 import type { z } from "zod";
 import { cardTools } from "./card_tools.js";
 import { folderObjectTools } from "./folder_tools.js";
+import { pageTools } from "./page_tools.js";
+import { liveCardTools } from "./live_card_view_tools.js";
+import { skillTools } from "./skills_tools.js";
 
 /** Mirrors the MCP SDK tool annotations without importing the SDK. */
 export interface McpToolAnnotations {
@@ -16,7 +19,7 @@ export interface McpToolConfig {
   title?: string;
   description?: string;
   inputSchema: z.ZodRawShape;
-  outputSchema?: z.ZodRawShape;
+  outputSchema?: z.ZodRawShape | z.ZodObject;
   annotations?: McpToolAnnotations;
   _meta?: Record<string, unknown>;
 }
@@ -26,11 +29,18 @@ export interface McpToolDefinition {
   config: McpToolConfig;
   /** "internal" tools need a caller session and are never listed to external callers. */
   audience: "all" | "internal";
+  /** Input schema shown to and enforced for external callers when it differs from `config.inputSchema`. */
+  externalInputSchema?: z.ZodRawShape;
+  /** Forward timeout for the worker-to-orchestrator call when the default is too short. */
+  timeoutMs?: number;
 }
 
 export const mcpTools = {
   ...folderObjectTools,
   ...cardTools,
+  ...pageTools,
+  ...liveCardTools,
+  ...skillTools,
 } as const satisfies Record<string, McpToolDefinition>;
 
 export const mcpToolDefinitions = Object.values(mcpTools);

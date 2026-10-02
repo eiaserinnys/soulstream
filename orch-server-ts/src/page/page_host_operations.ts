@@ -180,36 +180,35 @@ export async function handlePageYjsHostOperation(
   if (!authorization.ok) {
     return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `Page Yjs host bearer token is ${authorization.reason}`);
   }
-  const parsed = schema.safeParse(request.body ?? {});
-  if (!parsed.success) {
-    return errorReply(reply, 422, "INVALID_PAGE_YJS_HOST_REQUEST", parsed.error.message);
-  }
+  const response = await executePageHostOperation(operation, request.body ?? {}, options.service, request.log);
+  return reply.status(response.status).send(response.body);
+}
+
+/** Shared body for the existing host route and orchestrator MCP execution. */
+export async function executePageHostOperation(
+  operation: string,
+  raw: unknown,
+  service: PageYjsService,
+  logger: Pick<FastifyRequest["log"], "error">,
+): Promise<{ status: number; body: unknown }> {
+  const failure = (status: number, code: string, message: string) =>
+    ({ status, body: { detail: { error: { code, message } } } });
+  const schema = schemas[operation as keyof typeof schemas];
+  if (!schema) return failure(404, "PAGE_YJS_HOST_OPERATION_NOT_FOUND", `Unknown Page Yjs host operation: ${operation}`);
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) return failure(422, "INVALID_PAGE_YJS_HOST_REQUEST", parsed.error.message);
   if (ACTOR_OPERATIONS.has(operation)) {
     const actorResult = actorSchema.safeParse(parsed.data);
-    if (!actorResult.success) {
-      return errorReply(reply, 422, "INVALID_PAGE_YJS_HOST_REQUEST", actorResult.error.message);
-    }
+    if (!actorResult.success) return failure(422, "INVALID_PAGE_YJS_HOST_REQUEST", actorResult.error.message);
   }
-
   try {
-    return reply.send(await dispatch(operation, parsed.data, options.service));
+    return { status: 200, body: await dispatch(operation, parsed.data, service) };
   } catch (error) {
-    if (error instanceof PageYjsPageNotFoundError) {
-      return errorReply(reply, 404, error.code, error.message);
-    }
-    if (error instanceof PageMutationVersionConflictError) {
-      return errorReply(reply, 409, error.code, error.message);
-    }
-    if (error instanceof PageMutationValidationError) {
-      return errorReply(reply, 422, error.code, error.message);
-    }
-    request.log.error({ err: error, operation }, "Page Yjs host operation failed");
-    return errorReply(
-      reply,
-      500,
-      "PAGE_YJS_HOST_OPERATION_FAILED",
-      error instanceof Error ? error.message : "Page Yjs host operation failed",
-    );
+    if (error instanceof PageYjsPageNotFoundError) return failure(404, error.code, error.message);
+    if (error instanceof PageMutationVersionConflictError) return failure(409, error.code, error.message);
+    if (error instanceof PageMutationValidationError) return failure(422, error.code, error.message);
+    logger.error({ err: error, operation }, "Page Yjs host operation failed");
+    return failure(500, "PAGE_YJS_HOST_OPERATION_FAILED", error instanceof Error ? error.message : "Page Yjs host operation failed");
   }
 }
 
