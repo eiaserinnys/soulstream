@@ -1,5 +1,7 @@
-import { TaskOwnedByAnotherNodeError } from "../../src/task/task_hydration_errors.js";
 import { createHash } from "node:crypto";
+import { TaskOwnedByAnotherNodeError } from "../../src/task/task_hydration_errors.js";
+import { FolderHostClient } from "../../src/folder/folder_host_client.js";
+import { registerFolderControlPlaneHostRoute } from "../../../orch-server-ts/src/folders/folder_control_plane_host_route.js";
 import Fastify from "fastify";
 import { vi } from "vitest";
 import { registerPersistenceHostRoutes } from "../../../orch-server-ts/src/control_plane/persistence_host_routes.js";
@@ -7,7 +9,7 @@ import type { PersistenceHostRepositories } from "../../../orch-server-ts/src/co
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { registerCogitoRoutes } from "../../../orch-server-ts/src/cogito/cogito_routes.js";
 import { SessionDataHostClient } from "../../src/control_plane/session_data_host_client.js";
-import { SessionDeliveryHostClient } from "../../src/control_plane/persistence_host_clients.js";
+import { SessionMutationHostClient, SessionDeliveryHostClient } from "../../src/control_plane/persistence_host_clients.js";
 import { ChildCompletionConsumptionRecorder } from "../../src/task/child_completion_consumption.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import type { McpHostOptions } from "../../../orch-server-ts/src/mcp/types.js";
@@ -80,9 +82,9 @@ export async function createSessionRoundtripFixture() {
       if (revisionMismatch) return { status: "revision_mismatch", childSessionId: batch[0].childSessionId };
       observations.push(...batch); return { status: "recorded" }; } },
   } as unknown as PersistenceHostRepositories;
-  const folderService = { getAllFolders: async () => [{ id: "folder", name: "폴더" }] };
+  const folderService = { getAllFolders: async () => { fail("get_all"); return [{ id: "folder", name: "폴더" }]; } };
   // Legacy list_sessions resolves the folder through its existing host route.
-  app.post("/api/folders/host/get_all_folders", async () => folderService.getAllFolders());
+  registerFolderControlPlaneHostRoute(app, { authBearerToken: "token", serviceProvider: async () => folderService } as any);
   registerPersistenceHostRoutes(app, { authBearerToken: "token", repositoryProvider: async () => repositories });
   const cogito = { provider: { listConnectedNodes: () => [] }, briefCollector: { reflectBrief: async () => ({}) },
     searchProvider: { search: async (params: any) => {
@@ -108,19 +110,16 @@ export async function createSessionRoundtripFixture() {
   const orch = { baseUrl, headers: { authorization: "Bearer token" } };
   const logger = { info: vi.fn(), warn: vi.fn() } as never;
   const db = new SessionDataHostClient({ orch, logger });
+  const folders = new FolderHostClient({ orch, logger });
+  const mutations = new SessionMutationHostClient({ orch, logger });
   const runtime = { nodeId: "local", orch, logger, db: { ...Object.fromEntries([
     "getSession", "listSessionsSummary", "readEvents", "countEvents", "readOneEvent", "getSessionStory", "getSessionSearchMetadata",
     "countTurnSummaries", "loadTurnSummaryRange", "searchSessionHistory", "getTurnExcerpt",
-  ].map(name => [name, (db as any)[name].bind(db)])), getAllFolders: async () => {
-    const response = await fetch(`${baseUrl}/api/folders/host/get_all_folders`, { method: "POST" }); return response.json();
-  }, getBoardItemIdsForSession: async () => ["board-item"] },
+  ].map(name => [name, (db as any)[name].bind(db)])), getAllFolders: () => folders.getAllFolders(), getBoardItemIdsForSession: async () => ["board-item"] },
     childCompletionConsumption: new ChildCompletionConsumptionRecorder(new SessionDeliveryHostClient({ orch, logger })),
     catalogService: { renameSession: async (id: string, displayName: string | null) => {
-      // Same deterministic key as CatalogService.renameSession; the actual host client is used.
-      const key = `rename_session:${id}:${createHash("sha256").update(JSON.stringify({ displayName })).digest("hex")}`;
-      const response = await fetch(`${baseUrl}/api/session-data/host/rename_session`, { method: "POST", headers: { ...orch.headers, "content-type": "application/json" },
-        body: JSON.stringify({ args: [{ session_id: id, display_name: displayName, idempotency_key: key }] }) });
-      if (!response.ok) throw new Error("rename failed"); notifications.push({ renamed: id });
+      await mutations.renameSession(id, displayName, `rename_session:${id}:${renameIntentHash(displayName)}`);
+      notifications.push({ renamed: id });
     }, broadcastSessionDeletion: async (id: string) => { notifications.push({ deleted: id }); } },
     taskManager: { deleteTask: async (id: string) => {
       if (sessions[id]?.node_id !== "local") throw new TaskOwnedByAnotherNodeError(id, sessions[id]?.node_id, "local");
@@ -138,3 +137,5 @@ export async function createSessionRoundtripFixture() {
   return { app, runtime, options, reset, paths, notifications, renameKeys,
     observations: () => observations, sessions: () => sessions };
 }
+
+function renameIntentHash(displayName: string | null) { return createHash("sha256").update(JSON.stringify({ displayName })).digest("hex"); }

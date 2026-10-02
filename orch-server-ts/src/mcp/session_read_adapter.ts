@@ -1,6 +1,10 @@
+import { executeFolderHostOperation, type FolderControlPlaneHostRouteOptions } from "../folders/folder_control_plane_host_route.js";
+import { describeFolderOperationError } from "../folders/folder_workspace_routes.js";
 import type { searchSessionEvents } from "@soulstream/search-contract";
 import type { SessionStoryView } from "@soulstream/mcp-contract";
 import type { PersistenceHostRepositories } from "../control_plane/persistence_host_runtime.js";
+
+type SessionHistorySearchResult = Awaited<ReturnType<Parameters<typeof searchSessionEvents>[0]["searchSessionHistory"]>>;
 
 export interface McpSessionRow {
   session_id: string;
@@ -50,8 +54,18 @@ export function sessionReadAdapter(repositories: PersistenceHostRepositories) {
     getSessionSearchMetadata: async (ids: string[]) => new Map(await read("story_search_metadata", () => storyReads.getSessionSearchMetadata(ids))),
     countTurnSummaries: (id: string) => read("turn_summary_count", () => storyReads.countTurnSummaries(id)),
     loadTurnSummaryRange: (...args: Parameters<typeof storyReads.loadTurnSummaryRange>) => read("turn_summary_range", () => storyReads.loadTurnSummaryRange(...args)),
-    searchSessionHistory: (...args: Parameters<typeof historySearch.search>) => read("history_search", async () => await historySearch.search(...args) as unknown as Awaited<ReturnType<Parameters<typeof searchSessionEvents>[0]["searchSessionHistory"]>>),
+    searchSessionHistory: (...args: Parameters<typeof historySearch.search>): Promise<SessionHistorySearchResult> => read("history_search", async () => await historySearch.search(...args) as unknown as SessionHistorySearchResult),
     getTurnExcerpt: (id: string, max: number) => read("turn_excerpt", () => sessionReadComposites.getTurnExcerpt(id, max)),
   };
 }
 export type McpSessionReadAdapter = ReturnType<typeof sessionReadAdapter>;
+
+/** The list-by-folder-name path retains the legacy folder host error envelope. */
+export async function readSessionFolders(options: FolderControlPlaneHostRouteOptions) {
+  try {
+    return sessionHostValue<{ id: string; name: string }[]>(await executeFolderHostOperation(options, "get_all", {}));
+  } catch (error) {
+    const failure = describeFolderOperationError(error);
+    throw new Error(`folder host get_all failed: ${failure.message}`);
+  }
+}

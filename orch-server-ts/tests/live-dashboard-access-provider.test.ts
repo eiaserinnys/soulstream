@@ -1,3 +1,4 @@
+import { SERVICE_CALLER } from "../src/auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
@@ -63,6 +64,13 @@ describe("live dashboard DB access provider", () => {
       })),
     ).resolves.toEqual({ restricted: true, allowedFolderIds: ["folder-a"] });
     expect(repository.findUserByEmail).toHaveBeenCalledWith("restricted@example.com");
+  });
+
+  it("gives an authenticated transport caller the same identity as a service bearer without email", async () => {
+    const { provider, repository } = createProviderHarness();
+    const legacy = await provider.resolveAccess(requestWith({ authorization: "Bearer service-token" }));
+    await expect(provider.resolveAccess(SERVICE_CALLER)).resolves.toEqual(legacy);
+    expect(repository.findUserByEmail).not.toHaveBeenCalled();
   });
 
   it("lets dashboard cookies win over service token access_email overrides", async () => {

@@ -200,7 +200,7 @@ export function registerSessionMgmtTools(
 }
 
 export function registerSessionNameToolsLegacy(server: McpServer, runtime: McpRuntime): void {
-server.registerTool(
+  server.registerTool(
     "get_session_name",
     sessionTools.get_session_name.config,
     async ({ session_id }) => {
@@ -214,7 +214,7 @@ server.registerTool(
       });
     },
   );
-server.registerTool(
+  server.registerTool(
     "set_session_name",
     sessionTools.set_session_name.config,
     async ({ session_id, name }) => {

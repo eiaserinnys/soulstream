@@ -77,8 +77,6 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
-
-
 export interface DeterministicDeliveryIdentity {
   deliveryId: string;
   completionId: string;

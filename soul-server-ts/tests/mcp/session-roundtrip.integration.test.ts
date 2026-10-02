@@ -87,6 +87,15 @@ describe("session legacy and orchestrator MCP parity", () => {
     expect(h.sessions().child).toBeUndefined(); expect(h.notifications).toEqual([{ deleted: "child" }]);
     expect(h.paths).toContain("/api/mcp/host/delete_session");
   });
+  it("returns a structured error when remote deletion cannot reach the orchestrator", async () => {
+    h.reset(); const orch = h.runtime.orch;
+    h.runtime.orch = { ...orch!, baseUrl: "http://127.0.0.1:1" };
+    try {
+      const result = await call(false, "delete_session", { session_id: "child" });
+      expect(result.isError).toBe(true); expect(result.structuredContent).toEqual({ error: "fetch failed" });
+      expect(h.sessions().child).toBeDefined(); expect(h.notifications).toEqual([]);
+    } finally { h.runtime.orch = orch; }
+  });
   it("refuses remote running deletion without stopping a runner", async () => {
     h.reset({ status: "running" }); const result = await call(false, "delete_session", { session_id: "child" });
     expect(result.isError).toBe(true);
@@ -98,6 +107,13 @@ describe("session legacy and orchestrator MCP parity", () => {
   it.each(["turn_summaries", "empty"])("preserves story fallback %s", async story => {
     await compare("get_session_story", { session_id: "child", include_highlight: true }, parent, { story });
     await compare("get_session_highlight", { session_id: "child" }, parent, { story });
+  });
+  it.each([
+    ["get_all", "list_sessions", { folder_name: "폴더" }],
+    ["rename_session", "set_session_name", { session_id: "child", name: "새 이름" }],
+    ["cogito", "search_sessions", { query: "needle" }],
+  ] as const)("preserves %s boundary failure", async (failure, name, args) => {
+    const result = await compare(name, args, parent, { failure }); expect(result.isError).toBe(true);
   });
   it("preserves partial session search", async () => { await compare("search_sessions", { query: "needle" }, parent, { partial: true }); });
   it.each([external, {}])("preserves query and mutation for identity %j", async context => {

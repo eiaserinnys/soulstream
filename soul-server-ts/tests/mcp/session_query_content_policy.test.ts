@@ -1,6 +1,10 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { startSessionTestHost } from "./session-test-host.js";
+const openHosts: Awaited<ReturnType<typeof startSessionTestHost>>[] = [];
+afterEach(async () => { while (openHosts.length) await openHosts.pop()?.close(); });
 
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { registerSessionQueryTools } from "../../src/mcp/tools/session_query.js";
@@ -35,6 +39,7 @@ describe("list_session_events tool content policy", () => {
         countEvents: async () => 1,
       },
     } as unknown as McpRuntime;
+    openHosts.push(await startSessionTestHost(runtime));
     registerSessionQueryTools(server, runtime);
 
     const result = await registered.get("list_session_events")!.handler({

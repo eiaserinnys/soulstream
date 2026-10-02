@@ -325,7 +325,10 @@ export function registerCatalogTools(
         );
         return jsonResult({ ok: true, session_id });
       } catch (err) {
-        if (err instanceof TaskOwnedByAnotherNodeError) return forwardOrchestratorTool(runtime, sessionTools.delete_session, { session_id });
+        if (err instanceof TaskOwnedByAnotherNodeError) {
+          try { return await forwardOrchestratorTool(runtime, sessionTools.delete_session, { session_id }); }
+          catch (forwardError) { return errorResult(forwardError instanceof Error ? forwardError.message : String(forwardError)); }
+        }
         return errorResult(err instanceof Error ? err.message : String(err));
       }
     },
@@ -334,7 +337,7 @@ export function registerCatalogTools(
 
 /** Previous local-only callback retained for roundtrip comparison until stage 6. */
 export function registerDeleteSessionToolLegacy(server: McpServer, runtime: McpRuntime): void {
-server.registerTool(
+  server.registerTool(
     "delete_session",
     sessionTools.delete_session.config,
     async ({ session_id }) => {

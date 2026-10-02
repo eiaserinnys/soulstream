@@ -3,7 +3,7 @@ import { sessionTools, errorResult, jsonResult, serializeSessionStoryView, seria
 import { searchSessionEvents } from "@soulstream/search-contract";
 import { applyToolContentPolicy } from "./session_content_policy.js";
 import { SessionConsumptionBoundary } from "./session_consumption_boundary.js";
-import { sessionReadAdapter, type McpSessionReadAdapter, type McpSessionRow } from "./session_read_adapter.js";
+import { readSessionFolders, sessionReadAdapter, type McpSessionReadAdapter, type McpSessionRow } from "./session_read_adapter.js";
 import type { McpCallContext, McpToolHandler } from "./types.js";
 type SessionArgs<N extends keyof typeof sessionTools> = z.infer<z.ZodObject<typeof sessionTools[N]["config"]["inputSchema"]>>;
 const TOOL_TRUNCATE_DEFAULT = 500;
@@ -13,7 +13,7 @@ export const sessionQueryHandlers = {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
-      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: async () => (await options.folders.serviceProvider()).getAllFolders() } };
+      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: () => readSessionFolders(options.folders) } };
       const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
       const handler = async ({ cursor, limit, search, folder_id, folder_name, node_id, node_name }: SessionArgs<"list_sessions">) => {
       const c = cursor ?? 0;
@@ -63,7 +63,7 @@ export const sessionQueryHandlers = {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
-      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: async () => (await options.folders.serviceProvider()).getAllFolders() } };
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
       const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
       const handler = async ({ session_id, cursor, limit, tool_truncate_chars, event_types, tool_content }: SessionArgs<"list_session_events">) => {
       const session = await runtime.db.getSession(session_id);
@@ -125,7 +125,7 @@ export const sessionQueryHandlers = {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
-      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: async () => (await options.folders.serviceProvider()).getAllFolders() } };
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
       const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
       const handler = async ({ session_id, event_id }: SessionArgs<"get_session_event">) => {
       const session = await runtime.db.getSession(session_id);
@@ -154,7 +154,7 @@ export const sessionQueryHandlers = {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
-      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: async () => (await options.folders.serviceProvider()).getAllFolders() } };
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
       const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
       const handler = async ({ session_id, include_highlight }: SessionArgs<"get_session_story">) => {
       const session = await runtime.db.getSession(session_id);
@@ -188,7 +188,7 @@ export const sessionQueryHandlers = {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
-      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: async () => (await options.folders.serviceProvider()).getAllFolders() } };
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
       const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
       const handler = async ({ session_id }: SessionArgs<"get_session_highlight">) => {
       const session = await runtime.db.getSession(session_id);
@@ -225,7 +225,7 @@ export const sessionQueryHandlers = {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
-      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: async () => (await options.folders.serviceProvider()).getAllFolders() } };
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
       const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
       const handler = async ({
       query,
@@ -302,7 +302,7 @@ export const sessionQueryHandlers = {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
-      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: async () => (await options.folders.serviceProvider()).getAllFolders() } };
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
       const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
       const handler = async ({ session_id, max_response_chars }: SessionArgs<"get_session_summary">) => {
       const session = await runtime.db.getSession(session_id);
@@ -340,7 +340,7 @@ export const sessionQueryHandlers = {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
-      const runtime = { db: { ...sessionReadAdapter(repositories), getAllFolders: async () => (await options.folders.serviceProvider()).getAllFolders() } };
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
       const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
       const handler = async ({
       session_id,

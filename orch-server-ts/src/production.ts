@@ -853,7 +853,10 @@ export function buildProductionRouteOptions(
           broadcastRename: sessionId => broadcastTargetedSessionCatalogDelta(
             {
               listFolders: () => providers.folderRoutes.provider.listFolders(),
-              listSessionAssignmentsByIds: async ids => (await folderControlPlaneServiceProvider()).getSessionAssignmentsByIds([...ids]),
+              listSessionAssignmentsByIds: async ids => Object.fromEntries(
+                (await (await folderControlPlaneServiceProvider()).getSessionAssignmentsByIds([...ids]))
+                  .map(row => [row.session_id, { folderId: row.folder_id, displayName: row.display_name }]),
+              ),
             }, runtime.sessionBroadcaster, [sessionId],
           ),
         },

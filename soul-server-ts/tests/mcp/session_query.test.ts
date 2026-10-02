@@ -6,6 +6,7 @@ import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import type { SessionHistorySearchParams } from "../../src/control_plane/session_data_host_client.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
+import { startSessionTestHost } from "./session-test-host.js";
 import { buildInternalMcpServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
@@ -18,6 +19,7 @@ const DEFAULT_READABLE_SEARCH_EVENT_TYPES = [
   "complete",
 ];
 
+const openHosts: Awaited<ReturnType<typeof startSessionTestHost>>[] = [];
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildInternalMcpServer>>[] = [];
 
@@ -99,6 +101,7 @@ async function createClient(
   runtime: McpRuntime,
   headers?: Record<string, string>,
 ): Promise<Client> {
+  openHosts.push(await startSessionTestHost(runtime));
   const server = await buildInternalMcpServer({
     logger: createSilentLogger(),
     runtime,
@@ -139,6 +142,7 @@ afterEach(async () => {
       // ignore cleanup failures
     }
   }
+  while (openHosts.length) await openHosts.pop()?.close();
 });
 
 describe("list_sessions", () => {
@@ -825,7 +829,8 @@ describe("search_session_history", () => {
     expect(result.structuredContent).not.toEqual({ results: [] });
     expect(result.content[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("database time limit"),
+      // The real repository boundary preserves the legacy host error projection.
+      text: "session-data host history_search failed",
     });
   });
 

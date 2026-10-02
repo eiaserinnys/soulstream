@@ -27,11 +27,11 @@ export function registerMcpHostRoutes(app: FastifyInstance, options: McpHostOpti
     request.raw.once("aborted", onAborted);
     reply.raw.once("close", onClosed);
     try {
-    return reply.send(await executeMcpTool(options, definition.name, args, {
-      principal: context.principal, callerSessionId: context.caller_session_id, nodeId: context.node_id,
-      execution: context.execution,
-      signal: controller.signal,
-    }));
+      return reply.send(await executeMcpTool(options, definition.name, args, {
+        principal: context.principal, callerSessionId: context.caller_session_id, nodeId: context.node_id,
+        execution: context.execution,
+        signal: controller.signal,
+      }));
     } finally {
       request.raw.removeListener("aborted", onAborted);
       reply.raw.removeListener("close", onClosed);

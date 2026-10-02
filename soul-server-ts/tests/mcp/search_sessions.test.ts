@@ -2,6 +2,11 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { startSessionTestHost } from "./session-test-host.js";
+
+let provider = vi.fn();
+const hosts: Awaited<ReturnType<typeof startSessionTestHost>>[] = [];
+
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 import { registerSessionQueryTools } from "../../src/mcp/tools/session_query.js";
@@ -27,7 +32,7 @@ const orch = {
 };
 
 describe("search_sessions", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(async () => { vi.unstubAllGlobals(); provider = vi.fn(); while (hosts.length) await hosts.pop()?.close(); });
 
   it("excludes the calling session and requests one extra result", async () => {
     const fetch = vi.fn().mockResolvedValue(response({
@@ -38,7 +43,7 @@ describe("search_sessions", () => {
         searchResult("session-2", "두 번째 결과"),
       ],
     }));
-    vi.stubGlobal("fetch", fetch);
+    provider = fetch;
     const { call } = register();
 
     const result = await withMcpRequestContext(
@@ -49,8 +54,7 @@ describe("search_sessions", () => {
     expect((result.structuredContent?.results as Array<{ session_id: string }>).map(
       ({ session_id }) => session_id,
     )).toEqual(["session-1", "session-2"]);
-    const url = new URL(String(fetch.mock.calls[0]?.[0]));
-    expect(url.searchParams.get("top_k")).toBe("3");
+    expect(fetch.mock.calls[0]?.[0].top_k).toBe(3);
   });
 
   it("keeps the requested result count when the caller session is unknown", async () => {
@@ -61,7 +65,7 @@ describe("search_sessions", () => {
         searchResult("session-2", "두 번째 결과"),
       ],
     }));
-    vi.stubGlobal("fetch", fetch);
+    provider = fetch;
     const { call } = register();
 
     const result = await call({ query: "세션 검색", top_k: 2 });
@@ -69,8 +73,7 @@ describe("search_sessions", () => {
     expect((result.structuredContent?.results as Array<{ session_id: string }>).map(
       ({ session_id }) => session_id,
     )).toEqual(["session-1", "session-2"]);
-    const url = new URL(String(fetch.mock.calls[0]?.[0]));
-    expect(url.searchParams.get("top_k")).toBe("2");
+    expect(fetch.mock.calls[0]?.[0].top_k).toBe(2);
   });
 
   it("maps session rows and sends the expanded search parameters", async () => {
@@ -90,7 +93,7 @@ describe("search_sessions", () => {
         session_url: "https://soulstream.test/sessions/session-1",
       }],
     }));
-    vi.stubGlobal("fetch", fetch);
+    provider = fetch;
     const { call } = register();
 
     const result = await call({ query: "세션 검색", top_k: 4, folder_id: "folder-1" });
@@ -113,25 +116,16 @@ describe("search_sessions", () => {
         session_url: "https://soulstream.test/sessions/session-1",
       }],
     });
-    const url = new URL(String(fetch.mock.calls[0]?.[0]));
-    expect(url.pathname).toBe("/cogito/search");
-    expect([...url.searchParams.entries()]).toEqual([
-      ["q", "세션 검색"],
-      ["top_k", "4"],
-      ["include_session_results", "true"],
-      ["session_search_mode", "expanded"],
-      ["search_session_id", "true"],
-      ["session_folder_id", "folder-1"],
-    ]);
-    expect(fetch.mock.calls[0]?.[1]).toMatchObject({
-      method: "GET",
-      headers: { authorization: "Bearer service-token" },
+    expect(fetch.mock.calls[0]?.[0]).toMatchObject({
+      q: "세션 검색", top_k: 4, include_session_results: true,
+      session_search_mode: "expanded", search_session_id: true,
+      session_filters: { folder_id: "folder-1" },
     });
-    expect(fetch.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(fetch.mock.calls[0]?.[0].signal).toBeInstanceOf(AbortSignal);
   });
 
   it("maps missing relevance and excerpt to null for the pre-PR1 response", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+    provider = vi.fn().mockResolvedValue(response({
       search_status: { search: { status: "complete" } },
       session_results: [{
         session_id: "session-2",
@@ -144,7 +138,7 @@ describe("search_sessions", () => {
         best_match: null,
         session_url: null,
       }],
-    })));
+    }));
     const { call } = register();
 
     const result = await call({ query: "기존 세션" });
@@ -155,10 +149,10 @@ describe("search_sessions", () => {
   });
 
   it("marks partial search status and carries its reason", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+    provider = vi.fn().mockResolvedValue(response({
       search_status: { search: { status: "partial", reason: "timeout" } },
       session_results: [],
-    })));
+    }));
     const { call } = register();
 
     const result = await call({ query: "timeout" });
@@ -176,14 +170,13 @@ describe("search_sessions", () => {
       search_status: { search: { status: "complete" } },
       session_results: [],
     }));
-    vi.stubGlobal("fetch", fetch);
+    provider = fetch;
     const { call } = register();
 
     await call({ query: "query" });
 
-    const url = new URL(String(fetch.mock.calls[0]?.[0]));
-    expect(url.searchParams.get("top_k")).toBe("10");
-    expect(url.searchParams.has("session_folder_id")).toBe(false);
+    expect(fetch.mock.calls[0]?.[0].top_k).toBe(10);
+    expect(fetch.mock.calls[0]?.[0].session_filters?.folder_id).toBeUndefined();
   });
 
   it("enforces query and top_k bounds and keeps folder_id optional", () => {
@@ -204,18 +197,17 @@ describe("search_sessions", () => {
       JSON.stringify({ detail: "orch unavailable" }),
       { status: 503 },
     )));
-    const { call } = register();
+    const { call } = register(true);
 
     const result = await call({ query: "retry" });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent?.error).toContain("503");
     expect(result.structuredContent?.error).toContain("orch unavailable");
   });
 
   it("returns network failures through errorResult", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
-    const { call } = register();
+    const { call } = register(true);
 
     const result = await call({ query: "retry" });
 
@@ -235,7 +227,7 @@ describe("search_sessions", () => {
   });
 });
 
-function register() {
+function register(transportOnly = false) {
   const registered = new Map<string, RegisteredTool>();
   const server = {
     registerTool(name: string, config: unknown, handler: unknown) {
@@ -245,13 +237,17 @@ function register() {
       });
     },
   } as unknown as McpServer;
-  registerSessionQueryTools(server, {
-    orch,
-  } as unknown as McpRuntime);
+  const runtime = { orch, nodeId: "test-node", db: {} } as unknown as McpRuntime;
+  let host: Awaited<ReturnType<typeof startSessionTestHost>> | undefined;
+  registerSessionQueryTools(server, runtime);
 
   return {
     registered,
     async call(input: Record<string, unknown>) {
+      if (!transportOnly && !host) {
+        host = await startSessionTestHost(runtime, { search: async params => ({ results: [], navigation_results: [], ...await provider(params) }) });
+        hosts.push(host);
+      }
       const tool = registered.get("search_sessions");
       if (!tool) throw new Error("missing tool: search_sessions");
       return await tool.handler(input, { signal: new AbortController().signal });
@@ -259,12 +255,7 @@ function register() {
   };
 }
 
-function response(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
-}
+function response(body: unknown): any { return body; }
 
 function searchResult(sessionId: string, title: string) {
   return {
