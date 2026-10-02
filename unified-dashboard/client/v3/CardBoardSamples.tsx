@@ -16,6 +16,7 @@ export function CardBoardSamples({onOpen}:{onOpen(label:string):void}) {
   const [scenario,setScenario]=useState<"mixed"|"none"|"done">("mixed");
   const [includeCompleted,onChange]=useState(false);
   const [statuses,setStatuses]=useState<Record<string,CardStatus>>({});
+  const [conversation,setConversation]=useState<"short"|"long">("short");
   const [selected,setSelected]=useState<string|null>(null);
   const mobileMode=useMobilePlannerMode();
   const cards=boardColumns.flatMap(({status},index)=>Array.from({length:index===0?4:1},(_,copy)=>({
@@ -46,9 +47,10 @@ export function CardBoardSamples({onOpen}:{onOpen(label:string):void}) {
       {(["grid","board"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={mode===value} onClick={()=>setMode(value)}>{value==="grid"?"일반 보기":"보드"}</Button>)}
       {(["mixed","none","done"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={scenario===value} onClick={()=>{setScenario(value);setStatuses({});}}>{{mixed:"혼합",none:"완료 0개",done:"전부 완료"}[value]}</Button>)}
     </div>
+    <div className="v3-detail-section-head">{(["short","long"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={conversation===value} onClick={()=>setConversation(value)}>{value==="short"?"짧은 커멘트":"긴 커멘트"}</Button>)}</div>
     {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={cards} renderCard={(card,handle,preview)=>renderCard(card as typeof cards[number],"compact",handle,preview)} completion={scope==="folder"?{includeCompleted,onChange}:undefined}/>
       : <PostItGrid>{cards.filter(card=>scope==="all"||includeCompleted||card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>}
-    {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleDetail={{...reviewDetail,card:selectedCard}} folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={()=>onOpen('세션')}
+    {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleDetail={{...reviewDetail,card:selectedCard,comments:Array.from({length:conversation==="short"?1:20},(_,index)=>({id:`detail-comment-${index}`,cardId:selectedCard.id,authorKind:"user",authorId:"sample",sessionId:null,kind:"comment",body:`커멘트 ${index+1}: 탭을 바꾸어도 작성 중 문장과 첨부는 유지됩니다.`,createdAt:reviewCard.createdAt})),questions:[{id:"detail-question",text:"내용을 확인했나요?",options:["확인했습니다"],answer:"확인했습니다",askedAt:reviewCard.createdAt,answeredAt:reviewCard.createdAt}]}} folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={()=>onOpen('세션')}
       mobileMode={mobileMode} mobileTab="projects" activeSession={undefined} chatInputDisabled historyEnabled={false} sessionStreamActive={false}
       sessionConnectionStatus="disconnected" reconnectSession={()=>{}} onAcknowledgedReview={()=>{}}/>:null}
   </div>;
