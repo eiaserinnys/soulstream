@@ -2,11 +2,10 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { settingsStorage } from './settingsStorage';
 
-export type DraftValue = string | number | boolean | null | DraftValue[] | { [key: string]: DraftValue };
 interface DraftState {
-  drafts: Record<string, DraftValue>;
-  write(key: string, value: DraftValue): void;
-  remove(key: string, submitted?: DraftValue): void;
+  drafts: Record<string, string>;
+  write(key: string, value: string): void;
+  remove(key: string, submitted?: string): void;
 }
 
 export const useDraftStore = create<DraftState>()(persist((set) => ({
@@ -18,7 +17,7 @@ export const useDraftStore = create<DraftState>()(persist((set) => ({
   remove: (key, submitted) => {
     if (!useDraftStore.persist.hasHydrated()) return;
     set(state => {
-      if (submitted !== undefined && JSON.stringify(state.drafts[key]) !== JSON.stringify(submitted)) return state;
+      if (submitted !== undefined && state.drafts[key] !== submitted) return state;
       const { [key]: removed, ...drafts } = state.drafts;
       return { drafts };
     });

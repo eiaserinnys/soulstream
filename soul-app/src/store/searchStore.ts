@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { useDraftStore } from './draftStore';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import * as SecureStore from 'expo-secure-store';
 import { subscribeAuthScope } from '../lib/auth-scope';
@@ -115,10 +114,7 @@ export const useSearchStore = create<SearchState>()(
       filters: { ...DEFAULT_SEARCH_FILTERS },
       recentQueries: [],
       recentSessionIds: [],
-      setQuery: (query) => {
-        if (!useDraftStore.persist.hasHydrated()) return;
-        set({ query, selectedResultIndex: 0 });
-      },
+      setQuery: (query) => set({ query, selectedResultIndex: 0 }),
       setScope: (scope) => set({ scope, selectedResultIndex: 0 }),
       setFilters: (filters) => set((state) => ({
         filters: { ...state.filters, ...filters },
@@ -142,6 +138,7 @@ export const useSearchStore = create<SearchState>()(
       openTabletSearch: () => set({ tabletActive: true }),
       closeTabletSearch: () => set({
         tabletActive: false,
+        query: '',
         selectedResultIndex: 0,
       }),
       requestSearchFocus: () => set((state) => ({

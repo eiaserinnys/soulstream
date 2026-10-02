@@ -95,7 +95,7 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
         </View>
       </View>
     </PlannerForegroundCard>
-    {selecting === 'folder' ? <FolderSelectionSheet draftScope="main-composer" api={api} onClose={() => setSelecting(null)} onSelect={(folderId) => {
+    {selecting === 'folder' ? <FolderSelectionSheet api={api} onClose={() => setSelecting(null)} onSelect={(folderId) => {
       const next = { ...value, folderId }; setAssignment(next); settings.setCardAssignment(settings.serverUrl, next);
     }} /> : null}
     {selecting === 'execution' ? <ExecutionSelectionSheet api={api} value={value} onClose={() => setSelecting(null)} onSave={(next) => {

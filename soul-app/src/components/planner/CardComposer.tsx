@@ -65,7 +65,7 @@ function FolderCardComposer({ api, folderId, onCreated }: { api: ApiClient | nul
         </GlassButton>
       </View>
     </PlannerForegroundCard>
-    {selecting ? <CardAssignmentSheet draftScope={`folder-compose:${folderId ?? 'all'}`} api={api} value={value} onClose={() => setSelecting(false)} onSave={async (next) => {
+    {selecting ? <CardAssignmentSheet api={api} value={value} onClose={() => setSelecting(false)} onSave={async (next) => {
       setAssignment(next); settings.setCardAssignment(settings.serverUrl, next);
     }} /> : null}
   </>;

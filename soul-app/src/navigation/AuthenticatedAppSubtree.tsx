@@ -1,5 +1,4 @@
 import React from 'react';
-import { usePersistentSearch } from '../hooks/usePersistentSearch';
 import { SplitLayout } from '../components/split/SplitLayout';
 import type { DeviceType } from '../theme/useDeviceType';
 import { TabNavigator } from './TabNavigator';
@@ -41,6 +40,5 @@ export function AuthenticatedAppSubtree({
 }
 
 function AuthenticatedAppInstance({ device }: Pick<Props, 'device'>) {
-  usePersistentSearch();
   return device === 'phone' ? <TabNavigator /> : <SplitLayout />;
 }

@@ -16,9 +16,7 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 export function RecurringSchedulePicker({
   value,
   onChange,
-  ready = true,
 }: {
-  ready?: boolean;
   value: RecurringScheduleDraft;
   onChange(value: RecurringScheduleDraft): void;
 }) {
@@ -38,7 +36,7 @@ export function RecurringSchedulePicker({
     />
     {value.mode === 'advanced' ? <View style={styles.block}>
       <Text style={styles.label}>고급 cron 직접 편집</Text>
-      <TextInput editable={ready}
+      <TextInput
         testID="recurring-schedule-advanced-cron"
         accessibilityLabel="고급 cron"
         style={[styles.input, styles.multiline]}
@@ -52,7 +50,7 @@ export function RecurringSchedulePicker({
     </View> : <>
       <Text style={styles.label}>실행 시각</Text>
       {value.times.map((time, index) => <View key={`time-${index}`} style={styles.timeRow}>
-        <TextInput editable={ready}
+        <TextInput
           testID={`recurring-schedule-time-${index}`}
           accessibilityLabel={`실행 시각 ${index + 1}`}
           style={[styles.input, styles.timeInput]}

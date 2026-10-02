@@ -143,7 +143,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
         onPickAttachment={pickAttachment} onSend={() => { void send(); }} uploading={attachments.uploading} sending={comments.pending || pending}
         disabled={locked || !api} voiceControls={null} />
     </View>
-    {assignmentOpen && card ? <CardAssignmentSheet draftScope={`card:${cardId}`} api={api} mode="edit" value={{ folderId: card.folderId, nodeId: card.nodeId,
+    {assignmentOpen && card ? <CardAssignmentSheet api={api} mode="edit" value={{ folderId: card.folderId, nodeId: card.nodeId,
       agentId: card.assigneeAgentId, modelPreset: card.modelPreset }} onClose={() => setAssignmentOpen(false)} onSave={async (next) => {
         if (!api) return;
         let version = card.version;

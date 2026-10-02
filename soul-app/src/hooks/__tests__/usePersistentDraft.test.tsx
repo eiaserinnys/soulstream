@@ -31,20 +31,20 @@ test('app restart restores edited draft and token refresh keeps the stable user 
   expect(saved).not.toContain('auth-scope');
 });
 
-test('server, user, role and target isolate drafts; form drafts preserve all fields', () => {
-  const view = renderHook(({ target }: { target: string }) => usePersistentDraft('card-create', [target], { title: '', request: '' }), { initialProps: { target: 'all' } });
-  act(() => view.result.current.setValue({ title: '제목', request: '요청' }));
+test('server, user, role and target isolate long text drafts', () => {
+  const view = renderHook(({ target }: { target: string }) => usePersistentDraft('card-request', [target], ''), { initialProps: { target: 'all' } });
+  act(() => view.result.current.setValue('요청 본문'));
   view.rerender({ target: 'folder' });
-  expect(view.result.current.value.title).toBe('');
+  expect(view.result.current.value).toBe('');
   view.rerender({ target: 'all' });
-  expect(view.result.current.value.request).toBe('요청');
+  expect(view.result.current.value).toBe('요청 본문');
   act(() => { useSettingsStore.setState({ serverUrl: 'https://two.example' }); });
-  expect(view.result.current.value.title).toBe('');
+  expect(view.result.current.value).toBe('');
   act(() => { useSettingsStore.setState({ serverUrl: 'https://one.example' }); });
   act(() => { useAuthStore.setState({ jwt: jwt('two@example.com') }); });
-  expect(view.result.current.value.title).toBe('');
+  expect(view.result.current.value).toBe('');
   act(() => { useAuthStore.setState({ jwt: jwt('one@example.com') }); });
-  expect(view.result.current.value.title).toBe('제목');
+  expect(view.result.current.value).toBe('요청 본문');
   const other = renderHook(() => usePersistentDraft('card-comment', ['all'], ''));
   expect(other.result.current.value).toBe('');
 });
@@ -79,14 +79,15 @@ test('hydration gate prevents empty defaults from replacing a saved draft', asyn
   read.mockRestore();
 });
 
-test('unidentified user does not load or persist drafts; connection settings have a local scope', () => {
+test('unidentified user keeps input in memory without loading or persisting drafts', () => {
   useAuthStore.setState({ jwt: null });
   const view = renderHook(() => usePersistentDraft('chat', ['node', 'session'], ''));
   act(() => view.result.current.setValue('메모리 입력'));
+  expect(view.result.current.value).toBe('메모리 입력');
   expect(Object.keys(useDraftStore.getState().drafts)).toHaveLength(0);
-  const connection = renderHook(() => usePersistentDraft('connection-settings', [], { url: '', type: 'soul-server' }, { deviceLocal: true }));
-  act(() => connection.result.current.setValue({ url: 'https://new.example', type: 'orchestrator' }));
-  expect(Object.keys(useDraftStore.getState().drafts)).toHaveLength(1);
+  view.unmount();
+  const reopened = renderHook(() => usePersistentDraft('chat', ['node', 'session'], ''));
+  expect(reopened.result.current.value).toBe('');
 });
 
 test('clearing server text is a real edit; discarding restores the server value', () => {

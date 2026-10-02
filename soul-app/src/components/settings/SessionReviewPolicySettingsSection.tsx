@@ -1,4 +1,3 @@
-import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -74,15 +73,8 @@ export function SessionReviewPolicySettingsSection({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [payload, setPayload] = useState<SessionReviewPolicyPayload | null>(null);
-  const form = usePersistentDraft('review-policy', [], { sources: payload?.policy.sourceAllowlist ?? [], input: '' });
-  const { sources, input: draft } = form.value;
-  const setSources = (update: React.SetStateAction<string[]>) => form.setValue(current => ({ ...current,
-    sources: typeof update === 'function' ? update(current.sources) : update }));
-  const setDraft = (input: string) => form.setValue(current => ({ ...current, input }));
-  const formRef = React.useRef(form);
-  formRef.current = form;
-  const payloadRef = React.useRef(payload);
-  payloadRef.current = payload;
+  const [sources, setSources] = useState<string[]>([]);
+  const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -106,12 +98,14 @@ export function SessionReviewPolicySettingsSection({
     setError(null);
     try {
       const next = await createApiClient(serverUrl).getSessionReviewPolicy();
-      const previousSources = payloadRef.current?.policy.sourceAllowlist;
       setPayload(next);
-      if (conflict) formRef.current.setValue(current => ({ ...current,
-        sources: rebaseSourceChanges(conflict.baseSources, conflict.draftSources, next.policy.sourceAllowlist) }));
-      else if (previousSources && formRef.current.hasDraft) formRef.current.setValue(current => ({ ...current,
-        sources: rebaseSourceChanges(previousSources, current.sources, next.policy.sourceAllowlist) }));
+      setSources(conflict
+        ? rebaseSourceChanges(
+          conflict.baseSources,
+          conflict.draftSources,
+          next.policy.sourceAllowlist,
+        )
+        : next.policy.sourceAllowlist);
       setMessage(
         conflict
           ? '다른 관리자가 먼저 저장했습니다. 최신 버전에 내 변경만 다시 적용했습니다. 확인 후 저장해 주세요.'
@@ -152,8 +146,7 @@ export function SessionReviewPolicySettingsSection({
   }
 
   async function save() {
-    if (!form.ready || !payload || !changed) return;
-    const submitted = form.value;
+    if (!payload || !changed) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -163,8 +156,7 @@ export function SessionReviewPolicySettingsSection({
         expectedVersion: payload.policy.version,
       });
       setPayload(next);
-      // The API saves the list, but an ID not added to it is still an unsaved input.
-      if (!submitted.input) form.clearIfMatches(submitted);
+      setSources(next.policy.sourceAllowlist);
       setMessage(`정책 v${next.policy.version}을 저장했습니다. 다음 신규 세션부터 모든 노드에 적용됩니다.`);
     } catch (cause) {
       if (cause instanceof ApiHttpError && cause.status === 409) {
@@ -220,7 +212,7 @@ export function SessionReviewPolicySettingsSection({
                 accessibilityLabel={`${presentation.label} 제거`}
                 accessibilityState={{ disabled: loading || saving }}
                 style={styles.removeButton}
-                disabled={!form.ready || loading || saving}
+                disabled={loading || saving}
                 onPress={() => setSources((current) =>
                   current.filter((item) => item !== source))}
               >
@@ -240,7 +232,7 @@ export function SessionReviewPolicySettingsSection({
             placeholderTextColor={t.colors.textPlaceholder}
             autoCapitalize="none"
             autoCorrect={false}
-            editable={form.ready && !loading && !saving}
+            editable={!loading && !saving}
             onChangeText={setDraft}
             onSubmitEditing={addSource}
           />
@@ -249,7 +241,7 @@ export function SessionReviewPolicySettingsSection({
             accessibilityLabel="출처 추가"
             style={styles.smallButton}
             onPress={addSource}
-            disabled={!form.ready || !draft.trim() || loading || saving}
+            disabled={!draft.trim() || loading || saving}
           >
             <Text style={styles.secondaryText}>추가</Text>
           </GlassButton>
@@ -272,7 +264,7 @@ export function SessionReviewPolicySettingsSection({
             accessibilityLabel="검수 정책 다시 불러오기"
             style={styles.action}
             onPress={() => void load()}
-            disabled={!form.ready || loading || saving}
+            disabled={loading || saving}
           >
             <Text style={styles.secondaryText}>다시 불러오기</Text>
           </GlassButton>

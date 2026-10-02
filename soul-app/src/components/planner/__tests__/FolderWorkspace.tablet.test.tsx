@@ -57,6 +57,7 @@ import { usePlannerStore } from '../../../store/plannerStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { FolderWorkspace } from '../FolderWorkspace';
 import { plannerFolderTitleSaveCoordinator } from '../../../lib/planner-folder-title-save';
+import { useDraftStore } from '../../../store/draftStore';
 import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useUIStore } from '../../../store/uiStore';
@@ -758,3 +759,27 @@ function plannerToday(folders: PlannerFolder[]): PlannerToday {
     reviewSessionIds: [],
   };
 }
+
+
+test('폰에서 닫은 설명 초안은 태블릿 편집에 복원되고 취소하면 서버 값으로 돌아간다', async () => {
+  await useAuthStore.persist.rehydrate();
+  await useSettingsStore.persist.rehydrate();
+  await useDraftStore.persist.rehydrate();
+  useDraftStore.setState({ drafts: {} });
+  useSettingsStore.setState({ serverUrl: 'https://planner.test' });
+  useAuthStore.setState({ jwt: `header.${Buffer.from(JSON.stringify({ email: 'folder@example.com' })).toString('base64url')}.signature` });
+  usePlannerStore.getState().setSelectedFolderSnapshot(plannerFolder);
+  useSessionStore.setState({ catalog: { folders: [folder], sessions: {} } });
+  mockDeviceType = 'phone';
+  const phone = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  fireEvent.changeText(phone.getByTestId('folder-description-input'), '닫기 전에 쓴 설명');
+  phone.unmount();
+  mockDeviceType = 'tabletPortrait';
+  const tablet = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  fireEvent.press(tablet.getByTestId('task-description-edit-action'));
+  expect(tablet.getByTestId('task-description-input').props.value).toBe('닫기 전에 쓴 설명');
+  fireEvent.press(tablet.getByTestId('task-description-cancel-action'));
+  expect(useDraftStore.getState().drafts).toEqual({});
+  fireEvent.press(tablet.getByTestId('task-description-edit-action'));
+  expect(tablet.getByTestId('task-description-input').props.value).toBe('');
+});

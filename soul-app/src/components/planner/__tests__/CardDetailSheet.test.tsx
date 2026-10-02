@@ -24,6 +24,7 @@ jest.mock('../../useSessionCardAnimation', () => ({ useSessionCardAnimation: () 
   return { pulse: new Animated.Value(0), shimmer: new Animated.Value(0), reducedMotion: true, appActive: true, animationEnabled: false };
 } }));
 jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }));
+import { CardCreateSheet } from '../CardCreateSheet';
 import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
 
 const card: CardDto = { id: 'card-1', folderId: 'folder-1', title: '요청 제목', request: '원문', brief: '# 경과',
@@ -135,5 +136,23 @@ test('커멘트 초안은 실패와 상세 닫기 후 복원되고 성공할 때
   const reopened = render(<CardDetailContent {...props} />);
   await waitFor(() => expect(reopened.getByDisplayValue('나중에 이어 쓸 내용')).toBeTruthy());
   await act(async () => fireEvent.press(reopened.getByLabelText('커멘트 보내기')));
+  expect(useDraftStore.getState().drafts).toEqual({});
+});
+
+
+test('카드 생성은 요청 본문만 복원하고 제목은 기존 빈 값으로 시작한다', async () => {
+  const api = { createCard: jest.fn().mockResolvedValue({ card, folderId: card.folderId }), getCard: jest.fn().mockResolvedValue(detail) };
+  const props = { api: api as any, folderId: card.folderId, onClose: jest.fn() };
+  const first = render(<CardCreateSheet {...props} />);
+  fireEvent.changeText(first.getByLabelText('카드 제목'), '저장하지 않을 제목');
+  fireEvent.changeText(first.getByLabelText('요청 원문'), '이어 쓸 긴 요청');
+  first.unmount();
+  const next = render(<CardCreateSheet {...props} />);
+  expect(next.getByLabelText('카드 제목').props.value).toBe('');
+  expect(next.getByLabelText('요청 원문').props.value).toBe('이어 쓸 긴 요청');
+  expect(Object.values(useDraftStore.getState().drafts)).toEqual(['이어 쓸 긴 요청']);
+  fireEvent.changeText(next.getByLabelText('카드 제목'), '제출 제목');
+  await act(async () => fireEvent.press(next.getByLabelText('카드 저장')));
+  expect(api.createCard).toHaveBeenCalledWith(expect.objectContaining({ title: '제출 제목', request: '이어 쓸 긴 요청' }));
   expect(useDraftStore.getState().drafts).toEqual({});
 });
