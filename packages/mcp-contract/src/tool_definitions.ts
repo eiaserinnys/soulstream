@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { cardTools } from "./card_tools.js";
 import { folderObjectTools } from "./folder_tools.js";
 
 /** Mirrors the MCP SDK tool annotations without importing the SDK. */
@@ -29,6 +30,7 @@ export interface McpToolDefinition {
 
 export const mcpTools = {
   ...folderObjectTools,
+  ...cardTools,
 } as const satisfies Record<string, McpToolDefinition>;
 
 export const mcpToolDefinitions = Object.values(mcpTools);

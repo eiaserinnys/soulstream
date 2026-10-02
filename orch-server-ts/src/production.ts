@@ -1,4 +1,5 @@
 import { createLiveJevCardObservation } from "./cards/live_jev_card_observation.js";
+import { serviceTokenAccessWithoutEmail } from "./runtime/live_dashboard_access_provider.js";
 import type { SqlClient } from "./control_plane/control_plane_types.js";
 // 500줄 예외: 프로덕션 composition root의 단일 조립 순서를 한 파일에서 검증한다.
 // 도메인 동작은 각 service/repository 모듈에 있고, 이 파일은 연결만 소유한다.
@@ -843,6 +844,7 @@ export function buildProductionRouteOptions(
     ...(folderControlPlaneServiceProvider ? {
       mcpHostRoutes: {
         authBearerToken: config.authBearerToken,
+        cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail },
         folders: {
           serviceProvider: folderControlPlaneServiceProvider,
           cardServiceProvider,
