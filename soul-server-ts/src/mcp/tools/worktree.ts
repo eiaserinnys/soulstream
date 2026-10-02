@@ -6,19 +6,7 @@ import type { McpRuntime } from "../runtime.js";
 import { requireMcpMutationActor } from "./caller_session.js";
 import { WorktreeServiceError } from "../../worktree/worktree_service.js";
 
-const nodeSchema = z.string().min(1).optional();
-// Leave a separate response-propagation margin beyond the orchestrator's
-// 150s pending-command contract.
-export const REMOTE_WORKTREE_HTTP_TIMEOUT_MS = 160_000;
-export const REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS = 1_830_000;
-
 type WorktreeOperation = "list" | "create" | "remove" | "delete-branch";
-
-export function remoteWorktreeHttpTimeoutMs(operation: WorktreeOperation): number {
-  return operation === "create"
-    ? REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS
-    : REMOTE_WORKTREE_HTTP_TIMEOUT_MS;
-}
 
 export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): void {
   server.registerTool(
@@ -26,16 +14,15 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
     {
       description: "노드의 Git worktree 발견 목록과 Soulstream 소유 상태를 조회한다. 네트워크 fetch는 하지 않는다.",
       inputSchema: {
-        node_id: nodeSchema,
         repo_id: z.string().min(1).optional(),
         worktree_id: z.string().min(1).optional(),
         caller_session_id: z.string().min(1).optional(),
       },
     },
-    async ({ node_id, repo_id, worktree_id, caller_session_id }) => {
+    async ({ repo_id, worktree_id, caller_session_id }) => {
       try {
         const actor = requireAgentActor(caller_session_id, "list_worktrees");
-        const worktrees = await route(runtime, node_id, "list", {
+        const worktrees = await route(runtime, "list", {
           actorSessionId: actor,
           ...(repo_id ? { repoId: repo_id } : {}),
           ...(worktree_id ? { worktreeId: worktree_id } : {}),
@@ -53,7 +40,6 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
       description: "새/기존 branch worktree를 만들거나 발견된 unmanaged worktree를 명시적으로 인계한다.",
       annotations: { destructiveHint: true },
       inputSchema: {
-        node_id: nodeSchema,
         repo_id: z.string().min(1),
         branch: z.string().min(1),
         mode: z.enum(["new", "existing", "adopt"]),
@@ -65,10 +51,10 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
         caller_session_id: z.string().min(1).optional(),
       },
     },
-    async ({ node_id, repo_id, branch, mode, start_point, adopt_path, expected_head, setup, require_setup, caller_session_id }) => {
+    async ({ repo_id, branch, mode, start_point, adopt_path, expected_head, setup, require_setup, caller_session_id }) => {
       try {
         const actorSessionId = requireAgentActor(caller_session_id, "create_worktree");
-        return jsonResult(await route(runtime, node_id, "create", {
+        return jsonResult(await route(runtime, "create", {
           actorSessionId,
           repoId: repo_id,
           branch,
@@ -91,15 +77,14 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
       description: "소유한 clean worktree의 작업 디렉터리만 제거한다. branch와 파일은 강제 삭제하지 않는다.",
       annotations: { destructiveHint: true },
       inputSchema: {
-        node_id: nodeSchema,
         worktree_id: z.string().min(1),
         caller_session_id: z.string().min(1).optional(),
       },
     },
-    async ({ node_id, worktree_id, caller_session_id }) => {
+    async ({ worktree_id, caller_session_id }) => {
       try {
         const actorSessionId = requireAgentActor(caller_session_id, "remove_worktree");
-        return jsonResult(await route(runtime, node_id, "remove", {
+        return jsonResult(await route(runtime, "remove", {
           actorSessionId,
           worktreeId: worktree_id,
         }));
@@ -115,15 +100,14 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
       description: "제거된 worktree의 보존이 입증된 local branch만 expected-SHA transaction으로 삭제한다.",
       annotations: { destructiveHint: true },
       inputSchema: {
-        node_id: nodeSchema,
         worktree_id: z.string().min(1),
         caller_session_id: z.string().min(1).optional(),
       },
     },
-    async ({ node_id, worktree_id, caller_session_id }) => {
+    async ({ worktree_id, caller_session_id }) => {
       try {
         const actorSessionId = requireAgentActor(caller_session_id, "delete_worktree_branch");
-        return jsonResult(await route(runtime, node_id, "delete-branch", {
+        return jsonResult(await route(runtime, "delete-branch", {
           actorSessionId,
           worktreeId: worktree_id,
         }));
@@ -144,80 +128,16 @@ function requireAgentActor(callerSessionId: string | undefined, operation: strin
 
 async function route(
   runtime: McpRuntime,
-  nodeId: string | undefined,
   operation: WorktreeOperation,
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const targetNodeId = nodeId ?? runtime.nodeId;
-  if (targetNodeId === runtime.nodeId) {
-    if (!runtime.worktreeService) {
-      throw new WorktreeServiceError("WORKTREE_MCP_DISABLED", "Worktree MCP is disabled on this node");
-    }
-    if (operation === "list") return await runtime.worktreeService.list(body as never);
-    if (operation === "create") return await runtime.worktreeService.create(body as never);
-    if (operation === "remove") return await runtime.worktreeService.remove(body as never);
-    return await runtime.worktreeService.deleteBranch(body as never);
+  if (!runtime.worktreeService) {
+    throw new WorktreeServiceError("WORKTREE_MCP_DISABLED", "Worktree MCP is disabled on this node");
   }
-  if (!runtime.orch) throw new WorktreeServiceError("ORCH_UNAVAILABLE", "Orchestrator proxy is unavailable");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), remoteWorktreeHttpTimeoutMs(operation));
-  try {
-    const response = await fetch(
-      `${runtime.orch.baseUrl}/api/nodes/${encodeURIComponent(targetNodeId)}/worktrees/${operation}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", ...runtime.orch.headers },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      },
-    );
-    return await decodeRemoteWorktreeResponse(response);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-export async function decodeRemoteWorktreeResponse(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!response.ok) {
-    let result: unknown;
-    try {
-      result = JSON.parse(text) as unknown;
-    } catch {
-      result = text;
-    }
-    const remote = remoteError(result);
-    throw new WorktreeServiceError(
-      remote?.code ?? "REMOTE_WORKTREE_FAILED",
-      remote?.message ?? (typeof result === "string" ? result : JSON.stringify(result)),
-      remote?.details,
-    );
-  }
-  return JSON.parse(text) as unknown;
-}
-
-function remoteError(value: unknown): {
-  code: string;
-  message: string;
-  details?: Record<string, unknown>;
-} | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const error = (value as { error?: unknown }).error;
-  if (!error || typeof error !== "object") return undefined;
-  const { code, message, details } = error as {
-    code?: unknown;
-    message?: unknown;
-    details?: unknown;
-  };
-  return typeof code === "string" && typeof message === "string"
-    ? {
-        code,
-        message,
-        ...(details !== null && typeof details === "object" && !Array.isArray(details)
-          ? { details: details as Record<string, unknown> }
-          : {}),
-      }
-    : undefined;
+  if (operation === "list") return await runtime.worktreeService.list(body as never);
+  if (operation === "create") return await runtime.worktreeService.create(body as never);
+  if (operation === "remove") return await runtime.worktreeService.remove(body as never);
+  return await runtime.worktreeService.deleteBranch(body as never);
 }
 
 function worktreeError(error: unknown) {

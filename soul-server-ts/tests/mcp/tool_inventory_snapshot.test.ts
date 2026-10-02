@@ -95,6 +95,11 @@ describe("advertised MCP tool inventory", () => {
     const external = await listTools({
       authority: "external", source: "external-llm", displayName: "External LLM",
     });
+    for (const name of ["list_worktrees", "create_worktree", "remove_worktree", "delete_worktree_branch"]) {
+      expect(internal.find(tool => tool.name === name)!.inputSchema.properties).not.toHaveProperty("node_id");
+    }
+    expect(internal.find(tool => tool.name === "create_remote_agent_session")!.inputSchema.properties).not.toHaveProperty("worktree_id");
+    expect(internal.find(tool => tool.name === "create_agent_session")!.inputSchema.properties).toHaveProperty("worktree_id");
     expect(internal).toHaveLength(106);
     expect(external).toHaveLength(91);
     const externalNames = new Set(external.map(tool => tool.name));

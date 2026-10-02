@@ -284,11 +284,10 @@ export function registerMultiNodeTools(
         notify_completion: z.boolean().optional(),
         folder_id: z.string().nullable().optional(),
         card_id: z.string().optional(),
-        worktree_id: z.string().uuid().optional(),
       },
     },
     async (input) => {
-      const { node_id, agent_id, model_preset, reasoning_effort, prompt, caller_session_id, notify_completion, folder_id, card_id, worktree_id } = input;
+      const { node_id, agent_id, model_preset, reasoning_effort, prompt, caller_session_id, notify_completion, folder_id, card_id } = input;
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
@@ -323,10 +322,6 @@ export function registerMultiNodeTools(
         body.caller_session_id = structuralCallerSessionId;
       }
       body.caller_info = caller.callerInfo;
-      if (worktree_id !== undefined) {
-        body.worktree_id = worktree_id;
-        body.worktree_actor_session_id = caller.callerSessionId;
-      }
 
       try {
         const data = await fetchOrch(
