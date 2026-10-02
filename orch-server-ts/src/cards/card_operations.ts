@@ -4,11 +4,12 @@ import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import type { FolderActorParams } from "./control_plane/card_types.js";
 import { serializeCardMutation, serializeCardRow } from "../folders/folder_contracts.js";
 const id=z.string().min(1);
+const attachments=z.array(z.object({nodeId:id,path:id,name:id,mimeType:id}).strict()).default([]);
 const assignee=z.object({ kind:z.enum(["agent","human","session"]).nullable(),agentId:id.nullable().optional(),sessionId:id.nullable().optional(),userId:id.nullable().optional() });
 const mutation=z.object({ expectedVersion:z.number().int().positive(),idempotencyKey:id,reason:z.string().nullable().optional() });
 const append=z.object({ idempotencyKey:id });
 export const cardOperationSchemas={
-  create_card:z.object({ folderId:id,title:id,request:z.string(),queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
+  create_card:z.object({ folderId:id,title:id,request:z.string(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
   update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
   start_card_work:mutation.extend({execution:z.object({registrationId:id,executionCommandId:id}).strict()}),
   set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional() }),

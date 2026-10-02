@@ -1,3 +1,5 @@
+import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
+import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { buildCardChangeNotification, type CardChangeDelivery } from "./card_change_notification.js";
 import { randomUUID } from "node:crypto";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
@@ -24,6 +26,7 @@ export type CardLaunch = {
     agentId: string;
     modelPreset: string | null;
     folderId: string;
+    attachments?: CardAttachment[];
     orchestrationAdmission?:{runId:string;executionToken:string;cardId:string};
 };
 export type CardNotification = {
@@ -39,7 +42,7 @@ export type CardDispatcherOptions = {
     cards: () => Promise<CardControlPlaneService>;
     resolveTarget: (card: CardRow, modelPreset?: string | null) => CardTarget;
     launch: (input: CardLaunch) => Promise<unknown>;
-    sendMessage: (sessionId: string, text: string, admission?:{runId:string;executionToken:string;cardId:string}, changeDelivery?:CardChangeDelivery) => Promise<void>;
+    sendMessage: (sessionId: string, text: string, admission?:{runId:string;executionToken:string;cardId:string}, changeDelivery?:CardChangeDelivery, attachments?:readonly CardAttachment[]) => Promise<void>;
     notify: (input: CardNotification) => Promise<unknown>;
     warn: (message: string) => void;
     now?: () => number;
@@ -118,7 +121,7 @@ export class CardDispatcher {
         const mergeAnswer=notification && answeredQuestion?.session_id === notification.sessionId;
         if (notification && !mergeAnswer) {
           try {
-            await this.options.sendMessage(notification.sessionId,notification.text,undefined,notification);
+            await this.deliver(card,notification.sessionId,notification.text,notification);
             if (comment) await cards.markCommentDelivered(card.id,commentId);
           } catch (error) { this.options.warn(`card ${card.id} change delivery failed: ${String(error)}`); }
         }
@@ -133,8 +136,8 @@ export class CardDispatcher {
             const session = q && typeof q.session_id === "string" ? await this.options.repository.ownerSession(q.session_id) : null;
             if (session?.status && !isTerminalSessionStatus(session.status)) {
                 const answer=`질문에 답이 왔다: ${String(q!.text)} → ${String(q!.answer)}. 이어서 진행한다.`;
-                if (mergeAnswer) await this.options.sendMessage(String(q!.session_id),`${notification!.text}\n${answer}`,undefined,notification!);
-                else await this.options.sendMessage(String(q!.session_id),answer);
+                if (mergeAnswer) await this.deliver(card,String(q!.session_id),`${notification!.text}\n${answer}`,notification!);
+                else await this.deliver(card,String(q!.session_id),answer);
             }
             else
                 await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
@@ -142,13 +145,18 @@ export class CardDispatcher {
         if (op.operation_type === "set_card_status" && op.actor_kind === "user" && previousStatus === "review" && payload.status === "running") {
             const session = await this.options.repository.latestSession(card.id);
             if (session && !isTerminalSessionStatus(session.status)) {
-                if (!change.previousAssigneeSessionId) await this.options.sendMessage(session.session_id, `검수 반려: ${op.reason}. 고친 뒤 새 보고를 올리고 다시 검수를 요청한다.`);
+                if (!change.previousAssigneeSessionId) await this.deliver(card,session.session_id, `검수 반려: ${op.reason}. 고친 뒤 새 보고를 올리고 다시 검수를 요청한다.`);
             }
             else
                 await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
         }
         if (card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
             await this.dispatchOnce();
+    }
+    private async deliver(card:CardRow, sessionId:string, text:string, changeDelivery?:CardChangeDelivery):Promise<void> {
+        if(card.attachments?.length) return this.options.sendMessage(sessionId,text,undefined,changeDelivery,card.attachments);
+        if(changeDelivery) return this.options.sendMessage(sessionId,text,undefined,changeDelivery);
+        return this.options.sendMessage(sessionId,text);
     }
     private async notify(card: CardRow, kind: "question" | "review", question?: string): Promise<void> {
         try {
@@ -187,8 +195,12 @@ export class CardDispatcher {
             if ((occupancy[target.nodeId] ?? 0) >= (settings.nodeConcurrency[target.nodeId] ?? settings.nodeConcurrency.default))
                 continue;
             if (session && isUsageLimitTermination(session)) {
+                try { cardAttachmentPaths(card.attachments ?? [], session.node_id); } catch(error) {
+                    await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId:card.id,expectedVersion:card.version,status:"blocked",blockedKind:"no_report",blockedDetail:String(error)});
+                    continue;
+                }
                 await cards.resumeDispatchedCard({ cardId: card.id, expectedVersion: card.version, sessionId: session.session_id });
-                await this.options.sendMessage(session.session_id, "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다.");
+                await this.deliver(card,session.session_id, "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다.");
             }
             else
                 await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
@@ -231,7 +243,7 @@ export class CardDispatcher {
             const sessionId = randomUUID();
             await cards.recordDispatch({ cardId: card.id, expectedVersion: detail.card.version, sessionId, nodeId: target.nodeId });
             try {
-                await this.options.launch({ sessionId, cardId: card.id, prompt, nodeId: target.nodeId, agentId: target.agentId, modelPreset: target.modelPreset, folderId: card.folder_id });
+                await this.options.launch({ sessionId, cardId: card.id, prompt, nodeId: target.nodeId, agentId: target.agentId, modelPreset: target.modelPreset, folderId: card.folder_id, attachments: detail.card.attachments ?? [] });
             }
             catch (error) {
                 // Confirmed create rejection leaves the card for the director to retry.

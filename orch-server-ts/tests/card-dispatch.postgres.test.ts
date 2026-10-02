@@ -5,6 +5,7 @@ import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
+import {createCardDispatchRuntime} from "../src/cards/card_dispatch_runtime.js";
 import { buildCardPrompt } from "../src/cards/card_prompt.js";
 import { readCardDispatchSettings, updateCardDispatchSettings } from "../src/cards/card_dispatch_settings.js";
 import { registerCardDispatchSettingsRoutes } from "../src/cards/card_dispatch_settings_routes.js";
@@ -83,6 +84,22 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.sessionEnded(sessionId);
         await dispatcher.drain();
     }
+    it("stores structured attachments over HTTP, reads them and launches then resumes with paths", async () => {
+        const attachments=[{nodeId:"eiaserinnys",path:"/incoming/upload/image.png",name:"그림.png",mimeType:"image/png"}];
+        const app=Fastify();
+        registerCardRoutes(app,{cardServiceProvider:async()=>cards,provider:{listFolders:()=>[{id:"dispatch-folder"}],listSessionAssignments:()=>({})},accessProvider:{resolveAccess:()=>({restricted:false,allowedFolderIds:[]})},resolveDashboardUserId:()=>human.actorUserId,environment:"test"});
+        try {
+            const made=await app.inject({method:"POST",url:"/api/cards",payload:{folderId:"dispatch-folder",title:"첨부",request:"원문",queue:true,attachments,assignee:{kind:"agent",agentId:"roselin"},idempotencyKey:key()}});
+            expect(made.statusCode).toBe(201);const id=made.json().card.id;
+            await dispatcher.drain();
+            expect((await cards.getCard(id))!.card).toMatchObject({request:"원문",attachments});
+            expect((await app.inject({method:"GET",url:`/api/cards/${id}`})).json().card.attachments).toEqual(attachments);
+            expect(launch).toHaveBeenCalledWith(expect.objectContaining({attachments}));
+            const sessionId=launch.mock.calls[0]![0].sessionId;
+            available=false;await terminal(sessionId,"limit_hit");available=true;await dispatcher.checkLimits();await dispatcher.drain();
+            expect(messages).toHaveBeenCalledWith(sessionId,expect.any(String),undefined,undefined,attachments);
+        } finally {await app.close();}
+    });
     it("launches only the first of two queued cards at node concurrency one", async () => {
         const first = await make('첫');
         const second = await make('둘째');
@@ -94,6 +111,32 @@ describe("card dispatch and session lifecycle", () => {
         expect(launch.mock.calls[0]![0]).toMatchObject({ cardId: first, agentId: 'roselin', nodeId: 'eiaserinnys' });
         expect((await cards.getCard(first))!.card.status).toBe('running');
         expect((await cards.getCard(second))!.card.status).toBe('queued');
+    });
+    it("passes stored attachments through the actual runtime create and intervene node commands",async()=>{
+        const attachments=[{nodeId:"eiaserinnys",path:"/incoming/upload/image.png",name:"image.png",mimeType:"image/png"}];
+        const createSession=vi.fn((payload:any)=>({node:{nodeId:"eiaserinnys"},command:{payload},modelPresetId:"sol"}));
+        const routeExisting=vi.fn(async(payload:any)=>({node:{nodeId:"eiaserinnys"},command:{payload}}));
+        const send=vi.fn(async(routed:any)=>{
+            const p=routed.command.payload;
+            if(p.type==='create_session')await h.sql`INSERT INTO sessions(session_id,card_id,node_id,agent_id,status,model_preset) VALUES(${p.agentSessionId},${p.cardId},'eiaserinnys','roselin','running','sol')`;
+            return {type:'session_created',agentSessionId:p.agentSessionId,status:'ok'};
+        });
+        const runtime=await createCardDispatchRuntime({sqlResolver:{resolveSql:async()=>h.liveSql,close:async()=>{}},
+            router:{selectNodeForCreate:()=>({nodeId:'eiaserinnys',profileId:'roselin',modelPresetId:'sol'}),createSession,waitForCreatedSession:async()=>true,routeExistingSessionPendingCommand:routeExisting} as any,
+            bridge:{sendPendingCommand:send} as any,availability:{resolveForNode:()=>({available:true})} as any,notifier:{} as any,admin:{} as any,broadcaster:{append:()=>{}} as any,
+            warn,onFolderHeaderUpdated:async()=>{},usageSnapshot:()=>({}) as any,ensureSystemFolder:async()=>{},validateFolder:async()=>true});
+        try {
+            const service=await runtime.serviceProvider();
+            const created=await service.createCard({...human,folderId:'dispatch-folder',title:'실제 경계',request:'原文',attachments,queue:true,assignee:{kind:'agent',agentId:'roselin'},nodeId:'eiaserinnys',modelPreset:'sol',idempotencyKey:key()});
+            await runtime.dispatcher.drain();
+            expect(createSession).toHaveBeenCalledWith(expect.objectContaining({attachment_paths:[attachments[0]!.path]}),expect.anything());
+            const sessionId=createSession.mock.calls[0]![0].agentSessionId;
+            await h.sql`UPDATE sessions SET status='error',termination_reason='limit_hit',termination_event_id=1 WHERE session_id=${sessionId}`;
+            await h.sql`UPDATE cards SET status='blocked',blocked_kind='limit' WHERE id=${created.operation.target_id}`;
+            await runtime.dispatcher.checkLimits();await runtime.dispatcher.drain();
+            expect(routeExisting).toHaveBeenCalledWith(expect.objectContaining({type:'intervene',attachment_paths:[attachments[0]!.path]}));
+            expect(send).toHaveBeenLastCalledWith(expect.objectContaining({command:expect.objectContaining({payload:expect.objectContaining({attachment_paths:[attachments[0]!.path]})})}));
+        }finally{await runtime.dispatcher.drain();}
     });
     it("includes user comments and spoken instructions but excludes agent replies from dispatch input", async () => {
         const id = await make('커멘트 구분');

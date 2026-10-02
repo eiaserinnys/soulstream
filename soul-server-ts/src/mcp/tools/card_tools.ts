@@ -14,10 +14,10 @@ const scope = { card_id: id, caller_session_id: callerSessionIdSchema };
 export function registerCardTools(server: McpServer, runtime: McpRuntime): void {
   server.registerTool("create_card", {
     description: "요청 원문이 고정된 카드를 만들고 queue=true면 대기열에 넣는다.",
-    inputSchema: { folder_id: id, title: id, request: z.string(), assignee: assigneeSchema,
+    inputSchema: { folder_id: id, title: id, request: z.string(), attachments: z.array(z.object({nodeId:id,path:id,name:id,mimeType:id}).strict()).optional(), assignee: assigneeSchema,
       node_id: id.optional(), model_preset: id.optional(), queue: z.boolean().optional(), caller_session_id: callerSessionIdSchema },
   }, async input => run(async () => getFolderService(runtime).createCard({
-    ...agent(input.caller_session_id), folderId: input.folder_id, title: input.title, request: input.request,
+    ...agent(input.caller_session_id), folderId: input.folder_id, title: input.title, request: input.request, attachments: input.attachments,
     ...assigneePatch(input), nodeId: input.node_id, modelPreset: input.model_preset, queue: input.queue,
   })));
   server.registerTool("list_cards", {

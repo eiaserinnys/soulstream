@@ -18,7 +18,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  const [image,setImage]=useState<{src:string;alt:string}|null>(null);
  const openImage=(src:string,alt:string)=>setImage({src,alt});
  const entries:{id:string;at:string;kind:string;role:"user"|"assistant";spoken?:boolean;collapsible?:boolean;body:ReactNode}[]=[
-  {id:"request",at:card.createdAt,kind:"지시",role:"user",collapsible:true,body:<RequestPreview request={card.request} expanded={expanded.has("request")} onImageClick={openImage}/>},
+  {id:"request",at:card.createdAt,kind:"지시",role:"user",collapsible:true,body:<RequestPreview request={card.request} attachments={card.attachments??[]} expanded={expanded.has("request")} onImageClick={openImage}/>},
   ...(detail?.questions??[]).flatMap(q=>[
    {id:`q-${q.id}`,at:q.askedAt,kind:"질문",role:"assistant" as const,body:<><MarkdownContent content={q.text} onImageClick={openImage}/>{!q.answer&&q.options?.length?<div className="v3-card-answer-options">{q.options.map(option=><Button key={option} variant="outline" disabled={pending} onClick={()=>onAnswer(q.id,option)}>{option}</Button>)}</div>:null}</>},
    ...(q.answer?[{id:`a-${q.id}`,at:q.answeredAt??q.askedAt,kind:"답",role:"user" as const,body:<MarkdownContent content={q.answer} onImageClick={openImage}/>}]:[]),
@@ -43,8 +43,11 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
   <DialogTitle className="sr-only">{image?.alt||"이미지"}</DialogTitle>{image?<img src={image.src} alt={image.alt} className="max-w-full object-contain"/>:null}
  </DialogPopup></Dialog></>;
 }
-function RequestPreview({request,expanded,onImageClick}:{request:string;expanded:boolean;onImageClick(src:string,alt:string):void}) {
- return <><div className={expanded?undefined:"v3-card-three-lines"}><MarkdownContent content={cardRequestMarkdown(request)} onImageClick={onImageClick}/></div><span className="v3-card-collapse-hint">{expanded?"접기":"더 보기"}</span></>;
+function RequestPreview({request,attachments,expanded,onImageClick}:{request:string;attachments:CardRow["attachments"];expanded:boolean;onImageClick(src:string,alt:string):void}) {
+ return <><div className={expanded?undefined:"v3-card-three-lines"}><MarkdownContent content={cardRequestMarkdown(request)} onImageClick={onImageClick}/></div>{attachments.length?<div className="v3-card-report-thumbnails">{attachments.map(attachment=>{
+  const src=`/api/attachments/files?${new URLSearchParams({nodeId:attachment.nodeId,path:attachment.path})}`;
+  return attachment.mimeType.startsWith("image/")?<MarkdownImage key={src} src={src} alt={attachment.name} onOpen={onImageClick}/>:<a key={src} href={src} target="_blank" rel="noreferrer">{attachment.name}</a>;
+ })}</div>:null}<span className="v3-card-collapse-hint">{expanded?"접기":"더 보기"}</span></>;
 }
 function ReportPreview({report,expanded,onImageClick}:{report:CardReport;expanded:boolean;onImageClick(src:string,alt:string):void}) {
  const images=report.format==="markdown"?[...report.body.matchAll(/!\[([^\]]*)\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)].slice(0,2).map(match=>({alt:match[1],src:match[2]})):[];

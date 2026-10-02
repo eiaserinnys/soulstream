@@ -8,8 +8,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 
 const expectedV3DialogConsumers = [
   "CardMenu.tsx",
-  "CardInbox.tsx",
-  "FolderCardSection.tsx",
+  "CardCreateDialog.tsx",
   "CardTimeline.tsx",
   "ComponentsReviewPage.tsx",
   "FolderArchiveDialog.tsx",
@@ -29,6 +28,7 @@ const sharedV3DialogConsumers = [
 ] as const;
 
 const soulUiDialogConsumers = [
+  "../../../packages/soul-ui/src/components/FileAttachmentPreview.tsx",
   "../../../packages/soul-ui/src/components/FolderContextMenu.tsx",
   "../../../packages/soul-ui/src/components/FolderDialog.tsx",
   "../../../packages/soul-ui/src/components/FolderSettingsDialog.tsx",

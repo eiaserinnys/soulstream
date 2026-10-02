@@ -50,11 +50,7 @@ export interface CoordinatorOptions {
     instructionsRevision?: string;
   }) => Promise<unknown>;
   launchWorker: (input: CardLaunch) => Promise<unknown>;
-  sendMessage: (
-    sessionId: string,
-    text: string,
-    admission?: { runId: string; executionToken: string; cardId: string },
-  ) => Promise<void>;
+  sendMessage: import("./card_dispatcher.js").CardDispatcherOptions["sendMessage"];
   warn: (message: string) => void;
 }
 /** A tick reconciles durable intent; only a changed logical input can ask the model. */
@@ -405,6 +401,7 @@ export class CardOrchestrationCoordinator {
         agentId: target.agentId,
         modelPreset: target.modelPreset,
         configuredModelPreset: card.model_preset,
+        attachments: card.attachments ?? [],
         resume,
         existingSession: !!target.sessionId || resume,
         ...((target.sessionId || resume) ? {deliveryId: `card-admission:${run.id}:${card.id}`} : {}),

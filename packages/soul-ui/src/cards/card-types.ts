@@ -1,8 +1,11 @@
+import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
+export type {CardAttachment} from "@soulstream/wire-schema/card-attachments";
 import type { CardStatus } from "@soulstream/wire-schema";
 export type { CardStatus } from "@soulstream/wire-schema";
 export interface CardActivity { kind: "instruction" | "report"; body: string; createdAt: string; format: "markdown" | "html" }
 export interface CardRow {
   id: string; folderId: string; title: string; request: string; brief: string;
+  attachments: CardAttachment[];
   status: CardStatus; blockedKind: "limit" | "question" | "no_report" | null;
   blockedDetail: string | null; positionKey: string; queuePositionKey: string | null;
   assigneeKind: "agent" | "human" | "session" | null;

@@ -36,12 +36,12 @@ export class CardOrchestrationWorkers {
         ...(d.input.deliveryId ? {deliveryId:String(d.input.deliveryId)} : {}),
       };
       try {
-        if (d.input.existingSession === true || d.input.resume === true)
-          await this.options.sendMessage(
-            d.session_id,
-            String(d.input.prompt ?? "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다."),
-            admission,
-          );
+        if (d.input.existingSession === true || d.input.resume === true) {
+          const text=String(d.input.prompt ?? "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다.");
+          const attachments=d.input.attachments as import("@soulstream/wire-schema/card-attachments").CardAttachment[] | undefined;
+          if(attachments?.length) await this.options.sendMessage(d.session_id,text,admission,undefined,attachments);
+          else await this.options.sendMessage(d.session_id,text,admission);
+        }
         else
           await this.options.launchWorker({
             ...d.input,
@@ -62,7 +62,7 @@ export class CardOrchestrationWorkers {
   private async reject(d: WorkerDispatch, reason: string) {
     const cards = await this.options.cards(),
       detail = await cards.getCard(d.card_id);
-    if (detail?.card.status === "running")
+    if (detail && ["running","queued"].includes(detail.card.status))
       await cards.setCardStatus({
         actorKind: "system",
         actorSessionId: null,

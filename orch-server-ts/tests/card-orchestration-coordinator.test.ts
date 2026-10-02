@@ -10,7 +10,7 @@ import type { NodeConnectionSnapshot } from "../src/node/registry_types.js";
 
 function queuedCard(): DispatchCard {
   const now = new Date("2026-10-01T12:00:00Z");
-  return { id: "queued-1", folder_id: "original-folder", folder_name: "작업 폴더", position_key: "a", queue_position_key: "a", title: "작업", request: "요청", brief: "", blocked_kind: null, blocked_detail: null, node_id: "node", model_preset: null, status: "queued", archived: false, version: 1, assignee_kind: "agent", assignee_agent_id: "worker", assignee_session_id: null, assignee_user_id: null, created_session_id: null, created_event_id: null, updated_session_id: null, updated_event_id: null, completed_kind: null, completed_session_id: null, completed_event_id: null, completed_user_id: null, completed_at: null, created_at: now, updated_at: now };
+  return { id: "queued-1", folder_id: "original-folder", folder_name: "작업 폴더", position_key: "a", queue_position_key: "a", title: "작업", request: "요청", attachments:[], brief: "", blocked_kind: null, blocked_detail: null, node_id: "node", model_preset: null, status: "queued", archived: false, version: 1, assignee_kind: "agent", assignee_agent_id: "worker", assignee_session_id: null, assignee_user_id: null, created_session_id: null, created_event_id: null, updated_session_id: null, updated_event_id: null, completed_kind: null, completed_session_id: null, completed_event_id: null, completed_user_id: null, completed_at: null, created_at: now, updated_at: now };
 }
 const settings: OrchestrationSettings = {
   key: "card_orchestration", version: 1, updatedAt: "2026-10-01T12:00:00Z", updatedBy: "admin",
@@ -257,4 +257,13 @@ describe("validated advertised preset accessor", () => {
     expect(() => service.resolveStaticForNode("node", "missing")).toThrow("not advertised");
     expect(() => service.resolveStaticForNode("offline", "claude-opus")).toThrow("not advertised");
   });
+});
+
+it("persists card attachments in the central worker admission before launch",async()=>{
+ const attachments=[{nodeId:"node",path:"/incoming/upload/image.png",name:"image.png",mimeType:"image/png"}];
+ const state=durableState();state.cards[0]!.attachments=attachments;
+ const h=harness(state,{decision:run=>({decisions:run.snapshot.map(card=>({cardId:card.cardId,cardVersion:card.cardVersion,action:"run",reason:"실행"}))})});
+ h.recordDispatch.mockImplementation(async()=>undefined as never);
+ await finishJudgement(h);
+ expect(h.recordDispatch).toHaveBeenCalledWith(expect.objectContaining({admission:expect.objectContaining({workerInput:expect.objectContaining({attachments})})}));
 });

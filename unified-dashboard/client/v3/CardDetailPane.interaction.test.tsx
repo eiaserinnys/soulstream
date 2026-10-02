@@ -74,3 +74,11 @@ it("resets the selected tab when a different card opens",async()=>{
  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("커멘트");
  expect(container.querySelector('[data-card-entry="지시"]')).not.toBeNull();
 });
+it("shows structured request attachments and opens the existing image viewer",async()=>{
+ const attachments=[{nodeId:"node",path:"/incoming/upload/이미지.png",name:"첨부 이미지.png",mimeType:"image/png"},{nodeId:"other",path:"/incoming/upload/notes.pdf",name:"설명.pdf",mimeType:"application/pdf"}];
+ useCardStore.setState({byId:{inherit:{...card,attachments}},details:{inherit:{...detail,card:{...card,attachments}}}});
+ await render();const image=container.querySelector<HTMLImageElement>('img[alt="첨부 이미지.png"]')!;
+ expect(image).not.toBeNull();expect(image.src).toContain('nodeId=node');expect(image.src).toContain(encodeURIComponent(attachments[0].path));
+ expect(container.querySelector<HTMLAnchorElement>('a[href*="nodeId=other"]')?.textContent).toContain("설명.pdf");
+ await act(()=>image.click());expect(document.querySelector('[role="dialog"] img')?.getAttribute('alt')).toBe('첨부 이미지.png');
+});

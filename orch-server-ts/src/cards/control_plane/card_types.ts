@@ -1,3 +1,4 @@
+import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type {
   BoardYjsQuerySql,
 } from "../../board-yjs/board_yjs_sql.js";
@@ -51,6 +52,7 @@ export interface CardRow extends CardAssigneeFields {
   position_key: string;
   title: string;
   request: string;
+  attachments: CardAttachment[];
   queue_position_key: string | null;
   brief: string;
   blocked_kind: "limit" | "question" | "no_report" | null;

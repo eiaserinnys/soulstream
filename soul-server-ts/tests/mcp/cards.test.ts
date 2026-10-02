@@ -16,7 +16,8 @@ import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 const names = ["create_card", "list_cards", "get_card", "update_card_brief", "add_card_report", "add_card_comment",
   "request_card_review", "ask_card_question", "move_card", "start_card_work"];
 const logger = pino({ level: "silent" });
-const card = { id: "card-1", folderId: "folder-1", title: "카드", status: "running", version: 3 };
+const attachments=[{nodeId:"node",path:"/incoming/upload/image.png",name:"image.png",mimeType:"image/png"}];
+const card = { id: "card-1", folderId: "folder-1", title: "카드", status: "running", version: 3, attachments };
 const detail = { card, reports: [{ title: "보고" }], questions: [], comments: [{ body: "지시 요점", kind: "spoken" }], sessions: [] };
 function harness(task?:Record<string,unknown>) {
   const entries = new Map<string, { config: { inputSchema: z.ZodRawShape }; callback: (input: unknown) => Promise<any> }>();
@@ -41,7 +42,7 @@ describe("card MCP contract", () => {
     vi.stubGlobal("fetch", fetch);
     const h = harness();
     for (const [name, input, method, path, body] of [
-      ["create_card", { folder_id: "folder-1", title: "제목", request: "원문", queue: true, assignee: { kind: "agent", agent_id: "roselin" }, node_id: "node", model_preset: "sol" }, "POST", "/api/cards", { folderId: "folder-1", title: "제목", request: "원문", queue: true, assignee: { kind: "agent", agentId: "roselin" }, nodeId: "node", modelPreset: "sol" }],
+      ["create_card", { folder_id: "folder-1", title: "제목", request: "원문", attachments, queue: true, assignee: { kind: "agent", agent_id: "roselin" }, node_id: "node", model_preset: "sol" }, "POST", "/api/cards", { folderId: "folder-1", title: "제목", request: "원문", attachments, queue: true, assignee: { kind: "agent", agentId: "roselin" }, nodeId: "node", modelPreset: "sol" }],
       ["list_cards", { folder_id: "folder-1", status: "running" }, "GET", "/api/cards?folderId=folder-1&status=running", undefined],
       ["get_card", { card_id: "card-1" }, "GET", "/api/cards/card-1", undefined],
       ["update_card_brief", { card_id: "card-1", brief: "경과" }, "PATCH", "/api/cards/card-1", { brief: "경과", expectedVersion: 3 }],
@@ -59,7 +60,7 @@ describe("card MCP contract", () => {
       expect(init.headers).toMatchObject({ authorization: "Bearer test-service", "x-soulstream-agent-session-id": "session-1" });
       if (body) expect(JSON.parse(init.body as string)).toMatchObject({ ...body, idempotencyKey: expect.any(String) });
       if (name === "add_card_comment") expect(h.entries.get(name)!.config.description).toContain("아래는 사용자의 발언을 요약하여 옮긴 것입니다");
-      if (name === "get_card") expect(JSON.stringify(result)).toContain("지시 요점");
+      if (name === "get_card") {expect(JSON.stringify(result)).toContain("지시 요점");expect(JSON.stringify(result)).toContain(JSON.stringify(attachments));}
       if (name === "ask_card_question") expect(JSON.stringify(result)).toContain("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     }
   });
