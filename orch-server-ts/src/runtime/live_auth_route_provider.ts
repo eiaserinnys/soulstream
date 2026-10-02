@@ -277,7 +277,7 @@ async function requireNonEmptyConfigString(
   return value;
 }
 
-function signJwt(payload: Record<string, unknown>, secret: string): string {
+export function signJwt(payload: Record<string, unknown>, secret: string): string {
   const header = { alg: JWT_ALGORITHM, typ: "JWT" };
   const signingInput = `${base64UrlJson(header)}.${base64UrlJson(payload)}`;
   return `${signingInput}.${hmacSha256(signingInput, secret)}`;
@@ -288,6 +288,11 @@ function verifyJwt(
   secret: string,
   nowSeconds: number,
 ): AuthJwtPayload | null {
+  const payload = verifySignedJwt(token, secret, nowSeconds);
+  return payload && typeof payload.email === "string" ? payload as AuthJwtPayload : null;
+}
+
+export function verifySignedJwt(token: string, secret: string, nowSeconds: number): Record<string, unknown> | null {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [encodedHeader, encodedPayload, encodedSignature] = parts;
@@ -300,10 +305,10 @@ function verifyJwt(
   if (!constantTimeStringEqual(encodedSignature, expected)) return null;
 
   const payload = decodeJsonRecord(encodedPayload);
-  if (!payload || typeof payload.email !== "string") return null;
+  if (!payload) return null;
   if ("exp" in payload && typeof payload.exp !== "number") return null;
   if (typeof payload.exp === "number" && payload.exp <= nowSeconds) return null;
-  return payload as AuthJwtPayload;
+  return payload;
 }
 
 function base64UrlJson(value: unknown): string {

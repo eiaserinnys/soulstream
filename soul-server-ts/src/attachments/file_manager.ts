@@ -1,5 +1,6 @@
 import { appendFile, copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import * as path from "node:path";
+import { MAX_IMPORTED_ATTACHMENT_SIZE, streamR2Attachment, validateR2DownloadUrl, type ImportSessionFileParams } from "./url_import.js";
 import { AttachmentDiagnostics, type AttachmentDiagnosticsLogger } from "./diagnostic_logger.js";
 
 // Temporarily exceeds 500 lines while attachment diagnostics and rename-race
@@ -109,6 +110,7 @@ export class FileAttachmentStore implements AttachmentStore {
   private readonly baseDir: string;
   private readonly diagnostics: AttachmentDiagnostics;
   private readonly pendingUploads = new Map<string, PendingUpload>();
+  private readonly imports = new Map<string, AbortController>();
   private readonly uploadOperations = new Map<string, Promise<void>>();
   // cleanupSession has no upload_id, so upload-level ordering alone cannot
   // protect temp files from same-session delete_session_attachments races.
@@ -143,6 +145,34 @@ export class FileAttachmentStore implements AttachmentStore {
     };
     this.diagnostics.info("saveFileForSession.exit", { sessionId: params.sessionId, filename, size: saved.size, sessionDir, path: saved.path });
     return saved;
+  }
+
+  async importFileFromUrl(params: ImportSessionFileParams): Promise<SavedAttachment> {
+    validateR2DownloadUrl(params.downloadUrl);
+    const uploadId = sanitizeUploadId(params.uploadId);
+    const originalName = sanitizeOriginalFilename(params.filename);
+    this.validateFile(originalName, params.expectedSize, MAX_IMPORTED_ATTACHMENT_SIZE);
+    if (!Number.isSafeInteger(params.expectedSize) || params.expectedSize <= 0) {
+      throw new AttachmentError("첨부 크기가 올바르지 않습니다");
+    }
+    const sessionDir = this.sessionDir(params.sessionId);
+    const controller = new AbortController();
+    this.imports.set(uploadId, controller);
+    const timer = setTimeout(() => controller.abort(), 300_000);
+    try {
+      return await this.withSessionOperation(sessionDir, async () => {
+        await mkdir(sessionDir, { recursive: true });
+        const filename = buildStreamingAttachmentFilename(buildFsSafeTimestamp(), uploadId, originalName);
+        const finalPath = path.join(sessionDir, filename);
+        await streamR2Attachment({ downloadUrl: params.downloadUrl, expectedSize: params.expectedSize,
+          tempPath: path.join(sessionDir, `.import-${uploadId}.tmp`), finalPath, signal: controller.signal });
+        return { path: path.resolve(finalPath), filename, size: params.expectedSize,
+          content_type: params.contentType || inferContentType(filename) };
+      });
+    } finally {
+      clearTimeout(timer);
+      this.imports.delete(uploadId);
+    }
   }
 
   async beginFileUpload(params: BeginSessionFileUploadParams): Promise<{ uploadId: string; next_chunk_index: number }> {
@@ -270,6 +300,8 @@ export class FileAttachmentStore implements AttachmentStore {
   }
 
   async abortFileUpload(params: AbortSessionFileUploadParams): Promise<boolean> {
+    const importing = this.imports.get(params.uploadId);
+    if (importing) { importing.abort(); return true; }
     return this.withUploadOperation(params.uploadId, async (safeUploadId) => {
       const state = this.pendingUploads.get(safeUploadId);
       this.diagnostics.info("abortFileUpload.enter", { uploadId: safeUploadId, stateExists: Boolean(state), tempPath: state?.tempPath, pendingUploadsSize: this.pendingUploads.size });
@@ -354,6 +386,9 @@ export class FileAttachmentStore implements AttachmentStore {
       throw new FileNotFoundError("파일이 존재하지 않습니다");
     }
 
+    if (fileStat.size > MAX_ATTACHMENT_SIZE) {
+      throw new AttachmentError("대형 첨부는 워커 로컬 파일 경로로 접근해 주세요. 기존 다운로드는 최대 100MiB까지 지원합니다");
+    }
     const content = await readFile(target);
     return {
       content_b64: content.toString("base64"),
@@ -363,13 +398,13 @@ export class FileAttachmentStore implements AttachmentStore {
     };
   }
 
-  private validateFile(filename: string, size: number): void {
+  private validateFile(filename: string, size: number, maximum = MAX_ATTACHMENT_SIZE): void {
     if (!Number.isFinite(size) || !Number.isInteger(size) || size < 0) {
       throw new AttachmentError("파일 크기가 잘못되었습니다");
     }
-    if (size > MAX_ATTACHMENT_SIZE) {
+    if (size > maximum) {
       throw new AttachmentError(
-        `파일이 너무 큽니다 (${Math.floor(size / 1024 / 1024)}MB > ${Math.floor(MAX_ATTACHMENT_SIZE / 1024 / 1024)}MB)`,
+        `파일이 너무 큽니다 (${Math.floor(size / 1024 / 1024)}MB > ${Math.floor(maximum / 1024 / 1024)}MB)`,
       );
     }
     const suffix = path.extname(filename).toLowerCase();

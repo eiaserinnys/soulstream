@@ -493,6 +493,9 @@ export async function createLiveProductionApplication(
       runtimeServices,
       uiEventRepository,
       usageSummaryRoutes: { service: usageSummaryService },
+      resolveAttachmentStorage: () => createR2StorageResolver(
+        async () => await sqlResolver.resolveSql() as unknown as SqlClient,
+      ).resolveBinding("attachment"),
     });
   } catch (error) {
     await dbCatalogRepository.close();

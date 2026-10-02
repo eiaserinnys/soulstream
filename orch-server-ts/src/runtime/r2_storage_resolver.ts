@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { readR2Settings, type R2Purpose } from "../system/r2_settings.js";
 import { createR2BoardAssetStorage, checkR2Bucket } from "./live_board_asset_storage.js";
@@ -5,9 +6,15 @@ import { createR2BoardAssetStorage, checkR2Bucket } from "./live_board_asset_sto
 export type R2CheckResult = { status: "ok" | "not_configured" | "access_failed"; message: string };
 export function createR2StorageResolver(resolveSql: () => Promise<SqlClient>) {
   async function resolve(purpose: R2Purpose) {
+    return (await resolveBinding(purpose))?.storage ?? null;
+  }
+  async function resolveBinding(purpose: R2Purpose) {
     const settings = await readR2Settings(await resolveSql(), purpose);
-    return settings.endpoint && settings.bucket && settings.accessKeyId && settings.secretAccessKey
-      ? createR2BoardAssetStorage(settings) : null;
+    if (!settings.endpoint || !settings.bucket || !settings.accessKeyId || !settings.secretAccessKey) return null;
+    const identity = createHash("sha256").update(JSON.stringify([
+      purpose, settings.version, settings.endpoint, settings.bucket, settings.accessKeyId,
+    ])).digest("hex");
+    return { storage: createR2BoardAssetStorage(settings), identity };
   }
   async function check(purpose: R2Purpose): Promise<R2CheckResult> {
     const settings = await readR2Settings(await resolveSql(), purpose);
@@ -21,5 +28,5 @@ export function createR2StorageResolver(resolveSql: () => Promise<SqlClient>) {
       return { status: "access_failed", message: "버킷 접근에 실패했습니다. 권한과 접속 정보를 확인해 주세요." };
     }
   }
-  return { resolve, check };
+  return { resolve, resolveBinding, check };
 }

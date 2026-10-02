@@ -157,7 +157,7 @@ function createAllOptInRouteApp() {
     r2SettingsRoutes: inert,
     atomRoutes: inert,
     authRoutes: inert,
-    attachmentRoutes: inert,
+    attachmentRoutes: { multipart: inert },
     boardAssetRoutes: inert,
     boardItemRoutes: inert,
     boardYjsRoutes: { createService: () => ({ close: async () => undefined }) as never },

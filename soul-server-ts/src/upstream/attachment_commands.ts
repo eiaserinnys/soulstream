@@ -1,7 +1,9 @@
+import type { ImportSessionFileParams } from "../attachments/url_import.js";
 import {
   AttachmentError,
   FileNotFoundError,
   type AttachmentStore,
+  type SavedAttachment,
 } from "../attachments/file_manager.js";
 
 export interface UploadAttachmentParams {
@@ -113,7 +115,18 @@ export class AttachmentCommandError extends Error {
  * the generic sendError envelope.
  */
 export class AttachmentCommands {
-  constructor(private readonly store: AttachmentStore) {}
+  constructor(private readonly store: AttachmentStore & {
+    importFileFromUrl?: (input: ImportSessionFileParams) => Promise<SavedAttachment>;
+  }) {}
+
+  async importFromUrl(params: ImportSessionFileParams & { requestId: string }): Promise<UploadAttachmentAck> {
+    if (!this.store.importFileFromUrl) throw new AttachmentCommandError("INVALID_REQUEST: 대용량 첨부를 지원하지 않습니다");
+    if (!params.sessionId || !params.filename || !params.uploadId || !params.downloadUrl) {
+      throw new AttachmentCommandError("INVALID_REQUEST: 첨부 import 필드 누락");
+    }
+    const result = await this.store.importFileFromUrl(params);
+    return { type: "upload_attachment_result", requestId: params.requestId, ...result };
+  }
 
   async upload(params: UploadAttachmentParams): Promise<UploadAttachmentAck> {
     if (!params.contentB64) {

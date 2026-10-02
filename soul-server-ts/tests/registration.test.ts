@@ -56,6 +56,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       max_concurrent: 1,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      attachment_import_v1: true,
       runner_inventory_v1: true,
     });
     expect(msg.supported_backends).toEqual(["codex"]);
@@ -85,6 +86,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       max_concurrent: 1,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      attachment_import_v1: true,
       runner_inventory_v1: true,
       runner_process_v1: true,
     });
@@ -141,6 +143,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       max_concurrent: 0,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      attachment_import_v1: true,
       runner_inventory_v1: true,
     });
     expect(msg.supported_backends).toEqual([]);
@@ -238,6 +241,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       max_concurrent: 2,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      attachment_import_v1: true,
       runner_inventory_v1: true,
     });
     expect((msg.supported_backends ?? []).slice().sort()).toEqual(["claude", "codex"]);

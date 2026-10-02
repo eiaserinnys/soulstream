@@ -20,6 +20,6 @@ export function CardCommentInput({nodeId,sessionId,pending,onSend}:{nodeId?:stri
  return <div className="v3-card-comment-dock">
   <CardComposer text={text} onChangeText={setText} onSend={()=>void submit()} placeholder="커멘트" label="커멘트 전송" pending={pending} disabled={!ready}
    files={upload.files} onAddFiles={uploadUrl?upload.addFiles:undefined} onRemoveFile={upload.removeFile} onAttachUnavailable={()=>setNotice("첨부는 곧 지원합니다. 담당 세션이 연결되면 사용할 수 있습니다.")}/>
-  {notice?<p role="status" className="v3-card-error">{notice}</p>:null}
+  {(notice||upload.files.find(file=>file.status==="error")?.errorMessage)?<p role="status" className="v3-card-error">{notice||upload.files.find(file=>file.status==="error")?.errorMessage}</p>:null}
  </div>;
 }

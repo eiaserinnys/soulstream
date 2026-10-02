@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 157개 $defs (top-level wire 81 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 158개 $defs (top-level wire 82 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -26,6 +26,7 @@
     "realtime_create_call",
     "realtime_event",
     "realtime_resolve_tool_approval",
+    "import_attachment_from_url",
     "upload_attachment",
     "upload_attachment_start",
     "upload_attachment_chunk",
@@ -1614,6 +1615,22 @@
         "request_id": { "type": "string" },
         "requestId": { "type": "string" }
       }
+    },
+    "ImportAttachmentFromUrl": {
+      "type": "object",
+      "description": "Trusted orch→worker: streaming HTTPS R2 import, upload_attachment_result response.",
+      "required": ["type", "requestId", "upload_id", "session_id", "filename", "content_type", "expected_size", "download_url"],
+      "properties": {
+        "type": { "const": "import_attachment_from_url" },
+        "requestId": { "type": "string" },
+        "upload_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "filename": { "type": "string" },
+        "content_type": { "type": "string" },
+        "expected_size": { "type": "integer", "minimum": 1, "maximum": 5368709120 },
+        "download_url": { "type": "string" }
+      },
+      "additionalProperties": false
     },
     "UploadAttachment": {
       "type": "object",
@@ -3259,6 +3276,7 @@
     { "$ref": "#/$defs/RealtimeResolveToolApproval" },
     { "$ref": "#/$defs/ListSessions" },
     { "$ref": "#/$defs/ListRunnerInventory" },
+    { "$ref": "#/$defs/ImportAttachmentFromUrl" },
     { "$ref": "#/$defs/UploadAttachment" },
     { "$ref": "#/$defs/UploadAttachmentStart" },
     { "$ref": "#/$defs/UploadAttachmentChunk" },

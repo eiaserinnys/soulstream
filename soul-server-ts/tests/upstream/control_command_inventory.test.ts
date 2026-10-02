@@ -34,7 +34,7 @@ describe("control command inventory", () => {
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(44);
+    expect(inventoryTypes).toHaveLength(45);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -86,6 +86,7 @@ describe("control command inventory", () => {
       { type: "realtime_create_call", family: "realtime", policy: "durable_mutation" },
       { type: "realtime_event", family: "realtime", policy: "durable_mutation" },
       { type: "realtime_resolve_tool_approval", family: "realtime", policy: "durable_mutation" },
+      { type: "import_attachment_from_url", family: "attachment", policy: "durable_mutation" },
       { type: "upload_attachment", family: "attachment", policy: "durable_mutation" },
       { type: "upload_attachment_start", family: "attachment", policy: "durable_mutation" },
       { type: "upload_attachment_chunk", family: "attachment", policy: "durable_mutation" },

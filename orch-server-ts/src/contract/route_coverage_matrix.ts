@@ -94,6 +94,9 @@ export const routeCoverageOwners = [
 // The route inventory fixture describes the retired Python server. New TS-only
 // routes must be listed explicitly instead of being backfilled into that fixture.
 export const tsOnlyRouteKeys = [
+  "POST /api/attachments/sessions/multipart/init",
+  "POST /api/attachments/sessions/multipart/complete",
+  "POST /api/attachments/sessions/multipart/abort",
   "POST /api/cards/{id}/start-work",
   "GET /api/settings/card-orchestration",
   "PUT /api/settings/card-orchestration",

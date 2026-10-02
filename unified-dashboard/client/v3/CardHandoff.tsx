@@ -27,7 +27,7 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
  const changeId = useRef(0);
  const stars = useFolderPickerStars(folderOpen,folders);
  const fileUploadUrl = selection.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(selection.nodeId)}` : "";
- const {files,isUploading,addFiles,removeFile,resetLocal} = useFileUpload({uploadUrl:fileUploadUrl,sessionId:uploadSessionId});
+ const {files,isUploading,addFiles,removeFile,resetLocal} = useFileUpload({uploadUrl:fileUploadUrl,sessionId:uploadSessionId,folderId:selection.folderId});
  const attachFiles = (incoming:FileList|File[]) => {
   addFiles(incoming);
  };
@@ -74,5 +74,5 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
      onAgentInfoChange={setAgent} onModelPresetInfoChange={setModel} onValidityChange={setModelValid} disabled={pending} onError={setError}/></PopoverPopup></Popover>
    </div>
   </div>
- </div>{error?<p role="alert" className="v3-card-error">{error}</p>:null}</>;
+ </div>{(error||files.find(f=>f.status==="error")?.errorMessage)?<p role="alert" className="v3-card-error">{error||files.find(f=>f.status==="error")?.errorMessage}</p>:null}</>;
 }

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 157개 $defs (top-level wire 81 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 158개 $defs (top-level wire 82 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -54,6 +54,7 @@ export type SoulstreamUpstreamProtocol =
   | RealtimeResolveToolApproval
   | ListSessions
   | ListRunnerInventory
+  | ImportAttachmentFromUrl
   | UploadAttachment
   | UploadAttachmentStart
   | UploadAttachmentChunk
@@ -1989,6 +1990,19 @@ export interface ListRunnerInventory {
   [k: string]: unknown;
 }
 /**
+ * Trusted orch→worker: streaming HTTPS R2 import, upload_attachment_result response.
+ */
+export interface ImportAttachmentFromUrl {
+  type: "import_attachment_from_url";
+  requestId: string;
+  upload_id: string;
+  session_id: string;
+  filename: string;
+  content_type: string;
+  expected_size: number;
+  download_url: string;
+}
+/**
  * orch→노드: legacy single-frame attachment upload. 8MB 이하 backward compatibility path.
  */
 export interface UploadAttachment {
@@ -2848,6 +2862,7 @@ export const CONTROL_COMMAND_TYPES = [
   "realtime_create_call",
   "realtime_event",
   "realtime_resolve_tool_approval",
+  "import_attachment_from_url",
   "upload_attachment",
   "upload_attachment_start",
   "upload_attachment_chunk",

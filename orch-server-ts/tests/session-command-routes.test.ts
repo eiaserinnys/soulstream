@@ -349,6 +349,7 @@ describe("session command HTTP route harness", () => {
         profile: "claude-roselin",
         folderId: "folder-1",
         agentSessionId: "client-selected-session",
+        attachmentPaths: ["/incoming/pending/large.zip"],
       },
     });
 
@@ -370,6 +371,8 @@ describe("session command HTTP route harness", () => {
       requestId: "route-create_session-1-1700000000000",
     });
     expect(sent[0]?.agentSessionId).not.toBe("client-selected-session");
+    expect(sent[0]?.attachment_paths).toEqual(["/incoming/pending/large.zip"]);
+    expect(sent[0]).not.toHaveProperty("attachmentPaths");
   });
 
   it("preserves pageAnchor, client recovery id, and non-fatal worker warnings", async () => {
