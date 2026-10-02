@@ -13,6 +13,14 @@ function input() { return buildObservationInput({ completeEventId: 10, cards: [c
 const answer = (choice: string) => ({ type: 'choice', choice, probabilities: { [choice]: 1 }, confidence: 1 });
 
 describe('Jev card observation contract', () => {
+  it('accepts compact prepared snapshots while retaining legacy rich snapshots', () => {
+    const built=buildObservationInput({completeEventId:10,cards:[card('a')],history:[],summaries:[],totalCards:1,startObservations:[
+      {eventId:1,source:'prepared_model_input',capturedAt:'now',registrationId:'r',executionCommandId:'e',inputId:'i',total:1,cards:[{id:'a',title:'compact',status:'running',latestCommentAt:null,latestReportAt:null}]},
+      {eventId:2,source:'prepared_model_input',capturedAt:'now',registrationId:'r',executionCommandId:'e',inputId:'i',total:1,cards:[{id:'a',title:'legacy',status:'running',version:4,instruction:'지시',report:'보고'}]},
+    ]});
+    expect(built.startObservations[0]?.cards[0]).toMatchObject({title:'compact'});
+    expect(built.startObservations[1]?.cards[0]).toMatchObject({version:4,instruction:'지시',report:'보고'});
+  });
   it('sends only canonical text through the cutoff, and marks absent actual start snapshot', () => {
     const built = input();
     expect(built.scope.actualStartSnapshot).toBe('unavailable');

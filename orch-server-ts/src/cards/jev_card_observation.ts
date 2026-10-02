@@ -16,7 +16,10 @@ export interface ObservationHistory { id: number; type: string; text: string }
 export interface PreparedCardSnapshot {
   eventId: number; source: 'prepared_model_input' | 'after_input_observation';
   capturedAt: string; registrationId: string | null; executionCommandId: string | null;
-  inputId: string | null; total: number; cards: Array<{ id: string; title: string; status: string; instruction: string; report: string; version?: number }>;
+  inputId: string | null; total: number; cards: Array<{
+    id: string; title: string; status: string; instruction?: string; report?: string; version?: number;
+    latestCommentAt?: string | null; latestReportAt?: string | null;
+  }>;
 }
 export interface ObservationScope {
   actualStartSnapshot: 'unavailable'; endSnapshot: 'after_completion_read';
@@ -73,7 +76,9 @@ export function buildObservationInput(input: {
   const cards = input.cards.slice(0,12).map(c => ({ ...c, title: observationText(c.title).slice(0, 160), request: observationText(c.request).slice(0, 800),
     brief: observationText(c.brief).slice(0, 800), instruction: observationText(c.instruction).slice(0, 800), report: observationText(c.report).slice(0, 800) }));
   const startObservations = input.startObservations.slice(0,4).map(s => ({...s, cards:s.cards.slice(0,12).map(c=>({
-    ...c,title:observationText(c.title).slice(0,160),instruction:observationText(c.instruction).slice(0,200),report:observationText(c.report).slice(0,200),
+    ...c,title:observationText(c.title).slice(0,160),
+    ...(typeof c.instruction==='string'?{instruction:observationText(c.instruction).slice(0,200)}:{}),
+    ...(typeof c.report==='string'?{report:observationText(c.report).slice(0,200)}:{}),
   }))}));
   const built: ObservationInput = { cards, history: recent, summaries, startObservations,
     scope: { actualStartSnapshot: 'unavailable', endSnapshot: 'after_completion_read', completeEventId: input.completeEventId,

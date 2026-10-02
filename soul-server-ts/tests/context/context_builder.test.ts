@@ -1972,16 +1972,16 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
 describe("assigned card input refresh",()=>{
   it("refreshes the same read-only slot on initial, ordinary resume and compact/rollover full context",async()=>{
     let status="todo";
-    const read=vi.fn(async()=>({total:1,cards:[{id:"card",title:"현재",status,instruction:"사용자 지시",report:"보고"}]}));
+    const read=vi.fn(async()=>({capturedAt:"2026-10-02T00:00:00Z",total:1,omitted:0,cards:[{id:"card",title:"현재",status,latestCommentAt:null,latestReportAt:null}]}));
     const builder=makeBuilder({getAssignedCardContext:read});
     const task=makeTask({contextItems:[{key:"assigned_cards",content:"stale supplied slot"}]});
     const initial=await builder.build(task,codexAgent);
     expect(initial.combinedContextItems.filter(i=>i.key==="assigned_cards")).toHaveLength(1);
-    expect(initial.combinedContextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"todo"}]});
+    expect(initial.combinedContextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"할 일"}]});
     status="running";
-    expect((await builder.buildFollowupContext(task,codexAgent)).contextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"running"}]});
+    expect((await builder.buildFollowupContext(task,codexAgent)).contextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"실행 중"}]});
     status="review";
-    expect((await builder.buildFollowupContext(task,codexAgent,{includeFullContext:true})).contextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"review"}]});
+    expect((await builder.buildFollowupContext(task,codexAgent,{includeFullContext:true})).contextItems.find(i=>i.key==="assigned_cards")!.content).toMatchObject({cards:[{status:"검수 대기"}]});
     expect(read).toHaveBeenCalledTimes(3);
     expect(task.interventionQueue).toHaveLength(0);
   });

@@ -2,24 +2,20 @@ import type { Logger } from 'pino';
 import type { EventPersistence } from '../db/event_persistence.js';
 import type { SSEEventPayload } from '../engine/protocol.js';
 import type { AssignedCardContextCapture } from './assigned_card_context.js';
+import { cardStatusLabel } from './assigned_card_context.js';
 
 export function formatAssignedCardSnapshotContent(
-  snapshot: AssignedCardContextCapture['snapshot'],
+  snapshot: Pick<AssignedCardContextCapture['snapshot'],'capturedAt'> & {
+    cards: Array<Pick<AssignedCardContextCapture['snapshot']['cards'][number],
+      'id'|'title'|'status'|'latestCommentAt'|'latestReportAt'>>;
+  },
 ): string {
-  const lines = [
-    '담당 카드 입력 준비 스냅샷 · 소비 확인 전',
-    '관측 범위: 저장된 준비 캡처 · 최종 모델 포맷과 소비는 확인하지 않음',
-    `전체 ${snapshot.total}개 · 표시 ${snapshot.cards.length}개 · 생략 ${snapshot.omitted}개`,
-  ];
-  snapshot.cards.forEach((card, index) => {
-    lines.push(
-      `${index + 1}. ${card.title} · ${card.status} · v${card.version}`,
-      `지시: ${card.instruction}`,
-      `보고: ${card.report}`,
-    );
-  });
-  lines.push(`준비 시각: ${snapshot.capturedAt}`);
-  return lines.join('\n');
+  if (!snapshot.cards.length) return '담당 카드 없음';
+  return snapshot.cards.map(card => [
+    oneLine(card.title), cardStatusLabel(card.status),
+    card.latestReportAt ? `마지막 보고 ${card.latestReportAt}` : '보고 없음',
+    isLater(card.latestCommentAt,card.latestReportAt) ? '최근 커멘트 이후 보고 없음' : null,
+  ].filter(Boolean).join(' · ')).join('\n');
 }
 
 /** Copies already-read input data into the existing outbox. Never performs a provider call or waits for an ACK. */
@@ -32,7 +28,7 @@ export function createAssignedCardSnapshotRecorder(persistence: Pick<EventPersis
       identityMissing: !capture.registrationId || !capture.executionCommandId || !capture.inputId,
       snapshot: { total: capture.snapshot.total, omitted: capture.snapshot.omitted, capturedAt: capture.snapshot.capturedAt,
         cards: capture.snapshot.cards.slice(0,12).map(c=>({ id:c.id,title:c.title.slice(0,160),status:c.status,
-          version:c.version,instruction:c.instruction.slice(0,401),report:c.report.slice(0,401) })) },
+          latestCommentAt:c.latestCommentAt,latestReportAt:c.latestReportAt })) },
     };
     const dedupe = capture.registrationId && capture.inputId
       ? `assigned_card_context_snapshot:${capture.registrationId}:${capture.inputId}` : null;
@@ -44,4 +40,9 @@ export function createAssignedCardSnapshotRecorder(persistence: Pick<EventPersis
       logger.warn({ sessionId:capture.sessionId, inputId:capture.inputId },'assigned card prepared observation missing: append failed');
     });
   };
+}
+
+function oneLine(value: string): string { return value.replace(/\s+/g,' ').trim(); }
+function isLater(left: string | null, right: string | null): boolean {
+  return left !== null && right !== null && Date.parse(left) > Date.parse(right);
 }
