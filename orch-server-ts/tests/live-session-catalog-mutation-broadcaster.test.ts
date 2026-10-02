@@ -10,6 +10,21 @@ import {
 } from "../src/index.js";
 
 describe("withSessionCatalogMutationBroadcasts", () => {
+  it("publishes every committed descendant returned by both REST move routes", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
+    const provider = createSessionProvider();
+    const sessionIds = ["root", "child", "grandchild"];
+    provider.moveSessionsToFolder = vi.fn(async () => ({count:3,sessionIds}));
+    provider.updateSessionCatalog = vi.fn(async () => ({count:3,sessionIds}));
+    const folders = createFolderProvider();
+    const wrapped = withSessionCatalogMutationBroadcasts(provider,folders,broadcaster);
+    await wrapped.moveSessionsToFolder(["root"],"folder-b");
+    await wrapped.updateSessionCatalog("root",{folderId:"folder-b"});
+    expect(folders.listSessionAssignmentsByIds).toHaveBeenNthCalledWith(1,sessionIds);
+    expect(folders.listSessionAssignmentsByIds).toHaveBeenNthCalledWith(2,sessionIds);
+    expect(broadcaster.bufferedEvents).toHaveLength(2);
+  });
+
   it("builds one targeted delta from the committed assignment owner", async () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
     const folderProvider = createFolderProvider();

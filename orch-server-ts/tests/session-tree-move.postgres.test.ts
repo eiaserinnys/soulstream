@@ -98,5 +98,18 @@ it("rolls back sessions, cards and snapshots when a card move fails inside the t
   expect(await harness.sql`SELECT name,snapshot FROM board_yjs_documents WHERE name <> 'board-folder:rejected' ORDER BY name`).toEqual(before);
   expect(await harness.sql`SELECT DISTINCT folder_id,version FROM cards WHERE id <> 'unrelated-card'`)
     .toEqual([{folder_id:"target",version:2}]);
+  expect(await harness.sql`SELECT DISTINCT folder_id FROM sessions WHERE session_id IN ('root','child','grandchild')`)
+    .toEqual([{folder_id:"target"}]);
+  expect(await harness.sql`SELECT item_id FROM board_items WHERE folder_id='rejected'`).toEqual([]);
+  expect(committed).not.toHaveBeenCalled();
+});
+
+it("rejects an unassigned destination for a tree with assigned cards without a partial move", async () => {
+  const before = await harness.sql`SELECT session_id,folder_id FROM sessions ORDER BY session_id`;
+  const snapshots = await harness.sql`SELECT name,snapshot FROM board_yjs_documents ORDER BY name`;
+  committed.mockClear();
+  await expect(move.moveSessionsToFolder(["root"],null)).rejects.toMatchObject({statusCode:422});
+  expect(await harness.sql`SELECT session_id,folder_id FROM sessions ORDER BY session_id`).toEqual(before);
+  expect(await harness.sql`SELECT name,snapshot FROM board_yjs_documents ORDER BY name`).toEqual(snapshots);
   expect(committed).not.toHaveBeenCalled();
 });

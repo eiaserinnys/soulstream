@@ -25,6 +25,8 @@ export interface SessionContextMenuState {
   x: number;
   y: number;
   sessionId: string;
+  /** Keep a menu invoked inside an existing dialog within that dialog surface. */
+  portalContainer?: HTMLElement;
 }
 
 export interface SessionContextMenuProps {
@@ -362,6 +364,7 @@ export function SessionContextMenu({
         >
           <MenuPopup
             anchor={desktopAnchor}
+            portalContainer={contextMenu?.portalContainer}
             side="bottom"
             align="start"
             sideOffset={4}

@@ -53,7 +53,6 @@ export function SessionSuccessionModal({
   contextItems,
   documentOptions,
   contextPending,
-  contextError,
   predecessorOptions,
   pageDefaults,
   currentSession,
@@ -66,7 +65,6 @@ export function SessionSuccessionModal({
   contextItems: readonly SuccessionContextItem[];
   documentOptions: readonly SuccessionDocumentOption[];
   contextPending: boolean;
-  contextError?: string | null;
   predecessorOptions: readonly SuccessionSessionOption[];
   pageDefaults: PageSessionDefaults | null;
   currentSession: SessionSummary | null;
@@ -170,7 +168,7 @@ export function SessionSuccessionModal({
   }, []);
 
   const start = async () => {
-    if (!selectedNodeId || !selectedAgentId || !modelPresetValid || contextError) return;
+    if (!selectedNodeId || !selectedAgentId || !modelPresetValid) return;
     if (effort.unsupported) return;
     setPending(true);
     setError(null);

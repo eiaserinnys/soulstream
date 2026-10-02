@@ -5,7 +5,6 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { ChevronsDown, Plus } from "lucide-react";
-import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { retainEqualValue } from "@seosoyoung/soul-ui";
 
 import {
@@ -44,12 +43,8 @@ export function FolderSessionHistory({
   runHistoryLoading,
   activeSessionId,
   onLoadMoreRuns,
-  moveTargets,
   onOpenSession,
   onSessionCreated,
-  onRenameSession,
-  onDeleteSessions,
-  onMoveSession,
 }: {
   folderTitle: string;
   folderPageId: string;
@@ -66,14 +61,9 @@ export function FolderSessionHistory({
   runHistoryLoading: boolean;
   activeSessionId: string | null;
   onLoadMoreRuns(): Promise<void>;
-  moveTargets: readonly FolderMoveTarget[];
   onOpenSession(session: SessionSummary): void;
   onSessionCreated(session: SessionSummary): void;
-  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
-  onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
 }) {
-  const api = useMemo(() => createPageApiClient(), []);
   const treeRef = useRef<ReturnType<typeof buildRunTree>>([]);
   const predecessorOptionsRef = useRef<ReturnType<typeof buildSuccessionSessionOptions>>([]);
   const tree = useMemo(
@@ -98,11 +88,8 @@ export function FolderSessionHistory({
     [tree],
   );
   const [successionOpen, setSuccessionOpen] = useState(false);
-  const [targetedSuccessionId, setTargetedSuccessionId] = useState<string | null>(null);
   const openSessionMenu = useSessionMenu();
-  const targetedSuccession = targetedSuccessionId
-    ? sessions.find((session) => session.agentSessionId === targetedSuccessionId) ?? null
-    : currentSession;
+
 
   const loadMoreRuns = async (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -147,8 +134,8 @@ export function FolderSessionHistory({
           contextPending={contextPending}
           predecessorOptions={predecessorOptions}
           pageDefaults={sessionDefaults}
-          currentSession={targetedSuccession}
-          onClose={() => { setSuccessionOpen(false); setTargetedSuccessionId(null); }}
+          currentSession={currentSession}
+          onClose={() => setSuccessionOpen(false)}
           onCreated={onSessionCreated}
         />
       ) : null}

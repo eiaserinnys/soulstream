@@ -1,3 +1,5 @@
+import { SessionMenuProvider } from "./SessionMenuProvider";
+import { SessionMenuReviewSample } from "./SessionMenuReviewSample";
 import { useState, type ReactNode } from "react";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
 import { SystemMessage } from "@seosoyoung/soul-ui/components/chat/SystemMessage";
@@ -85,7 +87,10 @@ export function ComponentsReviewPage() {
     onToggleToday: async () => setInToday(value => !value), onMoveToParent: () => open("상위 폴더 이동"),
   };
 
-  return <article className="v3-detail-pane v3-detail-pane--inline" data-testid="components-review">
+  return <SessionMenuProvider sessions={[reviewSession]}
+    onRename={async()=>open("세션 이름 변경")} onDelete={async()=>open("세션 삭제")}
+    onMove={async(_id,target)=>open(`폴더 이동 · ${target.page.title}`)} onCreated={()=>open("세션 승계")}>
+    <article className="v3-detail-pane v3-detail-pane--inline" data-testid="components-review">
     <FolderPanelHeader title={title} onRename={async next => setTitle(next)} inline
       backLabel="대시보드로 돌아가기" onBack={() => window.location.assign("/")} actions={
         <DashboardIconCap label="샘플 상태 초기화" onClick={reset}><RotateCcw className="h-4 w-4" /></DashboardIconCap>
@@ -219,6 +224,9 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-input" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>입력창</h3></div>
+            <Sample name="공통 세션 메뉴 / FolderMoveDialog / SessionSuccessionModal" state="운영 행·헤더 우클릭 · 기존 폴더 선택기 · 승계 · 비활성 사유">
+              <SessionMenuReviewSample/>
+            </Sample>
             <Sample name="CardComposer / ChatInputComposer / ChatInputEditor" state="한 줄 → 여러 줄 · 전송 · 로컬 첨부">
               <div className="v3-card-handoff">
                 <CardComposer text={request} onChangeText={setRequest} onSend={send} placeholder="샘플 메시지" inputLabel="검수 메시지"
@@ -275,5 +283,5 @@ export function ComponentsReviewPage() {
         </div>
       </div>
     </div>
-  </article>;
+  </article></SessionMenuProvider>;
 }

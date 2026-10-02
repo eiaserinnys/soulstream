@@ -283,4 +283,3 @@ async function readContainerRows(
     ORDER BY id
   `;
 }
-

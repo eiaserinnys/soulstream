@@ -3,7 +3,8 @@ import { useMemo } from "react";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 import type { BlockDto } from "@seosoyoung/soul-ui/page";
 
-import { singleLinePreview } from "./session-preview";
+import { buildFolderSessionContextItems } from "./folder-session-context-items";
+export { contextSourceLabel } from "./folder-session-context-items";
 import {
   mergeProjectContextPages,
 } from "./project-context-inheritance";
@@ -50,42 +51,8 @@ export function useFolderSessionContext({
       details: folderContext,
     },
   ]), [inheritedContext, folderPageId, folderContext]);
-  const contextItems = useMemo(() => [
-    ...effectiveContext.guidance.map((guidance) => ({
-      id: `${guidance.source.pageId}:${guidance.blockId}`,
-      kind: "guidance" as const,
-      blockId: guidance.blockId,
-      direct: guidance.source.pageId === folderPageId,
-      icon: "✦",
-      contentLabel: singleLinePreview(guidance.text, 96) ?? guidance.text,
-      sourceLabel: contextSourceLabel(guidance.source.folderName),
-      label: `${singleLinePreview(guidance.text, 96) ?? guidance.text} · ${contextSourceLabel(guidance.source.folderName)}`,
-    })),
-    ...effectiveContext.atomReferences.map((reference) => ({
-      id: `${reference.source.pageId}:${reference.blockId}`,
-      kind: "atom" as const,
-      blockId: reference.blockId,
-      direct: reference.source.pageId === folderPageId,
-      reference,
-      icon: "⚛",
-      contentLabel: reference.nodeTitle,
-      sourceLabel: contextSourceLabel(reference.source.folderName),
-      label: `${reference.nodeTitle} · ${contextSourceLabel(reference.source.folderName)}`,
-    })),
-    ...contextBlocks.flatMap((block) => {
-      const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
-      return match ? [{
-        id: block.id,
-        kind: "page" as const,
-        blockId: block.id,
-        direct: true,
-        icon: "📄",
-        contentLabel: match[1],
-        sourceLabel: "이 폴더",
-        label: `${match[1]} · 이 폴더`,
-      }] : [];
-    }),
-  ], [contextBlocks, effectiveContext, folderPageId]);
+  const contextItems = useMemo(() => buildFolderSessionContextItems(effectiveContext,contextBlocks,folderPageId),
+    [contextBlocks,effectiveContext,folderPageId]);
   const directDefaults = folderContext.sessionDefaults.at(-1) ?? null;
   const sourcedDefaults = effectiveContext.sessionDefaults.at(-1);
   const effectiveSessionDefaults = sourcedDefaults ? {
@@ -104,8 +71,4 @@ export function useFolderSessionContext({
     effectiveSessionDefaults,
     contextPending: inheritedContext.status === "loading",
   };
-}
-
-export function contextSourceLabel(folderName: string): string {
-  return folderName === "이 폴더" ? folderName : `${folderName}에서 상속`;
 }

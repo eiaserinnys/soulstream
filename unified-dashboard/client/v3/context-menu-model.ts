@@ -6,13 +6,6 @@ export interface V3ContextMenuAction {
   separatorBefore?: boolean;
 }
 
-export interface V3SessionContextMenuExtraAction {
-  label: string;
-  onClick(): void | Promise<void>;
-  disabled?: boolean;
-  className?: string;
-}
-
 export function buildFolderContextMenuActions(
   state: { starred: boolean; completed: boolean; inToday: boolean },
   actions: {
@@ -118,14 +111,4 @@ export function buildDocumentContextMenuActions(actions: {
     });
   }
   return menu;
-}
-
-export function buildFolderSessionExtraActions(actions: {
-  continueFromSession(): void | Promise<void>;
-  moveToFolder(): void | Promise<void>;
-}): V3SessionContextMenuExtraAction[] {
-  return [
-    { label: "＋ 이어서 새 세션 (승계)", onClick: actions.continueFromSession },
-    { label: "다른 폴더로 이동", onClick: actions.moveToFolder },
-  ];
 }

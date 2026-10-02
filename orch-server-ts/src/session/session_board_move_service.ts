@@ -17,6 +17,8 @@ interface SessionBoardMoveBoardPort {
 
 export interface MovedAssignedCard { cardId: string; sourceFolderId: string; folderId: string; }
 
+export interface SessionTreeMoveCommit { cards: readonly MovedAssignedCard[]; folderIds: readonly string[]; }
+
 interface SessionBoardMoveRepositoryPort {
   listSessionMoveTree(sessionIds: readonly string[]): Promise<string[]>;
   listSessionBoardItems(sessionId: string): Promise<CatalogBoardItemRow[]>;
@@ -25,7 +27,7 @@ interface SessionBoardMoveRepositoryPort {
     sessionIds: readonly string[];
     folderId: string | null;
     boardApplications: readonly BoardYjsDocumentApplication[];
-  }): Promise<readonly MovedAssignedCard[] | void>;
+  }): Promise<SessionTreeMoveCommit | void>;
 }
 
 export class SessionBoardMoveService {
@@ -34,6 +36,7 @@ export class SessionBoardMoveService {
   constructor(private readonly config: {
     board: SessionBoardMoveBoardPort;
     repository: SessionBoardMoveRepositoryPort;
+    onFoldersMoveCommitted?: (folderIds: readonly string[]) => Promise<void>;
     onCardsMoveCommitted?: (cards: readonly MovedAssignedCard[]) => Promise<void>;
     /** Board/Yjs path only. REST catalog mutations emit through their route wrapper. */
     onBoardMoveCommitted?: (move: {
@@ -82,14 +85,15 @@ export class SessionBoardMoveService {
     emitBoardCatalogDelta: boolean,
   ): Promise<{ moved: CatalogBoardItemRow | null; sessionIds: string[] }> {
     const sessionIds = await this.config.repository.listSessionMoveTree(roots);
+    const lockedIds = [...sessionIds].sort();
     const lock = async (index: number): Promise<{ moved: CatalogBoardItemRow | null; sessionIds: string[] }> =>
       index < sessionIds.length
-        ? this.withSessionLock([...sessionIds].sort()[index]!, () => lock(index + 1))
+        ? this.withSessionLock(lockedIds[index]!, () => lock(index + 1))
         : work();
     const work = async () => {
       const boardItems = (await Promise.all(sessionIds.map(id =>
         this.config.repository.listSessionBoardItems(id)))).flat();
-      let movedCards: readonly MovedAssignedCard[] = [];
+      let committed: SessionTreeMoveCommit = {cards:[],folderIds:[]};
       const moved = await this.config.board.withSessionBoardMoveApplications(
         {
           sessionId: input.sessionId,
@@ -99,18 +103,19 @@ export class SessionBoardMoveService {
           ...(input.position ? { position: input.position } : {}),
         },
         async ({ movedBoardItem, boardApplications }) => {
-          movedCards = await this.config.repository.commitSessionMove({
+          committed = await this.config.repository.commitSessionMove({
             sessionId: input.sessionId,
             sessionIds,
             folderId: input.targetScope?.folderId ?? null,
             boardApplications,
-          }) ?? [];
+          }) ?? {cards:[],folderIds:[]};
           return movedBoardItem;
         },
       );
       // withSessionBoardMoveApplications returns only after BoardYjsMoveRepository's transaction
       // (Yjs application + session_assign_folder) and the live Yjs update both succeed.
-      await this.config.onCardsMoveCommitted?.(movedCards);
+      await this.config.onCardsMoveCommitted?.(committed.cards);
+      await this.config.onFoldersMoveCommitted?.(committed.folderIds);
       if (emitBoardCatalogDelta) {
         await this.config.onBoardMoveCommitted?.({
           sessionId: input.sessionId,

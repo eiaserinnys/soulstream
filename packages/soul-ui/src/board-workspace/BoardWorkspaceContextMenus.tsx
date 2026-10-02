@@ -72,11 +72,6 @@ interface BoardWorkspaceContextMenusProps {
   ) => Promise<void>;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onRequestMarkdownEdit?: (documentId: string) => void;
-  onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
-  onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
-  onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
-  onContinueSession?: (sessionId: string) => Promise<void>;
-  getContinueSessionDisabledReason?: (sessionId: string) => string | null;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onDeleteFolder?: (folderId: string) => Promise<void> | void;
   onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
@@ -106,11 +101,6 @@ export function BoardWorkspaceContextMenus({
   onMoveBoardItemToFolder,
   onMarkdownDocumentDeleted,
   onRequestMarkdownEdit,
-  onMoveSessions,
-  onRenameSession,
-  onDeleteSessions,
-  onContinueSession,
-  getContinueSessionDisabledReason,
   onRenameFolder,
   onDeleteFolder,
   onUpdateFolderSettings,

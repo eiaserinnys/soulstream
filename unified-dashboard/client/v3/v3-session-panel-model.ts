@@ -69,10 +69,10 @@ export function sessionPanelAffiliation(
   boardItems: readonly CatalogBoardItem[],
   folders: readonly CatalogFolder[],
   sessionId: string,
+  assignedFolderId?: string | null,
 ): string | null {
-  const primary = primarySessionBoardItem(boardItems, sessionId);
-  if (!primary) return null;
-  return folders.find((folder) => folder.id === primary.folderId)?.name.trim() || null;
+  const folderId = assignedFolderId === undefined ? primarySessionBoardItem(boardItems, sessionId)?.folderId : assignedFolderId;
+  return folders.find((folder) => folder.id === folderId)?.name.trim() || null;
 }
 
 function primarySessionBoardItem(

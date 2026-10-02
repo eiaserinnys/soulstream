@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import {
-  DashboardIconCap, SessionModelPresetBadge, SessionStoryDisclosure, STATUS_CONFIG,
+  useSessionMenu, DashboardIconCap, SessionModelPresetBadge, SessionStoryDisclosure, STATUS_CONFIG,
   type SessionProviderConnectionStatus, type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { ArrowLeft, X } from "lucide-react";
@@ -27,7 +27,9 @@ export function SessionPanelHeader({ session, emptyTitle = "선택된 세션 없
   streamActive: boolean; connectionStatus: SessionProviderConnectionStatus;
   reconnect(): void; onClose?(): void;
 }) {
-  return <header className="v3-panel-header v3-chat-header">
+  const openMenu = useSessionMenu();
+  return <header className="v3-panel-header v3-chat-header"
+    onContextMenu={event=>{if(session)openMenu(session.agentSessionId,event);}}>
     <div className="v3-chat-session-title"><strong>{session ? sessionPanelTitle(session) : emptyTitle}</strong></div>
     <SessionModelPresetBadge session={session}/>
     <span className={`v3-chat-status v3-chat-status--${session?.status ?? "unknown"}`}>

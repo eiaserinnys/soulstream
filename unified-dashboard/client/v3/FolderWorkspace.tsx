@@ -13,7 +13,6 @@ import {
 import { X } from "lucide-react";
 
 import type { PlannerFolder } from "./planner-data";
-import type { FolderMoveTarget } from "./folder-move-targets";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
 import {
   DEFAULT_WORKSPACE_SPLIT,
@@ -68,9 +67,6 @@ export function FolderWorkspace({
   onOpenSession,
   onRenameFolderTitle,
   onSaveDescription,
-  onRenameSession,
-  onDeleteSessions,
-  onMoveSession,
   onFolderBlocksChanged,
   onAcknowledgedReview,
   forceBoardOpen = false,
@@ -117,9 +113,6 @@ export function FolderWorkspace({
   onOpenSession(session: SessionSummary): void;
   onRenameFolderTitle(title: string): Promise<string>;
   onSaveDescription(markdown: string): Promise<void>;
-  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
-  onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
   onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
   forceBoardOpen?: boolean;
@@ -284,9 +277,7 @@ export function FolderWorkspace({
         onClose={() => { setBoardOpen(false); onCloseBoard(); }}
         onOpenSession={onOpenSession}
         onLoadMoreRuns={onLoadMoreRuns}
-        onRenameSession={onRenameSession}
-        onDeleteSessions={onDeleteSessions}
-        onMoveSession={onMoveSession}
+
         onAcknowledgedReview={onAcknowledgedReview}
       />
     );
@@ -335,9 +326,7 @@ export function FolderWorkspace({
             setVisibleTitle(renamedTitle);
           }}
           onSaveDescription={onSaveDescription}
-          onRenameSession={onRenameSession}
-          onDeleteSessions={onDeleteSessions}
-          onMoveSession={onMoveSession}
+
           onFolderBlocksChanged={onFolderBlocksChanged}
           onArchiveFolder={onArchiveFolder}
         />

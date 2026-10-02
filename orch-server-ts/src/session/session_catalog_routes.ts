@@ -305,6 +305,7 @@ async function batchMoveFolder(
     return reply.send({
       success: true,
       count: result?.count ?? sessionIds.value.length,
+      sessionIds: result?.sessionIds ?? sessionIds.value,
     });
   } catch (error) {
     return sendProviderError(reply, error);

@@ -146,7 +146,7 @@ describe("SessionContextMenu", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-a/resume-after-limit");
     const item = findMenuItem("리밋이 풀릴 때 재개");
     expect(item.getAttribute("aria-disabled") ?? item.getAttribute("data-disabled")).toBeTruthy();
-    expect(document.body.querySelector("[role='status']")?.textContent)
+    expect(findMenuItem("리밋이 풀릴 때 재개").querySelector("[role='status']")?.textContent)
       .toContain("현재 세션이 사용량 제한으로 중단된 상태가 아닙니다.");
   });
 
@@ -176,7 +176,7 @@ describe("SessionContextMenu", () => {
       "/api/sessions/session-a/resume-after-limit",
       expect.objectContaining({ method: "POST", body: "{}" }),
     );
-    expect(document.body.querySelector("[role='status']")?.textContent).toMatch(/재개 예약$/);
+    expect(findMenuItem("리밋이 풀릴 때 재개").querySelector("[role='status']")?.textContent).toMatch(/재개 예약$/);
   });
 
   it("uses the existing schedule cancel endpoint and reports its result", async () => {
@@ -205,7 +205,7 @@ describe("SessionContextMenu", () => {
       "/api/sessions/session-a/schedules/resume-after-limit%3Asession-a%3A32%3A0",
       { method: "DELETE" },
     );
-    expect(document.body.querySelector("[role='status']")?.textContent)
+    expect(findMenuItem("리밋이 풀릴 때 재개").querySelector("[role='status']")?.textContent)
       .toContain("재개 예약을 취소했습니다.");
   });
 });

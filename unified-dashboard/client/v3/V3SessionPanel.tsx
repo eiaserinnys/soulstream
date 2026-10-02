@@ -12,7 +12,7 @@ import {
   type MouseEvent,
 } from "react";
 import {
-  useSessionMenu,
+  useSessionMenu, useDashboardStore,
   SessionReviewAcknowledgeError,
   acknowledgeSessionReview,
   useGlassSurface,
@@ -38,8 +38,6 @@ interface V3SessionPanelProps {
   activeSessionId: string | null;
   acknowledgedReviewIds?: ReadonlySet<string>;
   onOpenSession(session: SessionSummary): void;
-  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
-  onDeleteSessions(sessionIds: string[]): Promise<void>;
   onAcknowledged(result: SessionReviewAcknowledgeResult): void;
 }
 
@@ -51,10 +49,9 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   activeSessionId,
   acknowledgedReviewIds = new Set(),
   onOpenSession,
-  onRenameSession,
-  onDeleteSessions,
   onAcknowledged,
 }, forwardedRef) {
+  const assignments = useDashboardStore(s=>s.catalog?.sessions);
   const cards = useCardStore(s=>s.byId);
   const reviewCards = Object.values(cards).filter(card=>card.status==="review"&&!card.archived);
   const surfaceRef = useRef<HTMLElement>(null);
@@ -66,8 +63,8 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   );
   const affiliations = useMemo(() => new Map(sessions.map((session) => [
     session.agentSessionId,
-    (session.cardId ? cards[session.cardId]?.title : null) ?? sessionPanelAffiliation(boardItems, folders, session.agentSessionId),
-   ])), [boardItems, folders, sessions, cards]);
+    (session.cardId ? cards[session.cardId]?.title : null) ?? sessionPanelAffiliation(boardItems, folders, session.agentSessionId, assignments?.[session.agentSessionId]?.folderId),
+   ])), [boardItems, folders, sessions, cards, assignments]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const openSessionMenu = useSessionMenu();

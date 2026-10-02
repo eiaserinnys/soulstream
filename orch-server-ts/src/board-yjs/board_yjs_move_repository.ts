@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { applyCardMoveTx } from "../cards/control_plane/card_move.js";
 import type { CardRow } from "../cards/control_plane/card_types.js";
 import { appendFolderOperation } from "../folders/folder_operation_store.js";
-import type { MovedAssignedCard } from "../session/session_board_move_service.js";
+import type { MovedAssignedCard, SessionTreeMoveCommit } from "../session/session_board_move_service.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { listSessionBoardItems } from "../session/session_board_item_inventory.js";
 import { BoardYjsSqlResolver, type BoardYjsQuerySql } from "./board_yjs_sql.js";
@@ -47,9 +47,13 @@ export class BoardYjsMoveRepository {
     sessionIds: readonly string[];
     folderId: string | null;
     boardApplications: readonly BoardYjsDocumentApplication[];
-  }): Promise<MovedAssignedCard[]> {
+  }): Promise<SessionTreeMoveCommit> {
     const sql = await this.sqlResolver.resolveSql();
     return await sql.begin(async (transaction) => {
+      const sessions = await transaction<{folder_id:string|null}[]>`
+        SELECT folder_id FROM sessions WHERE session_id = ANY(${transaction.array(input.sessionIds)}::text[])
+        ORDER BY session_id FOR UPDATE
+      `;
       const cards = await transaction<CardRow[]>`
         SELECT * FROM cards WHERE assignee_session_id = ANY(${transaction.array(input.sessionIds)}::text[])
         ORDER BY id FOR UPDATE
@@ -73,7 +77,10 @@ export class BoardYjsMoveRepository {
         });
         movedCards.push({ cardId: card.id, sourceFolderId: card.folder_id, folderId: input.folderId! });
       }
-      return movedCards;
+      return {cards:movedCards,folderIds:[...new Set([
+        ...sessions.map(session=>session.folder_id),input.folderId,
+        ...movedCards.map(card=>card.sourceFolderId),
+      ].filter((id):id is string=>id!==null))]};
     });
   }
 

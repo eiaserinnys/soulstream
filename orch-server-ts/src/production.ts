@@ -215,6 +215,9 @@ export async function createLiveProductionApplication(
     repository: boardYjsMoveRepository,
     // Board/Yjs owns this post-commit emission. REST calls moveSessionToFolder instead,
     // whose route wrapper remains its single catalog-delta owner.
+    onFoldersMoveCommitted: async (folderIds) => {
+      for (const folderId of folderIds) runtimeServices.sessionBroadcaster.append({type:"folder_updated",folderId});
+    },
     onCardsMoveCommitted: async (cards) => {
       for (const card of cards) {
         runtimeServices.sessionBroadcaster.append({type:"card_updated",cardId:card.cardId,folderId:card.sourceFolderId});
