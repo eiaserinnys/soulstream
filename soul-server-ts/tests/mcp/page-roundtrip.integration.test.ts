@@ -1,8 +1,10 @@
+import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { registerPageYjsHostOperationRoutes } from "../../../orch-server-ts/src/page/page_host_operations.js";
+import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { PageRepository } from "../../../orch-server-ts/src/page/page_repository.js";
 import { PageYjsService } from "../../../orch-server-ts/src/page/page_service.js";
 import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
@@ -35,6 +37,10 @@ describe("page MCP → orch host complete round-trip", () => {
       service,
       authBearerToken: "service-token",
     });
+    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: "service-token", pages: { service, logger: app.log },
+      folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused"); } },
+      cards: { provider: { listFolders: () => [], listSessionAssignments: () => ({}) }, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
+    });
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
     const client = new PageYjsHostClient({
       orch: {
@@ -43,7 +49,7 @@ describe("page MCP → orch host complete round-trip", () => {
       },
       logger: { warn: vi.fn() } as never,
     });
-    call = register(client);
+    call = register(client, address);
   }, 60_000);
 
   afterAll(async () => {
@@ -149,7 +155,7 @@ describe("page MCP → orch host complete round-trip", () => {
   }, 30_000);
 });
 
-function register(client: PageYjsHostClient) {
+function register(client: PageYjsHostClient, baseUrl: string) {
   const handlers = new Map<string, Function>();
   const server = {
     registerTool(name: string, _config: unknown, handler: Function) {
@@ -158,6 +164,7 @@ function register(client: PageYjsHostClient) {
   } as unknown as McpServer;
   registerPageTools(server, {
     pageHostClient: client,
+    nodeId: "test", orch: { baseUrl, headers: { authorization: "Bearer service-token" } },
     logger: { warn: vi.fn() },
   } as unknown as McpRuntime);
   return async (name: string, input: Record<string, unknown>) => {

@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import { skillTools } from "@soulstream/mcp-contract";
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
 
 import { rankByRelevance } from "../../relevance/typesafe_client.js";
 import {
@@ -11,16 +12,13 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
 export function registerSkillsTools(server: McpServer, runtime: McpRuntime): void {
+  registerOrchestratorTools(server, runtime, Object.values(skillTools));
+}
+
+export function registerSkillsToolsLegacy(server: McpServer, runtime: McpRuntime): void {
   server.registerTool(
     "search_skills",
-    {
-      description:
-        "스킬 카탈로그에서 요청에 맞는 스킬을 적합도 순으로 찾는다. 주입된 카탈로그에 없는 절차성 요청일 때 body_node_id를 얻기 위해 쓴다.",
-      inputSchema: {
-        query: z.string().min(1),
-        limit: z.number().int().min(1).max(10).default(5),
-      },
-    },
+    skillTools.search_skills.config,
     async ({ query, limit }) => {
       const nodeId = process.env.SKILL_CATALOG_NODE_ID ?? DEFAULT_SKILL_CATALOG_NODE_ID;
       let catalog;

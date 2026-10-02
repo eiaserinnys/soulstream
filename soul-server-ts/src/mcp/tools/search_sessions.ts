@@ -1,3 +1,5 @@
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
+import { sessionTools } from "@soulstream/mcp-contract";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -35,22 +37,13 @@ type CogitoSearchResponse = {
   session_results: CogitoSearchResult[];
 };
 
-export function registerSearchSessionsTool(
+export function registerSearchSessionsToolLegacy(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
   server.registerTool(
     "search_sessions",
-    {
-      description:
-        "과거 세션을 뜻으로 찾는다. 검색어가 가리키는 작업이나 대화를 한 세션을 관련도 순으로 돌려준다. "
-        + "원문 이벤트 조각(특정 문장, 도구 출력)이 필요하면 search_session_history를 쓴다.",
-      inputSchema: {
-        query: z.string().min(1).max(500),
-        top_k: z.number().int().min(1).max(30).default(10),
-        folder_id: z.string().optional(),
-      },
-    },
+    sessionTools.search_sessions.config,
     async ({ query, top_k, folder_id }, extra) => {
       const orch = runtime.orch;
       if (!orch) return errorResult("orchestrator proxy is not configured");
@@ -116,4 +109,8 @@ export function registerSearchSessionsTool(
       }
     },
   );
+}
+
+export function registerSearchSessionsTool(server: McpServer, runtime: McpRuntime): void {
+  registerOrchestratorTools(server, runtime, [sessionTools.search_sessions]);
 }

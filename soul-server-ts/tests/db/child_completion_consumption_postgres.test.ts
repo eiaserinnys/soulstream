@@ -24,6 +24,7 @@ import {
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
 import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
+import { startSessionPostgresMcpHost } from "../helpers/session_postgres_mcp_host.js";
 import { appendTestEvent } from "../helpers/append_test_event.js";
 
 const describePostgres =
@@ -35,7 +36,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
   let db: SessionDB;
   let server: Awaited<ReturnType<typeof buildInternalMcpServer>>;
   let client: Client;
-  let consumptionRecorder: ChildCompletionConsumptionRecorder;
+  let orchestrator: Awaited<ReturnType<typeof startSessionPostgresMcpHost>>;
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
@@ -51,7 +52,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
         ('caller-session', 'node-test', 'claude', 'completed', 'caller', NULL)
     `;
 
-    consumptionRecorder = new ChildCompletionConsumptionRecorder(
+    const consumptionRecorder = new ChildCompletionConsumptionRecorder(
       db.sessionDeliveries(),
     );
     const runtime: McpRuntime = {
@@ -66,6 +67,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       catalogService: {} as CatalogService,
       logger,
     };
+    orchestrator = await startSessionPostgresMcpHost(runtime, harness);
     server = await buildInternalMcpServer({
       logger,
       runtime,
@@ -98,6 +100,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
     await client?.close();
     if (server?.closeMcp) await server.closeMcp();
     await server?.close();
+    await orchestrator?.app.close();
     await harness.cleanup();
   });
 
@@ -254,12 +257,12 @@ describePostgres("child completion observation PostgreSQL integration", () => {
     const childB = "child-session-batch-b";
     const revisionA = await createTerminalChild(childA, text);
     const revisionB = await createTerminalChild(childB, text);
-    const original = consumptionRecorder.recordObservedBatch.bind(
-      consumptionRecorder,
+    const original = orchestrator.deliveries.recordObservedChildCompletions.bind(
+      orchestrator.deliveries,
     );
     const recordSpy = vi.spyOn(
-      consumptionRecorder,
-      "recordObservedBatch",
+      orchestrator.deliveries,
+      "recordObservedChildCompletions",
     ).mockImplementation(async (observations) => {
       const newerRevision = await appendTestEvent(harness.sql, {
         sessionId: childB,

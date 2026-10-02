@@ -1,3 +1,4 @@
+import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 export const AGGREGATE_SCHEMA_VERSION = "soulstream.reflect.aggregate.v1";
@@ -106,9 +107,9 @@ export type CogitoSearchAccess = {
 };
 
 export type CogitoSearchAccessProvider = {
-  resolveAccess: (request: FastifyRequest) => CogitoSearchAccess | Promise<CogitoSearchAccess>;
+  resolveAccess: (request: FastifyRequest | ServiceCaller) => CogitoSearchAccess | Promise<CogitoSearchAccess>;
   filterResults?: (input: {
-    request: FastifyRequest;
+    request: FastifyRequest | ServiceCaller;
     response: CogitoSearchResponse;
     access: CogitoSearchAccess;
   }) => CogitoSearchResponse | Promise<CogitoSearchResponse>;
@@ -166,19 +167,53 @@ export function registerCogitoRoutes(
   options: CogitoRouteOptions,
 ): void {
   app.get("/cogito/search", async (request, reply) => {
-    const query = parseSearchQuery(request.query);
-    if (!query.ok) return routeError(reply, query.statusCode, query.detail);
+    const result = await executeCogitoSearch(options, request.query, request, undefined, reply);
+    return result.statusCode === 0 ? reply : reply.code(result.statusCode).send(result.body);
+  });
+
+  app.get("/cogito/briefs", async (request, reply) => {
+    const result = await executeCogitoBriefRoute(options, request.query);
+    return reply.code(result.status).send(result.body);
+  });
+}
+
+/** Same brief aggregation as the HTTP route; search keeps its separate request lifecycle. */
+export async function executeCogitoBriefRoute(options: CogitoRouteOptions, query: unknown) {
+  const timeout = parseBriefTimeout(query);
+  if (!timeout.ok) return { status: timeout.statusCode, body: { detail: timeout.detail } };
+  const nodes = await options.provider.listConnectedNodes();
+  return { status: 200, body: await collectCogitoBriefs(nodes, {
+    collector: options.briefCollector,
+    timeoutSeconds: timeout.value,
+    nowIso: options.nowIso ?? nowIso,
+  }) };
+}
+
+/** The search route body, also used after MCP service authentication. */
+export async function executeCogitoSearch(
+  options: CogitoRouteOptions,
+  queryInput: unknown,
+  request: FastifyRequest | ServiceCaller,
+  signal?: AbortSignal,
+  reply?: FastifyReply,
+): Promise<{ statusCode: number; body: unknown }> {
+    const query = parseSearchQuery(queryInput);
+    if (!query.ok) return { statusCode: query.statusCode, body: { detail: query.detail } };
 
     const deadlineMs = cogitoSearchDeadlineMs(query.value);
     const deadlineAt = Date.now() + deadlineMs;
     const controller = new AbortController();
     const onRequestAborted = () => controller.abort();
     const onResponseClosed = () => {
-      if (!reply.raw.writableFinished) controller.abort();
+      if (reply && !reply.raw.writableFinished) controller.abort();
     };
     const deadlineTimer = setTimeout(() => controller.abort(), deadlineMs);
-    request.raw.once("aborted", onRequestAborted);
-    reply.raw.once("close", onResponseClosed);
+    if (!isServiceCaller(request)) request.raw.once("aborted", onRequestAborted);
+    reply?.raw.once("close", onResponseClosed);
+    const onSignalAbort = () => controller.abort(signal?.reason);
+    if (signal?.aborted) onSignalAbort();
+    else signal?.addEventListener("abort", onSignalAbort, { once: true });
+    const disconnected = () => (!isServiceCaller(request) && request.raw.aborted) || reply?.raw.destroyed === true;
     try {
       const access = await waitForCogitoSearchStep(
         resolveSearchAccess(options, request),
@@ -199,51 +234,33 @@ export function registerCogitoRoutes(
         )
         : response;
       const publicResponse = stripInternalSessionFolderIds(filtered);
-      return {
+      return { statusCode: 200, body: {
         ...publicResponse,
         results: publicResponse.results.slice(0, query.value.top_k),
         navigation_results: publicResponse.navigation_results.slice(0, query.value.top_k),
         ...(publicResponse.session_results === undefined
           ? {}
           : { session_results: publicResponse.session_results.slice(0, query.value.top_k) }),
-      };
+      } };
     } catch (error) {
       if (isPostgresStatementTimeout(error)
-        && !request.raw.aborted
-        && !reply.raw.destroyed) {
-        return routeError(reply, 504, "Search access scope exceeded its database time limit");
+        && !disconnected()) {
+        return { statusCode: 504, body: { detail: "Search access scope exceeded its database time limit" } };
       }
-      if (hasHttpStatus(error, 504) && !request.raw.aborted && !reply.raw.destroyed) {
-        return routeError(reply, 504, "Search request deadline exceeded");
+      if (hasHttpStatus(error, 504) && !disconnected()) {
+        return { statusCode: 504, body: { detail: "Search request deadline exceeded" } };
       }
       if (!controller.signal.aborted) throw error;
-      if (!request.raw.aborted && !reply.raw.destroyed && Date.now() >= deadlineAt) {
-        return routeError(reply, 504, "Search access exceeded the request deadline");
+      if (!disconnected() && Date.now() >= deadlineAt) {
+        return { statusCode: 504, body: { detail: "Search access exceeded the request deadline" } };
       }
-      return reply;
+      return { statusCode: 0, body: null };
     } finally {
       clearTimeout(deadlineTimer);
-      request.raw.removeListener("aborted", onRequestAborted);
-      reply.raw.removeListener("close", onResponseClosed);
+      if (!isServiceCaller(request)) request.raw.removeListener("aborted", onRequestAborted);
+      reply?.raw.removeListener("close", onResponseClosed);
+      signal?.removeEventListener("abort", onSignalAbort);
     }
-  });
-
-  app.get("/cogito/briefs", async (request, reply) => {
-    const result = await executeCogitoBriefRoute(options, request.query);
-    return reply.code(result.status).send(result.body);
-  });
-}
-
-/** Same brief aggregation as the HTTP route; search keeps its separate request lifecycle. */
-export async function executeCogitoBriefRoute(options: CogitoRouteOptions, query: unknown) {
-  const timeout = parseBriefTimeout(query);
-  if (!timeout.ok) return { status: timeout.statusCode, body: { detail: timeout.detail } };
-  const nodes = await options.provider.listConnectedNodes();
-  return { status: 200, body: await collectCogitoBriefs(nodes, {
-    collector: options.briefCollector,
-    timeoutSeconds: timeout.value,
-    nowIso: options.nowIso ?? nowIso,
-  }) };
 }
 
 function isPostgresStatementTimeout(error: unknown): boolean {
@@ -535,7 +552,7 @@ function parseBriefTimeout(query: unknown): Validation<number> {
 
 async function resolveSearchAccess(
   options: CogitoRouteOptions,
-  request: FastifyRequest,
+  request: FastifyRequest | ServiceCaller,
 ): Promise<CogitoSearchAccess> {
   if (options.accessProvider === undefined) return { restricted: false };
   return options.accessProvider.resolveAccess(request);
@@ -543,7 +560,7 @@ async function resolveSearchAccess(
 
 async function filterRestrictedResults(
   options: CogitoRouteOptions,
-  request: FastifyRequest,
+  request: FastifyRequest | ServiceCaller,
   response: CogitoSearchResponse,
   access: CogitoSearchAccess,
 ): Promise<CogitoSearchResponse> {

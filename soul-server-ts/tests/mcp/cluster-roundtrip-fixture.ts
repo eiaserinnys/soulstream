@@ -114,7 +114,7 @@ export async function createClusterRoundtripFixture() {
   registerCogitoRoutes(app, cogito); registerSessionCommandRoutes(app, sessions);
   registerRecurringJobHostRoutes(app, recurringJobs); registerCardOrchestrationRoutes(app, cardOrchestration);
   app.get<{ Params: { sessionId: string } }>("/api/persistence/sessions/:sessionId", async request => ({ session: await readSession(request.params.sessionId) }));
-  registerMcpHostRoutes(app, { authBearerToken: "service-token", recurringJobs, cardOrchestration,
+  registerMcpHostRoutes(app, { board: undefined as never, authBearerToken: "service-token", recurringJobs, cardOrchestration,
     cluster: { nodes, nodeAgentProfiles, cogito, sessions, readSession, logger: app.log },
     cards: { provider: {} as never, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
     folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused folders"); } } });

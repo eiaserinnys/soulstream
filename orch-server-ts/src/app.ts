@@ -298,11 +298,13 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.recurringJobRoutes !== undefined) {
     registerRecurringJobRoutes(app, options.recurringJobRoutes);
   }
-  if (options.mcpHostRoutes) registerMcpHostRoutes(app, { ...options.mcpHostRoutes,
+  if (options.mcpHostRoutes) registerMcpHostRoutes(app, { ...options.mcpHostRoutes, environment: options.config.environment,
     cluster: { ...options.mcpHostRoutes.cluster, logger: app.log },
     recurringJobs: options.recurringJobHostRoutes ?? options.mcpHostRoutes.recurringJobs!,
     cardOrchestration: options.cardOrchestrationRoutes ?? options.mcpHostRoutes.cardOrchestration!,
-    environment: options.config.environment });
+    ...(options.pageYjsRoutes ? { pages: { service: options.pageYjsRoutes.createService(app.log), logger: app.log } } : {}),
+    ...(options.mcpHostRoutes.skills ? { skills: { ...options.mcpHostRoutes.skills, logger: app.log } } : {}),
+  });
   if (options.recurringJobHostRoutes !== undefined) {
     registerRecurringJobHostRoutes(app, {
       ...options.recurringJobHostRoutes,
