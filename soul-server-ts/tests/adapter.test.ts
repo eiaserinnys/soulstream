@@ -247,6 +247,7 @@ describe("UpstreamAdapter", () => {
       max_concurrent: 1,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      attachment_import_v1: true,
       runner_inventory_v1: true,
     });
     // PR(portrait wire): agents 매핑에 portrait_url 추가 (Python adapter.py:212-233 정합).
