@@ -63,18 +63,19 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
    <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{if(!sampleDetail)await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
    <div className="v3-folder-header-actions"><DashboardIconCap label="완료" disabled={pending||card.status!=="review"} onClick={()=>void complete()}><Check className="h-4 w-4"/></DashboardIconCap></div>
   </header>
+  <div className="v3-detail-gutter v3-task-detail-content v3-card-context">
+   <section className="v3-detail-section"><div className="v3-task-default-values"><span>{agentName??"담당 미지정"}</span>{nodeId?<span>{nodeId}</span>:null}{model?<span>{model}</span>:null}</div></section>
+   <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} onOpenSession={onOpenSession}/></section>
+  </div>
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs<"comments"|"content"> id={tabId} label="카드 보기" panelId={`${tabId}-panel`} tabs={[["comments","커멘트"],["content","내용"]]} value={tab} onChange={setTab}/></div>
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
   <div className="v3-detail-scroll v3-card-panel-scroll v3-detail-gutter" ref={scroll} role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`}>
    <div className="v3-task-detail-content">
-   {tab==="content"?<><section className="v3-detail-section"><div className="v3-task-default-values"><span>{agentName??"담당 미지정"}</span>{nodeId?<span>{nodeId}</span>:null}{model?<span>{model}</span>:null}</div></section>
-   <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} onOpenSession={onOpenSession}/></section></>:null}
-   <section className="v3-detail-section">
-   <CardTimeline key={cardId} scope={tab} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)}/>
-   </section>
-   {tab==="content"?<details className="v3-detail-section v3-card-other"><summary>그 밖에</summary><div className="v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></div></details>:null}
+   {tab==="comments"?<section className="v3-detail-section">
+   <CardTimeline key={cardId} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)}/>
+   </section>:<section className="v3-detail-section v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></section>}
    </div>
   </div>
-  <div hidden={tab!=="comments"} className="v3-card-composer-slot"><CardCommentInput key={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} onSend={submit}/></div>
+  <div className="v3-card-composer-slot"><CardCommentInput key={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} onSend={submit}/></div>
  </article>;
 }
