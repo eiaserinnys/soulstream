@@ -1,4 +1,7 @@
 /** Catalog browse/mutation tools. Session deletion is TaskLifecycleRoute-owned. */
+import { sessionTools } from "@soulstream/mcp-contract";
+import { forwardOrchestratorTool } from "../orchestrator_tools.js";
+import { TaskOwnedByAnotherNodeError } from "../../task/task_hydration_errors.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -311,10 +314,29 @@ export function registerCatalogTools(
 
   server.registerTool(
     "delete_session",
-    {
-      description: "세션 삭제 (이벤트 cascade 포함).",
-      inputSchema: { session_id: z.string() },
+    sessionTools.delete_session.config,
+    async ({ session_id }) => {
+      try {
+        const deletedBoardItemIds = await runtime.db.getBoardItemIdsForSession(session_id);
+        await runtime.taskManager.deleteTask(session_id);
+        await runtime.catalogService.broadcastSessionDeletion(
+          session_id,
+          deletedBoardItemIds,
+        );
+        return jsonResult({ ok: true, session_id });
+      } catch (err) {
+        if (err instanceof TaskOwnedByAnotherNodeError) return forwardOrchestratorTool(runtime, sessionTools.delete_session, { session_id });
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
     },
+  );
+}
+
+/** Previous local-only callback retained for roundtrip comparison until stage 6. */
+export function registerDeleteSessionToolLegacy(server: McpServer, runtime: McpRuntime): void {
+server.registerTool(
+    "delete_session",
+    sessionTools.delete_session.config,
     async ({ session_id }) => {
       try {
         const deletedBoardItemIds = await runtime.db.getBoardItemIdsForSession(session_id);

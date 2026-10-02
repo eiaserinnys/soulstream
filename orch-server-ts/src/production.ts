@@ -845,6 +845,18 @@ export function buildProductionRouteOptions(
       mcpHostRoutes: {
         authBearerToken: config.authBearerToken,
         cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail },
+        sessions: {
+          repositoryProvider: persistenceRepositoryProvider,
+          cogito: providers.cogitoRoutes,
+          catalogProvider: providers.sessionCatalogRoutes.provider,
+          resolveAccess: serviceTokenAccessWithoutEmail,
+          broadcastRename: sessionId => broadcastTargetedSessionCatalogDelta(
+            {
+              listFolders: () => providers.folderRoutes.provider.listFolders(),
+              listSessionAssignmentsByIds: async ids => (await folderControlPlaneServiceProvider()).getSessionAssignmentsByIds([...ids]),
+            }, runtime.sessionBroadcaster, [sessionId],
+          ),
+        },
         folders: {
           serviceProvider: folderControlPlaneServiceProvider,
           cardServiceProvider,
