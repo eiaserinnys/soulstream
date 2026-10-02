@@ -219,7 +219,8 @@ describe('surface role contract', () => {
   test('오늘 카드는 폴더와 같은 CardRow를 쓴다', () => {
     expect(read('screens/DailyPlannerScreen.tsx')).toContain('<TodayCards');
     expect(read('components/planner/TodayCards.tsx')).toContain('<CardRow');
-    expect(read('components/planner/FolderCards.tsx')).toContain('<CardRow');
+    expect(read('components/planner/FolderCards.tsx')).toContain('<FolderCardList');
+    expect(read('components/planner/FolderCardList.tsx')).toContain('<CardRow');
   });
 
   test('프로젝트 트리도 직접 glass를 만들지 않고 공통 grouped surface를 재사용한다', () => {

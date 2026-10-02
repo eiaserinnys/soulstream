@@ -22,6 +22,7 @@ test('새 세션 초기 지시 입력과 sheet 제품 마운트를 전수 고정
 
 test('FolderWorkspace 새 세션 표면은 phone과 tablet 경로를 모두 지난다', () => {
   expect(findProductFilesContaining(/<FolderWorkspace\b/)).toEqual([
+    'component-review/ReviewFolderWorkspace.tsx',
     'components/planner/FolderWorkspaceReadOverlay.tsx',
     'components/split/MainListPane.tsx',
     'navigation/TabNavigator.tsx',

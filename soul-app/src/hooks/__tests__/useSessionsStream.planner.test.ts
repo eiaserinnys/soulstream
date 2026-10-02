@@ -136,10 +136,11 @@ test('page_updated는 version dedup 없이 수신마다 page source를 무효화
   expect(mockInvalidatePlanner).toHaveBeenNthCalledWith(2, 'page');
 });
 
-test('card_updated는 해당 카드만 재조회하고 전체 planner를 무효화하지 않는다', async () => {
+test('card_updated는 해당 카드 재조회와 완료 목록의 folder source를 무효화한다', async () => {
   renderHook(() => useSessionsStream());
   await act(async () => capturedStreamOptions.onEvent('card_updated', { cardId: 'card-1', folderId: 'folder-1' }));
   expect(mockRefreshCard).toHaveBeenCalledTimes(1);
   expect(mockRefreshCard).toHaveBeenCalledWith(expect.any(Object), 'card-1');
-  expect(mockInvalidatePlanner).not.toHaveBeenCalled();
+  expect(mockInvalidatePlanner).toHaveBeenCalledTimes(1);
+  expect(mockInvalidatePlanner).toHaveBeenCalledWith('folder');
 });

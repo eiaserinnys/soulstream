@@ -41,7 +41,7 @@ export function PlannerSectionHeader({
       accessibilityLabel={`${title} ${expanded ? '접기' : '펼치기'}`}
       accessibilityState={{ expanded }} style={[styles.row, count !== undefined && styles.countedRow]} onPress={onToggle}>
       <Text style={[styles.title, count !== undefined && styles.countedTitle]}>{title}</Text>
-      {count !== undefined ? <Text testID={countTestID} style={styles.count}>{count}{countSuffix}</Text> : null}
+      {count !== undefined ? <Text testID={countTestID} style={styles.count}>{countSuffix ? `${count}${countSuffix}` : count}</Text> : null}
       <View testID={disclosureFrameTestID} style={styles.disclosureFrame}>
         <DisclosureIcon expanded={expanded === true} color={t.colors.textMuted} size={t.iconSize.compact} />
       </View>
@@ -50,7 +50,7 @@ export function PlannerSectionHeader({
   return (
     <View testID={testID} style={[styles.row, count !== undefined && styles.countedRow, board && styles.boardRow]}>
       <Text numberOfLines={board ? 1 : undefined} style={[styles.title, count !== undefined && styles.countedTitle, board && styles.boardTitle]}>{title}</Text>
-      {count !== undefined ? <Text testID={countTestID} style={styles.count}>{count}{countSuffix}</Text> : null}
+      {count !== undefined ? <Text testID={countTestID} style={styles.count}>{countSuffix ? `${count}${countSuffix}` : count}</Text> : null}
       {onAction && actionLabel ? (
         <TouchableOpacity accessibilityRole="button" style={styles.action} onPress={onAction}>
           <Text style={styles.link}>{actionLabel}</Text>
