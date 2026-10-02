@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
-import { registerRecurringJobTools } from "../../src/mcp/tools/recurring_jobs.js";
+import { registerRecurringJobToolsLegacy as registerRecurringJobTools } from "../../src/mcp/tools/recurring_jobs.js";
 
 describe("recurring-job MCP tools", () => {
   afterEach(() => vi.unstubAllGlobals());

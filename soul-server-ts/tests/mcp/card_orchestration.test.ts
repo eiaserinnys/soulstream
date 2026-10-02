@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
-import { registerCardOrchestrationTools } from "../../src/mcp/tools/card_orchestration.js";
+import { registerCardOrchestrationToolsLegacy as registerCardOrchestrationTools } from "../../src/mcp/tools/card_orchestration.js";
 const policy = {
   enabled: false,
   candidates: [

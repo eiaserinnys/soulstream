@@ -2,7 +2,17 @@ import { recurringJobTools } from "@soulstream/mcp-contract";
 import { registerOrchestratorTools } from "../orchestrator_tools.js";
 import { createCallerInfoPreprocessor } from "./cluster_caller_info.js";
 export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime): void {
-  registerOrchestratorTools(server, runtime, Object.values(recurringJobTools), createCallerInfoPreprocessor(runtime));
+  const attribution = createCallerInfoPreprocessor(runtime);
+  registerOrchestratorTools(server, runtime, Object.values(recurringJobTools), Object.fromEntries(Object.keys(recurringJobTools).map(name => [name,
+    (args: Record<string, unknown>) => {
+      // With no transport, retain the legacy failure ordering; reachable hosts own validation.
+      if (!runtime.orch) {
+        const actor = resolveMcpRecurringJobActor(runtime, args.caller_session_id as string | undefined);
+        return errorResult(actor.ok ? "recurring jobs are not configured with an orchestrator" : actor.error);
+      }
+      return attribution[name]!(args);
+    },
+  ])));
 }
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 

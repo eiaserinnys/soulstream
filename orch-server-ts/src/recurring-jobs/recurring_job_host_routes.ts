@@ -46,7 +46,7 @@ export function registerRecurringJobHostRoutes(
       );
       if (!authorization.ok) return hostError(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
       const result = await executeRecurringJobHostOperation(options.service, request.params.operation, request.body);
-      if (result.status === 500) request.log.error({ operation: request.params.operation }, "Recurring job host operation failed");
+      if ("error" in result) request.log.error({ err: result.error, operation: request.params.operation }, "Recurring job host operation failed");
       return reply.code(result.status).send(result.body);
     },
   );
@@ -64,7 +64,7 @@ export async function executeRecurringJobHostOperation(service: RecurringJobServ
   try { return { status: 200, body: await dispatch(service, operation, actor, body) }; }
   catch (error) {
     if (error instanceof RecurringJobError) return failure(error.statusCode, error.code, error.message, error.currentJob);
-    return failure(500, "RECURRING_JOB_OPERATION_FAILED", error instanceof Error ? error.message : "Recurring job operation failed");
+    return { ...failure(500, "RECURRING_JOB_OPERATION_FAILED", error instanceof Error ? error.message : "Recurring job operation failed"), error };
   }
 }
 

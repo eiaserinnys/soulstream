@@ -1,7 +1,13 @@
 import { cardOrchestrationTools } from "@soulstream/mcp-contract";
 import { registerOrchestratorTools } from "../orchestrator_tools.js";
 export function registerCardOrchestrationTools(server: McpServer, runtime: McpRuntime): void {
-  registerOrchestratorTools(server, runtime, Object.values(cardOrchestrationTools), {});
+  registerOrchestratorTools(server, runtime, Object.values(cardOrchestrationTools), Object.fromEntries(Object.keys(cardOrchestrationTools).map(name => [name,
+    (args: Record<string, unknown>) => {
+      if (runtime.orch) return {};
+      const caller = resolveSettingsCaller(runtime, args.caller_session_id as string | undefined);
+      return errorResult(caller.error ?? "Orchestrator is not configured");
+    },
+  ])));
 }
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseOrchestrationPolicy } from "@soulstream/wire-schema/card-orchestration";
@@ -42,26 +48,8 @@ async function call(
   operation: "get" | "update",
   body: Record<string, unknown>,
 ) {
-  if (isCurrentMcpCallerExternal())
-    return errorResult(
-      "Untrusted external callers cannot access card orchestration settings",
-    );
-  const headerSessionId = getCurrentMcpCallerSessionId();
-  if (
-    headerSessionId &&
-    explicitSessionId?.trim() &&
-    explicitSessionId.trim() !== headerSessionId
-  ) {
-    return errorResult(
-      "caller_session_id must match the authenticated request session header",
-    );
-  }
-  const attribution = resolveMcpCallerAttribution(
-    runtime,
-    headerSessionId ?? explicitSessionId,
-  );
-  if (!attribution.callerSessionId)
-    return errorResult("A trusted persisted caller session is required");
+  const caller = resolveSettingsCaller(runtime, explicitSessionId);
+  if (caller.error) return errorResult(caller.error);
   if (!runtime.orch) return errorResult("Orchestrator is not configured");
   try {
     const response = await new PersistenceHostTransport({
@@ -69,7 +57,7 @@ async function call(
       logger: runtime.logger,
     }).send("POST", `/api/card-orchestration/host/${operation}`, {
       ...body,
-      callerSessionId: attribution.callerSessionId,
+      callerSessionId: caller.callerSessionId,
     });
     if (!response.ok) {
       const error = await readOrchErrorEnvelope(response);
@@ -79,4 +67,22 @@ async function call(
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : String(error));
   }
+}
+function resolveSettingsCaller(runtime: McpRuntime, explicitSessionId: string | undefined): { error?: string; callerSessionId?: string } {
+  if (isCurrentMcpCallerExternal()) return { error: "Untrusted external callers cannot access card orchestration settings" };
+  const headerSessionId = getCurrentMcpCallerSessionId();
+  if (
+    headerSessionId &&
+    explicitSessionId?.trim() &&
+    explicitSessionId.trim() !== headerSessionId
+  ) {
+    return { error: "caller_session_id must match the authenticated request session header" };
+  }
+  const attribution = resolveMcpCallerAttribution(
+    runtime,
+    headerSessionId ?? explicitSessionId,
+  );
+  if (!attribution.callerSessionId)
+    return { error: "A trusted persisted caller session is required" };
+  return { callerSessionId: attribution.callerSessionId };
 }
