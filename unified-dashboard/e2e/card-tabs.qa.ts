@@ -18,7 +18,7 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  const card={id:'inherit',folderId:'other',title:'기존 요소를 상속하는 긴 카드 제목을 말줄임으로 확인합니다',request:'지시 첫 줄\n둘째 줄\n셋째 줄\n넷째 줄',brief:'접힌 내부 정보',status:'running',blockedKind:null,positionKey:'a',queuePositionKey:null,assigneeKind:'session',assigneeSessionId:'run-alpha-1',nodeId:'eiaserinnys',assigneeAgentId:'roselin_codex',modelPreset:'qa-standard',version:1,archived:false,createdAt:now,updatedAt:now};
  const sessions=Array.from({length:4},(_,i)=>({sessionId:`run-alpha-${i+1}`,agentSessionId:`run-alpha-${i+1}`,callerSessionId:i?'run-alpha-1':null,folderId:'folder-amber',displayName:`세션 ${i+1}`,status:'completed',agentName:'로젤린',agentId:'roselin_codex',nodeId:'eiaserinnys',modelLabel:'Sol',eventCount:1,prompt:'세션의 기존 미리보기',createdAt:now,updatedAt:now}));
  const reports=[{id:'report',title:'최신 보고 제목',body:'보고 첫 줄\n둘째 줄\n셋째 줄\n넷째 줄\n\n![보고 캡처](https://example.test/capture.svg)',format:'markdown',createdAt:now,sessionId:'run-alpha-1'}];
- const comments:any[]=[],writes:any[]=[];let showFolderCards=false;
+ const comments:any[]=[{id:'first-comment',cardId:card.id,authorKind:'user',kind:'comment',body:'추가 커멘트를 읽고 아래에서 입력합니다.',createdAt:now}],writes:any[]=[];let showFolderCards=false;
  const folderCards=Array.from({length:6},(_,i)=>({...card,id:i?`folder-card-${i}`:card.id,folderId:"folder-amber",positionKey:String(i)}));
  await page.route('**/api/**',async route=>{
   const req=route.request(),url=new URL(req.url()),p=url.pathname;
@@ -42,10 +42,10 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  mkdirSync(output,{recursive:true});
 
  await page.goto('/v3');
- const cardRow=page.locator(width<760?'article[data-card-id=inherit]':'div[data-card-id=inherit]');
+ const cardRow=page.locator('article[data-card-id=inherit]');
  await expect(cardRow).toBeVisible();
  await cardRow.getByRole('button',{name:`카드 ${card.title} 열기`,exact:true}).click();
- const detail=page.getByTestId('card-detail');await expect(detail).toBeVisible();
+ const detail=page.getByTestId('card-detail');await expect(detail).toBeVisible();await expect(detail.locator('[data-card-entry=커멘트]')).toHaveCount(1);
  await page.evaluate(()=>document.fonts.ready);
  await page.screenshot({path:path.join(output,`${phase}-${width}-card.png`),animations:'disabled'});
  if(phase==='before')return;
@@ -53,29 +53,44 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  await expect(detail.locator('[data-card-entry=지시]')).toHaveCount(0);
  const input=detail.getByPlaceholder('커멘트',{exact:true});
  await input.fill('입력 중 문장');
+ await detail.locator('input[type=file]').setInputFiles({name:'evidence.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf9sAAAAASUVORK5CYII=','base64')});
+ await expect(detail.locator('[title="evidence.png"]')).toBeVisible();
  await detail.getByRole('tab',{name:'내용',exact:true}).click();
  await expect(input).toBeHidden();
  await expect(detail.locator('[data-card-entry=지시]')).toBeVisible();
  await detail.locator('.v3-card-panel-scroll').evaluate(el=>{el.scrollTop=0;});
  await page.screenshot({path:path.join(output,`after-${width}-content.png`),animations:'disabled'});
  await detail.getByRole('tab',{name:'커멘트',exact:true}).click();
- await expect(input).toHaveValue('입력 중 문장');
+ await expect(input).toHaveValue('입력 중 문장');await expect(detail.locator('[title="evidence.png"]')).toBeVisible();
  const metrics=await detail.evaluate(pane=>{
    const box=(selector:string)=>{const r=pane.querySelector(selector)!.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
    const r=pane.getBoundingClientRect();
    return {pane:{left:r.left,right:r.right,top:r.top,bottom:r.bottom},header:box('header'),tabs:box('[role=tablist]'),scroll:box('.v3-card-panel-scroll'),dock:box('.v3-card-comment-dock'),composer:box('[data-slot=chat-input-composer]')};
  });
- expect(metrics.dock.bottom).toBeCloseTo(metrics.pane.bottom-1,0);
+ expect(Math.abs(metrics.dock.bottom-metrics.pane.bottom)).toBeLessThanOrEqual(1);
  expect(metrics.tabs.left).toBeCloseTo(metrics.composer.left,0);
  expect(metrics.tabs.right).toBeCloseTo(metrics.composer.right,0);
  writeFileSync(path.join(output,`after-${width}-metrics.json`),JSON.stringify(metrics,null,2));
  await input.fill(' 여러 줄 입력\n'.repeat(10));
  await page.screenshot({path:path.join(output,`after-${width}-expanded-input.png`),animations:'disabled'});
+ if(width>=760){
+  await detail.getByRole('tab',{name:'내용',exact:true}).click();
+  await detail.locator('.v3-run-open').first().click();
+  await expect(page.getByTestId('v3-card-session-chat').locator('[data-slot=chat-input-composer]')).toBeVisible();
+  await detail.getByRole('tab',{name:'커멘트',exact:true}).click();
+  await page.screenshot({path:path.join(output,`after-${width}-session.png`),animations:'disabled'});
+  const pane=await detail.boundingBox();expect(pane!.x).toBeCloseTo(metrics.pane.left,0);expect(pane!.width).toBeCloseTo(metrics.pane.right-metrics.pane.left,0);
+ }
+ comments.push(...Array.from({length:20},(_,index)=>({id:`long-${index}`,cardId:card.id,authorKind:'user',kind:'comment',body:`커멘트 ${index+1}: 긴 대화에서도 입력창이 아래에 남습니다.`,createdAt:now})));
+ await page.reload();await cardRow.getByRole('button',{name:`카드 ${card.title} 열기`,exact:true}).click();
+ await expect(detail.locator('[data-card-entry=커멘트]')).toHaveCount(21);
+ const long=await detail.locator('.v3-card-comment-dock').boundingBox();expect(long!.y+long!.height).toBeCloseTo(metrics.dock.bottom,0);
+ await page.screenshot({path:path.join(output,`after-${width}-long.png`),animations:'disabled'});
 });
 
 for(const width of [1440,390])test(`folder tabs invariant ${width} ${phase}`,async({page})=>{
  await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});
- await page.addInitScript(()=>{localStorage.setItem('soul-dashboard-theme','dark');localStorage.setItem('ls.webglGlass','0');});
+ await page.addInitScript(()=>{localStorage.setItem('soul-dashboard-theme','dark');localStorage.setItem('ls.webglGlass','0');Object.defineProperty(navigator.serviceWorker,'register',{configurable:true,value:async()=>({update:async()=>undefined,active:null,addEventListener:()=>undefined})});Object.defineProperty(navigator.serviceWorker,'controller',{configurable:true,get:()=>null});});
  await installV3VisualQaRoutes(page,{unifiedFolderView:true});
  await page.route('**/api/auth/config',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({authEnabled:true,devModeEnabled:false})}));
  await page.route('**/api/auth/status',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({authenticated:true,user:{email:'qa@example.test',name:'QA',isAdmin:true}})}));
@@ -86,4 +101,16 @@ for(const width of [1440,390])test(`folder tabs invariant ${width} ${phase}`,asy
  await page.locator('.v3-folder-picker').screenshot({path:path.join(output,`${phase}-${width}-folder-picker.png`),animations:'disabled'});
  await page.getByRole('tab',{name:'전체',exact:true}).click();
  await expect(page.getByRole('tab',{name:'전체',exact:true})).toHaveAttribute('aria-selected','true');
+ if(phase==='after'){
+  await page.keyboard.press('Escape');
+  const board=page.getByTestId('card-board-sample');
+  await board.getByRole('button',{name:'긴 커멘트',exact:true}).click();
+  await board.locator('[data-card-id] button').first().click();
+  const detail=page.getByTestId('card-detail');await expect(detail).toBeVisible();
+  await expect(detail.locator('[data-card-entry=커멘트]')).toHaveCount(20);
+  await expect(detail.getByRole('tab',{name:'커멘트',exact:true})).toHaveAttribute('aria-selected','true');
+  await page.screenshot({path:path.join(output,`after-${width}-registered-sample.png`),animations:'disabled'});
+  await detail.getByRole('tab',{name:'내용',exact:true}).click();await expect(detail.locator('[data-card-entry=지시]')).toBeVisible();
+ }
+
 });

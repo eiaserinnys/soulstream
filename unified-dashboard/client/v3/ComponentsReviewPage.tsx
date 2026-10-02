@@ -101,6 +101,7 @@ export function ComponentsReviewPage() {
         <div className="v3-task-detail-content">
           <p role="status" className="v3-components-label">{notice}</p>
           <section id="components-board" className="v3-detail-section">
+            <p className="v3-components-label">CardWorkspace / CardDetailPane · 커멘트·내용 탭 · 짧은·긴 대화 · 하단 입력창</p>
             <CardBoardSamples onOpen={open}/>
           </section>
           <section id="components-rows" className="v3-detail-section">

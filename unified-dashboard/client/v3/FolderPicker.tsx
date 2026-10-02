@@ -59,7 +59,7 @@ export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, sel
     </div>;
   };
   return <div className="v3-shell v3-folder-picker" style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
-    <DetailTabs id={id} label="폴더 목록" panelId={`${id}-folders`} tabs={[["starred","별표"],["all","전체"]]} value={tab} disabled={pending} onChange={setTab}/>
+    <DetailTabs<"starred"|"all"> id={id} label="폴더 목록" panelId={`${id}-folders`} tabs={[["starred","별표"],["all","전체"]]} value={tab} disabled={pending} onChange={setTab}/>
     <Input type="search" aria-label="이동할 폴더 검색" placeholder="폴더 검색…" value={query}
       disabled={pending} onChange={(event) => setQuery(event.target.value)} />
     <div id={`${id}-folders`} role="tabpanel" aria-labelledby={`${id}-${tab}`} className="v3-navigation-scroll v3-folder-picker-scroll">
