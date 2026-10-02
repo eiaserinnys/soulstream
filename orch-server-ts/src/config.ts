@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_SKILL_CATALOG_NODE_ID } from "./skills/skill_catalog.js";
 
 import {
   USAGE_SUMMARY_PROVIDER_NAMES,
@@ -35,6 +36,7 @@ export type OrchServerEnvironmentConfig = {
   readonly atom_server_url: string;
   readonly atom_api_key: string;
   readonly atom_root_node_id: string | null;
+  readonly skill_catalog_node_id: string;
   readonly auth_bearer_token: string;
   readonly cors_allowed_origins: readonly string[];
   readonly google_client_id: string;
@@ -68,6 +70,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "ATOM_SERVER_URL",
   "ATOM_API_KEY",
   "ATOM_ROOT_NODE_ID",
+  "SKILL_CATALOG_NODE_ID",
   "AUTH_BEARER_TOKEN",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
@@ -136,6 +139,7 @@ export function loadOrchServerEnvironment(
     atom_server_url: env.ATOM_SERVER_URL ?? "",
     atom_api_key: env.ATOM_API_KEY ?? "",
     atom_root_node_id: optionalString(env.ATOM_ROOT_NODE_ID),
+    skill_catalog_node_id: env.SKILL_CATALOG_NODE_ID ?? DEFAULT_SKILL_CATALOG_NODE_ID,
     auth_bearer_token: authBearerToken,
     cors_allowed_origins: corsAllowedOrigins,
     google_client_id: env.GOOGLE_CLIENT_ID ?? "",

@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { errorResult, errorResultFromError, type CallToolResult, type McpToolDefinition } from "@soulstream/mcp-contract";
 import { fetchOrchResponse, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
-import { getCurrentMcpCallerPrincipal, getCurrentMcpCallerSessionId } from "./request_context.js";
+import { getCurrentMcpCallerPrincipal, getCurrentMcpCallerSessionId, isCurrentMcpCallerExternal } from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
 
 export type McpForwardContext = { execution?: { registrationId: string; executionCommandId: string } };
@@ -15,7 +15,9 @@ export function registerOrchestratorTools(
   preprocessors: Readonly<Record<string, McpForwardPreprocessor>> = {},
 ): void {
   for (const definition of definitions) {
-    server.registerTool(definition.name, definition.config, async (args, request) => {
+    const config = isCurrentMcpCallerExternal() && definition.externalInputSchema
+      ? { ...definition.config, inputSchema: definition.externalInputSchema } : definition.config;
+    server.registerTool(definition.name, config, async (args, request) => {
       try {
         const extra = await preprocessors[definition.name]?.(args);
         if (extra && "content" in extra) return extra;

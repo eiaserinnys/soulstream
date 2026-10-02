@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { resolveLocalBoardYjsService } from "../board/board_yjs_host_proxy.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { McpHostOptions } from "./types.js";
 import { executeMcpTool, findMcpTool } from "./tool_executor.js";
@@ -13,6 +14,9 @@ const requestSchema = z.object({
 });
 
 export function registerMcpHostRoutes(app: FastifyInstance, options: McpHostOptions): void {
+  const executionOptions = options.board === undefined ? options : { ...options, board: { ...options.board,
+    host: { ...options.board.host, get service() { return resolveLocalBoardYjsService(app, options.board.host); } },
+  } };
   app.post<{ Params: { tool: string } }>("/api/mcp/host/:tool", async (request, reply) => {
     const authorization = verifyServiceBearerAuthorization(request.headers.authorization, options.authBearerToken, options.environment);
     if (!authorization.ok) return reply.code(authorization.statusCode).send({ detail: { error: { code: "UNAUTHORIZED", message: `bearer token is ${authorization.reason}` } } });
@@ -27,7 +31,7 @@ export function registerMcpHostRoutes(app: FastifyInstance, options: McpHostOpti
     request.raw.once("aborted", onAborted);
     reply.raw.once("close", onClosed);
     try {
-      return reply.send(await executeMcpTool(options, definition.name, args, {
+      return reply.send(await executeMcpTool(executionOptions, definition.name, args, {
         principal: context.principal, callerSessionId: context.caller_session_id, nodeId: context.node_id,
         execution: context.execution,
         signal: controller.signal,

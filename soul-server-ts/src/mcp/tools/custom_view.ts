@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import { boardTools } from "@soulstream/mcp-contract";
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
 
 import type { CustomViewService } from "../../custom_view/custom_view_service.js";
 import { errorResult, jsonResult } from "../result.js";
@@ -9,34 +10,19 @@ import {
   requireMcpMutationActor,
   type McpMutationActor,
 } from "./caller_session.js";
-import {
-  callerSessionIdSchema,
-  errorMessage,
-  expectedVersionSchema,
-  idempotencyKeySchema,
-  mutationToolDescription,
-} from "./folder_tool_shared.js";
+import { errorMessage } from "./folder_tool_shared.js";
 
-export function registerCustomViewTools(
+export function registerCustomViewTools(server: McpServer, runtime: McpRuntime): void {
+  registerOrchestratorTools(server, runtime, [boardTools.create_custom_view, boardTools.patch_custom_view, boardTools.get_custom_view, boardTools.list_custom_views]);
+}
+
+export function registerCustomViewToolsLegacy(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
   server.registerTool(
     "create_custom_view",
-    {
-      description: mutationToolDescription(
-        "현재 MCP caller origin을 감사 actor로 하여 sandboxed HTML custom view board item을 생성한다.",
-      ),
-      inputSchema: {
-        folder_id: z.string().min(1),
-        title: z.string().default("Custom view"),
-        html: z.string(),
-        x: z.number().optional(),
-        y: z.number().optional(),
-        idempotency_key: idempotencyKeySchema,
-        caller_session_id: callerSessionIdSchema,
-      },
-    },
+    boardTools.create_custom_view.config,
     async (input) =>
       mutation(runtime, input.caller_session_id, (service, actor) =>
         service.createCustomView({
@@ -53,19 +39,7 @@ export function registerCustomViewTools(
 
   server.registerTool(
     "patch_custom_view",
-    {
-      description: mutationToolDescription(
-        "커스텀 뷰 HTML을 전체 replace로 갱신한다. expected_revision이 맞지 않으면 충돌로 실패한다.",
-      ),
-      inputSchema: {
-        custom_view_id: z.string().min(1),
-        expected_revision: expectedVersionSchema,
-        html: z.string(),
-        title: z.string().nullable().optional(),
-        idempotency_key: idempotencyKeySchema,
-        caller_session_id: callerSessionIdSchema,
-      },
-    },
+    boardTools.patch_custom_view.config,
     async (input) =>
       mutation(runtime, input.caller_session_id, (service, actor) =>
         service.patchCustomView({
@@ -83,10 +57,7 @@ export function registerCustomViewTools(
 
   server.registerTool(
     "get_custom_view",
-    {
-      description: "커스텀 뷰 HTML과 revision을 조회한다.",
-      inputSchema: { custom_view_id: z.string().min(1) },
-    },
+    boardTools.get_custom_view.config,
     async ({ custom_view_id }) => {
       try {
         return jsonResult(await getCustomViewService(runtime).getCustomView(custom_view_id));
@@ -98,14 +69,7 @@ export function registerCustomViewTools(
 
   server.registerTool(
     "list_custom_views",
-    {
-      description: "지정한 폴더의 커스텀 뷰 목록을 조회한다.",
-      inputSchema: {
-        folder_id: z.string().min(1),
-        include_archived: z.boolean().default(false),
-        limit: z.number().int().min(1).max(500).default(100),
-      },
-    },
+    boardTools.list_custom_views.config,
     async ({ folder_id, include_archived, limit }) => {
       try {
         return jsonResult(
