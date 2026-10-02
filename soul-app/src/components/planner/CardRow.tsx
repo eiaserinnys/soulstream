@@ -10,6 +10,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
 import { useTokens } from '../../theme';
+import type { ColorScheme } from '../../theme/colors';
 import { GlassButton } from '../GlassSurface';
 import { makeSessionCardStyles } from '../sessionCardFrame';
 import { AppGlassCard } from '../AppGlassCard';
@@ -20,9 +21,12 @@ import { formatRelativeTime } from '../../lib/relative-time';
 import { CardRequestView } from './CardRequestView';
 import { CardReportView } from './CardReportView';
 
-export function CardStatusChip({ card, title = false, board = false }: { card: CardDto; title?: boolean; board?: boolean }) {
+export function CardStatusChip({ card, title = false, board = false, colors }: { card: CardDto; title?: boolean; board?: boolean; colors?: ColorScheme }) {
   const t = useTokens();
-  const color = card.status === 'review' ? t.colors.accent : card.status === 'running' ? t.colors.success
+  const palette = colors ?? t.colors;
+  const color = colors ? card.status === 'review' ? palette.link : card.status === 'running' ? palette.successText
+    : card.status === 'blocked' ? palette.warningText : palette.textMuted
+    : card.status === 'review' ? t.colors.accent : card.status === 'running' ? t.colors.success
     : card.status === 'blocked' ? t.colors.warning : t.colors.textMuted;
   return <Text style={{ ...t.foundation.typography.meta, color, ...(title ? { ...t.foundation.typography.cardTitle, marginRight: t.uiSpacing.sm } : {}), fontWeight: '700' }} numberOfLines={1}>
     {board && card.status === 'todo' ? '드래프트' : board && card.status === 'review' ? '검수 대기'

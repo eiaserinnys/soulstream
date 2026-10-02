@@ -9,6 +9,7 @@ import { createPostItRoles } from '../../theme/postItRoles';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { BoardDragCard, type BoardDragEvent } from './BoardDragCard';
 import { CardStatusMenu } from './CardStatusMenu';
+import { useBoardPointerPan } from './useBoardPointerPan';
 import { useCardTransition } from '../../hooks/useCardTransition';
 import { boardVisibleColumns, boardDropStatus, boardLaneGeometry, boardLaneOffset, boardSnapOffsets, boardNearestLane, type BoardFrame, type BoardPosition } from '../../lib/card-board-layout';
 export { BOARD_COLUMNS } from '../../lib/card-board-layout';
@@ -16,7 +17,7 @@ export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
 export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   phone: controlledPhone, initialPosition, onPositionChange }: {
-  api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string): void;
+  api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string, target?: number): void;
   includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void;
 }) {
@@ -74,6 +75,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
     position.current.lane = columnsRef.current[boardNearestLane(bounded, offsetsRef.current)][0];
     scroll.current?.scrollTo({ x: bounded, animated }); savePosition();
   };
+  const pan = useBoardPointerPan({ getX: () => position.current.x, max: offsets[offsets.length - 1], dragging: !!drag, move: (x) => moveTo(x, false) });
   const stopEdge = () => { if (edgeTimer.current) clearInterval(edgeTimer.current); edgeTimer.current = null; };
   useEffect(() => () => { stopEdge(); }, []);
   const start = (card: CardDto, event: BoardDragEvent) => {
@@ -98,7 +100,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
     if (card.status === 'review' && next === 'running') { setMenu({ card, target: next }); return; }
     void action.transition(card, next);
   };
-  return <View ref={frameRef} testID="card-board-frame" style={{ flex: 1 }} onLayout={(event) => {
+  return <View ref={frameRef} {...pan.handlers} testID="card-board-frame" style={{ flex: 1 }} onLayout={(event) => {
     const { width, height } = event.nativeEvent.layout;
     setFrame((old) => ({ ...old, width, height }));
     frameRef.current?.measureInWindow((x, y) => setFrame({ x, y, width, height }));
@@ -127,7 +129,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
             onScroll={(event) => { position.current.lanes[status] = event.nativeEvent.contentOffset.y; savePosition(); }}
             contentContainerStyle={{ gap: t.cardLayout.gap, paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs, paddingBottom: t.cardLayout.padding }}>
             {items.length ? items.map((card) => <BoardDragCard key={card.id} api={api} card={card}
-              dragging={drag?.card.id === card.id} onOpen={() => onOpen(card.id)} onMenu={() => setMenu({ card })}
+              dragging={drag?.card.id === card.id} onOpen={(target) => { if (pan.canPress()) onOpen(card.id, target); }} onMenu={() => { if (pan.canPress()) setMenu({ card }); }}
               onStart={(event) => start(card, event)} onMove={(event) => { if (dragRef.current) { const value = { ...dragRef.current, event }; dragRef.current = value; setDrag(value); } }}
               onDrop={(event) => drop(card, event)} onFinish={finish} />)
               : <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>}

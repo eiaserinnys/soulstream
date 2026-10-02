@@ -9,7 +9,7 @@ import { PostItCard } from './PostItCard';
 
 export type BoardDragEvent = { absoluteX: number; absoluteY: number; x: number; y: number; translationX: number; translationY: number };
 export function BoardDragCard(props: {
-  api: ApiClient | null; card: CardDto; dragging: boolean; onOpen(): void; onMenu(): void;
+  api: ApiClient | null; card: CardDto; dragging: boolean; onOpen(target?: number): void; onMenu(): void;
   onStart(event: BoardDragEvent): void; onMove(event: BoardDragEvent): void;
   onDrop(event: BoardDragEvent): void; onFinish(): void;
 }) {
@@ -32,7 +32,7 @@ export function BoardDragCard(props: {
     })
     .onFinalize(() => { if (suppressUntil.current === Infinity) { suppressUntil.current = Date.now() + BOARD_LONG_PRESS_MS; latest.current.onFinish(); } }),
   [props.card.id, props.api, pending]);
-  const open = () => { if (Date.now() >= suppressUntil.current) props.onOpen(); };
+  const open = (target?: number) => { if (Date.now() >= suppressUntil.current) props.onOpen(target); };
   const menu = () => { if (Date.now() >= suppressUntil.current) props.onMenu(); };
   // RN 0.86 pointer delivery is gated by RCTGetDispatchW3CPointerEvents on iOS.
   // withNativePointerEvents enables this path before the first React surface.

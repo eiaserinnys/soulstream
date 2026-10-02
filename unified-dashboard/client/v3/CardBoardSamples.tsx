@@ -5,7 +5,9 @@ import { boardColumns } from "./CardBoard";
 import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { CardCompletionFilter } from "./CardCompletionFilter";
 import { PostItCardView, PostItGrid, type PostItVariant } from "./PostItCard";
-import { reviewCard, reviewSession, reviewTitle } from "./components-review-fixtures";
+import { reviewCard, reviewDetail, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
+import { CardWorkspace } from "./CardWorkspace";
+import { useMobilePlannerMode } from "./MobilePlannerTabs";
 
 /** The actual board and card, with fixture-only state and no operational writes. */
 export function CardBoardSamples({onOpen}:{onOpen(label:string):void}) {
@@ -14,6 +16,8 @@ export function CardBoardSamples({onOpen}:{onOpen(label:string):void}) {
   const [scenario,setScenario]=useState<"mixed"|"none"|"done">("mixed");
   const [includeCompleted,onChange]=useState(false);
   const [statuses,setStatuses]=useState<Record<string,CardStatus>>({});
+  const [selected,setSelected]=useState<string|null>(null);
+  const mobileMode=useMobilePlannerMode();
   const cards=boardColumns.flatMap(({status},index)=>Array.from({length:index===0?4:1},(_,copy)=>({
     ...reviewCard,id:`board-${index}-${copy}`,status:statuses[`board-${index}-${copy}`]??(scenario==="done"?"done":status),
     title:index===0?reviewTitle:`${boardColumns[index].label} 카드`,blockedKind:status==="blocked"?"question" as const:null,
@@ -22,12 +26,13 @@ export function CardBoardSamples({onOpen}:{onOpen(label:string):void}) {
   }))).filter(card=>scenario!=="none"||card.status!=="done");
   const doneCount=cards.filter(card=>card.status==="done").length;
   const renderCard=(card:typeof cards[number],variant:PostItVariant="compact",handle?:ReactNode,preview=false)=><PostItCardView card={card} variant={variant} activity={card.latestActivity} handle={handle} assignee={reviewSession}
-    onOpen={()=>onOpen("보드 카드 상세")}
+    onOpen={()=>setSelected(card.id)}
     completion={preview?undefined:{pending:false,onComplete:()=>setStatuses(previous=>({...previous,[card.id]:"done"}))}}
     statusControl={preview?undefined:{pending:false,load:async()=>({card,reports:card.status==="todo"?[]:[{id:"sample-report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
       questions:card.status==="blocked"?[{id:"sample-question",text:"질문",answer:null,options:null,askedAt:card.createdAt,answeredAt:null}]:[],sessions:[]}),
       change:async(_,status)=>setStatuses(previous=>({...previous,[card.id]:status}))}}/>;
   const comparison={...cards[0],id:"board-size-comparison",status:statuses["board-size-comparison"]??"review" as const};
+  const selectedCard=selected===comparison.id?comparison:cards.find(card=>card.id===selected);
   return <div className="v3-card-board-sample" data-testid="card-board-sample">
     <div className="v3-postit-size-comparison" data-testid="postit-size-comparison">
       <div><p className="v3-components-label">기본 · 같은 제목과 원문</p>{renderCard(comparison,"default")}</div>
@@ -43,5 +48,8 @@ export function CardBoardSamples({onOpen}:{onOpen(label:string):void}) {
     </div>
     {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={cards} renderCard={(card,handle,preview)=>renderCard(card as typeof cards[number],"compact",handle,preview)} completion={scope==="folder"?{includeCompleted,onChange}:undefined}/>
       : <PostItGrid>{cards.filter(card=>scope==="all"||includeCompleted||card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>}
+    {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleDetail={{...reviewDetail,card:selectedCard}} folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={()=>onOpen('세션')}
+      mobileMode={mobileMode} mobileTab="projects" activeSession={undefined} chatInputDisabled historyEnabled={false} sessionStreamActive={false}
+      sessionConnectionStatus="disconnected" reconnectSession={()=>{}} onAcknowledgedReview={()=>{}}/>:null}
   </div>;
 }
