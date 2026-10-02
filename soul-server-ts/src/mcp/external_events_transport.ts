@@ -23,7 +23,7 @@ export function registerExternalEventsRoutes(app: FastifyInstance, runtime: McpR
   async function legacy<T>(action: (client: Client) => Promise<T>): Promise<T> {
     return withMcpRequestContext(context, async () => {
       const server = buildMcpServer(runtime);
-      const client = new Client({ name: "external-events-tool-bridge", version: "1" });
+      const client = new Client({ name: "external-events-canonical-bridge", version: "1" });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       try {
         await server.connect(serverTransport); await client.connect(clientTransport);
@@ -37,7 +37,7 @@ export function registerExternalEventsRoutes(app: FastifyInstance, runtime: McpR
   const handler = createMcpHandler(({ era }) => {
     // Events is an extension capability. SDK2's wire preserves it; its legacy
     // capability typings/client convenience getter currently omit this field.
-    const capabilities = { tools: {}, ...(era === "modern" ? { events: {} } : {}) };
+    const capabilities = { tools: {}, resources: {}, ...(era === "modern" ? { events: {} } : {}) };
     const server = new Server({ name: "soul-server-ts", version: "0.0.1" }, { capabilities });
     server.setRequestHandler("tools/list", async request => {
       // SDK1 declares JSON Schema properties as object, SDK2 as JSONValue.
@@ -54,6 +54,14 @@ export function registerExternalEventsRoutes(app: FastifyInstance, runtime: McpR
         return server.projectCallToolResult(result as CallToolResult, tool?.outputSchema);
       });
     });
+    server.setRequestHandler("resources/list", request => legacy(async client =>
+      client.getServerCapabilities()?.resources ? client.listResources(request.params) : { resources: [] }));
+    server.setRequestHandler("resources/read", request => legacy(client => {
+      if (!client.getServerCapabilities()?.resources) throw new ProtocolError(-32002, "Resource not found");
+      return client.readResource(request.params);
+    }));
+    server.setRequestHandler("resources/templates/list", request => legacy(async client =>
+      client.getServerCapabilities()?.resources ? client.listResourceTemplates(request.params) : { resourceTemplates: [] }));
     if (era === "modern") {
       server.setRequestHandler("events/list", { params: z.object({ cursor: z.string().optional() }) }, async () => ({ events: [eventDefinition] }));
       server.setRequestHandler("events/subscribe", { params: subscribeSchema }, async params => {

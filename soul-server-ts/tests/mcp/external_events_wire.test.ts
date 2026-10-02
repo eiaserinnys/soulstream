@@ -8,8 +8,10 @@ import { Client as ModernClient, StreamableHTTPClientTransport as ModernTranspor
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { buildServer } from "../../src/server.js";
 import { buildMcpServer } from "../../src/mcp/server.js";
+import * as canonicalServer from "../../src/mcp/server.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
 import { ExternalEventsService, credentialOwner } from "../../src/external_events/service.js";
 import { withMcpRequestContext, INTERNAL_MCP_PRINCIPAL } from "../../src/mcp/request_context.js";
@@ -20,6 +22,7 @@ const secret = `whsec_${Buffer.alloc(32, 8).toString("base64")}`;
 const subscription = { name: "soulstream.message.created", arguments: { recipient_label: "primary-dot" },
   delivery: { mode: "webhook", url: "https://receiver.example/events", secret } };
 const cleanup: (() => Promise<unknown>)[] = [];
+const canonicalBuildMcpServer = buildMcpServer;
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 async function runtime() {
   const dir = await mkdtemp(join(tmpdir(), "mcp-events-wire-"));
@@ -44,6 +47,35 @@ async function web() {
   return { rt, base: `http://127.0.0.1:${address.port}` };
 }
 describe("dedicated MCP2 ingress with SDK1 canonical tool bridge", () => {
+  it.each(["modern", "legacy"] as const)("%s preserves canonical resources, templates and UI metadata", async era => {
+    const uri = "ui://soulstream/live-cards-v2.html";
+    const ui = { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } };
+    // Main integration is caller-owned. Register a resource via the same public
+    // SDK1 API to test the bridge without importing or changing PR1106.
+    const factory = vi.spyOn(canonicalServer, "buildMcpServer").mockImplementation(runtime => {
+      const server = canonicalBuildMcpServer(runtime);
+      server.registerResource("live-card-fixture", uri, { _meta: { ui } }, async () => ({
+        contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: "<html>cards</html>", _meta: { ui } }],
+      }));
+      server.registerResource("card-template-fixture", new ResourceTemplate("ui://soulstream/cards/{name}", { list: undefined }),
+        { _meta: { ui } }, async templateUri => ({ contents: [{ uri: templateUri.href, text: "template cards", _meta: { ui } }] }));
+      return server;
+    });
+    cleanup.push(async () => { factory.mockRestore(); });
+    const { base } = await web();
+    const client = era === "modern"
+      ? new ModernClient({ name: "resource-wire", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } })
+      : new Client({ name: "resource-wire", version: "1" });
+    const options = { requestInit: { headers: { Authorization: "Bearer dot-token" } } };
+    const url = new URL(`${base}/dot`);
+    await client.connect(era === "modern" ? new ModernTransport(url, options) : new StreamableHTTPClientTransport(url, options));
+    cleanup.push(() => client.close());
+    expect(client.getServerCapabilities()).toMatchObject({ resources: {} });
+    expect(await client.listResources()).toMatchObject({ resources: [{ uri, _meta: { ui } }] });
+    expect(await client.readResource({ uri })).toMatchObject({ contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: "<html>cards</html>", _meta: { ui } }] });
+    expect(await client.listResourceTemplates()).toMatchObject({ resourceTemplates: [{ uriTemplate: "ui://soulstream/cards/{name}", _meta: { ui } }] });
+    expect(await client.readResource({ uri: "ui://soulstream/cards/test" })).toMatchObject({ contents: [{ text: "template cards", _meta: { ui } }] });
+  });
   it("real pinned MCP2 client discovers and round-trips tools and Events", async () => {
     const { rt, base } = await web(); const responses: Record<string, unknown>[] = [];
     const client = new ModernClient({ name: "wire-test", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
@@ -58,6 +90,9 @@ describe("dedicated MCP2 ingress with SDK1 canonical tool bridge", () => {
     expect(tools.tools.some(tool => tool.name === "reflect_refresh")).toBe(true);
     expect(tools.tools.some(tool => tool.name === "send_to_external_llm")).toBe(false);
     expect((await client.callTool({ name: "reflect_refresh", arguments: {} })).isError).not.toBe(true);
+    expect(await client.listResources()).toMatchObject({ resources: [] });
+    expect(await client.listResourceTemplates()).toMatchObject({ resourceTemplates: [] });
+    await expect(client.readResource({ uri: "ui://missing/resource" })).rejects.toThrow("Resource not found");
     const resultSchema = z.object({}).passthrough();
     expect(await client.request({ method: "events/list", params: {} }, resultSchema)).toMatchObject({ events: [{ name: subscription.name }] });
     const created = await client.request({ method: "events/subscribe", params: subscription }, resultSchema);
@@ -76,6 +111,11 @@ describe("dedicated MCP2 ingress with SDK1 canonical tool bridge", () => {
       cleanup.push(() => client.close());
       expect((await client.listTools()).tools.some(tool => tool.name === "reflect_refresh")).toBe(true);
       expect((await client.callTool({ name: "reflect_refresh", arguments: {} })).isError).not.toBe(true);
+      if (path === "/dot") {
+        expect(await client.listResources()).toMatchObject({ resources: [] });
+        expect(await client.listResourceTemplates()).toMatchObject({ resourceTemplates: [] });
+        await expect(client.readResource({ uri: "ui://missing/resource" })).rejects.toThrow("Resource not found");
+      }
       await expect(client.request({ method: "events/list", params: {} }, z.object({}).passthrough())).rejects.toThrow();
     }
   });
