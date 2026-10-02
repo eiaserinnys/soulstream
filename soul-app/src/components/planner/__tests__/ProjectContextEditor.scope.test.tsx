@@ -1,3 +1,5 @@
+import { useDraftStore } from '../../../store/draftStore';
+import { Alert } from 'react-native';
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
@@ -82,4 +84,25 @@ test('긴 지침은 읽기 상태에서 8줄로 접고 편집 때만 TextInput�
   expect(screen.getByTestId('folder-context-read-text').props.numberOfLines).toBe(8);
   fireEvent.press(screen.getByText('편집'));
   expect(screen.getByPlaceholderText('이 프로젝트의 공통 지침').props.value).toBe(guidance);
+});
+
+test('프로젝트 지침 초안은 닫기·실패 뒤 복원되고 저장 성공 뒤 제거된다', async () => {
+  await useAuthStore.persist.rehydrate(); await useSettingsStore.persist.rehydrate(); await useDraftStore.persist.rehydrate();
+  useAuthStore.setState({ jwt: `header.${Buffer.from(JSON.stringify({ email: 'project@example.com' })).toString('base64url')}.signature` });
+  useDraftStore.setState({ drafts: {} });
+  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  mockSaveProjectContext.mockRejectedValueOnce(new Error('연결 실패')).mockResolvedValue(undefined);
+  const screen = render(<ProjectContextEditor api={null} projectPageId="project-page" active />);
+  fireEvent.press(screen.getByText('편집'));
+  fireEvent.changeText(screen.getByPlaceholderText('이 프로젝트의 공통 지침'), '영속 지침 초안');
+  await act(async () => fireEvent.press(screen.getByText('컨텍스트 저장')));
+  expect(Object.values(useDraftStore.getState().drafts)).toContain('영속 지침 초안');
+  screen.unmount();
+  const reopened = render(<ProjectContextEditor api={null} projectPageId="project-page" active />);
+  fireEvent.press(reopened.getByText('편집'));
+  expect(reopened.getByDisplayValue('영속 지침 초안')).toBeTruthy();
+  await act(async () => fireEvent.press(reopened.getByText('컨텍스트 저장')));
+  expect(useDraftStore.getState().drafts).toEqual({});
+  expect(mockSaveProjectContext).toHaveBeenLastCalledWith('project-page', '영속 지침 초안');
+  jest.restoreAllMocks();
 });

@@ -1,3 +1,6 @@
+import { useAuthStore } from '../../../store/authStore';
+import { useSettingsStore } from '../../../store/settingsStore';
+import { useDraftStore } from '../../../store/draftStore';
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => 'phone' }));
 jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jest.fn(), launchImageLibraryAsync: jest.fn() }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
@@ -33,7 +36,13 @@ const detail: CardDetail = { card, reports: [
 ], questions: [{ id: 'question-1', cardId: card.id, sessionId: 's1', text: '어떤 색?', options: ['파랑', '빨강'], answer: null, askedAt: '' }],
   sessions: [{ agentSessionId: 's1', displayName: '실행 세션', status: 'idle', createdAt: '', updatedAt: '' }] };
 
-beforeEach(() => {
+beforeEach(async () => {
+  await useAuthStore.persist.rehydrate();
+  await useSettingsStore.persist.rehydrate();
+  await useDraftStore.persist.rehydrate();
+  useAuthStore.setState({ jwt: `header.${Buffer.from(JSON.stringify({ email: 'card@example.com' })).toString('base64url')}.signature` });
+  useSettingsStore.setState({ serverUrl: 'https://card.example' });
+  useDraftStore.setState({ drafts: {} });
   useCardStore.setState({ rows: {}, details: {} });
   useSessionStore.setState({ sessions: { s1: detail.sessions[0] } });
   useNodeConnectivityStore.getState().reset();
@@ -109,4 +118,22 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
   expect(onClose).toHaveBeenCalled();
   expect(onOpenSession).toHaveBeenCalledWith('run-33');
   expect(useSessionStore.getState().sessions['run-33'].updatedAt).toBe('2026-09-30T00:00:00Z');
+});
+
+test('커멘트 초안은 실패와 상세 닫기 후 복원되고 성공할 때만 삭제된다', async () => {
+  const resolvedDetail = { ...detail, questions: [] };
+  const api = { getCard: jest.fn().mockResolvedValue(resolvedDetail),
+    addCardComment: jest.fn().mockRejectedValueOnce(new Error('연결 실패')).mockResolvedValue({ id: 'saved-comment', cardId: card.id, body: '나중에 이어 쓸 내용', authorKind: 'user' }) };
+  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const props = { api: api as any, cardId: card.id, onClose: jest.fn() };
+  const screen = render(<CardDetailContent {...props} />);
+  await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '나중에 이어 쓸 내용');
+  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
+  expect(Object.values(useDraftStore.getState().drafts)).toContain('나중에 이어 쓸 내용');
+  screen.unmount();
+  const reopened = render(<CardDetailContent {...props} />);
+  await waitFor(() => expect(reopened.getByDisplayValue('나중에 이어 쓸 내용')).toBeTruthy());
+  await act(async () => fireEvent.press(reopened.getByLabelText('커멘트 보내기')));
+  expect(useDraftStore.getState().drafts).toEqual({});
 });

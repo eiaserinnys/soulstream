@@ -19,6 +19,7 @@ export function TabletMarkdownEditor({
   testID,
   ownerKey = testID,
   contentOnly = false,
+  ready = true,
 }: {
   value: string;
   draft: string;
@@ -33,6 +34,7 @@ export function TabletMarkdownEditor({
   ownerKey?: string;
   /** Parent already owns the material surface; render editor content without another card. */
   contentOnly?: boolean;
+  ready?: boolean;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -70,6 +72,7 @@ export function TabletMarkdownEditor({
           <PlannerMarkdownText markdown={value} testID={`${testID}-markdown`} />
         ) : <Text style={styles.empty}>{emptyText}</Text>}
         <TouchableOpacity
+          disabled={!ready}
           testID={`${testID}-edit-action`}
           accessibilityLabel="설명 편집"
           style={styles.editAction}
@@ -85,6 +88,7 @@ export function TabletMarkdownEditor({
     <View testID={`${testID}-edit`}>
       <Surface style={styles.surface}>
         <TextInput
+          editable={ready}
           ref={inputRef}
           testID={`${testID}-input`}
           value={draft}
@@ -99,7 +103,7 @@ export function TabletMarkdownEditor({
         <TouchableOpacity
           testID={`${testID}-cancel-action`}
           style={styles.action}
-          disabled={saving}
+          disabled={!ready || saving}
           onPress={() => {
             if (activeSaveAttempt.current) return;
             blurInput();
@@ -113,7 +117,7 @@ export function TabletMarkdownEditor({
           <TouchableOpacity
             testID={`${testID}-save-action`}
             style={styles.action}
-            disabled={saving}
+            disabled={!ready || saving}
             onPress={() => {
               if (activeSaveAttempt.current) return;
               const submittedDraft = draftRef.current;

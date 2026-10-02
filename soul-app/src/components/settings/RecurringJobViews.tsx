@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -100,7 +101,9 @@ export function RecurringJobEditor({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [job, setJob] = useState<RecurringJobDto | null>(null);
-  const [draft, setDraft] = useState<EditorDraft>(emptyDraft());
+  const [serverDraft, setServerDraft] = useState<EditorDraft>(emptyDraft());
+  const form = usePersistentDraft('recurring-job', [jobId ?? 'new'], serverDraft);
+  const { value: draft, setValue: setDraft } = form;
   const [nodes, setNodes] = useState<Array<{ nodeId: string }>>([]);
   const [agents, setAgents] = useState<Array<{ id: string; name: string | null }>>([]);
   const [presets, setPresets] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
@@ -121,7 +124,7 @@ export function RecurringJobEditor({
   const loadExisting = useCallback(async ({ preserveDraft = false }: { preserveDraft?: boolean } = {}) => {
     if (!serverUrl || !jobId) {
       setJob(null);
-      if (!preserveDraft) setDraft(emptyDraft());
+      if (!preserveDraft) setServerDraft(emptyDraft());
       setLoading(false);
       return true;
     }
@@ -135,7 +138,7 @@ export function RecurringJobEditor({
         return false;
       }
       setJob(found);
-      if (!preserveDraft) setDraft(draftFromJob(found));
+      if (!preserveDraft) setServerDraft(draftFromJob(found));
       return true;
     } catch (cause) {
       setError(errorMessage(cause));
@@ -170,6 +173,7 @@ export function RecurringJobEditor({
     } catch (cause) { setError(errorMessage(cause)); } finally { setSaving(false); }
   };
   const save = async () => {
+    if (!form.ready || loading) return;
     setSaving(true); setError(null);
     try {
       const write = writeFromDraft(draft);
@@ -177,7 +181,7 @@ export function RecurringJobEditor({
       const saved = job
         ? (await api.updateRecurringJob(job.job_id, { ...write, expected_version: job.version })).job
         : (await api.createRecurringJob({ ...write, idempotency_key: idempotency('create') })).job;
-      setJob(saved); setDraft(draftFromJob(saved)); onDone(saved);
+      setJob(saved); setServerDraft(draftFromJob(saved)); form.clearIfMatches(draft); onDone(saved);
     } catch (cause) {
       if (isVersionConflict(cause) && job) {
         const refreshed = await loadExisting({ preserveDraft: true });
@@ -194,7 +198,7 @@ export function RecurringJobEditor({
       const saved = (await createApiClient(serverUrl).updateRecurringJob(job.job_id, {
         expected_version: job.version, enabled: !job.enabled,
       })).job;
-      setJob(saved); setDraft(draftFromJob(saved)); onDone(saved);
+      setJob(saved); setServerDraft(draftFromJob(saved)); onDone(saved);
     } catch (cause) { setError(errorMessage(cause)); } finally { setSaving(false); }
   };
   const runNow = async () => {
@@ -219,18 +223,18 @@ export function RecurringJobEditor({
     {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     <Text style={styles.heading}>{job ? job.name : '새 반복 작업'}</Text>
-    <Input label="작업 이름" value={draft.name} onChangeText={(name) => update({ name })} />
-    <Input label="작업 내용" value={draft.prompt} multiline onChangeText={(prompt) => update({ prompt })} />
-    <Input label="시간대" value={draft.timezone} onChangeText={(timezone) => update({ timezone })} />
-    <RecurringSchedulePicker value={draft.schedule} onChange={(schedule) => update({ schedule })} />
+    <Input editable={form.ready && !loading && !saving} label="작업 이름" value={draft.name} onChangeText={(name) => update({ name })} />
+    <Input editable={form.ready && !loading && !saving} label="작업 내용" value={draft.prompt} multiline onChangeText={(prompt) => update({ prompt })} />
+    <Input editable={form.ready && !loading && !saving} label="시간대" value={draft.timezone} onChangeText={(timezone) => update({ timezone })} />
+    <RecurringSchedulePicker ready={form.ready && !loading && !saving} value={draft.schedule} onChange={(schedule) => update({ schedule })} />
     <Text style={styles.label}>생성·저장 후 자동 실행</Text><OptionRow selected={draft.enabled ? 'enabled' : 'paused'} options={[{ id: 'enabled', label: '실행' }, { id: 'paused', label: '일시정지' }]} onSelect={(state) => update({ enabled: state === 'enabled' })} emptyLabel="" />
-    <Input label="오프라인 허용 초" value={draft.lateRunWindowSeconds} keyboardType="number-pad" onChangeText={(lateRunWindowSeconds) => update({ lateRunWindowSeconds })} />
+    <Input editable={form.ready && !loading && !saving} label="오프라인 허용 초" value={draft.lateRunWindowSeconds} keyboardType="number-pad" onChangeText={(lateRunWindowSeconds) => update({ lateRunWindowSeconds })} />
     <Text style={styles.label}>실행 노드</Text><OptionRow selected={draft.nodeId} options={nodes.map((node) => ({ id: node.nodeId, label: node.nodeId }))} onSelect={(nodeId) => update({ nodeId, agentId: '', modelPreset: null })} emptyLabel="연결된 노드 없음" />
     <Text style={styles.label}>실행 에이전트</Text><OptionRow selected={draft.agentId} options={agents.map((agent) => ({ id: agent.id, label: agent.name ?? agent.id }))} onSelect={(agentId) => update({ agentId })} emptyLabel="노드를 선택하세요" />
     <Text style={styles.label}>모델</Text><OptionRow selected={draft.modelPreset ?? ''} options={[{ id: '', label: '에이전트 기본값' }, ...presets.map((preset) => ({ id: preset.id, label: preset.available ? preset.label : `${preset.label} (사용 불가)` }))]} onSelect={(modelPreset) => update({ modelPreset: modelPreset || null })} emptyLabel="에이전트 기본값" />
     <Text style={styles.label}>결과 폴더</Text><OptionRow selected={draft.folderId} options={folders.map((folder) => ({ id: folder.id, label: folder.name }))} onSelect={(folderId) => update({ folderId })} emptyLabel="선택 가능한 폴더가 없습니다." />
     <Text style={styles.help}>선택한 폴더에 결과 세션을 저장합니다.</Text>
-    <View style={styles.actions}><Action label="다음 5회" disabled={saving} onPress={() => void previewSchedule()} /><Action label={saving ? '저장 중...' : '저장'} disabled={saving || job?.archived_at != null} primary onPress={() => void save()} /></View>
+    <View style={styles.actions}><Action label="다음 5회" disabled={saving} onPress={() => void previewSchedule()} /><Action label={saving ? '저장 중...' : '저장'} disabled={!form.ready || loading || saving || job?.archived_at != null} primary onPress={() => void save()} /></View>
     {preview.length > 0 ? <View style={styles.preview}><Text style={styles.heading}>다음 5회</Text>{preview.map((time) => <Text key={time} style={styles.help}>{formatTime(time)}</Text>)}</View> : null}
     {job ? <View style={styles.actions}><Action label="이력" disabled={saving} onPress={() => onOpenHistory(job.job_id)} testID="recurring-job-history" /><Action label={job.enabled ? '일시정지' : '재개'} disabled={saving || job.archived_at !== null} onPress={() => void updateEnabled()} testID="recurring-job-toggle-enabled" /><Action label="지금 실행" disabled={saving || job.archived_at !== null} primary onPress={() => void runNow()} testID="recurring-job-run-now" /><Action label="보관" disabled={saving || job.archived_at !== null} onPress={() => void archive()} testID="recurring-job-archive" /></View> : null}
   </ScrollView>;

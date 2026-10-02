@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useMemo, useState } from 'react';
 import { ScrollView, Text, TextInput, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
@@ -17,20 +18,22 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
   const remembered = useSettingsStore((state) => state.cardAssignments[state.serverUrl]);
   const folders = useSessionStore((state) => state.catalog.folders);
   const [folderId, setFolderId] = useState(initialFolderId ?? remembered?.folderId ?? '');
-  const [title, setTitle] = useState('');
-  const [request, setRequest] = useState('');
+  const draft = usePersistentDraft('card-create', [initialFolderId ?? 'all'], { title: '', request: '' });
+  const { title, request } = draft.value;
+  const setTitle = (title: string) => draft.setValue(current => ({ ...current, title }));
+  const setRequest = (request: string) => draft.setValue(current => ({ ...current, request }));
   const [selecting, setSelecting] = useState(false);
   const { run, pending } = useCardActions(api);
-  if (selecting) return <FolderSelectionSheet api={api} onClose={() => setSelecting(false)} onSelect={setFolderId} />;
+  if (selecting) return <FolderSelectionSheet draftScope={`card-create:${initialFolderId ?? 'all'}`} api={api} onClose={() => setSelecting(false)} onSelect={setFolderId} />;
   return <AppModalSurface visible modalId="modal_card_assignment" variant="expanded" presentationStyle="pageSheet" onRequestClose={onClose}>
     <AppKeyboardAvoidingView style={{ flex: 1 }}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.heading}>카드 추가</Text>
       <GlassButton accessibilityLabel="카드 폴더 선택" onPress={() => setSelecting(true)} disabled={pending}><Text style={styles.body}>{folders.find((folder) => folder.id === folderId)?.name ?? '폴더 선택'}</Text></GlassButton>
-      <TextInput accessibilityLabel="카드 제목" placeholder="제목" value={title} onChangeText={setTitle} style={styles.input} placeholderTextColor={t.colors.textPlaceholder} editable={!pending} />
-      <TextInput accessibilityLabel="요청 원문" placeholder="요청 원문" value={request} onChangeText={setRequest} style={styles.input} placeholderTextColor={t.colors.textPlaceholder} multiline editable={!pending} />
+      <TextInput accessibilityLabel="카드 제목" placeholder="제목" value={title} onChangeText={setTitle} style={styles.input} placeholderTextColor={t.colors.textPlaceholder} editable={!pending && draft.ready} />
+      <TextInput accessibilityLabel="요청 원문" placeholder="요청 원문" value={request} onChangeText={setRequest} style={styles.input} placeholderTextColor={t.colors.textPlaceholder} multiline editable={!pending && draft.ready} />
       <View style={styles.actions}><GlassButton onPress={onClose} disabled={pending}><Text style={styles.body}>닫기</Text></GlassButton>
-        <GlassButton accessibilityLabel="카드 저장" disabled={!api || pending || !folderId || !title.trim() || !request.trim()} onPress={() => {
-          if (api) void run(() => api.createCard({ folderId, title: title.trim(), request, queue: false, idempotencyKey: cardOperationId() })).then((ok) => { if (ok) onClose(); });
+        <GlassButton accessibilityLabel="카드 저장" disabled={!api || !draft.ready || pending || !folderId || !title.trim() || !request.trim()} onPress={() => {
+          if (api) void run(() => api.createCard({ folderId, title: title.trim(), request, queue: false, idempotencyKey: cardOperationId() })).then((ok) => { if (ok) { draft.clearIfMatches({ title, request }); onClose(); } });
         }}><Text style={styles.actionText}>저장</Text></GlassButton></View>
     </ScrollView></AppKeyboardAvoidingView>
   </AppModalSurface>;

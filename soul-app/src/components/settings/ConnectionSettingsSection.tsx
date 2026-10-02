@@ -19,6 +19,7 @@ const SERVER_OPTIONS = [
 
 export function ConnectionSettingsSection({
   flattened,
+  ready = true,
   url,
   serverType,
   testing,
@@ -28,6 +29,7 @@ export function ConnectionSettingsSection({
   onTest,
   onSave,
 }: {
+  ready?: boolean;
   flattened: boolean;
   url: string;
   serverType: ServerType;
@@ -46,6 +48,7 @@ export function ConnectionSettingsSection({
       <View style={styles.block}>
         <Text style={styles.rowLabel}>서버 URL</Text>
         <TextInput
+          editable={ready}
           testID="settings-server-input"
           style={styles.input}
           value={url}
@@ -90,7 +93,7 @@ export function ConnectionSettingsSection({
             style={styles.action}
             contentStyle={styles.secondaryButtonContent}
             onPress={onTest}
-            disabled={testing || !url.trim()}
+            disabled={!ready || testing || !url.trim()}
           >
             {testing ? (
               <ActivityIndicator size="small" color={t.colors.accent} />
@@ -105,7 +108,7 @@ export function ConnectionSettingsSection({
             accessibilityLabel="저장"
             style={styles.action}
             onPress={onSave}
-            disabled={!url.trim()}
+            disabled={!ready || !url.trim()}
           >
             <Text style={styles.primaryText}>저장</Text>
           </GlassButton>

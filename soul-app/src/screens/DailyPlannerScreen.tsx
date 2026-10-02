@@ -157,6 +157,8 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {data ? (
         <DailyMemo
+          date={date}
+          folderId={data.daily.page.id}
           blocks={data.memoBlocks}
           onSave={(blockId, text) => actions.saveDailyMemo(
             date,

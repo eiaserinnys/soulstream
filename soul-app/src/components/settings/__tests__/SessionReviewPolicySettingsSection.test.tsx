@@ -1,3 +1,6 @@
+import { useDraftStore } from '../../../store/draftStore';
+import { useAuthStore } from '../../../store/authStore';
+import { useSettingsStore } from '../../../store/settingsStore';
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
@@ -286,4 +289,24 @@ test('locks source controls while a reload is in flight', async () => {
   expect(screen.queryByTestId('review-policy-source-slack')).toBeNull();
   expect(screen.queryByTestId('review-policy-source-external-llm')).toBeNull();
   expect(screen.getByText(/현재 v5/)).toBeTruthy();
+});
+
+test('정책 목록 저장 성공도 아직 추가하지 않은 ID 초안은 지우지 않는다', async () => {
+  await useAuthStore.persist.rehydrate(); await useSettingsStore.persist.rehydrate(); await useDraftStore.persist.rehydrate();
+  useAuthStore.setState({ jwt: `header.${Buffer.from(JSON.stringify({ email: 'policy@example.com' })).toString('base64url')}.signature` });
+  useSettingsStore.setState({ serverUrl: 'https://soul.test' });
+  useDraftStore.setState({ drafts: {} });
+  api.updateSessionReviewPolicy.mockResolvedValue({ ...initialPayload, policy: { ...initialPayload.policy, sourceAllowlist: ['slack'], version: 5 } });
+  const screen = render(<SessionReviewPolicySettingsSection flattened serverUrl="https://soul.test" />);
+  await screen.findByTestId('review-policy-source-external-llm');
+  fireEvent.press(screen.getByTestId('review-policy-remove-external-llm'));
+  fireEvent.changeText(screen.getByTestId('review-policy-source-input'), 'pending-source');
+  fireEvent.press(screen.getByTestId('review-policy-save'));
+  await screen.findByText(/정책 v5을 저장했습니다/);
+  expect(screen.getByTestId('review-policy-source-input').props.value).toBe('pending-source');
+  screen.unmount();
+  api.getSessionReviewPolicy.mockResolvedValue({ ...initialPayload, policy: { ...initialPayload.policy, sourceAllowlist: ['slack'], version: 5 } });
+  const reopened = render(<SessionReviewPolicySettingsSection flattened serverUrl="https://soul.test" />);
+  await reopened.findByText(/현재 v5/);
+  expect(reopened.getByTestId('review-policy-source-input').props.value).toBe('pending-source');
 });

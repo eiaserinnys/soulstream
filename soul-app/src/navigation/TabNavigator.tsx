@@ -340,7 +340,7 @@ function PhoneSearchScreen({
   const t = useTokens();
   const tabs = navigation.getParent<BottomTabNavigationProp<RootTabParamList>>();
   useLayoutEffect(() => {
-    useSearchStore.getState().setQuery(route.params?.initialQuery ?? '');
+    if (route.params?.initialQuery !== undefined) useSearchStore.getState().setQuery(route.params.initialQuery);
   }, [route.params?.initialQuery]);
   useFocusEffect(
     useCallback(() => {

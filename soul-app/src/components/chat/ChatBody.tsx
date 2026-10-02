@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -135,10 +136,11 @@ export function ChatBody({
   );
   const nodesReady = useNodeConnectivityStore((state) => state.ready);
   const connectedNodeIds = useNodeConnectivityStore((state) => state.connectedNodeIds);
-  const inputDisabled = session ? isSessionOnDisconnectedNode(session, {
+  const inputDraft = usePersistentDraft('chat', [session?.nodeId, sessionId], '');
+  const inputDisabled = !inputDraft.ready || (session ? isSessionOnDisconnectedNode(session, {
     ready: nodesReady,
     connectedNodeIds,
-  }) : false;
+  }) : false);
 
   const [input, setInput] = useState('');
   const [interrupting, setInterrupting] = useState(false);
@@ -222,7 +224,8 @@ export function ChatBody({
     if (previous && !value) composeFlowRef.current = null;
     inputRef.current = value;
     setInput(value);
-  }, [sessionId]);
+    inputDraft.setValue(value);
+  }, [sessionId, inputDraft.setValue]);
 
   const handleSendUsage = useCallback((event: ChatSendUsageEvent) => {
     const flowId = event.flowId === undefined
@@ -420,6 +423,12 @@ export function ChatBody({
   }, [sessionId, api]);
 
   useEffect(() => {
+    if (!inputDraft.ready) return;
+    inputRef.current = inputDraft.value;
+    setInput(inputDraft.value);
+  }, [inputDraft.key, inputDraft.value, inputDraft.ready, api]);
+
+  useEffect(() => {
     return () => {
       if (sessionId) clearStreamingEvents(sessionId);
     };
@@ -556,6 +565,7 @@ export function ChatBody({
     disabled: inputDisabled,
     scrollToBottom: requestBottomFollow,
     onUsageEvent: handleSendUsage,
+    onSendConfirmed: inputDraft.clearIfMatches,
   });
 
   const handleRetryPending = useCallback((eventId: string) => {
@@ -567,6 +577,7 @@ export function ChatBody({
     if (!restored) return;
     inputRef.current = restored.inputText;
     setInput(restored.inputText);
+    inputDraft.setValue(restored.inputText);
     if (!composeFlowRef.current && sessionId) {
       const flowId = createUiUsageFlowId();
       if (flowId) {
@@ -583,7 +594,7 @@ export function ChatBody({
       path: attachment.path,
       name: attachment.name ?? attachment.path,
     })));
-  }, [restoreAttachments, restorePendingOptimistic, sessionId]);
+  }, [restoreAttachments, restorePendingOptimistic, sessionId, inputDraft.setValue]);
 
   const handleInterrupt = async () => {
     if (!api || !sessionId || interrupting) return;

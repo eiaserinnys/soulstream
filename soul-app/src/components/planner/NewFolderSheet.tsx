@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
@@ -59,25 +60,24 @@ export function NewFolderSheet({
   const styles = useMemo(() => makeStyles(t), [t]);
   const options = useMemo(() => projectOptionsFromFolders(folders), [folders]);
   const scopeGeneration = useAuthScopeGeneration();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [projectPageId, setProjectPageId] = useState('');
-  const [mountToday, setMountToday] = useState(true);
-  const [initialContext, setInitialContext] = useState<InitialFolderContext>(emptyInitialFolderContext);
+  const form = usePersistentDraft('folder-create', [defaultProjectPageId ?? 'root'], {
+    title: '', description: '', projectPageId: defaultProjectPageId ?? options[0]?.projectPageId ?? '',
+    mountToday: true, initialContext: emptyInitialFolderContext(),
+  });
+  const { title, description, projectPageId, mountToday, initialContext } = form.value;
+  const setTitle = (title: string) => form.setValue(current => ({ ...current, title }));
+  const setDescription = (description: string) => form.setValue(current => ({ ...current, description }));
+  const setProjectPageId = (projectPageId: string) => form.setValue(current => ({ ...current, projectPageId }));
+  const setMountToday = (update: React.SetStateAction<boolean>) => form.setValue(current => ({ ...current,
+    mountToday: typeof update === 'function' ? update(current.mountToday) : update }));
+  const setInitialContext = (update: React.SetStateAction<InitialFolderContext>) => form.setValue(current => ({ ...current,
+    initialContext: typeof update === 'function' ? update(current.initialContext) : update }));
   const [assignmentIncomplete, setAssignmentIncomplete] = useState(false);
   const [atomPickerOpen, setAtomPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wasVisible = useRef(false);
   const draftScopeGeneration = useRef(scopeGeneration);
-  const openingDefaults = useRef({
-    defaultProjectPageId,
-    firstProjectPageId: options[0]?.projectPageId ?? '',
-  });
-  openingDefaults.current = {
-    defaultProjectPageId,
-    firstProjectPageId: options[0]?.projectPageId ?? '',
-  };
 
   useEffect(() => {
     const opening = visible && !wasVisible.current;
@@ -85,12 +85,6 @@ export function NewFolderSheet({
     wasVisible.current = visible;
     draftScopeGeneration.current = scopeGeneration;
     if (!visible || (!opening && !scopeChanged)) return;
-    const defaults = openingDefaults.current;
-    setTitle('');
-    setDescription('');
-    setProjectPageId(defaults.defaultProjectPageId ?? defaults.firstProjectPageId);
-    setMountToday(true);
-    setInitialContext(emptyInitialFolderContext());
     setAssignmentIncomplete(false);
     setAtomPickerOpen(false);
     setSubmitting(false);
@@ -121,7 +115,9 @@ export function NewFolderSheet({
   };
 
   const submit = async () => {
+    if (!form.ready) return;
     const scope = captureAuthScope();
+    const submittedForm = form.value;
     const submittedGeneration = scopeGeneration;
     setError(null);
     try {
@@ -136,6 +132,7 @@ export function NewFolderSheet({
       setSubmitting(true);
       await onSubmit(input);
       if (isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration) {
+        form.clearIfMatches(submittedForm);
         onClose();
       }
     } catch (cause) {
@@ -150,7 +147,7 @@ export function NewFolderSheet({
   };
 
   const canSubmit = Boolean(
-    visibleTitle.trim() && visibleProjectPageId && !assignmentIncomplete && !submitting,
+    form.ready && visibleTitle.trim() && visibleProjectPageId && !assignmentIncomplete && !submitting,
   );
   const addAtomReference = (reference: InitialFolderAtomReference) => {
     setInitialContext((current) => ({
@@ -207,6 +204,7 @@ export function NewFolderSheet({
               <Text style={styles.label}>폴더 이름</Text>
               <View style={styles.field}>
                 <TextInput
+                  editable={form.ready && !submitting}
                   value={visibleTitle}
                   onChangeText={setTitle}
                   placeholder="폴더 이름"
@@ -218,6 +216,7 @@ export function NewFolderSheet({
               <Text style={styles.label}>설명</Text>
               <View style={styles.field}>
                 <TextInput
+                  editable={form.ready && !submitting}
                   value={visibleDescription}
                   onChangeText={setDescription}
                   placeholder="목표와 완료 조건을 적어두세요."
@@ -264,7 +263,7 @@ export function NewFolderSheet({
                 visible={visible && ownsDraft}
                 api={api}
                 value={visibleInitialContext}
-                disabled={submitting}
+                disabled={submitting || !form.ready}
                 assignmentIncomplete={assignmentIncomplete}
                 onChange={setInitialContext}
                 onAssignmentIncompleteChange={setAssignmentIncomplete}

@@ -14,7 +14,8 @@ import { useTokens } from '../../theme';
 import { FolderSelectionSheet } from './FolderSelectionSheet';
 import { cardStyles } from './Card.styles';
 
-export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assignment', includeFolder = true, folderOnly = false }: {
+export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assignment', includeFolder = true, folderOnly = false, draftScope }: {
+  draftScope?: string;
   api: ApiClient | null; value: CardAssignment; onClose(): void;
   onSave(value: CardAssignment): Promise<void>; mode?: 'assignment' | 'move' | 'edit'; includeFolder?: boolean; folderOnly?: boolean;
 }) {
@@ -83,7 +84,7 @@ export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assig
     ...(mode === 'move' || folderOnly ? [] : [{ label: '노드', value: selection.selectedNodeName, pick: pickNode },
       { label: '에이전트', value: selection.selectedAgentName, pick: pickAgent },
       { label: '모델', value: selection.selectedModelPresetName, pick: pickModel }])];
-  if (pickingFolder) return <FolderSelectionSheet api={api} onClose={() => setPickingFolder(false)} onSelect={(id) => {
+  if (pickingFolder) return <FolderSelectionSheet draftScope={draftScope ?? `assignment:${mode}:${value.folderId ?? 'all'}`} api={api} onClose={() => setPickingFolder(false)} onSelect={(id) => {
     if (mode !== 'assignment' || folderOnly) selection.setSelectedFolderId(id);
     else setPickedFolderId(id);
   }} />;

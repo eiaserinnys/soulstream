@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 /**
  * ChatInputRequest — Claude AskUserQuestion 인라인 카드
  *
@@ -109,7 +110,10 @@ export const ChatInputRequest = memo(function ChatInputRequest({
       ),
   );
 
-  const [selections, setSelections] = useState<AnswerSelections>({});
+  const draft = usePersistentDraft<AnswerSelections>('chat-question', [sessionId, requestId ?? event.id], {});
+  const [confirmedSelections, setConfirmedSelections] = useState<AnswerSelections | null>(null);
+  const selections = confirmedSelections ?? draft.value;
+  const setSelections = draft.setValue;
   const [submissionState, setSubmissionState] =
     useState<SubmissionState>('idle');
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -121,7 +125,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
   const isDone = isResponded || submissionState === 'submitted';
   const isTimedOut = isExpired || (timerExpired && !isDone);
   const isSubmitting = submissionState === 'submitting';
-  const interactionDisabled = isDone || isTimedOut || isSubmitting;
+  const interactionDisabled = !draft.ready || isDone || isTimedOut || isSubmitting;
   const canSubmit =
     !interactionDisabled && allQuestionsAnswered(questions, selections);
 
@@ -169,6 +173,8 @@ export const ChatInputRequest = memo(function ChatInputRequest({
         reportSubmissionFailure('http_error', { status: response.status });
         return;
       }
+      setConfirmedSelections(nextSelections);
+      draft.clearIfMatches(nextSelections);
       setSubmissionState('submitted');
     } catch (error) {
       reportSubmissionFailure('network_error', {
@@ -181,7 +187,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
     questionIndex: number,
     optionLabel: string,
   ) => {
-    if (interactionDisabled) return;
+    if (interactionDisabled || !draft.ready) return;
     setSubmitError(null);
     const question = questions[questionIndex];
     const current = selections[questionIndex] ?? [];

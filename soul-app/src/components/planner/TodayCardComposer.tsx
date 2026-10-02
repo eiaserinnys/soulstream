@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useMemo, useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
@@ -31,7 +32,8 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
   const remembered = settings.cardAssignments[settings.serverUrl];
   const [assignment, setAssignment] = useState<CardAssignment | null>(null);
   const value = assignment ?? remembered ?? { folderId: '', nodeId: settings.nodeId, agentId: null, modelPreset: null };
-  const [text, setText] = useState('');
+  const draft = usePersistentDraft('main-composer', [], '');
+  const { value: text, setValue: setText } = draft;
   const [selecting, setSelecting] = useState<'folder' | 'execution' | null>(null);
   // The new-session dialog uses the same upload route with a draft UUID before a session exists.
   const [uploadId, setUploadId] = useState(() => Crypto.randomUUID());
@@ -42,7 +44,7 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
   const labels = useNewSessionSelection({ visible: true, api, folders, settingsNodeId: settings.nodeId,
     defaultFolderId: value.folderId, defaultNodeId: value.nodeId ?? settings.nodeId,
     defaultAgentId: value.agentId, defaultModelPresetId: value.modelPreset, preserveAgentOnNodeChange: true });
-  const disabled = pending || attachments.uploading;
+  const disabled = pending || attachments.uploading || !draft.ready;
   const canSend = !!api && !!text.trim() && !!value.folderId && !!value.agentId && !labels.modelPresetSelectionInvalid && !disabled;
   const submit = async () => {
     if (!api || !canSend) return;
@@ -61,7 +63,7 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
         onCreated: (id) => { if (onCreated) onCreated(id); else useUIStore.getState().openSessionAtEvent(id); },
         clearAttachments: attachments.clearAttachments, onClose: () => undefined });
       settings.setCardAssignment(settings.serverUrl, value);
-      setText('');
+      draft.clearIfMatches(text);
       setUploadId(Crypto.randomUUID());
     } catch (cause) { Alert.alert('세션 시작 실패', cause instanceof Error ? cause.message : String(cause)); }
     finally { submitting.current = false; setPending(false); }
@@ -93,7 +95,7 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
         </View>
       </View>
     </PlannerForegroundCard>
-    {selecting === 'folder' ? <FolderSelectionSheet api={api} onClose={() => setSelecting(null)} onSelect={(folderId) => {
+    {selecting === 'folder' ? <FolderSelectionSheet draftScope="main-composer" api={api} onClose={() => setSelecting(null)} onSelect={(folderId) => {
       const next = { ...value, folderId }; setAssignment(next); settings.setCardAssignment(settings.serverUrl, next);
     }} /> : null}
     {selecting === 'execution' ? <ExecutionSelectionSheet api={api} value={value} onClose={() => setSelecting(null)} onSave={(next) => {

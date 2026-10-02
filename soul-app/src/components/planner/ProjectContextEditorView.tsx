@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { PlannerBlock } from '../../api/plannerTypes';
@@ -22,8 +23,9 @@ export function ProjectContextEditorView({
   const styles = useMemo(() => makeStyles(t), [t]);
   const scopeGeneration = useAuthScopeGeneration();
   const ownerKey = `${scopeGeneration}\u0000${projectPageId}`;
-  const [text, setText] = useState('');
   const [saved, setSaved] = useState('');
+  const form = usePersistentDraft('project-context', [projectPageId], saved);
+  const { value: text, setValue: setText } = form;
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -36,7 +38,6 @@ export function ProjectContextEditorView({
       draftOwner.current = ownerKey;
       draft.current = '';
       server.current = '';
-      setText('');
       setSaved('');
       setSaving(false);
       setEditing(false);
@@ -47,27 +48,27 @@ export function ProjectContextEditorView({
     if (draft.current === '' && server.current === '') {
       draft.current = value;
       server.current = value;
-      setText(value);
       setSaved(value);
       return;
     }
-    const merged = mergeServerDraft(draft.current, server.current, value);
+    const merged = mergeServerDraft(form.hasDraft ? form.value : draft.current, server.current, value);
     draft.current = merged.draft;
     server.current = merged.server;
-    setText(merged.draft);
     setSaved(merged.server);
   }, [detail.data, ownerKey]);
 
   const save = async () => {
     const scope = captureAuthScope();
     const submittedOwner = ownerKey;
-    const submittedText = draft.current;
+    if (!form.ready) return;
+    const submittedText = form.value;
     setSaving(true);
     try {
       await saveProjectContext(projectPageId, submittedText);
       if (!isAuthScopeCurrent(scope) || draftOwner.current !== submittedOwner) return;
       server.current = submittedText;
       setSaved(submittedText);
+      form.clearIfMatches(submittedText);
       setEditing(false);
     } catch (error) {
       if (isAuthScopeCurrent(scope) && draftOwner.current === submittedOwner) {
@@ -92,11 +93,12 @@ export function ProjectContextEditorView({
       <PlannerForegroundCard glassTestID="folder-context-glass" foregroundTestID="folder-context-foreground">
         {editing ? (
           <TextInput
+            editable={form.ready && !saving}
             value={visibleText}
             onChangeText={(value) => {
               draft.current = value;
               setText(value);
-            }}
+                    }}
             multiline
             placeholder="이 프로젝트의 공통 지침"
             placeholderTextColor={t.colors.textPlaceholder}
@@ -117,12 +119,12 @@ export function ProjectContextEditorView({
         <View style={styles.actions}>
           <TouchableOpacity style={styles.saveAction} onPress={() => {
             draft.current = server.current;
-            setText(server.current);
+            form.clear();
             setEditing(false);
           }} disabled={saving}>
             <Text style={styles.save}>취소</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.saveAction} onPress={save} disabled={saving || visibleText === visibleSaved}>
+          <TouchableOpacity style={styles.saveAction} onPress={save} disabled={!form.ready || saving || visibleText === visibleSaved}>
             <Text style={[styles.save, (saving || visibleText === visibleSaved) && styles.disabled]}>
               {saving ? '저장 중…' : '컨텍스트 저장'}
             </Text>

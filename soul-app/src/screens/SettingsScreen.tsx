@@ -1,3 +1,4 @@
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, ScrollView, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -63,8 +64,10 @@ export function SettingsScreen({
   const jwt = useAuthStore((state) => state.jwt);
   const detectedAdmin = useDashboardAdminStatus(showAdmin === undefined);
   const canManageReviewPolicy = showAdmin ?? detectedAdmin;
-  const [urlInput, setUrlInput] = useState(serverUrl);
-  const [typeInput, setTypeInput] = useState<ServerType>(serverType);
+  const connectionDraft = usePersistentDraft('connection-settings', [], { url: serverUrl, type: serverType }, { deviceLocal: true });
+  const { url: urlInput, type: typeInput } = connectionDraft.value;
+  const setUrlInput = (url: string) => connectionDraft.setValue(current => ({ ...current, url }));
+  const setTypeInput = (type: ServerType) => connectionDraft.setValue(current => ({ ...current, type }));
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -121,6 +124,7 @@ export function SettingsScreen({
     if (!url) return;
     if (url !== serverUrl) useAuthStore.getState().clear();
     setSettings(url, typeInput);
+    connectionDraft.clearIfMatches({ url: urlInput, type: typeInput });
   }
 
   async function savePreferences(
@@ -249,7 +253,7 @@ export function SettingsScreen({
             />
           ) : null}
           {includes('connection') ? (
-            <ConnectionSettingsSection
+            <ConnectionSettingsSection ready={connectionDraft.ready}
               flattened={flattened}
               url={urlInput}
               serverType={typeInput}

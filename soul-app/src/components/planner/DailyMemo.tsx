@@ -2,162 +2,98 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { PlannerBlock } from '../../api/plannerTypes';
 import { mergeServerDraft } from '../../lib/server-draft';
+import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import { createPlannerVisualRoles, useDeviceType, useTokens, type DesignTokens } from '../../theme';
 import { AppGlassCard } from '../AppGlassCard';
 import { TabletMarkdownEditor } from './TabletMarkdownEditor';
 import { captureAuthScope, useAuthScopeGeneration } from '../../lib/auth-scope';
 
-export function DailyMemo({
-  blocks,
-  onSave,
-}: {
+type SaveMemo = (blockId: string | null, text: string) => Promise<unknown> | void;
+export function DailyMemo({ blocks, onSave, date, folderId }: {
   blocks: readonly PlannerBlock[];
-  onSave?: (blockId: string | null, text: string) => Promise<unknown> | void;
+  onSave?: SaveMemo;
+  date?: string;
+  folderId?: string;
 }) {
   const t = useTokens();
   const tablet = useDeviceType() !== 'phone';
+  const generation = useAuthScopeGeneration();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const scopeGeneration = useAuthScopeGeneration();
-  const draftScope = useRef(scopeGeneration);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [newMemo, setNewMemo] = useState('');
+  const newDraft = usePersistentDraft('daily-memo-new', [date, folderId], '');
+  const { value: newMemo, setValue: setNewMemo } = newDraft;
   const savingNewMemo = useRef(false);
-  const draftValues = useRef<Record<string, string>>({});
-  const serverValues = useRef<Record<string, string>>({});
-  const ownsDrafts = draftScope.current === scopeGeneration;
-  const visibleBlocks = ownsDrafts ? blocks : [];
-  useEffect(() => {
-    if (draftScope.current === scopeGeneration) return;
-    draftScope.current = scopeGeneration;
-    draftValues.current = {};
-    serverValues.current = {};
-    setDrafts({});
-    setNewMemo('');
-  }, [scopeGeneration]);
-  useEffect(() => {
-    const nextDrafts: Record<string, string> = {};
-    const nextServers: Record<string, string> = {};
-    for (const block of visibleBlocks) {
-      const previousServer = serverValues.current[block.id] ?? block.text;
-      const merged = mergeServerDraft(
-        draftValues.current[block.id] ?? previousServer,
-        previousServer,
-        block.text,
-      );
-      nextDrafts[block.id] = merged.draft;
-      nextServers[block.id] = merged.server;
-    }
-    draftValues.current = nextDrafts;
-    serverValues.current = nextServers;
-    setDrafts(nextDrafts);
-  }, [visibleBlocks]);
   const saveNewMemo = () => {
     const text = newMemo.trim();
-    if (!text || !onSave || savingNewMemo.current) return;
-    const submittedGeneration = scopeGeneration;
+    if (!newDraft.ready || !text || !onSave || savingNewMemo.current) return;
     savingNewMemo.current = true;
-    void Promise.resolve(onSave(null, text)).then(() => {
-      if (captureAuthScope().generation !== submittedGeneration) return;
-      setNewMemo((current) => current.trim() === text ? '' : current);
+    void Promise.resolve().then(() => onSave(null, text)).then(() => {
+      newDraft.clearIfMatches(newMemo);
+    }).catch(() => {
+      // The caller reports the save error; the draft remains available.
     }).finally(() => { savingNewMemo.current = false; });
   };
   return (
     <AppGlassCard testID="daily-memo-box" style={tablet ? styles.container : styles.phoneContainer}>
       {tablet ? <Text style={styles.title}>메모</Text> : null}
-      {visibleBlocks.map((block) => {
-        const draft = drafts[block.id] ?? block.text;
-        const serverValue = serverValues.current[block.id] ?? block.text;
-        const changeDraft = (text: string) => {
-          draftValues.current = { ...draftValues.current, [block.id]: text };
-          setDrafts((current) => ({ ...current, [block.id]: text }));
-        };
-        if (tablet && onSave) {
-          return (
-            <TabletMarkdownEditor
-              key={block.id}
-              contentOnly
-              testID={`daily-memo-${block.id}`}
-              ownerKey={`${scopeGeneration}\u0000${block.id}`}
-              value={serverValue}
-              draft={draft}
-              onChangeDraft={changeDraft}
-              onCancel={() => changeDraft(serverValue)}
-              onSave={(submittedDraft) => {
-                const submittedGeneration = scopeGeneration;
-                return Promise.resolve(onSave(block.id, submittedDraft)).then(() => {
-                  if (captureAuthScope().generation !== submittedGeneration) return;
-                  serverValues.current = { ...serverValues.current, [block.id]: submittedDraft };
-                  // ref 갱신만으로는 자식 props가 바뀌지 않는다. 성공 직후 read markdown과
-                  // dirty guard가 저장값을 보도록 새 객체로 한 번 렌더한다.
-                  setDrafts((current) => ({ ...current }));
-                });
-              }}
-              emptyText="오늘 메모가 없습니다."
-            />
-          );
-        }
-        const saveDraft = () => {
-          const submittedDraft = draftValues.current[block.id] ?? draft;
-          if (submittedDraft !== serverValue) {
-            const submittedGeneration = scopeGeneration;
-            void Promise.resolve(onSave?.(block.id, submittedDraft)).then(() => {
-              if (captureAuthScope().generation !== submittedGeneration) return;
-              serverValues.current = { ...serverValues.current, [block.id]: submittedDraft };
-            });
-          }
-        };
-        return (
-          <TextInput
-            key={block.id}
-            testID={`daily-memo-${block.id}-input`}
-            value={draft}
-            onChangeText={changeDraft}
-            onBlur={saveDraft}
-            onSubmitEditing={tablet ? undefined : saveDraft}
-            submitBehavior={tablet ? undefined : 'submit'}
-            returnKeyType={tablet ? undefined : 'done'}
-            editable={!!onSave}
-            multiline
-            style={tablet ? styles.input : styles.phoneInput}
-          />
-        );
-      })}
-      {visibleBlocks.length === 0 && !onSave ? <Text style={styles.placeholder}>오늘 메모가 없습니다.</Text> : null}
+      {blocks.map(block => <MemoBlock key={`${generation}:${block.id}`} block={block} onSave={onSave} tablet={tablet} styles={styles} />)}
+      {blocks.length === 0 && !onSave ? <Text style={styles.placeholder}>오늘 메모가 없습니다.</Text> : null}
       {onSave && !tablet ? (
-        <TextInput
-          testID="daily-memo-new-input"
-          value={newMemo}
-          onChangeText={setNewMemo}
-          onSubmitEditing={saveNewMemo}
-          onBlur={saveNewMemo}
-          submitBehavior="submit"
-          returnKeyType="done"
-          placeholder="오늘 기억해 둘 내용을 적으세요."
-          placeholderTextColor={t.colors.textPlaceholder}
-          style={styles.phoneInput}
-        />
+        <TextInput testID="daily-memo-new-input" value={newMemo} onChangeText={setNewMemo}
+          editable={newDraft.ready} onSubmitEditing={saveNewMemo} onBlur={saveNewMemo}
+          submitBehavior="submit" returnKeyType="done" placeholder="오늘 기억해 둘 내용을 적으세요."
+          placeholderTextColor={t.colors.textPlaceholder} style={styles.phoneInput} />
       ) : null}
       {onSave && tablet ? (
         <View style={styles.newRow}>
-          <TextInput
-            testID="daily-memo-new-input"
-            value={newMemo}
-            onChangeText={setNewMemo}
-            placeholder="메모 추가"
-            placeholderTextColor={t.colors.textPlaceholder}
-            style={[styles.input, styles.newInput]}
-          />
-          <TouchableOpacity
-            testID="daily-memo-add-action"
-            style={styles.addAction}
-            onPress={saveNewMemo}
-          >
-            <Text style={styles.add}>추가</Text>
-          </TouchableOpacity>
+          <TextInput testID="daily-memo-new-input" value={newMemo} onChangeText={setNewMemo}
+            editable={newDraft.ready} placeholder="메모 추가" placeholderTextColor={t.colors.textPlaceholder}
+            style={[styles.input, styles.newInput]} />
+          <TouchableOpacity testID="daily-memo-add-action" style={styles.addAction}
+            disabled={!newDraft.ready} onPress={saveNewMemo}><Text style={styles.add}>추가</Text></TouchableOpacity>
         </View>
       ) : null}
     </AppGlassCard>
   );
+}
+
+function MemoBlock({ block, onSave, tablet, styles }: {
+  block: PlannerBlock; onSave?: SaveMemo; tablet: boolean; styles: ReturnType<typeof makeStyles>;
+}) {
+  const generation = useAuthScopeGeneration();
+  const [serverValue, setServerValue] = useState(block.text);
+  const serverRef = useRef(block.text);
+  const form = usePersistentDraft('daily-memo', [block.id], serverValue);
+  const currentDraft = useRef(form.value);
+  currentDraft.current = form.value;
+  useEffect(() => {
+    const merged = mergeServerDraft(currentDraft.current, serverRef.current, block.text);
+    serverRef.current = merged.server;
+    setServerValue(merged.server);
+  }, [block.text]);
+  const save = async (submitted: string) => {
+    if (!form.ready || !onSave) return;
+    const submittedGeneration = generation;
+    await onSave(block.id, submitted);
+    form.clearIfMatches(submitted);
+    if (captureAuthScope().generation !== submittedGeneration) return;
+    serverRef.current = submitted;
+    setServerValue(submitted);
+  };
+  if (tablet && onSave) return (
+    <TabletMarkdownEditor ready={form.ready} contentOnly testID={`daily-memo-${block.id}`}
+      ownerKey={`${generation}\u0000${block.id}`} value={serverValue} draft={form.value}
+      onChangeDraft={form.setValue} onCancel={form.clear}
+      onSave={save} emptyText="오늘 메모가 없습니다." />
+  );
+  const saveDraft = () => {
+    if (form.value !== serverValue) void save(form.value).catch(() => {
+      // The caller reports the save error; keep the unsaved draft.
+    });
+  };
+  return <TextInput testID={`daily-memo-${block.id}-input`} value={form.value}
+    onChangeText={form.setValue} onBlur={saveDraft} onSubmitEditing={tablet ? undefined : saveDraft}
+    submitBehavior={tablet ? undefined : 'submit'} returnKeyType={tablet ? undefined : 'done'}
+    editable={!!onSave && form.ready} multiline style={tablet ? styles.input : styles.phoneInput} />;
 }
 function makeStyles(t: DesignTokens) {
   const planner = createPlannerVisualRoles(t);
