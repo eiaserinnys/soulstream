@@ -271,12 +271,14 @@ function canonicalHeaders(headers: Readonly<Record<string, string>>): string {
 
 function canonicalQuery(query: Readonly<Record<string, string>>): string {
   return Object.entries(query)
-    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
-      leftKey === rightKey
-        ? leftValue.localeCompare(rightValue)
-        : leftKey.localeCompare(rightKey),
-    )
-    .map(([key, value]) => `${encodeRfc3986(key)}=${encodeRfc3986(value)}`)
+    .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)] as const)
+    // SigV4 orders encoded ASCII bytes, independent of locale or letter case.
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+      const left = leftKey === rightKey ? leftValue : leftKey;
+      const right = leftKey === rightKey ? rightValue : rightKey;
+      return left < right ? -1 : left > right ? 1 : 0;
+    })
+    .map(([key, value]) => `${key}=${value}`)
     .join("&");
 }
 

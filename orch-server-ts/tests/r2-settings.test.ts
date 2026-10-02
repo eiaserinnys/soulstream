@@ -4,7 +4,7 @@ import { registerR2SettingsRoutes } from "../src/admin/r2_settings_routes.js";
 import { readR2Settings, updateR2Settings, r2SettingsMetadata, normalizeR2Fields } from "../src/system/r2_settings.js";
 import { createApp } from "../src/app.js";
 import { parseOrchServerConfig } from "../src/config.js";
-import { checkR2Bucket } from "../src/runtime/live_board_asset_storage.js";
+import { checkR2Bucket, createR2BoardAssetStorage } from "../src/runtime/live_board_asset_storage.js";
 import { createR2StorageResolver } from "../src/runtime/r2_storage_resolver.js";
 
 const endpoint = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
@@ -30,6 +30,35 @@ function database() {
 }
 
 describe("central R2 settings", () => {
+  it("matches the botocore multipart presign vector with mixed-case query keys", async () => {
+    // Independent vector: botocore 1.40.61 S3SigV4QueryAuth, s3/auto, expires=3600,
+    // AWSRequest(PUT, endpoint + '/private-files/file', params={partNumber:'1',
+    // uploadId:'Upload-A+/=', 'X-Amz-Content-Sha256':'UNSIGNED-PAYLOAD'}).
+    // Credentials('AKIDEXAMPLE', 'EXAMPLE_TEST_SECRET'); get_current_datetime fixed below.
+    // https://github.com/boto/botocore/blob/1.40.61/botocore/auth.py
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-02T00:00:00Z"));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(
+      "<InitiateMultipartUploadResult><UploadId>Upload-A+/=</UploadId></InitiateMultipartUploadResult>",
+    )));
+    try {
+      const storage = createR2BoardAssetStorage({ ...fields,
+        accessKeyId: "AKIDEXAMPLE", secretAccessKey: "EXAMPLE_TEST_SECRET" });
+      const upload = await storage.createMultipartUpload({ storageKey: "file",
+        mimeType: "application/octet-stream", byteSize: 1, partSize: 16 * 1024 ** 2, expiresSeconds: 3600 });
+      const url = new URL(upload.parts[0]!.uploadUrl);
+      expect(url.searchParams.get("X-Amz-Signature")).toBe(
+        "9d18a75de62013bf25955b633fccc53a5f8b69b67375a466d54c476f2c9c601e",
+      );
+      url.searchParams.delete("X-Amz-Signature");
+      expect(url.search.slice(1)).toBe([
+        "X-Amz-Algorithm=AWS4-HMAC-SHA256", "X-Amz-Content-Sha256=UNSIGNED-PAYLOAD",
+        "X-Amz-Credential=AKIDEXAMPLE%2F20261002%2Fauto%2Fs3%2Faws4_request",
+        "X-Amz-Date=20261002T000000Z", "X-Amz-Expires=3600", "X-Amz-SignedHeaders=host",
+        "partNumber=1", "uploadId=Upload-A%2B%2F%3D",
+      ].join("&"));
+    } finally { vi.useRealTimers(); }
+  });
   it("uses the SigV4 authorization scheme followed by a space for HeadBucket", async () => {
     const fetchMock = vi.fn(async (_url: URL, _init: RequestInit) => new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
