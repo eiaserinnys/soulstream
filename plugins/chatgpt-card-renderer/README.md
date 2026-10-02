@@ -1,17 +1,32 @@
 # Soulstream card renderer plugin
 
-A standalone, read-only MCP Apps renderer. **Soulstream's backend stays unchanged.** This folder is a prototype, not a deployed or installed ChatGPT plugin.
+A read-only MCP Apps card UI, with two modes: an authenticated **live view** served through Soulstream's existing MCP, and the standalone snapshot renderer retained for development. Source availability does not mean the new live tools are deployed or registered.
 
-## Architecture
+## Live architecture
 
-1. ChatGPT reads cards through the user's existing, authorized Soulstream MCP connection.
-2. ChatGPT copies only the card fields into this plugin's `render_soulstream_cards` tool.
-3. This plugin returns structured data and its own HTML UI resource.
-4. ChatGPT displays that resource in an iframe.
+1. Call `show_live_card_view` on the existing authenticated Soulstream MCP connection. No card array is needed. Optional `folder_id` scopes the view; omitted means all cards visible through that existing connection. `limit` defaults to 100 and cannot exceed 100.
+2. The thin registration in `soul-server-ts/src/mcp/tools/live_card_view.ts` reads through the same guarded MCP server, caller request context, and `FolderService.listCards` path used by `list_cards`. It neither copies tokens nor creates new permissions.
+3. Soulstream returns the actual card projection and the plugin-owned HTML as `ui://soulstream/live-cards-v2.html`.
+4. The iframe calls `list_live_cards` through the same host MCP bridge for manual and 30-second automatic refresh. It never calls the backend directly and never receives credentials.
 
-The renderer never calls Soulstream, inherits no OAuth token, stores no card data, and has no mutation tools. It owns presentation only. This is the official [decoupled data-tool → render-tool pattern](https://developers.openai.com/plugins/build/chatgpt-ui#separate-data-processing-from-ui-rendering), applied across two connected MCP servers. Cross-plugin orchestration and iframe rendering still need an end-to-end ChatGPT check.
+Presentation and the dependency-free card projection remain in this plugin folder. The small Soulstream registration is required because only the authenticated source can safely perform repeated reads. The standalone public snapshot renderer does **not** gain private backend access.
 
-The widget displays Korean status badges, optional assignees/update times, light/dark styles, and a local status filter. It shows a snapshot supplied through the conversation, not an independently verified or automatically synchronized backend view. Statuses are `todo`, `queued`, `blocked`, `running`, `review`, `done`, `cancelled`, and `unknown`.
+The widget shows Korean status badges, optional assignees/update times, last successful sync time, and a local status filter. Hidden documents pause polling; visibility restores a refresh. Only one refresh is in flight. A new model-supplied view invalidates old in-flight results. Requests time out after 10 seconds. Teardown removes timers/listeners and clears data. A failed refresh is shown as an error, never converted to an empty-success response; stale data is labeled, and known authorization failures clear it.
+
+A query returns at most 100 cards but reports the full returned-source count and truncation. It is not a streaming subscription. Backend retrieval currently uses the existing unpaginated card-list API. UI visibility notifications depend on the host correctly marking hidden frames.
+
+## Deploy/retest checklist (not performed by these files)
+
+- Run the plugin tests/typecheck and relevant Soulstream MCP tests/build.
+- Deploy the reviewed Soulstream MCP build through the existing authorized release flow. The standalone renderer service alone cannot activate the live tools.
+- Refresh the existing connection's tool/resource metadata. The new URI prevents reuse of the previous snapshot HTML cache key.
+- Discover `show_live_card_view` and call it without an input card array, optionally with an authorized folder ID.
+- Confirm real initial cards, manual refresh, periodic refresh, permission failure, and close behavior in normal ChatGPT and dot separately. A successful tool call does not prove dot delivered the iframe.
+- Keep existing transport authentication and folder ACLs unchanged. No token export, anonymous backend proxy, or new access grant is required by this integration.
+
+## Standalone snapshot mode
+
+`render_soulstream_cards` remains a separate renderer that accepts already-retrieved data, following the [decoupled data-tool → render-tool pattern](https://developers.openai.com/plugins/build/chatgpt-ui#separate-data-processing-from-ui-rendering). It does not fetch or auto-refresh Soulstream. Its cards pass through the renderer operator, so the destination must be trusted and sharing authorized. Empty snapshot input correctly displays no cards; use the live tool for automatic real retrieval.
 
 ## Local development
 
@@ -51,7 +66,7 @@ A reviewed HTTPS deployment can set comma-separated `ALLOWED_HOSTS` (exact autho
 
 Aborted request-body reads are contained per request; the server neither crashes nor writes an error to a destroyed response. The widget acknowledges `ui/resource-teardown` with the caller's request ID and clears card state/listeners before disposal. These controls are not substitutes for authentication.
 
-The server code does not implement production OAuth, TLS, rate limiting, or persistence. A development endpoint must not be mistaken for an authenticated production service. A separate direct-to-Soulstream bridge is possible later, but would require its own approved authentication/authorization; this prototype intentionally avoids that.
+The server code does not implement production OAuth, TLS, rate limiting, or persistence. A development endpoint must not be mistaken for an authenticated production service. The live integration instead reuses the existing authenticated Soulstream MCP. Do not give this standalone service an administrator token as a shortcut.
 
 ## Data contract and privacy
 
@@ -65,7 +80,7 @@ Card fields are transmitted to the **renderer operator**, even though that servi
 
 Automated tests cover projection/minimization, unknown values, malformed and empty data, real in-memory MCP tool discovery/resource read/call, rejection of extra fields and oversized batches, safe DOM rendering, repeated filters, empty/error states, generated-HTML consistency, plugin metadata and HTTP routes/body limits, aborted uploads in a child process, exact Host/Origin policy, and UI teardown/request-response ID collisions. `npm run typecheck` validates the source.
 
-Not verified here: a real authenticated Soulstream→ChatGPT→renderer flow or browser visual QA. No production files, authentication settings, or deployment configuration are changed by this folder. No production service is started by package installation.
+Not verified here: a deployed authenticated live-card flow in ChatGPT/dot or browser visual QA. Local tests cover the MCP adapter with injected source responses and the UI host bridge with a test DOM. The live adapter changes Soulstream MCP source registration only; authentication settings and deployment configuration are not changed. No production service is started by package installation.
 
 ## References
 

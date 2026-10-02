@@ -3,36 +3,60 @@
 <style>
 :root{font:14px/1.5 system-ui,sans-serif;color:#24302c;background:#f5f7f5;color-scheme:light dark}*{box-sizing:border-box}body{margin:0;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:16px}h1{font-size:22px;margin:0;letter-spacing:-.7px}.eyebrow{font-size:11px;letter-spacing:2px;color:#597266;font-weight:700}#summary{color:#66776e;margin:8px 0 20px}select{padding:9px;border:1px solid #cbd5ce;border-radius:9px;background:#fff;color:#24302c}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px}article{background:#fff;border:1px solid #dbe3dd;border-radius:16px;padding:19px;min-height:154px}article h2{font-size:16px;margin:13px 0 8px;overflow-wrap:anywhere}article p{color:#6b776f;font-size:12px;margin:0;overflow-wrap:anywhere}.badge{font-size:11px;font-weight:650;padding:4px 8px;border-radius:6px;display:inline-block;background:#edf1ee;color:#526057}.running{background:#e6f1e9;color:#24633e}.blocked{background:#fff0dc;color:#855315}.done{background:#e6edf6;color:#405f89}.review{background:#eee9f6;color:#705694}#notice{padding:20px 0;color:#68786d}footer{font-size:11px;color:#758078;margin-top:18px}@media(prefers-color-scheme:dark){:root{color:#e1e8e3;background:#17201c}article,select{background:#202b25;color:#e1e8e3;border-color:#39483f}#summary,article p,#notice,footer{color:#a3b0a8}}@media(max-width:440px){body{padding:16px}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
-<header><div><div class="eyebrow">SOULSTREAM</div><h1>업무 카드</h1></div><label>상태 <select id="filter" aria-label="카드 상태 필터"><option value="all">전체</option><option value="todo">할 일</option><option value="queued">대기</option><option value="running">진행 중</option><option value="blocked">막힘</option><option value="review">검토</option><option value="done">완료</option><option value="cancelled">취소</option><option value="unknown">기타</option></select></label></header>
-<p id="summary" aria-live="polite">카드를 불러오는 중…</p><div id="cards" class="grid"></div><p id="notice" role="status"></p><footer>읽기 전용 · 대화에서 전달된 스냅샷 · 원본 자동 동기화 없음</footer>
+<header><div><div class="eyebrow">SOULSTREAM</div><h1>업무 카드</h1></div><div><button id="refresh" type="button" hidden>새로고침</button> <label>상태 <select id="filter" aria-label="카드 상태 필터"><option value="all">전체</option><option value="todo">할 일</option><option value="queued">대기</option><option value="running">진행 중</option><option value="blocked">막힘</option><option value="review">검토</option><option value="done">완료</option><option value="cancelled">취소</option><option value="unknown">기타</option></select></label></div></header>
+<p id="summary" aria-live="polite">카드를 불러오는 중…</p><div id="cards" class="grid"></div><p id="notice" role="status"></p><footer id="sync-status">읽기 전용 · 대화에서 전달된 스냅샷 · 원본 자동 동기화 없음</footer>
 <script>
 (()=>{
 const labels={todo:'할 일',queued:'대기',running:'진행 중',blocked:'막힘',review:'검토',done:'완료',cancelled:'취소',unknown:'기타'};
-let cards=[],total=0,hasData=false;
+let cards=[],total=0,hasData=false,sync=null,disposed=false,initialized=false,timer=null,pending=null,rpcId=1,generation=0;
 const el=id=>document.getElementById(id);
 function render(){const selected=el('filter').value;const visible=cards.filter(c=>selected==='all'||c.status===selected);el('cards').replaceChildren();for(const card of visible){const article=document.createElement('article');const badge=document.createElement('span');badge.className='badge '+card.status;badge.textContent=labels[card.status]||labels.unknown;const title=document.createElement('h2');title.textContent=card.title;const meta=document.createElement('p');meta.textContent=[card.assignee,card.updatedAt?'업데이트 '+new Date(card.updatedAt).toLocaleString('ko-KR'):''].filter(Boolean).join(' · ');article.append(badge,title,meta);el('cards').append(article)}el('summary').textContent=total>cards.length?`${total}개 중 ${cards.length}개 불러옴 · ${visible.length}개 표시`:`${cards.length}개 불러옴 · ${visible.length}개 표시`;el('notice').textContent=visible.length?'':cards.length?'이 상태의 카드가 없습니다':'표시할 카드가 없습니다'}
-function receive(result){if(result?.isError){hasData=false;cards=[];el('notice').textContent='카드를 불러오지 못했습니다. 대화에서 다시 요청해 주세요';el('summary').textContent='불러오기 실패';el('cards').replaceChildren();return}const data=result?.structuredContent;if(!data||!Array.isArray(data.cards))return;cards=data.cards;total=data.total??cards.length;hasData=true;render()}
-let disposed=false,initialized=false;
+function stopPending(){if(pending){clearTimeout(pending.timeout);pending=null}el('refresh').disabled=false}
+function schedule(){clearTimeout(timer);timer=null;if(sync&&!disposed&&!document.hidden)timer=setTimeout(()=>refresh(),30000)}
+function failure(result){
+ const denied=result?.structuredContent?.syncError?.authorization;
+ if(!hasData||denied){cards=[];hasData=false;el('cards').replaceChildren();el('summary').textContent='불러오기 실패'}
+ el('notice').textContent=hasData?'새로고침 실패 · 이전 데이터를 표시합니다. 다시 시도해 주세요':'카드를 불러오지 못했습니다. 접근 권한과 서버 연결을 확인해 주세요';
+ el('summary').textContent='동기화 실패'+(hasData?' · 이전 '+cards.length+'개 표시':'');el('sync-status').textContent='읽기 전용 · 동기화 실패';schedule();
+}
+function receive(result,modelUpdate=false){
+ if(modelUpdate){generation++;stopPending()}
+ if(result?.isError){if(modelUpdate){sync=null;hasData=false;cards=[];clearTimeout(timer);el('refresh').hidden=true}failure(result);return}
+ const data=result?.structuredContent;if(!data||!Array.isArray(data.cards))return;
+ cards=data.cards;total=data.total??cards.length;hasData=true;
+ sync=data.sync&&typeof data.sync==='object'?data.sync:null;
+ el('refresh').hidden=!sync;render();
+ el('sync-status').textContent=sync?'읽기 전용 · 30초마다 동기화 · 최근 '+new Date(sync.fetchedAt).toLocaleTimeString('ko-KR'):'읽기 전용 · 대화에서 전달된 스냅샷 · 원본 자동 동기화 없음';schedule();
+}
+function refresh(){
+ if(disposed||!sync||pending||!initialized||document.hidden)return;
+ clearTimeout(timer);timer=null;const id=++rpcId;const epoch=generation;
+ el('refresh').disabled=true;el('notice').textContent='새로고침 중…';
+ const timeout=setTimeout(()=>{if(pending?.id!==id)return;stopPending();failure({})},10000);
+ pending={id,epoch,timeout};
+ const args={limit:sync.limit??100};if(sync.folderId)args.folder_id=sync.folderId;
+ window.parent.postMessage({jsonrpc:'2.0',id,method:'tools/call',params:{name:'list_live_cards',arguments:args}},'*');
+}
 const onFilter=()=>{if(hasData&&!disposed)render()};
-function cleanup(){disposed=true;hasData=false;cards=[];total=0;el('cards').replaceChildren();el('filter').disabled=true;el('filter').removeEventListener('change',onFilter);window.removeEventListener('message',onMessage);window.removeEventListener('pagehide',cleanup)}
+const onVisibility=()=>{if(document.hidden){clearTimeout(timer);timer=null}else if(sync){refresh();schedule()}};
+function cleanup(){disposed=true;hasData=false;sync=null;cards=[];total=0;clearTimeout(timer);stopPending();el('cards').replaceChildren();el('filter').disabled=true;el('refresh').disabled=true;el('filter').removeEventListener('change',onFilter);el('refresh').removeEventListener('click',refresh);document.removeEventListener('visibilitychange',onVisibility);window.removeEventListener('message',onMessage);window.removeEventListener('pagehide',cleanup)}
 function onMessage(event){
  if(disposed||event.source!==window.parent)return;
  const m=event.data;if(m?.jsonrpc!=='2.0')return;
  const hasId=typeof m.id==='string'||typeof m.id==='number';
- // Host requests have a method, even when their id collides with initialization.
  if(typeof m.method==='string'){
   if(m.method==='ui/resource-teardown'&&hasId){cleanup();window.parent.postMessage({jsonrpc:'2.0',id:m.id,result:{}},'*');return}
-  if(!hasId&&m.method==='ui/notifications/tool-result')receive(m.params);
-  return;
+  if(!hasId&&m.method==='ui/notifications/tool-result')receive(m.params,true);return;
  }
- // Only a response to our initialization request can complete initialization.
  if(m.id===1&&!initialized&&(Object.hasOwn(m,'result')||Object.hasOwn(m,'error'))){
-  initialized=true;
-  if(m.error){el('notice').textContent='ChatGPT UI 연결에 실패했습니다';return}
-  window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}},'*');
+  if(m.error){failure({});return}initialized=true;
+  window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}},'*');schedule();return;
  }
+ if(pending&&m.id===pending.id){const valid=pending.epoch===generation;stopPending();if(!valid)return;if(m.error)failure({});else receive(m.result)}
 }
 el('filter').addEventListener('change',onFilter);
+el('refresh').addEventListener('click',refresh);
+document.addEventListener('visibilitychange',onVisibility);
 window.addEventListener('message',onMessage);
 window.addEventListener('pagehide',cleanup);
 if(window.parent!==window){window.parent.postMessage({jsonrpc:'2.0',id:1,method:'ui/initialize',params:{appInfo:{name:'soulstream-cards',version:'0.2.0'},appCapabilities:{},protocolVersion:'2026-01-26'}},'*')}else{el('notice').textContent='ChatGPT 카드 리소스입니다. 로컬 데모는 /preview 에서 열어 주세요'}

@@ -5,6 +5,10 @@ description: Display previously retrieved Soulstream work cards in a read-only c
 
 # Show Soulstream cards
 
+For an automatically synchronized view, prefer the existing authenticated Soulstream connection's `show_live_card_view` tool when available. No input card array is needed. Pass `folder_id` only when the user requested a particular folder, and a maximum `limit` of 100. The widget refreshes through `list_live_cards` on that same connection. A tool result is not evidence that the UI was delivered: report any host rendering failure honestly. Do not send a backend token to the standalone renderer.
+
+If only the standalone snapshot renderer is connected:
+
 1. Identify the folder or bounded card set requested by the user. Use the existing connected Soulstream read tools to retrieve it. Discover currently available tool names rather than assuming a legacy task API exists.
 2. If retrieval fails or access is denied, report that error. Never invent cards, change access, or substitute demo data.
 3. Confirm the renderer destination is trusted and the requested sharing is authorized. Card fields pass through its server; it does not inherit Soulstream credentials.
