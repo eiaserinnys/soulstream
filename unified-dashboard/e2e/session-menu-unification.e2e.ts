@@ -176,3 +176,33 @@ test("folder history, expanded board rows and session board tiles share the comp
   await menu(page,page.getByTestId("board-session-tile").last());
   await capture(page,"wide-board-session-tile-menu");
 });
+
+
+test("session menu stays open on pointer leave and closes through explicit actions", async ({page}) => {
+  await page.setViewportSize({width:1440,height:1000});
+  await setup(page);
+  await page.goto("/");
+  const row=page.getByTestId("v3-session-panel").locator(".v3-run-row").first();
+  const popup=page.locator("[data-slot='menu-popup']:visible");
+  const phase=process.env.SESSION_MENU_VERIFY_PHASE ?? "after";
+  await menu(page,row);
+  const bounds=(await popup.boundingBox())!;
+  await page.mouse.move(bounds.x+bounds.width/2,bounds.y+20);
+  await capture(page,`pointer-${phase}-inside`);
+  await page.mouse.move(bounds.x-80,bounds.y+20);
+  // Allow the primitive's existing close/animation lifecycle to settle before inspecting it.
+  await page.waitForTimeout(300);
+  await capture(page,`pointer-${phase}-outside`);
+  await expect(popup).toBeVisible();
+  await page.mouse.click(700,600);
+  await expect(popup).toBeHidden();
+  await menu(page,row);
+  await page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
+  await menu(page,row);
+  await popup.getByRole("menuitem",{name:"다른 폴더로 이동",exact:true}).click();
+  await expect(popup).toBeHidden();
+  await expect(page.getByRole("dialog",{name:"다른 폴더로 이동"})).toBeVisible();
+  await expect(page.locator(".v3-folder-picker")).toBeVisible();
+  await capture(page,"pointer-after-existing-folder-picker");
+});

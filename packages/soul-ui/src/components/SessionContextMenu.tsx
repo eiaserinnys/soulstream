@@ -359,7 +359,13 @@ export function SessionContextMenu({
       ) : (
         <Menu
           open={contextMenu !== null}
-          onOpenChange={(open) => { if (!open) onClose(); }}
+          onOpenChange={(open, details) => {
+            if (!open && details.reason === "trigger-hover") {
+              details.cancel();
+              return;
+            }
+            if (!open) onClose();
+          }}
           modal={false}
         >
           <MenuPopup
