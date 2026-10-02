@@ -1,10 +1,10 @@
+import {previewSchema} from '../../../packages/soul-ui/src/cards/card-preview-schema.ts';
 import {projectCards} from './card-data.ts';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { widgetHtml } from './widget-html.ts';
 export const RESOURCE_URI='ui://soulstream/cards-v3.html';
 export const statuses=['todo','queued','blocked','running','review','done','cancelled'] as const;
-export const previewSchema=z.object({kind:z.enum(['instruction','report']),text:z.string().max(500)}).strict();
 const cardSchema=z.object({id:z.string().min(1).max(256),title:z.string().min(1).max(500),status:z.enum([...statuses,'unknown']),assignee:z.string().max(200).default(''),updatedAt:z.string().datetime({offset:true}).nullable().default(null),preview:previewSchema.optional()}).strict();
 export function normalizeCards(payload:unknown,limit=24){return projectCards(payload,limit)}
 /** Stateless presentation only: no backend calls, storage, credentials, or identity overrides. */

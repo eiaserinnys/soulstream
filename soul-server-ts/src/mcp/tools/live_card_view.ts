@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { widgetHtml } from "../../../../plugins/chatgpt-card-renderer/src/widget-html.js";
 import { projectCards } from "../../../../plugins/chatgpt-card-renderer/src/card-data.js";
-import { previewSchema } from "../../../../plugins/chatgpt-card-renderer/src/card-view.js";
+import { previewSchema } from "../../../../packages/soul-ui/src/cards/card-preview-schema.js";
 
 export const LIVE_CARD_RESOURCE = "ui://soulstream/live-cards-v3.html";
 export type LiveCardQuery = { folder_id?: string; limit: number };
