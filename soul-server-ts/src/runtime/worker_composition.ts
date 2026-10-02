@@ -5,6 +5,7 @@ import { CatalogService } from "../catalog/catalog_service.js";
 import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
 import { ExecutionContextBuilder } from "../context/context_builder.js";
+import { createAssignedCardSnapshotRecorder } from "../context/assigned_card_snapshot_recorder.js";
 import { DefaultPageContextAssembler } from "../context/page_context_assembler.js";
 import { HostPageContextRepository } from "../context/page_context_repository.js";
 import { AncestorPageContextResolver } from "../context/page_context_resolver.js";
@@ -173,6 +174,7 @@ export async function composeWorkerRuntime(
     agentRegistry,
     {
       nodeId: env.SOULSTREAM_NODE_ID,
+      captureAssignedCardContext: createAssignedCardSnapshotRecorder(persistence, logger),
       atom: {
         enabled: Boolean(env.ATOM_ENABLED),
         serverUrl: env.ATOM_SERVER_URL ?? "",

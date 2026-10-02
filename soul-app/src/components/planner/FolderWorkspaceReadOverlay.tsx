@@ -29,7 +29,12 @@ import { createSurfaceRoles } from '../../theme/surfaceRoles';
 
 const ANIMATION_MS = 240;
 
-export function FolderWorkspaceReadOverlay() {
+export function FolderWorkspaceReadOverlay({ host = 'root' }: { host?: 'root' | 'board' }) {
+  const expanded = useUIStore((state) => state.cardBoardExpanded);
+  return expanded === (host === 'board') ? <FolderWorkspaceOverlayContent /> : null;
+}
+
+function FolderWorkspaceOverlayContent() {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const { width: screenWidth } = useWindowDimensions();

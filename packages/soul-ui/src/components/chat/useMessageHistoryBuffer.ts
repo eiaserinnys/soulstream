@@ -39,6 +39,7 @@ export const CHAT_HISTORY_EVENT_TYPES = [
   "session_notification",
   "assistant_message",
   "turn_summary",
+  "debug",
   "tool_start",
   "tool_result",
   "error",

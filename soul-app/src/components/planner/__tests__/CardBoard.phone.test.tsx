@@ -37,3 +37,19 @@ test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 검
   expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
   expect(saved.mock.calls.at(-1)[0].x).toBe(screen.getByTestId('card-board').props.snapToOffsets[4]);
 });
+
+ test('pointer mouse pan changes horizontal position before longpress, vertical motion and secondary click do not', () => {
+  const saved=jest.fn(),open=jest.fn();
+  const screen=render(<CardBoard phone={false} api={null} cards={[cardFixture()]} onOpen={open} onPositionChange={saved} />);
+  const frame=screen.getByTestId('card-board-frame');
+  fireEvent(frame,'layout',{nativeEvent:{layout:{width:600,height:500}}});
+  fireEvent(frame,'pointerDown',{nativeEvent:{pointerType:'mouse',button:0,pointerId:1,pageX:500,pageY:80}});
+  fireEvent(frame,'pointerMove',{preventDefault:jest.fn(),nativeEvent:{pointerType:'mouse',pointerId:1,pageX:400,pageY:82}});
+  fireEvent(frame,'pointerUp',{nativeEvent:{pointerId:1}});
+  expect(saved.mock.calls.at(-1)[0].x).toBe(100);
+  fireEvent.press(screen.getByLabelText('카드 제목 카드 상세'));
+  expect(open).not.toHaveBeenCalled();
+  fireEvent(frame,'pointerDown',{nativeEvent:{pointerType:'mouse',button:0,pointerId:2,pageX:400,pageY:80}});
+  fireEvent(frame,'pointerMove',{preventDefault:jest.fn(),nativeEvent:{pointerType:'mouse',pointerId:2,pageX:395,pageY:160}});
+  expect(saved.mock.calls.at(-1)[0].x).toBe(100);
+ });

@@ -1,0 +1,45 @@
+import { expect,it,vi } from 'vitest';
+import { createAssignedCardSnapshotRecorder } from '../../src/context/assigned_card_snapshot_recorder.js';
+import type { AssignedCardContextCapture } from '../../src/context/assigned_card_context.js';
+const capture=():AssignedCardContextCapture=>({source:'prepared_model_input',sessionId:'s',registrationId:'r',executionCommandId:'e',inputId:'i',snapshot:{total:14,omitted:2,capturedAt:'2026-10-02T00:00:00Z',cards:Array.from({length:14},(_,i)=>({id:String(i),title:'제목',status:'running',version:2,instruction:'지시',report:'보고'}))}});
+it('owns a bounded immutable copy, preserves identity and returns without ACK',async()=>{
+  const enqueueEvent=vi.fn((..._args:unknown[])=>new Promise<never>(()=>{}));
+  const record=createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn:vi.fn()});
+  const raw=capture();
+  await record(raw);
+  raw.snapshot.cards[0]!.title='나중 변경';
+  const event=enqueueEvent.mock.calls[0]![1] as any;
+  expect(event.capture.snapshot.cards).toHaveLength(12);
+  expect(event.capture.snapshot.cards[0].title).toBe('제목');
+  expect(event.capture.snapshot.omitted).toBe(2);
+  expect(event._dedupe_key).toBe('assigned_card_context_snapshot:r:i');
+  expect(event.capture.source).toBe('prepared_model_input');
+  expect(event.content).toContain('입력 준비 스냅샷');
+  expect(event.content).toContain('소비 확인 전');
+  expect(event.content).toContain('최종 모델 포맷과 소비는 확인하지 않음');
+  expect(event.content).toContain('제목 · running · v2');
+  expect(event.content).toContain('지시: 지시');
+  expect(event.content).toContain('보고: 보고');
+  expect(event.content).toContain('전체 14개 · 표시 12개 · 생략 2개');
+});
+it('renders the already-bounded raw snapshot without another text cut or a consumption claim',async()=>{
+  const enqueueEvent=vi.fn().mockResolvedValue(undefined);
+  const raw=capture();
+  raw.snapshot.cards=[{id:'c',title:'제목',status:'review',version:7,instruction:'가'.repeat(401),report:'나'.repeat(401)}];
+  raw.snapshot.total=1; raw.snapshot.omitted=0;
+  await createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn:vi.fn()})(raw);
+  const event=enqueueEvent.mock.calls[0]![1] as any;
+  expect(event.content).toContain(`지시: ${'가'.repeat(401)}\n`);
+  expect(event.content).toContain(`보고: ${'나'.repeat(401)}\n`);
+  expect(event.content).not.toContain('소비됨');
+});
+it('contains storage failure without retries or input wakeups and marks missing identity',async()=>{
+  const enqueueEvent=vi.fn(async(..._args:unknown[])=>{throw new Error('storage failure');});
+  const warn=vi.fn();
+  const raw=capture(); raw.inputId=null;
+  await createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn})(raw);
+  await Promise.resolve();
+  expect(enqueueEvent).toHaveBeenCalledTimes(1);
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect((enqueueEvent.mock.calls[0]![1] as any).capture.identityMissing).toBe(true);
+});

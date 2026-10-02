@@ -30,7 +30,11 @@ export interface TaskInitialMessagePublisherDeps {
 export class TaskInitialMessagePublisher {
   constructor(private readonly deps: TaskInitialMessagePublisherDeps) {}
 
-  async publishInitialMessages(task: Task, ctx?: PreparedContext): Promise<void> {
+  async publishInitialMessages(
+    task: Task,
+    ctx?: PreparedContext,
+    inputId?: string,
+  ): Promise<void> {
     if (ctx?.contextManifest) {
       await this.publishContextManifestBestEffort(task, ctx.contextManifest);
     }
@@ -39,6 +43,7 @@ export class TaskInitialMessagePublisher {
     }
     const event = buildUserMessageEvent({
       text: task.prompt,
+      inputId,
       callerInfo: task.callerInfo,
       attachmentPaths: task.attachmentPaths,
       contextItems: (ctx ? ctx.combinedContextItems : task.contextItems)?.filter(item=>item.key !== "assigned_cards"),

@@ -47,8 +47,6 @@ export function CardStatusPicker({card,control,onOpen,ref,onBusyChange}: {
         </form> : <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"
           aria-pressed={status === (detail?.card.status ?? card.status)} title={detail ? cardTransitionError(detail,status) ?? undefined : undefined} disabled={unavailable || status === "review" && !detail?.reports.length}
           onClick={() => void change(status)}>{cardStatusLabel({...card, status})}</Button>)}</div>}
-        {!reasonStep && detail && !detail.reports.length ? <p>보고가 필요합니다</p> : null}
-        {!reasonStep ? <p>대기: 담당 에이전트 실행이 시작될 수 있습니다</p> : null}
       </div>
     </PopoverPopup>
   </Popover>;

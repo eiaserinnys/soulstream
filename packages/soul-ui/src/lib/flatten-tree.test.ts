@@ -44,6 +44,8 @@ const CHAT_MESSAGE_EVENT_ID_INVENTORY = {
   assistant_error: "hidden",
   away_summary: "render",
   turn_summary: "render",
+  card_observation: "render",
+  assigned_card_context: "render",
 } as const satisfies Record<
   EventTreeNode["type"],
   "render" | "hidden" | "synthetic"
@@ -234,12 +236,14 @@ describe("flattenTree", () => {
   it("모든 raw-event ChatMessage 생성 경로가 eventId를 한 번씩 전달한다", () => {
     const notification = makeSessionNotification("delivery-notification", "완료 결과");
     notification.eventId = 30;
+    const user = makeUserMessage("user-msg-10", "user");
+    user.inputId = "prepared-input";
     const fixtures: Array<{
       node: EventTreeNode;
       type: EventTreeNode["type"];
       eventId: number;
     }> = [
-      { node: makeUserMessage("user-msg-10", "user"), type: "user_message", eventId: 10 },
+      { node: user, type: "user_message", eventId: 10 },
       { node: makeSystemMessage("system-message-20", "system"), type: "system_message", eventId: 20 },
       { node: notification, type: "session_notification", eventId: 30 },
       { node: makeRawEventNode("intervention", 40), type: "intervention", eventId: 40 },
@@ -257,6 +261,10 @@ describe("flattenTree", () => {
       { node: makeAssistantMessage(120), type: "assistant_message", eventId: 120 },
       { node: makeRawEventNode("away_summary", 130), type: "away_summary", eventId: 130 },
       { node: makeLegacyTurnSummary(140), type: "turn_summary", eventId: 140 },
+      { node: makeRawEventNode("card_observation",170,{finalResponseEventId:120,
+        observation:{complete_event_id:121}}),type:"card_observation",eventId:170 },
+      { node: makeRawEventNode("assigned_card_context",180,{preparedInputId:"prepared-input"}),
+        type:"assigned_card_context",eventId:180 },
       {
         node: makeRawEventNode("input_request", 150, {
           requestId: "request-150",

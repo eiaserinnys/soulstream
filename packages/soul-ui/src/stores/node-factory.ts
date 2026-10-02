@@ -34,6 +34,8 @@ import type {
   TextNode,
 } from "@shared/types";
 import { formatRetryingErrorHistory } from "@shared/sse-events";
+import { isJevCardObservation } from "../../../wire-schema/src/card_observation";
+import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
 import { TRUNCATE_THRESHOLD } from "./event-update";
@@ -126,6 +128,7 @@ export function createNodeFromEvent(
         context: e.context,
         agentInfo: agentInfoFromCi ?? agentInfoLegacy,
         callerInfo: ci,
+        inputId: e.input_id,
       });
     }
 
@@ -178,6 +181,7 @@ export function createNodeFromEvent(
         context: e.context,
         agentInfo,
         callerInfo: ci,
+        inputId: e.input_id,
       });
     }
 
@@ -369,6 +373,36 @@ export function createNodeFromEvent(
         completed: true,
         parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
+      });
+    }
+
+    case "debug": {
+      if (isAssignedCardContextSnapshotEvent(event)) {
+        const { capture } = event;
+        if (
+          capture.identityMissing
+          || !capture.registrationId
+          || !capture.executionCommandId
+          || !capture.inputId
+        ) return null;
+        return makeNode(
+          `assigned-card-context-${eventId}`,
+          "assigned_card_context",
+          event.content,
+          {
+            completed: true,
+            preparedInputId: capture.inputId,
+            capture,
+            timestamp: event.timestamp,
+          },
+        );
+      }
+      if (!isJevCardObservation(event)) return null;
+      return makeNode(`card-observation-${eventId}`, "card_observation", event.content, {
+        completed: true,
+        observation: event,
+        finalResponseEventId: event.final_response_event_id,
+        timestamp: event.timestamp,
       });
     }
 

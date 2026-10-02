@@ -5,6 +5,7 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { InterventionMessage, Task } from "./task_models.js";
+import { buildDeliveryInputUuid } from "./delivery_identity.js";
 
 export interface InterventionEventPublisherDeps {
   broadcaster: SessionBroadcaster;
@@ -23,6 +24,7 @@ export function buildInterventionSentEvent(
   };
   if (message.deliveryId) {
     interventionEvent._dedupe_key = `intervention_sent:${message.deliveryId}`;
+    interventionEvent.input_id = buildDeliveryInputUuid(message.deliveryId);
   }
   if (message.callerInfo) {
     interventionEvent.caller_info = message.callerInfo;

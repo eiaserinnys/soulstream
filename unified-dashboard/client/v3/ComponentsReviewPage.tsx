@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
+import { SystemMessage } from "@seosoyoung/soul-ui/components/chat/SystemMessage";
+import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { FolderPanelHeader, SessionPanelHeader } from "./WorkspacePanelHeaders";
 import { DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
 import type { UploadedFile } from "@seosoyoung/soul-ui/hooks/useFileUpload";
@@ -20,6 +22,7 @@ import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
 import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSample";
 import { CardBoardSamples } from "./CardBoardSamples";
+import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -103,6 +106,11 @@ export function ComponentsReviewPage() {
                   nodeOffline session={{ ...reviewSession, agentSessionId: `components-offline-${size}`, displayName: reviewTitle }}
                   onOpen={() => open("오프라인 세션")}/>)}</div>
               </Sample>
+              <Sample name="RichSessionRow / RunRowFrame" state="운영 패널 폭 · 소속 · 긴 제목과 본문 · 오른쪽 상태와 시간">
+                <div className="v3-run-list" style={{ width: "100%", maxWidth: V3_SESSION_PANEL_DEFAULT_WIDTH_PX }} data-testid="session-row-operating-sample">
+                  <RichSessionRow session={{ ...reviewSession, displayName: reviewTitle }} affiliation={reviewTitle} preview={reviewTitle} onOpen={() => open("운영 폭 세션")}/>
+                </div>
+              </Sample>
               <Sample name="CardRowView / RunRowFrame" state="기본 · 여러 항목 · 긴 한국어 제목">
                 <div className="v3-run-list">{[reviewCard.title, reviewTitle].map((label, index) => <CardRowView key={label}
                   card={{ ...reviewCard, id: `components-card-${index}`, title: label }} assignee={reviewSession} detail={reviewDetail} onOpen={() => open("카드")}/>)}</div>
@@ -184,6 +192,17 @@ export function ComponentsReviewPage() {
             <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
                 onAnswer={() => open("질문 응답")} pending={false}/>
+            </Sample>
+            <Sample name="SystemMessage / 기존 caption" state="같은 배치 · 기존 요약과 요청한 Jev 판정 한 줄">
+              <div data-testid="jev-caption-comparison">
+                <UserMessage msg={{id:"assigned-card-input",role:"user",treeNodeId:"assigned-card-input",treeNodeType:"user_message",content:"외부 카드 알림을 확인해줘"}}/>
+                <SystemMessage msg={{id:"assigned-card-preview",role:"system",treeNodeId:"assigned-card-preview",treeNodeType:"assigned_card_context",content:"담당 카드 입력 준비 스냅샷 · 소비 확인 전\n관측 범위: 저장된 준비 캡처 · 최종 모델 포맷과 소비는 확인하지 않음\n전체 1개 · 표시 1개 · 생략 0개\n1. 담당 카드 현황 매 턴 주입·외부 변경 알림 · running · v6\n지시: 입력마다 담당 카드의 최신 지시를 전달합니다.\n보고: 실제 준비 스냅샷을 입력 아래에서 확인합니다.\n준비 시각: 2026-10-02T01:00:00.000Z"}}/>
+                <AssistantMessage msg={{id:"jev-sample-answer",role:"assistant",treeNodeId:"jev-sample-answer",treeNodeType:"assistant_message",content:"구현을 맡겼습니다. 다른 작업 결과를 기다립니다."}}/>
+                <SystemMessage msg={{id:"jev-sample-summary",role:"system",treeNodeId:"jev-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
+                <SystemMessage msg={{id:"jev-sample-observation",role:"system",treeNodeId:"jev-sample-observation",treeNodeType:"card_observation",content:"Jev · 위임 대기 — 다른 작업 결과를 기다리는 상태로 분류"}}/>
+                <SystemMessage msg={{id:"jev-sample-limited",role:"system",treeNodeId:"jev-sample-limited",treeNodeType:"card_observation",content:"Jev · 완료 가능 · 관측 범위 제한"}}/>
+                <SystemMessage msg={{id:"jev-sample-error",role:"system",treeNodeId:"jev-sample-error",treeNodeType:"card_observation",content:"Jev · 미평가 — 평가 요청 실패"}}/>
+              </div>
             </Sample>
           </section>
           <section id="components-input" className="v3-detail-section">

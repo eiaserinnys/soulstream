@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { publishInterventionSent } from "../../src/task/task_intervention_events.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -40,6 +41,7 @@ describe("publishInterventionSent", () => {
         "intervention_sent:deduped-intervention",
       );
       expect(record.payload.text).toBe(`${"a".repeat(199)}�tail`);
+      expect(record.payload.input_id).toBe(buildDeliveryInputUuid("deduped-intervention"));
       expect(record.session_effect).toMatchObject({
         kind: "last_message",
         last_message: {

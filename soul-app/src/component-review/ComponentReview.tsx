@@ -34,7 +34,7 @@ type Section = typeof sections[number]['value'];
 
 export function initializeReview() {
   const entryShell = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'entryShell';
-  useSettingsStore.setState({ serverUrl: entryShell ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: 'light' });
+  useSettingsStore.setState({ serverUrl: entryShell ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   useSessionStore.setState({ catalog: { folders, sessions: {} }, catalogLoadState: 'ready' });
 }
 

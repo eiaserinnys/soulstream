@@ -63,6 +63,7 @@
     "session_notification",
     "assistant_message",
     "turn_summary",
+    "debug",
     "thinking",
     "tool_start",
     "tool_result",

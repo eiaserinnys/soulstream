@@ -184,13 +184,13 @@ export class RunningInterventionTransition {
       };
     }
     const composed = composeInterventionTurnPrompt([{...message,context:message.context?.filter(item=>item.key !== "assigned_cards")}]);
-    if (this.deps.assignedCardContext) {
-      const current = await this.deps.assignedCardContext(task, message.deliveryId ?? null);
-      composed.prompt += `\n\n${formatContextItems([current])}`;
-    }
     const inputUuid = message.deliveryId
       ? buildDeliveryInputUuid(message.deliveryId)
       : undefined;
+    if (this.deps.assignedCardContext) {
+      const current = await this.deps.assignedCardContext(task, inputUuid ?? null);
+      composed.prompt += `\n\n${formatContextItems([current])}`;
+    }
     const input = {
       ...composed,
       ...(inputUuid ? { inputUuid } : {}),

@@ -45,6 +45,8 @@ export interface InterventionSentEvent {
   type: "intervention_sent";
   user: string;
   text: string;
+  /** 준비된 모델 입력과 공개 입력 행을 정확히 결합하는 식별자. */
+  input_id?: string;
   /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
@@ -113,6 +115,8 @@ export interface CallerInfo {
 /** 사용자가 보낸 초기 프롬프트 (세션 시작 시 대시보드가 생성) */
 export interface UserMessageEvent {
   type: "user_message";
+  /** 준비된 모델 입력과 공개 입력 행을 정확히 결합하는 식별자. */
+  input_id?: string;
   /** Claude 세션: 프롬프트 전체 텍스트 */
   text?: string;
   /** Claude 세션: 사용자 ID */
@@ -146,7 +150,13 @@ export interface SystemMessageEvent {
 
 export interface DebugEvent {
   type: "debug";
-  message: string;
+  message?: string;
+  kind?: string;
+  content?: string;
+  complete_event_id?: number;
+  final_response_event_id?: number;
+  details?: string[];
+  capture?: unknown;
   timestamp?: number;
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;

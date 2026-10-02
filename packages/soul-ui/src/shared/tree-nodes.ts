@@ -6,6 +6,8 @@
  */
 
 import type { CallerInfo, ContextItem, InputRequestQuestion } from "./sse-events";
+import type { JevCardObservation } from "../../../wire-schema/src/card_observation";
+import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
 export type EventTreeNodeType = EventTreeNode["type"];
@@ -53,6 +55,7 @@ export interface SessionNode extends BaseNode {
 /** 사용자 메시지 노드 */
 export interface UserMessageNode extends BaseNode {
   type: "user_message";
+  inputId?: string;
   user: string;
   context?: ContextItem[];
   /** 에이전트가 발신한 경우 채워지는 메타데이터 (caller_info.source==="agent"에서 도출) */
@@ -93,6 +96,7 @@ export interface SessionNotificationNode extends BaseNode {
 /** 인터벤션 노드 */
 export interface InterventionNode extends BaseNode {
   type: "intervention";
+  inputId?: string;
   user?: string;
   /**
    * F-9 fix(2026-05-08): 발신자가 agent인 경우 채워지는 메타데이터.
@@ -248,6 +252,18 @@ export interface TurnSummaryNode extends BaseNode {
   summaryParentEventId?: number;
 }
 
+export interface CardObservationNode extends BaseNode {
+  type: "card_observation";
+  observation: JevCardObservation;
+  finalResponseEventId: number;
+}
+
+export interface AssignedCardContextNode extends BaseNode {
+  type: "assigned_card_context";
+  preparedInputId: string;
+  capture: AssignedCardContextSnapshotEvent["capture"];
+}
+
 /** Claude API 에러 노드 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorNode extends BaseNode {
   type: "assistant_error";
@@ -275,4 +291,6 @@ export type EventTreeNode =
   | AssistantMessageNode
   | AssistantErrorNode
   | AwaySummaryNode
-  | TurnSummaryNode;
+  | TurnSummaryNode
+  | CardObservationNode
+  | AssignedCardContextNode;

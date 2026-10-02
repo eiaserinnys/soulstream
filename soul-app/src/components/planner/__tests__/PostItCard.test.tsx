@@ -73,3 +73,16 @@ test('완료는 기존 version/opId 계약을 쓰고 실패하면 알리고 카�
   expect(api.getCard).toHaveBeenCalledTimes(1);
   alert.mockRestore();
 });
+
+ test('dark/light full/compact 모두 밝은 종이와 어두운 글자를 공유한다', () => {
+  const { useSettingsStore } = require('../../../store/settingsStore');
+  for (const appearance of ['dark', 'light']) {
+   useSettingsStore.setState({ appearance });
+   for (const variant of ['full', 'compact'] as const) {
+    const screen = render(<PostItCard api={null} card={cardFixture()} variant={variant} onOpen={() => {}} />);
+    expect(screen.getByTestId('postit-card-card-1').props.style.backgroundColor).toBe('#fff4e5');
+    expect(screen.getByTestId('postit-body-card-1').props.style.color).toBe('#000000');
+    screen.unmount();
+   }
+  }
+ });
