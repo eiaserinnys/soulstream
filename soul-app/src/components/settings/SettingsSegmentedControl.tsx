@@ -12,17 +12,19 @@ export function SettingsSegmentedControl<T extends string>({
   value,
   options,
   onChange,
+  wrap = false,
 }: {
   id: string;
   value: T;
   options: readonly SettingsSegmentOption<T>[];
   onChange(value: T): void;
+  wrap?: boolean;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
-    <View style={styles.track}>
+    <View style={[styles.track, wrap && styles.wrapTrack]}>
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -32,15 +34,15 @@ export function SettingsSegmentedControl<T extends string>({
             accessibilityRole="button"
             accessibilityLabel={option.label}
             accessibilityState={{ selected }}
-            style={styles.hitTarget}
+            style={[styles.hitTarget, wrap && styles.wrapHitTarget]}
             onPress={() => onChange(option.value)}
           >
             <View
               testID={`settings-segment-${id}-${option.value}-visual`}
               pointerEvents="none"
-              style={[styles.visual, selected && styles.selected]}
+              style={[styles.visual, wrap && styles.wrapVisual, selected && styles.selected]}
             >
-              <Text style={[styles.label, selected && styles.selectedLabel]}>
+              <Text numberOfLines={wrap ? 1 : undefined} style={[styles.label, selected && styles.selectedLabel]}>
                 {option.label}
               </Text>
             </View>
@@ -65,6 +67,9 @@ function makeStyles(t: DesignTokens) {
       minHeight: t.hitTarget.min,
       justifyContent: 'center',
     },
+    wrapTrack: { flexWrap: 'wrap' },
+    wrapHitTarget: { flex: 0, flexShrink: 0, flexBasis: 'auto' },
+    wrapVisual: { width: 'auto' },
     visual: {
       width: '100%',
       minHeight: t.foundation.minHeight.segment,
