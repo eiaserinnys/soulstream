@@ -4,7 +4,8 @@ import path from 'node:path';
 import { installV3VisualQaRoutes } from './v3-visual-fixtures';
 
 const output = path.resolve('../.local/artifacts/20261002-compact-card-debug');
-const previewText = '860fe149-ae89-46bd-bb3e-b6115229edba · 담당 카드 현황 매 턴 주입·외부 변경 알림 · 실행 중';
+const cardId = '860fe149-ae89-46bd-bb3e-b6115229edba';
+const previewText = '담당 카드 현황 매 턴 주입·외부 변경 알림 · 실행 중';
 
 for (const width of [1440, 390]) {
   test(`prepared card preview uses the existing caption directly after its input at ${width}`, async ({ page }) => {
@@ -30,6 +31,7 @@ for (const width of [1440, 390]) {
     await comparison.scrollIntoViewIfNeeded();
     const previewRow = comparison.locator('[data-tree-node-id="assigned-card-preview"]');
     await expect(previewRow).toContainText(previewText);
+    await expect(previewRow).not.toContainText(cardId);
     await expect(previewRow).toContainText('마지막 보고');
     await expect(previewRow).toContainText('최근 커멘트 이후 보고 없음');
     await expect(previewRow).not.toContainText('지시:');
@@ -75,6 +77,7 @@ for (const width of [1440, 390]) {
     await nativeSection.scrollIntoViewIfNeeded();
     const nativePreview = page.getByText(new RegExp(previewText)).first();
     await expect(nativePreview).toBeVisible();
+    await expect(nativePreview).not.toContainText(cardId);
     await expect(nativePreview).toContainText('마지막 보고 20분 전');
     await expect(nativePreview).toContainText('최근 커멘트 이후 보고 없음');
     await expect(nativePreview).not.toContainText('지시:');

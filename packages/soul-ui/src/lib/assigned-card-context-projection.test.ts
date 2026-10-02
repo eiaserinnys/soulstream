@@ -27,11 +27,11 @@ describe("placeAssignedCardContextsAtInputAnchors", () => {
       {id:"a",title:"첫 카드",status:"running",latestCommentAt:"2026-10-02T00:30:00Z",latestReportAt:"2026-10-02T00:20:00Z"},
       {id:"b",title:"둘째 카드",status:"review",latestCommentAt:null,latestReportAt:null},
     ]});
-    expect(fresh).toBe(`a · 첫 카드 · 실행 중 · 마지막 보고 ${formatBoardWorkspaceTime("2026-10-02T00:20:00Z")} · 최근 커멘트 이후 보고 없음\nb · 둘째 카드 · 검수 대기 · 보고 없음`);
+    expect(fresh).toBe(`첫 카드 · 실행 중 · 마지막 보고 ${formatBoardWorkspaceTime("2026-10-02T00:20:00Z")} · 최근 커멘트 이후 보고 없음\n둘째 카드 · 검수 대기 · 보고 없음`);
     const legacy = formatAssignedCardContextSnapshot({capturedAt:"2026-10-02T01:00:00Z",total:1,omitted:0,cards:[
       {id:"old",title:"과거 카드",status:"queued",version:7,instruction:"긴 지시",report:"긴 보고"},
     ]});
-    expect(legacy).toBe("old · 과거 카드 · 대기 · 마지막 보고 시각 확인 불가");
+    expect(legacy).toBe("과거 카드 · 대기 · 마지막 보고 시각 확인 불가");
   });
 
   it("moves a late prepared snapshot directly below its exact initial or intervention input", () => {

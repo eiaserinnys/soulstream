@@ -6,7 +6,6 @@ type Snapshot = AssignedCardContextSnapshotEvent["capture"]["snapshot"];
 export function formatAssignedCardContextSnapshot(snapshot: Snapshot): string {
   if (!snapshot.cards.length) return "담당 카드 없음";
   return snapshot.cards.map(card => [
-    card.id,
     card.title.replace(/\s+/g," ").trim(),
     statusLabel(card.status),
     reportLabel(card),

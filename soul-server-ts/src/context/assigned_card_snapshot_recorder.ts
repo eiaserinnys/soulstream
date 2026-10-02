@@ -12,7 +12,7 @@ export function formatAssignedCardSnapshotContent(
 ): string {
   if (!snapshot.cards.length) return '담당 카드 없음';
   return snapshot.cards.map(card => [
-    card.id, oneLine(card.title), cardStatusLabel(card.status),
+    oneLine(card.title), cardStatusLabel(card.status),
     card.latestReportAt ? `마지막 보고 ${card.latestReportAt}` : '보고 없음',
     isLater(card.latestCommentAt,card.latestReportAt) ? '최근 커멘트 이후 보고 없음' : null,
   ].filter(Boolean).join(' · ')).join('\n');

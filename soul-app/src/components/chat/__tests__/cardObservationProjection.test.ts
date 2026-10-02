@@ -18,15 +18,15 @@ it('anchors the latest prepared card snapshot to its exact input after late arri
  const reload=placeTurnSummaries(JSON.parse(JSON.stringify(inputBase)),JSON.parse(JSON.stringify(events)));
  expect(before).toEqual(reload);
  expect((before[0] as any).summaries.map((s:any)=>s.event.id)).toEqual(['42']);
- expect((before[0] as any).summaries[0].content).toBe('old · 과거 카드 · 대기 · 마지막 보고 시각 확인 불가');
+ expect((before[0] as any).summaries[0].content).toBe('과거 카드 · 대기 · 마지막 보고 시각 확인 불가');
  expect((before[1] as any).summaries.map((s:any)=>s.event.id)).toEqual(['40']);
 });
 it('projects compact and legacy card snapshots with captured-time-relative report labels',()=>{
  expect(formatAssignedCardContextSnapshot({capturedAt:'2026-10-02T01:00:00Z',cards:[
   {id:'a',title:'첫 카드',status:'running',latestCommentAt:'2026-10-02T00:30:00Z',latestReportAt:'2026-10-02T00:20:00Z'},
   {id:'b',title:'둘째 카드',status:'review',latestCommentAt:null,latestReportAt:null},
- ]})).toBe('a · 첫 카드 · 실행 중 · 마지막 보고 40분 전 · 최근 커멘트 이후 보고 없음\nb · 둘째 카드 · 검수 대기 · 보고 없음');
+ ]})).toBe('첫 카드 · 실행 중 · 마지막 보고 40분 전 · 최근 커멘트 이후 보고 없음\n둘째 카드 · 검수 대기 · 보고 없음');
  expect(formatAssignedCardContextSnapshot({capturedAt:'2026-10-02T01:00:00Z',cards:[
   {id:'old',title:'과거 카드',status:'queued',version:7,instruction:'긴 지시',report:'긴 보고'},
- ]})).toBe('old · 과거 카드 · 대기 · 마지막 보고 시각 확인 불가');
+ ]})).toBe('과거 카드 · 대기 · 마지막 보고 시각 확인 불가');
 });

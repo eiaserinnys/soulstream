@@ -14,7 +14,8 @@ it('owns a bounded immutable copy, preserves identity and returns without ACK',a
   expect(event.capture.snapshot.omitted).toBe(2);
   expect(event._dedupe_key).toBe('assigned_card_context_snapshot:r:i');
   expect(event.capture.source).toBe('prepared_model_input');
-  expect(event.content).toContain('0 · 제목 · 실행 중 · 마지막 보고 2026-10-01T23:58:00Z · 최근 커멘트 이후 보고 없음');
+  expect(event.content).toContain('제목 · 실행 중 · 마지막 보고 2026-10-01T23:58:00Z · 최근 커멘트 이후 보고 없음');
+  expect(event.content).not.toContain('0 · 제목');
   expect(event.content).not.toContain('입력 준비 스냅샷');
   expect(event.content).not.toContain('소비 확인 전');
   expect(event.content).not.toContain('v2');
@@ -29,7 +30,7 @@ it('renders the already-bounded raw snapshot without another text cut or a consu
   raw.snapshot.total=1; raw.snapshot.omitted=0;
   await createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn:vi.fn()})(raw);
   const event=enqueueEvent.mock.calls[0]![1] as any;
-  expect(event.content).toBe('c · 제목 · 검수 대기 · 보고 없음');
+  expect(event.content).toBe('제목 · 검수 대기 · 보고 없음');
   expect(event.capture.snapshot.cards[0]).toEqual({id:'c',title:'제목',status:'review',latestCommentAt:null,latestReportAt:null});
 });
 it('contains storage failure without retries or input wakeups and marks missing identity',async()=>{

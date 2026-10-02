@@ -36,7 +36,6 @@ export function formatAssignedCardContextSnapshot(snapshot: Record<string,unknow
   if (!cards.length) return '담당 카드 없음';
   const capturedAt=typeof snapshot.capturedAt==='string' ? Date.parse(snapshot.capturedAt) : Number.NaN;
   return cards.map(card=>[
-    typeof card.id==='string'?card.id:'',
     typeof card.title==='string'?card.title.replace(/\s+/g,' ').trim():'',
     statusLabel(typeof card.status==='string'?card.status:''),
     reportLabel(card,capturedAt),
