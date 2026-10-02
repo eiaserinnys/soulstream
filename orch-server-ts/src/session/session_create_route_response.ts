@@ -117,4 +117,3 @@ export function createAckErrorStatus(code: unknown): number | undefined {
     ? CREATE_ACK_ERROR_HTTP_STATUS[code]
     : undefined;
 }
-
