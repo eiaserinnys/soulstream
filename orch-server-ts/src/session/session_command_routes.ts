@@ -1,3 +1,6 @@
+// Existing session route helpers remain together during parallel MCP extraction; the create-only response mapping is in session_create_route_response.ts.
+import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
+import { badRequest as createBadRequest, serviceUnavailable as createUnavailable, sendMappedError as createMappedError, sendCreateAckError as createAckError, type SessionCreateRouteResponse } from "./session_create_route_response.js";
 import { randomUUID } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -105,140 +108,8 @@ export function registerSessionCommandRoutes(
   options: SessionCommandRouteOptions,
 ): void {
   app.post("/api/sessions", async (request, reply) => {
-    const body = parseObjectBody(request.body);
-    if (body === undefined) {
-      return badRequest(reply, "Request body must be a JSON object");
-    }
-    if (body.worktree_id !== undefined) {
-      const authorization = verifyServiceBearerAuthorization(
-        request.headers.authorization,
-        options.worktreeAuthBearerToken ?? "",
-        options.environment,
-      );
-      if (!authorization.ok) {
-        return reply.code(authorization.statusCode).send({
-          error: {
-            code: "WORKTREE_INTERNAL_AUTH_REQUIRED",
-            message: `service bearer is ${authorization.reason}`,
-          },
-        });
-      }
-      if (
-        typeof body.worktree_actor_session_id !== "string"
-        || body.worktree_actor_session_id.length === 0
-      ) {
-        return badRequest(
-          reply,
-          "worktree_actor_session_id is required for worktree-bound sessions",
-        );
-      }
-    }
-    const attachmentPaths = parseAttachmentPaths(body);
-    if (!attachmentPaths.ok) return badRequest(reply, attachmentPaths.message);
-    const resolvedPrompt = resolveCreateSessionPrompt(body);
-    if ("error" in resolvedPrompt) return badRequest(reply, resolvedPrompt.error);
-    const { prompt } = resolvedPrompt;
-    if (body.pageAnchor !== undefined && !isPageAnchor(body.pageAnchor)) {
-      return badRequest(reply, "pageAnchor must include pageId, blockId, and a positive expectedVersion");
-    }
-    if (body.pageAnchor !== undefined && prompt.trim().length === 0) {
-      return badRequest(reply, "prompt is required for page-anchored session creation");
-    }
-    if (
-      body.predecessor_session_id !== undefined &&
-      body.predecessor_session_id !== null &&
-      (typeof body.predecessor_session_id !== "string" ||
-        body.predecessor_session_id.trim().length === 0)
-    ) {
-      return badRequest(reply, "predecessor_session_id must be a non-empty string or null");
-    }
-    if (
-      body.model_preset !== undefined
-      && body.model_preset !== null
-      && (
-        typeof body.model_preset !== "string"
-        || body.model_preset.trim().length === 0
-      )
-    ) {
-      return badRequest(reply, "model_preset must be a non-empty string or null");
-    }
-
-    try {
-      const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
-      const payload = createSessionPayload(prepared.payload, prompt);
-      const routed = options.router.createSession(payload, {
-        timeoutMs: options.timeoutMs,
-        beforeCreateCommand: (selection) => {
-          if (selection.modelPresetId && options.modelPresetAvailability) {
-            options.modelPresetAvailability.requireAvailable(
-              selection.node.nodeId,
-              selection.modelPresetId,
-            );
-          }
-        },
-      });
-      let result: NodeCommandResponse;
-      try {
-        result = await options.bridge.sendPendingCommand(routed);
-      } catch (error) {
-        if (error instanceof PendingNodeCommandTimeoutError) {
-          try {
-            const reconciled = await options.router.waitForCreatedSession(
-              payload.agentSessionId,
-              routed.node.nodeId,
-              { timeoutMs: options.createSessionReconcileTimeoutMs },
-            );
-            if (reconciled) {
-              request.log.warn(
-                {
-                  requestId: error.requestId,
-                  agentSessionId: payload.agentSessionId,
-                  nodeId: routed.node.nodeId,
-                },
-                "create_session command timed out but the node session event was observed",
-              );
-              return reply.code(201).send({
-                agentSessionId: payload.agentSessionId,
-                nodeId: routed.node.nodeId,
-                prompt,
-              });
-            }
-          } catch (reconcileError) {
-            request.log.warn(
-              {
-                err: reconcileError,
-                requestId: error.requestId,
-                agentSessionId: payload.agentSessionId,
-                nodeId: routed.node.nodeId,
-              },
-              "create_session timeout reconciliation failed",
-            );
-          }
-        }
-        throw error;
-      }
-      if (isErrorAck(result)) {
-        return sendCreateAckError(reply, result);
-      }
-      const agentSessionId = payload.agentSessionId;
-      if (
-        typeof result.agentSessionId === "string" &&
-        result.agentSessionId !== agentSessionId
-      ) {
-        return serviceUnavailable(reply, {
-          code: "SESSION_ID_MISMATCH",
-          message: "create_session ack changed the server-generated agentSessionId",
-        });
-      }
-      return reply.code(201).send({
-        agentSessionId,
-        nodeId: routed.node.nodeId,
-        prompt,
-        ...(Array.isArray(result.warnings) ? { warnings: result.warnings } : {}),
-      });
-    } catch (error) {
-      return sendMappedError(reply, error);
-    }
+    const result = await executeCreateSessionRoute(options, request, request.body, request.log);
+    return reply.code(result.status).send(result.body);
   });
 
   app.post<{
@@ -283,6 +154,148 @@ export function registerSessionCommandRoutes(
       return sendMappedError(reply, error);
     }
   });
+}
+
+/** Transport identity is preserved through the same preparation and node-command path. */
+export async function executeCreateSessionRoute(
+  options: SessionCommandRouteOptions,
+  request: import("fastify").FastifyRequest | ServiceCaller,
+  input: unknown,
+  logger: Pick<import("fastify").FastifyRequest["log"], "warn">,
+): Promise<SessionCreateRouteResponse> {
+    const body = parseObjectBody(input);
+    if (body === undefined) {
+      return createBadRequest("Request body must be a JSON object");
+    }
+    if (body.worktree_id !== undefined) {
+      const authorization = isServiceCaller(request) ? { ok: true as const } : verifyServiceBearerAuthorization(
+        request.headers.authorization,
+        options.worktreeAuthBearerToken ?? "",
+        options.environment,
+      );
+      if (!authorization.ok) {
+        return { status: authorization.statusCode, body: {
+          error: {
+            code: "WORKTREE_INTERNAL_AUTH_REQUIRED",
+            message: `service bearer is ${authorization.reason}`,
+          },
+        } };
+      }
+      if (
+        typeof body.worktree_actor_session_id !== "string"
+        || body.worktree_actor_session_id.length === 0
+      ) {
+        return createBadRequest(
+          "worktree_actor_session_id is required for worktree-bound sessions",
+        );
+      }
+    }
+    const attachmentPaths = parseAttachmentPaths(body);
+    if (!attachmentPaths.ok) return createBadRequest(attachmentPaths.message);
+    const resolvedPrompt = resolveCreateSessionPrompt(body);
+    if ("error" in resolvedPrompt) return createBadRequest(resolvedPrompt.error);
+    const { prompt } = resolvedPrompt;
+    if (body.pageAnchor !== undefined && !isPageAnchor(body.pageAnchor)) {
+      return createBadRequest("pageAnchor must include pageId, blockId, and a positive expectedVersion");
+    }
+    if (body.pageAnchor !== undefined && prompt.trim().length === 0) {
+      return createBadRequest("prompt is required for page-anchored session creation");
+    }
+    if (
+      body.predecessor_session_id !== undefined &&
+      body.predecessor_session_id !== null &&
+      (typeof body.predecessor_session_id !== "string" ||
+        body.predecessor_session_id.trim().length === 0)
+    ) {
+      return createBadRequest("predecessor_session_id must be a non-empty string or null");
+    }
+    if (
+      body.model_preset !== undefined
+      && body.model_preset !== null
+      && (
+        typeof body.model_preset !== "string"
+        || body.model_preset.trim().length === 0
+      )
+    ) {
+      return createBadRequest("model_preset must be a non-empty string or null");
+    }
+
+    try {
+      const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
+      const payload = createSessionPayload(prepared.payload, prompt);
+      const routed = options.router.createSession(payload, {
+        timeoutMs: options.timeoutMs,
+        beforeCreateCommand: (selection) => {
+          if (selection.modelPresetId && options.modelPresetAvailability) {
+            options.modelPresetAvailability.requireAvailable(
+              selection.node.nodeId,
+              selection.modelPresetId,
+            );
+          }
+        },
+      });
+      let result: NodeCommandResponse;
+      try {
+        result = await options.bridge.sendPendingCommand(routed);
+      } catch (error) {
+        if (error instanceof PendingNodeCommandTimeoutError) {
+          try {
+            const reconciled = await options.router.waitForCreatedSession(
+              payload.agentSessionId,
+              routed.node.nodeId,
+              { timeoutMs: options.createSessionReconcileTimeoutMs },
+            );
+            if (reconciled) {
+              logger.warn(
+                {
+                  requestId: error.requestId,
+                  agentSessionId: payload.agentSessionId,
+                  nodeId: routed.node.nodeId,
+                },
+                "create_session command timed out but the node session event was observed",
+              );
+              return { status: 201, body: {
+                agentSessionId: payload.agentSessionId,
+                nodeId: routed.node.nodeId,
+                prompt,
+              } };
+            }
+          } catch (reconcileError) {
+            logger.warn(
+              {
+                err: reconcileError,
+                requestId: error.requestId,
+                agentSessionId: payload.agentSessionId,
+                nodeId: routed.node.nodeId,
+              },
+              "create_session timeout reconciliation failed",
+            );
+          }
+        }
+        throw error;
+      }
+      if (isErrorAck(result)) {
+        return createAckError(result);
+      }
+      const agentSessionId = payload.agentSessionId;
+      if (
+        typeof result.agentSessionId === "string" &&
+        result.agentSessionId !== agentSessionId
+      ) {
+        return createUnavailable({
+          code: "SESSION_ID_MISMATCH",
+          message: "create_session ack changed the server-generated agentSessionId",
+        });
+      }
+      return { status: 201, body: {
+        agentSessionId,
+        nodeId: routed.node.nodeId,
+        prompt,
+        ...(Array.isArray(result.warnings) ? { warnings: result.warnings } : {}),
+      } };
+    } catch (error) {
+      return createMappedError(error);
+    }
 }
 
 async function prepareCreateSession(

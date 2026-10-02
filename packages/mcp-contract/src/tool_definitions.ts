@@ -1,3 +1,6 @@
+import { clusterTools } from "./multi_node.js";
+import { cardOrchestrationTools } from "./card_orchestration.js";
+import { recurringJobTools } from "./recurring_jobs.js";
 import type { z } from "zod";
 import { boardTools } from "./board_tools.js";
 import { sessionTools } from "./session_tools.js";
@@ -38,6 +41,9 @@ export interface McpToolDefinition {
 }
 
 export const mcpTools = {
+  ...clusterTools,
+  ...cardOrchestrationTools,
+  ...recurringJobTools,
   ...folderObjectTools,
   ...cardTools,
   ...boardTools,

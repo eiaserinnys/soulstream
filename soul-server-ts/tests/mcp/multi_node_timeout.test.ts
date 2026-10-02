@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { registerMultiNodeTools } from "../../src/mcp/tools/multi_node.js";
+import { registerMultiNodeToolsLegacy as registerMultiNodeTools } from "../../src/mcp/tools/multi_node.js";
 
 type ToolHandler = (input?: Record<string, unknown>) => Promise<unknown>;
 

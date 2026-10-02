@@ -28,6 +28,14 @@ import type {
 } from "../../src/task/task_manager.js";
 import type { AgentProfile } from "../../src/agent_registry.js";
 
+// These historical cases assert the old worker-to-domain HTTP requests. Keep that
+// transport oracle; cluster-roundtrip.integration.test.ts calls both registrations
+// against the same real host and compares complete results and node commands.
+vi.mock("../../src/mcp/tools/multi_node.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../src/mcp/tools/multi_node.js")>();
+  return { ...actual, registerMultiNodeTools: actual.registerMultiNodeToolsLegacy };
+});
+
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
 

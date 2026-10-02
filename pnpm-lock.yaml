@@ -99,7 +99,14 @@ importers:
         specifier: ^8.18.0
         version: 8.20.0
 
-  packages/agent-profile-contract: {}
+  packages/agent-profile-contract:
+    dependencies:
+      '@soulstream/model-catalog':
+        specifier: workspace:*
+        version: link:../model-catalog
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
   packages/db-schema:
     dependencies:
@@ -114,6 +121,12 @@ importers:
 
   packages/mcp-contract:
     dependencies:
+      '@soulstream/agent-profile-contract':
+        specifier: workspace:*
+        version: link:../agent-profile-contract
+      '@soulstream/model-catalog':
+        specifier: workspace:*
+        version: link:../model-catalog
       '@soulstream/wire-schema':
         specifier: workspace:*
         version: link:../wire-schema

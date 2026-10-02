@@ -1,3 +1,4 @@
+import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -64,7 +65,7 @@ describe("folder object legacy and orchestrator MCP parity", () => {
       cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
     app = Fastify();
     registerFolderControlPlaneHostRoute(app, options);
-    registerMcpHostRoutes(app, { board: undefined as never, authBearerToken: options.authBearerToken, folders: options, cards: {
+    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: options.authBearerToken, folders: options, cards: {
       cardServiceProvider: options.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }),
     } });

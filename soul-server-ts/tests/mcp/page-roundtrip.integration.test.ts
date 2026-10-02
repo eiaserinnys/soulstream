@@ -1,3 +1,4 @@
+import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -36,7 +37,7 @@ describe("page MCP → orch host complete round-trip", () => {
       service,
       authBearerToken: "service-token",
     });
-    registerMcpHostRoutes(app, { authBearerToken: "service-token", pages: { service, logger: app.log },
+    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: "service-token", pages: { service, logger: app.log },
       folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused"); } },
       cards: { provider: { listFolders: () => [], listSessionAssignments: () => ({}) }, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
     });

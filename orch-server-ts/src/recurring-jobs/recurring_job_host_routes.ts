@@ -45,29 +45,27 @@ export function registerRecurringJobHostRoutes(
         options.environment,
       );
       if (!authorization.ok) return hostError(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
-      if (!operations.has(request.params.operation)) {
-        return hostError(reply, 404, "RECURRING_JOB_OPERATION_NOT_FOUND", "unknown recurring job operation");
-      }
-      const body = objectValue(request.body);
-      if (!body) return hostError(reply, 422, "VALIDATION", "body must be an object");
-      const actor = actorValue(body.actor);
-      if (!actor) return hostError(reply, 403, "FORBIDDEN", "verified recurring-job actor is required");
-      try {
-        return reply.send(await dispatch(options.service, request.params.operation, actor, body));
-      } catch (error) {
-        if (error instanceof RecurringJobError) {
-          return hostError(reply, error.statusCode, error.code, error.message, error.currentJob);
-        }
-        request.log.error({ err: error, operation: request.params.operation }, "Recurring job host operation failed");
-        return hostError(
-          reply,
-          500,
-          "RECURRING_JOB_OPERATION_FAILED",
-          error instanceof Error ? error.message : "Recurring job operation failed",
-        );
-      }
+      const result = await executeRecurringJobHostOperation(options.service, request.params.operation, request.body);
+      if ("error" in result) request.log.error({ err: result.error, operation: request.params.operation }, "Recurring job host operation failed");
+      return reply.code(result.status).send(result.body);
     },
   );
+}
+
+export async function executeRecurringJobHostOperation(service: RecurringJobService, operation: string, input: unknown) {
+  const failure = (status: number, code: string, message: string, currentJob?: import("./types.js").RecurringJob) => ({
+    status, body: { detail: { error: { code, message, ...(currentJob ? { current_job: serializeJob(currentJob) } : {}) } } },
+  });
+  if (!operations.has(operation)) return failure(404, "RECURRING_JOB_OPERATION_NOT_FOUND", "unknown recurring job operation");
+  const body = objectValue(input);
+  if (!body) return failure(422, "VALIDATION", "body must be an object");
+  const actor = actorValue(body.actor);
+  if (!actor) return failure(403, "FORBIDDEN", "verified recurring-job actor is required");
+  try { return { status: 200, body: await dispatch(service, operation, actor, body) }; }
+  catch (error) {
+    if (error instanceof RecurringJobError) return failure(error.statusCode, error.code, error.message, error.currentJob);
+    return { ...failure(500, "RECURRING_JOB_OPERATION_FAILED", error instanceof Error ? error.message : "Recurring job operation failed"), error };
+  }
 }
 
 async function dispatch(

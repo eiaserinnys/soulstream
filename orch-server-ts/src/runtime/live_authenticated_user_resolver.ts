@@ -1,3 +1,4 @@
+import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 
 import {
@@ -31,7 +32,7 @@ export type LiveDashboardTokenVerifier = (
 ) => Promise<AuthJwtPayload | null>;
 
 export type LiveCallerInfoResolver = (
-  request: FastifyRequest,
+  request: FastifyRequest | ServiceCaller,
   bodyCallerInfo: Record<string, unknown> | null | undefined,
   systemNodeId: string,
 ) => Promise<Record<string, unknown>>;
@@ -109,8 +110,8 @@ export function createLiveAuthenticatedUserResolvers(
       return (await resolveUser(request))?.email ?? null;
     },
     async resolveCallerInfo(request, bodyCallerInfo, _systemNodeId) {
-      const authenticated = await resolveAuthenticatedUser(request);
-      if (authenticated !== null) {
+      const authenticated = isServiceCaller(request) ? null : await resolveAuthenticatedUser(request);
+      if (authenticated !== null && !isServiceCaller(request)) {
         // Credential carrier is the server-owned provenance boundary. Browser
         // cookies can only become browser, while the dashboard JWT bearer is
         // reserved for the native Soul app. A body source can never downgrade
@@ -128,10 +129,10 @@ export function createLiveAuthenticatedUserResolvers(
       }
       const callerInfo: Record<string, unknown> = {
         source: "browser",
-        ip: request.ip ?? null,
-        user_agent: headerString(request.headers["user-agent"]) ?? null,
-        referer: headerString(request.headers.referer) ?? null,
-        forwarded_for: headerString(request.headers["x-forwarded-for"]) ?? null,
+        ip: isServiceCaller(request) ? null : request.ip ?? null,
+        user_agent: headerString((isServiceCaller(request) ? {} : request.headers)["user-agent"]) ?? null,
+        referer: headerString(isServiceCaller(request) ? undefined : request.headers.referer) ?? null,
+        forwarded_for: headerString((isServiceCaller(request) ? {} : request.headers)["x-forwarded-for"]) ?? null,
       };
       return callerInfo;
     },

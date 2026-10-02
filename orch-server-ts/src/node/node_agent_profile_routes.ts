@@ -1,3 +1,4 @@
+// This route inventory shares existing validation/portrait helpers; splitting it is deferred to preserve the parallel extraction boundary.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type {
@@ -181,50 +182,25 @@ export function registerNodeAgentProfileRoutes(
     }
   }
   app.get<{ Params: NodeParams }>("/api/nodes/:node_id/agents", async (request, reply) => {
-    const nodeId = nodeParams(request).node_id;
-    const profiles = await options.provider.listAgentProfiles(nodeId);
-    if (profiles === undefined) {
-      return reply.code(404).send({ detail: `Node ${nodeId} not connected` });
-    }
-    return reply.send({
-      agents: Object.entries(profiles).map(([agentId, profile]) =>
-        projectAgentProfile(nodeId, agentId, profile),
-      ),
+      const result = await executeNodeAgentProfileRoute(options, "agents", nodeParams(request).node_id, undefined);
+      return reply.code(result.status).send(result.body);
     });
-  });
 
   if (options.modelPresetProvider) {
     app.get<{ Params: NodeParams }>(
       "/api/nodes/:node_id/model-presets",
       async (request, reply) => {
-        const nodeId = nodeParams(request).node_id;
-        const presets: ModelPresetAvailability[] | undefined =
-          options.modelPresetProvider?.listForNode(nodeId);
-        if (!presets) {
-          return reply.code(404).send({ detail: `Node ${nodeId} not connected` });
-        }
-        return reply.send({ model_presets: presets });
-      },
+      const result = await executeNodeAgentProfileRoute(options, "model-presets", nodeParams(request).node_id, undefined);
+      return reply.code(result.status).send(result.body);
+    },
     );
   }
 
   app.post<{ Params: NodeParams }>(
     "/api/nodes/:node_id/agents/config/plan-profile-update",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
-      if (!body.ok) return validationError(reply, body);
-      const input = profileUpdateInput(body.value);
-      if (!input.ok) return validationError(reply, input);
-
-      try {
-        const result = await options.provider.planAgentProfileUpdate(
-          nodeParams(request).node_id,
-          input.value,
-        );
-        return reply.send(result);
-      } catch (error) {
-        return sendConfigProviderError(reply, error);
-      }
+      const result = await executeNodeAgentProfileRoute(options, "plan", nodeParams(request).node_id, request.body);
+      return reply.code(result.status).send(result.body);
     },
   );
 
@@ -250,54 +226,24 @@ export function registerNodeAgentProfileRoutes(
   app.post<{ Params: NodeParams }>(
     "/api/nodes/:node_id/agents/config/apply-profile-update",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
-      if (!body.ok) return validationError(reply, body);
-      const input = applyProfileUpdateInput(body.value);
-      if (!input.ok) return validationError(reply, input);
-
-      try {
-        const result = await options.provider.applyAgentProfileUpdate(
-          nodeParams(request).node_id,
-          input.value,
-        );
-        return reply.send(result);
-      } catch (error) {
-        return sendConfigProviderError(reply, error);
-      }
+      const result = await executeNodeAgentProfileRoute(options, "apply", nodeParams(request).node_id, request.body);
+      return reply.code(result.status).send(result.body);
     },
   );
 
   app.get<{ Params: NodeParams }>(
     "/api/nodes/:node_id/agents/config/snapshots",
     async (request, reply) => {
-      try {
-        const result = await options.provider.listAgentsConfigSnapshots(
-          nodeParams(request).node_id,
-        );
-        return reply.send(result);
-      } catch (error) {
-        return sendConfigProviderError(reply, error);
-      }
+      const result = await executeNodeAgentProfileRoute(options, "snapshots", nodeParams(request).node_id, undefined);
+      return reply.code(result.status).send(result.body);
     },
   );
 
   app.post<{ Params: NodeParams }>(
     "/api/nodes/:node_id/agents/config/rollback",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
-      if (!body.ok) return validationError(reply, body);
-      const input = rollbackInput(body.value);
-      if (!input.ok) return validationError(reply, input);
-
-      try {
-        const result = await options.provider.rollbackAgentsConfig(
-          nodeParams(request).node_id,
-          input.value,
-        );
-        return reply.send(result);
-      } catch (error) {
-        return sendConfigProviderError(reply, error);
-      }
+      const result = await executeNodeAgentProfileRoute(options, "rollback", nodeParams(request).node_id, request.body);
+      return reply.code(result.status).send(result.body);
     },
   );
 
@@ -337,6 +283,41 @@ export function registerNodeAgentProfileRoutes(
       }
     },
   );
+}
+
+export async function executeNodeAgentProfileRoute(
+  options: NodeAgentProfileRouteOptions,
+  operation: "agents" | "model-presets" | "plan" | "apply" | "snapshots" | "rollback",
+  nodeId: string,
+  input?: unknown,
+): Promise<{ status: number; body: unknown }> {
+  if (operation === "agents") {
+    const profiles = await options.provider.listAgentProfiles(nodeId);
+    return profiles === undefined ? { status: 404, body: { detail: `Node ${nodeId} not connected` } }
+      : { status: 200, body: { agents: Object.entries(profiles).map(([id, profile]) => projectAgentProfile(nodeId, id, profile)) } };
+  }
+  if (operation === "model-presets") {
+    const presets = options.modelPresetProvider?.listForNode(nodeId);
+    return !presets ? { status: 404, body: { detail: `Node ${nodeId} not connected` } }
+      : { status: 200, body: { model_presets: presets } };
+  }
+  const body = parseObjectBody(input);
+  const parsed = !body.ok ? body : operation === "plan" ? profileUpdateInput(body.value)
+    : operation === "apply" ? applyProfileUpdateInput(body.value)
+    : operation === "rollback" ? rollbackInput(body.value) : { ok: true as const, value: {} };
+  if (!parsed.ok) return { status: parsed.statusCode ?? 400, body: { error: { code: "INVALID_NODE_AGENT_PROFILE_REQUEST", message: parsed.message } } };
+  try {
+    const result = operation === "plan" ? await options.provider.planAgentProfileUpdate(nodeId, parsed.value as AgentProfileUpdateInput)
+      : operation === "apply" ? await options.provider.applyAgentProfileUpdate(nodeId, parsed.value as ApplyAgentProfileUpdateInput)
+      : operation === "rollback" ? await options.provider.rollbackAgentsConfig(nodeId, parsed.value as RollbackAgentsConfigInput)
+      : await options.provider.listAgentsConfigSnapshots(nodeId);
+    return { status: 200, body: result };
+  } catch (error) {
+    if (error instanceof NodeAgentProfileRouteError) return { status: error.statusCode, body: { error: {
+      code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}),
+    } } };
+    return { status: 400, body: { error: { code: "NODE_AGENT_PROFILE_ROUTE_ERROR", message: error instanceof Error ? error.message : "Node profile route failed" } } };
+  }
 }
 
 function projectAgentProfile(

@@ -206,7 +206,7 @@ async function resolveAccessIdentity(input: {
   readonly cookieName: string;
   readonly accessEmail?: string | null;
 }): Promise<AccessIdentity> {
-  if (isServiceCaller(input.request)) return { mode: "service_token", accessEmail: null };
+  if (isServiceCaller(input.request)) return { mode: "service_token", accessEmail: input.accessEmail ?? null };
   const snapshot = await input.configProvider.getConfig();
   const configuredBearer = optionalConfigString(snapshot, "auth_bearer_token");
   const environment = requiredSnapshotString(snapshot, "environment");

@@ -850,6 +850,13 @@ export function buildProductionRouteOptions(
         authBearerToken: config.authBearerToken,
         ...(mcpSkills ? { skills: mcpSkills } : {}),
         cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail },
+        cluster: {
+          nodes: providers.runtime.nodeSnapshotRoutes,
+          nodeAgentProfiles: providers.nodeAgentProfileRoutes,
+          cogito: providers.cogitoRoutes,
+          sessions: providers.runtime.sessionCommandRoutes,
+          readSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
+        },
         board: {
           host: providers.runtime.boardYjsHostProxyRoutes,
           getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
