@@ -6,7 +6,7 @@ A read-only MCP Apps card UI, with two modes: an authenticated **live view** ser
 
 1. Call `show_live_card_view` on the existing authenticated Soulstream MCP connection. No card array is needed. Optional `folder_id` scopes the view; omitted means all cards visible through that existing connection. `limit` defaults to 100 and cannot exceed 100.
 2. The thin registration in `soul-server-ts/src/mcp/tools/live_card_view.ts` reads through the same guarded MCP server, caller request context, and `FolderService.listCards` path used by `list_cards`. It neither copies tokens nor creates new permissions.
-3. Soulstream returns the actual card projection and the plugin-owned HTML as `ui://soulstream/live-cards-v3.html`.
+3. Soulstream returns the actual card projection and the plugin-owned HTML as `ui://soulstream/live-cards-v4.html`.
 4. The iframe calls `list_live_cards` through the same host MCP bridge for manual and 30-second automatic refresh. It never calls the backend directly and never receives credentials.
 
 Presentation and the bounded card projection remain in this plugin folder. The small Soulstream registration is required because only the authenticated source can safely perform repeated reads. The standalone public snapshot renderer does **not** gain private backend access.
@@ -80,7 +80,7 @@ Card fields are transmitted to the **renderer operator**, even though that servi
 
 `PostItCardPresentation` is the pure paper/grid used by the dashboard wrapper and iframe. The wrapper supplies existing typography, navigation and controls; iframe cards use `readOnly` and `showStatus=false` with no fake open action, mutations, drag handles or portrait requests. The actual five-group combination is registered in the component review window. Groups retain source order: review+blocked, running, queued+unknown, todo, done+cancelled. Unknown and cancelled cards have explanatory body-adjacent text. Empty groups are hidden. The local filter uses these same five groups.
 
-The single embedded HTML includes React, Base UI controls, generated Tailwind CSS and canonical PostIt/section tokens. No CDN or CSP extension is needed. Build inspection rejects dashboard store/API/router dependencies. Live resource is v3; standalone snapshot resource is separately `ui://soulstream/cards-v3.html`. The standalone service is not a deployment target for this UI change.
+The single embedded HTML includes React, Base UI controls, generated Tailwind CSS and canonical PostIt/section tokens. No CDN or CSP extension is needed. Build inspection rejects dashboard store/API/router dependencies. Live resource is v4; standalone snapshot resource is separately `ui://soulstream/cards-v4.html`. The standalone service is not a deployment target for this UI change.
 
 ## Validation
 
@@ -96,3 +96,5 @@ Not verified here: a deployed authenticated live-card flow in ChatGPT/dot or bro
 - [Soulstream card tool](https://github.com/eiaserinnys/soulstream/blob/main/soul-server-ts/src/mcp/tools/card_tools.ts)
 
 No OpenAI API key is needed; this is an MCP UI server, not a model API client.
+
+The v4 widget bounds its shared scroll area to the host iframe viewport and uses the page title token above section headings. Existing v3 frames keep their original resource; open a new card view to receive v4.

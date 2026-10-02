@@ -15,7 +15,7 @@ export function ReadOnlyCardList({cards,total,hasData,disabled=false,refresh,not
  const count=groups.reduce((total,group)=>total+group.cards.length,0);
  return <div className="v3-readonly-card-list">
   <header className="v3-detail-section-head widget-head">
-   <h3>업무 카드</h3>
+   <h2>업무 카드</h2>
    <div className="widget-controls v3-succession-assignment">
     <CatalogSelectionField label="상태" ariaLabel="카드 상태 필터" value={filter} disabled={disabled}
      selectedLabel={cardGroups.find(g=>g.id===filter)?.label??'전체'}

@@ -8,6 +8,7 @@ import {widgetHtml} from '../src/widget-html.ts';
 // @ts-ignore jsdom types are unnecessary for the embedded browser harness.
 import {JSDOM} from 'jsdom';
 const payload={cards:[{id:'1',title:'<img src=x onerror=alert(1)>',status:'running',assigneeAgentId:'demo',updatedAt:'2026-10-02T00:00:00Z',request:'private detail'},{id:'2',title:'Second',status:'done'}]};
+test('snapshot UI cache key advances to the bounded-scroll resource',()=>assert.equal(RESOURCE_URI,'ui://soulstream/cards-v4.html'));
 test('normalizes current card contract, strips private details, limits output',()=>{const d=normalizeCards(payload,1);assert.equal(d.total,2);assert.equal(d.truncated,true);assert.equal(d.cards[0].assignee,'demo');assert.equal('request' in d.cards[0],false)});
 test('unknown status and invalid date do not pretend known state',()=>{assert.deepEqual(normalizeCards({cards:[{id:'a',title:'A',status:'future',updatedAt:'bad'}]}).cards[0],{id:'a',title:'A',status:'unknown',assignee:'',updatedAt:null})});
 test('invalid response is rejected, empty array is valid',()=>{assert.throws(()=>normalizeCards({tasks:[]}));assert.equal(normalizeCards({cards:[]}).total,0)});
