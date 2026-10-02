@@ -37,6 +37,7 @@ describe("SessionBoardMoveService", () => {
         },
       },
       repository: {
+        listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
         listSessionBoardItems: vi.fn(async () => sourceItems),
         commitSessionMove,
       },
@@ -50,6 +51,7 @@ describe("SessionBoardMoveService", () => {
       });
     expect(commitSessionMove).toHaveBeenCalledWith({
       sessionId: "session-a",
+      sessionIds: ["session-a"],
       folderId: "folder-target",
       boardApplications: applications,
     });
@@ -69,6 +71,7 @@ describe("SessionBoardMoveService", () => {
         },
       },
       repository: {
+        listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
         listSessionBoardItems: vi.fn(async () => sourceItems),
         commitSessionMove,
       },
@@ -78,6 +81,7 @@ describe("SessionBoardMoveService", () => {
     await expect(service.moveSessionToFolder("session-a", null)).resolves.toBeNull();
     expect(commitSessionMove).toHaveBeenCalledWith({
       sessionId: "session-a",
+      sessionIds: ["session-a"],
       folderId: null,
       boardApplications: applicationRows,
     });
@@ -98,6 +102,7 @@ describe("SessionBoardMoveService", () => {
         },
       },
       repository: {
+        listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
         listSessionBoardItems: vi.fn(async () => [sessionItem("folder-old")]),
         commitSessionMove,
       },
@@ -113,6 +118,7 @@ describe("SessionBoardMoveService", () => {
     expect(onBoardMoveCommitted).toHaveBeenCalledTimes(1);
     expect(onBoardMoveCommitted).toHaveBeenCalledWith({
       sessionId: "session-a",
+      sessionIds: ["session-a"],
       folderId: "folder-target",
     });
     expect(order).toEqual(["commit", "broadcast"]);
@@ -128,6 +134,7 @@ describe("SessionBoardMoveService", () => {
         },
       },
       repository: {
+        listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
         listSessionBoardItems: vi.fn(async () => [sessionItem("folder-old")]),
         commitSessionMove: vi.fn(async () => { throw new Error("transaction rolled back"); }),
       },
@@ -164,6 +171,7 @@ describe("SessionBoardMoveService", () => {
         },
       },
       repository: {
+        listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
         listSessionBoardItems,
         commitSessionMove: vi.fn(async () => undefined),
       },

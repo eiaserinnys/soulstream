@@ -33,6 +33,7 @@ export interface StagedBoardMove {
 
 export interface SessionBoardMoveInput {
   sessionId: string;
+  sessionIds: readonly string[];
   boardItems: readonly CatalogBoardItemRow[];
   targetScope: BoardYjsFolderScope | null;
   position?: { x: number; y: number };
@@ -100,7 +101,7 @@ export async function withStagedSessionBoardMove(
 ): Promise<CatalogBoardItemRow | null> {
   const primaryItems = input.boardItems.filter((item) =>
     item.itemType === "session" &&
-    item.itemId === input.sessionId &&
+    input.sessionIds.includes(item.itemId) &&
     (item.membershipKind ?? "primary") === "primary"
   );
   const scopes = sessionMoveScopes(primaryItems, input.targetScope);
@@ -129,16 +130,19 @@ export async function withStagedSessionBoardMove(
       if (entry) deleteBoardYjsItem(entry.staged, boardItem.id);
     }
 
-    const movedBoardItem = input.targetScope
-      ? createTargetSessionItem(
-          input,
+    let movedBoardItem: CatalogBoardItemRow | null = null;
+    if (input.targetScope) {
+      const target = requireEntry(byDocumentName, input.targetScope).staged;
+      for (const sessionId of input.sessionIds) {
+        const moved = createTargetSessionItem(
+          { ...input, sessionId, position: sessionId === input.sessionId ? input.position : undefined },
           input.targetScope,
-          primaryItems,
-          requireEntry(byDocumentName, input.targetScope).staged,
-        )
-      : null;
-    if (movedBoardItem && input.targetScope) {
-      upsertBoardYjsItem(requireEntry(byDocumentName, input.targetScope).staged, movedBoardItem);
+          primaryItems.filter(item => item.itemId === sessionId),
+          target,
+        );
+        upsertBoardYjsItem(target, moved);
+        if (sessionId === input.sessionId) movedBoardItem = moved;
+      }
     }
 
     const boardApplications = connections.map(({ scope, staged }) =>
@@ -164,7 +168,7 @@ export async function withStagedSessionBoardMove(
 export function sessionBoardMoveDocumentNames(input: SessionBoardMoveInput): string[] {
   const primaryItems = input.boardItems.filter((item) =>
     item.itemType === "session" &&
-    item.itemId === input.sessionId &&
+    input.sessionIds.includes(item.itemId) &&
     (item.membershipKind ?? "primary") === "primary"
   );
   return sessionMoveScopes(primaryItems, input.targetScope).map((scope) =>

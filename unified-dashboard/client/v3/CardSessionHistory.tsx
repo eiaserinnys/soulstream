@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useDashboardStore, useSessionListProvider, type SessionSummary } from "@seosoyoung/soul-ui";
+import { useDashboardStore, useSessionListProvider, useSessionMenu, type SessionSummary } from "@seosoyoung/soul-ui";
 import { orchestratorSessionProvider } from "../providers";
 import { buildRunTree, resolveRunSessions } from "./folder-workspace-run-model";
 import { SessionRunList } from "./SessionRunList";
@@ -9,6 +9,7 @@ export function CardSessionHistory({ sessionIds, onOpenSession, collapsedLimit }
   collapsedLimit?: number;
   onOpenSession(session: SessionSummary): void;
 }) {
+  const openMenu = useSessionMenu();
   const [expanded,setExpanded] = useState(false);
   const catalog = useDashboardStore(state => state.catalog);
   const activeSessionId = useDashboardStore(state => state.activeSessionKey);
@@ -36,7 +37,7 @@ export function CardSessionHistory({ sessionIds, onOpenSession, collapsedLimit }
   return <>
     <div className="v3-detail-section-head"><h3>세션</h3><span>{sessionIds.length}회</span></div>
     {sessionIds.length === 0 ? <p className="v3-detail-empty">아직 세션이 없습니다.</p> : null}
-    <SessionRunList size="small" tree={visibleTree} activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
+    <SessionRunList size="small" tree={visibleTree} activeSessionId={activeSessionId} onOpenSession={onOpenSession} onContextMenu={(session,event)=>openMenu(session.agentSessionId,event)} />
     {!expanded && collapsedLimit && sessionIds.length > collapsedLimit ? <button type="button" className="v3-card-more" onClick={()=>setExpanded(true)}>{sessionIds.length-collapsedLimit}개 더</button> : null}
   </>;
 }

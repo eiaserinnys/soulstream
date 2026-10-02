@@ -202,7 +202,7 @@ export async function createLiveProductionApplication(
   };
   let boardYjsService: BoardYjsService | undefined;
   let emitBoardYjsSessionCatalogDelta:
-    | ((sessionId: string) => Promise<void>)
+    | ((sessionIds: readonly string[]) => Promise<void>)
     | undefined;
   const boardYjsMoveRepository = new BoardYjsMoveRepository(sqlResolver);
   const sessionBoardMoveService = new SessionBoardMoveService({
@@ -215,11 +215,17 @@ export async function createLiveProductionApplication(
     repository: boardYjsMoveRepository,
     // Board/Yjs owns this post-commit emission. REST calls moveSessionToFolder instead,
     // whose route wrapper remains its single catalog-delta owner.
-    onBoardMoveCommitted: async ({ sessionId }) => {
+    onCardsMoveCommitted: async (cards) => {
+      for (const card of cards) {
+        runtimeServices.sessionBroadcaster.append({type:"card_updated",cardId:card.cardId,folderId:card.sourceFolderId});
+        runtimeServices.sessionBroadcaster.append({type:"card_updated",cardId:card.cardId,folderId:card.folderId});
+      }
+    },
+    onBoardMoveCommitted: async ({ sessionIds }) => {
       if (!emitBoardYjsSessionCatalogDelta) {
         throw new Error("Board/Yjs catalog delta emitter is not initialized");
       }
-      await emitBoardYjsSessionCatalogDelta(sessionId);
+      await emitBoardYjsSessionCatalogDelta(sessionIds);
     },
   });
   const sessionDeletionService = new SessionDeletionService({
@@ -423,11 +429,11 @@ export async function createLiveProductionApplication(
       }),
     },
   });
-  emitBoardYjsSessionCatalogDelta = async (sessionId) =>
+  emitBoardYjsSessionCatalogDelta = async (sessionIds) =>
     await broadcastTargetedSessionCatalogDelta(
       dbCatalogRepository.folderRouteProvider,
       runtimeServices.sessionBroadcaster,
-      [sessionId],
+      sessionIds,
     );
   publishReconciledSessionUpdate = (update) => {
     const message = {

@@ -12,11 +12,10 @@ import {
   type MouseEvent,
 } from "react";
 import {
-  SessionContextMenu,
+  useSessionMenu,
   SessionReviewAcknowledgeError,
   acknowledgeSessionReview,
   useGlassSurface,
-  type SessionContextMenuState,
   type SessionReviewAcknowledgeResult,
   type CatalogBoardItem,
   type CatalogFolder,
@@ -71,18 +70,12 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
    ])), [boardItems, folders, sessions, cards]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
+  const openSessionMenu = useSessionMenu();
   useImperativeHandle(forwardedRef, () => surfaceRef.current as HTMLElement);
 
   const openContextMenu = useCallback((session: SessionSummary, event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      sessionId: session.agentSessionId,
-    });
-  }, []);
+    openSessionMenu(session.agentSessionId,event);
+  }, [openSessionMenu]);
 
   const acknowledge = useCallback(async (session: SessionSummary) => {
     if (pendingRef.current) return;
@@ -153,14 +146,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
         />
         {error ? <p className="v3-session-panel-error" role="alert">{error}</p> : null}
       </div>
-      <SessionContextMenu
-        contextMenu={contextMenu}
-        onClose={() => setContextMenu(null)}
-        onRenameSession={onRenameSession}
-        onDeleteSessions={onDeleteSessions}
-        getSessionName={(sessionId) => sessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? ""}
-        resolveSessionIds={(sessionId) => [sessionId]}
-      />
+
     </aside>
   );
 });

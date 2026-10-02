@@ -1,3 +1,4 @@
+import { SessionMenuProvider } from "./SessionMenuProvider";
 import { CardWorkspace } from "./CardWorkspace";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -547,6 +548,8 @@ function V3DashboardContent() {
     ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title)
     : Promise.reject(new Error("연결된 폴더가 없습니다"));
   return (
+    <SessionMenuProvider sessions={sessions} onRename={plannerActions.renameSession}
+      onDelete={plannerActions.deleteSessions} onMove={plannerActions.moveSession} onCreated={sessionPanel.openSession}>
     <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} data-mobile-project-open={selectedFolderId ? "true" : "false"} style={shellStyle}>
       <WallpaperLayer />
       <LiquidGlassCanvas />
@@ -718,5 +721,6 @@ function V3DashboardContent() {
       <V3SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} onOpenFolder={(folderId) => { const folder = catalog?.folders.find((candidate) => candidate.id === folderId); if (folder) void selectFolder(folder); }} />
       <V3Toast message={toast} />
     </div>
+    </SessionMenuProvider>
   );
 }

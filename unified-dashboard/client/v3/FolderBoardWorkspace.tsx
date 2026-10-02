@@ -5,11 +5,10 @@ import {
   DashboardIconCap,
   DragHandle,
   MarkdownDocumentPanel,
-  SessionContextMenu,
+  useSessionMenu,
   useDashboardStore,
   type CatalogBoardItem,
   type CatalogFolder,
-  type SessionContextMenuState,
   type SessionReviewAcknowledgeResult,
   type SessionProviderConnectionStatus,
   type SessionSummary,
@@ -23,9 +22,7 @@ import type { PlannerFolder } from "./planner-data";
 import { buildRunTree, type RunSessionLoadState } from "./folder-workspace-run-model";
 import { buildSuccessionSessionOptions, latestFolderRun } from "./session-succession-model";
 import { SessionSuccessionModal } from "./SessionSuccessionModal";
-import { buildFolderSessionExtraActions } from "./context-menu-model";
 import { getRunSessionRenamePrefill } from "./FolderSessionHistory";
-import { FolderMoveDialog } from "./FolderMoveDialog";
 import type { FolderMoveTarget } from "./folder-move-targets";
 import { useFolderSessionContext } from "./use-folder-session-context";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
@@ -154,9 +151,8 @@ export function FolderBoardWorkspace({
   // 🔴30: 세션 행 우클릭 컨텍스트 메뉴 상태. 폴더 패널(FolderSessionHistory)과 동일한 공통
   // SessionContextMenu·승계 모달·이동 다이얼로그를 재사용한다(테마·포털은 base-ui Menu가
   // 이미 text-foreground를 상속하므로 🔴29 래퍼가 불필요하다).
-  const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
+  const openSessionMenu = useSessionMenu();
   const [targetedSuccessionId, setTargetedSuccessionId] = useState<string | null>(null);
-  const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
   const moveApi = useMemo(() => createPageApiClient(), []);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
 
@@ -424,9 +420,7 @@ export function FolderBoardWorkspace({
   };
   // 🔴30: 세션 행 우클릭 → 공통 SessionContextMenu를 마우스 좌표에 띄운다(FolderSessionHistory와 동일).
   const openSessionContextMenu = (session: SessionSummary, event: ReactMouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setSessionContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.agentSessionId });
+    openSessionMenu(session.agentSessionId,event);
   };
   const handleBoardItemsChanged = useCallback((items: readonly CatalogBoardItem[]) => {
     setBoardItems(items);
@@ -611,38 +605,8 @@ export function FolderBoardWorkspace({
 
       {/* 🔴30: 세션 행 우클릭 메뉴 — 복사·이어서 새 세션·이름 변경·다른 폴더로 이동·삭제.
           폴더 패널(FolderSessionHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다. */}
-      <SessionContextMenu
-        contextMenu={sessionContextMenu}
-        onClose={() => setSessionContextMenu(null)}
-        onRenameSession={onRenameSession}
-        onDeleteSessions={onDeleteSessions}
-        getSessionName={(sessionId) => getRunSessionRenamePrefill(sessions, sessionId)}
-        resolveSessionIds={(sessionId) => [sessionId]}
-        extraActions={buildFolderSessionExtraActions({
-          continueFromSession: () => {
-            if (!sessionContextMenu) return;
-            setTargetedSuccessionId(sessionContextMenu.sessionId);
-            setSessionContextMenu(null);
-            setSuccessionOpen(true);
-          },
-          moveToFolder: () => {
-            if (!sessionContextMenu) return;
-            setMoveSessionId(sessionContextMenu.sessionId);
-            setSessionContextMenu(null);
-          },
-        })}
-      />
-      <FolderMoveDialog
-        api={moveApi}
-        currentFolderId={task.folderId}
-        defaultTargets={folderMoveTargets}
-        open={moveSessionId !== null}
-        onClose={() => setMoveSessionId(null)}
-        onMove={async (target) => {
-          if (!moveSessionId) return;
-          await onMoveSession(moveSessionId, target);
-        }}
-      />
+
+
     </div>
   );
 }

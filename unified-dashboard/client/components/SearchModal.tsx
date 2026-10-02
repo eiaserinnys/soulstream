@@ -1,3 +1,4 @@
+import { useSessionMenu } from "@seosoyoung/soul-ui";
 /**
  * SearchModal - 세션 기록 BM25 전문 검색 모달 (unified-dashboard)
  *
@@ -116,9 +117,11 @@ function SearchResultRow({
       ? searchEventTypeLabel(result.event_type)
       : SEARCH_MATCH_SOURCE_LABELS[result.match_source];
 
+  const openMenu = useSessionMenu();
   return (
     <button
       onClick={onClick}
+      onContextMenu={event=>openMenu(result.session_id,event)}
       data-match-source={result.match_source}
       className={cn(
         "w-full text-left px-3 py-2.5 rounded-lg border transition-colors",
@@ -167,9 +170,11 @@ function SearchSessionResultRow({
   result: SearchSessionResult;
   onClick: () => void;
 }) {
+  const openMenu = useSessionMenu();
   return (
     <button
       onClick={onClick}
+      onContextMenu={event=>openMenu(result.session_id,event)}
       data-testid="session-search-result"
       data-session-id={result.session_id}
       className={cn(

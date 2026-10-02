@@ -76,6 +76,15 @@ describe("SessionContextMenu", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps the complete session action set visible when capabilities are unavailable", async () => {
+    ({ container, root } = await renderMenu());
+    for (const label of ["이 세션을 이어서 시작하기", "이름 변경", "다른 폴더로 이동", "삭제", "재개 예약 취소"]) {
+      const item = findMenuItem(label);
+      expect(item.getAttribute("aria-disabled") === "true" || item.hasAttribute("disabled")).toBe(true);
+      expect(item.title).not.toBe("");
+    }
+  });
+
   it("shows continue-session action and calls the injected callback", async () => {
     const onContinueSession = vi.fn().mockResolvedValue(undefined);
     ({ container, root } = await renderMenu({

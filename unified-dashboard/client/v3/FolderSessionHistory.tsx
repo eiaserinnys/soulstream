@@ -1,8 +1,7 @@
 import { useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   DashboardIconCap,
-  SessionContextMenu,
-  type SessionContextMenuState,
+  useSessionMenu,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { ChevronsDown, Plus } from "lucide-react";
@@ -21,14 +20,12 @@ import type { PageSessionDefaults } from "./folder-workspace-page-api";
 import {
   type FolderMoveTarget,
 } from "./folder-move-targets";
-import { FolderMoveDialog } from "./FolderMoveDialog";
 import {
   SessionSuccessionModal,
   type SuccessionContextItem,
   type SuccessionDocumentOption,
 } from "./SessionSuccessionModal";
 import { SessionRunList } from "./SessionRunList";
-import { buildFolderSessionExtraActions } from "./context-menu-model";
 import "./v3-run-history.css";
 
 export function FolderSessionHistory({
@@ -102,8 +99,7 @@ export function FolderSessionHistory({
   );
   const [successionOpen, setSuccessionOpen] = useState(false);
   const [targetedSuccessionId, setTargetedSuccessionId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
-  const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
+  const openSessionMenu = useSessionMenu();
   const targetedSuccession = targetedSuccessionId
     ? sessions.find((session) => session.agentSessionId === targetedSuccessionId) ?? null
     : currentSession;
@@ -115,9 +111,7 @@ export function FolderSessionHistory({
   };
 
   const openRunContextMenu = (session: SessionSummary, event: MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.agentSessionId });
+    openSessionMenu(session.agentSessionId,event);
   };
 
   return (
@@ -158,38 +152,8 @@ export function FolderSessionHistory({
           onCreated={onSessionCreated}
         />
       ) : null}
-      <SessionContextMenu
-        contextMenu={contextMenu}
-        onClose={() => setContextMenu(null)}
-        onRenameSession={onRenameSession}
-        onDeleteSessions={onDeleteSessions}
-        getSessionName={(sessionId) => getRunSessionRenamePrefill(sessions, sessionId)}
-        resolveSessionIds={(sessionId) => [sessionId]}
-        extraActions={buildFolderSessionExtraActions({
-          continueFromSession: () => {
-            if (!contextMenu) return;
-            setTargetedSuccessionId(contextMenu.sessionId);
-            setContextMenu(null);
-            setSuccessionOpen(true);
-          },
-          moveToFolder: () => {
-            if (!contextMenu) return;
-            setMoveSessionId(contextMenu.sessionId);
-            setContextMenu(null);
-          },
-        })}
-      />
-      <FolderMoveDialog
-        api={api}
-        currentFolderId={folderId}
-        defaultTargets={moveTargets}
-        open={moveSessionId !== null}
-        onClose={() => setMoveSessionId(null)}
-        onMove={async (target) => {
-          if (!moveSessionId) return;
-          await onMoveSession(moveSessionId, target);
-        }}
-      />
+
+
     </section>
   );
 }

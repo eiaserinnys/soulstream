@@ -29,6 +29,7 @@ export type SessionEventCard = {
 };
 
 export type MoveSessionsResult = {
+  sessionIds?: readonly string[];
   count?: number;
 };
 
@@ -47,7 +48,7 @@ export type SessionCatalogProvider = {
     sessionId: string,
     update: SessionCatalogUpdateInput,
     callerInfo?: SessionCatalogCallerInfo,
-  ) => Promise<void>;
+  ) => Promise<void | MoveSessionsResult>;
   deleteSession: (
     sessionId: string,
     callerInfo?: SessionCatalogCallerInfo,

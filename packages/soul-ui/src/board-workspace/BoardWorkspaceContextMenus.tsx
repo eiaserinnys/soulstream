@@ -15,7 +15,7 @@ import { MarkdownDeleteDialog } from "../components/MarkdownDeleteDialog";
 import { FolderDialog } from "../components/FolderDialog";
 import { FolderContextMenu, type FolderContextMenuTarget } from "../components/FolderContextMenu";
 import { FolderSettingsDialog } from "../components/FolderSettingsDialog";
-import { SessionContextMenu, type SessionContextMenuExtraAction } from "../components/SessionContextMenu";
+import { SessionMenuTrigger } from "../components/SessionMenuOwner";
 import type { BoardWorkspaceItem } from "./board-workspace-items";
 import type { BoardYjsRuntime } from "./board-yjs-client";
 
@@ -192,14 +192,6 @@ export function BoardWorkspaceContextMenus({
   };
   const availableFolderMoveTargets = folderMoveTargets.filter((target) => target.id !== boardContainer?.id);
 
-  const moveSessionActions: SessionContextMenuExtraAction[] =
-    movableContextMenu?.item.type === "session" && canMoveBoardItem
-      ? [{
-          label: "다른 폴더로 이동...",
-          onClick: () => openMoveBoardItemTarget(movableContextMenu.item),
-        }]
-      : [];
-
   function openMoveBoardItemTarget(item: MovableBoardWorkspaceItem) {
     if (!onMoveBoardItemToFolder || !boardContainer || !resolvedBoardFolderId) return;
     onCloseCardContextMenu();
@@ -370,7 +362,7 @@ export function BoardWorkspaceContextMenus({
         </div>
       )}
 
-      <SessionContextMenu
+      <SessionMenuTrigger
         contextMenu={
           cardContextMenu?.item.type === "session"
             ? {
@@ -381,16 +373,6 @@ export function BoardWorkspaceContextMenus({
             : null
         }
         onClose={onCloseCardContextMenu}
-        onRenameSession={onRenameSession}
-        onMoveSessions={onMoveSessions}
-        onDeleteSessions={onDeleteSessions}
-        onContinueSession={onContinueSession}
-        getContinueSessionDisabledReason={getContinueSessionDisabledReason}
-        getSessionName={(sessionId) =>
-          displaySessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? ""
-        }
-        extraActions={moveSessionActions}
-        resolveSessionIds={(sessionId) => [sessionId]}
       />
 
       <FolderContextMenu
