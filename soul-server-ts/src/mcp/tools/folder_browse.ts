@@ -1,20 +1,17 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import { boardTools } from "@soulstream/mcp-contract";
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
 
-import { FOLDER_SEARCH_SCAN_LIMIT, type FolderBrowseItem } from "../../catalog/folder_browse_service.js";
+import { type FolderBrowseItem } from "../../catalog/folder_browse_service.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
 export function registerFolderSearchTools(server: McpServer, runtime: McpRuntime): void {
-  server.registerTool("search_folder_items", {
-    description: `한 폴더 안에서 최근 갱신된 최대 ${FOLDER_SEARCH_SCAN_LIMIT}개 세션과 마크다운의 표시명·제목·본문을 검색한다. truncated=true면 더 오래된 항목은 검색되지 않았다.`,
-    inputSchema: {
-      folder_id: z.string().min(1),
-      query: z.string().min(1),
-      limit: z.number().int().positive().default(20),
-      include_archived: z.boolean().default(false),
-    },
-  }, async ({ folder_id, query, limit, include_archived }) => {
+  registerOrchestratorTools(server, runtime, [boardTools.search_folder_items]);
+}
+
+export function registerFolderSearchToolsLegacy(server: McpServer, runtime: McpRuntime): void {
+  server.registerTool("search_folder_items", boardTools.search_folder_items.config, async ({ folder_id, query, limit, include_archived }) => {
     try {
       const result = await runtime.catalogService.searchFolderItems({
         folderId: folder_id,

@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { boardTools } from "./board_tools.js";
 import { cardTools } from "./card_tools.js";
 import { folderObjectTools } from "./folder_tools.js";
 
@@ -31,6 +32,7 @@ export interface McpToolDefinition {
 export const mcpTools = {
   ...folderObjectTools,
   ...cardTools,
+  ...boardTools,
 } as const satisfies Record<string, McpToolDefinition>;
 
 export const mcpToolDefinitions = Object.values(mcpTools);

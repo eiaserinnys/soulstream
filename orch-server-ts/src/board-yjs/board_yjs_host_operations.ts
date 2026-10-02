@@ -112,14 +112,17 @@ const schemas = {
   }),
 } as const;
 
+export function getBoardYjsHostOperationSchema(operation: string): z.ZodType | undefined {
+  return schemas[operation as keyof typeof schemas] ?? getBoardProjectionHostOperationSchema(operation);
+}
+
 export async function handleBoardYjsHostOperation(
   request: FastifyRequest,
   reply: FastifyReply,
   operation: string,
   options: BoardYjsHostOperationOptions,
 ): Promise<FastifyReply> {
-  const schema = schemas[operation as keyof typeof schemas]
-    ?? getBoardProjectionHostOperationSchema(operation);
+  const schema = getBoardYjsHostOperationSchema(operation);
   if (schema === undefined) {
     return reply.status(404).send({
       detail: {
@@ -191,7 +194,7 @@ export async function handleBoardYjsHostOperation(
   }
 }
 
-async function dispatchBoardYjsHostOperation(
+export async function dispatchBoardYjsHostOperation(
   operation: string,
   input: unknown,
   options: BoardYjsHostOperationOptions,

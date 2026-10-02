@@ -2,6 +2,9 @@ import type { CallToolResult } from "@soulstream/mcp-contract";
 import type { FolderControlPlaneHostRouteOptions } from "../folders/folder_control_plane_host_route.js";
 import type { CardRouteBodyOptions } from "../cards/card_route_body.js";
 import type { FolderAccess } from "../folders/folder_route_access.js";
+import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_proxy.js";
+import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes.js";
+import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 
 export interface McpCallContext {
   principal: "internal" | "external";
@@ -15,6 +18,12 @@ export interface McpHostOptions {
   environment?: string;
   folders: FolderControlPlaneHostRouteOptions;
   cards: CardRouteBodyOptions & { resolveAccess: () => FolderAccess | Promise<FolderAccess> };
+  board: {
+    host: BoardYjsHostProxyRouteOptions;
+    getSession: (id: string) => Promise<{ folder_id: string | null } | null>;
+    listAgentProfiles: NodeAgentProfileProvider["listAgentProfiles"];
+    broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
+  };
 }
 
 export type McpToolHandler = (

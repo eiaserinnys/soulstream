@@ -845,6 +845,12 @@ export function buildProductionRouteOptions(
       mcpHostRoutes: {
         authBearerToken: config.authBearerToken,
         cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail },
+        board: {
+          host: providers.runtime.boardYjsHostProxyRoutes,
+          getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
+          listAgentProfiles: nodeId => providers.nodeAgentProfileRoutes.provider.listAgentProfiles(nodeId),
+          broadcaster: runtime.sessionBroadcaster,
+        },
         folders: {
           serviceProvider: folderControlPlaneServiceProvider,
           cardServiceProvider,

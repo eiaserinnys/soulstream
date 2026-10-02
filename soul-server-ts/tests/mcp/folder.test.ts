@@ -130,22 +130,17 @@ describe("folder and checklist MCP contract", () => {
   });
 
   it("moves board items and creates markdown with one folder_id", async () => {
-    const moveBoardItemToFolder = vi.fn(async () => ({
-      boardItem: { id: "markdown:doc-1", folderId: "folder-1" }, enrolled: false,
-    }));
-    const createMarkdownDocument = vi.fn(async () => ({ document: { id: "doc-2" }, boardItem: { id: "markdown:doc-2" } }));
-    const client = await clientFor(runtime(undefined, { moveBoardItemToFolder, createMarkdownDocument }));
-    const moved = await client.callTool({ name: "move_board_item_to_folder", arguments: {
-      board_item_id: "markdown:doc-1", folder_id: "folder-1", idempotency_key: "move-1",
-    } });
-    const created = await client.callTool({ name: "create_markdown_document", arguments: {
-      folder_id: "folder-1", title: "Note", body: "Text",
-    } });
-    expect(moved.isError).not.toBe(true);
-    expect(created.isError).not.toBe(true);
-    expect(moveBoardItemToFolder).toHaveBeenCalledWith({
-      boardItemId: "markdown:doc-1", folderId: "folder-1", idempotencyKey: "move-1",
-    });
-    expect(createMarkdownDocument).toHaveBeenCalledWith(expect.objectContaining({ folderId: "folder-1", title: "Note", body: "Text" }));
+    const forwarded = vi.spyOn(persistenceHostTransport, "fetchOrchResponse").mockImplementation(async () =>
+      new Response(JSON.stringify(jsonResult({ ok: true })), { status: 200 }));
+    const client = await clientFor(runtime());
+    for (const [name, args] of [
+      ["move_board_item_to_folder", { board_item_id: "markdown:doc-1", folder_id: "folder-1", idempotency_key: "move-1" }],
+      ["create_markdown_document", { folder_id: "folder-1", title: "Note", body: "Text" }],
+    ] as const) {
+      const result = await client.callTool({ name, arguments: args });
+      expect(result.isError).not.toBe(true);
+      expect(forwarded.mock.calls.at(-1)?.[2]).toBe(`/api/mcp/host/${name}`);
+      expect((forwarded.mock.calls.at(-1)?.[3] as { args: unknown }).args).toEqual(args);
+    }
   });
 });

@@ -2,11 +2,13 @@ import { z } from "zod";
 import { mcpToolDefinitions, errorResult, type McpToolName } from "@soulstream/mcp-contract";
 import type { McpCallContext, McpHostOptions, McpToolHandler } from "./types.js";
 import { folderObjectHandlers } from "./folder_object_handlers.js";
+import { boardHandlers } from "./board_handlers.js";
 import { cardHandlers } from "./card_handlers.js";
 
 export const mcpToolHandlers = {
   ...folderObjectHandlers,
   ...cardHandlers,
+  ...boardHandlers,
 } satisfies Record<McpToolName, McpToolHandler>;
 
 export function findMcpTool(name: string) {
