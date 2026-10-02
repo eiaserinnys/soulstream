@@ -29,11 +29,11 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
  const changeId = useRef(0);
  const stars = useFolderPickerStars(folderOpen,folders);
  const fileUploadUrl = selection.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(selection.nodeId)}` : "";
- const {files,isUploading,addFiles,removeFile,resetLocal} = useFileUpload({uploadUrl:fileUploadUrl,sessionId:uploadSessionId,folderId:selection.folderId});
+ const {files,isReady,uploadedPaths,addFiles,removeFile,resetLocal} = useFileUpload({uploadUrl:fileUploadUrl,sessionId:uploadSessionId,folderId:selection.folderId});
  const attachFiles = (incoming:FileList|File[]) => {
   addFiles(incoming);
  };
- const canSubmit = !pending && modelValid && !isUploading && !files.some(f=>f.status==="error") && Boolean(request.trim()&&selection.folderId&&selection.nodeId&&selection.agentId);
+ const canSubmit = !pending && modelValid && isReady && Boolean(request.trim()&&selection.folderId&&selection.nodeId&&selection.agentId);
  useEffect(() => {localStorage.setItem(storageKey,JSON.stringify(selection));},[selection]);
  const selectFolder = async (folder:CatalogFolder) => {
   const id = ++changeId.current;
@@ -42,10 +42,6 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
   try {
    const defaults = await fetchPageSessionDefaults(folder.projectPageId);
    if (defaults && id===changeId.current) {
-    if (files.length && defaults.nodeId && defaults.nodeId!==selection.nodeId) {
-     setError("첨부를 제거한 뒤 노드를 바꿔 주세요.");
-     return;
-    }
     setSelection(s=>({...s,nodeId:defaults.nodeId??s.nodeId,agentId:defaults.agentId??s.agentId,modelPreset:defaults.modelPreset??s.modelPreset}));
    }
   } catch (e) {setError(String(e));}
@@ -54,7 +50,7 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
   if (!canSubmit) return;
   const submittedKey = draftKey, submittedText = request;
   setPending(true);setError(null);
-  const attachmentPaths = files.flatMap(f=>f.path?[f.path]:[]);
+  const attachmentPaths = uploadedPaths;
   try {
    await createDashboardSession({queryClient,addOptimisticSession:useDashboardStore.getState().addOptimisticSession,
     initialInstruction:appendAttachmentPathNotes(request.trim(),attachmentPaths),attachmentPaths,
@@ -72,6 +68,6 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
   executionLabel={`${agent?.id===selection.agentId ? agent.name : selection.agentId||"에이전트"} · ${selection.nodeId||"노드"} · ${model?.id===selection.modelPreset ? model.label : selection.modelPreset||"모델"}`}
   folderOpen={folderOpen} onFolderOpenChange={setFolderOpen} executionOpen={executionOpen} onExecutionOpenChange={setExecutionOpen} error={error||files.find(f=>f.status==="error")?.errorMessage}
   folderPicker={<FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={selection.folderId} disabledFolderIds={new Set(["claude","llm"])} pending={pending} onSelect={f=>void selectFolder(f)}/>}
-  executionPicker={<CardExecutionPicker selection={selection} onChange={next=>{if(files.length&&next.nodeId!==selection.nodeId){setError("첨부를 제거한 뒤 노드를 바꿔 주세요.");return;}changeId.current++;setSelection(next);}}
+  executionPicker={<CardExecutionPicker selection={selection} onChange={next=>{changeId.current++;setSelection(next);}}
    onAgentInfoChange={setAgent} onModelPresetInfoChange={setModel} onValidityChange={setModelValid} disabled={pending} onError={setError}/>}/>;
 }

@@ -26,7 +26,7 @@ function paste(files: File[]) {
 describe("production input clipboard events", () => {
   it.each(["comment", "chat"])("uploads a pasted image in the %s input and preserves text paste", async surface => {
     await act(() => root.render(surface === "comment"
-      ? <CardCommentInput nodeId="A" sessionId="session-1" pending={false} onSend={async () => true}/>
+      ? <CardCommentInput cardId="paste-card" nodeId="A" sessionId="session-1" pending={false} onSend={async () => true}/>
       : <ChatInput fileUploadUrl="/api/attachments/sessions?nodeId=A"/>));
     let textPaste!: Event; await act(() => { textPaste = paste([]); }); expect(textPaste.defaultPrevented).toBe(false);
     const image = new File(["image"], "image.png", { type: "image/png" });

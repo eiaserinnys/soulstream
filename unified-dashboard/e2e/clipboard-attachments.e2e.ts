@@ -28,6 +28,7 @@ async function setup(page: Page, width: number) {
     if (url.pathname === "/api/auth/config") return json({ authEnabled: true, devModeEnabled: false });
     if (url.pathname === "/api/auth/status") return json({ authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } });
     if (url.pathname === "/api/nodes/qa-node/agents") return json({ agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex", default_preset: "qa-standard", portraitUrl: null }] });
+    if (url.pathname === "/api/pages/project-ops/session-defaults") return json({ nodeId: "qa-node", agentId: "roselin_codex", modelPreset: "qa-standard" });
     if (url.pathname === "/api/attachments/sessions") {
       const node = url.searchParams.get("nodeId")!;
       const body = request.postDataBuffer()!.toString();
@@ -63,7 +64,7 @@ async function folder(page: Page, width: number) {
 }
 
 for (const width of [1440, 390]) {
-  test(`main paste preserves file selection preview at ${width}`, async ({ page }) => {
+  for (const source of ["picker", "folder"]) test(`main ${source} A→B preserves preview and draft at ${width}`, async ({ page }) => {
     const state = await setup(page, width); await page.goto("/");
     const composer = page.locator(".v3-card-handoff"), input = composer.locator("textarea");
     await expect(input).toBeVisible();
@@ -84,9 +85,33 @@ for (const width of [1440, 390]) {
     await input.fill("이미지를 확인합니다");
     await expect(composer.getByTestId("send-button")).toBeEnabled();
     await capture(page, `main-pasted-${width}`);
+    state.hold();
+    if (source === "picker") {
+      await page.getByRole("button", { name: "실행 조합 선택", exact: true }).click();
+      const picker = page.locator(".v3-card-execution-picker:visible");
+      await picker.locator('section[aria-label="노드"]').getByRole("button", { name: "qa-node", exact: true }).click();
+      await page.keyboard.press("Escape");
+    } else {
+      await composer.locator(".v3-card-handoff-folder").click();
+      const picker = page.locator(".v3-card-folder-picker:visible");
+      await picker.getByRole("tab", { name: "전체", exact: true }).click();
+      await picker.getByLabel("이동할 폴더 검색", { exact: true }).fill("Soulstream 운영");
+      await picker.getByRole("button", { name: "Soulstream 운영", exact: true }).click();
+    }
+    await expect.poll(() => state.uploads.filter(upload => upload.node === "qa-node").length).toBe(1);
+    await expect(composer.getByTestId("send-button")).toBeDisabled(); expect(state.creates).toHaveLength(0);
+    await expect(input).toHaveValue("이미지를 확인합니다");
+    // The same retained File keeps the clipboard filename across the destination change.
+    const pastedA = state.uploads[1].body.match(/filename="([^"]+)"/)![1];
+    expect(state.uploads[2].body).toContain(`filename="${pastedA}"`);
+    state.release(); await expect(composer.getByTestId("send-button")).toBeEnabled();
+    await capture(page, `main-${source}-B-${width}`);
     await composer.getByTestId("send-button").click();
     await expect.poll(() => state.creates.length).toBe(1);
-    expect(state.creates[0]).toMatchObject({ nodeId: "eiaserinnys", attachmentPaths: ["/eiaserinnys/clipboard.png"] });
+    expect(state.creates[0]).toMatchObject({ nodeId: "qa-node", folderId: source === "folder" ? "folder-ops" : "folder-amber", attachmentPaths: ["/qa-node/clipboard.png"] });
+    expect(state.creates[0].initial_instruction).not.toContain("/eiaserinnys/clipboard.png");
+    await expect(input).toHaveValue("");
+    writeFileSync(path.join(output, `main-${source}-${width}.json`), JSON.stringify({ creates: state.creates, uploads: state.uploads.map(upload => upload.node) }, null, 2));
   });
   test(`new conversation paste and A→B at ${width}`, async ({ page }) => {
     const state = await setup(page, width); await page.goto("/"); await folder(page, width);

@@ -15,7 +15,7 @@ vi.mock("@seosoyoung/soul-ui", async original => ({
 const createSession=vi.hoisted(()=>vi.fn().mockResolvedValue({agentSessionId:"new"}));
 vi.mock("../lib/session-create",()=>({createDashboardSession:createSession}));
 vi.mock("@tanstack/react-query",()=>({useQueryClient:()=>({})}));
-vi.mock("@seosoyoung/soul-ui/hooks/useFileUpload",()=>({useFileUpload:()=>({files:[],isUploading:false,addFiles:vi.fn(),removeFile:vi.fn(),resetLocal:vi.fn()})}));
+vi.mock("@seosoyoung/soul-ui/hooks/useFileUpload",()=>({useFileUpload:()=>({files:[],uploadedPaths:[],isReady:true,isUploading:false,addFiles:vi.fn(),removeFile:vi.fn(),resetLocal:vi.fn()})}));
 vi.mock("./FolderPicker",()=>({FolderPicker:({folders,onSelect}:any)=><button onClick={()=>onSelect(folders[0])}>다음 폴더</button>}));
 vi.mock("./use-folder-picker-stars",()=>({useFolderPickerStars:()=>({folderIds:[]})}));
 vi.mock("./CardExecutionPicker",()=>({CardExecutionPicker:({selection,onChange}:any)=><button onClick={()=>onChange({...selection,nodeId:"next-node"})}>다음 노드</button>}));
