@@ -25,13 +25,18 @@ describe("PR-CL v3 visual system contract", () => {
     expect(css).toContain('font-family: "Pretendard Variable", Pretendard');
   });
 
-  it("fixes the card grids, section rhythm, and semantic progress roles", () => {
+  it("uses the registered shared card row, section rhythm, and semantic progress roles", () => {
     const css = read("./v3-visual-system.css") + read("./v3-project-star.css");
+    const cardRow = read("./CardRow.tsx");
+    const componentReview = read("./ComponentsReviewPage.tsx");
+    const runRows = read("./v3-run-history.css");
 
     expect(css).toMatch(/\.v3-task-list[^{]*\{[^}]*gap:\s*var\(--v3-space-1\)/s);
     expect(css).toMatch(/\.v3-session-list[^{]*\{[^}]*gap:\s*var\(--v3-space-1\)/s);
-    expect(css).toContain('grid-template-columns: minmax(0, 1fr) var(--v3-task-state-column) var(--v3-action-size)');
-    expect(read('./v3-run-history.css')).toContain('grid-template-columns: auto minmax(0, 1fr) fit-content(40%)');
+    expect(componentReview).toContain('name="CardRowView / RunRowFrame"');
+    expect(cardRow).toContain('<RunRowFrame variant="card"');
+    expect(runRows).toMatch(/\.v3-run-open\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) fit-content\(30%\)/s);
+    expect(runRows).toMatch(/\.v3-run-row\[data-has-actions\]\s+\.v3-run-open\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) fit-content\(30%\) auto/s);
     expect(css).toContain('grid-template-columns: var(--v3-tree-toggle-column) var(--v3-tree-drag-column) var(--v3-tree-icon-column) minmax(0, 1fr)');
     expect(css).toContain('padding-left: calc(var(--v3-project-depth, 0) * var(--v3-tree-indent-step))');
     expect(css).toMatch(/\.v3-progress > i[^{]*\{[^}]*background:\s*var\(--v3-accent\)/s);
@@ -39,12 +44,12 @@ describe("PR-CL v3 visual system contract", () => {
     expect(css).toMatch(/\.v3-progress\[data-complete="true"\] > i[^{]*\{[^}]*background:\s*var\(--v3-progress-complete\)/s);
   });
 
-  it("defines three glass densities, the darker detail surface, and responsive exits", () => {
+  it("defines shared glass surfaces, the darker detail surface, and responsive exits", () => {
     const css = read("./v3-visual-system.css");
 
     expect(css).toContain('--v3-glass-panel: color-mix(in srgb, var(--background) 16%, transparent)');
     expect(css).toContain('--v3-glass-card: color-mix(in srgb, var(--background) 34%, transparent)');
-    expect(css).toContain('--v3-glass-dense: color-mix(in srgb, var(--background) 48%, transparent)');
+    expect(css).toContain('--v3-glass-dense: var(--control-surface)');
     expect(css).toContain('--v3-glass-detail: color-mix(in srgb, var(--background) 24%, transparent)');
     expect(css).toContain('@media (max-width: 1180px)');
     expect(css).toContain('@media (max-width: 760px)');
