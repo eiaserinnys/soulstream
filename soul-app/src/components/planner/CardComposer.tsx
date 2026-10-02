@@ -8,7 +8,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
 import { useChatAttachments } from '../../hooks/useChatAttachments';
-import { appendCardAttachments, cardAttachmentUrl } from '../../lib/card-attachments';
+import { cardFiles } from '../../lib/card-files';
 import { ChatComposer } from '../chat/ChatComposer';
 import { AttachmentChips } from '../chat/AttachmentChips';
 import { makeStyles as makeChatStyles } from '../chat/ChatBody.styles';
@@ -38,16 +38,16 @@ function FolderCardComposer({ api, folderId, onCreated }: { api: ApiClient | nul
   const [selecting, setSelecting] = useState(false);
   const { run, pending } = useCardActions(api);
   const [uploadId, setUploadId] = useState(() => Crypto.randomUUID());
-  const mapUploadedPath = React.useCallback((path: string, nodeId: string) => cardAttachmentUrl(settings.serverUrl, nodeId, path), [settings.serverUrl]);
   const attachments = useChatAttachments({ api, sessionId: uploadId, nodeId: value.nodeId ?? settings.nodeId ?? undefined,
-    disabled: pending, mapUploadedPath });
-  const locked = pending || attachments.uploading || !draft.ready;
+    disabled: pending, reuploadOnNodeChange: true });
+  const locked = pending || !attachments.attachmentsReady || !draft.ready;
   const submit = async () => {
     if (!api || !text.trim() || locked) return;
     if (!value.folderId || !value.agentId) { setSelecting(true); return; }
-    const request = appendCardAttachments(text, attachments.attachments.map(({ name, path }) => ({ name, url: path })));
+    const request = text;
     if (await run(() => api.createCard({ folderId: value.folderId, title: request.trim().split('\n')[0], request, queue: true,
-      assignee: { kind: 'agent', agentId: value.agentId }, nodeId: value.nodeId, modelPreset: value.modelPreset, idempotencyKey: cardOperationId() }))) {
+      assignee: { kind: 'agent', agentId: value.agentId }, nodeId: value.nodeId, modelPreset: value.modelPreset,
+      attachments: cardFiles(attachments.attachments), idempotencyKey: cardOperationId() }))) {
       settings.setCardAssignment(settings.serverUrl, value);
       draft.clearIfMatches(text); attachments.clearAttachments(); setUploadId(Crypto.randomUUID()); onCreated?.();
     }
@@ -56,8 +56,8 @@ function FolderCardComposer({ api, folderId, onCreated }: { api: ApiClient | nul
     <PlannerForegroundCard testID="card-composer">
       <ChatComposer input={text} onChangeInput={setText} placeholder="한 줄로 맡기기" inputAccessibilityLabel="맡길 일"
         sendAccessibilityLabel="카드 맡기기" onPickAttachment={attachments.pickAttachment} onSend={() => { void submit(); }}
-        uploading={attachments.uploading} sending={pending} disabled={pending || !api || !draft.ready} sendDisabled={attachments.uploading} voiceControls={null} />
-      <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={locked}
+        uploading={attachments.uploading} sending={pending} disabled={pending || !api || !draft.ready} sendDisabled={!attachments.attachmentsReady} voiceControls={null} />
+      <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={pending}
         styles={chatStyles} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
       <View style={styles.padded}>
         <GlassButton accessibilityLabel="폴더·노드·에이전트·모델 선택" onPress={() => setSelecting(true)} disabled={locked}>

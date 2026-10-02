@@ -87,7 +87,7 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
       {board ? <>
         <View style={styles.card}>{identityContent}</View>
         <View testID={`card-${card.id}-board-body`} style={{ paddingHorizontal: styles.card.paddingHorizontal, paddingBottom: styles.card.paddingVertical, gap: t.uiSpacing.md }}>
-          <CardRequestView request={card.request} />
+          <CardRequestView request={card.request} attachments={card.attachments} />
           {card.latestActivity ? <View style={{ gap: t.uiSpacing.xs }}>
             <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{card.latestActivity.kind === 'report' ? '최신 보고' : '최신 지시'}</Text>
             {card.latestActivity.format === 'html' ? <CardReportView report={{ ...card.latestActivity, id: `${card.id}-activity`, cardId: card.id, title: '' }} />

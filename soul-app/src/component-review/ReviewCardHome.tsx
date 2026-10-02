@@ -16,8 +16,10 @@ export function ReviewCardHome() {
   const folderId = scope === 'folder' ? folders[0].id : undefined;
   const cardDisplay = useCardDisplay(folderId);
   const [selected, setSelected] = useState<string | null>(null);
+  const [created, setCreated] = useState<unknown>(null);
   const api = useMemo(() => createReviewApi('normal', { home: true, emptyReview: example === 'emptyReview', failWrites: example === 'failWrites',
-    completed: example === 'noCompleted' ? 'none' : example === 'onlyCompleted' ? 'only' : undefined }), [example]);
+    completed: example === 'noCompleted' ? 'none' : example === 'onlyCompleted' ? 'only' : undefined,
+    onCreateCard: setCreated }), [example]);
   return <View testID="review-card-home" style={{ flex: 1, gap: t.uiSpacing.sm }}>
     <SettingsSegmentedControl<typeof example> id="card-home-scenario" value={example}
       onChange={(next) => { useCardStore.setState({ rows: {}, details: {} }); setExample(next); }}
@@ -29,5 +31,8 @@ export function ReviewCardHome() {
       : <CardBoardWorkspace key={`${example}:${scope}`} api={api} folderId={folderId}
         cardDisplay={cardDisplay} onOpen={setSelected} />}
     <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>공개 fixture · 길게 눌러 이동 / 상태 메뉴</Text>
+    {created ? <Text testID="review-card-create-result" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>
+      {JSON.stringify(created)}
+    </Text> : null}
   </View>;
 }

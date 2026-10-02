@@ -79,7 +79,7 @@ test('오늘 첨부는 채팅 picker·upload 경로와 세션 생성의 attachme
 
 
 test.each([false, true])('today=%s 입력은 ChatComposer를 쓰고 리턴은 줄바꿈이며 버튼으로만 전송한다', async (today) => {
-  const api = { createCard: jest.fn().mockResolvedValue({ card: cardFixture() }), createSession: jest.fn().mockResolvedValue({ agentSessionId: 'new' }) };
+  const api = { getCard: jest.fn().mockResolvedValue({ card: cardFixture(), reports: [], questions: [], sessions: [] }), createCard: jest.fn().mockResolvedValue({ card: cardFixture() }), createSession: jest.fn().mockResolvedValue({ agentSessionId: 'new' }) };
   const screen = render(<CardComposer today={today} api={api as any} />);
   expect(screen.UNSAFE_getByType(ChatComposer)).toBeTruthy();
   const input = screen.getByTestId('chat-composer-text-input');
@@ -95,16 +95,17 @@ test.each([false, true])('today=%s 입력은 ChatComposer를 쓰고 리턴은 �
     ? { prompt: '첫 줄\n둘째 줄' } : { title: '첫 줄', request: '첫 줄\n둘째 줄' }));
 });
 
-test('폴더 카드 입력도 기존 채팅 첨부 업로드 URL을 요청에 넣고 성공 시 비운다', async () => {
+test('폴더 카드 입력은 원문과 구조화 첨부를 분리하고 성공 시 비운다', async () => {
   jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => { void callback(1); });
   jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValue({ canceled: false, assets: [{ uri: 'file://photo.png', name: '사진.png', mimeType: 'image/png' }] } as any);
-  const api = { uploadAttachment: jest.fn().mockResolvedValue({ path: '/tmp/사진.png' }), createCard: jest.fn().mockResolvedValue({ card: cardFixture() }) };
+  const api = { getCard: jest.fn().mockResolvedValue({ card: cardFixture(), reports: [], questions: [], sessions: [] }), uploadAttachment: jest.fn().mockResolvedValue({ path: '/tmp/사진.png' }), createCard: jest.fn().mockResolvedValue({ card: cardFixture() }) };
   const screen = render(<CardComposer api={api as any} />);
   await act(async () => fireEvent.press(screen.getByLabelText('첨부 추가')));
   expect(api.uploadAttachment).toHaveBeenCalledWith('draft-upload-id', 'node-1', expect.objectContaining({ name: '사진.png' }));
   expect(screen.getByText('사진.png')).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('맡길 일'), '첨부를 봐주세요');
   await act(async () => fireEvent.press(screen.getByLabelText('카드 맡기기')));
-  expect(api.createCard).toHaveBeenCalledWith(expect.objectContaining({ title: '첨부를 봐주세요', request: expect.stringContaining('첨부: 사진.png(https://cards.test/api/attachments/files?') }));
+  expect(api.createCard).toHaveBeenCalledWith(expect.objectContaining({ title: '첨부를 봐주세요', request: '첨부를 봐주세요', queue: true,
+    attachments: [{ nodeId: 'node-1', path: '/tmp/사진.png', name: '사진.png', mimeType: 'image/png' }] }));
   expect(screen.queryByText('사진.png')).toBeNull();
 });

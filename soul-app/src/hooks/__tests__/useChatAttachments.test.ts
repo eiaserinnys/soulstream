@@ -1,5 +1,5 @@
 import { ActionSheetIOS, Alert } from 'react-native';
-import { act, renderHook } from '@testing-library/react-native';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useChatAttachments } from '../useChatAttachments';
@@ -14,6 +14,54 @@ jest.mock('expo-image-picker', () => ({
 beforeEach(() => {
   jest.restoreAllMocks();
   jest.clearAllMocks();
+});
+
+test('카드 옵션은 원본과 MIME을 보존하여 노드 변경 시 재업로드하고 실패 경로는 저장 불가다', async () => {
+  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const api = { uploadAttachment: jest.fn().mockResolvedValueOnce({ path: '/a' }).mockResolvedValueOnce({ path: '/b' }).mockRejectedValueOnce(new Error('노드 업로드 실패')) };
+  const file = { uri: 'file://image', name: '원본.png', type: 'image/png' };
+  const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId, reuploadOnNodeChange: true }), { initialProps: { nodeId: 'a' } });
+  await act(async () => result.current.uploadAttachment(file));
+  expect(result.current.attachments[0]).toMatchObject({ path: '/a', nodeId: 'a', mimeType: 'image/png', originalFile: file });
+  rerender({ nodeId: 'b' });
+  await waitFor(() => expect(result.current.attachments[0]).toMatchObject({ path: '/b', nodeId: 'b' }));
+  expect(api.uploadAttachment).toHaveBeenLastCalledWith('draft', 'b', file);
+  rerender({ nodeId: 'c' });
+  await waitFor(() => expect(result.current.uploading).toBe(false));
+  expect(result.current.attachmentsReady).toBe(false);
+  expect(result.current.attachments).toHaveLength(1);
+  expect(result.current.error).toBe('노드 업로드 실패');
+  act(() => result.current.removeAttachment(0));
+  expect(result.current.attachmentsReady).toBe(true);
+});
+
+test('옵션 기본값은 노드를 바꿔도 재업로드하지 않으며 clear 후 옛 응답을 복원하지 않는다', async () => {
+  const pending = deferred<{ path: string }>();
+  const api = { uploadAttachment: jest.fn().mockReturnValue(pending.promise) };
+  const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId }), { initialProps: { nodeId: 'a' } });
+  let uploading!: Promise<void>;
+  act(() => { uploading = result.current.uploadAttachment({ uri: 'file://file', name: '파일' }); });
+  act(() => result.current.clearAttachments());
+  await act(async () => { pending.resolve({ path: '/a' }); await uploading; });
+  expect(result.current.attachments).toEqual([]);
+  await act(async () => result.current.uploadAttachment({ uri: 'file://file', name: '파일' }));
+  rerender({ nodeId: 'b' });
+  expect(api.uploadAttachment).toHaveBeenCalledTimes(2);
+  expect(result.current.attachments[0].mimeType).toBe('application/octet-stream');
+});
+
+test('재업로드 중 제거와 연속 노드 변경은 옛 응답을 현재 목록으로 되살리지 않는다', async () => {
+  const oldNode = deferred<{ path: string }>();
+  const api = { uploadAttachment: jest.fn().mockResolvedValueOnce({ path: '/a' }).mockReturnValueOnce(oldNode.promise).mockResolvedValue({ path: '/c' }) };
+  const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId, reuploadOnNodeChange: true }), { initialProps: { nodeId: 'a' } });
+  await act(async () => result.current.uploadAttachment({ uri: 'file://original', name: '원본' }));
+  rerender({ nodeId: 'b' });
+  rerender({ nodeId: 'c' });
+  await waitFor(() => expect(result.current.attachments[0].nodeId).toBe('c'));
+  act(() => result.current.removeAttachment(0));
+  await act(async () => oldNode.resolve({ path: '/b' }));
+  expect(result.current.attachments).toEqual([]);
+  expect(result.current.attachmentsReady).toBe(true);
 });
 
 test('offline disabled이면 ActionSheet와 direct upload 모두 race-safe no-op이다', async () => {
@@ -242,7 +290,7 @@ test('복원 첨부를 현재 목록 앞에 되돌린다', async () => {
 
   expect(result.current.attachments).toEqual([
     { path: '/old-file.pdf', name: 'old-file.pdf' },
-    { path: '/new-file.png', name: 'new-file.png' },
+    expect.objectContaining({ path: '/new-file.png', name: 'new-file.png', nodeId: 'node-a', mimeType: 'application/octet-stream' }),
   ]);
 });
 

@@ -1,3 +1,5 @@
+// Existing succession state/context flow remains together to preserve its UX;
+// this card change extracts only the shared selection row. Broader splitting is separate work.
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -39,6 +41,7 @@ import { makeStyles as makeChatStyles } from '../chat/ChatBody.styles';
 import { SessionSuccessionErrorBoundary } from './SessionSuccessionErrorBoundary';
 import { SessionSuccessionDiagnosticFallback } from './SessionSuccessionDiagnosticFallback';
 import { GroupedGlassSheet } from './GroupedGlassSheet';
+import { SessionSelectionRow as SelectionRow } from './SessionSelectionRow';
 import { GrowingMultilineInput } from './GrowingMultilineInput';
 import {
   buildPlannerFolderContextItem,
@@ -491,21 +494,6 @@ export function resolveSessionAssignmentDefaults(
     // session alone. Dropping it would rerun the successor at the preset default.
     reasoningEffort: predecessor?.reasoningEffort ?? null,
   };
-}
-
-function SelectionRow({ testID, label, value, onPress, styles }: {
-  testID?: string;
-  label: string;
-  value: string;
-  onPress(): void;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  return (
-    <TouchableOpacity testID={testID} style={styles.selectionRow} onPress={onPress} accessibilityRole="button">
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <Text style={styles.selectionValue} numberOfLines={1}>{value}</Text>
-    </TouchableOpacity>
-  );
 }
 
 function CheckRow({ testID, checked, label, detail, onPress, styles }: {

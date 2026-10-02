@@ -55,7 +55,8 @@ test('생성·완료·반려·대기·빼기·취소·이동·순서·담당·�
   const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(response({ card: cardFixture, folderId: 'folder-1' }));
   const api = createApiClient('https://cards.test');
   await api.createCard({ folderId: 'folder-1', title: '요청', request: '요청', queue: true,
-    assignee: { kind: 'agent', agentId: 'roselin' }, nodeId: 'node-1', modelPreset: 'sol', idempotencyKey: 'create' });
+    assignee: { kind: 'agent', agentId: 'roselin' }, nodeId: 'node-1', modelPreset: 'sol', idempotencyKey: 'create',
+    attachments: [{ nodeId: 'node-1', path: '/uploaded/사진.png', name: '사진.png', mimeType: 'image/png' }] });
   for (const status of ['done', 'running', 'queued', 'todo', 'cancelled'] as const) {
     await api.setCardStatus('card/1', status, 3, `status-${status}`, status === 'running' ? '반려 사유' : undefined);
   }
@@ -65,6 +66,7 @@ test('생성·완료·반려·대기·빼기·취소·이동·순서·담당·�
   await api.answerCardQuestion('card/1', 'question/1', '네', 'answer');
   const calls = fetch.mock.calls.map(([url, init]) => ({ url, method: init?.method, body: JSON.parse(init?.body as string) }));
   expect(calls[0]).toMatchObject({ method: 'POST', body: { queue: true, folderId: 'folder-1', nodeId: 'node-1' } });
+  expect(calls[0].body.attachments).toEqual([{ nodeId: 'node-1', path: '/uploaded/사진.png', name: '사진.png', mimeType: 'image/png' }]);
   expect(calls.slice(1, 6).map((c) => c.body.status)).toEqual(['done', 'running', 'queued', 'todo', 'cancelled']);
   expect(calls[2].body).toEqual({ status: 'running', expectedVersion: 3, idempotencyKey: 'status-running', reason: '반려 사유' });
   expect(calls[6].body).toEqual({ folderId: 'folder-2', expectedVersion: 3, idempotencyKey: 'move' });
