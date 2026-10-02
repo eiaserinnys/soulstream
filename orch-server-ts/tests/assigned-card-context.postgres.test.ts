@@ -18,11 +18,12 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
       ('archive','f','97','보관','비밀','running',TRUE,'owner'),('foreign','f','96','타 담당','비밀','running',FALSE,'other')`;
     await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body,created_at) VALUES ('i1','c14','user','comment','예전',NOW()-INTERVAL '1 minute'),('i2','c14','user','comment','최신 지시',NOW())`;
     await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id) VALUES ('r1','c14','보고','html','<p>최신 보고</p>','owner')`;
+    await h.sql`UPDATE cards SET version=17 WHERE id='c14'`;
     const sql=createBoardYjsSqlAdapter(h.liveSql),tracked=vi.fn(sql);
     const snapshot=await readAssignedCardContext(tracked as unknown as typeof sql,'owner');
     expect(tracked).toHaveBeenCalledTimes(1);
     expect(snapshot.total).toBe(15);expect(snapshot.cards).toHaveLength(12);
-    expect(snapshot.cards).toContainEqual(expect.objectContaining({id:'c14',instruction:'최신 지시',report:' 최신 보고 '}));
+    expect(snapshot.cards).toContainEqual(expect.objectContaining({id:'c14',version:17,instruction:'최신 지시',report:' 최신 보고 '}));
     expect(snapshot.cards.some(c=>['done','cancel','archive','foreign'].includes(c.id))).toBe(false);
     await h.sql`UPDATE cards SET status='done' WHERE id='c14'`;
     const next=await readAssignedCardContext(sql,'owner');expect(next.total).toBe(14);expect(next.cards.some(c=>c.id==='c14')).toBe(false);
