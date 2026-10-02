@@ -5,6 +5,7 @@ import { PostItGrid } from "./PostItCard";
 import type { CardCompletionOption } from "./CardCompletionFilter";
 import { CardBoardDnd, CardBoardItem, CardBoardLane } from "./CardBoardDnd";
 import "./v3-card-board.css";
+import { useBoardPan } from "./use-board-pan";
 
 export const boardColumns = [
   {status:"todo",label:"드래프트"}, {status:"queued",label:"대기"},
@@ -16,8 +17,9 @@ export const boardColumns = [
 export function CardBoard({cards, renderCard, completion, draftAction}: {
   cards: readonly CardRow[]; renderCard(card:CardRow,handle:ReactNode,preview?:boolean):ReactNode; draftAction?:ReactNode; completion?:CardCompletionOption;
 }) {
+  const pan = useBoardPan();
   const visible=cards.filter(card=>!card.archived && card.status!=="cancelled");
-  return <CardBoardDnd cards={visible} renderCard={renderCard}><PostItGrid className="v3-card-board" variant="compact">{boardColumns.map(({status,label})=>{
+  return <CardBoardDnd cards={visible} renderCard={renderCard}><PostItGrid {...pan} className="v3-card-board" variant="compact">{boardColumns.map(({status,label})=>{
     const column=visible.filter(card=>card.status===status).sort((a,b)=>{
       const left=status==="queued"?a.queuePositionKey??"":a.positionKey;
       const right=status==="queued"?b.queuePositionKey??"":b.positionKey;

@@ -20,6 +20,7 @@ import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
 import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSample";
 import { CardBoardSamples } from "./CardBoardSamples";
+import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -102,6 +103,11 @@ export function ComponentsReviewPage() {
                 <div className="v3-run-list">{(["default", "small"] as const).map(size => <RichSessionRow key={size} size={size}
                   nodeOffline session={{ ...reviewSession, agentSessionId: `components-offline-${size}`, displayName: reviewTitle }}
                   onOpen={() => open("오프라인 세션")}/>)}</div>
+              </Sample>
+              <Sample name="RichSessionRow / RunRowFrame" state="운영 패널 폭 · 소속 · 긴 제목과 본문 · 오른쪽 상태와 시간">
+                <div className="v3-run-list" style={{ width: "100%", maxWidth: V3_SESSION_PANEL_DEFAULT_WIDTH_PX }} data-testid="session-row-operating-sample">
+                  <RichSessionRow session={{ ...reviewSession, displayName: reviewTitle }} affiliation={reviewTitle} preview={reviewTitle} onOpen={() => open("운영 폭 세션")}/>
+                </div>
               </Sample>
               <Sample name="CardRowView / RunRowFrame" state="기본 · 여러 항목 · 긴 한국어 제목">
                 <div className="v3-run-list">{[reviewCard.title, reviewTitle].map((label, index) => <CardRowView key={label}

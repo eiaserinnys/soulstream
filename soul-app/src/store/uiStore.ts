@@ -48,6 +48,9 @@ interface UIState {
   settingsVisible: boolean;
   /** iPad 업무 문맥 또는 세션 단독 채팅 슬라이드 오버레이 표시 여부. */
   folderOverlayVisible: boolean;
+  /** Expanded board's native sheet owns the existing detail overlay while mounted. Not persisted. */
+  cardBoardExpanded: boolean;
+  setCardBoardExpanded: (expanded: boolean) => void;
   /** cache miss 조회를 미소속과 구분하는 session→folder resolver 표시 상태. */
   sessionFolderResolution: SessionFolderResolutionState;
   /** Root search intent survives a retryable linked-folder lookup failure. */
@@ -136,6 +139,8 @@ export const useUIStore = create<UIState>()(
       selectedCardId: null,
       settingsVisible: false,
       folderOverlayVisible: false,
+      cardBoardExpanded: false,
+      setCardBoardExpanded: (cardBoardExpanded) => set({ cardBoardExpanded }),
       sessionFolderResolution: null,
       sessionSearchIntentId: null,
       completedSessionSearchIntentId: null,

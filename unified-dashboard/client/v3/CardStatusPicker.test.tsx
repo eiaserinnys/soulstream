@@ -20,7 +20,7 @@ async function render(load=vi.fn().mockResolvedValue(detail()),change=vi.fn().mo
 it("loads only on explicit opens, gates missing reports, and does not mutate the current status",async()=>{
  const d=detail();d.reports=[];const c=await render(vi.fn().mockResolvedValue(d));
  expect(c.load).not.toHaveBeenCalled();await click("카드 상태 변경");expect(c.load).toHaveBeenCalledTimes(1);
- expect(button("검수 대기").disabled).toBe(true);expect(document.body.textContent).toContain("보고가 필요합니다");
+ expect(button("검수 대기").disabled).toBe(true);expect(document.body.textContent).not.toContain("보고가 필요합니다");expect(document.body.textContent).not.toContain("대기: 담당 에이전트");
  await click("드래프트");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
 it("blocks every change with unanswered questions and opens detail only through the explicit action",async()=>{

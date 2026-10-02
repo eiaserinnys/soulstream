@@ -5,10 +5,12 @@ import { Maximize2, X } from "lucide-react";
 import { CardBoard } from "./CardBoard";
 import { CardCompletionFilter } from "./CardCompletionFilter";
 import { CardBoardLayerContext } from "./card-board-layer";
+import { useCardNavigation } from "./card-navigation";
 
 /** One mounted board owns its scope, option and scroll even while expanded. */
 export function CardBoardWorkspace({title,actions,...boardProps}:ComponentProps<typeof CardBoard>&{title:string;actions?:ReactNode}) {
   const [expanded,setExpanded]=useState(false);
+  const detailOpen=useCardNavigation(state=>state.cardId!==null);
   const root=useRef<HTMLDivElement>(null);
   const nestedLayers=useRef(0);
   const layer=useMemo(()=>({claim(){nestedLayers.current++;return ()=>{nestedLayers.current--;};}}),[]);
@@ -39,7 +41,7 @@ export function CardBoardWorkspace({title,actions,...boardProps}:ComponentProps<
     onKeyDown={event=>{
       if(!expanded)return;
       // Popup portals and the sensor own their Escape; only the idle board closes.
-      if(nestedLayers.current)return;
+      if(nestedLayers.current || detailOpen)return;
       if(event.key==="Escape" && !event.defaultPrevented){event.preventDefault();event.stopPropagation();collapse();}
       if(event.key==="Tab"){
         const focusable=[...root.current!.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]')].filter(node=>node.getClientRects().length);

@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
 import { DashboardIconCap, ProfileAvatar, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { Check } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
@@ -18,8 +18,8 @@ export function postItRotation(id: string): number {
 
 export type PostItVariant = "default" | "compact";
 
-export function PostItGrid({ children, className = "", variant = "default" }: { children?: ReactNode; className?: string; variant?: PostItVariant }) {
-  return <div className={`v3-postit-grid${variant === "compact" ? " v3-postit-grid--compact" : ""} ${className}`} style={usePostItScale()}>{children}</div>;
+export function PostItGrid({ children, className = "", variant = "default", ...props }: HTMLAttributes<HTMLDivElement> & { variant?: PostItVariant }) {
+  return <div {...props} className={`v3-postit-grid${variant === "compact" ? " v3-postit-grid--compact" : ""} ${className}`} style={usePostItScale()}>{children}</div>;
 }
 
 /** List data already carries the latest original activity; mounting never loads detail. */

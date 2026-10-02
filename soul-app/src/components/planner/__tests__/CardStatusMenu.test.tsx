@@ -24,3 +24,15 @@ test('menu reason and failure stay visible, successful explicit move closes only
   expect(close).toHaveBeenCalledTimes(1);
   jest.restoreAllMocks();
 });
+
+ test('상태 목록은 이름만 보여주며 보고/질문 제한은 유지한다', async () => {
+  const card = cardFixture({ status: 'todo' });
+  const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }), setCardStatus: jest.fn() };
+  const screen = render(<CardStatusMenu api={api as any} card={card} onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByLabelText('검수 대기로 이동')).toBeTruthy());
+  expect(screen.queryByText(/보고가 필요/)).toBeNull();
+  expect(screen.queryByText(/현재/)).toBeNull();
+  expect(screen.queryByText(/직접 옮길 수 없/)).toBeNull();
+  fireEvent.press(screen.getByLabelText('검수 대기로 이동'));
+  expect(api.setCardStatus).not.toHaveBeenCalled();
+ });

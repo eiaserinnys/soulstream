@@ -1,5 +1,5 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Platform, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import type { ApiClient } from '../../api/client';
 import { useCardList } from '../../hooks/useCardList';
@@ -13,6 +13,8 @@ import { CompletedCardsToggle } from './CompletedCardsToggle';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { CardCreateSheet } from './CardCreateSheet';
 import type { BoardPosition } from '../../lib/card-board-layout';
+import { useUIStore } from '../../store/uiStore';
+import { FolderWorkspaceReadOverlay } from './FolderWorkspaceReadOverlay';
 
 export interface FolderCardDisplay { includeCompleted: boolean; onChange(value: boolean): void; }
 export interface CardBoardWorkspaceHandle { openCreate(): void; openExpanded(): void; }
@@ -27,13 +29,41 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState<BoardPosition | null>(null);
   const position = useRef<BoardPosition>({ x: 0, lanes: {} });
+  const detailVisible = useUIStore(state => state.folderOverlayVisible);
+  const detailFocus = useRef<{ focus(options?: { preventScroll?: boolean }): void; isConnected?: boolean } | null>(null);
+  const nativeDetailFocus = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (!expanded || phone) return;
+    useUIStore.getState().setCardBoardExpanded(true);
+    return () => {
+      useUIStore.getState().closeFolderOverlay();
+      useUIStore.getState().setCardBoardExpanded(false);
+    };
+  }, [Boolean(expanded), folderId, phone]);
+  useEffect(() => {
+    if (!detailVisible && detailFocus.current) {
+      if (detailFocus.current.isConnected) detailFocus.current.focus({ preventScroll: true });
+      detailFocus.current = null;
+    }
+    if (!detailVisible && nativeDetailFocus.current !== null) {
+      AccessibilityInfo.setAccessibilityFocus(nativeDetailFocus.current);
+      nativeDetailFocus.current = null;
+    }
+  }, [detailVisible]);
+  // Changing scope releases the sheet host before rendering the next folder.
+  useEffect(() => { setExpanded(null); }, [folderId]);
   useImperativeHandle(ref, () => ({ openCreate: () => setAdding(true),
     openExpanded: () => setExpanded({ ...position.current, lanes: { ...position.current.lanes } }) }), []);
   const completedCount = cards.filter((card) => card.status === 'done').length;
   const board = (initialPosition?: BoardPosition, expandedBoard = false) => <CardBoard api={api} cards={cards} phone={phone}
     includeCompleted={cardDisplay.includeCompleted} initialPosition={initialPosition}
     onPositionChange={expandedBoard ? undefined : (next) => { position.current = next; }}
-    onOpen={(id) => { if (expandedBoard) setExpanded(null); onOpen(id); }} />;
+    onOpen={(id, target) => {
+      if (expandedBoard && phone) setExpanded(null);
+      if (expandedBoard && !phone && typeof document !== 'undefined') detailFocus.current = document.activeElement as HTMLElement;
+      if (expandedBoard && !phone && Platform.OS !== 'web' && target !== undefined) nativeDetailFocus.current = target;
+      onOpen(id);
+    }} />;
   const heading = <View style={{ paddingHorizontal: phone ? t.cardLayout.padding : 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.sm }}>
     <View style={{ flexGrow: 1 }}><PlannerSectionHeader title={folderId ? '현재 폴더 · 카드' : '전체 · 카드'} /></View>
     <CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted} completedCount={completedCount} onChange={cardDisplay.onChange} />
@@ -53,9 +83,15 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     </View> : null}
     {board()}
     {adding ? <CardCreateSheet api={api} folderId={folderId} onClose={() => setAdding(false)} /> : null}
-    {expanded ? <AppModalSurface visible modalId="modal_card_detail" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => setExpanded(null)}>
+    {expanded ? <AppModalSurface visible modalId="modal_card_detail" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => {
+      if (useUIStore.getState().folderOverlayVisible) useUIStore.getState().closeFolderOverlay();
+      else setExpanded(null);
+    }}>
       <GestureHandlerRootView style={{ flex: 1 }}><View testID="card-board-expanded" style={{ flex: 1, padding: t.cardLayout.padding, gap: t.uiSpacing.md }}>
-        {heading}{board(expanded, true)}
+        <View style={{ flex: 1, gap: t.uiSpacing.md }} pointerEvents={detailVisible ? 'none' : 'auto'} accessibilityElementsHidden={detailVisible} importantForAccessibility={detailVisible ? 'no-hide-descendants' : 'auto'}>
+          {heading}{board(expanded, true)}
+        </View>
+        <FolderWorkspaceReadOverlay host="board" />
       </View></GestureHandlerRootView>
     </AppModalSurface> : null}
   </View>;

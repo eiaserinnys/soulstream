@@ -47,9 +47,8 @@ export function CardStatusMenu({ api, card, initialTarget, onClose }: {
         const problem = cardTransitionProblem(detail, next, needsReason ? reason || '사유 입력 예정' : undefined);
         return <View key={next} style={{ gap: t.uiSpacing.xs }}>
           <GlassButton accessibilityLabel={`${label}로 이동`} disabled={pending || !!problem} onPress={() => { void move(next); }}>
-            <Text style={styles.body}>{label}{detail.card.status === next ? ' · 현재' : ''}</Text>
+            <Text style={styles.body}>{label}</Text>
           </GlassButton>
-          {problem && detail.card.status !== next ? <Text style={styles.body}>{problem}</Text> : null}
         </View>;
       }) : null}
       {target === 'running' && detail?.card.status === 'review' ? <View style={{ gap: t.uiSpacing.sm }}>

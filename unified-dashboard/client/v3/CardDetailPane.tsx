@@ -9,9 +9,11 @@ import { CardSessionHistory } from "./CardSessionHistory";
 import { CardTimeline } from "./CardTimeline";
 import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
+import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 export { cardRequestMarkdown } from "./card-request-markdown";
-export function CardDetailPane({cardId,onClose,onOpenSession}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;focus?:string|null}) {
- const card=useCardStore(s=>s.byId[cardId]);const detail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
+export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;focus?:string|null;sampleDetail?:CardDetail}) {
+ const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
+ const card=sampleDetail?.card??storedCard,detail=sampleDetail??storedDetail;
  const catalog=useDashboardStore(s=>s.catalog);
  const {user}=useAuth();
  const scroll=useRef<HTMLDivElement>(null);
@@ -25,15 +27,17 @@ export function CardDetailPane({cardId,onClose,onOpenSession}: {cardId:string;fo
  const portrait=nodeId&&agentId ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait`:"";
  const agentName=assignee && "agentName" in assignee ? assignee.agentName ?? agentId : agentId;
  const model=assignee && "modelLabel" in assignee ? assignee.modelLabel ?? card?.modelPreset : card?.modelPreset;
- useEffect(()=>{void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId]);
+ useEffect(()=>{if(!sampleDetail)void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId,sampleDetail]);
  useEffect(()=>{if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[cardId,detail]);
  const answer=async(questionId:string,text:string)=>{
+  if(sampleDetail)return;
   setPending(true);
   try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,{answer:text});}
   catch {} finally {setPending(false);}
  };
  const submit=async(comment:string)=>{
   if(!comment.trim()||pending)return false;
+  if(sampleDetail)return true;
   setPending(true);
   try {
    await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey());
@@ -42,6 +46,7 @@ export function CardDetailPane({cardId,onClose,onOpenSession}: {cardId:string;fo
  };
  const complete=async()=>{
   if(!card || card.status!=="review" || pending)return;
+  if(sampleDetail)return;
   setPending(true);
   try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});}
   catch {} finally {setPending(false);}
@@ -51,7 +56,7 @@ export function CardDetailPane({cardId,onClose,onOpenSession}: {cardId:string;fo
   <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
    <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
    <CardStatusChip card={card}/>
-   <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
+   <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{if(!sampleDetail)await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
    <div className="v3-folder-header-actions"><DashboardIconCap label="완료" disabled={pending||card.status!=="review"} onClick={()=>void complete()}><Check className="h-4 w-4"/></DashboardIconCap></div>
   </header>
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}

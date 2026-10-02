@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import type { Session } from '../../../api/types';
 import { usePlannerStore } from '../../../store/plannerStore';
@@ -63,6 +63,7 @@ beforeEach(() => {
   useUIStore.setState({
     selectedFolderPageId: null,
     folderOverlayVisible: false,
+    cardBoardExpanded: false,
     activeSessionId: null,
     focusEventId: null,
     sessionFolderResolution: null,
@@ -130,11 +131,11 @@ test('계약 위반처럼 재시도로 해소되지 않는 오류는 거짓 재�
   expect(screen.queryByTestId('session-task-retry')).toBeNull();
 });
 
-test('업무 오버레이 배경 닫기도 동일 close coordinator를 거친다', () => {
+test('업무 오버레이 배경 닫기도 동일 close coordinator를 거친다', async () => {
   useUIStore.getState().openFolderOverlay('task-1');
   const screen = render(<FolderWorkspaceReadOverlay />);
 
-  fireEvent.press(screen.getByTestId('task-workspace-backdrop-close'));
+  await act(async () => { fireEvent.press(screen.getByTestId('task-workspace-backdrop-close')); });
 
   expect(coordinateFolderWorkspaceClose).toHaveBeenCalledWith('task-1', expect.any(Function));
   expect(useUIStore.getState().folderOverlayVisible).toBe(false);
@@ -184,4 +185,15 @@ test('업무 pane은 overlay 폭의 46%를 쓰되 좁고 넓은 iPad에서 clamp
   expect(resolveFolderPaneWidth(700, metrics)).toBe(340);
   expect(resolveFolderPaneWidth(820, metrics)).toBe(377);
   expect(resolveFolderPaneWidth(920, metrics)).toBe(420);
+});
+
+test('the native board sheet and inline root exclusively host the same overlay', () => {
+  useUIStore.getState().openSessionOverlay('session-only');
+  const screen = render(<><FolderWorkspaceReadOverlay /><FolderWorkspaceReadOverlay host="board" /></>);
+  expect(screen.getAllByTestId('task-workspace-overlay')).toHaveLength(1);
+  act(() => { useUIStore.getState().setCardBoardExpanded(true); });
+  expect(screen.getAllByTestId('task-workspace-overlay')).toHaveLength(1);
+  expect(screen.getByTestId('overlay-chat').props.active).toBe(true);
+  act(() => { useUIStore.getState().setCardBoardExpanded(false); });
+  expect(screen.getAllByTestId('task-workspace-overlay')).toHaveLength(1);
 });
