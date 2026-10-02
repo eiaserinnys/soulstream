@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { CardTimeline } from "./CardTimeline";
+import { CardSessionHistory } from "./CardSessionHistory";
 import { CardDetailPane, cardRequestMarkdown } from "./CardDetailPane";
 const lookup = vi.hoisted(() => ({ sessions: [] as import("@seosoyoung/soul-ui").SessionSummary[], loading: false }));
 vi.mock("@seosoyoung/soul-ui", async importOriginal => ({...await importOriginal<typeof import("@seosoyoung/soul-ui")>(), useAuth: () => ({user:{picture:"https://example.test/user.png"}}), useSessionListProvider: vi.fn(() => lookup)}));
@@ -13,7 +15,8 @@ function seed(status="review") {
  useCardStore.setState({byId:{c:card as never},details:{c:{card,reports:[{id:"new",title:"새 보고",format:"html",body:"<p>결론</p>",createdAt:"2026-09-30"},{id:"old",title:"옛 보고",format:"markdown",body:"이전\n\n![캡처](https://example.test/a.png)",createdAt:"2026-09-29"}],questions:[{id:"q",text:"어느 쪽?",options:["A","B"],answer:"A",askedAt:"2026-09-28T01:00:00Z",answeredAt:"2026-09-28T02:00:00Z"}],comments:[{id:"comment",authorKind:"user",kind:"spoken",body:"추가 지시",createdAt:"2026-09-30T03:00:00Z"}],sessions:[]} as never}});
 }
 afterEach(()=>{useCardStore.getState().reset();lookup.sessions=[];lookup.loading=false;});
-const render=()=>renderToStaticMarkup(<CardDetailPane cardId="c" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()}/>);
+const renderPane=()=>renderToStaticMarkup(<CardDetailPane cardId="c" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()}/>);
+const render=()=>{const s=useCardStore.getState();return renderToStaticMarkup(<CardTimeline card={s.byId.c} detail={s.details.c} portraitUrl="" pending={false} onAnswer={()=>{}}/>);};
 describe("card final UX",()=>{
  it("orders request, questions, answer, reports and comments oldest first in shared chat bubbles",()=>{
   seed();const html=render();
@@ -22,12 +25,12 @@ describe("card final UX",()=>{
   expect(html.indexOf("옛 보고")).toBeLessThan(html.indexOf("새 보고"));
   expect(html).not.toContain('sandbox="allow-scripts"');
   expect(html).not.toContain('data-report-id="new" open');
-  expect(html).toContain('aria-label="커멘트"');
+  expect(renderPane()).toContain('aria-label="커멘트"');
   expect(html).not.toContain('aria-label="카드 섹션"');
-  expect(html).toContain("그 밖에");
+
  });
  it.each(["review","running","todo","queued"])("has only one completion button, enabled only for review (%s)",status=>{
-  seed(status);const html=render();
+  seed(status);const html=renderPane();
   expect(html).toMatch(/<button[^>]*aria-label="완료"/);
   expect(html).not.toContain('aria-label="반려"');expect(html).not.toContain('aria-label="맡기기"');
   const button=html.match(/<button[^>]*aria-label="완료"[^>]*>/)![0];
@@ -36,7 +39,7 @@ describe("card final UX",()=>{
  it("shows the first three linked sessions and a remaining count using the folder tree",()=>{
   seed();lookup.sessions=Array.from({length:5},(_,i)=>({agentSessionId:`s${i}`,callerSessionId:i?"s0":undefined,displayName:`세션 ${i}`,status:"completed",eventCount:2,createdAt:"2026-09-30",updatedAt:"2026-09-30"}));
   useCardStore.setState(s=>({details:{c:{...s.details.c,sessions:lookup.sessions.map(s=>({sessionId:s.agentSessionId})) as never}}}));
-  const html=render();expect(html.match(/data-session-id=/g)).toHaveLength(3);expect(html).toContain("2개 더");
+  const html=renderToStaticMarkup(<CardSessionHistory sessionIds={lookup.sessions.map(s=>s.agentSessionId)} collapsedLimit={3} onOpenSession={()=>{}}/>);expect(html.match(/data-session-id=/g)).toHaveLength(3);expect(html).toContain("2개 더");
  });
  it("previews the whole markdown report with only a three-line clamp",()=>{
   seed();useCardStore.setState(s=>({details:{c:{...s.details.c,reports:[{id:"paragraphs",sessionId:null,title:"문단 보고",format:"markdown",body:"첫 문단\n\n두 번째 문단\n\n세 번째 문단",createdAt:"2026-09-30"}]}}}));

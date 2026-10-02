@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { DashboardIconCap, MarkdownContent, useAuth, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { ArrowLeft, Check } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
@@ -6,6 +6,7 @@ import { cardMutationKey } from "@seosoyoung/soul-ui/cards/card-api";
 import { CardStatusChip } from "./CardActions";
 import { FolderTitleEditor } from "./FolderTitleEditor";
 import { CardSessionHistory } from "./CardSessionHistory";
+import { DetailTabs } from "./DetailTabs";
 import { CardTimeline } from "./CardTimeline";
 import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
@@ -19,6 +20,8 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
  const scroll=useRef<HTMLDivElement>(null);
  const surface=useRef<HTMLElement>(null);
  const webglActive=useGlassSurface(surface,{enabled:true});
+ const tabId=useId();
+ const [tab,setTab]=useState<"comments"|"content">("comments");
  const [pending,setPending]=useState(false);
  const sessionIds=useMemo(()=>[...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId]:[]),...(detail?.sessions.map(session=>session.sessionId)??[])])],[card?.assigneeSessionId,detail?.sessions]);
  const assignee=catalog?.sessionList?.find(session=>session.agentSessionId===card?.assigneeSessionId) ?? detail?.sessions.find(session=>session.sessionId===card?.assigneeSessionId);
@@ -28,7 +31,8 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
  const agentName=assignee && "agentName" in assignee ? assignee.agentName ?? agentId : agentId;
  const model=assignee && "modelLabel" in assignee ? assignee.modelLabel ?? card?.modelPreset : card?.modelPreset;
  useEffect(()=>{if(!sampleDetail)void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId,sampleDetail]);
- useEffect(()=>{if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[cardId,detail]);
+ useEffect(()=>{setTab("comments");},[cardId]);
+ useEffect(()=>{if(tab==="comments"&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[cardId,detail,tab]);
  const answer=async(questionId:string,text:string)=>{
   if(sampleDetail)return;
   setPending(true);
@@ -48,7 +52,7 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
   if(!card || card.status!=="review" || pending)return;
   if(sampleDetail)return;
   setPending(true);
-  try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});}
+  try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});onClose();}
   catch {} finally {setPending(false);}
  };
  if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;
@@ -59,17 +63,18 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
    <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{if(!sampleDetail)await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
    <div className="v3-folder-header-actions"><DashboardIconCap label="완료" disabled={pending||card.status!=="review"} onClick={()=>void complete()}><Check className="h-4 w-4"/></DashboardIconCap></div>
   </header>
+  <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} tabs={[["comments","커멘트"],["content","내용"]]} value={tab} onChange={setTab}/></div>
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
-  <div className="v3-detail-scroll v3-card-panel-scroll v3-detail-gutter" ref={scroll}>
+  <div className="v3-detail-scroll v3-card-panel-scroll v3-detail-gutter" ref={scroll} role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`}>
    <div className="v3-task-detail-content">
-   <section className="v3-detail-section"><div className="v3-task-default-values"><span>{agentName??"담당 미지정"}</span>{nodeId?<span>{nodeId}</span>:null}{model?<span>{model}</span>:null}</div></section>
-   <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} onOpenSession={onOpenSession}/></section>
+   {tab==="content"?<><section className="v3-detail-section"><div className="v3-task-default-values"><span>{agentName??"담당 미지정"}</span>{nodeId?<span>{nodeId}</span>:null}{model?<span>{model}</span>:null}</div></section>
+   <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} onOpenSession={onOpenSession}/></section></>:null}
    <section className="v3-detail-section">
-   <CardTimeline key={cardId} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)}/>
+   <CardTimeline key={cardId} scope={tab} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)}/>
    </section>
-   <details className="v3-detail-section v3-card-other"><summary>그 밖에</summary><div className="v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></div></details>
+   {tab==="content"?<details className="v3-detail-section v3-card-other"><summary>그 밖에</summary><div className="v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></div></details>:null}
    </div>
   </div>
-  <CardCommentInput key={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} onSend={submit}/>
+  <div hidden={tab!=="comments"} className="v3-card-composer-slot"><CardCommentInput key={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} onSend={submit}/></div>
  </article>;
 }

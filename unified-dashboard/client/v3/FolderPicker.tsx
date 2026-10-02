@@ -1,10 +1,11 @@
 import "./v3-project-star.css";
 import { useId, useMemo, useState, type CSSProperties } from "react";
-import { Button, DisclosureActionIcon, Input, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { DisclosureActionIcon, Input, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { FolderNameRowContent } from "./FolderNameRowContent";
 import { buildProjectFolderTree, type ProjectFolderTreeNode } from "./project-folders";
 import { V3_CARD_GAP_PX } from "./v3-layout-metrics";
 import "./folder-picker.css";
+import { DetailTabs } from "./DetailTabs";
 
 export interface FolderPickerProps {
   folders: readonly CatalogFolder[];
@@ -58,11 +59,7 @@ export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, sel
     </div>;
   };
   return <div className="v3-shell v3-folder-picker" style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
-    <div className="v3-folder-picker-tabs" role="tablist" aria-label="폴더 목록">
-      {([ ["starred", "별표"], ["all", "전체"] ] as const).map(([value, label]) =>
-        <Button key={value} variant="ghost" role="tab" id={`${id}-${value}`} aria-selected={tab === value}
-          aria-controls={`${id}-folders`} disabled={pending} onClick={() => setTab(value)}>{label}</Button>)}
-    </div>
+    <DetailTabs id={id} label="폴더 목록" panelId={`${id}-folders`} tabs={[["starred","별표"],["all","전체"]]} value={tab} disabled={pending} onChange={setTab}/>
     <Input type="search" aria-label="이동할 폴더 검색" placeholder="폴더 검색…" value={query}
       disabled={pending} onChange={(event) => setQuery(event.target.value)} />
     <div id={`${id}-folders`} role="tabpanel" aria-labelledby={`${id}-${tab}`} className="v3-navigation-scroll v3-folder-picker-scroll">
