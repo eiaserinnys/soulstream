@@ -427,6 +427,7 @@ CREATE TABLE cards (
     queue_position_key   TEXT,
     title                TEXT NOT NULL,
     request              TEXT NOT NULL DEFAULT '',
+    attachments          JSONB NOT NULL DEFAULT '[]'::jsonb,
     brief                TEXT NOT NULL DEFAULT '',
     blocked_kind         TEXT CHECK (blocked_kind IN ('limit','question','no_report')),
     blocked_detail       TEXT,

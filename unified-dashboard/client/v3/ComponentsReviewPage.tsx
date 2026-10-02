@@ -1,3 +1,4 @@
+import {CardCreateSample} from "./CardCreateSample";
 import { SessionMenuProvider } from "./SessionMenuProvider";
 import { SessionMenuReviewSample } from "./SessionMenuReviewSample";
 import { useState, type ReactNode } from "react";
@@ -228,7 +229,8 @@ export function ComponentsReviewPage() {
             <Sample name="공통 세션 메뉴 / FolderMoveDialog / SessionSuccessionModal" state="운영 행·헤더 우클릭 · 기존 폴더 선택기 · 승계 · 비활성 사유">
               <SessionMenuReviewSample/>
             </Sample>
-            <Sample name="CardHandoffView / CardComposer / ChatInputComposer / ChatInputEditor" state="선택행 위 · 한 줄 → 여러 줄 · 전송 · 로컬 첨부">
+            <Sample name="CardCreateDialog / AgentNodeAssignmentFields / SessionAttachmentFields" state="운영 폼 · 폴더·실행 대상·첨부 · 로컬 검수 저장"><CardCreateSample/></Sample>
+          <Sample name="CardHandoffView / CardComposer / ChatInputComposer / ChatInputEditor" state="선택행 위 · 한 줄 → 여러 줄 · 전송 · 로컬 첨부">
               <CardHandoffSample key={inputSampleVersion} onSend={send}/>
             </Sample>
           </section>

@@ -1,3 +1,4 @@
+import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
@@ -39,21 +40,21 @@ export class CardControlPlaneService {
     return this.core.setFolderStatus(params);
   }
   async createCard(params: FolderActorParams & {
-    folderId: string; title: string; request: string; queue?: boolean; assignee?: CardAssigneeInput | null;
+    folderId: string; title: string; request: string; attachments?: CardAttachment[]; queue?: boolean; assignee?: CardAssigneeInput | null;
     nodeId?: string | null; modelPreset?: string | null; idempotencyKey?: string | null;
   }) {
     const id=randomUUID();
     const result=await this.core.mutate({ folderId:params.folderId,targetKind:"card",targetId:id,operationType:"create_card",actor:params,
-      idempotencyKey:params.idempotencyKey,payload:{ title:params.title,request:params.request,queue:params.queue ?? false,assignee:params.assignee ?? null,nodeId:params.nodeId ?? null,modelPreset:params.modelPreset ?? null },
+      idempotencyKey:params.idempotencyKey,payload:{ title:params.title,request:params.request,attachments:params.attachments ?? [],queue:params.queue ?? false,assignee:params.assignee ?? null,nodeId:params.nodeId ?? null,modelPreset:params.modelPreset ?? null },
       apply:async (sql,eventId) => {
         await this.lockFolder(sql,params.folderId);
         const position=await this.position(sql,params.folderId,null);
         const queuePosition=params.queue ? await this.position(sql,null,null) : null;
         const a=assigneeToFields(params.assignee);
-        await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,status,
+        await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,attachments,status,
           assignee_kind,assignee_agent_id,assignee_session_id,assignee_user_id,node_id,model_preset,
           created_session_id,created_event_id,updated_session_id,updated_event_id)
-          VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${params.queue ? "queued" : "todo"},
+          VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${sql.json(params.attachments ?? [])},${params.queue ? "queued" : "todo"},
           ${a.assignee_kind},${a.assignee_agent_id},${a.assignee_session_id},${a.assignee_user_id},${params.nodeId ?? null},${params.modelPreset ?? null},
           ${params.actorSessionId},${eventId},${params.actorSessionId},${eventId})`;
       } });

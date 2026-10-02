@@ -288,7 +288,9 @@ describe("versioned migration contract", () => {
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migrations.at(-1)?.id).toBe("113_card_orchestration.sql");
+    expect(migrations.at(-1)?.id).toBe("114_card_attachments.sql");
+    expect(migrations.at(-1)?.sql).toContain("ADD COLUMN attachments JSONB NOT NULL DEFAULT '[]'::jsonb");
+    expect(schema).toMatch(/attachments\s+JSONB NOT NULL DEFAULT '\[\]'::jsonb/);
     expect(removal?.sql).toMatch(/ALTER TABLE folders DROP COLUMN checklist_enabled/i);
     expect(schema).not.toMatch(/\bchecklist_enabled\b/);
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS schedule_kind TEXT NOT NULL DEFAULT 'recurring'");

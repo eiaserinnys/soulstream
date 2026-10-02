@@ -1,3 +1,4 @@
+import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { resolveCardSessionTarget } from "./card_session_target.js";
 import { sendCardChangeOnce } from "./card_change_delivery.js";
 import { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
@@ -101,11 +102,12 @@ export async function createCardDispatchRuntime(options: {
           bridge: options.bridge,
           modelPresetAvailability: options.availability,
         },
-        { ...input, callerInfo: { source: "system" } },
+        { ...input, attachmentPaths:cardAttachmentPaths(input.attachments ?? [], input.nodeId), callerInfo: { source: "system" } },
       ),
-    sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string;deliveryId?:string}, changeDelivery?:import("./card_change_notification.js").CardChangeDelivery) => {
+    sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string;deliveryId?:string}, changeDelivery?:import("./card_change_notification.js").CardChangeDelivery, attachments?:readonly import("@soulstream/wire-schema/card-attachments").CardAttachment[]) => {
       const parsed = intervenePayload(sessionId, {
         text,
+        ...(attachments?.length ? {attachment_paths:attachments.map(a=>a.path)} : {}),
         ...(admission?.deliveryId ? {delivery_id:admission.deliveryId,delivery_intent:"durable_next_turn",source:"card_orchestration",relation_key:admission.deliveryId,completion_id:admission.deliveryId} : {}),
         ...(changeDelivery ? {delivery_id:changeDelivery.deliveryId,delivery_intent:"durable_next_turn",source:"card_change",
           relation_key:changeDelivery.deliveryId,completion_id:changeDelivery.deliveryId} : {}),
@@ -113,9 +115,11 @@ export async function createCardDispatchRuntime(options: {
           ...(changeDelivery.actorSessionId ? {session_id:changeDelivery.actorSessionId} : {}) } : { source: "system" },
       });
       if (!parsed.ok) throw new Error(parsed.message);
-      const send = async (payload: typeof parsed.value) => options.bridge.sendPendingCommand(
-        await options.router.routeExistingSessionPendingCommand({...payload,...(admission?{orchestrationAdmission:admission}:{})}),
-      );
+      const send = async (payload: typeof parsed.value) => {
+        const routed = await options.router.routeExistingSessionPendingCommand({...payload,...(admission?{orchestrationAdmission:admission}:{})});
+        cardAttachmentPaths(attachments ?? [], routed.node.nodeId);
+        return options.bridge.sendPendingCommand(routed);
+      };
       if (changeDelivery) {
         const repository = new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient);
         return sendCardChangeOnce(repository, parsed.value, send);

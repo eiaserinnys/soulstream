@@ -11,7 +11,8 @@
     "./delivery": "./src/delivery.ts",
     "./assigned-card-context-snapshot": "./src/assigned_card_context_snapshot.ts",
     "./schema": "./src/upstream.schema.json",
-    "./card-orchestration": "./src/card_orchestration.ts"
+    "./card-orchestration": "./src/card_orchestration.ts",
+    "./card-attachments": "./src/card_attachments.ts"
   },
   "scripts": {
     "generate": "bash scripts/generate.sh",

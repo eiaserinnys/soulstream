@@ -1,9 +1,9 @@
+import {SessionAttachmentFields} from "./SessionAttachmentFields";
 import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
 import { useCallback, useMemo, useRef, useState, useId } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  FileAttachmentPreview,
   AtomNodeSelector,
   reasoningEffortLabel,
   Dialog,
@@ -93,7 +93,6 @@ export function SessionSuccessionModal({
   const [inheritSummary, setInheritSummary] = useState(Boolean(predecessorId));
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
   const [pendingSessionId] = useState(() => crypto.randomUUID());
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [atomNodeId, setAtomNodeId] = useState("");
   const [atomNodeTitle, setAtomNodeTitle] = useState("");
   const [initialInstruction, setInitialInstruction] = useState("");
@@ -421,41 +420,7 @@ export function SessionSuccessionModal({
                 onPaste={event => { if (uploadUrl && !pending) handleClipboardFiles(event, addFiles); }}
               />
             </label>
-            <div className="flex min-w-0 flex-col gap-2">
-              {files.length > 0 ? (
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {files.map((file) => (
-                    <FileAttachmentPreview
-                      key={file.id}
-                      file={file.file}
-                      status={file.status}
-                      onRemove={() => removeFile(file.id)}
-                    />
-                  ))}
-                </div>
-              ) : null}
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={pending || !selectedNodeId}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  파일 첨부
-                </Button>
-                {isUploading ? <small>업로드 중…</small> : null}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(event) => {
-                  if (event.target.files?.length) addFiles(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-            </div>
+            <SessionAttachmentFields files={files} pending={pending} nodeId={selectedNodeId} isUploading={isUploading} addFiles={addFiles} removeFile={removeFile}/>
           </div>
         </DialogPanel>
         <DialogFooter className="v3-succession-footer">

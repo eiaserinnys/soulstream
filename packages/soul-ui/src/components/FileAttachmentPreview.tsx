@@ -8,7 +8,8 @@
  * X 버튼으로 개별 취소
  */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
+import {Dialog,DialogPopup,DialogTitle} from "./ui/dialog";
 
 export interface FileAttachmentPreviewProps {
   file: File;
@@ -44,20 +45,22 @@ interface ImagePreviewProps {
 }
 
 function ImagePreview({ file }: ImagePreviewProps) {
-  const objectUrl = useMemo(() => URL.createObjectURL(file), [file]);
+  const [open,setOpen]=useState(false);
+  const [objectUrl,setObjectUrl]=useState<string>();
 
   useEffect(() => {
-    return () => {
-      URL.revokeObjectURL(objectUrl);
-    };
-  }, [objectUrl]);
+    const url=URL.createObjectURL(file);
+    setObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
 
   return (
-    <img
+    <><img
+      role="button" tabIndex={0} onClick={()=>setOpen(true)} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();setOpen(true);}}}
       src={objectUrl}
       alt={file.name}
-      className="w-full h-full object-cover rounded"
-    />
+      className="w-full h-full object-cover rounded outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    /><Dialog open={open} onOpenChange={setOpen}><DialogPopup><DialogTitle className="sr-only">{file.name}</DialogTitle><img src={objectUrl} alt={file.name} className="max-w-full object-contain"/></DialogPopup></Dialog></>
   );
 }
 

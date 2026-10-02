@@ -1,3 +1,4 @@
+import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
   BoardItemType,
@@ -537,6 +538,7 @@ export interface ChildFolderRow {
 
 /** Card HTTP uses camelCase rows; report/question/comment/session arrays are orch-owned. */
 export interface CardRow extends Record<string, unknown> {
+  attachments: CardAttachment[];
   id: string;
   folderId: string;
   title: string;

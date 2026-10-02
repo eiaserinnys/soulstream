@@ -1,3 +1,4 @@
+import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { Logger } from "pino";
 
 import { randomUUID } from "node:crypto";
@@ -70,7 +71,7 @@ export class FolderService {
     return this.cardRequest("GET", `/api/cards/${encodeURIComponent(cardId)}`, undefined, actorSessionId);
   }
 
-  async createCard(params: FolderActorParams & { folderId: string; title: string; request: string; assignee?: CardAssigneeInput | null; nodeId?: string; modelPreset?: string; queue?: boolean }) {
+  async createCard(params: FolderActorParams & { folderId: string; title: string; request: string; attachments?: CardAttachment[]; assignee?: CardAssigneeInput | null; nodeId?: string; modelPreset?: string; queue?: boolean }) {
     const { actorSessionId, actorKind, actorUserId, ...body } = params;
     return this.cardRequest("POST", "/api/cards", { ...body, idempotencyKey: randomUUID() }, actorSessionId ?? undefined);
   }

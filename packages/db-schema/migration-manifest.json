@@ -460,6 +460,10 @@
     {
       "id": "113_card_orchestration.sql",
       "sha256": "8851a5b856363e5ffbd8726ef1c72fe7f262b7133768ac13b0ec990e4d7743b1"
+    },
+    {
+      "id": "114_card_attachments.sql",
+      "sha256": "b3645a91b362eae10324988bc9ccef8447db348f19ba6d1007bd2eefc8f123ce"
     }
   ]
 }

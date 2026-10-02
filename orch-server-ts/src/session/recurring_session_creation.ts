@@ -31,6 +31,7 @@ export type CreateRecurringSessionInput = {
   readonly folderId: string;
   readonly callerInfo: Readonly<Record<string, unknown>>;
   readonly cardId?: string;
+  readonly attachmentPaths?: readonly string[];
   readonly orchestrationAdmission?:{runId:string;executionToken:string;cardId:string};
 };
 
@@ -69,6 +70,7 @@ export async function createRecurringSession(
     profile: input.agentId,
     ...(input.modelPreset === null ? {} : { model_preset: input.modelPreset }),
     folderId: input.folderId,
+    ...(input.attachmentPaths?.length ? {attachment_paths:[...input.attachmentPaths]} : {}),
     ...(input.cardId ? {cardId:input.cardId} : {}),
 
     ...(input.orchestrationAdmission?{orchestrationAdmission:input.orchestrationAdmission}:{}),

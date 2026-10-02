@@ -15,6 +15,7 @@ export const reviewSession: SessionSummary = {
 
 export const reviewCard: CardRow = {
   id: "components-card", folderId: "components-folder", title: "카드 행 기본",
+  attachments: [],
   request: "샘플을 눌러 보고 입력창에 한 줄과 여러 줄을 작성합니다.", brief: "",
   status: "running", blockedKind: null, blockedDetail: null,
   positionKey: "a", queuePositionKey: null, assigneeKind: "session",

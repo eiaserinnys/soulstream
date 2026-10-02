@@ -107,10 +107,9 @@
 .v3-card-comment-dock { flex: none; }
 
 .v3-card-inbox .v3-section-head > .dashboard-icon-cap { margin-left: auto; }
-.v3-card-create-form { display: flex; flex-direction: column; gap: var(--v3-space-2); padding: var(--v3-space-3); background: var(--v3-glass-card); border-radius: var(--v3-space-4); }
-.v3-shell.v3-card-folder-picker { width: calc(var(--v3-session-meta-column) * 5 + var(--v3-space-5)); }
+:is(.v3-shell,.v3-surface).v3-card-folder-picker { width: calc(var(--v3-session-meta-column) * 5 + var(--v3-space-5)); }
 .v3-shell.v3-card-execution-picker { width: calc(var(--v3-session-meta-column) * 8 + var(--v3-space-2)); }
-.v3-shell.v3-card-folder-picker, .v3-shell.v3-card-execution-picker { display: flex; grid-template-columns: none; height: auto; max-width: 100%; max-height: 60vh; border-radius: calc(var(--v3-space-7) / 2); background: var(--v3-glass-dense); --glass-chrome-surface: var(--v3-glass-dense); }
+:is(.v3-shell,.v3-surface).v3-card-folder-picker, .v3-shell.v3-card-execution-picker { display: flex; grid-template-columns: none; height: auto; max-width: 100%; max-height: 60vh; border-radius: calc(var(--v3-space-7) / 2); background: var(--v3-glass-dense); --glass-chrome-surface: var(--v3-glass-dense); }
 .v3-card-execution-columns { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--v3-space-3); }
 .v3-card-execution-columns section { min-width: 0; }
 .v3-card-execution-columns h3 { font: var(--v3-type-meta) var(--v3-font-family); font-weight: 700; color: var(--v3-text-tertiary); margin: 0 0 var(--v3-space-2); }
@@ -127,7 +126,6 @@
 
 .v3-card-collapse-hint { display: block; color: var(--v3-text-tertiary); font: var(--v3-type-meta) var(--v3-font-family); }
 
-.v3-card-create-form textarea { width: 100%; min-width: 0; resize: none; border: 0; padding: 0; outline: none; background: transparent; color: var(--v3-text-primary); font: var(--v3-type-body) var(--v3-font-family); scrollbar-width: none; }
 
 .v3-card-detail > .v3-card-panel-scroll { flex: 1; min-height: 0; }
 .v3-card-tabs { flex: none; padding-block: var(--v3-space-3); }
@@ -137,3 +135,8 @@
  box-sizing: border-box; min-width: 0; padding-inline: var(--v3-detail-inline-inset);
  padding-bottom: var(--v3-space-4);
 }
+
+/* New card uses the registered session dialog and its section spacing. */
+.v3-card-create-dialog { font: var(--v3-type-body) var(--v3-font-family); }
+.v3-card-create-dialog :is(input, textarea, button, select, strong) { font: var(--v3-type-body) var(--v3-font-family); }
+.v3-card-create-dialog .v3-succession-context-editor textarea { resize: none; }
