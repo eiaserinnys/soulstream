@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { CardDetailPane } from "./CardDetailPane";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 
@@ -14,6 +15,7 @@ const card = {id:"inherit",folderId:"f",title:"행 제목",request:"요청 첫 �
 const detail:CardDetail = {card,sessions:[],comments:[{id:"c",cardId:card.id,authorKind:"user",authorId:"sample",sessionId:null,kind:"comment",body:"커멘트 본문",createdAt:card.createdAt}],questions:[{id:"q",text:"질문 본문",options:["답변"],answer:"답변 본문",askedAt:card.createdAt,answeredAt:card.createdAt}],reports:[{id:"r",sessionId:null,title:"최신 보고 제목",format:"markdown",body:"첫 줄\n둘째 줄\n셋째 줄\n넷째 줄\n\n![캡처](https://example.test/capture.png)",createdAt:"2026-10-01"}]};
 let container:HTMLDivElement,root:Root;
 beforeEach(()=>{
+  useDashboardStore.setState({drafts:{}});
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
   container=document.createElement("div");document.body.append(container);root=createRoot(container);
   useCardStore.setState({byId:{inherit:card},details:{inherit:detail},loadCard:vi.fn().mockResolvedValue(detail)});
@@ -29,6 +31,7 @@ it("keeps sessions and composer in both tabs, with the full conversation and ope
  const textarea=container.querySelector('textarea')!;
  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(textarea,"작성 중");
  await act(()=>textarea.dispatchEvent(new Event("input",{bubbles:true})));
+ expect(useDashboardStore.getState().drafts["composer:card-comment:inherit"]).toBe("작성 중");
  await tab("내용");
  expect(container.querySelector('[data-card-section="sessions"]')).toBe(sessions);
  expect(container.querySelector('textarea')).toBe(textarea);

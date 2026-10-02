@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useDashboardStore, appendAttachmentPathNotes, Popover, PopoverTrigger, PopoverPopup, type AgentInfo, type ModelPresetAvailability, type CatalogFolder } from "@seosoyoung/soul-ui";
-import { CardComposer } from "./CardComposer";
+import { useDashboardStore, appendAttachmentPathNotes, type AgentInfo, type ModelPresetAvailability, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { CardHandoffView } from "./CardHandoffView";
 import { useFileUpload } from "@seosoyoung/soul-ui/hooks/useFileUpload";
 import { useQueryClient } from "@tanstack/react-query";
 import { createDashboardSession } from "../lib/session-create";
@@ -11,6 +11,7 @@ import { CardExecutionPicker } from "./CardExecutionPicker";
 import { fetchPageSessionDefaults } from "./folder-workspace-page-api";
 import "./v3-cards.css";
 const storageKey = "cards-p1-handoff";
+const draftKey = "composer:main";
 function savedSelection(): CardAssignment {
  try { return JSON.parse(localStorage.getItem(storageKey) ?? "null") ?? {folderId:"",nodeId:"",agentId:"",modelPreset:""}; }
  catch { return {folderId:"",nodeId:"",agentId:"",modelPreset:""}; }
@@ -19,7 +20,8 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
  const queryClient=useQueryClient();
  const [modelValid,setModelValid]=useState(true);
  const [selection,setSelection] = useState(savedSelection);
- const [request,setRequest] = useState("");
+ const request = useDashboardStore(s=>s.drafts[draftKey]??"");
+ const setDraft = useDashboardStore(s=>s.setDraft);
  const [folderOpen,setFolderOpen] = useState(false),[executionOpen,setExecutionOpen] = useState(false);
  const [pending,setPending] = useState(false),[error,setError] = useState<string|null>(null);
  const [agent,setAgent] = useState<AgentInfo|null>(null),[model,setModel] = useState<ModelPresetAvailability|null>(null);
@@ -50,29 +52,26 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
  };
  const submit = async () => {
   if (!canSubmit) return;
+  const submittedKey = draftKey, submittedText = request;
   setPending(true);setError(null);
   const attachmentPaths = files.flatMap(f=>f.path?[f.path]:[]);
   try {
    await createDashboardSession({queryClient,addOptimisticSession:useDashboardStore.getState().addOptimisticSession,
     initialInstruction:appendAttachmentPathNotes(request.trim(),attachmentPaths),attachmentPaths,
     folderId:selection.folderId,nodeId:selection.nodeId,agentId:selection.agentId,agent,modelPreset:selection.modelPreset||null});
-   setRequest("");resetLocal();setUploadSessionId(crypto.randomUUID());
+   const store = useDashboardStore.getState();
+   if (store.drafts[submittedKey]===submittedText) store.clearDraft(submittedKey);
+   resetLocal();setUploadSessionId(crypto.randomUUID());
   } catch (e) {setError(String(e));} finally {setPending(false);}
  };
  const folder = folders.find(f=>f.id===selection.folderId);
- return <><div>
-  <div className="v3-card-handoff">
-   <CardComposer text={request} onChangeText={setRequest} onSend={()=>void submit()} placeholder="새 세션에서 무엇을 할까요" inputLabel="세션 첫 메시지" label="세션 시작" disabled={!canSubmit} pending={pending}
-    files={files} onAddFiles={fileUploadUrl?attachFiles:undefined} onRemoveFile={removeFile} onAttachUnavailable={()=>setError("첨부하려면 실행 노드를 선택해 주세요.")}/>
-   <div className="v3-card-handoff-controls">
-    <Popover open={folderOpen} onOpenChange={setFolderOpen}><PopoverTrigger type="button" className="v3-card-handoff-chip control-surface v3-card-handoff-folder rounded-full" disabled={pending}>
-     <span>{folder ? `📁 ${folder.name}` : "폴더 선택"}</span><span aria-hidden="true">▾</span>
-    </PopoverTrigger><PopoverPopup side="top" align="start" sideOffset={8} className="v3-shell v3-card-folder-picker"><FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={selection.folderId} disabledFolderIds={new Set(["claude","llm"])} pending={pending} onSelect={f=>void selectFolder(f)}/></PopoverPopup></Popover>
-    <Popover open={executionOpen} onOpenChange={setExecutionOpen}><PopoverTrigger type="button" className="v3-card-handoff-chip control-surface v3-card-handoff-execution rounded-full" disabled={pending} aria-label="실행 조합 선택">
-     <span>{agent?.id===selection.agentId ? agent.name : selection.agentId||"에이전트"} · {selection.nodeId||"노드"} · {model?.id===selection.modelPreset ? model.label : selection.modelPreset||"모델"}</span><span aria-hidden="true">▾</span>
-    </PopoverTrigger><PopoverPopup keepMounted side="top" align="start" sideOffset={8} className="v3-shell v3-card-execution-picker"><CardExecutionPicker selection={selection} onChange={next=>{if(files.length&&next.nodeId!==selection.nodeId){setError("첨부를 제거한 뒤 노드를 바꿔 주세요.");return;}changeId.current++;setSelection(next);}}
-     onAgentInfoChange={setAgent} onModelPresetInfoChange={setModel} onValidityChange={setModelValid} disabled={pending} onError={setError}/></PopoverPopup></Popover>
-   </div>
-  </div>
- </div>{(error||files.find(f=>f.status==="error")?.errorMessage)?<p role="alert" className="v3-card-error">{error||files.find(f=>f.status==="error")?.errorMessage}</p>:null}</>;
+ return <CardHandoffView
+  composer={{text:request,onChangeText:text=>setDraft(draftKey,text),onSend:()=>void submit(),placeholder:"새 세션에서 무엇을 할까요",inputLabel:"세션 첫 메시지",label:"세션 시작",disabled:!canSubmit,pending,
+   files,onAddFiles:fileUploadUrl?attachFiles:undefined,onRemoveFile:removeFile,onAttachUnavailable:()=>setError("첨부하려면 실행 노드를 선택해 주세요.")}}
+  folderLabel={folder?`📁 ${folder.name}`:"폴더 선택"}
+  executionLabel={`${agent?.id===selection.agentId ? agent.name : selection.agentId||"에이전트"} · ${selection.nodeId||"노드"} · ${model?.id===selection.modelPreset ? model.label : selection.modelPreset||"모델"}`}
+  folderOpen={folderOpen} onFolderOpenChange={setFolderOpen} executionOpen={executionOpen} onExecutionOpenChange={setExecutionOpen} error={error||files.find(f=>f.status==="error")?.errorMessage}
+  folderPicker={<FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={selection.folderId} disabledFolderIds={new Set(["claude","llm"])} pending={pending} onSelect={f=>void selectFolder(f)}/>}
+  executionPicker={<CardExecutionPicker selection={selection} onChange={next=>{if(files.length&&next.nodeId!==selection.nodeId){setError("첨부를 제거한 뒤 노드를 바꿔 주세요.");return;}changeId.current++;setSelection(next);}}
+   onAgentInfoChange={setAgent} onModelPresetInfoChange={setModel} onValidityChange={setModelValid} disabled={pending} onError={setError}/>}/>;
 }

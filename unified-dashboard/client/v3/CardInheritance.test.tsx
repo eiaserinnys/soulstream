@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { useCardNavigation } from "./card-navigation";
 import { CardRow } from "./CardRow";
 import { RichSessionRow } from "./RichSessionRow";
@@ -21,6 +22,7 @@ const card = {id:"inherit",folderId:"f",title:"행 제목",request:"요청 첫 �
 const detail:CardDetail = {card,sessions:[],questions:[],comments:[],reports:[{id:"r",sessionId:null,title:"최신 보고 제목",format:"markdown",body:"첫 줄\n둘째 줄\n셋째 줄\n넷째 줄\n\n![캡처](https://example.test/capture.png)",createdAt:"2026-10-01"}]};
 let container:HTMLDivElement,root:Root;
 beforeEach(()=>{
+  useDashboardStore.setState({drafts:{}});
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
   container=document.createElement("div");document.body.append(container);root=createRoot(container);
   useCardStore.setState({byId:{inherit:card},details:{inherit:detail},loadCard:vi.fn().mockResolvedValue(detail)});
@@ -58,7 +60,7 @@ it("keeps card state in the status slot and only the title in the title line",()
 });
 
 it("does not reserve a mode slot for the card's empty icon",async()=>{
- await act(()=>root.render(<CardCommentInput pending={false} onSend={vi.fn().mockResolvedValue(true)}/>));
+ await act(()=>root.render(<CardCommentInput cardId="inherit" pending={false} onSend={vi.fn().mockResolvedValue(true)}/>));
  const textarea=container.querySelector('[data-slot="chat-input-body"]')!;
  expect(textarea.previousElementSibling).toBeNull();
 });
@@ -103,7 +105,7 @@ it("folder card lists grow with their contents instead of overflowing into the b
 
 it("comments inherit Enter newline and Ctrl/Cmd+Enter submission from ChatInputEditor",async()=>{
  const send=vi.fn().mockResolvedValue(true);
- await act(()=>root.render(<CardCommentInput pending={false} onSend={send}/>));
+ await act(()=>root.render(<CardCommentInput cardId="inherit" pending={false} onSend={send}/>));
  const textarea=container.querySelector("textarea")!;
  const edit=async(text:string)=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(textarea,text);await act(()=>textarea.dispatchEvent(new Event("input",{bubbles:true})));};
  const key=async(options:KeyboardEventInit={})=>{const event=new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true,...options});await act(async()=>{textarea.dispatchEvent(event);await Promise.resolve();});return event;};

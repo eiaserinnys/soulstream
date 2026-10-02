@@ -5,15 +5,14 @@ import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantM
 import { SystemMessage } from "@seosoyoung/soul-ui/components/chat/SystemMessage";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { FolderPanelHeader, SessionPanelHeader } from "./WorkspacePanelHeaders";
-import { DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Popover, PopoverPopup, PopoverTrigger, formatAssignedCardContextSnapshot } from "@seosoyoung/soul-ui";
-import type { UploadedFile } from "@seosoyoung/soul-ui/hooks/useFileUpload";
+import { DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, formatAssignedCardContextSnapshot } from "@seosoyoung/soul-ui";
 import { Folder, Layers, LayoutDashboard, MessageSquare, MoreHorizontal, Plus, RotateCcw, SendHorizontal, SquarePen, Star } from "lucide-react";
 import { CardRowView } from "./CardRow";
 import { RichSessionRow } from "./RichSessionRow";
 import { PlannerFolderCardView } from "./PlannerFolderCard";
 import { InlineMarkdownCard } from "./InlineMarkdownCard";
 import { CardTimeline } from "./CardTimeline";
-import { CardComposer } from "./CardComposer";
+import { CardHandoffSample } from "./CardHandoffSample";
 import { FolderPicker } from "./FolderPicker";
 import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 import { FolderTodayToggle } from "./FolderTodayToggle";
@@ -60,9 +59,7 @@ export function ComponentsReviewPage() {
   const [inToday, setInToday] = useState(false);
   const [documentExpanded, setDocumentExpanded] = useState(false);
   const [documentBody, setDocumentBody] = useState("# 문서 샘플\n\n운영 문서 행과 같은 표시와 여백을 사용합니다.");
-  const [request, setRequest] = useState("");
-  const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [folderOpen, setFolderOpen] = useState(false);
+  const [inputSampleVersion, setInputSampleVersion] = useState(0);
   const [folder, setFolder] = useState(reviewFolders[0]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [description, setDescription] = useState("폴더 설명을 누르면 기존 편집기가 열립니다.");
@@ -70,15 +67,15 @@ export function ComponentsReviewPage() {
   const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(() => new Set());
   const open = (label: string) => setNotice(`${label} 샘플을 열었습니다.`);
   const folderStar = { starred, pending: false, error: null, toggle: async () => setStarred(value => !value) };
-  const send = () => {
+  const send = (request:string) => {
     if (!request.trim()) return;
     setComments(current => [...current, { id: `components-comment-${current.length}`, cardId: reviewCard.id,
       authorKind: "user", authorId: "sample", sessionId: null, kind: "comment", body: request,
       createdAt: new Date().toISOString() }]);
-    setRequest(""); setFiles([]); setNotice("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
+    setNotice("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
   };
   const reset = () => {
-    setStarred(false); setInToday(false); setDocumentExpanded(false); setRequest(""); setFiles([]);
+    setStarred(false); setInToday(false); setDocumentExpanded(false); setInputSampleVersion(value=>value+1);
     setFolder(reviewFolders[0]); setComments([]); setNotice("샘플 상태를 초기화했습니다.");
   };
   const folderProps = {
@@ -227,26 +224,8 @@ export function ComponentsReviewPage() {
             <Sample name="공통 세션 메뉴 / FolderMoveDialog / SessionSuccessionModal" state="운영 행·헤더 우클릭 · 기존 폴더 선택기 · 승계 · 비활성 사유">
               <SessionMenuReviewSample/>
             </Sample>
-            <Sample name="CardComposer / ChatInputComposer / ChatInputEditor" state="한 줄 → 여러 줄 · 전송 · 로컬 첨부">
-              <div className="v3-card-handoff">
-                <CardComposer text={request} onChangeText={setRequest} onSend={send} placeholder="샘플 메시지" inputLabel="검수 메시지"
-                  label="샘플 전송" disabled={!request.trim()} pending={false} files={files}
-                  onAddFiles={incoming => {
-                    const added = Array.from(incoming).map(file => ({ id: crypto.randomUUID(), file, path: null, status: "done" as const }));
-                    setFiles(current => [...current, ...added]);
-                  }} onRemoveFile={id => setFiles(current => current.filter(file => file.id !== id))}/>
-                <div className="v3-card-handoff-controls">
-                  <Popover open={folderOpen} onOpenChange={setFolderOpen}>
-                    <PopoverTrigger className="v3-card-handoff-chip control-surface v3-card-handoff-folder rounded-full" aria-label="샘플 폴더 선택">
-                      <span>📁 {folder.name}</span><span aria-hidden="true">▾</span>
-                    </PopoverTrigger>
-                    <PopoverPopup side="top" align="start" className="v3-shell v3-card-folder-picker">
-                      <FolderPicker folders={reviewFolders} starredFolderIds={reviewFolders.map(item => item.id)} disabledFolderIds={new Set()}
-                        selectedFolderId={folder.id} pending={false} onSelect={next => { setFolder(next); setFolderOpen(false); }}/>
-                    </PopoverPopup>
-                  </Popover>
-                </div>
-              </div>
+            <Sample name="CardHandoffView / CardComposer / ChatInputComposer / ChatInputEditor" state="선택행 위 · 한 줄 → 여러 줄 · 전송 · 로컬 첨부">
+              <CardHandoffSample key={inputSampleVersion} onSend={send}/>
             </Sample>
           </section>
           <section id="components-controls" className="v3-detail-section">

@@ -76,6 +76,6 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
    </section>:<section className="v3-detail-section v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></section>}
    </div>
   </div>
-  <div className="v3-card-composer-slot"><CardCommentInput key={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} onSend={submit}/></div>
+  <div className="v3-card-composer-slot"><CardCommentInput key={cardId} cardId={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} onSend={submit}/></div>
  </article>;
 }
