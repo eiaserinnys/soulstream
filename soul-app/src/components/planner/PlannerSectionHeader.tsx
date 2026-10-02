@@ -8,6 +8,7 @@ export function PlannerSectionHeader({
   count,
   testID,
   countTestID,
+  countSuffix,
   variant = 'default',
   actionLabel,
   onAction,
@@ -20,6 +21,7 @@ export function PlannerSectionHeader({
   count?: number;
   testID?: string;
   countTestID?: string;
+  countSuffix?: string;
   variant?: 'default' | 'board' | 'lane';
   actionLabel?: string;
   onAction?: () => void;
@@ -32,14 +34,14 @@ export function PlannerSectionHeader({
   const styles = useMemo(() => makeStyles(t), [t]);
   const board = variant === 'board';
   if (variant === 'lane') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={styles.title}>
-    {title + ' '}<Text testID={countTestID}>{`${count ?? 0}개`}</Text>
+    {title + ' '}<Text testID={countTestID}>{`${count ?? 0}${countSuffix??'개'}`}</Text>
   </Text>;
   if (onToggle) return (
     <TouchableOpacity testID={testID} accessibilityRole="button"
       accessibilityLabel={`${title} ${expanded ? '접기' : '펼치기'}`}
       accessibilityState={{ expanded }} style={[styles.row, count !== undefined && styles.countedRow]} onPress={onToggle}>
       <Text style={[styles.title, count !== undefined && styles.countedTitle]}>{title}</Text>
-      {count !== undefined ? <Text testID={countTestID} style={styles.count}>{count}</Text> : null}
+      {count !== undefined ? <Text testID={countTestID} style={styles.count}>{count}{countSuffix}</Text> : null}
       <View testID={disclosureFrameTestID} style={styles.disclosureFrame}>
         <DisclosureIcon expanded={expanded === true} color={t.colors.textMuted} size={t.iconSize.compact} />
       </View>
@@ -48,7 +50,7 @@ export function PlannerSectionHeader({
   return (
     <View testID={testID} style={[styles.row, count !== undefined && styles.countedRow, board && styles.boardRow]}>
       <Text numberOfLines={board ? 1 : undefined} style={[styles.title, count !== undefined && styles.countedTitle, board && styles.boardTitle]}>{title}</Text>
-      {count !== undefined ? <Text testID={countTestID} style={styles.count}>{count}</Text> : null}
+      {count !== undefined ? <Text testID={countTestID} style={styles.count}>{count}{countSuffix}</Text> : null}
       {onAction && actionLabel ? (
         <TouchableOpacity accessibilityRole="button" style={styles.action} onPress={onAction}>
           <Text style={styles.link}>{actionLabel}</Text>

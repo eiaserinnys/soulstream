@@ -163,7 +163,7 @@ export async function loadFolderPlanner(
   dependencies: PlannerDataDependencies,
 ): Promise<FolderPlannerData> {
   const payload = await dependencies.fetchPlanner(
-    `/api/planner/folders/${encodeURIComponent(folderId)}`,
+    `/api/planner/folders/${encodeURIComponent(folderId)}?includeCompleted=false`,
   ) as PlannerFolderAggregate;
   return {
     folder: payload.folder,
@@ -239,9 +239,10 @@ export async function loadStarredPlannerFolder(
 export async function loadPlannerFolderById(
   api: PageApiClient,
   folderId: string,
+  options?: {includeCompleted?:boolean},
 ): Promise<PlannerFolder> {
   const payload = await createPlannerDataDependencies().fetchPlanner(
-    `/api/planner/folders/${encodeURIComponent(folderId)}`,
+    `/api/planner/folders/${encodeURIComponent(folderId)}${options?.includeCompleted===undefined?"":`?includeCompleted=${options.includeCompleted}`}`,
   ) as PlannerFolderAggregate;
   return { ...plannerFolder({ folder: payload.folder, page: payload.page,
     itemCounts: {}, itemTotal: payload.cards.length,

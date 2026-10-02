@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode, type Ref } from "react";
 import { DashboardIconCap, ProfileAvatar, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { Check } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
@@ -18,7 +18,7 @@ export function postItRotation(id: string): number {
 
 export type PostItVariant = "default" | "compact";
 
-export function PostItGrid({ children, className = "", variant = "default", ...props }: HTMLAttributes<HTMLDivElement> & { variant?: PostItVariant }) {
+export function PostItGrid({ children, className = "", variant = "default", ...props }: HTMLAttributes<HTMLDivElement> & { variant?: PostItVariant; ref?:Ref<HTMLDivElement> }) {
   return <div {...props} className={`v3-postit-grid${variant === "compact" ? " v3-postit-grid--compact" : ""} ${className}`} style={usePostItScale()}>{children}</div>;
 }
 

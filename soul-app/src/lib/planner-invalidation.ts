@@ -57,6 +57,7 @@ export function plannerSourceForStreamEvent(
     case 'catalog_updated':
       return 'catalog';
     case 'folder_updated':
+    case 'card_updated':
       return 'folder';
     case 'custom_view_updated':
       return 'custom_view';

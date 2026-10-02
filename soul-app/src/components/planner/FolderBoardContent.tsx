@@ -44,7 +44,7 @@ export function FolderBoardContent({
   const [sectionExpanded, setSectionExpanded] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const folder = usePlannerFolder(api, folderId, active);
+  const folder = usePlannerFolder(api, folderId, active,false);
   const sessions = useSessionStore((state) => state.sessions);
   const bindings = useMemo(
     () => buildCustomViewBindings(folder.data, sessions),

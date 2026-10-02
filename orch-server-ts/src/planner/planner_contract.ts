@@ -71,7 +71,7 @@ export interface PlannerReadProvider {
   getStarredFolders(input: PlannerPageInput): Promise<PlannerPageSlice<PlannerFolderDto>>;
   getDailyHistory(input: { before: string; limit: number }): Promise<PlannerDailyHistoryDto>;
   getToday(date: string): Promise<PlannerTodayDto | null>;
-  getFolder(folderId: string, input: { limit: number }): Promise<PlannerFolderDetailDto | null>;
+  getFolder(folderId: string, input: { limit: number; includeCompleted?: boolean }): Promise<PlannerFolderDetailDto | null>;
   getSubfolders(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<Record<string, unknown>>>;
   getSessions(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<PlannerSessionDto>>;
 }

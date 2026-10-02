@@ -281,7 +281,7 @@ async function hydrateLinkedFolder(
   selectedSession: Session,
   scope: PlannerResolutionScope,
 ): Promise<PlannerFolder> {
-  const detail = await scope.client.getPlannerFolder(folderId);
+  const detail = await scope.client.getPlannerFolder(folderId,{includeCompleted:false});
   assertResolutionScope(scope);
   if (detail.folder.archived) {
     throw new SessionFolderResolutionError('연결된 폴더는 보관되어 열 수 없습니다.', {

@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { FolderRouteOptions } from "../folders/folder_routes.js";
-import { isFolderAllowed, normalizeAccess } from "../folders/folder_route_access.js";
+import { filterFolders, isFolderAllowed, normalizeAccess } from "../folders/folder_route_access.js";
+import { parseCardQuery } from "./completed_card_query.js";
 import { dashboardFolderActor, folderOperationError } from "../folders/folder_workspace_routes.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import { executeCardOperation, serializeCardDetail, type CardOperation } from "./card_operations.js";
@@ -24,10 +25,16 @@ export function registerCardRoutes(app:FastifyInstance,options:FolderRouteOption
   app.get<{ Querystring:{ folderId?:string; status?:string } }>("/api/cards",async (request,reply)=>{
     try {
       const service=await options.cardServiceProvider!();
-      const cards=await service.listCards(request.query);
+      const query=parseCardQuery(request.query);
       const [access,folders]=await Promise.all([options.accessProvider.resolveAccess(request),options.provider.listFolders()]);
-      const visible=cards.filter(c=>isFolderAllowed(normalizeAccess(access),folders,c.folder_id));
-      return { cards:(await service.projectCards(visible)).map(serializeCardRow) };
+      const normalized=normalizeAccess(access);
+      const allowedFolderIds=normalized.restricted ? filterFolders(normalized,folders).map(folder=>folder.id) : null;
+      if(query.status === "done") {
+        const page=await service.listCompletedCards({...query,allowedFolderIds});
+        return {cards:page.cards.map(serializeCardRow),nextCursor:page.nextCursor};
+      }
+      const cards=await service.listCards({...query,allowedFolderIds});
+      return { cards:(await service.projectCards(cards)).map(serializeCardRow) };
     } catch(error) { return folderOperationError(reply,error); }
   });
   for (const reports of [false,true]) {

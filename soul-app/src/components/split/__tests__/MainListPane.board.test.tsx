@@ -6,7 +6,7 @@ jest.mock('../../planner/FolderWorkspace', () => ({ FolderWorkspace: (props: any
 } }));
 jest.mock('../../../screens/DailyPlannerScreen', () => ({ DailyPlannerScreen: () => require('react').createElement(require('react-native').Text, null, '기존 데일리') }));
 jest.mock('../../planner/DailyHeaderActions', () => ({ DailyHeaderActions: () => null }));
-jest.mock('../../../api/client', () => ({ createApiClient: () => ({ listCards: mockList }) }));
+jest.mock('../../../api/client', () => ({ createApiClient: () => ({ listCards: mockList, listCompletedCards: mockCompleted }) }));
 jest.mock('../../planner/CardDetailSheet', () => ({ CardDetailSheet: () => null }));
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
@@ -16,11 +16,13 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { useCardStore } from '../../../store/cardStore';
 import { cardFixture } from '../../../test-support/cards';
 const mockList = jest.fn();
+const mockCompleted=jest.fn();
 
 beforeEach(() => {
   useSettingsStore.setState({ serverUrl: 'https://test.example', cardIncludeCompleted: {} });
   useCardStore.setState({ rows: {}, details: {} });
-  mockList.mockReset().mockResolvedValue({ cards: [cardFixture({ status: 'done' }), cardFixture({ id: 'draft', status: 'todo' })] });
+  mockList.mockReset().mockResolvedValue({ cards: [cardFixture({ id: 'draft', status: 'todo' })] });
+  mockCompleted.mockReset().mockResolvedValue({cards:[cardFixture({status:'done'})],nextCursor:null});
 });
 
 test('기존 데일리는 유지하고 보드는 오늘 피드 대신 전체 인증 목록을 읽는다', async () => {
@@ -29,16 +31,16 @@ test('기존 데일리는 유지하고 보드는 오늘 피드 대신 전체 인
   expect(screen.queryByText('기존 데일리')).toBeNull();
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
-  expect(mockList).toHaveBeenCalledWith(undefined);
+  expect(mockList).toHaveBeenCalledWith(undefined,{includeCompleted:false});
   expect(screen.getByTestId('postit-card-draft')).toBeTruthy();
   expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
   await act(async () => fireEvent.press(screen.getByLabelText('완료 숨김')));
-  expect(screen.getByTestId('postit-card-card-1')).toBeTruthy();
+  await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   await act(async () => fireEvent.press(screen.getByLabelText('데일리 기록')));
   expect(screen.getByText('기존 데일리')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   expect(mockList).toHaveBeenCalledTimes(1);
-  expect(screen.getByTestId('postit-card-card-1')).toBeTruthy();
+  await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
 });
 
 test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮겨도 폴더 옵션을 전파하지 않는다', async () => {
@@ -46,15 +48,15 @@ test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮
   const screen = render(<MainListPane />);
   expect(screen.getByText('false')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
-  await waitFor(() => expect(mockList).toHaveBeenCalledWith('folder-1'));
+  await waitFor(() => expect(mockList).toHaveBeenCalledWith('folder-1',{includeCompleted:false}));
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
   await act(async () => fireEvent.press(screen.getByLabelText('완료 숨김')));
-  expect(screen.getByTestId('postit-card-card-1')).toBeTruthy();
+  await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   await act(async () => fireEvent.press(screen.getByLabelText('기존 보기')));
   expect(screen.getByText('true')).toBeTruthy();
   await act(async () => useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } }));
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
-  await waitFor(() => expect(mockList).toHaveBeenCalledWith(undefined));
+  await waitFor(() => expect(mockList).toHaveBeenCalledWith(undefined,{includeCompleted:false}));
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
   await act(async () => useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } }));
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
@@ -76,6 +78,7 @@ test('보드 카드 탭은 기존 카드 오버레이를 열고 목록 오류는
 test('상태 저장 후 상세 row가 합쳐져도 인증 목록의 최신 활동 본문을 유지한다', async () => {
   const card = cardFixture({ status: 'review', latestActivity: { kind: 'report', format: 'markdown', body: '최신 보고 원문', createdAt: '' } });
   mockList.mockResolvedValue({ cards: [card] });
+  mockCompleted.mockResolvedValue({cards:[{...card,status:'done'}],nextCursor:null});
   useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
   const screen = render(<MainListPane />);
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
@@ -86,5 +89,5 @@ test('상태 저장 후 상세 row가 합쳐져도 인증 목록의 최신 활�
   await act(async () => fireEvent.press(screen.getByLabelText('데일리 기록')));
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await act(async () => fireEvent.press(screen.getByLabelText('완료 숨김')));
-  expect(screen.getByText(/최신 보고 원문/)).toBeTruthy();
+  await waitFor(()=>expect(screen.getByText(/최신 보고 원문/)).toBeTruthy());
 });

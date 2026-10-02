@@ -84,7 +84,7 @@ export function useV3SessionPanelController({
         session,
         boardItems: catalog?.boardItems ?? [],
         currentFolderEntries,
-        loadFolderById: (folderId) => loadPlannerFolderById(api, folderId),
+        loadFolderById: (folderId) => loadPlannerFolderById(api, folderId,{includeCompleted:false}),
       });
       if (requestSequence !== openRequestSequence.current) return false;
 

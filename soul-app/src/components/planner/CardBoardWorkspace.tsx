@@ -3,6 +3,7 @@ import { AccessibilityInfo, ActivityIndicator, Platform, Text, View } from 'reac
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import type { ApiClient } from '../../api/client';
 import { useCardList } from '../../hooks/useCardList';
+import { useCompletedCards } from '../../hooks/useCompletedCards';
 import { useDeviceType, useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -26,6 +27,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   const t = useTokens();
   const phone = useDeviceType() === 'phone';
   const { cards, loading, error, refresh } = useCardList(api, folderId);
+  const completed=useCompletedCards(api,folderId,cardDisplay.includeCompleted);
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState<BoardPosition | null>(null);
   const position = useRef<BoardPosition>({ x: 0, lanes: {} });
@@ -54,8 +56,8 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   useEffect(() => { setExpanded(null); }, [folderId]);
   useImperativeHandle(ref, () => ({ openCreate: () => setAdding(true),
     openExpanded: () => setExpanded({ ...position.current, lanes: { ...position.current.lanes } }) }), []);
-  const completedCount = cards.filter((card) => card.status === 'done').length;
-  const board = (initialPosition?: BoardPosition, expandedBoard = false) => <CardBoard api={api} cards={cards} phone={phone}
+  const completedCount = completed.cards.length;
+  const board = (initialPosition?: BoardPosition, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={phone} completed={completed}
     includeCompleted={cardDisplay.includeCompleted} initialPosition={initialPosition}
     onPositionChange={expandedBoard ? undefined : (next) => { position.current = next; }}
     onOpen={(id, target) => {

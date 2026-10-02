@@ -152,7 +152,7 @@ export function usePlannerFolderDetail(
   enabled = true,
 ) {
   const scopeGeneration = useAuthScopeGeneration();
-  const ownerKey = scopeGeneration + ':' + (folderId ?? '');
+  const ownerKey = scopeGeneration + ':' + (folderId ?? '') + ':includeCompleted=false';
   const [local, setLocal] = useState<{
     ownerKey: string;
     data: PlannerFolderDetail | undefined;
@@ -177,7 +177,7 @@ export function usePlannerFolderDetail(
       error: null,
     }));
     try {
-      const data = await api.getPlannerFolder(folderId);
+      const data = await api.getPlannerFolder(folderId,{includeCompleted:false});
       if (isCurrentRequest(requestGeneration, generation, scopeGeneration)) {
         setLocal({ ownerKey, data, loading: false, error: null });
       }

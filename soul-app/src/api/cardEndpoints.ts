@@ -1,4 +1,5 @@
 import type { ApiRequestContext } from './clientCore';
+import type { CompletedCardParams } from '../../../packages/soul-ui/src/cards/completed-cards';
 import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment } from './cardTypes';
 
 export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestContext) {
@@ -7,8 +8,10 @@ export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestCon
     method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }).then((response) => readJson<CardMutationResult>(response, 'cardMutation'));
   return {
-    listCards: (folderId?: string) => authFetch(`${base}/api/cards${folderId ? `?${new URLSearchParams({ folderId })}` : ''}`)
+    listCards: (folderId?: string, options?:{includeCompleted?:boolean}) => authFetch(`${base}/api/cards?${new URLSearchParams({...folderId?{folderId}:{},...options?.includeCompleted!==undefined?{includeCompleted:String(options.includeCompleted)}:{}})}`.replace(/\?$/,''))
       .then((response) => readJson<{ cards: CardDto[] }>(response, 'listCards')),
+    listCompletedCards: (params:CompletedCardParams) => authFetch(`${base}/api/cards?${new URLSearchParams({status:'done',...Object.fromEntries(Object.entries(params).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)]))})}`)
+      .then(response=>readJson<{cards:CardDto[];nextCursor:string|null}>(response,'listCompletedCards')),
     getCard: (id: string) => authFetch(path(id)).then((response) => readJson<CardDetailWire>(response, 'getCard'))
       .then((raw): CardDetail => ({ ...raw, sessions: raw.sessions.map((session) => ({
         ...session, agentSessionId: session.sessionId, nodeId: session.nodeId ?? undefined,

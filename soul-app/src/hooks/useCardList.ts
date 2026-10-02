@@ -21,7 +21,7 @@ export function useCardList(api: ApiClient | null, folderId?: string) {
       if (!api) return;
       setState((previous) => ({ owner, cards: previous.owner === owner ? previous.cards : [], loading: true, error: null }));
       try {
-        const result = await api.listCards(folderId);
+        const result = await api.listCards(folderId,{includeCompleted:false});
         if (!cancelled) setState({ owner, cards: result.cards, loading: false, error: null });
       } catch (cause) {
         if (!cancelled) setState((previous) => ({ ...previous, loading: false, error: cause instanceof Error ? cause.message : String(cause) }));
@@ -37,7 +37,7 @@ export function useCardList(api: ApiClient | null, folderId?: string) {
   const cards = useMemo(() => {
     if (state.owner !== owner) return [];
     const inventory = new Map(state.cards.map((card) => [card.id, card]));
-    return mergeCardRows(state.cards, updates).filter((card) => !folderId || card.folderId === folderId)
+    return mergeCardRows(state.cards, updates).filter((card) => card.status!=='done' && (!folderId || card.folderId === folderId))
       .map((card) => card.latestActivity === undefined
         ? { ...card, latestActivity: inventory.get(card.id)?.latestActivity } : card);
   }, [state, owner, updates, folderId]);

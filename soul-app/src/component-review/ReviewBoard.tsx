@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo,useState } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
@@ -6,8 +6,10 @@ import { PlannerSectionHeader } from '../components/planner/PlannerSectionHeader
 import { CardBoard } from '../components/planner/CardBoard';
 import { FolderCardList } from '../components/planner/FolderCardList';
 import { CompletedCardsToggle } from '../components/planner/CompletedCardsToggle';
-import { initialCards } from './fixtures';
+import { createReviewApi,initialCards } from './fixtures';
 import { useCardDisplay } from '../hooks/useCardDisplay';
+import { useCompletedCards } from '../hooks/useCompletedCards';
+import { CompletedCardCollection } from '../components/planner/CompletedCardCollection';
 
 type Scenario = 'mixed' | 'none' | 'all';
 type Scope = 'folder' | 'global';
@@ -28,10 +30,12 @@ export function ReviewBoard() {
   const [layout, setLayout] = useState<Layout>('board');
   const { includeCompleted, onChange: setIncludeCompleted } = useCardDisplay(scope === 'folder' ? initialCards[0].folderId : undefined);
   const [selected, setSelected] = useState('');
+  const api=useMemo(()=>createReviewApi('normal',{manyCompleted:true,...scenario==='none'?{completed:'none' as const}:scenario==='all'?{completed:'only' as const}:{}}),[scenario]);
+  const completed=useCompletedCards(api,scope==='folder'?initialCards[0].folderId:undefined,includeCompleted);
   const cards = scenario === 'none' ? exampleCards.filter((card) => card.status !== 'done')
     : scenario === 'all' ? exampleCards.filter((card) => card.status === 'done') : exampleCards;
   const completedCount = cards.filter((card) => card.status === 'done').length;
-  return <View style={{ gap: t.uiSpacing.md }}>
+  return <View style={{ flex:1,gap: t.uiSpacing.md }}>
     <SettingsSegmentedControl<Scenario> id="board-scenario" value={scenario} onChange={setScenario}
       options={[{ value: 'mixed', label: '혼합' }, { value: 'none', label: '완료 0개' }, { value: 'all', label: '전부 완료' }]} />
     <SettingsSegmentedControl<Scope> id="board-scope" value={scope} onChange={setScope}
@@ -42,9 +46,9 @@ export function ReviewBoard() {
       <View style={{ flexGrow: 1 }}><PlannerSectionHeader title={scope === 'folder' ? '현재 폴더 · 카드' : '전체 · 보드'} /></View>
       <CompletedCardsToggle includeCompleted={includeCompleted} completedCount={completedCount} onChange={setIncludeCompleted} />
     </View>
-    {layout === 'board' ? <View testID="review-board-frame" style={{ height: height - t.hitTarget.min * 2, minHeight: t.tabletShell.folderPane.minWidth }}>
-      <CardBoard api={null} cards={cards} includeCompleted={includeCompleted} onOpen={setSelected} />
-    </View> : <FolderCardList api={null} cards={cards} includeCompleted={includeCompleted} onOpen={setSelected} />}
+    {layout === 'board' ? <View testID="review-board-frame" style={{flex:1}}>
+      <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} completed={completed} includeCompleted={includeCompleted} onOpen={setSelected} />
+    </View> : <><FolderCardList api={api} cards={cards} includeCompleted={false} onOpen={setSelected} />{includeCompleted?<CompletedCardCollection api={api} browser={completed} onOpen={setSelected}/>:null}</>}
     {selected ? <Text testID="review-board-selection" style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>선택한 카드: {selected}</Text> : null}
   </View>;
 }

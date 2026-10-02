@@ -131,7 +131,7 @@ export function createCatalogEndpoints({
         body: JSON.stringify(body),
       }).then((r) => readJson(r, 'createFolder')),
 
-    getFolderSnapshot: (folderId: string): Promise<FolderSnapshot> => authFetch(`${base}/api/folders/${encodeURIComponent(folderId)}`)
+    getFolderSnapshot: (folderId: string,options?:{includeCompleted?:boolean}): Promise<FolderSnapshot> => authFetch(`${base}/api/folders/${encodeURIComponent(folderId)}${options?.includeCompleted===undefined?'':`?includeCompleted=${options.includeCompleted}`}`)
       .then((response) => readJson(response, 'getFolderSnapshot')),
 
     getChildFolders: (folderId: string, cursor?: string): Promise<{

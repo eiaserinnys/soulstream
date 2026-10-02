@@ -59,8 +59,8 @@ export function createPlannerEndpoints({
         'getDailyHistory',
       )),
 
-    getPlannerFolder: (folderId: string) =>
-      authFetch(`${base}/api/planner/folders/${encodeURIComponent(folderId)}`)
+    getPlannerFolder: (folderId: string,options?:{includeCompleted?:boolean}) =>
+      authFetch(`${base}/api/planner/folders/${encodeURIComponent(folderId)}${options?.includeCompleted===undefined?'':`?includeCompleted=${options.includeCompleted}`}`)
         .then((response) => readJson<PlannerFolderDetailWire>(response, 'getPlannerFolder'))
         .then(parsePlannerFolderDetail),
 

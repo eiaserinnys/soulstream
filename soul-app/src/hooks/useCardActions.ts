@@ -5,6 +5,7 @@ import type { ApiClient } from '../api/client';
 import type { CardMutationResult } from '../api/cardTypes';
 import { captureAuthScope } from '../lib/auth-scope';
 import { refreshCard, useCardStore } from '../store/cardStore';
+import { usePlannerStore } from '../store/plannerStore';
 
 export const cardOperationId = () => `soul-app-card-${Crypto.randomUUID()}`;
 
@@ -21,6 +22,7 @@ export function useCardActions(api: ApiClient | null) {
     try {
       const result = await mutation();
       if (captureAuthScope().generation !== scope) return false;
+      usePlannerStore.getState().invalidate('folder');
       if (result.card) {
         useCardStore.getState().putCard(result.card);
         try { await refreshCard(api, result.card.id); }

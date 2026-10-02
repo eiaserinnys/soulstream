@@ -11,9 +11,10 @@ export function usePlannerFolder(
   api: ApiClient | null,
   folderId: string | null,
   enabled = true,
+  includeCompleted = true,
 ) {
   const scopeGeneration = useAuthScopeGeneration();
-  const ownerKey = `${scopeGeneration}\u0000${folderId ?? ''}`;
+  const ownerKey = `${scopeGeneration}\u0000${folderId ?? ''}\u0000${includeCompleted}`;
   const [local, setLocal] = useState(() => emptyState(ownerKey));
   const current = local.ownerKey === ownerKey ? local : emptyState(ownerKey);
   const refreshKey = usePlannerStore((state) => (
@@ -34,7 +35,7 @@ export function usePlannerFolder(
       error: null,
     }));
     try {
-      const result = await api.getFolderSnapshot(folderId);
+      const result = await api.getFolderSnapshot(folderId,{includeCompleted});
       if (isCurrent(generationRef, generation, scopeGeneration)) {
         setLocal((previous) => previous.ownerKey === ownerKey
           ? { ...previous, data: result }
@@ -53,7 +54,7 @@ export function usePlannerFolder(
           : previous);
       }
     }
-  }, [api, enabled, ownerKey, folderId, scopeGeneration]);
+  }, [api, enabled, ownerKey, folderId, scopeGeneration,includeCompleted]);
 
   useEffect(() => {
     generationRef.current += 1;
@@ -66,9 +67,9 @@ export function usePlannerFolder(
 
   const rows = useCardStore((state) => state.rows);
   const data = useMemo(() => current.data ? { ...current.data,
-    cards: mergeCardRows(current.data.cards, rows).filter((card) => card.folderId === folderId)
+    cards: mergeCardRows(current.data.cards, rows).filter((card) => card.folderId === folderId && (includeCompleted||card.status!=='done'))
       .sort((a, b) => a.positionKey < b.positionKey ? -1 : a.positionKey > b.positionKey ? 1 : 0),
-  } : undefined, [current.data, rows, folderId]);
+  } : undefined, [current.data, rows, folderId,includeCompleted]);
   return {
     data,
     loading: current.loading,

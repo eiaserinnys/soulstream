@@ -14,15 +14,16 @@ import { useCardStore } from '../../store/cardStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { CompletedCardsToggle } from '../../components/planner/CompletedCardsToggle';
 
-const mockApi = { listCards: jest.fn(), getCard: jest.fn(), setCardStatus: jest.fn() };
+const mockApi = { listCards: jest.fn(), listCompletedCards: jest.fn(), getCard: jest.fn(), setCardStatus: jest.fn() };
 beforeEach(() => {
   useSettingsStore.setState({ serverUrl: 'https://test.example', cardIncludeCompleted: {} });
   useCardStore.setState({ rows: {}, details: {} });
-  mockApi.listCards.mockReset(); mockApi.getCard.mockReset(); mockApi.setCardStatus.mockReset();
+  mockApi.listCards.mockReset(); mockApi.listCompletedCards.mockReset(); mockApi.listCompletedCards.mockResolvedValue({cards: [], nextCursor: null}); mockApi.getCard.mockReset(); mockApi.setCardStatus.mockReset();
 });
 
 test('전체 홈과 폴더 선호를 따로 유지하고 홈 재마운트에도 보존한다', async () => {
-  mockApi.listCards.mockResolvedValue({ cards: [cardFixture({ status: 'done' })] });
+  mockApi.listCards.mockResolvedValue({ cards: [] });
+  mockApi.listCompletedCards.mockResolvedValue({cards:[cardFixture({status:'done',completedAt:new Date().toISOString()})],nextCursor:null});
   function FolderOption() {
     const display = useCardDisplay('folder-1');
     return <CompletedCardsToggle {...display} completedCount={1} />;
@@ -31,7 +32,7 @@ test('전체 홈과 폴더 선호를 따로 유지하고 홈 재마운트에도 
   await waitFor(() => expect(mockApi.listCards).toHaveBeenCalled());
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
   fireEvent.press(screen.getByLabelText('완료 숨김'));
-  expect(screen.getByTestId('postit-card-card-1')).toBeTruthy();
+  await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   screen.unmount();
   screen = render(<FolderOption />);
   expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
@@ -45,15 +46,16 @@ test('완료 표시 중 드롭 저장 후 숨김·재마운트·다시 표시해
   const card = cardFixture({ status: 'review', version: 7 });
   mockApi.listCards.mockResolvedValue({ cards: [card] });
   mockApi.getCard.mockResolvedValue({ card, reports: [], questions: [], sessions: [] });
-  mockApi.setCardStatus.mockResolvedValue({ card: { ...card, status: 'done', version: 8 }, folderId: card.folderId });
+  mockApi.setCardStatus.mockImplementation(async()=>{const done={...card,status:'done',version:8,completedAt:new Date().toISOString()};mockApi.listCards.mockResolvedValue({cards:[]});mockApi.listCompletedCards.mockResolvedValue({cards:[done],nextCursor:null});mockApi.getCard.mockResolvedValue({card:done,reports:[],questions:[],sessions:[]});return {card:done,folderId:card.folderId};});
   let screen = render(<CardHomeScreen onOpen={() => {}} />);
   await waitFor(() => expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   fireEvent.press(screen.getByLabelText('완료 숨김'));
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 1210, height: 600 } } });
   const width = StyleSheet.flatten(screen.getByTestId('card-board-column-done').props.style).width;
   const contentStyle = StyleSheet.flatten(screen.getByTestId('card-board').props.contentContainerStyle);
-  const maxScroll = width * 6 + contentStyle.gap * 5 + contentStyle.paddingHorizontal * 2 - 1210;
-  const doneX = contentStyle.paddingHorizontal + (width + contentStyle.gap) * 5 - maxScroll + width / 2;
+  const normalWidth = StyleSheet.flatten(screen.getByTestId('card-board-column-todo').props.style).width;
+  const maxScroll = normalWidth * 5 + width + contentStyle.gap * 5 + contentStyle.paddingHorizontal * 2 - 1210;
+  const doneX = contentStyle.paddingHorizontal + (normalWidth + contentStyle.gap) * 5 - maxScroll + width / 2;
   fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: maxScroll, y: 0 } } });
   await act(async () => fireGestureHandler(getByGestureTestId('board-drag-card-1'), [
     { state: State.BEGAN }, { state: State.ACTIVE, absoluteX: doneX, absoluteY: 100 },
@@ -66,6 +68,6 @@ test('완료 표시 중 드롭 저장 후 숨김·재마운트·다시 표시해
   screen = render(<CardHomeScreen onOpen={() => {}} />);
   await waitFor(() => expect(screen.getByLabelText('완료 숨김')).toBeTruthy());
   fireEvent.press(screen.getByLabelText('완료 숨김'));
-  expect(screen.getByTestId('postit-card-card-1')).toBeTruthy();
+  await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   expect(useCardStore.getState().rows[card.id].status).toBe('done');
 });

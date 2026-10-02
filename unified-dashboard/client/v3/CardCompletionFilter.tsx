@@ -6,9 +6,8 @@ export interface CardCompletionOption {
 }
 
 /** A view option only; the owner shares it across folder grid and board. */
-export function CardCompletionFilter({includeCompleted, onChange, hiddenCount}: CardCompletionOption & {hiddenCount:number}) {
+export function CardCompletionFilter({includeCompleted, onChange}: CardCompletionOption & {hiddenCount?:number}) {
   return <div className="v3-card-completion-filter">
-    <label><Switch aria-label="완료 포함" checked={includeCompleted} onCheckedChange={onChange}/><span>완료 포함</span></label>
-    {!includeCompleted && hiddenCount > 0 ? <span className="v3-card-completion-hidden">완료 {hiddenCount}개 숨김</span> : null}
+    <label><Switch aria-label="완료 숨김" checked={!includeCompleted} onCheckedChange={value=>onChange(!value)}/><span>완료 숨김</span></label>
   </div>;
 }

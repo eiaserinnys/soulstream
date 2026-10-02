@@ -58,14 +58,15 @@ export class PlannerRepository implements PlannerReadProvider {
       memoBlocks: blocks.filter(r => r.block_type === "paragraph" && !r.is_mount).map(blockDto),
       reviewSessionIds: review.map(r => String(r.session_id)) };
   }
-  async getFolder(folderId: string, input: { limit: number }): Promise<PlannerFolderDetailDto | null> {
+  async getFolder(folderId: string, input: { limit: number; includeCompleted?: boolean }): Promise<PlannerFolderDetailDto | null> {
     const sql = await this.resolver.resolveSql();
     const [row] = await sql`SELECT to_jsonb(f) AS folder, to_jsonb(p) - 'snapshot' - 'state_vector' AS page
       FROM folders f JOIN pages p ON p.id = f.project_page_id WHERE f.id = ${folderId}`;
     if (!row) return null;
     const page = pageDto(row.page as Record<string, unknown>);
     const blocks = await sql`SELECT * FROM blocks WHERE page_id = ${page.id} ORDER BY position_key, id`;
-    const cards = await projectCardActivity(sql, await sql`SELECT * FROM cards WHERE folder_id = ${folderId} AND NOT archived ORDER BY position_key COLLATE "C", id`);
+    const cards = await projectCardActivity(sql, await sql`SELECT * FROM cards WHERE folder_id = ${folderId} AND NOT archived
+      AND (${input.includeCompleted ?? true} OR status <> 'done') ORDER BY position_key COLLATE "C", id`);
     return { folder: serializeCardRow(row.folder as Record<string, unknown>), page, blocks: blocks.map(blockDto),
       cards: cards.map(serializeCardRow), subfolders: await this.getSubfolders(folderId, input),
       sessions: await this.getSessions(folderId, input) };

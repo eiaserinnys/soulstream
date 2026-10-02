@@ -49,13 +49,13 @@ export function registerFolderWorkspaceRoutes(app: FastifyInstance, options: Fol
   }
   for (const kind of ["snapshot", "children", "operations"] as const) {
     const path = `/api/folders/:folder_id${kind === "snapshot" ? "" : `/${kind}`}`;
-    app.get<{ Params: Scope; Querystring: { view?: string; cardId?: string; limit?: string; cursor?: string; includeArchived?: string } }>(path, async (request, reply) => {
+    app.get<{ Params: Scope; Querystring: { view?: string; cardId?: string; limit?: string; cursor?: string; includeArchived?: string; includeCompleted?: string } }>(path, async (request, reply) => {
       try {
         const folderId = request.params.folder_id;
         if (!await allowed(request, options, folderId)) return failure(reply, 403, "FOLDER_ACCESS_DENIED", "Folder access denied");
         if (!options.cardServiceProvider) throw new Error("Folder service is not configured");
         const service = await options.cardServiceProvider();
-        if (kind === "snapshot") return reply.send(await readFolderSnapshot(service, folderId, request.query.cardId, request.query.view));
+        if (kind === "snapshot") return reply.send(await readFolderSnapshot(service, folderId, request.query.cardId, request.query.view,request.query.includeCompleted !== "false"));
         const limit = z.coerce.number().int().min(1).max(200).parse(request.query.limit ?? 50);
         const offset = z.coerce.number().int().nonnegative().parse(request.query.cursor ?? 0);
         const includeArchived = z.enum(["true", "false"]).parse(request.query.includeArchived ?? "false") === "true";

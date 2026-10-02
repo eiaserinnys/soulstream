@@ -1,5 +1,15 @@
 import { boardLaneGeometry, boardDropStatus, boardVisibleColumns, boardSnapOffsets, BOARD_COLUMNS } from '../card-board-layout';
 
+test('completed grid owns variable lane boundaries for snap, drop and maximum scroll', () => {
+  const columns=boardVisibleColumns(true);
+  const g=boardLaneGeometry(1100,256,8,false,columns,8);
+  expect(g.lanes.at(-1)?.width).toBe(3*256+2*8+16);
+  const done=g.lanes.at(-1)!;
+  const frame={x:0,y:0,width:1100,height:600};
+  expect(boardDropStatus(100,100,frame,g,done.start,'review',columns)).toBe('done');
+  expect(boardSnapOffsets(1100,g,columns.length).at(-1)).toBe(g.maxScroll);
+});
+
 test.each([390, 430])('phone %s: ordinary lanes align left and final lane ends at the right gutter', (width) => {
   const g = boardLaneGeometry(width, 256, 8, true);
   expect(g.laneWidth).toBeLessThan(width);
