@@ -16,8 +16,7 @@ export const MISSING_REMOTE_CALLER_SESSION_ID_ERROR = [
   `Pass the current soulstream_session.agent_session_id or send ${SOULSTREAM_AGENT_SESSION_HEADER}.`,
 ].join(" ");
 
-export const CALLER_SESSION_ID_FALLBACK_GUIDANCE =
-  "세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.";
+export { CALLER_SESSION_ID_FALLBACK_GUIDANCE } from "@soulstream/mcp-contract";
 
 export function resolveEffectiveCallerSessionId(
   explicitCallerSessionId: string | null | undefined,

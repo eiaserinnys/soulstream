@@ -1,3 +1,4 @@
+import { mcpHostRouteAuthRequirements } from "../mcp/mcp_host_routes.js";
 import { cardOrchestrationRouteAuthRequirements } from "../cards/card_orchestration_routes.js";
 import { cardOrchestrationDecisionRouteAuthRequirements } from "../cards/card_orchestration_decision_routes.js";
 import { r2SettingsRouteAuthRequirements } from "../admin/r2_settings_routes.js";
@@ -43,6 +44,7 @@ import { recurringJobRouteAuthRequirements } from "../recurring-jobs/recurring_j
 import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
+  { owner: "mcp.host", authRequirements: mcpHostRouteAuthRequirements },
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
   {owner:"cards.orchestration",authRequirements:{...cardOrchestrationRouteAuthRequirements,...cardOrchestrationDecisionRouteAuthRequirements}},
   { owner: "admin.users", authRequirements: { ...adminUsersRouteAuthRequirements, ...r2SettingsRouteAuthRequirements } },
@@ -94,6 +96,7 @@ export const routeCoverageOwners = [
 // The route inventory fixture describes the retired Python server. New TS-only
 // routes must be listed explicitly instead of being backfilled into that fixture.
 export const tsOnlyRouteKeys = [
+  "POST /api/mcp/host/{tool}",
   "POST /api/attachments/sessions/multipart/init",
   "POST /api/attachments/sessions/multipart/complete",
   "POST /api/attachments/sessions/multipart/abort",

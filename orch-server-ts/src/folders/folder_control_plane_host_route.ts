@@ -54,16 +54,24 @@ export function registerFolderControlPlaneHostRoute(
         return errorReply(reply, 404, "FOLDER_OPERATION_NOT_FOUND", `unknown operation: ${operation}`);
       }
       try {
-        const service = await options.serviceProvider();
-        const result = ["assign_session", "get_default", "get_all", "get_catalog", "get_session_assignments"].includes(operation)
-          ? await dispatch(service, operation, body)
-          : await dispatchWorkspace(options, operation, body);
+        const result = await executeFolderHostOperation(options, operation, body);
         return reply.send(result ?? null);
       } catch (error) {
         return folderOperationError(reply, error);
       }
     },
   );
+}
+
+export async function executeFolderHostOperation(
+  options: FolderControlPlaneHostRouteOptions,
+  operation: string,
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const service = await options.serviceProvider();
+  return ["assign_session", "get_default", "get_all", "get_catalog", "get_session_assignments"].includes(operation)
+    ? await dispatch(service, operation, body)
+    : await dispatchWorkspace(options, operation, body);
 }
 
 async function dispatch(

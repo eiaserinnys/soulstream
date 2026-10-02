@@ -840,6 +840,17 @@ export function buildProductionRouteOptions(
     cogitoRoutes: providers.cogitoRoutes,
     executeProxyRoutes: providers.executeProxyRoutes,
     ...(ephemeralLlmRoutes === undefined ? {} : { ephemeralLlmRoutes }),
+    ...(folderControlPlaneServiceProvider ? {
+      mcpHostRoutes: {
+        authBearerToken: config.authBearerToken,
+        folders: {
+          serviceProvider: folderControlPlaneServiceProvider,
+          cardServiceProvider,
+          identity: folderProjectIdentityService,
+          authBearerToken: config.authBearerToken,
+        },
+      },
+    } : {}),
     folderRoutes: {
       ...providers.folderRoutes,
       ...(cardServiceProvider ? { cardServiceProvider } : {}),
