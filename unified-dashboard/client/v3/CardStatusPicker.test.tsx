@@ -23,12 +23,13 @@ it("loads only on explicit opens, gates missing reports, and does not mutate the
  expect(button("검수 대기").disabled).toBe(true);expect(document.body.textContent).not.toContain("보고가 필요합니다");expect(document.body.textContent).not.toContain("대기: 담당 에이전트");
  await click("드래프트");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
-it("blocks every change with unanswered questions and opens detail only through the explicit action",async()=>{
+it("allows changes with unanswered questions and still requests a review restart reason",async()=>{
  const d=detail();d.questions=[{id:"q",text:"질문",options:null,answer:null,askedAt:"",answeredAt:null}];
  const c=await render(vi.fn().mockResolvedValue(d));await click("카드 상태 변경");
- for(const label of ["드래프트","대기","실행 중","검수 대기","완료","취소"])expect(button(label).disabled).toBe(true);
- expect(document.body.textContent).toContain("질문에 답한 뒤 변경할 수 있습니다");expect(c.onOpen).not.toHaveBeenCalled();
- await click("카드 상세 열기");expect(c.onOpen).toHaveBeenCalledTimes(1);expect(c.change).not.toHaveBeenCalled();
+ for(const label of ["드래프트","대기","실행 중","검수 대기","완료","취소"])expect(button(label).disabled).toBe(false);
+ expect(document.body.textContent).not.toContain("질문에 답한 뒤 변경할 수 있습니다");
+ await click("실행 중");expect(button("확인").disabled).toBe(true);expect(c.change).not.toHaveBeenCalled();
+ await click("취소");await click("완료");expect(c.change).toHaveBeenCalledWith(d.card,"done",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
 it("requires a reason, cancels without writes, and preserves the draft on failure until explicit refresh",async()=>{
  const change=vi.fn().mockRejectedValue(new Error("version conflict")),c=await render(undefined,change);

@@ -45,7 +45,7 @@ export function registerCardTools(server: McpServer, runtime: McpRuntime): void 
     return getFolderService(runtime).addCardComment({ ...agent(input.caller_session_id), cardId: input.card_id, text: input.text, mode: input.mode });
   }));
   server.registerTool("start_card_work", {
-    description: "현재 담당 카드의 작업 착수를 명시합니다. todo/review는 담당 선언, queued는 유효 자동배정 승인과 해당 실행의 전달 소비가 필요합니다. 검수 재착수에는 reason을 씁니다.",
+    description: "현재 담당 카드의 작업 착수를 명시합니다. todo/review/blocked(question)는 담당 선언, queued는 유효 자동배정 승인과 해당 실행의 전달 소비가 필요합니다. 검수 재착수에는 reason을 씁니다. 미답 질문은 착수를 막지 않습니다.",
     inputSchema: {...scope,expected_version:z.number().int().positive(),idempotency_key:id,reason:id.optional()},
   }, async input => run(async () => {
     const header = getCurrentMcpCallerSessionId();

@@ -140,8 +140,7 @@ export class CardOrchestrationCoordinator {
       const detail = await cards.getCard(card.id);
       if (
         !detail ||
-        detail.card.version !== card.version ||
-        detail.questions.some((q) => q.answer === null)
+        detail.card.version !== card.version
       )
         continue;
       const target = await this.resolve(card);

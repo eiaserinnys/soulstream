@@ -84,7 +84,7 @@ function harness(state = durableState(), options: {
   };
   const getCard = vi.fn(async (id: string) => {
     const card = state.cards.find(value => value.id === id);
-    return card ? { card: structuredClone(card), questions: [], comments: [] } : null;
+    return card ? { card: structuredClone(card), questions: [] as Array<{text:string;answer:string|null}>, comments: [] } : null;
   });
   const recordDispatch = vi.fn(async () => { throw new Error("These cost tests defer; worker admission would violate the fixture"); });
   const dispatch = {
@@ -119,7 +119,7 @@ function harness(state = durableState(), options: {
     },
     ensureFolder, launchDecision, launchWorker: vi.fn(), sendMessage: vi.fn(), warn,
   });
-  return { state, coordinator, repository, dispatch, settingsRead, launchDecision, ensureFolder, recordDispatch, warn };
+  return { state, coordinator, repository, dispatch, settingsRead, launchDecision, ensureFolder, recordDispatch, getCard, warn };
 }
 async function finishJudgement(h: ReturnType<typeof harness>) {
   await h.coordinator.kick();
@@ -128,6 +128,13 @@ async function finishJudgement(h: ReturnType<typeof harness>) {
 }
 
 describe("card orchestration logical-input cost and durable replay", () => {
+  it("includes explicitly queued cards with unanswered questions in the decision snapshot",async()=>{
+    const h=harness();
+    h.getCard.mockImplementation(async()=>({card:structuredClone(h.state.cards[0]!),questions:[{text:"판단",answer:null},{text:"기존 답",answer:"진행"}],comments:[]}));
+    await finishJudgement(h);
+    expect(h.launchDecision).toHaveBeenCalledTimes(1);
+    expect(h.launchDecision.mock.calls[0]![0].run.snapshot).toEqual([expect.objectContaining({cardId:"queued-1",answers:[{text:"기존 답",answer:"진행"}]})]);
+  });
   it("keeps accepted but unstarted cards pending across duplicate ticks and restart", async () => {
     const state=durableState();
     for (const h of [harness(state),harness(state)]) {

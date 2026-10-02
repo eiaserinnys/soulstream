@@ -361,8 +361,7 @@ export async function assertPolicyAdmission(
       AND ((c.assignee_kind='agent' AND c.assignee_agent_id=${String(input.workerInput.agentId)} AND COALESCE(c.node_id,'eiaserinnys')=${input.nodeId}
         AND c.model_preset IS NOT DISTINCT FROM ${input.workerInput.configuredModelPreset ?? null})
       OR (c.assignee_kind='session' AND owner.session_id=${input.sessionId} AND owner.node_id=${input.nodeId}
-        AND owner.agent_id=${String(input.workerInput.agentId)} AND owner.model_preset IS NOT DISTINCT FROM ${input.workerInput.modelPreset ?? null}))
-      AND NOT EXISTS(SELECT 1 FROM card_questions q WHERE q.card_id=c.id AND q.answer IS NULL)`;
+        AND owner.agent_id=${String(input.workerInput.agentId)} AND owner.model_preset IS NOT DISTINCT FROM ${input.workerInput.modelPreset ?? null}))`;
   if (!valid.length) throw new Error("Card is no longer eligible");
   await sql`INSERT INTO card_orchestration_dispatches(run_id,card_id,session_id,node_id,input,launch_token,state) VALUES(${input.runId},${input.cardId},${input.sessionId},${input.nodeId},${sql.json({...input.workerInput,admittedCardVersion:input.cardVersion+1})},${randomUUID()},'admitted')`;
 }

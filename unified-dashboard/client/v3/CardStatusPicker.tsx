@@ -23,7 +23,6 @@ export function CardStatusPicker({card,control,onOpen,ref,onBusyChange}: {
   const board=useCardBoardTransitions();
   useEffect(()=>board?.register(card.id,status=>{void state.request(status);}),[board,card.id,state.request]);
   useEffect(()=>{onBusyChange?.(busy||loading);},[busy,loading,onBusyChange]);
-  const unanswered=detail?.questions.some(question=>question.answer===null)??false;
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
   return <Popover open={open} onOpenChange={(next,details)=>{
     if(details.reason==="escape-key")details.event.preventDefault();
@@ -37,7 +36,6 @@ export function CardStatusPicker({card,control,onOpen,ref,onBusyChange}: {
       <div className="v3-card-status-picker-content">
         {loading ? <p role="status">불러오는 중…</p> : null}
         {error ? <><p role="alert">{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? "갱신 후 재시도" : "다시 불러오기"}</Button></> : null}
-        {unanswered ? <><p>질문에 답한 뒤 변경할 수 있습니다</p><Button size="sm" variant="ghost" onClick={() => {changeOpen(false); onOpen();}}>카드 상세 열기</Button></> : null}
         {reasonStep ? <form onSubmit={event => {event.preventDefault(); void change("running", draft.trim());}}>
           <Input aria-label="다시 실행할 사유" placeholder="다시 실행할 사유" value={draft} disabled={busy} onChange={event => setDraft(event.target.value)}/>
           <div className="v3-card-status-picker-actions">

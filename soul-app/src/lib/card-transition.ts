@@ -14,7 +14,6 @@ const notify = () => listeners.forEach((listener) => listener());
 export function cardTransitionProblem(detail: CardDetail, next: CardStatus, reason?: string): string | null {
   if (detail.card.archived) return '보관된 카드는 이동할 수 없습니다.';
   if (detail.card.status === next) return '이미 이 단계입니다.';
-  if (detail.questions.some((question) => question.answer === null)) return '미답 질문에 먼저 답해 주세요.';
   if (next === 'blocked') return '막힘은 질문·실행 상태에서 지정합니다.';
   if (next === 'review' && !detail.reports.length) return '검수 대기에는 보고가 필요합니다.';
   if (detail.card.status === 'review' && next === 'running' && !reason?.trim()) return '재실행 사유를 입력해 주세요.';

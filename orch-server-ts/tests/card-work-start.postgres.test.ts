@@ -128,7 +128,21 @@ describe("explicit manual card work", () => {
     execution={registrationId:"final-reg",executionCommandId:"final-command"};
     await recordWorkReceipt(h,"owner","running",execution);
   });
-  it("rejects another assignee, archived work, stale execution and open questions", async () => {
+  it.each(["todo","question"])("starts declared %s work with an unanswered question",async status=>{
+    const id=await make(status === "question" ? "blocked" : "todo");
+    if(status === "question") await h.sql`UPDATE cards SET blocked_kind='question',blocked_detail='판단' WHERE id=${id}`;
+    await h.sql`INSERT INTO card_questions(id,card_id,session_id,text) VALUES(${`open-${status}`},${id},'owner','판단')`;
+    await cards.startCardWork(declaration(id,`open-${status}`));
+    const detail=(await cards.getCard(id))!;
+    expect(detail.card).toMatchObject({status:"running",blocked_kind:null,blocked_detail:null});
+    expect(detail.questions[0]!.answer).toBeNull();
+  });
+  it.each(["limit","no_report"])("still rejects explicit work blocked by %s",async kind=>{
+    const id=await make("blocked");
+    await h.sql`UPDATE cards SET blocked_kind=${kind} WHERE id=${id}`;
+    await expect(cards.startCardWork(declaration(id,`blocked-${kind}`))).rejects.toThrow("state");
+  });
+  it("rejects another assignee, archived work and stale execution", async () => {
     const other = await make("todo", "session", "other");
     await expect(cards.startCardWork(declaration(other, "other"))).rejects.toThrow("assignee");
     const archived = await make();
@@ -136,7 +150,5 @@ describe("explicit manual card work", () => {
     await expect(cards.startCardWork(declaration(archived, "archived"))).rejects.toThrow("archived");
     const id = await make();
     await expect(cards.startCardWork({...declaration(id,"stale"),execution:{registrationId:"old",executionCommandId:"old"}})).rejects.toThrow("execution");
-    await h.sql`INSERT INTO card_questions(id,card_id,session_id,text) VALUES('open',${id},'owner','판단')`;
-    await expect(cards.startCardWork(declaration(id,"open"))).rejects.toThrow("questions");
   });
 });

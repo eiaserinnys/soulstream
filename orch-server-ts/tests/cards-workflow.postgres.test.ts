@@ -54,17 +54,15 @@ describe("cards storage, HTTP and planner", () => {
     expect(events).toContainEqual({ cardId:c.id,folderId:'cards-a' });
   });
 
-  it("keeps unanswered questions blocked and resumes only after the human answers all", async () => {
+  it("keeps question waiting until all answers arrive when no one moves the card", async () => {
     const made=await cards.createCard({ ...human,folderId:'cards-a',title:'질문',request:'',idempotencyKey:key() });
     const id=made.operation.target_id;
     await cards.setCardStatus({ ...human,cardId:id,status:'running',idempotencyKey:key() });
     await cards.askQuestion({ ...agent,cardId:id,text:'결정?',options:['진행','중단'],idempotencyKey:key() });
     await cards.askQuestion({ ...human,cardId:id,text:'추가 확인?',idempotencyKey:key() });
     await cards.addReport({ ...agent,cardId:id,title:'작업 보고',format:'markdown',body:'보고',idempotencyKey:key() });
-    await expect(cards.setCardStatus({ ...agent,cardId:id,status:'review',idempotencyKey:key() })).rejects.toThrow(/questions/i);
     expect((await cards.getCard(id))!.card.status).toBe('blocked');
     const q=(await cards.getCard(id))!.questions;
-    await expect(cards.setCardStatus({ ...human,cardId:id,status:'done',idempotencyKey:key() })).rejects.toThrow(/questions/i);
     await expect(cards.answerQuestion({ ...agent,cardId:id,questionId:String(q[0]!.id),answer:'진행',idempotencyKey:key() })).rejects.toThrow(/human/i);
     await cards.answerQuestion({ ...human,cardId:id,questionId:String(q[0]!.id),answer:'진행',idempotencyKey:key() });
     expect((await cards.getCard(id))!.card.status).toBe('blocked');
@@ -73,15 +71,47 @@ describe("cards storage, HTTP and planner", () => {
     expect((await cards.getCard(id))!.questions[0]).toMatchObject({ answered_by:human.actorUserId,answer:'진행' });
   });
 
-  it.each(['todo','queued','blocked'] as const)("accepts an assigned session's %s review over HTTP and clears queue/block metadata", async (from) => {
+  it.each(['todo','queued','running','review','done','cancelled'] as const)("allows human %s with an open question and preserves that state after a late answer", async status => {
+    const made=await cards.createCard({ ...human,folderId:'cards-a',title:'질문 이후 이동',request:'',idempotencyKey:key() });
+    const id=made.operation.target_id;
+    await cards.setCardStatus({ ...human,cardId:id,status:'running',idempotencyKey:key() });
+    await cards.askQuestion({ ...agent,cardId:id,text:'결정?',idempotencyKey:key() });
+    await cards.addReport({ ...agent,cardId:id,title:'보고',format:'markdown',body:'증거',idempotencyKey:key() });
+    await cards.setCardStatus({ ...human,cardId:id,status,idempotencyKey:key() });
+    const before=(await cards.getCard(id))!;
+    expect(before.card.status).toBe(status);
+    expect(before.questions[0]!.answer).toBeNull();
+    await cards.answerQuestion({ ...human,cardId:id,questionId:String(before.questions[0]!.id),answer:'진행',idempotencyKey:key() });
+    const after=(await cards.getCard(id))!;
+    expect(after.card).toMatchObject({status,queue_position_key:before.card.queue_position_key,completed_at:before.card.completed_at});
+    expect(after.questions[0]).toMatchObject({answer:'진행',answered_by:human.actorUserId});
+    await h.sql`DELETE FROM cards WHERE id=${id}`;
+  });
+
+  it("records a late answer on an already completed card without reopening it",async()=>{
+    const made=await cards.createCard({...human,folderId:'cards-a',title:'이미 완료',request:'',idempotencyKey:key()});
+    const id=made.operation.target_id;
+    await cards.setCardStatus({...human,cardId:id,status:'done',idempotencyKey:key()});
+    await h.sql`INSERT INTO card_questions(id,card_id,text) VALUES('late-done',${id},'남은 질문')`;
+    await cards.answerQuestion({...human,cardId:id,questionId:'late-done',answer:'확인',idempotencyKey:key()});
+    expect((await cards.getCard(id))!.card.status).toBe('done');
+    await h.sql`DELETE FROM cards WHERE id=${id}`;
+  });
+
+  it.each(['todo','queued','blocked','question'] as const)("accepts an assigned session's %s review over HTTP and clears queue/block metadata", async (from) => {
     const made=await cards.createCard({ ...human,folderId:'cards-a',title:'완료 보고 검수',request:'원문',
       queue:from !== 'todo',assignee:{kind:'session',sessionId:agent.actorSessionId},idempotencyKey:key() });
     const id=made.operation.target_id;
     if (from === 'blocked') await cards.setCardStatus({ ...human,cardId:id,status:'blocked',
       blockedKind:'limit',blockedDetail:'이전 한도',idempotencyKey:key() });
+    if (from === 'question') {
+      await cards.setCardStatus({...human,cardId:id,status:'running',idempotencyKey:key()});
+      await cards.askQuestion({...agent,cardId:id,text:'미답 질문',idempotencyKey:key()});
+    }
+    const expectedStatus=from === 'question' ? 'blocked' : from;
     let before=(await cards.getCard(id))!.card;
-    expect(before.status).toBe(from);
-    if (from !== 'todo') expect(before.queue_position_key).not.toBeNull();
+    expect(before.status).toBe(expectedStatus);
+    if (from === 'queued' || from === 'blocked') expect(before.queue_position_key).not.toBeNull();
     const app=Fastify();
     registerFolderRoutes(app,{
       provider:{listFolders:()=>[{id:'cards-a'}],listSessionAssignments:()=>({})},
@@ -96,7 +126,7 @@ describe("cards storage, HTTP and planner", () => {
       const reportless=await review();
       expect(reportless.statusCode).toBe(422);
       expect(reportless.json().detail.error.message).toMatch(/report/i);
-      expect((await cards.getCard(id))!.card).toMatchObject({status:from,version:before.version});
+      expect((await cards.getCard(id))!.card).toMatchObject({status:expectedStatus,version:before.version});
       await cards.addReport({ ...agent,cardId:id,title:'최종 보고',format:'markdown',body:'작업 증거',idempotencyKey:key() });
       before=(await cards.getCard(id))!.card;
       const accepted=await review();

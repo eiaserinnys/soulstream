@@ -4,7 +4,7 @@ import path from "node:path";
 import {installV3VisualQaRoutes} from "./v3-visual-fixtures";
 import {reviewCard,reviewDetail} from "../client/v3/components-review-fixtures";
 import {DEFAULT_USER_PREFERENCES} from "../../packages/soul-ui/src/lib/user-preferences";
-const output=path.resolve("../../../.local/artifacts/20261001-postit-scale-status");
+const output=path.resolve("../../../.local/artifacts/20261002-card-question-status");
 mkdirSync(output,{recursive:true});
 async function prepare(page:Page,width:number,fontSize:14|17|18) {
  const cards=Array.from({length:8},(_,index)=>({...reviewCard,id:`scale-${index}`,folderId:"folder-amber",
@@ -34,7 +34,7 @@ async function prepare(page:Page,width:number,fontSize:14|17|18) {
   const body=route.request().postDataJSON();state.writes.push(body);
   if(state.hold)await new Promise<void>(resolve=>{state.release=resolve;});
   if(body.expectedVersion!==card.version||state.fail){state.fail=false;card.version++;return route.fulfill({status:409,body:JSON.stringify({message:"version conflict"})});}
-  if(card.id==="scale-2"||body.status==="review"&&card.id==="scale-1"||card.status==="review"&&body.status==="running"&&!body.reason?.trim())return route.fulfill({status:422,body:JSON.stringify({message:"invalid transition"})});
+  if(body.status==="review"&&card.id==="scale-1"||card.status==="review"&&body.status==="running"&&!body.reason?.trim())return route.fulfill({status:422,body:JSON.stringify({message:"invalid transition"})});
   card.status=body.status;card.version++;
   return route.fulfill({contentType:"application/json",body:"{}"});
  });
@@ -81,7 +81,7 @@ for(const width of [390,1440])for(const fontSize of [14,17,18] as const)test(`ma
 for(const width of [390,1440])test(`status pointer keyboard retry and latest version ${width}`,async({page})=>{
  const state=await prepare(page,width,14);await page.goto("/");const card=page.locator('.v3-postit-card[data-card-id="scale-0"]');await expect(card).toBeVisible();expect(state.reads).toEqual([]);
  const trigger=card.getByRole("button",{name:"카드 상태 변경"});await trigger.focus();await page.keyboard.press("Enter");
- const popup=page.locator('[data-card-status-picker]');await expect(popup).toBeVisible();expect(state.reads).toEqual(["scale-0"]);await expect(page.getByTestId("card-detail")).toHaveCount(0);
+ const popup=page.locator('[data-card-status-picker][data-open]');await expect(popup).toBeVisible();expect(state.reads).toEqual(["scale-0"]);await expect(page.getByTestId("card-detail")).toHaveCount(0);
  await popup.getByRole("button",{name:"실행 중",exact:true}).click();const input=popup.getByRole("textbox",{name:"다시 실행할 사유"});await expect(input).toBeVisible();await expect(popup.getByRole("button",{name:"확인"})).toBeDisabled();
  await input.fill("수정 요청");await capture(page,`reason-${width}`);await popup.getByRole("button",{name:"취소",exact:true}).click();expect(state.writes).toEqual([]);
  await popup.getByRole("button",{name:"실행 중",exact:true}).click();await input.fill("사용자 수정 요청");state.fail=true;
@@ -89,11 +89,11 @@ for(const width of [390,1440])test(`status pointer keyboard retry and latest ver
  await expect(popup.getByRole("button",{name:"확인",exact:true})).toBeDisabled();expect(state.writes).toHaveLength(1);expect(state.writes[0]).toMatchObject({status:"running",reason:"사용자 수정 요청",expectedVersion:7});
  await capture(page,`error-${width}`);await popup.getByRole("button",{name:"갱신 후 재시도"}).click();await expect(popup.getByRole("button",{name:"확인",exact:true})).toBeEnabled();expect(state.reads).toHaveLength(2);
  state.hold=true;await popup.getByRole("button",{name:"확인",exact:true}).click();await expect(popup.getByRole("button",{name:"확인",exact:true})).toBeDisabled();await expect(card.getByRole("button",{name:"완료",exact:true})).toBeDisabled();
- await expect.poll(()=>Boolean(state.release)).toBe(true);state.release!();await expect(card).toHaveAttribute("data-card-status","running");expect(state.writes).toHaveLength(2);expect(state.writes[1]).toMatchObject({status:"running",expectedVersion:8});
+ await expect.poll(()=>Boolean(state.release)).toBe(true);state.hold=false;state.release!();await expect(card).toHaveAttribute("data-card-status","running");expect(state.writes).toHaveLength(2);expect(state.writes[1]).toMatchObject({status:"running",expectedVersion:8});
  expect(typeof state.writes[1].idempotencyKey).toBe("string");expect(state.writes[0].idempotencyKey).not.toBe(state.writes[1].idempotencyKey);await expect(page.getByTestId("card-detail")).toHaveCount(0);
- await page.locator('.v3-postit-card[data-card-id="scale-1"]').getByRole("button",{name:"카드 상태 변경"}).click();await expect(popup.getByRole("button",{name:"검수 대기",exact:true})).toBeDisabled();await expect(popup).toContainText("보고가 필요합니다");await page.keyboard.press("Escape");
- await page.locator('.v3-postit-card[data-card-id="scale-2"]').getByRole("button",{name:"카드 상태 변경"}).click();await expect(popup).toContainText("질문에 답한 뒤 변경할 수 있습니다");
- for(const name of ["드래프트","대기","실행 중","검수 대기","완료","취소"])await expect(popup.getByRole("button",{name,exact:true})).toBeDisabled();
+ await page.locator('.v3-postit-card[data-card-id="scale-1"]').getByRole("button",{name:"카드 상태 변경"}).click();await expect(popup.getByRole("button",{name:"검수 대기",exact:true})).toBeDisabled();await expect(popup.getByRole("button",{name:"검수 대기",exact:true})).toHaveAttribute("title","보고가 필요합니다");await page.keyboard.press("Escape");
+ await page.locator('.v3-postit-card[data-card-id="scale-2"]').getByRole("button",{name:"카드 상태 변경"}).click();await expect(popup).not.toContainText("질문에 답한 뒤 변경할 수 있습니다");
+ for(const name of ["드래프트","대기","실행 중","검수 대기","완료","취소"])await expect(popup.getByRole("button",{name,exact:true})).toBeEnabled();
  await capture(page,`question-${width}`);expect(state.writes).toHaveLength(2);await expect(page.getByTestId("card-detail")).toHaveCount(0);
- await popup.getByRole("button",{name:"카드 상세 열기",exact:true}).click();await expect(page.getByTestId("card-detail")).toBeVisible();
+ await popup.getByRole("button",{name:"완료",exact:true}).click();await expect(page.locator('.v3-postit-card[data-card-id="scale-2"]')).toHaveCount(0);expect(state.cards.find(card=>card.id==="scale-2")!.status).toBe("done");expect(state.writes).toHaveLength(3);
 });

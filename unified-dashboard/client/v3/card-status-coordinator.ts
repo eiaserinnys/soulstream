@@ -10,7 +10,6 @@ export const cardStatusChoices = ["todo", "queued", "running", "review", "done",
 
 /** One client contract for picker, context menu, completion and lane drops. */
 export function cardTransitionError(detail:CardDetail, status:CardStatus, reason?:string):string|null {
-  if (detail.questions.some(question=>question.answer===null)) return "질문에 답한 뒤 변경할 수 있습니다";
   if (status==="blocked") return "막힘 단계로 직접 옮길 수 없습니다";
   if (status==="review" && !detail.reports.length) return "보고가 필요합니다";
   if (status==="running" && detail.card.status==="review" && !reason?.trim()) return "다시 실행할 사유가 필요합니다";
@@ -41,7 +40,7 @@ export function useCardStatusCoordinator(card:CardRow,control:CardStatusControl)
   const commit=async(latest:CardDetail,status:CardStatus,reason?:string)=>{
     if(status===latest.card.status)return;
     const blocked=cardTransitionError(latest,status,reason);
-    if(status==="running" && latest.card.status==="review" && !reason?.trim() && !latest.questions.some(q=>q.answer===null)){
+    if(status==="running" && latest.card.status==="review" && !reason?.trim()){
       setReasonStep(true);return;
     }
     if(blocked){setError(blocked);return;}
@@ -59,7 +58,7 @@ export function useCardStatusCoordinator(card:CardRow,control:CardStatusControl)
   };
   const changeOpen=(next:boolean)=>{if(next===open)return;if(next)void request();else close();};
   const busy=pending||control.pending;
-  const unavailable=!detail||loading||busy||Boolean(error)||Boolean(detail?.questions.some(q=>q.answer===null));
+  const unavailable=!detail||loading||busy||Boolean(error);
   const change=async(status:CardStatus,reason?:string)=>{
     if(unavailable||writing.current||!detail)return;
     writing.current=true;try {await commit(detail,status,reason);}finally{writing.current=false;}

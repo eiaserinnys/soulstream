@@ -110,6 +110,14 @@ describe("durable card orchestration admissions", () => {
       },
     };
   }
+  it("admits an explicitly queued card despite an unanswered question",async()=>{
+    const id=await make();
+    await h.sql`INSERT INTO card_questions(id,card_id,text) VALUES('unanswered',${id},'판단')`;
+    const r=await run([id]);
+    await cards.recordDispatch({cardId:id,expectedVersion:1,sessionId:`worker-${id}`,nodeId:target.nodeId,admission:admission(r,id)});
+    expect((await cards.getCard(id))?.card.status).toBe('queued');
+    expect(await h.sql`SELECT * FROM card_orchestration_dispatches WHERE card_id=${id}`).toHaveLength(1);
+  });
   it("claims once concurrently and recovers the same session with a fenced lease", async () => {
     const input = {
       inputHash: "logical",
