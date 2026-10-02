@@ -104,7 +104,10 @@ describe("card comments HTTP, storage, and delivery", () => {
     await h.sql`UPDATE cards SET assignee_session_id='new-owner' WHERE id=${cardId}`;
     messages.mockClear();
     await cards.answerQuestion({...human,cardId,questionId:String(question.id),answer:'첫 답'});await dispatcher.drain();
-    expect((await cards.getCard(cardId))?.card).toMatchObject({status:'blocked',blocked_kind:'question'});expect(messages).not.toHaveBeenCalled();
+    expect((await cards.getCard(cardId))?.card).toMatchObject({status:'blocked',blocked_kind:'question'});
+    expect(messages).toHaveBeenCalledWith('old-owner',expect.stringContaining('첫 답'));
+    expect(messages.mock.calls[0]![1]).toContain('답변 수신만으로 카드 상태를 바꾸거나 완료된 작업을 재착수하지 않습니다');
+    messages.mockClear();
     const answer={...human,cardId,questionId:'remaining',answer:'마지막 답',idempotencyKey:key()};
     await cards.answerQuestion(answer);await dispatcher.drain();await cards.answerQuestion(answer);await dispatcher.drain();
     expect(messages).toHaveBeenCalledTimes(2);

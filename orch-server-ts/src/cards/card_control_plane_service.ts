@@ -71,8 +71,6 @@ export class CardControlPlaneService {
       const counts=await sql<{ count:number }[]>`SELECT count(*)::int AS count FROM card_reports WHERE card_id=${card.id}`;
       assertCardTransition(card.status,params.status,params.actorKind ?? "agent",counts[0]?.count ?? 0,params.blockedKind ?? null);
       if (card.status === "review" && params.status === "running" && params.actorKind === "user" && !params.reason?.trim()) throw invalid("Review rejection requires a reason");
-      const open=await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL LIMIT 1`;
-      if (open.length && (params.status !== "blocked" || params.blockedKind !== "question")) throw invalid("Open questions keep a card blocked");
       await this.patch(sql,card,{ status:params.status,
         blocked_kind:params.status === "blocked" ? params.blockedKind : null,blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
         queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id) : params.blockedKind === "limit" ? card.queue_position_key : null,
@@ -87,9 +85,9 @@ export class CardControlPlaneService {
       if (card.archived) throw invalidWork("Cannot start archived work");
       if (card.assignee_session_id !== params.actorSessionId && !(card.status === "queued" && card.assignee_kind === "agent"))
         throw invalidWork("Only the assignee session may start work");
-      if (!["todo","review","queued"].includes(card.status)) throw invalidWork("Cannot start this state; running requires replay of the same declaration");
+      const questionWaiting=card.status === "blocked" && card.blocked_kind === "question";
+      if (!["todo","review","queued"].includes(card.status) && !questionWaiting) throw invalidWork("Cannot start this state; running requires replay of the same declaration");
       if (card.status === "review" && !params.reason?.trim()) throw invalidWork("Review work requires a reason");
-      if ((await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL LIMIT 1`).length) throw invalidWork("Open questions keep work blocked");
       await validateWorkExecution(sql,params.actorSessionId!,params.execution);
       if (card.status === "queued") await acceptQueuedWork(sql,card,params.actorSessionId!,params.execution);
       await this.patch(sql,card,{status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
@@ -153,7 +151,8 @@ export class CardControlPlaneService {
         WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL RETURNING id`;
       if (!rows.length) throw invalid("Open question not found in card");
       const open=await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL LIMIT 1`;
-      if (!open.length) await this.patch(sql,card,{ status:"running",blocked_kind:null,blocked_detail:null },params,eventId);
+      if (!open.length && card.status === "blocked" && card.blocked_kind === "question")
+        await this.patch(sql,card,{ status:"running",blocked_kind:null,blocked_detail:null },params,eventId);
     });
   }
   recordDispatch(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {

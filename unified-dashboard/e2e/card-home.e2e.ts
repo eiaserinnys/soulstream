@@ -95,7 +95,7 @@ test("keyboard and pointer lane moves share latest guards and awaited fixture wr
  await expect(page.locator("[data-card-status-picker]")).toHaveCount(0);await expect(page.getByRole("dialog",{name:"전체 카드 보드"})).toBeVisible();await expect(page.getByTestId("card-detail")).toHaveCount(0);
  await page.keyboard.press("Escape");await expect(page.getByRole("dialog",{name:"전체 카드 보드"})).toHaveCount(0);await expect(page.getByRole("button",{name:"보드 확대",exact:true})).toBeFocused();
  const blocked=state.board.locator('[data-card-id="home-3-0"]');await blocked.scrollIntoViewIfNeeded();await blocked.click({button:"right"});
- const picker=page.locator("[data-card-status-picker]");await expect(picker).toContainText("질문에 답한 뒤 변경할 수 있습니다");await expect(picker.getByRole("button",{name:"완료",exact:true})).toBeDisabled();await page.keyboard.press("Escape");
+ const picker=page.locator("[data-card-status-picker]");await expect(picker).not.toContainText("질문에 답한 뒤 변경할 수 있습니다");await expect(picker.getByRole("button",{name:"완료",exact:true})).toBeEnabled();await page.keyboard.press("Escape");
  expect(state.writes).toHaveLength(2);await capture(page,"after-drag-and-guards");writeFileSync(path.join(output,"drag.json"),JSON.stringify({reads:state.reads,writes:state.writes},null,2));
 });
 
