@@ -18,6 +18,7 @@ import { ReviewBoardWorkspace } from './ReviewBoardWorkspace';
 import { ReviewCardHome } from './ReviewCardHome';
 import {ReviewFolderWorkspace} from './ReviewFolderWorkspace';
 import { ReviewEntryShell } from './ReviewEntryShell';
+import { ReviewLongFolders } from './ReviewLongFolders';
 import { folders } from './fixtures';
 
 const sections = [
@@ -31,6 +32,7 @@ const sections = [
   { value: 'cardHome', label: '카드 홈' },
   {value:'folderWorkspace',label:'폴더 카드'},
   { value: 'entryShell', label: '앱 홈 조합' },
+  { value: 'longFolders', label: '긴 폴더 목록' },
 ] as const;
 type Section = typeof sections[number]['value'];
 
@@ -57,6 +59,7 @@ function Gallery() {
   if (section === 'board') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoard/></View>;
   if(section==='folderWorkspace')return <View style={{flex:1,backgroundColor:t.colors.background}}><ReviewFolderWorkspace/></View>;
   if (section === 'entryShell') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewEntryShell /></View>;
+  if (section === 'longFolders') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewLongFolders /></View>;
   return <ScrollView testID="component-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={style} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
     <View style={{ gap: t.spacing.sm }}>
