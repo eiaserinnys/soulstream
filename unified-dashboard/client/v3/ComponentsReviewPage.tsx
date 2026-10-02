@@ -21,6 +21,7 @@ import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { reviewCard, reviewDetail, reviewFolder, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
+import { ReadOnlyCardListSample } from "./ReadOnlyCardListSample";
 import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSample";
 import { CardBoardSamples } from "./CardBoardSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
@@ -139,6 +140,9 @@ export function ComponentsReviewPage() {
               </Sample>
               <Sample name="PostItCardView / PostItGrid" state="채팅 글자 비율 · 상태 변경 · 사유 입력 · 질문 · 로컬 샘플">
                 <PostItCardSamples onOpen={open}/>
+              </Sample>
+              <Sample name="PostItCardView / PostItGrid readonly" state="승인된 iframe 5그룹 · 태그 없음 · 비대화형 카드 · 필터와 새로고침">
+                <ReadOnlyCardListSample/>
               </Sample>
               <Sample name="PlannerFolderCardView" state="하위 폴더 · 관리 캡">
                 <div className="v3-task-list"><PlannerFolderCardView {...folderProps} task={reviewFolder("폴더 카드 기본", "components-folder-card")}

@@ -204,6 +204,12 @@ importers:
       lucide-react:
         specifier: ^0.575.0
         version: 0.575.0(react@19.2.4)
+      marked:
+        specifier: 15.0.12
+        version: 15.0.12
+      parse5:
+        specifier: 7.3.0
+        version: 7.3.0
       radix-ui:
         specifier: ^1.4.3
         version: 1.4.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -4249,6 +4255,11 @@ packages:
 
   markdown-table@3.0.4:
     resolution: {integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==}
+
+  marked@15.0.12:
+    resolution: {integrity: sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA==}
+    engines: {node: '>= 18'}
+    hasBin: true
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -9590,6 +9601,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   markdown-table@3.0.4: {}
+
+  marked@15.0.12: {}
 
   math-intrinsics@1.1.0: {}
 

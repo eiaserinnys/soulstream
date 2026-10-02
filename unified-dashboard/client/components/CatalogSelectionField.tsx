@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from "react";
-import { Select, SelectItem, SelectPopup, SelectTrigger } from "@seosoyoung/soul-ui";
+import { Select, SelectItem, SelectPopup, SelectTrigger } from "../../../packages/soul-ui/src/components/ui/select";
 
 /** Agent and model catalogs share the trigger, keyboard handling and option surface. */
 export function CatalogSelectionField({ label, ariaLabel, value, selectedLabel, options, disabled,
