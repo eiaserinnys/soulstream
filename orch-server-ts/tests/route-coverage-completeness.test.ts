@@ -167,6 +167,7 @@ function createAllOptInRouteApp() {
     executeProxyRoutes: inert,
     ephemeralLlmRoutes: inert,
     folderRoutes: inert,
+    mcpHostRoutes: { authBearerToken: "test-token", folders: { serviceProvider: async () => inert as never, authBearerToken: "test-token" } },
     cardDispatchSettingsRoutes: inert,
     cardOrchestrationRoutes: inert,
     cardOrchestrationDecisionRoutes: inert,

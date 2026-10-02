@@ -81,12 +81,20 @@ export async function dashboardFolderActor(request: FastifyRequest, options: Fol
 }
 
 export function folderOperationError(reply: FastifyReply, error: unknown) {
-  if (error instanceof ZodError) return failure(reply, 422, "INVALID_FOLDER_REQUEST", error.message);
+  const failure = describeFolderOperationError(error);
+  return reply.code(failure.status).send({ detail: { error: { code: failure.code, message: failure.message } } });
+}
+
+export function describeFolderOperationError(error: unknown): { status: number; code: string; message: string } {
+  if (error instanceof ZodError) return { status: 422, code: "INVALID_FOLDER_REQUEST", message: error.message };
   if (error instanceof CardVersionConflict) {
-    return failure(reply, 409, error.targetKind === "folder" ? "FOLDER_VERSION_CONFLICT" : "CARD_VERSION_CONFLICT", error.message);
+    return { status: 409, code: error.targetKind === "folder" ? "FOLDER_VERSION_CONFLICT" : "CARD_VERSION_CONFLICT", message: error.message };
   }
-  const statusCode = (error as { statusCode?: number })?.statusCode ?? 500;
-  return failure(reply, statusCode, (error as { code?: string })?.code ?? "FOLDER_OPERATION_FAILED", error instanceof Error ? error.message : "Folder operation failed");
+  return {
+    status: (error as { statusCode?: number })?.statusCode ?? 500,
+    code: (error as { code?: string })?.code ?? "FOLDER_OPERATION_FAILED",
+    message: error instanceof Error ? error.message : "Folder operation failed",
+  };
 }
 
 function failure(reply: FastifyReply, status: number, code: string, message: string) {

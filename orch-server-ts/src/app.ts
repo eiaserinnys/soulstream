@@ -1,3 +1,5 @@
+import { registerMcpHostRoutes } from "./mcp/mcp_host_routes.js";
+import type { McpHostOptions } from "./mcp/types.js";
 import { registerCardOrchestrationRoutes, type CardOrchestrationRouteOptions } from "./cards/card_orchestration_routes.js";
 import { registerCardOrchestrationDecisionRoutes, type CardOrchestrationDecisionRouteOptions } from "./cards/card_orchestration_decision_routes.js";
 import { registerR2SettingsRoutes, type R2SettingsProvider } from "./admin/r2_settings_routes.js";
@@ -221,6 +223,7 @@ export type CreateAppOptions = {
   scheduleHostRoutes?: ScheduleHostRouteOptions;
   recurringJobRoutes?: RecurringJobRouteOptions;
   recurringJobHostRoutes?: RecurringJobHostRouteOptions;
+  mcpHostRoutes?: McpHostOptions;
   persistenceHostRoutes?: PersistenceHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
   uiEventRoutes?: UiEventRouteOptions;
@@ -295,6 +298,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.recurringJobRoutes !== undefined) {
     registerRecurringJobRoutes(app, options.recurringJobRoutes);
   }
+  if (options.mcpHostRoutes) registerMcpHostRoutes(app, { ...options.mcpHostRoutes, environment: options.config.environment });
   if (options.recurringJobHostRoutes !== undefined) {
     registerRecurringJobHostRoutes(app, {
       ...options.recurringJobHostRoutes,

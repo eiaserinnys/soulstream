@@ -5,27 +5,13 @@ import type { FolderService } from "../../folder/folder_service.js";
 import { errorResultFromError, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import {
-  CALLER_SESSION_ID_FALLBACK_GUIDANCE,
   requireMcpMutationActor,
   type McpMutationActor,
 } from "./caller_session.js";
 import type { FolderMutationResult } from "../../folder/folder_service_models.js";
 
-export const folderStatusSchema = z.enum(["open", "completed"]);
-export const assigneeValueSchema = z.object({
-  kind: z.enum(["agent", "human", "session"]),
-  agent_id: z.string().nullable().optional(),
-  session_id: z.string().nullable().optional(),
-  user_id: z.string().nullable().optional(),
-}).nullable();
-export const assigneeSchema = assigneeValueSchema.optional();
-export const idempotencyKeySchema = z.string().min(1);
-export const optionalReasonSchema = z.string().nullable().optional();
-export const expectedVersionSchema = z.number().int().positive();
-export const callerSessionIdSchema = z.string().optional();
-export function mutationToolDescription(description: string): string {
-  return `${description} 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
-}
+export { folderStatusSchema, assigneeValueSchema, assigneeSchema, idempotencyKeySchema, optionalReasonSchema, expectedVersionSchema, callerSessionIdSchema, mutationToolDescription } from "@soulstream/mcp-contract";
+import { assigneeSchema } from "@soulstream/mcp-contract";
 
 export async function mutation(
   runtime: McpRuntime,

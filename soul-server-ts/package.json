@@ -52,7 +52,8 @@
     "y-protocols": "1.0.6",
     "yaml": "^2.9.0",
     "yjs": "13.6.27",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@soulstream/mcp-contract": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.2.0",

@@ -34,6 +34,9 @@ importers:
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
+      '@soulstream/mcp-contract':
+        specifier: workspace:*
+        version: link:../packages/mcp-contract
       '@soulstream/model-catalog':
         specifier: workspace:*
         version: link:../packages/model-catalog
@@ -108,6 +111,12 @@ importers:
         version: 3.4.9
 
   packages/fractional-position: {}
+
+  packages/mcp-contract:
+    dependencies:
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
   packages/model-catalog:
     dependencies:
@@ -377,6 +386,9 @@ importers:
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
+      '@soulstream/mcp-contract':
+        specifier: workspace:*
+        version: link:../packages/mcp-contract
       '@soulstream/model-catalog':
         specifier: workspace:*
         version: link:../packages/model-catalog

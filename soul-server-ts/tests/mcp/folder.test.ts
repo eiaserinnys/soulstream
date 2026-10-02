@@ -2,6 +2,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { jsonResult } from "../../src/mcp/result.js";
+import * as persistenceHostTransport from "../../src/control_plane/persistence_host_transport.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -38,6 +40,7 @@ function runtime(folderService?: Partial<FolderService>, catalogService?: Partia
     catalogService: (catalogService ?? {}) as CatalogService,
     folderService: folderService as FolderService,
     logger: logger(),
+    orch: { baseUrl: "http://orch.test", headers: { authorization: "Bearer service-token" } },
   };
 }
 
@@ -57,6 +60,7 @@ async function clientFor(source: McpRuntime, headers?: Record<string, string>): 
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   while (openClients.length) {
     try { await openClients.pop()?.close(); } catch { /* cleanup */ }
   }
@@ -93,11 +97,9 @@ describe("folder and checklist MCP contract", () => {
   });
 
   it("returns folder snapshots with full, outline, and item views", async () => {
-    const getFolder = vi.fn(async (_folderId: string, options?: { view?: string; cardId?: string }) => ({
-      folder: snapshot.folder,
-      cards: options?.cardId ? snapshot.cards.filter((item) => item.id === options.cardId) : snapshot.cards,
-    }));
-    const client = await clientFor(runtime({ getFolder }));
+    const forwarded = vi.spyOn(persistenceHostTransport, "fetchOrchResponse").mockImplementation(async () =>
+      new Response(JSON.stringify(jsonResult(snapshot)), { status: 200 }));
+    const client = await clientFor(runtime());
     const full = await client.callTool({ name: "get_folder", arguments: { folder_id: "folder-1" } });
     const outline = await client.callTool({ name: "get_folder", arguments: {
       folder_id: "folder-1", view: "outline",
@@ -108,17 +110,23 @@ describe("folder and checklist MCP contract", () => {
     expect(full.structuredContent).toMatchObject({ folder: { id: "folder-1" }, cards: [{ request: "Do the thing" }] });
     expect(outline.structuredContent).toMatchObject({ folder: { id: "folder-1" }, cards: [{ id: "card-1" }] });
     expect(item.structuredContent).toMatchObject({ cards: [{ id: "card-1" }] });
-    expect(getFolder).toHaveBeenCalledTimes(3);
-    expect(getFolder).toHaveBeenNthCalledWith(2, "folder-1", { view: "outline" });
-    expect(getFolder).toHaveBeenNthCalledWith(3, "folder-1", { view: "full", cardId: "card-1" });
+    expect(forwarded).toHaveBeenCalledTimes(3);
+    const bodies = forwarded.mock.calls.map(([, , , body]) => body as { args: unknown; context: unknown });
+    expect(bodies[1].args).toEqual({ folder_id: "folder-1", view: "outline" });
+    expect(bodies[2].args).toEqual({ folder_id: "folder-1", view: "full", card_id: "card-1" });
+    expect(bodies[0].context).toEqual({ principal: "internal", caller_session_id: null, node_id: "node-test" });
+    expect(forwarded.mock.calls[0]?.[2]).toBe("/api/mcp/host/get_folder");
+
   });
 
-  it("passes null to the host when listing root folders", async () => {
-    const listChildFolders = vi.fn(async () => ({ items: [{ id: "folder-1" }], nextCursor: null }));
-    const client = await clientFor(runtime({ listChildFolders }));
+  it("forwards SDK defaults when listing root folders", async () => {
+    const forwarded = vi.spyOn(persistenceHostTransport, "fetchOrchResponse").mockResolvedValue(
+      new Response(JSON.stringify(jsonResult({ items: [{ id: "folder-1" }], nextCursor: null })), { status: 200 }));
+    const client = await clientFor(runtime());
     const result = await client.callTool({ name: "list_child_folders", arguments: { cursor: "20" } });
     expect(result.isError).not.toBe(true);
-    expect(listChildFolders).toHaveBeenCalledWith({ folderId: null, includeArchived: false, limit: 100, cursor: "20" });
+    expect((forwarded.mock.calls[0]?.[3] as { args: unknown }).args)
+      .toEqual({ include_archived: false, limit: 100, cursor: "20" });
   });
 
   it("moves board items and creates markdown with one folder_id", async () => {
