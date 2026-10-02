@@ -74,7 +74,7 @@ describe("card legacy and orchestrator MCP parity", () => {
       authBearerToken: "service-token" };
     app = Fastify();
     registerCardRoutes(app, options);
-    registerMcpHostRoutes(app, { authBearerToken: options.authBearerToken,
+    registerMcpHostRoutes(app, { board: undefined as never, authBearerToken: options.authBearerToken,
       cards: { ...options, resolveAccess: serviceTokenAccessWithoutEmail }, folders: {
       authBearerToken: options.authBearerToken, serviceProvider: async () => { throw new Error("unused folder host"); },
     } });

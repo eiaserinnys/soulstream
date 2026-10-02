@@ -1,17 +1,12 @@
-import type {
-  BoardItemType,
-  CatalogBoardItemRow,
-  FolderRow,
-  ListFolderItemsParams,
-  ListFolderItemsResult,
-  SessionDB,
-} from "../db/session_db.js";
+import type { BoardItemType, CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
+import type { ListFolderItemsParams, ListFolderItemsResult } from "../board-yjs/board_projection_types.js";
+import type { BoardMcpStore, FolderRow } from "./board_catalog_types.js";
+import { FOLDER_SEARCH_SCAN_LIMIT } from "@soulstream/mcp-contract";
 
 const DEFAULT_LIMIT = 20;
 const MAX_BROWSE_LIMIT = 100;
 const MAX_SEARCH_LIMIT = 50;
-import { FOLDER_SEARCH_SCAN_LIMIT } from "@soulstream/mcp-contract";
-export { FOLDER_SEARCH_SCAN_LIMIT };
+
 const SESSION_PREVIEW_LIMIT = 120;
 const MARKDOWN_PREVIEW_LIMIT = 240;
 const BOARD_ITEM_LIMIT = 10_000;
@@ -184,7 +179,7 @@ export class FolderBrowseService {
   }
 }
 
-export function createFolderBrowseStore(db: SessionDB): FolderBrowseStore {
+export function createFolderBrowseStore(db: BoardMcpStore): FolderBrowseStore {
   return {
     getFolderById: async (folderId) => await db.getFolderById(folderId),
     listFolderItems: async (params) => await db.listFolderItems(params),

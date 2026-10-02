@@ -64,7 +64,7 @@ describe("folder object legacy and orchestrator MCP parity", () => {
       cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
     app = Fastify();
     registerFolderControlPlaneHostRoute(app, options);
-    registerMcpHostRoutes(app, { authBearerToken: options.authBearerToken, folders: options, cards: {
+    registerMcpHostRoutes(app, { board: undefined as never, authBearerToken: options.authBearerToken, folders: options, cards: {
       cardServiceProvider: options.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }),
     } });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mcpToolDefinitions, errorResult, type McpToolName } from "@soulstream/mcp-contract";
 import type { McpCallContext, McpHostOptions, McpToolHandler } from "./types.js";
 import { folderObjectHandlers } from "./folder_object_handlers.js";
+import { boardHandlers } from "./board_handlers.js";
 import { cardHandlers } from "./card_handlers.js";
 import { pageHandlers } from "./page_handlers.js";
 import { liveCardHandlers } from "./live_card_handlers.js";
@@ -10,6 +11,7 @@ import { skillHandlers } from "./skill_handlers.js";
 export const mcpToolHandlers = {
   ...folderObjectHandlers,
   ...cardHandlers,
+  ...boardHandlers,
   ...pageHandlers,
   ...liveCardHandlers,
   ...skillHandlers,

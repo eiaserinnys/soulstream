@@ -7,10 +7,14 @@
  *   - callTool("list_local_agents") → AgentRegistry 응답
  */
 import fs from "node:fs";
+import Fastify from "fastify";
+import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
+import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
+import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
 import os from "node:os";
 import path from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -289,6 +293,8 @@ function createSilentLogger() {
 }
 
 let sqlCalls: MockSqlCall[] = [];
+let smokeSql: SqlClient;
+let smokeProjection: ReturnType<typeof configureTestBoardProjectionReadHost>;
 const worktreeList = vi.fn(async (input: unknown) => [{ input }]);
 const worktreeCreate = vi.fn(async (input: unknown) => ({ input, created: true }));
 const renameFolder = vi.fn(async () => ({ folder: {}, operation: {}, idempotent: false }));
@@ -297,7 +303,8 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
   const sql = createMockSql() as SqlClient & { __calls: MockSqlCall[] };
   sqlCalls = sql.__calls;
   const db = new SessionDB();
-  configureTestBoardProjectionReadHost(db, sql);
+  smokeSql = sql;
+  smokeProjection = configureTestBoardProjectionReadHost(db, sql);
   db.configureFolderHost(
     new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
   );
@@ -349,6 +356,9 @@ describe("MCP SDK client smoke", () => {
   let tempDir: string;
   let configPath: string;
   let agentRegistry: AgentRegistry;
+  let orch: ReturnType<typeof Fastify>;
+  let smokeRuntime: McpRuntime;
+  let smokeOrchConfig: McpRuntime["orch"];
 
   beforeAll(async () => {
     tempDir = makeTempDirSync("soul-mcp-smoke-");
@@ -400,9 +410,21 @@ describe("MCP SDK client smoke", () => {
         max_turns: 50,
       },
     ]);
+    const runtime = makeRuntime(configPath, agentRegistry);
+    smokeRuntime = runtime;
+    orch = Fastify();
+    const cards = new CardControlPlaneService(createBoardYjsSqlAdapter(smokeSql as never), { appendEventTx: async () => 1 }, { emitFolderUpdated: async () => {}, emitCardUpdated: async () => {} });
+    registerMcpHostRoutes(orch, { authBearerToken: "smoke-token", folders: {
+      authBearerToken: "smoke-token", serviceProvider: async () => new FolderControlPlaneService(smokeSql as never),
+      cardServiceProvider: async () => cards, identity: { create: vi.fn(), mutateFromFolder: renameFolder },
+    }, cards: undefined as never, board: { host: { authBearerToken: "smoke-token", service: {} as never, projectionHost: smokeProjection as never },
+      getSession: async () => null, listAgentProfiles: async () => ({ "codex-default": { name: "Codex" } }),
+      broadcaster: { append: () => {} } as never,
+    } });
+    smokeOrchConfig = { baseUrl: await orch.listen({ host: "127.0.0.1", port: 0 }), headers: { authorization: "Bearer smoke-token" } };
     server = await buildInternalMcpServer({
       logger: createSilentLogger(),
-      runtime: makeRuntime(configPath, agentRegistry),
+      runtime,
       path: "/mcp/internal",
       auth: {
         requireAuth: false,
@@ -419,6 +441,12 @@ describe("MCP SDK client smoke", () => {
     await client.connect(transport);
   });
 
+  beforeEach(({ task }) => {
+    // Only migrated tools need the orchestrator; keep the other smoke tests' unconfigured runtime.
+    smokeRuntime.orch = ["browse_folder", "search_folder_items", "move_folder"].some(name => task.name.includes(`'${name}'`))
+      ? smokeOrchConfig : undefined;
+  });
+
   afterAll(async () => {
     try {
       await client.close();
@@ -427,6 +455,7 @@ describe("MCP SDK client smoke", () => {
     }
     if (server.closeMcp) await server.closeMcp();
     await server.close();
+    await orch.close();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -664,8 +693,8 @@ describe("MCP SDK client smoke", () => {
     expect(rooted.structuredContent).toEqual({ ok: true });
 
     expect(renameFolder).toHaveBeenCalledTimes(2);
-    expect(renameFolder).toHaveBeenNthCalledWith(1, expect.objectContaining({ folderId: "child", parentFolderId: "root" }));
-    expect(renameFolder).toHaveBeenNthCalledWith(2, expect.objectContaining({ folderId: "child", parentFolderId: null }));
+    expect(renameFolder).toHaveBeenNthCalledWith(1, expect.objectContaining({ folderId: "child", update: { parentFolderId: "root" }, actor: { actorKind: "system", actorSessionId: null, actorUserId: null } }));
+    expect(renameFolder).toHaveBeenNthCalledWith(2, expect.objectContaining({ folderId: "child", update: { parentFolderId: null } }));
   });
 
   it("level=0 capability inventory matches the registered MCP tools", async () => {
