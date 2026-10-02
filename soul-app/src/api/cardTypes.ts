@@ -1,11 +1,19 @@
 import type { CatalogFolder, Session } from './types';
 
 export type CardStatus = 'todo' | 'queued' | 'blocked' | 'running' | 'review' | 'done' | 'cancelled';
+export interface CardAttachment {
+  nodeId: string;
+  path: string;
+  name: string;
+  mimeType: string;
+}
 export interface CardDto {
   id: string;
   folderId: string;
   title: string;
   request: string;
+  /** Older server responses omit this field; readers treat omission as []. */
+  attachments?: CardAttachment[];
   brief: string;
   status: CardStatus;
   positionKey: string;

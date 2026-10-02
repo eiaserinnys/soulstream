@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { parseCardRequest } from '../../lib/card-attachments';
+import { cardAttachmentUrl, parseCardRequest } from '../../lib/card-attachments';
+import type { CardAttachment } from '../../api/cardTypes';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTokens } from '../../theme';
@@ -10,13 +11,15 @@ import { CompactTouchTarget } from '../CompactTouchTarget';
 import { cardDetailStyles } from './CardDetail.styles';
 
 /** Card messages use the same image surface as chat; file names remain links. */
-export function CardRequestView({ request }: { request: string }) {
+export function CardRequestView({ request, attachments: files = [] }: { request: string; attachments?: readonly CardAttachment[] }) {
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const jwt = useAuthStore((state) => state.jwt);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
-  const { text, attachments } = parseCardRequest(request);
-  const source = (url: string) => ({ uri: url, ...(jwt && serverUrl && new URL(url).origin === new URL(serverUrl).origin
+  const { text, attachments: legacy } = parseCardRequest(request);
+  const attachments = [...legacy, ...files.map((file) => ({ name: file.name,
+    url: cardAttachmentUrl(serverUrl, file.nodeId, file.path), image: file.mimeType.startsWith('image/') }))];
+  const source = (url: string) => ({ uri: url, ...(jwt && serverUrl && new URL(url, serverUrl).origin === new URL(serverUrl).origin
     ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) });
   const images = attachments.filter((attachment) => attachment.image);
   const sources = images.map((image) => source(image.url));

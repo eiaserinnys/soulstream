@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-test('새 세션 초기 지시 입력과 sheet 제품 마운트를 전수 고정한다', () => {
+test('새 세션·새 카드 공통 입력과 새 세션 sheet 제품 마운트를 전수 고정한다', () => {
   expect(findProductFilesContaining(/<GrowingMultilineInput\b/)).toEqual([
+    'components/planner/CardCreateSheet.tsx',
     'components/planner/SessionSuccessionSheet.tsx',
   ]);
 

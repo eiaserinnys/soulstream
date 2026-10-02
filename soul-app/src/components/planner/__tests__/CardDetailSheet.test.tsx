@@ -141,7 +141,15 @@ test('커멘트 초안은 실패와 상세 닫기 후 복원되고 성공할 때
 
 
 test('카드 생성은 요청 본문만 복원하고 제목은 기존 빈 값으로 시작한다', async () => {
-  const api = { createCard: jest.fn().mockResolvedValue({ card, folderId: card.folderId }), getCard: jest.fn().mockResolvedValue(detail) };
+  useSettingsStore.setState({ nodeId: 'node-1', cardAssignments: {
+    'https://card.example': { folderId: card.folderId, nodeId: 'node-1', agentId: 'roselin', modelPreset: 'sol' },
+  } });
+  const api = {
+    listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }),
+    listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }] }),
+    listModelPresets: jest.fn().mockResolvedValue({ model_presets: [{ id: 'sol', label: 'Sol', available: true }] }),
+    createCard: jest.fn().mockResolvedValue({ card, folderId: card.folderId }), getCard: jest.fn().mockResolvedValue(detail),
+  };
   const props = { api: api as any, folderId: card.folderId, onClose: jest.fn() };
   const first = render(<CardCreateSheet {...props} />);
   fireEvent.changeText(first.getByLabelText('카드 제목'), '저장하지 않을 제목');
@@ -152,7 +160,9 @@ test('카드 생성은 요청 본문만 복원하고 제목은 기존 빈 값으
   expect(next.getByLabelText('요청 원문').props.value).toBe('이어 쓸 긴 요청');
   expect(Object.values(useDraftStore.getState().drafts)).toEqual(['이어 쓸 긴 요청']);
   fireEvent.changeText(next.getByLabelText('카드 제목'), '제출 제목');
+  await waitFor(() => expect(next.getByLabelText('카드 저장')).toBeEnabled());
   await act(async () => fireEvent.press(next.getByLabelText('카드 저장')));
-  expect(api.createCard).toHaveBeenCalledWith(expect.objectContaining({ title: '제출 제목', request: '이어 쓸 긴 요청' }));
+  expect(api.createCard).toHaveBeenCalledWith(expect.objectContaining({ title: '제출 제목', request: '이어 쓸 긴 요청',
+    nodeId: 'node-1', assignee: { kind: 'agent', agentId: 'roselin' }, modelPreset: 'sol', queue: false, attachments: [] }));
   expect(useDraftStore.getState().drafts).toEqual({});
 });

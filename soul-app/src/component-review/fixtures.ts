@@ -32,7 +32,7 @@ export const sessions: Session[] = [
 export function makeCard(status: CardStatus): CardDto {
   return { id: 'public-' + status, folderId: folders[0].id,
     title: '현재 카드 행을 검수하는 공개 예시', request: '공개 fixture로 표시와 동작을 확인합니다.',
-    brief: '', status, positionKey: 'a', queuePositionKey: null,
+    brief: '', attachments: [], status, positionKey: 'a', queuePositionKey: null,
     blockedKind: status === 'blocked' ? 'question' : null, blockedDetail: null,
     assigneeKind: 'agent', assigneeAgentId: 'public-agent', assigneeSessionId: null,
     assigneeUserId: null, nodeId: null, modelPreset: '예시 모델',
@@ -51,7 +51,8 @@ export const fixtureOptions = [
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
-export function createReviewApi(state: FixtureState = 'normal', options: { home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean } = {}) {
+export function createReviewApi(state: FixtureState = 'normal', options: { home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
+  onCreateCard?(body: Parameters<ApiClient['createCard']>[0]): void } = {}) {
   const cards = new Map(initialCards.map((card) => [card.id, { ...card }]));
   if(options.manyCompleted)for(let index=0;index<1000;index++)cards.set(`completed-${index}`,{...makeCard('done'),id:`completed-${index}`,title:index%10===0?'검색할 긴 완료 카드 제목입니다. 같은 폭과 본문을 유지합니다.':'완료 카드 '+index,completedAt:new Date(Date.now()-index*10*60*1000).toISOString()});
   if (options.home) for (let index = 1; index <= 4; index++) cards.set(`public-review-${index}`, { ...makeCard('review'), id: `public-review-${index}`, title: `검수할 공개 예시 ${index}`, latestActivity: { kind: 'report', body: '같은 제목과 본문으로 카드 크기와 읽기 흐름을 확인합니다.', format: 'markdown', createdAt: time } });
@@ -64,7 +65,9 @@ export function createReviewApi(state: FixtureState = 'normal', options: { home?
     if (state === 'loading') return new Promise(() => {});
     return value;
   };
-  const api: Pick<ApiClient, 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+  const api: Pick<ApiClient, 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+    // Mock upload only: the sample asset is served by the review export.
+    uploadAttachment: async (_sessionId, nodeId, file) => ({ path: file.uri, filename: file.name, node_id: nodeId }),
     getPage:async id=>read({page:{...starredFolders[0].page,id},blocks:[],stateVector:''}),
     getPlannerFolder:async (id,query)=>read({folder:{...folders[0],id,projectPageId:'public-page'},page:{...starredFolders[0].page,id:'public-page'},blocks:[],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done')),subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}}),
     getFolderSnapshot:async (id,query)=>read({folder:folders[0],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done'))}),
@@ -84,8 +87,12 @@ export function createReviewApi(state: FixtureState = 'normal', options: { home?
       return { card, reports: card.status === 'review' || card.status === 'done' ? [{ id: `report-${id}`, cardId: id, title: '공개 보고', format: 'markdown', body: '변경을 확인해 주세요.', createdAt: time }] : [], comments: [], questions: card.blockedKind === 'question' ? [{ id: 'public-question', cardId: id, sessionId: 'public-session', text: '공개 질문입니다.', options: null, answer: null, askedAt: time }] : [], sessions: [] };
     },
     createCard: async (body) => {
+      options.onCreateCard?.(body);
       if (options.failWrites) throw new Error('공개 예시: 저장 실패');
-      const card = { ...makeCard('todo'), id: `public-draft-${cards.size}`, title: body.title, request: body.request, folderId: body.folderId };
+      const card = { ...makeCard(body.queue ? 'queued' : 'todo'), id: `public-draft-${cards.size}`, title: body.title, request: body.request, folderId: body.folderId,
+        assigneeKind: body.assignee?.kind ?? null, assigneeAgentId: body.assignee?.agentId ?? null,
+        assigneeSessionId: body.assignee?.sessionId ?? null, assigneeUserId: body.assignee?.userId ?? null,
+        nodeId: body.nodeId ?? null, modelPreset: body.modelPreset ?? null, attachments: body.attachments ?? [] };
       cards.set(card.id, card); return { card, folderId: card.folderId };
     },
     setCardStatus: async (id, status, expectedVersion) => {

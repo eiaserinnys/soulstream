@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { TouchableWithoutFeedback, Text, View } from 'react-native';
-import type { CardDetail, CardQuestion, CardReport } from '../../api/cardTypes';
+import type { CardAttachment, CardDetail, CardQuestion, CardReport } from '../../api/cardTypes';
 import type { Session, SessionEvent } from '../../api/types';
 import { formatRelativeTime } from '../../lib/relative-time';
 import { useSessionStore } from '../../store/sessionStore';
@@ -14,7 +14,7 @@ import { CardReportView } from './CardReportView';
 import { cardDetailStyles } from './CardDetail.styles';
 
 type Entry = { id: string; kind: string; user: boolean; body: string; at: string; sessionId?: string | null;
-  spoken?: boolean; report?: CardReport; question?: CardQuestion };
+  spoken?: boolean; report?: CardReport; question?: CardQuestion; attachments?: CardAttachment[] };
 
 export function CardTimeline({ detail, onChooseAnswer }: { detail: CardDetail; onChooseAnswer(answer: string): void }) {
   const catalog = useSessionStore((state) => state.sessions);
@@ -22,7 +22,7 @@ export function CardTimeline({ detail, onChooseAnswer }: { detail: CardDetail; o
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const assigned = catalog[detail.card.assigneeSessionId ?? ''] ?? detail.sessions.find((session) => session.agentSessionId === detail.card.assigneeSessionId);
   const entries: Entry[] = [
-    { id: 'request', kind: '지시', user: true, body: detail.card.request, at: detail.card.createdAt },
+    { id: 'request', kind: '지시', user: true, body: detail.card.request, at: detail.card.createdAt, attachments: detail.card.attachments },
     ...detail.questions.flatMap((question): Entry[] => [
       { id: `question-${question.id}`, kind: '질문', user: false, body: question.text, at: question.askedAt, sessionId: question.sessionId, question },
       ...(question.answer === null ? [] : [{ id: `answer-${question.id}`, kind: '답', user: true, body: question.answer, at: question.answeredAt ?? question.askedAt }]),
@@ -64,7 +64,7 @@ function TimelineBody({ entry, expanded, onChooseAnswer }: { entry: Entry; expan
   const gallery = report ? reportImages(report).map((uri) => ({ uri })) : [];
   const images = gallery.slice(0, 2);
   return <View style={styles.bodyStack}>
-    {!fold || (expanded && entry.kind === '지시') ? <CardRequestView request={entry.body} /> : <Text style={styles.body} numberOfLines={fold && !expanded ? 3 : undefined}>{preview}</Text>}
+    {!fold || (expanded && entry.kind === '지시') ? <CardRequestView request={entry.body} attachments={entry.attachments} /> : <Text style={styles.body} numberOfLines={fold && !expanded ? 3 : undefined}>{preview}</Text>}
     {images.length ? <View style={styles.thumbnails}>{images.map((source, index) => <AttachmentImage key={source.uri}
       testID={`card-report-thumbnail-${report!.id}-${index}`} source={source} sources={gallery} index={index} accessibilityLabel={`보고 캡처 ${index + 1}`} />)}</View> : null}
     {fold ? <Text style={styles.meta}>{expanded ? '접기' : report ? '자세히' : '더 보기'}</Text> : null}

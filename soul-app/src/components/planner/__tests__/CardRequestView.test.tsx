@@ -7,6 +7,20 @@ import { CardRequestView } from '../CardRequestView';
 
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 
+test('구조화 첨부는 실제 노드 경로를 인증된 기존 이미지 뷰어로 연다', () => {
+  useSettingsStore.setState({ serverUrl: 'https://app.test' });
+  useAuthStore.setState({ jwt: 'fixture-token' });
+  const screen = render(<CardRequestView request="긴 원문" attachments={[
+    { nodeId: 'node-b', path: '/tmp/picture', name: '사진', mimeType: 'image/png' },
+    { nodeId: 'node-b', path: '/tmp/file', name: '문서', mimeType: 'application/pdf' },
+  ]} />);
+  expect(screen.getByTestId('card-request-image-0').props.source).toEqual({
+    uri: 'https://app.test/api/attachments/files?nodeId=node-b&path=%2Ftmp%2Fpicture', headers: { Authorization: 'Bearer fixture-token' },
+  });
+  fireEvent.press(screen.getByLabelText('문서'));
+  expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith('https://app.test/api/attachments/files?nodeId=node-b&path=%2Ftmp%2Ffile');
+});
+
 test('요청 원문은 그대로, 이미지 첨부는 그림으로, 문서는 링크로 렌더한다', () => {
   useSettingsStore.setState({ serverUrl: 'https://app.test' });
   useAuthStore.setState({ jwt: 'fixture-token' });
@@ -19,5 +33,5 @@ test('요청 원문은 그대로, 이미지 첨부는 그림으로, 문서는 �
   expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(pdf);
   screen.rerender(<CardRequestView request="첨부: 외부(https://other.test/photo.png)" />);
   expect(screen.getByTestId('card-request-image-0').props.source.headers).toBeUndefined();
-  act(() => useAuthStore.setState({ jwt: null }));
+  act(() => { useAuthStore.setState({ jwt: null }); });
 });

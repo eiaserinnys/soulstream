@@ -1,13 +1,15 @@
-import { useCallback, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert as RNAlert } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert as RNAlert } from 'react-native';
+import { ActionSheetIOS, DocumentPicker, ImagePicker } from './attachmentPickers';
 import type { ApiClient } from '../api/client';
 import type { NativeUploadFile } from '../api/nativeUpload';
 
 export interface ChatAttachment {
   path: string;
   name: string;
+  nodeId?: string;
+  mimeType?: string;
+  originalFile?: NativeUploadFile;
 }
 
 export type AttachmentUploadInput = NativeUploadFile;
@@ -23,11 +25,15 @@ interface UseChatAttachmentsArgs {
   disabled?: boolean;
   /** Optional display URL for consumers outside chat; upload transport stays the same. */
   mapUploadedPath?: (path: string, nodeId: string) => string;
+  /** Draft cards keep their files when the execution node changes. */
+  reuploadOnNodeChange?: boolean;
 }
 
 export interface UseChatAttachmentsResult {
   attachments: ChatAttachment[];
   uploading: boolean;
+  attachmentsReady: boolean;
+  error: string | null;
   pickAttachment: () => void;
   uploadAttachment: (file: AttachmentUploadInput) => Promise<void>;
   removeAttachment: (idx: number) => void;
@@ -48,12 +54,51 @@ export interface UseChatAttachmentsResult {
 export function useChatAttachments(
   args: UseChatAttachmentsArgs,
 ): UseChatAttachmentsResult {
-  const { api, sessionId, nodeId, disabled = false, mapUploadedPath } = args;
+  const { api, sessionId, nodeId, disabled = false, mapUploadedPath, reuploadOnNodeChange = false } = args;
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
 
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const currentNode = useRef(nodeId);
+  if (currentNode.current !== nodeId) {
+    currentNode.current = nodeId;
+    if (reuploadOnNodeChange) generation.current++;
+  }
+
+  useEffect(() => {
+    if (!reuploadOnNodeChange || !api || !sessionId || !nodeId) return;
+    const files = attachments.filter((item) => item.nodeId !== nodeId && item.originalFile);
+    if (!files.length) return;
+    const revision = generation.current;
+    let active = true;
+    setUploading(true); setError(null);
+    void (async () => {
+      try {
+        // All responses belong to one node revision. Removal is checked again at commit.
+        const uploaded: Array<{ item: ChatAttachment; path: string }> = [];
+        for (const item of files) {
+          const response = await api.uploadAttachment(sessionId, nodeId, item.originalFile!);
+          if (!active || revision !== generation.current) return;
+          if (!response.path) throw new Error('서버 응답에 경로가 없습니다.');
+          uploaded.push({ item, path: response.path });
+        }
+        setAttachments((current) => current.map((item) => {
+          const upload = uploaded.find((entry) => entry.item === item);
+          return upload ? { ...item, path: upload.path, nodeId } : item;
+        }));
+      } catch (cause) {
+        if (!active || revision !== generation.current) return;
+        const message = cause instanceof Error ? cause.message : String(cause);
+        setError(message); RNAlert.alert('첨부 실패', message);
+      } finally { if (active && revision === generation.current) setUploading(false); }
+    })();
+    return () => { active = false; };
+    // Only a node transition starts reupload. Failure/removal does not auto retry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, sessionId, nodeId, reuploadOnNodeChange]);
 
   const uploadAttachment = useCallback(
     async (file: AttachmentUploadInput) => {
@@ -67,20 +112,31 @@ export function useChatAttachments(
         return;
       }
       setUploading(true);
+      setError(null);
+      const revision = generation.current;
+      const draftFile: ChatAttachment = { path: '', name: file.name, nodeId: '',
+        mimeType: file.type || 'application/octet-stream', originalFile: file };
+      if (reuploadOnNodeChange) setAttachments((prev) => [...prev, draftFile]);
       try {
         const res = await api.uploadAttachment(sessionId, targetNodeId, file);
         const path = (res as any)?.path;
         if (typeof path !== 'string' || !path) {
           throw new Error('서버 응답에 경로가 없습니다.');
         }
-        setAttachments((prev) => [...prev, { path: mapUploadedPath ? mapUploadedPath(path, targetNodeId) : path, name: file.name }]);
+        if (revision !== generation.current) return;
+        const uploaded = { ...draftFile, path: mapUploadedPath ? mapUploadedPath(path, targetNodeId) : path, nodeId: targetNodeId };
+        setAttachments((prev) => reuploadOnNodeChange
+          ? prev.map((item) => item === draftFile ? uploaded : item)
+          : [...prev, uploaded]);
       } catch (e: any) {
+        if (revision !== generation.current) return;
+        setError(e?.message ?? '알 수 없는 오류');
         RNAlert.alert('첨부 실패', e?.message ?? '알 수 없는 오류');
       } finally {
-        setUploading(false);
+        if (revision === generation.current) setUploading(false);
       }
     },
-    [api, sessionId, nodeId, mapUploadedPath],
+    [api, sessionId, nodeId, mapUploadedPath, reuploadOnNodeChange],
   );
 
   const pickAttachment = useCallback(() => {
@@ -142,9 +198,12 @@ export function useChatAttachments(
 
   const removeAttachment = useCallback((idx: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== idx));
+    setError(null);
   }, []);
 
-  const clearAttachments = useCallback(() => setAttachments([]), []);
+  const clearAttachments = useCallback(() => {
+    generation.current++; setAttachments([]); setUploading(false); setError(null);
+  }, []);
   const restoreAttachments = useCallback((restored: ChatAttachment[]) => {
     setAttachments((current) => [...restored, ...current]);
   }, []);
@@ -152,6 +211,8 @@ export function useChatAttachments(
   return {
     attachments,
     uploading,
+    attachmentsReady: !uploading && (!reuploadOnNodeChange || attachments.every((file) => !!file.path && file.nodeId === nodeId)),
+    error,
     pickAttachment,
     uploadAttachment,
     removeAttachment,

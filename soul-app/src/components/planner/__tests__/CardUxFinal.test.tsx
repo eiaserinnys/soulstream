@@ -106,12 +106,15 @@ test('실행 시트는 세 목록을 독립 선택하고 노드 변경 시 같�
 });
 test('+ 카드 시트는 제목·요청 원문을 todo로 저장한다', async () => {
   const saved = cardFixture({ status: 'todo' });
-  const api = { createCard: jest.fn().mockResolvedValue({ card: saved, folderId: saved.folderId }), getCard: jest.fn().mockResolvedValue({ card: saved, sessions: [], questions: [], reports: [] }) };
+  const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }), listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', default_preset: 'sol' }] }),
+    listModelPresets: jest.fn().mockResolvedValue({ model_presets: [{ id: 'sol', label: 'Sol', available: true }] }),
+    createCard: jest.fn().mockResolvedValue({ card: saved, folderId: saved.folderId }), getCard: jest.fn().mockResolvedValue({ card: saved, sessions: [], questions: [], reports: [] }) };
   const screen = render(<CardCreateSheet api={api as any} onClose={jest.fn()} />);
   fireEvent.changeText(screen.getByLabelText('카드 제목'), '제목');
   fireEvent.changeText(screen.getByLabelText('요청 원문'), '  요청 원문  ');
   await act(async () => fireEvent.press(screen.getByLabelText('카드 저장')));
-  expect(api.createCard).toHaveBeenCalledWith({ folderId: 'folder-1', title: '제목', request: '  요청 원문  ', queue: false, idempotencyKey: expect.any(String) });
+  expect(api.createCard).toHaveBeenCalledWith({ folderId: 'folder-1', title: '제목', request: '  요청 원문  ', queue: false,
+    nodeId: 'node-1', assignee: { kind: 'agent', agentId: 'roselin' }, modelPreset: 'sol', attachments: [], idempotencyKey: expect.any(String) });
 });
 
 test.each(['담당 변경', '노드 변경', '모델 변경'])('%s 칩은 폴더 항목을 가진 한 시트를 열며 버전을 이어서 저장한다', async (label) => {

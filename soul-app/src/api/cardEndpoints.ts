@@ -1,6 +1,6 @@
 import type { ApiRequestContext } from './clientCore';
 import type { CompletedCardParams } from '../../../packages/soul-ui/src/cards/completed-cards';
-import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment } from './cardTypes';
+import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment, CardAttachment } from './cardTypes';
 
 export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestContext) {
   const path = (id: string) => `${base}/api/cards/${encodeURIComponent(id)}`;
@@ -13,7 +13,7 @@ export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestCon
     listCompletedCards: (params:CompletedCardParams) => authFetch(`${base}/api/cards?${new URLSearchParams({status:'done',...Object.fromEntries(Object.entries(params).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)]))})}`)
       .then(response=>readJson<{cards:CardDto[];nextCursor:string|null}>(response,'listCompletedCards')),
     getCard: (id: string) => authFetch(path(id)).then((response) => readJson<CardDetailWire>(response, 'getCard'))
-      .then((raw): CardDetail => ({ ...raw, sessions: raw.sessions.map((session) => ({
+      .then((raw): CardDetail => ({ ...raw, card: { ...raw.card, attachments: raw.card.attachments ?? [] }, sessions: raw.sessions.map((session) => ({
         ...session, agentSessionId: session.sessionId, nodeId: session.nodeId ?? undefined,
         updatedAt: session.updatedAt ?? session.createdAt,
       })) })),
@@ -21,7 +21,7 @@ export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestCon
       authFetch(`${path(id)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then((response) => readJson<CardComment>(response, 'addCardComment')),
     createCard: (body: { folderId: string; title: string; request: string; queue?: boolean;
-      assignee?: CardPatch['assignee']; nodeId?: string | null; modelPreset?: string | null; idempotencyKey: string }) => write(`${base}/api/cards`, body),
+      assignee?: CardPatch['assignee']; nodeId?: string | null; modelPreset?: string | null; attachments?: CardAttachment[]; idempotencyKey: string }) => write(`${base}/api/cards`, { ...body, attachments: body.attachments ?? [] }),
     setCardStatus: (id: string, status: CardStatus, expectedVersion: number, idempotencyKey: string, reason?: string) =>
       write(`${path(id)}/status`, { status, expectedVersion, idempotencyKey, ...(reason ? { reason } : {}) }),
     updateCard: (id: string, patch: CardPatch, expectedVersion: number, idempotencyKey: string) =>
