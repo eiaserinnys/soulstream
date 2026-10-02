@@ -1,3 +1,4 @@
+import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import { useRef } from "react";
 import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
@@ -22,7 +23,7 @@ export function CardComposer({text,onChangeText,onSend,placeholder,inputLabel,la
    <PaperclipButton disabled={pending} onClick={()=>onAddFiles?fileInput.current?.click():onAttachUnavailable?.()}/>
    <ChatInputEditor ref={textarea} text={text} onChangeText={onChangeText} onSend={onSend} placeholder={placeholder} inputLabel={inputLabel??placeholder}
     buttonLabel={label} modeIcon="" modeLabel={placeholder} borderColor="" buttonVariant="default" disabled={disabled} textareaDisabled={pending}
-    onPaste={event=>{if(onAddFiles&&!pending&&event.clipboardData.files.length){event.preventDefault();onAddFiles(event.clipboardData.files);}}}/>
+    onPaste={event=>{if(onAddFiles&&!pending)handleClipboardFiles(event,onAddFiles);}}/>
   </ChatInputComposer>
   <input type="file" ref={fileInput} multiple hidden disabled={pending} onChange={event=>{if(event.target.files)onAddFiles?.(event.target.files);event.target.value="";}}/>
  </div>;

@@ -444,3 +444,50 @@ describe("preset with efforts but no advertised default", () => {
     expect(createDashboardSession.mock.calls[0]?.[0]).not.toHaveProperty("reasoningEffort");
   });
 });
+
+
+describe("SessionSuccessionModal attachments", () => {
+  it("uploads pasted images to the changed node before creating the first execution", async () => {
+    useOrchestratorStore.setState({ nodes: new Map([["node-a", node("node-a")], ["node-b", node("node-b")]]) });
+    let finishB!: (response: Response) => void;
+    const bUpload = new Promise<Response>(resolve => { finishB = resolve; });
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("attachments/sessions")) return url.includes("node-b") ? bUpload : Promise.resolve({ ok: true, json: async () => ({ path: "/A/pasted.png" }) } as Response);
+      return Promise.resolve({ ok: true, json: async () => url.includes("model-presets")
+        ? { model_presets: [OPUS] } : { agents: [{ id: "roselin", name: "roselin", default_preset: "claude-opus" }] } } as Response);
+    }));
+    URL.createObjectURL = vi.fn(() => "blob:test"); URL.revokeObjectURL = vi.fn();
+    mount(); await settle();
+    const input = document.body.querySelector("textarea")!;
+    const image = new File(["png"], "image.png", { type: "image/png" });
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: { files: [image], items: [{ kind: "file", type: image.type, getAsFile: () => image }] } });
+    flushSync(() => input.dispatchEvent(paste)); await settle();
+    expect(paste.defaultPrevented).toBe(true);
+    expect(document.body.querySelector('img[src="blob:test"]')).not.toBeNull();
+    flushSync(() => setSelect(document.body.querySelector<HTMLSelectElement>('select[aria-label="노드 선택"]')!, "node-b"));
+    await settle();
+    const submit = document.body.querySelector<HTMLButtonElement>(".v3-succession-footer button:last-child")!;
+    expect(submit.disabled).toBe(true);
+    submit.click(); expect(createDashboardSession).not.toHaveBeenCalled();
+    finishB({ ok: true, json: async () => ({ path: "/B/pasted.png" }) } as Response); await settle();
+    expect(startButton()?.disabled).toBe(false);
+    startButton()?.click(); await settle();
+    expect(createDashboardSession).toHaveBeenCalledWith(expect.objectContaining({ nodeId: "node-b", attachmentPaths: ["/B/pasted.png"] }));
+    expect(createDashboardSession.mock.calls[0][0].initialInstruction).not.toContain("/A/");
+  });
+  it("blocks creation after a selected-file upload fails", async () => {
+    stubFetch([OPUS]);
+    const fetchMetadata = vi.mocked(fetch).getMockImplementation()!;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => String(input).includes("attachments/sessions")
+      ? Promise.resolve({ ok: false, status: 500 } as Response) : fetchMetadata(input)));
+    URL.createObjectURL = vi.fn(() => "blob:test"); URL.revokeObjectURL = vi.fn();
+    mount(); await settle();
+    const chooser = document.body.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(chooser, "files", { value: [new File(["png"], "photo.png", { type: "image/png" })] });
+    flushSync(() => chooser.dispatchEvent(new Event("change", { bubbles: true }))); await settle();
+    expect(startButton()?.disabled).toBe(true);
+    startButton()?.click(); expect(createDashboardSession).not.toHaveBeenCalled();
+  });
+});

@@ -28,6 +28,7 @@ export type CreateSessionNodeCommandPayload =
     profile?: string;
     model?: string | null;
     model_preset?: string | null;
+    attachment_paths?: string[];
   };
 
 export type SessionOwner = CachedNodeSession & {
