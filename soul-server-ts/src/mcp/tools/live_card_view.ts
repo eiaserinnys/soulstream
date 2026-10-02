@@ -4,7 +4,7 @@ import { widgetHtml } from "../../../../plugins/chatgpt-card-renderer/src/widget
 import { projectCards } from "../../../../plugins/chatgpt-card-renderer/src/card-data.js";
 import { previewSchema } from "../../../../packages/soul-ui/src/cards/card-preview-schema.js";
 
-export const LIVE_CARD_RESOURCE = "ui://soulstream/live-cards-v3.html";
+export const LIVE_CARD_RESOURCE = "ui://soulstream/live-cards-v4.html";
 export type LiveCardQuery = { folder_id?: string; limit: number };
 export const liveCardOutputSchema=z.object({
  cards:z.array(z.object({id:z.string(),title:z.string(),status:z.enum(["todo","queued","blocked","running","review","done","cancelled","unknown"]),assignee:z.string(),updatedAt:z.string().datetime().nullable(),preview:previewSchema.optional()}).strict()).max(100).optional(),

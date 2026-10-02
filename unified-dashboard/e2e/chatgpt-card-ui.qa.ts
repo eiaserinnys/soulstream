@@ -58,3 +58,55 @@ for(const width of [1440,390]){
   expect(external).toEqual([]);expect(errors).toEqual([]);
  });
 }
+
+for(const width of [1440,390]){
+ test(`constrained iframe viewport scroll and title ${width}`,async({page})=>{
+  const output=process.env.WIDGET_QA_OUTPUT??path.resolve('../../../.local/artifacts/20261002-widget-scroll-v4');
+  mkdirSync(output,{recursive:true});
+  await page.setViewportSize({width,height:700});await page.emulateMedia({reducedMotion:'reduce'});
+  const manyCards=Array.from({length:40},(_,index)=>({...cards[index%cards.length],id:`many-${index}`}));
+  await page.setContent(`<!doctype html><body style="margin:0"><iframe title="카드 iframe" style="display:block;border:0;width:100%;height:600px" srcdoc="${widgetHtml.replaceAll('&','&amp;').replaceAll('"','&quot;')}"></iframe><script>
+   const frame=document.querySelector('iframe');window.calls=[];
+   const result=()=>({structuredContent:{cards:${JSON.stringify(manyCards)},total:40,sync:{folderId:'qa',limit:100,refreshSeconds:30,fetchedAt:'2026-10-02T00:00:00Z'}}});
+   addEventListener('message',e=>{if(e.source!==frame.contentWindow)return;const m=e.data;
+    if(m.method==='ui/initialize')frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{}},'*');
+    if(m.method==='ui/notifications/initialized')frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result()},'*');
+    if(m.method==='tools/call'){window.calls.push(m);frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:result()},'*');}
+   });</script>`);
+  const frame=page.frameLocator('iframe'),scroller=frame.locator('.widget-shell > .v3-detail-scroll');
+  await expect(frame.locator('article')).toHaveCount(40);
+  await scroller.evaluate(()=>document.fonts.ready);
+  const measure=()=>scroller.evaluate((el:HTMLElement)=>{
+   const header=el.querySelector('header')!,title=header.querySelector('h2,h3')!,section=el.querySelector('[data-card-group] h3')!;
+   const rootStyle=getComputedStyle(el),box=el.getBoundingClientRect(),footer=el.querySelector('footer')!.getBoundingClientRect(),bottom=Math.min(box.bottom,innerHeight);
+   const controls=[...header.querySelectorAll('[data-slot="select-trigger"],#refresh')].map(node=>{const rect=node.getBoundingClientRect();return {top:rect.top,height:rect.height};});
+   return {scrollTop:el.scrollTop,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,
+    titleFont:getComputedStyle(title).fontSize,sectionFont:getComputedStyle(section).fontSize,
+    pageToken:rootStyle.getPropertyValue('--v3-type-page').trim(),sectionToken:rootStyle.getPropertyValue('--v3-type-section').trim(),
+    padding:rootStyle.padding,headerX:header.getBoundingClientRect().x,sectionX:section.getBoundingClientRect().x,
+    footerVisible:footer.top>=box.top&&footer.bottom<=bottom,lastCardBottom:el.querySelectorAll('article')[39].getBoundingClientRect().bottom,
+    bottom,controls,overflowX:el.scrollWidth>el.clientWidth};
+  });
+  const initial=await measure();await page.screenshot({path:path.join(output,`${phase}-constrained-${width}-top.png`)});
+  await page.mouse.move(width/2,300);await page.mouse.wheel(0,500);
+  await page.waitForTimeout(250);const wheeled=await measure();
+  await page.mouse.wheel(0,100000);await page.waitForTimeout(350);const bottom=await measure();
+  await page.screenshot({path:path.join(output,`${phase}-constrained-${width}-bottom.png`)});
+  writeFileSync(path.join(output,`${phase}-constrained-${width}.json`),JSON.stringify({initial,wheeled,bottom},null,2));
+  // Both assertions fail against v3. These observe actual layout and browser wheel behavior.
+  expect.soft(initial.clientHeight).toBe(600);
+  expect.soft(wheeled.scrollTop).toBeGreaterThan(initial.scrollTop);
+  expect.soft(bottom.footerVisible).toBe(true);
+  expect.soft(bottom.lastCardBottom).toBeLessThanOrEqual(bottom.bottom);
+  expect.soft(parseFloat(initial.titleFont)).toBeGreaterThan(parseFloat(initial.sectionFont));
+  if(phase==='after'){
+   expect(initial.pageToken).toContain(initial.titleFont);expect(initial.sectionToken).toContain(initial.sectionFont);
+   expect(Math.abs(initial.headerX-initial.sectionX)).toBeLessThanOrEqual(1);
+   expect(initial.overflowX).toBe(false);expect(initial.controls[0]).toEqual(initial.controls[1]);
+   await page.mouse.wheel(0,-100000);await expect.poll(async()=>(await measure()).scrollTop).toBe(0);
+   await frame.getByRole('combobox',{name:'카드 상태 필터'}).click();await frame.getByRole('option',{name:'검수 대기',exact:true}).click();
+   await expect(frame.locator('article')).toHaveCount(10);
+   await frame.getByRole('button',{name:'새로고침',exact:true}).click();await expect.poll(()=>page.evaluate(()=>(window as any).calls.length)).toBe(1);
+  }
+ });
+}

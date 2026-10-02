@@ -12,4 +12,8 @@
 
 /* The registered inbox keeps its inset, section spacing and card tracks. */
 .widget-shell { --v3-card-gap: var(--spacing); color: var(--foreground); background: var(--background); }
+/* The iframe viewport bounds the inbox; the inherited detail scroll owns scrolling. */
+html, body, #root { height: 100%; min-height: 0; }
+.widget-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.widget-shell > .v3-detail-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 html { scrollbar-width: thin; scrollbar-color: var(--v3-text-tertiary) transparent; }
