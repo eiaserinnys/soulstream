@@ -18,6 +18,7 @@ describe("buildHistoryPageUrl", () => {
       "session_notification",
       "assistant_message",
       "turn_summary",
+      "debug",
       "tool_start",
       "tool_result",
       "error",
