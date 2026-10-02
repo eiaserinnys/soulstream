@@ -9,18 +9,29 @@ export function PlannerMarkdownText({
   markdown,
   testID,
   variant = 'planner',
+  textAlign,
 }: {
   markdown: string;
   testID?: string;
   variant?: 'planner' | 'card';
+  textAlign?: 'left';
 }) {
   const t = useTokens();
+  const markdownStyle = variant === 'card' ? cardMarkdownStyle(t) : plannerMarkdownStyle(t);
+  const alignedStyle = textAlign ? {
+    ...markdownStyle,
+    paragraph: { ...markdownStyle.paragraph, textAlign },
+    h1: { ...markdownStyle.h1, textAlign },
+    h2: { ...markdownStyle.h2, textAlign },
+    h3: { ...markdownStyle.h3, textAlign },
+  } : markdownStyle;
   return (
-    <View testID={testID}>
+    <View testID={testID} style={textAlign ? { width: '100%', alignSelf: 'stretch' } : undefined}>
       <EnrichedMarkdownText
         markdown={markdown}
         flavor="github"
-        markdownStyle={variant === 'card' ? cardMarkdownStyle(t) : plannerMarkdownStyle(t)}
+        markdownStyle={alignedStyle}
+        containerStyle={textAlign ? { width: '100%', textAlign } : undefined}
         selectable
         onLinkPress={({ url }) => { void WebBrowser.openBrowserAsync(url); }}
       />

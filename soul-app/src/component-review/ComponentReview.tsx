@@ -20,6 +20,7 @@ import {ReviewFolderWorkspace} from './ReviewFolderWorkspace';
 import { ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewLongFolders } from './ReviewLongFolders';
 import { ReviewAutoRefresh } from './ReviewAutoRefresh';
+import { ReviewCardImages } from './ReviewCardImages';
 import { folders } from './fixtures';
 
 const sections = [
@@ -35,12 +36,14 @@ const sections = [
   { value: 'entryShell', label: '앱 홈 조합' },
   { value: 'longFolders', label: '긴 폴더 목록' },
   { value: 'autoRefresh', label: '자동 갱신' },
+  { value: 'cardImages', label: '카드 이미지' },
 ] as const;
 type Section = typeof sections[number]['value'];
 
 export function initializeReview() {
   const entryShell = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'entryShell';
-  useSettingsStore.setState({ serverUrl: entryShell ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
+  useSettingsStore.setState({ serverUrl: cardImages ? window.location.origin : entryShell ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   useSessionStore.setState({ catalog: { folders, sessions: {} }, catalogLoadState: 'ready' });
 }
 
@@ -81,9 +84,11 @@ function Gallery() {
     </View>
     <SettingsSegmentedControl<Section> id="review-section" value={section} onChange={(next) => {
       if (next === 'entryShell') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
+      if (next === 'cardImages') useSettingsStore.setState({ serverUrl: window.location.origin });
       setSection(next);
     }} options={sections} />
     {section === 'rows' ? <ReviewRows /> : section === 'chat' ? <ReviewChat />
+      : section === 'cardImages' ? <ReviewCardImages serverUrl={window.location.origin} bundledImages />
       : section === 'project' ? <ReviewProject /> : section === 'settings' ? <ReviewSettings />
         : section === 'boardActions' ? <ReviewBoardActions />
           : section === 'postit' ? <ReviewPostIt /> : <ReviewSurfaces />}

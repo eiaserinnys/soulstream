@@ -11,7 +11,10 @@ async function start() {
     ]);
   const serverUrl = window.location.origin;
   useSettingsStore.setState({ serverUrl, appearance: 'dark' });
-  // Invented public value only; this entry never imports native App startup.
+  // LOCAL HTTP CAPTURE ONLY, not selected by native index.ts or export:components.
+  // Metro aliases SecureStore to fixture-secure-store's in-memory Map, so this
+  // invented value cannot replace an OS Keychain JWT or browser login cookie.
+  // The normal ComponentReview menu imports ReviewCardImages, never this entry.
   useAuthStore.setState({ jwt: 'public-image-review-token' });
   registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider>
     <ReviewCardImages serverUrl={serverUrl} />

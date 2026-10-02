@@ -33,9 +33,9 @@ function CardMarkdownReport({ report }: { report: CardReport }) {
   const segments = useMemo(() => segmentCardReportImages(report.body), [report.body]);
   const gallery = segments.flatMap((part) => part.kind === 'image' ? [cardImageSource(part.url, serverUrl, jwt)] : []);
   let imageIndex = 0;
-  return <View testID={`card-report-markdown-${report.id}`} style={styles.bodyStack}>{segments.map((part, index) => {
+  return <View testID={`card-report-markdown-${report.id}`} style={styles.reportBodyStack}>{segments.map((part, index) => {
     if (part.kind === 'markdown') return part.markdown.trim()
-      ? <PlannerMarkdownText key={index} markdown={part.markdown} variant="card" /> : null;
+      ? <PlannerMarkdownText key={index} markdown={part.markdown} variant="card" textAlign="left" /> : null;
     const current = imageIndex++;
     return <AttachmentImage key={index} testID={`card-report-image-${report.id}-${current}`}
       source={gallery[current]} sources={gallery} index={current} accessibilityLabel={part.alt || `보고 캡처 ${current + 1}`} />;
