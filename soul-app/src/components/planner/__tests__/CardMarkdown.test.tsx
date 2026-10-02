@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, renderHook } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { useTokens } from '../../../theme';
 import { useSettingsStore } from '../../../store/settingsStore';
 
@@ -36,9 +37,23 @@ test.each([
   for (const key of ['h1', 'h2', 'h3']) {
     expect(cardStyle[key]).toEqual({ color: result.current.colors.textPrimary, ...result.current.foundation.typography.cardTitle });
   }
-  expect(cardStyle).toEqual(report.getByTestId('markdown').props.markdownStyle);
+  expect(report.getByTestId('markdown').props.markdownStyle).toMatchObject(cardStyle);
   expect(card.getByTestId('markdown').props.flavor).toBe('github');
   // 폴더/편집기 소비자의 기본 스타일은 그대로 유지한다.
   const folder = render(<PlannerMarkdownText markdown={markdown} />);
   expect(folder.getByTestId('markdown').props.markdownStyle).toMatchObject({ paragraph: { fontSize: 15 }, h1: { fontSize: 28 }, h2: { fontSize: 18 }, h3: { fontSize: 16 } });
+});
+
+test.each([390, 1194])('펼친 보고 %s는 기존 썸네일 간격과 전체폭 왼쪽 본문을 사용한다', (width) => {
+  mockDimensions = { ...mockDimensions, width };
+  useSettingsStore.setState({ serverUrl: 'https://cards.test' });
+  const screen = render(<CardReportView report={{ id: 'aligned', cardId: 'card', title: '보고', format: 'markdown',
+    body: '본문\n\n![첫 사진](https://cards.test/one.png)\n![둘째 사진](https://cards.test/two.png)\n\n마지막', createdAt: '' }} />);
+  const { result } = renderHook(() => useTokens());
+  expect(StyleSheet.flatten(screen.getByTestId('card-report-markdown-aligned').props.style))
+    .toMatchObject({ gap: result.current.uiSpacing.sm, width: '100%', alignSelf: 'stretch', alignItems: 'flex-start' });
+  for (const markdown of screen.getAllByTestId('markdown')) {
+    expect(markdown.props.containerStyle).toMatchObject({ width: '100%', textAlign: 'left' });
+    for (const key of ['paragraph', 'h1', 'h2', 'h3']) expect(markdown.props.markdownStyle[key].textAlign).toBe('left');
+  }
 });

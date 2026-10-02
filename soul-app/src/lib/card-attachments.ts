@@ -10,17 +10,17 @@ export function appendCardAttachments(text: string, files: readonly CardAttachme
 }
 
 /** Only the trailing attachment block is interpreted; ordinary request text stays literal. */
-export function parseCardRequest(request: string) {
+export function parseCardRequest(request: string, serverUrl?: string) {
   const lines = request.split('\n');
   const attachments: Array<CardAttachment & { image: boolean }> = [];
   while (lines.length) {
     const line = lines.at(-1)!;
     if (attachments.length && line === '') { lines.pop(); continue; }
-    const match = /^첨부: (.*)\((https?:\/\/.*)\)$/.exec(line)
-      ?? /^!?\[([^\]]*)\]\((https?:\/\/.*)\)$/.exec(line);
+    const match = /^첨부: (.*)\(((?:https?:\/\/|\/).*)\)$/.exec(line)
+      ?? /^!?\[([^\]]*)\]\(((?:https?:\/\/|\/).*)\)$/.exec(line);
     if (!match) break;
     const [, name, url] = match;
-    const parsed = new URL(url);
+    const parsed = new URL(url, serverUrl);
     const path = parsed.searchParams.get('path') ?? parsed.pathname;
     attachments.unshift({ name, url, image: /\.(png|jpe?g|gif|webp|heic|avif)$/i.test(path) });
     lines.pop();

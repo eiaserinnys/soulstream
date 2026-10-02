@@ -25,6 +25,7 @@ export function cardDetailStyles(t: DesignTokens) {
     meta: { ...type.meta, color: t.colors.textSecondary },
     body: { fontSize: t.chatFontSize.body, lineHeight: t.chatFontSize.body * t.lineHeightRatio, color: t.colors.textPrimary },
     bodyStack: {},
+    reportBodyStack: { gap: s.sm, width: '100%', alignSelf: 'stretch', alignItems: 'flex-start' },
     link: { ...type.body, color: t.colors.accent },
     option: { minHeight: t.controlHeight.chip, justifyContent: 'center' },
     thumbnails: { flexDirection: 'row', flexWrap: 'wrap', gap: s.sm },
