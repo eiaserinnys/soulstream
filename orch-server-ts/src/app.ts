@@ -223,7 +223,7 @@ export type CreateAppOptions = {
   scheduleHostRoutes?: ScheduleHostRouteOptions;
   recurringJobRoutes?: RecurringJobRouteOptions;
   recurringJobHostRoutes?: RecurringJobHostRouteOptions;
-  mcpHostRoutes?: McpHostOptions;
+  mcpHostRoutes?: Omit<McpHostOptions, "recurringJobs" | "cardOrchestration" | "cluster"> & { cluster: Omit<McpHostOptions["cluster"], "logger"> } & Partial<Pick<McpHostOptions, "recurringJobs" | "cardOrchestration">>;
   persistenceHostRoutes?: PersistenceHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
   uiEventRoutes?: UiEventRouteOptions;
@@ -298,7 +298,11 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.recurringJobRoutes !== undefined) {
     registerRecurringJobRoutes(app, options.recurringJobRoutes);
   }
-  if (options.mcpHostRoutes) registerMcpHostRoutes(app, { ...options.mcpHostRoutes, environment: options.config.environment });
+  if (options.mcpHostRoutes) registerMcpHostRoutes(app, { ...options.mcpHostRoutes,
+    cluster: { ...options.mcpHostRoutes.cluster, logger: app.log },
+    recurringJobs: options.recurringJobHostRoutes ?? options.mcpHostRoutes.recurringJobs!,
+    cardOrchestration: options.cardOrchestrationRoutes ?? options.mcpHostRoutes.cardOrchestration!,
+    environment: options.config.environment });
   if (options.recurringJobHostRoutes !== undefined) {
     registerRecurringJobHostRoutes(app, {
       ...options.recurringJobHostRoutes,

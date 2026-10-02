@@ -1,5 +1,9 @@
+import { cardOrchestrationTools } from "@soulstream/mcp-contract";
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
+export function registerCardOrchestrationTools(server: McpServer, runtime: McpRuntime): void {
+  registerOrchestratorTools(server, runtime, Object.values(cardOrchestrationTools), {});
+}
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import { parseOrchestrationPolicy } from "@soulstream/wire-schema/card-orchestration";
 import {
   PersistenceHostTransport,
@@ -12,49 +16,19 @@ import {
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
-const policySchema = z
-  .object({
-    enabled: z.boolean(),
-    candidates: z.array(
-      z
-        .object({
-          agentId: z.string().min(1),
-          nodeId: z.string().min(1),
-          modelPreset: z.string().min(1),
-          minimumRemainingPercent: z.number().min(0).max(100),
-        })
-        .strict(),
-    ),
-    usageMaxAgeMs: z.literal(300000),
-    sessionFolderId: z.uuid().nullable(),
-    systemFolderParentId: z.uuid().nullable(),
-  })
-  .strict();
-export function registerCardOrchestrationTools(
+export function registerCardOrchestrationToolsLegacy(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
   server.registerTool(
     "get_card_orchestration_settings",
-    {
-      description:
-        "관리자 전용 중앙 카드 배정 정책과 최근 판단 상태를 조회한다. 판단 세션은 사용할 수 없다.",
-      inputSchema: { caller_session_id: z.string().min(1).optional() },
-    },
+    cardOrchestrationTools.get_card_orchestration_settings.config,
     async ({ caller_session_id }) =>
       call(runtime, caller_session_id, "get", {}),
   );
   server.registerTool(
     "update_card_orchestration_settings",
-    {
-      description:
-        "관리자 전용 중앙 카드 배정 정책을 CAS version으로 저장한다. 후보 배열 순서가 모델 우선순위이며 사용량은 원천 관측 5분 이내여야 한다. 저장 폴더 null은 첫 판단 직전 서버가 생성한다. 기존 설정 version을 먼저 조회한다.",
-      inputSchema: {
-        caller_session_id: z.string().min(1).optional(),
-        expectedVersion: z.number().int().positive(),
-        policy: policySchema,
-      },
-    },
+    cardOrchestrationTools.update_card_orchestration_settings.config,
     async ({ caller_session_id, expectedVersion, policy }) =>
       call(runtime, caller_session_id, "update", {
         expectedVersion,

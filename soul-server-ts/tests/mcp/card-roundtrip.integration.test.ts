@@ -1,3 +1,4 @@
+import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import { readFile } from "node:fs/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -74,7 +75,7 @@ describe("card legacy and orchestrator MCP parity", () => {
       authBearerToken: "service-token" };
     app = Fastify();
     registerCardRoutes(app, options);
-    registerMcpHostRoutes(app, { authBearerToken: options.authBearerToken,
+    registerMcpHostRoutes(app, { ...unusedClusterDependencies, authBearerToken: options.authBearerToken,
       cards: { ...options, resolveAccess: serviceTokenAccessWithoutEmail }, folders: {
       authBearerToken: options.authBearerToken, serviceProvider: async () => { throw new Error("unused folder host"); },
     } });

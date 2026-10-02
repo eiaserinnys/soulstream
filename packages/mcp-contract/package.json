@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "zod": "^4.3.6",
-    "@soulstream/wire-schema": "workspace:*"
+    "@soulstream/wire-schema": "workspace:*",
+    "@soulstream/agent-profile-contract": "workspace:*",
+    "@soulstream/model-catalog": "workspace:*"
   }
 }

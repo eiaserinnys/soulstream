@@ -1,28 +1,16 @@
+import { recurringJobTools } from "@soulstream/mcp-contract";
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
+import { createCallerInfoPreprocessor } from "./cluster_caller_info.js";
+export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime): void {
+  registerOrchestratorTools(server, runtime, Object.values(recurringJobTools), createCallerInfoPreprocessor(runtime));
+}
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 
 import { RecurringJobHostClient } from "../../recurring-jobs/recurring_job_host_client.js";
 import { isCurrentMcpCallerExternal } from "../request_context.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
-
-const callerSchema = { caller_session_id: z.string().min(1).optional() };
-const jobTargetSchema = {
-  node_id: z.string().min(1),
-  agent_id: z.string().min(1),
-  model_preset: z.string().min(1).nullable(),
-  folder_id: z.string().min(1),
-};
-const scheduleSchema = {
-  timezone: z.string().min(1),
-  schedule_expressions: z.array(z.string().min(1)).min(1),
-};
-const createScheduleSchema = {
-  timezone: z.string().min(1),
-  schedule_expressions: z.array(z.string().min(1)).min(1).optional(),
-  run_at: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시각. 예: 2026-09-29T09:00:00+09:00").optional(),
-};
 
 type RecurringJobMcpActor = {
   readonly ownerEmail: string;
@@ -31,13 +19,10 @@ type RecurringJobMcpActor = {
   readonly source: "agent";
 };
 
-export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime): void {
+export function registerRecurringJobToolsLegacy(server: McpServer, runtime: McpRuntime): void {
   server.registerTool(
     "list_recurring_jobs",
-    {
-      description: "현재 신뢰된 Soulstream 호출자의 반복 작업 목록을 조회한다.",
-      inputSchema: { include_archived: z.boolean().optional(), ...callerSchema },
-    },
+    recurringJobTools.list_recurring_jobs.config,
     async ({ include_archived, caller_session_id }) => await call(runtime, caller_session_id, "list", {
       include_archived: include_archived ?? false,
     }),
@@ -45,10 +30,7 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
 
   server.registerTool(
     "get_recurring_job",
-    {
-      description: "반복 작업 한 건과 서버가 계산한 다음 실행 정보를 조회한다.",
-      inputSchema: { job_id: z.string().min(1), include_archived: z.boolean().optional(), ...callerSchema },
-    },
+    recurringJobTools.get_recurring_job.config,
     async ({ job_id, include_archived, caller_session_id }) => await call(runtime, caller_session_id, "get", {
       job_id,
       include_archived: include_archived ?? false,
@@ -57,10 +39,7 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
 
   server.registerTool(
     "preview_recurring_schedule",
-    {
-      description: "timezone과 cron 배열의 다음 5회 실행 시각을 서버 규칙으로 미리 본다.",
-      inputSchema: { ...scheduleSchema, ...callerSchema },
-    },
+    recurringJobTools.preview_recurring_schedule.config,
     async ({ timezone, schedule_expressions, caller_session_id }) => await call(runtime, caller_session_id, "preview", {
       timezone,
       schedule_expressions,
@@ -69,19 +48,7 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
 
   server.registerTool(
     "create_recurring_job",
-    {
-      description: "반복 또는 1회 에이전트 작업을 생성한다. 반복은 schedule_expressions(cron 배열), 1회는 run_at(오프셋 포함 ISO 8601, 예: 2026-09-29T09:00:00+09:00) 중 정확히 하나를 준다. 1회 작업은 실행으로 세션이 만들어진 것이 확인되면 작업과 이력이 삭제된다. idempotency_key는 재시도에도 같은 값을 쓴다.",
-      inputSchema: {
-        name: z.string().min(1),
-        prompt: z.string().min(1),
-        idempotency_key: z.string().min(1),
-        enabled: z.boolean().optional(),
-        late_run_window_seconds: z.number().int().positive().optional(),
-        ...createScheduleSchema,
-        ...jobTargetSchema,
-        ...callerSchema,
-      },
-    },
+    recurringJobTools.create_recurring_job.config,
     async (input) => await call(runtime, input.caller_session_id, "create", {
       name: input.name,
       prompt: input.prompt,
@@ -104,34 +71,13 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
 
   server.registerTool(
     "update_recurring_job",
-    {
-      description: "반복 작업을 CAS version으로 수정하거나 일시정지·재개한다. 1회 작업의 실행 시각은 run_at으로 바꾼다.",
-      inputSchema: {
-        job_id: z.string().min(1),
-        expected_version: z.number().int().positive(),
-        name: z.string().min(1).optional(),
-        prompt: z.string().min(1).optional(),
-        timezone: z.string().min(1).optional(),
-        schedule_expressions: z.array(z.string().min(1)).min(1).optional(),
-        run_at: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시각. 예: 2026-09-29T09:00:00+09:00").optional(),
-        node_id: z.string().min(1).optional(),
-        agent_id: z.string().min(1).optional(),
-        model_preset: z.string().min(1).nullable().optional(),
-        folder_id: z.string().min(1).optional(),
-        enabled: z.boolean().optional(),
-        late_run_window_seconds: z.number().int().positive().optional(),
-        ...callerSchema,
-      },
-    },
+    recurringJobTools.update_recurring_job.config,
     async ({ caller_session_id, ...input }) => await call(runtime, caller_session_id, "update", input),
   );
 
   server.registerTool(
     "run_recurring_job",
-    {
-      description: "반복 작업을 지금 한 번 실행한다. pause 상태에서도 수동 실행은 허용된다.",
-      inputSchema: { job_id: z.string().min(1), idempotency_key: z.string().min(1), ...callerSchema },
-    },
+    recurringJobTools.run_recurring_job.config,
     async ({ job_id, idempotency_key, caller_session_id }) => await call(runtime, caller_session_id, "run", {
       job_id,
       idempotency_key,
@@ -140,10 +86,7 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
 
   server.registerTool(
     "archive_recurring_job",
-    {
-      description: "반복 작업을 보관한다. 이미 실행 중인 세션은 종료하지 않는다.",
-      inputSchema: { job_id: z.string().min(1), expected_version: z.number().int().positive(), ...callerSchema },
-    },
+    recurringJobTools.archive_recurring_job.config,
     async ({ job_id, expected_version, caller_session_id }) => await call(runtime, caller_session_id, "archive", {
       job_id,
       expected_version,
@@ -152,10 +95,7 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
 
   server.registerTool(
     "list_recurring_job_runs",
-    {
-      description: "반복 작업의 실행 이력과 연결된 Soulstream session_id를 조회한다.",
-      inputSchema: { job_id: z.string().min(1), limit: z.number().int().positive().max(100).optional(), ...callerSchema },
-    },
+    recurringJobTools.list_recurring_job_runs.config,
     async ({ job_id, limit, caller_session_id }) => await call(runtime, caller_session_id, "list_runs", {
       job_id,
       ...(limit === undefined ? {} : { limit }),

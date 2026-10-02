@@ -1,3 +1,4 @@
+import { unusedClusterDependencies } from "./mcp-cluster-unused-fixture.js";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerMcpHostRoutes } from "../src/mcp/mcp_host_routes.js";

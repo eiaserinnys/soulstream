@@ -4,7 +4,7 @@ import { fetchOrchResponse, readOrchErrorEnvelope } from "../control_plane/persi
 import { getCurrentMcpCallerPrincipal, getCurrentMcpCallerSessionId } from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
 
-export type McpForwardContext = { execution?: { registrationId: string; executionCommandId: string } };
+export type McpForwardContext = { callerInfo?: Record<string, unknown>; execution?: { registrationId: string; executionCommandId: string } };
 export type McpForwardPreprocessor = (args: Record<string, unknown>) =>
   McpForwardContext | CallToolResult | Promise<McpForwardContext | CallToolResult>;
 
@@ -28,7 +28,7 @@ export function registerOrchestratorTools(
             node_id: runtime.nodeId,
             ...extra,
           },
-        });
+        }, { timeoutMs: definition.timeoutMs });
         if (response.status !== 200) return errorResult((await readOrchErrorEnvelope(response)).message);
         return await response.json() as CallToolResult;
       } catch (error) {

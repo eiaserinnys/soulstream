@@ -229,15 +229,21 @@ export function registerCogitoRoutes(
   });
 
   app.get("/cogito/briefs", async (request, reply) => {
-    const timeout = parseBriefTimeout(request.query);
-    if (!timeout.ok) return routeError(reply, timeout.statusCode, timeout.detail);
-    const nodes = await options.provider.listConnectedNodes();
-    return collectCogitoBriefs(nodes, {
-      collector: options.briefCollector,
-      timeoutSeconds: timeout.value,
-      nowIso: options.nowIso ?? nowIso,
-    });
+    const result = await executeCogitoBriefRoute(options, request.query);
+    return reply.code(result.status).send(result.body);
   });
+}
+
+/** Same brief aggregation as the HTTP route; search keeps its separate request lifecycle. */
+export async function executeCogitoBriefRoute(options: CogitoRouteOptions, query: unknown) {
+  const timeout = parseBriefTimeout(query);
+  if (!timeout.ok) return { status: timeout.statusCode, body: { detail: timeout.detail } };
+  const nodes = await options.provider.listConnectedNodes();
+  return { status: 200, body: await collectCogitoBriefs(nodes, {
+    collector: options.briefCollector,
+    timeoutSeconds: timeout.value,
+    nowIso: options.nowIso ?? nowIso,
+  }) };
 }
 
 function isPostgresStatementTimeout(error: unknown): boolean {

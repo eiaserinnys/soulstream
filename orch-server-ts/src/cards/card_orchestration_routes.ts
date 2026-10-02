@@ -36,11 +36,60 @@ export function registerCardOrchestrationRoutes(
   app: FastifyInstance,
   options: CardOrchestrationRouteOptions,
 ): void {
-  const read = async () => ({
+  for (const method of ["GET", "PUT"] as const)
+    app.route({
+      method,
+      url: "/api/settings/card-orchestration",
+      handler: async (request, reply) => {
+        const email = await requireAdmin(request, reply, options);
+        if (!email) return reply;
+        try {
+          return method === "GET"
+            ? await readCardOrchestrationBody(options)
+            : await writeCardOrchestrationBody(options, request.body, email);
+        } catch (error) {
+          return handleError(reply, error);
+        }
+      },
+    });
+  app.post<{ Params: { operation: string } }>(
+    "/api/card-orchestration/host/:operation",
+    async (request, reply) => {
+      const auth = verifyServiceBearerAuthorization(
+        request.headers.authorization,
+        options.authBearerToken,
+        options.environment,
+      );
+      if (!auth.ok)
+        return reply
+          .code(auth.statusCode)
+          .send({ detail: "Service authentication required" });
+      const result = await executeCardOrchestrationHostOperation(options, request.params.operation, request.body);
+      return reply.code(result.status).send(result.body);
+    },
+  );
+}
+export async function executeCardOrchestrationHostOperation(options: CardOrchestrationRouteOptions, operation: string, input: unknown) {
+  const failure = (status: number, detail: unknown) => ({ status, body: { detail } });
+  if (!["get", "update"].includes(operation)) return failure(404, "Unknown policy operation");
+  const body = input as Record<string, unknown> | null;
+  if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.callerSessionId !== "string" || !body.callerSessionId.trim())
+    return failure(403, "Persisted caller session required");
+  const caller = await options.resolveCaller(body.callerSessionId);
+  const email = caller?.ownerEmail?.trim().toLowerCase();
+  if (!caller || !email || caller.purpose === ORCHESTRATION_DECISION_PURPOSE || !(await options.isAdminEmail(email)))
+    return failure(403, "Verified administrator session required");
+  try { return { status: 200, body: operation === "get" ? await readCardOrchestrationBody(options) : await writeCardOrchestrationBody(options, body, email) }; }
+  catch (error) {
+    if (!(error instanceof CardOrchestrationSettingsError)) throw error;
+    return failure(error.statusCode, { error: { code: error.code, message: error.message } });
+  }
+}
+async function readCardOrchestrationBody(options: CardOrchestrationRouteOptions) { return ({
     settings: await options.get(),
     ...(options.readStatus ? { status: await options.readStatus() } : {}),
-  });
-  const write = async (body: unknown, email: string) => {
+  }); }
+async function writeCardOrchestrationBody(options: CardOrchestrationRouteOptions, body: unknown, email: string) {
     try {
       if (!body || typeof body !== "object" || Array.isArray(body))
         throw new TypeError("body must be an object");
@@ -69,69 +118,8 @@ export function registerCardOrchestrationRoutes(
         );
       throw error;
     }
-  };
-  for (const method of ["GET", "PUT"] as const)
-    app.route({
-      method,
-      url: "/api/settings/card-orchestration",
-      handler: async (request, reply) => {
-        const email = await requireAdmin(request, reply, options);
-        if (!email) return reply;
-        try {
-          return method === "GET"
-            ? await read()
-            : await write(request.body, email);
-        } catch (error) {
-          return handleError(reply, error);
-        }
-      },
-    });
-  app.post<{ Params: { operation: string } }>(
-    "/api/card-orchestration/host/:operation",
-    async (request, reply) => {
-      const auth = verifyServiceBearerAuthorization(
-        request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
-      );
-      if (!auth.ok)
-        return reply
-          .code(auth.statusCode)
-          .send({ detail: "Service authentication required" });
-      if (!["get", "update"].includes(request.params.operation))
-        return reply.code(404).send({ detail: "Unknown policy operation" });
-      const body = request.body as Record<string, unknown> | null;
-      if (
-        !body ||
-        typeof body !== "object" ||
-        Array.isArray(body) ||
-        typeof body.callerSessionId !== "string" ||
-        !body.callerSessionId.trim()
-      )
-        return reply
-          .code(403)
-          .send({ detail: "Persisted caller session required" });
-      const caller = await options.resolveCaller(body.callerSessionId);
-      const email = caller?.ownerEmail?.trim().toLowerCase();
-      if (
-        !caller ||
-        !email ||
-        caller.purpose === ORCHESTRATION_DECISION_PURPOSE ||
-        !(await options.isAdminEmail(email))
-      )
-        return reply
-          .code(403)
-          .send({ detail: "Verified administrator session required" });
-      try {
-        return request.params.operation === "get"
-          ? await read()
-          : await write(body, email);
-      } catch (error) {
-        return handleError(reply, error);
-      }
-    },
-  );
 }
+
 function handleError(reply: FastifyReply, error: unknown) {
   if (!(error instanceof CardOrchestrationSettingsError)) throw error;
   return reply

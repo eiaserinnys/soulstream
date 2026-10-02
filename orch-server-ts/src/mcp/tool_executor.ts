@@ -1,3 +1,6 @@
+import { clusterHandlers } from "./cluster_handlers.js";
+import { cardOrchestrationHandlers } from "./card_orchestration_handlers.js";
+import { recurringJobHandlers } from "./recurring_job_handlers.js";
 import { z } from "zod";
 import { mcpToolDefinitions, errorResult, type McpToolName } from "@soulstream/mcp-contract";
 import type { McpCallContext, McpHostOptions, McpToolHandler } from "./types.js";
@@ -5,6 +8,9 @@ import { folderObjectHandlers } from "./folder_object_handlers.js";
 import { cardHandlers } from "./card_handlers.js";
 
 export const mcpToolHandlers = {
+  ...clusterHandlers,
+  ...cardOrchestrationHandlers,
+  ...recurringJobHandlers,
   ...folderObjectHandlers,
   ...cardHandlers,
 } satisfies Record<McpToolName, McpToolHandler>;

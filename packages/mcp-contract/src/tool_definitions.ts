@@ -1,3 +1,6 @@
+import { clusterTools } from "./multi_node.js";
+import { cardOrchestrationTools } from "./card_orchestration.js";
+import { recurringJobTools } from "./recurring_jobs.js";
 import type { z } from "zod";
 import { cardTools } from "./card_tools.js";
 import { folderObjectTools } from "./folder_tools.js";
@@ -24,11 +27,16 @@ export interface McpToolConfig {
 export interface McpToolDefinition {
   name: string;
   config: McpToolConfig;
+  /** Forward timeout for the worker-to-orchestrator call when the default is too short. */
+  timeoutMs?: number;
   /** "internal" tools need a caller session and are never listed to external callers. */
   audience: "all" | "internal";
 }
 
 export const mcpTools = {
+  ...clusterTools,
+  ...cardOrchestrationTools,
+  ...recurringJobTools,
   ...folderObjectTools,
   ...cardTools,
 } as const satisfies Record<string, McpToolDefinition>;

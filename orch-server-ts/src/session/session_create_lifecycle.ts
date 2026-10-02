@@ -1,3 +1,4 @@
+import type { ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 
 import type {
@@ -13,7 +14,7 @@ import {
 type JsonObject = Record<string, unknown>;
 
 export type SessionCallerInfoResolver = (
-  request: FastifyRequest,
+  request: FastifyRequest | ServiceCaller,
   bodyCallerInfo: JsonObject | null | undefined,
   systemNodeId: string,
 ) => Promise<JsonObject> | JsonObject;
@@ -23,7 +24,7 @@ export type PreparedSessionCreate = {
 };
 
 export type PrepareSessionCreateInput = {
-  readonly request: FastifyRequest;
+  readonly request: FastifyRequest | ServiceCaller;
   readonly body: JsonObject;
 };
 

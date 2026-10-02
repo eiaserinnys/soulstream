@@ -1,3 +1,9 @@
+import { clusterTools } from "@soulstream/mcp-contract";
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
+import { createCallerInfoPreprocessor } from "./cluster_caller_info.js";
+export function registerMultiNodeTools(server: McpServer, runtime: McpRuntime): void {
+  registerOrchestratorTools(server, runtime, Object.values(clusterTools), { create_remote_agent_session: createCallerInfoPreprocessor(runtime).create_remote_agent_session });
+}
 /**
  * multi_node 도구 — Python `mcp_multi_node.py` 정합.
  *
@@ -5,25 +11,12 @@
  * 발견하되 실패 사유를 명확히 받게).
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-
-import {
-  REASONING_EFFORT_ACCEPT_SET,
-  type ReasoningEffort,
-} from "../../engine/protocol.js";
-
-/** Accepts the full read vocabulary; the node validates against the preset. */
-const ReasoningEffortToolSchema = z.enum(
-  REASONING_EFFORT_ACCEPT_SET as unknown as [ReasoningEffort, ...ReasoningEffort[]],
-);
-
 
 import {
   fetchOrchResponse,
   ORCH_NODE_COMMAND_TIMEOUT_MS,
   readOrchErrorEnvelope,
 } from "../../control_plane/persistence_host_transport.js";
-import { AgentProfileSchema } from "../../agent_registry.js";
 import { resolveDelegatedFolderId } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { errorResult, jsonResult } from "../result.js";
@@ -33,16 +26,13 @@ import { appendModelPresetLookupHint } from "./model_preset_hint.js";
 
 const NOT_CONFIGURED_MSG = "multi-node not configured";
 
-export function registerMultiNodeTools(
+export function registerMultiNodeToolsLegacy(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
   server.registerTool(
     "list_nodes",
-    {
-      description: "오케스트레이터에 연결된 노드 목록 조회.",
-      inputSchema: {},
-    },
+    clusterTools.list_nodes.config,
     async () => {
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
@@ -57,10 +47,7 @@ export function registerMultiNodeTools(
 
   server.registerTool(
     "list_node_agents",
-    {
-      description: "특정 노드의 에이전트 목록 조회.",
-      inputSchema: { node_id: z.string().min(1) },
-    },
+    clusterTools.list_node_agents.config,
     async ({ node_id }) => {
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
@@ -79,11 +66,7 @@ export function registerMultiNodeTools(
 
   server.registerTool(
     "list_node_model_presets",
-    {
-      description:
-        "특정 노드가 광고한 모델 preset id와 현재 가용성·사용량 경고를 조회.",
-      inputSchema: { node_id: z.string().min(1) },
-    },
+    clusterTools.list_node_model_presets.config,
     async ({ node_id }) => {
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
@@ -102,11 +85,7 @@ export function registerMultiNodeTools(
 
   server.registerTool(
     "reflect_cluster_brief",
-    {
-      description:
-        "오케스트레이터를 통해 연결된 TS 노드들의 reflect_brief를 집계한다. 로컬 reflect_brief(self-only)와 별도 도구다.",
-      inputSchema: {},
-    },
+    clusterTools.reflect_cluster_brief.config,
     async () => {
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
@@ -121,17 +100,7 @@ export function registerMultiNodeTools(
 
   server.registerTool(
     "plan_remote_agent_profile_update",
-    {
-      description:
-        "오케스트레이터를 통해 대상 노드에 agent profile 변경 계획(diff)만 요청한다. 파일 쓰기와 snapshot 생성은 하지 않는다.",
-      inputSchema: {
-        node_id: z.string().min(1),
-        profile: AgentProfileSchema,
-        create_if_missing: z.boolean().default(false),
-        include_text_diff: z.boolean().optional(),
-        includeTextDiff: z.boolean().optional(),
-      },
-    },
+    clusterTools.plan_remote_agent_profile_update.config,
     async ({ node_id, profile, create_if_missing, include_text_diff, includeTextDiff }) => {
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
@@ -156,19 +125,7 @@ export function registerMultiNodeTools(
 
   server.registerTool(
     "apply_remote_agent_profile_update",
-    {
-      description:
-        "오케스트레이터를 통해 대상 노드에 agent profile 변경을 실제 적용한다. 파일 write/snapshot/reload는 대상 노드에서 수행한다.",
-      inputSchema: {
-        node_id: z.string().min(1),
-        profile: AgentProfileSchema,
-        create_if_missing: z.boolean().default(false),
-        include_text_diff: z.boolean().optional(),
-        includeTextDiff: z.boolean().optional(),
-        expected_config_checksum: z.string().optional(),
-        expectedConfigChecksum: z.string().optional(),
-      },
-    },
+    clusterTools.apply_remote_agent_profile_update.config,
     async ({
       node_id,
       profile,
@@ -203,11 +160,7 @@ export function registerMultiNodeTools(
 
   server.registerTool(
     "list_remote_agents_config_snapshots",
-    {
-      description:
-        "오케스트레이터를 통해 대상 노드의 agents.yaml snapshot 목록을 조회한다.",
-      inputSchema: { node_id: z.string().min(1) },
-    },
+    clusterTools.list_remote_agents_config_snapshots.config,
     async ({ node_id }) => {
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
@@ -226,17 +179,7 @@ export function registerMultiNodeTools(
 
   server.registerTool(
     "rollback_remote_agents_config",
-    {
-      description:
-        "오케스트레이터를 통해 대상 노드의 agents.yaml을 snapshot path 또는 snapshot id로 rollback한다.",
-      inputSchema: {
-        node_id: z.string().min(1),
-        snapshot_path: z.string().optional(),
-        snapshot_id: z.string().optional(),
-        include_text_diff: z.boolean().optional(),
-        includeTextDiff: z.boolean().optional(),
-      },
-    },
+    clusterTools.rollback_remote_agents_config.config,
     async ({
       node_id,
       snapshot_path,
@@ -270,22 +213,7 @@ export function registerMultiNodeTools(
 
   server.registerTool(
     "create_remote_agent_session",
-    {
-      description:
-        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. notify_completion=false는 카드가 추적 표면일 때 권장.",
-      inputSchema: {
-        node_id: z.string().min(1),
-        agent_id: z.string().optional(),
-        model_preset: z.string().min(1).optional(),
-        /** Omit to use the selected model preset's advertised default effort. */
-        reasoning_effort: ReasoningEffortToolSchema.optional(),
-        prompt: z.string(),
-        caller_session_id: z.string().optional(),
-        notify_completion: z.boolean().optional(),
-        folder_id: z.string().nullable().optional(),
-        card_id: z.string().optional(),
-      },
-    },
+    clusterTools.create_remote_agent_session.config,
     async (input) => {
       const { node_id, agent_id, model_preset, reasoning_effort, prompt, caller_session_id, notify_completion, folder_id, card_id } = input;
       const orch = runtime.orch;

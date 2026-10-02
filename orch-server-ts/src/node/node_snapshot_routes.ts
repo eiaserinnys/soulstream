@@ -95,10 +95,14 @@ export function registerNodeSnapshotRoutes(
   app: FastifyInstance,
   options: NodeSnapshotRouteOptions,
 ): void {
-  app.get("/api/nodes", async () => options.snapshotService.listNodes());
+  app.get("/api/nodes", async () => executeNodeSnapshotRoute(options));
   app.get("/api/nodes/stream", async (request, reply) =>
     sendNodeStream(request, reply, options),
   );
+}
+
+export function executeNodeSnapshotRoute(options: Pick<NodeSnapshotRouteOptions, "snapshotService">) {
+  return options.snapshotService.listNodes();
 }
 
 export function formatNodeStreamFrame(frame: NodeStreamFrame): string {
