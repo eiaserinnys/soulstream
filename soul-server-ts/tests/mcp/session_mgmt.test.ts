@@ -27,21 +27,6 @@ import type {
   TaskManager,
 } from "../../src/task/task_manager.js";
 import type { AgentProfile } from "../../src/agent_registry.js";
-import {
-  REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS,
-  REMOTE_WORKTREE_HTTP_TIMEOUT_MS,
-  remoteWorktreeHttpTimeoutMs,
-} from "../../src/mcp/tools/worktree.js";
-import {
-  WORKTREE_CREATE_TIMEOUT_MAX_MS,
-  WORKTREE_OPERATION_TIMEOUT_MS,
-} from "../../src/worktree/worktree_timeouts.js";
-import {
-  WORKTREE_NODE_COMMAND_TIMEOUT_MS,
-  WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS,
-  worktreeNodeCommandTimeoutMs,
-} from
-  "../../../orch-server-ts/src/runtime/live_node_agent_profile_route_provider.js";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
@@ -347,69 +332,28 @@ afterEach(async () => {
   }
 });
 
-describe("remote worktree tools", () => {
-  it("keeps nested timeout budgets ordered through compensation and response propagation", () => {
-    expect(WORKTREE_NODE_COMMAND_TIMEOUT_MS).toBeGreaterThan(
-      WORKTREE_OPERATION_TIMEOUT_MS + 1_100 + 10_000,
-    );
-    expect(REMOTE_WORKTREE_HTTP_TIMEOUT_MS).toBeGreaterThan(
-      WORKTREE_NODE_COMMAND_TIMEOUT_MS,
-    );
-    expect(WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS).toBeGreaterThan(
-      WORKTREE_CREATE_TIMEOUT_MAX_MS + 1_100 + 10_000,
-    );
-    expect(REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS).toBeGreaterThan(
-      WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS,
-    );
-    expect(worktreeNodeCommandTimeoutMs("create")).toBe(
-      WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS,
-    );
-    expect(worktreeNodeCommandTimeoutMs("list")).toBe(WORKTREE_NODE_COMMAND_TIMEOUT_MS);
-    expect(remoteWorktreeHttpTimeoutMs("create")).toBe(
-      REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS,
-    );
-    expect(remoteWorktreeHttpTimeoutMs("remove")).toBe(REMOTE_WORKTREE_HTTP_TIMEOUT_MS);
-  });
-
-  it("preserves dirty inventory and cleanup guidance from the remote node", async () => {
-    const capture = await createOrchCapture(400, () => ({
-      body: {
-        error: {
-          code: "WORKTREE_DIRTY",
-          message: "clean the worktree and retry",
-          details: {
-            tracked: ["README.md"],
-            untracked: [],
-            ignored: ["dist/"],
-            cleanup: "Commit, stash, or remove only the listed paths",
-          },
-        },
-      },
-    }));
+describe("node-local worktree tools", () => {
+  it.each([
+    ["list_worktrees", "list", { repo_id: "repo-1" }],
+    ["create_worktree", "create", { repo_id: "repo-1", branch: "feature/local", mode: "new" }],
+    ["remove_worktree", "remove", { worktree_id: "worktree-1" }],
+    ["delete_worktree_branch", "deleteBranch", { worktree_id: "worktree-1" }],
+  ] as const)("%s always executes on the receiving node", async (name, method, args) => {
+    const capture = await createOrchCapture(500, () => ({ body: { error: "unexpected remote call" } }));
     try {
       const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const localResult = method === "list" ? [{ worktreeId: "local-worktree" }] : { worktreeId: "local-worktree" };
+      const execute = vi.fn(async () => localResult);
+      runtime.worktreeService = { [method]: execute } as unknown as McpRuntime["worktreeService"];
       const client = await createClient(runtime);
-
       const result = await client.callTool({
-        name: "remove_worktree",
-        arguments: {
-          node_id: "node-remote",
-          worktree_id: "worktree-1",
-          caller_session_id: "caller-sess-1",
-        },
+        name,
+        arguments: { ...args, node_id: "node-remote", caller_session_id: "caller-sess-1" },
       });
-
-      expect(result.isError).toBe(true);
-      expect(result.structuredContent).toEqual({
-        error: "clean the worktree and retry",
-        code: "WORKTREE_DIRTY",
-        details: {
-          tracked: ["README.md"],
-          untracked: [],
-          ignored: ["dist/"],
-          cleanup: "Commit, stash, or remove only the listed paths",
-        },
-      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual(method === "list" ? { worktrees: localResult } : localResult);
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ actorSessionId: "caller-sess-1" }));
+      expect(capture.requests).toEqual([]);
     } finally {
       await capture.close();
     }
@@ -1001,7 +945,7 @@ describe("list_node_model_presets", () => {
 });
 
 describe("create_remote_agent_session", () => {
-  it("원격 세션에 worktree와 소유권 검증 caller를 함께 전달한다", async () => {
+  it("원격 세션 요청에는 worktree와 소유권 검증 caller를 싣지 않는다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "POST" && req.url === "/api/sessions") {
         return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
@@ -1025,9 +969,9 @@ describe("create_remote_agent_session", () => {
       expect(result.isError).not.toBe(true);
       expect(JSON.parse(capture.requests[0]!.body)).toMatchObject({
         nodeId: "node-remote",
-        worktree_id: "22222222-2222-4222-8222-222222222222",
-        worktree_actor_session_id: "caller-sess-1",
       });
+      expect(JSON.parse(capture.requests[0]!.body)).not.toHaveProperty("worktree_id");
+      expect(JSON.parse(capture.requests[0]!.body)).not.toHaveProperty("worktree_actor_session_id");
     } finally {
       await capture.close();
     }
