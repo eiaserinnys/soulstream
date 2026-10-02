@@ -1,3 +1,5 @@
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
+import { sessionTools } from "@soulstream/mcp-contract";
 /**
  * session_mgmt 도구 — Python `mcp_session_mgmt.py` 정합 (키 호환).
  */
@@ -191,12 +193,16 @@ export function registerSessionMgmtTools(
     },
   );
 
+  registerOrchestratorTools(server, runtime, [sessionTools.get_session_name]);
+
+  registerOrchestratorTools(server, runtime, [sessionTools.set_session_name]);
+
+}
+
+export function registerSessionNameToolsLegacy(server: McpServer, runtime: McpRuntime): void {
   server.registerTool(
     "get_session_name",
-    {
-      description: "세션 표시 이름 조회.",
-      inputSchema: { session_id: z.string() },
-    },
+    sessionTools.get_session_name.config,
     async ({ session_id }) => {
       const session = await runtime.db.getSession(session_id);
       if (!session) {
@@ -208,17 +214,9 @@ export function registerSessionMgmtTools(
       });
     },
   );
-
   server.registerTool(
     "set_session_name",
-    {
-      description:
-        "세션 표시 이름 설정. 빈 문자열 → 제거. CatalogService 경유로 broadcastCatalog 자동.",
-      inputSchema: {
-        session_id: z.string(),
-        name: z.string().default(""),
-      },
-    },
+    sessionTools.set_session_name.config,
     async ({ session_id, name }) => {
       const trimmed = (name ?? "").trim();
       const displayName = trimmed.length > 0 ? trimmed : null;
@@ -233,5 +231,4 @@ export function registerSessionMgmtTools(
       });
     },
   );
-
 }

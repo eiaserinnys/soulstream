@@ -17,26 +17,43 @@ export function registerOrchestratorTools(
   for (const definition of definitions) {
     const config = isCurrentMcpCallerExternal() && definition.externalInputSchema
       ? { ...definition.config, inputSchema: definition.externalInputSchema } : definition.config;
-    server.registerTool(definition.name, config, async (args) => {
+    server.registerTool(definition.name, config, async (args, request) => {
       try {
         const extra = await preprocessors[definition.name]?.(args);
         if (extra && "content" in extra) return extra;
-        if (!runtime.orch) return errorResult("orchestrator is not configured");
-        const response = await fetchOrchResponse(runtime.orch, "POST", `/api/mcp/host/${definition.name}`, {
-          args,
-          context: {
-            principal: getCurrentMcpCallerPrincipal()?.authority === "external" ? "external" : "internal",
-            caller_session_id: getCurrentMcpCallerSessionId() ?? null,
-            node_id: runtime.nodeId,
-            ...extra,
-          },
-        }, { timeoutMs: definition.timeoutMs });
-        if (response.status !== 200) return errorResult((await readOrchErrorEnvelope(response)).message);
-        return await response.json() as CallToolResult;
+        return await forwardOrchestratorTool(runtime, definition, args, extra, request.signal);
       } catch (error) {
         return preprocessors[definition.name] ? errorResultFromError(error)
           : errorResult(error instanceof Error ? error.message : String(error));
       }
     });
   }
+}
+
+/** Shared by forwarding registrations and the local delete tool's ownership relay. */
+export async function forwardOrchestratorTool(
+  runtime: McpRuntime,
+  definition: McpToolDefinition,
+  args: Record<string, unknown>,
+  extra?: McpForwardContext,
+  signal?: AbortSignal,
+): Promise<CallToolResult> {
+  if (!runtime.orch) return errorResult(definition.name === "search_sessions"
+    ? "orchestrator proxy is not configured" : "orchestrator is not configured");
+  const response = await fetchOrchResponse(runtime.orch, "POST", `/api/mcp/host/${definition.name}`, {
+    args,
+    context: {
+      principal: getCurrentMcpCallerPrincipal()?.authority === "external" ? "external" : "internal",
+      caller_session_id: getCurrentMcpCallerSessionId() ?? null,
+      node_id: runtime.nodeId,
+      ...extra,
+    },
+  }, { timeoutMs: definition.timeoutMs, signal });
+  if (response.status !== 200) {
+    const detail = await readOrchErrorEnvelope(response);
+    return errorResult(definition.name === "search_sessions"
+      ? `orch GET /cogito/search failed: ${response.status} ${response.statusText} ${detail.message}`
+      : detail.message);
+  }
+  return await response.json() as CallToolResult;
 }

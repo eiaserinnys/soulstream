@@ -856,6 +856,21 @@ export function buildProductionRouteOptions(
           listAgentProfiles: nodeId => providers.nodeAgentProfileRoutes.provider.listAgentProfiles(nodeId),
           broadcaster: runtime.sessionBroadcaster,
         },
+        sessions: {
+          repositoryProvider: persistenceRepositoryProvider,
+          cogito: providers.cogitoRoutes,
+          catalogProvider: providers.sessionCatalogRoutes.provider,
+          resolveAccess: serviceTokenAccessWithoutEmail,
+          broadcastRename: sessionId => broadcastTargetedSessionCatalogDelta(
+            {
+              listFolders: () => providers.folderRoutes.provider.listFolders(),
+              listSessionAssignmentsByIds: async ids => Object.fromEntries(
+                (await (await folderControlPlaneServiceProvider()).getSessionAssignmentsByIds([...ids]))
+                  .map(row => [row.session_id, { folderId: row.folder_id, displayName: row.display_name }]),
+              ),
+            }, runtime.sessionBroadcaster, [sessionId],
+          ),
+        },
         folders: {
           serviceProvider: folderControlPlaneServiceProvider,
           cardServiceProvider,

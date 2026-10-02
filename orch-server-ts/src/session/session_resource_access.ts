@@ -1,3 +1,4 @@
+import type { ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 
 import {
@@ -13,7 +14,7 @@ export type SessionAccessResolveContext = {
 
 export type SessionAccessPolicyProvider = {
   readonly resolveAccess: (
-    request: FastifyRequest,
+    request: FastifyRequest | ServiceCaller,
     context?: SessionAccessResolveContext,
   ) => BoardAccess | Promise<BoardAccess>;
 };
@@ -35,7 +36,7 @@ export type SessionResourceAccessRepository = {
 };
 
 export type SessionResourceAccessInput = {
-  readonly request: FastifyRequest;
+  readonly request: FastifyRequest | ServiceCaller;
   readonly accessEmail?: string | null;
 };
 

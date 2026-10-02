@@ -179,7 +179,7 @@ describe("pages/live/skills legacy and MCP host parity", () => {
       const result = await call(false, "search_skills", { query: "skill-1" }, internal);
       expect(result.isError).not.toBe(true);
       expect(skillDefinitions.search_skills.timeoutMs).toBe(190000);
-      expect(request).toHaveBeenCalledWith(runtime.orch, "POST", "/api/mcp/host/search_skills", expect.anything(), { timeoutMs: 190000 });
+      expect(request).toHaveBeenCalledWith(runtime.orch, "POST", "/api/mcp/host/search_skills", expect.anything(), { timeoutMs: 190000, signal: expect.any(AbortSignal) });
     } finally { request.mockRestore(); }
   });
 });

@@ -1,3 +1,4 @@
+import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 import postgres from "postgres";
 
@@ -78,7 +79,7 @@ export type LiveDashboardAccessProvider =
   & {
     readonly isAdminEmail: (email: string) => Promise<boolean>;
     readonly resolveAccess: (
-      request: FastifyRequest,
+      request: FastifyRequest | ServiceCaller,
       context?: DashboardAccessResolveContext,
     ) => Promise<DashboardAccess>;
     readonly userPayloadExtra: AuthUserPayloadExtra;
@@ -119,7 +120,7 @@ export function createLiveDashboardAccessProvider(
       return user?.isAdmin === true;
     },
     async resolveAccess(
-      request: FastifyRequest,
+      request: FastifyRequest | ServiceCaller,
       context?: DashboardAccessResolveContext,
     ) {
       const identity = await resolveAccessIdentity({
@@ -198,13 +199,14 @@ export function normalizeDashboardEmail(value: string | null | undefined): strin
 }
 
 async function resolveAccessIdentity(input: {
-  readonly request: FastifyRequest;
+  readonly request: FastifyRequest | ServiceCaller;
   readonly configProvider: LiveConfigProviderBoundary;
   readonly jwt: AuthJwtHelper;
   readonly verifyDashboardToken?: LiveDashboardTokenVerifier;
   readonly cookieName: string;
   readonly accessEmail?: string | null;
 }): Promise<AccessIdentity> {
+  if (isServiceCaller(input.request)) return { mode: "service_token", accessEmail: null };
   const snapshot = await input.configProvider.getConfig();
   const configuredBearer = optionalConfigString(snapshot, "auth_bearer_token");
   const environment = requiredSnapshotString(snapshot, "environment");
@@ -216,7 +218,7 @@ async function resolveAccessIdentity(input: {
   if (googleClientId.length > 0) {
     const cookieToken = extractDashboardJwtCookieToken(input.request, input.cookieName);
     if (cookieToken) {
-      const payload = await verifyDashboardToken(input, cookieToken);
+      const payload = await verifyDashboardToken({ ...input, request: input.request }, cookieToken);
       if (payload) {
         return { mode: "dashboard", email: normalizeDashboardEmail(payload.email) };
       }
@@ -229,7 +231,7 @@ async function resolveAccessIdentity(input: {
   if (googleClientId.length > 0) {
     const dashboardToken = extractDashboardBearerToken(input.request);
     if (dashboardToken) {
-      const payload = await verifyDashboardToken(input, dashboardToken);
+      const payload = await verifyDashboardToken({ ...input, request: input.request }, dashboardToken);
       if (payload) {
         return { mode: "dashboard", email: normalizeDashboardEmail(payload.email) };
       }

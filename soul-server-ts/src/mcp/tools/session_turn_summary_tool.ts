@@ -1,3 +1,5 @@
+import { registerOrchestratorTools } from "../orchestrator_tools.js";
+import { sessionTools } from "@soulstream/mcp-contract";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -8,25 +10,14 @@ import type { McpRuntime } from "../runtime.js";
 import type { SessionQueryConsumptionBoundary } from
   "./session_query_consumption_boundary.js";
 
-export function registerSessionTurnSummaryTool(
+export function registerSessionTurnSummaryToolLegacy(
   server: McpServer,
   runtime: McpRuntime,
   consumptionBoundary: SessionQueryConsumptionBoundary,
 ): void {
   server.registerTool(
     "get_session_turn_summaries",
-    {
-      description:
-        "세션 턴 요약을 개수(count), 단건(index), 범위(range) 모드로 조회한다.",
-      inputSchema: {
-        session_id: z.string(),
-        mode: z.enum(["count", "index", "range"]),
-        turn_number: z.number().int().positive().optional(),
-        from_turn_number: z.number().int().positive().optional(),
-        to_turn_number: z.number().int().positive().optional(),
-        limit: z.number().int().min(1).max(100).default(50),
-      },
-    },
+    sessionTools.get_session_turn_summaries.config,
     async ({
       session_id,
       mode,
@@ -121,4 +112,8 @@ export function registerSessionTurnSummaryTool(
       );
     },
   );
+}
+
+export function registerSessionTurnSummaryTool(server: McpServer, runtime: McpRuntime): void {
+  registerOrchestratorTools(server, runtime, [sessionTools.get_session_turn_summaries]);
 }

@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { boardTools } from "./board_tools.js";
+import { sessionTools } from "./session_tools.js";
 import { cardTools } from "./card_tools.js";
 import { folderObjectTools } from "./folder_tools.js";
 import { pageTools } from "./page_tools.js";
@@ -43,6 +44,7 @@ export const mcpTools = {
   ...pageTools,
   ...liveCardTools,
   ...skillTools,
+  ...sessionTools,
 } as const satisfies Record<string, McpToolDefinition>;
 
 export const mcpToolDefinitions = Object.values(mcpTools);

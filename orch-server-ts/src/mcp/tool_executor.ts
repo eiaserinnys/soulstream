@@ -3,6 +3,7 @@ import { mcpToolDefinitions, errorResult, type McpToolName } from "@soulstream/m
 import type { McpCallContext, McpHostOptions, McpToolHandler } from "./types.js";
 import { folderObjectHandlers } from "./folder_object_handlers.js";
 import { boardHandlers } from "./board_handlers.js";
+import { sessionHandlers } from "./session_handlers.js";
 import { cardHandlers } from "./card_handlers.js";
 import { pageHandlers } from "./page_handlers.js";
 import { liveCardHandlers } from "./live_card_handlers.js";
@@ -15,6 +16,7 @@ export const mcpToolHandlers = {
   ...pageHandlers,
   ...liveCardHandlers,
   ...skillHandlers,
+  ...sessionHandlers,
 } satisfies Record<McpToolName, McpToolHandler>;
 
 export function findMcpTool(name: string) {
