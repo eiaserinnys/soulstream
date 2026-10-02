@@ -124,9 +124,9 @@ const randomIdPaths: Record<string, readonly string[]> = {
   // card_control_plane_service.ts:45 card UUID, repeated by serializeCardMutation in operation.targetId.
   create_card: ["card.id", "operation.targetId", "operation.id", "operation.idempotencyKey"],
   update_card_brief: ["operation.id", "operation.idempotencyKey"],
-  // Reports/questions UUIDs (card_control_plane_service.ts:109,143) are stored but absent from mutation result.
+  // Reports/questions UUIDs (card_control_plane_service.ts:109,137) are stored but absent from mutation result.
   add_card_report: ["operation.id", "operation.idempotencyKey"],
-  // card_control_plane_service.ts:120,138; response is the stored comment, not the audit envelope.
+  // card_control_plane_service.ts:120,131; response is the stored comment, not the audit envelope.
   add_card_comment: ["id"],
   set_card_status: ["operation.id"],
   start_card_work: ["operation.id"],
