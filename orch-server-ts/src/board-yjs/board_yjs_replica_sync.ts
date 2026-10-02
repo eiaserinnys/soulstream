@@ -27,16 +27,18 @@ export async function syncBoardYjsReplicaWithSql(
         AND id <> ALL(${sql.array(boardItemIds)})
     `;
   }
-  for (const item of projectedReplica.boardItems) {
+  if (projectedReplica.boardItems.length > 0) {
     await sql`
       INSERT INTO board_items (
         id, folder_id, membership_kind,
         item_type, item_id, x, y, metadata, updated_at
-      ) VALUES (
-        ${item.id}, ${scope.folderId},
-        ${item.membershipKind ?? "primary"},
-        ${item.itemType}, ${item.itemId}, ${item.x}, ${item.y},
-        ${sql.json(item.metadata ?? {})}::jsonb, NOW()
+      )
+      SELECT item.id, ${scope.folderId}, COALESCE(item."membershipKind", 'primary'),
+        item."itemType", item."itemId", item.x, item.y,
+        COALESCE(NULLIF(item.metadata, 'null'::jsonb), '{}'::jsonb), NOW()
+      FROM jsonb_to_recordset(${sql.json(projectedReplica.boardItems)}::jsonb) AS item(
+        id text, "membershipKind" text, "itemType" text, "itemId" text,
+        x double precision, y double precision, metadata jsonb
       )
       ON CONFLICT (id) DO UPDATE
       SET folder_id = EXCLUDED.folder_id,
@@ -47,17 +49,26 @@ export async function syncBoardYjsReplicaWithSql(
           y = EXCLUDED.y,
           metadata = EXCLUDED.metadata,
           updated_at = EXCLUDED.updated_at
+      WHERE (board_items.folder_id, board_items.membership_kind,
+        board_items.item_type, board_items.item_id, board_items.x, board_items.y, board_items.metadata)
+        IS DISTINCT FROM (EXCLUDED.folder_id, EXCLUDED.membership_kind,
+          EXCLUDED.item_type, EXCLUDED.item_id, EXCLUDED.x, EXCLUDED.y, EXCLUDED.metadata)
     `;
   }
-  for (const document of projectedReplica.markdownDocuments) {
+  if (projectedReplica.markdownDocuments.length > 0) {
     await sql`
       INSERT INTO markdown_documents (id, title, body, version, updated_at)
-      VALUES (${document.id}, ${document.title}, ${document.body}, ${document.version}, NOW())
+      SELECT document.id, document.title, document.body, document.version, NOW()
+      FROM jsonb_to_recordset(${sql.json(projectedReplica.markdownDocuments)}::jsonb) AS document(
+        id text, title text, body text, version integer
+      )
       ON CONFLICT (id) DO UPDATE
       SET title = EXCLUDED.title,
           body = EXCLUDED.body,
           version = EXCLUDED.version,
           updated_at = EXCLUDED.updated_at
+      WHERE (markdown_documents.title, markdown_documents.body, markdown_documents.version)
+        IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.body, EXCLUDED.version)
     `;
   }
   await sql`

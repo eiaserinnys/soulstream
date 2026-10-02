@@ -101,7 +101,8 @@ describe("orch BoardYjsRepository", () => {
     ]);
     expect(calls.every((call) => call.inTransaction)).toBe(true);
     expect(jsonValues).toEqual([
-      { title: "Note", version: 3 },
+      replica.boardItems,
+      replica.markdownDocuments,
       replica.boardItems,
       replica.markdownDocuments,
     ]);
