@@ -12,11 +12,21 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { uploadSessionFile } from "./uploadSessionFile";
 
+export interface UploadDestination {
+  uploadUrl: string;
+  sessionId: string;
+}
+
+function sameDestination(a: UploadDestination | undefined, b: UploadDestination): boolean {
+  return a?.uploadUrl === b.uploadUrl && a.sessionId === b.sessionId;
+}
+
 export interface UploadedFile {
   id: string;
   file: File;
   path: string | null;
   status: "uploading" | "done" | "error";
+  destination?: UploadDestination;
   errorMessage?: string;
 }
 
@@ -31,6 +41,8 @@ export interface UseFileUploadOptions {
 export interface UseFileUploadReturn {
   files: UploadedFile[];
   isUploading: boolean;
+  /** Every retained attachment has a path at the current destination. */
+  isReady: boolean;
   addFiles: (fileList: FileList | File[]) => void;
   removeFile: (id: string) => void;
   cancel: () => Promise<void>;
@@ -44,63 +56,74 @@ export function useFileUpload({
   sessionId,
   folderId,
 }: UseFileUploadOptions): UseFileUploadReturn {
-  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [entries, setEntries] = useState<UploadedFile[]>([]);
+  const entriesRef = useRef(entries);
+  const destinationRef = useRef<UploadDestination>({ uploadUrl, sessionId });
+  destinationRef.current = { uploadUrl, sessionId };
+  const previousDestinationRef = useRef(destinationRef.current);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const updateFiles = useCallback((update: (files: UploadedFile[]) => UploadedFile[]) => {
+    entriesRef.current = update(entriesRef.current);
+    setEntries(entriesRef.current);
+  }, []);
+  const resetLocal = useCallback(() => {
+    for (const controller of abortControllersRef.current.values()) controller.abort();
+    abortControllersRef.current.clear();
+    updateFiles(() => []);
+  }, [updateFiles]);
 
-  // 컴포넌트 unmount 시 진행 중인 업로드 abort
-  useEffect(() => {
-    return () => {
-      for (const controller of abortControllersRef.current.values()) {
-        controller.abort();
-      }
-    };
+  const upload = useCallback((entry: UploadedFile, destination: UploadDestination) => {
+    const controller = new AbortController();
+    abortControllersRef.current.set(entry.id, controller);
+    const currentRequest = () => abortControllersRef.current.get(entry.id) === controller
+      && sameDestination(destination, destinationRef.current);
+    uploadSessionFile({ file: entry.file, uploadUrl: destination.uploadUrl, sessionId: destination.sessionId, folderId, signal: controller.signal })
+      .then(path => {
+        if (!currentRequest()) return;
+        updateFiles(files => files.map(file => file.id === entry.id ? { ...file, path, status: "done" } : file));
+      })
+      .catch(error => {
+        if (!currentRequest()) return;
+        updateFiles(files => files.map(file => file.id === entry.id ? { ...file, path: null, status: "error", errorMessage: error instanceof Error ? error.message : "첨부 업로드 실패" } : file));
+      })
+      .finally(() => {
+        if (abortControllersRef.current.get(entry.id) === controller) abortControllersRef.current.delete(entry.id);
+      });
+  }, [folderId, updateFiles]);
+
+  useEffect(() => () => {
+    for (const controller of abortControllersRef.current.values()) controller.abort();
+    abortControllersRef.current.clear();
   }, []);
 
-  const addFiles = useCallback(
-    (fileList: FileList | File[]) => {
-      const fileArray = Array.from(fileList);
-      const newEntries: UploadedFile[] = fileArray.map((file) => ({
-        id: crypto.randomUUID(),
-        file,
-        path: null,
-        status: "uploading" as const,
-      }));
+  useEffect(() => {
+    const destination = { uploadUrl, sessionId };
+    const previous = previousDestinationRef.current;
+    previousDestinationRef.current = destination;
+    if (previous.sessionId !== sessionId) {
+      // A different conversation keeps its own attachments; never migrate them.
+      resetLocal();
+      return;
+    }
+    if (sameDestination(previous, destination)) return;
+    for (const controller of abortControllersRef.current.values()) controller.abort();
+    abortControllersRef.current.clear();
+    const next = entriesRef.current.map(entry => ({
+      ...entry, path: null, errorMessage: undefined, status: uploadUrl ? "uploading" as const : "error" as const, destination,
+    }));
+    updateFiles(() => next);
+    if (uploadUrl) for (const entry of next) upload(entry, destination);
+  }, [uploadUrl, sessionId, resetLocal, updateFiles, upload]);
 
-      setFiles((prev) => [...prev, ...newEntries]);
-
-      // 각 파일을 비동기로 업로드
-      for (const entry of newEntries) {
-        const controller = new AbortController();
-        abortControllersRef.current.set(entry.id, controller);
-
-        uploadSessionFile({ file: entry.file, uploadUrl, sessionId, folderId, signal: controller.signal })
-          .then((serverPath) => {
-            setFiles((prev) =>
-              prev.map((f) =>
-                f.id === entry.id
-                  ? { ...f, path: serverPath, status: "done" }
-                  : f,
-              ),
-            );
-          })
-          .catch((err) => {
-            if (err instanceof DOMException && err.name === "AbortError") {
-              // 의도적 취소 — setFiles 호출 없음
-              return;
-            }
-            setFiles((prev) =>
-              prev.map((f) =>
-                f.id === entry.id ? { ...f, status: "error", errorMessage: err instanceof Error ? err.message : "첨부 업로드 실패" } : f,
-              ),
-            );
-          })
-          .finally(() => {
-            abortControllersRef.current.delete(entry.id);
-          });
-      }
-    },
-    [uploadUrl, sessionId, folderId],
-  );
+  const addFiles = useCallback((fileList: FileList | File[]) => {
+    const destination = { uploadUrl, sessionId };
+    const added = Array.from(fileList).map(file => ({
+      id: crypto.randomUUID(), file, path: null,
+      status: uploadUrl ? "uploading" as const : "error" as const, destination,
+    }));
+    updateFiles(files => [...files, ...added]);
+    if (uploadUrl) for (const entry of added) upload(entry, destination);
+  }, [uploadUrl, sessionId, updateFiles, upload]);
 
   const removeFile = useCallback((id: string) => {
     // 진행 중인 업로드는 abort
@@ -110,16 +133,11 @@ export function useFileUpload({
       abortControllersRef.current.delete(id);
     }
     // 로컬 목록에서만 제거 (서버 DELETE 없음)
-    setFiles((prev) => prev.filter((f) => f.id !== id));
-  }, []);
+    updateFiles(files => files.filter(file => file.id !== id));
+  }, [updateFiles]);
 
   const cancel = useCallback(async () => {
-    // 진행 중인 업로드 전부 abort
-    for (const controller of abortControllersRef.current.values()) {
-      controller.abort();
-    }
-    abortControllersRef.current.clear();
-    setFiles([]);
+    resetLocal();
 
     // 서버 파일 정리 — best-effort (실패해도 무시)
     if (!sessionId) return;
@@ -136,26 +154,22 @@ export function useFileUpload({
     } catch {
       // best-effort — 실패 무시
     }
-  }, [uploadUrl, sessionId]);
-
-  const resetLocal = useCallback(() => {
-    // 진행 중인 업로드 abort
-    for (const controller of abortControllersRef.current.values()) {
-      controller.abort();
-    }
-    abortControllersRef.current.clear();
-    // 로컬 상태만 초기화 — 서버 파일은 보존 (Claude가 읽어야 함)
-    setFiles([]);
-  }, []);
+  }, [uploadUrl, sessionId, resetLocal]);
 
   const restoreUploadedFiles = useCallback((restored: UploadedFile[]) => {
-    if (restored.length === 0) return;
-    setFiles((current) => {
-      const restoredIds = new Set(restored.map((file) => file.id));
-      return [...restored, ...current.filter((file) => !restoredIds.has(file.id))];
+    if (!restored.length) return;
+    const destination = destinationRef.current;
+    const normalized = restored.map(file => ({ ...file, destination: file.destination ?? destination }));
+    updateFiles(current => {
+      const ids = new Set(normalized.map(file => file.id));
+      return [...normalized, ...current.filter(file => !ids.has(file.id))];
     });
-  }, []);
+  }, [updateFiles]);
 
+  // Invalidate paths during render, before the node-change upload effect runs.
+  const files = previousDestinationRef.current.sessionId !== sessionId ? [] : entries.map(file => (
+    sameDestination(file.destination, destinationRef.current) ? file : { ...file, path: null, status: "uploading" as const }
+  ));
   const isUploading = files.some((f) => f.status === "uploading");
   const uploadedPaths = files
     .filter((f) => f.status === "done" && f.path !== null)
@@ -164,6 +178,7 @@ export function useFileUpload({
   return {
     files,
     isUploading,
+    isReady: files.every(file => file.status === "done" && file.path !== null),
     addFiles,
     removeFile,
     cancel,

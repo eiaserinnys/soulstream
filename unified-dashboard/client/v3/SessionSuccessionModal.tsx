@@ -1,3 +1,4 @@
+import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
 import { useCallback, useMemo, useRef, useState, useId } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -130,6 +131,7 @@ export function SessionSuccessionModal({
   const {
     files,
     isUploading,
+    isReady,
     addFiles,
     removeFile,
     cancel,
@@ -168,7 +170,7 @@ export function SessionSuccessionModal({
   }, []);
 
   const start = async () => {
-    if (!selectedNodeId || !selectedAgentId || !modelPresetValid) return;
+    if (pending || !selectedNodeId || !selectedAgentId || !modelPresetValid || !isReady) return;
     if (effort.unsupported) return;
     setPending(true);
     setError(null);
@@ -416,6 +418,7 @@ export function SessionSuccessionModal({
                 rows={4}
                 placeholder="세션을 시작하자마자 수행할 지시…"
                 onChange={(event) => setInitialInstruction(event.target.value)}
+                onPaste={event => { if (uploadUrl && !pending) handleClipboardFiles(event, addFiles); }}
               />
             </label>
             <div className="flex min-w-0 flex-col gap-2">
@@ -461,6 +464,7 @@ export function SessionSuccessionModal({
             disabled={
               pending
               || isUploading
+              || !isReady
               || contextPending
               || !selectedNodeId
               || !selectedAgentId

@@ -76,6 +76,28 @@ describe("session command HTTP route harness", () => {
     });
   }
 
+  it.each(["attachmentPaths", "attachment_paths"])("forwards %s as the worker attachment_paths contract", async (key) => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    const sent: Record<string, unknown>[] = [];
+    transports.attach({ nodeId: "fake-node", connectionId, transport: { send: (data) => {
+      const message = JSON.parse(data) as Record<string, unknown>;
+      sent.push(message);
+      registry.receiveNodeMessage({ nodeId: "fake-node", connectionId }, {
+        type: "session_created", requestId: message.requestId, agentSessionId: message.agentSessionId,
+      });
+    } } });
+    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    try {
+      const result = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+        initial_instruction: "첨부를 확인해줘", profile: "claude-roselin", [key]: ["/node-b/draft/image.png"],
+      } });
+      expect(result.statusCode).toBe(201);
+      expect(sent[0]!.attachment_paths).toEqual(["/node-b/draft/image.png"]);
+      expect(sent[0]).not.toHaveProperty("attachmentPaths");
+    } finally { await app.close(); }
+  });
+
   it("keeps session command routes disabled on the default app", async () => {
     const app = createApp({ config });
 

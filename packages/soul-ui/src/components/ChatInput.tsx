@@ -1,3 +1,4 @@
+import { handleClipboardFiles } from "../lib/clipboard-files";
 /**
  * ChatInput - 인터벤션 / 세션 계속 / LLM 컨텍스트 전송 컴포넌트
  *
@@ -103,6 +104,7 @@ export function ChatInput({
   const {
     files,
     isUploading,
+    isReady,
     addFiles,
     removeFile,
     resetLocal,
@@ -220,8 +222,9 @@ export function ChatInput({
   );
 
   const sendMessage = useCallback(() => {
+    if (effectiveFileUploadUrl && !isReady) return;
     void send(text);
-  }, [send, text]);
+  }, [send, text, effectiveFileUploadUrl, isReady]);
 
   const interruptSession = useCallback(async () => {
     if (!activeSessionKey || interrupting) return;
@@ -286,7 +289,7 @@ export function ChatInput({
   if (!activeSessionKey) return null;
 
   const uploadError = files.find(file => file.status === "error")?.errorMessage;
-  const fileUploadDisabled = effectiveFileUploadUrl ? isUploading || files.some(file => file.status === "error") : false;
+  const fileUploadDisabled = effectiveFileUploadUrl ? isUploading || !isReady : false;
   const isDisabled = sending || pendingChatSend !== undefined || !text.trim() || additionalDisabled || fileUploadDisabled;
   const textareaDisabled = additionalDisabled;
   const showInterrupt = status === "running";
@@ -368,6 +371,9 @@ export function ChatInput({
           buttonVariant={mode.buttonVariant}
           disabled={isDisabled}
           textareaDisabled={textareaDisabled}
+          onPaste={event => {
+            if (effectiveFileUploadUrl && !textareaDisabled && !sending) handleClipboardFiles(event, addFiles);
+          }}
         />
       </ChatInputComposer>
 
