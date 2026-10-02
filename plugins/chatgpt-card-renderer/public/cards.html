@@ -12,8 +12,29 @@ let cards=[],total=0,hasData=false;
 const el=id=>document.getElementById(id);
 function render(){const selected=el('filter').value;const visible=cards.filter(c=>selected==='all'||c.status===selected);el('cards').replaceChildren();for(const card of visible){const article=document.createElement('article');const badge=document.createElement('span');badge.className='badge '+card.status;badge.textContent=labels[card.status]||labels.unknown;const title=document.createElement('h2');title.textContent=card.title;const meta=document.createElement('p');meta.textContent=[card.assignee,card.updatedAt?'업데이트 '+new Date(card.updatedAt).toLocaleString('ko-KR'):''].filter(Boolean).join(' · ');article.append(badge,title,meta);el('cards').append(article)}el('summary').textContent=total>cards.length?`${total}개 중 ${cards.length}개 불러옴 · ${visible.length}개 표시`:`${cards.length}개 불러옴 · ${visible.length}개 표시`;el('notice').textContent=visible.length?'':cards.length?'이 상태의 카드가 없습니다':'표시할 카드가 없습니다'}
 function receive(result){if(result?.isError){hasData=false;cards=[];el('notice').textContent='카드를 불러오지 못했습니다. 대화에서 다시 요청해 주세요';el('summary').textContent='불러오기 실패';el('cards').replaceChildren();return}const data=result?.structuredContent;if(!data||!Array.isArray(data.cards))return;cards=data.cards;total=data.total??cards.length;hasData=true;render()}
-el('filter').addEventListener('change',()=>{if(hasData)render()});
-window.addEventListener('message',event=>{if(event.source!==window.parent)return;const m=event.data;if(m?.jsonrpc!=='2.0')return;if(m.id===1){if(m.error){el('notice').textContent='ChatGPT UI 연결에 실패했습니다';return}window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}},'*')}if(m.method==='ui/notifications/tool-result')receive(m.params)});
+let disposed=false,initialized=false;
+const onFilter=()=>{if(hasData&&!disposed)render()};
+function cleanup(){disposed=true;hasData=false;cards=[];total=0;el('cards').replaceChildren();el('filter').disabled=true;el('filter').removeEventListener('change',onFilter);window.removeEventListener('message',onMessage);window.removeEventListener('pagehide',cleanup)}
+function onMessage(event){
+ if(disposed||event.source!==window.parent)return;
+ const m=event.data;if(m?.jsonrpc!=='2.0')return;
+ const hasId=typeof m.id==='string'||typeof m.id==='number';
+ // Host requests have a method, even when their id collides with initialization.
+ if(typeof m.method==='string'){
+  if(m.method==='ui/resource-teardown'&&hasId){cleanup();window.parent.postMessage({jsonrpc:'2.0',id:m.id,result:{}},'*');return}
+  if(!hasId&&m.method==='ui/notifications/tool-result')receive(m.params);
+  return;
+ }
+ // Only a response to our initialization request can complete initialization.
+ if(m.id===1&&!initialized&&(Object.hasOwn(m,'result')||Object.hasOwn(m,'error'))){
+  initialized=true;
+  if(m.error){el('notice').textContent='ChatGPT UI 연결에 실패했습니다';return}
+  window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}},'*');
+ }
+}
+el('filter').addEventListener('change',onFilter);
+window.addEventListener('message',onMessage);
+window.addEventListener('pagehide',cleanup);
 if(window.parent!==window){window.parent.postMessage({jsonrpc:'2.0',id:1,method:'ui/initialize',params:{appInfo:{name:'soulstream-cards',version:'0.2.0'},appCapabilities:{},protocolVersion:'2026-01-26'}},'*')}else{el('notice').textContent='ChatGPT 카드 리소스입니다. 로컬 데모는 /preview 에서 열어 주세요'}
 })();
 </script></body></html>

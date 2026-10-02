@@ -43,6 +43,14 @@ A manifest alone cannot make ChatGPT run this Node server. Someone must operate 
 3. For portable plugin packaging, replace `mcp.json`'s empty `mcpServers` object with a named entry containing `type: "streamable-http"` and the approved HTTPS `/mcp` URL. For OpenAI registered-app packaging, obtain the actual registered connection ID and configure the mapping using the current plugin tooling. No fictitious server URL or connection ID is bundled.
 4. Enable both relevant connections and ask ChatGPT to retrieve a small card list, then render it. Check exact field fidelity, empty/error states, mobile layout, and access-denied retrieval behavior.
 
+### Request boundary policy
+
+Host and Origin are checked before reading a body or invoking MCP. By default, allowed Host values are `localhost:<listening-port>`, `127.0.0.1:<listening-port>`, and `[::1]:<listening-port>`. Present Origin values must exactly match the corresponding `http://` loopback origin at that port. Missing Origin is accepted for non-browser MCP clients; `Origin: null` and unlisted origins are rejected with HTTP 403. Duplicate Host/Origin headers are rejected.
+
+A reviewed HTTPS deployment can set comma-separated `ALLOWED_HOSTS` (exact authorities, with port when needed) and `ALLOWED_ORIGINS` (exact origins including scheme and port, no trailing slash). Each configured list **replaces** its loopback defaults. For example, an operator may allow only the renderer's chosen public authority and separately reviewed browser client origins. Do not use wildcards or reflect arbitrary request origins. These variables configure only this server; no OS/network settings are changed. `HOST` controls the bind address and does not automatically authorize that address. Reverse proxies must preserve an explicitly allowed Host; forwarded Host/Origin headers are not trusted.
+
+Aborted request-body reads are contained per request; the server neither crashes nor writes an error to a destroyed response. The widget acknowledges `ui/resource-teardown` with the caller's request ID and clears card state/listeners before disposal. These controls are not substitutes for authentication.
+
 The server code does not implement production OAuth, TLS, rate limiting, or persistence. A development endpoint must not be mistaken for an authenticated production service. A separate direct-to-Soulstream bridge is possible later, but would require its own approved authentication/authorization; this prototype intentionally avoids that.
 
 ## Data contract and privacy
@@ -55,7 +63,7 @@ Card fields are transmitted to the **renderer operator**, even though that servi
 
 ## Validation
 
-Automated tests cover projection/minimization, unknown values, malformed and empty data, real in-memory MCP tool discovery/resource read/call, rejection of extra fields and oversized batches, safe DOM rendering, repeated filters, empty/error states, generated-HTML consistency, plugin metadata and HTTP routes/body limits. `npm run typecheck` validates the source.
+Automated tests cover projection/minimization, unknown values, malformed and empty data, real in-memory MCP tool discovery/resource read/call, rejection of extra fields and oversized batches, safe DOM rendering, repeated filters, empty/error states, generated-HTML consistency, plugin metadata and HTTP routes/body limits, aborted uploads in a child process, exact Host/Origin policy, and UI teardown/request-response ID collisions. `npm run typecheck` validates the source.
 
 Not verified here: a real authenticated Soulstream→ChatGPT→renderer flow or browser visual QA. No production files, authentication settings, or deployment configuration are changed by this folder. No production service is started by package installation.
 
