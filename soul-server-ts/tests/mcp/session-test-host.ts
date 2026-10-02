@@ -5,10 +5,10 @@ import type { McpHostOptions } from "../../../orch-server-ts/src/mcp/types.js";
 import type { PersistenceHostRepositories } from "../../../orch-server-ts/src/control_plane/persistence_host_runtime.js";
 
 /** Existing scenario doubles now sit behind the real orchestrator MCP HTTP boundary. */
-export async function startSessionTestHost(runtime: McpRuntime, searchProvider?: { search: (...args: any[]) => any }) {
+export async function startSessionTestHost(runtime: McpRuntime, searchProvider?: { search: (...args: any[]) => any }, repositories?: PersistenceHostRepositories) {
   runtime.nodeId ??= "test-node";
   const db = runtime.db;
-  const repositories = {
+  const scenarioRepositories = repositories ?? {
     sessionReads: {
       getSession: (id: string) => db.getSession?.(id) ?? Promise.resolve(null),
       listSessionsSummary: (params: any) => db.listSessionsSummary(params),
@@ -38,7 +38,7 @@ export async function startSessionTestHost(runtime: McpRuntime, searchProvider?:
   registerMcpHostRoutes(app, {
     authBearerToken: "test-token",
     folders: { serviceProvider: async () => ({ getAllFolders: () => db.getAllFolders() }) },
-    sessions: { repositoryProvider: async () => repositories,
+    sessions: { repositoryProvider: async () => scenarioRepositories,
       cogito: { provider: { listConnectedNodes: () => [] }, briefCollector: { reflectBrief: async () => ({}) }, searchProvider } },
   } as unknown as McpHostOptions);
   runtime.orch = { baseUrl: await app.listen({ host: "127.0.0.1", port: 0 }),

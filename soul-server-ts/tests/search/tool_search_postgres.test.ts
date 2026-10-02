@@ -8,16 +8,13 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildInternalMcpServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
-import { SessionHistorySearchRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_history_search_repository.js";
-import { EventReadRepository } from "../../../orch-server-ts/src/control_plane/repositories/event_read_repository.js";
-import { SessionStoryReadRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_story_read_repository.js";
-import { createLiveSearchDbConnectionFactory } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "../db/full_schema_postgres_harness.js";
 import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
+import { startSessionPostgresMcpHost } from "../helpers/session_postgres_mcp_host.js";
 import { appendTestEvent } from "../helpers/append_test_event.js";
 
 const describePostgres = hasFullSchemaPostgresBackend ? describe : describe.skip;
@@ -26,6 +23,7 @@ describePostgres("tool event PostgreSQL search integration", () => {
   let harness: FullSchemaPostgresHarness | undefined;
   let db: SessionDB;
   const openClients: Client[] = [];
+  const openHosts: Awaited<ReturnType<typeof startSessionPostgresMcpHost>>[] = [];
   const openServers: Awaited<ReturnType<typeof buildInternalMcpServer>>[] = [];
 
   beforeAll(async () => {
@@ -60,6 +58,7 @@ describePostgres("tool event PostgreSQL search integration", () => {
         // ignore cleanup failures
       }
     }
+    while (openHosts.length > 0) await openHosts.pop()?.app.close();
     await harness?.cleanup();
   }, 15_000);
 
@@ -78,21 +77,23 @@ describePostgres("tool event PostgreSQL search integration", () => {
     } as unknown as McpRuntime["logger"];
   }
 
-  async function createMcpClient(mcpDb: SessionDB = db): Promise<Client> {
+  async function createMcpClient(): Promise<Client> {
     const logger = silentLogger();
+    const runtime: McpRuntime = {
+      nodeId: "node-test",
+      agentsConfigPath: "/tmp/agents.yaml",
+      db,
+      taskManager: {} as TaskManager,
+      taskExecutor: {} as TaskExecutor,
+      onResume: () => undefined,
+      agentRegistry: {} as McpRuntime["agentRegistry"],
+      catalogService: {} as CatalogService,
+      logger,
+    };
+    openHosts.push(await startSessionPostgresMcpHost(runtime, harness!));
     const server = await buildInternalMcpServer({
       logger,
-      runtime: {
-        nodeId: "node-test",
-        agentsConfigPath: "/tmp/agents.yaml",
-        db: mcpDb,
-        taskManager: {} as TaskManager,
-        taskExecutor: {} as TaskExecutor,
-        onResume: () => undefined,
-        agentRegistry: {} as McpRuntime["agentRegistry"],
-        catalogService: {} as CatalogService,
-        logger,
-      },
+      runtime,
       path: "/mcp/internal",
       auth: {
         requireAuth: false,
@@ -189,20 +190,7 @@ describePostgres("tool event PostgreSQL search integration", () => {
       createdAt: new Date(),
     });
 
-    const mcpDb = new SessionDB();
-    const eventReads = new EventReadRepository(harness!.sql as never);
-    const stories = new SessionStoryReadRepository(harness!.sql as never);
-    const historySearch = new SessionHistorySearchRepository(
-      createLiveSearchDbConnectionFactory({ databaseUrl: harness!.databaseUrl }),
-      eventReads,
-      stories,
-    );
-    mcpDb.configureSessionDataHost({
-      searchSessionHistory: (params, signal) => historySearch.search(params, signal),
-      getSessionSearchMetadata: async (sessionIds) =>
-        new Map(await stories.getSessionSearchMetadata(sessionIds)),
-    } as never);
-    const client = await createMcpClient(mcpDb);
+    const client = await createMcpClient();
     const result = await client.callTool({
       name: "search_session_history",
       arguments: {
