@@ -37,19 +37,24 @@ describe('Jev card observation contract', () => {
     expect(outcome.status).toBe('not_evaluated');
     expect(outcome.calls).toBe(0);
   });
+  it('omits recognizable credentials even when they appear in canonical text',()=>{
+    const built=buildObservationInput({completeEventId:10,cards:[card()],history:[{id:1,type:'user_message',text:'TYPESAFE_API_KEY=private-value Authorization: Bearer private.token.value'}],summaries:[],startObservations:[],totalCards:1});
+    expect(JSON.stringify(built)).not.toContain('private-value');
+    expect(JSON.stringify(built)).not.toContain('private.token.value');
+  });
   it.each(['waiting', 'blocked', 'in_progress', 'unrelated', 'unknown'])('maps %s from the provider, never from stored status', async choice => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ model: 'jev-1.13.0', answers: { c0: answer(choice) }, usage: { input_tokens: 45, output_tokens: 12 } })));
     const outcome = await evaluateCardObservation(input(), 'key', { fetcher });
-    expect(outcome.cards[0].classification).toBe(choice);
-    expect(outcome.cards[0].storedStatus).toBe('blocked');
+    expect(outcome.cards[0]!.classification).toBe(choice);
+    expect(outcome.cards[0]!.storedStatus).toBe('blocked');
     expect(outcome.calls).toBe(1);
   });
   it('withholds completion when actual start/ending scope is unverified', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ answers: { c0: answer('ready_for_review') } })));
     const outcome = await evaluateCardObservation(input(), 'key', { fetcher });
-    expect(outcome.cards[0].classification).toBe('unknown');
-    expect(outcome.cards[0].providerChoice).toBe('ready_for_review');
-    expect(outcome.cards[0].completionWithheld).toBe(true);
+    expect(outcome.cards[0]!.classification).toBe('unknown');
+    expect(outcome.cards[0]!.providerChoice).toBe('ready_for_review');
+    expect(outcome.cards[0]!.completionWithheld).toBe(true);
   });
   it('maps multiple cards to one request and treats missing outputs as errors', async () => {
     const built = { ...input(), cards: [card('a'), card('b')] };

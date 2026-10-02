@@ -22,7 +22,7 @@ export class JevCardObservationDbRepository implements CardObservationRepository
     if (!boundary || !boundary.final_id || Number(boundary.final_id) <= Number(boundary.previous_id)) return null;
     const previousId = Number(boundary.previous_id);
     const inputEvents = await sql`
-      SELECT id,event_type,payload FROM events WHERE session_id=${complete.sessionId}
+      SELECT id,event_type,payload,COUNT(*) OVER ()::int AS total FROM events WHERE session_id=${complete.sessionId}
         AND id>${previousId} AND id<=${complete.completeEventId}
         AND event_type IN ('user_message','intervention_sent','session_notification','debug','folder_operation')
       ORDER BY id ASC LIMIT 100
@@ -50,15 +50,14 @@ export class JevCardObservationDbRepository implements CardObservationRepository
     // Bound BEFORE fetching details; allow former ownership only when preserved in this session's observations/operations.
     const details = await sql`
       SELECT c.id,LEFT(c.title,160) AS title,c.status,c.version,LEFT(c.request,801) AS request,LEFT(c.brief,801) AS brief,
-        c.updated_at,c.assignee_session_id,
+        c.updated_at,c.assignee_session_id,c.updated_session_id,c.updated_event_id,
         COALESCE((SELECT LEFT(cc.body,801) FROM card_comments cc WHERE cc.card_id=c.id
           AND cc.created_at<=${boundary.created_at} ORDER BY cc.created_at DESC,cc.id DESC LIMIT 1),'') AS instruction,
         COALESCE((SELECT LEFT(cr.body,801) FROM card_reports cr WHERE cr.card_id=c.id
           AND cr.created_at<=${boundary.created_at} ORDER BY cr.created_at DESC,cr.id DESC LIMIT 1),'') AS report
-      FROM cards c WHERE c.id=ANY(${selected.ids}::text[])
+      FROM cards c WHERE c.id=ANY(${selected.ids}::text[]) AND c.archived=FALSE
         AND (c.assignee_session_id=${complete.sessionId} OR c.id=ANY(${snapshots.flatMap(s=>s.cards.map(c=>c.id))}::text[])
-          OR EXISTS(SELECT 1 FROM folder_operations op WHERE op.target_kind='card' AND op.target_id=c.id
-            AND op.actor_session_id=${complete.sessionId} AND op.actor_event_id>${previousId} AND op.actor_event_id<=${complete.completeEventId}))
+          )
       ORDER BY c.id COLLATE "C" LIMIT ${CAP}
     `;
     const cards: ObservationCard[] = details.map(r => ({ id: String(r.id), title: String(r.title), status: String(r.status), version: Number(r.version),
@@ -83,6 +82,15 @@ export class JevCardObservationDbRepository implements CardObservationRepository
       startObservations: snapshots, totalCards: total });
     input.scope.omittedHistoryEvents += Math.max(0, Number(rows[0]?.total ?? 0)-rows.length);
     input.scope.truncated ||= input.scope.omittedHistoryEvents > 0;
+    input.scope.completeCreatedAt = new Date(String(boundary.created_at)).toISOString();
+    input.scope.turnLinkage = 'canonical_complete_event_interval';
+    input.scope.omittedTurnEvidenceEvents = Math.max(0,Number(inputEvents[0]?.total ?? 0)-inputEvents.length);
+    input.scope.endCapturedAt = end.capturedAt;
+    input.scope.detailOrdering = 'timestamp_filter_only_unverified';
+    input.scope.cardCounts = {representedUnion:selected.total,endTotal:end.total,preparedTotals:snapshots.map(s=>s.total),
+      totalIsLowerBound:end.omitted>0 || snapshots.some(s=>s.total>s.cards.length)};
+    input.scope.cardProvenance = details.map(r=>({id:String(r.id),version:Number(r.version),updatedAt:String(r.updated_at),
+      updatedSessionId:nullableString(r.updated_session_id),updatedEventId:r.updated_event_id ? Number(r.updated_event_id) : null}));
     const job: CardObservationJob = { ...complete, previousCompleteEventId: previousId, finalResponseEventId: Number(boundary.final_id), capturedAt: new Date().toISOString() };
     return { job, input };
   }

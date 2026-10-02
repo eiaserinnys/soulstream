@@ -13,6 +13,21 @@ type SqlCall = {
 };
 
 describe("live DB session history provider", () => {
+  it("reloads only public Jev debug observations and preserves their original response anchor", async () => {
+    const payload={type:"debug",kind:"jev_card_observation",complete_event_id:10,final_response_event_id:9,content:"Jev · 위임 대기",details:[]};
+    const harness=createSqlHarness(text=>{
+      if(text.includes("SELECT EXISTS")) return [{exists:true}];
+      if(text.includes("event_type = ANY")) {
+        expect(text).toContain("event_type <> 'debug' OR payload->>'kind'='jev_card_observation'");
+        return [{id:40,event_type:"debug",payload,created_at:new Date("2026-10-02T00:00:00Z")}];
+      }
+      return [];
+    });
+    const provider=createLiveDbCatalogRepository({sql:harness.sql}).sessionHistoryProvider;
+    const [rows]=await provider.readTimeline("sess-1",null,10);
+    expect(rows).toEqual([expect.objectContaining({event_type:"debug",payload:expect.objectContaining({kind:"jev_card_observation",final_response_event_id:9})})]);
+    expect(harness.calls.find(c=>c.text.includes("event_type = ANY"))?.values).toContainEqual(expect.arrayContaining(["debug"]));
+  });
   it("reads viewport, last id, and raw events using the canonical DB queries", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("COUNT(*)::int")) return [{ count: 1 }];

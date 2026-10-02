@@ -13,7 +13,7 @@ it('duplicate complete calls once; debug never triggers; reload reservation prev
   pipeline.accept([event(10), event(10), event(12, 'debug'), event(13, 'session_ended')]);
   await pipeline.drain();
   expect(evaluate).toHaveBeenCalledTimes(1);
-  expect(publish.mock.calls[0][2]).toEqual({ final_response_event_id: 9 });
+  expect(publish.mock.calls[0]![2]).toEqual({ final_response_event_id: 9 });
   const restarted = new JevCardObservationPipeline(deps);
   restarted.accept([event(10)]);
   await restarted.drain();
@@ -26,9 +26,9 @@ it('accept does not wait for provider and late responses retain their own turn a
   const pipeline = new JevCardObservationPipeline({ repository: { load: async (job: any) => ({ job: { ...job, finalResponseEventId: job.completeEventId - 1 }, input }), claim: async () => true, append: async (job: any) => ({ eventId: job.completeEventId + 100, payload: { final_response_event_id: job.finalResponseEventId } }) }, apiKey: 'key', evaluate: () => new Promise(resolve => pending.push(resolve)), publish, log: vi.fn() });
   expect(pipeline.accept([event(10), event(20)])).toBeUndefined();
   await new Promise(resolve => setTimeout(resolve, 0));
-  pending[1]({ status: 'evaluated', cards: [], calls: 1 });
+  pending[1]!({ status: 'evaluated', cards: [], calls: 1 });
   await new Promise(resolve => setTimeout(resolve, 0));
-  pending[0]({ status: 'evaluated', cards: [], calls: 1 });
+  pending[0]!({ status: 'evaluated', cards: [], calls: 1 });
   await pipeline.drain();
   expect(publish.mock.calls.map(args => args[2].final_response_event_id)).toEqual([19, 9]);
 });

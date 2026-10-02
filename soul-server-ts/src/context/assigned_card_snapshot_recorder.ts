@@ -11,7 +11,7 @@ export function createAssignedCardSnapshotRecorder(persistence: Pick<EventPersis
       source: capture.source, sessionId: capture.sessionId, registrationId: capture.registrationId,
       executionCommandId: capture.executionCommandId, inputId: capture.inputId,
       identityMissing: !capture.registrationId || !capture.executionCommandId || !capture.inputId,
-      snapshot: { total: capture.snapshot.total, capturedAt: capture.snapshot.capturedAt,
+      snapshot: { total: capture.snapshot.total, omitted: capture.snapshot.omitted, capturedAt: capture.snapshot.capturedAt,
         cards: capture.snapshot.cards.slice(0,12).map(c=>({ id:c.id,title:c.title.slice(0,160),status:c.status,
           version:c.version,instruction:c.instruction.slice(0,401),report:c.report.slice(0,401) })) },
     };

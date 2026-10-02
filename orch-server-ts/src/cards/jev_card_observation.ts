@@ -23,6 +23,13 @@ export interface ObservationScope {
   completeEventId: number; historyFirstEventId: number | null; historyLastEventId: number | null;
   historyEvents: number; omittedHistoryEvents: number; truncated: boolean;
   totalCards: number; omittedCards: number; snapshotSource: string; completionEvidence: 'conversation_only';
+  omittedPreparedObservations: number;
+  completeCreatedAt?: string; endCapturedAt?: string;
+  detailOrdering?: 'timestamp_filter_only_unverified';
+  cardCounts?: {representedUnion:number;endTotal:number;preparedTotals:number[];totalIsLowerBound:boolean};
+  cardProvenance?: Array<{id:string;version:number|null;updatedAt:string;updatedSessionId:string|null;updatedEventId:number|null}>;
+  omittedTurnEvidenceEvents?: number;
+  turnLinkage?: 'canonical_complete_event_interval';
 }
 export interface ObservationInput {
   cards: ObservationCard[]; history: ObservationHistory[];
@@ -56,22 +63,52 @@ export function buildObservationInput(input: {
   const recent: ObservationHistory[] = [];
   for (const event of [...eligible].reverse()) {
     if (budget <= 0) { truncated = true; continue; }
-    const text = event.text.slice(-budget);
+    const text = observationText(event.text).slice(-budget);
     if (text.length !== event.text.length) truncated = true;
     recent.unshift({ ...event, text });
     budget -= text.length;
   }
   const summaries = input.summaries.filter(s => s.throughEventId > 0 && s.throughEventId <= input.completeEventId)
-    .slice(-6).map(s => ({ ...s, text: s.text.slice(0, 1_000) }));
-  const cards = input.cards.map(c => ({ ...c, title: c.title.slice(0, 160), request: c.request.slice(0, 800),
-    brief: c.brief.slice(0, 800), instruction: c.instruction.slice(0, 800), report: c.report.slice(0, 800) }));
-  return { cards, history: recent, summaries, startObservations: input.startObservations,
+    .slice(-6).map(s => ({ ...s, text: observationText(s.text).slice(0, 1_000) }));
+  const cards = input.cards.slice(0,12).map(c => ({ ...c, title: observationText(c.title).slice(0, 160), request: observationText(c.request).slice(0, 800),
+    brief: observationText(c.brief).slice(0, 800), instruction: observationText(c.instruction).slice(0, 800), report: observationText(c.report).slice(0, 800) }));
+  const startObservations = input.startObservations.slice(0,4).map(s => ({...s, cards:s.cards.slice(0,12).map(c=>({
+    ...c,title:observationText(c.title).slice(0,160),instruction:observationText(c.instruction).slice(0,200),report:observationText(c.report).slice(0,200),
+  }))}));
+  const built: ObservationInput = { cards, history: recent, summaries, startObservations,
     scope: { actualStartSnapshot: 'unavailable', endSnapshot: 'after_completion_read', completeEventId: input.completeEventId,
       historyFirstEventId: recent[0]?.id ?? null, historyLastEventId: recent.at(-1)?.id ?? null,
       historyEvents: recent.length, omittedHistoryEvents: eligible.length - recent.length, truncated,
       totalCards: input.totalCards, omittedCards: Math.max(0, input.totalCards - cards.length),
       snapshotSource: input.startObservations.length ? 'prepared_or_after_input_observations' : 'unavailable',
-      completionEvidence: 'conversation_only' } };
+      completionEvidence: 'conversation_only', omittedPreparedObservations: input.startObservations.length-startObservations.length } };
+  // Retain the most recent text that fits the existing provider byte budget, including card/scope overhead.
+  const historyBudget = Math.max(0, STATE_BYTES - new TextEncoder().encode(JSON.stringify(buildCardChoicePayload({...built,history:[]} ).state)).byteLength - 512);
+  let remaining = historyBudget;
+  built.history = [];
+  for (const event of [...recent].reverse()) {
+    const text = boundedUtf8Tail(event.text,Math.max(0,remaining-120));
+    if (text !== event.text) built.scope.truncated = true;
+    if (!text) continue;
+    built.history.unshift({...event,text});
+    remaining -= new TextEncoder().encode(JSON.stringify({...event,text})).byteLength;
+  }
+  built.scope.historyFirstEventId = built.history[0]?.id ?? null;
+  built.scope.historyLastEventId = built.history.at(-1)?.id ?? null;
+  built.scope.historyEvents = built.history.length;
+  built.scope.omittedHistoryEvents = eligible.length-built.history.length;
+  built.scope.truncated ||= built.scope.omittedPreparedObservations > 0;
+  return built;
+}
+function observationText(text:string) {
+  return text.replace(/\b(?:Bearer\s+[A-Za-z0-9._~+/-]+|sk-[A-Za-z0-9_-]{12,})\b/gi,'[인증 값 제외]')
+    .replace(/\b([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*)[^\s,;]+/gi,'$1[비밀 값 제외]');
+}
+function boundedUtf8Tail(text:string,bytes:number) {
+  let low=0,high=text.length;
+  const encoder=new TextEncoder();
+  while(low<high) { const count=Math.ceil((low+high)/2); if(encoder.encode(text.slice(-count)).byteLength<=bytes) low=count; else high=count-1; }
+  return low ? text.slice(-low) : '';
 }
 export function buildCardChoicePayload(input: ObservationInput) {
   return { model: 'jev-latest', state: { ...input,
@@ -101,12 +138,12 @@ export async function evaluateCardObservation(input: ObservationInput, apiKey: s
     const classified: CardObservationResult[] = [];
     for (let index = 0; index < cards.length; index++) {
       const answer = data.answers?.[`c${index}`];
-      if (answer?.type !== 'choice' || typeof answer.choice !== 'string' || !(answer.choice in CARD_CHOICES)) return failure('invalid_response', 1);
+      if (answer?.type !== 'choice' || typeof answer.choice !== 'string' || !Object.hasOwn(CARD_CHOICES,answer.choice)) return failure('invalid_response', 1);
       const providerChoice = answer.choice as CardClassification;
       const withheld = providerChoice === 'ready_for_review'; // No verified accepted start + as-of end in v1. Never turn missing scope into success.
       const probabilities = answer.probabilities && typeof answer.probabilities === 'object' && !Array.isArray(answer.probabilities)
         ? Object.fromEntries(Object.entries(answer.probabilities).filter(([key, value]) => key in CARD_CHOICES && typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1)) : undefined;
-      classified.push({ ...cards[index], classification: withheld ? 'unknown' : providerChoice, providerChoice,
+      classified.push({ ...cards[index]!, classification: withheld ? 'unknown' : providerChoice, providerChoice,
         ...(withheld ? { completionWithheld: true } : {}),
         ...(typeof answer.confidence === 'number' && Number.isFinite(answer.confidence) && answer.confidence >= 0 && answer.confidence <= 1 ? { confidence: answer.confidence } : {}),
         ...(probabilities ? { probabilities } : {}) });

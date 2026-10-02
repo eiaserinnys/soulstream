@@ -1,9 +1,19 @@
 import type { SessionEvent } from '../../api/types';
-import { isJevCardObservation } from '../../../../packages/wire-schema/src/card_observation';
 import type {
   ChatRenderItem,
   TurnSummaryRenderItem,
 } from './groupChatEvents';
+
+// Native uses its existing SessionEvent wire adapter: no external workspace package or EAS dependency.
+function isJevCardObservation(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const event=value as Record<string,unknown>;
+  return event.type === 'debug' && event.kind === 'jev_card_observation'
+    && positivePayloadEventId(event.complete_event_id) !== null
+    && positivePayloadEventId(event.final_response_event_id) !== null
+    && typeof event.content === 'string' && Array.isArray(event.details)
+    && event.details.every(line=>typeof line === 'string');
+}
 
 function positiveEventId(value: unknown): number | null {
   if (typeof value === 'number') {
