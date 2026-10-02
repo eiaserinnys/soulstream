@@ -15,7 +15,7 @@ import { MarkdownDeleteDialog } from "../components/MarkdownDeleteDialog";
 import { FolderDialog } from "../components/FolderDialog";
 import { FolderContextMenu, type FolderContextMenuTarget } from "../components/FolderContextMenu";
 import { FolderSettingsDialog } from "../components/FolderSettingsDialog";
-import { SessionContextMenu, type SessionContextMenuExtraAction } from "../components/SessionContextMenu";
+import { SessionMenuTrigger } from "../components/SessionMenuOwner";
 import type { BoardWorkspaceItem } from "./board-workspace-items";
 import type { BoardYjsRuntime } from "./board-yjs-client";
 
@@ -72,11 +72,6 @@ interface BoardWorkspaceContextMenusProps {
   ) => Promise<void>;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onRequestMarkdownEdit?: (documentId: string) => void;
-  onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
-  onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
-  onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
-  onContinueSession?: (sessionId: string) => Promise<void>;
-  getContinueSessionDisabledReason?: (sessionId: string) => string | null;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onDeleteFolder?: (folderId: string) => Promise<void> | void;
   onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
@@ -106,11 +101,6 @@ export function BoardWorkspaceContextMenus({
   onMoveBoardItemToFolder,
   onMarkdownDocumentDeleted,
   onRequestMarkdownEdit,
-  onMoveSessions,
-  onRenameSession,
-  onDeleteSessions,
-  onContinueSession,
-  getContinueSessionDisabledReason,
   onRenameFolder,
   onDeleteFolder,
   onUpdateFolderSettings,
@@ -191,14 +181,6 @@ export function BoardWorkspaceContextMenus({
     if (activeBoardDocumentId === item.customViewId) setActiveBoardDocument(null);
   };
   const availableFolderMoveTargets = folderMoveTargets.filter((target) => target.id !== boardContainer?.id);
-
-  const moveSessionActions: SessionContextMenuExtraAction[] =
-    movableContextMenu?.item.type === "session" && canMoveBoardItem
-      ? [{
-          label: "다른 폴더로 이동...",
-          onClick: () => openMoveBoardItemTarget(movableContextMenu.item),
-        }]
-      : [];
 
   function openMoveBoardItemTarget(item: MovableBoardWorkspaceItem) {
     if (!onMoveBoardItemToFolder || !boardContainer || !resolvedBoardFolderId) return;
@@ -370,7 +352,7 @@ export function BoardWorkspaceContextMenus({
         </div>
       )}
 
-      <SessionContextMenu
+      <SessionMenuTrigger
         contextMenu={
           cardContextMenu?.item.type === "session"
             ? {
@@ -381,16 +363,6 @@ export function BoardWorkspaceContextMenus({
             : null
         }
         onClose={onCloseCardContextMenu}
-        onRenameSession={onRenameSession}
-        onMoveSessions={onMoveSessions}
-        onDeleteSessions={onDeleteSessions}
-        onContinueSession={onContinueSession}
-        getContinueSessionDisabledReason={getContinueSessionDisabledReason}
-        getSessionName={(sessionId) =>
-          displaySessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? ""
-        }
-        extraActions={moveSessionActions}
-        resolveSessionIds={(sessionId) => [sessionId]}
       />
 
       <FolderContextMenu

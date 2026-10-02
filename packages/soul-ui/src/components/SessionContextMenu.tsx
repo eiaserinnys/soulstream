@@ -8,12 +8,12 @@
  * 데스크탑: base-ui Menu 프리미티브 (VirtualElement anchor + scale/opacity 진입·퇴장 전환)
  */
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useDashboardStore } from "../stores/dashboard-store";
 import { useIsMobile } from "../hooks/use-mobile";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
-import { Menu, MenuPopup, MenuItem, MenuSeparator } from "./ui/menu";
+import { Menu, MenuPopup } from "./ui/menu";
 import { Button } from "./ui/button";
 import { cn } from "../lib/cn";
+import { SessionMenuItems } from "./SessionMenuItems";
 import { RenameSessionDialog } from "./RenameSessionDialog";
 import {
   deleteClaudeSchedule,
@@ -25,6 +25,8 @@ export interface SessionContextMenuState {
   x: number;
   y: number;
   sessionId: string;
+  /** Keep a menu invoked inside an existing dialog within that dialog surface. */
+  portalContainer?: HTMLElement;
 }
 
 export interface SessionContextMenuProps {
@@ -35,7 +37,8 @@ export interface SessionContextMenuProps {
   /** 세션 이름 변경 콜백. 미지정 시 이름 변경 메뉴 비활성화 */
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   /** 세션 폴더 이동 콜백. 미지정 시 폴더 이동 메뉴 비활성화 */
-  onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
+  onRequestMoveSession?: (sessionId: string) => void;
+  getMoveSessionDisabledReason?: (sessionId: string) => string | null;
   /** 세션 삭제 콜백. 미지정 시 삭제 메뉴 비활성화 */
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
   /** 원본 세션의 맥락을 이어 받을 새 세션 생성 콜백 */
@@ -69,124 +72,12 @@ type ResumeAfterLimitActionState = {
   message: string | null;
   error: string | null;
 };
-/** 메뉴 항목 리스트 (모바일/데스크탑 공용) */
-function MenuItems({
-  onCopyId,
-  onContinue,
-  onRename,
-  onMove,
-  onDelete,
-  hasContinue,
-  continueDisabledReason,
-  hasRename,
-  hasMove,
-  hasDelete,
-  extraActions,
-  className,
-}: {
-  onCopyId: () => void;
-  onContinue?: () => void;
-  onRename?: () => void;
-  onMove?: () => void;
-  onDelete?: () => void;
-  hasContinue: boolean;
-  continueDisabledReason?: string | null;
-  hasRename: boolean;
-  hasMove: boolean;
-  hasDelete: boolean;
-  extraActions: SessionContextMenuExtraAction[];
-  className?: string;
-}) {
-  return (
-    <div className={className}>
-      <button
-        className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
-        onClick={onCopyId}
-      >
-        세션 ID 복사
-      </button>
-      {hasContinue && onContinue && (
-        <>
-          <div className="border-t border-border my-1" />
-          <button
-            className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md disabled:pointer-events-none disabled:opacity-64"
-            disabled={!!continueDisabledReason}
-            title={continueDisabledReason ?? undefined}
-            onClick={onContinue}
-          >
-            이 세션을 이어서 시작하기
-          </button>
-        </>
-      )}
-      {hasRename && onRename && (
-        <>
-          <div className="border-t border-border my-1" />
-          <button
-            className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
-            onClick={onRename}
-          >
-            이름 변경
-          </button>
-        </>
-      )}
-      {hasMove && onMove && (
-        <>
-          <div className="border-t border-border my-1" />
-          <button
-            className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
-            onClick={onMove}
-          >
-            다른 폴더로 이동
-          </button>
-        </>
-      )}
-      {extraActions.length > 0 && (
-        <>
-          <div className="border-t border-border my-1" />
-          {extraActions.map((action) => (
-            <button
-              key={action.label}
-              className={cn(
-                "w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md disabled:pointer-events-none disabled:opacity-64",
-                action.description && "flex flex-col items-start",
-                action.className,
-              )}
-              disabled={action.disabled}
-              title={action.description}
-              onClick={() => { void action.onClick(); }}
-            >
-              {action.description ? (
-                <>
-                  <span>{action.label}</span>
-                  <span className="max-w-56 pt-1 text-xs text-muted-foreground whitespace-normal break-keep" role="status">
-                    {action.description}
-                  </span>
-                </>
-              ) : action.label}
-            </button>
-          ))}
-        </>
-      )}
-      {hasDelete && onDelete && (
-        <>
-          <div className="border-t border-border my-1" />
-          <button
-            className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md text-destructive"
-            onClick={onDelete}
-          >
-            삭제
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
 export function SessionContextMenu({
   contextMenu,
   onClose,
   onRenameSession,
-  onMoveSessions,
+  onRequestMoveSession,
+  getMoveSessionDisabledReason,
   onDeleteSessions,
   onContinueSession,
   getContinueSessionDisabledReason,
@@ -194,7 +85,6 @@ export function SessionContextMenu({
   extraActions = [],
   resolveSessionIds,
 }: SessionContextMenuProps) {
-  const catalog = useDashboardStore((s) => s.catalog);
   const isMobile = useIsMobile();
 
   // 데스크톱 컨텍스트 메뉴: 마우스 좌표를 VirtualElement anchor로 변환
@@ -217,12 +107,6 @@ export function SessionContextMenu({
   }>({ open: false, sessionId: "" });
   const [renameInput, setRenameInput] = useState("");
 
-  // 폴더 이동 모달
-  const [moveFolderDialog, setMoveFolderDialog] = useState<{
-    open: boolean;
-    sessionIds: string[];
-    selectedFolderId: string | null;
-  }>({ open: false, sessionIds: [], selectedFolderId: null });
   const [deleteDialog, setDeleteDialog] = useState<{
     open: boolean;
     sessionIds: string[];
@@ -371,21 +255,20 @@ export function SessionContextMenu({
         || currentResumeSchedule !== null,
       description: resumeDescription ?? undefined,
     },
-    ...(currentResumeSchedule
-      ? [{
+    ...[{
           label: "재개 예약 취소",
           closeOnClick: false,
           onClick: handleCancelResumeAfterLimit,
-          disabled: activeResumeAfterLimit?.busy ?? true,
-        }]
-      : []),
+          disabled: !currentResumeSchedule || (activeResumeAfterLimit?.busy ?? true),
+          description: currentResumeSchedule ? undefined : "취소할 재개 예약이 없습니다.",
+        }],
   ];
   const menuExtraActions = [...extraActions, ...resumeExtraActions];
 
   const continueDisabledReason =
     contextMenu && onContinueSession
       ? getContinueSessionDisabledReason?.(contextMenu.sessionId) ?? null
-      : null;
+      : "이어 시작을 지원하지 않습니다.";
 
   const handleCopyId = useCallback(() => {
     if (!contextMenu) return;
@@ -414,11 +297,11 @@ export function SessionContextMenu({
   }, [onRenameSession, renameDialog, renameInput]);
 
   const handleMoveClick = useCallback(() => {
-    if (!contextMenu || !onMoveSessions) return;
-    const sessionIds = resolveSessionIds(contextMenu.sessionId);
+    if (!contextMenu || !onRequestMoveSession) return;
+    if (getMoveSessionDisabledReason?.(contextMenu.sessionId)) return;
     onClose();
-    setMoveFolderDialog({ open: true, sessionIds, selectedFolderId: null });
-  }, [contextMenu, onMoveSessions, onClose, resolveSessionIds]);
+    onRequestMoveSession(contextMenu.sessionId);
+  }, [contextMenu, onRequestMoveSession, getMoveSessionDisabledReason, onClose]);
 
   const handleContinueClick = useCallback(async () => {
     if (!contextMenu || !onContinueSession) return;
@@ -434,13 +317,6 @@ export function SessionContextMenu({
     }
   }, [contextMenu, getContinueSessionDisabledReason, onClose, onContinueSession]);
 
-  const handleMoveFolderSubmit = useCallback(async () => {
-    if (!onMoveSessions) return;
-    const { sessionIds, selectedFolderId } = moveFolderDialog;
-    setMoveFolderDialog((d) => ({ ...d, open: false }));
-    await onMoveSessions(sessionIds, selectedFolderId);
-  }, [onMoveSessions, moveFolderDialog]);
-
   const handleDeleteClick = useCallback(() => {
     if (!contextMenu || !onDeleteSessions) return;
     const sessionIds = resolveSessionIds(contextMenu.sessionId);
@@ -455,6 +331,20 @@ export function SessionContextMenu({
     await onDeleteSessions(sessionIds);
   }, [deleteDialog, onDeleteSessions]);
 
+  const moveReason = !onRequestMoveSession ? "폴더 이동을 지원하지 않습니다."
+    : contextMenu ? getMoveSessionDisabledReason?.(contextMenu.sessionId) : null;
+  const actions = [
+    {label:"세션 ID 복사",onClick:handleCopyId},
+    {label:"이 세션을 이어서 시작하기",onClick:handleContinueClick,
+      disabled:!!continueDisabledReason,description:continueDisabledReason ?? undefined},
+    ...menuExtraActions,
+    {label:"이름 변경",onClick:handleRenameClick,disabled:!onRenameSession,
+      description:!onRenameSession ? "이름 변경을 지원하지 않습니다." : undefined},
+    {label:"다른 폴더로 이동",onClick:handleMoveClick,disabled:!!moveReason,
+      description:moveReason ?? undefined},
+    {label:"삭제",onClick:handleDeleteClick,disabled:!onDeleteSessions,className:"text-destructive",
+      description:!onDeleteSessions ? "삭제를 지원하지 않습니다." : undefined},
+  ];
   return (
     <>
       {/* 컨텍스트 메뉴 — 모바일: Dialog 하단 시트, 데스크탑: base-ui Menu */}
@@ -462,19 +352,7 @@ export function SessionContextMenu({
         <Dialog open={contextMenu !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
           <DialogPopup bottomStickOnMobile className="max-w-sm" showCloseButton={false}>
             <div className="py-2 px-2">
-              <MenuItems
-                onCopyId={handleCopyId}
-                onContinue={onContinueSession ? handleContinueClick : undefined}
-                onRename={onRenameSession ? handleRenameClick : undefined}
-                onMove={onMoveSessions ? handleMoveClick : undefined}
-                onDelete={onDeleteSessions ? handleDeleteClick : undefined}
-                hasContinue={!!onContinueSession}
-                continueDisabledReason={continueDisabledReason}
-                hasRename={!!onRenameSession}
-                hasMove={!!onMoveSessions}
-                hasDelete={!!onDeleteSessions}
-                extraActions={menuExtraActions}
-              />
+              <SessionMenuItems actions={actions} mobile />
             </div>
           </DialogPopup>
         </Dialog>
@@ -486,6 +364,7 @@ export function SessionContextMenu({
         >
           <MenuPopup
             anchor={desktopAnchor}
+            portalContainer={contextMenu?.portalContainer}
             side="bottom"
             align="start"
             sideOffset={4}
@@ -498,66 +377,7 @@ export function SessionContextMenu({
               "motion-reduce:data-[ending-style]:scale-100 motion-reduce:data-[ending-style]:opacity-100",
             )}
           >
-            <MenuItem onClick={handleCopyId}>세션 ID 복사</MenuItem>
-            {!!onContinueSession && (
-              <>
-                <MenuSeparator />
-                <MenuItem
-                  disabled={!!continueDisabledReason}
-                  title={continueDisabledReason ?? undefined}
-                  onClick={handleContinueClick}
-                >
-                  이 세션을 이어서 시작하기
-                </MenuItem>
-              </>
-            )}
-            {!!onRenameSession && (
-              <>
-                <MenuSeparator />
-                <MenuItem onClick={handleRenameClick}>이름 변경</MenuItem>
-              </>
-            )}
-            {!!onMoveSessions && (
-              <>
-                <MenuSeparator />
-                <MenuItem onClick={handleMoveClick}>다른 폴더로 이동</MenuItem>
-              </>
-            )}
-            {menuExtraActions.length > 0 && (
-              <>
-                <MenuSeparator />
-                {menuExtraActions.map((action) => (
-                  <MenuItem
-                    key={action.label}
-                    disabled={action.disabled}
-                    closeOnClick={action.closeOnClick}
-                    title={action.description}
-                    onClick={() => { void action.onClick(); }}
-                    className={cn(
-                      action.className,
-                      action.description && "flex-col items-start gap-0 py-2",
-                    )}
-                  >
-                    {action.description ? (
-                      <>
-                        <span>{action.label}</span>
-                        <span className="max-w-56 whitespace-normal break-keep text-xs text-muted-foreground" role="status">
-                          {action.description}
-                        </span>
-                      </>
-                    ) : action.label}
-                  </MenuItem>
-                ))}
-              </>
-            )}
-            {!!onDeleteSessions && (
-              <>
-                <MenuSeparator />
-                <MenuItem onClick={handleDeleteClick} className="text-destructive">
-                  삭제
-                </MenuItem>
-              </>
-            )}
+            <SessionMenuItems actions={actions} />
           </MenuPopup>
         </Menu>
       )}
@@ -593,62 +413,6 @@ export function SessionContextMenu({
                 onClick={() => setContinueError(null)}
               >
                 확인
-              </Button>
-            </DialogFooter>
-          </DialogPopup>
-        </Dialog>
-      )}
-
-      {/* 폴더 이동 모달 */}
-      {onMoveSessions && (
-        <Dialog
-          open={moveFolderDialog.open}
-          onOpenChange={(open) => setMoveFolderDialog((d) => ({ ...d, open }))}
-        >
-          <DialogPopup className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>폴더 이동</DialogTitle>
-            </DialogHeader>
-            <DialogPanel>
-              <div className="flex flex-col gap-1">
-                {catalog?.folders && catalog.folders.length > 0 ? (
-                  catalog.folders.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
-                        moveFolderDialog.selectedFolderId === f.id
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-accent"
-                      }`}
-                      onClick={() =>
-                        setMoveFolderDialog((d) => ({ ...d, selectedFolderId: f.id }))
-                      }
-                    >
-                      {f.name}
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground py-2">
-                    이동할 수 있는 폴더가 없습니다.
-                  </p>
-                )}
-              </div>
-            </DialogPanel>
-            <DialogFooter variant="bare">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setMoveFolderDialog((d) => ({ ...d, open: false }))}
-              >
-                취소
-              </Button>
-              <Button
-                type="button"
-                disabled={moveFolderDialog.selectedFolderId === null}
-                onClick={handleMoveFolderSubmit}
-              >
-                이동하기
               </Button>
             </DialogFooter>
           </DialogPopup>

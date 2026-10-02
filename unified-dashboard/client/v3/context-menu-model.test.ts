@@ -4,7 +4,6 @@ import {
   buildDocumentContextMenuActions,
   buildProjectContextMenuActions,
   buildFolderContextMenuActions,
-  buildFolderSessionExtraActions,
 } from "./context-menu-model";
 
 describe("v3 context menu model", () => {
@@ -111,7 +110,7 @@ describe("v3 context menu model", () => {
     expect(menu[3]).toMatchObject({ destructive: true });
   });
 
-  it("owns folder session extension ordering", () => {
+  it("keeps project folder menu ordering", () => {
     expect(buildProjectContextMenuActions({
       open: vi.fn(),
       copyId: vi.fn(),
@@ -126,13 +125,7 @@ describe("v3 context menu model", () => {
       "폴더 보관",
     ]);
 
-    expect(buildFolderSessionExtraActions({
-      continueFromSession: vi.fn(),
-      moveToFolder: vi.fn(),
-    }).map((action) => action.label)).toEqual([
-      "＋ 이어서 새 세션 (승계)",
-      "다른 폴더로 이동",
-    ]);
+
   });
 });
 

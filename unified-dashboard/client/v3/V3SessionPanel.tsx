@@ -12,11 +12,10 @@ import {
   type MouseEvent,
 } from "react";
 import {
-  SessionContextMenu,
+  useSessionMenu, useDashboardStore,
   SessionReviewAcknowledgeError,
   acknowledgeSessionReview,
   useGlassSurface,
-  type SessionContextMenuState,
   type SessionReviewAcknowledgeResult,
   type CatalogBoardItem,
   type CatalogFolder,
@@ -39,8 +38,6 @@ interface V3SessionPanelProps {
   activeSessionId: string | null;
   acknowledgedReviewIds?: ReadonlySet<string>;
   onOpenSession(session: SessionSummary): void;
-  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
-  onDeleteSessions(sessionIds: string[]): Promise<void>;
   onAcknowledged(result: SessionReviewAcknowledgeResult): void;
 }
 
@@ -52,10 +49,9 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   activeSessionId,
   acknowledgedReviewIds = new Set(),
   onOpenSession,
-  onRenameSession,
-  onDeleteSessions,
   onAcknowledged,
 }, forwardedRef) {
+  const assignments = useDashboardStore(s=>s.catalog?.sessions);
   const cards = useCardStore(s=>s.byId);
   const reviewCards = Object.values(cards).filter(card=>card.status==="review"&&!card.archived);
   const surfaceRef = useRef<HTMLElement>(null);
@@ -67,22 +63,16 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   );
   const affiliations = useMemo(() => new Map(sessions.map((session) => [
     session.agentSessionId,
-    (session.cardId ? cards[session.cardId]?.title : null) ?? sessionPanelAffiliation(boardItems, folders, session.agentSessionId),
-   ])), [boardItems, folders, sessions, cards]);
+    (session.cardId ? cards[session.cardId]?.title : null) ?? sessionPanelAffiliation(boardItems, folders, session.agentSessionId, assignments?.[session.agentSessionId]?.folderId),
+   ])), [boardItems, folders, sessions, cards, assignments]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
+  const openSessionMenu = useSessionMenu();
   useImperativeHandle(forwardedRef, () => surfaceRef.current as HTMLElement);
 
   const openContextMenu = useCallback((session: SessionSummary, event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      sessionId: session.agentSessionId,
-    });
-  }, []);
+    openSessionMenu(session.agentSessionId,event);
+  }, [openSessionMenu]);
 
   const acknowledge = useCallback(async (session: SessionSummary) => {
     if (pendingRef.current) return;
@@ -153,14 +143,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
         />
         {error ? <p className="v3-session-panel-error" role="alert">{error}</p> : null}
       </div>
-      <SessionContextMenu
-        contextMenu={contextMenu}
-        onClose={() => setContextMenu(null)}
-        onRenameSession={onRenameSession}
-        onDeleteSessions={onDeleteSessions}
-        getSessionName={(sessionId) => sessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? ""}
-        resolveSessionIds={(sessionId) => [sessionId]}
-      />
+
     </aside>
   );
 });

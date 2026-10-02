@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { createElement } from "react";
+import { act, createElement, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,8 @@ import type { CatalogState, SessionSummary } from "../shared/types";
 import { mergeCatalogSessionsDelta } from "../hooks/session-stream-helpers";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useFolderCardStore } from "../stores/folder-card-store";
+import { SessionMenuOwnerProvider } from "../components/SessionMenuOwner";
+import { SessionContextMenu, type SessionContextMenuProps, type SessionContextMenuState } from "../components/SessionContextMenu";
 import { BoardWorkspaceView } from "./BoardWorkspaceView";
 import { resolveEffectiveBoardCatalog } from "./board-catalog-resolution";
 
@@ -207,8 +209,16 @@ class MockIntersectionObserver {
   }
 }
 
+function TestSessionMenuOwner({props,children}: {props:Partial<SessionContextMenuProps>;children?:React.ReactNode}) {
+  const [menu,setMenu] = useState<SessionContextMenuState|null>(null);
+  return createElement(SessionMenuOwnerProvider,{onOpen:setMenu,children},
+    children,createElement(SessionContextMenu,{
+      getSessionName:()=>"",resolveSessionIds:id=>[id],...props,contextMenu:menu,onClose:()=>setMenu(null),
+    }));
+}
+
 function renderBoard(
-  props: Partial<React.ComponentProps<typeof BoardWorkspaceView>> = {},
+  props: Partial<React.ComponentProps<typeof BoardWorkspaceView>> & Partial<SessionContextMenuProps> = {},
   options: { catalog?: CatalogState; sessions?: SessionSummary[] } = {},
 ) {
   const container = document.createElement("div");
@@ -220,7 +230,7 @@ function renderBoard(
   useDashboardStore.getState().selectFolder("root");
 
   flushSync(() => {
-    root.render(createElement(BoardWorkspaceView, { sessions: options.sessions ?? sessions, ...props }));
+    root.render(createElement(TestSessionMenuOwner, {props}, createElement(BoardWorkspaceView, { sessions: options.sessions ?? sessions, ...props })));
   });
 
   return { container, root };
@@ -291,6 +301,7 @@ describe("BoardWorkspaceView", () => {
   });
 
   afterEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",false);
     if (root) {
       flushSync(() => {
         root?.unmount();
@@ -1140,17 +1151,18 @@ describe("BoardWorkspaceView", () => {
     });
   });
 
-  it("shows continue-session action from a board session tile context menu", () => {
+  it("shows continue-session action from a board session tile context menu", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
     const onContinueSession = vi.fn().mockResolvedValue(undefined);
-    ({ container, root } = renderBoard({
+    await act(async () => { ({ container, root } = renderBoard({
       onContinueSession,
       getContinueSessionDisabledReason: () => null,
-    }));
+    })); });
 
-    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    const sessionTile = container!.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
     expect(sessionTile).not.toBeNull();
 
-    flushSync(() => {
+    await act(async () => {
       sessionTile!.dispatchEvent(new MouseEvent("contextmenu", {
         bubbles: true,
         cancelable: true,
@@ -1433,14 +1445,15 @@ describe("BoardWorkspaceView", () => {
   });
 
   it("opens a session card context menu with delete action", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
     const onDeleteSessions = vi.fn().mockResolvedValue(undefined);
-    ({ container, root } = renderBoard({ onDeleteSessions }));
+    await act(async () => { ({ container, root } = renderBoard({ onDeleteSessions })); });
 
-    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    const sessionTile = container!.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
     expect(sessionTile).not.toBeNull();
 
-    flushSync(() => {
+    await act(async () => {
       sessionTile!.dispatchEvent(new MouseEvent("contextmenu", {
         bubbles: true,
         cancelable: true,
@@ -1452,14 +1465,14 @@ describe("BoardWorkspaceView", () => {
 
     const deleteAction = findButtonByText(document.body, "삭제");
     expect(deleteAction).not.toBeUndefined();
-    flushSync(() => {
+    await act(async () => {
       deleteAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await Promise.resolve();
 
     const confirmDelete = findButtonByText(document.body, "삭제");
     expect(confirmDelete).not.toBeUndefined();
-    flushSync(() => {
+    await act(async () => {
       confirmDelete!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await Promise.resolve();

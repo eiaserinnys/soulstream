@@ -313,28 +313,21 @@ describe("task board session list context menu (🔴30) contract", () => {
   it("reuses the canonical SessionContextMenu, actions, and dialogs in the board (🔴30)", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
 
-    // 폴더 패널(FolderSessionHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다.
-    expect(workspace).toContain("<SessionContextMenu");
-    expect(workspace).toContain("onRenameSession={onRenameSession}");
-    expect(workspace).toContain("onDeleteSessions={onDeleteSessions}");
-    expect(workspace).toContain("getRunSessionRenamePrefill(sessions, sessionId)");
-    expect(workspace).toContain("buildFolderSessionExtraActions");
+    const owner = read("./SessionMenuProvider.tsx");
+    expect(workspace).toContain("openSessionMenu(session.agentSessionId,event)");
     expect(workspace).toContain("onSessionContextMenu={openSessionContextMenu}");
-    // 이어서 새 세션은 우클릭한 세션을 대상으로 승계 모달을 연다.
-    expect(workspace).toContain("currentSession={targetedSuccession}");
-    // 다른 폴더로 이동은 기존 FolderMoveDialog 정본을 재사용한다.
-    expect(workspace).toContain("<FolderMoveDialog");
-    expect(workspace).toContain("await onMoveSession(moveSessionId, target)");
+    expect(owner).toContain("<SessionContextMenu");
+    expect(owner).toContain("<FolderMoveDialog");
+    expect(owner).toContain("<SessionSuccessionModal");
     // 우클릭 메뉴는 별도 인라인 style·svg를 만들지 않는다(계약 유지).
     expect(workspace).not.toContain("style={{");
   });
 
-  it("threads the session mutation callbacks from FolderWorkspace into the board (🔴30)", () => {
+  it("keeps mutation callbacks at the shared owner instead of threading them into each board", () => {
     const taskWorkspace = read("./FolderWorkspace.tsx");
-
-    // 예전엔 FolderDetailPane에만 전달하던 콜백을 보드 워크스페이스에도 전달한다.
-    expect(taskWorkspace).toMatch(
-      /<FolderBoardWorkspace[\s\S]*?onRenameSession=\{onRenameSession\}[\s\S]*?onDeleteSessions=\{onDeleteSessions\}[\s\S]*?onMoveSession=\{onMoveSession\}[\s\S]*?\/>/,
-    );
+    expect(taskWorkspace).not.toContain("onRenameSession");
+    expect(taskWorkspace).not.toContain("onDeleteSessions");
+    expect(taskWorkspace).not.toContain("onMoveSession");
+    expect(read("./SessionMenuProvider.tsx")).toContain("onRenameSession={onRename}");
   });
 });

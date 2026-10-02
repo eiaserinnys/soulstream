@@ -1,3 +1,4 @@
+import { SessionMenuProvider } from "./SessionMenuProvider";
 import { CardWorkspace } from "./CardWorkspace";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -547,6 +548,8 @@ function V3DashboardContent() {
     ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title)
     : Promise.reject(new Error("연결된 폴더가 없습니다"));
   return (
+    <SessionMenuProvider sessions={sessions} onRename={plannerActions.renameSession}
+      onDelete={plannerActions.deleteSessions} onMove={plannerActions.moveSession} onCreated={sessionPanel.openSession}>
     <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} data-mobile-project-open={selectedFolderId ? "true" : "false"} style={shellStyle}>
       <WallpaperLayer />
       <LiquidGlassCanvas />
@@ -604,9 +607,7 @@ function V3DashboardContent() {
               onOpenSession={openSession}
               onRenameFolderTitle={async (title) => { await renameSelectedFolder(title); }}
               onSaveDescription={saveDescription}
-              onRenameSession={plannerActions.renameSession}
-              onDeleteSessions={plannerActions.deleteSessions}
-              onMoveSession={plannerActions.moveSession}
+
               onFolderBlocksChanged={applyFolderBlocks}
               onArchiveFolder={() => projectNavigationMutations.onDeleteProject(selectedFolder)}
             /> : !workspaceFolderEntry && !activeSession ? (
@@ -625,7 +626,7 @@ function V3DashboardContent() {
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
         <DragHandle onDrag={sessionPanel.resize} widthPx={V3_PANEL_GAP_PX} />
       </div>
-      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
+      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openSession} onAcknowledged={acknowledgeReview} />
       {cardNavigation.cardId ? <CardWorkspace cardId={cardNavigation.cardId} folders={catalog?.folders??[]} onClose={closeCardWorkspace} onOpenSession={openSession}
         mobileMode={mobileMode} mobileTab={mobileTab} activeSession={chatOpen?activeSession:undefined}
         chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}
@@ -670,9 +671,7 @@ function V3DashboardContent() {
           onOpenSession={openSession}
           onRenameFolderTitle={(title) => workspaceFolderEntry ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title) : Promise.reject(new Error("연결된 폴더가 없습니다"))}
           onSaveDescription={saveDescription}
-          onRenameSession={plannerActions.renameSession}
-          onDeleteSessions={plannerActions.deleteSessions}
-          onMoveSession={plannerActions.moveSession}
+
           onFolderBlocksChanged={applyFolderBlocks}
           onAcknowledgedReview={acknowledgeReview}
           forceBoardOpen={boardOverlayOpen}
@@ -718,5 +717,6 @@ function V3DashboardContent() {
       <V3SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} onOpenFolder={(folderId) => { const folder = catalog?.folders.find((candidate) => candidate.id === folderId); if (folder) void selectFolder(folder); }} />
       <V3Toast message={toast} />
     </div>
+    </SessionMenuProvider>
   );
 }

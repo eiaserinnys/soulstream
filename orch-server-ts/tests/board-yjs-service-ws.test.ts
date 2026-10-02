@@ -233,6 +233,7 @@ function createService(
       const boardItems = repository.sessionInventory.get(input.sessionId) ?? [];
       return await service.withSessionBoardMoveApplications({
         ...input,
+        sessionIds: [input.sessionId],
         boardItems,
       }, async ({ boardApplications }) => {
         await repository.apply(boardApplications);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
-import { initTheme, LiquidGlassCanvas, LiquidGlassProvider, useGlassSurface, WallpaperLayer, useAuth, useUserPreferencesSync } from "@seosoyoung/soul-ui";
+import { initTheme, LiquidGlassCanvas, LiquidGlassProvider, useGlassSurface, WallpaperLayer, useInitialCatalogLoad, useAuth, useUserPreferencesSync } from "@seosoyoung/soul-ui";
 import { ComponentsReviewPage } from "./ComponentsReviewPage";
 import { V3_CARD_GAP_PX, V3_OUTER_INSET_PX } from "./v3-layout-metrics";
 import "./v3-dashboard-styles";
@@ -13,6 +13,7 @@ export function ComponentsReviewLayout({ children }: { children?: ReactNode } = 
 
 function ComponentsReviewContent({ children }: { children?: ReactNode }) {
   const { user } = useAuth();
+  useInitialCatalogLoad(true);
   useUserPreferencesSync(user?.email);
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });

@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 import { useDashboardStore, type CatalogFolder } from "@seosoyoung/soul-ui";
 
-import { moveBoardItemToFolder } from "../lib/board-workspace-operations";
+import { moveSessionTree } from "../lib/move-sessions";
 import { deleteSessions as deleteSessionRecords } from "../lib/delete-session";
 import { renameSessionOptimistic } from "../lib/rename-session";
 import {
@@ -170,12 +170,9 @@ export function useV3PlannerActions({
 
   const moveSession = useCallback(async (sessionId: string, targetFolder: FolderMoveTarget) => {
     try {
-      await moveBoardItemToFolder({
-        boardItemId: `session:${sessionId}`,
-        folderId: targetFolder.folderId,
-        idempotencyKey: `v3-run-move-${crypto.randomUUID()}`,
-      });
-      moveSessionInPlanner(sessionId, targetFolder.page.id);
+      const sessionIds = await moveSessionTree(sessionId,targetFolder.folderId);
+      useDashboardStore.getState().moveSessionsToFolder(sessionIds,targetFolder.folderId);
+      for (const id of sessionIds) moveSessionInPlanner(id, targetFolder.page.id);
       notify(`세션 이동 · ${targetFolder.page.title}`);
     } catch (error) {
       notifyWriteFailure("세션 이동", error);

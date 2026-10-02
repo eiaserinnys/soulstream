@@ -135,10 +135,10 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly boardAssetStorage?: LiveBoardAssetStorage | null;
   readonly sessionDeletion?: SessionDeletionPort;
   readonly sessionMoves?: {
-    moveSessionToFolder(
-      sessionId: string,
+    moveSessionsToFolder(
+      sessionIds: readonly string[],
       folderId: string | null,
-    ): Promise<unknown>;
+    ): Promise<{ count: number; sessionIds: string[] }>;
   };
 };
 
@@ -528,15 +528,13 @@ function createSessionCatalogProvider(
     },
     async moveSessionsToFolder(sessionIds, folderId) {
       if (!sessionMoves) throw new Error("session board move service is required");
-      for (const sessionId of sessionIds) {
-        await sessionMoves.moveSessionToFolder(sessionId, folderId);
-      }
-      return { count: sessionIds.length };
+      return await sessionMoves.moveSessionsToFolder(sessionIds, folderId);
     },
     async updateSessionCatalog(sessionId, update) {
+      let moved: { count: number; sessionIds: string[] } | undefined;
       if (hasOwn(update, "folderId")) {
         if (!sessionMoves) throw new Error("session board move service is required");
-        await sessionMoves.moveSessionToFolder(sessionId, update.folderId ?? null);
+        moved = await sessionMoves.moveSessionsToFolder([sessionId], update.folderId ?? null);
       }
       if (hasOwn(update, "displayName")) {
         const sql = await sqlResolver.resolveSql();
@@ -544,6 +542,7 @@ function createSessionCatalogProvider(
           SELECT session_rename(${sessionId}, ${update.displayName ?? null})
         `;
       }
+      return moved;
     },
     async deleteSession(sessionId) {
       if (!sessionDeletion) throw new Error("session deletion service is required");

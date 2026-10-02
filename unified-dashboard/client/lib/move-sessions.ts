@@ -13,3 +13,14 @@ export const { moveSessionsOptimistic } = createMoveSessionsOperations({
   batchUrl: "/api/sessions/folder",
   batchMethod: "PATCH",
 });
+
+/** The server expands roots and commits their descendants and assigned cards together. */
+export async function moveSessionTree(sessionId:string,folderId:string):Promise<string[]> {
+  const response=await fetch("/api/sessions/folder",{
+    method:"PATCH",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({sessionIds:[sessionId],folderId}),
+  });
+  if(!response.ok) throw new Error(`세션 이동에 실패했습니다 (${response.status}).`);
+  const result=await response.json() as {sessionIds:string[]};
+  return result.sessionIds;
+}

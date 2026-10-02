@@ -32,7 +32,8 @@ vi.mock("@seosoyoung/soul-ui", () => ({
   ProfileAvatar: ({ fallbackEmoji }: { fallbackEmoji: string }) => (
     <span data-testid="profile-avatar">{fallbackEmoji}</span>
   ),
-  SessionContextMenu: () => null,
+  useDashboardStore: (select: (state:any)=>unknown)=>select({catalog:null}),
+  useSessionMenu: () => vi.fn(),
   SessionReviewAcknowledgeError: class SessionReviewAcknowledgeError extends Error {},
   useGlassSurface: () => false,
 }));
@@ -60,8 +61,7 @@ describe("V3SessionPanel", () => {
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
           onOpenSession={onOpenSession}
-          onRenameSession={async () => undefined}
-          onDeleteSessions={async () => undefined}
+
           onAcknowledged={() => undefined}
         />,
       );
@@ -109,8 +109,7 @@ describe("V3SessionPanel", () => {
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
           onOpenSession={() => undefined}
-          onRenameSession={async () => undefined}
-          onDeleteSessions={async () => undefined}
+
           onAcknowledged={(result) => setSessions((current) => current.filter((item) => item.agentSessionId !== result.agentSessionId))}
         />
       );
@@ -142,8 +141,7 @@ describe("V3SessionPanel", () => {
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
           onOpenSession={() => undefined}
-          onRenameSession={async () => undefined}
-          onDeleteSessions={async () => undefined}
+
           onAcknowledged={() => undefined}
         />,
       );
@@ -164,8 +162,7 @@ describe("V3SessionPanel", () => {
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["node-offline"]) }}
           activeSessionId={null}
           onOpenSession={() => undefined}
-          onRenameSession={async () => undefined}
-          onDeleteSessions={async () => undefined}
+
           onAcknowledged={() => undefined}
         />,
       );

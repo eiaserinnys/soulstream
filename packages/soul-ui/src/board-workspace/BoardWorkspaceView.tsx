@@ -221,11 +221,6 @@ export function BoardWorkspaceView({
   selectedFolderIdOverride,
   sessions = EMPTY_SESSIONS,
   folderMoveTargets: providedFolderMoveTargets,
-  onMoveSessions,
-  onRenameSession,
-  onDeleteSessions,
-  onContinueSession,
-  getContinueSessionDisabledReason,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -1018,11 +1013,6 @@ export function BoardWorkspaceView({
             onMoveBoardItemToFolder={moveBoardItemToFolder}
             onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
             onRequestMarkdownEdit={onRequestMarkdownEdit}
-            onMoveSessions={onMoveSessions}
-            onRenameSession={onRenameSession}
-            onDeleteSessions={onDeleteSessions}
-            onContinueSession={onContinueSession}
-            getContinueSessionDisabledReason={getContinueSessionDisabledReason}
             onRenameFolder={onRenameFolder}
             onDeleteFolder={onDeleteFolder}
             onUpdateFolderSettings={onUpdateFolderSettings}

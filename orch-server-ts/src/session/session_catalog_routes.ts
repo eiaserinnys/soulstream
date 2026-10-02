@@ -29,6 +29,7 @@ export type SessionEventCard = {
 };
 
 export type MoveSessionsResult = {
+  sessionIds?: readonly string[];
   count?: number;
 };
 
@@ -47,7 +48,7 @@ export type SessionCatalogProvider = {
     sessionId: string,
     update: SessionCatalogUpdateInput,
     callerInfo?: SessionCatalogCallerInfo,
-  ) => Promise<void>;
+  ) => Promise<void | MoveSessionsResult>;
   deleteSession: (
     sessionId: string,
     callerInfo?: SessionCatalogCallerInfo,
@@ -304,6 +305,7 @@ async function batchMoveFolder(
     return reply.send({
       success: true,
       count: result?.count ?? sessionIds.value.length,
+      sessionIds: result?.sessionIds ?? sessionIds.value,
     });
   } catch (error) {
     return sendProviderError(reply, error);

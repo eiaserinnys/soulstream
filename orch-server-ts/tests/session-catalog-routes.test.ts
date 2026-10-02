@@ -217,7 +217,7 @@ describe("session catalog/read-position route harness", () => {
     });
 
     expect(rename.json()).toEqual({ success: true });
-    expect(move.json()).toEqual({ success: true, count: 2 });
+    expect(move.json()).toEqual({ success: true, count: 2, sessionIds:["sess-a","sess-b"] });
     expect(update.json()).toEqual({ ok: true });
     expect(cards.json()).toEqual([
       {
@@ -258,7 +258,7 @@ describe("session catalog/read-position route harness", () => {
         url: "/api/sessions/folder",
         payload: { sessionIds: ["sess-contract"] },
       });
-      expect(response.json()).toEqual({ success: true, count: 1 });
+      expect(response.json()).toEqual({ success: true, count: 1, sessionIds:["sess-contract"] });
     }
 
     expect(calls).toEqual([
@@ -440,4 +440,14 @@ describe("session catalog/read-position route harness", () => {
     await forbiddenApp.close();
     await failedApp.close();
   });
+});
+
+it("returns the server-expanded move tree for immediate client updates", async () => {
+  const sessionIds=["root","child","grandchild"];
+  const {provider}=createProvider({moveSessionsToFolder:async()=>({count:3,sessionIds})});
+  const app=createApp({config,sessionCatalogRoutes:{provider}});
+  const result=await app.inject({method:"PATCH",url:"/api/sessions/folder",payload:{sessionIds:["root"],folderId:"target"}});
+  expect(result.statusCode).toBe(200);
+  expect(result.json()).toEqual({success:true,count:3,sessionIds});
+  await app.close();
 });

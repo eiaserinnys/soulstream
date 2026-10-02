@@ -106,6 +106,7 @@ export function selectV3PlannerInvalidationKeys(
     project: pageCollections,
     starred: pageCollections + current.sources.starred_page,
     runHistory: selectV3InvalidationKey(current, [
+      "folder",
       "session_created",
       "session_deleted",
       "replay",

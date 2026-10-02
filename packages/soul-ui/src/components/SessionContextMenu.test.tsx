@@ -76,6 +76,15 @@ describe("SessionContextMenu", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps the complete session action set visible when capabilities are unavailable", async () => {
+    ({ container, root } = await renderMenu());
+    for (const label of ["이 세션을 이어서 시작하기", "이름 변경", "다른 폴더로 이동", "삭제", "재개 예약 취소"]) {
+      const item = findMenuItem(label);
+      expect(item.getAttribute("aria-disabled") === "true" || item.hasAttribute("disabled")).toBe(true);
+      expect(item.title).not.toBe("");
+    }
+  });
+
   it("shows continue-session action and calls the injected callback", async () => {
     const onContinueSession = vi.fn().mockResolvedValue(undefined);
     ({ container, root } = await renderMenu({
@@ -137,7 +146,7 @@ describe("SessionContextMenu", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-a/resume-after-limit");
     const item = findMenuItem("리밋이 풀릴 때 재개");
     expect(item.getAttribute("aria-disabled") ?? item.getAttribute("data-disabled")).toBeTruthy();
-    expect(document.body.querySelector("[role='status']")?.textContent)
+    expect(findMenuItem("리밋이 풀릴 때 재개").querySelector("[role='status']")?.textContent)
       .toContain("현재 세션이 사용량 제한으로 중단된 상태가 아닙니다.");
   });
 
@@ -167,7 +176,7 @@ describe("SessionContextMenu", () => {
       "/api/sessions/session-a/resume-after-limit",
       expect.objectContaining({ method: "POST", body: "{}" }),
     );
-    expect(document.body.querySelector("[role='status']")?.textContent).toMatch(/재개 예약$/);
+    expect(findMenuItem("리밋이 풀릴 때 재개").querySelector("[role='status']")?.textContent).toMatch(/재개 예약$/);
   });
 
   it("uses the existing schedule cancel endpoint and reports its result", async () => {
@@ -196,7 +205,7 @@ describe("SessionContextMenu", () => {
       "/api/sessions/session-a/schedules/resume-after-limit%3Asession-a%3A32%3A0",
       { method: "DELETE" },
     );
-    expect(document.body.querySelector("[role='status']")?.textContent)
+    expect(findMenuItem("리밋이 풀릴 때 재개").querySelector("[role='status']")?.textContent)
       .toContain("재개 예약을 취소했습니다.");
   });
 });

@@ -61,7 +61,7 @@ export function SessionSuccessionModal({
 }: {
   folderTitle: string;
   folderPageId: string;
-  folderId: string;
+  folderId: string | null;
   contextItems: readonly SuccessionContextItem[];
   documentOptions: readonly SuccessionDocumentOption[];
   contextPending: boolean;
@@ -88,7 +88,7 @@ export function SessionSuccessionModal({
     ? predecessorOptions.indexOf(selectedPredecessor)
     : -1;
   const predecessorId = selectedPredecessor?.sessionId ?? null;
-  const [inheritCard, setInheritCard] = useState(true);
+  const [inheritCard, setInheritCard] = useState(Boolean(folderPageId));
   const [inheritSummary, setInheritSummary] = useState(Boolean(predecessorId));
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
   const [pendingSessionId] = useState(() => crypto.randomUUID());
@@ -330,6 +330,7 @@ export function SessionSuccessionModal({
                       type="checkbox"
                       aria-label="카드 본문과 컨텍스트 포함"
                       checked={inheritCard}
+                      disabled={!folderPageId}
                       onChange={(event) => setInheritCard(event.target.checked)}
                     />
                     <span>

@@ -5,17 +5,15 @@ import {
   DashboardIconCap,
   DragHandle,
   MarkdownDocumentPanel,
-  SessionContextMenu,
+  useSessionMenu,
   useDashboardStore,
   type CatalogBoardItem,
   type CatalogFolder,
-  type SessionContextMenuState,
   type SessionReviewAcknowledgeResult,
   type SessionProviderConnectionStatus,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
-import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import type { MobilePlannerTab } from "./mobile-planner-state";
@@ -23,10 +21,6 @@ import type { PlannerFolder } from "./planner-data";
 import { buildRunTree, type RunSessionLoadState } from "./folder-workspace-run-model";
 import { buildSuccessionSessionOptions, latestFolderRun } from "./session-succession-model";
 import { SessionSuccessionModal } from "./SessionSuccessionModal";
-import { buildFolderSessionExtraActions } from "./context-menu-model";
-import { getRunSessionRenamePrefill } from "./FolderSessionHistory";
-import { FolderMoveDialog } from "./FolderMoveDialog";
-import type { FolderMoveTarget } from "./folder-move-targets";
 import { useFolderSessionContext } from "./use-folder-session-context";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
 import {
@@ -81,9 +75,6 @@ export function FolderBoardWorkspace({
   onMarkdownDocumentEditorClosed,
   onOpenSession,
   onLoadMoreRuns,
-  onRenameSession,
-  onDeleteSessions,
-  onMoveSession,
   onAcknowledgedReview,
 }: {
   task: PlannerFolder;
@@ -112,9 +103,6 @@ export function FolderBoardWorkspace({
   onMarkdownDocumentEditorClosed(): void;
   onOpenSession(session: SessionSummary): void;
   onLoadMoreRuns(): Promise<void>;
-  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
-  onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
   // 🔴23: 이 task의 마지막 보드 레이아웃(dashboard-store persist)을 최초 1회만 읽어 복원 시드로 쓴다.
@@ -154,10 +142,7 @@ export function FolderBoardWorkspace({
   // 🔴30: 세션 행 우클릭 컨텍스트 메뉴 상태. 폴더 패널(FolderSessionHistory)과 동일한 공통
   // SessionContextMenu·승계 모달·이동 다이얼로그를 재사용한다(테마·포털은 base-ui Menu가
   // 이미 text-foreground를 상속하므로 🔴29 래퍼가 불필요하다).
-  const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
-  const [targetedSuccessionId, setTargetedSuccessionId] = useState<string | null>(null);
-  const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
-  const moveApi = useMemo(() => createPageApiClient(), []);
+  const openSessionMenu = useSessionMenu();
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
 
   // 새 세션 흐름은 폴더 패널(FolderSessionHistory)과 동일한 컨텍스트 상속 경로·다이얼로그를
@@ -183,9 +168,7 @@ export function FolderBoardWorkspace({
     [task.sessionIds, sessions],
   );
   // 🔴30: "이어서 새 세션" 대상은 우클릭한 세션이며, 없으면 최신 세션(현재 동작)으로 폴백한다.
-  const targetedSuccession = targetedSuccessionId
-    ? sessions.find((session) => session.agentSessionId === targetedSuccessionId) ?? null
-    : currentSession;
+
   const documentOptions = useMemo(
     () => boardItems
       .filter((item) => item.itemType === "markdown")
@@ -424,9 +407,7 @@ export function FolderBoardWorkspace({
   };
   // 🔴30: 세션 행 우클릭 → 공통 SessionContextMenu를 마우스 좌표에 띄운다(FolderSessionHistory와 동일).
   const openSessionContextMenu = (session: SessionSummary, event: ReactMouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setSessionContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.agentSessionId });
+    openSessionMenu(session.agentSessionId,event);
   };
   const handleBoardItemsChanged = useCallback((items: readonly CatalogBoardItem[]) => {
     setBoardItems(items);
@@ -480,7 +461,7 @@ export function FolderBoardWorkspace({
                   : { ...current, activeTabId }
               ));
             }}
-            onNewSession={() => { setTargetedSuccessionId(null); setSuccessionOpen(true); }}
+            onNewSession={() => { setSuccessionOpen(true); }}
             onSessionContextMenu={openSessionContextMenu}
           />
         </section>
@@ -599,11 +580,10 @@ export function FolderBoardWorkspace({
           contextPending={sessionContext.contextPending}
           predecessorOptions={predecessorOptions}
           pageDefaults={sessionContext.effectiveSessionDefaults}
-          currentSession={targetedSuccession}
-          onClose={() => { setSuccessionOpen(false); setTargetedSuccessionId(null); }}
+          currentSession={currentSession}
+          onClose={() => setSuccessionOpen(false)}
           onCreated={(session) => {
             setSuccessionOpen(false);
-            setTargetedSuccessionId(null);
             openSession(session);
           }}
         />
@@ -611,38 +591,8 @@ export function FolderBoardWorkspace({
 
       {/* 🔴30: 세션 행 우클릭 메뉴 — 복사·이어서 새 세션·이름 변경·다른 폴더로 이동·삭제.
           폴더 패널(FolderSessionHistory)과 동일한 공통 컴포넌트·액션 배선을 재사용한다. */}
-      <SessionContextMenu
-        contextMenu={sessionContextMenu}
-        onClose={() => setSessionContextMenu(null)}
-        onRenameSession={onRenameSession}
-        onDeleteSessions={onDeleteSessions}
-        getSessionName={(sessionId) => getRunSessionRenamePrefill(sessions, sessionId)}
-        resolveSessionIds={(sessionId) => [sessionId]}
-        extraActions={buildFolderSessionExtraActions({
-          continueFromSession: () => {
-            if (!sessionContextMenu) return;
-            setTargetedSuccessionId(sessionContextMenu.sessionId);
-            setSessionContextMenu(null);
-            setSuccessionOpen(true);
-          },
-          moveToFolder: () => {
-            if (!sessionContextMenu) return;
-            setMoveSessionId(sessionContextMenu.sessionId);
-            setSessionContextMenu(null);
-          },
-        })}
-      />
-      <FolderMoveDialog
-        api={moveApi}
-        currentFolderId={task.folderId}
-        defaultTargets={folderMoveTargets}
-        open={moveSessionId !== null}
-        onClose={() => setMoveSessionId(null)}
-        onMove={async (target) => {
-          if (!moveSessionId) return;
-          await onMoveSession(moveSessionId, target);
-        }}
-      />
+
+
     </div>
   );
 }

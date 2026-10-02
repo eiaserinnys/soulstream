@@ -66,3 +66,5 @@ export type { FileAttachmentPreviewProps } from "./FileAttachmentPreview";
 export * from "./chat";
 export * from "./auth";
 export * from "./ui";
+
+export { SessionMenuOwnerProvider, SessionMenuTrigger, useSessionMenu } from "./SessionMenuOwner";

@@ -21,6 +21,7 @@ describe("BoardYjsMoveRepository", () => {
 
     await repository.commitSessionMove({
       sessionId: "session-a",
+      sessionIds: ["session-a"],
       folderId: "folder-target",
       boardApplications: ["folder-source", "folder-target"].map((folderId) => ({
         documentName: `board-folder:${folderId}`,

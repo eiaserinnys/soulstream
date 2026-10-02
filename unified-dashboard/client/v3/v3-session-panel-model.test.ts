@@ -104,6 +104,8 @@ describe("v3 session panel model", () => {
     expect(sessionPanelAffiliation([boardItem("primary", "folder-a")], folders, "session-a"))
       .toBe("소울스트림");
     expect(sessionPanelAffiliation([], folders, "session-a")).toBeNull();
+    expect(sessionPanelAffiliation([], folders, "session-a", "folder-a")).toBe("소울스트림");
+    expect(sessionPanelAffiliation([boardItem("primary", "folder-a")], folders, "session-a", null)).toBeNull();
   });
 });
 

@@ -5,7 +5,6 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { LayoutDashboard, MoreHorizontal, Star } from "lucide-react";
 
 import type { PlannerFolder } from "./planner-data";
-import type { FolderMoveTarget } from "./folder-move-targets";
 import { plannerStatusPresentation } from "./planner-model";
 import { singleLinePreview } from "./session-preview";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
@@ -60,9 +59,6 @@ export function FolderDetailPane({
   onOpenSession,
   onRenameFolderTitle,
   onSaveDescription,
-  onRenameSession,
-  onDeleteSessions,
-  onMoveSession,
   onFolderBlocksChanged,
   placement = "overlay",
   scrollContainerRef,
@@ -94,9 +90,6 @@ export function FolderDetailPane({
   onOpenSession(session: SessionSummary): void;
   onRenameFolderTitle(title: string): Promise<void>;
   onSaveDescription(markdown: string): Promise<void>;
-  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
-  onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
   onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
   placement?: "inline" | "overlay";
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
@@ -316,11 +309,8 @@ export function FolderDetailPane({
                 runHistoryLoading={runHistoryLoading}
                 activeSessionId={activeSessionId}
                 onLoadMoreRuns={onLoadMoreRuns}
-                moveTargets={folderMoveTargets}
                 onOpenSession={onOpenSession}
-                onRenameSession={onRenameSession}
-                onDeleteSessions={onDeleteSessions}
-                onMoveSession={onMoveSession}
+
                 onSessionCreated={(session) => {
                   setCreatedSessions((current) => [
                     ...current.filter((candidate) => candidate.agentSessionId !== session.agentSessionId),

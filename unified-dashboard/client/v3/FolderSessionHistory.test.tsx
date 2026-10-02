@@ -53,7 +53,7 @@ describe("FolderSessionHistory", () => {
         sessionDefaults={null}
         sessionIds={["catalog-hit", "loading-miss", "failed-miss"]}
         sessions={[richSession]}
-        moveTargets={[]}
+
         runHistoryTotal={61}
         runHistoryHasMore
         runHistoryLoading={false}
@@ -66,9 +66,7 @@ describe("FolderSessionHistory", () => {
         ])}
         onOpenSession={vi.fn()}
         onSessionCreated={vi.fn()}
-        onRenameSession={vi.fn()}
-        onDeleteSessions={vi.fn()}
-        onMoveSession={vi.fn()}
+
       />,
     );
 

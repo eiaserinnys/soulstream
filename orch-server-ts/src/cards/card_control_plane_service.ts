@@ -1,3 +1,4 @@
+import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
 import { randomUUID } from "node:crypto";
@@ -95,8 +96,7 @@ export class CardControlPlaneService {
   }
   async moveCard(params: CardMutationParams & { folderId:string; afterCardId?:string | null }) {
     const result=await this.mutateCard(params,"move_card",{ folder_id:params.folderId,after_card_id:params.afterCardId ?? null },async (sql,card,eventId) => {
-      await this.lockFolder(sql,params.folderId);
-      await this.patch(sql,card,{ folder_id:params.folderId,position_key:await this.position(sql,params.folderId,params.afterCardId ?? null,card.id) },params,eventId);
+      await applyCardMoveTx(sql,card,params.folderId,params.afterCardId ?? null,params,eventId);
     });
     if (!result.idempotent && result.snapshot.folder.id !== params.folderId) await this.broadcaster?.emitCardUpdated?.(params.cardId,params.folderId);
     return { ...result,snapshot:(await this.repo.getSnapshot(params.folderId))! };

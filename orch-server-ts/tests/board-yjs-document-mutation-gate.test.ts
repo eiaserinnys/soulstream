@@ -83,6 +83,7 @@ describe("Board Y.Doc mutation gate", () => {
         expectedNames: ["board-folder:folder-a", "board-folder:folder-b"],
         run: () => service.withSessionBoardMoveApplications({
           sessionId: "a",
+        sessionIds: ["a"],
           boardItems: [boardItem("session")],
           targetScope: {
             folderId: "folder-b",

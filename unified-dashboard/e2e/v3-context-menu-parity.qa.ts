@@ -75,7 +75,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await reviewRow.waitFor({ state: "visible" });
     await openContextMenu(reviewRow);
     await assertSessionCommonMenu(page);
-    await assertMissingMenuItems(page, ["＋ 이어서 새 세션 (승계)", "다른 폴더로 이동"]);
+    await assertMenuItems(page, ["이 세션을 이어서 시작하기", "다른 폴더로 이동", "재개 예약 취소"]);
     await page.keyboard.press("Escape");
 
     await page.getByRole("button", { name: "오늘로 돌아가기" }).click();
