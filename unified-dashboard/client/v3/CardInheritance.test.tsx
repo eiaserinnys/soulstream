@@ -65,7 +65,6 @@ it("does not reserve a mode slot for the card's empty icon",async()=>{
 
 it("expands reports by the bubble, keeps images independently clickable, and renders no more/details button row",async()=>{
   await act(()=>root.render(<CardDetailPane cardId="inherit" folders={[]} onClose={()=>{}} onOpenSession={()=>{}}/>));
-  await act(()=>[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(el=>el.textContent==="내용")!.click());
   const entry=container.querySelector('[data-card-entry="보고"]')!;
   const bubble=entry.querySelector<HTMLElement>('[data-slot="chat-message-bubble"]')!;
   expect(bubble.getAttribute("aria-expanded")).toBe("false");

@@ -9,9 +9,8 @@ import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { CardDetail, CardReport, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { cardRequestMarkdown } from "./card-request-markdown";
 
-export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,scope="all"}: {
+export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending}: {
  card:CardRow;detail?:CardDetail;portraitUrl:string|null;userPortraitUrl?:string|null;
- scope?:"all"|"comments"|"content";
  onAnswer(questionId:string,answer:string):void;pending:boolean;
 }) {
  const {chatTypographyStyle}=useChatTypography();
@@ -29,7 +28,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  ];
  entries.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
  const toggle=(id:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next;});
- return <><div className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.filter(entry=>scope==="all"||(scope==="content"?entry.kind==="지시"||entry.kind==="보고":entry.kind!=="지시"&&entry.kind!=="보고")).map(entry=>{
+ return <><div className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.map(entry=>{
   const msg:ChatMessage={id:entry.id,treeNodeId:entry.id,treeNodeType:"card",role:entry.role,content:""};
   const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}):""}</time></div>;
   const bubbleProps:HTMLAttributes<HTMLDivElement>|undefined=entry.collapsible?{
