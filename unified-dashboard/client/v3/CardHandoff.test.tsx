@@ -4,12 +4,13 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { CardHandoff } from "./CardHandoff";
+import { useDashboardStore } from "@seosoyoung/soul-ui";
 
-vi.mock("@seosoyoung/soul-ui", () => ({
+vi.mock("@seosoyoung/soul-ui", async original => ({
+  ...await original<typeof import("@seosoyoung/soul-ui")>(),
   DashboardIconCap: ({ label, ...props }: HTMLAttributes<HTMLButtonElement> & {label: string}) => createElement("button", {...props,"aria-label":label}),
   Button: (props: HTMLAttributes<HTMLButtonElement>) => createElement("button", props),
   appendAttachmentPathNotes:(text:string)=>text,
-  useDashboardStore: Object.assign(()=>null,{getState:()=>({addOptimisticSession:()=>undefined})}),
   Input: (props: HTMLAttributes<HTMLInputElement>) => createElement("input", props),
   Popover: ({ children }: HTMLAttributes<HTMLDivElement>) => children,
   PopoverTrigger: (props: HTMLAttributes<HTMLButtonElement>) => createElement("button", props),
@@ -26,7 +27,7 @@ vi.mock("@seosoyoung/soul-ui/hooks/useFileUpload",()=>({useFileUpload:()=>({...u
 vi.mock("./folder-workspace-page-api",()=>({fetchPageSessionDefaults:vi.fn().mockResolvedValue({nodeId:"other",agentId:"a",modelPreset:"sol"})}));
 vi.mock("./FolderPicker", () => ({ FolderPicker: ({folders,onSelect}:any) => createElement("button",{onClick:()=>onSelect(folders[0]),type:"button"},"테스트 폴더") }));
 vi.mock("./use-folder-picker-stars", () => ({ useFolderPickerStars: () => ({ folderIds: [] }) }));
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); uploadFiles.files=[]; sessionCreate.mockClear(); });
+afterEach(() => { document.body.replaceChildren(); useDashboardStore.setState({drafts:{}});localStorage.clear(); uploadFiles.files=[]; sessionCreate.mockClear(); });
 
 it("inherits Enter newline and Ctrl/Cmd+Enter submission from ChatInputEditor", async () => {
   localStorage.setItem("cards-p1-handoff",JSON.stringify({folderId:"f",nodeId:"n",agentId:"a",modelPreset:"sol"}));
