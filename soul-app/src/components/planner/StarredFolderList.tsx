@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   StyleSheet,
   Text,
   View,
@@ -126,20 +125,19 @@ export function StarredFolderList({
           />
         )
       ))}
-      {!loading && folders.length === 0 ? (
-        <View style={styles.stateRow}><Text style={styles.empty}>{error ?? '별표 카드가 없습니다.'}</Text></View>
+      {folders.length === 0 ? (
+        <View style={styles.stateRow}><Text style={styles.empty}>{loading ? '별표 목록을 불러오는 중입니다.' : error ?? '별표 카드가 없습니다.'}</Text></View>
       ) : null}
       {!loading && refreshRequired && error && folders.length > 0 ? (
         <View testID="starred-refresh-error" style={styles.stateRow}>
           <Text style={styles.empty}>{error}</Text>
         </View>
       ) : null}
-      {loading ? <View style={styles.stateRow}><ActivityIndicator color={t.colors.accent} /></View> : null}
-      {(hasMore || refreshRequired) && !loading ? (
+      {(hasMore || refreshRequired) ? (
         <GroupedGlassRow
           testID="starred-load-more"
           onPress={refreshRequired ? onRefresh : onLoadMore}
-          disabled={reordering || dragging || (refreshRequired && !onRefresh)}
+          disabled={loading || reordering || dragging || (refreshRequired && !onRefresh)}
           style={styles.more}
         >
           <Text style={styles.moreText}>{refreshRequired ? '목록 새로고침' : '더 보기'}</Text>
