@@ -15,7 +15,7 @@ export const cardOperationSchemas={
   move_card:mutation.extend({ folderId:id,afterCardId:id.nullable().optional() }),
   reorder_card_queue:mutation.extend({ afterCardId:id.nullable().optional() }),
   add_card_report:append.extend({ title:id,format:z.enum(["markdown","html"]),body:z.string() }),
-  add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional() }),
+  add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional(),mode:z.enum(["spoken","reply"]).optional() }),
   ask_card_question:append.extend({ text:id,options:z.array(id).nullable().optional() }),
   answer_card_question:append.extend({ questionId:id,answer:id }),
 } as const;

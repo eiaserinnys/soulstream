@@ -126,6 +126,52 @@ describe("card comments HTTP, storage, and delivery", () => {
     return server;
   }
 
+  it("stores an assignee reply as agent in review without delivery or status change", async () => {
+    const cardId = await makeCard("에이전트 답변");
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('reply-owner','running')`;
+    await h.sql`UPDATE cards SET status='review',assignee_kind='session',assignee_session_id='reply-owner' WHERE id=${cardId}`;
+    const before = (await cards.getCard(cardId))!.card;
+    const server = app();
+    try {
+      const input = { body: "확인한 결과입니다", mode: "reply", idempotencyKey: key() };
+      const options = { method: "POST" as const, url: `/api/cards/${cardId}/comments`,
+        headers: { authorization: "Bearer service-test", "x-soulstream-agent-session-id": "reply-owner" }, payload: input };
+      const posted = await server.inject(options);
+      expect(posted.statusCode).toBe(201);
+      expect(posted.json()).toMatchObject({ authorKind: "agent", authorId: null, sessionId: "reply-owner", kind: "comment", body: input.body });
+      expect((await server.inject(options)).json().id).toBe(posted.json().id);
+      await h.sql`INSERT INTO sessions(session_id,status) VALUES ('reply-other','running')`;
+      const impersonation = await server.inject({ ...options,
+        headers: { authorization: "Bearer service-test", "x-soulstream-agent-session-id": "reply-other" } });
+      expect(impersonation.statusCode).toBeGreaterThanOrEqual(400);
+      await dispatcher.drain();
+      const detail = (await cards.getCard(cardId))!;
+      expect(detail.card).toMatchObject({ status: "review", version: before.version });
+      expect(detail.comments).toEqual([expect.objectContaining({ author_kind: "agent", session_id: "reply-owner", kind: "comment", body: input.body, delivered_at: null })]);
+      expect(messages).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    } finally { await server.close(); }
+  });
+
+  it("rejects human, untrusted header and another session reply impersonation", async () => {
+    const cardId = await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('reply-owner','running'),('reply-other','running')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='reply-owner' WHERE id=${cardId}`;
+    const server = app();
+    try {
+      for (const headers of [
+        {},
+        { "x-soulstream-agent-session-id": "reply-owner" },
+        { authorization: "Bearer service-test", "x-soulstream-agent-session-id": "reply-other" },
+      ]) {
+        const result = await server.inject({ method: "POST", url: `/api/cards/${cardId}/comments`, headers,
+          payload: { body: "사칭 답변", mode: "reply", idempotencyKey: key() } });
+        expect(result.statusCode).toBeGreaterThanOrEqual(400);
+      }
+      expect((await cards.getCard(cardId))!.comments).toEqual([]);
+    } finally { await server.close(); }
+  });
+
   it.each([
     { target: "assigned", actor: "self", kind: "spoken", expected: 0 },
     { target: "assigned", actor: "self", kind: "comment", expected: 0 },

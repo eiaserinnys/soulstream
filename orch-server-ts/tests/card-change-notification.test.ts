@@ -12,6 +12,10 @@ describe("committed card reference notifications",()=>{
   it.each([change({previousStatus:"running"}),change({previousAssigneeSessionId:null}),change({committedCard:{id:"card",status:"done"}}),change({result:{idempotent:true,operation:{}}}),change({result:{operation:{actor_kind:"agent",actor_session_id:"owner",operation_type:"set_card_status"}}})])("suppresses no-change, unowned, done, replay, own changes",c=>expect(buildCardChangeNotification(c)).toBeNull());
   it("labels another session honestly even when comment.author_kind says user",()=>{
     const c=change();c.result.operation.actor_kind="agent";c.result.operation.actor_session_id="other";c.result.operation.operation_type="add_card_comment";
-    expect(buildCardChangeNotification(c,{body:"추가 지시",delivered_at:null})).toMatchObject({text:"세션 other가 카드 「작업」(card)에 커멘트를 남겼습니다: 추가 지시",deliveryId:"card:card:comment:op:owner"});
+    expect(buildCardChangeNotification(c,{author_kind:"user",body:"추가 지시",delivered_at:null})).toMatchObject({text:"세션 other가 카드 「작업」(card)에 커멘트를 남겼습니다: 추가 지시",deliveryId:"card:card:comment:op:owner"});
+  });
+  it("never delivers an agent reply as a new owner input",()=>{
+    const c=change();c.result.operation.actor_kind="agent";c.result.operation.actor_session_id="other";c.result.operation.operation_type="add_card_comment";
+    expect(buildCardChangeNotification(c,{author_kind:"agent",body:"확인한 답변",delivered_at:null})).toBeNull();
   });
 });

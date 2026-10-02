@@ -26,6 +26,7 @@ describe("card dispatch and session lifecycle", () => {
     const warn = vi.fn();
     const launch = vi.fn(async (input: {
         sessionId: string;
+        prompt: string;
         cardId: string;
         nodeId: string;
         agentId: string;
@@ -93,6 +94,20 @@ describe("card dispatch and session lifecycle", () => {
         expect(launch.mock.calls[0]![0]).toMatchObject({ cardId: first, agentId: 'roselin', nodeId: 'eiaserinnys' });
         expect((await cards.getCard(first))!.card.status).toBe('running');
         expect((await cards.getCard(second))!.card.status).toBe('queued');
+    });
+    it("includes user comments and spoken instructions but excludes agent replies from dispatch input", async () => {
+        const id = await make('커멘트 구분');
+        await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body) VALUES
+          ('user-comment',${id},'user','comment','사용자 추가 요청'),
+          ('user-spoken',${id},'user','spoken','옮겨 적은 사용자 발언'),
+          ('agent-reply',${id},'agent','comment','에이전트 자신의 답변')`;
+        await cards.setCardStatus({ ...human, cardId:id, status:'queued', idempotencyKey:key() });
+        await dispatcher.drain();
+        expect(launch).toHaveBeenCalledOnce();
+        const { prompt } = launch.mock.calls[0]![0];
+        expect(prompt).toContain('사용자 추가 요청');
+        expect(prompt).toContain('옮겨 적은 사용자 발언');
+        expect(prompt).not.toContain('에이전트 자신의 답변');
     });
     it.each(["completed","interrupted","error"])("keeps running work after %s while releasing the execution capacity", async status => {
         const { id, sessionId } = await start();

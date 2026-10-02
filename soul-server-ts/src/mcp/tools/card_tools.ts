@@ -36,9 +36,14 @@ export function registerCardTools(server: McpServer, runtime: McpRuntime): void 
     inputSchema: { ...scope, title: id, format: z.enum(["markdown", "html"]), body: z.string() },
   }, async input => run(() => getFolderService(runtime).addCardReport({ ...agent(input.caller_session_id), cardId: input.card_id, title: input.title, format: input.format, body: input.body })));
   server.registerTool("add_card_comment", {
-    description: "담당 세션이 대화로 받은 디렉터 지시의 요점을 카드에 남긴다",
-    inputSchema: { ...scope, text: id },
-  }, async input => run(() => getFolderService(runtime).addCardComment({ ...agent(input.caller_session_id), cardId: input.card_id, text: input.text })));
+    description: '담당 세션이 카드에 커멘트를 남긴다. mode=spoken(기본)은 사용자 발언 요약만 사용자가 말한 것처럼 기록하며 첫 줄에 정확히 "아래는 사용자의 발언을 요약하여 옮긴 것입니다"라고 표기한다. mode=reply는 담당 세션 자신의 답변만 에이전트 신원으로 기록한다. 두 내용을 엄밀하게 구분한다. 본문은 자동 변경하지 않으며 카드 상태도 바꾸지 않는다.',
+    inputSchema: { ...scope, text: id, mode: z.enum(["spoken", "reply"]).optional() },
+  }, async input => run(() => {
+    const header = getCurrentMcpCallerSessionId();
+    if (input.mode === "reply" && header && input.caller_session_id && input.caller_session_id.trim() !== header)
+      throw new Error("caller_session_id must match the authenticated request session header");
+    return getFolderService(runtime).addCardComment({ ...agent(input.caller_session_id), cardId: input.card_id, text: input.text, mode: input.mode });
+  }));
   server.registerTool("start_card_work", {
     description: "현재 담당 카드의 작업 착수를 명시합니다. todo/review는 담당 선언, queued는 유효 자동배정 승인과 해당 실행의 전달 소비가 필요합니다. 검수 재착수에는 reason을 씁니다.",
     inputSchema: {...scope,expected_version:z.number().int().positive(),idempotency_key:id,reason:id.optional()},

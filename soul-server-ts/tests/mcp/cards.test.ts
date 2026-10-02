@@ -9,6 +9,7 @@ import { resolvePrimarySessionFolderContext } from "../../src/context/session_fo
 import { buildSoulstreamContextItem } from "../../src/context/soulstream_item.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { makeTaskCreationHarness } from "../task/task_creation_harness.js";
+import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 
 // Reuses folder.test.ts tool registration and task_creation.test.ts creation harness;
 // direct callbacks isolate the new card wire contract without opening an MCP server.
@@ -45,7 +46,7 @@ describe("card MCP contract", () => {
       ["get_card", { card_id: "card-1" }, "GET", "/api/cards/card-1", undefined],
       ["update_card_brief", { card_id: "card-1", brief: "경과" }, "PATCH", "/api/cards/card-1", { brief: "경과", expectedVersion: 3 }],
       ["add_card_report", { card_id: "card-1", title: "보고", format: "html", body: "<p>결과</p>" }, "POST", "/api/cards/card-1/reports", { title: "보고", format: "html", body: "<p>결과</p>" }],
-      ["add_card_comment", { card_id: "card-1", text: "회의에서 받은 요청" }, "POST", "/api/cards/card-1/comments", { body: "회의에서 받은 요청", kind: "spoken" }],
+      ["add_card_comment", { card_id: "card-1", text: "회의에서 받은 요청" }, "POST", "/api/cards/card-1/comments", { body: "회의에서 받은 요청", mode: "spoken" }],
       ["request_card_review", { card_id: "card-1" }, "POST", "/api/cards/card-1/status", { status: "review", expectedVersion: 3 }],
       ["ask_card_question", { card_id: "card-1", text: "질문", options: ["하나", "둘"] }, "POST", "/api/cards/card-1/questions", { text: "질문", options: ["하나", "둘"] }],
       ["move_card", { card_id: "card-1", folder_id: "folder-2", after_card_id: "card-2" }, "POST", "/api/cards/card-1/move", { folderId: "folder-2", afterCardId: "card-2", expectedVersion: 3 }],
@@ -57,10 +58,34 @@ describe("card MCP contract", () => {
       expect(init.method).toBe(method);
       expect(init.headers).toMatchObject({ authorization: "Bearer test-service", "x-soulstream-agent-session-id": "session-1" });
       if (body) expect(JSON.parse(init.body as string)).toMatchObject({ ...body, idempotencyKey: expect.any(String) });
-      if (name === "add_card_comment") expect(h.entries.get(name)!.config.description).toBe("담당 세션이 대화로 받은 디렉터 지시의 요점을 카드에 남긴다");
+      if (name === "add_card_comment") expect(h.entries.get(name)!.config.description).toContain("아래는 사용자의 발언을 요약하여 옮긴 것입니다");
       if (name === "get_card") expect(JSON.stringify(result)).toContain("지시 요점");
       if (name === "ask_card_question") expect(JSON.stringify(result)).toContain("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     }
+  });
+  it("exposes spoken/reply and forwards replies without rewriting their text", async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ card }), { status: 201 }));
+    vi.stubGlobal("fetch", fetch);
+    const h = harness();
+    const schema = z.object(h.entries.get("add_card_comment")!.config.inputSchema);
+    expect(schema.parse({ card_id: "card-1", text: "답변", mode: "reply" }).mode).toBe("reply");
+    expect(schema.safeParse({ card_id: "card-1", text: "답변", mode: "invalid" }).success).toBe(false);
+    for (const mode of ["spoken", "reply"] as const) {
+      expect((await h.call("add_card_comment", { card_id: "card-1", text: "그대로 보존", mode })).isError).not.toBe(true);
+      expect(JSON.parse(String(fetch.mock.calls.at(-1)![1].body))).toMatchObject({ body: "그대로 보존", mode });
+    }
+  });
+  it("rejects reply session impersonation and external callers before HTTP", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const h = harness();
+    for (const context of [
+      { callerSessionId: "authenticated-session" },
+      { principal: { authority: "external" as const, source: "llm", displayName: "External LLM" } },
+    ]) {
+      const result = await withMcpRequestContext(context, () => h.call("add_card_comment", { card_id: "card-1", text: "답변", mode: "reply" }));
+      expect(result.isError).toBe(true);
+    }
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("returns the orch rejection when review has no report", async () => {
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => init.method === "GET"
