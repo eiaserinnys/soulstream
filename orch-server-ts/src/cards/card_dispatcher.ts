@@ -133,8 +133,8 @@ export class CardDispatcher {
             const session = q && typeof q.session_id === "string" ? await this.options.repository.ownerSession(q.session_id) : null;
             if (session?.status && !isTerminalSessionStatus(session.status)) {
                 const answer=`질문에 답이 왔다: ${String(q!.text)} → ${String(q!.answer)}. 이어서 진행한다.`;
-                await this.options.sendMessage(String(q!.session_id),mergeAnswer ? `${notification!.text}\n${answer}` : answer,
-                  undefined,mergeAnswer ? notification! : undefined);
+                if (mergeAnswer) await this.options.sendMessage(String(q!.session_id),`${notification!.text}\n${answer}`,undefined,notification!);
+                else await this.options.sendMessage(String(q!.session_id),answer);
             }
             else
                 await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });

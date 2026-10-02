@@ -39,7 +39,7 @@ describe("card dispatch and session lifecycle", () => {
     beforeAll(async () => {
         h = await createPagePostgresHarness();
         await h.sql `INSERT INTO folders(id,name) VALUES ('dispatch-folder','실험')`;
-        await h.sql `ALTER TABLE sessions ADD COLUMN model_preset TEXT, ADD COLUMN termination_reason TEXT, ADD COLUMN termination_event_id INTEGER`;
+        await h.sql `ALTER TABLE sessions ADD COLUMN model_preset TEXT, ADD COLUMN metadata JSONB, ADD COLUMN termination_reason TEXT, ADD COLUMN termination_event_id INTEGER`;
         await h.sql `CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
         await h.sql `INSERT INTO system_settings(setting_key,value,updated_by) VALUES ('card_dispatch','{"nodeConcurrency":{"default":1}}','migration')`;

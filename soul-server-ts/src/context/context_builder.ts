@@ -1,6 +1,4 @@
-/** Builds full startup/compaction context and per-input live session/card snapshots.
- * Context data remains in the input; agent and folder instructions form the system prompt.
- */
+/** Builds input context; agent and folder instructions form the system prompt. */
 import { fetchAssignedCardContextItem, type AssignedCardContextCapture } from "./assigned_card_context.js";
 import type { Logger } from "pino";
 import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
