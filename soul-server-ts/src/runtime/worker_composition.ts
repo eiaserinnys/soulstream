@@ -1,4 +1,5 @@
 import { AgentConfigService } from "../agent_config_service.js";
+import { ExternalEventsService, credentialOwner } from "../external_events/service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { CatalogService } from "../catalog/catalog_service.js";
@@ -353,6 +354,10 @@ export async function composeWorkerRuntime(
     logger.info("LLM proxy skipped: no provider API keys configured");
   }
   const mcpRuntime: McpRuntime = {
+    ...(env.MCP_EXTERNAL_EVENTS_STATE_FILE ? { externalEvents: await ExternalEventsService.open({
+      path: env.MCP_EXTERNAL_EVENTS_STATE_FILE,
+      owner: credentialOwner(env.MCP_EXTERNAL_INGRESS_PATH!, env.MCP_EXTERNAL_INGRESS_BEARER_TOKEN!),
+    }) } : {}),
     nodeId: env.SOULSTREAM_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,

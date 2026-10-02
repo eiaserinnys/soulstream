@@ -22,6 +22,7 @@ import { registerSessionMgmtTools } from "./tools/session_mgmt.js";
 import { registerSessionQueryTools } from "./tools/session_query.js";
 import { registerSkillsTools } from "./tools/skills.js";
 import { registerWorktreeTools } from "./tools/worktree.js";
+import { registerExternalLlmTools } from "./tools/external_llm.js";
 
 export function buildMcpServer(runtime: McpRuntime): McpServer {
   const server = new McpServer({
@@ -43,5 +44,6 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerWorktreeTools(guardedServer, runtime);
   registerRecurringJobTools(guardedServer, runtime);
   registerCardOrchestrationTools(guardedServer, runtime);
+  registerExternalLlmTools(guardedServer, runtime);
   return server;
 }

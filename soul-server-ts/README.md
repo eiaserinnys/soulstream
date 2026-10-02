@@ -71,6 +71,7 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | Makes the public LLM route sessionless; the isolated internal agent SDK route is always stateless. |
 | `MCP_REQUIRE_AUTH` | `false` | Requires bearer authentication for MCP requests. |
 | `MCP_EXTERNAL_INGRESS_ENABLED` | `false` | Enables the stateless, credential-bound external connector route only when all four conditional settings above are present. |
+| `MCP_EXTERNAL_EVENTS_STATE_FILE` | unset | Enables MCP2 Events on the dedicated external ingress. Absolute subscription-state file in a private directory outside releases; see [dot handoff](../docs/dot-mcp-events.md). |
 | `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated Host header allowlist. |
 | `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | `true` | Persistent Claude Query runtime. Set `false` only as the emergency legacy kill switch. |
 | `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | `300000` | Idle Query reclamation delay. |

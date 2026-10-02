@@ -8,6 +8,7 @@ import {
 } from "./mcp/request_context.js";
 import { internalMcpPath } from "./mcp/endpoint_paths.js";
 import { registerMcpRoutes } from "./mcp/transport.js";
+import { registerExternalEventsRoutes } from "./mcp/external_events_transport.js";
 import {
   registerCogitoSearchRoute,
   type CogitoSearchRouteConfig,
@@ -122,7 +123,7 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       principal: GENERIC_EXTERNAL_MCP_PRINCIPAL,
     });
     const closeExternalMcp = params.mcp.externalIngress
-      ? registerMcpRoutes(fastify, params.mcp.runtime, {
+      ? (params.mcp.runtime.externalEvents ? registerExternalEventsRoutes : registerMcpRoutes)(fastify, params.mcp.runtime, {
           path: params.mcp.externalIngress.path,
           auth: params.mcp.externalIngress.auth,
           statelessTransport: true,

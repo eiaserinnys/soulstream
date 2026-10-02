@@ -82,6 +82,7 @@ export function buildConfigReflection(runtime: McpRuntime): ConfigReflectionEntr
     envEntry("MCP_EXTERNAL_INGRESS_SOURCE", { required: false, sensitive: false }),
     envEntry("MCP_EXTERNAL_INGRESS_DISPLAY_NAME", { required: false, sensitive: false }),
     envEntry("MCP_EXTERNAL_INGRESS_BEARER_TOKEN", { required: false, sensitive: true }),
+    envEntry("MCP_EXTERNAL_EVENTS_STATE_FILE", { required: false, sensitive: false }),
     {
       key: "orch_http_base_url",
       status: runtime.orch ? "present" : "not_configured",

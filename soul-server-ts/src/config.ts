@@ -187,6 +187,7 @@ export const EnvSchema = z
       .optional(),
     MCP_EXTERNAL_INGRESS_DISPLAY_NAME: z.string().trim().min(1).max(120).optional(),
     MCP_EXTERNAL_INGRESS_BEARER_TOKEN: z.string().min(1).optional(),
+    MCP_EXTERNAL_EVENTS_STATE_FILE: z.string().min(1).refine(isAbsolute, "MCP_EXTERNAL_EVENTS_STATE_FILE must be absolute").optional(),
     /**
      * Node-local privileged MCP listener. When omitted, the config layer derives
      * PORT+1 so existing deployments retain an explicit, deterministic endpoint.
@@ -338,6 +339,10 @@ export const EnvSchema = z
         path: ["MCP_ENABLED"],
         message: "MCP_ENABLED must be true when MCP_EXTERNAL_INGRESS_ENABLED=true",
       });
+    }
+    if (env.MCP_EXTERNAL_EVENTS_STATE_FILE && !env.MCP_EXTERNAL_INGRESS_ENABLED) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["MCP_EXTERNAL_INGRESS_ENABLED"],
+        message: "MCP_EXTERNAL_INGRESS_ENABLED must be true when MCP_EXTERNAL_EVENTS_STATE_FILE is set" });
     }
     if (env.MCP_EXTERNAL_INGRESS_ENABLED) {
       for (const key of [

@@ -1,6 +1,7 @@
 {
   "schema_version": 2,
   "entries": {
+    "MCP_EXTERNAL_EVENTS_STATE_FILE": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CARD_DECISION_DOCKER_IMAGE": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "CARD_DECISION_CODEX_BINARY_PATH": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CARD_DECISION_CLAUDE_EXECUTABLE_PATH": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },

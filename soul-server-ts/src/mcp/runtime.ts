@@ -5,6 +5,7 @@
  * 테스트는 fake runtime을 주입하여 도구 동작만 검증.
  */
 import type { Logger } from "pino";
+import type { ExternalEventsService } from "../external_events/service.js";
 
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
@@ -32,6 +33,7 @@ export interface OrchProxyConfig {
 }
 
 export interface McpRuntime {
+  externalEvents?: ExternalEventsService;
   nodeId: string;
   agentsConfigPath: string;
   db: SessionDB;
