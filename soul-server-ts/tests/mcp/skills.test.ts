@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { McpRuntime } from "../../src/mcp/runtime.js";
-import { registerSkillsTools } from "../../src/mcp/tools/skills.js";
+import { registerSkillsToolsLegacy } from "../../src/mcp/tools/skills.js";
 
 const SKILL_NODE_ID = "11111111-2222-4333-8444-555555555555";
 const SLACK_BODY_NODE_ID = "66666666-7777-4888-8999-aaaaaaaaaaaa";
@@ -39,7 +39,7 @@ function createHarness(): SearchSkillsHandler {
       if (name === "search_skills") handler = callback as SearchSkillsHandler;
     },
   } as unknown as McpServer;
-  registerSkillsTools(server, {
+  registerSkillsToolsLegacy(server, {
     logger: { warn: vi.fn() },
   } as unknown as McpRuntime);
   return handler!;

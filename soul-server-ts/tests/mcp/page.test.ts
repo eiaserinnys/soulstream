@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
-import { registerPageTools } from "../../src/mcp/tools/page.js";
+import { registerPageToolsLegacy } from "../../src/mcp/tools/page.js";
 
 describe("page MCP tools", () => {
   it("registers exactly the eight spec tools and caller_session_id on every input", () => {
@@ -137,7 +137,7 @@ function register(client: ReturnType<typeof fakeClient>) {
       registered.set(name, { config, handler });
     },
   } as unknown as McpServer;
-  registerPageTools(server, {
+  registerPageToolsLegacy(server, {
     pageHostClient: client,
     logger: { warn: vi.fn() },
   } as unknown as McpRuntime);
