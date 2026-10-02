@@ -1,7 +1,7 @@
 import { expect,it,vi } from 'vitest';
 import { createAssignedCardSnapshotRecorder } from '../../src/context/assigned_card_snapshot_recorder.js';
 import type { AssignedCardContextCapture } from '../../src/context/assigned_card_context.js';
-const capture=():AssignedCardContextCapture=>({source:'prepared_model_input',sessionId:'s',registrationId:'r',executionCommandId:'e',inputId:'i',snapshot:{total:14,omitted:2,capturedAt:'2026-10-02T00:00:00Z',cards:Array.from({length:14},(_,i)=>({id:String(i),title:'제목',status:'running',version:2,instruction:'지시',report:'보고'}))}});
+const capture=():AssignedCardContextCapture=>({source:'prepared_model_input',sessionId:'s',registrationId:'r',executionCommandId:'e',inputId:'i',snapshot:{total:14,omitted:2,capturedAt:'2026-10-02T00:00:00Z',cards:Array.from({length:14},(_,i)=>({id:String(i),title:'제목',status:'running',latestCommentAt:'2026-10-01T23:59:00Z',latestReportAt:i===0?'2026-10-01T23:58:00Z':null}))}});
 it('owns a bounded immutable copy, preserves identity and returns without ACK',async()=>{
   const enqueueEvent=vi.fn((..._args:unknown[])=>new Promise<never>(()=>{}));
   const record=createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn:vi.fn()});
@@ -14,24 +14,23 @@ it('owns a bounded immutable copy, preserves identity and returns without ACK',a
   expect(event.capture.snapshot.omitted).toBe(2);
   expect(event._dedupe_key).toBe('assigned_card_context_snapshot:r:i');
   expect(event.capture.source).toBe('prepared_model_input');
-  expect(event.content).toContain('입력 준비 스냅샷');
-  expect(event.content).toContain('소비 확인 전');
-  expect(event.content).toContain('최종 모델 포맷과 소비는 확인하지 않음');
-  expect(event.content).toContain('제목 · running · v2');
-  expect(event.content).toContain('지시: 지시');
-  expect(event.content).toContain('보고: 보고');
-  expect(event.content).toContain('전체 14개 · 표시 12개 · 생략 2개');
+  expect(event.content).toContain('0 · 제목 · 실행 중 · 마지막 보고 2026-10-01T23:58:00Z · 최근 커멘트 이후 보고 없음');
+  expect(event.content).not.toContain('입력 준비 스냅샷');
+  expect(event.content).not.toContain('소비 확인 전');
+  expect(event.content).not.toContain('v2');
+  expect(event.content).not.toContain('지시: 지시');
+  expect(event.content).not.toContain('보고: 보고');
+  expect(event.capture.snapshot.cards[0]).toEqual({id:'0',title:'제목',status:'running',latestCommentAt:'2026-10-01T23:59:00Z',latestReportAt:'2026-10-01T23:58:00Z'});
 });
 it('renders the already-bounded raw snapshot without another text cut or a consumption claim',async()=>{
   const enqueueEvent=vi.fn().mockResolvedValue(undefined);
   const raw=capture();
-  raw.snapshot.cards=[{id:'c',title:'제목',status:'review',version:7,instruction:'가'.repeat(401),report:'나'.repeat(401)}];
+  raw.snapshot.cards=[{id:'c',title:'제목',status:'review',latestCommentAt:null,latestReportAt:null}];
   raw.snapshot.total=1; raw.snapshot.omitted=0;
   await createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn:vi.fn()})(raw);
   const event=enqueueEvent.mock.calls[0]![1] as any;
-  expect(event.content).toContain(`지시: ${'가'.repeat(401)}\n`);
-  expect(event.content).toContain(`보고: ${'나'.repeat(401)}\n`);
-  expect(event.content).not.toContain('소비됨');
+  expect(event.content).toBe('c · 제목 · 검수 대기 · 보고 없음');
+  expect(event.capture.snapshot.cards[0]).toEqual({id:'c',title:'제목',status:'review',latestCommentAt:null,latestReportAt:null});
 });
 it('contains storage failure without retries or input wakeups and marks missing identity',async()=>{
   const enqueueEvent=vi.fn(async(..._args:unknown[])=>{throw new Error('storage failure');});

@@ -36,6 +36,7 @@ import type {
 import { formatRetryingErrorHistory } from "@shared/sse-events";
 import { isJevCardObservation } from "../../../wire-schema/src/card_observation";
 import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
+import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-content";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
 import { TRUNCATE_THRESHOLD } from "./event-update";
@@ -388,7 +389,7 @@ export function createNodeFromEvent(
         return makeNode(
           `assigned-card-context-${eventId}`,
           "assigned_card_context",
-          event.content,
+          formatAssignedCardContextSnapshot(capture.snapshot),
           {
             completed: true,
             preparedInputId: capture.inputId,

@@ -3,6 +3,7 @@ import type {
   ChatRenderItem,
   TurnSummaryRenderItem,
 } from './groupChatEvents';
+import { formatRelativeTime } from '../../lib/relative-time';
 
 // Native uses its existing SessionEvent wire adapter: no external workspace package or EAS dependency.
 function isJevCardObservation(value: unknown): boolean {
@@ -28,6 +29,35 @@ function assignedCardPreparedInputId(event: SessionEvent): string | null {
     && typeof value.inputId === 'string' && value.inputId.length > 0
     ? value.inputId
     : null;
+}
+
+export function formatAssignedCardContextSnapshot(snapshot: Record<string,unknown>): string {
+  const cards=Array.isArray(snapshot.cards) ? snapshot.cards.filter((card):card is Record<string,unknown>=>!!card&&typeof card==='object') : [];
+  if (!cards.length) return '담당 카드 없음';
+  const capturedAt=typeof snapshot.capturedAt==='string' ? Date.parse(snapshot.capturedAt) : Number.NaN;
+  return cards.map(card=>[
+    typeof card.id==='string'?card.id:'',
+    typeof card.title==='string'?card.title.replace(/\s+/g,' ').trim():'',
+    statusLabel(typeof card.status==='string'?card.status:''),
+    reportLabel(card,capturedAt),
+    hasLaterComment(card)?'최근 커멘트 이후 보고 없음':null,
+  ].filter(Boolean).join(' · ')).join('\n');
+}
+
+function reportLabel(card: Record<string,unknown>, capturedAt: number): string {
+  if (!Object.prototype.hasOwnProperty.call(card,'latestReportAt')) return '마지막 보고 시각 확인 불가';
+  if (card.latestReportAt===null) return '보고 없음';
+  if (typeof card.latestReportAt!=='string' || !Number.isFinite(Date.parse(card.latestReportAt)) || !Number.isFinite(capturedAt)) return '마지막 보고 시각 확인 불가';
+  return `마지막 보고 ${formatRelativeTime(card.latestReportAt,capturedAt)}`;
+}
+
+function hasLaterComment(card: Record<string,unknown>): boolean {
+  return typeof card.latestCommentAt==='string' && typeof card.latestReportAt==='string'
+    && Date.parse(card.latestCommentAt)>Date.parse(card.latestReportAt);
+}
+
+function statusLabel(status:string):string {
+  return ({todo:'할 일',queued:'대기',blocked:'막힘',running:'실행 중',review:'검수 대기',done:'완료',cancelled:'취소'} as Record<string,string>)[status]??status;
 }
 
 function positiveEventId(value: unknown): number | null {
@@ -164,7 +194,12 @@ export function placeTurnSummaries(
       warnInvalidTurnSummary(event, 'content is missing');
       continue;
     }
-    const content = preparedInputId === null ? rawContent.trim() : rawContent;
+    const snapshot = event.data?.capture && typeof event.data.capture==='object'
+      ? (event.data.capture as Record<string,unknown>).snapshot : null;
+    const content = preparedInputId === null ? rawContent.trim()
+      : snapshot && typeof snapshot==='object'
+        ? formatAssignedCardContextSnapshot(snapshot as Record<string,unknown>)
+        : rawContent;
 
     if (preparedInputId !== null) {
       const anchorIndex = itemIndexByInputId.get(preparedInputId);

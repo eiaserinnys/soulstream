@@ -12,6 +12,7 @@ export { formatTime } from "./input-request-utils";
 export { fetchWithProjectionRetry } from "./projection-retry";
 export { retainEqualSet, retainEqualValue } from "./structural-sharing";
 export { appendAttachmentPathNotes } from "./attachment-path-notes";
+export { formatAssignedCardContextSnapshot } from "./assigned-card-context-content";
 
 // === Folder / Session Operations ===
 export { createFolderOperations } from "./folder-operations";

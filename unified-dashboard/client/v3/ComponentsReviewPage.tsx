@@ -3,7 +3,7 @@ import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantM
 import { SystemMessage } from "@seosoyoung/soul-ui/components/chat/SystemMessage";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { FolderPanelHeader, SessionPanelHeader } from "./WorkspacePanelHeaders";
-import { DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Popover, PopoverPopup, PopoverTrigger, formatAssignedCardContextSnapshot } from "@seosoyoung/soul-ui";
 import type { UploadedFile } from "@seosoyoung/soul-ui/hooks/useFileUpload";
 import { Folder, Layers, LayoutDashboard, MessageSquare, MoreHorizontal, Plus, RotateCcw, SendHorizontal, SquarePen, Star } from "lucide-react";
 import { CardRowView } from "./CardRow";
@@ -33,6 +33,17 @@ const sections = [
   { id: "controls", title: "선택·설정", icon: SquarePen },
   { id: "surfaces", title: "패널 표면", icon: SquarePen },
 ];
+
+const assignedCardPreview = formatAssignedCardContextSnapshot({
+  total: 1, omitted: 0, capturedAt: "2026-10-02T01:00:00.000Z",
+  cards: [{
+    id: "860fe149-ae89-46bd-bb3e-b6115229edba",
+    title: "담당 카드 현황 매 턴 주입·외부 변경 알림",
+    status: "running",
+    latestCommentAt: "2026-10-02T00:55:00.000Z",
+    latestReportAt: "2026-10-02T00:40:00.000Z",
+  }],
+});
 
 function Sample({ name, state, children }: { name: string; state: string; children: ReactNode }) {
   return <div className="v3-components-sample" data-component={name}>
@@ -196,7 +207,7 @@ export function ComponentsReviewPage() {
             <Sample name="SystemMessage / 기존 caption" state="같은 배치 · 기존 요약과 요청한 Jev 판정 한 줄">
               <div data-testid="jev-caption-comparison">
                 <UserMessage msg={{id:"assigned-card-input",role:"user",treeNodeId:"assigned-card-input",treeNodeType:"user_message",content:"외부 카드 알림을 확인해줘"}}/>
-                <SystemMessage msg={{id:"assigned-card-preview",role:"system",treeNodeId:"assigned-card-preview",treeNodeType:"assigned_card_context",content:"담당 카드 입력 준비 스냅샷 · 소비 확인 전\n관측 범위: 저장된 준비 캡처 · 최종 모델 포맷과 소비는 확인하지 않음\n전체 1개 · 표시 1개 · 생략 0개\n1. 담당 카드 현황 매 턴 주입·외부 변경 알림 · running · v6\n지시: 입력마다 담당 카드의 최신 지시를 전달합니다.\n보고: 실제 준비 스냅샷을 입력 아래에서 확인합니다.\n준비 시각: 2026-10-02T01:00:00.000Z"}}/>
+                <SystemMessage msg={{id:"assigned-card-preview",role:"system",treeNodeId:"assigned-card-preview",treeNodeType:"assigned_card_context",content:assignedCardPreview}}/>
                 <AssistantMessage msg={{id:"jev-sample-answer",role:"assistant",treeNodeId:"jev-sample-answer",treeNodeType:"assistant_message",content:"구현을 맡겼습니다. 다른 작업 결과를 기다립니다."}}/>
                 <SystemMessage msg={{id:"jev-sample-summary",role:"system",treeNodeId:"jev-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
                 <SystemMessage msg={{id:"jev-sample-observation",role:"system",treeNodeId:"jev-sample-observation",treeNodeType:"card_observation",content:"Jev · 위임 대기 — 다른 작업 결과를 기다리는 상태로 분류"}}/>

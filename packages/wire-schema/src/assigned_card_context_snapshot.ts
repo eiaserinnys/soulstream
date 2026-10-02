@@ -2,9 +2,12 @@ export interface AssignedCardContextSnapshotCard {
   id: string;
   title: string;
   status: string;
-  version: number;
-  instruction: string;
-  report: string;
+  latestCommentAt?: string | null;
+  latestReportAt?: string | null;
+  /** Legacy capture fields retained only for reading already-stored events. */
+  version?: number;
+  instruction?: string;
+  report?: string;
 }
 
 export interface AssignedCardContextSnapshotEvent {

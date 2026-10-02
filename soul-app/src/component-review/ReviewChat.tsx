@@ -11,11 +11,22 @@ import { SettingsSegmentedControl } from '../components/settings/SettingsSegment
 import { GlassButton } from '../components/GlassSurface';
 import { message, sessions } from './fixtures';
 import { ReviewSection } from './ReviewSection';
+import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummaryProjection';
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
   { value: 'uploading', label: '첨부 중' }, { value: 'disabled', label: '비활성' },
 ] as const;
+const assignedCardPreview = formatAssignedCardContextSnapshot({
+  capturedAt: '2026-10-02T01:00:00.000Z',
+  cards: [{
+    id: '860fe149-ae89-46bd-bb3e-b6115229edba',
+    title: '담당 카드 현황 매 턴 주입·외부 변경 알림',
+    status: 'running',
+    latestCommentAt: '2026-10-02T00:55:00.000Z',
+    latestReportAt: '2026-10-02T00:40:00.000Z',
+  }],
+});
 export function ReviewChat() {
   const t = useTokens();
   const [input, setInput] = useState('');
@@ -71,7 +82,7 @@ export function ReviewChat() {
     </ReviewSection>
     <ReviewSection title="기존 caption · 기존 요약과 요청한 Jev 판정 한 줄">
       <UserMessage event={message('user_message', '외부 카드 알림을 확인해줘')} />
-      <TurnSummaryCaption content={'담당 카드 입력 준비 스냅샷 · 소비 확인 전\n관측 범위: 저장된 준비 캡처 · 최종 모델 포맷과 소비는 확인하지 않음\n전체 1개 · 표시 1개 · 생략 0개\n1. 담당 카드 현황 매 턴 주입·외부 변경 알림 · running · v6\n지시: 입력마다 담당 카드의 최신 지시를 전달합니다.\n보고: 실제 준비 스냅샷을 입력 아래에서 확인합니다.\n준비 시각: 2026-10-02T01:00:00.000Z'} />
+      <TurnSummaryCaption content={assignedCardPreview} />
       <AssistantMessage session={sessions[0]} event={message('assistant_message', '구현을 맡겼습니다. 다른 작업 결과를 기다립니다.')} />
       <TurnSummaryCaption content="기존 요약: 다른 작업 결과를 기다립니다." />
       <TurnSummaryCaption content="Jev · 위임 대기 — 다른 작업 결과를 기다리는 상태로 분류" />

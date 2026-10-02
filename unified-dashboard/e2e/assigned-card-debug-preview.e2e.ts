@@ -3,8 +3,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { installV3VisualQaRoutes } from './v3-visual-fixtures';
 
-const output = path.resolve('../.local/artifacts/20261002-assigned-card-debug-preview');
-const previewText = '담당 카드 입력 준비 스냅샷 · 소비 확인 전';
+const output = path.resolve('../.local/artifacts/20261002-compact-card-debug');
+const previewText = '860fe149-ae89-46bd-bb3e-b6115229edba · 담당 카드 현황 매 턴 주입·외부 변경 알림 · 실행 중';
 
 for (const width of [1440, 390]) {
   test(`prepared card preview uses the existing caption directly after its input at ${width}`, async ({ page }) => {
@@ -30,8 +30,11 @@ for (const width of [1440, 390]) {
     await comparison.scrollIntoViewIfNeeded();
     const previewRow = comparison.locator('[data-tree-node-id="assigned-card-preview"]');
     await expect(previewRow).toContainText(previewText);
-    await expect(previewRow).toContainText('지시: 입력마다 담당 카드의 최신 지시를 전달합니다.');
-    await expect(previewRow).toContainText('보고: 실제 준비 스냅샷을 입력 아래에서 확인합니다.');
+    await expect(previewRow).toContainText('마지막 보고');
+    await expect(previewRow).toContainText('최근 커멘트 이후 보고 없음');
+    await expect(previewRow).not.toContainText('지시:');
+    await expect(previewRow).not.toContainText('보고:');
+    await expect(previewRow).not.toContainText('소비 확인');
 
     const metrics = await comparison.evaluate(element => {
       const children = [...element.querySelectorAll<HTMLElement>(':scope > [data-tree-node-id]')];
@@ -70,10 +73,12 @@ for (const width of [1440, 390]) {
     await page.goto('http://127.0.0.1:4202/assets/ios-components/?section=chat');
     const nativeSection = page.getByText('기존 caption · 기존 요약과 요청한 Jev 판정 한 줄', { exact: true });
     await nativeSection.scrollIntoViewIfNeeded();
-    const nativePreview = page.getByText(previewText).first();
+    const nativePreview = page.getByText(new RegExp(previewText)).first();
     await expect(nativePreview).toBeVisible();
-    await expect(nativePreview).toContainText('지시: 입력마다 담당 카드의 최신 지시를 전달합니다.');
-    await expect(nativePreview).toContainText('보고: 실제 준비 스냅샷을 입력 아래에서 확인합니다.');
+    await expect(nativePreview).toContainText('마지막 보고 20분 전');
+    await expect(nativePreview).toContainText('최근 커멘트 이후 보고 없음');
+    await expect(nativePreview).not.toContainText('지시:');
+    await expect(nativePreview).not.toContainText('보고:');
     await page.screenshot({
       path: path.join(output, `native-web-preview-${width}.png`),
       animations: 'disabled',
