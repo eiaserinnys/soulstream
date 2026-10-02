@@ -29,31 +29,35 @@ test('긴 목록은 샘플 안에서만 설치되고 종료하면 기존 목록�
   expect(usePlannerStore.getState().starred).toBe(starred);
 });
 
-test('운영 프로젝트 목록은 첫 layout 전 콘텐츠 높이이고 layout 후 화면 높이로 제한된다', () => {
+test('긴 운영 목록은 미측정 배경 없이 시작하고 부모 layout 후 화면 높이로 제한된다', () => {
   const restore = installFolderReviewScope(createFolderReviewFixture('long'));
   const screen = render(<ProjectListScreen />);
   const background = () => screen.getByTestId('project-list-glass-background');
-  const firstHeight = StyleSheet.flatten(background().props.style).height as number;
-  expect(firstHeight).toBeGreaterThan(6000);
-  const originalInstance = background();
+  expect(screen.queryByTestId('project-list-glass-background')).toBeNull();
+  expect(StyleSheet.flatten(screen.getByTestId('project-list-scroll').props.style))
+    .toMatchObject({ position: 'absolute', height: 0 });
+  fireEvent(screen.getByTestId('project-list-scroll'), 'contentSizeChange', 350, 6500);
+  expect(screen.queryByTestId('project-list-glass-background')).toBeNull();
   fireEvent(screen.getByTestId('project-list-root'), 'layout', { nativeEvent: { layout: { height: 844 } } });
-  expect(StyleSheet.flatten(background().props.style).height).toBeLessThan(844);
-  expect(background()).toBe(originalInstance);
+  expect(StyleSheet.flatten(background().props.style).height).toBe(812);
   screen.unmount(); restore();
 });
 
-test('네이티브 효과 경로도 첫 layout 전에 전체 높이를 받고 같은 인스턴스를 축소한다', () => {
+test('네이티브 배경은 실측 후에 생성되고 부모 크기 변경에도 같은 인스턴스로 제한된다', () => {
   mockNativeAvailable = true;
   const restore = installFolderReviewScope(createFolderReviewFixture('long'));
   const screen = render(<ProjectListScreen />);
-  const first = screen.getByTestId('project-list-glass-background');
-  const firstHeight = StyleSheet.flatten(first.props.style).height;
-  expect(first.props.glassEffectStyle).toBe('regular');
-  expect(firstHeight).toBeGreaterThan(6000);
+  expect(screen.queryByTestId('project-list-glass-background')).toBeNull();
   fireEvent(screen.getByTestId('project-list-root'), 'layout', { nativeEvent: { layout: { height: 844 } } });
-  const after = screen.getByTestId('project-list-glass-background');
-  expect(after).toBe(first);
-  expect(StyleSheet.flatten(after.props.style).height).toBe(812);
-  console.log('native props observation', { firstHeight, afterHeight: 812, remounted: false, renderer: 'mock View; no UIKit rendering' });
+  const first = screen.getByTestId('project-list-glass-background');
+  expect(first.props.glassEffectStyle).toBe('regular');
+  expect(StyleSheet.flatten(first.props.style).height).toBe(812);
+  for (const [viewportHeight, panelHeight] of [[400, 368], [1180, 1148]]) {
+    fireEvent(screen.getByTestId('project-list-root'), 'layout', { nativeEvent: { layout: { height: viewportHeight } } });
+    const after = screen.getByTestId('project-list-glass-background');
+    expect(after).toBe(first);
+    expect(StyleSheet.flatten(after.props.style).height).toBe(panelHeight);
+    expect(StyleSheet.flatten(screen.getByTestId('project-list-scroll').props.style).height).toBe(panelHeight);
+  }
   screen.unmount(); restore(); mockNativeAvailable = false;
 });
