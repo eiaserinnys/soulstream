@@ -304,7 +304,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.mcpHostRoutes) {
     const mcpOptions: McpHostOptions = { ...options.mcpHostRoutes, environment: options.config.environment,
     sessionMessages: options.sessionActionCommandRoutes ?? options.mcpHostRoutes.sessionMessages,
-    externalLlm: { service: options.externalEvents, getSession: options.mcpHostRoutes.cluster.readSession },
+    ...(options.mcpHostRoutes.cluster?.readSession ? { externalLlm: {
+      service: options.externalEvents, getSession: options.mcpHostRoutes.cluster.readSession,
+    } } : {}),
     cluster: { ...options.mcpHostRoutes.cluster, logger: app.log },
     recurringJobs: options.recurringJobHostRoutes ?? options.mcpHostRoutes.recurringJobs!,
     cardOrchestration: options.cardOrchestrationRoutes ?? options.mcpHostRoutes.cardOrchestration!,

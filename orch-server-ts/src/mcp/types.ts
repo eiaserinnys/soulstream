@@ -18,8 +18,6 @@ import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 
 export interface McpCallContext {
-  /** Set only by the orchestrator's own external ingress; never accepted from the worker forward body. */
-  externalCaller?: { source: string; displayName: string };
   signal?: AbortSignal;
   principal: "internal" | "external";
   callerSessionId: string | null;
