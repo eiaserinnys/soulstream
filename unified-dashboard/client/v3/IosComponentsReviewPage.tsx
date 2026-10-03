@@ -4,12 +4,15 @@ import { ArrowLeft } from "lucide-react";
 import { ComponentsReviewLayout } from "./ComponentsReviewLayout";
 import "./ios-components-review.css";
 import { DialogueGallery, type DialogueGalleryGroup } from "./DialogueGallery";
-import { dialoguePreviewGroups, nativeConfirmations, nativeRenames, nativeMenuTypes, alertOwners } from "../../../soul-app/src/component-review/dialogue-inventory";
+import metadata from "../../../soul-app/src/component-review/dialogue-metadata.json";
 
-const dialogueGroups: DialogueGalleryGroup[] = dialoguePreviewGroups.map(group => ({
-  id: group.id, title: group.title, items: group.items.map(item => ({
-    id: item.value, title: item.label,
-    src: "/assets/ios-components/index.html?section=dialogues&sample=" + item.value,
+const { nativeConfirmations, nativeRenames, nativeMenuTypes, alertOwners } = metadata;
+const samples: Record<string, { label: string }> = { ...metadata.samples, ...metadata.details };
+
+const dialogueGroups: DialogueGalleryGroup[] = metadata.groups.map(group => ({
+  id: group.id, title: group.title, items: group.ids.map(id => ({
+    id, title: samples[id].label,
+    src: "/assets/ios-components/index.html?section=dialogues&sample=" + id,
   })),
 }));
 dialogueGroups.push({ id: "native", title: "iOS 기본 창", items: [{
