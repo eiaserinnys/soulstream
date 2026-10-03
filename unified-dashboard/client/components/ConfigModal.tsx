@@ -1,3 +1,6 @@
+import "./config/config-layout.css";
+import { fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settings";
+import { ArrowLeft, Check } from "lucide-react";
 import { FileStorageTab } from "./FileStorageTab";
 import { CardDispatchTab } from "./CardDispatchTab";
 /**
@@ -83,13 +86,18 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
 
   const [localChat, setLocalChat] = useState<import("@seosoyoung/soul-ui").ChatFontSize>(14);
   const [localGlass, setLocalGlass] = useState(DEFAULT_LIQUID_GLASS_SETTINGS);
-  const [selectedTab, setSelectedTab] = useState<string>(initialTab ?? "");
+  const [selectedTab, setSelectedTab] = useState<string>(initialTab ?? "appearance");
+  const [mobileIndex, setMobileIndex] = useState(!initialTab);
+  const [discardPrompt, setDiscardPrompt] = useState(false);
+  const saveInFlight = useRef(false);
+  const saveChanges = async () => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    try { await save(); } finally { saveInFlight.current = false; }
+  };
   const extraTabs = useMemo(() => {
-    const glassTab = { name: LIQUID_GLASS_TAB_NAME, label: "리퀴드 글래스" };
-    const chatTab = { name: CHAT_TAB_NAME, label: "채팅" };
     return [
-      chatTab,
-      glassTab,
+      { name: "appearance", label: "화면과 읽기" },
       { name: NODES_TAB_NAME, label: "노드" },
       { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
       { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
@@ -106,16 +114,16 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
   // 카테고리 로드 시 첫 탭 선택. 모달을 닫으면 다음 오픈 시 재선택되도록 리셋.
   useEffect(() => {
     if (!selectedTab) {
-      const firstTab = categories[0]?.name ?? extraTabs[0]?.name;
+      const firstTab = initialTab ?? "appearance";
       if (firstTab) setSelectedTab(firstTab);
     }
   }, [categories, extraTabs, selectedTab]);
   useEffect(() => {
-    if (!open) setSelectedTab("");
+    if (!open) { setSelectedTab(initialTab ?? "appearance"); setMobileIndex(!initialTab); setDiscardPrompt(false); }
   }, [open]);
 
   const activeCategory = categories.find((c) => c.name === selectedTab);
-  const isNonConfigTab =
+  const isNonConfigTab = selectedTab === "appearance" ||
     selectedTab === LIQUID_GLASS_TAB_NAME ||
     selectedTab === CHAT_TAB_NAME ||
     selectedTab === NODES_TAB_NAME ||
@@ -128,18 +136,26 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     selectedTab === USERS_TAB_NAME;
   const hasTabs = categories.length > 0 || extraTabs.length > 0;
 
+  const activeLabel = selectedTab === "appearance" ? "화면과 읽기" : [...categories, ...extraTabs].find(tab => tab.name === selectedTab)?.label ?? "설정";
+  const descriptions: Record<string, string> = {
+    appearance: "나에게 편안한 배경과 대화 글자 크기를 고릅니다.",
+    nodes: "작업을 실행할 기기와 연결 상태를 확인합니다.", agents: "에이전트의 프로필과 기본 실행 환경을 관리합니다.",
+    recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
+    users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
+    file_storage: "첨부 파일을 보관할 저장소를 연결합니다.", usage_log: "사용 기록을 확인하고 필요한 범위로 좁힙니다.",
+  };
+  const close = () => { if (saving || saveInFlight.current) return; if (hasChanges) setDiscardPrompt(true); else onOpenChange(false); };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="w-[min(960px,calc(100vw-2rem))] max-w-5xl">
+    <Dialog open={open} onOpenChange={next => { if (!next) close(); }}>
+      <DialogPopup className="approved-dialog config-dialog max-w-5xl" closeProps={{ disabled: saving, onClick: event => { event.preventDefault(); close(); } }}>
         <DialogHeader>
-          <DialogTitle>⚙️ 서버 설정</DialogTitle>
+          <DialogTitle>설정</DialogTitle>
           <DialogDescription>
-            서버 설정과 운영 패널을 관리합니다. 🔄 표시된 항목은 서버 재시작 후 적용됩니다.
+            개인 환경부터 서버 운영까지, 필요한 설정을 찾으세요.
           </DialogDescription>
         </DialogHeader>
 
-        <DialogPanel className="min-h-0">
-          <WallpaperPicker local={Boolean(api)} />
+        <DialogPanel className="config-dialog-panel">
           {loading && (
             <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
               설정을 불러오는 중...
@@ -150,15 +166,22 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
               ❌ {error}
             </div>
           )}
-          {!loading && !error && hasTabs && (
-            <>
+          {!loading && hasTabs && (
+            <div className="config-layout" data-mobile-index={mobileIndex}>
               <ConfigCategoryNav
                 categories={categories}
                 extraTabs={extraTabs}
                 activeCategory={selectedTab}
-                onSelect={setSelectedTab}
+                onSelect={name => { setSelectedTab(name); setMobileIndex(false); }}
               />
-              {selectedTab === CHAT_TAB_NAME ? (
+              <section className="config-detail" aria-label={activeLabel}>
+              <button type="button" className="config-back" onClick={() => setMobileIndex(true)}><ArrowLeft className="size-4" aria-hidden="true"/>모든 설정</button>
+              <header className="config-detail-heading"><h2>{activeLabel}</h2><p>{descriptions[selectedTab] ?? "서버에 적용할 값을 변경한 뒤 저장하세요."}</p></header>
+              {selectedTab === "appearance" ? <div className="config-appearance">
+                <WallpaperPicker local={Boolean(api)} />
+                <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined}/>
+                <details className="config-advanced"><summary>유리 효과 세부 조정<span>고급</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
+              </div> : selectedTab === CHAT_TAB_NAME ? (
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined} />
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
                 <LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined} />
@@ -192,27 +215,24 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                   ))}
                 </div>
               ) : null}
-            </>
+              </section>
+            </div>
           )}
         </DialogPanel>
 
-        <DialogFooter>
-          <div className="flex flex-col w-full gap-2">
-            <ConfigResultMessage result={result} />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-                닫기
-              </Button>
-              <Button
-                data-testid="config-save-button"
-                size="sm"
-                disabled={isNonConfigTab || !hasChanges || saving}
-                onClick={save}
-              >
-                {saving ? "저장 중..." : `저장${hasChanges ? ` (${changedKeys.length})` : ""}`}
-              </Button>
-            </div>
-          </div>
+        <DialogFooter className="config-footer">
+          <ConfigResultMessage result={result}/>
+          {discardPrompt ? <div className="config-discard" role="alert">
+            <div><strong>저장하지 않은 변경이 있습니다</strong><p>창을 닫으면 서버 설정 변경이 사라집니다.</p></div>
+            <Button variant="outline" onClick={() => setDiscardPrompt(false)}>계속 편집</Button>
+            <Button variant="destructive" onClick={() => onOpenChange(false)}>변경 버리기</Button>
+          </div> : <div className="config-footer-row">
+            <p className="config-save-state">{hasChanges ? `${changedKeys.length}개 변경, 아직 저장되지 않음` : selectedTab === "appearance" ? <><Check className="size-4" aria-hidden="true"/> 변경 즉시 적용</> : isNonConfigTab ? "각 항목의 버튼으로 변경을 적용합니다" : "재시작이 필요한 항목은 별도로 표시됩니다"}</p>
+            <Button variant="outline" disabled={saving} onClick={close}>{hasChanges ? "취소" : "완료"}</Button>
+            {hasChanges || !isNonConfigTab ? <Button data-testid="config-save-button" disabled={!hasChanges || saving} onClick={() => void saveChanges()}>
+              {saving ? "저장 중…" : "변경 저장"}
+            </Button> : null}
+          </div>}
         </DialogFooter>
       </DialogPopup>
     </Dialog>
@@ -220,10 +240,10 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
 }
 
 const WALLPAPER_OPTIONS: Array<{ mode: WallpaperMode; label: string }> = [
-  { mode: "bokeh", label: "Bokeh" },
-  { mode: "metal", label: "Metal" },
-  { mode: "photo", label: "Photo" },
-  { mode: "plain", label: "Plain" },
+  { mode: "bokeh", label: "보케" },
+  { mode: "metal", label: "메탈" },
+  { mode: "photo", label: "사진" },
+  { mode: "plain", label: "단색" },
 ];
 
 function WallpaperPicker({ local = false }: {local?: boolean}) {
@@ -235,33 +255,34 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
   const wallpaper = local ? localWallpaper : storedWallpaper;
   const setWallpaper = local ? setLocalWallpaper : storedSetWallpaper;
   const setWallpaperMode = local ? (mode: WallpaperMode) => setLocalWallpaper(value=>({...value,mode})) : storedSetWallpaperMode;
-  const setWallpaperCustomImage = local ? async (file: File) => { const data = await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(file);}); setLocalWallpaper(value=>({...value,customImage:data,mode:"photo"})); } : storedSetWallpaperCustomImage;
+  const setWallpaperCustomImage = local ? async (file: File) => { const data = await fileToWallpaperDataUrl(file); setLocalWallpaper(value=>({...value,customImage:data,mode:"photo"})); } : storedSetWallpaperCustomImage;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const uploadInFlight = useRef(false);
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) return;
+    if (!file || uploadInFlight.current) return;
+    if (!file.type.startsWith("image/")) { setError("이미지 파일을 선택하세요."); return; }
+    uploadInFlight.current = true;
     setError(null);
     setUploading(true);
     try {
       await setWallpaperCustomImage(file);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "배경 이미지를 읽지 못했습니다");
+      setError("배경 이미지를 읽지 못했습니다. 다른 이미지 파일을 선택하세요.");
     } finally {
+      uploadInFlight.current = false;
       setUploading(false);
     }
   };
 
   return (
-    <section className="mb-4 rounded-[18px] border border-glass-border bg-[var(--lg-card)] px-4 py-3 shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]">
+    <section className="config-wallpaper">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
-            Wallpaper
-          </div>
           <div className="mt-0.5 text-sm font-semibold text-foreground">
             배경
           </div>
@@ -272,12 +293,12 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
           size="sm"
           className="rounded-full"
           disabled={uploading}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => { if (!uploadInFlight.current) fileInputRef.current?.click(); }}
         >
-          {uploading ? "처리 중..." : "커스텀 업로드"}
+          {uploading ? "처리 중..." : "사진 업로드"}
         </Button>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="config-wallpaper-options">
         {WALLPAPER_OPTIONS.map((option) => (
           <button
             key={option.mode}
@@ -287,15 +308,17 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
                 ? "rounded-full border border-accent-blue/55 bg-accent-blue/15 px-3 py-1.5 text-xs font-semibold text-foreground"
                 : "rounded-full border border-[var(--lg-line)] bg-muted/40 px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:border-accent-blue/40 hover:text-foreground"
             }
+            disabled={uploading}
+            data-wallpaper={option.mode}
             aria-pressed={wallpaper.mode === option.mode}
             onClick={() => setWallpaperMode(option.mode)}
           >
-            {option.label}
+            <span className="wallpaper-swatch" aria-hidden="true"/><span>{option.label}</span>
           </button>
         ))}
       </div>
       {error && (
-        <div className="mt-2 rounded-[13px] bg-accent-red/10 px-3 py-2 text-xs text-accent-red">
+        <div role="alert" className="mt-2 rounded-lg bg-accent-red/10 px-3 py-2 text-sm text-accent-red">
           {error}
         </div>
       )}
@@ -304,7 +327,8 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
           type="button"
           variant="ghost"
           size="sm"
-          className="mt-2 rounded-full px-0 text-xs text-muted-foreground hover:text-foreground"
+          className="mt-2 rounded-full px-0 text-sm text-muted-foreground hover:text-foreground"
+          disabled={uploading}
           onClick={() => setWallpaper({ mode: "bokeh" })}
         >
           기본값 복원

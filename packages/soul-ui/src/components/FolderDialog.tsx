@@ -6,7 +6,8 @@
  * mode="archive": 보관 확인 메시지 → 보관
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { safeErrorDetail } from "../lib/safe-error-detail";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -27,7 +28,7 @@ type FolderDialogProps =
       mode: "create";
       open: boolean;
       onOpenChange: (open: boolean) => void;
-      onConfirm: (name: string) => void;
+      onConfirm: (name: string) => Promise<void> | void;
       folderName?: undefined;
     }
   | {
@@ -71,8 +72,11 @@ function CreateFolderDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (name: string) => void;
+  onConfirm: (name: string) => Promise<void> | void;
 }) {
+  const inFlight = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -85,16 +89,28 @@ function CreateFolderDialog({
   });
 
   useEffect(() => {
-    if (open) reset({ name: "" });
+    if (open) { reset({ name: "" }); setError(null); }
   }, [open, reset]);
 
-  const onSubmit = (data: CreateFormValues) => {
-    onConfirm(data.name);
+  const onSubmit = async (data: CreateFormValues) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    setError(null);
+    try {
+      await onConfirm(data.name);
+    } catch (err) {
+      setError(safeErrorDetail(err instanceof Error ? err.message : String(err)));
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
   };
+  const changeOpen = (next: boolean) => { if (!inFlight.current) onOpenChange(next); };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-sm">
+    <Dialog open={open} onOpenChange={changeOpen}>
+      <DialogPopup className="approved-dialog max-w-sm" closeProps={{ disabled: pending }}>
         <DialogHeader>
           <DialogTitle>새 폴더</DialogTitle>
           <DialogDescription>폴더 이름을 입력하세요.</DialogDescription>
@@ -103,20 +119,26 @@ function CreateFolderDialog({
           <DialogPanel>
             <Input
               autoFocus
+              disabled={pending}
               placeholder="폴더 이름"
               {...register("name")}
             />
+            {error && <div className="dialog-error-notice" role="alert">
+              <p>폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요.</p>
+              <details><summary>기술 상세</summary><pre>{error}</pre></details>
+            </div>}
           </DialogPanel>
           <DialogFooter variant="bare">
             <Button
               type="button"
               variant="outline"
-              onClick={() => onOpenChange(false)}
+              disabled={pending}
+              onClick={() => changeOpen(false)}
             >
               취소
             </Button>
-            <Button type="submit" disabled={!isValid}>
-              만들기
+            <Button type="submit" disabled={!isValid || pending}>
+              {pending ? "만드는 중…" : "만들기"}
             </Button>
           </DialogFooter>
         </form>
@@ -138,7 +160,7 @@ function ArchiveFolderDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-sm">
+      <DialogPopup className="approved-dialog max-w-sm">
         <DialogHeader>
           <DialogTitle>폴더 보관</DialogTitle>
           <DialogDescription>

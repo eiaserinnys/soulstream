@@ -1,52 +1,26 @@
-/**
- * ConfigCategoryNav — 설정 카테고리 네비게이션 탭
- *
- * 서버 설정 카테고리 + (선택적) Claude Auth 보조 탭을 표시한다.
- */
-
 import { cn } from "@seosoyoung/soul-ui";
-
-export interface ConfigCategoryNavItem {
-  name: string;
-  label: string;
-}
-
-export function ConfigCategoryNav({
-  categories,
-  extraTabs = [],
-  activeCategory,
-  onSelect,
-}: {
-  categories: ConfigCategoryNavItem[];
-  extraTabs?: ConfigCategoryNavItem[];
-  activeCategory: string;
-  onSelect: (name: string) => void;
+import { ChevronRight, Monitor, Server, Workflow, Users, ShieldCheck, HardDrive, CalendarClock, Activity, Bot, SlidersHorizontal } from "lucide-react";
+export interface ConfigCategoryNavItem { name: string; label: string }
+const icons: Record<string, typeof Monitor> = { appearance: Monitor, nodes: Server, card_dispatch: Workflow, users: Users, session_review: ShieldCheck, file_storage: HardDrive, recurring_jobs: CalendarClock, usage_log: Activity, agents: Bot };
+const execution = new Set(["nodes", "agents", "card_dispatch", "recurring_jobs"]);
+export function ConfigCategoryNav({ categories, extraTabs = [], activeCategory, onSelect }: {
+  categories: ConfigCategoryNavItem[]; extraTabs?: ConfigCategoryNavItem[];
+  activeCategory: string; onSelect(name: string): void;
 }) {
-  const all = [...categories, ...extraTabs];
-
-  return (
-    <div
-      role="tablist"
-      data-testid="config-category-nav"
-      className="mb-4 flex gap-1 overflow-x-auto border-b border-border pb-2 [scrollbar-width:thin]"
-    >
-      {all.map((cat) => (
-        <button
-          key={cat.name}
-          type="button"
-          role="tab"
-          aria-selected={activeCategory === cat.name}
-          onClick={() => onSelect(cat.name)}
-          className={cn(
-            "shrink-0 px-3 py-1.5 text-xs rounded-t transition-colors",
-            activeCategory === cat.name
-              ? "bg-muted text-foreground border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-          )}
-        >
-          {cat.label}
-        </button>
-      ))}
-    </div>
-  );
+  const all = [...extraTabs, ...categories];
+  const groups = [
+    { label: "개인 환경", items: all.filter(item => item.name === "appearance") },
+    { label: "작업과 실행", items: all.filter(item => execution.has(item.name)) },
+    { label: "서버 관리", items: all.filter(item => item.name !== "appearance" && !execution.has(item.name)) },
+  ];
+  return <nav aria-label="설정 카테고리" data-testid="config-category-nav" className="config-category-nav">
+    {groups.filter(group => group.items.length).map(group => <section key={group.label}>
+      <h3>{group.label}</h3>
+      {group.items.map(cat => { const Icon = icons[cat.name] ?? SlidersHorizontal; return <button key={cat.name} type="button"
+        aria-current={activeCategory === cat.name ? "page" : undefined}
+        onClick={() => onSelect(cat.name)} className={cn("config-category-item", activeCategory === cat.name && "is-active")}>
+        <Icon className="size-4" aria-hidden="true"/><span>{cat.label}</span><ChevronRight className="config-category-chevron size-4" aria-hidden="true"/>
+      </button>; })}
+    </section>)}
+  </nav>;
 }
