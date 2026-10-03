@@ -94,7 +94,7 @@ export async function createSessionRoundtripFixture() {
         .slice(0, params.top_k).map(s => ({ session_id: s.session_id, title: s.display_name,
           agent_name: "로젤린", node_id: s.node_id, status: s.status, created_at: at.toISOString(), updated_at: at.toISOString(),
           folder_name: "폴더", relevance: 1, best_match: { excerpt: "needle" }, session_url: `/?session=${s.session_id}` })),
-        ...(partial ? { search_status: { search: { status: "partial", stage: "semantic", reason: "timeout" }, query_expansion: { status: "skipped", latency_ms: 0 } } } : {}) };
+        ...(partial ? { search_status: { search: { status: "partial" as const, stage: "semantic" as const, reason: "timeout" as const }, query_expansion: { status: "skipped" as const, latency_ms: 0 } } } : {}) };
     } } };
   registerCogitoRoutes(app, cogito);
   const catalog = { deleteSession: async (id: string) => { delete sessions[id]; notifications.push({ deleted: id }); } };

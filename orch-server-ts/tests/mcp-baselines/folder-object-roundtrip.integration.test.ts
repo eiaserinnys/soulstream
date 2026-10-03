@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@soulstream/mcp-contract";
 import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -65,12 +66,12 @@ describe("folder object orchestrator MCP roundtrip", () => {
   }
 
   async function call(name: string, input: object, requestContext: McpRequestContext) {
-    const value = await executeMcpTool(executionOptions, name as never, input as Record<string, unknown>, { principal: "external", callerSessionId: null, nodeId: "test-node" });
+    const value: CallToolResult = await executeMcpTool(executionOptions, name as never, input as Record<string, unknown>, { principal: "external", callerSessionId: null, nodeId: "test-node" });
     const { isError, content, structuredContent, ...rest } = value;
     return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) };
   }
 
-  async function roundtrip(name: string, input: object, requestContext = context) {
+  async function roundtrip(name: string, input: object, requestContext: McpRequestContext = context) {
     await seed(); const next = await call(name, input, requestContext);
     expect(serializeResult(name, next)).toMatchSnapshot();
     return next;

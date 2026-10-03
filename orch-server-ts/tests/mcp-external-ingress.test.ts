@@ -122,7 +122,7 @@ describe("orchestrator dedicated external MCP ingress", () => {
       principal: "external", callerSessionId: null, nodeId: "test-node", externalCaller: { source: "dot", displayName: "Dot ingress" },
       callerInfo: { source: "dot", display_name: "Dot ingress", agent_node: "test-node", user_id: null, avatar_url: null } });
     execute.mockClear();
-    expect(await client.callTool({ name: "batch_page_operations", arguments: { page_id: "page", operations: [{ op: "delete_block_subtree", block_id: "block" }] } })).toMatchObject({ isError: true,
+    expect(await client.callTool({ name: "batch_page_operations", arguments: { page_id: "seed", expected_version: 1, idempotency_key: "batch-key", operations: [{ op: "delete_block_subtree", block_id: "seed-block" }] } })).toMatchObject({ isError: true,
       content: [{ type: "text", text: 'MCP tool "batch_page_operations" is not available to external LLM callers' }] });
     expect(await client.callTool({ name: "send_to_external_llm", arguments: { recipient_id: "recipient", text: "hello" } })).toMatchObject({ isError: true });
     expect(execute).not.toHaveBeenCalled();
@@ -166,4 +166,12 @@ describe("orchestrator dedicated external MCP ingress", () => {
     expect(response.statusCode).toBe(status);
     expect(response.json()).toEqual({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized" } });
   });
+});
+
+// The retired worker SDK rejected this exact baseline before forwarding.
+it("keeps the old external batch delete input rejected by the executor", async () => {
+  const result = await executor.executeMcpTool({} as never, "batch_page_operations", {
+    page_id: "seed", expected_version: 1, idempotency_key: "batch-key", operations: [{ op: "delete_block_subtree", block_id: "seed-block" }],
+  }, { principal: "external", callerSessionId: null, nodeId: "test-node" });
+  expect(result.isError).toBe(true);
 });

@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@soulstream/mcp-contract";
 import { executeMcpTool } from "../../src/mcp/tool_executor.js";
 import type { McpHostOptions } from "../../src/mcp/types.js";
 type McpRequestContext = { callerSessionId?: string; principal?: { authority: string; source: string; displayName: string } };
@@ -20,7 +21,7 @@ const external: McpRequestContext = { callerSessionId: "forged", principal: { au
 const create = { name: "새 작업", prompt: "수행", timezone: "Asia/Seoul", schedule_expressions: ["0 9 * * *"], idempotency_key: "create-key", node_id: "node-a", agent_id: "roselin", model_preset: null, folder_id: "allowed-folder" };
 const profile = { id: "roselin", name: "로젤린", backend: "codex", workspace_dir: "/test/worker", aliases: ["별칭"] };
 const remote = { node_id: "node-a", agent_id: "roselin", model_preset: "sol", prompt: "수행" };
-type Case = readonly [label: string, name: string, args: Record<string, unknown>, context?: McpRequestContext, fails?: boolean, offline?: boolean];
+type Case = [label: string, name: string, args: Record<string, unknown>, context?: McpRequestContext, fails?: boolean, offline?: boolean];
 const cases: Case[] = [["recurring external query", "list_recurring_jobs", {}, external, true],
 ["recurring external mutation", "create_recurring_job", create, external, true],
 ["settings external", "get_card_orchestration_settings", {}, external, true],
@@ -30,7 +31,7 @@ describe("cluster MCP roundtrip", () => {
   let fixture: Awaited<ReturnType<typeof createClusterRoundtripFixture>>;
   beforeAll(async () => { fixture = await createClusterRoundtripFixture(); });
   afterAll(async () => { await fixture?.app.close(); fixture?.registry.disconnectNode("node-a", "test complete"); });
-  async function call(name: string, args: Record<string, unknown>, requestContext: McpRequestContext, runtime = fixture.runtime){ const value = await executeMcpTool(fixture.executionOptions as unknown as McpHostOptions, name as never, args, { principal: "external", callerSessionId: null, nodeId: "worker-node", callerInfo: { source: "llm", agent_node: "worker-node", display_name: "External", user_id: null, avatar_url: null } }); const { content, structuredContent, isError, ...rest } = value; return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) }; }
+  async function call(name: string, args: Record<string, unknown>, requestContext: McpRequestContext, runtime = fixture.runtime){ const value: CallToolResult = await executeMcpTool(fixture.executionOptions as unknown as McpHostOptions, name as never, args, { principal: "external", callerSessionId: null, nodeId: "worker-node", callerInfo: { source: "llm", agent_node: "worker-node", display_name: "External", user_id: null, avatar_url: null } }); const { content, structuredContent, isError, ...rest } = value; return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) }; }
   it.each(cases)("preserves %s", async (label, name, args, requestContext = context, fails = false, offline = false) => {
     fixture.seed(offline);
     const next = await call(name, args, requestContext);

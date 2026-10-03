@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@soulstream/mcp-contract";
 import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import { readFile } from "node:fs/promises";
 import Fastify from "fastify";
@@ -63,7 +64,7 @@ describe("card orchestrator MCP roundtrip", () => {
     await h.sql`UPDATE sessions SET card_id='card-1' WHERE session_id='header-session'`;
   }
   async function call(name: string, input: object, requestContext: McpRequestContext) {
-    const value = await executeMcpTool(executionOptions, name as never, input as Record<string, unknown>, { principal: "external", callerSessionId: null, nodeId: "test-node" });
+    const value: CallToolResult = await executeMcpTool(executionOptions, name as never, input as Record<string, unknown>, { principal: "external", callerSessionId: null, nodeId: "test-node" });
     const { isError, content, structuredContent, ...rest } = value;
     return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) };
   }

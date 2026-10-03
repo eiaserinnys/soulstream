@@ -82,12 +82,12 @@ export async function createBoardRoundtripHarness() {
   const executionOptions = { authBearerToken: "service-token", folders,
     cards: { cardServiceProvider: folders.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
-    board: { host: { ...host, get service() { return board; } }, getSession: id => sessionReads.getSession(id),
+    board: { host: { ...host, get service() { return board; } }, getSession: (id: string) => sessionReads.getSession(id),
       listAgentProfiles,
       broadcaster: { append: (event: unknown) => { events.push(event); } },
     },
   } as never;
-  
+
   registerMcpHostRoutes(app, executionOptions);
   const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
   const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };

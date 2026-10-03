@@ -25,7 +25,7 @@ it("accepts a new worker forward at the old host and an old worker body at the n
   const options = { ...unusedClusterDependencies, authBearerToken: "test-host", board: undefined as never,
     cards: undefined as never, folders: undefined as never, externalLlm: { getSession: async () => ({}) } };
   const server = new McpServer({ name: "worker-version-compat", version: "test" });
-  registerExternalLlmTools(server, { nodeId: "worker", orch: { baseUrl: "http://orch.test", headers: { authorization: "Bearer test-host" } } } as McpRuntime);
+  registerExternalLlmTools(server, { nodeId: "worker", orch: { baseUrl: "http://orch.test", headers: { authorization: "Bearer test-host" } } } as unknown as McpRuntime);
   const client = new Client({ name: "compat", version: "test" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const app = Fastify();

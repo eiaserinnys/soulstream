@@ -8,7 +8,6 @@ import {
 } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
 
-export { CALLER_SESSION_ID_FALLBACK_GUIDANCE } from "@soulstream/mcp-contract";
 
 export function resolveEffectiveCallerSessionId(
   explicitCallerSessionId: string | null | undefined,
@@ -16,12 +15,12 @@ export function resolveEffectiveCallerSessionId(
   return cleanSessionId(explicitCallerSessionId) ?? getCurrentMcpCallerSessionId();
 }
 
-export interface McpCallerAttribution {
+interface McpCallerAttribution {
   callerSessionId: string | undefined;
   callerInfo: CallerInfo | undefined;
 }
 
-export type McpMutationActor = { actorKind: "agent"; actorSessionId: string };
+type McpMutationActor = { actorKind: "agent"; actorSessionId: string };
 
 export function resolveMcpCallerAttribution(
   runtime: McpRuntime,
@@ -36,7 +35,7 @@ export function resolveMcpCallerAttribution(
   };
 }
 
-export function resolveMcpMutationActor(
+function resolveMcpMutationActor(
   explicitCallerSessionId: string | null | undefined,
 ): McpMutationActor | undefined {
   const actorSessionId = resolveEffectiveCallerSessionId(explicitCallerSessionId);

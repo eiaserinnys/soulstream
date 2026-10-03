@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@soulstream/mcp-contract";
 import { executeMcpTool } from "../../src/mcp/tool_executor.js";
 import type { McpHostOptions } from "../../src/mcp/types.js";
 type McpRequestContext = { callerSessionId?: string; principal?: { authority: string; source: string; displayName: string } };
@@ -44,7 +45,7 @@ describe("session MCP roundtrip", () => {
   let h: Awaited<ReturnType<typeof createSessionRoundtripFixture>>;
   beforeAll(async () => { h = await createSessionRoundtripFixture(); });
   afterAll(async () => { await h?.app.close(); });
-  async function call(name: string, args: Record<string, unknown>, context = parent){ const value = await executeMcpTool(h.options as unknown as McpHostOptions, name as never, args, { principal: "external", callerSessionId: null, nodeId: "local" }); const { content, structuredContent, isError, ...rest } = value; return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) }; }
+  async function call(name: string, args: Record<string, unknown>, context = parent){ const value: CallToolResult = await executeMcpTool(h.options as unknown as McpHostOptions, name as never, args, { principal: "external", callerSessionId: null, nodeId: "local" }); const { content, structuredContent, isError, ...rest } = value; return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) }; }
   async function roundtrip(name: string, args: Record<string, unknown>, context = parent, settings = {}) {
     h.reset(settings); const next = await call(name, args, context);
     expect(JSON.stringify(next)).toMatchSnapshot(name);

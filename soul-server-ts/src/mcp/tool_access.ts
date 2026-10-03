@@ -28,7 +28,7 @@ export function getRegisteredMcpToolNames(runtime: McpRuntime): string[] {
   return [...(REGISTERED_TOOL_NAMES_BY_RUNTIME.get(runtime) ?? [])].sort();
 }
 
-export function isDestructiveMcpTool(
+function isDestructiveMcpTool(
   toolName: string,
   config?: unknown,
 ): boolean {

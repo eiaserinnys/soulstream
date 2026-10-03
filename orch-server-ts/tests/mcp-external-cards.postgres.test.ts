@@ -1,4 +1,3 @@
-import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cardTools } from "@soulstream/mcp-contract";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
@@ -8,16 +7,18 @@ import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
-import { registerMcpHostRoutes } from "../src/mcp/mcp_host_routes.js";
+import { executeMcpTool } from "../src/mcp/tool_executor.js";
+import type { McpHostOptions } from "../src/mcp/types.js";
+import type { CallToolResult } from "@soulstream/mcp-contract";
 
 // Same real PostgreSQL, mutation callback and dispatcher pattern as card-comments.postgres.test.ts.
 describe("external MCP card writes", () => {
   let h: PagePostgresHarness;
-  let app: ReturnType<typeof Fastify>;
+  let executionOptions: McpHostOptions;
   let cards: CardControlPlaneService;
   let dispatcher: CardDispatcher;
   const messages = vi.fn(async (..._args: unknown[]) => {}), notify = vi.fn(async () => {}), warnings = vi.fn();
-  const context = { principal: "external", caller_session_id: "forged-header", node_id: "orch" };
+  const context = { principal: "external" as const, callerSessionId: null, nodeId: "orch" };
   beforeAll(async () => {
     h = await createPagePostgresHarness();
     await prepareCardWorkSchema(h);
@@ -29,15 +30,14 @@ describe("external MCP card writes", () => {
     dispatcher = new CardDispatcher({ deliveryExists: async () => false, repository: new CardDispatchRepository(async () => sql), cards: async () => cards,
       resolveTarget: () => ({ nodeId: "node", agentId: "roselin", modelPreset: null, available: true, reason: null }),
       launch: async () => {}, sendMessage: messages, notify, warn: warnings });
-    app = Fastify();
-    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never,
+    executionOptions = { ...unusedClusterDependencies, board: undefined as never,
       authBearerToken: "token", folders: undefined as never, cards: {
         cardServiceProvider: async () => cards,
         provider: { listFolders: async () => [{ id: "a" }, { id: "b" }], listSessionAssignments: () => ({}) },
         resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }),
-      } });
+      } };
   }, 60_000);
-  afterAll(async () => { await dispatcher?.drain(); await app?.close(); await h?.cleanup(); });
+  afterAll(async () => { await dispatcher?.drain(); await h?.cleanup(); });
   beforeEach(async () => {
     await dispatcher.drain();
     await h.sql`TRUNCATE folders,sessions,folder_operations RESTART IDENTITY CASCADE`;
@@ -48,11 +48,9 @@ describe("external MCP card writes", () => {
     messages.mockClear(); notify.mockClear(); warnings.mockClear();
   });
   async function call(tool: string, args: object) {
-    const response = await app.inject({ method: "POST", url: `/api/mcp/host/${tool}`,
-      headers: { authorization: "Bearer token" }, payload: { args, context } });
-    expect(response.statusCode).toBe(200);
+    const result: CallToolResult = await executeMcpTool(executionOptions, tool as keyof typeof cardTools, args as Record<string, unknown>, context);
     await dispatcher.drain();
-    return response.json();
+    return result;
   }
   it("lists exactly the eight external writes while retaining internal work start", () => {
     const writes = ["create_card", "update_card_brief", "add_card_report", "add_card_comment", "set_card_status",
@@ -109,7 +107,7 @@ describe("external MCP card writes", () => {
   it("records a null-session question, notifies the user, and stores the answer without external push or errors", async () => {
     const result = await call("ask_card_question", { card_id: "card", text: "닷 질문", options: ["진행", "대기"] });
     expect(result.isError).not.toBe(true);
-    expect(result.structuredContent.guidance).toBe("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
+    expect(result.structuredContent?.guidance).toBe("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     const question = (await cards.getCard("card"))!.questions[0]!;
     expect(question).toMatchObject({ session_id: null, text: "닷 질문", options: ["진행", "대기"] });
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ cardId: "card", kind: "question", question: "닷 질문" }));

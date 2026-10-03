@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@soulstream/mcp-contract";
 import { executeMcpTool } from "../../src/mcp/tool_executor.js";
 import type { McpHostOptions } from "../../src/mcp/types.js";
 type McpRequestContext = { callerSessionId?: string; principal?: { authority: string; source: string; displayName: string } };
@@ -17,7 +18,7 @@ describe("folder-board-custom-view MCP roundtrip", () => {
   let h: Awaited<ReturnType<typeof createBoardRoundtripHarness>>;
   beforeAll(async () => { h = await createBoardRoundtripHarness(); }, 60_000);
   afterAll(async () => { await h?.cleanup(); });
-  async function call(name: string, args: Record<string, unknown>) { const value = await executeMcpTool(h.executionOptions as unknown as McpHostOptions, name as never, args, { principal: "external", callerSessionId: null, nodeId: "test-node" }); const { content, structuredContent, isError, ...rest } = value; return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) }; }
+  async function call(name: string, args: Record<string, unknown>) { const value: CallToolResult = await executeMcpTool(h.executionOptions as unknown as McpHostOptions, name as never, args, { principal: "external", callerSessionId: null, nodeId: "test-node" }); const { content, structuredContent, isError, ...rest } = value; return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) }; }
   async function roundtrip(name: string, args: Record<string, unknown>, requestContext = context, fails = false) {
     await h.seed(); const next = await call(name, args);
     expect(next.isError === true, name).toBe(fails);

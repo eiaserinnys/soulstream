@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@soulstream/mcp-contract";
 import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -45,7 +46,7 @@ describe("pages/live/skills MCP host roundtrip", () => {
     }), provider: { listFolders: async () => [{ id: "folder-a" }] }, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) };
     skillOptions = { enabled: true, serverUrl: "https://atom.test", apiKey: "atom", nodeId: "", typesafeApiKey: "typesafe", logger: { warn: vi.fn() }, httpClient: createLiveAtomHttpClient({ fetch: async (url, init) => fakeFetch(url, init) }) };
     app = Fastify();
-    app.addHook("onRequest", async request => { if (request.url.startsWith("/api/mcp/host/")) hostCalls++; });
+    app.addHook("onRequest", async (request: import("fastify").FastifyRequest) => { if (request.url.startsWith("/api/mcp/host/")) hostCalls++; });
     executionOptions = { authBearerToken: "token", pages: pageOptions, skills: skillOptions, cards, folders: {} } as never as unknown as McpHostOptions;
     registerMcpHostRoutes(app, executionOptions);
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
@@ -80,7 +81,7 @@ describe("pages/live/skills MCP host roundtrip", () => {
     Object.assign(skillOptions, { nodeId, enabled: query !== "disabled", typesafeApiKey: query === "missing-key" ? "" : "typesafe" });
   }
   async function call(name: string, input: Record<string, unknown>, ctx: McpRequestContext) {
-    const value = await executeMcpTool(executionOptions, name as never, input as Record<string, unknown>, { principal: "external", callerSessionId: null, nodeId: "test" });
+    const value: CallToolResult = await executeMcpTool(executionOptions, name as never, input as Record<string, unknown>, { principal: "external", callerSessionId: null, nodeId: "test" });
     const { isError, content, structuredContent, ...rest } = value;
     return { ...rest, content, ...(structuredContent === undefined ? {} : { structuredContent }), ...(isError === undefined ? {} : { isError }) };
   }
@@ -91,7 +92,7 @@ describe("pages/live/skills MCP host roundtrip", () => {
     for (let i = 0; i < repeats; i++) next = await call(name, input, ctx);
     expect(next.isError === true).toBe(error);
     expect(serialize(name === "upsert_page_markdown" && input.title ? "upsert_page_markdown:new" : name, next)).toMatchSnapshot();
-    
+
     if (name === "create_page" && ctx === external) expect(next.structuredContent.operation).toMatchObject({ actor_kind: "llm", actor_session_id: null });
   });
 });
