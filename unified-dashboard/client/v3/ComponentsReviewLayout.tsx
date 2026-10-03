@@ -7,14 +7,14 @@ import "./v3-folder-section-navigation.css";
 import "./components-review.css";
 
 // AuthGate in main.tsx owns authentication for this route and the dashboard.
-export function ComponentsReviewLayout({ children }: { children?: ReactNode } = {}) {
-  return <LiquidGlassProvider renderDefaultCanvas={false}><ComponentsReviewContent>{children}</ComponentsReviewContent></LiquidGlassProvider>;
+export function ComponentsReviewLayout({ children, syncPreferences = true }: { children?: ReactNode; syncPreferences?: boolean } = {}) {
+  return <LiquidGlassProvider renderDefaultCanvas={false}><ComponentsReviewContent syncPreferences={syncPreferences}>{children}</ComponentsReviewContent></LiquidGlassProvider>;
 }
 
-function ComponentsReviewContent({ children }: { children?: ReactNode }) {
+function ComponentsReviewContent({ children, syncPreferences }: { children?: ReactNode; syncPreferences: boolean }) {
   const { user } = useAuth();
   useInitialCatalogLoad(true);
-  useUserPreferencesSync(user?.email);
+  useUserPreferencesSync(syncPreferences ? user?.email : null);
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   useEffect(() => { initTheme(); }, []);

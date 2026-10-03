@@ -51,7 +51,7 @@ interface ManifestSource {
 const VERSION_CONFLICT_MESSAGE =
   "다른 사용자가 먼저 수정했습니다. 최신 프로필을 다시 불러온 뒤 변경을 다시 적용하세요.";
 
-export function AgentProfileEditorTab() {
+export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fetch } = {}) {
   const nodes = useOrchestratorStore((state) => state.nodes);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [bundles, setBundles] = useState<ContextBundle[]>([]);
@@ -108,8 +108,8 @@ export function AgentProfileEditorTab() {
     setError(null);
     try {
       const [response, nextBundles] = await Promise.all([
-        fetch("/api/agent-profiles", { credentials: "same-origin" }),
-        fetchBundles(),
+        request("/api/agent-profiles", { credentials: "same-origin" }),
+        fetchBundles(request),
       ]);
       const body = await responseJson(response);
       if (!response.ok) throw new Error(responseMessage(body, "프로필을 불러오지 못했습니다."));
@@ -132,7 +132,7 @@ export function AgentProfileEditorTab() {
   };
 
   const refreshBundles = async () => {
-    setBundles(await fetchBundles());
+    setBundles(await fetchBundles(request));
     setSelectedBundleToAdd("");
   };
 
@@ -183,16 +183,16 @@ export function AgentProfileEditorTab() {
     setError(null);
     setMessage(null);
     try {
-      let current = await putProfile(draft);
+      let current = await putProfile(draft, request);
       setDraft(profileDraft(current));
 
       if (portraitFile) {
         if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(portraitFile.type)) {
           throw new Error("초상화는 PNG, JPEG, WebP, GIF만 지원합니다.");
         }
-        current = await putPortrait(current, portraitFile);
+        current = await putPortrait(current, portraitFile, request);
       } else if (removePortrait && current.has_portrait) {
-        current = await deletePortrait(current);
+        current = await deletePortrait(current, request);
       }
 
       setProfiles((previous) => upsertProfile(previous, current));
@@ -223,7 +223,7 @@ export function AgentProfileEditorTab() {
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(
+      const response = await request(
         `/api/nodes/${encodeURIComponent(selectedNodeId)}/agents/context-preview`,
         {
           method: "POST",
@@ -260,7 +260,7 @@ export function AgentProfileEditorTab() {
         </Button>
       </div>
       {managingBundles ? (
-        <ContextBundleEditor bundles={bundles} onBundlesChanged={refreshBundles} />
+        <ContextBundleEditor request={request} bundles={bundles} onBundlesChanged={refreshBundles} />
       ) : (
     <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded border border-border">
       <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2">
@@ -540,15 +540,15 @@ function moveBundleReference(draft: ProfileDraft, index: number, offset: -1 | 1)
   return { ...draft, context_bundles: contextBundles };
 }
 
-async function fetchBundles(): Promise<ContextBundle[]> {
-  const response = await fetch("/api/context-bundles", { credentials: "same-origin" });
+async function fetchBundles(request: typeof fetch): Promise<ContextBundle[]> {
+  const response = await request("/api/context-bundles", { credentials: "same-origin" });
   const body = await responseJson(response);
   if (!response.ok) throw new Error(responseMessage(body, "번들을 불러오지 못했습니다."));
   return Array.isArray(body.bundles) ? body.bundles as ContextBundle[] : [];
 }
 
-async function putProfile(draft: ProfileDraft): Promise<AgentProfile> {
-  const response = await fetch(`/api/agent-profiles/${encodeURIComponent(draft.agent_id.trim())}`, {
+async function putProfile(draft: ProfileDraft, request: typeof fetch): Promise<AgentProfile> {
+  const response = await request(`/api/agent-profiles/${encodeURIComponent(draft.agent_id.trim())}`, {
     method: "PUT",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
@@ -566,8 +566,8 @@ async function putProfile(draft: ProfileDraft): Promise<AgentProfile> {
   return profileResponse(response, "프로필 저장에 실패했습니다.");
 }
 
-async function putPortrait(profile: AgentProfile, file: File): Promise<AgentProfile> {
-  const response = await fetch(`/api/agent-profiles/${encodeURIComponent(profile.agent_id)}/portrait`, {
+async function putPortrait(profile: AgentProfile, file: File, request: typeof fetch): Promise<AgentProfile> {
+  const response = await request(`/api/agent-profiles/${encodeURIComponent(profile.agent_id)}/portrait`, {
     method: "PUT",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
@@ -576,8 +576,8 @@ async function putPortrait(profile: AgentProfile, file: File): Promise<AgentProf
   return profileResponse(response, "초상화 저장에 실패했습니다.");
 }
 
-async function deletePortrait(profile: AgentProfile): Promise<AgentProfile> {
-  const response = await fetch(`/api/agent-profiles/${encodeURIComponent(profile.agent_id)}/portrait`, {
+async function deletePortrait(profile: AgentProfile, request: typeof fetch): Promise<AgentProfile> {
+  const response = await request(`/api/agent-profiles/${encodeURIComponent(profile.agent_id)}/portrait`, {
     method: "DELETE",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },

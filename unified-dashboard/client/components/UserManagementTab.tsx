@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Edit, Plus, Trash2 } from "lucide-react";
 import {
   Badge,
@@ -57,7 +57,8 @@ const EMPTY_FORM: UserFormState = {
   allowedFolderIds: [],
 };
 
-export function UserManagementTab() {
+export function UserManagementTab({ request = fetch, initialEditor }: { initialEditor?: "create" | "edit"; request?: typeof fetch } = {}) {
+  const initializedEditor = useRef(false);
   const [users, setUsers] = useState<DashboardUser[]>([]);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -76,7 +77,7 @@ export function UserManagementTab() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/users", { credentials: "same-origin" });
+      const res = await request("/api/admin/users", { credentials: "same-origin" });
       if (!res.ok) throw new Error(await readError(res));
       const data = (await res.json()) as UsersResponse;
       setUsers(data.users ?? []);
@@ -109,6 +110,8 @@ export function UserManagementTab() {
     setEditorOpen(true);
   };
 
+  useEffect(() => { if (!initialEditor || loading || initializedEditor.current || (initialEditor === "edit" && !users[0])) return; initializedEditor.current=true; if (initialEditor === "create") openCreate(); else if (users[0]) openEdit(users[0]); }, [initialEditor, loading, users]);
+
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -122,7 +125,7 @@ export function UserManagementTab() {
       const url = editingEmail
         ? `/api/admin/users/${encodeURIComponent(editingEmail)}`
         : "/api/admin/users";
-      const res = await fetch(url, {
+      const res = await request(url, {
         method: editingEmail ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -143,9 +146,9 @@ export function UserManagementTab() {
   };
 
   const remove = async (user: DashboardUser) => {
-    if (!window.confirm(`${user.email} 사용자를 삭제할까요?`)) return;
+    if (!confirmUserRemoval(user.email)) return;
     setError(null);
-    const res = await fetch(`/api/admin/users/${encodeURIComponent(user.email)}`, {
+    const res = await request(`/api/admin/users/${encodeURIComponent(user.email)}`, {
       method: "DELETE",
       credentials: "same-origin",
     });
@@ -342,3 +345,5 @@ async function readError(res: Response): Promise<string> {
   if (typeof data?.detail === "string") return data.detail;
   return `HTTP ${res.status}`;
 }
+
+export function confirmUserRemoval(email: string) { return window.confirm(`${email} 사용자를 삭제할까요?`); }

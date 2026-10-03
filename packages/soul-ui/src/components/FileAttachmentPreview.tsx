@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import {Dialog,DialogPopup,DialogTitle} from "./ui/dialog";
 
 export interface FileAttachmentPreviewProps {
+  initialImageOpen?: boolean;
   file: File;
   status: "uploading" | "done" | "error";
   onRemove: () => void;
@@ -41,11 +42,12 @@ function getFileTypeIcon(file: File): string {
 }
 
 interface ImagePreviewProps {
+  initialOpen?: boolean;
   file: File;
 }
 
-function ImagePreview({ file }: ImagePreviewProps) {
-  const [open,setOpen]=useState(false);
+function ImagePreview({ file, initialOpen = false }: ImagePreviewProps) {
+  const [open,setOpen]=useState(initialOpen);
   const [objectUrl,setObjectUrl]=useState<string>();
 
   useEffect(() => {
@@ -91,6 +93,7 @@ function FileTypeIcon({ label }: { label: string }) {
 }
 
 export function FileAttachmentPreview({
+  initialImageOpen,
   file,
   status,
   onRemove,
@@ -109,7 +112,7 @@ export function FileAttachmentPreview({
     >
       {/* Content */}
       {isImage ? (
-        <ImagePreview file={file} />
+        <ImagePreview initialOpen={initialImageOpen} file={file} />
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 p-1">
           <FileTypeIcon label={fileTypeLabel} />

@@ -1,3 +1,4 @@
+import {SessionContinueErrorDialog,SessionDeleteDialog} from "./SessionDialogViews";
 /**
  * SessionContextMenu - 세션 우클릭 컨텍스트 메뉴 공통 컴포넌트
  *
@@ -29,7 +30,9 @@ export interface SessionContextMenuState {
   portalContainer?: HTMLElement;
 }
 
+export const sessionRuntimeActions = {getResumeAfterLimitEligibility, scheduleResumeAfterLimit, deleteClaudeSchedule};
 export interface SessionContextMenuProps {
+  actions?: typeof sessionRuntimeActions;
   /** 현재 열린 컨텍스트 메뉴 위치/대상. null이면 닫힘 */
   contextMenu: SessionContextMenuState | null;
   /** 메뉴 닫기 콜백 */
@@ -73,6 +76,7 @@ type ResumeAfterLimitActionState = {
   error: string | null;
 };
 export function SessionContextMenu({
+  actions: runtimeActions = sessionRuntimeActions,
   contextMenu,
   onClose,
   onRenameSession,
@@ -130,7 +134,7 @@ export function SessionContextMenu({
       message: null,
       error: null,
     });
-    void getResumeAfterLimitEligibility(contextSessionId).then(
+    void runtimeActions.getResumeAfterLimitEligibility(contextSessionId).then(
       (eligibility) => {
         if (!current) return;
         setResumeAfterLimit({
@@ -174,7 +178,7 @@ export function SessionContextMenu({
 
     setResumeAfterLimit({ ...activeResumeAfterLimit, busy: true, message: null, error: null });
     try {
-      const schedule = await scheduleResumeAfterLimit(contextSessionId);
+      const schedule = await runtimeActions.scheduleResumeAfterLimit(contextSessionId);
       setResumeAfterLimit((current) => current?.sessionId === contextSessionId
         ? {
             ...current,
@@ -206,7 +210,7 @@ export function SessionContextMenu({
     if (!contextSessionId || !currentResumeSchedule || !activeResumeAfterLimit || activeResumeAfterLimit.busy) return;
     setResumeAfterLimit({ ...activeResumeAfterLimit, busy: true, message: null, error: null });
     try {
-      const response = await deleteClaudeSchedule(contextSessionId, currentResumeSchedule.schedule_id);
+      const response = await runtimeActions.deleteClaudeSchedule(contextSessionId, currentResumeSchedule.schedule_id);
       setResumeAfterLimit((current) => current?.sessionId === contextSessionId
         ? {
             ...current,
@@ -398,63 +402,9 @@ export function SessionContextMenu({
         />
       ) : null}
 
-      {/* 이어 시작 실패 모달 */}
-      {onContinueSession && (
-        <Dialog
-          open={continueError !== null}
-          onOpenChange={(open) => { if (!open) setContinueError(null); }}
-        >
-          <DialogPopup className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>세션 이어서 시작 실패</DialogTitle>
-            </DialogHeader>
-            <DialogPanel>
-              <p className="text-sm text-muted-foreground">
-                {continueError}
-              </p>
-            </DialogPanel>
-            <DialogFooter variant="bare">
-              <Button
-                type="button"
-                onClick={() => setContinueError(null)}
-              >
-                확인
-              </Button>
-            </DialogFooter>
-          </DialogPopup>
-        </Dialog>
-      )}
+      {onContinueSession ? <SessionContinueErrorDialog error={continueError} onClose={() => setContinueError(null)}/> : null}
+      {onDeleteSessions ? <SessionDeleteDialog open={deleteDialog.open} count={deleteDialog.sessionIds.length} onOpenChange={open=>setDeleteDialog(d=>({...d,open}))} onConfirm={handleDeleteSubmit}/> : null}
 
-      {/* 삭제 확인 모달 */}
-      {onDeleteSessions && (
-        <Dialog
-          open={deleteDialog.open}
-          onOpenChange={(open) => setDeleteDialog((d) => ({ ...d, open }))}
-        >
-          <DialogPopup className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>세션 삭제</DialogTitle>
-            </DialogHeader>
-            <DialogPanel>
-              <p className="text-sm text-muted-foreground">
-                선택한 세션 {deleteDialog.sessionIds.length}개를 삭제합니다.
-              </p>
-            </DialogPanel>
-            <DialogFooter variant="bare">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDeleteDialog((d) => ({ ...d, open: false }))}
-              >
-                취소
-              </Button>
-              <Button type="button" variant="destructive" onClick={handleDeleteSubmit}>
-                삭제
-              </Button>
-            </DialogFooter>
-          </DialogPopup>
-        </Dialog>
-      )}
     </>
   );
 }

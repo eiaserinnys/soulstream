@@ -59,7 +59,7 @@ const CLIENT_LABELS: Readonly<Record<string, string>> = {
   "soul-app": "앱",
 };
 
-export function UsageLogTab() {
+export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}) {
   const [date, setDate] = useState(() => todayInputValue());
   const [installId, setInstallId] = useState("");
   const [events, setEvents] = useState<UiEventRow[]>([]);
@@ -79,8 +79,8 @@ export function UsageLogTab() {
       const params = new URLSearchParams({ from: range.from, to: range.to, limit: "500" });
       if (installId) params.set("installId", installId);
       const [eventsResponse, installsResponse] = await Promise.all([
-        fetch(`/api/ui-events?${params}`, { credentials: "same-origin" }),
-        fetch(
+        request(`/api/ui-events?${params}`, { credentials: "same-origin" }),
+        request(
           `/api/ui-events/installs?${new URLSearchParams({ from: range.from, to: range.to })}`,
           { credentials: "same-origin" },
         ),

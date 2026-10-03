@@ -15,7 +15,8 @@ export interface ContextBundle {
 const VERSION_CONFLICT_MESSAGE =
   "다른 사용자가 먼저 수정했습니다. 최신 번들을 다시 불러온 뒤 변경을 다시 적용하세요.";
 
-export function ContextBundleEditor({ bundles, onBundlesChanged }: {
+export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch }: {
+  request?: typeof fetch;
   bundles: ContextBundle[];
   onBundlesChanged: () => Promise<void>;
 }) {
@@ -52,7 +53,7 @@ export function ContextBundleEditor({ bundles, onBundlesChanged }: {
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(`/api/context-bundles/${encodeURIComponent(draft.bundle_id.trim())}`, {
+      const response = await request(`/api/context-bundles/${encodeURIComponent(draft.bundle_id.trim())}`, {
         method: "PUT",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
@@ -81,7 +82,7 @@ export function ContextBundleEditor({ bundles, onBundlesChanged }: {
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(`/api/context-bundles/${encodeURIComponent(draft.bundle_id)}`, {
+      const response = await request(`/api/context-bundles/${encodeURIComponent(draft.bundle_id)}`, {
         method: "DELETE",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
@@ -109,7 +110,7 @@ export function ContextBundleEditor({ bundles, onBundlesChanged }: {
     if (!draft) return;
     setError(null);
     try {
-      const response = await fetch(`/api/context-bundles/${encodeURIComponent(draft.bundle_id)}`, {
+      const response = await request(`/api/context-bundles/${encodeURIComponent(draft.bundle_id)}`, {
         credentials: "same-origin",
       });
       const body = await responseJson(response);

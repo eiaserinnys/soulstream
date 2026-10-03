@@ -28,16 +28,16 @@ export interface SaveResponse {
   errors: string[];
 }
 
-async function fetchSettings(): Promise<ConfigResponse> {
-  const res = await fetch("/api/config/settings");
+async function fetchSettings(request: typeof fetch): Promise<ConfigResponse> {
+  const res = await request("/api/config/settings");
   if (!res.ok) throw new Error("Failed to fetch settings");
   return res.json();
 }
 
 async function saveSettings(
-  changes: Record<string, string>,
+  changes: Record<string, string>, request: typeof fetch,
 ): Promise<SaveResponse> {
-  const res = await fetch("/api/config/settings", {
+  const res = await request("/api/config/settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ changes }),
@@ -78,7 +78,7 @@ export interface UseConfigSettingsResult {
  * modal이 열렸을 때 설정을 조회하고, 저장/변경 관리를 담당한다.
  * enabled=false면 네트워크 요청을 보내지 않고 상태만 초기화 상태로 유지한다.
  */
-export function useConfigSettings(enabled: boolean): UseConfigSettingsResult {
+export function useConfigSettings(enabled: boolean, request: typeof fetch = fetch): UseConfigSettingsResult {
   const [categories, setCategories] = useState<SettingCategory[]>([]);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [originalData, setOriginalData] = useState<Record<string, string>>({});
@@ -94,7 +94,7 @@ export function useConfigSettings(enabled: boolean): UseConfigSettingsResult {
     setError(null);
     setResult(null);
 
-    fetchSettings()
+    fetchSettings(request)
       .then((data) => {
         setCategories(data.categories);
 
@@ -113,7 +113,7 @@ export function useConfigSettings(enabled: boolean): UseConfigSettingsResult {
       .finally(() => {
         setLoading(false);
       });
-  }, [enabled]);
+  }, [enabled, request]);
 
   const updateField = useCallback((key: string, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
@@ -138,7 +138,7 @@ export function useConfigSettings(enabled: boolean): UseConfigSettingsResult {
     setResult(null);
 
     try {
-      const res = await saveSettings(changes);
+      const res = await saveSettings(changes, request);
       setResult(res);
 
       const savedKeys = new Set([...res.applied, ...res.restart_required]);
@@ -154,7 +154,7 @@ export function useConfigSettings(enabled: boolean): UseConfigSettingsResult {
     } finally {
       setSaving(false);
     }
-  }, [formData, originalData]);
+  }, [formData, originalData, request]);
 
   return {
     categories,

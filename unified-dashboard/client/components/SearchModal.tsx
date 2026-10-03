@@ -266,6 +266,7 @@ function NavigationResultRow({
 // === Props ===
 
 interface SearchModalProps {
+  request?: typeof fetch;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessions?: SessionSummary[];
@@ -281,6 +282,7 @@ interface SearchModalProps {
 // === Main Component ===
 
 export function SearchModal({
+  request,
   open,
   onOpenChange,
   sessions = [],
@@ -290,7 +292,7 @@ export function SearchModal({
   const catalog = useDashboardStore((s) => s.catalog);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const { results, navigationResults, sessionResults, searchStatus, loading, expansionPending, expansionFailed, error, search, invalidate, clear, currentSearchFlowId } =
-    useSessionSearch();
+    useSessionSearch(request);
   // 사용 로그: 결과 선택과 그 뒤의 화면 전환을 같은 검색에 묶는다.
   const trackUiEvent = useUiEventTracker();
   const markEntry = useUiEventEntryMarker();

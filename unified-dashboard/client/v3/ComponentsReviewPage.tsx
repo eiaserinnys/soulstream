@@ -6,7 +6,7 @@ import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantM
 import { SystemMessage } from "@seosoyoung/soul-ui/components/chat/SystemMessage";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { FolderPanelHeader, SessionPanelHeader } from "./WorkspacePanelHeaders";
-import { DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, formatAssignedCardContextSnapshot } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, formatAssignedCardContextSnapshot } from "@seosoyoung/soul-ui";
 import { Folder, Layers, LayoutDashboard, MessageSquare, MoreHorizontal, Plus, RotateCcw, SendHorizontal, SquarePen, Star } from "lucide-react";
 import { CardRowView } from "./CardRow";
 import { RichSessionRow } from "./RichSessionRow";
@@ -103,6 +103,7 @@ export function ComponentsReviewPage() {
           </button>)}
         </nav>
         <div className="v3-task-detail-content">
+          <Button variant="link" render={<a href="/dialogues"/>}>다이얼로그 비교</Button>
           <p role="status" className="v3-components-label">{notice}</p>
           <section id="components-board" className="v3-detail-section">
             <p className="v3-components-label">CardWorkspace / CardDetailPane · 커멘트·내용 탭 · 짧은·긴 대화 · 하단 입력창</p>

@@ -19,6 +19,7 @@ const parseErrorDetail = (detail: string): string => {
 
 export interface ClaudeAuthFlowParams {
   /** OAuth 엔드포인트 prefix. 예: "/auth/claude" 또는 "/api/nodes/{id}/claude-auth" */
+  request?: typeof fetch;
   basePath: string;
   /**
    * 인증 상태 조회 경로 (basePath 기준). 기본값 "/token".
@@ -73,7 +74,7 @@ export interface ClaudeAuthFlowState<U> {
 export function useClaudeAuthFlow<U = unknown>(
   params: ClaudeAuthFlowParams,
 ): ClaudeAuthFlowState<U> {
-  const { basePath, statusPath = "/token", onAuthenticated, onTokenDeleted } =
+  const { request = fetch, basePath, statusPath = "/token", onAuthenticated, onTokenDeleted } =
     params;
 
   const [tokenStatus, setTokenStatus] = useState<{ has_token: boolean } | null>(
@@ -102,7 +103,7 @@ export function useClaudeAuthFlow<U = unknown>(
   const fetchStatus = useCallback(async () => {
     setLoadingStatus(true);
     try {
-      const res = await fetch(`${basePath}${statusPath}`);
+      const res = await request(`${basePath}${statusPath}`);
       const data = await res.json();
       setTokenStatus(data);
       if (data?.has_token) {
@@ -129,7 +130,7 @@ export function useClaudeAuthFlow<U = unknown>(
       // window.open(authUrl)을 호출하면 on_new_window가 HTTP(S)을 open::that로
       // OS 기본 브라우저에 위임한다 (1-click).
       try {
-        const res = await fetch(`${basePath}/headless/start`);
+        const res = await request(`${basePath}/headless/start`);
         if (!res.ok) {
           const data = await res.json().catch(() => null);
           throw new Error(
@@ -153,7 +154,7 @@ export function useClaudeAuthFlow<U = unknown>(
     // iOS Safari는 async 호출 후 window.open()을 차단하지만 동기 호출은 허용한다.
     popupRef.current = window.open("about:blank", "_blank");
     try {
-      const res = await fetch(`${basePath}/headless/start`);
+      const res = await request(`${basePath}/headless/start`);
       if (!res.ok) {
         popupRef.current?.close();
         popupRef.current = null;
@@ -189,7 +190,7 @@ export function useClaudeAuthFlow<U = unknown>(
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`${basePath}/headless/submit-code`, {
+      const res = await request(`${basePath}/headless/submit-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: trimmed }),
@@ -219,7 +220,7 @@ export function useClaudeAuthFlow<U = unknown>(
   }, []);
 
   const handleDeleteToken = useCallback(async () => {
-    await fetch(`${basePath}/token`, { method: "DELETE" });
+    await request(`${basePath}/token`, { method: "DELETE" });
     setTokenStatus({ has_token: false });
     setUsage(null);
     onTokenDeletedRef.current?.();
@@ -229,7 +230,7 @@ export function useClaudeAuthFlow<U = unknown>(
     setLoadingUsage(true);
     setError(null);
     try {
-      const res = await fetch(`${basePath}/usage`);
+      const res = await request(`${basePath}/usage`);
       if (!res.ok) throw new Error(await res.text());
       setUsage((await res.json()) as U);
     } catch (e) {

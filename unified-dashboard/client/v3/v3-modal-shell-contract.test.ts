@@ -12,7 +12,7 @@ const expectedV3DialogConsumers = [
   "CardTimeline.tsx",
   "ComponentsReviewPage.tsx",
   "FolderArchiveDialog.tsx",
-  "FolderDetailPane.tsx",
+  "FolderDetailArchiveDialog.tsx",
   "ProjectDialog.tsx",
   "RitualModal.tsx",
   "SessionSuccessionModal.tsx",
@@ -35,6 +35,7 @@ const soulUiDialogConsumers = [
   "../../../packages/soul-ui/src/components/MarkdownDeleteDialog.tsx",
   "../../../packages/soul-ui/src/components/RenameSessionDialog.tsx",
   "../../../packages/soul-ui/src/components/SessionContextMenu.tsx",
+  "../../../packages/soul-ui/src/components/SessionDialogViews.tsx",
 ] as const;
 
 function dialogPopupConsumers(directory: URL, prefix: string): string[] {

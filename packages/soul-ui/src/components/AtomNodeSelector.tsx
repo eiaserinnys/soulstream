@@ -26,6 +26,7 @@ interface BreadcrumbEntry {
 }
 
 export interface AtomNodeSelectorProps {
+  request?: typeof fetch;
   /** 선택된 tree node id ("" = 미선택) */
   value: string;
   /** 선택된 노드의 표시 제목 (없으면 nodeId 축약 표시) */
@@ -36,6 +37,7 @@ export interface AtomNodeSelectorProps {
 }
 
 export function AtomNodeSelector({
+  request = fetch,
   value,
   selectedTitle,
   onChange,
@@ -57,7 +59,7 @@ export function AtomNodeSelector({
         nodeId === null
           ? "/api/atom/nodes"
           : `/api/atom/nodes/${nodeId}/children`;
-      const res = await fetch(url);
+      const res = await request(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { children: AtomNode[] };
       setNodes(data.children ?? []);

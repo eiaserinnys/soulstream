@@ -27,8 +27,10 @@ const APP_VERSION =
 
 export function UiEventsRuntime(props: { readonly children: ReactNode }) {
   const { user } = useAuth();
+  // Gallery operations, including usage collection, stay inside the sample.
+  const samplePage = ["/dialogues", "/dialogues/", "/dialogues/ios", "/dialogues/ios/"].includes(window.location.pathname);
   return (
-    <UiEventsProvider userEmail={user?.email ?? null} appVersion={APP_VERSION}>
+    <UiEventsProvider userEmail={samplePage ? null : user?.email ?? null} appVersion={APP_VERSION}>
       <NavigationUiEvents />
       {props.children}
     </UiEventsProvider>

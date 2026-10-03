@@ -3,6 +3,7 @@ import { Button, cn } from "@seosoyoung/soul-ui";
 import { useClaudeAuthFlow } from "../hooks/useClaudeAuthFlow";
 
 interface Props {
+  request?: typeof fetch;
   nodeId: string;
 }
 
@@ -145,7 +146,7 @@ type AccountProfile = {
   has_claude_max: boolean;
 };
 
-export function NodeClaudeAuthPanel({ nodeId }: Props) {
+export function NodeClaudeAuthPanel({ nodeId, request = fetch }: Props) {
   const basePath = `/api/nodes/${nodeId}/claude-auth`;
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [providerUsage, setProviderUsage] = useState<ProviderUsageSnapshot | null>(null);
@@ -154,7 +155,7 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
 
   const fetchProfile = useCallback(async () => {
     try {
-      const res = await fetch(`${basePath}/profile`);
+      const res = await request(`${basePath}/profile`);
       if (res.ok) {
         const data = await res.json();
         setProfile(data.account ?? null);
@@ -165,6 +166,7 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
   }, [basePath]);
 
   const flow = useClaudeAuthFlow<unknown>({
+    request,
     basePath,
     statusPath: "/status",
     onAuthenticated: fetchProfile,
@@ -178,7 +180,7 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
     setLoadingProviderUsage(true);
     setProviderUsageError(null);
     try {
-      const res = await fetch(`/api/nodes/${nodeId}/provider-usage`);
+      const res = await request(`/api/nodes/${nodeId}/provider-usage`);
       if (!res.ok) {
         throw new Error((await res.text()) || `HTTP ${res.status}`);
       }

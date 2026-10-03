@@ -23,6 +23,8 @@ const IosComponentsReviewPage = lazy(() =>
   })),
 );
 
+const DialoguesReviewPage = lazy(() => import("./v3/DialoguesReviewPage").then(mod => ({default:mod.DialoguesReviewPage})));
+
 export function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
 
@@ -49,6 +51,7 @@ export function App() {
     <Suspense fallback={null}>
       {pathname === "/components/ios" || pathname === "/components/ios/"
         ? <IosComponentsReviewPage />
+        : pathname === "/dialogues" || pathname === "/dialogues/" ? <DialoguesReviewPage />
         : pathname === "/components" ? <ComponentsReviewLayout /> : <V3DashboardLayout />}
     </Suspense>
   );

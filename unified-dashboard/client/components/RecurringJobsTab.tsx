@@ -53,7 +53,9 @@ const emptyEditor = (): Editor => ({
   enabled: true,
 });
 
-export function RecurringJobsTab() {
+export const recurringJobsApi = { archiveRecurringJob, createRecurringJob, listRecurringJobRuns, listRecurringJobs, previewRecurringSchedule, runRecurringJob, updateRecurringJob };
+
+export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?: typeof recurringJobsApi; assignment?: import("../v3/AgentNodeAssignmentFields").AssignmentData } = {}) {
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const catalog = useDashboardStore((state) => state.catalog);
   const [jobs, setJobs] = useState<RecurringJob[]>([]);
@@ -65,15 +67,15 @@ export function RecurringJobsTab() {
   const [error, setError] = useState<string | null>(null);
 
   const loadRuns = useCallback(async (jobId: string) => {
-    const loaded = await listRecurringJobRuns(jobId);
+    const loaded = await api.listRecurringJobRuns(jobId);
     setRuns(loaded);
-  }, []);
+  }, [api]);
 
   const refresh = useCallback(async (
     selectId?: string | null,
     options: { preserveEditor?: boolean } = {},
   ) => {
-    const loaded = await listRecurringJobs(true);
+    const loaded = await api.listRecurringJobs(true);
     setJobs(loaded);
     if (selectId) {
       const next = loaded.find((job) => job.job_id === selectId) ?? null;
@@ -100,8 +102,8 @@ export function RecurringJobsTab() {
     try {
       const write = writeFromEditor(editor);
       const saved = selected
-        ? await updateRecurringJob(selected.job_id, { ...write, expected_version: selected.version })
-        : await createRecurringJob({ ...write, idempotency_key: `recurring-job:${crypto.randomUUID()}` });
+        ? await api.updateRecurringJob(selected.job_id, { ...write, expected_version: selected.version })
+        : await api.createRecurringJob({ ...write, idempotency_key: `recurring-job:${crypto.randomUUID()}` });
       await refresh(saved.job_id);
     } catch (caught) {
       if (isVersionConflict(caught) && selected) {
@@ -122,7 +124,7 @@ export function RecurringJobsTab() {
     setBusy(true);
     setError(null);
     try {
-      const saved = await updateRecurringJob(selected.job_id, {
+      const saved = await api.updateRecurringJob(selected.job_id, {
         expected_version: selected.version,
         enabled,
       });
@@ -135,11 +137,11 @@ export function RecurringJobsTab() {
   };
 
   const archive = async () => {
-    if (!selected || !window.confirm(`“${selected.name}” 작업을 보관할까요?`)) return;
+    if (!selected || !confirmRecurringArchive(selected.name)) return;
     setBusy(true);
     setError(null);
     try {
-      await archiveRecurringJob(selected.job_id, selected.version);
+      await api.archiveRecurringJob(selected.job_id, selected.version);
       setSelected(null);
       setEditor(emptyEditor());
       setPreview([]);
@@ -157,7 +159,7 @@ export function RecurringJobsTab() {
     setError(null);
     try {
       const jobId = selected.job_id;
-      const run = await runRecurringJob(jobId, `recurring-run:${crypto.randomUUID()}`);
+      const run = await api.runRecurringJob(jobId, `recurring-run:${crypto.randomUUID()}`);
       if (selected.schedule_kind === "once") {
         await refresh(jobId);
       } else {
@@ -174,7 +176,7 @@ export function RecurringJobsTab() {
     setBusy(true);
     setError(null);
     try {
-      const result = await previewRecurringSchedule({
+      const result = await api.previewRecurringSchedule({
         timezone: editor.timezone,
         schedule_expressions: recurringScheduleExpressions(editor.schedule),
       });
@@ -241,7 +243,7 @@ export function RecurringJobsTab() {
 
         <div className="rounded border border-border p-3">
           <p className="mb-2 text-sm font-medium">실행 대상</p>
-          <AgentNodeAssignmentFields
+          <AgentNodeAssignmentFields data={assignment}
             agentId={editor.agentId}
             nodeId={editor.nodeId}
             modelPreset={editor.modelPreset}
@@ -363,3 +365,5 @@ function toLocalDateTime(value: string): string {
 }
 function message(value: unknown): string { return value instanceof Error ? value.message : String(value); }
 function isVersionConflict(value: unknown): value is HttpResponseError { return value instanceof HttpResponseError && value.status === 409; }
+
+export function confirmRecurringArchive(name: string) {return window.confirm(`“${name}” 작업을 보관할까요?`);}

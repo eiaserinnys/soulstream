@@ -29,8 +29,8 @@ const STATUS_CONFIG: Record<
   loading: { label: "Checking", variant: "outline", dotClass: "bg-muted-foreground/50" },
 };
 
-export function CogitoHealthPanel() {
-  const { summary, loading, refreshing, error, refresh } = useCogitoHealth();
+export function CogitoHealthPanel({request}: {request?: typeof fetch} = {}) {
+  const { summary, loading, refreshing, error, refresh } = useCogitoHealth(request);
   const state: CogitoHealthPanelState = loading
     ? { kind: "loading" }
     : error

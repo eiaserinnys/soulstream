@@ -8,6 +8,7 @@ import { FolderPicker } from "./FolderPicker";
 import { useFolderPickerStars } from "./use-folder-picker-stars";
 
 export interface FolderParentMoveDialogProps {
+  starredFolderIds?: readonly string[];
   task: PlannerFolder | null;
   currentFolderId: string | null;
   folders: readonly CatalogFolder[];
@@ -17,9 +18,9 @@ export interface FolderParentMoveDialogProps {
   onClose(): void;
 }
 
-export function FolderParentMoveDialog({ task, currentFolderId, folders, pending, error, onMove, onClose }: FolderParentMoveDialogProps) {
+export function FolderParentMoveDialog({ starredFolderIds, task, currentFolderId, folders, pending, error, onMove, onClose }: FolderParentMoveDialogProps) {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const stars = useFolderPickerStars(task !== null, folders);
+  const stars = useFolderPickerStars(task !== null, folders, starredFolderIds);
   const disabledFolderIds = useMemo(() => {
     // Child-card callers can carry a page identity; the catalog owns hierarchy IDs.
     const currentParentId = task

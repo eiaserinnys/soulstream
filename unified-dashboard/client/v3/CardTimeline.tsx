@@ -9,13 +9,14 @@ import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { CardDetail, CardReport, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { cardRequestMarkdown } from "./card-request-markdown";
 
-export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending}: {
+export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,initialImage}: {
+ initialImage?:{src:string;alt:string};
  card:CardRow;detail?:CardDetail;portraitUrl:string|null;userPortraitUrl?:string|null;
  onAnswer(questionId:string,answer:string):void;pending:boolean;
 }) {
  const {chatTypographyStyle}=useChatTypography();
  const [expanded,setExpanded]=useState<ReadonlySet<string>>(()=>new Set());
- const [image,setImage]=useState<{src:string;alt:string}|null>(null);
+ const [image,setImage]=useState<{src:string;alt:string}|null>(initialImage??null);
  const openImage=(src:string,alt:string)=>setImage({src,alt});
  const entries:{id:string;at:string;kind:string;role:"user"|"assistant";spoken?:boolean;collapsible?:boolean;body:ReactNode}[]=[
   {id:"request",at:card.createdAt,kind:"지시",role:"user",collapsible:true,body:<RequestPreview request={card.request} attachments={card.attachments??[]} expanded={expanded.has("request")} onImageClick={openImage}/>},

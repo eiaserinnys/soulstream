@@ -33,6 +33,7 @@ type RitualLoadState =
   | { status: "error"; message: string };
 
 export function RitualModal({
+  actions,
   open,
   today,
   reviewCount,
@@ -40,6 +41,7 @@ export function RitualModal({
   onActionApplied,
   onFocusSessionPanel,
 }: {
+  actions?: { load(): Promise<MorningRitualData>; apply(item: RitualQueueItem, action: RitualAction): Promise<void> };
   open: boolean;
   today: string;
   reviewCount: number;
@@ -57,17 +59,17 @@ export function RitualModal({
   useEffect(() => {
     if (!open || loadState.status !== "idle") return;
     setLoadState({ status: "loading" });
-    void loadMorningRitualData({
+    void (actions ? actions.load() : loadMorningRitualData({
       api,
       today,
       plannerDependencies,
-    }).then((data) => {
+    })).then((data) => {
       setLoadState({ status: "ready", data });
     }).catch((error: unknown) => {
       console.error("[v3/ritual] 아침 정리 조회 실패", error);
       setLoadState({ status: "error", message: errorText(error) });
     });
-  }, [api, loadState.status, open, plannerDependencies, today]);
+  }, [api, loadState.status, open, plannerDependencies, today, actions]);
 
   const data = loadState.status === "ready" ? loadState.data : null;
   const item = data?.items[index] ?? null;
@@ -81,11 +83,11 @@ export function RitualModal({
     setProcessing(true);
     setActionError(null);
     try {
-      await dispatchRitualAction(
+      await (actions ? actions.apply(item, action) : dispatchRitualAction(
         item,
         action,
         new BrowserRitualActionPort(data.dailyPageId, api),
-      );
+      ));
       onActionApplied(item, action);
       setIndex((value) => value + 1);
     } catch (error) {

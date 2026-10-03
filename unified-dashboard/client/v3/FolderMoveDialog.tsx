@@ -6,8 +6,10 @@ import { FolderPicker } from "./FolderPicker";
 import { useFolderPickerStars } from "./use-folder-picker-stars";
 
 export function FolderMoveDialog({
-  api, currentFolderId, defaultTargets, open, onClose, onMove,
+  starredFolderIds, sampleFolders, api, currentFolderId, defaultTargets, open, onClose, onMove,
 }: {
+  sampleFolders?: readonly import("@seosoyoung/soul-ui").CatalogFolder[];
+  starredFolderIds?: readonly string[];
   api: PageApiClient;
   currentFolderId: string;
   defaultTargets: readonly FolderMoveTarget[];
@@ -19,8 +21,8 @@ export function FolderMoveDialog({
   const [movePending, setMovePending] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
   const folders = useDashboardStore((state) => state.catalog?.folders);
-  const pickerFolders = useMemo(() => folders ?? [], [folders]);
-  const stars = useFolderPickerStars(open, pickerFolders);
+  const pickerFolders = useMemo(() => sampleFolders ?? folders ?? [], [folders, sampleFolders]);
+  const stars = useFolderPickerStars(open, pickerFolders, starredFolderIds);
   const disabledFolderIds = useMemo(() => new Set(pickerFolders
     .filter((folder) => folder.id === currentFolderId || !folder.projectPageId)
     .map((folder) => folder.id)), [currentFolderId, pickerFolders]);
