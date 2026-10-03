@@ -229,7 +229,7 @@ describe("ControlInboxRuntime", () => {
     store.close();
   });
 
-  it("durably deduplicates a long-running worktree mutation and replays its result", async () => {
+  it("durably deduplicates a long-running mutation and replays its result", async () => {
     const frames: Array<Record<string, unknown>> = [];
     const work: ControlInboxDispatchWork[] = [];
     const store = await makeStore();
@@ -242,9 +242,9 @@ describe("ControlInboxRuntime", () => {
     runtime.initialize();
     await runtime.connect(async (frame) => frames.push(frame));
     const command = {
-      type: "worktree_create",
-      requestId: "req-worktree-create",
-      input: { repoId: "demo", branch: "feature/slow" },
+      type: "rollback_agents_config",
+      requestId: "req-rollback-agents-config",
+      snapshotId: "snapshot-1",
     };
 
     await runtime.handleCommand(command);
@@ -253,15 +253,15 @@ describe("ControlInboxRuntime", () => {
     expect(work[0]).toMatchObject({ durable: true });
 
     await runtime.handleDomainResult(work[0]!.workId, {
-      type: "worktree_result",
-      result: { worktreeId: "worktree-1" },
+      type: "rollback_agents_config",
+      ok: true,
     });
     await runtime.handleCommand(command);
 
     expect(work).toHaveLength(1);
     expect(frames).toContainEqual(expect.objectContaining({
       type: "control_result",
-      requestId: "req-worktree-create",
+      requestId: "req-rollback-agents-config",
     }));
     store.close();
   });

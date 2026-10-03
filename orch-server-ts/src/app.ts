@@ -258,11 +258,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerNodeClaudeAuthRoutes(app, options.nodeClaudeAuthRoutes);
   }
   if (options.nodeAgentProfileRoutes !== undefined) {
-    registerNodeAgentProfileRoutes(app, {
-      ...options.nodeAgentProfileRoutes,
-      worktreeAuthBearerToken: options.config.authBearerToken,
-      environment: options.config.environment,
-    });
+    registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);
   }
   if (options.agentProfileRoutes !== undefined) {
     registerAgentProfileRoutes(app, options.agentProfileRoutes);

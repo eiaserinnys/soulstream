@@ -12,8 +12,7 @@ export type ControlCommandFamily =
   | "attachment"
   | "auth/provider-usage"
   | "reflection"
-  | "agent-config"
-  | "worktree";
+  | "agent-config";
 
 export type ControlCommandPolicy =
   | "health"
@@ -69,10 +68,6 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("apply_agent_profile_update", "agent-config", "durable_mutation"),
   entry("list_agents_config_snapshots", "agent-config", "bounded_result"),
   entry("rollback_agents_config", "agent-config", "durable_mutation"),
-  entry("worktree_list", "worktree", "bounded_result"),
-  entry("worktree_create", "worktree", "durable_mutation"),
-  entry("worktree_remove", "worktree", "durable_mutation"),
-  entry("worktree_delete_branch", "worktree", "durable_mutation"),
 ] as const satisfies readonly ControlCommandInventoryEntry[];
 
 export { CONTROL_COMMAND_TYPES };
@@ -93,8 +88,6 @@ export function controlCommandPolicy(commandType: string): ControlCommandInvento
 
 export function boundedResultTimeoutMs(commandType: string, fallbackMs: number): number {
   switch (commandType) {
-    case "worktree_list":
-      return 130_000;
     case "prepare_card_orchestration_decision":
     case "provider_usage_get":
     case "claude_auth_get_usage":

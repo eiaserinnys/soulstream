@@ -13,7 +13,6 @@ import type { TaskManager } from "../task/task_manager.js";
 import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js";
 import type { EventOutboxPumpTransport } from "./event_outbox_pump.js";
 import type { ReleaseActivationState } from "../release/release_activation_state.js";
-import type { WorktreeService } from "../worktree/worktree_service.js";
 import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
 
 export interface UpstreamConfig {
@@ -50,7 +49,6 @@ export interface UpstreamDependencies {
   listLiveRunnerSessionIds?: () => Promise<string[]>;
   waitForRunnerReconciliation?: () => Promise<void>;
   reconnectPolicy?: ReconnectPolicyBoundary;
-  worktreeService?: WorktreeService;
   decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
   authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
 }

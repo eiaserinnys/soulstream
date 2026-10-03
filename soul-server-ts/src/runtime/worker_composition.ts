@@ -436,7 +436,6 @@ export async function composeWorkerRuntime(
           codexBinaryPath: env.CARD_DECISION_CODEX_BINARY_PATH,
           timeoutMs: env.CARD_DECISION_TIMEOUT_MS },
       }),
-      ...(worktreeService ? { worktreeService } : {}),
     });
     return upstreamAdapter;
   };

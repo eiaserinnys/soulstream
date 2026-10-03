@@ -25,20 +25,6 @@ import type {
 import { LiveNodeHttpClientError } from "./live_node_http_client.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 
-// Ordinary worktree operations retain the original short budget.
-export const WORKTREE_NODE_COMMAND_TIMEOUT_MS = 150_000;
-// 1800s create + bounded process-tree confirmation/recovery still completes
-// before the orchestrator rejects the create command.
-export const WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS = 1_820_000;
-
-type WorktreeOperation = "list" | "create" | "remove" | "delete-branch";
-
-export function worktreeNodeCommandTimeoutMs(operation: WorktreeOperation): number {
-  return operation === "create"
-    ? WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS
-    : WORKTREE_NODE_COMMAND_TIMEOUT_MS;
-}
-
 type AgentSnapshot = {
   readonly id: string;
   readonly name?: unknown;
@@ -83,7 +69,7 @@ export type CreateLiveNodeAgentProfileRouteProviderOptions = {
 };
 
 export type LiveNodeAgentProfileRouteProviderBundle = {
-  readonly nodeAgentProfileRoutes: Pick<NodeAgentProfileRouteOptions, "provider" | "worktreeProvider">;
+  readonly nodeAgentProfileRoutes: Pick<NodeAgentProfileRouteOptions, "provider">;
 };
 
 export function createLiveNodeAgentProfileRouteProviders(
@@ -92,42 +78,8 @@ export function createLiveNodeAgentProfileRouteProviders(
   return {
     nodeAgentProfileRoutes: {
       provider: createLiveNodeAgentProfileProvider(options),
-      worktreeProvider: {
-        invoke: async (nodeId, operation, input) =>
-          await sendWorktreeCommand(options, nodeId, operation, input),
-      },
     },
   };
-}
-
-async function sendWorktreeCommand(
-  options: CreateLiveNodeAgentProfileRouteProviderOptions,
-  nodeId: string,
-  operation: WorktreeOperation,
-  input: Record<string, unknown>,
-): Promise<unknown> {
-  const node = requireConnectedNode(options.registry, nodeId);
-  if (node.capabilities.worktree_mcp_v1 !== true) {
-    throw new NodeAgentProfileRouteError(
-      "NODE_CAPABILITY_UNAVAILABLE",
-      `Node ${nodeId} does not advertise worktree_mcp_v1`,
-      409,
-    );
-  }
-  const type = operation === "delete-branch"
-    ? "worktree_delete_branch"
-    : `worktree_${operation}`;
-  try {
-    const command = options.registry.createCommand(
-      nodeId,
-      { type, input } as RequestResponseNodeCommandPayload,
-      { timeoutMs: worktreeNodeCommandTimeoutMs(operation) },
-    );
-    const response = await options.bridge.sendPendingCommand({ node, command });
-    return response.result;
-  } catch (error) {
-    throw mapCommandError(error);
-  }
 }
 
 function createLiveNodeAgentProfileProvider(
