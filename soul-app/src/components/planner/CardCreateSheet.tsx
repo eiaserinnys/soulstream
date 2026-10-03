@@ -125,7 +125,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
                 maxHeight={t.foundation.minHeight.memo * 2} verticalPadding={t.spacing.sm}
                 placeholderTextColor={t.colors.textPlaceholder} editable={!locked && draft.ready} />
               <CardRequestView request="" attachments={cardFiles(files.attachments.filter((file) => !!file.path))} />
-              {files.error && files.attachments.length ? <SheetErrorNotice summary="첨부를 올리지 못했습니다. 제거하거나 다시 선택해 주세요." detail={sheetErrorDetail(files.error)} /> : null}
+              {files.error && files.attachments.length ? <SheetErrorNotice summary="첨부를 올리지 못했습니다. 제거하거나 다시 선택해 주세요." detail={files.error} /> : null}
               <AttachmentPickerButton uploading={files.uploading} disabled={locked || !selection.effectiveNodeId} onPress={files.pickAttachment} />
               {!selection.effectiveNodeId ? <Text style={styles.meta}>파일을 첨부하려면 실행 노드를 선택해 주세요.</Text> : null}
           </View></GroupedGlassSheet>
@@ -136,7 +136,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
               disabled={locked || files.uploading} onPress={() => setSelecting('execution')}>
               <View style={styles.disclosureBody}>
                 <Text style={styles.rowTitle}>실행 대상</Text>
-                <Text style={styles.meta}>{selection.selectedAgentName} · {selection.selectedNodeName}</Text>
+                <Text style={styles.meta}>{selection.selectedAgentName}, {selection.selectedNodeName}</Text>
                 <Text style={styles.meta}>{selection.selectedModelPresetName}</Text>
               </View>
               <Text style={styles.disclosureAction}>변경 ›</Text>

@@ -71,7 +71,7 @@ export function InitialFolderContextEditor({
           />
           <Text style={styles.label}>기본 담당</Text>
           <TouchableOpacity testID="new-task-defaults-edit" style={styles.selection} disabled={disabled} onPress={onOpenDefaultsPicker}>
-            <Text style={styles.selectionValue}>{value.sessionDefaults ? `${value.sessionDefaults.agentId} · ${value.sessionDefaults.nodeId}` : '상속 / 미지정'}</Text>
+            <Text style={styles.selectionValue}>{value.sessionDefaults ? `${value.sessionDefaults.agentId}, ${value.sessionDefaults.nodeId}` : '상속 / 미지정'}</Text>
             <Text style={styles.addText}>변경 ›</Text>
           </TouchableOpacity>
           <Text style={styles.label}>Atom 컨텍스트</Text>

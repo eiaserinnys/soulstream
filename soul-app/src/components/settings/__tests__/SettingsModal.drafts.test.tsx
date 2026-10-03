@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { SettingsModal } from '../SettingsModal';
@@ -48,6 +49,22 @@ test('사진 선택 연타와 취소는 기존 배경을 보존한다', async ()
   await act(async () => resolve({ granted: true }));
   expect(useSettingsStore.getState().wallpaper.customImage).toBe('file://before.jpg');
   expect(api.uploadUserBackground).not.toHaveBeenCalled();
+});
+
+test('배경 업로드 실패는 성공으로 표시하지 않고 정제된 오류만 보여준다', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+  jest.mocked(ImagePicker.requestMediaLibraryPermissionsAsync).mockResolvedValue({ granted: true } as never);
+  jest.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValue({ canceled: false, assets: [{ uri: 'file://chosen.jpg' }] } as never);
+  api.uploadUserBackground.mockRejectedValueOnce(new Error('HTTP 403 Authorization: Bearer synthetic-auth Cookie=synthetic-cookie password=synthetic-password token=synthetic-token api_key=synthetic-key https://user:synthetic-userinfo@test.invalid/?key=synthetic-query'));
+  const screen = render(<SettingsModal visible onClose={jest.fn()} />);
+  fireEvent.press(screen.getByTestId('settings-category-display'));
+  await act(async () => fireEvent.press(screen.getByTestId('settings-upload-background')));
+  expect(api.putUserPreferences).not.toHaveBeenCalled();
+  expect(alert).toHaveBeenCalledWith('배경 저장 실패', 'HTTP 403\n민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.');
+  expect(JSON.stringify(alert.mock.calls)).not.toContain('synthetic-');
+  expect(JSON.stringify(screen.toJSON())).not.toContain('synthetic-');
+  expect(screen.getByTestId('settings-upload-background')).toBeEnabled();
+  alert.mockRestore();
 });
 
 test('폰 설정 목록을 왕복해도 반복 작업 편집기의 이름과 내용을 유지한다', async () => {

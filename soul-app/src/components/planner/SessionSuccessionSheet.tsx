@@ -195,8 +195,10 @@ function SessionSuccessionSheetContent({
   });
 
   const pickNode = () => {
+    if (submissionPending.current) return;
     const sheet = buildNodeActionSheet(selection.nodes);
     ActionSheetIOS.showActionSheetWithOptions(sheet, (index) => {
+      if (submissionPending.current) return;
       const result = resolveNodeActionSheetSelection(
         index,
         selection.nodes,
@@ -207,8 +209,10 @@ function SessionSuccessionSheetContent({
   };
 
   const pickAgent = () => {
+    if (submissionPending.current) return;
     const sheet = buildAgentActionSheet(selection.agents);
     ActionSheetIOS.showActionSheetWithOptions(sheet, (index) => {
+      if (submissionPending.current) return;
       const result = resolveAgentActionSheetSelection(
         index,
         selection.agents,
@@ -253,10 +257,12 @@ function SessionSuccessionSheetContent({
   }, [visible]);
 
   const pickEffort = useCallback(() => {
+    if (submissionPending.current) return;
     const sheet = buildEffortActionSheet(effortPreset);
     ActionSheetIOS.showActionSheetWithOptions(
       { options: sheet.options, cancelButtonIndex: sheet.cancelButtonIndex, title: sheet.title },
       (index) => {
+        if (submissionPending.current) return;
         const picked = resolveEffortActionSheetSelection(effortPreset, index);
         if (picked === undefined) return;
         setSelectedEffort(picked);
@@ -265,8 +271,10 @@ function SessionSuccessionSheetContent({
   }, [effortPreset]);
 
   const pickModel = () => {
+    if (submissionPending.current) return;
     const sheet = buildModelPresetActionSheet(selection.modelPresets);
     ActionSheetIOS.showActionSheetWithOptions(sheet, (index) => {
+      if (submissionPending.current) return;
       const result = resolveModelPresetActionSheetSelection(
         index,
         selection.modelPresets,
@@ -428,19 +436,20 @@ function SessionSuccessionSheetContent({
               onPress={() => setExecutionExpanded(current => !current)}>
               <View style={styles.disclosureBody}>
                 <Text style={styles.rowTitle}>실행 대상</Text>
-                <Text style={styles.meta}>{selection.selectedAgentName} · {selection.selectedNodeName}</Text>
-                <Text style={styles.meta}>{selection.selectedModelPresetName}{presetSupportsEffort(effortPreset) ? ` · ${effortRowValue(effortPreset, selectedEffort)}` : ''}</Text>
+                <Text style={styles.meta}>{selection.selectedAgentName}, {selection.selectedNodeName}</Text>
+                <Text style={styles.meta}>{selection.selectedModelPresetName}{presetSupportsEffort(effortPreset) ? `, ${effortRowValue(effortPreset, selectedEffort)}` : ''}</Text>
               </View>
               <Text style={styles.disclosureAction}>{executionNeedsAttention ? '확인 필요' : showExecution ? '접기 ⌃' : '변경 ⌄'}</Text>
             </TouchableOpacity>
             {showExecution ? <View testID="succession-execution-details" style={styles.disclosureDetails}>
             {!selection.effectiveNodeId || !selection.agentId ? <Text style={styles.selectionError}>노드와 에이전트를 선택해 주세요.</Text> : null}
-            <SelectionRow testID="succession-selection-node" label="노드" value={selection.selectedNodeName} onPress={pickNode} styles={styles} />
-            <SelectionRow testID="succession-selection-agent" label="에이전트" value={selection.selectedAgentName} onPress={pickAgent} styles={styles} />
-            <SelectionRow testID="succession-selection-model" label="모델" value={selection.selectedModelPresetName} onPress={pickModel} styles={styles} />
+            <SelectionRow disabled={submitting} testID="succession-selection-node" label="노드" value={selection.selectedNodeName} onPress={pickNode} styles={styles} />
+            <SelectionRow disabled={submitting} testID="succession-selection-agent" label="에이전트" value={selection.selectedAgentName} onPress={pickAgent} styles={styles} />
+            <SelectionRow disabled={submitting} testID="succession-selection-model" label="모델" value={selection.selectedModelPresetName} onPress={pickModel} styles={styles} />
             {presetSupportsEffort(effortPreset) ? (
               <SelectionRow
                 testID="succession-selection-effort"
+                disabled={submitting}
                 label="추론 강도"
                 value={effortRowValue(effortPreset, selectedEffort)}
                 onPress={pickEffort}
@@ -456,9 +465,10 @@ function SessionSuccessionSheetContent({
                 </Text>
                 <SelectionRow
                   testID="succession-effort-use-default"
+                  disabled={submitting}
                   label="이어받은 추론 강도"
                   value="기본값 사용"
-                  onPress={() => setSelectedEffort(null)}
+                  onPress={() => { if (!submissionPending.current) setSelectedEffort(null); }}
                   styles={styles}
                 />
               </>
@@ -477,19 +487,21 @@ function SessionSuccessionSheetContent({
           <Text style={styles.sectionTitle}>함께 가져갈 컨텍스트</Text>
           <GroupedGlassSheet testID="succession-context-group">
             <CheckRow
+              disabled={submitting}
               checked={includeFolderContext}
               testID="succession-check-task-context"
               label="폴더 본문과 컨텍스트"
               detail={contextChips.map((chip) => `${chip.icon} ${chip.label}`).join(' · ') || '연결된 컨텍스트 없음'}
-              onPress={() => setIncludeFolderContext((current) => !current)}
+              onPress={() => { if (!submissionPending.current) setIncludeFolderContext((current) => !current); }}
               styles={styles}
             />
             {predecessor ? (
               <CheckRow
+                disabled={submitting}
                 checked={inheritPredecessor}
                 label="이전 세션"
                 detail={getSessionDisplayName(predecessorSession, predecessor.agentSessionId)}
-                onPress={() => setInheritPredecessor((current) => !current)}
+                onPress={() => { if (!submissionPending.current) setInheritPredecessor((current) => !current); }}
                 styles={styles}
               />
             ) : null}
@@ -547,16 +559,17 @@ export function resolveSessionAssignmentDefaults(
   };
 }
 
-function CheckRow({ testID, checked, label, detail, onPress, styles }: {
+function CheckRow({ testID, checked, label, detail, onPress, styles, disabled }: {
   testID?: string;
   checked: boolean;
+  disabled?: boolean;
   label: string;
   detail?: string;
   onPress(): void;
   styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <TouchableOpacity testID={testID} style={styles.checkRow} onPress={onPress} accessibilityRole="checkbox" accessibilityState={{ checked }}>
+    <TouchableOpacity testID={testID} style={styles.checkRow} onPress={onPress} disabled={disabled} accessibilityRole="checkbox" accessibilityState={{ checked, disabled }}>
       <Text style={styles.check}>{checked ? '✓' : '○'}</Text>
       <View style={styles.checkBody}>
         <Text style={styles.rowTitle}>{label}</Text>
