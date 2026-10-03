@@ -169,25 +169,6 @@ export const EnvSchema = z
      * MCP HTTP 라우트 path. POST/GET/DELETE 모두 같은 경로 (Streamable HTTP 스펙).
      */
     MCP_PATH: z.string().default("/mcp"),
-    /** Dedicated credential-bound external LLM ingress. Disabled by default. */
-    MCP_EXTERNAL_INGRESS_ENABLED: z
-      .union([z.literal("true"), z.literal("false")])
-      .default("false")
-      .transform((v) => v === "true"),
-    MCP_EXTERNAL_INGRESS_PATH: z
-      .string()
-      .regex(
-        /^\/(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)$/,
-        "MCP_EXTERNAL_INGRESS_PATH must be a normalized absolute HTTP path",
-      )
-      .optional(),
-    MCP_EXTERNAL_INGRESS_SOURCE: z
-      .string()
-      .regex(/^[a-z][a-z0-9_-]{0,63}$/, "MCP_EXTERNAL_INGRESS_SOURCE must be a lowercase source ID")
-      .optional(),
-    MCP_EXTERNAL_INGRESS_DISPLAY_NAME: z.string().trim().min(1).max(120).optional(),
-    MCP_EXTERNAL_INGRESS_BEARER_TOKEN: z.string().min(1).optional(),
-    MCP_EXTERNAL_EVENTS_STATE_FILE: z.string().min(1).refine(isAbsolute, "MCP_EXTERNAL_EVENTS_STATE_FILE must be absolute").optional(),
     /**
      * Node-local privileged MCP listener. When omitted, the config layer derives
      * PORT+1 so existing deployments retain an explicit, deterministic endpoint.
@@ -332,71 +313,6 @@ export const EnvSchema = z
         message:
           "MCP_ENABLED must be true when MCP_STATELESS_TRANSPORT_ENABLED=true",
       });
-    }
-    if (env.MCP_EXTERNAL_INGRESS_ENABLED && !env.MCP_ENABLED) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["MCP_ENABLED"],
-        message: "MCP_ENABLED must be true when MCP_EXTERNAL_INGRESS_ENABLED=true",
-      });
-    }
-    if (env.MCP_EXTERNAL_EVENTS_STATE_FILE && !env.MCP_EXTERNAL_INGRESS_ENABLED) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["MCP_EXTERNAL_INGRESS_ENABLED"],
-        message: "MCP_EXTERNAL_INGRESS_ENABLED must be true when MCP_EXTERNAL_EVENTS_STATE_FILE is set" });
-    }
-    if (env.MCP_EXTERNAL_INGRESS_ENABLED) {
-      for (const key of [
-        "MCP_EXTERNAL_INGRESS_PATH",
-        "MCP_EXTERNAL_INGRESS_SOURCE",
-        "MCP_EXTERNAL_INGRESS_DISPLAY_NAME",
-        "MCP_EXTERNAL_INGRESS_BEARER_TOKEN",
-      ] as const) {
-        if (!env[key]) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [key],
-            message: `${key} is required when MCP_EXTERNAL_INGRESS_ENABLED=true`,
-          });
-        }
-      }
-    }
-    if (env.MCP_EXTERNAL_INGRESS_ENABLED) {
-      if (
-        env.MCP_EXTERNAL_INGRESS_SOURCE === "internal"
-        || env.MCP_EXTERNAL_INGRESS_SOURCE === "browser"
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["MCP_EXTERNAL_INGRESS_SOURCE"],
-          message: "MCP_EXTERNAL_INGRESS_SOURCE cannot use the reserved internal or browser source",
-        });
-      }
-      const externalPath = normalizedHttpPath(env.MCP_EXTERNAL_INGRESS_PATH);
-      const publicPath = normalizedHttpPath(env.MCP_PATH);
-      if (
-        externalPath !== undefined
-        && publicPath !== undefined
-        && (
-          externalPath === publicPath
-          || externalPath === normalizedHttpPath(internalMcpPath(publicPath))
-        )
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["MCP_EXTERNAL_INGRESS_PATH"],
-          message: "MCP_EXTERNAL_INGRESS_PATH must differ from the public and internal MCP paths",
-        });
-      }
-      if (
-        env.MCP_EXTERNAL_INGRESS_BEARER_TOKEN
-        && env.MCP_EXTERNAL_INGRESS_BEARER_TOKEN === env.AUTH_BEARER_TOKEN
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["MCP_EXTERNAL_INGRESS_BEARER_TOKEN"],
-          message: "MCP_EXTERNAL_INGRESS_BEARER_TOKEN must differ from AUTH_BEARER_TOKEN",
-        });
-      }
     }
     if (
       env.SOUL_RUNNER_PROCESS_ENABLED

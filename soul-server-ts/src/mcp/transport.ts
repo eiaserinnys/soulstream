@@ -22,18 +22,15 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { checkMcpAuth, type McpAuthConfig } from "./auth.js";
 import {
   SOULSTREAM_AGENT_SESSION_HEADER,
-  type McpCallerPrincipal,
   withMcpRequestContext,
 } from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
 import { buildMcpServer } from "./server.js";
-import { guardMcpToolCallRequest } from "./tool_access.js";
 
 export interface McpRouteConfig {
   path: string;
   auth: McpAuthConfig;
   statelessTransport: boolean;
-  principal: McpCallerPrincipal;
 }
 
 interface SessionEntry {
@@ -95,10 +92,9 @@ export function registerMcpRoutes(
           reply,
           statelessEntries,
           runtime,
-          config.principal,
         );
       } else {
-        await dispatchPost(req, reply, sessions, runtime, config.principal);
+        await dispatchPost(req, reply, sessions, runtime);
       }
     } catch (err) {
       runtime.logger.error(
@@ -163,21 +159,14 @@ async function dispatchStatelessPost(
   reply: FastifyReply,
   active: Set<StatelessEntry>,
   runtime: McpRuntime,
-  principal: McpCallerPrincipal,
 ): Promise<void> {
   await withMcpRequestContext(
     {
       callerSessionId: headerValue(
         req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
       ),
-      principal,
     },
     async () => {
-      const blocked = guardMcpToolCallRequest(runtime, req.body);
-      if (blocked) {
-        writeJsonRpcResult(reply, requestId(req.body), blocked);
-        return;
-      }
 
       // SDK official stateless mode: a fresh transport and McpServer per POST.
       // No MCP session ID is generated or validated, so server replacement cannot
@@ -228,7 +217,6 @@ async function dispatchPost(
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
   runtime: McpRuntime,
-  principal: McpCallerPrincipal,
 ): Promise<void> {
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   const body = req.body;
@@ -240,14 +228,8 @@ async function dispatchPost(
         callerSessionId: headerValue(
           req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
         ),
-        principal,
       },
       async () => {
-        const blocked = guardMcpToolCallRequest(runtime, body);
-        if (blocked) {
-          writeJsonRpcResult(reply, requestId(body), blocked);
-          return;
-        }
         await entry.transport.handleRequest(req.raw, reply.raw, body);
       },
     );
@@ -272,7 +254,6 @@ async function dispatchPost(
         callerSessionId: headerValue(
           req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
         ),
-        principal,
       },
       async () => {
         const server = buildMcpServer(runtime);

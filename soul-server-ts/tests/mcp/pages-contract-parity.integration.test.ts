@@ -11,7 +11,7 @@ import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_
 import { createLiveAtomHttpClient } from "../../../orch-server-ts/src/runtime/live_atom_route_provider.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../../../orch-server-ts/tests/page/page_postgres_harness.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
-import { createGuardedMcpServer } from "../../src/mcp/tool_access.js";
+import { createInventoryMcpServer } from "../../src/mcp/tool_access.js";
 import { skillTools as skillDefinitions } from "@soulstream/mcp-contract";
 import * as hostTransport from "../../src/control_plane/persistence_host_transport.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
@@ -20,7 +20,6 @@ import * as liveTools from "../../src/mcp/tools/live_card_view.js";
 import * as skillTools from "../../src/mcp/tools/skills.js";
 
 const internal: McpRequestContext = { callerSessionId: "agent-session" };
-const external: McpRequestContext = { ...internal, principal: { authority: "external", source: "llm", displayName: "External" } };
 const create = { id: "new-page", title: "새 페이지", idempotency_key: "new-key" };
 const batch = { page_id: "seed", expected_version: 1, idempotency_key: "batch-key", operations: [{ op: "rename_page", title: "변경" }] };
 type Case = [string, string, Record<string, unknown>, McpRequestContext?, boolean?, number?];
@@ -45,7 +44,6 @@ const cases: Case[] = [
   ["batch conflict", "batch_page_operations", { ...batch, expected_version: 999 }, internal, true],
   ["batch missing", "batch_page_operations", { ...batch, page_id: "missing" }, internal, true],
   ["batch delete internal", "batch_page_operations", { ...batch, operations: [{ op: "delete_block_subtree", block_id: "seed-block" }] }],
-  ["batch delete external", "batch_page_operations", { ...batch, operations: [{ op: "delete_block_subtree", block_id: "seed-block" }] }, external, true],
   ["upsert new", "upsert_page_markdown", { title: "새 마크다운", markdown: "첫 줄", idempotency_key: "markdown-new" }],
   ["upsert existing", "upsert_page_markdown", { page_id: "seed", expected_version: 1, markdown: "첫 줄", idempotency_key: "markdown-existing" }],
   ["upsert both ids", "upsert_page_markdown", { page_id: "seed", title: "둘", markdown: "", expected_version: 1, idempotency_key: "invalid" }, internal, true],
@@ -56,15 +54,12 @@ const cases: Case[] = [
   ["daily implicit", "get_daily_page", {}],
   ["daily explicit new", "get_daily_page", { date: "2026-08-02" }],
   ["daily existing", "get_daily_page", { date: "2026-08-02" }, internal, false, 2],
-  ["external read", "get_page", { page_id: "seed", caller_session_id: "spoofed" }, external],
-  ["external write", "create_page", { ...create, caller_session_id: "spoofed" }, external],
   ["missing actor", "create_page", create, {}, true],
   ["explicit actor", "create_page", { ...create, caller_session_id: " argument-session " }],
   ["live open all", "show_live_card_view", {}],
   ["live refresh folder", "list_live_cards", { folder_id: "folder-a", limit: 2 }],
   ["live bounded 100", "show_live_card_view", { limit: 100 }],
   ["live failed", "list_live_cards", { folder_id: "failure" }, internal, true],
-  ["live external", "show_live_card_view", {}, external],
   ["skill exact", "search_skills", { query: " Skill-1 " }, internal, false, 2],
   ["skill ranked", "search_skills", { query: "rank", limit: 2 }],
   ["skill default five", "search_skills", { query: "rank" }],
@@ -74,7 +69,6 @@ const cases: Case[] = [
   ["skill atom empty", "search_skills", { query: "atom-empty" }, internal, true],
   ["skill atom exception", "search_skills", { query: "atom-exception" }, internal, true],
   ["skill missing key", "search_skills", { query: "missing-key" }, internal, true],
-  ["skill external", "search_skills", { query: "skill-1" }, external],
 ];
 
 describe("pages/live/skills MCP host roundtrip", () => {
@@ -135,7 +129,7 @@ describe("pages/live/skills MCP host roundtrip", () => {
   }
   async function call(name: string, input: Record<string, unknown>, ctx: McpRequestContext) {
     const server = new McpServer({ name: "parity", version: "1" });
-    const guarded = createGuardedMcpServer(server, runtime);
+    const guarded = createInventoryMcpServer(server, runtime);
     withMcpRequestContext(ctx, () => {
       pageTools.registerPageTools(guarded, runtime);
       skillTools.registerSkillsTools(guarded, runtime);
@@ -154,7 +148,6 @@ describe("pages/live/skills MCP host roundtrip", () => {
     expect(next.isError === true).toBe(error);
     expect(serialize(name === "upsert_page_markdown" && input.title ? "upsert_page_markdown:new" : name, next)).toMatchSnapshot();
     if (!error) expect(hostCalls - before).toBe(repeats);
-    if (name === "create_page" && ctx === external) expect(next.structuredContent.operation).toMatchObject({ actor_kind: "llm", actor_session_id: null });
   });
   it("enforces external deletion on raw host calls", async () => {
     const response = await app.inject({ method: "POST", url: "/api/mcp/host/batch_page_operations", headers: { authorization: "Bearer token" }, payload: { args: { ...batch, operations: [{ op: "delete_block_subtree", block_id: "seed-block" }] }, context: { principal: "external", caller_session_id: "spoofed", node_id: "test" } } });

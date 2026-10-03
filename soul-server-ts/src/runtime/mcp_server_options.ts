@@ -16,19 +16,5 @@ export function buildMcpServerOptions(
       bearerToken: env.AUTH_BEARER_TOKEN,
       allowedHosts: env.MCP_ALLOWED_HOSTS,
     },
-    ...(env.MCP_EXTERNAL_INGRESS_ENABLED
-      ? {
-          externalIngress: {
-            path: env.MCP_EXTERNAL_INGRESS_PATH!,
-            source: env.MCP_EXTERNAL_INGRESS_SOURCE!,
-            displayName: env.MCP_EXTERNAL_INGRESS_DISPLAY_NAME!,
-            auth: {
-              requireAuth: true,
-              bearerToken: env.MCP_EXTERNAL_INGRESS_BEARER_TOKEN!,
-              allowedHosts: env.MCP_ALLOWED_HOSTS,
-            },
-          },
-        }
-      : {}),
   };
 }

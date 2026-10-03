@@ -26,7 +26,6 @@ describe("cluster MCP contract availability", () => {
 });
 
 const context: McpRequestContext = { callerSessionId: "caller" };
-const external: McpRequestContext = { callerSessionId: "forged", principal: { authority: "external", source: "llm", displayName: "External" } };
 const create = { name: "새 작업", prompt: "수행", timezone: "Asia/Seoul", schedule_expressions: ["0 9 * * *"], idempotency_key: "create-key", node_id: "node-a", agent_id: "roselin", model_preset: null, folder_id: "allowed-folder" };
 const profile = { id: "roselin", name: "로젤린", backend: "codex", workspace_dir: "/test/worker", aliases: ["별칭"] };
 const remote = { node_id: "node-a", agent_id: "roselin", model_preset: "sol", prompt: "수행" };
@@ -41,8 +40,6 @@ const cases: Case[] = [
   ["run recurring", "run_recurring_job", { job_id: "job-1", idempotency_key: "run-key" }],
   ["archive recurring", "archive_recurring_job", { job_id: "job-1", expected_version: 1 }],
   ["recurring history limit", "list_recurring_job_runs", { job_id: "job-1", limit: 1 }],
-  ["recurring external query", "list_recurring_jobs", {}, external, true],
-  ["recurring external mutation", "create_recurring_job", create, external, true],
   ["recurring no session", "create_recurring_job", create, {}, true],
   ["recurring no email", "list_recurring_jobs", {}, { callerSessionId: "no-email" }, true],
   ["recurring missing", "get_recurring_job", { job_id: "missing" }, context, true],
@@ -51,7 +48,6 @@ const cases: Case[] = [
   ["recurring bad cron", "preview_recurring_schedule", { timezone: "Asia/Seoul", schedule_expressions: ["invalid"] }, context, true],
   ["get settings", "get_card_orchestration_settings", {}],
   ["update settings", "update_card_orchestration_settings", { policy, expectedVersion: 1 }],
-  ["settings external", "get_card_orchestration_settings", {}, external, true],
   ["settings mismatch", "get_card_orchestration_settings", { caller_session_id: "other" }, context, true],
   ["settings non-admin", "get_card_orchestration_settings", {}, { callerSessionId: "limited" }, true],
   ["settings decision", "get_card_orchestration_settings", {}, { callerSessionId: "decision" }, true],
@@ -61,7 +57,6 @@ const cases: Case[] = [
   ["list agents", "list_node_agents", { node_id: "node-a" }],
   ["list presets", "list_node_model_presets", { node_id: "node-a" }],
   ["reflect brief", "reflect_cluster_brief", {}],
-  ["external node query", "list_nodes", {}, external],
   ["profile plan", "plan_remote_agent_profile_update", { node_id: "node-a", profile, create_if_missing: true, includeTextDiff: true }],
   ["profile apply", "apply_remote_agent_profile_update", { node_id: "node-a", profile, expectedConfigChecksum: "checksum", include_text_diff: true }],
   ["snapshots", "list_remote_agents_config_snapshots", { node_id: "node-a" }],
@@ -77,7 +72,6 @@ const cases: Case[] = [
   ["remote card", "create_remote_agent_session", { ...remote, card_id: "card-1", reasoning_effort: "high" }],
   ["remote missing preset", "create_remote_agent_session", { ...remote, model_preset: "unknown" }, context, true],
   ["remote missing caller", "create_remote_agent_session", remote, {}, true],
-  ["remote external", "create_remote_agent_session", { ...remote, caller_session_id: "forged" }, external],
   ["remote limited forbidden", "create_remote_agent_session", { ...remote, folder_id: "forbidden-folder" }, { callerSessionId: "limited" }, true],
   ["remote limited omitted", "create_remote_agent_session", remote, { callerSessionId: "limited" }],
   ["remote administrator unrestricted", "create_remote_agent_session", { ...remote, folder_id: "forbidden-folder" }],
@@ -123,11 +117,9 @@ describe("cluster MCP roundtrip", () => {
   });
   it.each([
     ["list_nodes", {}, context], ["create_remote_agent_session", remote, {}],
-    ["list_recurring_jobs", {}, context], ["list_recurring_jobs", {}, {}],
-    ["list_recurring_jobs", {}, external], ["list_recurring_jobs", {}, { callerSessionId: "no-email" }],
+    ["list_recurring_jobs", {}, context], ["list_recurring_jobs", {}, {}], ["list_recurring_jobs", {}, { callerSessionId: "no-email" }],
     ["get_card_orchestration_settings", {}, context], ["get_card_orchestration_settings", {}, {}],
     ["get_card_orchestration_settings", { caller_session_id: "other" }, context],
-    ["get_card_orchestration_settings", {}, external],
   ] as const)("preserves unavailable transport for %s %j %j", async (name, args, requestContext) => {
     const runtime = { ...fixture.runtime, orch: undefined };
     expect(serialize(name, await call(name, args, requestContext, runtime))).toMatchSnapshot("result");

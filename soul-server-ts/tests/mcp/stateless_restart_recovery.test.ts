@@ -43,7 +43,7 @@ afterEach(async () => {
 });
 
 describe("MCP stateless restart recovery", () => {
-  it("never mounts the internal route on the public listener, including nginx-shaped requests", async () => {
+  it.each(["/mcp", "/mcp/internal", "/mcp/external-llm"])("never mounts %s on the public listener, including nginx-shaped requests", async path => {
     server = await buildServer({
       host: "127.0.0.1",
       port: 0,
@@ -62,7 +62,7 @@ describe("MCP stateless restart recovery", () => {
     });
 
     const publicUrl = await server.listen({ host: "127.0.0.1", port: 0 });
-    const response = await fetch(`${publicUrl}/mcp/internal`, {
+    const response = await fetch(`${publicUrl}${path}`, {
       method: "POST",
       headers: {
         authorization: "Bearer shared-secret",
@@ -323,198 +323,9 @@ describe("MCP stateless restart recovery", () => {
     expect((await rpcPayload(called)).result.isError).not.toBe(true);
     expect(callerSessionIds).toEqual(["internal-owner-session"]);
   });
-
-  it("pins the stateless principal to llm when origin and session headers are omitted or forged", async () => {
-    const runtime = makeRuntime();
-    const createTask = vi.fn(async (params: { agentSessionId: string }) => ({
-      agentSessionId: params.agentSessionId,
-      status: "pending",
-    }));
-    runtime.taskManager = {
-      listTasks: () => [],
-      getTask: () => undefined,
-      createTask,
-    } as unknown as TaskManager;
-    runtime.taskExecutor = { startNewExecution: vi.fn() } as unknown as TaskExecutor;
-    runtime.agentRegistry = new AgentRegistry([{
-      id: "codex-default",
-      name: "Codex",
-      backend: "codex",
-      workspace_dir: "/tmp/codex-ws",
-    }]);
-
-    server = await buildStatelessServer(runtime);
-    const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
-
-    for (const origin of [undefined, "internal"] as const) {
-      const listed = await post(
-        baseUrl,
-        undefined,
-        { jsonrpc: "2.0", method: "tools/list", params: {}, id: 10 },
-        {
-          "x-soulstream-agent-session-id": "spoofed-header-session",
-          ...(origin ? { "x-soulstream-caller-origin": origin } : {}),
-        },
-      );
-      const toolNames = (await rpcPayload(listed)).result.tools.map(
-        (tool: { name: string }) => tool.name,
-      );
-      expect(toolNames).not.toContain("delete_session");
-    }
-
-    const created = await post(
-      baseUrl,
-      undefined,
-      {
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: {
-          name: "create_agent_session",
-          arguments: {
-            agent_id: "codex-default",
-            prompt: "do not trust the claimed parent",
-            caller_session_id: "spoofed-body-session",
-          },
-        },
-        id: 11,
-      },
-      {
-        "x-soulstream-agent-session-id": "spoofed-header-session",
-        "x-soulstream-caller-origin": "internal",
-      },
-    );
-    expect((await rpcPayload(created)).result.isError).not.toBe(true);
-    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({
-      callerSessionId: null,
-      callerInfo: expect.objectContaining({ source: "llm" }),
-    }));
-  });
-
-  it("serves LLM and internal stateless principals on separate production paths", async () => {
-    const callerSessionIds: Array<string | undefined> = [];
-    const runtime = makeRuntime();
-    runtime.agentProfileSource = {
-      async list() {
-        callerSessionIds.push(getCurrentMcpCallerSessionId());
-        return [];
-      },
-    } as never;
-    server = await buildStatelessServer(runtime);
-    const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
-    internalServer = await buildInternalMcpServer({
-      logger: createSilentLogger(),
-      runtime,
-      path: "/mcp/internal",
-      statelessTransport: true,
-      auth: {
-        requireAuth: false,
-        bearerToken: "",
-        allowedHosts: ["127.0.0.1", "localhost"],
-      },
-    });
-    const internalUrl = await startInternalMcpServer(internalServer, 0);
-
-    const publicList = await post(
-      baseUrl,
-      undefined,
-      { jsonrpc: "2.0", method: "tools/list", params: {}, id: 20 },
-      {
-        "x-soulstream-agent-session-id": "forged-public-session",
-        "x-soulstream-caller-origin": "internal",
-      },
-    );
-    const publicNames = (await rpcPayload(publicList)).result.tools.map(
-      (tool: { name: string }) => tool.name,
-    );
-
-    const initialized = await postAtPath(
-      internalUrl,
-      "/mcp/internal",
-      undefined,
-      {
-        jsonrpc: "2.0",
-        method: "initialize",
-        params: {
-          protocolVersion: "2024-11-05",
-          capabilities: {},
-          clientInfo: { name: "internal-sdk", version: "0.0.0" },
-        },
-        id: 21,
-      },
-      { "x-soulstream-agent-session-id": "internal-agent-session" },
-    );
-    const internalSessionId = initialized.headers.get("mcp-session-id");
-    expect(internalSessionId).toBeNull();
-    await initialized.text();
-
-    const internalList = await postAtPath(
-      internalUrl,
-      "/mcp/internal",
-      internalSessionId!,
-      { jsonrpc: "2.0", method: "tools/list", params: {}, id: 22 },
-      { "x-soulstream-agent-session-id": "internal-agent-session" },
-    );
-    const internalNames = (await rpcPayload(internalList)).result.tools.map(
-      (tool: { name: string }) => tool.name,
-    );
-    expect(
-      internalNames.filter((name: string) => !publicNames.includes(name)).sort(),
-    ).toEqual([
-      "apply_remote_agent_profile_update",
-      "create_worktree",
-      "delete_folder",
-      "delete_markdown_document",
-      "delete_session",
-      "delete_worktree_branch",
-      "list_external_llm_recipients",
-      "remove_worktree",
-      "rollback_agents_config",
-      "rollback_remote_agents_config",
-      "send_to_external_llm",
-      "set_agent_atom_contexts",
-      "set_agent_mcp_profile",
-      "set_folder_system_prompt",
-      "update_agent_profile",
-    ]);
-    expect(
-      publicNames.filter((name: string) => !internalNames.includes(name)),
-    ).toEqual([]);
-
-    const called = await postAtPath(
-      internalUrl,
-      "/mcp/internal",
-      internalSessionId!,
-      {
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: { name: "list_local_agents", arguments: {} },
-        id: 23,
-      },
-      { "x-soulstream-agent-session-id": "internal-agent-session" },
-    );
-    expect((await rpcPayload(called)).result.isError).not.toBe(true);
-    expect(callerSessionIds).toEqual(["internal-agent-session"]);
-  });
 });
+function buildStatelessServer(runtime: McpRuntime) { return buildInternalMcpServer({logger: createSilentLogger(), runtime, path: "/mcp", statelessTransport: true, auth:{requireAuth:false,bearerToken:"",allowedHosts:["127.0.0.1","localhost"]}}); }
 
-function buildStatelessServer(runtime: McpRuntime) {
-  return buildServer({
-    host: "127.0.0.1",
-    port: 0,
-    nodeId: "test-node",
-    logger: createSilentLogger(),
-    mcp: {
-      runtime,
-      path: "/mcp",
-      statelessTransport: true,
-      auth: {
-        requireAuth: false,
-        bearerToken: "",
-        allowedHosts: ["127.0.0.1", "localhost"],
-      },
-    },
-  });
-}
 
 function makeRuntime(): McpRuntime {
   return {

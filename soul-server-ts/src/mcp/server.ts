@@ -7,7 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { McpRuntime } from "./runtime.js";
-import { createGuardedMcpServer } from "./tool_access.js";
+import { createInventoryMcpServer } from "./tool_access.js";
 import { registerAgentConfigTools } from "./tools/agent_config.js";
 import { registerCatalogTools } from "./tools/catalog.js";
 import { registerClaudeRuntimeTools } from "./tools/claude_runtime.js";
@@ -30,22 +30,22 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
     name: "soul-server-ts",
     version: "0.0.1",
   });
-  const guardedServer = createGuardedMcpServer(server, runtime);
-  registerReflectTools(guardedServer, runtime);
-  registerSessionQueryTools(guardedServer, runtime);
-  registerSessionMgmtTools(guardedServer, runtime);
-  registerClaudeRuntimeTools(guardedServer, runtime);
-  registerCatalogTools(guardedServer, runtime);
-  registerSkillsTools(guardedServer, runtime);
-  registerAgentConfigTools(guardedServer, runtime);
-  registerMultiNodeTools(guardedServer, runtime);
-  registerFolderTools(guardedServer, runtime);
-  registerLiveCardView(guardedServer, runtime);
-  registerCustomViewTools(guardedServer, runtime);
-  registerPageTools(guardedServer, runtime);
-  registerWorktreeTools(guardedServer, runtime);
-  registerRecurringJobTools(guardedServer, runtime);
-  registerCardOrchestrationTools(guardedServer, runtime);
-  registerExternalLlmTools(guardedServer, runtime);
+  const inventoryServer = createInventoryMcpServer(server, runtime);
+  registerReflectTools(inventoryServer, runtime);
+  registerSessionQueryTools(inventoryServer, runtime);
+  registerSessionMgmtTools(inventoryServer, runtime);
+  registerClaudeRuntimeTools(inventoryServer, runtime);
+  registerCatalogTools(inventoryServer, runtime);
+  registerSkillsTools(inventoryServer, runtime);
+  registerAgentConfigTools(inventoryServer, runtime);
+  registerMultiNodeTools(inventoryServer, runtime);
+  registerFolderTools(inventoryServer, runtime);
+  registerLiveCardView(inventoryServer, runtime);
+  registerCustomViewTools(inventoryServer, runtime);
+  registerPageTools(inventoryServer, runtime);
+  registerWorktreeTools(inventoryServer, runtime);
+  registerRecurringJobTools(inventoryServer, runtime);
+  registerCardOrchestrationTools(inventoryServer, runtime);
+  registerExternalLlmTools(inventoryServer, runtime);
   return server;
 }

@@ -9,7 +9,6 @@ import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/req
 import { createSessionRoundtripFixture } from "./session-roundtrip-fixture.js";
 
 const parent: McpRequestContext = { callerSessionId: "parent" };
-const external: McpRequestContext = { callerSessionId: "parent", principal: { authority: "external", source: "llm", displayName: "Dot" } };
 const successes: [string, Record<string, unknown>][] = [
   ["list_sessions", {}], ["list_sessions", { folder_name: "폴더", limit: 1, cursor: 1 }],
   ["list_sessions", { search: "missing", node_name: "remote" }], ["list_sessions", { folder_name: "missing" }],
@@ -106,7 +105,7 @@ describe("session MCP roundtrip", () => {
     const result = await roundtrip(name, args, parent, { failure }); expect(result.isError).toBe(true);
   });
   it("preserves partial session search", async () => { await roundtrip("search_sessions", { query: "needle" }, parent, { partial: true }); });
-  it.each([external, {}])("preserves query and mutation for identity %j", async context => {
+  it.each([{}])("preserves query and mutation for identity %j", async context => {
     await roundtrip("get_session_event", { session_id: "child", event_id: 4, caller_session_id: "parent" }, context);
     await roundtrip("search_sessions", { query: "needle" }, context);
     await roundtrip("search_session_history", { query: "needle" }, context);

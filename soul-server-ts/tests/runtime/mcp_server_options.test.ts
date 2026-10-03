@@ -17,27 +17,4 @@ describe("MCP server option composition", () => {
       {} as McpRuntime,
     )).toBeUndefined();
   });
-
-  it("mounts a credential-separated external ingress only when enabled", () => {
-    const options = buildMcpServerOptions(parseEnv({
-      ...minimal,
-      MCP_ENABLED: "true",
-      AUTH_BEARER_TOKEN: "service-secret",
-      MCP_EXTERNAL_INGRESS_ENABLED: "true",
-      MCP_EXTERNAL_INGRESS_PATH: "/mcp/external-llm",
-      MCP_EXTERNAL_INGRESS_SOURCE: "external-llm",
-      MCP_EXTERNAL_INGRESS_DISPLAY_NAME: "External LLM",
-      MCP_EXTERNAL_INGRESS_BEARER_TOKEN: "external-secret",
-    }), {} as McpRuntime);
-
-    expect(options?.externalIngress).toMatchObject({
-      path: "/mcp/external-llm",
-      source: "external-llm",
-      displayName: "External LLM",
-      auth: {
-        requireAuth: true,
-        bearerToken: "external-secret",
-      },
-    });
-  });
 });

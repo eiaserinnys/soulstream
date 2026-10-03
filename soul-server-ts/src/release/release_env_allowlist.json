@@ -1,7 +1,6 @@
 {
   "schema_version": 2,
   "entries": {
-    "MCP_EXTERNAL_EVENTS_STATE_FILE": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CARD_DECISION_DOCKER_IMAGE": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "CARD_DECISION_CODEX_BINARY_PATH": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CARD_DECISION_CLAUDE_EXECUTABLE_PATH": { "owner": "card_orchestration", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
@@ -53,11 +52,6 @@
     "MCP_INTERNAL_PORT": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },
     "MCP_STATELESS_TRANSPORT_ENABLED": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
     "MCP_REQUIRE_AUTH": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
-    "MCP_EXTERNAL_INGRESS_ENABLED": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
-    "MCP_EXTERNAL_INGRESS_PATH": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
-    "MCP_EXTERNAL_INGRESS_SOURCE": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
-    "MCP_EXTERNAL_INGRESS_DISPLAY_NAME": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
-    "MCP_EXTERNAL_INGRESS_BEARER_TOKEN": { "owner": "mcp", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "MCP_ALLOWED_HOSTS": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string_array" },
     "WORKTREE_MCP_ENABLED": { "owner": "worktree", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
     "WORKTREE_CREATE_TIMEOUT_MS": { "owner": "worktree", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },
