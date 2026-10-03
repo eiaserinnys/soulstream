@@ -288,8 +288,8 @@ describe("versioned migration contract", () => {
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migrations.at(-1)?.id).toBe("114_card_attachments.sql");
-    expect(migrations.at(-1)?.sql).toContain("ADD COLUMN attachments JSONB NOT NULL DEFAULT '[]'::jsonb");
+    expect(migrations.at(-1)?.id).toBe("115_single_card_assignee.sql");
+    expect(migrations.find((item) => item.id === "114_card_attachments.sql")?.sql).toContain("ADD COLUMN attachments JSONB NOT NULL DEFAULT '[]'::jsonb");
     expect(schema).toMatch(/attachments\s+JSONB NOT NULL DEFAULT '\[\]'::jsonb/);
     expect(removal?.sql).toMatch(/ALTER TABLE folders DROP COLUMN checklist_enabled/i);
     expect(schema).not.toMatch(/\bchecklist_enabled\b/);
