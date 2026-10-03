@@ -7,7 +7,6 @@ import { registerOrchestratorTools } from "../orchestrator_tools.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { SessionQueryConsumptionBoundary } from "./session_query_consumption_boundary.js";
-export { registerSessionQueryToolsLegacy } from "./session_query_legacy.js";
 const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 export function registerSessionQueryTools(server: McpServer, runtime: McpRuntime): void {
   const consumptionBoundary = new SessionQueryConsumptionBoundary(runtime.childCompletionConsumption);
