@@ -6,15 +6,13 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
-import { registerCardRoutes } from "../../../orch-server-ts/src/cards/card_routes.js";
 import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../../../orch-server-ts/tests/page/page_postgres_harness.js";
 import { appendCardEventTx, prepareCardWorkSchema } from "../../../orch-server-ts/tests/card-work-postgres-fixture.js";
-import { FolderService } from "../../src/folder/folder_service.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
-import { registerCardTools, registerCardToolsLegacy } from "../../src/mcp/tools/card_tools.js";
+import { registerCardTools } from "../../src/mcp/tools/card_tools.js";
 import { createLiveDashboardAccessProvider, serviceTokenAccessWithoutEmail } from "../../../orch-server-ts/src/runtime/live_dashboard_access_provider.js";
 
 const context: McpRequestContext = { callerSessionId: "header-session" };
@@ -56,7 +54,7 @@ const cases: readonly [string, string, Record<string, unknown>, McpRequestContex
   ["work no execution", "start_card_work", status, { callerSessionId: "argument-session" }, true],
 ];
 
-describe("card legacy and orchestrator MCP parity", () => {
+describe("card orchestrator MCP roundtrip", () => {
   let h: PagePostgresHarness;
   let app: ReturnType<typeof Fastify>;
   let runtime: McpRuntime;
@@ -75,7 +73,6 @@ describe("card legacy and orchestrator MCP parity", () => {
       } as never, jwt: { verifyToken: async () => null } as never, repository: { findUserByEmail: async () => null } }),
       authBearerToken: "service-token" };
     app = Fastify();
-    registerCardRoutes(app, options);
     registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: options.authBearerToken,
       cards: { ...options, resolveAccess: serviceTokenAccessWithoutEmail }, folders: {
       authBearerToken: options.authBearerToken, serviceProvider: async () => { throw new Error("unused folder host"); },
@@ -83,8 +80,7 @@ describe("card legacy and orchestrator MCP parity", () => {
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
     const logger = { warn: vi.fn() } as never;
-    runtime = { nodeId: "test-node", orch, logger, folderService: new FolderService({ orch, logger }),
-      taskManager: { getTask: (id: string) => id === "header-session" ? { executionRegistration: execution } : undefined } } as unknown as McpRuntime;
+    runtime = { nodeId: "test-node", orch, logger, taskManager: { getTask: (id: string) => id === "header-session" ? { executionRegistration: execution } : undefined } } as unknown as McpRuntime;
   }, 60_000);
   afterAll(async () => { await app?.close(); await h?.cleanup(); });
   async function seed() {
@@ -101,9 +97,9 @@ describe("card legacy and orchestrator MCP parity", () => {
     await h.sql`INSERT INTO card_questions(id,card_id,session_id,text,options) VALUES('seed-question','card-1','header-session','기존 질문',NULL)`;
     await h.sql`UPDATE sessions SET card_id='card-1' WHERE session_id='header-session'`;
   }
-  async function call(legacy: boolean, name: string, input: object, requestContext: McpRequestContext) {
+  async function call(name: string, input: object, requestContext: McpRequestContext) {
     const server = new McpServer({ name: "parity", version: "1" });
-    (legacy ? registerCardToolsLegacy : registerCardTools)(server, runtime);
+    registerCardTools(server, runtime);
     const client = new Client({ name: "parity-client", version: "1" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
@@ -111,22 +107,19 @@ describe("card legacy and orchestrator MCP parity", () => {
       return await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: input as Record<string, unknown> }));
     } finally { await client.close(); await server.close(); }
   }
-  it("intentionally opens external report writes while preserving the legacy refusal", async () => {
+  it("allows external report writes with an llm audit actor", async () => {
     const input = { card_id: "card-1", title: "외부", format: "markdown", body: "보고" };
     await seed();
-    expect((await call(true, "add_card_report", input, external)).isError).toBe(true);
-    await seed();
-    expect((await call(false, "add_card_report", input, external)).isError).not.toBe(true);
+    expect((await call("add_card_report", input, external)).isError).not.toBe(true);
     expect((await h.sql`SELECT actor_kind,actor_session_id FROM folder_operations WHERE operation_type='add_card_report'`)[0])
       .toMatchObject({ actor_kind: "llm", actor_session_id: null });
   });
   it.each(cases)("preserves %s", async (_label, name, input, requestContext = context, fails = false) => {
-    await seed(); const old = await call(true, name, input, requestContext);
-    expect(old.isError === true).toBe(fails);
-    await seed(); const next = await call(false, name, input, requestContext);
-    assertParity(name, old, next);
+    await seed(); const next = await call(name, input, requestContext);
+    expect(next.isError === true).toBe(fails);
+    expect(serializeResult(name, next)).toMatchSnapshot();
     if (_label === "create success") expect((await h.sql`SELECT * FROM cards WHERE title='새 카드'`)[0]).toMatchObject({ assignee_kind: "agent", assignee_agent_id: "roselin", node_id: "test-node", model_preset: "sol" });
-    if (_label === "create duplicate assignee") for (const result of [old, next]) expect(JSON.stringify(result)).toContain("card-1");
+    if (_label === "create duplicate assignee") expect(JSON.stringify(next)).toContain("card-1");
     if (name === "ask_card_question" && !fails) expect(next.structuredContent).toHaveProperty("guidance", "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
   });
 });
@@ -165,28 +158,10 @@ function serializeResult(tool: string, result: unknown): string {
     return { ...item, text: JSON.stringify(mask(tool, parsed), null, 2) };
   }), ...(value.structuredContent === undefined ? {} : { structuredContent: mask(tool, value.structuredContent) }) }, null, 2);
 }
-function assertParity(tool: string, old: unknown, next: unknown) { expect(serializeResult(tool, next)).toBe(serializeResult(tool, old)); }
-describe("card parity comparator detects violations", () => {
-  const result = (value: Record<string, unknown>, spaces = 2) => ({ content: [{ type: "text", text: JSON.stringify(value, null, spaces) }], structuredContent: value });
-  it.each(["content", "structuredContent", "isError"])("detects changed %s", key => {
-    const old = { content: [{ type: "text", text: "ok" }], structuredContent: { result: "ok" }, isError: false };
-    expect(() => assertParity("get_card", old, { ...old, [key]: "broken" })).toThrow();
-  });
+describe("card result masking", () => {
   it("masks only listed random fields and timestamps", () => {
-    assertParity("set_card_status", result({ operation: { id: "a", createdAt: "old" }, card: { id: "card-1" } }),
-      result({ operation: { id: "b", createdAt: "new" }, card: { id: "card-1" } }));
-  });
-  it("detects structured key order", () => {
-    const old = result({ id: "first", title: "card" });
-    expect(() => assertParity("get_card", old, { ...old, structuredContent: { title: "card", id: "first" } })).toThrow();
-  });
-  it("detects JSON key order", () => { expect(() => assertParity("get_card", result({ id: "first", title: "card" }), result({ title: "card", id: "first" }))).toThrow(); });
-  it("detects JSON indentation", () => { expect(() => assertParity("get_card", result({ id: "first" }), result({ id: "first" }, 4))).toThrow(); });
-  it("detects unmasked IDs", () => { expect(() => assertParity("set_card_status", result({ card: { id: "card-1" } }), result({ card: { id: "card-2" } }))).toThrow(); });
-  it("compares compact JSON error messages verbatim", () => {
-    const body = { detail: { error: { code: "CARD_NOT_FOUND" } } };
-    const old = { content: [{ type: "text", text: JSON.stringify(body) }], isError: true };
-    assertParity("get_card", old, old);
-    expect(() => assertParity("get_card", old, { ...old, content: [{ type: "text", text: JSON.stringify(body, null, 2) }] })).toThrow();
+    expect(mask("set_card_status", { operation: { id: "random", createdAt: "now" }, card: { id: "card-1" } }))
+      .toEqual({ operation: { id: "<random-id>", createdAt: "<time>" }, card: { id: "card-1" } });
+    expect(mask("get_card", { id: "seed", completed_at: null })).toEqual({ id: "seed", completed_at: null });
   });
 });

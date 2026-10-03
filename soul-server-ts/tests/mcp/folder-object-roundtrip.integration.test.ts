@@ -7,16 +7,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
 import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
-import { registerFolderControlPlaneHostRoute } from "../../../orch-server-ts/src/folders/folder_control_plane_host_route.js";
 import { FolderProjectIdentityService } from "../../../orch-server-ts/src/folders/folder_project_identity_service.js";
 import { SqlFolderProjectIdentityRepository } from "../../../orch-server-ts/src/folders/folder_project_identity_repository.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../../../orch-server-ts/tests/page/page_postgres_harness.js";
-import { FolderService } from "../../src/folder/folder_service.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
-import { registerFolderObjectTools, registerFolderObjectToolsLegacy } from "../../src/mcp/tools/folder_object_tools.js";
+import { registerFolderObjectTools } from "../../src/mcp/tools/folder_object_tools.js";
 
 const folderId = "00000000-0000-4000-8000-000000000001";
 const mutation = { folder_id: folderId, expected_version: 1, idempotency_key: "tool-change" };
@@ -40,7 +38,7 @@ const cases = [
 ] as const;
 
 // Actual SDK, host routes, services and disposable PG, as in page-roundtrip.integration.test.ts.
-describe("folder object legacy and orchestrator MCP parity", () => {
+describe("folder object orchestrator MCP roundtrip", () => {
   let h: PagePostgresHarness;
   let identity: FolderProjectIdentityService;
   let app: ReturnType<typeof Fastify>;
@@ -64,7 +62,6 @@ describe("folder object legacy and orchestrator MCP parity", () => {
     const options = { serviceProvider: async () => new FolderControlPlaneService(sql),
       cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
     app = Fastify();
-    registerFolderControlPlaneHostRoute(app, options);
     registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: options.authBearerToken, folders: options, cards: {
       cardServiceProvider: options.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }),
@@ -72,7 +69,7 @@ describe("folder object legacy and orchestrator MCP parity", () => {
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
     const logger = { warn: vi.fn() } as never;
-    runtime = { nodeId: "test-node", orch, logger, folderService: new FolderService({ orch, logger }) } as McpRuntime;
+    runtime = { nodeId: "test-node", orch, logger } as McpRuntime;
   }, 60_000);
 
   afterAll(async () => { await app?.close(); await h?.cleanup(); });
@@ -86,9 +83,9 @@ describe("folder object legacy and orchestrator MCP parity", () => {
     await identity.create({ name: "기존 폴더", actor: { actorKind: "agent", actorSessionId: "header-session" }, idempotencyKey: "seed" });
   }
 
-  async function call(legacy: boolean, name: string, input: object, requestContext: McpRequestContext) {
+  async function call(name: string, input: object, requestContext: McpRequestContext) {
     const server = new McpServer({ name: "parity", version: "1" });
-    (legacy ? registerFolderObjectToolsLegacy : registerFolderObjectTools)(server, runtime);
+    registerFolderObjectTools(server, runtime);
     const client = new Client({ name: "parity-client", version: "1" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
@@ -97,15 +94,14 @@ describe("folder object legacy and orchestrator MCP parity", () => {
     } finally { await client.close(); await server.close(); }
   }
 
-  async function parity(name: string, input: object, requestContext = context) {
-    await seed(); const old = await call(true, name, input, requestContext);
-    await seed(); const next = await call(false, name, input, requestContext);
-    assertParity(name, old, next);
+  async function roundtrip(name: string, input: object, requestContext = context) {
+    await seed(); const next = await call(name, input, requestContext);
+    expect(serializeResult(name, next)).toMatchSnapshot();
     return next;
   }
 
   it.each(cases)("preserves %s for %j", async (name, input) => {
-    const result = await parity(name, input);
+    const result = await roundtrip(name, input);
     if ("folder_id" in input && input.folder_id === "missing" && name === "get_folder") {
       expect(result.structuredContent).toEqual({ result: null });
     } else if ("expected_version" in input && (input.expected_version === 999 || input.folder_id === "missing" || input.folder_id === "claude")) {
@@ -115,17 +111,17 @@ describe("folder object legacy and orchestrator MCP parity", () => {
   });
 
   it("preserves llm actor for external callers and ignores both session IDs", async () => {
-    const result = await parity("create_folder", { name: "외부", idempotency_key: "external", caller_session_id: "argument-session" }, {
+    const result = await roundtrip("create_folder", { name: "외부", idempotency_key: "external", caller_session_id: "argument-session" }, {
       ...context, principal: { authority: "external", source: "llm", displayName: "External" },
     });
     expect(result.structuredContent).toMatchObject({ operation: { actorKind: "llm", actorSessionId: null } });
   });
   it("preserves the missing internal actor error", async () => {
-    const result = await parity("rename_folder", { ...mutation, name: "이름" }, {});
+    const result = await roundtrip("rename_folder", { ...mutation, name: "이름" }, {});
     expect(result.content[0]).toMatchObject({ text: "caller session id is required for folder mutation tools. Send x-soulstream-agent-session-id." });
   });
   it("prefers the trimmed argument session over the header", async () => {
-    const result = await parity("rename_folder", { ...mutation, name: "이름", caller_session_id: " argument-session " });
+    const result = await roundtrip("rename_folder", { ...mutation, name: "이름", caller_session_id: " argument-session " });
     expect(result.structuredContent).toMatchObject({ operation: { actorKind: "agent", actorSessionId: "argument-session" } });
   });
 });
@@ -161,38 +157,10 @@ function serializeResult(tool: string, result: unknown): string {
   }, null, 2);
 }
 
-function assertParity(tool: string, old: unknown, next: unknown): void {
-  expect(serializeResult(tool, next)).toBe(serializeResult(tool, old));
-}
-
-describe("parity comparison detects violations", () => {
-  it.each(["content", "structuredContent", "isError"])("does not hide changed %s", key => {
-    const baseline = { content: [{ type: "text", text: "ok" }], structuredContent: { result: "ok" }, isError: false };
-    expect(() => assertParity("get_folder", baseline, { ...baseline, [key]: "broken" })).toThrow();
-  });
-});
-
-describe("parity comparison preserves formatting and unmasked IDs", () => {
-  const result = (value: Record<string, unknown>, spaces = 2) => ({
-    content: [{ type: "text", text: JSON.stringify(value, null, spaces) }],
-    structuredContent: value,
-  });
+describe("folder result masking", () => {
   it("masks only the listed random ID and timestamp fields", () => {
-    assertParity("set_folder_status",
-      result({ operation: { id: "random-a", createdAt: "old-time" }, folder: { id: folderId } }),
-      result({ operation: { id: "random-b", createdAt: "new-time" }, folder: { id: folderId } }));
-  });
-  it("detects reordered structured content keys", () => {
-    const old = result({ id: "first", name: "folder" });
-    expect(() => assertParity("get_folder", old, { ...old, structuredContent: { name: "folder", id: "first" } })).toThrow();
-  });
-  it("detects reordered JSON keys", () => {
-    expect(() => assertParity("get_folder", result({ id: "first", name: "folder" }), result({ name: "folder", id: "first" }))).toThrow();
-  });
-  it("detects different JSON indentation", () => {
-    expect(() => assertParity("get_folder", result({ id: "first" }), result({ id: "first" }, 4))).toThrow();
-  });
-  it("detects a changed sequential ID outside the masking table", () => {
-    expect(() => assertParity("set_folder_status", result({ folder: { id: folderId } }), result({ folder: { id: "00000000-0000-4000-8000-000000000002" } }))).toThrow();
+    expect(mask("set_folder_status", { operation: { id: "random", createdAt: "now" }, folder: { id: folderId } }))
+      .toEqual({ operation: { id: "<random-id>", createdAt: "<time>" }, folder: { id: folderId } });
+    expect(mask("get_folder", { id: folderId, completed_at: null })).toEqual({ id: folderId, completed_at: null });
   });
 });

@@ -4,16 +4,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { registerPageYjsHostOperationRoutes } from "../../../orch-server-ts/src/page/page_host_operations.js";
 import { PageRepository } from "../../../orch-server-ts/src/page/page_repository.js";
 import { PageYjsService } from "../../../orch-server-ts/src/page/page_service.js";
 import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
-import { registerCardRoutes } from "../../../orch-server-ts/src/cards/card_routes.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { createLiveAtomHttpClient } from "../../../orch-server-ts/src/runtime/live_atom_route_provider.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../../../orch-server-ts/tests/page/page_postgres_harness.js";
-import { PageYjsHostClient } from "../../src/page/page_host_client.js";
-import { FolderService } from "../../src/folder/folder_service.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
 import { createGuardedMcpServer } from "../../src/mcp/tool_access.js";
 import { skillTools as skillDefinitions } from "@soulstream/mcp-contract";
@@ -81,7 +77,7 @@ const cases: Case[] = [
   ["skill external", "search_skills", { query: "skill-1" }, external],
 ];
 
-describe("pages/live/skills legacy and MCP host parity", () => {
+describe("pages/live/skills MCP host roundtrip", () => {
   let h: PagePostgresHarness;
   let app: ReturnType<typeof Fastify>;
   let service: PageYjsService;
@@ -104,16 +100,14 @@ describe("pages/live/skills legacy and MCP host parity", () => {
     skillOptions = { enabled: true, serverUrl: "https://atom.test", apiKey: "atom", nodeId: "", typesafeApiKey: "typesafe", logger: { warn: vi.fn() }, httpClient: createLiveAtomHttpClient({ fetch: async (url, init) => fakeFetch(url, init) }) };
     app = Fastify();
     app.addHook("onRequest", async request => { if (request.url.startsWith("/api/mcp/host/")) hostCalls++; });
-    registerPageYjsHostOperationRoutes(app, pageOptions);
-    registerCardRoutes(app, { ...cards, authBearerToken: "token", accessProvider: { resolveAccess: cards.resolveAccess } } as never);
     registerMcpHostRoutes(app, { authBearerToken: "token", pages: pageOptions, skills: skillOptions, cards, folders: {} } as never);
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const orch = { baseUrl, headers: { authorization: "Bearer token" } };
     const logger = { warn: vi.fn() } as never;
-    runtime = { nodeId: "test", orch, logger, pageHostClient: new PageYjsHostClient({ orch, logger }), folderService: new FolderService({ orch, logger }) } as unknown as McpRuntime;
+    runtime = { nodeId: "test", orch, logger } as unknown as McpRuntime;
     vi.stubGlobal("fetch", fakeFetch);
   }, 60_000);
-  afterAll(async () => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); await app?.close(); await service?.close(); await h?.cleanup(); });
+  afterAll(async () => { vi.unstubAllGlobals(); await app?.close(); await service?.close(); await h?.cleanup(); });
   async function fakeFetch(input: any, init?: RequestInit): Promise<Response> {
     const url = String(input);
     if (url.startsWith("https://atom.test")) {
@@ -138,17 +132,14 @@ describe("pages/live/skills legacy and MCP host parity", () => {
     await service.createPage({ page: { id: "seed", title: "Seed", dailyDate: null }, actor: { actorKind: "agent", actorSessionId: "agent-session", actorUserId: null }, idempotencyKey: "create_page:agent-session:seed", initialCommand: { type: "replace_page_markdown", blocks: [{ id: "seed-block", parentId: null, positionKey: "a0", type: "paragraph", text: "[[Seed]]", properties: {}, collapsed: false }] } });
     const nodeId = randomUUID();
     Object.assign(skillOptions, { nodeId, enabled: query !== "disabled", typesafeApiKey: query === "missing-key" ? "" : "typesafe" });
-    vi.stubEnv("SKILL_CATALOG_NODE_ID", nodeId); vi.stubEnv("ATOM_ENABLED", String(skillOptions.enabled));
-    vi.stubEnv("ATOM_SERVER_URL", skillOptions.serverUrl); vi.stubEnv("ATOM_API_KEY", "atom"); vi.stubEnv("TYPESAFE_API_KEY", skillOptions.typesafeApiKey);
   }
-  async function call(legacy: boolean, name: string, input: Record<string, unknown>, ctx: McpRequestContext) {
+  async function call(name: string, input: Record<string, unknown>, ctx: McpRequestContext) {
     const server = new McpServer({ name: "parity", version: "1" });
     const guarded = createGuardedMcpServer(server, runtime);
     withMcpRequestContext(ctx, () => {
-      (legacy ? pageTools.registerPageToolsLegacy : pageTools.registerPageTools)(guarded, runtime);
-      (legacy ? skillTools.registerSkillsToolsLegacy : skillTools.registerSkillsTools)(guarded, runtime);
-      if (legacy) liveTools.registerLiveCardViewLegacy(guarded, (q: any) => runtime.folderService!.listCards({ folderId: q.folder_id }));
-      else liveTools.registerLiveCardView(guarded, runtime);
+      pageTools.registerPageTools(guarded, runtime);
+      skillTools.registerSkillsTools(guarded, runtime);
+      liveTools.registerLiveCardView(guarded, runtime);
     });
     const client = new Client({ name: "parity-client", version: "1" });
     const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -158,12 +149,10 @@ describe("pages/live/skills legacy and MCP host parity", () => {
   it.each(cases)("preserves %s", async (_label, name, input, ctx = internal, error = false, repeats = 1) => {
     query = String(input.query ?? "");
     input = { ...input, ...(input.idempotency_key ? { idempotency_key: `${name}:agent-session:${input.idempotency_key}` } : {}) };
-    await seed(); let old: any;
-    for (let i = 0; i < repeats; i++) old = await call(true, name, input, ctx);
-    expect(old.isError === true).toBe(error);
     await seed(); const before = hostCalls; let next: any;
-    for (let i = 0; i < repeats; i++) next = await call(false, name, input, ctx);
-    assertParity(name === "upsert_page_markdown" && input.title ? "upsert_page_markdown:new" : name, old, next);
+    for (let i = 0; i < repeats; i++) next = await call(name, input, ctx);
+    expect(next.isError === true).toBe(error);
+    expect(serialize(name === "upsert_page_markdown" && input.title ? "upsert_page_markdown:new" : name, next)).toMatchSnapshot();
     if (!error) expect(hostCalls - before).toBe(repeats);
     if (name === "create_page" && ctx === external) expect(next.structuredContent.operation).toMatchObject({ actor_kind: "llm", actor_session_id: null });
   });
@@ -176,7 +165,7 @@ describe("pages/live/skills legacy and MCP host parity", () => {
     await seed();
     const request = vi.spyOn(hostTransport, "fetchOrchResponse");
     try {
-      const result = await call(false, "search_skills", { query: "skill-1" }, internal);
+      const result = await call("search_skills", { query: "skill-1" }, internal);
       expect(result.isError).not.toBe(true);
       expect(skillDefinitions.search_skills.timeoutMs).toBe(190000);
       expect(request).toHaveBeenCalledWith(runtime.orch, "POST", "/api/mcp/host/search_skills", expect.anything(), { timeoutMs: 190000, signal: expect.any(AbortSignal) });
@@ -205,14 +194,11 @@ function serialize(tool: string, value: any) {
     return { ...item, text: JSON.stringify(mask(tool, parsed), null, 2) };
   }), ...(value.structuredContent === undefined ? {} : { structuredContent: mask(tool, value.structuredContent) }) });
 }
-function assertParity(tool: string, old: any, next: any) { expect(serialize(tool, next)).toBe(serialize(tool, old)); }
-describe("pages parity comparator", () => {
-  const r = (v: any, spaces = 2) => ({ content: [{ type: "text", text: JSON.stringify(v, null, spaces) }], structuredContent: v });
-  it("masks specified operation ids and timestamps", () => assertParity("create_page", r({ operation: { id: "a" }, updated_at: "old" }), r({ operation: { id: "b" }, updated_at: "new" })));
-  it.each(["content", "structuredContent", "isError"])("detects changed %s", key => { const old = r({ id: "seed" }); expect(() => assertParity("get_page", old, { ...old, [key]: "broken" })).toThrow(); });
-  it("preserves existing page ids during upsert", () => expect(() => assertParity("upsert_page_markdown", r({ page: { id: "seed" } }), r({ page: { id: "other" } }))).toThrow());
-  it("detects unlisted ids", () => expect(() => assertParity("get_page", r({ id: "a" }), r({ id: "b" }))).toThrow());
-  it("detects JSON order", () => expect(() => assertParity("get_page", r({ a: 1, b: 2 }), r({ b: 2, a: 1 }))).toThrow());
-  it("detects indentation", () => expect(() => assertParity("get_page", r({ a: 1 }), r({ a: 1 }, 4))).toThrow());
-  it("detects error text whitespace", () => expect(() => assertParity("get_page", { content: [{ type: "text", text: "error" }], isError: true }, { content: [{ type: "text", text: "error " }], isError: true })).toThrow());
+describe("page result masking", () => {
+  it("masks specified operation ids and timestamps", () => {
+    expect(mask("create_page", { operation: { id: "random" }, updated_at: "now", page: { id: "seed" } }))
+      .toEqual({ operation: { id: "<random>" }, updated_at: "<time>", page: { id: "seed" } });
+    expect(mask("upsert_page_markdown", { page: { id: "seed" }, blocks: [{ id: "random" }], completed_at: null }))
+      .toEqual({ page: { id: "seed" }, blocks: [{ id: "<random>" }], completed_at: null });
+  });
 });
