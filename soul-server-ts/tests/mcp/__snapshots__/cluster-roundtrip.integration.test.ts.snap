@@ -1,0 +1,1654 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`cluster MCP roundtrip > preserves apply_remote_agent_profile_update absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves apply_remote_agent_profile_update absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves apply_remote_agent_profile_update absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch POST /api/nodes/missing/agents/config/apply-profile-update failed: 404 Not Found Node missing not connected"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch POST /api/nodes/missing/agents/config/apply-profile-update failed: 404 Not Found Node missing not connected"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves archive recurring > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves archive recurring > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves archive recurring > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": false,\\n    \\"archived_at\\": \\"<time>\\",\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "job": {
+      "job_id": "job-1",
+      "owner_email": "owner@example.com",
+      "name": "정기 작업",
+      "prompt": "확인",
+      "timezone": "Asia/Seoul",
+      "schedule_kind": "recurring",
+      "schedule_expressions": [
+        "0 9 * * *"
+      ],
+      "schedule": {
+        "timezone": "Asia/Seoul",
+        "schedule_expressions": [
+          "0 9 * * *"
+        ]
+      },
+      "run_at": null,
+      "node_id": "node-a",
+      "agent_id": "roselin",
+      "model_preset": null,
+      "folder_id": "allowed-folder",
+      "enabled": false,
+      "archived_at": "<time>",
+      "late_run_window_seconds": 1800,
+      "next_run_at": "<time>",
+      "version": 2,
+      "created_at": "<time>",
+      "updated_at": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves archive_recurring_job absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves archive_recurring_job absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves archive_recurring_job absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host archive failed: Recurring job was not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host archive failed: Recurring job was not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves create cron > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves create cron > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"name":"새 작업","prompt":"수행","scheduleKind":"recurring","scheduleExpressions":["0 9 * * *"],"runAt":null,"timezone":"Asia/Seoul","nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","lateRunWindowSeconds":1800,"schedule":{"timezone":"Asia/Seoul","scheduleExpressions":["0 9 * * *"],"expressions":[{"source":"0 9 * * *","minute":{"wildcard":false},"hour":{"wildcard":false},"dayOfMonth":{"wildcard":true},"month":{"wildcard":true},"dayOfWeek":{"wildcard":true}}]}},"requireAvailableTarget":true}]]"`;
+
+exports[`cluster MCP roundtrip > preserves create cron > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"generated-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"name\\": \\"새 작업\\",\\n    \\"prompt\\": \\"수행\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "job": {
+      "job_id": "generated-1",
+      "owner_email": "owner@example.com",
+      "name": "새 작업",
+      "prompt": "수행",
+      "timezone": "Asia/Seoul",
+      "schedule_kind": "recurring",
+      "schedule_expressions": [
+        "0 9 * * *"
+      ],
+      "schedule": {
+        "timezone": "Asia/Seoul",
+        "schedule_expressions": [
+          "0 9 * * *"
+        ]
+      },
+      "run_at": null,
+      "node_id": "node-a",
+      "agent_id": "roselin",
+      "model_preset": null,
+      "folder_id": "allowed-folder",
+      "enabled": true,
+      "archived_at": null,
+      "late_run_window_seconds": 1800,
+      "next_run_at": "<time>",
+      "version": 1,
+      "created_at": "<time>",
+      "updated_at": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves create once > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves create once > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"name":"새 작업","prompt":"수행","scheduleKind":"once","scheduleExpressions":[],"runAt":"2099-10-01T09:00:00+09:00","timezone":"Asia/Seoul","nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","lateRunWindowSeconds":1800,"schedule":null},"requireAvailableTarget":true}]]"`;
+
+exports[`cluster MCP roundtrip > preserves create once > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"generated-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"name\\": \\"새 작업\\",\\n    \\"prompt\\": \\"수행\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"once\\",\\n    \\"schedule_expressions\\": [],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": []\\n    },\\n    \\"run_at\\": \\"<time>\\",\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "job": {
+      "job_id": "generated-1",
+      "owner_email": "owner@example.com",
+      "name": "새 작업",
+      "prompt": "수행",
+      "timezone": "Asia/Seoul",
+      "schedule_kind": "once",
+      "schedule_expressions": [],
+      "schedule": {
+        "timezone": "Asia/Seoul",
+        "schedule_expressions": []
+      },
+      "run_at": "<time>",
+      "node_id": "node-a",
+      "agent_id": "roselin",
+      "model_preset": null,
+      "folder_id": "allowed-folder",
+      "enabled": true,
+      "archived_at": null,
+      "late_run_window_seconds": 1800,
+      "next_run_at": "<time>",
+      "version": 1,
+      "created_at": "<time>",
+      "updated_at": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves create_remote_agent_session absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves create_remote_agent_session absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves create_remote_agent_session absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch POST /api/sessions failed: 404 Not Found Node missing not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch POST /api/sessions failed: 404 Not Found Node missing not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves external node query > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves external node query > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves external node query > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"nodes\\": [\\n    {\\n      \\"nodeId\\": \\"node-a\\",\\n      \\"host\\": \\"127.0.0.1\\",\\n      \\"port\\": 4105,\\n      \\"capabilities\\": {\\n        \\"reflect_brief\\": true\\n      },\\n      \\"supportedBackends\\": [\\n        \\"codex\\"\\n      ],\\n      \\"connectedAt\\": \\"<time>\\",\\n      \\"sessionCount\\": 0,\\n      \\"status\\": \\"connected\\",\\n      \\"connectionId\\": \\"node-a:1\\",\\n      \\"lastSeenAtMs\\": 1790899200000,\\n      \\"connectedAtMs\\": 1790899200000,\\n      \\"heartbeat\\": {\\n        \\"supported\\": false\\n      },\\n      \\"pendingCommandCount\\": 0,\\n      \\"connected\\": true\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "nodes": [
+      {
+        "nodeId": "node-a",
+        "host": "127.0.0.1",
+        "port": 4105,
+        "capabilities": {
+          "reflect_brief": true
+        },
+        "supportedBackends": [
+          "codex"
+        ],
+        "connectedAt": "<time>",
+        "sessionCount": 0,
+        "status": "connected",
+        "connectionId": "node-a:1",
+        "lastSeenAtMs": 1790899200000,
+        "connectedAtMs": 1790899200000,
+        "heartbeat": {
+          "supported": false
+        },
+        "pendingCommandCount": 0,
+        "connected": true
+      }
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves get recurring > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves get recurring > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves get recurring > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "job": {
+      "job_id": "job-1",
+      "owner_email": "owner@example.com",
+      "name": "정기 작업",
+      "prompt": "확인",
+      "timezone": "Asia/Seoul",
+      "schedule_kind": "recurring",
+      "schedule_expressions": [
+        "0 9 * * *"
+      ],
+      "schedule": {
+        "timezone": "Asia/Seoul",
+        "schedule_expressions": [
+          "0 9 * * *"
+        ]
+      },
+      "run_at": null,
+      "node_id": "node-a",
+      "agent_id": "roselin",
+      "model_preset": null,
+      "folder_id": "allowed-folder",
+      "enabled": true,
+      "archived_at": null,
+      "late_run_window_seconds": 1800,
+      "next_run_at": "<time>",
+      "version": 1,
+      "created_at": "<time>",
+      "updated_at": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves get settings > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves get settings > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves get settings > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"settings\\": {\\n    \\"key\\": \\"card_orchestration\\",\\n    \\"policy\\": {\\n      \\"enabled\\": false,\\n      \\"candidates\\": [\\n        {\\n          \\"agentId\\": \\"roselin\\",\\n          \\"nodeId\\": \\"node-a\\",\\n          \\"modelPreset\\": \\"sol\\",\\n          \\"minimumRemainingPercent\\": 15\\n        }\\n      ],\\n      \\"usageMaxAgeMs\\": 300000,\\n      \\"sessionFolderId\\": null,\\n      \\"systemFolderParentId\\": null\\n    },\\n    \\"version\\": 1,\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"updatedBy\\": \\"owner@example.com\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "settings": {
+      "key": "card_orchestration",
+      "policy": {
+        "enabled": false,
+        "candidates": [
+          {
+            "agentId": "roselin",
+            "nodeId": "node-a",
+            "modelPreset": "sol",
+            "minimumRemainingPercent": 15
+          }
+        ],
+        "usageMaxAgeMs": 300000,
+        "sessionFolderId": null,
+        "systemFolderParentId": null
+      },
+      "version": 1,
+      "updatedAt": "<time>",
+      "updatedBy": "owner@example.com"
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves get_recurring_job absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves get_recurring_job absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves get_recurring_job absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host get failed: Recurring job was not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host get failed: Recurring job was not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves list agents > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list agents > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list agents > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agents\\": [\\n    {\\n      \\"id\\": \\"roselin\\",\\n      \\"name\\": \\"로젤린\\",\\n      \\"portraitUrl\\": \\"\\",\\n      \\"max_turns\\": null,\\n      \\"backend\\": \\"codex\\",\\n      \\"default_preset\\": \\"sol\\"\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agents": [
+      {
+        "id": "roselin",
+        "name": "로젤린",
+        "portraitUrl": "",
+        "max_turns": null,
+        "backend": "codex",
+        "default_preset": "sol"
+      }
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves list nodes > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list nodes > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list nodes > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"nodes\\": [\\n    {\\n      \\"nodeId\\": \\"node-a\\",\\n      \\"host\\": \\"127.0.0.1\\",\\n      \\"port\\": 4105,\\n      \\"capabilities\\": {\\n        \\"reflect_brief\\": true\\n      },\\n      \\"supportedBackends\\": [\\n        \\"codex\\"\\n      ],\\n      \\"connectedAt\\": \\"<time>\\",\\n      \\"sessionCount\\": 0,\\n      \\"status\\": \\"connected\\",\\n      \\"connectionId\\": \\"node-a:1\\",\\n      \\"lastSeenAtMs\\": 1790899200000,\\n      \\"connectedAtMs\\": 1790899200000,\\n      \\"heartbeat\\": {\\n        \\"supported\\": false\\n      },\\n      \\"pendingCommandCount\\": 0,\\n      \\"connected\\": true\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "nodes": [
+      {
+        "nodeId": "node-a",
+        "host": "127.0.0.1",
+        "port": 4105,
+        "capabilities": {
+          "reflect_brief": true
+        },
+        "supportedBackends": [
+          "codex"
+        ],
+        "connectedAt": "<time>",
+        "sessionCount": 0,
+        "status": "connected",
+        "connectionId": "node-a:1",
+        "lastSeenAtMs": 1790899200000,
+        "connectedAtMs": 1790899200000,
+        "heartbeat": {
+          "supported": false
+        },
+        "pendingCommandCount": 0,
+        "connected": true
+      }
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves list presets > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list presets > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list presets > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"model_presets\\": [\\n    {\\n      \\"id\\": \\"sol\\",\\n      \\"label\\": \\"Sol\\",\\n      \\"backend\\": \\"codex\\",\\n      \\"available\\": true\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "model_presets": [
+      {
+        "id": "sol",
+        "label": "Sol",
+        "backend": "codex",
+        "available": true
+      }
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves list recurring > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list recurring > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list recurring > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"jobs\\": [\\n    {\\n      \\"job_id\\": \\"job-1\\",\\n      \\"owner_email\\": \\"owner@example.com\\",\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "jobs": [
+      {
+        "job_id": "job-1",
+        "owner_email": "owner@example.com",
+        "name": "정기 작업",
+        "prompt": "확인",
+        "timezone": "Asia/Seoul",
+        "schedule_kind": "recurring",
+        "schedule_expressions": [
+          "0 9 * * *"
+        ],
+        "schedule": {
+          "timezone": "Asia/Seoul",
+          "schedule_expressions": [
+            "0 9 * * *"
+          ]
+        },
+        "run_at": null,
+        "node_id": "node-a",
+        "agent_id": "roselin",
+        "model_preset": null,
+        "folder_id": "allowed-folder",
+        "enabled": true,
+        "archived_at": null,
+        "late_run_window_seconds": 1800,
+        "next_run_at": "<time>",
+        "version": 1,
+        "created_at": "<time>",
+        "updated_at": "<time>"
+      }
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves list_node_agents absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list_node_agents absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list_node_agents absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch GET /api/nodes/missing/agents failed: 404 Not Found Node missing not connected"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch GET /api/nodes/missing/agents failed: 404 Not Found Node missing not connected"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves list_node_model_presets absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list_node_model_presets absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list_node_model_presets absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch GET /api/nodes/missing/model-presets failed: 404 Not Found Node missing not connected"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch GET /api/nodes/missing/model-presets failed: 404 Not Found Node missing not connected"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves list_recurring_job_runs absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list_recurring_job_runs absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list_recurring_job_runs absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host list_runs failed: Recurring job was not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host list_runs failed: Recurring job was not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves list_remote_agents_config_snapshots absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list_remote_agents_config_snapshots absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves list_remote_agents_config_snapshots absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch GET /api/nodes/missing/agents/config/snapshots failed: 404 Not Found Node missing not connected"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch GET /api/nodes/missing/agents/config/snapshots failed: 404 Not Found Node missing not connected"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves plan_remote_agent_profile_update absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves plan_remote_agent_profile_update absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves plan_remote_agent_profile_update absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch POST /api/nodes/missing/agents/config/plan-profile-update failed: 404 Not Found Node missing not connected"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch POST /api/nodes/missing/agents/config/plan-profile-update failed: 404 Not Found Node missing not connected"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves preview cron > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves preview cron > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves preview cron > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"timezone\\": \\"Asia/Seoul\\",\\n  \\"scheduleExpressions\\": [\\n    \\"0 9 * * *\\"\\n  ],\\n  \\"nextRuns\\": [\\n    \\"2026-10-03T00:00:00.000Z\\",\\n    \\"2026-10-04T00:00:00.000Z\\",\\n    \\"2026-10-05T00:00:00.000Z\\",\\n    \\"2026-10-06T00:00:00.000Z\\",\\n    \\"2026-10-07T00:00:00.000Z\\"\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "timezone": "Asia/Seoul",
+    "scheduleExpressions": [
+      "0 9 * * *"
+    ],
+    "nextRuns": [
+      "2026-10-03T00:00:00.000Z",
+      "2026-10-04T00:00:00.000Z",
+      "2026-10-05T00:00:00.000Z",
+      "2026-10-06T00:00:00.000Z",
+      "2026-10-07T00:00:00.000Z"
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves profile apply > node commands 1`] = `"[{"type":"apply_agent_profile_update","profile":{"id":"roselin","name":"로젤린","backend":"codex","aliases":[{"id":"별칭"}],"workspace_dir":"/test/worker"},"create_if_missing":false,"include_text_diff":true,"expected_config_checksum":"checksum","requestId":"fixed-apply_agent_profile_update"}]"`;
+
+exports[`cluster MCP roundtrip > preserves profile apply > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves profile apply > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"type\\": \\"apply_agent_profile_update_result\\",\\n  \\"requestId\\": \\"fixed-apply_agent_profile_update\\",\\n  \\"result\\": {\\n    \\"ok\\": true\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "type": "apply_agent_profile_update_result",
+    "requestId": "fixed-apply_agent_profile_update",
+    "result": {
+      "ok": true
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves profile invalid > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves profile invalid > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves profile invalid > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool plan_remote_agent_profile_update: [\\n  {\\n    \\"origin\\": \\"number\\",\\n    \\"code\\": \\"too_small\\",\\n    \\"minimum\\": 0,\\n    \\"inclusive\\": false,\\n    \\"path\\": [\\n      \\"profile\\",\\n      \\"max_turns\\"\\n    ],\\n    \\"message\\": \\"Too small: expected number to be >0\\"\\n  }\\n]"
+    }
+  ],
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves profile missing transport > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves profile missing transport > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves profile missing transport > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch POST /api/nodes/node-a/agents/config/plan-profile-update failed: 503 Service Unavailable Node transport is missing: node-a/node-a:1"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch POST /api/nodes/node-a/agents/config/plan-profile-update failed: 503 Service Unavailable Node transport is missing: node-a/node-a:1"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves profile plan > node commands 1`] = `"[{"type":"plan_agent_profile_update","profile":{"id":"roselin","name":"로젤린","backend":"codex","aliases":[{"id":"별칭"}],"workspace_dir":"/test/worker"},"create_if_missing":true,"include_text_diff":true,"requestId":"fixed-plan_agent_profile_update"}]"`;
+
+exports[`cluster MCP roundtrip > preserves profile plan > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves profile plan > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"type\\": \\"plan_agent_profile_update_result\\",\\n  \\"requestId\\": \\"fixed-plan_agent_profile_update\\",\\n  \\"result\\": {\\n    \\"ok\\": true\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "type": "plan_agent_profile_update_result",
+    "requestId": "fixed-plan_agent_profile_update",
+    "result": {
+      "ok": true
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring archive bad version > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring archive bad version > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring archive bad version > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host archive failed: Recurring job changed. Reload before saving."
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host archive failed: Recurring job changed. Reload before saving."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring bad cron > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring bad cron > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring bad cron > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host preview failed: cron expression must have five fields: invalid"
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host preview failed: cron expression must have five fields: invalid"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring bad version > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring bad version > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"jobId":"job-1","ownerEmail":"owner@example.com","executionCaller":{"source":"agent","email":"owner@example.com"},"name":"정기 작업","prompt":"확인","timezone":"Asia/Seoul","scheduleKind":"recurring","runAt":null,"scheduleExpressions":["0 9 * * *"],"nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","enabled":true,"archivedAt":null,"lateRunWindowSeconds":1800,"nextRunAt":"2026-10-03T00:00:00.000Z","version":1,"createdIdempotencyKey":"seed","createdBy":"caller","updatedBy":"caller","createdAt":"2026-10-02T00:00:00.000Z","updatedAt":"2026-10-02T00:00:00.000Z"},"requireAvailableTarget":false}]]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring bad version > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host update failed: Recurring job changed. Reload before saving."
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host update failed: Recurring job changed. Reload before saving."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring external mutation > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring external mutation > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring external mutation > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Recurring-job tools are not available to untrusted external or LLM callers."
+    }
+  ],
+  "structuredContent": {
+    "error": "Recurring-job tools are not available to untrusted external or LLM callers."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring external query > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring external query > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring external query > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Recurring-job tools are not available to untrusted external or LLM callers."
+    }
+  ],
+  "structuredContent": {
+    "error": "Recurring-job tools are not available to untrusted external or LLM callers."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring history limit > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring history limit > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring history limit > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"runs\\": [\\n    {\\n      \\"run_id\\": \\"seed-run-0\\",\\n      \\"job_id\\": \\"job-1\\"\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "runs": [
+      {
+        "run_id": "seed-run-0",
+        "job_id": "job-1"
+      }
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring missing > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring missing > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring missing > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host get failed: Recurring job was not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host get failed: Recurring job was not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring no email > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring no email > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring no email > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "The trusted caller session has no verified owner email for recurring-job access."
+    }
+  ],
+  "structuredContent": {
+    "error": "The trusted caller session has no verified owner email for recurring-job access."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring no session > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring no session > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring no session > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "A trusted Soulstream caller session is required for recurring-job tools."
+    }
+  ],
+  "structuredContent": {
+    "error": "A trusted Soulstream caller session is required for recurring-job tools."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves reflect brief > node commands 1`] = `"[{"type":"reflect_brief","requestId":"fixed-reflect_brief"}]"`;
+
+exports[`cluster MCP roundtrip > preserves reflect brief > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves reflect brief > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"schema_version\\": \\"soulstream.reflect.aggregate.v1\\",\\n  \\"kind\\": \\"orchestrator_node_brief_aggregate\\",\\n  \\"status\\": \\"ok\\",\\n  \\"generated_at\\": \\"<time>\\",\\n  \\"checked_at\\": \\"<time>\\",\\n  \\"source\\": {\\n    \\"type\\": \\"orchestrator\\",\\n    \\"transport\\": \\"node_ws_command\\",\\n    \\"command\\": \\"reflect_brief\\"\\n  },\\n  \\"timeout_seconds\\": 5,\\n  \\"node_count\\": 1,\\n  \\"nodes\\": [\\n    {\\n      \\"node_id\\": \\"node-a\\",\\n      \\"status\\": \\"ok\\",\\n      \\"checked_at\\": \\"<time>\\",\\n      \\"source\\": {\\n        \\"type\\": \\"node\\",\\n        \\"transport\\": \\"websocket\\",\\n        \\"command\\": \\"reflect_brief\\"\\n      },\\n      \\"data\\": {\\n        \\"package\\": \\"test-worker\\"\\n      },\\n      \\"errors\\": []\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "schema_version": "soulstream.reflect.aggregate.v1",
+    "kind": "orchestrator_node_brief_aggregate",
+    "status": "ok",
+    "generated_at": "<time>",
+    "checked_at": "<time>",
+    "source": {
+      "type": "orchestrator",
+      "transport": "node_ws_command",
+      "command": "reflect_brief"
+    },
+    "timeout_seconds": 5,
+    "node_count": 1,
+    "nodes": [
+      {
+        "node_id": "node-a",
+        "status": "ok",
+        "checked_at": "<time>",
+        "source": {
+          "type": "node",
+          "transport": "websocket",
+          "command": "reflect_brief"
+        },
+        "data": {
+          "package": "test-worker"
+        },
+        "errors": []
+      }
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote administrator unrestricted > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","folderId":"forbidden-folder","caller_session_id":"caller","caller_info":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote administrator unrestricted > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote administrator unrestricted > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote card > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","reasoningEffort":"high","folderId":"inherited-folder","cardId":"card-1","caller_session_id":"caller","caller_info":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote card > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote card > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote explicit folder > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","folderId":"forbidden-folder","caller_session_id":"caller","caller_info":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote explicit folder > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote explicit folder > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote external > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","caller_info":{"source":"llm","agent_node":"worker-node","display_name":"External","user_id":null,"avatar_url":null},"profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote external > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote external > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote inherited folder > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","folderId":"inherited-folder","caller_session_id":"caller","caller_info":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote inherited folder > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote inherited folder > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote limited forbidden > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote limited forbidden > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote limited forbidden > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch POST /api/sessions failed: 403 Forbidden Folder access denied"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch POST /api/sessions failed: 403 Forbidden Folder access denied"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote limited omitted > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","caller_session_id":"limited","caller_info":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"limited@example.com"},"folderId":"allowed-folder","profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote limited omitted > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote limited omitted > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote missing caller > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote missing caller > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote missing caller > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller_session_id is required for create_remote_agent_session. Pass the current soulstream_session.agent_session_id or send x-soulstream-agent-session-id."
+    }
+  ],
+  "structuredContent": {
+    "error": "caller_session_id is required for create_remote_agent_session. Pass the current soulstream_session.agent_session_id or send x-soulstream-agent-session-id."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote missing preset > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote missing preset > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote missing preset > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Model preset 'unknown' is not advertised by node node-a. Call list_node_model_presets with node_id 'node-a' to list valid preset ids."
+    }
+  ],
+  "structuredContent": {
+    "error": "Model preset 'unknown' is not advertised by node node-a. Call list_node_model_presets with node_id 'node-a' to list valid preset ids."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote no notification > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","folderId":"inherited-folder","notify_completion":false,"caller_session_id":"caller","caller_info":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote no notification > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote no notification > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote null folder > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","caller_session_id":"caller","caller_info":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote null folder > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote null folder > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves rollback id > node commands 1`] = `"[{"type":"rollback_agents_config","include_text_diff":true,"snapshot_id":"snapshot","requestId":"fixed-rollback_agents_config"}]"`;
+
+exports[`cluster MCP roundtrip > preserves rollback id > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves rollback id > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"type\\": \\"rollback_agents_config_result\\",\\n  \\"requestId\\": \\"fixed-rollback_agents_config\\",\\n  \\"result\\": {\\n    \\"ok\\": true\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "type": "rollback_agents_config_result",
+    "requestId": "fixed-rollback_agents_config",
+    "result": {
+      "ok": true
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves rollback missing selector > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves rollback missing selector > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves rollback missing selector > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "snapshot_path or snapshot_id is required"
+    }
+  ],
+  "structuredContent": {
+    "error": "snapshot_path or snapshot_id is required"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves rollback path > node commands 1`] = `"[{"type":"rollback_agents_config","include_text_diff":false,"snapshot_path":"/test/snapshot.yaml","requestId":"fixed-rollback_agents_config"}]"`;
+
+exports[`cluster MCP roundtrip > preserves rollback path > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves rollback path > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"type\\": \\"rollback_agents_config_result\\",\\n  \\"requestId\\": \\"fixed-rollback_agents_config\\",\\n  \\"result\\": {\\n    \\"ok\\": true\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "type": "rollback_agents_config_result",
+    "requestId": "fixed-rollback_agents_config",
+    "result": {
+      "ok": true
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves rollback_remote_agents_config absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves rollback_remote_agents_config absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves rollback_remote_agents_config absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "orch POST /api/nodes/missing/agents/config/rollback failed: 404 Not Found Node missing not connected"
+    }
+  ],
+  "structuredContent": {
+    "error": "orch POST /api/nodes/missing/agents/config/rollback failed: 404 Not Found Node missing not connected"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves run recurring > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves run recurring > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves run recurring > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"run\\": {\\n    \\"run_id\\": \\"generated-1\\",\\n    \\"job_id\\": \\"job-1\\",\\n    \\"trigger\\": \\"manual\\",\\n    \\"scheduled_for\\": null,\\n    \\"session_id\\": \\"generated-2\\",\\n    \\"state\\": \\"queued\\",\\n    \\"reason_code\\": null,\\n    \\"reason_message\\": null,\\n    \\"job_snapshot\\": {\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"scheduleKind\\": \\"recurring\\",\\n      \\"scheduleExpressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"runAt\\": null,\\n      \\"nodeId\\": \\"node-a\\",\\n      \\"agentId\\": \\"roselin\\",\\n      \\"modelPreset\\": null,\\n      \\"folderId\\": \\"allowed-folder\\",\\n      \\"executionCaller\\": {\\n        \\"source\\": \\"agent\\",\\n        \\"email\\": \\"owner@example.com\\"\\n      },\\n      \\"lateRunWindowSeconds\\": 1800\\n    },\\n    \\"created_at\\": \\"<time>\\",\\n    \\"started_at\\": null,\\n    \\"finished_at\\": null,\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "run": {
+      "run_id": "generated-1",
+      "job_id": "job-1",
+      "trigger": "manual",
+      "scheduled_for": null,
+      "session_id": "generated-2",
+      "state": "queued",
+      "reason_code": null,
+      "reason_message": null,
+      "job_snapshot": {
+        "name": "정기 작업",
+        "prompt": "확인",
+        "timezone": "Asia/Seoul",
+        "scheduleKind": "recurring",
+        "scheduleExpressions": [
+          "0 9 * * *"
+        ],
+        "runAt": null,
+        "nodeId": "node-a",
+        "agentId": "roselin",
+        "modelPreset": null,
+        "folderId": "allowed-folder",
+        "executionCaller": {
+          "source": "agent",
+          "email": "owner@example.com"
+        },
+        "lateRunWindowSeconds": 1800
+      },
+      "created_at": "<time>",
+      "started_at": null,
+      "finished_at": null,
+      "updated_at": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves run_recurring_job absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves run_recurring_job absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves run_recurring_job absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host run failed: Recurring job was not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host run failed: Recurring job was not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves settings decision > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings decision > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings decision > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "403: Verified administrator session required"
+    }
+  ],
+  "structuredContent": {
+    "error": "403: Verified administrator session required"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves settings external > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings external > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings external > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Untrusted external callers cannot access card orchestration settings"
+    }
+  ],
+  "structuredContent": {
+    "error": "Untrusted external callers cannot access card orchestration settings"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves settings mismatch > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings mismatch > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings mismatch > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller_session_id must match the authenticated request session header"
+    }
+  ],
+  "structuredContent": {
+    "error": "caller_session_id must match the authenticated request session header"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves settings no session > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings no session > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings no session > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "A trusted persisted caller session is required"
+    }
+  ],
+  "structuredContent": {
+    "error": "A trusted persisted caller session is required"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves settings non-admin > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings non-admin > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings non-admin > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "403: Verified administrator session required"
+    }
+  ],
+  "structuredContent": {
+    "error": "403: Verified administrator session required"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves settings version > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings version > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings version > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "CARD_ORCHESTRATION_VERSION_CONFLICT: Settings version changed"
+    }
+  ],
+  "structuredContent": {
+    "error": "CARD_ORCHESTRATION_VERSION_CONFLICT: Settings version changed"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves snapshots > node commands 1`] = `"[{"type":"list_agents_config_snapshots","requestId":"fixed-list_agents_config_snapshots"}]"`;
+
+exports[`cluster MCP roundtrip > preserves snapshots > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves snapshots > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"type\\": \\"list_agents_config_snapshots_result\\",\\n  \\"requestId\\": \\"fixed-list_agents_config_snapshots\\",\\n  \\"result\\": {\\n    \\"ok\\": true\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "type": "list_agents_config_snapshots_result",
+    "requestId": "fixed-list_agents_config_snapshots",
+    "result": {
+      "ok": true
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for create_remote_agent_session {"node_id":"node-a","agent_id":"roselin","model_preset":"sol","prompt":"수행"} {} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "multi-node not configured"
+    }
+  ],
+  "structuredContent": {
+    "error": "multi-node not configured"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for get_card_orchestration_settings {"caller_session_id":"other"} {"callerSessionId":"caller"} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller_session_id must match the authenticated request session header"
+    }
+  ],
+  "structuredContent": {
+    "error": "caller_session_id must match the authenticated request session header"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for get_card_orchestration_settings {} {"callerSessionId":"caller"} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Orchestrator is not configured"
+    }
+  ],
+  "structuredContent": {
+    "error": "Orchestrator is not configured"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for get_card_orchestration_settings {} {"callerSessionId":"forged","principal":{"authority":"external","source":"llm","displayName":"External"}} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Untrusted external callers cannot access card orchestration settings"
+    }
+  ],
+  "structuredContent": {
+    "error": "Untrusted external callers cannot access card orchestration settings"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for get_card_orchestration_settings {} {} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "A trusted persisted caller session is required"
+    }
+  ],
+  "structuredContent": {
+    "error": "A trusted persisted caller session is required"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for list_nodes {} {"callerSessionId":"caller"} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "multi-node not configured"
+    }
+  ],
+  "structuredContent": {
+    "error": "multi-node not configured"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for list_recurring_jobs {} {"callerSessionId":"caller"} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring jobs are not configured with an orchestrator"
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring jobs are not configured with an orchestrator"
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for list_recurring_jobs {} {"callerSessionId":"forged","principal":{"authority":"external","source":"llm","displayName":"External"}} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Recurring-job tools are not available to untrusted external or LLM callers."
+    }
+  ],
+  "structuredContent": {
+    "error": "Recurring-job tools are not available to untrusted external or LLM callers."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for list_recurring_jobs {} {"callerSessionId":"no-email"} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "The trusted caller session has no verified owner email for recurring-job access."
+    }
+  ],
+  "structuredContent": {
+    "error": "The trusted caller session has no verified owner email for recurring-job access."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves unavailable transport for list_recurring_jobs {} {} > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "A trusted Soulstream caller session is required for recurring-job tools."
+    }
+  ],
+  "structuredContent": {
+    "error": "A trusted Soulstream caller session is required for recurring-job tools."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves update recurring > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves update recurring > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"jobId":"job-1","ownerEmail":"owner@example.com","executionCaller":{"source":"agent","email":"owner@example.com"},"name":"정기 작업","prompt":"확인","timezone":"Asia/Seoul","scheduleKind":"recurring","runAt":null,"scheduleExpressions":["0 9 * * *"],"nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","enabled":false,"archivedAt":null,"lateRunWindowSeconds":1800,"nextRunAt":null,"version":1,"createdIdempotencyKey":"seed","createdBy":"caller","updatedBy":"caller","createdAt":"2026-10-02T00:00:00.000Z","updatedAt":"2026-10-02T00:00:00.000Z"},"requireAvailableTarget":false}]]"`;
+
+exports[`cluster MCP roundtrip > preserves update recurring > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": false,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": null,\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "job": {
+      "job_id": "job-1",
+      "owner_email": "owner@example.com",
+      "name": "정기 작업",
+      "prompt": "확인",
+      "timezone": "Asia/Seoul",
+      "schedule_kind": "recurring",
+      "schedule_expressions": [
+        "0 9 * * *"
+      ],
+      "schedule": {
+        "timezone": "Asia/Seoul",
+        "schedule_expressions": [
+          "0 9 * * *"
+        ]
+      },
+      "run_at": null,
+      "node_id": "node-a",
+      "agent_id": "roselin",
+      "model_preset": null,
+      "folder_id": "allowed-folder",
+      "enabled": false,
+      "archived_at": null,
+      "late_run_window_seconds": 1800,
+      "next_run_at": null,
+      "version": 2,
+      "created_at": "<time>",
+      "updated_at": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves update settings > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves update settings > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves update settings > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"settings\\": {\\n    \\"key\\": \\"card_orchestration\\",\\n    \\"policy\\": {\\n      \\"enabled\\": false,\\n      \\"candidates\\": [\\n        {\\n          \\"agentId\\": \\"roselin\\",\\n          \\"nodeId\\": \\"node-a\\",\\n          \\"modelPreset\\": \\"sol\\",\\n          \\"minimumRemainingPercent\\": 15\\n        }\\n      ],\\n      \\"usageMaxAgeMs\\": 300000,\\n      \\"sessionFolderId\\": null,\\n      \\"systemFolderParentId\\": null\\n    },\\n    \\"version\\": 2,\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"updatedBy\\": \\"owner@example.com\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "settings": {
+      "key": "card_orchestration",
+      "policy": {
+        "enabled": false,
+        "candidates": [
+          {
+            "agentId": "roselin",
+            "nodeId": "node-a",
+            "modelPreset": "sol",
+            "minimumRemainingPercent": 15
+          }
+        ],
+        "usageMaxAgeMs": 300000,
+        "sessionFolderId": null,
+        "systemFolderParentId": null
+      },
+      "version": 2,
+      "updatedAt": "<time>",
+      "updatedBy": "owner@example.com"
+    }
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves update_recurring_job absent resource > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves update_recurring_job absent resource > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves update_recurring_job absent resource > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "recurring job host update failed: Recurring job was not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "recurring job host update failed: Recurring job was not found"
+  },
+  "isError": true
+}"
+`;

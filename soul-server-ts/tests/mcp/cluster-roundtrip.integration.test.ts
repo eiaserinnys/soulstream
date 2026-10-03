@@ -8,7 +8,7 @@ import { registerRecurringJobTools, registerRecurringJobToolsLegacy } from "../.
 import { registerCardOrchestrationTools, registerCardOrchestrationToolsLegacy } from "../../src/mcp/tools/card_orchestration.js";
 import { registerMultiNodeTools, registerMultiNodeToolsLegacy } from "../../src/mcp/tools/multi_node.js";
 import { createClusterRoundtripFixture, policy } from "./cluster-roundtrip-fixture.js";
-import { assertClusterParity, maskCluster } from "./cluster-parity-comparator.js";
+import { assertClusterParity, maskCluster, serialize } from "./cluster-parity-comparator.js";
 
 const clusterToolNames = [
   "list_recurring_jobs", "get_recurring_job", "preview_recurring_schedule", "create_recurring_job",
@@ -92,7 +92,7 @@ for (const [name, args] of [
   ["create_remote_agent_session", { ...remote, node_id: "missing" }],
 ] as const) cases.push([`${name} absent resource`, name, args, context, true]);
 
-describe("cluster MCP old HTTP and in-process host parity", () => {
+describe("cluster MCP roundtrip", () => {
   let fixture: Awaited<ReturnType<typeof createClusterRoundtripFixture>>;
   beforeAll(async () => { fixture = await createClusterRoundtripFixture(); });
   afterAll(async () => { await fixture?.app.close(); fixture?.registry.disconnectNode("node-a", "test complete"); });
@@ -114,6 +114,9 @@ describe("cluster MCP old HTTP and in-process host parity", () => {
     expect(old.isError === true, JSON.stringify(old)).toBe(fails);
     const oldCommands = JSON.stringify(fixture.sent.map(cmd => maskCluster("create_remote_agent_session", cmd)));
     const oldActors = JSON.stringify(fixture.recurring.validateTarget.mock.calls);
+    expect(serialize(name, old)).toMatchSnapshot("result");
+    expect(oldCommands).toMatchSnapshot("node commands");
+    expect(oldActors).toMatchSnapshot("recurring actors");
     fixture.seed(offline);
     const next = await call(false, name, args, requestContext);
     assertClusterParity(name, old, next);
@@ -134,7 +137,9 @@ describe("cluster MCP old HTTP and in-process host parity", () => {
     ["get_card_orchestration_settings", {}, external],
   ] as const)("preserves unavailable transport for %s %j %j", async (name, args, requestContext) => {
     const runtime = { ...fixture.runtime, orch: undefined };
-    assertClusterParity(name, await call(true, name, args, requestContext, runtime), await call(false, name, args, requestContext, runtime));
+    const old = await call(true, name, args, requestContext, runtime);
+    expect(serialize(name, old)).toMatchSnapshot("result");
+    assertClusterParity(name, old, await call(false, name, args, requestContext, runtime));
   });
 });
 
