@@ -8,7 +8,7 @@ import { buildCardChangeNotification } from "../src/cards/card_change_notificati
 
 describe("bounded assigned cards and locked mutation snapshots",()=>{
   let h:PagePostgresHarness;
-  beforeAll(async()=>{h=await createPagePostgresHarness();await h.sql`INSERT INTO folders(id,name) VALUES ('f','폴더')`;await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running'),('other','running')`;},60000);
+  beforeAll(async()=>{h=await createPagePostgresHarness();await h.sql`INSERT INTO folders(id,name) VALUES ('f','폴더')`;await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running'),('other','running'),('subtask','running')`;},60000);
   afterAll(async()=>await h?.cleanup());
   beforeEach(async()=>{await h.sql`DELETE FROM cards`;});
   it("includes completed and cancelled ownership, keeps activity times and excludes archive",async()=>{
@@ -29,6 +29,15 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
     await h.sql`UPDATE cards SET status='cancelled' WHERE id='owned'`;
     expect(await readAssignedCardContext(sql,'owner')).toMatchObject({total:1,cards:[{id:'owned',status:'cancelled'}]});
     expect(await readAssignedCardContext(sql,'unassigned')).toMatchObject({total:0,cards:[]});
+  });
+  it("does not treat card membership as session assignment",async()=>{
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
+      VALUES ('owned','f','a','담당 카드','요청','todo','session','owner')`;
+    await h.sql`UPDATE sessions SET card_id='owned' WHERE session_id='subtask'`;
+    const sql=createBoardYjsSqlAdapter(h.liveSql);
+
+    expect(await readAssignedCardContext(sql,'owner')).toMatchObject({total:1,cards:[{id:'owned',status:'todo'}]});
+    expect(await readAssignedCardContext(sql,'subtask')).toMatchObject({total:0,cards:[]});
   });
   it("captures state and owner under lock, independent of stale pre-lock read or post-commit reassignment",async()=>{
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_session_id) VALUES ('locked','f','100','경합','요청','todo','other')`;
