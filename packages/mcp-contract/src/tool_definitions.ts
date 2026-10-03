@@ -1,3 +1,4 @@
+import { sessionMessageTools } from "./session_message_tools.js";
 import { clusterTools } from "./multi_node.js";
 import { cardOrchestrationTools } from "./card_orchestration.js";
 import { recurringJobTools } from "./recurring_jobs.js";
@@ -41,6 +42,7 @@ export interface McpToolDefinition {
 }
 
 export const mcpTools = {
+  ...sessionMessageTools,
   ...clusterTools,
   ...cardOrchestrationTools,
   ...recurringJobTools,

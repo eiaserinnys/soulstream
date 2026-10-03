@@ -1,6 +1,6 @@
 import type { FastifyReply } from "fastify";
 import type { ControlCommandType } from "@soulstream/wire-schema";
-import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
+import { mapNodeCommandError } from "../http/api_errors.js";
 
 import {
   PendingNodeCommandTimeoutError,
@@ -42,23 +42,34 @@ export async function sendActionCommand<
   }
 }
 
+export type SessionActionResponse = { status: number; body: unknown };
+
 export async function sendInterveneCommand(
   reply: FastifyReply,
   options: SessionActionCommandDispatchOptions,
   payload: InterveneNodeCommandPayload,
   durableDeliveryId?: string,
-): Promise<FastifyReply | NodeCommandResponse> {
+): Promise<FastifyReply> {
+  const result = await executeInterveneCommand(options, payload, durableDeliveryId);
+  return reply.code(result.status).send(result.body);
+}
+
+export async function executeInterveneCommand(
+  options: SessionActionCommandDispatchOptions,
+  payload: InterveneNodeCommandPayload,
+  durableDeliveryId?: string,
+): Promise<SessionActionResponse> {
   try {
     const response = await dispatchActionCommand(options, payload);
     if (isAckStatusError(response)) {
-      return sendGenericStatusError(reply, response);
+      return genericStatusErrorResponse(response);
     }
-    return durableDeliveryId === undefined
+    return { status: 200, body: durableDeliveryId === undefined
       ? response
-      : { ...response, deliveryId: durableDeliveryId };
+      : { ...response, deliveryId: durableDeliveryId } };
   } catch (error) {
     if (durableDeliveryId !== undefined) {
-      return reply.code(200).send({
+      return { status: 200, body: {
         type: "intervene_ack",
         status: "ok",
         outcome: "queued",
@@ -67,13 +78,13 @@ export async function sendInterveneCommand(
         delivered: false,
         consumeWhen: "next_turn",
         reason: "next_turn_required",
-      });
+      } };
     }
     if (
       error instanceof PendingNodeCommandTimeoutError &&
       error.commandType === "intervene"
     ) {
-      return reply.code(200).send({
+      return { status: 200, body: {
         type: "intervene_ack",
         requestId: error.requestId,
         status: "ok",
@@ -82,9 +93,10 @@ export async function sendInterveneCommand(
         delivered: null,
         consumeWhen: null,
         reason: "verdict_unknown",
-      });
+      } };
     }
-    return sendMappedActionError(reply, error, sendGenericStatusError);
+    const mapped = mappedActionErrorResponse(error);
+    return "response" in mapped ? genericStatusErrorResponse(mapped.response) : mapped;
   }
 }
 
@@ -145,12 +157,15 @@ export function sendGenericStatusError(
   reply: FastifyReply,
   response: NodeCommandResponse,
 ): FastifyReply {
-  return reply.code(422).send({
-    error: {
-      code: stringField(response.code, "NODE_COMMAND_FAILED"),
-      message: stringField(response.message, "Node command failed"),
-    },
-  });
+  const result = genericStatusErrorResponse(response);
+  return reply.code(result.status).send(result.body);
+}
+
+function genericStatusErrorResponse(response: NodeCommandResponse): SessionActionResponse {
+  return { status: 422, body: { error: {
+    code: stringField(response.code, "NODE_COMMAND_FAILED"),
+    message: stringField(response.message, "Node command failed"),
+  } } };
 }
 
 export function sendInterruptAckError(
@@ -246,45 +261,50 @@ function sendMappedActionError(
   error: unknown,
   ackErrorMapper: (reply: FastifyReply, response: NodeCommandResponse) => FastifyReply,
 ): FastifyReply {
+  const result = mappedActionErrorResponse(error);
+  return "response" in result ? ackErrorMapper(reply, result.response) : reply.code(result.status).send(result.body);
+}
+
+function mappedActionErrorResponse(error: unknown): SessionActionResponse | { response: NodeCommandResponse } {
   const nodeCommandError = mapNodeCommandError(error);
   if (nodeCommandError?.kind === "rejected") {
     const response = nodeCommandError.response;
     if (response !== undefined && isAckStatusError(response)) {
-      return ackErrorMapper(reply, response);
+      return { response };
     }
-    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
+    return { status: nodeCommandError.statusCode, body: { error: nodeCommandError.apiError } };
   }
 
   if (error instanceof SessionCommandRouteError) {
     if (error.code === "SESSION_OWNER_MISSING") {
-      return reply.code(404).send({
+      return { status: 404, body: {
         error: {
           code: error.code,
           message: error.message,
           agentSessionId: error.agentSessionId,
         },
-      });
+      } };
     }
-    return reply.code(503).send({
+    return { status: 503, body: {
       error: {
         code: error.code,
         message: error.message,
         agentSessionId: error.agentSessionId,
         nodeId: error.nodeId,
       },
-    });
+    } };
   }
 
   if (nodeCommandError !== undefined) {
-    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
+    return { status: nodeCommandError.statusCode, body: { error: nodeCommandError.apiError } };
   }
 
-  return reply.code(500).send({
+  return { status: 500, body: {
     error: {
       code: "SESSION_ACTION_COMMAND_ROUTE_ERROR",
       message: error instanceof Error ? error.message : String(error),
     },
-  });
+  } };
 }
 
 function interruptStatusCode(code: string, message: unknown): number {

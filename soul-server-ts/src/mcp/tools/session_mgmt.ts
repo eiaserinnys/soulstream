@@ -1,5 +1,5 @@
 import { registerOrchestratorTools } from "../orchestrator_tools.js";
-import { sessionTools } from "@soulstream/mcp-contract";
+import { sessionMessageTools, sessionTools } from "@soulstream/mcp-contract";
 /**
  * session_mgmt 도구 — Python `mcp_session_mgmt.py` 정합 (키 호환).
  */
@@ -162,15 +162,7 @@ export function registerSessionMgmtTools(
 
   server.registerTool(
     "send_message_to_session",
-    {
-      description:
-        "대상 세션에 메시지 전달. running이면 현재 턴 개입을 먼저 시도하고, 지금 전달할 수 없을 때만 next_turn 큐로 보낸다. 결과의 delivered·reason·consumeWhen을 확인한다. 종료된 세션은 auto-resume. local 실패 시 orch /intervene fallback.",
-      inputSchema: {
-        target_session_id: z.string(),
-        message: z.string(),
-        caller_session_id: z.string().optional(),
-      },
-    },
+    sessionMessageTools.send_message_to_session.config,
     async ({ target_session_id, message, caller_session_id }) => {
       const attribution = resolveMcpCallerAttribution(runtime, caller_session_id);
 

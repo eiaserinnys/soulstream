@@ -299,6 +299,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerRecurringJobRoutes(app, options.recurringJobRoutes);
   }
   if (options.mcpHostRoutes) registerMcpHostRoutes(app, { ...options.mcpHostRoutes, environment: options.config.environment,
+    sessionMessages: options.sessionActionCommandRoutes ?? options.mcpHostRoutes.sessionMessages,
     cluster: { ...options.mcpHostRoutes.cluster, logger: app.log },
     recurringJobs: options.recurringJobHostRoutes ?? options.mcpHostRoutes.recurringJobs!,
     cardOrchestration: options.cardOrchestrationRoutes ?? options.mcpHostRoutes.cardOrchestration!,
