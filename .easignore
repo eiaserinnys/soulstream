@@ -1,4 +1,4 @@
-# EAS uploads the Git root; include the independent npm app and one pure shared TS module.
+# EAS uploads the Git root; include the independent npm app and its shared TS imports.
 /*
 !/soul-app
 # EAS copy filtering checks parent directory paths without trailing slashes.
@@ -11,6 +11,9 @@
 !/packages/soul-ui/src/cards
 /packages/soul-ui/src/cards/*
 !/packages/soul-ui/src/cards/completed-cards.ts
+!/packages/soul-ui/src/lib
+/packages/soul-ui/src/lib/*
+!/packages/soul-ui/src/lib/safe-error-detail.ts
 
 # .easignore replaces all .gitignore files, including soul-app/.gitignore.
 node_modules/
