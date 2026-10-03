@@ -1,0 +1,90 @@
+.v3-dialogue-gallery {
+  min-width: 0;
+  gap: var(--v3-space-8);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+.v3-dialogue-gallery .v3-dialogue-gallery-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-8);
+  min-width: 0;
+  padding: 0;
+}
+.v3-dialogue-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+.v3-dialogue-search, .v3-dialogue-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--v3-space-3);
+}
+.v3-dialogue-group > h2 {
+  margin: 0;
+  font: var(--v3-type-section) var(--v3-font-family);
+}
+.v3-dialogue-rail {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: var(--v3-space-6);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--v3-stroke-default) transparent;
+}
+.v3-dialogue-cell {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--dialogue-viewport-width, var(--v3-card-max-width));
+  max-width: 100%;
+  min-width: 0;
+  gap: var(--v3-space-3);
+}
+.v3-dialogue-cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-3);
+  min-height: var(--v3-action-size);
+}
+.v3-dialogue-cell-head h3 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+.v3-dialogue-preview {
+  height: var(--v3-card-max-width);
+}
+.v3-dialogue-preview iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.v3-dialogue-native {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--v3-space-3);
+}
+.v3-shell.v3-dialogue-sample-page {
+  display: block;
+  padding: 0;
+}
+.v3-dialogue-sample-closed {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v3-space-3);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
