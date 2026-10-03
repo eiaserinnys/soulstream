@@ -17,8 +17,13 @@ export function ProjectAtomFields({
   value,
   disabled,
   onChange,
+  selectorOpen, onSelectorOpenChange, onSelectorStatusChange, supportsLimit = true,
 }: {
   request?: typeof fetch;
+  supportsLimit?: boolean;
+  selectorOpen?: boolean;
+  onSelectorOpenChange?(open: boolean): void;
+  onSelectorStatusChange?(status: "loading" | "ready" | "error"): void;
   value: ProjectAtomFieldValue;
   disabled: boolean;
   onChange(value: ProjectAtomFieldValue): void;
@@ -27,21 +32,18 @@ export function ProjectAtomFields({
     <div className="v3-project-context-fields">
       <label>
         atom 인스턴스
-        <select
-          value={value.instance}
-          disabled={disabled}
-          onChange={(event) => onChange({ ...value, instance: event.target.value as "atom" | "atom-nl" })}
-        >
-          <option value="atom">atom</option>
-          <option value="atom-nl">atom-nl</option>
-        </select>
+        <span>{value.instance}</span>
+        <small>현재 노드 탐색은 atom만 지원합니다. 기존 atom-nl 자료의 연결은 유지합니다.</small>
       </label>
       <label>
         atom 노드
         <AtomNodeSelector request={request}
           value={value.nodeId}
           selectedTitle={value.nodeTitle}
-          disabled={disabled}
+          disabled={disabled || value.instance !== "atom"}
+          open={selectorOpen}
+          onOpenChange={onSelectorOpenChange}
+          onStatusChange={onSelectorStatusChange}
           onChange={(nodeId, nodeTitle) => onChange({ ...value, nodeId, nodeTitle })}
         />
       </label>
@@ -56,7 +58,7 @@ export function ProjectAtomFields({
           onChange={(event) => onChange({ ...value, depth: Number(event.target.value) })}
         />
       </label>
-      <label>
+      {supportsLimit ? <label>
         최근 자식 수
         <input
           type="number"
@@ -70,7 +72,7 @@ export function ProjectAtomFields({
             limit: event.target.value === "" ? null : Number(event.target.value),
           })}
         />
-      </label>
+      </label> : null}
       <label>
         렌더 방식
         <select
@@ -141,4 +143,10 @@ export function ProjectSessionDefaultsFields({
       />
     </div>
   );
+}
+
+export function isProjectAtomValid(value: ProjectAtomFieldValue): boolean {
+  return !!value.nodeId.trim() && Number.isInteger(value.depth) && value.depth >= 1 && value.depth <= 5
+    && (value.limit == null || (Number.isInteger(value.limit) && value.limit > 0))
+    && (value.mode === undefined || ["full", "index", "titles"].includes(value.mode));
 }

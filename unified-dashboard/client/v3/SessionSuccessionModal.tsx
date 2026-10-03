@@ -1,10 +1,11 @@
+import { ProjectAtomFields, isProjectAtomValid, type ProjectAtomFieldValue } from "./ProjectContextFormFields";
+import {CreationDisclosure} from "./CreationDisclosure";
 import {SessionAttachmentFields} from "./SessionAttachmentFields";
 import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
 import { useCallback, useMemo, useRef, useState, useId } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  AtomNodeSelector,
   reasoningEffortLabel,
   Dialog,
   DialogFooter,
@@ -98,8 +99,8 @@ export function SessionSuccessionModal({
   const [inheritSummary, setInheritSummary] = useState(Boolean(predecessorId));
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
   const [pendingSessionId] = useState(() => crypto.randomUUID());
-  const [atomNodeId, setAtomNodeId] = useState("");
-  const [atomNodeTitle, setAtomNodeTitle] = useState("");
+  const [atomValue, setAtomValue] = useState<ProjectAtomFieldValue>({instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false});
+  const {nodeId: atomNodeId, nodeTitle: atomNodeTitle} = atomValue;
   const [initialInstruction, setInitialInstruction] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState(resolvedDefaults.nodeId ?? "");
   const [selectedAgentId, setSelectedAgentId] = useState(resolvedDefaults.agentId ?? "");
@@ -127,6 +128,13 @@ export function SessionSuccessionModal({
   const effortSelectId = useId();
   const presetHasDefaultEffort = Boolean(selectedModelPresetInfo?.default_effort);
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createFolderPageAnchor>> | null>(null);
+  const submitting = useRef(false);
+  const completed = useRef(false);
+  const atomTrigger = useRef<HTMLButtonElement>(null);
+  const [atomDraft, setAtomDraft] = useState<ProjectAtomFieldValue | null>(null);
+  const [atomOpen, setAtomOpen] = useState(false);
+  const [atomStatus, setAtomStatus] = useState<"loading" | "ready" | "error">("ready");
+  const closeAtom = () => { setAtomDraft(null); queueMicrotask(() => atomTrigger.current?.focus()); };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const uploadUrl = selectedNodeId
@@ -149,9 +157,9 @@ export function SessionSuccessionModal({
     documentPageIds: documentOptions
       .filter((document) => selectedDocumentIds.has(document.pageId))
       .map((document) => document.pageId),
-    atomNode: atomNodeId ? { nodeId: atomNodeId, title: atomNodeTitle } : null,
+    atomNode: atomNodeId ? { nodeId: atomNodeId, title: atomNodeTitle, depth: atomValue.depth, titlesOnly: atomValue.titlesOnly, mode: atomValue.mode } : null,
     guidance: "",
-  }), [atomNodeId, atomNodeTitle, documentOptions, inheritCard, selectedDocumentIds, folderPageId]);
+  }), [atomValue, atomNodeId, atomNodeTitle, documentOptions, inheritCard, selectedDocumentIds, folderPageId]);
   const handleAssignmentError = useCallback((message: string) => {
     console.error("[v3/session-succession] 실행 대상 조회 실패", message);
     setError(message);
@@ -175,8 +183,9 @@ export function SessionSuccessionModal({
   }, []);
 
   const start = async () => {
-    if (pending || !selectedNodeId || !selectedAgentId || !modelPresetValid || !isReady) return;
+    if (submitting.current || completed.current || contextPending || selectedAgent?.id !== selectedAgentId || !selectedNodeId || !selectedAgentId || !modelPresetValid || !isReady) return;
     if (effort.unsupported) return;
+    submitting.current = true;
     setPending(true);
     setError(null);
     try {
@@ -209,6 +218,7 @@ export function SessionSuccessionModal({
           : undefined,
         ...succession,
       });
+      completed.current = true;
       resetLocal();
       const now = new Date().toISOString();
       onCreated({
@@ -230,12 +240,14 @@ export function SessionSuccessionModal({
       console.error("[v3/session-succession] 세션 시작 실패", caught);
       setError(errorText(caught));
     } finally {
+      submitting.current = false;
       setPending(false);
     }
   };
 
   const close = async () => {
-    if (pending) return;
+    if (submitting.current) return;
+    if (atomDraft) { closeAtom(); return; }
     if (uploadUrl) await cancel();
     else resetLocal();
     onClose();
@@ -244,12 +256,13 @@ export function SessionSuccessionModal({
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !pending) void close(); }}>
       <DialogPopup
-        className="v3-succession-modal max-w-[640px]"
+        className="v3-surface v3-succession-modal max-w-[640px]"
         closeProps={{ "aria-label": "승계 닫기", disabled: pending }}
+        onKeyDown={event => { if(event.key === "Escape" && atomDraft) { event.preventDefault(); event.stopPropagation(); if(atomOpen) setAtomOpen(false); else closeAtom(); } }}
       >
         <DialogHeader className="v3-succession-head">
           <span aria-hidden="true">↗</span>
-          <DialogTitle>새 세션</DialogTitle>
+          <DialogTitle>{atomDraft ? "추가 참고 자료" : "새 세션"}</DialogTitle>
         </DialogHeader>
         <DialogPanel className="v3-succession-body" scrollFade={false}>
           {(error || files.find(file => file.status === "error")?.errorMessage) ? (
@@ -259,11 +272,33 @@ export function SessionSuccessionModal({
               detail={error || files.find(file => file.status === "error")?.errorMessage}
             />
           ) : null}
-          <div className="v3-succession-context-editor">
-            <section>
-              <strong>노드 / 에이전트 / 모델</strong>
+          {atomDraft ? <div className="v3-succession-context-editor">
+            <ProjectAtomFields request={atomRequest} value={atomDraft} disabled={pending} supportsLimit={false}
+              selectorOpen={atomOpen} onSelectorOpenChange={setAtomOpen} onSelectorStatusChange={setAtomStatus} onChange={setAtomDraft} />
+          </div> : null}
+          <div hidden={atomDraft !== null}>
+          <fieldset disabled={pending} className="v3-succession-context-editor">
+            <div className="v3-form-context"><span>시작할 폴더</span><strong>{folderTitle}</strong></div>
+            <label>
+              <strong>무엇을 시작할까요?</strong>
+              <textarea
+                aria-label="초기 지시"
+                autoFocus
+                value={initialInstruction}
+                disabled={pending}
+                rows={4}
+                placeholder="세션을 시작하자마자 수행할 지시…"
+                onChange={(event) => setInitialInstruction(event.target.value)}
+                onPaste={event => { if (uploadUrl && !pending) handleClipboardFiles(event, addFiles); }}
+              />
+            </label>
+            <SessionAttachmentFields files={files} pending={pending} nodeId={selectedNodeId} isUploading={isUploading} addFiles={addFiles} removeFile={removeFile}/>
+
+            <CreationDisclosure title="실행 환경" invalid={!modelPresetValid || effort.unsupported || !selectedNodeId || !selectedAgentId} summary={`${selectedNodeId || "노드 선택"} / ${selectedAgent?.name ?? "에이전트 선택"} / ${selectedModelPreset || "기본 모델"}`}>
+              <section>
               <AgentNodeAssignmentFields data={assignment}
                 presentation="session"
+                disabled={pending}
                 agentId={selectedAgentId}
                 nodeId={selectedNodeId}
                 modelPreset={selectedModelPreset}
@@ -327,9 +362,10 @@ export function SessionSuccessionModal({
                   </button>
                 </small>
               ) : null}
-            </section>
-            <section>
-              <strong>컨텍스트</strong>
+              </section>
+            </CreationDisclosure>
+            <CreationDisclosure title="함께 전달할 자료" summary={<span>{inheritCard ? "폴더 정보" : "폴더 정보 제외"}{inheritSummary ? " / 이전 세션 포함" : ""}{selectedDocumentIds.size ? ` / 문서 ${selectedDocumentIds.size}개` : ""}{atomNodeId ? " / 추가 참고 자료" : ""}</span>}>
+              <section>
               <ol>
                 <li>
                   <label>
@@ -341,7 +377,7 @@ export function SessionSuccessionModal({
                       onChange={(event) => setInheritCard(event.target.checked)}
                     />
                     <span>
-                      <strong>카드 본문</strong>
+                      <strong>폴더 정보</strong>
                       <span className="v3-succession-context-chips">
                         {contextItems.map((context) => (
                           <span key={context.id}>
@@ -406,30 +442,25 @@ export function SessionSuccessionModal({
                 {documentOptions.length === 0 ? <small>폴더에 마운트된 보드 문서가 없습니다.</small> : null}
               </div>
               <label className="flex min-w-0 flex-col gap-2">
-                <strong>atom 노드</strong>
-                <AtomNodeSelector request={atomRequest}
-                  value={atomNodeId}
-                  selectedTitle={atomNodeTitle}
-                  disabled={pending}
-                  onChange={(nodeId, title) => { setAtomNodeId(nodeId); setAtomNodeTitle(title); }}
-                />
+                <strong>추가 참고 자료</strong>
+                <Button ref={atomTrigger} variant="outline" disabled={pending} onClick={() => {
+                  setAtomDraft({ ...atomValue }); setAtomStatus("loading"); setAtomOpen(true);
+                }}>{atomNodeTitle || "atom에서 추가"}</Button>
+                {atomNodeId ? <Button variant="ghost" disabled={pending} onClick={() => { setAtomValue({instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false}); }}>제거</Button> : null}
               </label>
-            </section>
-            <label>
-              <strong>초기 지시</strong>
-              <textarea
-                value={initialInstruction}
-                disabled={pending}
-                rows={4}
-                placeholder="세션을 시작하자마자 수행할 지시…"
-                onChange={(event) => setInitialInstruction(event.target.value)}
-                onPaste={event => { if (uploadUrl && !pending) handleClipboardFiles(event, addFiles); }}
-              />
-            </label>
-            <SessionAttachmentFields files={files} pending={pending} nodeId={selectedNodeId} isUploading={isUploading} addFiles={addFiles} removeFile={removeFile}/>
+              </section>
+            </CreationDisclosure>
+          </fieldset>
           </div>
         </DialogPanel>
         <DialogFooter className="v3-succession-footer">
+          {atomDraft ? <>
+            <Button variant="ghost" onClick={closeAtom}>취소</Button>
+            <Button disabled={!isProjectAtomValid(atomDraft) || atomOpen || atomStatus !== "ready"} onClick={() => {
+              setAtomValue(atomDraft); closeAtom();
+            }}>자료 추가</Button>
+          </> : <>
+          <p className="v3-form-submit-note">시작하면 선택한 환경에서 실행합니다</p>
           <Button variant="ghost" disabled={pending} onClick={() => { void close(); }}>취소</Button>
           <Button
             disabled={
@@ -447,8 +478,9 @@ export function SessionSuccessionModal({
             }
             onClick={() => { void start(); }}
           >
-            {pending ? "시작 중…" : isUploading ? "첨부 중…" : contextPending ? "컨텍스트 확인 중…" : "시작"}
+            {pending ? "시작 중…" : isUploading ? "첨부 중…" : contextPending ? "컨텍스트 확인 중…" : "세션 시작"}
           </Button>
+          </>}
         </DialogFooter>
       </DialogPopup>
     </Dialog>

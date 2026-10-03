@@ -40,37 +40,10 @@ export async function savePageAtomReference(
   },
   idFactory: ContextOperationIdFactory = operationId,
 ): Promise<PageMutationResponse> {
-  const nodeId = input.nodeId.trim();
-  if (!nodeId) throw new Error("atom 노드를 선택해야 합니다");
-  if (!Number.isInteger(input.depth) || input.depth < 1 || input.depth > 5) {
-    throw new Error("atom 깊이는 1~5여야 합니다");
-  }
-  if (input.limit != null && (!Number.isInteger(input.limit) || input.limit < 1)) {
-    throw new Error("atom 최근 자식 수는 양의 정수여야 합니다");
-  }
   return await mutate(api, pageId, idFactory, "v3 page atom reference save", (blocks) => {
-    const previous = input.blockId
-      ? blocks.find((block) => block.id === input.blockId)?.properties ?? {}
-      : {};
-    const properties: Record<string, unknown> = {
-      ...previous,
-      instance: input.instance?.trim() || "atom",
-      nodeId,
-      nodeTitle: input.nodeTitle.trim() || nodeId,
-      depth: input.depth,
-      titlesOnly: input.titlesOnly,
-      ...(input.limit != null ? { limit: input.limit } : {}),
-      ...(input.mode !== undefined ? { mode: input.mode } : {}),
-    };
-    if (input.limit == null) delete properties.limit;
-    if (input.mode === undefined) delete properties.mode;
+    const properties = projectAtomProperties(input, blocks);
     return input.blockId
-      ? [{
-        op: "update_block_type_and_properties",
-        block_id: input.blockId,
-        block_type: "atom_ref",
-        properties,
-      }]
+      ? [{ op: "update_block_type_and_properties", block_id: input.blockId, block_type: "atom_ref", properties }]
       : [createBlock(blocks, idFactory("atom-reference-block"), "atom_ref", "", properties)];
   });
 }
@@ -158,7 +131,7 @@ function createBlock(
   };
 }
 
-function decodeStateVector(value: string): Uint8Array {
+export function decodeStateVector(value: string): Uint8Array {
   if (typeof globalThis.atob !== "function") throw new Error("state vector를 디코딩할 수 없습니다");
   return Uint8Array.from(globalThis.atob(value), (character) => character.charCodeAt(0));
 }
@@ -166,4 +139,31 @@ function decodeStateVector(value: string): Uint8Array {
 function operationId(prefix: string): string {
   if (!globalThis.crypto?.randomUUID) throw new Error("브라우저 randomUUID 지원이 필요합니다");
   return `${prefix}-${globalThis.crypto.randomUUID()}`;
+}
+
+export function projectAtomProperties(input: Parameters<typeof savePageAtomReference>[2], blocks: readonly BlockDto[]): Record<string, unknown> {
+  const nodeId = input.nodeId.trim();
+  if (!nodeId) throw new Error("atom 노드를 선택해야 합니다");
+  if (!Number.isInteger(input.depth) || input.depth < 1 || input.depth > 5) {
+    throw new Error("atom 깊이는 1~5여야 합니다");
+  }
+  if (input.limit != null && (!Number.isInteger(input.limit) || input.limit < 1)) {
+    throw new Error("atom 최근 자식 수는 양의 정수여야 합니다");
+  }
+    const previous = input.blockId
+      ? blocks.find((block) => block.id === input.blockId)?.properties ?? {}
+      : {};
+    const properties: Record<string, unknown> = {
+      ...previous,
+      instance: input.instance?.trim() || "atom",
+      nodeId,
+      nodeTitle: input.nodeTitle.trim() || nodeId,
+      depth: input.depth,
+      titlesOnly: input.titlesOnly,
+      ...(input.limit != null ? { limit: input.limit } : {}),
+      ...(input.mode !== undefined ? { mode: input.mode } : {}),
+    };
+    if (input.limit == null) delete properties.limit;
+    if (input.mode === undefined) delete properties.mode;
+    return properties;
 }

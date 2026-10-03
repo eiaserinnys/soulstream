@@ -34,6 +34,9 @@ export interface AtomNodeSelectorProps {
   /** nodeId, title 두 값을 함께 전달 */
   onChange: (nodeId: string, title: string) => void;
   disabled?: boolean;
+  open?: boolean;
+  onOpenChange?(open: boolean): void;
+  onStatusChange?(status: "loading" | "ready" | "error"): void;
 }
 
 export function AtomNodeSelector({
@@ -42,8 +45,11 @@ export function AtomNodeSelector({
   selectedTitle,
   onChange,
   disabled = false,
+  open: controlledOpen, onOpenChange, onStatusChange,
 }: AtomNodeSelectorProps) {
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = (next: boolean) => { setLocalOpen(next); onOpenChange?.(next); };
   const [nodes, setNodes] = useState<AtomNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +59,7 @@ export function AtomNodeSelector({
 
   const loadNodes = async (nodeId: string | null) => {
     setLoading(true);
+    onStatusChange?.("loading");
     setError(null);
     try {
       const url =
@@ -63,8 +70,10 @@ export function AtomNodeSelector({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { children: AtomNode[] };
       setNodes(data.children ?? []);
+      onStatusChange?.("ready");
     } catch {
       setError("노드를 불러오지 못했습니다");
+      onStatusChange?.("error");
       setNodes([]);
     } finally {
       setLoading(false);
