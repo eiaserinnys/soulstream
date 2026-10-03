@@ -9,6 +9,7 @@ import { CardMutationCore } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
 import {assertPolicyAdmission} from "./card_orchestration_repository.js";
+import { claimableCardSessions, assertSingleCardAssignee, translateAssigneeConflict, invalidCard } from "./card_assignee.js";
 
 export type PolicyAdmission = {runId:string;leaseToken:string;workerInput:Record<string,unknown>};
 export type CardMutationParams = FolderActorParams & { cardId: string; expectedVersion?: number; idempotencyKey?: string | null; reason?: string | null };
@@ -40,23 +41,29 @@ export class CardControlPlaneService {
   }
   async createCard(params: FolderActorParams & {
     folderId: string; title: string; request: string; attachments?: CardAttachment[]; queue?: boolean; assignee?: CardAssigneeInput | null;
-    nodeId?: string | null; modelPreset?: string | null; idempotencyKey?: string | null;
+    nodeId?: string | null; modelPreset?: string | null; idempotencyKey?: string | null; brief?: string;
   }) {
+    if (params.actorKind === "agent" && params.actorSessionId && !Object.hasOwn(params,"assignee")) {
+      const creator=(await this.repoSql<{agent_id:string;node_id:string;model_preset:string | null}[]>`SELECT agent_id,node_id,model_preset FROM sessions WHERE session_id=${params.actorSessionId}`)[0];
+      if (!creator?.agent_id) throw invalidCard("Creating session must have an agent_id");
+      params={...params,assignee:{kind:"agent",agentId:creator.agent_id},nodeId:params.nodeId ?? creator.node_id,modelPreset:params.modelPreset ?? creator.model_preset};
+    }
     const id=randomUUID();
+    const a=assigneeToFields(params.assignee);
     const result=await this.core.mutate({ folderId:params.folderId,targetKind:"card",targetId:id,operationType:"create_card",actor:params,
-      idempotencyKey:params.idempotencyKey,payload:{ title:params.title,request:params.request,attachments:params.attachments ?? [],queue:params.queue ?? false,assignee:params.assignee ?? null,nodeId:params.nodeId ?? null,modelPreset:params.modelPreset ?? null },
+      idempotencyKey:params.idempotencyKey,payload:{ title:params.title,request:params.request,brief:params.brief ?? "",attachments:params.attachments ?? [],queue:params.queue ?? false,assignee:params.assignee ?? null,nodeId:params.nodeId ?? null,modelPreset:params.modelPreset ?? null },
       apply:async (sql,eventId) => {
         await this.lockFolder(sql,params.folderId);
         const position=await this.position(sql,params.folderId,null);
         const queuePosition=params.queue ? await this.position(sql,null,null) : null;
-        const a=assigneeToFields(params.assignee);
-        await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,attachments,status,
+        if (a.assignee_session_id) await assertSingleCardAssignee(sql,a.assignee_session_id,id);
+        await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,brief,attachments,status,
           assignee_kind,assignee_agent_id,assignee_session_id,assignee_user_id,node_id,model_preset,
           created_session_id,created_event_id,updated_session_id,updated_event_id)
-          VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${sql.json(params.attachments ?? [])},${params.queue ? "queued" : "todo"},
+          VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${params.brief ?? ""},${sql.json(params.attachments ?? [])},${params.queue ? "queued" : "todo"},
           ${a.assignee_kind},${a.assignee_agent_id},${a.assignee_session_id},${a.assignee_user_id},${params.nodeId ?? null},${params.modelPreset ?? null},
           ${params.actorSessionId},${eventId},${params.actorSessionId},${eventId})`;
-      } });
+      } }).catch(error=>translateAssigneeConflict(this.repoSql,error,a.assignee_session_id));
     if (!result.idempotent) this.onMutation?.({result});
     return result;
   }
@@ -66,10 +73,11 @@ export class CardControlPlaneService {
     async (sql,card,eventId,payload) => { await this.patch(sql,card,payload,params,eventId); });
   }
   async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null }) {
-    return this.mutateCard(params,"set_card_status",{ status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null },async (sql,card,eventId) => {
+    return this.mutateCard(params,"set_card_status",{ status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null },async (sql,card,eventId,payload) => {
+      const claim=params.actorKind === "agent" ? await this.claim(sql,card,params.actorSessionId,payload) : {};
       if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId))
         throw Object.assign(new Error("Only the assignee session may change card status"), {statusCode:403});
-      await this.patch(sql,card,{ status:params.status,
+      await this.patch(sql,card,{ ...claim,status:params.status,
         blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
         queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id) : params.status === "blocked" && params.blockedKind === "limit" ? card.queue_position_key : null,
         completed_kind:params.status === "done" ? params.actorKind === "system" ? null : params.actorKind ?? "agent" : null,completed_session_id:params.status === "done" ? params.actorSessionId : null,
@@ -79,12 +87,13 @@ export class CardControlPlaneService {
   }
   async startCardWork(params: CardMutationParams & { execution: CardWorkExecution }) {
     if (params.actorKind !== "agent" || !params.actorSessionId) throw invalidWork("Only the assignee session may start work");
-    return this.mutateCard(params,"start_card_work",{execution:params.execution},async(sql,card,eventId)=>{
+    return this.mutateCard(params,"start_card_work",{execution:params.execution},async(sql,card,eventId,payload)=>{
       await validateWorkExecution(sql,params.actorSessionId!,params.execution);
       const dispatch = await acceptQueuedWork(sql,card,params.actorSessionId!,params.execution);
+      const claim=dispatch ? {} : await this.claim(sql,card,params.actorSessionId,payload);
       if (card.assignee_session_id !== params.actorSessionId && !dispatch)
         throw invalidWork("Only the assignee session may start work");
-      await this.patch(sql,card,{status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
+      await this.patch(sql,card,{...claim,status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
         completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null,
         ...(dispatch ? {assignee_kind:"session",assignee_session_id:params.actorSessionId,assignee_agent_id:null} : {})},params,eventId);
     });
@@ -120,9 +129,11 @@ export class CardControlPlaneService {
       && typeof existing.payload_json.comment_id === "string" ? existing.payload_json.comment_id : null;
     const commentId=existingCommentId ?? randomUUID();
     const result=await this.mutateCard(params,"add_card_comment",{ comment_id:commentId,body:params.body,kind,
-      ...(reply ? {author_kind:"agent",session_id:params.actorSessionId} : {}) },async (sql,card) => {
+      ...(reply ? {author_kind:"agent",session_id:params.actorSessionId} : {}) },async (sql,card,eventId,payload) => {
+      const claim=reply ? await this.claim(sql,card,params.actorSessionId,payload) : {};
       if (reply && (card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId))
         throw invalid("Only the assignee session may reply to a card comment");
+      if (Object.keys(claim).length) await this.patch(sql,card,claim,params,eventId);
       await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body)
         VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body})`;
     });
@@ -196,12 +207,26 @@ export class CardControlPlaneService {
         previousAssigneeSessionId=locked.assignee_session_id;
         await apply(sql,locked,eventId,clean);
         committedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
-      } });
+      } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
+        typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));
     if (!result.idempotent) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});
     return result;
   }
   private async patch(sql:RepositorySql,card:CardRow,fields:Record<string,unknown>,actor:FolderActorParams,eventId:number | null) {
-    await sql`UPDATE cards SET ${sql(fields)},version=version+1,updated_at=NOW(),updated_session_id=${actor.actorSessionId},updated_event_id=${eventId} WHERE id=${card.id}`;
+    const sessionId=Object.hasOwn(fields,"assignee_session_id") ? fields.assignee_session_id : card.assignee_session_id;
+    if (typeof sessionId === "string" && (Object.hasOwn(fields,"assignee_session_id") || fields.archived === false)
+      && !(fields.archived ?? card.archived))
+      await assertSingleCardAssignee(sql,sessionId,card.id);
+    await sql`UPDATE cards SET ${sql(fields)},
+      status_changed_at=CASE WHEN ${fields.status !== undefined && fields.status !== card.status} THEN NOW() ELSE status_changed_at END,
+      version=version+1,updated_at=NOW(),updated_session_id=${actor.actorSessionId},updated_event_id=${eventId} WHERE id=${card.id}`;
+  }
+  private async claim(sql:RepositorySql,card:CardRow,sessionId:string | null,payload:Record<string,unknown>) {
+    if (!sessionId || !(await claimableCardSessions(sql,card.id,sessionId)).length) return {};
+    const fields={assignee_kind:"session",assignee_session_id:sessionId,assignee_agent_id:null};
+    Object.assign(card,fields);
+    payload.claimed_assignee=true;
+    return fields;
   }
   private async lockFolder(sql:RepositorySql,folderId:string) {
     const rows=await sql`SELECT id FROM folders WHERE id=${folderId} FOR UPDATE`;

@@ -16,9 +16,9 @@ export const cardHandlers = {
       kind: (a.assignee as Args).kind, agentId: (a.assignee as Args).agent_id,
       sessionId: (a.assignee as Args).session_id, userId: (a.assignee as Args).user_id,
     } };
-    return mutation(o.cards, "create_card", undefined, { folderId: a.folder_id, title: a.title, request: a.request,
+    return mutation(o.cards, "create_card", undefined, { folderId: a.folder_id, title: a.title, request: a.request, brief: a.brief,
       attachments: a.attachments, ...assignee, nodeId: a.node_id, modelPreset: a.model_preset, queue: a.queue,
-      idempotencyKey: randomUUID() }, actor);
+      idempotencyKey: a.idempotency_key ?? randomUUID() }, actor);
   }),
   list_cards: (o, a) => run(() => request(() => listCardRouteBody(o.cards,
     { folderId: a.folder_id, status: a.status }, o.cards.resolveAccess))),

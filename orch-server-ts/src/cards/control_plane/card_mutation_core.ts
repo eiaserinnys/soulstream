@@ -210,10 +210,11 @@ export class CardMutationCore {
     if (!idempotencyKey) return null;
     const operation = await this.repo.getOperationByIdempotencyKey(idempotencyKey);
     if (!operation?.folder_id) return null;
+    const { claimed_assignee: _claim, ...requestPayload } = operation.payload_json;
     if ((expected.folderId && expected.operationType !== "move_card" && operation.folder_id !== expected.folderId)
       || operation.operation_type !== expected.operationType
       || (!expected.operationType.startsWith("create_") && operation.target_id !== expected.targetId)
-      || !isDeepStrictEqual(operation.payload_json, JSON.parse(JSON.stringify(expected.payload)))) {
+      || !isDeepStrictEqual(requestPayload, JSON.parse(JSON.stringify(expected.payload)))) {
       throw Object.assign(new Error("Idempotency key belongs to a different request"), { statusCode: 409, code: "FOLDER_IDEMPOTENCY_CONFLICT" });
     }
     return {

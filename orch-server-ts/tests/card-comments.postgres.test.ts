@@ -31,7 +31,7 @@ describe("card comments HTTP, storage, and delivery", () => {
         return rows[0]!.id;
       },
     }, { emitCardUpdated: cardUpdated, emitFolderUpdated: async () => {} }, change => dispatcher.acceptMutation(change));
-    dispatcher = new CardDispatcher({
+    dispatcher = new CardDispatcher({ deliveryExists: async () => false,
       repository: new CardDispatchRepository(async () => sql),
       cards: async () => cards,
       resolveTarget: () => ({ nodeId: "eiaserinnys", agentId: "roselin", modelPreset: null, available: true, reason: null }),
@@ -128,6 +128,18 @@ describe("card comments HTTP, storage, and delivery", () => {
     } as unknown as FolderRouteOptions);
     return server;
   }
+
+  it("delivers a completed card's user comment to its owner without reopening the card",async()=>{
+    const cardId=await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','completed')`;
+    await h.sql`UPDATE cards SET status='done',assignee_kind='session',assignee_session_id='owner' WHERE id=${cardId}`;
+    const comment=await cards.addComment({...human,cardId,body:'보완해 주세요',idempotencyKey:key()});
+    await dispatcher.drain();
+    expect(messages).toHaveBeenCalledWith('owner',expect.stringContaining('보완해 주세요'),undefined,expect.objectContaining({actorKind:'user'}));
+    const detail=(await cards.getCard(cardId))!;
+    expect(detail.card.status).toBe('done');
+    expect(detail.comments.find(c=>c.id===comment.id)!.delivered_at).toBeInstanceOf(Date);
+  });
 
   it("stores an assignee reply as agent in review without delivery or status change", async () => {
     const cardId = await makeCard("에이전트 답변");

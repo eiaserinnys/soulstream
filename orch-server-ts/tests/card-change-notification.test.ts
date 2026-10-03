@@ -18,4 +18,10 @@ describe("committed card reference notifications",()=>{
     const c=change();c.result.operation.actor_kind="agent";c.result.operation.actor_session_id="other";c.result.operation.operation_type="add_card_comment";
     expect(buildCardChangeNotification(c,{author_kind:"agent",body:"확인한 답변",delivered_at:null})).toBeNull();
   });
+  it("delivers a user comment on a completed card while suppressing completion state notifications",()=>{
+    const c=change();c.committedCard!.status="done";c.result.operation.operation_type="add_card_comment";
+    expect(buildCardChangeNotification(c,{author_kind:"user",body:"보완 요청",delivered_at:null})).toMatchObject({sessionId:"owner",text:expect.stringContaining("보완 요청")});
+    c.result.operation.operation_type="set_card_status";
+    expect(buildCardChangeNotification(c)).toBeNull();
+  });
 });

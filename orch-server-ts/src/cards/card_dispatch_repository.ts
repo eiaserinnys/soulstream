@@ -3,6 +3,7 @@ import { endedCardWork } from "./card_work_lifecycle.js";
 import type { CardOwnerSession } from "./card_session_target.js";
 import type { CardRow, SqlClient } from "./control_plane/card_types.js";
 import { readCardDispatchSettings } from "./card_dispatch_settings.js";
+import { readCardReminderFacts } from "./card_status_reminder_repository.js";
 export type DispatchCard = CardRow & {
     folder_name: string;
 };
@@ -17,6 +18,7 @@ export type CardSession = {
 };
 export class CardDispatchRepository {
     constructor(private readonly resolveSql: () => Promise<SqlClient>) { }
+    async reminderFacts(now: number, endedRootId?: string) { return readCardReminderFacts(await this.resolveSql(), now, endedRootId); }
     async settings() { return readCardDispatchSettings(await this.resolveSql()); }
     async queued(): Promise<DispatchCard[]> {
         const sql = await this.resolveSql();

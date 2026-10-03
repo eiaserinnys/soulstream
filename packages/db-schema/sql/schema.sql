@@ -3408,6 +3408,7 @@ CREATE TABLE IF NOT EXISTS cards (
     assignee_user_id     TEXT,
     status               TEXT NOT NULL DEFAULT 'todo'
                            CHECK (status IN ('todo','queued','blocked','running','review','done','cancelled')),
+    status_changed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     archived             BOOLEAN NOT NULL DEFAULT FALSE,
     version              INTEGER NOT NULL DEFAULT 1,
     created_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
@@ -3430,6 +3431,9 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_folder ON cards(folder_id, position_key COLLATE "C");
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cards_assignee_session ON cards(assignee_session_id)
+    WHERE assignee_session_id IS NOT NULL AND NOT archived;
 CREATE INDEX IF NOT EXISTS idx_cards_queue ON cards(queue_position_key COLLATE "C") WHERE status='queued' AND archived=FALSE;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS card_id TEXT REFERENCES cards(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_sessions_card ON sessions(card_id) WHERE card_id IS NOT NULL;

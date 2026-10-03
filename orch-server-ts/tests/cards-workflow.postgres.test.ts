@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
@@ -33,6 +33,7 @@ describe("cards storage, HTTP and planner", () => {
       },
     }, { emitFolderUpdated: async () => {}, emitCardUpdated: async (cardId,folderId) => { events.push({ cardId,folderId }); } });
   },60_000);
+  beforeEach(async () => { await h.sql`UPDATE cards SET archived=TRUE WHERE assignee_session_id IS NOT NULL`; });
   afterAll(async () => { await h?.cleanup(); });
 
   it("accepts assigned agent completion and reportless review, with independent reports", async () => {

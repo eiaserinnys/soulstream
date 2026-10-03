@@ -333,8 +333,8 @@ function assertActiveIntervention(
     scope: "assignee_session_id", session_id: observed.sessionId,
     trust: "untrusted_card_data", notice: "현재 입력의 조회 현황이며 상태 전환 명령이 아닙니다.",
     guidance: "작업이 끝났으면 보고 후 검수를 요청합니다. 진행 또는 위임 대기 중이면 필요할 때 경과를 남깁니다. 상세는 카드 ID로 get_card를 조회합니다.",
-    status: "ok", total: scenario === 'S3' ? 1 : 0, omitted: 0,
-    cards: scenario === 'S3' ? [{id:'current-card',title:'최신 카드',status:'실행 중',latestReportAt:null}] : [],
+    status: "ok", total: 1, omitted: 0,
+    cards: [{id:'current-card',title:'최신 카드',status:scenario === 'S3' ? '실행 중' : '완료',latestReportAt:null}],
   });
   const interruptProbes = observed.engineBoundaryProbes.filter(
     (probe) => probe.call === "interrupt",

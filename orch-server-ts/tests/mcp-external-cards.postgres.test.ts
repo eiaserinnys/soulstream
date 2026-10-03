@@ -26,7 +26,7 @@ describe("external MCP card writes", () => {
     const sql = createBoardYjsSqlAdapter(h.liveSql);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, undefined,
       change => dispatcher.acceptMutation(change));
-    dispatcher = new CardDispatcher({ repository: new CardDispatchRepository(async () => sql), cards: async () => cards,
+    dispatcher = new CardDispatcher({ deliveryExists: async () => false, repository: new CardDispatchRepository(async () => sql), cards: async () => cards,
       resolveTarget: () => ({ nodeId: "node", agentId: "roselin", modelPreset: null, available: true, reason: null }),
       launch: async () => {}, sendMessage: messages, notify, warn: warnings });
     app = Fastify();
