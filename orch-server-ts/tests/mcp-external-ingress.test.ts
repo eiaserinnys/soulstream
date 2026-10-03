@@ -43,6 +43,7 @@ async function connect(era: "modern" | "legacy", url: URL) {
 }
 function assertInventory(tools: { name: string }[], era: "modern" | "legacy" = "legacy") {
   const definitions = mcpToolDefinitions.filter(d => d.audience === "all");
+  expect(tools).toHaveLength(63);
   expect(tools.map(t => t.name)).toEqual(definitions.map(d => d.name));
   for (const tool of tools) {
     const expected = inventory.find(t => t.name === tool.name)!;
