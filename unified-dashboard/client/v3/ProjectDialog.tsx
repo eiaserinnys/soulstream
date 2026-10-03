@@ -238,7 +238,7 @@ function ProjectFormFields({ value, disabled, defaultsInvalid, onChange, onEdit 
     <label><span>폴더 이름 <small className="project-required">필수</small></span>
       <input aria-label="폴더 이름" placeholder="예: 대시보드 개선" autoFocus value={value.title} disabled={disabled}
         onChange={event => onChange({ ...value, title: event.target.value })} /></label>
-    <div className="project-optional-heading"><strong>작업 컨텍스트</strong><span>선택 · 나중에 추가할 수 있어요</span></div>
+    <div className="project-optional-heading"><strong>작업 컨텍스트</strong><span>선택, 나중에 추가할 수 있어요</span></div>
     <CreationDisclosure className="project-context-disclosure" title="작업 지침" summary="에이전트가 참고할 목표와 규칙" defaultExpanded={value.guidance.length > 0}>
       <fieldset><legend className="sr-only">작업 지침</legend>
         {value.guidance.map((item, index) => <div className="v3-project-dialog-entry" key={item.blockId ?? item.draftId ?? index}>
@@ -258,7 +258,7 @@ function ProjectFormFields({ value, disabled, defaultsInvalid, onChange, onEdit 
     <CreationDisclosure className="project-context-disclosure" title="참고 자료" summary="atom에서 가져올 지식과 문서" defaultExpanded={value.atomReferences.length > 0}>
       <fieldset><legend className="sr-only">참고 자료</legend>
         {value.atomReferences.map((item, index) => <div className="v3-project-dialog-entry" key={item.blockId ?? item.draftId ?? index}>
-          <Button variant="outline" disabled={disabled} onClick={event => onEdit({ kind: "atom", value: { ...item }, index }, event.currentTarget)}>{item.nodeTitle} · {item.instance}</Button>
+          <Button variant="outline" disabled={disabled} onClick={event => onEdit({ kind: "atom", value: { ...item }, index }, event.currentTarget)}>{item.nodeTitle} / {item.instance}</Button>
           <Button variant="ghost" disabled={disabled} onClick={() => onChange({ ...value, atomReferences: value.atomReferences.filter((_, i) => i !== index) })}>제거</Button>
         </div>)}
         <Button variant="outline" disabled={disabled} onClick={event => onEdit({ kind: "atom", index: null,
