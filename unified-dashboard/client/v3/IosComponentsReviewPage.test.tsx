@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IosComponentsReviewPage } from "./IosComponentsReviewPage";
 
 vi.mock("./ComponentsReviewLayout", () => ({
-  ComponentsReviewLayout: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  ComponentsReviewLayout: ({ children, syncPreferences }: { children: ReactNode; syncPreferences: boolean }) => <main data-sync-preferences={String(syncPreferences)}>{children}</main>,
 }));
 vi.mock("@seosoyoung/soul-ui", () => ({
   DashboardIconCap: ({ label, children, onClick }: { label: string; children: ReactNode; onClick: () => void }) =>
@@ -44,6 +44,7 @@ it("checks the same-origin index once before displaying the named iframe", async
   fetchMock.mockImplementation(() => new Promise(resolve => { resolveCheck = resolve; }));
   await act(async () => root.render(<IosComponentsReviewPage />));
   expect(container.querySelector("iframe")).toBeNull();
+  expect(container.querySelector("main")?.dataset.syncPreferences).toBe("true");
   expect(container.querySelector("h1")?.textContent).toBe("소울앱 컴포넌트");
   expect(container.textContent).toContain("앱 컴포넌트의 브라우저 미리보기입니다. iOS 전용 효과와 동작은 기기에서 확인합니다.");
   await act(async () => resolveCheck({ ok: true }));
@@ -55,4 +56,14 @@ it("checks the same-origin index once before displaying the named iframe", async
   expect(fetchMock).toHaveBeenCalledWith("/assets/ios-components/index.html", expect.objectContaining({
     method: "HEAD", cache: "no-store", signal: expect.any(AbortSignal),
   }));
+});
+
+it("opens the dialogues section in the same bundle and keeps the host frame", async () => {
+  fetchMock.mockResolvedValue({ ok: true });
+  await act(async () => root.render(<IosComponentsReviewPage section="dialogues" />));
+  expect(container.querySelector("iframe")?.getAttribute("src")).toBe("/assets/ios-components/index.html?section=dialogues");
+  expect(container.textContent).toContain("iOS 앱 컴포넌트의 웹 미리보기");
+  expect(container.querySelector("button")?.getAttribute("aria-label")).toBe("웹 다이얼로그로 돌아가기");
+  expect(container.querySelector(".v3-ios-components-review")).not.toBeNull();
+  expect(container.querySelector("main")?.dataset.syncPreferences).toBe("false");
 });

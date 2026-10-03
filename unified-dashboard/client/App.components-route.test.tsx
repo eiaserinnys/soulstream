@@ -11,7 +11,7 @@ vi.mock("./v3/ComponentsReviewLayout", () => ({
   ComponentsReviewLayout: () => <main data-testid="standalone-review" />,
 }));
 vi.mock("./v3/IosComponentsReviewPage", () => ({
-  IosComponentsReviewPage: () => <main data-testid="ios-review" />,
+  IosComponentsReviewPage: ({ section }: { section?: string }) => <main data-testid="ios-review" data-section={section} />,
 }));
 
 let container: HTMLDivElement;
@@ -52,4 +52,11 @@ it("keeps other components paths on the existing dashboard route", async () => {
   flushSync(() => root.render(<App />));
   await vi.waitFor(() => expect(container.querySelector('[data-testid="dashboard"]')).not.toBeNull());
   expect(container.querySelector('[data-testid="ios-review"]')).toBeNull();
+});
+
+it.each(["/dialogues/ios", "/dialogues/ios/"])("opens %s with the RN dialogues section", async pathname => {
+  window.history.replaceState(null, "", pathname);
+  flushSync(() => root.render(<App />));
+  await vi.waitFor(() => expect(container.querySelector('[data-testid="ios-review"]')?.getAttribute("data-section")).toBe("dialogues"));
+  expect(container.querySelector('[data-testid="dashboard"]')).toBeNull();
 });

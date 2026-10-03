@@ -6,6 +6,7 @@ config.resolver.nodeModulesPaths = [path.resolve(__dirname, '../node_modules')];
 const client = path.resolve(__dirname, '../src/api/client.ts');
 const pickers = path.resolve(__dirname, '../src/hooks/attachmentPickers.ts');
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === '@react-native-async-storage/async-storage') return { type: 'sourceFile', filePath: path.resolve(__dirname, '../src/component-review/fixture-async-storage.ts') };
   if (moduleName === 'expo-secure-store') return { type: 'sourceFile', filePath: path.resolve(__dirname, '../src/component-review/fixture-secure-store.ts') };
   const resolved = context.resolveRequest(context,
     moduleName === 'event-target-shim/index' ? 'event-target-shim' : moduleName, platform);
