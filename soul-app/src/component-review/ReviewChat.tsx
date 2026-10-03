@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { useTokens } from '../theme';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { UserMessage } from '../components/events/UserMessage';
@@ -46,6 +46,14 @@ export function ReviewChat() {
         inputAccessibilityLabel="공개 예시 메시지" />
       {attachment ? <AttachmentImage source={require('../../assets/icon.png')} accessibilityLabel="공개 예시 첨부 열기" /> : null}
       {sent ? <UserMessage event={message('user_message', sent)} /> : null}
+    </ReviewSection>
+    <ReviewSection title="입력창 · embedded · 프레임이 바깥 여백 소유">
+      <View style={{ padding: t.uiSpacing.md }}>
+        <ChatComposer embedded input={input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
+          onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
+          sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
+          inputAccessibilityLabel="embedded 예시 메시지" />
+      </View>
     </ReviewSection>
     <ReviewSection title="사용자 말풍선 · 일반·개입·전송 실패">
       <UserMessage event={message('user_message', '이 프로젝트의 화면을 검수해주세요. 긴 문장과 여러 줄을 확인합니다.')} />

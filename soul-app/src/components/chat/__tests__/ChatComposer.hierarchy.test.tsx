@@ -89,3 +89,15 @@ test.each([
     'chat-composer-send-button',
   ]);
 });
+
+test('embedded delegates only outer padding; regular minimumBottomPadding and inner controls stay unchanged', () => {
+  const props = { input: '본문', onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null, minimumBottomPadding: 32 };
+  const screen = render(<ChatComposer {...props} />);
+  const inner = StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style);
+  const send = StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style);
+  expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style).paddingBottom).toBe(32);
+  screen.rerender(<ChatComposer {...props} embedded />);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-row').props.style)).toMatchObject({ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 });
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style)).toEqual(inner);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(send);
+});

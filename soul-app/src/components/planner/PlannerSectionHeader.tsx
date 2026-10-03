@@ -33,7 +33,7 @@ export function PlannerSectionHeader({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const board = variant === 'board';
-  if (variant === 'lane') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={styles.title}>
+  if (variant === 'lane') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={[styles.title, { flexGrow: 0, flexBasis: 'auto', flexShrink: 1 }]}>
     {title + ' '}<Text testID={countTestID}>{`${count ?? 0}${countSuffix??'개'}`}</Text>
   </Text>;
   if (onToggle) return (
@@ -71,7 +71,7 @@ function makeStyles(t: DesignTokens) {
     row: { minHeight: planner.minHeight.context, flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
     title: { color: t.colors.textPrimary, ...planner.typography.section, flex: 1 },
     countedRow: { alignItems: 'baseline', gap: t.uiSpacing.sm },
-    countedTitle: { flex: 0, flexShrink: 1 },
+    countedTitle: { flexGrow: 0, flexBasis: 'auto', flexShrink: 1 },
     boardTitle: { flexBasis: 'auto' },
     boardRow: { minHeight: planner.typography.section.lineHeight },
     count: { color: t.colors.textSecondary, ...planner.typography.meta, marginRight: 'auto' },

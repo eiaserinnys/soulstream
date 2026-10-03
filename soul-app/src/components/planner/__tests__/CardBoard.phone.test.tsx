@@ -39,12 +39,12 @@ test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 검
   const saved = jest.fn();
   const screen = render(<CardBoard phone api={null} cards={[]} includeCompleted onOpen={() => {}} onPositionChange={saved} />);
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
-  fireEvent.press(screen.getByLabelText('실행 중 레인 보기'));
+  fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: screen.getByTestId('card-board').props.snapToOffsets[2], y: 0 } } });
   screen.rerender(<CardBoard phone api={null} cards={[]} includeCompleted={false} onOpen={() => {}} onPositionChange={saved} />);
   expect(saved.mock.calls.at(-1)[0].lane).toBe('running');
   expect(screen.queryByLabelText('완료 레인 보기')).toBeNull();
   screen.rerender(<CardBoard phone api={null} cards={[]} includeCompleted onOpen={() => {}} onPositionChange={saved} />);
-  fireEvent.press(screen.getByLabelText('완료 레인 보기'));
+  fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: screen.getByTestId('card-board').props.snapToOffsets[5], y: 0 } } });
   screen.rerender(<CardBoard phone api={null} cards={[]} includeCompleted={false} onOpen={() => {}} onPositionChange={saved} />);
   expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
   expect(saved.mock.calls.at(-1)[0].x).toBe(screen.getByTestId('card-board').props.snapToOffsets[4]);
@@ -65,3 +65,14 @@ test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 검
   fireEvent(frame,'pointerMove',{preventDefault:jest.fn(),nativeEvent:{pointerType:'mouse',pointerId:2,pageX:395,pageY:160}});
   expect(saved.mock.calls.at(-1)[0].x).toBe(100);
  });
+
+test.each([true, false])('phone=%s has no status tabs and the empty draft heading owns creation', phone => {
+  const create = jest.fn();
+  const screen = render(<CardBoard phone={phone} api={null} cards={[]} includeCompleted={false} onOpen={() => {}} onCreate={create} />);
+  expect(screen.queryByTestId('card-board-stages')).toBeNull();
+  const draft = require('@testing-library/react-native').within(screen.getByTestId('card-board-column-todo'));
+  expect(draft.getByText(/드래프트/)).toBeTruthy();
+  expect(draft.getByTestId('card-board-count-todo').props.children).toBe('0개');
+  fireEvent.press(draft.getByLabelText('드래프트 카드 추가'));
+  expect(create).toHaveBeenCalledTimes(1);
+});

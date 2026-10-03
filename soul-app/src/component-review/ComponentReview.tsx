@@ -52,8 +52,12 @@ export function initializeReview() {
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   useSettingsStore.setState({ serverUrl: cardImages ? window.location.origin : entryShell || dialogues ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  const longSelection = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chips') === 'long';
+  if (longSelection) useSettingsStore.setState({ cardAssignments: {
+    [entryShell ? 'https://public-fixture.invalid' : '']: { folderId: folders[0].id, nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-exhausted-model' },
+  } });
   const fixtureSessions = Object.fromEntries(reviewSessionPortraits(dialogueSessions).map(session => [session.agentSessionId, session]));
-  useSessionStore.setState({ catalog: { folders: dialogues ? dialogueFolders : folders, sessions: dialogues ? fixtureSessions : {} }, ...(dialogues ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
+  useSessionStore.setState({ catalog: { folders: dialogues ? dialogueFolders : longSelection ? folders.map((folder, index) => index === 0 ? { ...folder, name: '아주 긴 프로젝트 폴더 이름으로 한 줄 말줄임을 확인합니다' } : folder) : folders, sessions: dialogues ? fixtureSessions : {} }, ...(dialogues ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
 }
 
 function Gallery() {

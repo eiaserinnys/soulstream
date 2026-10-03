@@ -28,6 +28,7 @@ interface Props {
   interruptControls?: React.ReactNode;
   voiceControls: React.ReactNode;
   minimumBottomPadding?: number;
+  embedded?: boolean;
 }
 
 export function ChatComposer({
@@ -42,6 +43,7 @@ export function ChatComposer({
   interruptControls,
   voiceControls,
   minimumBottomPadding = 0,
+  embedded = false,
   placeholder = '메시지 입력...',
   inputAccessibilityLabel,
   sendAccessibilityLabel = '메시지 보내기',
@@ -56,9 +58,11 @@ export function ChatComposer({
 
   return (
     <View
+      {...(embedded ? { testID: 'chat-composer-row' } : {})}
       style={[
         styles.inputRow,
-        { paddingBottom: Math.max(t.spacing.sm, minimumBottomPadding) },
+        embedded ? { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }
+          : { paddingBottom: Math.max(t.spacing.sm, minimumBottomPadding) },
       ]}
     >
       <GlassSurface

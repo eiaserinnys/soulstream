@@ -41,13 +41,14 @@ export function MainListPane({
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
   const insets = useSafeAreaInsets();
   const activeSection = useUIStore((state) => state.activeSection);
+  const effectiveShowSearch = showSearch && activeSection.kind !== 'daily';
   const views = useUIStore(state => state.mainPaneViews);
   const setMainPaneView = useUIStore(state => state.setMainPaneView);
   const bottomInset = useUIStore(state => state.floatingComposerBottomInset);
   const scope = useAuthScopeGeneration();
   const displayOwner = `${scope}:${activeSection.kind === 'project' ? activeSection.folderId : 'global'}`;
   const viewKey = activeSection.kind === 'project' ? activeSection.folderId : 'global';
-  const view = views[viewKey] ?? (viewKey === 'global' ? 'board' : 'existing');
+  const view = activeSection.kind === 'daily' ? 'board' : views[viewKey] ?? 'existing';
   const [visited, setVisited] = useState<Record<string, boolean>>(() => ({
     global: true,
     ...Object.fromEntries(Object.entries(views).filter(([, view]) => view === 'board').map(([key]) => [key, true])),
@@ -65,10 +66,10 @@ export function MainListPane({
     ? view === 'board' ? '카드' : '데일리 기록'
     : folders.find((folder) => folder.id === activeSection.folderId)?.name ?? '프로젝트';
   useEffect(() => {
-    if (showSearch && searchFocusRequestId > 0) {
+    if (effectiveShowSearch && searchFocusRequestId > 0) {
       requestAnimationFrame(() => searchInputRef.current?.focus());
     }
-  }, [searchFocusRequestId, showSearch]);
+  }, [searchFocusRequestId, effectiveShowSearch]);
   return (
     <View style={styles.container}>
       <TabletPaneHeader
@@ -89,7 +90,7 @@ export function MainListPane({
           </LiquidGlassButton>
         ) : null}
         <View testID="tablet-main-title" style={styles.title}>
-          {showSearch ? (
+          {effectiveShowSearch ? (
             <SessionSearchField
               ref={searchInputRef}
               value={searchQuery}
@@ -107,30 +108,22 @@ export function MainListPane({
             />
           )}
         </View>
-        {view === 'board' && !showSearch ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+        {view === 'board' && !effectiveShowSearch ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
           <CompletedCardsToggle {...cardDisplay} />
-          <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
-          accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
-          <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
-        </LiquidGlassButton>
-          {activeSection.kind === 'daily' ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
-            accessibilityLabel="기존 데일리 기록" onPress={() => setView('existing')}>
-            <Ionicons name="today-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
-          </LiquidGlassButton> : null}
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="보드 확대" onPress={() => boardRef.current?.openExpanded()}>
             <Ionicons name="expand-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
           </LiquidGlassButton>
         </View> : null}
-        {activeSection.kind === 'daily' && !showSearch && view === 'existing' ? (
+        {activeSection.kind === 'daily' && !effectiveShowSearch && view === 'existing' ? (
           <DailyHeaderActions
             onOpenReview={() => dailyRef.current?.openReview()}
             onOpenNewFolder={() => dailyRef.current?.openNewFolder()}
           />
         ) : null}
       </TabletPaneHeader>
-      {!showSearch ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
+      {!effectiveShowSearch && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
         <SettingsSegmentedControl<'existing' | 'board'> id="tablet-card-view" value={view} onChange={setView}
-          options={[{ value: 'existing', label: activeSection.kind === 'daily' ? '데일리 기록' : '기존 보기' }, { value: 'board', label: '카드 보드' }]} />
+          options={[{ value: 'existing', label: '기존 보기' }, { value: 'board', label: '카드 보드' }]} />
       </View> : null}
       <View style={styles.body}>
         {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>

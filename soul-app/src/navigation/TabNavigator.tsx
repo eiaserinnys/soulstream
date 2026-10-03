@@ -144,6 +144,7 @@ function rootScreenOptions(section: RootSectionKey) {
   const config = ROOT_SECTION_CONFIG[section];
   return {
     title: config.title,
+    headerTitleAlign: 'left' as const,
     headerTitle: () => <RootSectionHeaderTitle section={section} />,
   };
 }

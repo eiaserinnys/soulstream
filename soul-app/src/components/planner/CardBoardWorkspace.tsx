@@ -62,6 +62,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   const board = (initialPosition?: BoardPosition, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
     bottomInset={expandedBoard ? 0 : bottomInset}
     includeCompleted={cardDisplay.includeCompleted} initialPosition={initialPosition}
+    onCreate={() => setAdding(true)}
     onPositionChange={expandedBoard ? undefined : (next) => { position.current = next; }}
     onOpen={(id, target) => {
       if (expandedBoard && phone) closeExpanded();
@@ -72,14 +73,11 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   const heading = (expandedBoard = false) => <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : t.cardLayout.padding, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.sm }}>
     <View style={{ flexGrow: 1 }}><PlannerSectionHeader title={folderId ? '현재 폴더 · 카드' : '전체 · 카드'} /></View>
     <CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted} completedCount={completedCount} onChange={cardDisplay.onChange} />
-    <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={() => setAdding(true)}>
-      <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
-    </LiquidGlassButton>
     {!phone ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel={expanded ? '보드 확대 닫기' : '보드 확대'} onPress={() => expanded ? closeExpanded() : setExpanded({ ...position.current, lanes: { ...position.current.lanes } })}>
       <Ionicons name={expanded ? 'close-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton> : null}
   </View>;
-  return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: 0, paddingTop: t.uiSpacing.xl, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
+  return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: 0, paddingTop: t.uiSpacing.sm, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
     {externalHeader ? null : heading()}
     {error ? <View style={{ gap: t.uiSpacing.sm }}>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.error }}>{error}</Text>
@@ -92,7 +90,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
       if (useUIStore.getState().folderOverlayVisible) useUIStore.getState().closeFolderOverlay();
       else closeExpanded();
     }}>
-      <GestureHandlerRootView style={{ flex: 1 }}><View testID="card-board-expanded" style={{ flex: 1, position: 'relative', paddingHorizontal: t.cardLayout.padding, paddingTop: t.uiSpacing.xl, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
+      <GestureHandlerRootView style={{ flex: 1 }}><View testID="card-board-expanded" style={{ flex: 1, position: 'relative', paddingHorizontal: t.cardLayout.padding, paddingTop: t.uiSpacing.sm, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
         <View style={{ flex: 1, gap: t.uiSpacing.md }} pointerEvents={detailVisible ? 'none' : 'auto'} accessibilityElementsHidden={detailVisible} importantForAccessibility={detailVisible ? 'no-hide-descendants' : 'auto'}>
           {heading(true)}{board(expanded, true)}
         </View>
