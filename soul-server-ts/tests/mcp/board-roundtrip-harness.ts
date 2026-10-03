@@ -81,14 +81,16 @@ export async function createBoardRoundtripHarness() {
   // Getter ensures each reset uses a fresh real Y.Doc service rather than a stale document cache.
   registerBoardYjsHostProxyRoutes(app, { ...host, get service() { return board; } });
   registerPersistenceHostRoutes(app, { authBearerToken: "service-token", repositoryProvider: async () => ({ sessionReads }) as never });
-  registerMcpHostRoutes(app, { authBearerToken: "service-token", folders,
+  const executionOptions = { authBearerToken: "service-token", folders,
     cards: { cardServiceProvider: folders.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
     board: { host: { ...host, get service() { return board; } }, getSession: id => sessionReads.getSession(id),
       listAgentProfiles,
       broadcaster: { append: (event: unknown) => { events.push(event); } },
     },
-  } as never);
+  } as never;
+  
+  registerMcpHostRoutes(app, executionOptions);
   const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
   const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
   const clientConfig = { orch, logger };
@@ -147,7 +149,7 @@ export async function createBoardRoundtripHarness() {
       return await withMcpRequestContext(context, () => client.callTool({ name, arguments: input }));
     } finally { await client.close(); await server.close(); }
   }
-  return { seed, call, events, h, projectionHost, listAgentProfiles,
+  return { executionOptions, seed, call, events, h, projectionHost, listAgentProfiles,
     distinguishRemoteNames(value: boolean) { distinguishRemote = value; },
     async cleanup() { await board.close(); await app.close(); await h.cleanup(); } };
 }

@@ -1,0 +1,94 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`folder-board-custom-view MCP roundtrip > preserves external read > get_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"cv-1\\",\\n    \\"boardItemId\\": \\"custom_view:cv-1\\",\\n    \\"title\\": \\"뷰\\",\\n    \\"html\\": \\"<p>before</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:cv-1\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"cv-1\\",\\n    \\"x\\": 0,\\n    \\"y\\": 320,\\n    \\"metadata\\": {\\n      \\"title\\": \\"뷰\\",\\n      \\"preview\\": \\"before\\",\\n      \\"revision\\": 1\\n    },\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "cv-1",
+      "boardItemId": "custom_view:cv-1",
+      "title": "뷰",
+      "html": "<p>before</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:cv-1",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "cv-1",
+      "x": 0,
+      "y": 320,
+      "metadata": {
+        "title": "뷰",
+        "preview": "before",
+        "revision": 1
+      },
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves external read > get_custom_view events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves external view mutation > create_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"boardItemId\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"title\\": \\"Custom view\\",\\n    \\"html\\": \\"<p>새 뷰</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"llm\\",\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedActorKind\\": \\"llm\\",\\n    \\"updatedSessionId\\": null,\\n    \\"updatedEventId\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"x\\": 0,\\n    \\"y\\": 0,\\n    \\"metadata\\": {\\n      \\"title\\": \\"Custom view\\",\\n      \\"preview\\": \\"새 뷰\\",\\n      \\"revision\\": 1\\n    }\\n  },\\n  \\"eventId\\": null\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "custom-view-3f43fee516271e695e398f57",
+      "boardItemId": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "title": "Custom view",
+      "html": "<p>새 뷰</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "llm",
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedActorKind": "llm",
+      "updatedSessionId": null,
+      "updatedEventId": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "custom-view-3f43fee516271e695e398f57",
+      "x": 0,
+      "y": 0,
+      "metadata": {
+        "title": "Custom view",
+        "preview": "새 뷰",
+        "revision": 1
+      }
+    },
+    "eventId": null
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves external view mutation > create_custom_view events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"custom_view:custom-view-3f43fee516271e695e398f57":{"id":"custom_view:custom-view-3f43fee516271e695e398f57","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"custom_view","itemId":"custom-view-3f43fee516271e695e398f57","x":0,"y":0,"metadata":{"title":"Custom view","preview":"새 뷰","revision":1}}},"nodeId":"test-node"}]"`;

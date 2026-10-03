@@ -114,10 +114,12 @@ export async function createClusterRoundtripFixture() {
   registerCogitoRoutes(app, cogito); registerSessionCommandRoutes(app, sessions);
   registerRecurringJobHostRoutes(app, recurringJobs); registerCardOrchestrationRoutes(app, cardOrchestration);
   app.get<{ Params: { sessionId: string } }>("/api/persistence/sessions/:sessionId", async request => ({ session: await readSession(request.params.sessionId) }));
-  registerMcpHostRoutes(app, { board: undefined as never, authBearerToken: "service-token", recurringJobs, cardOrchestration,
+  const executionOptions = { board: undefined as never, authBearerToken: "service-token", recurringJobs, cardOrchestration,
     cluster: { nodes, nodeAgentProfiles, cogito, sessions, readSession, logger: app.log },
     cards: { provider: {} as never, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
-    folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused folders"); } } });
+    folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused folders"); } } };
+  
+  registerMcpHostRoutes(app, executionOptions);
   const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
   const runtime = { nodeId: "worker-node", orch: { baseUrl, headers: { authorization: "Bearer service-token" } }, logger: app.log,
     taskManager: { getTask: (id: string) => ({ profileId: "roselin", callerInfo: { email: callerEmail(id) } }) },
@@ -127,5 +129,5 @@ export async function createClusterRoundtripFixture() {
     recurring.seed(); settings = { key: "card_orchestration", policy, version: 1, updatedAt: now, updatedBy: "owner@example.com" };
     sent.length = 0; if (missingTransport) transports.detach({ nodeId: "node-a", connectionId }); else attach();
   };
-  return { app, runtime, seed, sent, recurring, registry };
+  return { executionOptions, app, runtime, seed, sent, recurring, registry };
 }

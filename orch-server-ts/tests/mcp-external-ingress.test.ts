@@ -127,6 +127,17 @@ describe("orchestrator dedicated external MCP ingress", () => {
     expect(await client.callTool({ name: "send_to_external_llm", arguments: { recipient_id: "recipient", text: "hello" } })).toMatchObject({ isError: true });
     expect(execute).not.toHaveBeenCalled();
   });
+  it("rejects every internal-only definition before execution", async () => {
+    const execute = vi.spyOn(executor, "executeMcpTool");
+    const { url } = await web(); const client = await connect("modern", url);
+    const { tools } = await client.listTools();
+    for (const definition of mcpToolDefinitions.filter(d => d.audience === "internal")) {
+      expect(tools.some(t => t.name === definition.name), definition.name).toBe(false);
+      const result = await client.callTool({ name: definition.name, arguments: {} });
+      expect(result, definition.name).toMatchObject({ isError: true, content: [{ type: "text", text: `MCP error -32602: Tool ${definition.name} not found` }] });
+      expect(execute, definition.name).not.toHaveBeenCalled();
+    }
+  });
   it("modern Events subscribe, internal list/send, unsubscribe share one store; legacy has no Events", async () => {
     const dir = await mkdtemp(join(tmpdir(), "orch-dot-wire-")); cleanup.push(() => rm(dir, { recursive: true, force: true }));
     const post = vi.fn(async (_url: string, body: string) => ({ status: 200, body: JSON.stringify({ challenge: JSON.parse(body).challenge }) }));
