@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Image, ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardAssignment } from '../../api/cardTypes';
@@ -15,6 +15,7 @@ import { cardStyles } from './Card.styles';
 export function ExecutionSelectionSheet({ api, value, onSave, onClose }: {
   api: ApiClient | null; value: CardAssignment; onSave(value: CardAssignment): void; onClose(): void;
 }) {
+  const confirmed = useRef(false);
   const t = useTokens();
   const styles = useMemo(() => cardStyles(t), [t]);
   const settings = useSettingsStore();
@@ -43,7 +44,7 @@ export function ExecutionSelectionSheet({ api, value, onSave, onClose }: {
       </View>
       <View style={styles.actions}><GlassButton onPress={onClose}><Text style={styles.body}>닫기</Text></GlassButton>
         <GlassButton accessibilityLabel="실행 대상 확인" disabled={!selection.agentId || !selection.effectiveNodeId || selection.modelPresetSelectionInvalid}
-          onPress={() => { onSave({ folderId: value.folderId, agentId: selection.agentId, nodeId: selection.effectiveNodeId ?? null, modelPreset: selection.effectiveModelPresetId }); onClose(); }}><Text style={styles.actionText}>확인</Text></GlassButton>
+          onPress={() => { if (confirmed.current) return; confirmed.current = true; onSave({ folderId: value.folderId, agentId: selection.agentId, nodeId: selection.effectiveNodeId ?? null, modelPreset: selection.effectiveModelPresetId }); onClose(); }}><Text style={styles.actionText}>확인</Text></GlassButton>
       </View>
     </ScrollView>
   </AppModalSurface>;

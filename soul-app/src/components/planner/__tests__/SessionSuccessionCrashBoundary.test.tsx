@@ -70,6 +70,7 @@ jest.mock('../../../hooks/useChatAttachments', () => ({
   useChatAttachments: () => ({
     attachments: [],
     uploading: false,
+    attachmentsReady: true,
     pickAttachment: jest.fn(),
     uploadAttachment: jest.fn(),
     removeAttachment: jest.fn(),
@@ -266,6 +267,8 @@ test('정상 경로는 추가 지침 없이 초기 지시 첨부와 기본 담�
   const screen = renderSheet();
 
   expect(screen.getByTestId('succession-header-title')).toBeTruthy();
+  expect(screen.queryByTestId('succession-selection-node')).toBeNull();
+  fireEvent.press(screen.getByTestId('succession-execution-disclosure'));
   expect(screen.getByTestId('succession-selection-node')).toBeTruthy();
   expect(screen.queryByPlaceholderText('이 세션에만 적용할 지침…')).toBeNull();
   expect(screen.getByTestId('succession-attachment-button')).toBeTruthy();

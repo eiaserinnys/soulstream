@@ -1,10 +1,11 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SettingsScreen } from '../../screens/SettingsScreen';
 import { useDeviceType, useTokens, type DesignTokens } from '../../theme';
 import { AppModalSurface } from '../AppModalSurface';
 import { SettingsCategorySidebar } from './SettingsCategorySidebar';
-import type { SettingsCategory } from './settingsCategories';
+import { SETTINGS_CATEGORIES, type SettingsCategory } from './settingsCategories';
 import { useDashboardAdminStatus } from './useDashboardAdminStatus';
 
 export function SettingsModal({
@@ -17,10 +18,11 @@ export function SettingsModal({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const deviceType = useDeviceType();
-  const [category, setCategory] = useState<SettingsCategory>('display');
+  const [category, setCategory] = useState<SettingsCategory | null>(null);
   const wide = deviceType !== 'phone';
   const isAdmin = useDashboardAdminStatus(visible);
 
+  useEffect(() => { if (!visible) setCategory(null); }, [visible]);
   useEffect(() => {
     if (!isAdmin && category === 'review-policy') setCategory('display');
   }, [category, isAdmin]);
@@ -37,7 +39,8 @@ export function SettingsModal({
       safeAreaTestID="settings-modal-safe-area"
     >
       <View testID="settings-modal-header" style={styles.header}>
-        <Text style={styles.title}>설정</Text>
+        {!wide && category ? <TouchableOpacity style={styles.back} accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.close}>설정</Text></TouchableOpacity> : null}
+        <Text style={[styles.title, !wide && category ? styles.detailTitle : null]}>{!wide && category ? SETTINGS_CATEGORIES.find(item => item.id === category)?.label : '설정'}</Text>
         <TouchableOpacity
           testID="settings-modal-close"
           style={styles.closeButton}
@@ -45,13 +48,13 @@ export function SettingsModal({
           accessibilityLabel="설정 닫기"
           accessibilityRole="button"
         >
-          <Text style={styles.close}>닫기</Text>
+          <Text style={styles.close}>완료</Text>
         </TouchableOpacity>
       </View>
       {wide ? (
         <View testID="settings-wide-layout" style={styles.wideLayout}>
           <SettingsCategorySidebar
-            selected={category}
+            selected={category ?? 'display'}
             onSelect={setCategory}
             showAdmin={isAdmin}
           />
@@ -59,14 +62,20 @@ export function SettingsModal({
             <SettingsScreen
               showTitle={false}
               flattened
-              category={category}
+              category={category ?? 'display'}
               showAdmin={isAdmin}
             />
           </View>
         </View>
       ) : (
         <View style={styles.body}>
-          <SettingsScreen showTitle={false} flattened showAdmin={isAdmin} />
+          {!category ? <ScrollView testID="settings-phone-index" contentContainerStyle={styles.indexBody}>
+            <View style={styles.introduction}><Text style={styles.introTitle}>내 작업 환경</Text><Text style={styles.introDescription}>변경할 항목을 선택하세요.</Text></View>
+            <SettingsCategorySidebar compact selected={null} onSelect={setCategory} showAdmin={isAdmin}/>
+          </ScrollView> : null}
+          <View style={[styles.body, !category && styles.hidden]}>
+            <SettingsScreen showTitle={false} flattened preserveSections category={category ?? 'display'} showAdmin={isAdmin}/>
+          </View>
         </View>
       )}
     </AppModalSurface>
@@ -98,6 +107,13 @@ function makeStyles(t: DesignTokens) {
       fontWeight: '700',
     },
     body: { flex: 1 },
+    hidden: { display: 'none' },
+    indexBody: { paddingBottom: t.spacing.xl },
+    introduction: { paddingHorizontal: t.foundation.pageInset, paddingTop: t.spacing.lg, paddingBottom: t.spacing.sm, gap: t.spacing.sm },
+    introTitle: { ...t.foundation.typography.section, color: t.colors.textPrimary },
+    introDescription: { ...t.foundation.typography.body, color: t.colors.textSecondary },
+    back: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.spacing.xxs },
+    detailTitle: { flex: 1, textAlign: 'center' },
     wideLayout: { flex: 1, flexDirection: 'row' },
     detail: { flex: 1, minWidth: 0 },
   });

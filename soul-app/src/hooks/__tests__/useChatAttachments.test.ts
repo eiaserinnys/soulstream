@@ -305,3 +305,35 @@ async function waitForCall(mock: jest.MockedFunction<any>) {
     while (mock.mock.calls.length === 0) await Promise.resolve();
   });
 }
+
+test('OS 선택기 연타는 하나만 열고 닫은 작성창의 선택 결과는 업로드하지 않는다', async () => {
+  let picked!: (index: number) => void;
+  const show = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => { picked = callback; });
+  const api = { uploadAttachment: jest.fn() } as any;
+  const { result } = renderHook(() => useChatAttachments({ api, sessionId: 'draft', nodeId: 'node-a', reuploadOnNodeChange: true }));
+  act(() => { result.current.pickAttachment(); result.current.pickAttachment(); });
+  expect(show).toHaveBeenCalledTimes(1);
+  act(() => result.current.clearAttachments());
+  await act(async () => picked(1));
+  expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
+  expect(api.uploadAttachment).not.toHaveBeenCalled();
+});
+
+test('선택한 파일 업로드 중 노드를 바꿔도 재업로드 후 추가 선택기를 열 수 있다', async () => {
+  let picked!: (index: number) => void;
+  const show = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => { picked = callback; });
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValue({ canceled: false, assets: [{ uri: 'file://original', name: 'original.txt', mimeType: 'text/plain' }] });
+  const first = deferred<{ path: string }>();
+  const api = { uploadAttachment: jest.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce({ path: '/node-b/file' }) };
+  const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId, reuploadOnNodeChange: true }), { initialProps: { nodeId: 'a' } });
+  act(() => result.current.pickAttachment());
+  let selection!: Promise<void>;
+  await act(async () => { selection = picked(1) as unknown as Promise<void>; await Promise.resolve(); });
+  expect(api.uploadAttachment).toHaveBeenCalledTimes(1);
+  rerender({ nodeId: 'b' });
+  await waitFor(() => expect(result.current.attachmentsReady).toBe(true));
+  await act(async () => { first.resolve({ path: '/node-a/stale' }); await selection; });
+  expect(result.current.attachments[0]).toMatchObject({ path: '/node-b/file', nodeId: 'b' });
+  act(() => result.current.pickAttachment());
+  expect(show).toHaveBeenCalledTimes(2);
+});

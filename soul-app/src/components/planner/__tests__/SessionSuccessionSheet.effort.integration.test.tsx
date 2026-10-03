@@ -1,6 +1,6 @@
 import React from 'react';
-import { ActionSheetIOS } from 'react-native';
-import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { ActionSheetIOS, Modal, ScrollView } from 'react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import type { PlannerFolder } from '../../../api/plannerTypes';
 import { resetAuthScopeForTest } from '../../../lib/auth-scope';
@@ -13,6 +13,7 @@ jest.mock('../../../hooks/useChatAttachments', () => ({
   useChatAttachments: () => ({
     attachments: [],
     uploading: false,
+    attachmentsReady: true,
     pickAttachment: jest.fn(),
     uploadAttachment: jest.fn(),
     removeAttachment: jest.fn(),
@@ -267,7 +268,7 @@ test('effort를 건드리지 않으면 payload에서 생략하여 노드가 pres
  * was recorded on a Codex preset). Node, agent and model all resolve from the
  * predecessor, so nothing is picked here: this is the state the user lands in.
  */
-function renderInheritedUltra() {
+function renderInheritedUltra(reasoningEffort = 'ultra') {
   const withPredecessor = {
     ...folder(),
     sessions: [{
@@ -279,7 +280,7 @@ function renderInheritedUltra() {
       status: 'completed',
       agentId: 'seosoyoung-opus',
       modelPreset: 'claude-opus',
-      reasoningEffort: 'ultra',
+      reasoningEffort,
       predecessorSessionId: null,
       reviewState: 'not_required',
     }],
@@ -339,4 +340,67 @@ test("쓸 수 없는 상속값은 '기본값 사용'으로 같은 모델을 유�
   // the user actually kept.
   expect(payload).not.toHaveProperty('reasoningEffort');
   expect(payload).toEqual(expect.objectContaining({ modelPreset: 'claude-opus' }));
+});
+
+
+test('유효한 상속 실행 대상은 요약하고 요청과 첨부를 먼저 제시한다', async () => {
+  const screen = renderInheritedUltra('high');
+  await waitFor(() => expect(screen.getByText('Claude - Opus · High')).toBeTruthy());
+  expect(screen.queryByTestId('succession-execution-details')).toBeNull();
+  expect(screen.getByTestId('succession-execution-disclosure').props.accessibilityState.expanded).toBe(false);
+  expect(within(screen.getByTestId('succession-request-section')).getByTestId('succession-attachment-button')).toBeTruthy();
+  expect(screen.getByLabelText('세션 시작')).toBeTruthy();
+  const sections = screen.UNSAFE_getByType(ScrollView).props.children.filter(Boolean)
+    .map((child: any) => child.props.testID);
+  expect(sections.indexOf('succession-folder-scope')).toBeLessThan(sections.indexOf('succession-request-section'));
+  expect(sections.indexOf('succession-request-section')).toBeLessThan(sections.indexOf('succession-selection-group'));
+  fireEvent.press(screen.getByTestId('succession-execution-disclosure'));
+  expect(screen.getByTestId('succession-selection-effort')).toBeTruthy();
+  fireEvent.changeText(screen.getByTestId('succession-initial-instruction'), '입력을 유지합니다');
+  fireEvent.press(screen.getByTestId('succession-execution-disclosure'));
+  expect(screen.queryByTestId('succession-execution-details')).toBeNull();
+  expect(screen.getByTestId('succession-initial-instruction').props.value).toBe('입력을 유지합니다');
+});
+
+test('상속 실행 오류는 펼쳐 보이며 수정 뒤에도 설정을 유지한다', async () => {
+  const screen = renderInheritedUltra();
+  await waitFor(() => expect(screen.getByText('확인 필요')).toBeTruthy());
+  expect(screen.getByTestId('succession-execution-details')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('succession-execution-disclosure'));
+  expect(screen.getByTestId('succession-execution-details')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('succession-effort-use-default'));
+  await waitFor(() => expect(effortValue(screen, 'X High')).toBeTruthy());
+  expect(screen.getByTestId('succession-execution-disclosure').props.accessibilityState.expanded).toBe(true);
+});
+
+
+test('세션 생성 대기 중 연속 시작과 사용자 닫기를 막고 성공하면 한 번 닫는다', async () => {
+  let resolveCreate!: (value: { agentSessionId: string }) => void;
+  mockCreateFolderSession.mockImplementation(() => new Promise(resolve => { resolveCreate = resolve; }));
+  const close = jest.fn(), created = jest.fn(), api = makeApi([OPUS]);
+  const screen = render(<SessionSuccessionSheet api={api} folder={folder()}
+    predecessorSessionId={null} visible onClose={close} onCreated={created} />);
+  await waitFor(() => expect(api.listModelPresets).toHaveBeenCalled());
+  pickAgent(screen, 1);
+  pickModel(screen, 1);
+  await waitFor(() => expect(screen.getByTestId('succession-submit')).toBeEnabled());
+  const nativeClose = screen.UNSAFE_getByType(Modal).props.onRequestClose;
+  act(() => {
+    fireEvent.press(screen.getByTestId('succession-submit'));
+    fireEvent.press(screen.getByTestId('succession-submit'));
+    nativeClose();
+  });
+  expect(mockCreateFolderSession).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('세션 작성 취소')).toBeDisabled();
+  act(() => {
+    fireEvent.press(screen.getByLabelText('세션 작성 취소'));
+    screen.UNSAFE_getByType(Modal).props.onRequestClose();
+  });
+  expect(close).not.toHaveBeenCalled();
+  expect(created).not.toHaveBeenCalled();
+  await act(async () => { resolveCreate({ agentSessionId: 'created-session' }); });
+  expect(mockCreateFolderSession).toHaveBeenCalledTimes(1);
+  expect(created).toHaveBeenCalledTimes(1);
+  expect(created).toHaveBeenCalledWith('created-session');
+  expect(close).toHaveBeenCalledTimes(1);
 });

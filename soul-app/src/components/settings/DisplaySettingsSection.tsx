@@ -14,7 +14,7 @@ import type {
   WallpaperMode,
   WallpaperSettings,
 } from '../../store/settingsStore';
-import { useTokens, type DesignTokens } from '../../theme';
+import { useDeviceType, useTokens, type DesignTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { SettingsDivider, SettingsSection } from './SettingsSection';
 import { SettingsSegmentedControl } from './SettingsSegmentedControl';
@@ -58,10 +58,11 @@ export function DisplaySettingsSection({
   onResetBackground(): void;
 }) {
   const t = useTokens();
+  const wide = useDeviceType() !== 'phone';
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
-    <SettingsSection id="display" title="디스플레이" flattened={flattened}>
+    <SettingsSection id="display" title="화면과 배경" flattened={flattened}>
       <View style={styles.block}>
         <Text style={styles.rowLabel}>외양</Text>
         <SettingsSegmentedControl
@@ -83,8 +84,9 @@ export function DisplaySettingsSection({
                 testID={`settings-wallpaper-${option.value}`}
                 accessibilityRole="button"
                 accessibilityLabel={option.label}
-                accessibilityState={{ selected }}
-                style={[styles.wallpaperTile, selected && styles.wallpaperTileSelected]}
+                accessibilityState={{ selected, disabled: savingBackground }}
+                disabled={savingBackground}
+                style={[styles.wallpaperTile, wide && styles.wallpaperTileWide, selected && styles.wallpaperTileSelected]}
                 onPress={() => onWallpaperModeChange(option.value)}
               >
                 <Ionicons
@@ -98,6 +100,7 @@ export function DisplaySettingsSection({
                 {selected ? (
                   <Ionicons
                     testID={`settings-wallpaper-${option.value}-checkmark`}
+                    style={{position: 'absolute', top: t.spacing.sm, right: t.spacing.sm}}
                     name="checkmark-circle"
                     color={t.colors.accent}
                     size={t.iconSize.standard}
@@ -137,6 +140,7 @@ export function DisplaySettingsSection({
                   surfaceTestID="settings-reset-background-surface"
                   style={styles.action}
                   contentStyle={styles.secondaryButtonContent}
+                  disabled={savingBackground}
                   onPress={onResetBackground}
                 >
                   <Text style={styles.secondaryText}>기본값 복원</Text>
@@ -176,6 +180,7 @@ function makeStyles(t: DesignTokens) {
       justifyContent: 'center',
       gap: t.spacing.xs,
     },
+    wallpaperTileWide: { width: '22%' },
     wallpaperTileSelected: {
       borderColor: t.colors.accent,
       backgroundColor: t.colors.accentTint,
