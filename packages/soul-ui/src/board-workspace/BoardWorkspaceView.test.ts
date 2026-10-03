@@ -1470,7 +1470,7 @@ describe("BoardWorkspaceView", () => {
     });
     await Promise.resolve();
 
-    const confirmDelete = findButtonByText(document.body, "삭제");
+    const confirmDelete = findButtonByText(document.body, "세션 삭제");
     expect(confirmDelete).not.toBeUndefined();
     await act(async () => {
       confirmDelete!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
