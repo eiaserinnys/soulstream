@@ -3,6 +3,7 @@ import { Alert as RNAlert } from 'react-native';
 import { ActionSheetIOS, DocumentPicker, ImagePicker } from './attachmentPickers';
 import type { ApiClient } from '../api/client';
 import type { NativeUploadFile } from '../api/nativeUpload';
+import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
 
 export interface ChatAttachment {
   path: string;
@@ -33,6 +34,7 @@ export interface UseChatAttachmentsResult {
   attachments: ChatAttachment[];
   uploading: boolean;
   attachmentsReady: boolean;
+  /** Safe diagnostic text only; callers can display this without raw error data. */
   error: string | null;
   pickAttachment: () => void;
   uploadAttachment: (file: AttachmentUploadInput) => Promise<void>;
@@ -93,7 +95,7 @@ export function useChatAttachments(
         }));
       } catch (cause) {
         if (!active || revision !== generation.current) return;
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
         setError(message); RNAlert.alert('첨부 실패', message);
       } finally { if (active && revision === generation.current) setUploading(false); }
     })();
@@ -132,8 +134,9 @@ export function useChatAttachments(
           : [...prev, uploaded]);
       } catch (e: any) {
         if (revision !== generation.current) return;
-        setError(e?.message ?? '알 수 없는 오류');
-        RNAlert.alert('첨부 실패', e?.message ?? '알 수 없는 오류');
+        const message = safeErrorDetail(e?.message ?? String(e));
+        setError(message);
+        RNAlert.alert('첨부 실패', message);
       } finally {
         if (revision === generation.current) setUploading(false);
       }
@@ -193,7 +196,7 @@ export function useChatAttachments(
             });
           }
         } catch (e: any) {
-          RNAlert.alert('첨부 실패', e?.message ?? '알 수 없는 오류');
+          RNAlert.alert('첨부 실패', safeErrorDetail(e?.message ?? String(e)));
         } finally {
           if (pickerRevision === generation.current) { pickerPending.current = false; setUploading(false); }
         }

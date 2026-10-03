@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, ScrollView, Text, View } from 'react-native';
+import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { createApiClient } from '../api/client';
@@ -196,7 +197,7 @@ export function SettingsScreen({
       });
       applyUserPreferences(saved.preferences);
     } catch (error: any) {
-      Alert.alert('배경 저장 실패', error?.message ?? '알 수 없는 오류');
+      Alert.alert('배경 저장 실패', safeErrorDetail(error?.message ?? String(error)));
     } finally {
       backgroundPending.current = false;
       setSavingBackground(false);

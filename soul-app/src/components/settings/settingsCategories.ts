@@ -18,7 +18,7 @@ export interface SettingsCategoryDefinition {
 }
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
-  { id: 'display', label: '화면과 배경', group: '개인 환경', description: '외양 · 배경', icon: 'color-palette-outline' },
+  { id: 'display', label: '화면과 배경', group: '개인 환경', description: '외양, 배경', icon: 'color-palette-outline' },
   { id: 'connection', label: '서버 연결', group: '작업과 실행', description: '서버 주소와 연결 확인', icon: 'server-outline' },
   { id: 'backends', label: '에이전트와 모델', group: '작업과 실행', description: 'AI 백엔드와 인증 상태', icon: 'terminal-outline' },
   { id: 'recurring-jobs', label: '반복 작업', group: '작업과 실행', description: '일정과 다음 실행', icon: 'repeat-outline' },
