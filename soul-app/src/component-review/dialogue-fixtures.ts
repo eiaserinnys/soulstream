@@ -1,10 +1,11 @@
+import type { HistoricalMessage } from '../api/historyTypes';
 import type { ApiClient } from '../api/client';
 import type { PlannerFolder, PlannerSessionSummary } from '../api/plannerTypes';
 import type { Session, ClaudeRuntimeTaskOutputResponse } from '../api/types';
 import type { CardDto } from '../api/cardTypes';
 import { Asset } from 'expo-asset';
 import { createPlannerMutationPort } from '../api/plannerMutationPort';
-import { createReviewApi, folders, sessions, starredFolders } from './fixtures';
+import { createReviewApi, folders, sessions, starredFolders, message } from './fixtures';
 
 export const dialogueFolders = folders.map(folder => ({ ...folder, projectPageId: folder.id === 'public-project' ? 'public-page' : 'public-child-page' }));
 export const dialogueSessions = sessions.map((session): Session & PlannerSessionSummary => ({ ...session, folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model', predecessorSessionId: null, sessionType: 'interactive', reviewState: session.reviewState ?? 'not_required' }));
@@ -26,8 +27,17 @@ export function reviewSessionPortraits(items: typeof dialogueSessions) {
   return items.map(session => ({ ...session, agentPortraitUrl: dialogueImageUrl() }));
 }
 function withReviewSession(card: CardDto) {
-  return card.assigneeAgentId === 'public-agent' ? { ...card, assigneeSessionId: 'public-idle' } : card;
+  return card.assigneeAgentId === 'public-agent' ? { ...card, assigneeKind: 'session' as const, assigneeSessionId: 'public-idle' } : card;
 }
+
+const dialogueMessages: HistoricalMessage[] = [
+  { id: 2, parent_event_id: 1, event_type: 'assistant_message',
+    payload: message('assistant_message', '담당 세션의 대화입니다. 카드 요청과 입력창을 함께 확인할 수 있습니다.').data,
+    created_at: '2026-10-03T16:00:01Z' },
+  { id: 1, parent_event_id: null, event_type: 'user_message',
+    payload: message('user_message', '이 카드의 담당 대화를 오른쪽에서 보여주세요.').data,
+    created_at: '2026-10-03T16:00:00Z' },
+];
 
 // Explicit review transport. Methods operate on public in-memory data; there
 // is no HTTP client, dynamic fallback, or production mutation behind this object.
@@ -50,7 +60,7 @@ export function createDialogueApi(): ApiClient {
     getCard: async (id: string) => {
       const detail = await base.getCard(id);
       if (id !== 'public-todo') return { ...detail, card: withReviewSession(detail.card), sessions: reviewSessionPortraits(dialogueSessions) };
-      return { ...detail, card: { ...detail.card, assigneeSessionId: 'public-idle' },
+      return { ...detail, card: { ...detail.card, assigneeKind: 'session', assigneeSessionId: 'public-idle' },
         reports: [{ id: 'public-image-report', cardId: id, title: '공개 보고 이미지', format: 'markdown', createdAt: detail.card.createdAt,
           body: '공개 예시 상세입니다. 세로 스크롤과 이미지 확대를 확인합니다.\n\n' + '메모리에서만 사용하는 공개 예시 본문입니다.\n'.repeat(20) + '\n![공개 보고 이미지](' + dialogueImageUrl() + ')' }],
         sessions: reviewSessionPortraits(dialogueSessions) };
@@ -82,7 +92,9 @@ export function createDialogueApi(): ApiClient {
     }),
     getDailyPage: async () => ({ page: dialogueFolder.page, created: false }),
     getPageBacklinks: async () => ({ items: [], nextCursor: null }),
-    getTimeline: async () => ({ messages: [], next_cursor: null }),
+    getTimeline: async (sessionId: string, params?: Parameters<ApiClient['getTimeline']>[1]) => ({
+      messages: sessionId === 'public-idle' && !params?.before ? dialogueMessages : [], next_cursor: null,
+    }),
     getMessages: async () => ({ messages: [], next_cursor: null }),
     getSessionStory: async () => null,
     getConfig: async () => ({ mode: 'orchestrator' as const }),

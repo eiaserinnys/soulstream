@@ -20,3 +20,13 @@ it('isolates drafts and settings from browser/native persistent storage', async 
   await storage.removeItem('settings');
   expect(await storage.getItem('settings')).toBeNull();
 });
+
+it('담당 대화는 기존 timeline 응답으로 요청과 답변을 공급하고 다른 세션과 섞지 않는다', async () => {
+  const api = createDialogueApi();
+  const owner = await api.getTimeline('public-idle');
+  expect(owner.messages.map(item => item.event_type)).toEqual(['assistant_message', 'user_message']);
+  expect(owner.messages[0].payload.text).toContain('담당 세션의 대화');
+  expect(owner.next_cursor).toBeNull();
+  expect((await api.getTimeline('public-running')).messages).toEqual([]);
+  expect((await api.getTimeline('public-idle', { before: '1' })).messages).toEqual([]);
+});

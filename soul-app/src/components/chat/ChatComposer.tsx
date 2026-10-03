@@ -1,14 +1,16 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Platform,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { GlassSurface } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
-import { useTokens } from '../../theme';
+import { createSessionVisualRoles, useTokens } from '../../theme';
 import { makeStyles } from './ChatBody.styles';
 import { AttachmentPickerButton } from './AttachmentPickerButton';
 
@@ -53,8 +55,16 @@ export function ChatComposer({
   const styles = React.useMemo(() => makeStyles(t), [t]);
   const canSend = input.trim().length > 0 && !hasPendingOptimistic && !disabled && !sendDisabled;
   const controlsDisabled = uploading || disabled;
-  const [multilineExpanded, setMultilineExpanded] = React.useState(false);
-  const singleLineContentHeightRef = React.useRef<number | null>(null);
+  const { fontScale } = useWindowDimensions();
+  const composer = createSessionVisualRoles(t).chat.composer;
+  const lineHeight = t.chatFontSize.body * t.lineHeightRatio * fontScale;
+  // Soft wrapping keeps the field one line tall; only explicit Enter grows it.
+  const lines = input.split('\n').length;
+  const multilineExpanded = lines > 1;
+  const singleLineHeight = Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2);
+  const inputHeight = Math.min(styles.composerTextInput.maxHeight,
+    Math.max(singleLineHeight, lines * lineHeight + composer.inputPaddingVertical * 2));
+  const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
 
   return (
     <View
@@ -70,7 +80,7 @@ export function ChatComposer({
         testID="chat-composer-box"
         style={styles.composerBox}
       >
-        <View testID="chat-composer-content-row" style={styles.composerContentRow}>
+        <View testID="chat-composer-content-row" style={[styles.composerContentRow, { alignItems: multilineExpanded ? 'flex-end' : 'center' }]}>
           <AttachmentPickerButton
             testID="chat-composer-attach-button"
             surfaceTestID="chat-composer-attach-visual"
@@ -80,29 +90,21 @@ export function ChatComposer({
           />
           <TextInput
             testID="chat-composer-text-input"
-            style={styles.composerTextInput}
+            style={[styles.composerTextInput, { height: inputHeight, paddingVertical: inputPadding,
+              ...(Platform.OS === 'web' ? { whiteSpace: multilineExpanded ? 'pre-wrap' : 'pre' } : {}),
+            }]}
             value={input}
             onChangeText={onChangeInput}
             placeholder={placeholder}
             accessibilityLabel={inputAccessibilityLabel}
             placeholderTextColor={t.colors.textPlaceholder}
             multiline
+            {...(Platform.OS === 'web' ? { rows: 1 } : {})}
+            scrollEnabled
             maxLength={4000}
             autoCorrect={false}
             spellCheck={false}
             textAlignVertical={multilineExpanded ? 'top' : 'center'}
-            onContentSizeChange={(event) => {
-              const measuredHeight = event.nativeEvent.contentSize.height;
-              const previousSingleLineHeight = singleLineContentHeightRef.current;
-              if (previousSingleLineHeight === null || measuredHeight < previousSingleLineHeight) {
-                singleLineContentHeightRef.current = measuredHeight;
-              }
-              const singleLineHeight = singleLineContentHeightRef.current ?? measuredHeight;
-              const lineHeight = t.chatFontSize.body * t.lineHeightRatio;
-              // iOS contentSize는 기기·폰트 설정에 따라 padding 포함 여부가 달라질 수 있다.
-              // 최초 한 줄 실측값을 기준으로 반 줄 이상 늘어난 순간부터 multiline으로 본다.
-              setMultilineExpanded(measuredHeight > singleLineHeight + lineHeight / 2);
-            }}
             editable={!disabled}
             accessibilityState={{ disabled }}
           />
