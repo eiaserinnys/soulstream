@@ -116,8 +116,9 @@ describe("SessionContextMenu", () => {
   });
 
   it("shows continue-session failures instead of swallowing them", async () => {
+    const onContinueSession = vi.fn().mockRejectedValue(new Error("node unavailable"));
     ({ container, root } = await renderMenu({
-      onContinueSession: vi.fn().mockRejectedValue(new Error("node unavailable")),
+      onContinueSession,
       getContinueSessionDisabledReason: () => null,
     }));
 
@@ -129,7 +130,21 @@ describe("SessionContextMenu", () => {
     });
 
     expect(document.body.textContent).toContain("세션 이어서 시작 실패");
-    expect(document.body.textContent).toContain("node unavailable");
+    expect(document.body.textContent).toContain("세션을 이어서 시작하지 못했습니다.");
+    expect(document.body.textContent).toContain("노드 연결 상태와 실행 환경을 확인한 뒤 다시 시도하세요.");
+    const details = document.querySelector<HTMLDetailsElement>('[role="dialog"] details');
+    expect(details).not.toBeNull();
+    expect(details!.open).toBe(false);
+    expect(document.body.innerHTML).not.toContain("node unavailable");
+
+    await act(async () => {
+      details!.querySelector("summary")!.click();
+    });
+
+    expect(details!.open).toBe(true);
+    expect(details!.textContent).toContain("민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.");
+    expect(document.body.innerHTML).not.toContain("node unavailable");
+    expect(onContinueSession).toHaveBeenCalledTimes(1);
   });
 
   it("loads eligibility when opened and explains why the action is disabled", async () => {
