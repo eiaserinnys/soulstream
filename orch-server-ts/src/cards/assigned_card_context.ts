@@ -20,7 +20,6 @@ export async function readAssignedCardContext(sql: RepositorySql, sessionId: str
       SELECT id,LEFT(title,161) AS title,status,
         count(*) OVER ()::int AS total
       FROM cards WHERE assignee_session_id=${sessionId} AND archived=FALSE
-        AND status NOT IN ('done','cancelled')
       ORDER BY updated_at DESC,id COLLATE "C" LIMIT 12
     )
     SELECT c.id,c.title,c.status,c.total,

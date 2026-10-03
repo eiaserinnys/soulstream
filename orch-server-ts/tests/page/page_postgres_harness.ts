@@ -439,6 +439,7 @@ CREATE TABLE cards (
     assignee_user_id     TEXT,
     status               TEXT NOT NULL DEFAULT 'todo'
                            CHECK (status IN ('todo','queued','blocked','running','review','done','cancelled')),
+    status_changed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     archived             BOOLEAN NOT NULL DEFAULT FALSE,
     version              INTEGER NOT NULL DEFAULT 1,
     created_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,

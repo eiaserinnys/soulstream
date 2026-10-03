@@ -7,9 +7,9 @@ const scope = { card_id: id, caller_session_id: callerSessionIdSchema };
 
 export const cardTools = {
   create_card: { name: "create_card", config: {
-    description: "요청 원문이 고정된 카드를 만들고 queue=true면 대기열에 넣는다.",
+    description: "요청 원문이 고정된 카드를 만들고 queue=true면 대기열에 넣는다. 새 업무는 queue=true로 대기에 올리고, assignee와 node_id와 model_preset을 생략하면 만든 세션과 같은 값이 들어가며, brief에 인계 내용을 적는다.",
     inputSchema: { folder_id: id, title: id, request: z.string(), attachments: z.array(z.object({nodeId:id,path:id,name:id,mimeType:id}).strict()).optional(), assignee: assigneeSchema,
-      node_id: id.optional(), model_preset: id.optional(), queue: z.boolean().optional(), caller_session_id: callerSessionIdSchema },
+      brief: z.string().optional(), idempotency_key: id.optional(), node_id: id.optional(), model_preset: id.optional(), queue: z.boolean().optional(), caller_session_id: callerSessionIdSchema },
   }, audience: "all" },
   list_cards: { name: "list_cards", config: {
     description: "폴더와 상태로 카드를 조회하고 folder_id가 없으면 모든 폴더를 조회한다.",

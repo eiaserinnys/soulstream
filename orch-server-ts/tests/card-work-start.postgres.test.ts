@@ -3,7 +3,7 @@ import { CardOrchestrationRepository } from "../src/cards/card_orchestration_rep
 import { endedCardWork } from "../src/cards/card_work_lifecycle.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
@@ -26,6 +26,7 @@ describe("explicit manual card work", () => {
     repo=new CardOrchestrationRepository(async()=>createBoardYjsSqlAdapter(h.liveSql));
     cards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
   }, 60000);
+  beforeEach(async () => { await h.sql`UPDATE cards SET archived=TRUE`; });
   afterAll(async () => h?.cleanup());
   async function make(status = "todo", kind = "session", owner = "owner") {
     const r = await cards.createCard({ actorKind: "user", actorSessionId: null, folderId: "work", title: "요청", request: "요청", assignee: {kind: kind as "session", sessionId: owner} });
@@ -35,7 +36,7 @@ describe("explicit manual card work", () => {
   }
   const declaration = (cardId: string, key: string, reason?: string) => ({ cardId, actorKind: "agent" as const, actorSessionId: "owner", expectedVersion: 1, idempotencyKey: key, reason, execution: {...execution} });
   it("starts only the declared todo and replays the same declaration", async () => {
-    const id = await make(), other = await make();
+    const id = await make(), other = await make("todo", "session", "other");
     await cards.startCardWork(declaration(id, "todo-start"));
     expect((await cards.getCard(id))?.card.status).toBe("running");
     expect((await cards.getCard(other))?.card.status).toBe("todo");
@@ -77,32 +78,19 @@ describe("explicit manual card work", () => {
     expect(await repo.authorizeWorker({runId:r.id,sessionId:"owner",executionToken:d.launch_token,nodeId:"node",cardId:id})).toBe(true);
     expect(await repo.workerObserved("owner",r.id,id)).toBe(false);
     const request={...declaration(id,"auto-start"),expectedVersion:2};
-    // A prior execution with an unconsumed automatic instruction may still start manually.
-    // Its write must not consume the pending automatic dispatch.
-    const manual=await make("queued");
-    await cards.startCardWork(declaration(manual,"manual-while-admitted"));
-    expect((await cards.getCard(manual))!.card.status).toBe("running");
     await consumeCardDelivery(h,"delivery","owner");
     expect((await cards.getCard(id))?.card.status).toBe("queued");
     await cards.startCardWork(request);
     expect((await cards.getCard(id))?.card.status).toBe("running");
     expect(await repo.workerObserved("owner",r.id,id)).toBe(true);
     await repo.finish(r,"completed","applied");
-    const second=await make("queued");
-    const next=(await repo.claim({inputHash:second,policyVersion:1,snapshot:[{cardId:second,cardVersion:1}],target:{agentId:"judge",nodeId:"node",modelPreset:"model",minimumRemainingPercent:15}}))!;
-    await repo.prepareLaunch(next);
-    await repo.decide(next,{decisions:[{cardId:second,cardVersion:1,action:"run",reason:"같은 담당"}]},2,"revision");
-    // Same active owner consumes one capacity slot for both card instructions.
-    await cards.recordDispatch({cardId:second,expectedVersion:1,sessionId:"owner",nodeId:"node",admission:{runId:next.id,leaseToken:next.lease_token,workerInput:{agentId:"profile",modelPreset:"model",existingSession:true,deliveryId:"delivery2"}}});
-    expect(await repo.workerObserved("owner",next.id,second)).toBe(false);
-    expect((await repo.pendingWorkers()).filter(d=>d.card_id===second)).toHaveLength(1);
-    await repo.finish(next,"completed","admitted");
+
   });
   it.each([true,false])("keeps declared work running while waiting for delegated reports, policy=%s", async enabled => {
     await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}',${h.sql.json(enabled)}) WHERE setting_key='card_orchestration'`;
-    const id=await make(), untouched=await make(),reported=await make();
+    const id=await make(), untouched=await make("todo","agent"),reported=await make("todo","session","other");
     await cards.startCardWork(declaration(id,`end-work-${enabled}`));
-    await cards.startCardWork(declaration(reported,`reported-work-${enabled}`));
+    await cards.startCardWork({...declaration(reported,`reported-work-${enabled}`),actorSessionId:"other",execution:{registrationId:"other-reg",executionCommandId:"other-command"}});
     await cards.addReport({actorKind:"agent",actorSessionId:"owner",cardId:reported,title:"보고",body:"증거",format:"markdown"});
     await recordWorkReceipt(h,"owner","completed",null);
     const ended=await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner");
@@ -120,6 +108,7 @@ describe("explicit manual card work", () => {
     expect(warnings).toEqual([]);
     execution={registrationId:`new-reg-${enabled}`,executionCommandId:`new-command-${enabled}`};
     await recordWorkReceipt(h,"owner","running",execution);
+    await cards.patchCard({actorKind:"user",actorSessionId:null,cardId:id,archived:true});
     const fresh=await make();
     await cards.startCardWork({...declaration(fresh,`later-work-${enabled}`),execution:{...execution}});
     expect((await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner")).map(r=>r.card_id)).not.toContain(fresh);

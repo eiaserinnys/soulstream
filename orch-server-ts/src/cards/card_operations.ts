@@ -9,7 +9,7 @@ const assignee=z.object({ kind:z.enum(["agent","human","session"]).nullable(),ag
 const mutation=z.object({ expectedVersion:z.number().int().positive(),idempotencyKey:id,reason:z.string().nullable().optional() });
 const append=z.object({ idempotencyKey:id });
 export const cardOperationSchemas={
-  create_card:z.object({ folderId:id,title:id,request:z.string(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
+  create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
   update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
   start_card_work:mutation.extend({execution:z.object({registrationId:id,executionCommandId:id}).strict()}),
   set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional() }),

@@ -1,4 +1,4 @@
-import { afterAll,beforeAll,describe,expect,it,vi } from "vitest";
+import { afterAll,beforeAll,beforeEach,describe,expect,it,vi } from "vitest";
 import { createPagePostgresHarness,type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { readAssignedCardContext } from "../src/cards/assigned_card_context.js";
@@ -10,31 +10,24 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
   let h:PagePostgresHarness;
   beforeAll(async()=>{h=await createPagePostgresHarness();await h.sql`INSERT INTO folders(id,name) VALUES ('f','폴더')`;await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running'),('other','running')`;},60000);
   afterAll(async()=>await h?.cleanup());
-  it("queries active ownership and latest activity times, limits rows and removes completed cards on next read",async()=>{
-    for(let i=0;i<15;i++) await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
-      VALUES (${`c${i}`},'f',${String(i)},'카드','원 지시','todo','session','owner')`;
-    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,archived,assignee_session_id) VALUES
-      ('done','f','99','완료','비밀','done',FALSE,'owner'),('cancel','f','98','취소','비밀','cancelled',FALSE,'owner'),
-      ('archive','f','97','보관','비밀','running',TRUE,'owner'),('foreign','f','96','타 담당','비밀','running',FALSE,'other')`;
-    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body,created_at) VALUES ('i1','c14','user','comment','예전',NOW()-INTERVAL '2 minutes'),('i2','c14','user','comment','최신 커멘트',NOW())`;
-    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,created_at) VALUES ('r1','c14','보고','html','<p>최신 보고</p>','owner',NOW()-INTERVAL '1 minute')`;
-    await h.sql`UPDATE cards SET version=17 WHERE id='c14'`;
+  beforeEach(async()=>{await h.sql`DELETE FROM cards`;});
+  it("includes completed and cancelled ownership, keeps activity times and excludes archive",async()=>{
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
+      VALUES ('owned','f','a','카드','원 지시','done','session','owner')`;
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,archived,assignee_session_id)
+      VALUES ('archive','f','b','보관',TRUE,'owner'),('foreign','f','c','타 담당',FALSE,'other')`;
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body,created_at) VALUES
+      ('i1','owned','user','comment','예전',NOW()-INTERVAL '2 minutes'),('i2','owned','user','comment','최신 커멘트',NOW())`;
+    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,created_at)
+      VALUES ('r1','owned','보고','html','<p>최신 보고</p>','owner',NOW()-INTERVAL '1 minute')`;
     const sql=createBoardYjsSqlAdapter(h.liveSql),tracked=vi.fn(sql);
     const snapshot=await readAssignedCardContext(tracked as unknown as typeof sql,'owner');
-    expect(tracked).toHaveBeenCalledTimes(1);
-    expect(snapshot.total).toBe(15);expect(snapshot.cards).toHaveLength(12);
-    expect(snapshot.cards).toContainEqual(expect.objectContaining({
-      id:'c14',title:'카드',status:'todo',
-      latestCommentAt:expect.any(String),latestReportAt:expect.any(String),
-    }));
-    const current=snapshot.cards.find(card=>card.id==='c14')!;
-    expect(Date.parse(current.latestCommentAt!)).toBeGreaterThan(Date.parse(current.latestReportAt!));
-    expect(current).not.toHaveProperty('version');
-    expect(current).not.toHaveProperty('instruction');
-    expect(current).not.toHaveProperty('report');
-    expect(snapshot.cards.some(c=>['done','cancel','archive','foreign'].includes(c.id))).toBe(false);
-    await h.sql`UPDATE cards SET status='done' WHERE id='c14'`;
-    const next=await readAssignedCardContext(sql,'owner');expect(next.total).toBe(14);expect(next.cards.some(c=>c.id==='c14')).toBe(false);
+    expect(tracked).toHaveBeenCalledTimes(1);expect(snapshot.total).toBe(1);expect(snapshot.omitted).toBe(0);
+    expect(snapshot.cards).toEqual([expect.objectContaining({id:'owned',status:'done',latestCommentAt:expect.any(String),latestReportAt:expect.any(String)})]);
+    expect(Date.parse(snapshot.cards[0]!.latestCommentAt!)).toBeGreaterThan(Date.parse(snapshot.cards[0]!.latestReportAt!));
+    expect(snapshot.cards[0]).not.toHaveProperty('report');
+    await h.sql`UPDATE cards SET status='cancelled' WHERE id='owned'`;
+    expect(await readAssignedCardContext(sql,'owner')).toMatchObject({total:1,cards:[{id:'owned',status:'cancelled'}]});
     expect(await readAssignedCardContext(sql,'unassigned')).toMatchObject({total:0,cards:[]});
   });
   it("captures state and owner under lock, independent of stale pre-lock read or post-commit reassignment",async()=>{

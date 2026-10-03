@@ -10,7 +10,7 @@ export function buildCardChangeNotification(change:CardMutationChange,comment?:R
   const op=result.operation;
   const kind=op.operation_type === "add_card_comment" ? "comment" : "state";
   const sessionId=previousAssigneeSessionId ?? (kind === "comment" ? fallbackSessionId : null);
-  if (!sessionId || op.actor_session_id === sessionId || card.status === "done") return null;
+  if (!sessionId || op.actor_session_id === sessionId || kind === "state" && card.status === "done") return null;
   const actor=op.actor_kind === "user" ? "사용자" : op.actor_session_id ? `세션 ${op.actor_session_id}` : op.actor_kind === "system" ? "시스템" : op.actor_kind;
   const target=`카드 「${card.title}」(${card.id})`;
   let text:string;
