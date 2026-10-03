@@ -19,8 +19,15 @@ export const folderObjectTools = {
     inputSchema: { folder_id: z.string().nullable().optional(), include_archived: z.boolean().default(false), limit: z.number().int().min(1).max(200).default(100), cursor: z.string().optional() },
   }, audience: "all" },
   get_folder: { name: "get_folder", config: {
-    description: "폴더와 카드를 조회한다. view=outline 또는 card_id로 응답을 축약할 수 있다.",
-    inputSchema: { folder_id: z.string().min(1), view: z.enum(["full", "outline"]).default("full"), card_id: z.string().min(1).optional() },
+    description: "폴더와 카드를 조회한다. 기본 full은 기존 상세 응답이다. view=outline은 상세 본문 없는 카드 목록을 기본 20장씩 반환하며 보관 카드는 기본 제외한다. outline 목록은 limit(최대 50), cursor로 이어 읽고 get_card로 상세를 확인한다. 목록 옵션은 full 또는 card_id 직접 조회에서 무시된다.",
+    inputSchema: {
+      folder_id: z.string().min(1),
+      view: z.enum(["full", "outline"]).default("full"),
+      card_id: z.string().min(1).optional(),
+      include_archived: z.boolean().optional(),
+      limit: z.number().int().min(1).max(50).optional(),
+      cursor: z.string().regex(/^\d+$/).optional(),
+    },
   }, audience: "all" },
   rename_folder: { name: "rename_folder", config: {
     description: mutationToolDescription("폴더 이름을 바꾼다."),

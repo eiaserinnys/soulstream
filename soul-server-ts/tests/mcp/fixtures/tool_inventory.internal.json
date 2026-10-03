@@ -2337,7 +2337,7 @@
     "name": "get_daily_page"
   },
   {
-    "description": "폴더와 카드를 조회한다. view=outline 또는 card_id로 응답을 축약할 수 있다.",
+    "description": "폴더와 카드를 조회한다. 기본 full은 기존 상세 응답이다. view=outline은 상세 본문 없는 카드 목록을 기본 20장씩 반환하며 보관 카드는 기본 제외한다. outline 목록은 limit(최대 50), cursor로 이어 읽고 get_card로 상세를 확인한다. 목록 옵션은 full 또는 card_id 직접 조회에서 무시된다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2348,9 +2348,21 @@
           "minLength": 1,
           "type": "string"
         },
+        "cursor": {
+          "pattern": "^\\d+$",
+          "type": "string"
+        },
         "folder_id": {
           "minLength": 1,
           "type": "string"
+        },
+        "include_archived": {
+          "type": "boolean"
+        },
+        "limit": {
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
         },
         "view": {
           "default": "full",

@@ -106,13 +106,18 @@ describe("folder and checklist MCP contract", () => {
     const item = await client.callTool({ name: "get_folder", arguments: {
       folder_id: "folder-1", card_id: "card-1",
     } });
+    const paged = await client.callTool({ name: "get_folder", arguments: {
+      folder_id: "folder-1", view: "outline", include_archived: true, limit: 7, cursor: "14",
+    } });
+    expect(paged.isError).not.toBe(true);
     expect(full.structuredContent).toMatchObject({ folder: { id: "folder-1" }, cards: [{ request: "Do the thing" }] });
     expect(outline.structuredContent).toMatchObject({ folder: { id: "folder-1" }, cards: [{ id: "card-1" }] });
     expect(item.structuredContent).toMatchObject({ cards: [{ id: "card-1" }] });
-    expect(forwarded).toHaveBeenCalledTimes(3);
+    expect(forwarded).toHaveBeenCalledTimes(4);
     const bodies = forwarded.mock.calls.map(([, , , body]) => body as { args: unknown; context: unknown });
     expect(bodies[1].args).toEqual({ folder_id: "folder-1", view: "outline" });
     expect(bodies[2].args).toEqual({ folder_id: "folder-1", view: "full", card_id: "card-1" });
+    expect(bodies[3].args).toEqual({ folder_id: "folder-1", view: "outline", include_archived: true, limit: 7, cursor: "14" });
     expect(bodies[0].context).toEqual({ principal: "internal", caller_session_id: null, node_id: "node-test" });
     expect(forwarded.mock.calls[0]?.[2]).toBe("/api/mcp/host/get_folder");
 

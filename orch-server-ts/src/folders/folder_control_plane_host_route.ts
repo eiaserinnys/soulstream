@@ -95,7 +95,14 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
   if (!options.cardServiceProvider) throw new Error("Card service is not configured");
   const service = await options.cardServiceProvider();
   if (operation === "get_assigned_card_context") return service.getAssignedCardContext(requiredString(body,"session_id"));
-  if (operation === "get_folder") return await readFolderSnapshot(service, requiredString(body, "folder_id"), body.card_id as string | undefined, body.view as string | undefined);
+  if (operation === "get_folder") return await readFolderSnapshot(
+    service,
+    requiredString(body, "folder_id"),
+    body.card_id as string | undefined,
+    body.view as string | undefined,
+    true,
+    { includeArchived: body.include_archived, limit: body.limit, cursor: body.cursor },
+  );
   if (operation === "list_child_folders" || operation === "list_folder_operations") {
     const limit = z.number().int().min(1).max(200).parse(body.limit ?? 50);
     const offset = z.coerce.number().int().nonnegative().parse(body.cursor ?? 0);

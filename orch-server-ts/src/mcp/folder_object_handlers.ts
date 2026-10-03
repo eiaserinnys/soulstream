@@ -15,7 +15,10 @@ export const folderObjectHandlers = {
   list_child_folders: (o, a) => query(o.folders, "list_child_folders", {
     folderId: a.folder_id ?? null, includeArchived: a.include_archived, limit: a.limit, cursor: a.cursor,
   }),
-  get_folder: (o, a) => query(o.folders, "get_folder", { folderId: a.folder_id, view: a.view, cardId: a.card_id }),
+  get_folder: (o, a) => query(o.folders, "get_folder", {
+    folderId: a.folder_id, view: a.view, cardId: a.card_id,
+    includeArchived: a.include_archived, limit: a.limit, cursor: a.cursor,
+  }),
   rename_folder: (o, a, c) => mutate(o.folders, "rename_folder", a, c, { ...mutationFields(a), name: a.name }),
   archive_folder: (o, a, c) => mutate(o.folders, "archive_folder", a, c, mutationFields(a)),
   unarchive_folder: (o, a, c) => mutate(o.folders, "unarchive_folder", a, c, mutationFields(a)),
