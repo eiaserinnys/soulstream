@@ -89,9 +89,11 @@ function mount() {
 
 describe("ui events runtime wiring", () => {
   beforeEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.useFakeTimers();
     posted = [];
     localStorage.clear();
+    window.history.replaceState(null, "", "/");
     useDashboardStore.setState({ viewMode: "feed", activeSessionKey: null });
   });
 
@@ -103,6 +105,15 @@ describe("ui events runtime wiring", () => {
     document.body.innerHTML = "";
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it.each(["/dialogues", "/dialogues/", "/dialogues/ios", "/dialogues/ios/"])("keeps the authenticated dialogue gallery %s free of backend writes", async (path) => {
+    window.history.replaceState(null, "", path);
+    const request = installFetch({ enabled: true });
+    await mount();
+    await drainFlushTimer();
+    expect(request).not.toHaveBeenCalled();
+    expect(posted).toHaveLength(0);
   });
 
   it("records the screen that was already open, through the real boot order", async () => {
