@@ -4,6 +4,9 @@ export const PAGE_CONTEXT_SOURCES_KEY = "page_context_sources";
 interface SessionAtomNode {
   nodeId: string;
   title: string;
+  depth?: number;
+  titlesOnly?: boolean;
+  mode?: "full" | "index" | "titles";
 }
 
 interface SessionContextItem {
@@ -46,7 +49,7 @@ export function buildSessionContextSelection({
       key: ATOM_CONTEXT_SOURCES_KEY,
       label: "선택한 atom 노드",
       content: {
-        nodes: [{ node_id: atomNode.nodeId.trim(), depth: 3, titles_only: false }],
+        nodes: [{ node_id: atomNode.nodeId.trim(), depth: atomNode.depth ?? 3, titles_only: atomNode.titlesOnly ?? false, ...(atomNode.mode ? { mode: atomNode.mode } : {}) }],
       },
     });
   }

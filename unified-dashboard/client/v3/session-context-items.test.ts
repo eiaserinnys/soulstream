@@ -98,3 +98,9 @@ describe("session context item selection", () => {
     ]);
   });
 });
+
+it("forwards the single confirmed atom range using only supported session options", () => {
+  const result = buildSessionContextSelection({ inheritCard: false, folderPageId: "", documentPageIds: [], guidance: "",
+    atomNode: { nodeId: "n", title: "자료", depth: 5, titlesOnly: true, mode: "index" } });
+  expect(result.contextItems[0].content).toEqual({ nodes: [{node_id: "n", depth: 5, titles_only: true, mode: "index"}] });
+});

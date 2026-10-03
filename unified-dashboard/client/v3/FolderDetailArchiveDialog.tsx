@@ -22,9 +22,9 @@ export function FolderDetailArchiveDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-sm">
+      <DialogPopup className="approved-dialog max-w-sm">
         <DialogHeader>
-          <DialogTitle>폴더 보관</DialogTitle>
+          <DialogTitle>폴더를 보관할까요?</DialogTitle>
           <DialogDescription>‘{title}’ 폴더를 보관합니다. 내용과 세션은 보존됩니다.</DialogDescription>
         </DialogHeader>
         {error ? <p role="alert">폴더 보관 실패 · {error}</p> : null}
@@ -32,8 +32,8 @@ export function FolderDetailArchiveDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             취소
           </Button>
-          <Button type="button" variant="destructive" onClick={onArchive}>
-            보관
+          <Button type="button" variant="default" onClick={onArchive}>
+            폴더 보관
           </Button>
         </DialogFooter>
       </DialogPopup>

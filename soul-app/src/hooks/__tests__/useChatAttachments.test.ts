@@ -11,6 +11,8 @@ jest.mock('expo-image-picker', () => ({
   launchImageLibraryAsync: jest.fn(),
 }));
 
+const safeFallback = '민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.';
+
 beforeEach(() => {
   jest.restoreAllMocks();
   jest.clearAllMocks();
@@ -30,7 +32,7 @@ test('카드 옵션은 원본과 MIME을 보존하여 노드 변경 시 재업�
   await waitFor(() => expect(result.current.uploading).toBe(false));
   expect(result.current.attachmentsReady).toBe(false);
   expect(result.current.attachments).toHaveLength(1);
-  expect(result.current.error).toBe('노드 업로드 실패');
+  expect(result.current.error).toBe(safeFallback);
   act(() => result.current.removeAttachment(0));
   expect(result.current.attachmentsReady).toBe(true);
 });
@@ -242,7 +244,7 @@ test('권한 요청과 사진·파일 선택기 reject는 첨부 실패 경고�
   jest.mocked(ImagePicker.requestMediaLibraryPermissionsAsync)
     .mockRejectedValueOnce(new Error('permission failed'));
   await invoke(0);
-  expect(alert).toHaveBeenCalledWith('첨부 실패', 'permission failed');
+  expect(alert).toHaveBeenCalledWith('첨부 실패', safeFallback);
 
   alert.mockClear();
   jest.mocked(ImagePicker.requestMediaLibraryPermissionsAsync)
@@ -250,16 +252,16 @@ test('권한 요청과 사진·파일 선택기 reject는 첨부 실패 경고�
   jest.mocked(ImagePicker.launchImageLibraryAsync)
     .mockRejectedValueOnce(new Error('image picker failed'));
   await invoke(0);
-  expect(alert).toHaveBeenCalledWith('첨부 실패', 'image picker failed');
+  expect(alert).toHaveBeenCalledWith('첨부 실패', safeFallback);
 
   alert.mockClear();
   jest.mocked(DocumentPicker.getDocumentAsync)
     .mockRejectedValueOnce(new Error('file picker failed'));
   await invoke(1);
-  expect(alert).toHaveBeenCalledWith('첨부 실패', 'file picker failed');
+  expect(alert).toHaveBeenCalledWith('첨부 실패', safeFallback);
 });
 
-test('업로드 오류는 기존 첨부 실패 Alert 문구를 보존한다', async () => {
+test('업로드 오류는 첨부 실패 제목을 유지하고 상세를 정제한다', async () => {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
   const api = { uploadAttachment: jest.fn().mockRejectedValue(new Error('upload failed')) };
   const { result } = renderHook(() => useChatAttachments({
@@ -270,8 +272,33 @@ test('업로드 오류는 기존 첨부 실패 Alert 문구를 보존한다', as
 
   await act(async () => result.current.uploadAttachment({ uri: 'file://x', name: 'x' }));
 
-  expect(alert).toHaveBeenCalledWith('첨부 실패', 'upload failed');
+  expect(alert).toHaveBeenCalledWith('첨부 실패', safeFallback);
   expect(result.current.uploading).toBe(false);
+});
+
+test('업로드와 노드 재업로드 오류는 합성 비밀을 숨기고 제거 후 재선택할 수 있다', async () => {
+  const secret = 'Authorization: Bearer synthetic-auth Cookie=synthetic-cookie password=synthetic-password token=synthetic-token api_key=synthetic-key https://user:synthetic-userinfo@test.invalid/?key=synthetic-query';
+  const failure = new Error(`HTTP 403 ${secret}`);
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+  const api = { uploadAttachment: jest.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce({ path: '/a/file' }).mockRejectedValueOnce(failure) };
+  const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId, reuploadOnNodeChange: true }), { initialProps: { nodeId: 'a' } });
+  const file = { uri: 'file://source', name: 'source.txt', type: 'text/plain' };
+  await act(async () => result.current.uploadAttachment(file));
+  expect(result.current.attachmentsReady).toBe(false);
+  expect(result.current.error).toBe(`HTTP 403\n${safeFallback}`);
+  act(() => result.current.removeAttachment(0));
+  expect(result.current.error).toBeNull();
+  await act(async () => result.current.uploadAttachment(file));
+  expect(result.current.attachmentsReady).toBe(true);
+  rerender({ nodeId: 'b' });
+  await waitFor(() => expect(result.current.uploading).toBe(false));
+  expect(result.current.attachmentsReady).toBe(false);
+  expect(result.current.attachments[0].originalFile).toEqual(file);
+  expect(result.current.error).toBe(`HTTP 403\n${safeFallback}`);
+  expect(alert).toHaveBeenCalledTimes(2);
+  expect(JSON.stringify(alert.mock.calls)).not.toContain('synthetic-');
+  act(() => result.current.removeAttachment(0));
+  expect(result.current.attachmentsReady).toBe(true);
 });
 
 test('복원 첨부를 현재 목록 앞에 되돌린다', async () => {
@@ -305,3 +332,35 @@ async function waitForCall(mock: jest.MockedFunction<any>) {
     while (mock.mock.calls.length === 0) await Promise.resolve();
   });
 }
+
+test('OS 선택기 연타는 하나만 열고 닫은 작성창의 선택 결과는 업로드하지 않는다', async () => {
+  let picked!: (index: number) => void;
+  const show = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => { picked = callback; });
+  const api = { uploadAttachment: jest.fn() } as any;
+  const { result } = renderHook(() => useChatAttachments({ api, sessionId: 'draft', nodeId: 'node-a', reuploadOnNodeChange: true }));
+  act(() => { result.current.pickAttachment(); result.current.pickAttachment(); });
+  expect(show).toHaveBeenCalledTimes(1);
+  act(() => result.current.clearAttachments());
+  await act(async () => picked(1));
+  expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
+  expect(api.uploadAttachment).not.toHaveBeenCalled();
+});
+
+test('선택한 파일 업로드 중 노드를 바꿔도 재업로드 후 추가 선택기를 열 수 있다', async () => {
+  let picked!: (index: number) => void;
+  const show = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => { picked = callback; });
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValue({ canceled: false, assets: [{ uri: 'file://original', name: 'original.txt', mimeType: 'text/plain' }] });
+  const first = deferred<{ path: string }>();
+  const api = { uploadAttachment: jest.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce({ path: '/node-b/file' }) };
+  const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId, reuploadOnNodeChange: true }), { initialProps: { nodeId: 'a' } });
+  act(() => result.current.pickAttachment());
+  let selection!: Promise<void>;
+  await act(async () => { selection = picked(1) as unknown as Promise<void>; await Promise.resolve(); });
+  expect(api.uploadAttachment).toHaveBeenCalledTimes(1);
+  rerender({ nodeId: 'b' });
+  await waitFor(() => expect(result.current.attachmentsReady).toBe(true));
+  await act(async () => { first.resolve({ path: '/node-a/stale' }); await selection; });
+  expect(result.current.attachments[0]).toMatchObject({ path: '/node-b/file', nodeId: 'b' });
+  act(() => result.current.pickAttachment());
+  expect(show).toHaveBeenCalledTimes(2);
+});

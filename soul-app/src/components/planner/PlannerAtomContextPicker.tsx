@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SheetErrorNotice, sheetErrorDetail } from './SheetErrorNotice';
 import type { InitialFolderAtomReference } from '../../api/initialFolderContext';
 import { useTokens, type DesignTokens } from '../../theme';
 
@@ -37,6 +38,7 @@ export function PlannerAtomContextPicker({ visible, api, onClose, onPicked }: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wasVisible = useRef(false);
+  const confirmed = useRef(false);
   const current = breadcrumb[breadcrumb.length - 1];
 
   useEffect(() => {
@@ -50,6 +52,7 @@ export function PlannerAtomContextPicker({ visible, api, onClose, onPicked }: {
       return;
     }
     if (!opening) return;
+    confirmed.current = false;
     setBreadcrumb([]);
     setSelected(null);
     setDepth(3);
@@ -69,7 +72,7 @@ export function PlannerAtomContextPicker({ visible, api, onClose, onPicked }: {
     }).catch((cause) => {
       if (!cancelled) {
         setItems([]);
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(sheetErrorDetail(cause));
       }
     }).finally(() => {
       if (!cancelled) setLoading(false);
@@ -83,7 +86,8 @@ export function PlannerAtomContextPicker({ visible, api, onClose, onPicked }: {
     setTitlesOnly(false);
   };
   const addSelected = () => {
-    if (!selected) return;
+    if (!selected || !api || loading || error || confirmed.current) return;
+    confirmed.current = true;
     onPicked({
       instance: 'atom',
       nodeId: selected.id,
@@ -128,12 +132,12 @@ export function PlannerAtomContextPicker({ visible, api, onClose, onPicked }: {
                 onValueChange={setTitlesOnly}
               />
             </View>
-            <TouchableOpacity testID="atom-picker-add-selected" style={styles.addSelected} onPress={addSelected}>
+            <TouchableOpacity testID="atom-picker-add-selected" style={styles.addSelected} disabled={!api || loading || !!error} onPress={addSelected}>
               <Text style={styles.addSelectedText}>이 설정으로 추가</Text>
             </TouchableOpacity>
           </View>
         </View>
-      ) : <Text style={styles.hint}>노드를 선택하면 같은 카드에서 포함 범위를 정할 수 있습니다.</Text>}
+      ) : <Text style={styles.hint}>atom 자료만 조회합니다. 노드를 선택하면 포함 범위를 정할 수 있습니다.</Text>}
       {breadcrumb.length > 0 ? (
         <TouchableOpacity style={styles.backRow} onPress={() => setBreadcrumb((path) => path.slice(0, -1))}>
           <Text style={styles.back}>‹ 상위</Text>
@@ -144,7 +148,7 @@ export function PlannerAtomContextPicker({ visible, api, onClose, onPicked }: {
           data={items}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          ListEmptyComponent={<Text style={styles.meta}>{error ?? '하위 노드가 없습니다.'}</Text>}
+          ListEmptyComponent={error ? <SheetErrorNotice summary="자료를 불러오지 못했습니다. 닫고 다시 열어 주세요." detail={error} /> : <Text style={styles.meta}>하위 노드가 없습니다.</Text>}
           renderItem={({ item }) => (
             <View style={styles.nodeRow}>
               <TouchableOpacity

@@ -70,7 +70,7 @@ export function DialoguesSamples({
           api.local.folder.name = title;
           api.record("폴더 이름 변경");
         }}
-        onSaveContext={(id,previous,value) => saveProjectFormContext(pageApi,id,previous,value)}
+        onSaveContext={(id,previous,value,attempt) => saveProjectFormContext(pageApi,id,previous,value,attempt)}
         onSaved={() => done("폴더 저장")}
       />
     );

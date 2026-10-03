@@ -700,7 +700,7 @@ function V3DashboardContent() {
         onClose={() => setChildFolderDialog(null)}
         onCreateIdentity={projectNavigationMutations.onCreateProject}
         onRename={projectNavigationMutations.onRenameProject}
-        onSaveContext={(pageId, previous, value) => saveProjectFormContext(api, pageId, previous, value)}
+        onSaveContext={(pageId, previous, value, attempt) => saveProjectFormContext(api, pageId, previous, value, attempt)}
         onSaved={() => undefined}
       />
       <FolderArchiveDialog

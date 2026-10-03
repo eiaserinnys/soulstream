@@ -28,6 +28,7 @@ let mockModelPresetSelectionInvalid = false;
 const mockUseChatAttachments = jest.fn((_input?: unknown) => ({
   attachments: mockAttachments,
   uploading: mockUploading,
+  attachmentsReady: !mockUploading && mockAttachments.every(file => Boolean(file.path)),
   pickAttachment: mockPickAttachment,
   uploadAttachment: jest.fn(),
   removeAttachment: mockRemoveAttachment,
@@ -147,6 +148,7 @@ test.each([
   expect(succession.getByTestId('succession-header-title').props.allowFontScaling).not.toBe(false);
   expect(style(succession.getByTestId('succession-content').props.contentContainerStyle))
     .toMatchObject({ paddingHorizontal: 20 });
+  fireEvent.press(succession.getByTestId('succession-execution-disclosure'));
   expect(style(succession.getByTestId('succession-selection-node').props.style))
     .toMatchObject({ minHeight: 52 });
   expect(style(succession.getByTestId('succession-check-task-context').props.style))
@@ -226,7 +228,9 @@ test('새 폴더 시트는 직접 지침과 기본 에이전트를 생성 요청
     screen.getByPlaceholderText('이 폴더에서만 사용할 지침을 적어두세요.'),
     '직접 지침',
   );
+  fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
   fireEvent.press(screen.getByTestId('new-task-default-agent'));
+  fireEvent.press(screen.getByLabelText('기본 환경 확인'));
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '새 폴더');
   await act(async () => { fireEvent.press(screen.getByText('만들기')); });
 
@@ -251,6 +255,7 @@ test('새 폴더 직접 지정에도 기본 모델 선택 행을 함께 표시�
 
   fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
 
+  fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
   expect(screen.getByTestId('new-task-default-node')).toBeTruthy();
   expect(screen.getByTestId('new-task-default-agent')).toBeTruthy();
   expect(screen.getByTestId('new-task-default-model')).toBeTruthy();
@@ -268,41 +273,31 @@ test('유효하지 않은 preset 경고는 가용성이 회복되면 단방향 �
   const screen = render(<NewFolderSheet {...props} />);
   fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
 
+  fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
   mockModelPresetSelectionInvalid = true;
   screen.rerender(<NewFolderSheet {...props} />);
   await waitFor(() => expect(screen.getByText(
-    '선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.',
+    '기본 담당은 노드와 에이전트를 모두 선택하고 사용 가능한 모델을 지정해야 합니다.',
   )).toBeTruthy());
 
   mockModelPresetSelectionInvalid = false;
   screen.rerender(<NewFolderSheet {...props} />);
   await waitFor(() => expect(screen.queryByText(
-    '선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.',
+    '기본 담당은 노드와 에이전트를 모두 선택하고 사용 가능한 모델을 지정해야 합니다.',
   )).toBeNull());
   expect(screen.queryByText('기본 담당 선택을 마쳐야 합니다.')).toBeNull();
 });
 
-test('새 폴더 시트는 노드만 고른 불완전한 기본 담당으로 제출하지 않는다', () => {
+test('기본 환경을 취소하면 폴더 작성 내용과 상속 설정을 보존한다', async () => {
   const onSubmit = jest.fn().mockResolvedValue(undefined);
-  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions')
-    .mockImplementation((_options, callback) => callback(1));
-  const screen = render(<NewFolderSheet
-    visible
-    api={null}
-    folders={folders}
-    dailyDate="2026-07-18"
-    onClose={jest.fn()}
-    onSubmit={onSubmit}
-  />);
-
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} dailyDate="2026-07-18" onClose={jest.fn()} onSubmit={onSubmit} />);
+  fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '상속 유지');
   fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
-  fireEvent.press(screen.getByTestId('new-task-default-node'));
-  fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '미완성 기본 담당');
-
-  expect(screen.getByText('기본 담당은 노드와 에이전트를 모두 선택해야 합니다.')).toBeTruthy();
-  expect(screen.getByTestId('new-task-submit').props.accessibilityState.disabled).toBe(true);
-  fireEvent.press(screen.getByTestId('new-task-submit'));
-  expect(onSubmit).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
+  fireEvent.press(screen.getByLabelText('기본 환경 취소'));
+  expect(screen.getByPlaceholderText('폴더 이름').props.value).toBe('상속 유지');
+  await act(async () => fireEvent.press(screen.getByTestId('new-task-submit')));
+  expect(onSubmit.mock.calls[0][0].initialContext.sessionDefaults).toBeUndefined();
 });
 
 test('새 폴더 시트는 같은 Atom 선택 화면에서 정한 옵션을 생성 요청에 담는다', async () => {
@@ -412,7 +407,7 @@ test('모델 목록 요청이 끝나지 않아도 유효성 오류가 없으면 
   />);
 
   await act(async () => {
-    fireEvent.press(screen.getByText('시작'));
+    fireEvent.press(screen.getByLabelText('세션 시작'));
   });
 
   expect(mockCreateFolderSession).toHaveBeenCalledTimes(1);
@@ -446,7 +441,7 @@ test('승계 시트는 기존 첨부 UI로 고른 경로를 첫 세션 생성 �
     screen.getByPlaceholderText('세션을 시작하자마자 수행할 지시…'),
     '이미지를 보고 시작해',
   );
-  await act(async () => { fireEvent.press(screen.getByText('시작')); });
+  await act(async () => { fireEvent.press(screen.getByLabelText('세션 시작')); });
 
   expect(mockCreateFolderSession).toHaveBeenCalledWith(expect.objectContaining({
     prompt: expect.stringContaining('이미지를 보고 시작해'),
@@ -505,7 +500,7 @@ test('승계 시트는 내부 context source와 중복 일반명을 숨기고 �
   />);
 
   expect(screen.getAllByText(/검수 원칙/)).toHaveLength(1);
-  expect(screen.getAllByText(/^컨텍스트$/)).toHaveLength(1);
+  expect(screen.getAllByText(/^함께 가져갈 컨텍스트$/)).toHaveLength(1);
   expect(screen.queryByText(/runbook-1|session-a|session-b/)).toBeNull();
 });
 
@@ -554,3 +549,43 @@ function plannerBlock(
 function style(value: unknown) {
   return require('react-native').StyleSheet.flatten(value) as Record<string, unknown>;
 }
+
+test('폴더 제출 snapshot은 실패 후 동일 키로 재시도하고 pending 닫기와 중복 제출을 막는다', async () => {
+  let reject!: (cause: Error) => void;
+  const onSubmit = jest.fn().mockImplementationOnce(() => new Promise((_, no) => { reject = no; })).mockResolvedValue(undefined);
+  const onClose = jest.fn();
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} dailyDate="2026-07-18" onClose={onClose} onSubmit={onSubmit} />);
+  fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '한 번만');
+  await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeEnabled());
+  const { Modal } = require('react-native');
+  act(() => { fireEvent.press(screen.getByTestId('new-task-submit')); fireEvent.press(screen.getByTestId('new-task-submit')); screen.UNSAFE_getByType(Modal).props.onRequestClose(); });
+  expect(onSubmit).toHaveBeenCalledTimes(1); expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByPlaceholderText('폴더 이름').props.editable).toBe(false);
+  await act(async () => reject(new Error('결과 불확실')));
+  await act(async () => fireEvent.press(screen.getByTestId('new-task-submit')));
+  expect(onSubmit.mock.calls[1][0]).toEqual(onSubmit.mock.calls[0][0]);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('명시적 거절 뒤 생성 성공과 오늘 반영 실패가 오면 생성 결과를 보존한다', async () => {
+  const { ApiHttpError } = require('../../../api/clientCore');
+  const onSubmit = jest.fn()
+    .mockRejectedValueOnce(new ApiHttpError('HTTP 422', 422, ''))
+    .mockImplementationOnce(async (input) => {
+      input.creation.result = { folderId: 'created-folder' };
+      throw new Error('오늘 반영 응답 불확실');
+    })
+    .mockResolvedValueOnce(undefined);
+  const onClose = jest.fn();
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} dailyDate="2026-07-18" onClose={onClose} onSubmit={onSubmit} />);
+  fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '생성된 폴더');
+  await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeEnabled());
+  await act(async () => fireEvent.press(screen.getByTestId('new-task-submit')));
+  expect(screen.getByPlaceholderText('폴더 이름').props.editable).toBe(true);
+  await act(async () => fireEvent.press(screen.getByTestId('new-task-submit')));
+  expect(screen.getByPlaceholderText('폴더 이름').props.editable).toBe(false);
+  await act(async () => fireEvent.press(screen.getByTestId('new-task-submit')));
+  expect(onSubmit.mock.calls[2][0].creation).toBe(onSubmit.mock.calls[1][0].creation);
+  expect(onSubmit.mock.calls[2][0].creation.result).toEqual({ folderId: 'created-folder' });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});

@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, ScrollView, Text } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Platform, ScrollView, Text, View } from 'react-native';
+import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { createApiClient } from '../api/client';
@@ -33,6 +34,7 @@ interface Props {
   showTitle?: boolean;
   flattened?: boolean;
   category?: SettingsCategory;
+  preserveSections?: boolean;
   showAdmin?: boolean;
   onOpenRecurringJobs?: () => void;
 }
@@ -42,6 +44,7 @@ export function SettingsScreen({
   showTitle = true,
   flattened = false,
   category,
+  preserveSections = false,
   showAdmin,
   onOpenRecurringJobs,
 }: Props = {}) {
@@ -73,6 +76,7 @@ export function SettingsScreen({
   const [mode, setMode] = useState<'single' | 'orchestrator' | null>(null);
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
   const [loadingNodes, setLoadingNodes] = useState(false);
+  const backgroundPending = useRef(false);
   const [savingBackground, setSavingBackground] = useState(false);
 
   useEffect(() => {
@@ -146,6 +150,7 @@ export function SettingsScreen({
   }
 
   async function handleWallpaperModeChange(next: WallpaperMode) {
+    if (backgroundPending.current) return;
     const nextWallpaper =
       next === 'photo'
         ? { ...wallpaper, mode: 'photo' as const }
@@ -157,27 +162,29 @@ export function SettingsScreen({
   }
 
   async function handlePickBackground() {
-    const permission =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('권한 필요', '사진 라이브러리 접근 권한을 허용해주세요.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.9,
-    });
-    if (result.canceled || result.assets.length === 0) return;
-    const asset = result.assets[0];
-    const nextWallpaper = {
-      mode: 'photo' as const,
-      customImage: asset.uri,
-    };
-    setWallpaper(nextWallpaper);
-    if (!serverUrl || !useAuthStore.getState().jwt) return;
-
+    if (backgroundPending.current) return;
+    backgroundPending.current = true;
     setSavingBackground(true);
     try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('권한 필요', '사진 라이브러리 접근 권한을 허용해주세요.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.9,
+      });
+      if (result.canceled || result.assets.length === 0) return;
+      const asset = result.assets[0];
+      const nextWallpaper = {
+        mode: 'photo' as const,
+        customImage: asset.uri,
+      };
+      setWallpaper(nextWallpaper);
+      if (!serverUrl || !useAuthStore.getState().jwt) return;
+
       const api = createApiClient(serverUrl);
       const uploaded = await api.uploadUserBackground({
         uri: asset.uri,
@@ -190,13 +197,15 @@ export function SettingsScreen({
       });
       applyUserPreferences(saved.preferences);
     } catch (error: any) {
-      Alert.alert('배경 저장 실패', error?.message ?? '알 수 없는 오류');
+      Alert.alert('배경 저장 실패', safeErrorDetail(error?.message ?? String(error)));
     } finally {
+      backgroundPending.current = false;
       setSavingBackground(false);
     }
   }
 
   async function handleResetBackground() {
+    if (backgroundPending.current) return;
     const nextWallpaper = { mode: 'bokeh' as const };
     setWallpaper(nextWallpaper);
     await savePreferences(appearance, nextWallpaper, {
@@ -231,7 +240,8 @@ export function SettingsScreen({
           ]}
         >
           {showTitle ? <Text style={styles.title}>설정</Text> : null}
-          {includes('display') ? (
+          {(preserveSections || includes('display')) ? (
+            <View style={!includes('display') ? { display: 'none' } : undefined}>
             <DisplaySettingsSection
               flattened={flattened}
               appearance={appearance}
@@ -247,8 +257,10 @@ export function SettingsScreen({
               onPickBackground={() => void handlePickBackground()}
               onResetBackground={() => void handleResetBackground()}
             />
+            </View>
           ) : null}
-          {includes('connection') ? (
+          {(preserveSections || includes('connection')) ? (
+            <View style={!includes('connection') ? { display: 'none' } : undefined}>
             <ConnectionSettingsSection
               flattened={flattened}
               url={urlInput}
@@ -263,8 +275,10 @@ export function SettingsScreen({
               onTest={() => void handleTest()}
               onSave={handleSave}
             />
+            </View>
           ) : null}
-          {includes('backends') ? (
+          {(preserveSections || includes('backends')) ? (
+            <View style={!includes('backends') ? { display: 'none' } : undefined}>
             <AIBackendSettingsSection
               flattened={flattened}
               serverUrl={serverUrl}
@@ -273,22 +287,29 @@ export function SettingsScreen({
               nodes={nodes}
               loadingNodes={loadingNodes}
             />
+            </View>
           ) : null}
-          {includes('recurring-jobs') ? (
+          {(preserveSections || includes('recurring-jobs')) ? (
+            <View style={!includes('recurring-jobs') ? { display: 'none' } : undefined}>
             <RecurringJobsSettingsSection
               flattened={flattened}
               serverUrl={serverUrl}
               onOpenRecurringJobs={onOpenRecurringJobs}
             />
+            </View>
           ) : null}
-          {canManageReviewPolicy && includes('review-policy') ? (
+          {(preserveSections || includes('review-policy')) && canManageReviewPolicy ? (
+            <View style={!includes('review-policy') ? { display: 'none' } : undefined}>
             <SessionReviewPolicySettingsSection
               flattened={flattened}
               serverUrl={serverUrl}
             />
+            </View>
           ) : null}
-          {includes('diagnostics') ? (
+          {(preserveSections || includes('diagnostics')) ? (
+            <View style={!includes('diagnostics') ? { display: 'none' } : undefined}>
             <DiagnosticsSettingsSection flattened={flattened} />
+            </View>
           ) : null}
         </ScrollView>
       </AppKeyboardAvoidingView>

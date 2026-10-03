@@ -59,6 +59,8 @@ const EMPTY_FORM: UserFormState = {
 
 export function UserManagementTab({ request = fetch, initialEditor }: { initialEditor?: "create" | "edit"; request?: typeof fetch } = {}) {
   const initializedEditor = useRef(false);
+  const saveInFlight = useRef(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
   const [users, setUsers] = useState<DashboardUser[]>([]);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -94,12 +96,14 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
   }, []);
 
   const openCreate = () => {
+    setEditorError(null);
     setEditingEmail(null);
     setForm(EMPTY_FORM);
     setEditorOpen(true);
   };
 
   const openEdit = (user: DashboardUser) => {
+    setEditorError(null);
     setEditingEmail(user.email);
     setForm({
       email: user.email,
@@ -113,11 +117,13 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
   useEffect(() => { if (!initialEditor || loading || initializedEditor.current || (initialEditor === "edit" && !users[0])) return; initializedEditor.current=true; if (initialEditor === "create") openCreate(); else if (users[0]) openEdit(users[0]); }, [initialEditor, loading, users]);
 
   const save = async () => {
+    if (saveInFlight.current || !form.email.trim()) return;
+    saveInFlight.current = true;
     setSaving(true);
-    setError(null);
+    setEditorError(null);
     try {
       const body = {
-        email: form.email,
+        email: form.email.trim(),
         displayName: form.displayName.trim() || null,
         isAdmin: form.isAdmin,
         allowedFolderIds: form.allowedFolderIds,
@@ -139,8 +145,9 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       setEditorOpen(false);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "저장하지 못했습니다");
+      setEditorError(err instanceof Error ? err.message : "저장하지 못했습니다");
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
@@ -247,25 +254,28 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
         </Table>
       </div>
 
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
-        <DialogPopup className="max-w-xl">
+      <Dialog open={editorOpen} onOpenChange={(next) => { if (!saveInFlight.current) setEditorOpen(next); }}>
+        <DialogPopup className="approved-dialog max-w-xl" closeProps={{ disabled: saving }}>
           <DialogHeader>
             <DialogTitle>{editingEmail ? "사용자 편집" : "사용자 추가"}</DialogTitle>
             <DialogDescription>이메일과 폴더 권한을 설정합니다.</DialogDescription>
           </DialogHeader>
           <DialogPanel>
             <div className="space-y-4">
+              {editorError && <div role="alert" className="text-sm text-accent-red">{editorError}</div>}
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">이메일</span>
+                <span className="text-sm font-medium text-muted-foreground">이메일</span>
                 <Input
                   value={form.email}
-                  disabled={editingEmail !== null}
+                  autoFocus
+                  disabled={saving || editingEmail !== null}
                   onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
                 />
               </label>
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">이름</span>
+                <span className="text-sm font-medium text-muted-foreground">이름</span>
                 <Input
+                  disabled={saving}
                   value={form.displayName}
                   onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))}
                 />
@@ -273,12 +283,14 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
               <div className="flex items-center justify-between rounded border border-border px-3 py-2">
                 <span className="text-sm font-medium">Admin</span>
                 <Switch
+                  disabled={saving}
                   checked={form.isAdmin}
                   onCheckedChange={(checked) => setForm((current) => ({ ...current, isAdmin: Boolean(checked) }))}
                 />
               </div>
               <div className={cn("space-y-2", form.isAdmin && "opacity-50")}>
-                <div className="text-xs font-medium text-muted-foreground">폴더</div>
+                <div className="text-sm font-medium text-muted-foreground">폴더</div>
+                <p className="text-sm text-muted-foreground">{form.isAdmin ? "관리자는 전체 폴더에 접근할 수 있습니다." : form.allowedFolderIds.length === 0 ? "선택한 폴더가 없으면 전체 폴더에 접근할 수 있습니다." : "선택한 폴더에만 접근할 수 있습니다."}</p>
                 <ScrollArea className="h-48 rounded border border-border">
                   <div className="space-y-1 p-2">
                     {folders.map((folder) => (
@@ -288,7 +300,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
                       >
                         <Checkbox
                           checked={form.allowedFolderIds.includes(folder.id)}
-                          disabled={form.isAdmin}
+                          disabled={saving || form.isAdmin}
                           onCheckedChange={() => toggleFolder(folder.id)}
                         />
                         <span className="min-w-0 truncate">{folder.name}</span>
@@ -303,7 +315,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
             </div>
           </DialogPanel>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setEditorOpen(false)}>
+            <Button variant="outline" size="sm" disabled={saving} onClick={() => { if (!saveInFlight.current) setEditorOpen(false); }}>
               취소
             </Button>
             <Button size="sm" disabled={saving || !form.email.trim()} onClick={() => void save()}>

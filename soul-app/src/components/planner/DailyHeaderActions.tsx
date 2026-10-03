@@ -29,7 +29,7 @@ export function DailyHeaderActions({
         iconOnly
         testID="daily-new-task-action"
         accessibilityLabel="새 작업"
-        accessibilityHint="새 카드 입력 시트를 엽니다"
+        accessibilityHint="새 폴더 입력 시트를 엽니다"
         onPress={onOpenNewFolder}
         contentStyle={styles.action}
       >

@@ -40,7 +40,7 @@ test('wide iPad uses a page sheet with provider-neutral sidebar and detail', () 
     .toMatchObject({ minWidth: 48, minHeight: 48 });
   expect(screen.UNSAFE_getByType(Modal).props.presentationStyle).toBe('pageSheet');
   expect(screen.getByTestId('settings-wide-layout')).toBeTruthy();
-  expect(screen.getByText('AI 백엔드')).toBeTruthy();
+  expect(screen.getByText('에이전트와 모델')).toBeTruthy();
   expect(screen.getByTestId('settings-category-backends')).toBeTruthy();
   expect(screen.getByTestId('settings-child').props).toMatchObject({
     showTitle: false,
@@ -59,12 +59,16 @@ test('compact Stage Manager width collapses to the phone grouped flow', () => {
 
   expect(screen.UNSAFE_getByType(Modal).props.presentationStyle).toBe('pageSheet');
   expect(screen.queryByTestId('settings-wide-layout')).toBeNull();
-  expect(screen.queryByTestId('settings-category-backends')).toBeNull();
+  expect(screen.getByTestId('settings-category-backends')).toBeTruthy();
+  expect(screen.getByTestId('settings-phone-index')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('settings-category-backends'));
   expect(screen.getByTestId('settings-child').props).toMatchObject({
     showTitle: false,
     flattened: true,
   });
-  expect(screen.getByTestId('settings-child').props.category).toBeUndefined();
+  expect(screen.getByTestId('settings-child').props.category).toBe('backends');
+  fireEvent.press(screen.getByLabelText('모든 설정으로 돌아가기'));
+  expect(screen.getByTestId('settings-phone-index')).toBeTruthy();
 });
 
 test('admin status exposes the review policy on iPad and passes it to the detail', async () => {
@@ -97,6 +101,8 @@ test('admin status exposes the review policy in the compact grouped flow', async
   });
 
   const screen = render(<SettingsModal visible onClose={jest.fn()} />);
-  await waitFor(() => expect(screen.getByTestId('settings-child').props.showAdmin).toBe(true));
-  expect(screen.queryByTestId('settings-category-review-policy')).toBeNull();
+  const category = await screen.findByTestId('settings-category-review-policy');
+  fireEvent.press(category);
+  expect(screen.getByTestId('settings-child').props.showAdmin).toBe(true);
+  expect(screen.getByTestId('settings-child').props.category).toBe('review-policy');
 });

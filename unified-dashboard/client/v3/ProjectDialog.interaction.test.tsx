@@ -6,6 +6,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { dialoguesAssignment } from "./dialogues-api";
 import { ProjectDialog } from "./ProjectDialog";
 import { fetchProjectPageDetails } from "./project-page-details";
 
@@ -54,7 +55,7 @@ describe("ProjectDialog shared form", () => {
   it("renders the same project form component for creation and settings", async () => {
     render({ mode: "create", parentFolderId: null, parentName: null });
     expect(document.body.querySelectorAll('[data-testid="v3-project-dialog-form"]')).toHaveLength(1);
-    expect(sectionLabels()).toEqual(["guidance", "atom", "기본 에이전트"]);
+    expect(sectionLabels()).toEqual(["작업 지침", "참고 자료", "기본 에이전트"]);
 
     render({
       mode: "edit",
@@ -62,7 +63,7 @@ describe("ProjectDialog shared form", () => {
     });
     await vi.waitFor(() => expect(document.body.textContent).not.toContain("불러오는 중"));
     expect(document.body.querySelectorAll('[data-testid="v3-project-dialog-form"]')).toHaveLength(1);
-    expect(sectionLabels()).toEqual(["guidance", "atom", "기본 에이전트"]);
+    expect(sectionLabels()).toEqual(["작업 지침", "참고 자료", "기본 에이전트"]);
   });
 
   it("does not expose stale settings when project context loading fails", async () => {
@@ -76,15 +77,80 @@ describe("ProjectDialog shared form", () => {
     expect(button("저장").disabled).toBe(true);
   });
 
-  function render(target: Parameters<typeof ProjectDialog>[0]["target"]) {
+  it("reuses the empty guidance row and focuses it without writing", () => {
+    render({ mode: "create", parentFolderId: null, parentName: null });
+    flushSync(() => button("지침 추가").click());
+    flushSync(() => button("지침 추가").click());
+    expect(document.body.querySelectorAll("textarea")).toHaveLength(1);
+    expect(document.activeElement).toBe(document.body.querySelector("textarea"));
+  });
+
+  it("keeps atom selection local on cancel, restores focus, and replaces duplicate confirmation", async () => {
+    const request = vi.fn(async () => ({ ok: true, json: async () => ({ children: [{ id: "n", card: { title: "선택 자료" } }] }) })) as unknown as typeof fetch;
+    render({ mode: "create", parentFolderId: null, parentName: null }, { request });
+    const add = button("atom에서 추가");
+    flushSync(() => add.click());
+    await vi.waitFor(() => expect(button("선택 자료")).toBeTruthy());
+    flushSync(() => button("선택 자료").click());
+    flushSync(() => button("취소").click());
+    await vi.waitFor(() => expect(document.activeElement).toBe(add));
+    expect(document.body.querySelector('[data-testid="v3-project-dialog-form"]')?.textContent).not.toContain("선택 자료");
+    for (let i = 0; i < 2; i++) {
+      flushSync(() => add.click());
+      await vi.waitFor(() => expect(button("선택 자료")).toBeTruthy());
+      flushSync(() => button("선택 자료").click());
+      flushSync(() => button("자료 추가").click());
+    }
+    expect([...document.body.querySelectorAll('button')].filter(b => b.textContent === "선택 자료 / atom")).toHaveLength(1);
+  });
+
+  it("cancels execution defaults without changing the parent and confirms all-unspecified as inheritance", async () => {
+    const onSaveContext = vi.fn().mockResolvedValue(undefined);
+    render({ mode: "create", parentFolderId: null, parentName: null }, { onSaveContext, onCreateIdentity: vi.fn().mockResolvedValue({ id: "new", name: "이름" }) });
+    change(document.body.querySelector('input[aria-label="폴더 이름"]')!, "이름");
+    flushSync(() => button("＋ 기본 에이전트").click());
+    const node = document.body.querySelector('select[aria-label="기본 실행 노드"]')!;
+    change(node, "sample-node");
+    flushSync(() => button("취소").click());
+    expect(document.body.textContent).not.toContain("기본 실행 환경 편집");
+    flushSync(() => button("＋ 기본 에이전트").click());
+    flushSync(() => button("확인").click());
+    flushSync(() => button("만들기").click());
+    await vi.waitFor(() => expect(onSaveContext).toHaveBeenCalled());
+    expect(onSaveContext.mock.calls[0][2].sessionDefaults).toBeNull();
+  });
+
+  it("requires correction of a saved unavailable model before any folder save", async () => {
+    vi.mocked(fetchProjectPageDetails).mockResolvedValueOnce({ ...existingDetails, sessionDefaults: [{blockId: "defaults", scope: "project", agentId: "roselin", nodeId: "sample-node", modelPreset: "missing"}] });
+    render({ mode: "edit", folder: {id: "existing", name: "이름", projectPageId: "existing", status: "open", version: 1, archived: false, sortOrder: 0} });
+    await vi.waitFor(() => expect(button("기본 실행 환경 편집")).toBeTruthy());
+    expect(button("저장").disabled).toBe(true);
+    const summary = [...document.body.querySelectorAll('summary')].find(item => item.textContent?.includes("기본 실행 환경"))!;
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    flushSync(() => button("기본 실행 환경 편집").click());
+    await vi.waitFor(() => expect(button("확인").disabled).toBe(true));
+    expect(document.body.textContent).toContain("선택한 모델");
+  });
+
+  function change(element: Element, value: string) {
+    const prototype = element.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    flushSync(() => {
+      Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(element, value);
+      element.dispatchEvent(new Event(element.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
+    });
+  }
+
+  function render(target: Parameters<typeof ProjectDialog>[0]["target"], overrides: Partial<Parameters<typeof ProjectDialog>[0]> = {}) {
     flushSync(() => root.render(
       <ProjectDialog
         target={target}
+        assignment={dialoguesAssignment}
         onClose={vi.fn()}
         onCreateIdentity={vi.fn()}
         onRename={vi.fn()}
         onSaveContext={vi.fn()}
         onSaved={vi.fn()}
+        {...overrides}
       />,
     ));
   }

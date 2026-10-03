@@ -3,6 +3,7 @@ import { Alert as RNAlert } from 'react-native';
 import { ActionSheetIOS, DocumentPicker, ImagePicker } from './attachmentPickers';
 import type { ApiClient } from '../api/client';
 import type { NativeUploadFile } from '../api/nativeUpload';
+import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
 
 export interface ChatAttachment {
   path: string;
@@ -33,6 +34,7 @@ export interface UseChatAttachmentsResult {
   attachments: ChatAttachment[];
   uploading: boolean;
   attachmentsReady: boolean;
+  /** Safe diagnostic text only; callers can display this without raw error data. */
   error: string | null;
   pickAttachment: () => void;
   uploadAttachment: (file: AttachmentUploadInput) => Promise<void>;
@@ -62,10 +64,12 @@ export function useChatAttachments(
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const pickerPending = useRef(false);
+  useEffect(() => () => { generation.current++; }, []);
   const currentNode = useRef(nodeId);
   if (currentNode.current !== nodeId) {
     currentNode.current = nodeId;
-    if (reuploadOnNodeChange) generation.current++;
+    if (reuploadOnNodeChange) { generation.current++; pickerPending.current = false; }
   }
 
   useEffect(() => {
@@ -91,7 +95,7 @@ export function useChatAttachments(
         }));
       } catch (cause) {
         if (!active || revision !== generation.current) return;
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
         setError(message); RNAlert.alert('첨부 실패', message);
       } finally { if (active && revision === generation.current) setUploading(false); }
     })();
@@ -130,8 +134,9 @@ export function useChatAttachments(
           : [...prev, uploaded]);
       } catch (e: any) {
         if (revision !== generation.current) return;
-        setError(e?.message ?? '알 수 없는 오류');
-        RNAlert.alert('첨부 실패', e?.message ?? '알 수 없는 오류');
+        const message = safeErrorDetail(e?.message ?? String(e));
+        setError(message);
+        RNAlert.alert('첨부 실패', message);
       } finally {
         if (revision === generation.current) setUploading(false);
       }
@@ -140,7 +145,9 @@ export function useChatAttachments(
   );
 
   const pickAttachment = useCallback(() => {
-    if (disabledRef.current) return;
+    if (disabledRef.current || pickerPending.current) return;
+    pickerPending.current = true;
+    const pickerRevision = generation.current;
     ActionSheetIOS.showActionSheetWithOptions(
       {
         options: ['사진/동영상 선택', '파일 선택', '취소'],
@@ -148,12 +155,13 @@ export function useChatAttachments(
         title: '첨부',
       },
       async (idx) => {
-        if (disabledRef.current || (idx !== 0 && idx !== 1)) return;
+        if (pickerRevision !== generation.current) return;
+        if (disabledRef.current || (idx !== 0 && idx !== 1)) { pickerPending.current = false; return; }
         setUploading(true);
         try {
           if (idx === 0) {
             const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (disabledRef.current) return;
+            if (disabledRef.current || pickerRevision !== generation.current) return;
             if (!perm.granted) {
               RNAlert.alert(
                 '권한 필요',
@@ -166,7 +174,7 @@ export function useChatAttachments(
               quality: 0.9,
               shouldDownloadFromNetwork: true,
             });
-            if (disabledRef.current) return;
+            if (disabledRef.current || pickerRevision !== generation.current) return;
             if (res.canceled || res.assets.length === 0) return;
             const a = res.assets[0];
             await uploadAttachment({
@@ -178,7 +186,7 @@ export function useChatAttachments(
             const res = await DocumentPicker.getDocumentAsync({
               copyToCacheDirectory: true,
             });
-            if (disabledRef.current) return;
+            if (disabledRef.current || pickerRevision !== generation.current) return;
             if (res.canceled || res.assets.length === 0) return;
             const a = res.assets[0];
             await uploadAttachment({
@@ -188,9 +196,9 @@ export function useChatAttachments(
             });
           }
         } catch (e: any) {
-          RNAlert.alert('첨부 실패', e?.message ?? '알 수 없는 오류');
+          RNAlert.alert('첨부 실패', safeErrorDetail(e?.message ?? String(e)));
         } finally {
-          setUploading(false);
+          if (pickerRevision === generation.current) { pickerPending.current = false; setUploading(false); }
         }
       },
     );
@@ -202,7 +210,7 @@ export function useChatAttachments(
   }, []);
 
   const clearAttachments = useCallback(() => {
-    generation.current++; setAttachments([]); setUploading(false); setError(null);
+    generation.current++; pickerPending.current = false; setAttachments([]); setUploading(false); setError(null);
   }, []);
   const restoreAttachments = useCallback((restored: ChatAttachment[]) => {
     setAttachments((current) => [...restored, ...current]);

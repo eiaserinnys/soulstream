@@ -1,0 +1,39 @@
+/* Approved dialog-only hierarchy. No main, folder, or board layout rules. */
+[data-slot="dialog-popup"] .v3-form-context { display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--v3-space-2) var(--v3-space-3); padding:var(--v3-space-3) var(--v3-space-4); border-radius:var(--radius-xl); background:var(--control-surface); }
+[data-slot="dialog-popup"] :is(.v3-form-context span,.v3-form-intent,.v3-form-submit-note) { color:var(--v3-text-secondary); font:var(--v3-type-body) var(--v3-font-family); }
+[data-slot="dialog-popup"] .v3-form-context strong { overflow-wrap:anywhere; }
+[data-slot="dialog-popup"] .v3-form-intent { margin:0; }
+[data-slot="dialog-popup"] .v3-form-submit-note { margin:0 auto 0 0; flex:1; align-self:center; }
+[data-slot="dialog-popup"] .v3-form-disclosure { border:1px solid var(--v3-stroke-default); border-radius:var(--radius-xl); overflow:hidden; }
+[data-slot="dialog-popup"] .v3-form-disclosure > summary { cursor:pointer; padding:var(--v3-space-4); display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--v3-space-2) var(--v3-space-3); list-style:none; }
+[data-slot="dialog-popup"] .v3-form-disclosure > summary::-webkit-details-marker { display:none; }
+[data-slot="dialog-popup"] .v3-form-disclosure > summary > strong { flex-shrink:0; }
+[data-slot="dialog-popup"] .v3-form-disclosure > summary > span:nth-child(2) { flex:1; min-width:0; }
+[data-slot="dialog-popup"] .v3-form-disclosure > summary > span:not([aria-hidden]) { font:var(--v3-type-body) var(--v3-font-family); color:var(--v3-text-secondary); overflow-wrap:anywhere; }
+[data-slot="dialog-popup"] .v3-form-disclosure > div { padding:0 var(--v3-space-4) var(--v3-space-4); display:flex; flex-direction:column; gap:var(--v3-space-3); }
+[data-slot="dialog-popup"] .v3-form-disclosure:has([role="alert"]) { border-color:var(--v3-error); }
+[data-slot="dialog-popup"] .v3-succession-context-editor label > strong > small { color:var(--v3-text-secondary); font-weight:400; margin-left:var(--v3-space-2); }
+[data-slot="dialog-popup"] fieldset.v3-succession-context-editor { border:0; margin:0; padding:0; min-width:0; }
+[data-slot="dialog-popup"] .v3-form-selection-required { flex-basis:100%; color:var(--v3-error) !important; }
+[data-slot="dialog-popup"] :is(.v3-succession-footer,.v3-choice-footer) { flex-direction:row; flex-wrap:wrap; }
+@media (max-width:40rem) {
+ [data-slot="dialog-popup"] :is(.v3-succession-footer,.v3-choice-footer) .v3-form-submit-note { flex-basis:100%; }
+ [data-slot="dialog-popup"] .v3-form-disclosure > summary { padding:var(--v3-space-3); }
+ [data-slot="dialog-popup"] .v3-form-disclosure > div { padding:0 var(--v3-space-3) var(--v3-space-3); }
+}
+/* Error text remains readable in both inline notices and dialogs. */
+.v3-error-notice { font:var(--v3-type-body) var(--v3-font-family); }
+.v3-error-notice p { margin:0; }
+.v3-error-notice pre { font-size:var(--font-size-sm); max-height:30dvh; }
+.v3-error-notice summary:focus-visible { outline:none; border-radius:var(--radius-lg); box-shadow:0 0 0 calc(var(--spacing) / 2) var(--ring); }
+[data-slot="dialog-popup"] .v3-form-disclosure > summary > span[aria-hidden="true"] { flex-shrink:0; margin-left:auto; color:var(--v3-text-secondary); }
+
+/* The same context fields also render directly inside the approved dialog editors. */
+[data-slot="dialog-popup"] .v3-project-context-fields { gap:var(--v3-space-3); }
+[data-slot="dialog-popup"] .v3-project-context-fields > label { display:grid; min-width:0; gap:var(--v3-space-2); color:var(--foreground); font:var(--v3-type-body) var(--v3-font-family); }
+[data-slot="dialog-popup"] .v3-project-context-fields > label > small { color:var(--v3-text-secondary); font:inherit; }
+[data-slot="dialog-popup"] .v3-project-context-fields > label > :is(input[type="number"],select) { width:100%; min-width:0; border:1px solid var(--input); border-radius:var(--radius-lg); padding:var(--v3-space-2) var(--v3-space-3); color:var(--foreground); background:var(--control-surface); font:inherit; }
+[data-slot="dialog-popup"] .v3-project-context-fields > label:has(> input[type="checkbox"]) { display:flex; align-items:center; }
+[data-slot="dialog-popup"] .v3-project-context-fields > label > input[type="checkbox"] { min-height:0; accent-color:var(--info); }
+.project-purpose-dialog .v3-project-dialog-form :is(input,textarea):focus-visible,
+[data-slot="dialog-popup"] .v3-project-context-fields :is(input,select):focus-visible { outline:none; border-color:var(--ring); box-shadow:0 0 0 calc(var(--spacing) / 2) var(--ring); }

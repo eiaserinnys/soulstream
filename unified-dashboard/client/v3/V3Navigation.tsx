@@ -330,7 +330,7 @@ export function V3Navigation({
         onClose={() => setProjectDialog(null)}
         onCreateIdentity={onCreateProject}
         onRename={onRenameProject}
-        onSaveContext={(pageId, previous, value) => saveProjectFormContext(api, pageId, previous, value)}
+        onSaveContext={(pageId, previous, value, attempt) => saveProjectFormContext(api, pageId, previous, value, attempt)}
         onSaved={(folder) => {
           if (folder.parentFolderId) setProjectExpanded(folder.parentFolderId, true);
         }}

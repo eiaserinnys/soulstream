@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, useDashboardStore } from "@seosoyoung/soul-ui";
+import { Button, Dialog, DialogFooter, DialogHeader, DialogDescription, DialogPanel, DialogPopup, DialogTitle, useDashboardStore } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import type { FolderMoveTarget } from "./folder-move-targets";
 import { FolderPicker } from "./FolderPicker";
@@ -47,9 +47,10 @@ export function FolderMoveDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) close(); }}>
-      <DialogPopup className="max-w-md">
-        <DialogHeader><DialogTitle>다른 폴더로 이동</DialogTitle></DialogHeader>
+      <DialogPopup className="approved-dialog max-w-md">
+        <DialogHeader><DialogTitle>다른 폴더로 이동</DialogTitle><DialogDescription>이동할 위치를 고른 뒤 확인하세요.</DialogDescription></DialogHeader>
         <DialogPanel>
+          <div className="dialog-selection-context">현재 위치 <strong>{pickerFolders.find(folder => folder.id === currentFolderId)?.name ?? "현재 폴더"}</strong></div>
           <div data-testid="v3-run-move-targets">
             {stars.loading ? <p>폴더를 불러오는 중…</p> : open ? <FolderPicker
               folders={pickerFolders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
@@ -59,6 +60,7 @@ export function FolderMoveDialog({
           {moveError ? <p className="v3-load-error" role="alert">{moveError}</p> : null}
         </DialogPanel>
         <DialogFooter>
+          <p className="dialog-selection-destination">{selectedFolderId ? `${pickerFolders.find(folder => folder.id === selectedFolderId)?.name}으로 이동` : "이동할 폴더를 선택하세요"}</p>
           <Button variant="ghost" disabled={movePending} onClick={close}>취소</Button>
           <Button disabled={movePending || !selectedFolderId || disabledFolderIds.has(selectedFolderId)} onClick={() => { void move(); }}>이동</Button>
         </DialogFooter>
