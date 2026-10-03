@@ -24,8 +24,10 @@ const execution = { registrationId: "registration", executionCommandId: "command
 // Reuses the folder roundtrip SDK/HTTP/PG harness and card-work-start's real schema setup.
 const cases: readonly [string, string, Record<string, unknown>, McpRequestContext?, boolean?][] = [
   ["create success", "create_card", { folder_id: "cards-a", title: "새 카드", request: "원문", queue: true,
-    assignee: { kind: "session", session_id: "header-session" }, node_id: "test-node", model_preset: "sol",
     attachments: [{ nodeId: "node", path: "image.png", name: "이미지", mimeType: "image/png" }] }],
+  ["create duplicate assignee", "create_card", { folder_id: "cards-a", title: "새 카드", request: "원문", queue: true,
+    assignee: { kind: "session", session_id: "header-session" },
+    attachments: [{ nodeId: "node", path: "image.png", name: "이미지", mimeType: "image/png" }] }, context, true],
   ["list all", "list_cards", {}],
   ["list folder", "list_cards", { folder_id: "cards-a" }],
   ["list status", "list_cards", { status: "todo" }],
@@ -89,11 +91,11 @@ describe("card legacy and orchestrator MCP parity", () => {
     // Only the disposable harness's isolated schema is cleared; retain schema and policy.
     await h.sql`TRUNCATE folders,sessions,folder_operations RESTART IDENTITY CASCADE`;
     await h.sql`INSERT INTO folders(id,name) VALUES ('cards-a','A'),('cards-b','B'),('claude','System')`;
-    await h.sql`INSERT INTO sessions(session_id,node_id,status,execution_registration_id,execution_command_id)
-      VALUES ('header-session','test-node','running','registration','command'),('argument-session','test-node','running',NULL,NULL)`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status,execution_registration_id,execution_command_id)
+      VALUES ('header-session','test-node','roselin','sol','running','registration','command'),('argument-session','test-node',NULL,NULL,'running',NULL,NULL)`;
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,assignee_kind,assignee_session_id,status,completed_at)
       VALUES ('card-1','cards-a','a0','기존 카드','원문','session','header-session','todo',NULL),
-      ('card-done','cards-a','a1','완료 카드','완료 원문','session','header-session','done','2026-10-01T00:00:00Z')`;
+      ('card-done','cards-a','a1','완료 카드','완료 원문','session','argument-session','done','2026-10-01T00:00:00Z')`;
     await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id) VALUES('seed-report','card-1','기존 보고','markdown','본문','header-session')`;
     await h.sql`INSERT INTO card_comments(id,card_id,session_id,author_kind,kind,body) VALUES('seed-comment','card-1','header-session','user','spoken','기존 발언')`;
     await h.sql`INSERT INTO card_questions(id,card_id,session_id,text,options) VALUES('seed-question','card-1','header-session','기존 질문',NULL)`;
@@ -123,6 +125,8 @@ describe("card legacy and orchestrator MCP parity", () => {
     expect(old.isError === true).toBe(fails);
     await seed(); const next = await call(false, name, input, requestContext);
     assertParity(name, old, next);
+    if (_label === "create success") expect((await h.sql`SELECT * FROM cards WHERE title='새 카드'`)[0]).toMatchObject({ assignee_kind: "agent", assignee_agent_id: "roselin", node_id: "test-node", model_preset: "sol" });
+    if (_label === "create duplicate assignee") for (const result of [old, next]) expect(JSON.stringify(result)).toContain("card-1");
     if (name === "ask_card_question" && !fails) expect(next.structuredContent).toHaveProperty("guidance", "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
   });
 });
