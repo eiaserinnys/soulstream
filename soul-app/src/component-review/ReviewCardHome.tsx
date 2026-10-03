@@ -7,6 +7,7 @@ import { useCardStore } from '../store/cardStore';
 import { useTokens } from '../theme';
 import { createReviewApi, folders } from './fixtures';
 import { useCardDisplay } from '../hooks/useCardDisplay';
+import { CardHomeScreen } from '../screens/CardHomeScreen';
 
 /** The production workspace and detail with injected public API; never a live transport. */
 export function ReviewCardHome() {
@@ -28,8 +29,10 @@ export function ReviewCardHome() {
     <SettingsSegmentedControl<'global' | 'folder'> id="card-home-scope" value={scope} onChange={setScope}
       options={[{ value: 'global', label: '전체' }, { value: 'folder', label: '폴더' }]} />
     {selected ? <CardDetailContent api={api} cardId={selected} inline onClose={() => setSelected(null)} />
-      : <CardBoardWorkspace key={`${example}:${scope}`} api={api} folderId={folderId}
-        cardDisplay={cardDisplay} onOpen={setSelected} />}
+      : scope === 'global' ? <CardHomeScreen key={example} api={api as any} cardDisplay={cardDisplay}
+        onOpen={setSelected} onSessionCreated={() => {}} />
+        : <CardBoardWorkspace key={`${example}:${scope}`} api={api} folderId={folderId}
+          cardDisplay={cardDisplay} onOpen={setSelected} />}
     <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>공개 fixture · 길게 눌러 이동 / 상태 메뉴</Text>
     {created ? <Text testID="review-card-create-result" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>
       {JSON.stringify(created)}

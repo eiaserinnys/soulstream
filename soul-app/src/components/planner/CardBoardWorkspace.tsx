@@ -23,8 +23,8 @@ export interface CardBoardWorkspaceHandle { openCreate(): void; openExpanded(): 
 
 /** Workspace owns scope and restore snapshots, including across native Modal remounts. */
 export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
-  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean;
-}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false }, ref) {
+  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; bottomInset?: number;
+}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, bottomInset = 0 }, ref) {
   const t = useTokens();
   const phone = useDeviceType() === 'phone';
   const { cards, loading, error, refresh } = useCardList(api, folderId);
@@ -58,7 +58,8 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   useImperativeHandle(ref, () => ({ openCreate: () => setAdding(true),
     openExpanded: () => setExpanded({ ...position.current, lanes: { ...position.current.lanes } }) }), []);
   const completedCount = completed.cards.length;
-  const board = (initialPosition?: BoardPosition, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={phone} completed={completed}
+  const board = (initialPosition?: BoardPosition, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
+    bottomInset={expandedBoard ? 0 : bottomInset}
     includeCompleted={cardDisplay.includeCompleted} initialPosition={initialPosition}
     onPositionChange={expandedBoard ? undefined : (next) => { position.current = next; }}
     onOpen={(id, target) => {
@@ -67,7 +68,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
       if (expandedBoard && !phone && Platform.OS !== 'web' && target !== undefined) nativeDetailFocus.current = target;
       onOpen(id);
     }} />;
-  const heading = <View style={{ paddingHorizontal: phone ? t.cardLayout.padding : 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.sm }}>
+  const heading = (expandedBoard = false) => <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : t.cardLayout.padding, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.sm }}>
     <View style={{ flexGrow: 1 }}><PlannerSectionHeader title={folderId ? '현재 폴더 · 카드' : '전체 · 카드'} /></View>
     <CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted} completedCount={completedCount} onChange={cardDisplay.onChange} />
     <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={() => setAdding(true)}>
@@ -77,8 +78,8 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
       <Ionicons name={expanded ? 'close-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton> : null}
   </View>;
-  return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: phone ? 0 : t.cardLayout.padding, paddingTop: t.uiSpacing.xl, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
-    {externalHeader ? null : heading}
+  return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: 0, paddingTop: t.uiSpacing.xl, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
+    {externalHeader ? null : heading()}
     {error ? <View style={{ gap: t.uiSpacing.sm }}>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.error }}>{error}</Text>
       <GlassButton accessibilityLabel="보드 다시 조회" onPress={refresh}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text></GlassButton>
@@ -92,7 +93,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     }}>
       <GestureHandlerRootView style={{ flex: 1 }}><View testID="card-board-expanded" style={{ flex: 1, position: 'relative', paddingHorizontal: t.cardLayout.padding, paddingTop: t.uiSpacing.xl, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
         <View style={{ flex: 1, gap: t.uiSpacing.md }} pointerEvents={detailVisible ? 'none' : 'auto'} accessibilityElementsHidden={detailVisible} importantForAccessibility={detailVisible ? 'no-hide-descendants' : 'auto'}>
-          {heading}{board(expanded, true)}
+          {heading(true)}{board(expanded, true)}
         </View>
         {loading ? <AutomaticRefreshIndicator testID="card-board-expanded-auto-progress" style={{ top: 0, right: 0 }} /> : null}
         <FolderWorkspaceReadOverlay host="board" />

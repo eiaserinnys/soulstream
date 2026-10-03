@@ -19,7 +19,7 @@ export function postItRotation(id: string) {
   return ((Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 5) - 2) * 0.4;
 }
 
-/** Shared paper presentation. Compact changes paper tracks, never scales text or touch targets. */
+/** Foundation typography; paper and spacing scale together, while touch targets stay native. */
 export function PostItCard({ api, card, variant = 'full', onOpen, onMenu }: {
   api: ApiClient | null; card: CardDto; variant?: PostItVariant; onOpen(target?: number): void; onMenu?(): void;
 }) {

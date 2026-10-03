@@ -18,6 +18,7 @@ import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { SplitPanelSurface } from './SplitPanelSurface';
 import { TabletSafeAreaFrame } from './TabletSafeAreaFrame';
 import { TabletSessionFeedPane } from './TabletSessionFeedPane';
+import { TabletHomeComposerHost } from './TabletHomeComposerHost';
 
 const DRAWER_WIDTH = 280;
 const ANIM_MS = 240;
@@ -96,6 +97,7 @@ export function TwoPaneWithDrawer() {
           </SplitPanelSurface>
         </View>
 
+        <TabletHomeComposerHost />
         {/* 드로어 오버레이 — pointerEvents로 닫힘 상태에선 터치 통과 */}
         <Animated.View
           pointerEvents={drawerOpen ? 'auto' : 'none'}

@@ -11,6 +11,7 @@ import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { SplitPanelSurface } from './SplitPanelSurface';
 import { TabletSafeAreaFrame } from './TabletSafeAreaFrame';
 import { TabletSessionFeedPane } from './TabletSessionFeedPane';
+import { TabletHomeComposerHost } from './TabletHomeComposerHost';
 
 /**
  * 가로 태블릿용 3-pane 레이아웃.
@@ -57,6 +58,7 @@ export function ThreePaneLayout() {
             <TabletSessionFeedPane />
           </SplitPanelSurface>
         </View>
+        <TabletHomeComposerHost />
         <FolderWorkspaceReadOverlay />
       </TabletSafeAreaFrame>
     </SafeAreaView>

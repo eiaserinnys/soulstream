@@ -34,6 +34,11 @@ interface UIState {
   todayDate: string;
   /** 좌측 사이드바에서 선택된 항목 — 중앙 메인 패널의 내용을 결정. */
   activeSection: ActiveSection;
+  /** Nonpersistent middle-pane view choices and floating home composer coverage. */
+  mainPaneViews: Record<string, 'existing' | 'board'>;
+  setMainPaneView: (key: string, view: 'existing' | 'board') => void;
+  floatingComposerBottomInset: number;
+  setFloatingComposerBottomInset: (height: number) => void;
   /** 업무/세션 오버레이의 ChatPane에 표시할 세션. null이면 빈 상태. */
   activeSessionId: string | null;
   /** 업무 오버레이 ChatPane에서 스크롤할 이벤트 anchor. */
@@ -132,6 +137,10 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       todayDate: localDate(),
       activeSection: { kind: 'daily', date: localDate() },
+      mainPaneViews: { global: 'board' },
+      setMainPaneView: (key, view) => set(state => ({ mainPaneViews: { ...state.mainPaneViews, [key]: view } })),
+      floatingComposerBottomInset: 0,
+      setFloatingComposerBottomInset: (floatingComposerBottomInset) => set({ floatingComposerBottomInset }),
       activeSessionId: null,
       focusEventId: null,
       storyOpenRequestId: null,
@@ -291,6 +300,8 @@ subscribeAuthScope(() => {
   useUIStore.setState({
     todayDate,
     activeSection: { kind: 'daily', date: todayDate },
+    mainPaneViews: { global: 'board' },
+    floatingComposerBottomInset: 0,
     activeSessionId: null,
     focusEventId: null,
     selectedFolderPageId: null,

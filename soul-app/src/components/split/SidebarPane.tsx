@@ -67,6 +67,7 @@ export function SidebarPane({
   );
   const folders = useSessionStore((state) => state.catalog.folders);
   const activeSection = useUIStore((state) => state.activeSection);
+  const bottomInset = useUIStore(state => state.floatingComposerBottomInset);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
@@ -160,6 +161,7 @@ export function SidebarPane({
       ) : null}
       <FlatList
         testID="sidebar-main-list"
+        contentContainerStyle={{ paddingBottom: bottomInset }}
         style={styles.list}
         scrollEnabled={!starredDragging && !starred.reordering}
         data={treeRows.length > 0 ? ['project-tree'] : []}

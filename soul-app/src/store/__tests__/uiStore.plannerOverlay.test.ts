@@ -182,3 +182,13 @@ test('iPad 카드는 폴더 패널 자리에 열고 오른쪽 세션과 포커�
   useUIStore.getState().openFolderOverlay('folder-page');
   expect(useUIStore.getState().selectedCardId).toBeNull();
 });
+test('middle-pane choices and composer height are nonpersistent, with global board as default', () => {
+  useUIStore.getState().setMainPaneView('global', 'existing');
+  useUIStore.getState().setMainPaneView('folder-1', 'board');
+  useUIStore.getState().setFloatingComposerBottomInset(112);
+  expect(useUIStore.getState().mainPaneViews).toMatchObject({ global: 'existing', 'folder-1': 'board' });
+  const saved = useUIStore.persist.getOptions().partialize!(useUIStore.getState());
+  expect(saved).not.toHaveProperty('mainPaneViews');
+  expect(saved).not.toHaveProperty('floatingComposerBottomInset');
+  useUIStore.setState({ mainPaneViews: { global: 'board' }, floatingComposerBottomInset: 0 });
+});

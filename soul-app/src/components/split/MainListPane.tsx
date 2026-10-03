@@ -41,13 +41,18 @@ export function MainListPane({
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
   const insets = useSafeAreaInsets();
   const activeSection = useUIStore((state) => state.activeSection);
-  const [views, setViews] = useState<Record<string, 'existing' | 'board'>>({ global: 'board' });
+  const views = useUIStore(state => state.mainPaneViews);
+  const setMainPaneView = useUIStore(state => state.setMainPaneView);
+  const bottomInset = useUIStore(state => state.floatingComposerBottomInset);
   const scope = useAuthScopeGeneration();
   const displayOwner = `${scope}:${activeSection.kind === 'project' ? activeSection.folderId : 'global'}`;
   const viewKey = activeSection.kind === 'project' ? activeSection.folderId : 'global';
   const view = views[viewKey] ?? (viewKey === 'global' ? 'board' : 'existing');
-  const [visited, setVisited] = useState<Record<string, boolean>>({ global: true });
-  const setView = (value: 'existing' | 'board') => { setViews((old) => ({ ...old, [viewKey]: value })); if (value === 'board') setVisited((old) => ({ ...old, [viewKey]: true })); };
+  const [visited, setVisited] = useState<Record<string, boolean>>(() => ({
+    global: true,
+    ...Object.fromEntries(Object.entries(views).filter(([, view]) => view === 'board').map(([key]) => [key, true])),
+  }));
+  const setView = (value: 'existing' | 'board') => { setMainPaneView(viewKey, value); if (value === 'board') setVisited((old) => ({ ...old, [viewKey]: true })); };
   const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const folders = useSessionStore((state) => state.catalog.folders);
@@ -130,7 +135,7 @@ export function MainListPane({
       <View style={styles.body}>
         {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>
           <CardBoardWorkspace ref={boardRef} externalHeader key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
-            cardDisplay={cardDisplay} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
+            cardDisplay={cardDisplay} bottomInset={bottomInset} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
         </View> : null}
         {view === 'existing' && activeSection.kind === 'daily' ? (
           <DailyPlannerScreen

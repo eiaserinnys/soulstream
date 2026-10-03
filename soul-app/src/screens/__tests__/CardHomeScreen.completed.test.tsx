@@ -2,6 +2,7 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('../../api/client', () => ({ createApiClient: () => mockApi }));
+jest.mock('../../components/planner/TodayCardComposer', () => ({ TodayCardComposer: () => require('react').createElement(require('react-native').View, { testID: 'composer-content' }) }));
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
@@ -15,6 +16,19 @@ import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { CompletedCardsToggle } from '../../components/planner/CompletedCardsToggle';
 
 const mockApi = { listCards: jest.fn(), listCompletedCards: jest.fn(), getCard: jest.fn(), setCardStatus: jest.fn() };
+test('home composer floats over the board and measured height reserves lane scroll space only', async () => {
+  mockApi.listCards.mockResolvedValue({ cards: [] });
+  const screen = render(<CardHomeScreen onOpen={() => {}} onSessionCreated={() => {}} />);
+  await waitFor(() => expect(mockApi.listCards).toHaveBeenCalled());
+  const dock = screen.getByTestId('home-session-composer-dock');
+  expect(StyleSheet.flatten(dock.props.style)).toMatchObject({ position: 'absolute', left: 16, right: 16, bottom: 12 });
+  const board = screen.getByTestId('card-board-frame');
+  const style = StyleSheet.flatten(board.props.style);
+  fireEvent(dock, 'layout', { nativeEvent: { layout: { height: 100 } } });
+  expect(screen.getByTestId('card-board-frame')).toBe(board);
+  expect(StyleSheet.flatten(board.props.style)).toEqual(style);
+  expect(StyleSheet.flatten(screen.getByTestId('card-board-scroll-review').props.contentContainerStyle).paddingBottom).toBe(128);
+});
 beforeEach(() => {
   useSettingsStore.setState({ serverUrl: 'https://test.example', cardIncludeCompleted: {} });
   useCardStore.setState({ rows: {}, details: {} });

@@ -25,6 +25,18 @@ import { SessionFeedScreen } from '../SessionFeedScreen';
 import { useNodeConnectivityStore } from '../../store/nodeConnectivityStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useUIStore } from '../../store/uiStore';
+import { StyleSheet } from 'react-native';
+
+test('floating coverage adds to the feed bottom padding and returns to baseline on hide', () => {
+  useUIStore.setState({ floatingComposerBottomInset: 0 });
+  const screen = render(<SessionFeedScreen />);
+  const baseline = StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom;
+  act(() => { useUIStore.getState().setFloatingComposerBottomInset(112); });
+  expect(StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom).toBe(baseline + 112);
+  act(() => { useUIStore.getState().setFloatingComposerBottomInset(0); });
+  expect(StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom).toBe(baseline);
+});
 
 const mockSessionCard = SessionCard as jest.Mock;
 

@@ -16,6 +16,7 @@ import { classifySessionFeed } from '../lib/session-feed-groups';
 import { useSessionStore } from '../store/sessionStore';
 import { useNodeConnectivityStore } from '../store/nodeConnectivityStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useUIStore } from '../store/uiStore';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../theme';
 import { usePlannerContextMenus } from '../hooks/usePlannerContextMenus';
 import { SessionSuccessionHost } from '../components/planner/SessionSuccessionHost';
@@ -43,6 +44,7 @@ export function SessionFeedScreen({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
+  const bottomInset = useUIStore(state => state.floatingComposerBottomInset);
   const feedSessionIds = useSessionStore((state) => state.feedSessionIds);
   const catalogLoadState = useSessionStore((state) => state.catalogLoadState);
   const retryCatalog = useSessionStore((state) => state.retryCatalog);
@@ -148,9 +150,8 @@ export function SessionFeedScreen({
         contentContainerStyle={[
           styles.content,
           topInsetPadding && { paddingTop: insets.top + t.spacing.md },
-          reserveBottomSearchBarSpace && {
-            paddingBottom: insets.bottom + t.hitTarget.min + t.spacing.md,
-          },
+          { paddingBottom: (reserveBottomSearchBarSpace
+            ? insets.bottom + t.hitTarget.min + t.spacing.md : t.spacing.md) + bottomInset },
         ]}
         renderItem={renderItem}
         ListEmptyComponent={renderEmpty}
