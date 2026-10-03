@@ -38,8 +38,7 @@ export async function forwardOrchestratorTool(
   extra?: McpForwardContext,
   signal?: AbortSignal,
 ): Promise<CallToolResult> {
-  if (!runtime.orch) return errorResult(definition.name === "search_sessions"
-    ? "orchestrator proxy is not configured" : "orchestrator is not configured");
+  if (!runtime.orch) return errorResult("orchestrator is not configured");
   const response = await fetchOrchResponse(runtime.orch, "POST", `/api/mcp/host/${definition.name}`, {
     args,
     context: {
@@ -51,9 +50,7 @@ export async function forwardOrchestratorTool(
   }, { timeoutMs: definition.timeoutMs, signal });
   if (response.status !== 200) {
     const detail = await readOrchErrorEnvelope(response);
-    return errorResult(definition.name === "search_sessions"
-      ? `orch GET /cogito/search failed: ${response.status} ${response.statusText} ${detail.message}`
-      : detail.message);
+    return errorResult(detail.message);
   }
   return await response.json() as CallToolResult;
 }

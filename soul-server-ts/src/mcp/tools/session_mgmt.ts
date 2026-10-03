@@ -190,37 +190,3 @@ export function registerSessionMgmtTools(
   registerOrchestratorTools(server, runtime, [sessionTools.set_session_name]);
 
 }
-
-export function registerSessionNameToolsLegacy(server: McpServer, runtime: McpRuntime): void {
-  server.registerTool(
-    "get_session_name",
-    sessionTools.get_session_name.config,
-    async ({ session_id }) => {
-      const session = await runtime.db.getSession(session_id);
-      if (!session) {
-        return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
-      }
-      return jsonResult({
-        session_id,
-        display_name: session.display_name,
-      });
-    },
-  );
-  server.registerTool(
-    "set_session_name",
-    sessionTools.set_session_name.config,
-    async ({ session_id, name }) => {
-      const trimmed = (name ?? "").trim();
-      const displayName = trimmed.length > 0 ? trimmed : null;
-      const session = await runtime.db.getSession(session_id);
-      if (!session) {
-        return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
-      }
-      await runtime.catalogService.renameSession(session_id, displayName);
-      return jsonResult({
-        session_id,
-        display_name: displayName,
-      });
-    },
-  );
-}

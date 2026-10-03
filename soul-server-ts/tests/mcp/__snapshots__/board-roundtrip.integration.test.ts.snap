@@ -1,0 +1,2772 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`folder-board-custom-view MCP roundtrip > creates once for the same custom-view key and emits no duplicate notification > create_custom_view 0 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"boardItemId\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"title\\": \\"Custom view\\",\\n    \\"html\\": \\"<p>새 뷰</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 2,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 2,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"x\\": 0,\\n    \\"y\\": 0,\\n    \\"metadata\\": {\\n      \\"title\\": \\"Custom view\\",\\n      \\"preview\\": \\"새 뷰\\",\\n      \\"revision\\": 1\\n    }\\n  },\\n  \\"eventId\\": 2\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "custom-view-3f43fee516271e695e398f57",
+      "boardItemId": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "title": "Custom view",
+      "html": "<p>새 뷰</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "header-session",
+      "createdEventId": 2,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "header-session",
+      "updatedEventId": 2,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "custom-view-3f43fee516271e695e398f57",
+      "x": 0,
+      "y": 0,
+      "metadata": {
+        "title": "Custom view",
+        "preview": "새 뷰",
+        "revision": 1
+      }
+    },
+    "eventId": 2
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > creates once for the same custom-view key and emits no duplicate notification > create_custom_view 1 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"boardItemId\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"title\\": \\"Custom view\\",\\n    \\"html\\": \\"<p>새 뷰</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 2,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 2,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"x\\": 0,\\n    \\"y\\": 0,\\n    \\"metadata\\": {\\n      \\"title\\": \\"Custom view\\",\\n      \\"preview\\": \\"새 뷰\\",\\n      \\"revision\\": 1\\n    },\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": true\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "custom-view-3f43fee516271e695e398f57",
+      "boardItemId": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "title": "Custom view",
+      "html": "<p>새 뷰</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "header-session",
+      "createdEventId": 2,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "header-session",
+      "updatedEventId": 2,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "custom-view-3f43fee516271e695e398f57",
+      "x": 0,
+      "y": 0,
+      "metadata": {
+        "title": "Custom view",
+        "preview": "새 뷰",
+        "revision": 1
+      },
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "idempotent": true
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves archive folder > delete_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves archive folder > delete_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves archive missing > delete_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves archive missing > delete_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves archive system > delete_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "System folder 'claude' cannot be deleted."
+    }
+  ],
+  "structuredContent": {
+    "error": "System folder 'claude' cannot be deleted."
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves archive system > delete_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves browse archived > browse_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"name\\": \\"A\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"child_folders\\": [\\n    {\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"name\\": \\"하위\\",\\n      \\"sortOrder\\": 0,\\n      \\"settings\\": {},\\n      \\"parentFolderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"sessions\\": [\\n    {\\n      \\"sessionId\\": \\"archived\\",\\n      \\"title\\": \\"보관 세션\\",\\n      \\"displayName\\": \\"보관 세션\\",\\n      \\"status\\": \\"completed\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    },\\n    {\\n      \\"sessionId\\": \\"argument-session\\",\\n      \\"title\\": \\"다른 세션\\",\\n      \\"displayName\\": \\"다른 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    },\\n    {\\n      \\"sessionId\\": \\"generated\\",\\n      \\"title\\": \\"보드 없는 세션\\",\\n      \\"displayName\\": \\"보드 없는 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    },\\n    {\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"title\\": \\"세션\\",\\n      \\"displayName\\": \\"세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 1,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": 1,\\n      \\"lastReadEventId\\": null\\n    },\\n    {\\n      \\"sessionId\\": \\"remote\\",\\n      \\"title\\": \\"원격\\",\\n      \\"displayName\\": \\"원격\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"other-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    }\\n  ],\\n  \\"sessions_page\\": {\\n    \\"cursor\\": 0,\\n    \\"limit\\": 20,\\n    \\"total\\": 5,\\n    \\"nextCursor\\": null\\n  },\\n  \\"board_items\\": [\\n    {\\n      \\"id\\": \\"custom_view:cv-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"custom_view\\",\\n      \\"itemId\\": \\"cv-1\\",\\n      \\"x\\": 0,\\n      \\"y\\": 320,\\n      \\"metadata\\": {\\n        \\"title\\": \\"뷰\\",\\n        \\"preview\\": \\"before\\",\\n        \\"revision\\": 1\\n      },\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"frame:frame-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"frame\\",\\n      \\"itemId\\": \\"frame-1\\",\\n      \\"x\\": 840,\\n      \\"y\\": 160,\\n      \\"metadata\\": {},\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"markdown:doc-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"markdown\\",\\n      \\"itemId\\": \\"doc-1\\",\\n      \\"x\\": 0,\\n      \\"y\\": 0,\\n      \\"metadata\\": {\\n        \\"title\\": \\"문서\\",\\n        \\"preview\\": \\"찾을 본문\\",\\n        \\"version\\": 1\\n      },\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"subfolder:child\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"subfolder\\",\\n      \\"itemId\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"x\\": 840,\\n      \\"y\\": 0,\\n      \\"metadata\\": {},\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"items\\": [\\n    {\\n      \\"type\\": \\"custom_view\\",\\n      \\"board_item_id\\": \\"custom_view:cv-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"cv-1\\",\\n      \\"title\\": \\"뷰\\"\\n    },\\n    {\\n      \\"type\\": \\"frame\\",\\n      \\"board_item_id\\": \\"frame:frame-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"frame-1\\",\\n      \\"title\\": \\"제목 없는 프레임\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:doc-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"doc-1\\",\\n      \\"title\\": \\"문서\\",\\n      \\"preview\\": \\"찾을 본문\\"\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:archived\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"archived\\",\\n      \\"display_name\\": \\"보관 세션\\",\\n      \\"status\\": \\"completed\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 0,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"test-node\\",\\n      \\"last_event_id\\": null,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:argument-session\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"argument-session\\",\\n      \\"display_name\\": \\"다른 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 0,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"test-node\\",\\n      \\"last_event_id\\": null,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:generated\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"generated\\",\\n      \\"display_name\\": \\"보드 없는 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 0,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"test-node\\",\\n      \\"last_event_id\\": null,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:header-session\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"header-session\\",\\n      \\"display_name\\": \\"세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 1,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"test-node\\",\\n      \\"last_event_id\\": 1,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:remote\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"remote\\",\\n      \\"display_name\\": \\"원격\\",\\n      \\"status\\": \\"running\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 0,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"other-node\\",\\n      \\"last_event_id\\": null,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"subfolder\\",\\n      \\"board_item_id\\": \\"subfolder:child\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"title\\": \\"하위\\"\\n    }\\n  ],\\n  \\"items_page\\": {\\n    \\"cursor\\": 0,\\n    \\"limit\\": 20,\\n    \\"total\\": 9,\\n    \\"nextCursor\\": null\\n  },\\n  \\"counts\\": {\\n    \\"childFolders\\": 1,\\n    \\"sessions\\": 5,\\n    \\"boardItems\\": 4,\\n    \\"documents\\": 1,\\n    \\"assets\\": 0\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder_id": "00000000-0000-4000-8000-000000000001",
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "A",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "createdAt": "<time>"
+    },
+    "child_folders": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "name": "하위",
+        "sortOrder": 0,
+        "settings": {},
+        "parentFolderId": "00000000-0000-4000-8000-000000000001",
+        "projectPageId": "00000000-0000-4000-8000-000000000003",
+        "createdAt": "<time>"
+      }
+    ],
+    "sessions": [
+      {
+        "sessionId": "archived",
+        "title": "보관 세션",
+        "displayName": "보관 세션",
+        "status": "completed",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      },
+      {
+        "sessionId": "argument-session",
+        "title": "다른 세션",
+        "displayName": "다른 세션",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      },
+      {
+        "sessionId": "generated",
+        "title": "보드 없는 세션",
+        "displayName": "보드 없는 세션",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      },
+      {
+        "sessionId": "header-session",
+        "title": "세션",
+        "displayName": "세션",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 1,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": 1,
+        "lastReadEventId": null
+      },
+      {
+        "sessionId": "remote",
+        "title": "원격",
+        "displayName": "원격",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "other-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      }
+    ],
+    "sessions_page": {
+      "cursor": 0,
+      "limit": 20,
+      "total": 5,
+      "nextCursor": null
+    },
+    "board_items": [
+      {
+        "id": "custom_view:cv-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "custom_view",
+        "itemId": "cv-1",
+        "x": 0,
+        "y": 320,
+        "metadata": {
+          "title": "뷰",
+          "preview": "before",
+          "revision": 1
+        },
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "frame:frame-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "frame",
+        "itemId": "frame-1",
+        "x": 840,
+        "y": 160,
+        "metadata": {},
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "markdown:doc-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "markdown",
+        "itemId": "doc-1",
+        "x": 0,
+        "y": 0,
+        "metadata": {
+          "title": "문서",
+          "preview": "찾을 본문",
+          "version": 1
+        },
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "subfolder:child",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "subfolder",
+        "itemId": "00000000-0000-4000-8000-000000000003",
+        "x": 840,
+        "y": 0,
+        "metadata": {},
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      }
+    ],
+    "items": [
+      {
+        "type": "custom_view",
+        "board_item_id": "custom_view:cv-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "cv-1",
+        "title": "뷰"
+      },
+      {
+        "type": "frame",
+        "board_item_id": "frame:frame-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "frame-1",
+        "title": "제목 없는 프레임"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:doc-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "doc-1",
+        "title": "문서",
+        "preview": "찾을 본문"
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:archived",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "archived",
+        "display_name": "보관 세션",
+        "status": "completed",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 0,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "test-node",
+        "last_event_id": null,
+        "last_read_event_id": null
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:argument-session",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "argument-session",
+        "display_name": "다른 세션",
+        "status": "running",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 0,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "test-node",
+        "last_event_id": null,
+        "last_read_event_id": null
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:generated",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "generated",
+        "display_name": "보드 없는 세션",
+        "status": "running",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 0,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "test-node",
+        "last_event_id": null,
+        "last_read_event_id": null
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:header-session",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "header-session",
+        "display_name": "세션",
+        "status": "running",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 1,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "test-node",
+        "last_event_id": 1,
+        "last_read_event_id": null
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:remote",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "remote",
+        "display_name": "원격",
+        "status": "running",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 0,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "other-node",
+        "last_event_id": null,
+        "last_read_event_id": null
+      },
+      {
+        "type": "subfolder",
+        "board_item_id": "subfolder:child",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "00000000-0000-4000-8000-000000000003",
+        "title": "하위"
+      }
+    ],
+    "items_page": {
+      "cursor": 0,
+      "limit": 20,
+      "total": 9,
+      "nextCursor": null
+    },
+    "counts": {
+      "childFolders": 1,
+      "sessions": 5,
+      "boardItems": 4,
+      "documents": 1,
+      "assets": 0
+    }
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves browse archived > browse_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves browse cursors > browse_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"name\\": \\"A\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"child_folders\\": [\\n    {\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"name\\": \\"하위\\",\\n      \\"sortOrder\\": 0,\\n      \\"settings\\": {},\\n      \\"parentFolderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"sessions\\": [\\n    {\\n      \\"sessionId\\": \\"argument-session\\",\\n      \\"title\\": \\"다른 세션\\",\\n      \\"displayName\\": \\"다른 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    }\\n  ],\\n  \\"sessions_page\\": {\\n    \\"cursor\\": 1,\\n    \\"limit\\": 1,\\n    \\"total\\": 5,\\n    \\"nextCursor\\": 2\\n  },\\n  \\"board_items\\": [\\n    {\\n      \\"id\\": \\"custom_view:cv-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"custom_view\\",\\n      \\"itemId\\": \\"cv-1\\",\\n      \\"x\\": 0,\\n      \\"y\\": 320,\\n      \\"metadata\\": {\\n        \\"title\\": \\"뷰\\",\\n        \\"preview\\": \\"before\\",\\n        \\"revision\\": 1\\n      },\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"frame:frame-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"frame\\",\\n      \\"itemId\\": \\"frame-1\\",\\n      \\"x\\": 840,\\n      \\"y\\": 160,\\n      \\"metadata\\": {},\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"markdown:doc-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"markdown\\",\\n      \\"itemId\\": \\"doc-1\\",\\n      \\"x\\": 0,\\n      \\"y\\": 0,\\n      \\"metadata\\": {\\n        \\"title\\": \\"문서\\",\\n        \\"preview\\": \\"찾을 본문\\",\\n        \\"version\\": 1\\n      },\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"subfolder:child\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"subfolder\\",\\n      \\"itemId\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"x\\": 840,\\n      \\"y\\": 0,\\n      \\"metadata\\": {},\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"items\\": [\\n    {\\n      \\"type\\": \\"frame\\",\\n      \\"board_item_id\\": \\"frame:frame-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"frame-1\\",\\n      \\"title\\": \\"제목 없는 프레임\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:doc-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"doc-1\\",\\n      \\"title\\": \\"문서\\",\\n      \\"preview\\": \\"찾을 본문\\"\\n    }\\n  ],\\n  \\"items_page\\": {\\n    \\"cursor\\": 1,\\n    \\"limit\\": 2,\\n    \\"total\\": 9,\\n    \\"nextCursor\\": 3\\n  },\\n  \\"counts\\": {\\n    \\"childFolders\\": 1,\\n    \\"sessions\\": 5,\\n    \\"boardItems\\": 4,\\n    \\"documents\\": 1,\\n    \\"assets\\": 0\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder_id": "00000000-0000-4000-8000-000000000001",
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "A",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "createdAt": "<time>"
+    },
+    "child_folders": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "name": "하위",
+        "sortOrder": 0,
+        "settings": {},
+        "parentFolderId": "00000000-0000-4000-8000-000000000001",
+        "projectPageId": "00000000-0000-4000-8000-000000000003",
+        "createdAt": "<time>"
+      }
+    ],
+    "sessions": [
+      {
+        "sessionId": "argument-session",
+        "title": "다른 세션",
+        "displayName": "다른 세션",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      }
+    ],
+    "sessions_page": {
+      "cursor": 1,
+      "limit": 1,
+      "total": 5,
+      "nextCursor": 2
+    },
+    "board_items": [
+      {
+        "id": "custom_view:cv-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "custom_view",
+        "itemId": "cv-1",
+        "x": 0,
+        "y": 320,
+        "metadata": {
+          "title": "뷰",
+          "preview": "before",
+          "revision": 1
+        },
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "frame:frame-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "frame",
+        "itemId": "frame-1",
+        "x": 840,
+        "y": 160,
+        "metadata": {},
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "markdown:doc-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "markdown",
+        "itemId": "doc-1",
+        "x": 0,
+        "y": 0,
+        "metadata": {
+          "title": "문서",
+          "preview": "찾을 본문",
+          "version": 1
+        },
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "subfolder:child",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "subfolder",
+        "itemId": "00000000-0000-4000-8000-000000000003",
+        "x": 840,
+        "y": 0,
+        "metadata": {},
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      }
+    ],
+    "items": [
+      {
+        "type": "frame",
+        "board_item_id": "frame:frame-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "frame-1",
+        "title": "제목 없는 프레임"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:doc-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "doc-1",
+        "title": "문서",
+        "preview": "찾을 본문"
+      }
+    ],
+    "items_page": {
+      "cursor": 1,
+      "limit": 2,
+      "total": 9,
+      "nextCursor": 3
+    },
+    "counts": {
+      "childFolders": 1,
+      "sessions": 5,
+      "boardItems": 4,
+      "documents": 1,
+      "assets": 0
+    }
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves browse cursors > browse_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves browse missing > browse_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves browse missing > browse_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves clear prompt > set_folder_system_prompt 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves clear prompt > set_folder_system_prompt events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves create document automatic position > create_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"document\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"title\\": \\"문서\\",\\n    \\"body\\": \\"\\",\\n    \\"version\\": 1\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"markdown\\",\\n    \\"itemId\\": \\"<random-id>\\",\\n    \\"x\\": 560,\\n    \\"y\\": 160,\\n    \\"metadata\\": {\\n      \\"title\\": \\"문서\\",\\n      \\"preview\\": \\"\\",\\n      \\"version\\": 1\\n    }\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "document": {
+      "id": "<random-id>",
+      "title": "문서",
+      "body": "",
+      "version": 1
+    },
+    "boardItem": {
+      "id": "<random-id>",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "markdown",
+      "itemId": "<random-id>",
+      "x": 560,
+      "y": 160,
+      "metadata": {
+        "title": "문서",
+        "preview": "",
+        "version": 1
+      }
+    }
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves create document automatic position > create_markdown_document events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"<random-board-id>":{"id":"<random-id>","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"markdown","itemId":"<random-id>","x":560,"y":160,"metadata":{"title":"문서","preview":"","version":1}}},"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves create document positioned > create_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"document\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"title\\": \\"문서\\",\\n    \\"body\\": \\"본문\\",\\n    \\"version\\": 1\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"markdown\\",\\n    \\"itemId\\": \\"<random-id>\\",\\n    \\"x\\": 20,\\n    \\"y\\": 40,\\n    \\"metadata\\": {\\n      \\"title\\": \\"문서\\",\\n      \\"preview\\": \\"본문\\",\\n      \\"version\\": 1\\n    }\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "document": {
+      "id": "<random-id>",
+      "title": "문서",
+      "body": "본문",
+      "version": 1
+    },
+    "boardItem": {
+      "id": "<random-id>",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "markdown",
+      "itemId": "<random-id>",
+      "x": 20,
+      "y": 40,
+      "metadata": {
+        "title": "문서",
+        "preview": "본문",
+        "version": 1
+      }
+    }
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves create document positioned > create_markdown_document events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"<random-board-id>":{"id":"<random-id>","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"markdown","itemId":"<random-id>","x":20,"y":40,"metadata":{"title":"문서","preview":"본문","version":1}}},"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves create missing folder > create_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves create missing folder > create_custom_view events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves create view > create_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"boardItemId\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"title\\": \\"Custom view\\",\\n    \\"html\\": \\"<p>새 뷰</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 2,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 2,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"x\\": 0,\\n    \\"y\\": 0,\\n    \\"metadata\\": {\\n      \\"title\\": \\"Custom view\\",\\n      \\"preview\\": \\"새 뷰\\",\\n      \\"revision\\": 1\\n    }\\n  },\\n  \\"eventId\\": 2\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "custom-view-3f43fee516271e695e398f57",
+      "boardItemId": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "title": "Custom view",
+      "html": "<p>새 뷰</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "header-session",
+      "createdEventId": 2,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "header-session",
+      "updatedEventId": 2,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "custom-view-3f43fee516271e695e398f57",
+      "x": 0,
+      "y": 0,
+      "metadata": {
+        "title": "Custom view",
+        "preview": "새 뷰",
+        "revision": 1
+      }
+    },
+    "eventId": 2
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves create view > create_custom_view events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"custom_view:custom-view-3f43fee516271e695e398f57":{"id":"custom_view:custom-view-3f43fee516271e695e398f57","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"custom_view","itemId":"custom-view-3f43fee516271e695e398f57","x":0,"y":0,"metadata":{"title":"Custom view","preview":"새 뷰","revision":1}}},"nodeId":"test-node"},{"type":"custom_view_updated","customViewId":"custom-view-3f43fee516271e695e398f57","boardItemId":"custom_view:custom-view-3f43fee516271e695e398f57","revision":1,"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves delete document > delete_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true,\\n  \\"document_id\\": \\"doc-1\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "document_id": "doc-1"
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves delete document > delete_markdown_document events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"markdown:doc-1":null},"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves delete missing document > delete_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true,\\n  \\"document_id\\": \\"missing\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "document_id": "missing"
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves delete missing document > delete_markdown_document events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves delete orphan document > delete_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "markdown document board item not found: orphan"
+    }
+  ],
+  "structuredContent": {
+    "error": "markdown document board item not found: orphan"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves delete orphan document > delete_markdown_document events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves document empty update > update_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "No fields to update"
+    }
+  ],
+  "structuredContent": {
+    "error": "No fields to update"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves document empty update > update_markdown_document events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves document stale version > update_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "board Yjs host proxy update-markdown-document failed: markdown document version conflict: doc-1 expected version 999, actual version 1"
+    }
+  ],
+  "structuredContent": {
+    "error": "board Yjs host proxy update-markdown-document failed: markdown document version conflict: doc-1 expected version 999, actual version 1"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves document stale version > update_markdown_document events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves enroll generated > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true,\\n  \\"board_item\\": {\\n    \\"id\\": \\"session:generated\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"session\\",\\n    \\"itemId\\": \\"generated\\",\\n    \\"x\\": 0,\\n    \\"y\\": 0,\\n    \\"metadata\\": {},\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"idempotency_key\\": \\"move\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "board_item": {
+      "id": "session:generated",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "session",
+      "itemId": "generated",
+      "x": 0,
+      "y": 0,
+      "metadata": {},
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "idempotency_key": "move"
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves enroll generated > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves explicit trimmed session > create_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"boardItemId\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"title\\": \\"Custom view\\",\\n    \\"html\\": \\"<p>새 뷰</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"argument-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"argument-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"x\\": 0,\\n    \\"y\\": 0,\\n    \\"metadata\\": {\\n      \\"title\\": \\"Custom view\\",\\n      \\"preview\\": \\"새 뷰\\",\\n      \\"revision\\": 1\\n    }\\n  },\\n  \\"eventId\\": 1\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "custom-view-3f43fee516271e695e398f57",
+      "boardItemId": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "title": "Custom view",
+      "html": "<p>새 뷰</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "argument-session",
+      "createdEventId": 1,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "argument-session",
+      "updatedEventId": 1,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "custom-view-3f43fee516271e695e398f57",
+      "x": 0,
+      "y": 0,
+      "metadata": {
+        "title": "Custom view",
+        "preview": "새 뷰",
+        "revision": 1
+      }
+    },
+    "eventId": 1
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves explicit trimmed session > create_custom_view events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"custom_view:custom-view-3f43fee516271e695e398f57":{"id":"custom_view:custom-view-3f43fee516271e695e398f57","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"custom_view","itemId":"custom-view-3f43fee516271e695e398f57","x":0,"y":0,"metadata":{"title":"Custom view","preview":"새 뷰","revision":1}}},"nodeId":"test-node"},{"type":"custom_view_updated","customViewId":"custom-view-3f43fee516271e695e398f57","boardItemId":"custom_view:custom-view-3f43fee516271e695e398f57","revision":1,"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves external read > get_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"cv-1\\",\\n    \\"boardItemId\\": \\"custom_view:cv-1\\",\\n    \\"title\\": \\"뷰\\",\\n    \\"html\\": \\"<p>before</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:cv-1\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"cv-1\\",\\n    \\"x\\": 0,\\n    \\"y\\": 320,\\n    \\"metadata\\": {\\n      \\"title\\": \\"뷰\\",\\n      \\"preview\\": \\"before\\",\\n      \\"revision\\": 1\\n    },\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "cv-1",
+      "boardItemId": "custom_view:cv-1",
+      "title": "뷰",
+      "html": "<p>before</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:cv-1",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "cv-1",
+      "x": 0,
+      "y": 320,
+      "metadata": {
+        "title": "뷰",
+        "preview": "before",
+        "revision": 1
+      },
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves external read > get_custom_view events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves external view mutation > create_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"boardItemId\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"title\\": \\"Custom view\\",\\n    \\"html\\": \\"<p>새 뷰</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"llm\\",\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedActorKind\\": \\"llm\\",\\n    \\"updatedSessionId\\": null,\\n    \\"updatedEventId\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:custom-view-3f43fee516271e695e398f57\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"custom-view-3f43fee516271e695e398f57\\",\\n    \\"x\\": 0,\\n    \\"y\\": 0,\\n    \\"metadata\\": {\\n      \\"title\\": \\"Custom view\\",\\n      \\"preview\\": \\"새 뷰\\",\\n      \\"revision\\": 1\\n    }\\n  },\\n  \\"eventId\\": null\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "custom-view-3f43fee516271e695e398f57",
+      "boardItemId": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "title": "Custom view",
+      "html": "<p>새 뷰</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "llm",
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedActorKind": "llm",
+      "updatedSessionId": null,
+      "updatedEventId": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:custom-view-3f43fee516271e695e398f57",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "custom-view-3f43fee516271e695e398f57",
+      "x": 0,
+      "y": 0,
+      "metadata": {
+        "title": "Custom view",
+        "preview": "새 뷰",
+        "revision": 1
+      }
+    },
+    "eventId": null
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves external view mutation > create_custom_view events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"custom_view:custom-view-3f43fee516271e695e398f57":{"id":"custom_view:custom-view-3f43fee516271e695e398f57","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"custom_view","itemId":"custom-view-3f43fee516271e695e398f57","x":0,"y":0,"metadata":{"title":"Custom view","preview":"새 뷰","revision":1}}},"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves folders > list_folders 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folders\\": [\\n    {\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"name\\": \\"A\\",\\n      \\"sortOrder\\": 0,\\n      \\"settings\\": {},\\n      \\"parentFolderId\\": null,\\n      \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000002\\",\\n      \\"name\\": \\"B\\",\\n      \\"sortOrder\\": 0,\\n      \\"settings\\": {},\\n      \\"parentFolderId\\": null,\\n      \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"claude\\",\\n      \\"name\\": \\"System\\",\\n      \\"sortOrder\\": 0,\\n      \\"settings\\": {},\\n      \\"parentFolderId\\": null,\\n      \\"projectPageId\\": null,\\n      \\"createdAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"name\\": \\"하위\\",\\n      \\"sortOrder\\": 0,\\n      \\"settings\\": {},\\n      \\"parentFolderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folders": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "name": "A",
+        "sortOrder": 0,
+        "settings": {},
+        "parentFolderId": null,
+        "projectPageId": "00000000-0000-4000-8000-000000000001",
+        "createdAt": "<time>"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "name": "B",
+        "sortOrder": 0,
+        "settings": {},
+        "parentFolderId": null,
+        "projectPageId": "00000000-0000-4000-8000-000000000002",
+        "createdAt": "<time>"
+      },
+      {
+        "id": "claude",
+        "name": "System",
+        "sortOrder": 0,
+        "settings": {},
+        "parentFolderId": null,
+        "projectPageId": null,
+        "createdAt": "<time>"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "name": "하위",
+        "sortOrder": 0,
+        "settings": {},
+        "parentFolderId": "00000000-0000-4000-8000-000000000001",
+        "projectPageId": "00000000-0000-4000-8000-000000000003",
+        "createdAt": "<time>"
+      }
+    ]
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves folders > list_folders events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get document > get_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"id\\": \\"doc-1\\",\\n  \\"title\\": \\"문서\\",\\n  \\"body\\": \\"찾을 본문\\",\\n  \\"version\\": 1,\\n  \\"createdAt\\": \\"<time>\\",\\n  \\"updatedAt\\": \\"<time>\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "id": "doc-1",
+    "title": "문서",
+    "body": "찾을 본문",
+    "version": 1,
+    "createdAt": "<time>",
+    "updatedAt": "<time>"
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get document > get_markdown_document events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get document missing > get_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "document not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "document not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get document missing > get_markdown_document events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get missing prompt > get_folder_system_prompt 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get missing prompt > get_folder_system_prompt events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get missing view returns null > get_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "null"
+    }
+  ],
+  "structuredContent": {
+    "result": null
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get missing view returns null > get_custom_view events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get prompt > get_folder_system_prompt 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n  \\"system_prompt\\": null\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder_id": "00000000-0000-4000-8000-000000000001",
+    "system_prompt": null
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get prompt > get_folder_system_prompt events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get view > get_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"cv-1\\",\\n    \\"boardItemId\\": \\"custom_view:cv-1\\",\\n    \\"title\\": \\"뷰\\",\\n    \\"html\\": \\"<p>before</p>\\",\\n    \\"revision\\": 1,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:cv-1\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"cv-1\\",\\n    \\"x\\": 0,\\n    \\"y\\": 320,\\n    \\"metadata\\": {\\n      \\"title\\": \\"뷰\\",\\n      \\"preview\\": \\"before\\",\\n      \\"revision\\": 1\\n    },\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "cv-1",
+      "boardItemId": "custom_view:cv-1",
+      "title": "뷰",
+      "html": "<p>before</p>",
+      "revision": 1,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:cv-1",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "cv-1",
+      "x": 0,
+      "y": 320,
+      "metadata": {
+        "title": "뷰",
+        "preview": "before",
+        "revision": 1
+      },
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    }
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves get view > get_custom_view events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves internal no session > create_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller session id is required for custom view mutation tools. Send x-soulstream-agent-session-id."
+    }
+  ],
+  "structuredContent": {
+    "error": "caller session id is required for custom view mutation tools. Send x-soulstream-agent-session-id."
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves internal no session > create_custom_view events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves list missing folder > list_custom_views 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves list missing folder > list_custom_views events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves list views > list_custom_views 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "[\\n  {\\n    \\"customView\\": {\\n      \\"id\\": \\"cv-1\\",\\n      \\"boardItemId\\": \\"custom_view:cv-1\\",\\n      \\"title\\": \\"뷰\\",\\n      \\"html\\": \\"<p>before</p>\\",\\n      \\"revision\\": 1,\\n      \\"archived\\": false,\\n      \\"createdActorKind\\": \\"agent\\",\\n      \\"createdSessionId\\": \\"header-session\\",\\n      \\"createdEventId\\": 1,\\n      \\"updatedActorKind\\": \\"agent\\",\\n      \\"updatedSessionId\\": \\"header-session\\",\\n      \\"updatedEventId\\": 1,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    \\"boardItem\\": {\\n      \\"id\\": \\"custom_view:cv-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"custom_view\\",\\n      \\"itemId\\": \\"cv-1\\",\\n      \\"x\\": 0,\\n      \\"y\\": 320,\\n      \\"metadata\\": {\\n        \\"title\\": \\"뷰\\",\\n        \\"preview\\": \\"before\\",\\n        \\"revision\\": 1\\n      },\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    }\\n  }\\n]"
+    }
+  ],
+  "structuredContent": {
+    "result": [
+      {
+        "customView": {
+          "id": "cv-1",
+          "boardItemId": "custom_view:cv-1",
+          "title": "뷰",
+          "html": "<p>before</p>",
+          "revision": 1,
+          "archived": false,
+          "createdActorKind": "agent",
+          "createdSessionId": "header-session",
+          "createdEventId": 1,
+          "updatedActorKind": "agent",
+          "updatedSessionId": "header-session",
+          "updatedEventId": 1,
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        },
+        "boardItem": {
+          "id": "custom_view:cv-1",
+          "folderId": "00000000-0000-4000-8000-000000000001",
+          "membershipKind": "primary",
+          "itemType": "custom_view",
+          "itemId": "cv-1",
+          "x": 0,
+          "y": 320,
+          "metadata": {
+            "title": "뷰",
+            "preview": "before",
+            "revision": 1
+          },
+          "createdAt": "<time>",
+          "updatedAt": "<time>"
+        }
+      }
+    ]
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves list views > list_custom_views events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves mixed browse > browse_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"name\\": \\"A\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"child_folders\\": [\\n    {\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"name\\": \\"하위\\",\\n      \\"sortOrder\\": 0,\\n      \\"settings\\": {},\\n      \\"parentFolderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"sessions\\": [\\n    {\\n      \\"sessionId\\": \\"archived\\",\\n      \\"title\\": \\"보관 세션\\",\\n      \\"displayName\\": \\"보관 세션\\",\\n      \\"status\\": \\"completed\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    },\\n    {\\n      \\"sessionId\\": \\"argument-session\\",\\n      \\"title\\": \\"다른 세션\\",\\n      \\"displayName\\": \\"다른 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    },\\n    {\\n      \\"sessionId\\": \\"generated\\",\\n      \\"title\\": \\"보드 없는 세션\\",\\n      \\"displayName\\": \\"보드 없는 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    },\\n    {\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"title\\": \\"세션\\",\\n      \\"displayName\\": \\"세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 1,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"lastEventId\\": 1,\\n      \\"lastReadEventId\\": null\\n    },\\n    {\\n      \\"sessionId\\": \\"remote\\",\\n      \\"title\\": \\"원격\\",\\n      \\"displayName\\": \\"원격\\",\\n      \\"status\\": \\"running\\",\\n      \\"sessionType\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"eventCount\\": 0,\\n      \\"awaySummary\\": null,\\n      \\"callerSessionId\\": null,\\n      \\"predecessorSessionId\\": null,\\n      \\"nodeId\\": \\"other-node\\",\\n      \\"lastEventId\\": null,\\n      \\"lastReadEventId\\": null\\n    }\\n  ],\\n  \\"sessions_page\\": {\\n    \\"cursor\\": 0,\\n    \\"limit\\": 20,\\n    \\"total\\": 5,\\n    \\"nextCursor\\": null\\n  },\\n  \\"board_items\\": [\\n    {\\n      \\"id\\": \\"custom_view:cv-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"custom_view\\",\\n      \\"itemId\\": \\"cv-1\\",\\n      \\"x\\": 0,\\n      \\"y\\": 320,\\n      \\"metadata\\": {\\n        \\"title\\": \\"뷰\\",\\n        \\"preview\\": \\"before\\",\\n        \\"revision\\": 1\\n      },\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"frame:frame-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"frame\\",\\n      \\"itemId\\": \\"frame-1\\",\\n      \\"x\\": 840,\\n      \\"y\\": 160,\\n      \\"metadata\\": {},\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"markdown:doc-1\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"markdown\\",\\n      \\"itemId\\": \\"doc-1\\",\\n      \\"x\\": 0,\\n      \\"y\\": 0,\\n      \\"metadata\\": {\\n        \\"title\\": \\"문서\\",\\n        \\"preview\\": \\"찾을 본문\\",\\n        \\"version\\": 1\\n      },\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    },\\n    {\\n      \\"id\\": \\"subfolder:child\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"membershipKind\\": \\"primary\\",\\n      \\"itemType\\": \\"subfolder\\",\\n      \\"itemId\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"x\\": 840,\\n      \\"y\\": 0,\\n      \\"metadata\\": {},\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"items\\": [\\n    {\\n      \\"type\\": \\"custom_view\\",\\n      \\"board_item_id\\": \\"custom_view:cv-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"cv-1\\",\\n      \\"title\\": \\"뷰\\"\\n    },\\n    {\\n      \\"type\\": \\"frame\\",\\n      \\"board_item_id\\": \\"frame:frame-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"frame-1\\",\\n      \\"title\\": \\"제목 없는 프레임\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:doc-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"doc-1\\",\\n      \\"title\\": \\"문서\\",\\n      \\"preview\\": \\"찾을 본문\\"\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:archived\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"archived\\",\\n      \\"display_name\\": \\"보관 세션\\",\\n      \\"status\\": \\"completed\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 0,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"test-node\\",\\n      \\"last_event_id\\": null,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:argument-session\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"argument-session\\",\\n      \\"display_name\\": \\"다른 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 0,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"test-node\\",\\n      \\"last_event_id\\": null,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:generated\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"generated\\",\\n      \\"display_name\\": \\"보드 없는 세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 0,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"test-node\\",\\n      \\"last_event_id\\": null,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:header-session\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"header-session\\",\\n      \\"display_name\\": \\"세션\\",\\n      \\"status\\": \\"running\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 1,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"test-node\\",\\n      \\"last_event_id\\": 1,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"session\\",\\n      \\"board_item_id\\": \\"session:remote\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"agent_session_id\\": \\"remote\\",\\n      \\"display_name\\": \\"원격\\",\\n      \\"status\\": \\"running\\",\\n      \\"agent\\": {\\n        \\"id\\": \\"roselin\\",\\n        \\"name\\": \\"로젤린\\"\\n      },\\n      \\"session_type\\": null,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"event_count\\": 0,\\n      \\"away_summary\\": null,\\n      \\"caller_session_id\\": null,\\n      \\"predecessor_session_id\\": null,\\n      \\"node_id\\": \\"other-node\\",\\n      \\"last_event_id\\": null,\\n      \\"last_read_event_id\\": null\\n    },\\n    {\\n      \\"type\\": \\"subfolder\\",\\n      \\"board_item_id\\": \\"subfolder:child\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000003\\",\\n      \\"title\\": \\"하위\\"\\n    }\\n  ],\\n  \\"items_page\\": {\\n    \\"cursor\\": 0,\\n    \\"limit\\": 20,\\n    \\"total\\": 9,\\n    \\"nextCursor\\": null\\n  },\\n  \\"counts\\": {\\n    \\"childFolders\\": 1,\\n    \\"sessions\\": 5,\\n    \\"boardItems\\": 4,\\n    \\"documents\\": 1,\\n    \\"assets\\": 0\\n  }\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder_id": "00000000-0000-4000-8000-000000000001",
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "A",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "createdAt": "<time>"
+    },
+    "child_folders": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "name": "하위",
+        "sortOrder": 0,
+        "settings": {},
+        "parentFolderId": "00000000-0000-4000-8000-000000000001",
+        "projectPageId": "00000000-0000-4000-8000-000000000003",
+        "createdAt": "<time>"
+      }
+    ],
+    "sessions": [
+      {
+        "sessionId": "archived",
+        "title": "보관 세션",
+        "displayName": "보관 세션",
+        "status": "completed",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      },
+      {
+        "sessionId": "argument-session",
+        "title": "다른 세션",
+        "displayName": "다른 세션",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      },
+      {
+        "sessionId": "generated",
+        "title": "보드 없는 세션",
+        "displayName": "보드 없는 세션",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      },
+      {
+        "sessionId": "header-session",
+        "title": "세션",
+        "displayName": "세션",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 1,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "test-node",
+        "lastEventId": 1,
+        "lastReadEventId": null
+      },
+      {
+        "sessionId": "remote",
+        "title": "원격",
+        "displayName": "원격",
+        "status": "running",
+        "sessionType": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "eventCount": 0,
+        "awaySummary": null,
+        "callerSessionId": null,
+        "predecessorSessionId": null,
+        "nodeId": "other-node",
+        "lastEventId": null,
+        "lastReadEventId": null
+      }
+    ],
+    "sessions_page": {
+      "cursor": 0,
+      "limit": 20,
+      "total": 5,
+      "nextCursor": null
+    },
+    "board_items": [
+      {
+        "id": "custom_view:cv-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "custom_view",
+        "itemId": "cv-1",
+        "x": 0,
+        "y": 320,
+        "metadata": {
+          "title": "뷰",
+          "preview": "before",
+          "revision": 1
+        },
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "frame:frame-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "frame",
+        "itemId": "frame-1",
+        "x": 840,
+        "y": 160,
+        "metadata": {},
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "markdown:doc-1",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "markdown",
+        "itemId": "doc-1",
+        "x": 0,
+        "y": 0,
+        "metadata": {
+          "title": "문서",
+          "preview": "찾을 본문",
+          "version": 1
+        },
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      },
+      {
+        "id": "subfolder:child",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "membershipKind": "primary",
+        "itemType": "subfolder",
+        "itemId": "00000000-0000-4000-8000-000000000003",
+        "x": 840,
+        "y": 0,
+        "metadata": {},
+        "createdAt": "<time>",
+        "updatedAt": "<time>"
+      }
+    ],
+    "items": [
+      {
+        "type": "custom_view",
+        "board_item_id": "custom_view:cv-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "cv-1",
+        "title": "뷰"
+      },
+      {
+        "type": "frame",
+        "board_item_id": "frame:frame-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "frame-1",
+        "title": "제목 없는 프레임"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:doc-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "doc-1",
+        "title": "문서",
+        "preview": "찾을 본문"
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:archived",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "archived",
+        "display_name": "보관 세션",
+        "status": "completed",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 0,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "test-node",
+        "last_event_id": null,
+        "last_read_event_id": null
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:argument-session",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "argument-session",
+        "display_name": "다른 세션",
+        "status": "running",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 0,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "test-node",
+        "last_event_id": null,
+        "last_read_event_id": null
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:generated",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "generated",
+        "display_name": "보드 없는 세션",
+        "status": "running",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 0,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "test-node",
+        "last_event_id": null,
+        "last_read_event_id": null
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:header-session",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "header-session",
+        "display_name": "세션",
+        "status": "running",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 1,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "test-node",
+        "last_event_id": 1,
+        "last_read_event_id": null
+      },
+      {
+        "type": "session",
+        "board_item_id": "session:remote",
+        "archived": false,
+        "updated_at": "<time>",
+        "agent_session_id": "remote",
+        "display_name": "원격",
+        "status": "running",
+        "agent": {
+          "id": "roselin",
+          "name": "로젤린"
+        },
+        "session_type": null,
+        "created_at": "<time>",
+        "event_count": 0,
+        "away_summary": null,
+        "caller_session_id": null,
+        "predecessor_session_id": null,
+        "node_id": "other-node",
+        "last_event_id": null,
+        "last_read_event_id": null
+      },
+      {
+        "type": "subfolder",
+        "board_item_id": "subfolder:child",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "00000000-0000-4000-8000-000000000003",
+        "title": "하위"
+      }
+    ],
+    "items_page": {
+      "cursor": 0,
+      "limit": 20,
+      "total": 9,
+      "nextCursor": null
+    },
+    "counts": {
+      "childFolders": 1,
+      "sessions": 5,
+      "boardItems": 4,
+      "documents": 1,
+      "assets": 0
+    }
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves mixed browse > browse_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move folder > move_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move folder > move_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move frame > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "board item type is not movable: frame"
+    }
+  ],
+  "structuredContent": {
+    "error": "board item type is not movable: frame"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move frame > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move missing > move_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move missing > move_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move missing folder > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move missing folder > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move missing item > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "board item not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "board item not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move missing item > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move missing session > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "board item not found: session:missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "board item not found: session:missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move missing session > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move reference > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "board item not found: ref:doc-1"
+    }
+  ],
+  "structuredContent": {
+    "error": "board item not found: ref:doc-1"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move reference > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move root > move_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move root > move_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move sessions > move_sessions_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true,\\n  \\"moved\\": 1\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "moved": 1
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move sessions > move_sessions_to_folder events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{"header-session":{"folderId":"00000000-0000-4000-8000-000000000002","displayName":"세션"}},"board_items_delta":{"session:header-session":{"id":"session:header-session","folderId":"00000000-0000-4000-8000-000000000002","membershipKind":"primary","itemType":"session","itemId":"header-session","x":280,"y":0,"metadata":{},"createdAt":"<time>","updatedAt":"<time>"}},"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move system > move_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "System folder 'claude' cannot be moved."
+    }
+  ],
+  "structuredContent": {
+    "error": "System folder 'claude' cannot be moved."
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves move system > move_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves partial x > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "x and y must be supplied together"
+    }
+  ],
+  "structuredContent": {
+    "error": "x and y must be supplied together"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves partial x > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves partial y > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "x and y must be supplied together"
+    }
+  ],
+  "structuredContent": {
+    "error": "x and y must be supplied together"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves partial y > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves patch missing > patch_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "custom view not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "custom view not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves patch missing > patch_custom_view events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves patch null title > patch_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"cv-1\\",\\n    \\"boardItemId\\": \\"custom_view:cv-1\\",\\n    \\"title\\": null,\\n    \\"html\\": \\"<p>after</p>\\",\\n    \\"revision\\": 2,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 2,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:cv-1\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"cv-1\\",\\n    \\"x\\": 0,\\n    \\"y\\": 320,\\n    \\"metadata\\": {\\n      \\"title\\": \\"Custom view\\",\\n      \\"preview\\": \\"after\\",\\n      \\"revision\\": 2\\n    }\\n  },\\n  \\"eventId\\": 2\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "cv-1",
+      "boardItemId": "custom_view:cv-1",
+      "title": null,
+      "html": "<p>after</p>",
+      "revision": 2,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "header-session",
+      "updatedEventId": 2,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:cv-1",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "cv-1",
+      "x": 0,
+      "y": 320,
+      "metadata": {
+        "title": "Custom view",
+        "preview": "after",
+        "revision": 2
+      }
+    },
+    "eventId": 2
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves patch null title > patch_custom_view events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"custom_view:cv-1":{"id":"custom_view:cv-1","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"custom_view","itemId":"cv-1","x":0,"y":320,"metadata":{"title":"Custom view","preview":"after","revision":2}}},"nodeId":"test-node"},{"type":"custom_view_updated","customViewId":"cv-1","boardItemId":"custom_view:cv-1","revision":2,"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves patch view > patch_custom_view 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"customView\\": {\\n    \\"id\\": \\"cv-1\\",\\n    \\"boardItemId\\": \\"custom_view:cv-1\\",\\n    \\"title\\": \\"뷰\\",\\n    \\"html\\": \\"<p>after</p>\\",\\n    \\"revision\\": 2,\\n    \\"archived\\": false,\\n    \\"createdActorKind\\": \\"agent\\",\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"updatedActorKind\\": \\"agent\\",\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 2,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"boardItem\\": {\\n    \\"id\\": \\"custom_view:cv-1\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"custom_view\\",\\n    \\"itemId\\": \\"cv-1\\",\\n    \\"x\\": 0,\\n    \\"y\\": 320,\\n    \\"metadata\\": {\\n      \\"title\\": \\"뷰\\",\\n      \\"preview\\": \\"after\\",\\n      \\"revision\\": 2\\n    }\\n  },\\n  \\"eventId\\": 2\\n}"
+    }
+  ],
+  "structuredContent": {
+    "customView": {
+      "id": "cv-1",
+      "boardItemId": "custom_view:cv-1",
+      "title": "뷰",
+      "html": "<p>after</p>",
+      "revision": 2,
+      "archived": false,
+      "createdActorKind": "agent",
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "updatedActorKind": "agent",
+      "updatedSessionId": "header-session",
+      "updatedEventId": 2,
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "boardItem": {
+      "id": "custom_view:cv-1",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "custom_view",
+      "itemId": "cv-1",
+      "x": 0,
+      "y": 320,
+      "metadata": {
+        "title": "뷰",
+        "preview": "after",
+        "revision": 2
+      }
+    },
+    "eventId": 2
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves patch view > patch_custom_view events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"custom_view:cv-1":{"id":"custom_view:cv-1","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"custom_view","itemId":"cv-1","x":0,"y":320,"metadata":{"title":"뷰","preview":"after","revision":2}}},"nodeId":"test-node"},{"type":"custom_view_updated","customViewId":"cv-1","boardItemId":"custom_view:cv-1","revision":2,"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves position missing > update_board_item_position 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "board item not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "board item not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves position missing > update_board_item_position events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves remove sessions > move_sessions_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true,\\n  \\"moved\\": 1\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "moved": 1
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves remove sessions > move_sessions_to_folder events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{"header-session":{"folderId":null,"displayName":"세션"}},"board_items_delta":{},"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves same folder position > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true,\\n  \\"board_item\\": {\\n    \\"id\\": \\"markdown:doc-1\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"markdown\\",\\n    \\"itemId\\": \\"doc-1\\",\\n    \\"x\\": 20,\\n    \\"y\\": 40,\\n    \\"metadata\\": {\\n      \\"title\\": \\"문서\\",\\n      \\"preview\\": \\"찾을 본문\\",\\n      \\"version\\": 1\\n    },\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"idempotency_key\\": \\"move\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "board_item": {
+      "id": "markdown:doc-1",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "markdown",
+      "itemId": "doc-1",
+      "x": 20,
+      "y": 40,
+      "metadata": {
+        "title": "문서",
+        "preview": "찾을 본문",
+        "version": 1
+      },
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "idempotency_key": "move"
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves same folder position > move_board_item_to_folder events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"markdown:doc-1":{"id":"markdown:doc-1","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"markdown","itemId":"doc-1","x":20,"y":40,"metadata":{"title":"문서","preview":"찾을 본문","version":1},"createdAt":"<time>","updatedAt":"<time>"}},"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves same folder unchanged > move_board_item_to_folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true,\\n  \\"board_item\\": {\\n    \\"id\\": \\"markdown:doc-1\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"membershipKind\\": \\"primary\\",\\n    \\"itemType\\": \\"markdown\\",\\n    \\"itemId\\": \\"doc-1\\",\\n    \\"x\\": 0,\\n    \\"y\\": 0,\\n    \\"metadata\\": {\\n      \\"title\\": \\"문서\\",\\n      \\"preview\\": \\"찾을 본문\\",\\n      \\"version\\": 1\\n    },\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\"\\n  },\\n  \\"idempotency_key\\": \\"move\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "board_item": {
+      "id": "markdown:doc-1",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "membershipKind": "primary",
+      "itemType": "markdown",
+      "itemId": "doc-1",
+      "x": 0,
+      "y": 0,
+      "metadata": {
+        "title": "문서",
+        "preview": "찾을 본문",
+        "version": 1
+      },
+      "createdAt": "<time>",
+      "updatedAt": "<time>"
+    },
+    "idempotency_key": "move"
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves same folder unchanged > move_board_item_to_folder events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves search blank > search_folder_items 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "query must not be empty"
+    }
+  ],
+  "structuredContent": {
+    "error": "query must not be empty"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves search blank > search_folder_items events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves search matches > search_folder_items 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n  \\"items\\": [\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:doc-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"doc-1\\",\\n      \\"title\\": \\"문서\\",\\n      \\"preview\\": \\"찾을 본문\\"\\n    }\\n  ],\\n  \\"page\\": {\\n    \\"cursor\\": 0,\\n    \\"limit\\": 20,\\n    \\"total\\": 1,\\n    \\"next_cursor\\": null\\n  },\\n  \\"counts\\": {\\n    \\"session\\": 0,\\n    \\"markdown\\": 1,\\n    \\"subfolder\\": 0,\\n    \\"asset\\": 0,\\n    \\"frame\\": 0,\\n    \\"custom_view\\": 0\\n  },\\n  \\"truncated\\": false,\\n  \\"scanned_items\\": 6,\\n  \\"scan_limit\\": 2000\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder_id": "00000000-0000-4000-8000-000000000001",
+    "items": [
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:doc-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "doc-1",
+        "title": "문서",
+        "preview": "찾을 본문"
+      }
+    ],
+    "page": {
+      "cursor": 0,
+      "limit": 20,
+      "total": 1,
+      "next_cursor": null
+    },
+    "counts": {
+      "session": 0,
+      "markdown": 1,
+      "subfolder": 0,
+      "asset": 0,
+      "frame": 0,
+      "custom_view": 0
+    },
+    "truncated": false,
+    "scanned_items": 6,
+    "scan_limit": 2000
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves search matches > search_folder_items events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves search missing folder > search_folder_items 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves search missing folder > search_folder_items events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves search none > search_folder_items 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n  \\"items\\": [],\\n  \\"page\\": {\\n    \\"cursor\\": 0,\\n    \\"limit\\": 20,\\n    \\"total\\": 0,\\n    \\"next_cursor\\": null\\n  },\\n  \\"counts\\": {\\n    \\"session\\": 0,\\n    \\"markdown\\": 0,\\n    \\"subfolder\\": 0,\\n    \\"asset\\": 0,\\n    \\"frame\\": 0,\\n    \\"custom_view\\": 0\\n  },\\n  \\"truncated\\": false,\\n  \\"scanned_items\\": 6,\\n  \\"scan_limit\\": 2000\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder_id": "00000000-0000-4000-8000-000000000001",
+    "items": [],
+    "page": {
+      "cursor": 0,
+      "limit": 20,
+      "total": 0,
+      "next_cursor": null
+    },
+    "counts": {
+      "session": 0,
+      "markdown": 0,
+      "subfolder": 0,
+      "asset": 0,
+      "frame": 0,
+      "custom_view": 0
+    },
+    "truncated": false,
+    "scanned_items": 6,
+    "scan_limit": 2000
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves search none > search_folder_items events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves set missing prompt > set_folder_system_prompt 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder not found: missing"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder not found: missing"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves set missing prompt > set_folder_system_prompt events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves set prompt > set_folder_system_prompt 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves set prompt > set_folder_system_prompt events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves the 2000-item search scan boundary > search_folder_items 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n  \\"items\\": [\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-10\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-10\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-100\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-100\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1000\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1000\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1001\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1001\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1002\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1002\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1003\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1003\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1004\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1004\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1005\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1005\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1006\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1006\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1007\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1007\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1008\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1008\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1009\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1009\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-101\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-101\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1010\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1010\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1011\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1011\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1012\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1012\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1013\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1013\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1014\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1014\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1015\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1015\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1016\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1016\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1017\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1017\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1018\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1018\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1019\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1019\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-102\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-102\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1020\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1020\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1021\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1021\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1022\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1022\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1023\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1023\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1024\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1024\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1025\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1025\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1026\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1026\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1027\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1027\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1028\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1028\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1029\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1029\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-103\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-103\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1030\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1030\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1031\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1031\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1032\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1032\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1033\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1033\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1034\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1034\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1035\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1035\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1036\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1036\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1037\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1037\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1038\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1038\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1039\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1039\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-104\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-104\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1040\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1040\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1041\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1041\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    },\\n    {\\n      \\"type\\": \\"markdown\\",\\n      \\"board_item_id\\": \\"markdown:bulk-1042\\",\\n      \\"archived\\": false,\\n      \\"updated_at\\": \\"<time>\\",\\n      \\"id\\": \\"bulk-1042\\",\\n      \\"title\\": \\"bulk\\",\\n      \\"preview\\": \\"검색\\"\\n    }\\n  ],\\n  \\"page\\": {\\n    \\"cursor\\": 0,\\n    \\"limit\\": 50,\\n    \\"total\\": 2000,\\n    \\"next_cursor\\": 50\\n  },\\n  \\"counts\\": {\\n    \\"session\\": 0,\\n    \\"markdown\\": 2000,\\n    \\"subfolder\\": 0,\\n    \\"asset\\": 0,\\n    \\"frame\\": 0,\\n    \\"custom_view\\": 0\\n  },\\n  \\"truncated\\": true,\\n  \\"scanned_items\\": 2000,\\n  \\"scan_limit\\": 2000\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder_id": "00000000-0000-4000-8000-000000000001",
+    "items": [
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-10",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-10",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-100",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-100",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1000",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1000",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1001",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1001",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1002",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1002",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1003",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1003",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1004",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1004",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1005",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1005",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1006",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1006",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1007",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1007",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1008",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1008",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1009",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1009",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-101",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-101",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1010",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1010",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1011",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1011",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1012",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1012",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1013",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1013",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1014",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1014",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1015",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1015",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1016",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1016",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1017",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1017",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1018",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1018",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1019",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1019",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-102",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-102",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1020",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1020",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1021",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1021",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1022",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1022",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1023",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1023",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1024",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1024",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1025",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1025",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1026",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1026",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1027",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1027",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1028",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1028",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1029",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1029",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-103",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-103",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1030",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1030",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1031",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1031",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1032",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1032",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1033",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1033",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1034",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1034",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1035",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1035",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1036",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1036",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1037",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1037",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1038",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1038",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1039",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1039",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-104",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-104",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1040",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1040",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1041",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1041",
+        "title": "bulk",
+        "preview": "검색"
+      },
+      {
+        "type": "markdown",
+        "board_item_id": "markdown:bulk-1042",
+        "archived": false,
+        "updated_at": "<time>",
+        "id": "bulk-1042",
+        "title": "bulk",
+        "preview": "검색"
+      }
+    ],
+    "page": {
+      "cursor": 0,
+      "limit": 50,
+      "total": 2000,
+      "next_cursor": 50
+    },
+    "counts": {
+      "session": 0,
+      "markdown": 2000,
+      "subfolder": 0,
+      "asset": 0,
+      "frame": 0,
+      "custom_view": 0
+    },
+    "truncated": true,
+    "scanned_items": 2000,
+    "scan_limit": 2000
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves update document > update_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"id\\": \\"doc-1\\",\\n  \\"title\\": \\"수정\\",\\n  \\"body\\": \\"새 본문\\",\\n  \\"version\\": 2\\n}"
+    }
+  ],
+  "structuredContent": {
+    "id": "doc-1",
+    "title": "수정",
+    "body": "새 본문",
+    "version": 2
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves update document > update_markdown_document events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"markdown:doc-1":{"id":"markdown:doc-1","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"markdown","itemId":"doc-1","x":0,"y":0,"metadata":{"title":"수정","preview":"새 본문","version":2},"createdAt":"<time>","updatedAt":"<time>"}},"nodeId":"test-node"}]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves update document missing > update_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "document not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "document not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves update document missing > update_markdown_document events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves update orphan document > update_markdown_document 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "markdown document board item not found: orphan"
+    }
+  ],
+  "structuredContent": {
+    "error": "markdown document board item not found: orphan"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves update orphan document > update_markdown_document events 1`] = `"[]"`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves update snapped position > update_board_item_position 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"ok\\": true,\\n  \\"board_item_id\\": \\"markdown:doc-1\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "board_item_id": "markdown:doc-1"
+  }
+}"
+`;
+
+exports[`folder-board-custom-view MCP roundtrip > preserves update snapped position > update_board_item_position events 1`] = `"[{"type":"catalog_updated","folders":[{"id":"00000000-0000-4000-8000-000000000001","name":"A","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000001","createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000002","name":"B","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":"00000000-0000-4000-8000-000000000002","createdAt":"<time>"},{"id":"claude","name":"System","sortOrder":0,"settings":{},"parentFolderId":null,"projectPageId":null,"createdAt":"<time>"},{"id":"00000000-0000-4000-8000-000000000003","name":"하위","sortOrder":0,"settings":{},"parentFolderId":"00000000-0000-4000-8000-000000000001","projectPageId":"00000000-0000-4000-8000-000000000003","createdAt":"<time>"}],"sessions_delta":{},"board_items_delta":{"markdown:doc-1":{"id":"markdown:doc-1","folderId":"00000000-0000-4000-8000-000000000001","membershipKind":"primary","itemType":"markdown","itemId":"doc-1","x":20,"y":-40,"metadata":{"title":"문서","preview":"찾을 본문","version":1},"createdAt":"<time>","updatedAt":"<time>"}},"nodeId":"test-node"}]"`;

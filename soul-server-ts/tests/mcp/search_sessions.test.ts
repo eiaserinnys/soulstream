@@ -202,8 +202,14 @@ describe("search_sessions", () => {
     const result = await call({ query: "retry" });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent?.error).toContain("503");
-    expect(result.structuredContent?.error).toContain("orch unavailable");
+    expect(result.structuredContent).toEqual({ error: "orch unavailable" });
+  });
+
+  it("uses the shared missing-orchestrator error", async () => {
+    const { call, runtime } = register(true);
+    runtime.orch = undefined;
+    const result = await call({ query: "retry" });
+    expect(result.structuredContent).toEqual({ error: "orchestrator is not configured" });
   });
 
   it("returns network failures through errorResult", async () => {
@@ -243,7 +249,7 @@ function register(transportOnly = false) {
   registerSessionQueryTools(server, runtime);
 
   return {
-    registered,
+    registered, runtime,
     async call(input: Record<string, unknown>) {
       if (!transportOnly && !host) {
         host = await startSessionTestHost(runtime, { search: async params => ({ results: [], navigation_results: [], ...await provider(params) }) });
