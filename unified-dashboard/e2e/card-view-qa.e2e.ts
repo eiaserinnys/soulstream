@@ -9,6 +9,86 @@ const phase = process.env.WEB_CARD_QA_PHASE ?? "after";
 const preset = { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex", available: true,
   reason: "quota_exhausted", reason_label: "7일 사용량 제한", resets_at: null, usage_warning: false };
 mkdirSync(output, { recursive: true });
+for (const width of [1440, 390]) test(`card opens its assignee conversation ${width}`, async ({ page }) => {
+  await page.setViewportSize({width,height:1000});
+  await page.emulateMedia({reducedMotion:"reduce",colorScheme:"dark"});
+  await page.addInitScript(()=>{localStorage.setItem("ls.webglGlass","0");localStorage.setItem("soul-dashboard-theme","dark");});
+  const cards=[
+    {...reviewCard,id:"assignee-a",folderId:"folder-amber",title:"담당 있는 카드 A",assigneeSessionId:"run-alpha-1"},
+    {...reviewCard,id:"assignee-b",folderId:"folder-amber",title:"담당 있는 카드 B",assigneeSessionId:"run-beta-1"},
+    {...reviewCard,id:"assignee-none",folderId:"folder-amber",title:"담당 없는 카드",assigneeKind:null,assigneeSessionId:null},
+  ];
+  await installV3VisualQaRoutes(page,{unifiedFolderView:true,postitCards:cards,excludeSessionIdsFromInitialStream:["run-alpha-1"],
+    timelineEventCount:2,liveEventText:"담당 세션의 대화 본문입니다."});
+  await page.route("**/api/cards/*",route=>{
+    const id=new URL(route.request().url()).pathname.split("/").at(-1);
+    const card=cards.find(item=>item.id===id);
+    return card ? route.fulfill({json:{card,reports:[],questions:[],comments:[],sessions:[{
+      sessionId:"run-alpha-child",cardId:card.id,displayName:"대비 확인",nodeId:"eiaserinnys",agentId:"roselin_codex",
+      status:"completed",createdAt:"2026-07-14",updatedAt:"2026-07-14",callerSessionId:null,
+    }]}}) : route.fallback();
+  });
+  await page.goto("/");
+  const home=page.getByTestId("card-home"), workspace=page.getByTestId("v3-card-workspace");
+  const chat=workspace.getByTestId("v3-card-session-chat"), detail=workspace.getByTestId("card-detail");
+  const open=async(id:string)=>home.locator(`[data-card-id="${id}"]`).getByRole("button",{name:/카드 .* 열기/}).click();
+  const close=async()=>{
+    if(width<760)await page.keyboard.press("Escape");
+    else await detail.getByRole("button",{name:"카드 닫기",exact:true}).click();
+    await expect(workspace).toHaveCount(0);
+  };
+  await open("assignee-a");
+  await expect(chat.locator(".v3-chat-session-title")).toHaveText("밀도 기준 정리");await expect(chat).toBeVisible();
+  await expect(chat.getByText("담당 세션의 대화 본문입니다. run-alpha-1",{exact:true})).toBeVisible();
+  if(width<760)await expect(workspace).toHaveAttribute("data-mobile-view","chat");
+  await page.screenshot({path:path.join(output,`after-assignee-a-${width}.png`),animations:"disabled"});
+  if(width>=760){
+    await detail.locator('[data-session-id="run-alpha-child"] button').click();
+    await expect(chat.locator(".v3-chat-session-title")).toHaveText("대비 확인");
+    // The existing status menu refreshes card detail; it must not reset manual selection.
+    await detail.getByRole("button",{name:"카드 상태 변경",exact:true}).click();
+    await expect(page.locator("[data-card-status-picker]")).toBeVisible();await page.keyboard.press("Escape");
+    await expect(chat.locator(".v3-chat-session-title")).toHaveText("대비 확인");
+    await expect(chat.getByText("담당 세션의 대화 본문입니다. run-alpha-child",{exact:true})).toBeVisible();
+    await page.screenshot({path:path.join(output,`after-assignee-manual-${width}.png`),animations:"disabled"});
+  }
+  await close();await open("assignee-a");
+  await expect(chat.locator(".v3-chat-session-title")).toHaveText("밀도 기준 정리");
+  await close();await open("assignee-b");
+  await expect(chat.locator(".v3-chat-session-title")).toHaveText("모바일 탭 구현");
+  await expect(chat.getByText("담당 세션의 대화 본문입니다. run-beta-1",{exact:true})).toBeVisible();
+  await page.screenshot({path:path.join(output,`after-assignee-b-${width}.png`),animations:"disabled"});
+  await close();await open("assignee-none");
+  await expect(chat.locator(".v3-chat-session-title")).toHaveText("선택된 세션 없음");
+  await page.screenshot({path:path.join(output,`after-assignee-none-${width}.png`),animations:"disabled"});
+  writeFileSync(path.join(output,`after-assignee-${width}.json`),JSON.stringify({width,
+    initial:"run-alpha-1",manualAfterRefresh:width>=760?"run-alpha-child":"verified by desktop and unit tests; existing narrow tabs close the card",sameCardReopened:"run-alpha-1",
+    nextCard:"run-beta-1",unassigned:"선택된 세션 없음",mobileEntry:width<760?"existing chat tab":"existing right column"},null,2));
+});
+test("card assignee review sample selects the same right conversation",async({page})=>{
+  await page.setViewportSize({width:1440,height:1000});
+  await page.emulateMedia({reducedMotion:"reduce"});
+  await page.addInitScript(()=>localStorage.setItem("ls.webglGlass","0"));
+  await installV3VisualQaRoutes(page,{unifiedFolderView:true});
+  await page.goto("/components");
+  await page.getByTestId("card-board-sample").locator(".v3-postit-card").first().getByRole("button",{name:/카드 .* 열기/}).click();
+  const workspace=page.getByTestId("v3-card-workspace");
+  await expect(workspace.getByTestId("v3-card-session-chat").locator(".v3-chat-session-title")).toHaveText("세션 행 기본");
+  await expect(workspace.getByTestId("card-detail")).toBeVisible();
+  await workspace.screenshot({path:path.join(output,"after-assignee-review.png"),animations:"disabled"});
+});
+test("dialogue card detail stays open after automatic assignee selection",async({page})=>{
+  await page.setViewportSize({width:1440,height:1000});
+  await page.emulateMedia({reducedMotion:"reduce"});
+  await page.addInitScript(()=>localStorage.setItem("ls.webglGlass","0"));
+  await installV3VisualQaRoutes(page,{unifiedFolderView:true});
+  await page.goto("/dialogues?sample=card-detail");
+  const workspace=page.getByTestId("v3-card-workspace");
+  await expect(workspace.getByTestId("v3-card-session-chat").locator(".v3-chat-session-title")).toHaveText("세션 행 기본");
+  await expect(workspace.getByTestId("card-detail")).toBeVisible();
+  await expect(page.getByRole("button",{name:"다시 열기",exact:true})).toHaveCount(0);
+  await workspace.screenshot({path:path.join(output,"after-assignee-dialogue-review.png"),animations:"disabled"});
+});
 for (const width of [1440, 390, 320]) test(`handoff chips stay on one line ${width}`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
