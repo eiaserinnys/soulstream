@@ -1,0 +1,103 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`card orchestrator MCP roundtrip > preserves external query 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"todo\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": null,\\n    \\"updatedEventId\\": null,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"reports\\": [\\n    {\\n      \\"id\\": \\"seed-report\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"title\\": \\"기존 보고\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"본문\\",\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"questions\\": [\\n    {\\n      \\"id\\": \\"seed-question\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"text\\": \\"기존 질문\\",\\n      \\"options\\": null,\\n      \\"answer\\": null,\\n      \\"askedAt\\": \\"<time>\\",\\n      \\"answeredAt\\": null,\\n      \\"answeredBy\\": null\\n    }\\n  ],\\n  \\"comments\\": [\\n    {\\n      \\"id\\": \\"seed-comment\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"authorKind\\": \\"user\\",\\n      \\"authorId\\": null,\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"kind\\": \\"spoken\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"deliveredAt\\": null,\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"sessions\\": [\\n    {\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"displayName\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"agentId\\": \\"roselin\\",\\n      \\"status\\": \\"running\\",\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"callerSessionId\\": null,\\n      \\"updatedAt\\": \\"<time>\\"\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "todo",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 1,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": null,
+      "updatedEventId": null,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "reports": [
+      {
+        "id": "seed-report",
+        "cardId": "card-1",
+        "title": "기존 보고",
+        "format": "markdown",
+        "body": "본문",
+        "sessionId": "header-session",
+        "createdAt": "<time>"
+      }
+    ],
+    "questions": [
+      {
+        "id": "seed-question",
+        "cardId": "card-1",
+        "sessionId": "header-session",
+        "text": "기존 질문",
+        "options": null,
+        "answer": null,
+        "askedAt": "<time>",
+        "answeredAt": null,
+        "answeredBy": null
+      }
+    ],
+    "comments": [
+      {
+        "id": "seed-comment",
+        "cardId": "card-1",
+        "authorKind": "user",
+        "authorId": null,
+        "sessionId": "header-session",
+        "kind": "spoken",
+        "body": "기존 발언",
+        "deliveredAt": null,
+        "createdAt": "<time>"
+      }
+    ],
+    "sessions": [
+      {
+        "sessionId": "header-session",
+        "cardId": "card-1",
+        "displayName": null,
+        "nodeId": "test-node",
+        "agentId": "roselin",
+        "status": "running",
+        "createdAt": "<time>",
+        "callerSessionId": null,
+        "updatedAt": "<time>"
+      }
+    ]
+  }
+}"
+`;

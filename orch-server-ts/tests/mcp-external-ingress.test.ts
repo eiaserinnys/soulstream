@@ -8,7 +8,7 @@ import { Client as ModernClient, StreamableHTTPClientTransport as ModernTranspor
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { mcpToolDefinitions, LIVE_CARD_RESOURCE } from "@soulstream/mcp-contract";
-import inventory from "../../soul-server-ts/tests/mcp/fixtures/tool_inventory.external.json" with { type: "json" };
+import inventory from "./fixtures/mcp_external_tool_inventory.json" with { type: "json" };
 import { widgetHtml } from "../../plugins/chatgpt-card-renderer/src/widget-html.js";
 import { registerExternalEventsRoutes } from "../src/mcp/external_events_transport.js";
 import * as executor from "../src/mcp/tool_executor.js";
@@ -45,6 +45,8 @@ function assertInventory(tools: { name: string }[], era: "modern" | "legacy" = "
   const definitions = mcpToolDefinitions.filter(d => d.audience === "all");
   expect(tools).toHaveLength(63);
   expect(tools.map(t => t.name)).toEqual(definitions.map(d => d.name));
+  expect(tools.map(t => t.name).sort()).toEqual(inventory.map(t => t.name));
+  expect(inventory).toHaveLength(63);
   for (const tool of tools) {
     const expected = inventory.find(t => t.name === tool.name)!;
     // SDK2 modern list projection omits SDK1 execution.taskSupport. Compare every
