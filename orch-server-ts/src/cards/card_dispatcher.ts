@@ -1,6 +1,7 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { buildCardChangeNotification, type CardChangeDelivery } from "./card_change_notification.js";
+import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
 import { randomUUID } from "node:crypto";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import { isTerminalSessionStatus } from "../session/session_status.js";
@@ -43,6 +44,7 @@ export type CardDispatcherOptions = {
     resolveTarget: (card: CardRow, modelPreset?: string | null) => CardTarget;
     launch: (input: CardLaunch) => Promise<unknown>;
     sendMessage: (sessionId: string, text: string, admission?:{runId:string;executionToken:string;cardId:string}, changeDelivery?:CardChangeDelivery, attachments?:readonly CardAttachment[]) => Promise<void>;
+    deliveryExists: (deliveryId: string) => Promise<boolean>;
     notify: (input: CardNotification) => Promise<unknown>;
     warn: (message: string) => void;
     now?: () => number;
@@ -73,6 +75,7 @@ export class CardDispatcher {
             return;
         this.lastLimitCheck = now;
         await this.checkLimits();
+        await this.enqueue(() => this.checkReminders());
     }
     accept(events: readonly NodeRegistryEvent[]): void {
         for (const event of events) {
@@ -87,6 +90,7 @@ export class CardDispatcher {
     }
     sessionEnded(sessionId: string): Promise<void> {
         return this.enqueue(async () => {
+            await this.checkReminders(sessionId);
             if (await this.options.orchestration?.ownsSession(sessionId)) { await this.options.orchestration?.decisionEnded?.(sessionId); return; }
             for (const work of await this.options.repository.endedWork(sessionId)) {
               const limited=isUsageLimitTermination(work.terminal_session);
@@ -103,6 +107,19 @@ export class CardDispatcher {
         if (change.result.idempotent)
             return;
         void this.enqueue(() => this.handleMutation(change));
+    }
+    private async checkReminders(endedRootId?: string): Promise<void> {
+        let sent = 0;
+        for (const facts of await this.options.repository.reminderFacts(this.options.now?.() ?? Date.now(), endedRootId)) {
+            if (!endedRootId && sent >= MAX_REMINDERS_PER_TICK) break;
+            const reminder = buildCardStatusReminder(facts, endedRootId !== undefined);
+            if (!reminder) continue;
+            try {
+                if (await this.options.deliveryExists(reminder.deliveryId)) continue;
+                sent++;
+                await this.options.sendMessage(reminder.sessionId, reminder.text, undefined, reminder);
+            } catch (error) { this.options.warn(`card ${facts.cardId} reminder delivery failed: ${String(error)}`); }
+        }
     }
     private async handleMutation(change: CardMutationChange): Promise<void> {
         const {result,previousStatus}=change;
