@@ -19,4 +19,3 @@ export function serialize(tool: string, result: unknown) {
     return { ...item, text: JSON.stringify(maskCluster(tool, parsed), null, 2) };
   }), ...(value.structuredContent === undefined ? {} : { structuredContent: maskCluster(tool, value.structuredContent) }) }, null, 2);
 }
-export function assertClusterParity(tool: string, old: unknown, next: unknown) { expect(serialize(tool, next)).toBe(serialize(tool, old)); }
