@@ -1,0 +1,158 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`운영 출력 버튼으로 원본 모달을 열고 닫으며 표면 렌더를 보존한다 1`] = `
+<View
+  style={
+    [
+      [
+        {
+          "overflow": "hidden",
+        },
+        {},
+        {
+          "flex": 1,
+        },
+        {
+          "borderBottomLeftRadius": 0,
+          "borderBottomRightRadius": 0,
+          "borderRadius": 0,
+          "borderTopLeftRadius": 0,
+          "borderTopRightRadius": 0,
+        },
+      ],
+      {
+        "backgroundColor": "#f2f2f7",
+      },
+    ]
+  }
+  testID="runtime-output-modal"
+>
+  <RNCSafeAreaView
+    edges={
+      {
+        "bottom": "additive",
+        "left": "additive",
+        "right": "additive",
+        "top": "additive",
+      }
+    }
+    style={
+      {
+        "flex": 1,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "minHeight": 60,
+          "paddingHorizontal": 16,
+        }
+      }
+    >
+      <Text
+        numberOfLines={1}
+        style={
+          {
+            "color": "#000000",
+            "flex": 1,
+            "fontSize": 24,
+            "fontWeight": "600",
+          }
+        }
+      >
+        public-task
+      </Text>
+      <View
+        accessibilityLabel="닫기"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "justifyContent": "center",
+            "minHeight": 48,
+            "minWidth": 48,
+            "opacity": 1,
+          }
+        }
+        testID="runtime-output-close-touch"
+      >
+        <View
+          style={
+            [
+              {
+                "alignItems": "center",
+                "justifyContent": "center",
+              },
+              {
+                "alignItems": "center",
+                "borderRadius": 16,
+                "height": 28,
+                "justifyContent": "center",
+                "width": 28,
+              },
+            ]
+          }
+        >
+          <Ionicons
+            color="#2f3137"
+            name="close-outline"
+            size={20}
+          />
+        </View>
+      </View>
+    </View>
+    <RCTScrollView
+      style={
+        {
+          "flex": 1,
+          "padding": 16,
+        }
+      }
+    >
+      <View>
+        <Text
+          style={
+            {
+              "color": "#000000",
+              "fontFamily": "Menlo",
+              "fontSize": 16,
+              "lineHeight": 20.8,
+            }
+          }
+        >
+          공개 예시 작업 결과입니다. 운영 작업은 실행하지 않습니다.
+        </Text>
+      </View>
+    </RCTScrollView>
+  </RNCSafeAreaView>
+</View>
+`;

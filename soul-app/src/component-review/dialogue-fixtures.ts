@@ -1,6 +1,6 @@
 import type { ApiClient } from '../api/client';
 import type { PlannerFolder, PlannerSessionSummary } from '../api/plannerTypes';
-import type { Session } from '../api/types';
+import type { Session, ClaudeRuntimeTaskOutputResponse } from '../api/types';
 import type { CardDto } from '../api/cardTypes';
 import { Asset } from 'expo-asset';
 import { createPlannerMutationPort } from '../api/plannerMutationPort';
@@ -14,6 +14,10 @@ export const dialogueFolder: PlannerFolder = {
   sessions: dialogueSessions, sessionIds: dialogueSessions.map(session => session.agentSessionId),
 };
 export const reviewTask = { taskId: 'public-task', status: 'completed' as const, updatedAt: 1, description: '공개 예시 작업 출력', summary: '메모리 예시 결과' };
+export const reviewTaskOutput: ClaudeRuntimeTaskOutputResponse = {
+  sessionId: 'public-idle', taskId: 'public-task', task: reviewTask,
+  output: '공개 예시 작업 결과입니다. 운영 작업은 실행하지 않습니다.', outputAvailable: true, truncated: false,
+};
 export function dialogueImageUrl(): string | null {
   return typeof window !== 'undefined' && window.location?.origin
     ? new URL(Asset.fromModule(require('../../assets/icon.png')).uri, window.location.origin).href : null;
@@ -91,7 +95,7 @@ export function createDialogueApi(): ApiClient {
     getProviderUsage: async () => ({ generatedAt: new Date().toISOString(), providers: Object.fromEntries(['claude', 'codex', 'gemini'].map(provider => [provider, { status: 'not_configured', source: 'public-fixture', planType: null, quotas: [] }])) }),
     listRecurringJobs: async () => ({ jobs: [] }),
     listClaudeBackgroundTasks: async (sessionId: string) => ({ sessionId, sessionState: 'idle', runtimeSessionId: null, updatedAt: 1, tasks: [reviewTask] }),
-    getClaudeBackgroundTaskOutput: async (sessionId: string, taskId: string) => ({ sessionId, taskId, task: reviewTask, output: '공개 예시 작업 결과입니다. 운영 작업은 실행하지 않습니다.', outputAvailable: true, truncated: false }),
+    getClaudeBackgroundTaskOutput: async (sessionId: string, taskId: string) => ({ ...reviewTaskOutput, sessionId, taskId }),
     stopClaudeBackgroundTask: async (sessionId: string, taskId: string) => ({ sessionId, taskId, task: reviewTask, supported: true, stopped: true, alreadyTerminal: true }),
     listAtomRootNodes: async () => ({ nodes: [] }),
     listAtomNodeChildren: async () => ({ children: [] }),

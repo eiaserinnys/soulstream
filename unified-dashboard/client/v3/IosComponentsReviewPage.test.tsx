@@ -13,6 +13,13 @@ vi.mock("@seosoyoung/soul-ui", () => ({
     <button aria-label={label} onClick={onClick}>{children}</button>,
 }));
 
+vi.mock("./DialogueGallery", () => ({
+  DialogueGallery: ({ platform, groups, description }: { platform: string; groups: {id: string; items: {id: string; title: string; src?: string; description?: string}[]}[]; description: string }) =>
+    <main data-platform={platform}><p>{description}</p>{groups.map(group => <section key={group.id} data-group={group.id}>
+      {group.items.map(item => item.src ? <iframe key={item.id} title={item.title} src={item.src} /> : <details key={item.id}><summary>기기 전용 안내</summary>{item.description}</details>)}
+    </section>)}</main>,
+}));
+
 let container: HTMLDivElement;
 let root: Root;
 const fetchMock = vi.fn();
@@ -58,12 +65,18 @@ it("checks the same-origin index once before displaying the named iframe", async
   }));
 });
 
-it("opens the dialogues section in the same bundle and keeps the host frame", async () => {
+it("opens all 17 originals in grouped single-sample frames without the legacy host", async () => {
   fetchMock.mockResolvedValue({ ok: true });
   await act(async () => root.render(<IosComponentsReviewPage section="dialogues" />));
-  expect(container.querySelector("iframe")?.getAttribute("src")).toBe("/assets/ios-components/index.html?section=dialogues");
-  expect(container.textContent).toContain("iOS 앱 컴포넌트의 웹 미리보기");
-  expect(container.querySelector("button")?.getAttribute("aria-label")).toBe("웹 다이얼로그로 돌아가기");
-  expect(container.querySelector(".v3-ios-components-review")).not.toBeNull();
-  expect(container.querySelector("main")?.dataset.syncPreferences).toBe("false");
+  const frames = [...container.querySelectorAll('iframe')];
+  expect(frames).toHaveLength(17);
+  expect([...container.querySelectorAll('[data-group]')].slice(0, 6).map(group => group.querySelectorAll('iframe').length)).toEqual([3, 4, 3, 2, 2, 3]);
+  expect(frames.every(frame => frame.getAttribute('src')?.startsWith('/assets/ios-components/index.html?section=dialogues&sample='))).toBe(true);
+  expect(new Set(frames.map(frame => frame.getAttribute('src'))).size).toBe(17);
+  expect(container.textContent).toContain('phone');
+  expect(container.querySelector('.v3-ios-components-review')).toBeNull();
+  expect(container.querySelector('main')?.dataset.platform).toBe('ios');
+  expect(container.querySelector('details')?.open).toBe(false);
+  expect(container.querySelector('details')?.textContent).toContain('폴더 보관');
+  expect(container.querySelector('details')?.textContent).toContain('세션 이름 변경');
 });
