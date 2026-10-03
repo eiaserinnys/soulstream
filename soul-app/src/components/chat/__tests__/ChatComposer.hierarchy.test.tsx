@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { render } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 let mockDimensions = { width: 390, height: 844, scale: 3, fontScale: 1 };
@@ -11,10 +11,10 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 
 import { ChatComposer } from '../ChatComposer';
 
-function composer() {
-  return render(
+function composer(input = '메시지') {
+  return (
     <ChatComposer
-      input="메시지"
+      input={input}
       onChangeInput={jest.fn()}
       onPickAttachment={jest.fn()}
       onSend={jest.fn()}
@@ -22,7 +22,7 @@ function composer() {
       sending={false}
       interruptControls={<View testID="interrupt-control"><Text>stop</Text></View>}
       voiceControls={<View testID="voice-control"><Text>mic</Text></View>}
-    />,
+    />
   );
 }
 
@@ -37,7 +37,7 @@ test.each([
   hitTarget,
 ) => {
   mockDimensions = dimensions;
-  const screen = composer();
+  const screen = render(composer());
   const box = screen.getByTestId('chat-composer-box');
   const boxStyle = StyleSheet.flatten(box.props.style);
   expect(boxStyle).toMatchObject({ minHeight: 56 });
@@ -45,7 +45,7 @@ test.each([
   expect(StyleSheet.flatten(contentRow.props.style)).toMatchObject({
     minHeight: 48,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
   });
   expect(boxStyle.height).toBeUndefined();
   expect(screen.queryByTestId('chat-composer-toolbar')).toBeNull();
@@ -55,19 +55,16 @@ test.each([
     flex: 1,
     minHeight: 48,
     maxHeight: 128,
-    paddingVertical: 10,
   });
   expect(input.props.textAlignVertical).toBe('center');
   const deviceLineHeight = (dimensions.width >= 768 ? 18 : 17) * 1.3;
   const measuredLineHeight = deviceLineHeight * dimensions.fontScale;
-  fireEvent(input, 'contentSizeChange', {
-    nativeEvent: { contentSize: { width: 200, height: measuredLineHeight } },
-  });
-  expect(screen.getByTestId('chat-composer-text-input').props.textAlignVertical).toBe('center');
-  fireEvent(input, 'contentSizeChange', {
-    nativeEvent: { contentSize: { width: 200, height: measuredLineHeight * 2 } },
-  });
+  expect(StyleSheet.flatten(input.props.style).height).toBe(Math.max(48, measuredLineHeight + 20));
+  const initialHeight = StyleSheet.flatten(input.props.style).height!;
+  screen.rerender(composer('메시지\n둘째 줄'));
   expect(screen.getByTestId('chat-composer-text-input').props.textAlignVertical).toBe('top');
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-text-input').props.style).height)
+    .toBeGreaterThan(initialHeight);
 
   for (const name of ['attach', 'send']) {
     expect(StyleSheet.flatten(screen.getByTestId(`chat-composer-${name}-button`).props.style))
@@ -88,4 +85,16 @@ test.each([
     'chat-composer-voice-slot',
     'chat-composer-send-button',
   ]);
+});
+
+test('embedded delegates only outer padding; regular minimumBottomPadding and inner controls stay unchanged', () => {
+  const props = { input: '본문', onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null, minimumBottomPadding: 32 };
+  const screen = render(<ChatComposer {...props} />);
+  const inner = StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style);
+  const send = StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style);
+  expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style).paddingBottom).toBe(32);
+  screen.rerender(<ChatComposer {...props} embedded />);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-row').props.style)).toMatchObject({ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 });
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style)).toEqual(inner);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(send);
 });

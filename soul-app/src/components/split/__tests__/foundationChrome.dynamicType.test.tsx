@@ -52,13 +52,14 @@ beforeEach(() => {
 test.each([1, 2])('iPad fontScale %s custom headers keep one-line tail, semantic baseline, action and inset', (fontScale) => {
   mockDimensions = { ...mockDimensions, fontScale };
   const main = render(<MainListPane onMenuPress={jest.fn()} />);
-  fireEvent.press(main.getByLabelText('데일리 기록'));
   const mainHeader = StyleSheet.flatten(main.getByTestId('tablet-main-header').props.style);
   const mainTitle = main.getByTestId('root-header-title-DailyTab');
   const mainIcon = main.getByTestId('root-header-icon-DailyTab');
   const menu = main.getByLabelText('메뉴');
-  const review = main.getByLabelText('오늘 작업 검토');
-  const create = main.getByLabelText('새 작업');
+  const hideCompleted = main.getByLabelText('완료 숨김');
+  const expand = main.getByLabelText('보드 확대');
+  expect(main.queryByLabelText('데일리 기록')).toBeNull();
+  expect(mainTitle.props.children).toBe('카드');
 
   expect(mainHeader.height).toBeUndefined();
   expect(mainHeader.minHeight).toBe(60);
@@ -79,7 +80,7 @@ test.each([1, 2])('iPad fontScale %s custom headers keep one-line tail, semantic
   const menuStyle = StyleSheet.flatten(menu.props.style);
   expect(menuStyle.minWidth).toBeGreaterThanOrEqual(48);
   expect(menuStyle.minHeight).toBeGreaterThanOrEqual(48);
-  for (const action of [review, create]) {
+  for (const action of [hideCompleted, expand]) {
     const actionStyle = StyleSheet.flatten(action.props.style);
     expect(actionStyle.minWidth).toBeGreaterThanOrEqual(48);
     expect(actionStyle.minHeight).toBeGreaterThanOrEqual(48);

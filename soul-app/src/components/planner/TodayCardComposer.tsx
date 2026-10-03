@@ -79,21 +79,18 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
   </CompactTouchTarget>;
   return <>
     <PlannerForegroundCard testID="card-composer" style={styles.frame} cornerRadius={t.radius.lg}>
-      <View>
-        <ChatComposer input={text} onChangeInput={setText} placeholder="무엇을 시작할까요" inputAccessibilityLabel="세션 첫 메시지"
+      <View testID="card-composer-layout" style={styles.composerLayout}>
+        <View testID="card-composer-chips" style={styles.chips}>
+          {chip('폴더 선택', `📁 ${folders.find((folder) => folder.id === value.folderId)?.name ?? '폴더 선택'}`, 'folder')}
+          {chip('실행 대상 선택', <>{value.agentId ? labels.selectedAgentName : '에이전트'} · {labels.selectedNodeName || value.nodeId || settings.nodeId} · <SelectedModelPresetName selection={labels} /></>, 'execution')}
+        </View>
+        <ChatComposer embedded input={text} onChangeInput={setText} placeholder="무엇을 시작할까요" inputAccessibilityLabel="세션 첫 메시지"
           sendAccessibilityLabel="세션 시작" onPickAttachment={attachments.pickAttachment} onSend={() => { void submit(); }}
           uploading={attachments.uploading} sending={pending} disabled={pending || !api} sendDisabled={!canSend} voiceControls={null} />
         <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={disabled}
           styles={{ ...chat, attachmentRow: { ...chat.attachmentRow, paddingHorizontal: 0, paddingTop: 0 },
             attachmentName: { ...chat.attachmentName, ...t.foundation.typography.meta } }}
           textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
-        <View testID="card-composer-footer" style={[styles.footer, { paddingHorizontal: chat.inputRow.paddingHorizontal, paddingBottom: t.spacing.sm }]}>
-          <View testID="card-composer-chips" style={styles.chips}>
-            {chip('폴더 선택', `📁 ${folders.find((folder) => folder.id === value.folderId)?.name ?? '폴더 선택'}`, 'folder')}
-            {chip('실행 대상 선택', <>{value.agentId ? labels.selectedAgentName : '에이전트'} · {labels.selectedNodeName || value.nodeId || settings.nodeId} · <SelectedModelPresetName selection={labels} /></>, 'execution')}
-          </View>
-
-        </View>
       </View>
     </PlannerForegroundCard>
     {selecting === 'folder' ? <FolderSelectionSheet api={api} onClose={() => setSelecting(null)} onSelect={(folderId) => {

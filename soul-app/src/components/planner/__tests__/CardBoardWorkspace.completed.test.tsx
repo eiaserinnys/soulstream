@@ -20,12 +20,12 @@ beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; });
 test('tablet panel uses phone lanes and inset, while expanded board keeps wide geometry and resets inset', () => {
   const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
   const screen = render(<CardBoardWorkspace ref={ref} api={null} bottomInset={120} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
-  expect(screen.getByTestId('card-board-stages')).toBeTruthy();
+  expect(screen.queryByTestId('card-board-stages')).toBeNull();
   expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingHorizontal).toBe(0);
   const scroll = screen.getByTestId('card-board-scroll-review');
   expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(136);
   expect(StyleSheet.flatten(screen.getByTestId('card-board-scroll-done').props.contentContainerStyle).paddingBottom).toBe(136);
-  fireEvent.press(screen.getByLabelText('실행 중 레인 보기'));
+  fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: 140, y: 0 } } });
   act(() => ref.current!.openExpanded());
   const expanded = within(screen.getByTestId('card-board-expanded'));
   expect(expanded.queryByTestId('card-board-stages')).toBeNull();
@@ -146,4 +146,13 @@ test.each(['phone', 'tablet'])('확대 닫힘 %s은 선택적 콜백을 한 번 
   if (device === 'tablet') fireEvent.press(within(screen.getByTestId('card-board-expanded')).getByLabelText('보드 확대 닫기'));
   else fireEvent.press(within(screen.getByTestId('card-board-expanded')).getByLabelText('카드 제목 카드 상세'));
   expect(closed).toHaveBeenCalledTimes(2);
+});
+
+test.each([undefined, 'folder-1'])('empty draft creation retains scope %s in the existing sheet', folderId => {
+  mockCards = [];
+  const screen = render(<CardBoardWorkspace api={null} folderId={folderId} externalHeader cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={jest.fn()} />);
+  expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingTop).toBe(8);
+  expect(screen.getAllByLabelText('드래프트 카드 추가')).toHaveLength(1);
+  fireEvent.press(screen.getByLabelText('드래프트 카드 추가'));
+  expect(screen.UNSAFE_getByType(require('../CardCreateSheet').CardCreateSheet).props.folderId).toBe(folderId);
 });

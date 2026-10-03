@@ -3,6 +3,10 @@ import { StyleSheet, Text } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
+}));
 
 import { ChatComposer } from '../ChatComposer';
 
@@ -32,15 +36,15 @@ function renderComposer(
 }
 
 describe('ChatComposer', () => {
-  test('기존 채팅 입력 렌더 snapshot은 불변이다', () => {
+  test('공통 한 줄 시작과 입력 표면 계약을 snapshot으로 기록한다', () => {
     expect(renderComposer('hello').toJSON()).toMatchSnapshot();
   });
-  test('single frameless rounded composer keeps one-row control order', () => {
+  test('rounded input surface keeps one-row control order', () => {
     const { getByTestId } = renderComposer();
 
     const boxStyle = StyleSheet.flatten(getByTestId('chat-composer-box').props.style);
-    expect(boxStyle.borderWidth).toBeUndefined();
-    expect(boxStyle.borderColor).toBeUndefined();
+    expect(boxStyle.borderWidth).toBe(StyleSheet.hairlineWidth);
+    expect(boxStyle.borderColor).toBeTruthy();
     expect(boxStyle.borderRadius).toBeGreaterThan(12);
 
     const input = getByTestId('chat-composer-text-input');
@@ -58,6 +62,28 @@ describe('ChatComposer', () => {
       'chat-composer-voice-slot',
       'chat-composer-send-button',
     ]);
+  });
+
+  test('빈 입력·긴 비개행은 한 줄이고 Enter 후 본문만 자라며 삭제하면 복귀한다', () => {
+    const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
+    const screen = render(<ChatComposer {...props} input="" />);
+    const inputStyle = () => StyleSheet.flatten(screen.getByTestId('chat-composer-text-input').props.style);
+    const rowStyle = () => StyleSheet.flatten(screen.getByTestId('chat-composer-content-row').props.style);
+    const initialHeight = inputStyle().height;
+    expect(initialHeight).toBe(48);
+    expect(rowStyle().alignItems).toBe('center');
+    const button = StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style);
+    const longText = '개행 없이 초안을 그대로 유지합니다. '.repeat(40);
+    screen.rerender(<ChatComposer {...props} input={longText} />);
+    expect(inputStyle().height).toBe(initialHeight);
+    expect(screen.getByTestId('chat-composer-text-input').props.value).toBe(longText);
+    screen.rerender(<ChatComposer {...props} input={'첫 줄\n둘째 줄'} />);
+    expect(inputStyle().height).toBeGreaterThan(initialHeight!);
+    expect(screen.getByTestId('chat-composer-text-input').props.textAlignVertical).toBe('top');
+    expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(button);
+    screen.rerender(<ChatComposer {...props} input="첫 줄" />);
+    expect(inputStyle().height).toBe(initialHeight);
+    expect(rowStyle().alignItems).toBe('center');
   });
 
   test('attach and send handlers stay wired while empty send remains disabled', () => {

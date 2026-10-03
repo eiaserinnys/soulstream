@@ -311,10 +311,15 @@ describe('surface role contract', () => {
     expect(read(file)).not.toMatch(/border(?:Top|Bottom)Width/);
   });
 
-  test('채팅 composer는 입력부 안에 별도 frame을 중첩하지 않는다', () => {
-    expect(read('components/chat/ChatBody.styles.ts')).not.toMatch(
-      /composerBox:\s*\{[^}]*borderWidth/s,
-    );
+  test('채팅 composer는 단일 입력 표면에 토큰 hairline만 표시하고 높이를 보상한다', () => {
+    const composer = read('components/chat/ChatComposer.tsx');
+    expect(composer.match(/<GlassSurface\b/g)).toHaveLength(1);
+    expect(composer.match(/testID="chat-composer-box"/g)).toHaveLength(1);
+    const box = read('components/chat/ChatBody.styles.ts').match(/composerBox:\s*\{([^}]*)\}/s)![1];
+    expect(box.match(/borderWidth:/g)).toHaveLength(1);
+    expect(box).toMatch(/borderWidth:\s*StyleSheet\.hairlineWidth/);
+    expect(box).toMatch(/borderColor:\s*c\.border/);
+    expect(box).toMatch(/paddingVertical:\s*sessionRoles\.chat\.composer\.edgePaddingVertical\s*-\s*StyleSheet\.hairlineWidth/);
   });
 
   test('설정 modal은 자식 화면 제목을 숨겨 제목을 한 번만 표시한다', () => {

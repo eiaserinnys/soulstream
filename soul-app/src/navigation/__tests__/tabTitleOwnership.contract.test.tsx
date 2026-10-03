@@ -92,6 +92,7 @@ test('6개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
   for (const [index, root] of roots.entries()) {
     expect(root.options.title).not.toMatch(/[📅⭐📁📰💬⚙️]/u);
     expect(root.options.headerTitle).toEqual(expect.any(Function));
+    expect(root.options.headerTitleAlign).toBe('left');
     const section = ROOT_TAB_ORDER[index]!;
     const header = render(React.createElement(root.options.headerTitle));
     expect(header.getByTestId(`root-header-title-${section}`).props.children)
@@ -109,28 +110,20 @@ test('6개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
   }
 });
 
-test('card home header preserves daily history access with a native hit target', () => {
+test('phone card home header keeps only completion visibility, daily route remains stored', () => {
   renderStackNavigators();
   const dailyScreen = getNativeStackCaptures()[0]!.screens[0]!;
   const navigation = { setOptions: jest.fn(), navigate: jest.fn() };
-  render(React.createElement(dailyScreen.component, {
-    route: { key: 'daily', name: 'Daily' }, navigation,
-  }));
+  render(React.createElement(dailyScreen.component, { route: { key: 'daily', name: 'Daily' }, navigation }));
   const options = navigation.setOptions.mock.calls.at(-1)?.[0];
-  // The title owns the left slot; completion and circular actions share the right slot.
   expect(options.headerLeft()).toBeNull();
   const header = render(React.createElement(options.headerRight));
   expect(options.headerTitleAlign).toBe('left');
   expect(mockCardHomeProps).toHaveBeenLastCalledWith(expect.objectContaining({ externalHeader: true }));
-  fireEvent.press(header.getByLabelText('드래프트 카드 추가'));
-  expect(mockOpenCardCreate).toHaveBeenCalledTimes(1);
   expect(header.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
-  const history = header.getByLabelText('기존 데일리 기록');
-  const style = StyleSheet.flatten(history.parent?.props.style);
-  expect(style.minWidth).toBeGreaterThanOrEqual(44);
-  expect(style.minHeight).toBeGreaterThanOrEqual(44);
-  fireEvent.press(history);
-  expect(navigation.navigate).toHaveBeenCalledWith('DailyHistory');
+  expect(header.queryByLabelText('드래프트 카드 추가')).toBeNull();
+  expect(header.queryByLabelText('기존 데일리 기록')).toBeNull();
+  expect(header.queryByLabelText('보드 확대')).toBeNull();
   expect(getNativeStackCaptures()[0]!.screens.some((screen) => screen.name === 'DailyHistory')).toBe(true);
 });
 

@@ -3,7 +3,8 @@ import { Alert, FlatList, ScrollView, Text, View, useWindowDimensions } from 're
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
 import { useDeviceType, useTokens } from '../../theme';
-import { GlassButton } from '../GlassSurface';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { LiquidGlassButton } from '../LiquidGlassButton';
 import { PostItCard } from './PostItCard';
 import { createPostItRoles } from '../../theme/postItRoles';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
@@ -18,12 +19,13 @@ export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
 export function CardBoard({ api, cards, onOpen, includeCompleted = true,
-  phone: controlledPhone, initialPosition, onPositionChange,completed, bottomInset = 0 }: {
+  phone: controlledPhone, initialPosition, onPositionChange,completed, bottomInset = 0, onCreate }: {
   api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string, target?: number): void;
   includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void;
   completed?:CompletedBrowser;
   bottomInset?: number;
+  onCreate?(): void;
 }) {
   const t = useTokens();
   const devicePhone = useDeviceType() === 'phone';
@@ -74,7 +76,6 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const [menu, setMenu] = useState<{ card: CardDto; } | null>(null);
   const completedList=useRef<FlatList<CardDto>>(null);
   useEffect(()=>{completedList.current?.scrollToOffset({offset:0,animated:false});},[completed?.resetKey]);
-  const stageHeight = useRef(0);
   const action = useCardTransition(api, drag?.card.id ?? '');
   const active = cards.filter((card) => !card.archived && card.status !== 'cancelled');
   const savePosition = () => onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
@@ -104,7 +105,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
     if (phone) moveTo(offsetsRef.current[boardNearestLane(position.current.x, offsetsRef.current)], true);
   };
   const drop = (card: CardDto, event: BoardDragEvent) => {
-    const boardFrame = { ...frameLatest.current, y: frameLatest.current.y + stageHeight.current, height: frameLatest.current.height - stageHeight.current };
+    const boardFrame = frameLatest.current;
     const next = boardDropStatus(event.absoluteX, event.absoluteY, boardFrame, geometryRef.current, position.current.x, card.status, columnsRef.current);
     if (!next) { Alert.alert('카드 이동 취소', '다른 단계의 레인 위에서 놓아 주세요.'); return; }
     void action.transition(card, next);
@@ -114,18 +115,12 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
     setFrame((old) => ({ ...old, width, height }));
     frameRef.current?.measureInWindow((x, y) => setFrame({ x, y, width, height }));
   }}>
-    {phone ? <ScrollView horizontal testID="card-board-stages" showsHorizontalScrollIndicator={false}
-      onLayout={(event) => { stageHeight.current = event.nativeEvent.layout.height; }}
-      style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: t.cardLayout.padding, gap: t.uiSpacing.xs }}>
-      {columns.map(([status, label], index) => <GlassButton key={status} accessibilityLabel={`${label} 레인 보기`}
-        disabled={!!drag} onPress={() => moveTo(offsets[index], true)}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary }}>{label}</Text></GlassButton>)}
-    </ScrollView> : null}
     <ScrollView ref={scroll} horizontal testID="card-board" style={{ flex: 1 }} showsHorizontalScrollIndicator={false}
       scrollEnabled={!drag} snapToOffsets={phone ? boardSnapOffsets(viewport, geometry, columns.length) : undefined} decelerationRate={phone ? 'fast' : 'normal'}
       disableIntervalMomentum={phone} contentOffset={initialContentOffset.current} scrollEventThrottle={16}
       onScroll={(event) => { position.current.x = event.nativeEvent.contentOffset.x;
         position.current.lane = columns[boardNearestLane(position.current.x, offsets)][0]; savePosition(); }}
-      contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, alignItems: 'stretch', paddingTop: t.uiSpacing.sm }}>
+      contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, alignItems: 'stretch' }}>
       {columns.map(([status, label],laneIndex) => {
         const items = active.filter((card) => card.status === status);
         const renderItem=(card:CardDto)=><BoardDragCard api={api} card={card}
@@ -134,9 +129,13 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
           onMove={event=>{if(dragRef.current){const value={...dragRef.current,event};dragRef.current=value;setDrag(value);}}}
           onDrop={event=>drop(card,event)} onFinish={finish}/>;
         return <View key={status} testID={`card-board-column-${status}`} style={{ width: geometry.lanes[laneIndex].width, flexShrink: 0, gap: t.uiSpacing.sm }}>
-          <View style={{ paddingHorizontal: t.uiSpacing.sm, minHeight: t.foundation.typography.section.lineHeight }}>
-            <PlannerSectionHeader variant={phone ? 'lane' : 'board'} title={label} count={items.length} countSuffix={status==='done'?'개 표시':undefined}
+          <View style={{ paddingHorizontal: t.uiSpacing.sm, minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
+            <PlannerSectionHeader variant={status === 'todo' || phone ? 'lane' : 'board'} title={label} count={items.length} countSuffix={status==='done'?'개 표시':undefined}
               testID={phone ? `card-board-lane-heading-${status}` : undefined} countTestID={`card-board-count-${status}`} />
+            {status === 'todo' && onCreate ? <LiquidGlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+              testID="card-board-create" surfaceTestID="card-board-create-visual" accessibilityLabel="드래프트 카드 추가" onPress={onCreate}>
+              <Ionicons name="add-outline" size={t.iconSize.compact} color={t.colors.textPrimary} />
+            </LiquidGlassButton> : null}
           </View>
           {status==='done'?<>
             {completed?<View style={{paddingHorizontal:t.uiSpacing.sm}}><CompletedCardFilters browser={completed}/></View>:null}

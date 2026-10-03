@@ -43,18 +43,30 @@ test('저장 실패는 원문을 유지해 다시 보낼 수 있게 한다', asy
   expect(Alert.alert).toHaveBeenCalledWith('카드 변경 실패', 'network');
 });
 
-test('오늘 입력창은 채팅과 같은 한 줄 시작과 글자 크기이며 칩만 줄바꿈한다', () => {
+test('오늘 입력창은 칩이 위 한 줄에 있고 글자·입력 확장 동작을 보존한다', () => {
   const { StyleSheet } = require('react-native');
-  const screen = render(<CardComposer api={null} today />);
+  const screen = render(<CardComposer api={{} as any} today />);
   const input = screen.getByLabelText('세션 첫 메시지');
   expect(input.props.placeholder).toBe('무엇을 시작할까요');
   expect(input.props.multiline).toBe(true);
   expect(input.props.textAlignVertical).toBe('center');
-  expect(StyleSheet.flatten(input.props.style).height).toBeUndefined();
-  fireEvent(input, 'contentSizeChange', { nativeEvent: { contentSize: { height: 48 } } });
-  fireEvent(input, 'contentSizeChange', { nativeEvent: { contentSize: { height: 120 } } });
+  const initialHeight = StyleSheet.flatten(input.props.style).height;
+  expect(initialHeight).toBeGreaterThanOrEqual(48);
+  fireEvent.changeText(input, '첫 줄\n둘째 줄');
+  expect(StyleSheet.flatten(screen.getByLabelText('세션 첫 메시지').props.style).height).toBeGreaterThan(initialHeight);
   expect(screen.getByLabelText('세션 첫 메시지').props.textAlignVertical).toBe('top');
-  expect(StyleSheet.flatten(screen.getByTestId('card-composer-chips').props.style)).toMatchObject({ flex: 1, flexWrap: 'wrap' });
+  expect(StyleSheet.flatten(screen.getByTestId('card-composer-chips').props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
+  const chips = screen.getByTestId('card-composer-chips');
+  const frame = screen.getByTestId('card-composer-layout');
+  expect(React.Children.toArray(frame.props.children)[0]).toEqual(expect.objectContaining({ props: expect.objectContaining({ testID: 'card-composer-chips' }) }));
+  const layout = StyleSheet.flatten(frame.props.style);
+  const chipFrame = StyleSheet.flatten(screen.getByTestId('card-folder-chip').props.style);
+  const chipSurface = StyleSheet.flatten(screen.getByTestId('card-folder-chip-visual').props.style);
+  const surfaceInset = (chipFrame.minHeight - chipSurface.height) / 2;
+  expect(layout.paddingTop + surfaceInset).toBe(layout.paddingBottom);
+  expect(layout.gap + surfaceInset).toBeLessThan(layout.paddingBottom);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-row').props.style)).toMatchObject({ paddingTop: 0, paddingBottom: 0 });
+  fireEvent.changeText(screen.getByLabelText('세션 첫 메시지'), '');
   expect(screen.getByLabelText('세션 시작').props.accessibilityState.disabled).toBe(true);
 });
 

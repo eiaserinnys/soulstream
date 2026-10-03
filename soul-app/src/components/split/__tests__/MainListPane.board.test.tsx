@@ -26,9 +26,9 @@ beforeEach(() => {
   mockCompleted.mockReset().mockResolvedValue({cards:[cardFixture({status:'done'})],nextCursor:null});
 });
 
-test('기존 데일리는 유지하고 보드는 오늘 피드 대신 전체 인증 목록을 읽는다', async () => {
-  useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
-  const screen = render(<MainListPane />);
+test('카드 홈은 저장된 데일리 선택을 무시하고 전체 보드와 숨김·확대만 표시한다', async () => {
+  useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' }, mainPaneViews: { global: 'existing' } });
+  const screen = render(<MainListPane showSearch />);
   expect(screen.queryByText('기존 데일리')).toBeNull();
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
@@ -37,11 +37,12 @@ test('기존 데일리는 유지하고 보드는 오늘 피드 대신 전체 인
   expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
   await act(async () => fireEvent.press(screen.getByLabelText('완료 숨김')));
   await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
-  await act(async () => fireEvent.press(screen.getByLabelText('데일리 기록')));
-  expect(screen.getByText('기존 데일리')).toBeTruthy();
-  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
-  expect(mockList).toHaveBeenCalledTimes(1);
-  await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
+  expect(screen.queryByLabelText('데일리 기록')).toBeNull();
+  expect(screen.queryByLabelText('기존 데일리 기록')).toBeNull();
+  expect(screen.queryByLabelText('카드 보드')).toBeNull();
+  expect(screen.getByLabelText('보드 확대')).toBeTruthy();
+  expect(screen.getAllByLabelText('드래프트 카드 추가')).toHaveLength(1);
+
 });
 
 test('orientation remount keeps every previously selected folder board visible', async () => {
@@ -72,7 +73,6 @@ test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮
   await act(async () => fireEvent.press(screen.getByLabelText('기존 보기')));
   expect(screen.getByText('true')).toBeTruthy();
   await act(async () => useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } }));
-  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await waitFor(() => expect(mockList).toHaveBeenCalledWith(undefined,{includeCompleted:false}));
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
   await act(async () => useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } }));
@@ -84,7 +84,6 @@ test('보드 카드 탭은 기존 카드 오버레이를 열고 목록 오류는
   useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' }, selectedCardId: null });
   mockList.mockRejectedValueOnce(new Error('목록 조회 실패'));
   const screen = render(<MainListPane />);
-  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await waitFor(() => expect(screen.getByText('목록 조회 실패')).toBeTruthy());
   await act(async () => fireEvent.press(screen.getByLabelText('보드 다시 조회')));
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
@@ -98,13 +97,18 @@ test('상태 저장 후 상세 row가 합쳐져도 인증 목록의 최신 활�
   mockCompleted.mockResolvedValue({cards:[{...card,status:'done'}],nextCursor:null});
   useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
   const screen = render(<MainListPane />);
-  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await waitFor(() => expect(screen.getByText(/최신 보고 원문/)).toBeTruthy());
   const { latestActivity: _activity, ...detailRow } = card;
   await act(async () => useCardStore.getState().putCard({ ...detailRow, version: card.version + 1, status: 'done' }));
   expect(screen.queryByText(/최신 보고 원문/)).toBeNull();
-  await act(async () => fireEvent.press(screen.getByLabelText('데일리 기록')));
-  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await act(async () => fireEvent.press(screen.getByLabelText('완료 숨김')));
   await waitFor(()=>expect(screen.getByText(/최신 보고 원문/)).toBeTruthy());
+});
+
+test('폴더 탭은 요청한 검색창과 기존 본문을 유지한다', () => {
+  useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } });
+  const screen = render(<MainListPane showSearch />);
+  expect(screen.UNSAFE_getByType(require('../../search/SessionSearchField').SessionSearchField)).toBeTruthy();
+  expect(screen.getByTestId('folder-existing')).toBeTruthy();
+  expect(screen.queryByLabelText('보드 확대')).toBeNull();
 });

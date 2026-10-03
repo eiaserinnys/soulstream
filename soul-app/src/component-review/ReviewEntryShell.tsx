@@ -19,7 +19,8 @@ export function ReviewEntryShell() {
     const fixtureSessions = Array.from({ length: 20 }, (_, index) => ({
       ...sessions[0], agentSessionId: `public-shell-session-${index}`, displayName: `공개 예시 세션 ${index + 1}`,
     }));
-    useSessionStore.getState().setCatalog({ folders: [...folders, ...fixtureFolders], sessions: {} });
+    const reviewFolders = useSessionStore.getState().catalog.folders.filter(folder => !folder.id.startsWith('public-shell-folder-'));
+    useSessionStore.getState().setCatalog({ folders: [...reviewFolders, ...fixtureFolders], sessions: {} });
     useSessionStore.getState().setSessions(fixtureSessions);
   }, [device]);
   return <NavigationContainer>{device === 'phone' ? <TabNavigator />

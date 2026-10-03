@@ -2,6 +2,8 @@ import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import type { Session } from '../../../api/types';
+import { useCardStore } from '../../../store/cardStore';
+import { cardFixture } from '../../../test-support/cards';
 import { usePlannerStore } from '../../../store/plannerStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useUIStore } from '../../../store/uiStore';
@@ -23,6 +25,8 @@ jest.mock('expo-image-picker', () => ({
 jest.mock('react-native-webview', () => ({
   WebView: () => null,
 }));
+
+jest.mock('../CardDetailSheet', () => ({ CardDetailContent: () => require('react').createElement(require('react-native').View, { testID: 'overlay-card-detail' }) }));
 
 jest.mock('../../split/ChatPane', () => ({
   ChatPane: (props: unknown) => require('react').createElement(
@@ -52,6 +56,7 @@ jest.mock('../FolderSessionHistory', () => ({
 
 beforeEach(() => {
   usePlannerStore.getState().resetForTest();
+  useCardStore.setState({ rows: {}, details: {} });
   useSessionStore.setState({
     sessions: {
       'session-only': {
@@ -62,6 +67,7 @@ beforeEach(() => {
   });
   useUIStore.setState({
     selectedFolderPageId: null,
+    selectedCardId: null,
     folderOverlayVisible: false,
     cardBoardExpanded: false,
     activeSessionId: null,
@@ -196,4 +202,54 @@ test('the native board sheet and inline root exclusively host the same overlay',
   expect(screen.getByTestId('overlay-chat').props.active).toBe(true);
   act(() => { useUIStore.getState().setCardBoardExpanded(false); });
   expect(screen.getAllByTestId('task-workspace-overlay')).toHaveLength(1);
+});
+
+function cardDetail(id: string, assigneeSessionId: string | null) {
+  return { card: cardFixture({ id, assigneeSessionId, assigneeKind: assigneeSessionId ? 'session' : 'agent' }), sessions: [{ agentSessionId: 'worker', displayName: '소속 작업', status: 'idle', createdAt: '', updatedAt: '' }], questions: [], reports: [], comments: [] };
+}
+
+test('카드 첫 열기는 소속 작업이 아닌 담당 대화를 기존 오른쪽 패널에 선택한다', () => {
+  useUIStore.setState({ activeSessionId: 'previous' });
+  useCardStore.getState().putDetail(cardDetail('card-owner', 'owner'));
+  useUIStore.getState().openCardOverlay('card-owner');
+  const screen = render(<FolderWorkspaceReadOverlay />);
+  expect(screen.getByTestId('overlay-card-detail')).toBeTruthy();
+  expect(screen.getByTestId('overlay-chat').props.active).toBe(true);
+  expect(useUIStore.getState().activeSessionId).toBe('owner');
+});
+
+test('카드 담당 없으면 기존 대화를 유지하고 이후 갱신은 자동 선택하지 않는다', async () => {
+  useUIStore.setState({ activeSessionId: 'previous' });
+  useUIStore.getState().openCardOverlay('card-empty');
+  render(<FolderWorkspaceReadOverlay />);
+  await act(async () => useCardStore.getState().putDetail(cardDetail('card-empty', null)));
+  expect(useUIStore.getState().activeSessionId).toBe('previous');
+  await act(async () => useCardStore.getState().putDetail(cardDetail('card-empty', 'late-owner')));
+  expect(useUIStore.getState().activeSessionId).toBe('previous');
+});
+
+test('다른 카드 담당을 열되 수동 선택은 상세 갱신으로 덮지 않는다', async () => {
+  useCardStore.getState().putDetail(cardDetail('first', 'first-owner'));
+  useCardStore.getState().putDetail(cardDetail('second', 'second-owner'));
+  useUIStore.getState().openCardOverlay('first');
+  render(<FolderWorkspaceReadOverlay />);
+  expect(useUIStore.getState().activeSessionId).toBe('first-owner');
+  await act(async () => useUIStore.getState().openCardOverlay('second'));
+  expect(useUIStore.getState().activeSessionId).toBe('second-owner');
+  await act(async () => useUIStore.getState().setActiveSessionId('manual'));
+  await act(async () => useCardStore.getState().putDetail(cardDetail('second', 'second-owner')));
+  expect(useUIStore.getState().activeSessionId).toBe('manual');
+  await act(async () => useUIStore.getState().closeFolderOverlay());
+  await act(async () => useUIStore.getState().openCardOverlay('second'));
+  expect(useUIStore.getState().activeSessionId).toBe('second-owner');
+});
+
+test('세션 담당이 아닌 카드의 소속 세션이나 불일치 ID를 자동 선택하지 않는다', () => {
+  const detail = cardDetail('agent-only', 'worker');
+  detail.card.assigneeKind = 'agent';
+  useCardStore.getState().putDetail(detail);
+  useUIStore.setState({ activeSessionId: 'previous' });
+  useUIStore.getState().openCardOverlay(detail.card.id);
+  render(<FolderWorkspaceReadOverlay />);
+  expect(useUIStore.getState().activeSessionId).toBe('previous');
 });

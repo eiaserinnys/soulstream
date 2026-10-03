@@ -17,6 +17,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { getSessionDisplayName } from '../../lib/session-display-name';
 import { useUIStore } from '../../store/uiStore';
 import { useSessionStore } from '../../store/sessionStore';
+import { useCardStore } from '../../store/cardStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { ChatPane } from '../split/ChatPane';
 import { TabletPaneHeader } from '../split/TabletPaneHeader';
@@ -40,6 +41,8 @@ function FolderWorkspaceOverlayContent() {
   const { width: screenWidth } = useWindowDimensions();
   const visible = useUIStore((state) => state.folderOverlayVisible);
   const cardId = useUIStore((state) => state.selectedCardId);
+  const detail = useCardStore((state) => cardId ? state.details[cardId] : undefined);
+  const initializedCard = useRef<string | null>(null);
   const pageId = useUIStore((state) => state.selectedFolderPageId);
   const sessionId = useUIStore((state) => state.activeSessionId);
   const resolution = useUIStore((state) => state.sessionFolderResolution);
@@ -59,6 +62,16 @@ function FolderWorkspaceOverlayContent() {
     t.tabletShell.folderPane,
   );
   const requestClose = () => coordinateFolderWorkspaceClose(pageId, close);
+
+  // Opening a card selects its assignee once; refreshes preserve manual choices.
+  useEffect(() => {
+    if (!visible || !cardId) { initializedCard.current = null; return; }
+    if (!detail || initializedCard.current === cardId) return;
+    initializedCard.current = cardId;
+    if (detail.card.assigneeKind === 'session' && detail.card.assigneeSessionId) {
+      setActiveSessionId(detail.card.assigneeSessionId);
+    }
+  }, [visible, cardId, detail, setActiveSessionId]);
 
   useEffect(() => {
     Animated.timing(progress, {
