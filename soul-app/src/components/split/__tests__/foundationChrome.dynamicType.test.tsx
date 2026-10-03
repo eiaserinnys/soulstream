@@ -43,6 +43,7 @@ beforeEach(() => {
   useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
   useUIStore.setState({
     activeSection: { kind: 'daily', date: '2026-07-20' },
+    mainPaneViews: { global: 'board' },
     paneLeftWidth: 280,
     paneMiddleWidth: 420,
   });
