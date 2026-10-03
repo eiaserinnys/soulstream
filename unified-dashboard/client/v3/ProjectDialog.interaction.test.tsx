@@ -101,7 +101,7 @@ describe("ProjectDialog shared form", () => {
       flushSync(() => button("선택 자료").click());
       flushSync(() => button("자료 추가").click());
     }
-    expect([...document.body.querySelectorAll('button')].filter(b => b.textContent === "선택 자료 · atom")).toHaveLength(1);
+    expect([...document.body.querySelectorAll('button')].filter(b => b.textContent === "선택 자료 / atom")).toHaveLength(1);
   });
 
   it("cancels execution defaults without changing the parent and confirms all-unspecified as inheritance", async () => {
