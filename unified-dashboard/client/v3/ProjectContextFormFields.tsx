@@ -13,10 +13,12 @@ export interface ProjectAtomFieldValue {
 }
 
 export function ProjectAtomFields({
+  request,
   value,
   disabled,
   onChange,
 }: {
+  request?: typeof fetch;
   value: ProjectAtomFieldValue;
   disabled: boolean;
   onChange(value: ProjectAtomFieldValue): void;
@@ -36,7 +38,7 @@ export function ProjectAtomFields({
       </label>
       <label>
         atom 노드
-        <AtomNodeSelector
+        <AtomNodeSelector request={request}
           value={value.nodeId}
           selectedTitle={value.nodeTitle}
           disabled={disabled}
@@ -102,6 +104,7 @@ export function ProjectAtomFields({
 }
 
 export function ProjectSessionDefaultsFields({
+  assignment,
   agentId,
   nodeId,
   modelPreset,
@@ -112,6 +115,7 @@ export function ProjectSessionDefaultsFields({
   onModelPresetValidityChange,
   onError,
 }: {
+  assignment?: import("./AgentNodeAssignmentFields").AssignmentData;
   agentId: string;
   nodeId: string;
   modelPreset: string;
@@ -124,7 +128,7 @@ export function ProjectSessionDefaultsFields({
 }) {
   return (
     <div className="v3-project-context-fields">
-      <AgentNodeAssignmentFields
+      <AgentNodeAssignmentFields data={assignment}
         agentId={agentId}
         nodeId={nodeId}
         modelPreset={modelPreset}

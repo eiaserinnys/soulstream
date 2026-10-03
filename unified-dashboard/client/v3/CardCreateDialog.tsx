@@ -16,7 +16,8 @@ export interface CreateCardInput {
  folderId:string;title:string;request:string;nodeId:string;assignee:{kind:"agent";agentId:string};modelPreset:string|null;
  attachments:CardAttachment[];queue:false;idempotencyKey:string;
 }
-export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,onSave,uploadController}: {
+export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,onSave,uploadController,assignment,starredFolderIds}: {
+ assignment?:import("./AgentNodeAssignmentFields").AssignmentData;starredFolderIds?:readonly string[];
  folders:readonly CatalogFolder[];initialFolderId?:string;onClose():void;onCreated?(id:string):void;
  onSave?(input:CreateCardInput):Promise<{id:string}>;uploadController?:UseFileUploadReturn;
 }) {
@@ -27,7 +28,7 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
  const explicitPreset=useRef(false),textarea=useRef<HTMLTextAreaElement>(null);
  const localUpload=useFileUpload({uploadUrl:nodeId&&!uploadController?`/api/attachments/sessions?nodeId=${encodeURIComponent(nodeId)}`:"",sessionId:uploadSessionId,folderId:folderId||null});
  const upload=uploadController??localUpload;
- const stars=useFolderPickerStars(folderOpen,folders);
+ const stars=useFolderPickerStars(folderOpen,folders,starredFolderIds);
  useTextareaAutoHeight(textarea,request,14);
  const onNodeChange=useCallback((value:string)=>{setNodeId(value);setAgent(null);setModelPreset("");setValid(false);explicitPreset.current=false;},[]);
  const onAgentChange=useCallback((value:AgentInfo|null)=>{setAgent(value);if(!explicitPreset.current)setModelPreset(value?.default_preset??"");},[]);
@@ -55,7 +56,7 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
      <section><strong>폴더</strong><Popover open={folderOpen} onOpenChange={setFolderOpen}><PopoverTrigger render={<Button variant="outline" disabled={pending}/>} aria-label="폴더 선택">{folders.find(f=>f.id===folderId)?.name??"폴더 선택"}</PopoverTrigger>
       <PopoverPopup className="v3-surface v3-card-folder-picker" side="bottom" align="start"><FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={folderId} disabledFolderIds={new Set(["claude","llm"])} pending={pending} onSelect={folder=>{setFolderId(folder.id);setFolderOpen(false);}}/></PopoverPopup>
      </Popover></section>
-     <section><strong>노드 / 에이전트 / 모델</strong><AgentNodeAssignmentFields presentation="session" fallbackToAvailable nodeId={nodeId} agentId={agentId} modelPreset={modelPreset} disabled={pending}
+     <section><strong>노드 / 에이전트 / 모델</strong><AgentNodeAssignmentFields data={assignment} presentation="session" fallbackToAvailable nodeId={nodeId} agentId={agentId} modelPreset={modelPreset} disabled={pending}
       onNodeIdChange={onNodeChange} onAgentIdChange={setAgentId} onAgentInfoChange={onAgentChange} onModelPresetChange={onPresetChange} onModelPresetValidityChange={setValid} onError={setError}/></section>
      <SessionAttachmentFields files={upload.files} pending={pending} nodeId={nodeId} isUploading={upload.isUploading} addFiles={upload.addFiles} removeFile={upload.removeFile}/>
     </div>

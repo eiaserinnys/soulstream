@@ -51,20 +51,25 @@ type AtomEditorState = Extract<NonNullable<EditorState>, { kind: "atom" }>;
 type DefaultsEditorState = Extract<NonNullable<EditorState>, { kind: "defaults" }>;
 
 export function ProjectContextEditor({
+  api: suppliedApi, request, assignment, initialEditor,
   pageId,
   snapshot,
   onChanged,
 }: {
+  initialEditor?: "atom-add" | "atom-edit" | "defaults-add" | "defaults-edit";
+  api?: import("@seosoyoung/soul-ui/page").PageApiClient;
+  request?: typeof fetch;
+  assignment?: import("./AgentNodeAssignmentFields").AssignmentData;
   pageId: string;
   snapshot: ProjectPageSnapshot;
   onChanged(): Promise<void>;
 }) {
-  const [editor, setEditor] = useState<EditorState>(null);
+  const [editor, setEditor] = useState<EditorState>(()=> initialEditor === "atom-add" ? emptyAtomEditor() : initialEditor === "atom-edit" && snapshot.atomReferences[0] ? atomEditor(snapshot.atomReferences[0]) : initialEditor === "defaults-add" ? emptyDefaultsEditor() : initialEditor === "defaults-edit" && snapshot.sessionDefaults[0] ? defaultsEditor(snapshot.sessionDefaults[0]) : null);
   const [addingGuidance, setAddingGuidance] = useState(false);
   const [pending, setPending] = useState(false);
   const [modelPresetValid, setModelPresetValid] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
-  const api = useMemo(() => createPageApiClient(), []);
+  const api = useMemo(() => suppliedApi ?? createPageApiClient(), [suppliedApi]);
   const changeDefaultAgent = useCallback((agentId: string) => {
     setEditor((current) => current?.kind === "defaults" ? { ...current, agentId } : current);
   }, []);
@@ -151,7 +156,7 @@ export function ProjectContextEditor({
           <PopoverTrigger render={<DashboardIconCap size="small" label="atom 추가" disabled={pending}><Network className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
           <ContextPopover>
             {editor?.kind === "atom" && editor.blockId === null ? (
-              <AtomEditorFields editor={editor} pending={pending} setEditor={setEditor} onCancel={() => setEditor(null)} onSave={commit} />
+              <AtomEditorFields request={request} editor={editor} pending={pending} setEditor={setEditor} onCancel={() => setEditor(null)} onSave={commit} />
             ) : null}
           </ContextPopover>
         </Popover>
@@ -166,7 +171,7 @@ export function ProjectContextEditor({
             <PopoverTrigger render={<DashboardIconCap size="small" label="기본 에이전트 추가" disabled={pending}><Bot className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
             <ContextPopover>
               {editor?.kind === "defaults" && editor.blockId === null ? (
-                <DefaultsEditorFields editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
+                <DefaultsEditorFields assignment={assignment} editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
               ) : null}
             </ContextPopover>
           </Popover>
@@ -191,7 +196,7 @@ export function ProjectContextEditor({
             </PopoverTrigger>
             <ContextPopover>
               {editor?.kind === "atom" && editor.blockId === reference.blockId ? (
-                <AtomEditorFields editor={editor} pending={pending} setEditor={setEditor} onCancel={() => setEditor(null)} onSave={commit} onDelete={() => removeAtom(reference.blockId)} />
+                <AtomEditorFields request={request} editor={editor} pending={pending} setEditor={setEditor} onCancel={() => setEditor(null)} onSave={commit} onDelete={() => removeAtom(reference.blockId)} />
               ) : null}
             </ContextPopover>
           </Popover>
@@ -216,7 +221,7 @@ export function ProjectContextEditor({
             </PopoverTrigger>
             <ContextPopover>
               {editor?.kind === "defaults" && editor.blockId === defaults.blockId ? (
-                <DefaultsEditorFields editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
+                <DefaultsEditorFields assignment={assignment} editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
               ) : null}
             </ContextPopover>
           </Popover>
@@ -264,6 +269,7 @@ function ContextPopover({ children }: { children: ReactNode }) {
 }
 
 function AtomEditorFields({
+  request,
   editor,
   pending,
   setEditor,
@@ -271,6 +277,7 @@ function AtomEditorFields({
   onSave,
   onDelete,
 }: {
+  request?: typeof fetch;
   editor: AtomEditorState;
   pending: boolean;
   setEditor: Dispatch<SetStateAction<EditorState>>;
@@ -280,7 +287,7 @@ function AtomEditorFields({
 }) {
   return (
     <div className="v3-project-context-editor" data-editor-presentation="popover">
-      <ProjectAtomFields
+      <ProjectAtomFields request={request}
         value={editor}
         disabled={pending}
         onChange={(value) => setEditor({ ...editor, ...value })}
@@ -291,6 +298,7 @@ function AtomEditorFields({
 }
 
 function DefaultsEditorFields({
+  assignment,
   editor,
   pending,
   onAgentIdChange,
@@ -302,6 +310,7 @@ function DefaultsEditorFields({
   onCancel,
   onSave,
 }: {
+  assignment?: import("./AgentNodeAssignmentFields").AssignmentData;
   editor: DefaultsEditorState;
   pending: boolean;
   modelPresetValid: boolean;
@@ -315,7 +324,7 @@ function DefaultsEditorFields({
 }) {
   return (
     <div className="v3-project-context-editor" data-editor-presentation="popover">
-      <ProjectSessionDefaultsFields
+      <ProjectSessionDefaultsFields assignment={assignment}
         agentId={editor.agentId}
         nodeId={editor.nodeId}
         modelPreset={editor.modelPreset}

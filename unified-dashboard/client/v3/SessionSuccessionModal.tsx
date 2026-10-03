@@ -48,6 +48,7 @@ export interface SuccessionDocumentOption {
 }
 
 export function SessionSuccessionModal({
+  actions, uploadController, assignment, atomRequest,
   folderTitle,
   folderPageId,
   folderId,
@@ -60,6 +61,10 @@ export function SessionSuccessionModal({
   onClose,
   onCreated,
 }: {
+  actions?: { createSession: typeof createDashboardSession; createAnchor: typeof createFolderPageAnchor };
+  uploadController?: import("@seosoyoung/soul-ui/hooks/useFileUpload").UseFileUploadReturn;
+  assignment?: import("./AgentNodeAssignmentFields").AssignmentData;
+  atomRequest?: typeof fetch;
   folderTitle: string;
   folderPageId: string;
   folderId: string | null;
@@ -127,6 +132,7 @@ export function SessionSuccessionModal({
   const uploadUrl = selectedNodeId
     ? `/api/attachments/sessions?nodeId=${encodeURIComponent(selectedNodeId)}`
     : "";
+  const localUpload = useFileUpload({ uploadUrl: uploadController ? "" : uploadUrl, sessionId: pendingSessionId, folderId });
   const {
     files,
     isUploading,
@@ -136,7 +142,7 @@ export function SessionSuccessionModal({
     cancel,
     resetLocal,
     uploadedPaths,
-  } = useFileUpload({ uploadUrl, sessionId: pendingSessionId, folderId });
+  } = uploadController ?? localUpload;
   const contextSelection = useMemo(() => buildSessionContextSelection({
     inheritCard,
     folderPageId,
@@ -175,7 +181,7 @@ export function SessionSuccessionModal({
     setError(null);
     try {
       const pageAnchor = contextSelection.needsPageAnchor
-        ? preparedPageAnchor ?? await createFolderPageAnchor(api, folderPageId)
+        ? preparedPageAnchor ?? await (actions?.createAnchor ?? createFolderPageAnchor)(api, folderPageId)
         : null;
       if (pageAnchor && !preparedPageAnchor) setPreparedPageAnchor(pageAnchor);
       const succession = buildSuccessionCreateOptions({
@@ -185,7 +191,7 @@ export function SessionSuccessionModal({
         predecessorSessionId: predecessorId,
       });
       const attachmentPaths = uploadedPaths.length > 0 ? uploadedPaths : undefined;
-      const result = await createDashboardSession({
+      const result = await (actions?.createSession ?? createDashboardSession)({
         queryClient,
         addOptimisticSession: useDashboardStore.getState().addOptimisticSession,
         initialInstruction: appendAttachmentPathNotes(initialInstruction, attachmentPaths),
@@ -256,7 +262,7 @@ export function SessionSuccessionModal({
           <div className="v3-succession-context-editor">
             <section>
               <strong>노드 / 에이전트 / 모델</strong>
-              <AgentNodeAssignmentFields
+              <AgentNodeAssignmentFields data={assignment}
                 presentation="session"
                 agentId={selectedAgentId}
                 nodeId={selectedNodeId}
@@ -401,7 +407,7 @@ export function SessionSuccessionModal({
               </div>
               <label className="flex min-w-0 flex-col gap-2">
                 <strong>atom 노드</strong>
-                <AtomNodeSelector
+                <AtomNodeSelector request={atomRequest}
                   value={atomNodeId}
                   selectedTitle={atomNodeTitle}
                   disabled={pending}

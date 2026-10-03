@@ -9,7 +9,10 @@ import { NodeModelPresetSelect } from "../components/NodeModelPresetSelect";
 import type { NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 
+export interface AssignmentData { nodes: Array<{nodeId: string; status: string}>; agents: AgentInfo[]; modelPresetCatalog: NodeModelPresetCatalog }
+
 export function AgentNodeAssignmentFields({
+  data,
   agentId,
   nodeId,
   modelPreset,
@@ -22,12 +25,13 @@ export function AgentNodeAssignmentFields({
   onAgentIdChange,
   onNodeIdChange,
   onModelPresetChange,
-  modelPresetCatalog,
+  modelPresetCatalog: suppliedModelPresetCatalog,
   onAgentInfoChange,
   onModelPresetInfoChange,
   onModelPresetValidityChange,
   onError,
 }: {
+  data?: AssignmentData;
   agentId: string;
   nodeId: string;
   modelPreset: string;
@@ -46,10 +50,11 @@ export function AgentNodeAssignmentFields({
   onModelPresetValidityChange?(valid: boolean): void;
   onError?(message: string): void;
 }) {
+  const modelPresetCatalog = data?.modelPresetCatalog ?? suppliedModelPresetCatalog;
   const nodes = useOrchestratorStore((state) => state.nodes);
   const aliveNodes = useMemo(
-    () => [...nodes.values()].filter((node) => node.status === "connected"),
-    [nodes],
+    () => (data?.nodes ?? [...nodes.values()]).filter((node) => node.status === "connected"),
+    [nodes, data],
   );
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loadedNodeId, setLoadedNodeId] = useState<string | null>(null);
@@ -75,6 +80,7 @@ export function AgentNodeAssignmentFields({
       setLoadedNodeId(null);
       return;
     }
+    if (data) { setAgents(data.agents); setLoadedNodeId(nodeId); return; }
     let active = true;
     void fetch(`/api/nodes/${encodeURIComponent(nodeId)}/agents`, {
       credentials: "same-origin",
@@ -91,7 +97,7 @@ export function AgentNodeAssignmentFields({
       if (active) onErrorRef.current?.(caught instanceof Error ? caught.message : String(caught));
     });
     return () => { active = false; };
-  }, [nodeId]);
+  }, [nodeId, data]);
 
   useEffect(() => {
     if (!nodeId) {

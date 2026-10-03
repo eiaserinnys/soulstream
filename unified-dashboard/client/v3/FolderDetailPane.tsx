@@ -1,3 +1,4 @@
+import {FolderDetailArchiveDialog} from "./FolderDetailArchiveDialog";
 import { FolderCardSection } from "./FolderCardSection";
 import { useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
 import { Button, DashboardIconCap, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
@@ -241,24 +242,10 @@ export function FolderDetailPane({
     >
       <FolderPanelHeader title={task.page.title} onRename={onRenameFolderTitle} inline={inline}
         backLabel={backLabel} onBack={goBack} status={{value:task.status,icon:status.icon,label:status.label}} actions={actions}/>
-      <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
-        <DialogPopup className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>폴더 보관</DialogTitle>
-            <DialogDescription>‘{task.page.title}’ 폴더를 보관합니다. 내용과 세션은 보존됩니다.</DialogDescription>
-          </DialogHeader>
-          {archiveError ? <p role="alert">폴더 보관 실패 · {archiveError}</p> : null}
-          <DialogFooter variant="bare">
-            <Button type="button" variant="outline" onClick={() => setArchiveOpen(false)}>취소</Button>
-            <Button type="button" variant="destructive" onClick={() => {
-              if (!onArchiveFolder) return;
-              void onArchiveFolder().then(() => setArchiveOpen(false)).catch((error: unknown) => {
-                setArchiveError(error instanceof Error ? error.message : String(error));
-              });
-            }}>보관</Button>
-          </DialogFooter>
-        </DialogPopup>
-      </Dialog>
+      <FolderDetailArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} title={task.page.title} error={archiveError} onArchive={() => {
+        if (!onArchiveFolder) return;
+        void onArchiveFolder().then(() => setArchiveOpen(false)).catch((error: unknown) => setArchiveError(error instanceof Error ? error.message : String(error)));
+      }}/>
       <div ref={ownScrollRef} className="v3-detail-scroll">
         <div className="v3-task-detail-layout">
           <FolderSectionNavigation

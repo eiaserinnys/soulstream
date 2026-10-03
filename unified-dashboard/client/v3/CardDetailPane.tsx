@@ -1,3 +1,4 @@
+import {useLocalDialogueUpload} from "./use-local-dialogue-upload";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { DashboardIconCap, MarkdownContent, useAuth, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { ArrowLeft, Check } from "lucide-react";
@@ -14,7 +15,10 @@ import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 export { cardRequestMarkdown } from "./card-request-markdown";
 export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;focus?:string|null;sampleDetail?:CardDetail}) {
  const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
- const card=sampleDetail?.card??storedCard,detail=sampleDetail??storedDetail;
+ const [localSample,setLocalSample]=useState(sampleDetail);
+ const sampleUpload=useLocalDialogueUpload();
+ useEffect(()=>setLocalSample(sampleDetail),[sampleDetail]);
+ const card=localSample?.card??storedCard,detail=localSample??storedDetail;
  const catalog=useDashboardStore(s=>s.catalog);
  const {user}=useAuth();
  const scroll=useRef<HTMLDivElement>(null);
@@ -34,14 +38,14 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
  useEffect(()=>{setTab("comments");},[cardId]);
  useEffect(()=>{if(tab==="comments"&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[cardId,detail,tab]);
  const answer=async(questionId:string,text:string)=>{
-  if(sampleDetail)return;
+  if(sampleDetail){setLocalSample(current=>current?{...current,questions:current.questions.map(q=>q.id===questionId?{...q,answer:text,answeredAt:new Date().toISOString()}:q)}:current);return;}
   setPending(true);
   try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,{answer:text});}
   catch {} finally {setPending(false);}
  };
  const submit=async(comment:string)=>{
   if(!comment.trim()||pending)return false;
-  if(sampleDetail)return true;
+  if(sampleDetail){setLocalSample(current=>current?{...current,comments:[...(current.comments??[]),{id:crypto.randomUUID(),cardId,authorKind:"user",authorId:"sample",sessionId:null,kind:"comment",body:comment,createdAt:new Date().toISOString()}]}:current);return true;}
   setPending(true);
   try {
    await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey());
@@ -50,7 +54,7 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
  };
  const complete=async()=>{
   if(!card || pending)return;
-  if(sampleDetail)return;
+  if(sampleDetail){setLocalSample(current=>current?{...current,card:{...current.card,status:"done"}}:current);return;}
   setPending(true);
   try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});onClose();}
   catch {} finally {setPending(false);}
@@ -60,10 +64,10 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
   <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
    <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
    <CardStatusPicker card={card} onOpen={()=>{}} control={{pending,
-    load:()=>sampleDetail ? Promise.resolve(sampleDetail) : useCardStore.getState().loadCard(cardId),
-    change:async(latest,status,reason)=>{if(!sampleDetail)await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
+    load:()=>sampleDetail ? Promise.resolve(localSample!) : useCardStore.getState().loadCard(cardId),
+    change:async(latest,status,reason)=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,status}}:current);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
    }}/>
-   <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{if(!sampleDetail)await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
+   <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,title}}:current);else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
    <div className="v3-folder-header-actions"><DashboardIconCap label="완료" disabled={pending} onClick={()=>void complete()}><Check className="h-4 w-4"/></DashboardIconCap></div>
   </header>
   <div className="v3-detail-gutter v3-task-detail-content v3-card-context">
@@ -79,6 +83,6 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
    </section>:<section className="v3-detail-section v3-description-content"><MarkdownContent content={card.brief??""} codeBlockLayout="document"/></section>}
    </div>
   </div>
-  <div className="v3-card-composer-slot"><CardCommentInput key={cardId} cardId={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} onSend={submit}/></div>
+  <div className="v3-card-composer-slot"><CardCommentInput uploadController={sampleDetail?sampleUpload:undefined} key={cardId} cardId={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} onSend={submit}/></div>
  </article>;
 }

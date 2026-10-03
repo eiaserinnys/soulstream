@@ -11,8 +11,9 @@ import { useOrchestratorStore } from "../store/orchestrator-store";
 import { CogitoHealthPanel } from "./CogitoHealthPanel";
 import { NodeClaudeAuthPanel } from "./NodeClaudeAuthPanel";
 
-export function NodePanel() {
-  const nodes = useOrchestratorStore((s) => s.nodes);
+export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sampleNodes?: ReturnType<typeof useOrchestratorStore.getState>["nodes"] } = {}) {
+  const storedNodes = useOrchestratorStore((s) => s.nodes);
+  const nodes = sampleNodes ?? storedNodes;
   const [theme] = useTheme();
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
 
@@ -25,7 +26,7 @@ export function NodePanel() {
       </div>
       <ScrollArea data-testid="node-panel-scroll" className="flex-1 min-h-0">
         <div data-testid="node-panel-scroll-body" className="space-y-2 p-2">
-          <CogitoHealthPanel />
+          <CogitoHealthPanel request={request} />
           {nodeList.length === 0 ? (
             <div
               data-testid="node-card-list"
@@ -83,7 +84,7 @@ export function NodePanel() {
                       </span>
                     </div>
                     {/* 확장 패널 — Claude Code 크레덴셜 */}
-                    {isExpanded && <NodeClaudeAuthPanel nodeId={node.nodeId} />}
+                    {isExpanded && <NodeClaudeAuthPanel request={request} nodeId={node.nodeId} />}
                   </div>
                 );
               })}

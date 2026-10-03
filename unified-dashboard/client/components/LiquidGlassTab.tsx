@@ -23,11 +23,14 @@ const SLIDERS: Array<{
   { key: "tint", label: "틴트", digits: 2 },
 ];
 
-export function LiquidGlassTab() {
-  const liquidGlass = useDashboardStore((state) => state.liquidGlass);
-  const setLiquidGlass = useDashboardStore((state) => state.setLiquidGlass);
-  const setLiquidGlassEnabled = useDashboardStore((state) => state.setLiquidGlassEnabled);
+export function LiquidGlassTab({ preference }: { preference?: { value: LiquidGlassSettings; set(value: Partial<LiquidGlassSettings>): void } } = {}) {
+  const storedLiquidGlass = useDashboardStore((state) => state.liquidGlass);
+  const storedSetLiquidGlass = useDashboardStore((state) => state.setLiquidGlass);
+  const storedSetLiquidGlassEnabled = useDashboardStore((state) => state.setLiquidGlassEnabled);
 
+  const liquidGlass = preference?.value ?? storedLiquidGlass;
+  const setLiquidGlass = preference?.set ?? storedSetLiquidGlass;
+  const setLiquidGlassEnabled = preference ? (enabled: boolean) => preference.set({enabled}) : storedSetLiquidGlassEnabled;
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[var(--lg-line)] bg-muted/30 px-3 py-2">

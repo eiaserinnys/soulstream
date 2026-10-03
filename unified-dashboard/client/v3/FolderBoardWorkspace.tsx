@@ -1,3 +1,4 @@
+import {FolderDocumentOverlay} from "./FolderDocumentOverlay";
 // 500줄 예외: 보드 레이아웃·오버레이·세션 액션의 공존 계약을 소스 계약 테스트가 고정한다.
 // 이번 변경은 실행 이력 페이징 전달만 추가하며, 구조 분리는 별도 계약 마이그레이션이 필요하다.
 import { useCallback, useEffect, useMemo, useRef, useState, type AnimationEvent as ReactAnimationEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
@@ -522,51 +523,9 @@ export function FolderBoardWorkspace({
         />
 
         {activeFolderDocumentId ? (
-          <LiquidGlassCard
-            ref={overlayRef}
-            webglSurface
-            cornerRadius={24}
-            className={`v3-folder-board-document-overlay${overlayExpanded ? " is-expanded" : ""}${overlayClosing ? " is-closing" : ""}`}
-            data-testid="v3-folder-board-document-overlay"
-            data-state={overlayClosing ? "closing" : "open"}
-            onAnimationEnd={handleOverlayAnimationEnd}
-          >
-            <header className="v3-chat-header" onMouseDown={handleOverlayHeaderMouseDown}>
-              <div>
-                <small>{projectTitle} › {task.page.title}</small>
-                <strong>마크다운 문서</strong>
-              </div>
-              <DashboardIconCap
-                label={overlayExpanded ? "문서 편집기 높이 축소" : "문서 편집기 높이 확장"}
-                aria-pressed={overlayExpanded}
-                data-testid="v3-folder-board-document-overlay-expand"
-                onClick={() => setOverlayExpanded((current) => !current)}
-              >
-                {overlayExpanded ? (
-                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <ChevronUp className="h-4 w-4" aria-hidden="true" />
-                )}
-              </DashboardIconCap>
-              <DashboardIconCap
-                label="문서 편집기 닫기"
-                data-testid="v3-folder-board-document-overlay-close"
-                onClick={requestCloseOverlay}
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </DashboardIconCap>
-            </header>
-            <div className="v3-board-document-content">
-              <MarkdownDocumentPanel
-                documentId={activeFolderDocumentId}
-                container={{ kind: "folder", id: task.folderId }}
-                pendingEditId={pendingFolderDocumentEditId}
-                onPendingEditConsumed={clearPendingFolderDocumentEdit}
-                onClose={closeFolderDocumentOverlay}
-                onDeleted={(boardItemId) => setBoardItems((current) => current.filter((item) => item.id !== boardItemId))}
-              />
-            </div>
-          </LiquidGlassCard>
+          <FolderDocumentOverlay surfaceRef={overlayRef} expanded={overlayExpanded} closing={overlayClosing} onAnimationEnd={handleOverlayAnimationEnd} onHeaderMouseDown={handleOverlayHeaderMouseDown} projectTitle={projectTitle} folderTitle={task.page.title} onToggleExpanded={() => setOverlayExpanded(current=>!current)} onClose={requestCloseOverlay}>
+            <MarkdownDocumentPanel documentId={activeFolderDocumentId} container={{kind:"folder",id:task.folderId}} pendingEditId={pendingFolderDocumentEditId} onPendingEditConsumed={clearPendingFolderDocumentEdit} onClose={closeFolderDocumentOverlay} onDeleted={boardItemId=>setBoardItems(current=>current.filter(item=>item.id!==boardItemId))}/>
+          </FolderDocumentOverlay>
         ) : null}
       </div>
 

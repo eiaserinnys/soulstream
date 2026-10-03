@@ -8,8 +8,8 @@ import { CardBoardLayerContext } from "./card-board-layer";
 import { useCardNavigation } from "./card-navigation";
 
 /** One mounted board owns its scope, option and scroll even while expanded. */
-export function CardBoardWorkspace({title,actions,...boardProps}:ComponentProps<typeof CardBoard>&{title:string;actions?:ReactNode}) {
-  const [expanded,setExpanded]=useState(false);
+export function CardBoardWorkspace({title,actions,initialExpanded=false,...boardProps}:ComponentProps<typeof CardBoard>&{title:string;actions?:ReactNode;initialExpanded?:boolean}) {
+  const [expanded,setExpanded]=useState(initialExpanded);
   const detailOpen=useCardNavigation(state=>state.cardId!==null);
   const root=useRef<HTMLDivElement>(null);
   const nestedLayers=useRef(0);

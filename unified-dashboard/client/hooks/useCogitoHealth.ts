@@ -14,10 +14,10 @@ export interface UseCogitoHealthResult {
   refresh: () => void;
 }
 
-export function useCogitoHealth(): UseCogitoHealthResult {
+export function useCogitoHealth(request?: typeof fetch): UseCogitoHealthResult {
   const query = useQuery({
-    queryKey: ["cogito-health"],
-    queryFn: () => fetchCogitoBriefs(),
+    queryKey: request ? ["cogito-health", "sample"] : ["cogito-health"],
+    queryFn: () => fetchCogitoBriefs(request),
     staleTime: 30_000,
     refetchInterval: false,
   });

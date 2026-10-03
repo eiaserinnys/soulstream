@@ -29,7 +29,7 @@ type PolicyPayload = {
 
 const ENDPOINT = "/api/admin/settings/session-review-policy";
 
-export function SessionReviewPolicyTab() {
+export function SessionReviewPolicyTab({ request = fetch }: { request?: typeof fetch } = {}) {
   const [payload, setPayload] = useState<PolicyPayload | null>(null);
   const [sources, setSources] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
@@ -49,7 +49,7 @@ export function SessionReviewPolicyTab() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(ENDPOINT, { credentials: "same-origin" });
+      const response = await request(ENDPOINT, { credentials: "same-origin" });
       const body = await readJson(response);
       if (!response.ok) throw new Error(apiMessage(body, "검수 정책을 불러오지 못했습니다."));
       const next = body as PolicyPayload;
@@ -93,7 +93,7 @@ export function SessionReviewPolicyTab() {
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(ENDPOINT, {
+      const response = await request(ENDPOINT, {
         method: "PUT",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },

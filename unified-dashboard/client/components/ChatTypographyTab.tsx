@@ -7,10 +7,12 @@ import {
 
 const STEP_LABELS = ["기본", "+1", "+2", "+3", "+4"] as const;
 
-export function ChatTypographyTab() {
-  const chatFontSize = useDashboardStore((state) => state.chatFontSize);
-  const setChatFontSize = useDashboardStore((state) => state.setChatFontSize);
+export function ChatTypographyTab({ preference }: { preference?: { value: ChatFontSize; set(value: ChatFontSize): void } } = {}) {
+  const storedChatFontSize = useDashboardStore((state) => state.chatFontSize);
+  const storedSetChatFontSize = useDashboardStore((state) => state.setChatFontSize);
 
+  const chatFontSize = preference?.value ?? storedChatFontSize;
+  const setChatFontSize = preference?.set ?? storedSetChatFontSize;
   return (
     <section className="space-y-4 rounded-[14px] border border-[var(--lg-line)] bg-muted/20 px-4 py-4">
       <div className="flex items-baseline justify-between gap-3">

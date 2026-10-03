@@ -152,7 +152,7 @@ function normalizeExactTitle(value: string): string {
 /** 검색이 나간 계기. 디바운스된 타건인지, 필터 변경인지, 명시적 제출인지. */
 export type SearchTrigger = "typing" | "filter" | "submit";
 
-export function useSessionSearch() {
+export function useSessionSearch(request: typeof fetch = fetch) {
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [navigationResults, setNavigationResults] =
     useState<SearchNavigationResult[]>([]);
@@ -217,7 +217,7 @@ export function useSessionSearch() {
       setError(null);
       let lexicalPublished = false;
       try {
-        const res = await fetch(buildSessionSearchUrl(query, filters, topK, "lexical"), {
+        const res = await request(buildSessionSearchUrl(query, filters, topK, "lexical"), {
           signal: controller.signal,
         });
         if (!res.ok) {
@@ -247,7 +247,7 @@ export function useSessionSearch() {
           return;
         }
         setExpansionPending(true);
-        const expandedRes = await fetch(buildSessionSearchUrl(query, filters, topK, "expanded"), {
+        const expandedRes = await request(buildSessionSearchUrl(query, filters, topK, "expanded"), {
           signal: controller.signal,
         });
         if (!expandedRes.ok) throw new Error(`Expanded search failed: ${expandedRes.status}`);

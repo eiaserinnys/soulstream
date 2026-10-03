@@ -22,6 +22,7 @@ import {
   DialogDescription,
   DialogPanel,
   Button,
+  DEFAULT_LIQUID_GLASS_SETTINGS,
   useAuth,
   useDashboardStore,
   type WallpaperMode,
@@ -48,12 +49,23 @@ const SESSION_REVIEW_TAB_NAME = "session_review";
 const USAGE_LOG_TAB_NAME = "usage_log";
 const RECURRING_JOBS_TAB_NAME = "recurring_jobs";
 
+export interface ConfigModalApi {
+  request: typeof fetch;
+  recurring: typeof import("./RecurringJobsTab").recurringJobsApi;
+  cards: typeof import("@seosoyoung/soul-ui/cards/card-api").cardRequest;
+  orchestration: import("./CardOrchestrationSettingsForm").CardOrchestrationSettingsService;
+  nodes: ReturnType<typeof import("../store/orchestrator-store").useOrchestratorStore.getState>["nodes"];
+  assignment: import("../v3/AgentNodeAssignmentFields").AssignmentData;
+}
 interface ConfigModalProps {
+  initialTab?: string;
+  userEditor?: "create" | "edit";
+  api?: ConfigModalApi;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
+export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }: ConfigModalProps) {
   const { user } = useAuth();
 
   const {
@@ -67,9 +79,11 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
     hasChanges,
     updateField,
     save,
-  } = useConfigSettings(open);
+  } = useConfigSettings(open, api?.request);
 
-  const [selectedTab, setSelectedTab] = useState<string>("");
+  const [localChat, setLocalChat] = useState<import("@seosoyoung/soul-ui").ChatFontSize>(14);
+  const [localGlass, setLocalGlass] = useState(DEFAULT_LIQUID_GLASS_SETTINGS);
+  const [selectedTab, setSelectedTab] = useState<string>(initialTab ?? "");
   const extraTabs = useMemo(() => {
     const glassTab = { name: LIQUID_GLASS_TAB_NAME, label: "리퀴드 글래스" };
     const chatTab = { name: CHAT_TAB_NAME, label: "채팅" };
@@ -79,7 +93,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
       { name: NODES_TAB_NAME, label: "노드" },
       { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
       { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
-      ...(user?.isAdmin ? [
+      ...((api || user?.isAdmin) ? [
         { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
         { name: "file_storage", label: "파일 저장소" },
         { name: "card_dispatch", label: "카드 실행" },
@@ -87,7 +101,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
         { name: USERS_TAB_NAME, label: "사용자" },
       ] : []),
     ];
-  }, [user?.isAdmin]);
+  }, [(api || user?.isAdmin)]);
 
   // 카테고리 로드 시 첫 탭 선택. 모달을 닫으면 다음 오픈 시 재선택되도록 리셋.
   useEffect(() => {
@@ -125,7 +139,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
         </DialogHeader>
 
         <DialogPanel className="min-h-0">
-          <WallpaperPicker />
+          <WallpaperPicker local={Boolean(api)} />
           {loading && (
             <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
               설정을 불러오는 중...
@@ -145,27 +159,27 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
                 onSelect={setSelectedTab}
               />
               {selectedTab === CHAT_TAB_NAME ? (
-                <ChatTypographyTab />
+                <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined} />
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
-                <LiquidGlassTab />
+                <LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined} />
               ) : selectedTab === NODES_TAB_NAME ? (
                 <div className="h-[420px] overflow-hidden rounded border border-border">
-                  <NodePanel />
+                  <NodePanel request={api?.request} sampleNodes={api?.nodes} />
                 </div>
               ) : selectedTab === RECURRING_JOBS_TAB_NAME ? (
-                <RecurringJobsTab />
+                <RecurringJobsTab api={api?.recurring} assignment={api?.assignment} />
               ) : selectedTab === USAGE_LOG_TAB_NAME ? (
-                <UsageLogTab />
+                <UsageLogTab request={api?.request} />
               ) : selectedTab === SESSION_REVIEW_TAB_NAME ? (
-                <SessionReviewPolicyTab />
-              ) : selectedTab === "file_storage" && user?.isAdmin ? (
-                <FileStorageTab />
+                <SessionReviewPolicyTab request={api?.request} />
+              ) : selectedTab === "file_storage" && (api || user?.isAdmin) ? (
+                <FileStorageTab request={api?.request} />
               ) : selectedTab === "card_dispatch" ? (
-                <CardDispatchTab />
+                <CardDispatchTab api={api?.cards} orchestration={api?.orchestration} />
               ) : selectedTab === AGENTS_TAB_NAME ? (
-                <AgentProfileEditorTab />
+                <AgentProfileEditorTab request={api?.request} />
               ) : selectedTab === USERS_TAB_NAME ? (
-                <UserManagementTab />
+                <UserManagementTab request={api?.request} initialEditor={userEditor} />
               ) : activeCategory ? (
                 <div className="space-y-2">
                   {activeCategory.fields.map((field) => (
@@ -212,11 +226,16 @@ const WALLPAPER_OPTIONS: Array<{ mode: WallpaperMode; label: string }> = [
   { mode: "plain", label: "Plain" },
 ];
 
-function WallpaperPicker() {
-  const wallpaper = useDashboardStore((s) => s.wallpaper);
-  const setWallpaper = useDashboardStore((s) => s.setWallpaper);
-  const setWallpaperMode = useDashboardStore((s) => s.setWallpaperMode);
-  const setWallpaperCustomImage = useDashboardStore((s) => s.setWallpaperCustomImage);
+function WallpaperPicker({ local = false }: {local?: boolean}) {
+  const storedWallpaper = useDashboardStore((s) => s.wallpaper);
+  const storedSetWallpaper = useDashboardStore((s) => s.setWallpaper);
+  const storedSetWallpaperMode = useDashboardStore((s) => s.setWallpaperMode);
+  const storedSetWallpaperCustomImage = useDashboardStore((s) => s.setWallpaperCustomImage);
+  const [localWallpaper, setLocalWallpaper] = useState(storedWallpaper);
+  const wallpaper = local ? localWallpaper : storedWallpaper;
+  const setWallpaper = local ? setLocalWallpaper : storedSetWallpaper;
+  const setWallpaperMode = local ? (mode: WallpaperMode) => setLocalWallpaper(value=>({...value,mode})) : storedSetWallpaperMode;
+  const setWallpaperCustomImage = local ? async (file: File) => { const data = await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(file);}); setLocalWallpaper(value=>({...value,customImage:data,mode:"photo"})); } : storedSetWallpaperCustomImage;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);

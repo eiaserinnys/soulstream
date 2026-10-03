@@ -36,6 +36,7 @@ const EMPTY_DETAILS: ProjectPageDetails = {
 };
 
 export function ProjectDialog({
+  request, assignment,
   target,
   createLabel = "새 폴더",
   onClose,
@@ -44,6 +45,8 @@ export function ProjectDialog({
   onSaveContext,
   onSaved,
 }: {
+  request?: typeof fetch;
+  assignment?: import("./AgentNodeAssignmentFields").AssignmentData;
   target: ProjectDialogTarget | null;
   createLabel?: string;
   onClose(): void;
@@ -77,7 +80,7 @@ export function ProjectDialog({
     let active = true;
     setLoading(true);
     const pageId = target.folder.projectPageId ?? target.folder.id;
-    void fetchProjectPageDetails(pageId).then((snapshot) => {
+    void fetchProjectPageDetails(pageId, request).then((snapshot) => {
       if (!active) return;
       setPrevious(snapshot);
       setValue(projectFormValueFromDetails(target.folder.name, snapshot));
@@ -138,7 +141,7 @@ export function ProjectDialog({
         </DialogHeader>
         <DialogPanel>
           {loading ? <p aria-busy="true">프로젝트 설정을 불러오는 중…</p> : loadFailed ? null : (
-            <ProjectFormFields
+            <ProjectFormFields request={request} assignment={assignment}
               value={value}
               disabled={pending}
               onChange={setValue}
@@ -160,12 +163,15 @@ export function ProjectDialog({
 }
 
 function ProjectFormFields({
+  request, assignment,
   value,
   disabled,
   onChange,
   onAssignmentValidityChange,
   onError,
 }: {
+  request?: typeof fetch;
+  assignment?: import("./AgentNodeAssignmentFields").AssignmentData;
   value: ProjectFormValue;
   disabled: boolean;
   onChange(value: ProjectFormValue): void;
@@ -204,7 +210,7 @@ function ProjectFormFields({
         <legend>atom</legend>
         {value.atomReferences.map((item, index) => (
           <div className="v3-project-dialog-entry" key={item.blockId ?? `new-atom-${index}`}>
-            <ProjectAtomFields value={item} disabled={disabled} onChange={(next) => onChange({
+            <ProjectAtomFields request={request} value={item} disabled={disabled} onChange={(next) => onChange({
               ...value,
               atomReferences: value.atomReferences.map((candidate, itemIndex) => itemIndex === index ? { ...candidate, ...next } : candidate),
             })} />
@@ -217,7 +223,7 @@ function ProjectFormFields({
         <legend>기본 에이전트</legend>
         {value.sessionDefaults ? (
           <div className="v3-project-dialog-entry">
-            <ProjectSessionDefaultsFields
+            <ProjectSessionDefaultsFields assignment={assignment}
               agentId={value.sessionDefaults.agentId}
               nodeId={value.sessionDefaults.nodeId}
               modelPreset={value.sessionDefaults.modelPreset}

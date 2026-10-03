@@ -35,6 +35,7 @@ const MarkdownCodeMirrorEditor = lazy(async () => {
 });
 
 export function MarkdownDocumentPanel({
+  actions,
   documentId,
   container,
   pendingEditId = null,
@@ -42,6 +43,7 @@ export function MarkdownDocumentPanel({
   onClose,
   onDeleted,
 }: {
+  actions?: {read: typeof fetchMarkdownDocument; update: typeof updateMarkdownDocument; remove: typeof deleteMarkdownDocument};
   documentId: string | null;
   container: BoardContainerRef | null;
   pendingEditId?: string | null;
@@ -49,7 +51,8 @@ export function MarkdownDocumentPanel({
   onClose(): void;
   onDeleted(boardItemId: string, documentId: string): void;
 }) {
-  const runtime = useBoardRuntime(container);
+  const storedRuntime = useBoardRuntime(container);
+  const runtime = actions ? null : storedRuntime;
   const runtimeReady = runtime
     ? (runtime.hasInitialSync?.() ?? !runtime.isProviderBacked)
     : false;
@@ -134,7 +137,7 @@ export function MarkdownDocumentPanel({
     setPanelError(null);
     setSaveStatus("saving");
     try {
-      const updated = await updateMarkdownDocument({
+      const updated = await (actions?.update ?? updateMarkdownDocument)({
         documentId,
         title: currentTitle,
         body,
@@ -190,7 +193,7 @@ export function MarkdownDocumentPanel({
     if (runtime?.isProviderBacked && !runtimeReady) return;
 
     let cancelled = false;
-    fetchMarkdownDocument(documentId)
+    (actions?.read ?? fetchMarkdownDocument)(documentId)
       .then((next) => {
         if (cancelled) return;
         loadedDocumentIdRef.current = documentId;
@@ -267,7 +270,7 @@ export function MarkdownDocumentPanel({
       if (runtime) {
         runtime.deleteMarkdownDocument(documentId);
       } else {
-        await deleteMarkdownDocument(documentId);
+        await (actions?.remove ?? deleteMarkdownDocument)(documentId);
       }
       onDeleted(`markdown:${documentId}`, documentId);
       onClose();
