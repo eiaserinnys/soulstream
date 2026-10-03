@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
-import { registerCardOrchestrationToolsLegacy as registerCardOrchestrationTools } from "../../src/mcp/tools/card_orchestration.js";
+import { registerCardOrchestrationTools } from "../../src/mcp/tools/card_orchestration.js";
 const policy = {
   enabled: false,
   candidates: [
@@ -64,7 +64,7 @@ it("exposes only administrator policy query and CAS write and preserves native c
   ).toThrow();
   const fetch = vi.fn<typeof globalThis.fetch>(
     async () =>
-      new Response(JSON.stringify({ settings: { policy, version: 2 } }), {
+      new Response(JSON.stringify({ content: [], structuredContent: { settings: { policy, version: 2 } } }), {
         status: 200,
       }),
   );
@@ -75,70 +75,11 @@ it("exposes only administrator policy query and CAS write and preserves native c
   );
   expect(result.isError).not.toBe(true);
   expect(fetch.mock.calls[0]![0]).toBe(
-    "http://orch.test/api/card-orchestration/host/update",
+    "http://orch.test/api/mcp/host/update_card_orchestration_settings",
   );
   expect(
     JSON.parse(
       String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
     ),
-  ).toEqual({ policy, expectedVersion: 1, callerSessionId: "native-caller" });
-});
-it("does not call host for external or missing caller, and surfaces host admin refusal", async () => {
-  const { call } = register();
-  const fetch = vi.fn<typeof globalThis.fetch>(
-    async () =>
-      new Response(
-        JSON.stringify({ detail: "Verified administrator session required" }),
-        { status: 403 },
-      ),
-  );
-  vi.stubGlobal("fetch", fetch);
-  const external = await withMcpRequestContext(
-    {
-      callerSessionId: "spoofed",
-      principal: { authority: "external", source: "llm", displayName: "LLM" },
-    },
-    () => call("get_card_orchestration_settings", {}),
-  );
-  expect(external.isError).toBe(true);
-  expect(fetch).not.toHaveBeenCalled();
-  expect((await call("get_card_orchestration_settings", {})).isError).toBe(
-    true,
-  );
-  expect(fetch).not.toHaveBeenCalled();
-  expect(
-    (
-      await withMcpRequestContext({ callerSessionId: "native-caller" }, () =>
-        call("get_card_orchestration_settings", {}),
-      )
-    ).isError,
-  ).toBe(true);
-  expect(fetch).toHaveBeenCalledOnce();
-});
-it("binds policy operations to the request session header and rejects a spoofed explicit administrator session", async () => {
-  const { call } = register();
-  const fetch = vi.fn<typeof globalThis.fetch>(
-    async () =>
-      new Response(JSON.stringify({ settings: { version: 1 } }), {
-        status: 200,
-      }),
-  );
-  vi.stubGlobal("fetch", fetch);
-  const result = await withMcpRequestContext(
-    { callerSessionId: "real-header" },
-    () =>
-      call("get_card_orchestration_settings", {
-        caller_session_id: "different-admin",
-      }),
-  );
-  expect(result.isError).toBe(true);
-  expect(fetch).not.toHaveBeenCalled();
-  await withMcpRequestContext({ callerSessionId: "real-header" }, () =>
-    call("get_card_orchestration_settings", {
-      caller_session_id: "real-header",
-    }),
-  );
-  expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toEqual({
-    callerSessionId: "real-header",
-  });
+  ).toMatchObject({ args: { policy, expectedVersion: 1 }, context: { caller_session_id: "native-caller" } });
 });

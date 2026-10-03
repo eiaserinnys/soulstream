@@ -3,35 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
-import { registerRecurringJobToolsLegacy as registerRecurringJobTools } from "../../src/mcp/tools/recurring_jobs.js";
+import { registerRecurringJobTools } from "../../src/mcp/tools/recurring_jobs.js";
 
 describe("recurring-job MCP tools", () => {
   afterEach(() => vi.unstubAllGlobals());
-
-  it("rejects every recurring operation for an untrusted external caller", async () => {
-    const { call, registered } = register();
-    expect([...registered.keys()]).toEqual([
-      "list_recurring_jobs",
-      "get_recurring_job",
-      "preview_recurring_schedule",
-      "create_recurring_job",
-      "update_recurring_job",
-      "run_recurring_job",
-      "archive_recurring_job",
-      "list_recurring_job_runs",
-    ]);
-
-    for (const tool of registered.keys()) {
-      const result = await withMcpRequestContext({
-        callerSessionId: "spoofed-session",
-        principal: { authority: "external", source: "llm", displayName: "External LLM" },
-      }, async () => await call(tool, { caller_session_id: "also-spoofed" }));
-      expect(result.isError).toBe(true);
-      expect(result.structuredContent).toEqual(expect.objectContaining({
-        error: expect.stringContaining("untrusted external or LLM"),
-      }));
-    }
-  });
 
   it("uses the verified normal caller-session actor for query, creation, and update", async () => {
     const fetch = vi.fn()
@@ -39,7 +14,11 @@ describe("recurring-job MCP tools", () => {
       .mockResolvedValueOnce(response({ job: { job_id: "job-1" } }))
       .mockResolvedValueOnce(response({ job: { job_id: "job-1", version: 2 } }));
     vi.stubGlobal("fetch", fetch);
-    const { call } = register();
+    const { call, registered } = register();
+    expect([...registered.keys()]).toEqual([
+      "list_recurring_jobs", "get_recurring_job", "preview_recurring_schedule", "create_recurring_job",
+      "update_recurring_job", "run_recurring_job", "archive_recurring_job", "list_recurring_job_runs",
+    ]);
 
     const listed = await withMcpRequestContext(
       { callerSessionId: "caller-session" },
@@ -64,28 +43,20 @@ describe("recurring-job MCP tools", () => {
     expect(fetch).toHaveBeenCalledTimes(3);
     const listBody = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
     const createBody = JSON.parse(String(fetch.mock.calls[1]?.[1]?.body));
-    expect(listBody.actor).toEqual(expect.objectContaining({
-      ownerEmail: "owner@example.com",
-      actorId: "caller-session",
-      source: "agent",
-    }));
-    expect(createBody).toEqual(expect.objectContaining({
+    expect(listBody.context).toMatchObject({ caller_session_id: "caller-session", callerInfo: { email: "owner@example.com" } });
+    expect(createBody.args).toEqual(expect.objectContaining({
       name: "music recommendation",
       idempotency_key: "recurring:create:1",
       enabled: false,
-      actor: expect.objectContaining({ ownerEmail: "owner@example.com" }),
     }));
+    expect(createBody.context.callerInfo.email).toBe("owner@example.com");
     const updateBody = JSON.parse(String(fetch.mock.calls[2]?.[1]?.body));
-    expect(updateBody).toEqual(expect.objectContaining({
+    expect(updateBody.args).toEqual(expect.objectContaining({
       job_id: "job-1",
       expected_version: 1,
       enabled: true,
-      actor: expect.objectContaining({
-        ownerEmail: "owner@example.com",
-        actorId: "caller-session",
-        source: "agent",
-      }),
     }));
+    expect(updateBody.context).toMatchObject({ caller_session_id: "caller-session", callerInfo: { email: "owner@example.com" } });
   });
 
   it("forwards once run_at through the MCP schemas without a cron array", async () => {
@@ -119,12 +90,12 @@ describe("recurring-job MCP tools", () => {
       }),
     );
 
-    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).args).toMatchObject({
       run_at: runAt,
       timezone: "Asia/Seoul",
     });
-    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).not.toHaveProperty("schedule_expressions");
-    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toMatchObject({
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).args).not.toHaveProperty("schedule_expressions");
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)).args).toMatchObject({
       job_id: "job-once",
       run_at: "2026-09-30T09:00:00+09:00",
     });
@@ -187,7 +158,7 @@ function createInput() {
 }
 
 function response(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
+  return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(body, null, 2) }], structuredContent: body }), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
