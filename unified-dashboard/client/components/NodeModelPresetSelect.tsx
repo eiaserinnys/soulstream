@@ -76,12 +76,12 @@ export function NodeModelPresetSelect({
   });
 
   return <CatalogSelectionField className={className} label={label} ariaLabel="모델 선택"
-    value={value} disabled={disabled || !nodeId} selectedLabel={triggerLabel}
+    value={value} disabled={disabled || !nodeId} selectedLabel={selection.preset?.reason === "quota_exhausted" ? <span className="text-destructive">{triggerLabel}</span> : triggerLabel}
     triggerClassName={triggerClassName} invalid={Boolean(selection.warning)}
     options={[
       { value: "", label: "미지정" },
       ...(selectedPresetMissing ? [{ value, disabled: loaded, label: loading ? "선택한 모델 확인 중…" : "선택한 모델" }] : []),
-      ...presets.map(preset => ({ value: preset.id, disabled: !preset.available, label: modelPresetOptionLabel(preset) })),
+      ...presets.map(preset => ({ value: preset.id, disabled: !preset.available, label: <span className={preset.reason === "quota_exhausted" ? "text-destructive" : undefined}>{modelPresetOptionLabel(preset)}</span> })),
     ]}
     adornment={selection.preset?.usage_warning ? <Badge variant="warning">사용량 확인 지연</Badge> : null}
     message={selection.warning} onValueChange={onValueChange}/>;

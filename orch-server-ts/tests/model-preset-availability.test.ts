@@ -113,7 +113,7 @@ describe("resolvePresetAvailability", () => {
     });
   });
 
-  it("blocks an active matching quota and exposes its reset as ISO", () => {
+  it("allows an active matching quota and exposes its reset as ISO", () => {
     const resetAt = Math.floor(Date.parse("2026-07-28T04:00:00.000Z") / 1_000);
     expect(resolvePresetAvailability(
       "node-a",
@@ -132,7 +132,7 @@ describe("resolvePresetAvailability", () => {
       })),
       now,
     )).toMatchObject({
-      available: false,
+      available: true,
       reason: "quota_exhausted",
       reason_label: "7일 (Fable) 사용량 제한",
       resets_at: "2026-07-28T04:00:00.000Z",
@@ -176,7 +176,7 @@ describe("resolvePresetAvailability", () => {
       },
       now,
     )).toMatchObject({
-      available: false,
+      available: true,
       reason_label: "7일 사용량 제한",
     });
   });

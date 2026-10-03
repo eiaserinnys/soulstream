@@ -18,6 +18,7 @@ import { ChatComposer } from '../chat/ChatComposer';
 import { AttachmentChips } from '../chat/AttachmentChips';
 import { makeStyles as chatStyles } from '../chat/ChatBody.styles';
 import { useNewSessionSelection } from '../sheets/useNewSessionSelection';
+import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
 import { PlannerForegroundCard } from './PlannerForegroundCard';
 import { FolderSelectionSheet } from './FolderSelectionSheet';
 import { ExecutionSelectionSheet } from './ExecutionSelectionSheet';
@@ -69,7 +70,7 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
     finally { submitting.current = false; setPending(false); }
 
   };
-  const chip = (label: string, content: string, mode: 'folder' | 'execution') => <CompactTouchTarget
+  const chip = (label: string, content: React.ReactNode, mode: 'folder' | 'execution') => <CompactTouchTarget
     testID={`card-${mode}-chip`} surfaceTestID={`card-${mode}-chip-visual`}
     accessibilityRole="button" accessibilityLabel={label} disabled={disabled}
     frameStyle={styles.chipFrame} surfaceStyle={[styles.chip, disabled && styles.disabled]}
@@ -89,7 +90,7 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
         <View testID="card-composer-footer" style={[styles.footer, { paddingHorizontal: chat.inputRow.paddingHorizontal, paddingBottom: t.spacing.sm }]}>
           <View testID="card-composer-chips" style={styles.chips}>
             {chip('폴더 선택', `📁 ${folders.find((folder) => folder.id === value.folderId)?.name ?? '폴더 선택'}`, 'folder')}
-            {chip('실행 대상 선택', `${value.agentId ? labels.selectedAgentName : '에이전트'} · ${labels.selectedNodeName || value.nodeId || settings.nodeId} · ${labels.selectedModelPresetName}`, 'execution')}
+            {chip('실행 대상 선택', <>{value.agentId ? labels.selectedAgentName : '에이전트'} · {labels.selectedNodeName || value.nodeId || settings.nodeId} · <SelectedModelPresetName selection={labels} /></>, 'execution')}
           </View>
 
         </View>

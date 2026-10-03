@@ -204,6 +204,29 @@ test('로딩이 끝나면 선택 preset의 광고된 기본값을 보여준다',
   expect(effortValue(screen, 'X High')).toBeTruthy();
 });
 
+test.each([true, false])('소진 모델을 빨강 표시하고 명시 선택=%s도 제출한다', async explicit => {
+  const exhausted = { ...OPUS, reason: 'quota_exhausted',
+    reason_label: '7일 사용량 제한', resets_at: '2030-01-02T03:04:00.000Z' };
+  const api = makeApi([exhausted]);
+  const screen = renderSheet(api);
+  await waitFor(() => expect(api.listModelPresets).toHaveBeenCalled());
+  act(() => pickAgent(screen, 1));
+  await waitFor(() => expect(within(screen.getByTestId('succession-selection-model')).getByText(exhausted.label)).toBeTruthy());
+  if (explicit) {
+    fireEvent.press(screen.getByTestId('succession-selection-model'));
+    expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ options: ['자동 선택', exhausted.label, '취소'],
+        destructiveButtonIndex: [1], disabledButtonIndices: [] }), expect.any(Function));
+    act(() => lastSheetHandler()?.(1));
+  }
+  const name = within(screen.getByTestId('succession-selection-model')).getByText(exhausted.label);
+  expect(name.props.style).toEqual(expect.objectContaining({ color: expect.any(String) }));
+  fireEvent.press(screen.getByTestId('succession-submit'));
+  await waitFor(() => expect(mockCreateFolderSession).toHaveBeenCalled());
+  expect(mockCreateFolderSession.mock.calls[0][0]).toMatchObject(
+    explicit ? { modelPreset: exhausted.id } : { agentId: 'seosoyoung-opus' });
+});
+
 test('광고된 값만 선택지로 제시한다 (minimal 없음, 자동 sentinel 포함)', async () => {
   const screen = await renderWithModel(makeApi([OPUS]));
   await waitFor(() =>

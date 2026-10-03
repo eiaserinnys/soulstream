@@ -113,6 +113,8 @@ export function createReviewApi(state: FixtureState = 'normal', options: { home?
     listModelPresets: async () => read({ model_presets: state === 'empty' ? [] : [
       { id: 'public-model', label: '사용 가능한 예시 모델', backend: 'codex', available: true,
         reason: null, reason_label: null, resets_at: null, usage_warning: false },
+      { id: 'public-exhausted-model', label: '사용량 소진 예시 모델', backend: 'codex', available: true,
+        reason: 'quota_exhausted', reason_label: '7일 사용량 제한', resets_at: null, usage_warning: false },
       { id: 'public-unavailable-model', label: '사용 불가 예시 모델', backend: 'codex', available: false,
         reason: 'limit', reason_label: '공개 예시: 사용량 한도', resets_at: null, usage_warning: false },
     ] }),

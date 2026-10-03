@@ -99,6 +99,7 @@ export function FolderDefaultAssignment({
           <span aria-hidden="true">·</span>
           <span
             data-model-preset-state={modelCatalogStatus}
+            className={modelSelection.preset?.reason === "quota_exhausted" ? "text-destructive" : undefined}
             title={modelSelection.warning ?? undefined}
           >
             {modelDisplayLabel}

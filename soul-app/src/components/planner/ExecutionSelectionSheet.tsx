@@ -39,7 +39,7 @@ export function ExecutionSelectionSheet({ api, value, onSave, onClose }: {
       </View>
       <View testID="execution-models" style={styles.section}><PlannerSectionHeader title="모델" />
         <GroupedGlassSheet>{selection.modelPresets.map((model) => <GroupedGlassRow compact testID={`execution-model-${model.id}`} key={model.id} accessibilityLabel={`모델 ${model.label}`} selected={selection.effectiveModelPresetId === model.id}
-          disabled={!model.available} style={styles.padded} onPress={() => selection.setSelectedModelPresetId(model.id)}><Text style={styles.body}>{model.label}</Text>
+          disabled={!model.available} style={styles.padded} onPress={() => selection.setSelectedModelPresetId(model.id)}><Text style={[styles.body, model.reason === 'quota_exhausted' && { color: t.colors.errorText }]}>{model.label}</Text>
           {!model.available && model.reason_label ? <Text style={styles.meta}>{model.reason_label}</Text> : null}</GroupedGlassRow>)}</GroupedGlassSheet>
       </View>
       <View style={styles.actions}><GlassButton onPress={onClose}><Text style={styles.body}>닫기</Text></GlassButton>

@@ -128,6 +128,18 @@ describe('newSessionSelection', () => {
     expect(resolveSelectedAgentName('null-name', agents)).toBe('(이름 없는 에이전트)');
   });
 
+  test('소진 모델은 이름만 빨강 표시하고 선택할 수 있다', () => {
+    const preset = { id: 'sol', label: 'Codex - 6.1 Sol', backend: 'codex',
+      available: true, reason: 'quota_exhausted', reason_label: '7일 사용량 제한',
+      resets_at: '2030-01-02T03:04:00.000Z', usage_warning: false };
+    const sheet = buildModelPresetActionSheet([preset]);
+    expect(sheet.options[1]).toBe(preset.label);
+    expect(sheet.destructiveButtonIndex).toEqual([1]);
+    expect(sheet.disabledButtonIndices).toEqual([]);
+    expect(resolveModelPresetActionSheetSelection(1, [preset], sheet.cancelButtonIndex))
+      .toEqual({ cancelled: false, modelPresetId: 'sol' });
+  });
+
   test('모델 preset은 서버 라벨만 표시하고 불가 항목만 비활성화한다', () => {
     const presets = [
       {

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
 import { ActionSheetIOS, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardAssignment } from '../../api/cardTypes';
@@ -82,7 +83,7 @@ export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assig
   const rows = [...(includeFolder || mode === 'move' ? [{ label: '폴더', value: selection.selectedFolderName, pick: pickFolder }] : []),
     ...(mode === 'move' || folderOnly ? [] : [{ label: '노드', value: selection.selectedNodeName, pick: pickNode },
       { label: '에이전트', value: selection.selectedAgentName, pick: pickAgent },
-      { label: '모델', value: selection.selectedModelPresetName, pick: pickModel }])];
+      { label: '모델', value: <SelectedModelPresetName selection={selection} />, pick: pickModel }])];
   if (pickingFolder) return <FolderSelectionSheet api={api} onClose={() => setPickingFolder(false)} onSelect={(id) => {
     if (mode !== 'assignment' || folderOnly) selection.setSelectedFolderId(id);
     else setPickedFolderId(id);

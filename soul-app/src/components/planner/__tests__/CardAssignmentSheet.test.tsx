@@ -5,21 +5,21 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { CardAssignmentSheet } from '../CardAssignmentSheet';
 
-test('노드 미지정 폴더의 기본 담당을 현재 노드에 유지하고 확인한다', async () => {
+test.each([null, 'sol'])('노드 미지정 폴더의 기본 담당과 소진 모델 %s를 현재 노드에 유지하고 확인한다', async modelPreset => {
   useSettingsStore.setState({ nodeId: 'node-1' });
   useSessionStore.setState({ catalog: { folders: [{ id: 'folder-1', name: '폴더', archived: false }], sessions: {} } as any });
   const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }),
     listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린' }] }),
-    listModelPresets: jest.fn().mockResolvedValue({ model_presets: [] }),
+    listModelPresets: jest.fn().mockResolvedValue({ model_presets: [{ id: 'sol', label: 'Sol', available: true, reason: 'quota_exhausted' }] }),
     getPlannerFolder: jest.fn().mockResolvedValue({ folder: { parentFolderId: null }, blocks: [
-      { id: 'defaults', blockType: 'session_defaults', properties: { agentId: 'roselin' } },
+      { id: 'defaults', blockType: 'session_defaults', properties: { agentId: 'roselin', modelPreset } },
     ] }),
   };
   const onSave = jest.fn().mockResolvedValue(undefined);
   const screen = render(<CardAssignmentSheet api={api as any} value={{ folderId: 'folder-1', nodeId: null, agentId: null, modelPreset: null }} onClose={jest.fn()} onSave={onSave} />);
   await waitFor(() => expect(screen.getByText('로젤린')).toBeTruthy());
   fireEvent.press(screen.getByText('확인'));
-  await waitFor(() => expect(onSave).toHaveBeenCalledWith({ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: null }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith({ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset }));
 });
 
 
