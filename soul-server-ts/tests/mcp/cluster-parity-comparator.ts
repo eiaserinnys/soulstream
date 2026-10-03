@@ -10,7 +10,7 @@ export function maskCluster(tool: string, value: unknown, path: string[] = []): 
   return Object.fromEntries(Object.entries(value).map(([key, child]) => [key,
     /_at$|At$/.test(key) && child !== null ? "<time>" : maskCluster(tool, child, [...path, key])]));
 }
-function serialize(tool: string, result: unknown) {
+export function serialize(tool: string, result: unknown) {
   const value = result as { content: { type: string; text?: string }[]; structuredContent?: unknown; isError?: boolean };
   return JSON.stringify({ ...value, content: value.content.map(item => {
     if (item.type !== "text" || value.isError) return item;
@@ -19,4 +19,3 @@ function serialize(tool: string, result: unknown) {
     return { ...item, text: JSON.stringify(maskCluster(tool, parsed), null, 2) };
   }), ...(value.structuredContent === undefined ? {} : { structuredContent: maskCluster(tool, value.structuredContent) }) }, null, 2);
 }
-export function assertClusterParity(tool: string, old: unknown, next: unknown) { expect(serialize(tool, next)).toBe(serialize(tool, old)); }

@@ -4,11 +4,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
-import { registerRecurringJobTools, registerRecurringJobToolsLegacy } from "../../src/mcp/tools/recurring_jobs.js";
-import { registerCardOrchestrationTools, registerCardOrchestrationToolsLegacy } from "../../src/mcp/tools/card_orchestration.js";
-import { registerMultiNodeTools, registerMultiNodeToolsLegacy } from "../../src/mcp/tools/multi_node.js";
+import { registerRecurringJobTools } from "../../src/mcp/tools/recurring_jobs.js";
+import { registerCardOrchestrationTools } from "../../src/mcp/tools/card_orchestration.js";
+import { registerMultiNodeTools } from "../../src/mcp/tools/multi_node.js";
 import { createClusterRoundtripFixture, policy } from "./cluster-roundtrip-fixture.js";
-import { assertClusterParity, maskCluster } from "./cluster-parity-comparator.js";
+import { maskCluster, serialize } from "./cluster-parity-comparator.js";
 
 const clusterToolNames = [
   "list_recurring_jobs", "get_recurring_job", "preview_recurring_schedule", "create_recurring_job",
@@ -92,15 +92,15 @@ for (const [name, args] of [
   ["create_remote_agent_session", { ...remote, node_id: "missing" }],
 ] as const) cases.push([`${name} absent resource`, name, args, context, true]);
 
-describe("cluster MCP old HTTP and in-process host parity", () => {
+describe("cluster MCP roundtrip", () => {
   let fixture: Awaited<ReturnType<typeof createClusterRoundtripFixture>>;
   beforeAll(async () => { fixture = await createClusterRoundtripFixture(); });
   afterAll(async () => { await fixture?.app.close(); fixture?.registry.disconnectNode("node-a", "test complete"); });
-  async function call(legacy: boolean, name: string, args: Record<string, unknown>, requestContext: McpRequestContext, runtime = fixture.runtime) {
+  async function call(name: string, args: Record<string, unknown>, requestContext: McpRequestContext, runtime = fixture.runtime) {
     const server = new McpServer({ name: "cluster-parity", version: "1" });
-    (legacy ? registerRecurringJobToolsLegacy : registerRecurringJobTools)(server, runtime);
-    (legacy ? registerCardOrchestrationToolsLegacy : registerCardOrchestrationTools)(server, runtime);
-    (legacy ? registerMultiNodeToolsLegacy : registerMultiNodeTools)(server, runtime);
+    registerRecurringJobTools(server, runtime);
+    registerCardOrchestrationTools(server, runtime);
+    registerMultiNodeTools(server, runtime);
     const client = new Client({ name: "parity-client", version: "1" });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     try {
@@ -110,15 +110,11 @@ describe("cluster MCP old HTTP and in-process host parity", () => {
   }
   it.each(cases)("preserves %s", async (label, name, args, requestContext = context, fails = false, offline = false) => {
     fixture.seed(offline);
-    const old = await call(true, name, args, requestContext);
-    expect(old.isError === true, JSON.stringify(old)).toBe(fails);
-    const oldCommands = JSON.stringify(fixture.sent.map(cmd => maskCluster("create_remote_agent_session", cmd)));
-    const oldActors = JSON.stringify(fixture.recurring.validateTarget.mock.calls);
-    fixture.seed(offline);
-    const next = await call(false, name, args, requestContext);
-    assertClusterParity(name, old, next);
-    expect(JSON.stringify(fixture.sent.map(cmd => maskCluster("create_remote_agent_session", cmd)))).toBe(oldCommands);
-    expect(JSON.stringify(fixture.recurring.validateTarget.mock.calls)).toBe(oldActors);
+    const next = await call(name, args, requestContext);
+    expect(next.isError === true, JSON.stringify(next)).toBe(fails);
+    expect(serialize(name, next)).toMatchSnapshot("result");
+    expect(JSON.stringify(fixture.sent.map(cmd => maskCluster("create_remote_agent_session", cmd)))).toMatchSnapshot("node commands");
+    expect(JSON.stringify(fixture.recurring.validateTarget.mock.calls)).toMatchSnapshot("recurring actors");
     if (name === "list_recurring_job_runs" && !fails) expect((next.structuredContent as any).runs).toHaveLength(1);
     if (label === "remote limited omitted") expect(fixture.sent[0]).toHaveProperty("folderId", "allowed-folder");
     if (label === "remote inherited folder") expect(fixture.sent[0]).toHaveProperty("folderId", "inherited-folder");
@@ -134,25 +130,15 @@ describe("cluster MCP old HTTP and in-process host parity", () => {
     ["get_card_orchestration_settings", {}, external],
   ] as const)("preserves unavailable transport for %s %j %j", async (name, args, requestContext) => {
     const runtime = { ...fixture.runtime, orch: undefined };
-    assertClusterParity(name, await call(true, name, args, requestContext, runtime), await call(false, name, args, requestContext, runtime));
+    expect(serialize(name, await call(name, args, requestContext, runtime))).toMatchSnapshot("result");
   });
 });
 
-describe("cluster parity comparator", () => {
-  const result = (value: object, spaces = 2) => ({ content: [{ type: "text", text: JSON.stringify(value, null, spaces) }], structuredContent: value });
-  it("masks only the generated session id and time", () => assertClusterParity("create_remote_agent_session",
-    result({ agentSessionId: "first", updatedAt: "old" }), result({ agentSessionId: "second", updatedAt: "new" })));
-  it.each(["content", "structuredContent", "isError"])("detects %s changes", key => {
-    const old = result({ id: "seed", name: "name" });
-    expect(() => assertClusterParity("list_nodes", old, { ...old, [key]: "changed" })).toThrow();
-  });
-  it("detects key order, indentation and unlisted ids", () => {
-    expect(() => assertClusterParity("list_nodes", result({ a: 1, b: 2 }), result({ b: 2, a: 1 }))).toThrow();
-    expect(() => assertClusterParity("list_nodes", result({ a: 1 }), result({ a: 1 }, 4))).toThrow();
-    expect(() => assertClusterParity("list_nodes", result({ id: "seed" }), result({ id: "changed" }))).toThrow();
-  });
-  it("compares error text verbatim", () => {
-    const error = { content: [{ type: "text", text: '{"error":"same"}' }], isError: true };
-    expect(() => assertClusterParity("list_nodes", error, { ...error, content: [{ type: "text", text: '{ "error": "same" }' }] })).toThrow();
+describe("cluster snapshot masking", () => {
+  it("masks only the generated session id and time", () => {
+    expect(maskCluster("create_remote_agent_session", { agentSessionId: "first", updatedAt: "old", id: "seed" }))
+      .toEqual({ agentSessionId: "<session-id>", updatedAt: "<time>", id: "seed" });
+    expect(maskCluster("list_nodes", { agentSessionId: "first", updatedAt: null }))
+      .toEqual({ agentSessionId: "first", updatedAt: null });
   });
 });

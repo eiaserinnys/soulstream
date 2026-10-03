@@ -1,9 +1,10 @@
+import { clusterTools } from "@soulstream/mcp-contract";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { registerMultiNodeToolsLegacy as registerMultiNodeTools } from "../../src/mcp/tools/multi_node.js";
+import { registerMultiNodeTools } from "../../src/mcp/tools/multi_node.js";
 
-type ToolHandler = (input?: Record<string, unknown>) => Promise<unknown>;
+type ToolHandler = (input?: Record<string, unknown>, request?: unknown) => Promise<unknown>;
 
 const orch = {
   baseUrl: "http://orch.test",
@@ -38,7 +39,7 @@ async function invoke(
 ): Promise<void> {
   const handler = handlers.get(name);
   expect(handler, `${name} registered`).toBeTypeOf("function");
-  await handler!(input);
+  await handler!(input, {});
 }
 
 afterEach(() => {
@@ -46,8 +47,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("multi-node orch request timeouts", () => {
-  it("allows node-command POSTs 35 seconds while GETs retain the 10-second default", async () => {
+describe("multi-node common forwarding deadlines", () => {
+  it("allows command tools 35 seconds while query tools retain the 10-second default", async () => {
+    for (const name of ["plan_remote_agent_profile_update", "apply_remote_agent_profile_update", "rollback_remote_agents_config", "create_remote_agent_session"] as const) {
+      expect(clusterTools[name].timeoutMs).toBe(35_000);
+    }
     const timeout = vi.spyOn(AbortSignal, "timeout");
     vi.stubGlobal(
       "fetch",
