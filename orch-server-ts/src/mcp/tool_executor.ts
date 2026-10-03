@@ -1,3 +1,4 @@
+import { sessionMessageHandlers } from "./session_message_handlers.js";
 import { clusterHandlers } from "./cluster_handlers.js";
 import { cardOrchestrationHandlers } from "./card_orchestration_handlers.js";
 import { recurringJobHandlers } from "./recurring_job_handlers.js";
@@ -13,6 +14,7 @@ import { liveCardHandlers } from "./live_card_handlers.js";
 import { skillHandlers } from "./skill_handlers.js";
 
 export const mcpToolHandlers = {
+  ...sessionMessageHandlers,
   ...clusterHandlers,
   ...cardOrchestrationHandlers,
   ...recurringJobHandlers,

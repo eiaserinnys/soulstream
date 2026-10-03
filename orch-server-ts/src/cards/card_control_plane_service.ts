@@ -110,9 +110,10 @@ export class CardControlPlaneService {
     });
   }
   async addComment(params: CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply" }) {
+    const external=params.actorKind === "llm";
     const reply=params.mode === "reply";
     if (params.mode && (params.actorKind !== "agent" || !params.actorSessionId)) throw invalid("Only trusted session actors may select a comment mode");
-    const kind=params.actorKind === "agent" ? reply ? "comment" : "spoken" : params.kind ?? "comment";
+    const kind=external ? "comment" : params.actorKind === "agent" ? reply ? "comment" : "spoken" : params.kind ?? "comment";
     if (params.actorKind !== "agent" && kind !== "comment") throw invalid("Only trusted session actors may add spoken comments");
     const existing=params.idempotencyKey ? await this.repo.getOperationByIdempotencyKey(params.idempotencyKey) : null;
     const existingCommentId=existing?.operation_type === "add_card_comment" && existing.target_kind === "card" && existing.target_id === params.cardId
@@ -123,7 +124,7 @@ export class CardControlPlaneService {
       if (reply && (card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId))
         throw invalid("Only the assignee session may reply to a card comment");
       await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body)
-        VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${reply ? null : params.actorUserId ?? null},${params.actorSessionId},${kind},${params.body})`;
+        VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body})`;
     });
     const storedId=String(result.operation.payload_json.comment_id ?? commentId);
     const comment=await this.repo.getComment(params.cardId,storedId);

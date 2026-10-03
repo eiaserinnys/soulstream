@@ -1,3 +1,4 @@
+import type { SessionActionCommandRouteOptions } from "../session/session_action_command_routes.js";
 import type { RecurringJobHostRouteOptions } from "../recurring-jobs/recurring_job_host_routes.js";
 import type { CardOrchestrationRouteOptions } from "../cards/card_orchestration_routes.js";
 import type { NodeSnapshotRouteOptions } from "../node/node_snapshot_routes.js";
@@ -22,10 +23,13 @@ export interface McpCallContext {
   callerSessionId: string | null;
   nodeId: string;
   callerInfo?: Record<string, unknown>;
+  /** Set only by the orchestrator's own external ingress; never accepted from the worker forward body. */
+  externalCaller?: { source: string; displayName: string };
   execution?: { registrationId: string; executionCommandId: string };
 }
 
 export interface McpHostOptions {
+  sessionMessages?: SessionActionCommandRouteOptions;
   sessions?: SessionMcpDependencies;
   authBearerToken: string;
   recurringJobs: RecurringJobHostRouteOptions;

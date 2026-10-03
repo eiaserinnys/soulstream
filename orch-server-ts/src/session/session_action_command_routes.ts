@@ -1,3 +1,4 @@
+import type { ServiceCaller } from "../auth/service_caller.js";
 import { randomUUID } from "node:crypto";
 
 import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
@@ -10,7 +11,8 @@ import {
   badRequest,
   sendActionCommand,
   sendGenericStatusError,
-  sendInterveneCommand,
+  executeInterveneCommand,
+  type SessionActionResponse,
   sendInterruptAckError,
   sendReviewAcknowledgeCommand,
   sendRealtimeAckError,
@@ -34,7 +36,7 @@ import {
 import type { SessionReviewAcknowledgeFallback } from "./session_review_acknowledge_fallback.js";
 
 export type SessionActionCallerInfoResolver = (
-  request: FastifyRequest,
+  request: FastifyRequest | ServiceCaller,
   bodyCallerInfo: JsonObject | undefined,
   targetSessionId: string,
 ) => Promise<JsonObject> | JsonObject;
@@ -65,40 +67,8 @@ export function registerSessionActionCommandRoutes(
   app.post<{ Params: SessionParams }>(
     "/api/sessions/:session_id/intervene",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
-      if (body === undefined) {
-        return badRequest(reply, "Request body must be a JSON object");
-      }
-
-      const targetSessionId = sessionParams(request).session_id;
-      const payload = intervenePayload(targetSessionId, body);
-      if (!payload.ok) return badRequest(reply, payload.message);
-      if (options.resolveCallerInfo !== undefined) {
-        payload.value.caller_info = await options.resolveCallerInfo(
-          request,
-          payload.value.caller_info,
-          targetSessionId,
-        );
-      }
-      const durable = await admitDurableHumanIntervention(
-        options,
-        payload.value,
-      );
-      if (durable.conflict) {
-        return reply.code(409).send({
-          error: {
-            code: "DELIVERY_IDENTITY_CONFLICT",
-            message: `Delivery identity conflict: ${durable.deliveryId}`,
-            deliveryId: durable.deliveryId,
-          },
-        });
-      }
-      return sendInterveneCommand(
-        reply,
-        options,
-        durable.payload,
-        durable.deliveryId,
-      );
+      const result = await executeSessionIntervention(options, request, sessionParams(request).session_id, request.body);
+      return reply.code(result.status).send(result.body);
     },
   );
 
@@ -202,6 +172,27 @@ export function registerSessionActionCommandRoutes(
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
     },
   );
+}
+
+/** Shared body of the HTTP intervention route and orchestrator MCP message tool. */
+export async function executeSessionIntervention(
+  options: SessionActionCommandRouteOptions,
+  caller: FastifyRequest | ServiceCaller,
+  targetSessionId: string,
+  input: unknown,
+): Promise<SessionActionResponse> {
+  const body = parseObjectBody(input);
+  if (body === undefined) return { status: 400, body: { error: { code: "INVALID_REQUEST", message: "Request body must be a JSON object" } } };
+  const payload = intervenePayload(targetSessionId, body);
+  if (!payload.ok) return { status: 400, body: { error: { code: "INVALID_REQUEST", message: payload.message } } };
+  if (options.resolveCallerInfo !== undefined) {
+    payload.value.caller_info = await options.resolveCallerInfo(caller, payload.value.caller_info, targetSessionId);
+  }
+  const durable = await admitDurableHumanIntervention(options, payload.value);
+  if (durable.conflict) return { status: 409, body: { error: {
+    code: "DELIVERY_IDENTITY_CONFLICT", message: `Delivery identity conflict: ${durable.deliveryId}`, deliveryId: durable.deliveryId,
+  } } };
+  return executeInterveneCommand(options, durable.payload, durable.deliveryId);
 }
 
 async function admitDurableHumanIntervention(

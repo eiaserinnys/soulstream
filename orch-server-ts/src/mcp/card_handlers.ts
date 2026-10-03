@@ -27,7 +27,7 @@ export const cardHandlers = {
   add_card_report: (o, a, c) => append(o.cards, "add_card_report", a, c, { title: a.title, format: a.format, body: a.body }),
   add_card_comment: (o, a, c) => run(async () => {
     if (a.mode === "reply") matchingHeader(a, c);
-    return appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, mode: a.mode ?? "spoken" });
+    return appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, ...(c.principal === "external" ? (a.mode === undefined ? {} : { mode: a.mode }) : { mode: a.mode ?? "spoken" }) });
   }),
   set_card_status: (o, a, c) => run(async () => {
     matchingHeader(a, c);
@@ -36,6 +36,7 @@ export const cardHandlers = {
     }, agent(a, c, true));
   }),
   start_card_work: (o, a, c) => run(async () => {
+    if (c.principal === "external") throw new Error("card mutation requires an agent session");
     matchingHeader(a, c);
     const actor = agent(a, c, true);
     if (!c.execution) throw new Error("Current work execution required; orchestration purpose cannot start work");
@@ -56,11 +57,11 @@ export const cardHandlers = {
 } satisfies Record<keyof typeof cardTools, Handler>;
 
 function matchingHeader(args: Args, context: McpCallContext) {
-  if (context.callerSessionId && args.caller_session_id && String(args.caller_session_id).trim() !== context.callerSessionId)
+  if (context.principal !== "external" && context.callerSessionId && args.caller_session_id && String(args.caller_session_id).trim() !== context.callerSessionId)
     throw new Error("caller_session_id must match the authenticated request session header");
 }
 function agent(args: Args, context: McpCallContext, headerFirst = false) {
-  if (context.principal === "external") throw new Error("card mutation requires an agent session");
+  if (context.principal === "external") return { actorKind: "llm" as const, actorSessionId: null };
   const explicit = typeof args.caller_session_id === "string" ? args.caller_session_id.trim() : "";
   const actorSessionId = headerFirst ? context.callerSessionId ?? (explicit || undefined) : explicit || context.callerSessionId;
   if (!actorSessionId) throw new Error("caller session id is required for card mutation. Send x-soulstream-agent-session-id.");

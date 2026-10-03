@@ -46,7 +46,6 @@ const cases: readonly [string, string, Record<string, unknown>, McpRequestContex
   ["version conflict", "set_card_status", { ...status, status: "done", expected_version: 999 }, context, true],
   ["system create", "create_card", { folder_id: "claude", title: "시스템", request: "" }, context, true],
   ["system move", "move_card", { card_id: "card-1", folder_id: "claude" }, context, true],
-  ["external mutation", "add_card_report", { card_id: "card-1", title: "외부", format: "markdown", body: "" }, external, true],
   ["external query", "get_card", { card_id: "card-1", caller_session_id: "argument-session" }, external],
   ["internal no session", "update_card_brief", { card_id: "card-1", brief: "경과" }, {}, true],
   ["status mismatch", "set_card_status", { ...status, status: "done", caller_session_id: "argument-session" }, context, true],
@@ -110,6 +109,15 @@ describe("card legacy and orchestrator MCP parity", () => {
       return await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: input as Record<string, unknown> }));
     } finally { await client.close(); await server.close(); }
   }
+  it("intentionally opens external report writes while preserving the legacy refusal", async () => {
+    const input = { card_id: "card-1", title: "외부", format: "markdown", body: "보고" };
+    await seed();
+    expect((await call(true, "add_card_report", input, external)).isError).toBe(true);
+    await seed();
+    expect((await call(false, "add_card_report", input, external)).isError).not.toBe(true);
+    expect((await h.sql`SELECT actor_kind,actor_session_id FROM folder_operations WHERE operation_type='add_card_report'`)[0])
+      .toMatchObject({ actor_kind: "llm", actor_session_id: null });
+  });
   it.each(cases)("preserves %s", async (_label, name, input, requestContext = context, fails = false) => {
     await seed(); const old = await call(true, name, input, requestContext);
     expect(old.isError === true).toBe(fails);

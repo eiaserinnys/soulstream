@@ -847,6 +847,7 @@ export function buildProductionRouteOptions(
     ...(ephemeralLlmRoutes === undefined ? {} : { ephemeralLlmRoutes }),
     ...(folderControlPlaneServiceProvider ? {
       mcpHostRoutes: {
+        sessionMessages: providers.runtime.sessionActionCommandRoutes,
         authBearerToken: config.authBearerToken,
         ...(mcpSkills ? { skills: mcpSkills } : {}),
         cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail },
