@@ -1173,3 +1173,18 @@ pre[data-markdown-code-layout="document"] {
   --glass-blur: 3px;
   --glass-saturate: 160%;
 }
+
+/* Approved dialog content only; the shared DialogPopup owns its glass frame,
+   header/footer insets, focus treatment and responsive button sizes. */
+.approved-dialog .dialog-selection-context { display:flex; align-items:center; gap:calc(var(--spacing) * 2); margin-bottom:calc(var(--spacing) * 4); padding:calc(var(--spacing) * 3); border:1px solid var(--border); border-radius:var(--radius-lg); color:var(--muted-foreground); font-size:var(--font-size-sm); overflow-wrap:anywhere; }
+.approved-dialog .dialog-selection-context strong { color:var(--foreground); font-weight:600; }
+.approved-dialog .dialog-selection-destination { margin-right:auto; font-size:var(--font-size-sm); color:var(--muted-foreground); align-self:center; min-width:0; overflow-wrap:anywhere; }
+.approved-dialog .dialog-confirm-summary { padding:calc(var(--spacing) * 4); border:1px solid var(--border); border-radius:var(--radius-xl); font-size:var(--font-size-sm); background:var(--control-surface); }
+.approved-dialog .dialog-confirm-summary span { display:block; color:var(--muted-foreground); margin-top:calc(var(--spacing) * 2); }
+.approved-dialog .dialog-confirm-icon { display:grid; place-items:center; width:calc(var(--spacing) * 10); height:calc(var(--spacing) * 10); border-radius:var(--radius-xl); margin-bottom:calc(var(--spacing) * 2); background:color-mix(in srgb,var(--destructive) 9%,transparent); color:var(--destructive); }
+.approved-dialog .dialog-error-notice { display:grid; gap:calc(var(--spacing) * 2); font-size:var(--font-size-sm); overflow-wrap:anywhere; }
+.approved-dialog .dialog-error-notice summary { cursor:pointer; color:var(--muted-foreground); }
+.approved-dialog .dialog-error-notice pre { white-space:pre-wrap; overflow-wrap:anywhere; overflow:auto; max-height:30dvh; padding:calc(var(--spacing) * 3); border-radius:var(--radius-lg); background:var(--control-surface); }
+/* Keep the existing glass rim above a readable popup surface, including nested editors. */
+.approved-dialog[data-slot="dialog-popup"] { background:var(--popover); }
+.approved-dialog .dialog-error-notice summary:focus-visible { outline:none; border-radius:var(--radius-lg); box-shadow:0 0 0 calc(var(--spacing) / 2) var(--ring); }

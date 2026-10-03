@@ -41,9 +41,10 @@ export function FolderParentMoveDialog({ starredFolderIds, task, currentFolderId
 
   return (
     <Dialog open={task !== null} onOpenChange={(open) => { if (!open && !pending) onClose(); }}>
-      <DialogPopup className="max-w-md">
-        <DialogHeader><DialogTitle>다른 프로젝트로 이동</DialogTitle></DialogHeader>
+      <DialogPopup className="approved-dialog v3-surface max-w-md">
+        <DialogHeader><DialogTitle>폴더 이동</DialogTitle></DialogHeader>
         <DialogPanel>
+          <div className="v3-form-context"><span>이동할 폴더</span><strong>{task?.page.title}</strong></div>
           <div data-testid="v3-folder-parent-targets">
             {stars.loading ? <p>폴더를 불러오는 중…</p> : task ? <FolderPicker key={task.folderId}
               folders={folders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
@@ -52,10 +53,11 @@ export function FolderParentMoveDialog({ starredFolderIds, task, currentFolderId
           {stars.error ? <p className="v3-load-error" role="alert">별표 조회 실패 · {stars.error}</p> : null}
           {error ? <p className="v3-load-error" role="alert">{error}</p> : null}
         </DialogPanel>
-        <DialogFooter>
+        <DialogFooter className="v3-choice-footer">
+          <p className="v3-form-submit-note">{selectedFolderId ? `${folders.find(folder => folder.id === selectedFolderId)?.name ?? "선택한 폴더"} 안으로 이동` : "목적지를 선택하세요"}</p>
           <Button variant="ghost" disabled={pending} onClick={onClose}>취소</Button>
           <Button disabled={pending || !selectedFolderId || disabledFolderIds.has(selectedFolderId)}
-            onClick={() => { if (selectedFolderId && !pending && !disabledFolderIds.has(selectedFolderId)) onMove({ folderId: selectedFolderId }); }}>이동</Button>
+            onClick={() => { if (selectedFolderId && !pending && !disabledFolderIds.has(selectedFolderId)) onMove({ folderId: selectedFolderId }); }}>{pending ? "이동 중…" : "폴더 이동"}</Button>
         </DialogFooter>
       </DialogPopup>
     </Dialog>

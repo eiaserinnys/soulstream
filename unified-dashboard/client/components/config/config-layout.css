@@ -1,0 +1,55 @@
+/* Approved settings shell. DialogPopup owns the outer frame and insets. */
+.config-dialog { height:min(var(--container-3xl), calc(100dvh - var(--v3-space-8) * 2)); }
+.config-dialog > [data-slot="dialog-header"] { border-bottom:1px solid var(--border); }
+.config-dialog .config-dialog-panel { padding:0; }
+.config-dialog [data-slot="dialog-panel-scroll"] { border-radius:0; }
+.config-dialog .config-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,3fr); min-height:0; }
+.config-dialog .config-category-nav { padding:var(--v3-space-6) var(--v3-space-3); background:var(--control-surface); border-right:1px solid var(--border); }
+.config-dialog .config-category-nav section + section { margin-top:var(--v3-space-6); }
+.config-dialog .config-category-nav h3 { font:var(--v3-type-meta) var(--v3-font-family); color:var(--muted-foreground); margin:0 var(--v3-space-3) var(--v3-space-2); }
+.config-dialog .config-category-item { display:flex; align-items:center; gap:var(--v3-space-2); width:100%; min-height:var(--v3-action-size); padding:var(--v3-space-2) var(--v3-space-3); border:1px solid transparent; border-radius:var(--radius-lg); text-align:left; font:var(--v3-type-body) var(--v3-font-family); color:var(--muted-foreground); }
+.config-dialog .config-category-item span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.config-dialog .config-category-item svg { flex-shrink:0; }
+.config-dialog .config-category-item:hover { background:var(--muted); color:var(--foreground); }
+.config-dialog .config-category-item.is-active { background:var(--control-surface); color:var(--foreground); border-color:var(--border); font-weight:600; }
+.config-dialog .config-category-item.is-active > svg:first-child { color:var(--primary); }
+.config-dialog .config-category-chevron { opacity:0; }
+.config-dialog .config-detail { padding:var(--v3-space-6); min-width:0; }
+.config-dialog .config-detail-heading { margin-bottom:var(--v3-space-6); }
+.config-dialog .config-detail-heading h2 { margin:0 0 var(--v3-space-2); font:var(--v3-type-page) var(--v3-font-family); }
+.config-dialog .config-detail-heading p { color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); margin:0; }
+.config-dialog .config-back { display:none; }
+.config-dialog .config-appearance { display:flex; flex-direction:column; gap:var(--v3-space-6); }
+.config-dialog .config-wallpaper { padding:0 0 var(--v3-space-6); border-bottom:1px solid var(--border); }
+.config-dialog .config-wallpaper-options { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--v3-space-2); margin-top:var(--v3-space-4); }
+.config-dialog .config-wallpaper-options button { padding:var(--v3-space-2) var(--v3-space-2) var(--v3-space-2); border-radius:var(--radius-lg); background:transparent; color:var(--muted-foreground); border:1px solid transparent; font:var(--v3-type-body) var(--v3-font-family); display:flex; flex-direction:column; gap:var(--v3-space-2); }
+.config-dialog .config-wallpaper-options button[aria-pressed="true"] { border-color:var(--primary); background:color-mix(in srgb,var(--primary) 6%,transparent); color:var(--foreground); }
+.config-dialog .wallpaper-swatch { height:var(--v3-control-height); width:100%; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--muted); }
+.config-dialog [data-wallpaper="bokeh"] .wallpaper-swatch { background:radial-gradient(ellipse at 25% 20%,#e4b9b9 0%,transparent 70%),radial-gradient(ellipse at 75% 70%,#95a8cd 0%,#d7d2dc 80%); }
+.config-dialog [data-wallpaper="metal"] .wallpaper-swatch { background:linear-gradient(120deg,#e5e7ed,#aab2bd 38%,#f3f4f8 55%,#c2c8d2); }
+.config-dialog [data-wallpaper="photo"] .wallpaper-swatch { background:linear-gradient(155deg,#c9d8e2 50%,#b6c1ac 51%,#859984); }
+.config-dialog .config-appearance > section:not(.config-wallpaper) { background:transparent; padding:0 0 var(--v3-space-6); border:0; border-bottom:1px solid var(--border); border-radius:0; }
+.config-dialog .config-advanced { font:var(--v3-type-body) var(--v3-font-family); }
+.config-dialog .config-advanced > summary { display:flex; align-items:center; justify-content:space-between; padding:0 0 var(--v3-space-4); cursor:pointer; font-weight:500; }
+.config-dialog .config-advanced > summary::before { content:'›'; margin-right:var(--v3-space-2); color:var(--muted-foreground); }
+.config-dialog .config-advanced[open] > summary::before { content:'⌄'; }
+.config-dialog .config-advanced > summary span { margin-left:auto; font:var(--v3-type-meta) var(--v3-font-family); color:var(--muted-foreground); }
+.config-dialog .config-footer { display:block; }
+.config-dialog .config-footer-row, .config-dialog .config-discard { display:flex; align-items:center; flex-wrap:wrap; gap:var(--v3-space-2); width:100%; }
+.config-dialog .config-save-state { display:flex; align-items:center; gap:var(--v3-space-2); margin:0 auto 0 0; color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); }
+.config-dialog .config-discard > div { margin-right:auto; font:var(--v3-type-body) var(--v3-font-family); }
+.config-dialog .config-discard p { margin-top:var(--v3-space-2); color:var(--muted-foreground); }
+.config-dialog .config-detail [data-testid="config-field-row"] { padding:var(--v3-space-4) 0; border-bottom:1px solid var(--border); }
+.config-dialog .config-detail [data-testid="config-field-row"] > div > div > span:first-child { font:var(--v3-type-body) var(--v3-font-family); }
+.config-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius:var(--radius-lg); }
+@media (max-width:40rem) {
+ .config-dialog { height:calc(100dvh - var(--v3-space-8)); }
+ .config-dialog .config-layout { display:block; }
+ .config-dialog .config-category-nav { border-right:0; background:transparent; padding:var(--v3-space-6); }
+ .config-dialog .config-category-item { min-height:var(--v3-control-height); }
+ .config-dialog .config-category-chevron { opacity:.65; }
+ .config-dialog .config-layout[data-mobile-index="true"] .config-detail { display:none; }
+ .config-dialog .config-layout[data-mobile-index="false"] .config-category-nav { display:none; }
+ .config-dialog .config-back { display:flex; align-items:center; gap:var(--v3-space-2); color:var(--primary); font:var(--v3-type-body) var(--v3-font-family); min-height:var(--v3-action-size); margin-bottom:var(--v3-space-3); }
+ .config-dialog .config-save-state, .config-dialog .config-discard > div { width:100%; }
+}
