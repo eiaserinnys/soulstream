@@ -2,6 +2,7 @@ import type { Hocuspocus } from "@hocuspocus/server";
 import * as Y from "yjs";
 
 import {
+  BOARD_ITEMS_MAP,
   deleteBoardYjsItem,
   deleteMovedBoardYjsItem,
   getBoardYjsContainerDocumentName,
@@ -15,6 +16,7 @@ import type {
   BoardYjsFolderScope,
   BoardYjsDocumentApplication,
   CatalogBoardItemRow,
+  BoardYjsItemValue,
 } from "./board_yjs_types.js";
 
 export interface BoardMoveInput {
@@ -37,6 +39,8 @@ export interface SessionBoardMoveInput {
   boardItems: readonly CatalogBoardItemRow[];
   targetScope: BoardYjsFolderScope | null;
   position?: { x: number; y: number };
+  /** Checked inside the document mutation gate; sessions and assigned cards are DB facts. */
+  areAssignmentsInTargetFolder?: () => Promise<boolean>;
 }
 
 export interface StagedSessionBoardMove {
@@ -104,6 +108,8 @@ export async function withStagedSessionBoardMove(
     input.sessionIds.includes(item.itemId) &&
     (item.membershipKind ?? "primary") === "primary"
   );
+  const unchanged = await readSessionMoveNoop(hocuspocus, input, primaryItems);
+  if (unchanged) return unchanged;
   const scopes = sessionMoveScopes(primaryItems, input.targetScope);
   if (scopes.length === 0) {
     await persist({ movedBoardItem: null, boardApplications: [] });
@@ -162,6 +168,45 @@ export async function withStagedSessionBoardMove(
     for (const { connection } of connections.reverse()) {
       await connection.disconnect();
     }
+  }
+}
+
+async function readSessionMoveNoop(
+  hocuspocus: Hocuspocus,
+  input: SessionBoardMoveInput,
+  primaryItems: readonly CatalogBoardItemRow[],
+): Promise<CatalogBoardItemRow | null> {
+  const scope = input.targetScope;
+  if (!scope || !input.areAssignmentsInTargetFolder || input.sessionIds.length === 0 ||
+    primaryItems.some(item => item.folderId !== scope.folderId)) return null;
+  if (!(await input.areAssignmentsInTargetFolder())) return null;
+
+  // A DirectConnection would store on disconnect even when nothing changed.
+  // createDocument returns the existing live document or loads it through the
+  // normal persistence hooks. unloadDocument respects connections/pending saves.
+  const document = await hocuspocus.createDocument(
+    getBoardYjsContainerDocumentName(scope), {}, "server",
+    { isAuthenticated: true, readOnly: true }, { ...scope, source: "server" },
+  );
+  try {
+    const items = document.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
+    for (const sessionId of input.sessionIds) {
+      const item = items.get(`session:${sessionId}`);
+      if (!item || item.item_type !== "session" || item.item_id !== sessionId ||
+        (item.membership_kind ?? "primary") !== "primary") return null;
+      if (sessionId === input.sessionId && input.position &&
+        (Number(item.x) !== input.position.x || Number(item.y) !== input.position.y)) return null;
+    }
+    const root = items.get(`session:${input.sessionId}`)!;
+    return {
+      id: `session:${input.sessionId}`, folderId: scope.folderId,
+      membershipKind: "primary", itemType: "session", itemId: input.sessionId,
+      x: Number(root.x), y: Number(root.y), metadata: root.metadata ?? {},
+      ...(root.created_at ? { createdAt: root.created_at } : {}),
+      ...(root.updated_at ? { updatedAt: root.updated_at } : {}),
+    };
+  } finally {
+    await hocuspocus.unloadDocument(document);
   }
 }
 

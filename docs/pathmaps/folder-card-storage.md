@@ -12,6 +12,8 @@
 | 카드 HTTP와 저장 | `src/cards/card_routes.ts`, `card_operations.ts`, `card_control_plane_service.ts`, `control_plane/card_mutation_core.ts` | `/api/cards`와 `/:id`의 상태·이동·대기열·보고·질문 답 경로. `cards.folder_id`가 소속이며 `folder_operations`가 감사 정본이다. request는 생성 후 고정, brief는 수정 가능, 보고는 추가만 한다. |
 | 세션과 카드 연결 | `sessions.card_id` | ON DELETE SET NULL. 카드 상세 세션 목록과 세션 DTO cardId가 같은 열을 읽는다. 보드와 페이지 바인딩에 카드 연결 복제는 없다. |
 | 보드 여섯 종류 | `src/board-yjs/board_yjs_repository.ts` | session, markdown, subfolder, asset, frame, custom_view 모두 `folder_id` 하나로 소속한다. 문서명은 `board-folder:<id>`. |
+| 세션 트리와 담당 카드 이동 | `src/session/session_board_move_service.ts` → `src/board-yjs/board_yjs_move_repository.ts` | 루트와 모든 자식을 함께 이동한다. `sessions.folder_id`와 `cards.assignee_session_id`로 연결된 카드의 `folder_id`는 DB가 정본이다. `sessions.card_id`로 소속된 카드를 담당 카드로 간주하지 않는다. |
+| 같은 폴더 이동 생략 | `src/board-yjs/board_yjs_move.ts:readSessionMoveNoop` | 기존 이동의 문서 mutation gate 안에서 DB의 세션·담당 카드 폴더, 대상 live Y.Doc의 primary 항목·명시 좌표, 기존 DB/cache 합집합의 다른 폴더 primary 부재를 확인한다. 모두 같으면 문서 복제·인코딩·병합·전체 투영·이동 저장과 이동 자체 알림을 생략하고 기존 성공 DTO를 반환한다. 하나라도 다르면 기존 이동을 수행한다. 호출자가 성공 뒤 내는 catalog 알림은 유지한다. |
 | 오늘·별표·폴더 상세 | `src/planner/planner_repository.ts` | 오늘은 attention(review, blocked 전체: question/no_report/limit), running, queued 카드 목록을 포함한다. 대기열 순서는 queue_position_key의 C 정렬이다. 폴더 상세는 cards를 읽고 섹션은 없다. 폴더와 project page를 조합한다. 별표 순서는 `planner_starred_page_order`가 저장한다. 시스템 폴더 claude와 llm은 제외한다. |
 | 구독 갱신 | card/folder service → `card_updated` / `folder_updated` | 카드 변경은 `{cardId,folderId}`, 폴더 변경은 `{folderId}`로 해당 객체를 재조회한다. 폴더 헤더 변경은 catalog도 갱신한다. page mount 변경은 부모 page 구독자에게 알린다. |
 

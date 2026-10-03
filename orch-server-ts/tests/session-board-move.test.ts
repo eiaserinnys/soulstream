@@ -38,6 +38,7 @@ describe("SessionBoardMoveService", () => {
       },
       repository: {
         listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
+        areSessionAssignmentsInFolder: vi.fn(async () => false),
         listSessionBoardItems: vi.fn(async () => sourceItems),
         commitSessionMove,
       },
@@ -72,6 +73,7 @@ describe("SessionBoardMoveService", () => {
       },
       repository: {
         listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
+        areSessionAssignmentsInFolder: vi.fn(async () => false),
         listSessionBoardItems: vi.fn(async () => sourceItems),
         commitSessionMove,
       },
@@ -103,6 +105,7 @@ describe("SessionBoardMoveService", () => {
       },
       repository: {
         listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
+        areSessionAssignmentsInFolder: vi.fn(async () => false),
         listSessionBoardItems: vi.fn(async () => [sessionItem("folder-old")]),
         commitSessionMove,
       },
@@ -135,6 +138,7 @@ describe("SessionBoardMoveService", () => {
       },
       repository: {
         listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
+        areSessionAssignmentsInFolder: vi.fn(async () => false),
         listSessionBoardItems: vi.fn(async () => [sessionItem("folder-old")]),
         commitSessionMove: vi.fn(async () => { throw new Error("transaction rolled back"); }),
       },
@@ -172,6 +176,7 @@ describe("SessionBoardMoveService", () => {
       },
       repository: {
         listSessionMoveTree: vi.fn(async (ids: readonly string[]) => [...ids]),
+        areSessionAssignmentsInFolder: vi.fn(async () => false),
         listSessionBoardItems,
         commitSessionMove: vi.fn(async () => undefined),
       },

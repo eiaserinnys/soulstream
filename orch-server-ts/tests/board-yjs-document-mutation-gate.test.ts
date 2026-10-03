@@ -47,6 +47,7 @@ describe("Board Y.Doc mutation gate", () => {
     const deny = vi.fn(async () => {
       throw new Error("document mutation gate denied");
     });
+    const checkAssignments = vi.fn(async () => true);
     Object.assign(service as unknown as { documentMutationGate: unknown }, {
       documentMutationGate: {
         withMutation: deny,
@@ -54,6 +55,14 @@ describe("Board Y.Doc mutation gate", () => {
     });
 
     const paths = [
+      {
+        name: "same-folder no-op check",
+        expectedNames: ["board-folder:folder-a"],
+        run: () => service.withSessionBoardMoveApplications({
+          sessionId: "a", sessionIds: ["a"], boardItems: [boardItem("session")],
+          targetScope: { folderId: "folder-a" }, areAssignmentsInTargetFolder: checkAssignments,
+        }, vi.fn()),
+      },
       {
         name: "folder identity move to top level",
         expectedNames: ["board-folder:folder-a"],
@@ -105,6 +114,7 @@ describe("Board Y.Doc mutation gate", () => {
       await expect(path.run(), path.name).rejects.toThrow("document mutation gate denied");
       expect(deny, path.name).toHaveBeenCalledOnce();
       expect(deny, path.name).toHaveBeenCalledWith(path.expectedNames, expect.any(Function));
+      expect(checkAssignments).not.toHaveBeenCalled();
     }
     await service.close();
   });
