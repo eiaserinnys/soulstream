@@ -66,7 +66,6 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `MCP_ENABLED` | `false` | Enables the worker MCP endpoint. |
 | `MCP_PATH` | `/mcp` | Base used to derive the internal route as `${MCP_PATH}/internal`. No public MCP route is mounted. |
 | `MCP_INTERNAL_PORT` | `PORT+1` | Node-local `127.0.0.1` listener for the privileged internal route. Never publish or proxy this port through nginx. |
-| `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | Retained configuration key; the internal agent route is always stateless. |
 | `MCP_REQUIRE_AUTH` | `false` | Requires bearer authentication for MCP requests. |
 | `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated Host header allowlist. |
 | `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | `true` | Persistent Claude Query runtime. Set `false` only as the emergency legacy kill switch. |

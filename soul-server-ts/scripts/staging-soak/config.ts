@@ -173,7 +173,6 @@ export function buildServiceEnvironments(
       ATOM_ENABLED: "false",
       MCP_ENABLED: "true",
       MCP_PATH: "/mcp",
-      MCP_STATELESS_TRANSPORT_ENABLED: "true",
       MCP_REQUIRE_AUTH: "true",
       MCP_ALLOWED_HOSTS: "127.0.0.1,localhost",
       SOULSTREAM_MCP_AUTH: `Bearer ${secrets.authBearerToken}`,

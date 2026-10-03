@@ -23,8 +23,9 @@ describe("parseEnv", () => {
     expect(env.DASH_USER_PORTRAIT).toBe("");
     expect(env.LLM_OPENAI_API_KEY).toBeUndefined();
     expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
-    expect(env.TYPESAFE_API_KEY).toBeUndefined();
-    expect(env.SKILL_CATALOG_NODE_ID).toBeUndefined();
+    expect(env).not.toHaveProperty("TYPESAFE_API_KEY");
+    expect(env).not.toHaveProperty("SKILL_CATALOG_NODE_ID");
+    expect(env).not.toHaveProperty("MCP_STATELESS_TRANSPORT_ENABLED");
     expect(env.CODEX_CLI_PATH).toBeUndefined();
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
     expect(env.EVENT_OUTBOX_DIR).toBe("/tmp/soulstream-event-outbox-test");
@@ -40,17 +41,18 @@ describe("parseEnv", () => {
     ).toThrow(ZodError);
   });
 
-  it("Typesafe API key와 UUID skill catalog node를 받는다", () => {
+  it("ignores retired worker settings retained in an existing environment", () => {
     const env = parseEnv({
       ...minimal,
       TYPESAFE_API_KEY: "typesafe-test-key",
       SKILL_CATALOG_NODE_ID: "11111111-2222-4333-8444-555555555555",
+      MCP_STATELESS_TRANSPORT_ENABLED: "true",
     });
 
-    expect(env.TYPESAFE_API_KEY).toBe("typesafe-test-key");
-    expect(env.SKILL_CATALOG_NODE_ID).toBe("11111111-2222-4333-8444-555555555555");
-    expect(() => parseEnv({ ...minimal, SKILL_CATALOG_NODE_ID: "not-a-uuid" }))
-      .toThrow(ZodError);
+    expect(env).toEqual(parseEnv(minimal));
+    expect(env).not.toHaveProperty("TYPESAFE_API_KEY");
+    expect(env).not.toHaveProperty("SKILL_CATALOG_NODE_ID");
+    expect(env).not.toHaveProperty("MCP_STATELESS_TRANSPORT_ENABLED");
   });
 
   it("SOULSTREAM_UPSTREAM_URL 부재 시 ZodError", () => {
@@ -362,44 +364,21 @@ describe("parseEnv", () => {
       expect(env.MCP_PATH).toBe("/mcp");
     });
 
-    it("MCP_STATELESS_TRANSPORT_ENABLED defaults off and requires explicit opt-in", () => {
-      expect(parseEnv(minimal).MCP_STATELESS_TRANSPORT_ENABLED).toBe(false);
-      expect(parseEnv({
-        ...minimal,
-        MCP_ENABLED: "true",
-        MCP_STATELESS_TRANSPORT_ENABLED: "true",
-      }).MCP_STATELESS_TRANSPORT_ENABLED).toBe(true);
-    });
-
-    it("rejects stateless transport when the MCP route itself is disabled", () => {
-      expect(() => parseEnv({
-        ...minimal,
-        MCP_STATELESS_TRANSPORT_ENABLED: "true",
-      })).toThrow(/MCP_ENABLED/);
-    });
-
-    it("requires stateless MCP before runner process cutover when MCP is enabled", () => {
-      expect(() => parseEnv({
+    it("accepts runner process mode and internal MCP without the retired stateless key", () => {
+      const env = parseEnv({
         ...minimal,
         MCP_ENABLED: "true",
         SOUL_RUNNER_PROCESS_ENABLED: "true",
         SOUL_RUNNER_STATE_DIR: "/tmp/runners",
         SOUL_RUNNER_ARTIFACT_DIR: "/tmp/artifacts",
         SOUL_RUNNER_RELEASES_DIR: "/tmp/releases",
-      })).toThrow(/MCP_STATELESS_TRANSPORT_ENABLED/);
-      expect(parseEnv({
-        ...minimal,
-        MCP_ENABLED: "true",
-        MCP_STATELESS_TRANSPORT_ENABLED: "true",
-        SOUL_RUNNER_PROCESS_ENABLED: "true",
-        SOUL_RUNNER_STATE_DIR: "/tmp/runners",
-        SOUL_RUNNER_ARTIFACT_DIR: "/tmp/artifacts",
-        SOUL_RUNNER_RELEASES_DIR: "/tmp/releases",
-      })).toMatchObject({
+      });
+
+      expect(env).toMatchObject({
         MCP_ENABLED: true,
-        MCP_STATELESS_TRANSPORT_ENABLED: true,
         SOUL_RUNNER_PROCESS_ENABLED: true,
       });
+      expect(env).not.toHaveProperty("MCP_STATELESS_TRANSPORT_ENABLED");
     });
 
     it("MCP_REQUIRE_AUTH default false", () => {

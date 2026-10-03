@@ -42,8 +42,6 @@ export interface ServerParams {
     runtime: McpRuntime;
     path: string;
     auth: McpAuthConfig;
-    /** Default false. Stateless mode creates one SDK transport per POST. */
-    statelessTransport?: boolean;
   };
   /** Node-local Cogito search route retained for MCP session-history search. */
   cogito?: CogitoSearchRouteConfig;

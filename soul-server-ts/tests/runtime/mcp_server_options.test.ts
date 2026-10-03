@@ -17,4 +17,22 @@ describe("MCP server option composition", () => {
       {} as McpRuntime,
     )).toBeUndefined();
   });
+
+  it("leaves stateless transport to the internal MCP server", () => {
+    const runtime = {} as McpRuntime;
+    const options = buildMcpServerOptions(
+      parseEnv({ ...minimal, MCP_ENABLED: "true" }),
+      runtime,
+    );
+
+    expect(options).toEqual({
+      runtime,
+      path: "/mcp",
+      auth: {
+        requireAuth: false,
+        bearerToken: "",
+        allowedHosts: ["localhost", "127.0.0.1"],
+      },
+    });
+  });
 });

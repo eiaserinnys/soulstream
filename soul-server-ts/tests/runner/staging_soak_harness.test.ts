@@ -94,7 +94,6 @@ describe("runner staging soak isolation contract", () => {
       SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:15200/ws/node",
       SOUL_RUNNER_PROCESS_ENABLED: "true",
       MCP_ENABLED: "true",
-      MCP_STATELESS_TRANSPORT_ENABLED: "true",
       CLAUDE_AUTH_TOKEN_PATH: "/secure/staging-claude-oauth.json",
       CODEX_HOME: "/secure/staging-codex-home",
       CODEX_ADAPTER_MODE: "app-server",
