@@ -100,9 +100,12 @@ export async function reconcilePageLinks(
       `;
     } else {
       await sql`
-        DELETE FROM block_links
-        WHERE source_block_id = ANY(${sql.array(sourceBlockIds)}::text[])
-          AND id <> ALL(${sql.array(desiredIds)}::text[])
+        DELETE FROM block_links b
+        WHERE b.source_block_id = ANY(${sql.array(sourceBlockIds)}::text[])
+          AND NOT EXISTS (
+            SELECT 1 FROM unnest(${sql.array(desiredIds)}::text[]) AS keep(id)
+            WHERE keep.id = b.id
+          )
       `;
     }
   }
