@@ -32,10 +32,23 @@ test('개수는 제목 바로 다음 형제이며 두 글자를 baseline·8pt �
   const children = header.props.children.filter(Boolean);
   expect(children[0].props.children).toBe('확인할 것');
   expect(children[1].props.children).toBe(4);
-  expect(StyleSheet.flatten(title.props.style).flex).not.toBe(1);
+  // Yoga resolves positive flex + auto basis to zero in native layout; remove
+  // the inherited shorthand as well as preserving the explicit natural-width contract.
+  expect(StyleSheet.flatten(title.props.style)).toMatchObject({ flexGrow: 0, flexShrink: 1, flexBasis: 'auto' });
+  expect(StyleSheet.flatten(title.props.style).flex).toBeUndefined();
   expect(StyleSheet.flatten(header.props.style))
     .toMatchObject({ alignItems: 'baseline', gap: 8 });
   expect(StyleSheet.flatten(count.props.style)).toMatchObject({ fontSize: 13 });
+});
+
+test('드래프트 제목·개수는 줄어들 수 있는 자연폭이고 네이티브 flex 기본폭을 상속하지 않는다', () => {
+  const screen = render(<PlannerSectionHeader variant="lane" testID="draft" title="드래프트" count={0} />);
+  const title = screen.getByTestId('draft');
+  expect(title.props.numberOfLines).toBe(1);
+  expect(title.props.children[0]).toBe('드래프트 ');
+  expect(title.props.children[1].props.children).toBe('0개');
+  expect(StyleSheet.flatten(title.props.style)).toMatchObject({ flexGrow: 0, flexShrink: 1, flexBasis: 'auto' });
+  expect(StyleSheet.flatten(title.props.style).flex).toBeUndefined();
 });
 
 test('count 미지정 폴더 헤더는 기존 제목·동작 구조와 스타일을 유지한다', () => {

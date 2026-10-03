@@ -1,7 +1,7 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 import React, { useState } from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import { cardFixture } from '../../../test-support/cards';
 import { CardBoard } from '../CardBoard';
@@ -16,8 +16,16 @@ test('6열 순서와 개수를 유지하고 보관·취소는 보드에서 제�
   const screen = render(<CardBoard api={null} cards={[...cards, cardFixture({ id: 'archived', archived: true })]} onOpen={() => {}} />);
   expect(screen.getAllByTestId(/^card-board-column-/).map((column) => column.props.testID))
     .toEqual(['todo', 'queued', 'running', 'blocked', 'review', 'done'].map((status) => `card-board-column-${status}`));
-  expect(screen.getAllByText('드래프트')).toHaveLength(2);
-  expect(screen.getAllByText('검수 대기')).toHaveLength(2);
+  expect(screen.queryByTestId('card-board-stages')).toBeNull();
+  for (const [status, label] of [['todo', '드래프트'], ['review', '검수 대기']] as const) {
+    const lane = within(screen.getByTestId(`card-board-column-${status}`));
+    const count = lane.getByTestId(`card-board-count-${status}`);
+    // The lane contains its heading and this fixture card's status badge;
+    // removed navigation tabs must not contribute another status label.
+    expect(lane.getAllByText(new RegExp(label))).toHaveLength(2);
+    expect(count.props.children).toBe(status === 'todo' ? '1개' : 1);
+    expect(lane.getByTestId(`postit-card-${status}`)).toBeTruthy();
+  }
   expect(screen.queryByTestId('postit-card-cancelled')).toBeNull();
   expect(screen.queryByTestId('postit-card-archived')).toBeNull();
   expect(screen.getByTestId('card-board-count-done').props.children).toBe('1개 표시');
