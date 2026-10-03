@@ -24,6 +24,5 @@ export function registerCardTools(server: McpServer, runtime: McpRuntime): void 
 
 function agent(callerSessionId?: string) {
   const actor = requireMcpMutationActor(callerSessionId, "card mutation");
-  if (actor.actorKind !== "agent") throw new Error("card mutation requires an agent session");
   return actor;
 }

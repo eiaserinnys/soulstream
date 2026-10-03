@@ -16,7 +16,6 @@ import { registerCardTools } from "../../src/mcp/tools/card_tools.js";
 import { createLiveDashboardAccessProvider, serviceTokenAccessWithoutEmail } from "../../../orch-server-ts/src/runtime/live_dashboard_access_provider.js";
 
 const context: McpRequestContext = { callerSessionId: "header-session" };
-const external: McpRequestContext = { ...context, principal: { authority: "external", source: "llm", displayName: "External" } };
 const status = { card_id: "card-1", expected_version: 1, idempotency_key: "status-key" };
 const execution = { registrationId: "registration", executionCommandId: "command" };
 // Reuses the folder roundtrip SDK/HTTP/PG harness and card-work-start's real schema setup.
@@ -46,7 +45,6 @@ const cases: readonly [string, string, Record<string, unknown>, McpRequestContex
   ["version conflict", "set_card_status", { ...status, status: "done", expected_version: 999 }, context, true],
   ["system create", "create_card", { folder_id: "claude", title: "시스템", request: "" }, context, true],
   ["system move", "move_card", { card_id: "card-1", folder_id: "claude" }, context, true],
-  ["external query", "get_card", { card_id: "card-1", caller_session_id: "argument-session" }, external],
   ["internal no session", "update_card_brief", { card_id: "card-1", brief: "경과" }, {}, true],
   ["status mismatch", "set_card_status", { ...status, status: "done", caller_session_id: "argument-session" }, context, true],
   ["reply mismatch", "add_card_comment", { card_id: "card-1", text: "답변", mode: "reply", caller_session_id: "argument-session" }, context, true],
@@ -107,13 +105,6 @@ describe("card orchestrator MCP roundtrip", () => {
       return await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: input as Record<string, unknown> }));
     } finally { await client.close(); await server.close(); }
   }
-  it("allows external report writes with an llm audit actor", async () => {
-    const input = { card_id: "card-1", title: "외부", format: "markdown", body: "보고" };
-    await seed();
-    expect((await call("add_card_report", input, external)).isError).not.toBe(true);
-    expect((await h.sql`SELECT actor_kind,actor_session_id FROM folder_operations WHERE operation_type='add_card_report'`)[0])
-      .toMatchObject({ actor_kind: "llm", actor_session_id: null });
-  });
   it.each(cases)("preserves %s", async (_label, name, input, requestContext = context, fails = false) => {
     await seed(); const next = await call(name, input, requestContext);
     expect(next.isError === true).toBe(fails);

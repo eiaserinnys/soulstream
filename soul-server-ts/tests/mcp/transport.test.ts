@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { buildServer } from "../../src/server.js";
+import { buildInternalMcpServer, buildServer } from "../../src/server.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { CatalogService } from "../../src/catalog/catalog_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
@@ -92,31 +92,11 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
   const warning = vi.fn();
 
   beforeAll(async () => {
-    server = await buildServer({
-      host: "127.0.0.1",
-      port: 0,
-      nodeId: "test-node",
-      logger: createSilentLogger(),
-      mcp: {
-        runtime: makeRuntime(warning),
-        path: "/mcp",
-        auth: {
+    server = await buildInternalMcpServer({logger: createSilentLogger(), statelessTransport: false, runtime: makeRuntime(warning),path: "/mcp",auth: {
           requireAuth: false,
           bearerToken: "",
           allowedHosts: ["127.0.0.1", "localhost"],
-        },
-        externalIngress: {
-          path: "/mcp/external-llm",
-          source: "external-llm",
-          displayName: "External LLM",
-          auth: {
-            requireAuth: true,
-            bearerToken: "external-secret",
-            allowedHosts: ["127.0.0.1", "localhost"],
-          },
-        },
-      },
-    });
+        }});
     const addr = await server.listen({ host: "127.0.0.1", port: 0 });
     baseUrl = addr;
   });
@@ -194,177 +174,6 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
     // body stream을 끝까지 drain하여 transport가 cleanup하도록.
     await res.text();
   });
-
-  it("ignores caller-origin headers and keeps the public route server-fixed as external", async () => {
-    const res = await initialize(baseUrl, "unknown");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("mcp-session-id")).toBeTruthy();
-    await res.text();
-  });
-
-  it("keeps the generic public route externally restricted without an origin header", async () => {
-    const initialized = await initialize(baseUrl);
-    expect(initialized.status).toBe(200);
-    const sessionId = initialized.headers.get("mcp-session-id");
-    expect(sessionId).toBeTruthy();
-    await initialized.text();
-
-    const listed = await mcpPost(baseUrl, sessionId!, {
-      jsonrpc: "2.0",
-      method: "tools/list",
-      params: {},
-      id: 2,
-    });
-    const payload = await rpcPayload(listed);
-    const tools = payload.result.tools as Array<{
-      name: string;
-      inputSchema: unknown;
-    }>;
-    expect(tools.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining([
-        "create_agent_session",
-        "create_remote_agent_session",
-        "create_folder",
-        "archive_folder",
-        "batch_page_operations",
-      ]),
-    );
-    expect(tools.map((tool) => tool.name)).not.toEqual(
-      expect.arrayContaining([
-        "delete_folder",
-        "delete_markdown_document",
-        "delete_session",
-      ]),
-    );
-    const batch = tools.find((tool) => tool.name === "batch_page_operations");
-    expect(JSON.stringify(batch?.inputSchema)).not.toContain(
-      "delete_block_subtree",
-    );
-
-    const directDelete = await mcpPost(baseUrl, sessionId!, {
-      jsonrpc: "2.0",
-      method: "tools/call",
-      params: {
-        name: "delete_session",
-        arguments: { session_id: "sess-do-not-delete" },
-      },
-      id: 5,
-    });
-    const deletePayload = await rpcPayload(directDelete);
-    expect(deletePayload.result.isError).toBe(true);
-    expect(JSON.stringify(deletePayload.result)).toContain("delete_session");
-    expect(warning).toHaveBeenCalledWith(
-      { callerAuthority: "external", callerSource: "llm", toolName: "delete_session" },
-      "Blocked destructive MCP tool for external LLM caller",
-    );
-
-    const nestedDelete = await mcpPost(baseUrl, sessionId!, {
-      jsonrpc: "2.0",
-      method: "tools/call",
-      params: {
-        name: "batch_page_operations",
-        arguments: {
-          page_id: "page-do-not-delete",
-          operations: [
-            { op: "delete_block_subtree", block_id: "block-do-not-delete" },
-          ],
-        },
-      },
-      id: 6,
-    });
-    const nestedDeletePayload = await rpcPayload(nestedDelete);
-    expect(nestedDeletePayload.result.isError).toBe(true);
-    expect(JSON.stringify(nestedDeletePayload.result)).toContain(
-      "batch_page_operations",
-    );
-    expect(warning).toHaveBeenCalledWith(
-      { callerAuthority: "external", callerSource: "llm", toolName: "batch_page_operations" },
-      "Blocked destructive MCP tool for external LLM caller",
-    );
-  });
-
-  it("cannot downgrade a public external session by spoofing an origin header", async () => {
-    const initialized = await initialize(baseUrl);
-    const sessionId = initialized.headers.get("mcp-session-id");
-    expect(sessionId).toBeTruthy();
-    await initialized.text();
-
-    const listed = await mcpPost(
-      baseUrl,
-      sessionId!,
-      {
-        jsonrpc: "2.0",
-        method: "tools/list",
-        params: {},
-        id: 3,
-      },
-      "llm",
-    );
-    const payload = await rpcPayload(listed);
-    expect(
-      (payload.result.tools as Array<{ name: string }>).map((tool) => tool.name),
-    ).not.toContain("delete_session");
-  });
-
-  it("ignores unknown origin on an existing session follow-up", async () => {
-    const initialized = await initialize(baseUrl);
-    const sessionId = initialized.headers.get("mcp-session-id");
-    expect(sessionId).toBeTruthy();
-    await initialized.text();
-
-    const res = await mcpPost(
-      baseUrl,
-      sessionId!,
-      { jsonrpc: "2.0", method: "tools/list", params: {}, id: 4 },
-      "unknown",
-    );
-    expect(res.status).toBe(200);
-    const payload = await rpcPayload(res);
-    expect((payload.result.tools as Array<{ name: string }>).map((tool) => tool.name))
-      .not.toContain("delete_session");
-  });
-
-  it("keeps the dedicated external ingress separately authenticated and equally restricted", async () => {
-    const unauthorized = await fetch(`${baseUrl}/mcp/external-llm`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", params: {}, id: 8 }),
-    });
-    expect(unauthorized.status).toBe(401);
-
-    const blocked = await fetch(`${baseUrl}/mcp/external-llm`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-        authorization: "Bearer external-secret",
-        "x-soulstream-agent-session-id": "spoofed-parent",
-        "x-soulstream-caller-origin": "internal",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: {
-          name: "delete_session",
-          arguments: { session_id: "sess-do-not-delete" },
-        },
-        id: 9,
-      }),
-    });
-    const payload = await rpcPayload(blocked);
-    expect(payload.result.isError).toBe(true);
-    expect(warning).toHaveBeenCalledWith(
-      {
-        callerAuthority: "external",
-        callerSource: "external-llm",
-        toolName: "delete_session",
-      },
-      "Blocked destructive MCP tool for external LLM caller",
-    );
-  });
 });
 
 describe("MCP Host header guard", () => {
@@ -372,21 +181,11 @@ describe("MCP Host header guard", () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    server = await buildServer({
-      host: "127.0.0.1",
-      port: 0,
-      nodeId: "test-node",
-      logger: createSilentLogger(),
-      mcp: {
-        runtime: makeRuntime(),
-        path: "/mcp",
-        auth: {
+    server = await buildInternalMcpServer({logger: createSilentLogger(), statelessTransport: false, runtime: makeRuntime(),path: "/mcp",auth: {
           requireAuth: false,
           bearerToken: "",
           allowedHosts: ["example.com"], // 의도적으로 127.0.0.1 불포함
-        },
-      },
-    });
+        }});
     const addr = await server.listen({ host: "127.0.0.1", port: 0 });
     baseUrl = addr;
   });
@@ -414,31 +213,11 @@ describe("MCP bearer auth guard", () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    server = await buildServer({
-      host: "127.0.0.1",
-      port: 0,
-      nodeId: "test-node",
-      logger: createSilentLogger(),
-      mcp: {
-        runtime: makeRuntime(),
-        path: "/mcp",
-        auth: {
+    server = await buildInternalMcpServer({logger: createSilentLogger(), statelessTransport: false, runtime: makeRuntime(),path: "/mcp",auth: {
           requireAuth: true,
           bearerToken: "secret-token",
           allowedHosts: ["127.0.0.1", "localhost"],
-        },
-        externalIngress: {
-          path: "/mcp/external-llm",
-          source: "external-llm",
-          displayName: "External LLM",
-          auth: {
-            requireAuth: true,
-            bearerToken: "external-secret",
-            allowedHosts: ["127.0.0.1", "localhost"],
-          },
-        },
-      },
-    });
+        }});
     const addr = await server.listen({ host: "127.0.0.1", port: 0 });
     baseUrl = addr;
   });
@@ -481,28 +260,6 @@ describe("MCP bearer auth guard", () => {
     });
     expect(res.status).toBe(200);
     await res.text();
-  });
-
-  it("does not accept public and dedicated ingress bearers across boundaries", async () => {
-    const body = JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 });
-    const publicWithExternal = await fetch(`${baseUrl}/mcp`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer external-secret",
-      },
-      body,
-    });
-    const externalWithPublic = await fetch(`${baseUrl}/mcp/external-llm`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer secret-token",
-      },
-      body,
-    });
-    expect(publicWithExternal.status).toBe(401);
-    expect(externalWithPublic.status).toBe(401);
   });
 });
 

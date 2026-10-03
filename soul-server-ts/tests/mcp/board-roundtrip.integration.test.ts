@@ -3,7 +3,6 @@ import { createBoardRoundtripHarness } from "./board-roundtrip-harness.js";
 import type { McpRequestContext } from "../../src/mcp/request_context.js";
 
 const context: McpRequestContext = { callerSessionId: "header-session" };
-const external: McpRequestContext = { ...context, principal: { authority: "external", source: "llm", displayName: "External" } };
 const move = { board_item_id: "markdown:doc-1", folder_id: "00000000-0000-4000-8000-000000000001", idempotency_key: "move" };
 const view = { folder_id: "00000000-0000-4000-8000-000000000001", html: "<p>새 뷰</p>", idempotency_key: "create-view" };
 const patch = { custom_view_id: "cv-1", expected_revision: 1, html: "<p>after</p>", idempotency_key: "patch-view" };
@@ -65,8 +64,6 @@ const cases: readonly [string, string, Record<string, unknown>, boolean?, McpReq
   ["get missing view returns null", "get_custom_view", { custom_view_id: "missing" }],
   ["list views", "list_custom_views", { folder_id: "00000000-0000-4000-8000-000000000001" }],
   ["list missing folder", "list_custom_views", { folder_id: "missing" }, true],
-  ["external read", "get_custom_view", { custom_view_id: "cv-1" }, false, external],
-  ["external view mutation", "create_custom_view", { ...view, caller_session_id: "argument-session" }, false, external],
   ["internal no session", "create_custom_view", view, true, {}],
   ["explicit trimmed session", "create_custom_view", { ...view, caller_session_id: " argument-session " }],
 ];

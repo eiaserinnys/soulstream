@@ -1,18 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-
-import {
-  getCurrentMcpCallerPrincipal,
-  isCurrentMcpCallerExternal,
-} from "./request_context.js";
-import { errorResult } from "./result.js";
 import type { McpRuntime } from "./runtime.js";
 
-const DESTRUCTIVE_OPERATIONS_BY_TOOL: Readonly<
-  Record<string, ReadonlySet<string>>
-> = {
-  batch_page_operations: new Set(["delete_block_subtree"]),
-};
 const CONFIG_MUTATION_TOOL_NAMES = new Set([
   "update_agent_profile",
   "set_agent_mcp_profile",
@@ -22,119 +10,31 @@ const CONFIG_MUTATION_TOOL_NAMES = new Set([
   "set_agent_atom_contexts",
   "set_folder_system_prompt",
 ]);
-const DESTRUCTIVE_TOOL_NAMES_BY_RUNTIME = new WeakMap<
-  McpRuntime,
-  Set<string>
->();
 const REGISTERED_TOOL_NAMES_BY_RUNTIME = new WeakMap<McpRuntime, Set<string>>();
+
+export function createInventoryMcpServer(server: McpServer, runtime: McpRuntime): McpServer {
+  return new Proxy(server, { get(target, prop, receiver) {
+    if (prop !== "registerTool") return Reflect.get(target, prop, receiver);
+    return (name: string, config: unknown, handler: (...args: unknown[]) => unknown) => {
+      const registeredConfig = isDestructiveMcpTool(name, config) ? withDestructiveHint(config) : config;
+      const registered = target.registerTool(name, registeredConfig as never, handler as never);
+      recordRegisteredTool(runtime, name);
+      return registered;
+    };
+  } }) as McpServer;
+}
 
 export function getRegisteredMcpToolNames(runtime: McpRuntime): string[] {
   return [...(REGISTERED_TOOL_NAMES_BY_RUNTIME.get(runtime) ?? [])].sort();
 }
 
-export function isDestructiveMcpTool(
+function isDestructiveMcpTool(
   toolName: string,
   config?: unknown,
 ): boolean {
   if (CONFIG_MUTATION_TOOL_NAMES.has(toolName)) return true;
   const explicitHint = readDestructiveHint(config);
   return explicitHint ?? toolName.startsWith("delete_");
-}
-
-function hasDestructiveOperation(
-  toolName: string,
-  args: unknown,
-): boolean {
-  const destructiveOperations = DESTRUCTIVE_OPERATIONS_BY_TOOL[toolName];
-  if (!destructiveOperations || !isRecord(args)) return false;
-  return Array.isArray(args.operations)
-    && args.operations.some(
-      (operation) =>
-        isRecord(operation)
-        && typeof operation.op === "string"
-        && destructiveOperations.has(operation.op),
-    );
-}
-
-export function guardMcpToolCallRequest(
-  runtime: McpRuntime,
-  body: unknown,
-): CallToolResult | undefined {
-  if (!isCurrentMcpCallerExternal() || !isRecord(body)) {
-    return undefined;
-  }
-  if (body.method !== "tools/call" || !isRecord(body.params)) {
-    return undefined;
-  }
-  const toolName = body.params.name;
-  if (typeof toolName !== "string") return undefined;
-  return guardExternalLlmDestructiveOperation(
-    runtime,
-    toolName,
-    body.params.arguments,
-  );
-}
-
-export function guardMcpToolExecution(
-  runtime: McpRuntime,
-  toolName: string,
-  args?: unknown,
-  config?: unknown,
-): CallToolResult | undefined {
-  if (isCurrentMcpCallerExternal()) {
-    const blocked = guardExternalLlmDestructiveOperation(
-      runtime,
-      toolName,
-      args,
-      config,
-    );
-    if (blocked) return blocked;
-  }
-  return undefined;
-}
-
-export function createGuardedMcpServer(
-  server: McpServer,
-  runtime: McpRuntime,
-): McpServer {
-  return new Proxy(server, {
-    get(target, prop, receiver) {
-      if (prop !== "registerTool") {
-        return Reflect.get(target, prop, receiver);
-      }
-      return (name: string, config: unknown, handler: (...args: unknown[]) => unknown) => {
-        const staticallyDestructive = isDestructiveMcpTool(name, config);
-        recordDestructiveTool(runtime, name, staticallyDestructive);
-        if (
-          isCurrentMcpCallerExternal()
-          && staticallyDestructive
-        ) {
-          return undefined;
-        }
-        const registeredConfig = staticallyDestructive
-          ? withDestructiveHint(config)
-          : config;
-        const wrappedHandler = async (...args: unknown[]) => {
-          const blocked = guardMcpToolExecution(
-            runtime,
-            name,
-            args[0],
-            registeredConfig,
-          );
-          if (blocked) return blocked;
-          return await handler(...args);
-        };
-        const registerTool = Reflect.get(target, prop, target) as (
-          toolName: string,
-          toolConfig: unknown,
-          toolHandler: (...args: unknown[]) => unknown,
-        ) => unknown;
-        const registered = registerTool.call(target, name, registeredConfig, wrappedHandler);
-        recordRegisteredTool(runtime, name);
-        return registered;
-      };
-    },
-  }) as McpServer;
 }
 
 function recordRegisteredTool(runtime: McpRuntime, toolName: string): void {
@@ -144,49 +44,6 @@ function recordRegisteredTool(runtime: McpRuntime, toolName: string): void {
     REGISTERED_TOOL_NAMES_BY_RUNTIME.set(runtime, names);
   }
   names.add(toolName);
-}
-
-function guardExternalLlmDestructiveOperation(
-  runtime: McpRuntime,
-  toolName: string,
-  args: unknown,
-  config?: unknown,
-): CallToolResult | undefined {
-  const destructiveNames = DESTRUCTIVE_TOOL_NAMES_BY_RUNTIME.get(runtime);
-  const staticallyDestructive = config === undefined
-    ? destructiveNames?.has(toolName) ?? isDestructiveMcpTool(toolName)
-    : isDestructiveMcpTool(toolName, config);
-  if (!staticallyDestructive && !hasDestructiveOperation(toolName, args)) {
-    return undefined;
-  }
-  runtime.logger?.warn(
-    {
-      callerAuthority: "external",
-      callerSource: getCurrentMcpCallerPrincipal()?.source,
-      toolName,
-    },
-    "Blocked destructive MCP tool for external LLM caller",
-  );
-  return errorResult(
-    `MCP tool "${toolName}" is not available to external LLM callers`,
-  );
-}
-
-function recordDestructiveTool(
-  runtime: McpRuntime,
-  toolName: string,
-  destructive: boolean,
-): void {
-  let names = DESTRUCTIVE_TOOL_NAMES_BY_RUNTIME.get(runtime);
-  if (!names) {
-    names = new Set();
-    DESTRUCTIVE_TOOL_NAMES_BY_RUNTIME.set(runtime, names);
-  }
-  if (destructive) {
-    names.add(toolName);
-  } else {
-    names.delete(toolName);
-  }
 }
 
 function withDestructiveHint(config: unknown): unknown {

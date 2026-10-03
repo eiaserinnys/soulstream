@@ -6,29 +6,28 @@
  *   - callTool("reflect_brief") → services 배열
  *   - callTool("list_local_agents") → AgentRegistry 응답
  */
-import fs from "node:fs";
 import Fastify from "fastify";
-import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
-import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
-import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
-import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
+import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
+import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
+import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
+import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
 import { CatalogService } from "../../src/catalog/catalog_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
-import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildInternalMcpServer } from "../../src/server.js";
-import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
+import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_board_projection_host.js";
 
 import { makeTempDirSync } from "../helpers/temp_dir.js";
@@ -312,7 +311,7 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),
     emitSessionDeleted: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionBroadcaster;
-  const catalogService = new CatalogService(db, broadcaster, undefined, { renameFolder } as never);
+  const catalogService = new CatalogService(db, broadcaster, undefined);
   const taskManager = {
     listTasks: () => [],
     getTask: () => undefined,

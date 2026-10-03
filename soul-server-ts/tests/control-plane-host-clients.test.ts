@@ -148,60 +148,14 @@ describe("worker control-plane host clients", () => {
     now.mockRestore();
   });
 
-  it("serializes folder mutation input and returns the host mutation result", async () => {
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      const request = JSON.parse(String(init?.body));
-      expect(request).toMatchObject({
-        actor_kind: "agent",
-        actor_session_id: "session-1",
-        folder_id: "folder-1",
-
-        expected_version: 4,
-        idempotency_key: "idem-1",
-      });
-      return new Response(JSON.stringify({
-        folderId: "folder-1",
-        folder: { id: "folder-1", status: "completed" },
-        operation: { id: "operation-1" },
-        idempotent: false,
-      }), { status: 200, headers: { "content-type": "application/json" } });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const service = new FolderService({ orch, logger });
-
-    const result = await service.setFolderStatus({
-      actorSessionId: "session-1",
-      folderId: "folder-1",
-      expectedVersion: 4,
-      status: "completed",
-      idempotencyKey: "idem-1",
-    });
-
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/set_folder_status");
-    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeDefined();
-    expect(result).toEqual({
-      folderId: "folder-1",
-      folder: { id: "folder-1", status: "completed" },
-      operation: { id: "operation-1" },
-      idempotent: false,
-    });
-  });
-
   it("parses both orchestrator host error envelope shapes", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       error: { code: "BAD_INPUT", message: "invalid folder", details: { field: "name" } },
     }), { status: 400 })));
     const client = new FolderService({ orch, logger });
 
-    await expect(client.createFolder({
-      actorKind: "system",
-      actorSessionId: null,
-      name: "",
-      sortOrder: 0,
-      parentFolderId: null,
-      idempotencyKey: "idem-1",
-    })).rejects.toMatchObject({
-      message: "folder host create_folder failed: invalid folder",
+    await expect(client.getFolder("invalid-folder")).rejects.toMatchObject({
+      message: "folder host get_folder failed: invalid folder",
     });
   });
 
@@ -266,12 +220,7 @@ describe("worker control-plane host clients", () => {
     }), { status: 409, headers: { "content-type": "application/json" } })));
     const service = new FolderService({ orch, logger });
 
-    await expect(service.setFolderStatus({
-      actorSessionId: "session-1",
-      folderId: "folder-1",
-      expectedVersion: 2,
-      status: "completed",
-    })).rejects.toBeInstanceOf(FolderVersionConflict);
+    await expect(service.getFolder("folder-1")).rejects.toBeInstanceOf(FolderVersionConflict);
   });
 
   it("uses the folder host for session assignment", async () => {

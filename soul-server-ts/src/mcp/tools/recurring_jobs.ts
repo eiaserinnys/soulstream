@@ -16,7 +16,6 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
 }
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { isCurrentMcpCallerExternal } from "../request_context.js";
 import { errorResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
@@ -33,9 +32,6 @@ export function resolveMcpRecurringJobActor(
   runtime: McpRuntime,
   callerSessionId: string | null | undefined,
 ): { ok: true; actor: RecurringJobMcpActor } | { ok: false; error: string } {
-  if (isCurrentMcpCallerExternal()) {
-    return { ok: false, error: "Recurring-job tools are not available to untrusted external or LLM callers." };
-  }
   const attribution = resolveMcpCallerAttribution(runtime, callerSessionId);
   const email = attribution.callerInfo?.email;
   if (!attribution.callerSessionId) {

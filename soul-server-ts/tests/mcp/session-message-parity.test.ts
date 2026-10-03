@@ -6,7 +6,6 @@ import { executeMcpTool } from "../../../orch-server-ts/src/mcp/tool_executor.js
 import type { McpCallContext, McpHostOptions } from "../../../orch-server-ts/src/mcp/types.js";
 import { PendingNodeCommandTimeoutError } from "../../../orch-server-ts/src/node/pending_commands.js";
 import { sendMessageToSession } from "../../src/task/session_message_sender.js";
-import { buildExternalMcpCallerInfo } from "../../src/caller_info.js";
 
 // Reuses the action-route harness: real owner routing, pending commands and ACK transport.
 describe("session message worker remote and orchestrator parity", () => {
@@ -23,7 +22,9 @@ describe("session message worker remote and orchestrator parity", () => {
   ])("preserves the whole result for %s", async (state, ack) => {
     const harness = createActionHarness({ createSession: state !== "missing", ackFor: () => ack });
     try {
-      const callerInfo = buildExternalMcpCallerInfo("orch", "llm", "닷");
+      const next = await executeMcpTool({ sessionMessages: { router: harness.router, bridge: harness.bridge } } as unknown as McpHostOptions,
+        "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "같은 메시지" }, external);
+      const callerInfo = harness.sent.at(-1)?.caller_info;
       const fetchImpl: typeof fetch = async (_url, init) => {
         const response = await harness.app.inject({ method: "POST", url: "/api/sessions/sess-contract/intervene",
           payload: JSON.parse(String(init!.body)) });
@@ -34,8 +35,7 @@ describe("session message worker remote and orchestrator parity", () => {
         taskManager: { addIntervention: local }, onResume: vi.fn(), logger: { warn: vi.fn() } as never,
         orch: { baseUrl: "http://orch", headers: {} }, fetchImpl },
       { targetSessionId: "sess-contract", message: "같은 메시지", callerInfo });
-      const next = await executeMcpTool({ sessionMessages: { router: harness.router, bridge: harness.bridge } } as unknown as McpHostOptions,
-        "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "같은 메시지" }, external);
+
       // No IDs/timestamps occur in this result. Compare text formatting and structured result verbatim.
       expect(next).toEqual(jsonResult(old));
       expect(local).not.toHaveBeenCalled();

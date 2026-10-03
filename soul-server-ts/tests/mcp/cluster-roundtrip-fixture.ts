@@ -84,9 +84,10 @@ export async function createClusterRoundtripFixture() {
   } } });
   attach();
   const bridge = new SessionCommandTransportBridge({ registry, transports });
+  // The legacy node fixture omits later availability metadata; preserve its wire payload.
   const nodeAgentProfiles = { ...createLiveNodeAgentProfileRouteProviders({ registry, bridge,
     nodeHttpClient: { requestNode: async () => { throw new Error("unused HTTP"); } }, agentProfileRepository: { list: async () => [], getPortrait: async () => null },
-  }).nodeAgentProfileRoutes, modelPresetProvider: { listForNode: (id: string) => id === "node-a" ? registration.model_presets : undefined } };
+  }).nodeAgentProfileRoutes, modelPresetProvider: { listForNode: (id: string) => id === "node-a" ? registration.model_presets as unknown as import("../../../orch-server-ts/src/model/model_preset_availability.js").ModelPresetAvailability[] : undefined } };
   const cogito = createLiveCogitoRouteProviders({ registry, bridge, searchProvider: {} as never }).cogitoRoutes;
   const snapshotService = new NodeSnapshotService({ registry });
   const nodes = { snapshotService, broadcaster: new InMemoryNodeStreamBroadcaster({ snapshotService }) };
@@ -101,7 +102,7 @@ export async function createClusterRoundtripFixture() {
   const recurring = recurringFixture();
   const recurringJobs = { authBearerToken: "service-token", service: recurring.service };
   let settings: OrchestrationSettings;
-  const cardOrchestration = { authBearerToken: "service-token", resolveEmail: async () => "owner@example.com", isAdminEmail: async (email: string) => email === "owner@example.com",
+  const cardOrchestration = { authBearerToken: "service-token", currentEmail: async () => "owner@example.com", resolveEmail: async () => "owner@example.com", isAdminEmail: async (email: string) => email === "owner@example.com",
     resolveCaller: async (id: string) => ({ ownerEmail: callerEmail(id) ?? "", purpose: id === "decision" ? "card_orchestration_decision" : null }),
     validateFolder: async () => true, get: async () => settings,
     put: async (input: { policy: unknown; expectedVersion: number; updatedBy: string }) => {
@@ -114,10 +115,12 @@ export async function createClusterRoundtripFixture() {
   registerCogitoRoutes(app, cogito); registerSessionCommandRoutes(app, sessions);
   registerRecurringJobHostRoutes(app, recurringJobs); registerCardOrchestrationRoutes(app, cardOrchestration);
   app.get<{ Params: { sessionId: string } }>("/api/persistence/sessions/:sessionId", async request => ({ session: await readSession(request.params.sessionId) }));
-  registerMcpHostRoutes(app, { board: undefined as never, authBearerToken: "service-token", recurringJobs, cardOrchestration,
+  const executionOptions = { board: undefined as never, authBearerToken: "service-token", recurringJobs, cardOrchestration,
     cluster: { nodes, nodeAgentProfiles, cogito, sessions, readSession, logger: app.log },
     cards: { provider: {} as never, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
-    folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused folders"); } } });
+    folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused folders"); } } };
+
+  registerMcpHostRoutes(app, executionOptions);
   const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
   const runtime = { nodeId: "worker-node", orch: { baseUrl, headers: { authorization: "Bearer service-token" } }, logger: app.log,
     taskManager: { getTask: (id: string) => ({ profileId: "roselin", callerInfo: { email: callerEmail(id) } }) },
@@ -127,5 +130,5 @@ export async function createClusterRoundtripFixture() {
     recurring.seed(); settings = { key: "card_orchestration", policy, version: 1, updatedAt: now, updatedBy: "owner@example.com" };
     sent.length = 0; if (missingTransport) transports.detach({ nodeId: "node-a", connectionId }); else attach();
   };
-  return { app, runtime, seed, sent, recurring, registry };
+  return { executionOptions, app, runtime, seed, sent, recurring, registry };
 }

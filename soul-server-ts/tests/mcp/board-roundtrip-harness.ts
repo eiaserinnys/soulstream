@@ -1,37 +1,35 @@
-import Fastify from "fastify";
-import { vi } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createFullSchemaPostgresHarness } from "../../../orch-server-ts/tests/board_yjs_postgres_harness.js";
-import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
-import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
-import { BoardYjsRepository } from "../../../orch-server-ts/src/board-yjs/board_yjs_repository.js";
-import { BoardYjsMoveRepository } from "../../../orch-server-ts/src/board-yjs/board_yjs_move_repository.js";
-import { BoardYjsService } from "../../../orch-server-ts/src/board-yjs/board_yjs_service.js";
-import { SessionBoardMoveService } from "../../../orch-server-ts/src/session/session_board_move_service.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import Fastify from "fastify";
+import { vi } from "vitest";
 import { createBoardProjectionHost } from "../../../orch-server-ts/src/board-yjs/board_projection_host.js";
-import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
-import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
-import { FolderProjectIdentityService } from "../../../orch-server-ts/src/folders/folder_project_identity_service.js";
-import { SqlFolderProjectIdentityRepository } from "../../../orch-server-ts/src/folders/folder_project_identity_repository.js";
-import { registerFolderControlPlaneHostRoute } from "../../../orch-server-ts/src/folders/folder_control_plane_host_route.js";
+import { BoardYjsMoveRepository } from "../../../orch-server-ts/src/board-yjs/board_yjs_move_repository.js";
+import { BoardYjsRepository } from "../../../orch-server-ts/src/board-yjs/board_yjs_repository.js";
+import { BoardYjsService } from "../../../orch-server-ts/src/board-yjs/board_yjs_service.js";
+import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
 import { registerBoardYjsHostProxyRoutes } from "../../../orch-server-ts/src/board/board_yjs_host_proxy.js";
-import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
+import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
 import { registerPersistenceHostRoutes } from "../../../orch-server-ts/src/control_plane/persistence_host_routes.js";
-import { SessionDataHostClient } from "../../src/control_plane/session_data_host_client.js";
 import { SessionReadRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_read_repository.js";
+import { registerFolderControlPlaneHostRoute } from "../../../orch-server-ts/src/folders/folder_control_plane_host_route.js";
+import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
+import { SqlFolderProjectIdentityRepository } from "../../../orch-server-ts/src/folders/folder_project_identity_repository.js";
+import { FolderProjectIdentityService } from "../../../orch-server-ts/src/folders/folder_project_identity_service.js";
+import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
+import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
+import { SessionBoardMoveService } from "../../../orch-server-ts/src/session/session_board_move_service.js";
+import { createFullSchemaPostgresHarness } from "../../../orch-server-ts/tests/board_yjs_postgres_harness.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import { CatalogService } from "../../src/catalog/catalog_service.js";
+import { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
+import { SessionDataHostClient } from "../../src/control_plane/session_data_host_client.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import { FolderHostClient } from "../../src/folder/folder_host_client.js";
-import { FolderService } from "../../src/folder/folder_service.js";
-import { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
-import { CatalogService } from "../../src/catalog/catalog_service.js";
-import { CustomViewService } from "../../src/custom_view/custom_view_service.js";
-import { AgentRegistry } from "../../src/agent_registry.js";
-import * as catalog from "../../src/mcp/tools/catalog.js";
-import * as customView from "../../src/mcp/tools/custom_view.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
+import * as catalog from "../../src/mcp/tools/catalog.js";
+import * as customView from "../../src/mcp/tools/custom_view.js";
 
 // Same SDK/HTTP/isolated PG boundary as the preceding folder and card roundtrips.
 export async function createBoardRoundtripHarness() {
@@ -81,14 +79,16 @@ export async function createBoardRoundtripHarness() {
   // Getter ensures each reset uses a fresh real Y.Doc service rather than a stale document cache.
   registerBoardYjsHostProxyRoutes(app, { ...host, get service() { return board; } });
   registerPersistenceHostRoutes(app, { authBearerToken: "service-token", repositoryProvider: async () => ({ sessionReads }) as never });
-  registerMcpHostRoutes(app, { authBearerToken: "service-token", folders,
+  const executionOptions = { authBearerToken: "service-token", folders,
     cards: { cardServiceProvider: folders.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
-    board: { host: { ...host, get service() { return board; } }, getSession: id => sessionReads.getSession(id),
+    board: { host: { ...host, get service() { return board; } }, getSession: (id: string) => sessionReads.getSession(id),
       listAgentProfiles,
       broadcaster: { append: (event: unknown) => { events.push(event); } },
     },
-  } as never);
+  } as never;
+
+  registerMcpHostRoutes(app, executionOptions);
   const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
   const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
   const clientConfig = { orch, logger };
@@ -100,8 +100,7 @@ export async function createBoardRoundtripHarness() {
   db.configureSessionDataHost(new SessionDataHostClient(clientConfig));
   const agentRegistry = new AgentRegistry([{ id: "roselin", name: "로젤린" } as never]);
   const runtime = { nodeId: "test-node", orch, logger, db, agentRegistry,
-    catalogService: new CatalogService(db, oldBroadcaster as never, boardClient, new FolderService(clientConfig)),
-    customViewService: new CustomViewService(db, boardClient, oldBroadcaster),
+    catalogService: new CatalogService(db, oldBroadcaster as never, boardClient),
   } as unknown as McpRuntime;
   async function seed() {
     await board.close(); makeBoard(); events.length = 0;
@@ -147,7 +146,7 @@ export async function createBoardRoundtripHarness() {
       return await withMcpRequestContext(context, () => client.callTool({ name, arguments: input }));
     } finally { await client.close(); await server.close(); }
   }
-  return { seed, call, events, h, projectionHost, listAgentProfiles,
+  return { executionOptions, seed, call, events, h, projectionHost, listAgentProfiles,
     distinguishRemoteNames(value: boolean) { distinguishRemote = value; },
     async cleanup() { await board.close(); await app.close(); await h.cleanup(); } };
 }

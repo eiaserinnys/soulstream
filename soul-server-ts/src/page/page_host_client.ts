@@ -1,16 +1,15 @@
-import type { Logger } from "pino";
 import type {
   BacklinkDto,
   BlockDto,
   BlockOperationDto,
-  PageDto,
   PageActorKind,
-  PageLinkKind,
-  PageMarkdownBlockInput,
+  PageDto,
+  PageLinkKind
 } from "@soulstream/page-model";
+import type { Logger } from "pino";
 
-import type { OrchProxyConfig } from "../mcp/runtime.js";
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
+import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 export interface PageYjsHostClientConfig {
   orch: OrchProxyConfig;
@@ -23,11 +22,6 @@ export interface PageMutationResult {
   temp_id_mapping: Record<string, string>;
   operation: BlockOperationDto;
   idempotent?: boolean;
-}
-
-export interface PageClientActor {
-  actorKind?: PageActorKind;
-  actorSessionId: string | null;
 }
 
 export class PageYjsHostClientError extends Error {
@@ -53,10 +47,6 @@ export class PageYjsHostClient {
     return await this.request("get-page", { page_id: pageId, include_blocks: includeBlocks });
   }
 
-  async findPage(title: string): Promise<{ page: PageDto | null }> {
-    return await this.request("find-page", { title });
-  }
-
   async getBacklinks(input: {
     pageId: string;
     kinds: readonly PageLinkKind[];
@@ -73,20 +63,6 @@ export class PageYjsHostClient {
     });
   }
 
-  async createPage(input: {
-    page: { id: string; title: string; daily_date: string | null; metadata?: Record<string, unknown> };
-    blocks?: PageMarkdownBlockInput[];
-    actorKind?: PageActorKind;
-    actorSessionId: string | null;
-    idempotencyKey: string;
-  }): Promise<PageMutationResult> {
-    return await this.request("create-page", {
-      page: input.page,
-      ...(input.blocks ? { blocks: input.blocks } : {}),
-      ...actor(input, input.idempotencyKey),
-    });
-  }
-
   async batchPageOperations(input: Record<string, unknown> & {
     actor_kind?: PageActorKind;
     actor_session_id: string | null;
@@ -95,22 +71,6 @@ export class PageYjsHostClient {
     return await this.request("batch-page-operations", {
       ...input,
       actor_kind: input.actor_kind ?? "agent",
-    });
-  }
-
-  async replacePageMarkdown(input: {
-    pageId: string;
-    expectedVersion: number;
-    blocks: PageMarkdownBlockInput[];
-    actorKind?: PageActorKind;
-    actorSessionId: string | null;
-    idempotencyKey: string;
-  }): Promise<PageMutationResult> {
-    return await this.request("replace-page-markdown", {
-      page_id: input.pageId,
-      expected_version: input.expectedVersion,
-      blocks: input.blocks,
-      ...actor(input, input.idempotencyKey),
     });
   }
 
@@ -147,12 +107,4 @@ export class PageYjsHostClient {
     }
     return await response.json() as T;
   }
-}
-
-function actor(input: PageClientActor, idempotencyKey: string) {
-  return {
-    actor_kind: input.actorKind ?? "agent",
-    actor_session_id: input.actorSessionId,
-    idempotency_key: idempotencyKey,
-  };
 }

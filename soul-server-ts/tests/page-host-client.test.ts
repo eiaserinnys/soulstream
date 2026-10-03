@@ -27,26 +27,15 @@ describe("PageYjsHostClient", () => {
     });
   });
 
-  it("forwards agent provenance for mutation and lazy-create operations", async () => {
+  it("forwards agent provenance for lazy-create operations", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse(mutationResult()))
       .mockResolvedValueOnce(jsonResponse({ page: page(), created: true }));
     vi.stubGlobal("fetch", fetchMock);
     const client = makeClient();
 
-    await client.createPage({
-      page: { id: "page-1", title: "Page", daily_date: null },
-      actorSessionId: "session-1",
-      idempotencyKey: "create_page:session-1:req",
-    });
     await client.getDailyPage({ actorSessionId: "session-1" });
 
-    expect(requestBody(fetchMock, 0)).toMatchObject({
-      actor_kind: "agent",
-      actor_session_id: "session-1",
-      idempotency_key: "create_page:session-1:req",
-    });
-    expect(requestBody(fetchMock, 1)).toEqual({
+    expect(requestBody(fetchMock, 0)).toEqual({
       actor_kind: "agent",
       actor_session_id: "session-1",
     });
@@ -54,27 +43,16 @@ describe("PageYjsHostClient", () => {
 
   it("forwards sessionless llm provenance without fabricating an actor session", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse(mutationResult()))
       .mockResolvedValueOnce(jsonResponse({ page: page(), created: true }));
     vi.stubGlobal("fetch", fetchMock);
     const client = makeClient();
 
-    await client.createPage({
-      page: { id: "page-llm", title: "LLM Page", daily_date: null },
-      actorKind: "llm",
-      actorSessionId: null,
-      idempotencyKey: "create_page:llm:req",
-    });
     await client.getDailyPage({
       actorKind: "llm",
       actorSessionId: null,
     });
 
-    expect(requestBody(fetchMock, 0)).toMatchObject({
-      actor_kind: "llm",
-      actor_session_id: null,
-    });
-    expect(requestBody(fetchMock, 1)).toEqual({
+    expect(requestBody(fetchMock, 0)).toEqual({
       actor_kind: "llm",
       actor_session_id: null,
     });
@@ -135,14 +113,5 @@ function page() {
     metadata: {},
     created_at: "2026-07-11T00:00:00.000Z",
     updated_at: "2026-07-11T00:00:00.000Z",
-  };
-}
-
-function mutationResult() {
-  return {
-    page: page(),
-    blocks: [],
-    temp_id_mapping: {},
-    operation: { id: "op-1" },
   };
 }

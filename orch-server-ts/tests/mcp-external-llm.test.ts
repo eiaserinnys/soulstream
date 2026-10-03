@@ -1,9 +1,9 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExternalEventsService, credentialOwner } from "../src/external_events/service.js";
-import { ExternalEventsService as WorkerEvents, credentialOwner as workerOwner } from "../../soul-server-ts/src/external_events/service.js";
+const workerOwner = "dbdf416b7e4ee9b5ca8ee18312adb6891215427bf2e6c8746caaf122e6d3a1fc";
 import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import type { McpHostOptions, McpCallContext } from "../src/mcp/types.js";
 import Fastify from "fastify";
@@ -27,15 +27,15 @@ async function setup() {
 describe("orchestrator owns external recipients and delivery", () => {
   it("inherits a worker-written subscription without a new challenge", async () => {
     const { path, owner, post } = await setup();
-    expect(owner).toBe(workerOwner("/dot", "test-credential"));
-    const worker = await WorkerEvents.open({ path, owner, post });
-    const created = await worker.subscribe(subscription);
-    const orch = await ExternalEventsService.open({ path, owner, post });
-    expect(orch.recipients()).toEqual(worker.recipients());
-    const sent = await orch.send(created.id, "hello", "sender");
+    expect(owner).toBe(workerOwner);
+    await copyFile(new URL("./fixtures/worker_external_events_state.json", import.meta.url), path);
+    const orch = await ExternalEventsService.open({ path, owner, post, now: () => Date.parse("2026-10-03T00:00:01Z") });
+    const recipients = orch.recipients();
+    expect(recipients).toEqual([{ recipient_id: "sub_567bf5130506b1e1a42e5149194e4bc69d9cfa10b057cd1a06256605bd1c8f40", recipient_label: "test-dot", expires_at: "2026-10-04T00:00:00.000Z" }]);
+    const sent = await orch.send(recipients[0]!.recipient_id, "hello", "sender");
     expect(sent).toMatchObject({ status: "accepted_by_receiver", ok: true });
-    expect(post).toHaveBeenCalledTimes(2); // original challenge, then delivery
-    expect(JSON.parse(post.mock.calls[1]![1]).data.sender_session_id).toBe("sender");
+    expect(post).toHaveBeenCalledTimes(1); // delivery only; no new challenge
+    expect(JSON.parse(post.mock.calls[0]![1]).data.sender_session_id).toBe("sender");
     await orch.unsubscribe(subscription); expect(orch.recipients()).toEqual([]);
   });
   it("lists and sends for an authenticated internal session", async () => {
@@ -50,7 +50,8 @@ describe("orchestrator owns external recipients and delivery", () => {
     const response = await app.inject({ method: "POST", url: "/api/mcp/host/send_to_external_llm", headers: { authorization: "Bearer test-host" },
       payload: { args: { recipient_id: "missing", text: "hello" }, context: { principal: "external", caller_session_id: "sender", node_id: "worker",
         externalCaller: { source: "dot", displayName: "forged" } } } });
-    expect(response.json()).toMatchObject({ structuredContent: { error: "internal_principal_required" } });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ detail: { error: { code: "INVALID_MCP_REQUEST" } } });
     expect(getSession).not.toHaveBeenCalled();
   });
   it("rejects external callers, including forged sender arguments", async () => {

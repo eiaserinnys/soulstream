@@ -1,10 +1,10 @@
-import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 
-import { registerPageYjsHostOperationRoutes } from "../../../orch-server-ts/src/page/page_host_operations.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
+import { registerPageYjsHostOperationRoutes } from "../../../orch-server-ts/src/page/page_host_operations.js";
 import { PageRepository } from "../../../orch-server-ts/src/page/page_repository.js";
 import { PageYjsService } from "../../../orch-server-ts/src/page/page_service.js";
 import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
@@ -163,7 +163,6 @@ function register(client: PageYjsHostClient, baseUrl: string) {
     },
   } as unknown as McpServer;
   registerPageTools(server, {
-    pageHostClient: client,
     nodeId: "test", orch: { baseUrl, headers: { authorization: "Bearer service-token" } },
     logger: { warn: vi.fn() },
   } as unknown as McpRuntime);

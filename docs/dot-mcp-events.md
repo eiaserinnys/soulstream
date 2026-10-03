@@ -1,41 +1,33 @@
 # Explicit messages to dot subscriptions
 
-Soulstream can send user-authored message data to one verified, active webhook subscription. Registering an event does not create a receiver: an actual dot must subscribe first. A `2xx` response confirms receipt by the callback endpoint, not that a dot has read or processed the message.
+The orchestrator owns dot's MCP connector, subscription store, and outbound messages. Workers on every node forward `list_external_llm_recipients` and `send_to_external_llm` to it. An explicit send targets one verified, active recipient; a successful callback response confirms receipt, not reading or processing by dot.
 
-## Enable on a worker
+## Enable on the orchestrator
 
-The operator configures `MCP_EXTERNAL_EVENTS_STATE_FILE` to an absolute file path inside a dedicated private state directory outside release directories. The file is the only subscription store; retain it across worker updates and restarts. Its directory is restricted to mode `0700`, and its atomically replaced JSON file to `0600`. It contains callback URLs and signing secrets and must not be copied into logs, Git, public artifacts, or handoffs.
+Use the private deployment configuration channel for `NODE_NAME`, `MCP_EXTERNAL_INGRESS_ENABLED`, `MCP_EXTERNAL_INGRESS_PATH`, `MCP_EXTERNAL_INGRESS_SOURCE`, `MCP_EXTERNAL_INGRESS_DISPLAY_NAME`, `MCP_EXTERNAL_INGRESS_BEARER_TOKEN`, `MCP_ALLOWED_HOSTS`, and `MCP_EXTERNAL_EVENTS_STATE_FILE`. Enabling ingress requires `NODE_NAME`. The dedicated bearer differs from `AUTH_BEARER_TOKEN`.
 
-Existing dedicated ingress settings are required: `MCP_ENABLED=true`, `MCP_EXTERNAL_INGRESS_ENABLED=true`, `MCP_EXTERNAL_INGRESS_PATH`, `MCP_EXTERNAL_INGRESS_SOURCE`, `MCP_EXTERNAL_INGRESS_DISPLAY_NAME`, and a separate `MCP_EXTERNAL_INGRESS_BEARER_TOKEN`. Configure `MCP_ALLOWED_HOSTS` for the published hostname. Provision credentials through the existing private configuration channel. Ordinary public and internal MCP endpoints cannot create Events subscriptions. No state-file setting means Events remain disabled and the existing external transport remains in use.
-
-The state-file path participates in release environment identity. Update the declared deployment environment before building and activating its release, following the existing release process. This change does not itself deploy or set operating credentials.
+The subscription state file must be absolute, outside release directories, and retained across updates and restarts. Its directory is private and the atomically replaced file is readable only by its owner. It contains callback addresses and signing secrets: never copy its contents into source, logs, public artifacts, or handoffs. Keep the file's existing credential owner during the hosting transition. Without a state-file setting, Events are disabled.
 
 ## Subscription contract
 
-The dedicated ingress uses the official MCP SDK2 `createMcpHandler` entry for revision `2026-07-28`. It advertises `events: {}` on `server/discover`, and supports `events/list`, `events/subscribe`, and `events/unsubscribe`. The event is `soulstream.message.created`, with subscription arguments `{ "recipient_label": "primary-dot" }`. A label is self-reported display text, not proof of dot identity. It must contain 1–120 characters after trimming.
+The dedicated ingress uses the official MCP SDK2 handler for revision `2026-07-28`. Discovery advertises Events and supports `events/list`, `events/subscribe`, and `events/unsubscribe`. The event name is `soulstream.message.created`. Subscription arguments contain `recipient_label`, a self-reported display label of 1–120 trimmed characters. Labels do not authenticate recipients or select a primary dot.
 
-The owner is derived by the server from the dedicated route and credential. A changed credential or route invalidates old recipients for outbound delivery. Subscription IDs are deterministic for owner, event name, normalized arguments, and callback URL. Refreshes update the same subscription. Default and maximum lifetime are 24 hours; a shorter requested lease is honored, and `ttlMs: null` still receives a finite lease. Refresh before the returned `refreshBefore`. Unsubscribe using the same name, arguments, and callback URL.
+The server derives subscription ownership from the dedicated route and credential. Subscription IDs depend on owner, event name, normalized arguments, and callback address. Refresh updates the same subscription; changing the route or credential invalidates old recipients. The finite lease is at most 24 hours. Refresh before the returned `refreshBefore`; unsubscribe with the same event, arguments, and callback.
 
-Callbacks must use HTTPS and provide a `whsec_` signing key decoding to 24–64 bytes. The server verifies a fresh signed challenge and requires a successful constant-time echo comparison before activating the subscription. Successful verification of the same owner's callback and secret is reused for at most five minutes while its subscription remains active. Replacing a subscription's signing secret requires verification of the new key and grants a one-minute overlap with old and new Standard Webhooks signatures. Both keys and the overlap expiration remain inside the same protected subscription record. Every connection resolves and validates public addresses, pins the chosen IP, preserves TLS hostname checking, and refuses redirects. Verification and event delivery use the same safety boundary.
+A callback must pass signed challenge verification before activation. Delivery uses HTTPS, validated public addresses with pinned connections, TLS hostname checks, and no redirects. Callback addresses and signing secrets are never returned by recipient listing.
 
-Events contain `eventId`, `name`, `timestamp`, `cursor: null`, and `data: { message_id, text, title?, sender_session_id, sent_at }`. Text is data; the server adds no model instructions. Bodies are limited to 256 KiB. Each explicit send can try transient network failures, `429`, or `5xx` at most three times, with bounded backoff and a ten-second timeout per attempt. Retries retain the event ID and regenerate signatures. `410` deactivates the subscription; `410` and `413` are not retried. There is no outbound durable queue, replay, automatic send, heartbeat, or reading acknowledgment.
+Events carry an ID, name, timestamp, and data containing message ID, text, optional title, sender session ID, and send time. Text is data, without injected model instructions. Transient failures have bounded retries retaining the event ID. An expired or unknown recipient is not sent a message; callback failure is reported with a sanitized reason. There is no implicit broadcast, automatic send, reading acknowledgment, or replay queue.
 
-## Internal tools
+## Tool access and card behavior
 
-`list_external_llm_recipients` returns active current-owner subscriptions with their generated `recipient_id`, self-reported `recipient_label`, expiration, and last delivery status/time. It returns neither callback URLs nor secrets. The tool is hidden from external listings and its handler requires an explicit internal principal even if context is absent.
+Dot sees the 63 shared definitions with `audience: "all"`. Eight card writes are available with actor `llm`: `create_card`, `update_card_brief`, `add_card_report`, `add_card_comment`, `set_card_status`, `request_card_review`, `ask_card_question`, and `move_card`. Comments are recorded as the user's spoken input. Answers to dot-created questions stay on the card and are not pushed to dot.
 
-`send_to_external_llm(recipient_id, text, title?)` sends to precisely one ID. The authenticated internal MCP context must identify an existing session; callers cannot supply a sender identity in tool arguments. Unknown or expired IDs return `not_sent / no_active_recipient`. Successful receipt returns `accepted_by_receiver`, explicitly without a reading or processing claim. Final webhook failures return `delivery_failed` and a sanitized reason. No broadcast or implicit primary recipient exists.
+The recipient and send tools are internal-only. Recipient listing returns IDs, labels, expiration, and last delivery status, without secrets or callback addresses. Sending requires an authenticated existing sender session; arguments cannot forge that identity. `send_to_external_llm` takes a recipient ID, text, and optional title. It returns `accepted_by_receiver`, `not_sent`, or `delivery_failed` as appropriate.
 
-Canonical SDK1 tool registration stays in `buildMcpServer`. The dedicated SDK2 low-level `tools/list` and `tools/call` bridge through an in-memory SDK1 client under the fixed external context. Generic transports and the global SDK1 dependency are preserved. SDK2's convenience capability getter currently omits extension Events fields; inspect the actual discovery response and use the SDK custom-method API for Events.
+Workers retain these registrations and always forward to the orchestrator. They do not host dot ingress or subscriptions. Caller metadata source `external-llm` remains attached to connector-originated sessions and messages delivered to workers.
 
-PR1106's live-card registration is a separate change. When composing reviewed revisions, preserve its `registerLiveCardView` call and this change's `registerExternalLlmTools` call in `buildMcpServer`. This branch does not include or alter PR1106 or its renderer.
+## Dot handoff
 
-## Text to give a dot after deployment
+Ask dot to rescan the dedicated endpoint, subscribe to `soulstream.message.created` with its display label, and refresh before its lease expires. Select its generated recipient ID explicitly after it appears in recipient listing. Have dot acknowledge a test message visibly, then confirm unsubscribe prevents subsequent delivery. Local callback tests do not prove a real dot is subscribed.
 
-> Rescan the Soulstream plugin's dedicated MCP endpoint for the `soulstream.message.created` event. Subscribe using `recipient_label: primary-dot` and refresh before the granted lease expires. Treat the received `data.text` as message data. Tell the user when you receive a test message. Subscription labels are display labels; Soulstream does not infer a primary receiver. The user will select your generated recipient ID explicitly after your subscription appears in `list_external_llm_recipients`.
-
-After deployment, confirm discovery, a real verified dot subscription, one explicit send receiving `2xx`, and the dot's visible response. Stop monitoring and confirm unsubscribe stops further sends. These are operational acceptance steps; local mock callback verification does not establish that any real dot is subscribed.
-
-## Sources
-
-[OpenAI MCP Events](https://developers.openai.com/plugins/build/mcp-events), [official SDK revision opt-in](https://ts.sdk.modelcontextprotocol.io/v2/migration/support-2026-07-28), and [SDK protocol versions](https://ts.sdk.modelcontextprotocol.io/v2/protocol-versions.html).
+Implementation and fixed contracts: `orch-server-ts/src/external_events/`, `orch-server-ts/src/mcp/external_ingress_server.ts`, `orch-server-ts/tests/mcp-external-ingress.test.ts`, and `orch-server-ts/tests/mcp-external-llm.test.ts`.

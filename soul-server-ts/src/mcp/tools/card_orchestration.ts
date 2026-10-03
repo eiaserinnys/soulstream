@@ -11,14 +11,12 @@ export function registerCardOrchestrationTools(server: McpServer, runtime: McpRu
 }
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
-  isCurrentMcpCallerExternal,
   getCurrentMcpCallerSessionId,
 } from "../request_context.js";
 import { errorResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 function resolveSettingsCaller(runtime: McpRuntime, explicitSessionId: string | undefined): { error?: string; callerSessionId?: string } {
-  if (isCurrentMcpCallerExternal()) return { error: "Untrusted external callers cannot access card orchestration settings" };
   const headerSessionId = getCurrentMcpCallerSessionId();
   if (
     headerSessionId &&

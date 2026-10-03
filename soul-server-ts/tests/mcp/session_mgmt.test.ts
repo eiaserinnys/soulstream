@@ -179,79 +179,13 @@ function confirmRemoteOwnerAfterNotOwner(
     >;
   });
 }
-
-async function createClient(
-  runtime: McpRuntime,
-  options: {
-    headers?: Record<string, string>;
-    principal?: "internal" | "generic-external" | "dedicated-external";
-  } = {},
-): Promise<Client> {
-  const principal = options.principal ?? "internal";
-  const clientPath = principal === "internal"
-    ? "/mcp/internal"
-    : principal === "dedicated-external"
-      ? "/mcp/external-llm"
-      : "/mcp";
-  const commonMcp = {
-    runtime,
-    path: principal === "internal" ? clientPath : "/mcp",
-    auth: {
-      requireAuth: false,
-      bearerToken: "",
-      allowedHosts: ["127.0.0.1", "localhost"],
-    },
-  } as const;
-  const server = principal === "internal"
-    ? await buildInternalMcpServer({
-        logger: createSilentLogger(),
-        ...commonMcp,
-        statelessTransport: true,
-      })
-    : await buildServer({
-        host: "127.0.0.1",
-        port: 0,
-        nodeId: runtime.nodeId,
-        logger: createSilentLogger(),
-        mcp: {
-          ...commonMcp,
-          ...(principal === "dedicated-external"
-            ? {
-                externalIngress: {
-                  path: clientPath,
-                  source: "external-llm",
-                  displayName: "External LLM",
-                  auth: {
-                    requireAuth: true,
-                    bearerToken: "external-secret",
-                    allowedHosts: ["127.0.0.1", "localhost"],
-                  },
-                },
-              }
-            : {}),
-        },
-      });
-  openServers.push(server);
-  const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
-  const client = new Client({ name: "session-mgmt-test", version: "0.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(
-    new URL(`${baseUrl}${clientPath}`),
-    options.headers || principal === "dedicated-external"
-      ? {
-          requestInit: {
-            headers: {
-              ...(principal === "dedicated-external"
-                ? { authorization: "Bearer external-secret" }
-                : {}),
-              ...options.headers,
-            },
-          },
-        }
-      : undefined,
-  ));
-  openClients.push(client);
-  return client;
+async function createClient(runtime: McpRuntime, options: { headers?: Record<string, string> } = {}): Promise<Client> {
+ const server = await buildInternalMcpServer({ logger: createSilentLogger(), runtime, path: "/mcp/internal", statelessTransport: true, auth: { requireAuth: false, bearerToken: "", allowedHosts: ["127.0.0.1", "localhost"] } });
+ openServers.push(server);const url=await server.listen({host:"127.0.0.1",port:0});
+ const client=new Client({name:"session-mgmt-test",version:"0.0.0"});
+ await client.connect(new StreamableHTTPClientTransport(new URL(url+"/mcp/internal"),options.headers?{requestInit:{headers:options.headers}}:undefined));openClients.push(client);return client;
 }
+
 
 interface CapturedRequest {
   method?: string;
@@ -708,78 +642,6 @@ describe("agent profile backend boundary", () => {
     );
   });
 
-  it("generic public MCP는 부모 링크 없이 local session을 만들고 llm caller_info를 보존한다", async () => {
-    const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
-      undefined,
-      [codexAgent, claudeAgent],
-    );
-    const client = await createClient(runtime, {
-      principal: "generic-external",
-    });
-
-    const result = await client.callTool({
-      name: "create_agent_session",
-      arguments: {
-        agent_id: "codex-default",
-        prompt: "external delegation",
-        caller_session_id: "spoofed-session",
-      },
-    });
-
-    expect(result.isError).not.toBe(true);
-    expect(runtime.createTask).toHaveBeenCalledWith(
-      expect.objectContaining({
-        callerSessionId: null,
-        callerInfo: {
-          source: "llm",
-          agent_node: "node-test",
-          display_name: "External LLM",
-          user_id: null,
-          avatar_url: null,
-        },
-      }),
-    );
-  });
-
-  it("dedicated external ingress는 HTTP route principal을 external-llm caller_info로 고정한다", async () => {
-    const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
-      undefined,
-      [codexAgent, claudeAgent],
-    );
-    const client = await createClient(runtime, {
-      principal: "dedicated-external",
-      headers: {
-        "x-soulstream-agent-session-id": "spoofed-header-parent",
-        "x-soulstream-caller-origin": "internal",
-      },
-    });
-
-    const result = await client.callTool({
-      name: "create_agent_session",
-      arguments: {
-        agent_id: "codex-default",
-        prompt: "dedicated external delegation",
-        caller_session_id: "spoofed-explicit-parent",
-      },
-    });
-
-    expect(result.isError).not.toBe(true);
-    expect(runtime.createTask).toHaveBeenCalledWith(
-      expect.objectContaining({
-        callerSessionId: null,
-        callerInfo: {
-          source: "external-llm",
-          agent_node: "node-test",
-          display_name: "External LLM",
-          user_id: null,
-          avatar_url: null,
-        },
-      }),
-    );
-  });
-
   it("create_agent_session은 caller의 폴더를 단건 조회해 상속한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
@@ -862,20 +724,6 @@ describe("create_remote_agent_session forwarding attribution", () => {
       const body = JSON.parse(capture.requests[0]!.body);
       expect(body.args).toMatchObject({ node_id: "node-remote", agent_id: "roselin_codex", ...args });
       expect(body.context.callerInfo).toMatchObject({ source: "agent", agent_node: "node-test", agent_id: "codex-default", email: "owner@example.com" });
-    } finally { await capture.close(); }
-  });
-  it("dedicated external ingress는 external-llm caller_info를 전달한다", async () => {
-    const capture = await createOrchCapture(200, () => ({ body: { content: [], structuredContent: { agentSessionId: "sess-child" } } }));
-    try {
-      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
-      const client = await createClient(runtime, { principal: "dedicated-external" });
-      const result = await client.callTool({ name: "create_remote_agent_session", arguments: {
-        node_id: "node-remote", agent_id: "roselin_codex", prompt: "external remote delegation", caller_session_id: "spoofed-session",
-      } });
-      expect(result.isError).not.toBe(true);
-      const body = JSON.parse(capture.requests[0]!.body);
-      expect(body.context.principal).toBe("external");
-      expect(body.context.callerInfo).toEqual({ source: "external-llm", agent_node: "node-test", display_name: "External LLM", user_id: null, avatar_url: null });
     } finally { await capture.close(); }
   });
 });
@@ -1002,32 +850,6 @@ describe("send_message_to_session", () => {
       params.callerInfo,
       "send_message_to_session caller_info",
     )).not.toThrow();
-  });
-
-  it("generic public MCP는 명시 session 가장 없이 llm caller_info로 메시지를 보낸다", async () => {
-    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
-    const client = await createClient(runtime, {
-      principal: "generic-external",
-    });
-
-    const result = await client.callTool({
-      name: "send_message_to_session",
-      arguments: {
-        target_session_id: "target-sess-1",
-        message: "external steer",
-        caller_session_id: "spoofed-session",
-      },
-    });
-
-    expect(result.isError).not.toBe(true);
-    const params = runtime.addIntervention.mock.calls[0]![0] as AddInterventionParams;
-    expect(params.callerInfo).toEqual({
-      source: "llm",
-      agent_node: "node-test",
-      display_name: "External LLM",
-      user_id: null,
-      avatar_url: null,
-    });
   });
 
   it("confirmed remote owner relays to orch /intervene with snake_case caller_info", async () => {

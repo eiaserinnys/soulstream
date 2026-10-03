@@ -1,5 +1,4 @@
 import { AgentConfigService } from "../agent_config_service.js";
-import { ExternalEventsService, credentialOwner } from "../external_events/service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { CatalogService } from "../catalog/catalog_service.js";
@@ -10,7 +9,6 @@ import { createAssignedCardSnapshotRecorder } from "../context/assigned_card_sna
 import { DefaultPageContextAssembler } from "../context/page_context_assembler.js";
 import { HostPageContextRepository } from "../context/page_context_repository.js";
 import { AncestorPageContextResolver } from "../context/page_context_resolver.js";
-import { CustomViewService } from "../custom_view/custom_view_service.js";
 import {
   ClaudeRuntimeHostClient,
   SessionDeliveryHostClient,
@@ -328,10 +326,7 @@ export async function composeWorkerRuntime(
     db,
     broadcaster,
     boardYjsService,
-    folderService,
-    sessionMutations,
   );
-  const customViewService = new CustomViewService(db, boardYjsService, broadcaster);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),
     ...(env.LLM_ANTHROPIC_API_KEY
@@ -354,10 +349,6 @@ export async function composeWorkerRuntime(
     logger.info("LLM proxy skipped: no provider API keys configured");
   }
   const mcpRuntime: McpRuntime = {
-    ...(env.MCP_EXTERNAL_EVENTS_STATE_FILE ? { externalEvents: await ExternalEventsService.open({
-      path: env.MCP_EXTERNAL_EVENTS_STATE_FILE,
-      owner: credentialOwner(env.MCP_EXTERNAL_INGRESS_PATH!, env.MCP_EXTERNAL_INGRESS_BEARER_TOKEN!),
-    }) } : {}),
     nodeId: env.SOULSTREAM_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,
@@ -372,8 +363,6 @@ export async function composeWorkerRuntime(
     agentConfigService,
     mcpConfigService,
     catalogService,
-    folderService,
-    customViewService,
     logger,
     orch: orchProxyConfig,
     ...(worktreeService ? { worktreeService } : {}),

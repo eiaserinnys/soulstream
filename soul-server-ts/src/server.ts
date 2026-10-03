@@ -2,13 +2,8 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 
 import type { McpAuthConfig } from "./mcp/auth.js";
 import type { McpRuntime } from "./mcp/runtime.js";
-import {
-  GENERIC_EXTERNAL_MCP_PRINCIPAL,
-  INTERNAL_MCP_PRINCIPAL,
-} from "./mcp/request_context.js";
 import { internalMcpPath } from "./mcp/endpoint_paths.js";
 import { registerMcpRoutes } from "./mcp/transport.js";
-import { registerExternalEventsRoutes } from "./mcp/external_events_transport.js";
 import {
   registerCogitoSearchRoute,
   type CogitoSearchRouteConfig,
@@ -49,13 +44,6 @@ export interface ServerParams {
     auth: McpAuthConfig;
     /** Default false. Stateless mode creates one SDK transport per POST. */
     statelessTransport?: boolean;
-    /** Dedicated, fixed-attribution external ingress. Always stateless. */
-    externalIngress?: {
-      path: string;
-      source: string;
-      displayName: string;
-      auth: McpAuthConfig;
-    };
   };
   /** Node-local Cogito search route retained for MCP session-history search. */
   cogito?: CogitoSearchRouteConfig;
@@ -116,24 +104,6 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   });
 
   if (params.mcp) {
-    const closePublicMcp = registerMcpRoutes(fastify, params.mcp.runtime, {
-      path: params.mcp.path,
-      auth: params.mcp.auth,
-      statelessTransport: params.mcp.statelessTransport ?? false,
-      principal: GENERIC_EXTERNAL_MCP_PRINCIPAL,
-    });
-    const closeExternalMcp = params.mcp.externalIngress
-      ? (params.mcp.runtime.externalEvents ? registerExternalEventsRoutes : registerMcpRoutes)(fastify, params.mcp.runtime, {
-          path: params.mcp.externalIngress.path,
-          auth: params.mcp.externalIngress.auth,
-          statelessTransport: true,
-          principal: {
-            authority: "external",
-            source: params.mcp.externalIngress.source,
-            displayName: params.mcp.externalIngress.displayName,
-          },
-        })
-      : undefined;
     const internalMcpServer = await buildInternalMcpServer({
       logger: params.logger,
       runtime: params.mcp.runtime,
@@ -144,8 +114,6 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
     fastify.internalMcpServer = internalMcpServer;
     fastify.closeMcp = async () => {
       await Promise.all([
-        closePublicMcp(),
-        closeExternalMcp?.(),
         internalMcpServer.closeMcp?.(),
       ]);
     };
@@ -180,7 +148,6 @@ export async function buildInternalMcpServer(
     path: params.path,
     auth: params.auth,
     statelessTransport: params.statelessTransport,
-    principal: INTERNAL_MCP_PRINCIPAL,
   });
   fastify.closeMcp = closeInternalMcp;
   return fastify;

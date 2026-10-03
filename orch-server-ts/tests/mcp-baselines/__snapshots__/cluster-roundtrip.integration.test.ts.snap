@@ -1,0 +1,119 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`cluster MCP roundtrip > preserves external node query > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves external node query > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves external node query > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"nodes\\": [\\n    {\\n      \\"nodeId\\": \\"node-a\\",\\n      \\"host\\": \\"127.0.0.1\\",\\n      \\"port\\": 4105,\\n      \\"capabilities\\": {\\n        \\"reflect_brief\\": true\\n      },\\n      \\"supportedBackends\\": [\\n        \\"codex\\"\\n      ],\\n      \\"connectedAt\\": \\"<time>\\",\\n      \\"sessionCount\\": 0,\\n      \\"status\\": \\"connected\\",\\n      \\"connectionId\\": \\"node-a:1\\",\\n      \\"lastSeenAtMs\\": 1790899200000,\\n      \\"connectedAtMs\\": 1790899200000,\\n      \\"heartbeat\\": {\\n        \\"supported\\": false\\n      },\\n      \\"pendingCommandCount\\": 0,\\n      \\"connected\\": true\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "nodes": [
+      {
+        "nodeId": "node-a",
+        "host": "127.0.0.1",
+        "port": 4105,
+        "capabilities": {
+          "reflect_brief": true
+        },
+        "supportedBackends": [
+          "codex"
+        ],
+        "connectedAt": "<time>",
+        "sessionCount": 0,
+        "status": "connected",
+        "connectionId": "node-a:1",
+        "lastSeenAtMs": 1790899200000,
+        "connectedAtMs": 1790899200000,
+        "heartbeat": {
+          "supported": false
+        },
+        "pendingCommandCount": 0,
+        "connected": true
+      }
+    ]
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring external mutation > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring external mutation > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring external mutation > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Recurring-job tools are not available to untrusted external or LLM callers."
+    }
+  ],
+  "structuredContent": {
+    "error": "Recurring-job tools are not available to untrusted external or LLM callers."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves recurring external query > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring external query > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves recurring external query > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Recurring-job tools are not available to untrusted external or LLM callers."
+    }
+  ],
+  "structuredContent": {
+    "error": "Recurring-job tools are not available to untrusted external or LLM callers."
+  },
+  "isError": true
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves remote external > node commands 1`] = `"[{"prompt":"수행","model_preset":"sol","caller_info":{"source":"llm","agent_node":"worker-node","display_name":"External","user_id":null,"avatar_url":null},"profile":"roselin","type":"create_session","agentSessionId":"<session-id>","requestId":"fixed-create_session"}]"`;
+
+exports[`cluster MCP roundtrip > preserves remote external > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves remote external > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"agentSessionId\\": \\"<session-id>\\",\\n  \\"nodeId\\": \\"node-a\\",\\n  \\"prompt\\": \\"수행\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "agentSessionId": "<session-id>",
+    "nodeId": "node-a",
+    "prompt": "수행"
+  }
+}"
+`;
+
+exports[`cluster MCP roundtrip > preserves settings external > node commands 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings external > recurring actors 1`] = `"[]"`;
+
+exports[`cluster MCP roundtrip > preserves settings external > result 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Untrusted external callers cannot access card orchestration settings"
+    }
+  ],
+  "structuredContent": {
+    "error": "Untrusted external callers cannot access card orchestration settings"
+  },
+  "isError": true
+}"
+`;

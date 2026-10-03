@@ -8,7 +8,7 @@ import { Client as ModernClient, StreamableHTTPClientTransport as ModernTranspor
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { mcpToolDefinitions, LIVE_CARD_RESOURCE } from "@soulstream/mcp-contract";
-import inventory from "../../soul-server-ts/tests/mcp/fixtures/tool_inventory.external.json" with { type: "json" };
+import inventory from "./fixtures/mcp_external_tool_inventory.json" with { type: "json" };
 import { widgetHtml } from "../../plugins/chatgpt-card-renderer/src/widget-html.js";
 import { registerExternalEventsRoutes } from "../src/mcp/external_events_transport.js";
 import * as executor from "../src/mcp/tool_executor.js";
@@ -45,6 +45,8 @@ function assertInventory(tools: { name: string }[], era: "modern" | "legacy" = "
   const definitions = mcpToolDefinitions.filter(d => d.audience === "all");
   expect(tools).toHaveLength(63);
   expect(tools.map(t => t.name)).toEqual(definitions.map(d => d.name));
+  expect(tools.map(t => t.name).sort()).toEqual(inventory.map(t => t.name));
+  expect(inventory).toHaveLength(63);
   for (const tool of tools) {
     const expected = inventory.find(t => t.name === tool.name)!;
     // SDK2 modern list projection omits SDK1 execution.taskSupport. Compare every
@@ -120,10 +122,21 @@ describe("orchestrator dedicated external MCP ingress", () => {
       principal: "external", callerSessionId: null, nodeId: "test-node", externalCaller: { source: "dot", displayName: "Dot ingress" },
       callerInfo: { source: "dot", display_name: "Dot ingress", agent_node: "test-node", user_id: null, avatar_url: null } });
     execute.mockClear();
-    expect(await client.callTool({ name: "batch_page_operations", arguments: { page_id: "page", operations: [{ op: "delete_block_subtree", block_id: "block" }] } })).toMatchObject({ isError: true,
+    expect(await client.callTool({ name: "batch_page_operations", arguments: { page_id: "seed", expected_version: 1, idempotency_key: "batch-key", operations: [{ op: "delete_block_subtree", block_id: "seed-block" }] } })).toMatchObject({ isError: true,
       content: [{ type: "text", text: 'MCP tool "batch_page_operations" is not available to external LLM callers' }] });
     expect(await client.callTool({ name: "send_to_external_llm", arguments: { recipient_id: "recipient", text: "hello" } })).toMatchObject({ isError: true });
     expect(execute).not.toHaveBeenCalled();
+  });
+  it("rejects every internal-only definition before execution", async () => {
+    const execute = vi.spyOn(executor, "executeMcpTool");
+    const { url } = await web(); const client = await connect("modern", url);
+    const { tools } = await client.listTools();
+    for (const definition of mcpToolDefinitions.filter(d => d.audience === "internal")) {
+      expect(tools.some(t => t.name === definition.name), definition.name).toBe(false);
+      const result = await client.callTool({ name: definition.name, arguments: {} });
+      expect(result, definition.name).toMatchObject({ isError: true, content: [{ type: "text", text: `MCP error -32602: Tool ${definition.name} not found` }] });
+      expect(execute, definition.name).not.toHaveBeenCalled();
+    }
   });
   it("modern Events subscribe, internal list/send, unsubscribe share one store; legacy has no Events", async () => {
     const dir = await mkdtemp(join(tmpdir(), "orch-dot-wire-")); cleanup.push(() => rm(dir, { recursive: true, force: true }));
@@ -153,4 +166,12 @@ describe("orchestrator dedicated external MCP ingress", () => {
     expect(response.statusCode).toBe(status);
     expect(response.json()).toEqual({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized" } });
   });
+});
+
+// The retired worker SDK rejected this exact baseline before forwarding.
+it("keeps the old external batch delete input rejected by the executor", async () => {
+  const result = await executor.executeMcpTool({} as never, "batch_page_operations", {
+    page_id: "seed", expected_version: 1, idempotency_key: "batch-key", operations: [{ op: "delete_block_subtree", block_id: "seed-block" }],
+  }, { principal: "external", callerSessionId: null, nodeId: "test-node" });
+  expect(result.isError).toBe(true);
 });

@@ -5,24 +5,19 @@
  * 테스트는 fake runtime을 주입하여 도구 동작만 검증.
  */
 import type { Logger } from "pino";
-import type { ExternalEventsService } from "../external_events/service.js";
 
 import type { AgentConfigService } from "../agent_config_service.js";
+import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { CatalogService } from "../catalog/catalog_service.js";
-import type { CustomViewService } from "../custom_view/custom_view_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpConfigService } from "../mcp_config_service.js";
-import type { PageYjsHostClient } from "../page/page_host_client.js";
-import type { FolderService } from "../folder/folder_service.js";
+import type { ChildCompletionConsumptionRecorder } from "../task/child_completion_consumption.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type {
   StartExecutionCallback,
   TaskManager,
 } from "../task/task_manager.js";
-import type { ChildCompletionConsumptionRecorder } from
-  "../task/child_completion_consumption.js";
-import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import type { WorktreeService } from "../worktree/worktree_service.js";
 
 export interface OrchProxyConfig {
@@ -33,7 +28,6 @@ export interface OrchProxyConfig {
 }
 
 export interface McpRuntime {
-  externalEvents?: ExternalEventsService;
   nodeId: string;
   agentsConfigPath: string;
   db: SessionDB;
@@ -51,10 +45,6 @@ export interface McpRuntime {
   agentConfigService?: AgentConfigService;
   mcpConfigService?: McpConfigService;
   catalogService: CatalogService;
-  folderService?: FolderService;
-  customViewService?: CustomViewService;
-  /** Tests may inject the page host boundary; production constructs it from orch. */
-  pageHostClient?: PageYjsHostClient;
   logger: Logger;
   /** 미설정 시 multi-node 도구는 등록되되 호출 시 `{error: ...}` 반환. */
   orch?: OrchProxyConfig;

@@ -109,13 +109,6 @@ describe("folder object orchestrator MCP roundtrip", () => {
       expect(result.content[0]).toMatchObject({ text: expect.stringContaining(`folder host ${name} failed:`) });
     } else { expect(result.isError).not.toBe(true); }
   });
-
-  it("preserves llm actor for external callers and ignores both session IDs", async () => {
-    const result = await roundtrip("create_folder", { name: "외부", idempotency_key: "external", caller_session_id: "argument-session" }, {
-      ...context, principal: { authority: "external", source: "llm", displayName: "External" },
-    });
-    expect(result.structuredContent).toMatchObject({ operation: { actorKind: "llm", actorSessionId: null } });
-  });
   it("preserves the missing internal actor error", async () => {
     const result = await roundtrip("rename_folder", { ...mutation, name: "이름" }, {});
     expect(result.content[0]).toMatchObject({ text: "caller session id is required for folder mutation tools. Send x-soulstream-agent-session-id." });
