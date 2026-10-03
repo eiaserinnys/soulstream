@@ -23,8 +23,8 @@ export interface CardBoardWorkspaceHandle { openCreate(): void; openExpanded(): 
 
 /** Workspace owns scope and restore snapshots, including across native Modal remounts. */
 export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
-  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; bottomInset?: number;
-}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, bottomInset = 0 }, ref) {
+  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; bottomInset?: number; onExpandedClose?(): void;
+}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, bottomInset = 0, onExpandedClose }, ref) {
   const t = useTokens();
   const phone = useDeviceType() === 'phone';
   const { cards, loading, error, refresh } = useCardList(api, folderId);
@@ -57,13 +57,14 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   useEffect(() => { setExpanded(null); }, [folderId]);
   useImperativeHandle(ref, () => ({ openCreate: () => setAdding(true),
     openExpanded: () => setExpanded({ ...position.current, lanes: { ...position.current.lanes } }) }), []);
+  const closeExpanded = () => { setExpanded(null); onExpandedClose?.(); };
   const completedCount = completed.cards.length;
   const board = (initialPosition?: BoardPosition, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
     bottomInset={expandedBoard ? 0 : bottomInset}
     includeCompleted={cardDisplay.includeCompleted} initialPosition={initialPosition}
     onPositionChange={expandedBoard ? undefined : (next) => { position.current = next; }}
     onOpen={(id, target) => {
-      if (expandedBoard && phone) setExpanded(null);
+      if (expandedBoard && phone) closeExpanded();
       if (expandedBoard && !phone && typeof document !== 'undefined') detailFocus.current = document.activeElement as HTMLElement;
       if (expandedBoard && !phone && Platform.OS !== 'web' && target !== undefined) nativeDetailFocus.current = target;
       onOpen(id);
@@ -74,7 +75,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={() => setAdding(true)}>
       <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton>
-    {!phone ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel={expanded ? '보드 확대 닫기' : '보드 확대'} onPress={() => setExpanded(expanded ? null : { ...position.current, lanes: { ...position.current.lanes } })}>
+    {!phone ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel={expanded ? '보드 확대 닫기' : '보드 확대'} onPress={() => expanded ? closeExpanded() : setExpanded({ ...position.current, lanes: { ...position.current.lanes } })}>
       <Ionicons name={expanded ? 'close-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton> : null}
   </View>;
@@ -89,7 +90,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     {adding ? <CardCreateSheet api={api} folderId={folderId} onClose={() => setAdding(false)} /> : null}
     {expanded ? <AppModalSurface visible modalId="modal_card_detail" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => {
       if (useUIStore.getState().folderOverlayVisible) useUIStore.getState().closeFolderOverlay();
-      else setExpanded(null);
+      else closeExpanded();
     }}>
       <GestureHandlerRootView style={{ flex: 1 }}><View testID="card-board-expanded" style={{ flex: 1, position: 'relative', paddingHorizontal: t.cardLayout.padding, paddingTop: t.uiSpacing.xl, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
         <View style={{ flex: 1, gap: t.uiSpacing.md }} pointerEvents={detailVisible ? 'none' : 'auto'} accessibilityElementsHidden={detailVisible} importantForAccessibility={detailVisible ? 'no-hide-descendants' : 'auto'}>

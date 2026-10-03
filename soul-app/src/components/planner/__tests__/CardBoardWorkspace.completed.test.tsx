@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { ActivityIndicator, StyleSheet } from 'react-native';
 import { CardBoardWorkspace } from '../CardBoardWorkspace';
+import { AppModalSurface } from '../../AppModalSurface';
 import { cardFixture } from '../../../test-support/cards';
 import { useUIStore } from '../../../store/uiStore';
 jest.mock('../FolderWorkspaceReadOverlay', () => ({ FolderWorkspaceReadOverlay: () => require('react').createElement(require('react-native').View, { testID: 'board-detail-host' }) }));
@@ -127,4 +128,22 @@ test('expanded tablet keeps the mounted board and its position underneath detail
   act(() => ref.current!.openExpanded());
   screen.unmount();
   expect(useUIStore.getState().cardBoardExpanded).toBe(false);
+});
+
+test.each(['phone', 'tablet'])('확대 닫힘 %s은 선택적 콜백을 한 번 호출하고 공개 handle로 다시 열린다', device => {
+  mockDevice = device;
+  mockCards = [cardFixture({ id: 'todo' })];
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const closed = jest.fn();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null}
+    cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={jest.fn()} onExpandedClose={closed} />);
+  act(() => ref.current!.openExpanded());
+  fireEvent(screen.UNSAFE_getByType(AppModalSurface), 'requestClose');
+  expect(screen.queryByTestId('card-board-expanded')).toBeNull();
+  expect(closed).toHaveBeenCalledTimes(1);
+  act(() => ref.current!.openExpanded());
+  expect(screen.getByTestId('card-board-expanded')).toBeTruthy();
+  if (device === 'tablet') fireEvent.press(within(screen.getByTestId('card-board-expanded')).getByLabelText('보드 확대 닫기'));
+  else fireEvent.press(within(screen.getByTestId('card-board-expanded')).getByLabelText('카드 제목 카드 상세'));
+  expect(closed).toHaveBeenCalledTimes(2);
 });

@@ -167,12 +167,23 @@ export function ClaudeRuntimeTasksStrip({ sessionId, api }: Props) {
           ))}
         </ScrollView>
       ) : null}
+      <ClaudeRuntimeTaskOutputModal output={output} onClose={() => setOutput(null)} />
+    </View>
+  );
+}
+
+export function ClaudeRuntimeTaskOutputModal({ output, onClose }: {
+  output: ClaudeRuntimeTaskOutputResponse | null; onClose(): void;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  return (
       <AppModalSurface
         visible={output !== null}
         variant="expanded"
         modalId="modal_claude_runtime_tasks"
         presentationStyle="pageSheet"
-        onRequestClose={() => setOutput(null)}
+        onRequestClose={onClose}
         surfaceTestID="runtime-output-modal"
       >
         <View style={styles.modalHeader}>
@@ -181,7 +192,7 @@ export function ClaudeRuntimeTasksStrip({ sessionId, api }: Props) {
             </Text>
             <CompactTouchTarget
               testID="runtime-output-close-touch"
-              onPress={() => setOutput(null)}
+              onPress={onClose}
               accessibilityLabel="닫기"
               surfaceStyle={styles.iconButton}
             >
@@ -194,7 +205,6 @@ export function ClaudeRuntimeTasksStrip({ sessionId, api }: Props) {
             </Text>
         </ScrollView>
       </AppModalSurface>
-    </View>
   );
 }
 

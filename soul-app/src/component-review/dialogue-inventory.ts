@@ -18,6 +18,32 @@ export const dialogueSamples = [
 ] as const;
 export type DialogueSample = typeof dialogueSamples[number]['value'];
 
+export const dialogueDetailSamples = [
+  { value: 'card-detail', label: '카드 상세' },
+  { value: 'folder-detail', label: '폴더 상세' },
+  { value: 'session-detail', label: '세션 상세' },
+] as const;
+export type DialoguePreviewSample = DialogueSample | typeof dialogueDetailSamples[number]['value'];
+const previewSamples = [...dialogueSamples, ...dialogueDetailSamples];
+export const dialoguePreviewGroups = [
+  { id: 'create', title: '생성', ids: ['card-create', 'folder-create', 'session-create'] },
+  { id: 'select', title: '선택과 담당', ids: ['assignment', 'folder-picker', 'execution-picker', 'search-filter'] },
+  { id: 'status', title: '상태와 확인', ids: ['card-status', 'session-diagnostic', 'morning-review'] },
+  { id: 'settings', title: '설정과 출력', ids: ['settings', 'task-output'] },
+  { id: 'expand', title: '확대', ids: ['board-expanded', 'image-viewer'] },
+  { id: 'detail', title: '상세', ids: ['card-detail', 'folder-detail', 'session-detail'] },
+].map(group => ({ id: group.id, title: group.title, items: group.ids.map(id => {
+  const sample = previewSamples.find(item => item.value === id);
+  if (!sample) throw new Error('등록되지 않은 검수 샘플: ' + id);
+  return sample;
+}) }));
+
+export function getDialoguePreviewSample(search: string): DialoguePreviewSample | null {
+  const query = new URLSearchParams(search);
+  if (query.get('section') !== 'dialogues') return null;
+  return previewSamples.find(sample => sample.value === query.get('sample'))?.value ?? null;
+}
+
 export const nativeConfirmations = [
   { title: '폴더 보관', message: '폴더와 내용을 보존하고 목록에서 숨깁니다.', confirmText: '보관', source: 'planner/projectManagement.ts' },
   { title: '카드 완료 처리', message: '카드를 물리 삭제하지 않고 완료 상태로 전환합니다.', confirmText: '확인', source: 'hooks/usePlannerContextMenus.ts' },

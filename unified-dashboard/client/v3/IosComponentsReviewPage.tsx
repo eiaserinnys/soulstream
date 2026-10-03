@@ -3,6 +3,22 @@ import { DashboardIconCap } from "@seosoyoung/soul-ui";
 import { ArrowLeft } from "lucide-react";
 import { ComponentsReviewLayout } from "./ComponentsReviewLayout";
 import "./ios-components-review.css";
+import { DialogueGallery, type DialogueGalleryGroup } from "./DialogueGallery";
+import { dialoguePreviewGroups, nativeConfirmations, nativeRenames, nativeMenuTypes, alertOwners } from "../../../soul-app/src/component-review/dialogue-inventory";
+
+const dialogueGroups: DialogueGalleryGroup[] = dialoguePreviewGroups.map(group => ({
+  id: group.id, title: group.title, items: group.items.map(item => ({
+    id: item.value, title: item.label,
+    src: "/assets/ios-components/index.html?section=dialogues&sample=" + item.value,
+  })),
+}));
+dialogueGroups.push({ id: "native", title: "iOS 기본 창", items: [{
+  id: "native-reference", title: "기기에서 확인하는 기본 창",
+  description: "Alert·입력창·선택 메뉴의 iOS 원형은 웹에서 표시할 수 없습니다. " +
+    nativeConfirmations.map(item => item.title + ": " + item.message + " 취소 / " + item.confirmText).join(" · ") +
+    " · 이름 변경: " + nativeRenames.join(" · ") + " · 선택 메뉴: " + nativeMenuTypes.join(" · ") +
+    " · 저장·삭제·첨부 등의 일반 실패는 공통 Alert입니다. 실제 호출 위치: " + alertOwners.join(" · "),
+}] });
 
 const bundleIndex = "/assets/ios-components/index.html";
 
@@ -18,6 +34,9 @@ export function IosComponentsReviewPage({ section }: { section?: "dialogues" } =
       .catch(() => { if (!controller.signal.aborted) setReady(false); });
     return () => controller.abort();
   }, []);
+
+  if (dialogues) return <DialogueGallery platform="ios" groups={ready ? dialogueGroups : []}
+    description={ready ? "iOS 앱 컴포넌트의 phone 웹 미리보기입니다. 새 탭은 화면 크기에 따라 반응하며, iOS 기본 창과 전용 효과는 기기에서 확인합니다." : "앱 검수 화면을 준비 중입니다"} />;
 
   return <ComponentsReviewLayout syncPreferences={!dialogues}>
     <article className="v3-detail-pane v3-detail-pane--inline v3-ios-components-review" data-testid="ios-components-review">

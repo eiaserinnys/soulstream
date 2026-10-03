@@ -22,6 +22,8 @@ import { ReviewLongFolders } from './ReviewLongFolders';
 import { ReviewAutoRefresh } from './ReviewAutoRefresh';
 import { ReviewCardImages } from './ReviewCardImages';
 import { folders } from './fixtures';
+import { getDialoguePreviewSample } from './dialogue-inventory';
+import { ReviewDialoguePreview } from './ReviewDialoguePreview';
 import { ReviewDialogues } from './ReviewDialogues';
 import { dialogueFolders, dialogueSessions, reviewSessionPortraits } from './dialogue-fixtures';
 import { useUIStore } from '../store/uiStore';
@@ -111,5 +113,6 @@ function Gallery() {
 }
 
 export function ComponentReview() {
-  return <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider><Gallery /></SafeAreaProvider></GestureHandlerRootView>;
+  const sample = typeof window !== 'undefined' ? getDialoguePreviewSample(window.location.search) : null;
+  return <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider>{sample ? <ReviewDialoguePreview sample={sample} /> : <Gallery />}</SafeAreaProvider></GestureHandlerRootView>;
 }
