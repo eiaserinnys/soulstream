@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, afterAll, describe, it, expect, vi } from "vitest";
+import { beforeAll, beforeEach, afterEach, afterAll, describe, it, expect, vi } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema, appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixture.js";
 import { prepareCardReminderSchema } from "./card-reminder-postgres-fixture.js";
@@ -39,6 +39,7 @@ describe("durable card status reminders", () => {
     });
     dispatcher = makeDispatcher();
   });
+  afterEach(() => vi.restoreAllMocks());
   afterAll(async () => { await dispatcher?.drain(); await h?.cleanup(); });
   async function receipt(sessionId: string, status = "completed", age = 60000, reason: string | null = null) {
     const id = await recordWorkReceipt(h, sessionId, status, undefined, reason);
@@ -60,6 +61,25 @@ describe("durable card status reminders", () => {
       VALUES ('notice','root',${`child_session:child:${eventId}`},'durable_next_turn','child_session_completion',${"a".repeat(64)},${aggregate === "pending" ? "pending" : aggregate === "consumed" ? "consumed" : "uncertain"},${aggregate},${new Date(now - age)})`;
   }
   async function unchanged(id: string, status: string) { expect((await cards.getCard(id))!.card.status).toBe(status); expect(warn).not.toHaveBeenCalled(); }
+  it("skips reminder facts for updates of a running root", async () => {
+    const id = await seed("running", undefined, "running");
+    const facts = vi.spyOn(repo, "reminderFacts");
+    await dispatcher.sessionEnded("root");
+    expect(facts).not.toHaveBeenCalled();
+    expect(kick).toHaveBeenCalled();
+    await unchanged(id, "running");
+  });
+  it("continues existing terminal processing when reminder facts fail", async () => {
+    const id = await seed();
+    vi.spyOn(repo, "reminderFacts").mockRejectedValue(new Error("reminder facts unavailable"));
+    const endedWork = vi.spyOn(repo, "endedWork"), terminal = vi.spyOn(repo, "session");
+    await dispatcher.sessionEnded("root");
+    expect(endedWork).toHaveBeenCalledWith("root");
+    expect(terminal).toHaveBeenCalledWith("root");
+    expect(kick).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("reminder facts unavailable"));
+    expect((await cards.getCard(id))!.card.status).toBe("running");
+  });
   it("not_running sends once, includes the existing status label, and sends again only after status changes", async () => {
     const id = await seed("review", "running");
     await dispatcher.sessionEnded("root"); await dispatcher.sessionEnded("root");

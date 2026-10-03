@@ -109,17 +109,23 @@ export class CardDispatcher {
         void this.enqueue(() => this.handleMutation(change));
     }
     private async checkReminders(endedRootId?: string): Promise<void> {
-        let sent = 0;
-        for (const facts of await this.options.repository.reminderFacts(this.options.now?.() ?? Date.now(), endedRootId)) {
-            if (!endedRootId && sent >= MAX_REMINDERS_PER_TICK) break;
-            const reminder = buildCardStatusReminder(facts, endedRootId !== undefined);
-            if (!reminder) continue;
-            try {
-                if (await this.options.deliveryExists(reminder.deliveryId)) continue;
-                sent++;
-                await this.options.sendMessage(reminder.sessionId, reminder.text, undefined, reminder);
-            } catch (error) { this.options.warn(`card ${facts.cardId} reminder delivery failed: ${String(error)}`); }
-        }
+        try {
+            if (endedRootId) {
+                const session = await this.options.repository.ownerSession(endedRootId);
+                if (!isTerminalSessionStatus(session?.status ?? undefined)) return;
+            }
+            let sent = 0;
+            for (const facts of await this.options.repository.reminderFacts(this.options.now?.() ?? Date.now(), endedRootId)) {
+                if (!endedRootId && sent >= MAX_REMINDERS_PER_TICK) break;
+                const reminder = buildCardStatusReminder(facts, endedRootId !== undefined);
+                if (!reminder) continue;
+                try {
+                    if (await this.options.deliveryExists(reminder.deliveryId)) continue;
+                    sent++;
+                    await this.options.sendMessage(reminder.sessionId, reminder.text, undefined, reminder);
+                } catch (error) { this.options.warn(`card ${facts.cardId} reminder delivery failed: ${String(error)}`); }
+            }
+        } catch (error) { this.options.warn(`card reminder check failed: ${String(error)}`); }
     }
     private async handleMutation(change: CardMutationChange): Promise<void> {
         const {result,previousStatus}=change;

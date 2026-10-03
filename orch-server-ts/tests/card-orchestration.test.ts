@@ -108,7 +108,7 @@ describe("server owns card orchestration admission", () => {
     const kick = vi.fn(async () => {}),
       decisionEnded = vi.fn(async () => {});
     const d = new CardDispatcher({ deliveryExists: async () => false,
-      repository: { reminderFacts: async () => [] } as never,
+      repository: { ownerSession: async () => ({status:"completed"}), reminderFacts: async () => [] } as never,
       cards: vi.fn() as never,
       resolveTarget: vi.fn() as never,
       launch: vi.fn(),
