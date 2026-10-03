@@ -21,6 +21,17 @@ jest.mock('../../../hooks/usePlannerContextMenus', () => ({
 }));
 
 import { SidebarPane } from '../SidebarPane';
+import { useUIStore } from '../../../store/uiStore';
+import { StyleSheet } from 'react-native';
+
+test('floating coverage adds scroll space without moving the fixed settings footer', () => {
+  useUIStore.setState({ floatingComposerBottomInset: 0 });
+  const screen = render(<SidebarPane />);
+  const footer = StyleSheet.flatten(screen.getByTestId('sidebar-settings-footer').props.style);
+  require('@testing-library/react-native').act(() => { useUIStore.getState().setFloatingComposerBottomInset(112); });
+  expect(StyleSheet.flatten(screen.getByTestId('sidebar-main-list').props.contentContainerStyle).paddingBottom).toBe(112);
+  expect(StyleSheet.flatten(screen.getByTestId('sidebar-settings-footer').props.style)).toEqual(footer);
+});
 
 beforeEach(() => {
   useSettingsStore.setState({ serverUrl: 'https://planner.test' });

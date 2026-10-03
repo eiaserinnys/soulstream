@@ -19,6 +19,7 @@ const mockList = jest.fn();
 const mockCompleted=jest.fn();
 
 beforeEach(() => {
+  useUIStore.setState({ mainPaneViews: { global: 'board' }, floatingComposerBottomInset: 0 });
   useSettingsStore.setState({ serverUrl: 'https://test.example', cardIncludeCompleted: {} });
   useCardStore.setState({ rows: {}, details: {} });
   mockList.mockReset().mockResolvedValue({ cards: [cardFixture({ id: 'draft', status: 'todo' })] });
@@ -41,6 +42,22 @@ test('기존 데일리는 유지하고 보드는 오늘 피드 대신 전체 인
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   expect(mockList).toHaveBeenCalledTimes(1);
   await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
+});
+
+test('orientation remount keeps every previously selected folder board visible', async () => {
+  mockList.mockImplementation(async (folderId: string) => ({ cards: [cardFixture({ id: 'draft', status: 'todo', folderId })] }));
+  useUIStore.setState({
+    activeSection: { kind: 'project', folderId: 'folder-2', projectPageId: 'page-2' },
+    mainPaneViews: { global: 'board', 'folder-1': 'board', 'folder-2': 'board' },
+  });
+  const screen = render(<MainListPane />);
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+  expect(screen.queryByTestId('folder-existing')).toBeNull();
+  await act(async () => { useUIStore.setState({
+    activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' },
+  }); });
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+  expect(screen.queryByTestId('folder-existing')).toBeNull();
 });
 
 test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮겨도 폴더 옵션을 전파하지 않는다', async () => {

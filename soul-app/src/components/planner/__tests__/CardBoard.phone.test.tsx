@@ -5,6 +5,18 @@ import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { CardBoard } from '../CardBoard';
 import { cardFixture } from '../../../test-support/cards';
+import { boardLaneGeometry, boardLaneOffset, boardVisibleColumns } from '../../../lib/card-board-layout';
+
+test('opening a different board geometry restores the named lane instead of the old x', () => {
+  const saved = jest.fn();
+  const screen = render(<CardBoard phone={false} api={null} cards={[]} includeCompleted={false}
+    initialPosition={{ x: 9999, lane: 'running', lanes: {} }} onOpen={() => {}} onPositionChange={saved} />);
+  fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 800, height: 600 } } });
+  const columns = boardVisibleColumns(false);
+  const geometry = boardLaneGeometry(800, 320 * 0.8 * 15 / 17, 8, false, columns, 8 * 15 / 17);
+  expect(saved.mock.calls.at(-1)[0].lane).toBe('running');
+  expect(saved.mock.calls.at(-1)[0].x).toBe(boardLaneOffset(2, 800, geometry, columns.length));
+});
 
 test('phone initially shows review even empty, snaps by lane and preserves position across rerenders', () => {
   const saved = jest.fn();

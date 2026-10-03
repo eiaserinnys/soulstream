@@ -16,6 +16,20 @@ let mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 
 let mockDevice = 'tablet';
 let mockLoading = false;
 beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; });
+test('tablet panel uses phone lanes and inset, while expanded board keeps wide geometry and resets inset', () => {
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null} bottomInset={120} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
+  expect(screen.getByTestId('card-board-stages')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingHorizontal).toBe(0);
+  const scroll = screen.getByTestId('card-board-scroll-review');
+  expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(136);
+  expect(StyleSheet.flatten(screen.getByTestId('card-board-scroll-done').props.contentContainerStyle).paddingBottom).toBe(136);
+  fireEvent.press(screen.getByLabelText('실행 중 레인 보기'));
+  act(() => ref.current!.openExpanded());
+  const expanded = within(screen.getByTestId('card-board-expanded'));
+  expect(expanded.queryByTestId('card-board-stages')).toBeNull();
+  expect(StyleSheet.flatten(expanded.getByTestId('card-board-scroll-review').props.contentContainerStyle).paddingBottom).toBe(16);
+});
 function Sample({ folderId }: { folderId?: string }) {
   const [includeCompleted, onChange] = useState(false);
   return <CardBoardWorkspace api={null} folderId={folderId} cardDisplay={{ includeCompleted, onChange }} onOpen={() => {}} />;

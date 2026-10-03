@@ -18,11 +18,12 @@ export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
 export function CardBoard({ api, cards, onOpen, includeCompleted = true,
-  phone: controlledPhone, initialPosition, onPositionChange,completed }: {
+  phone: controlledPhone, initialPosition, onPositionChange,completed, bottomInset = 0 }: {
   api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string, target?: number): void;
   includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void;
   completed?:CompletedBrowser;
+  bottomInset?: number;
 }) {
   const t = useTokens();
   const devicePhone = useDeviceType() === 'phone';
@@ -37,13 +38,17 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const geometry = boardLaneGeometry(viewport, paper.width, t.uiSpacing.sm, phone,columns,paper.gap);
   const offsets = columns.map((_, index) => boardLaneOffset(index, viewport, geometry, columns.length));
   const firstPosition = useRef(initialPosition ?? { x: phone ? offsets[4] : 0, lane: phone ? 'review' as const : 'todo' as const, lanes: {} });
-  const initialContentOffset = useRef({ x: firstPosition.current.x, y: 0 });
+  const restoreX = (saved: BoardPosition) => {
+    const lane = columns.findIndex(([status]) => status === saved.lane);
+    return lane >= 0 ? offsets[lane] : Math.min(saved.x, offsets[offsets.length - 1]);
+  };
+  const initialContentOffset = useRef({ x: restoreX(firstPosition.current), y: 0 });
   const previousLayout = useRef({ stride: geometry.stride, viewport, includeCompleted });
   const initialized = useRef(false);
   useEffect(() => {
     if (frame.width > 0 && !initialized.current) {
       initialized.current = true;
-      position.current.x = initialPosition ? Math.min(initialPosition.x, offsets[offsets.length - 1]) : phone ? offsets[4] : 0;
+      position.current.x = initialPosition ? restoreX(initialPosition) : phone ? offsets[4] : 0;
       scroll.current?.scrollTo({ x: position.current.x, animated: false });
       onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
     } else if (initialized.current && (previousLayout.current.stride !== geometry.stride
@@ -138,7 +143,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
             <FlatList ref={completedList} key={geometry.completedColumns} testID="card-board-scroll-done" style={{flex:1}}
               data={items} numColumns={geometry.completedColumns} keyExtractor={card=>card.id} renderItem={({item})=><View style={{width:paper.width,marginBottom:paper.gap}}>{renderItem(item)}</View>}
               columnWrapperStyle={geometry.completedColumns>1?{gap:paper.gap}:undefined}
-              contentContainerStyle={{paddingHorizontal:t.uiSpacing.sm,paddingTop:t.uiSpacing.xs,paddingBottom:t.cardLayout.padding}}
+              contentContainerStyle={{paddingHorizontal:t.uiSpacing.sm,paddingTop:t.uiSpacing.xs,paddingBottom:t.cardLayout.padding + bottomInset}}
               windowSize={5} initialNumToRender={geometry.completedColumns*2} maxToRenderPerBatch={geometry.completedColumns*2}
               onEndReached={completed?.loadMore} onEndReachedThreshold={0.5} showsVerticalScrollIndicator={false} scrollEnabled={!drag}
               onScroll={event=>{position.current.lanes.done=event.nativeEvent.contentOffset.y;savePosition();}}
@@ -146,7 +151,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
           </>:<ScrollView testID={`card-board-scroll-${status}`} scrollEnabled={!drag} style={{ flex: 1 }} showsVerticalScrollIndicator={false}
             contentOffset={{ x: 0, y: firstPosition.current.lanes[status] ?? 0 }} scrollEventThrottle={16}
             onScroll={(event) => { position.current.lanes[status] = event.nativeEvent.contentOffset.y; savePosition(); }}
-            contentContainerStyle={{ gap: t.cardLayout.gap, paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs, paddingBottom: t.cardLayout.padding }}>
+            contentContainerStyle={{ gap: t.cardLayout.gap, paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs, paddingBottom: t.cardLayout.padding + bottomInset }}>
             {items.length ? items.map((card) => <BoardDragCard key={card.id} api={api} card={card}
               dragging={drag?.card.id === card.id} onOpen={(target) => {
                 if (!pan.canPress()) return;

@@ -9,6 +9,7 @@ import { CardHomeScreen } from '../screens/CardHomeScreen';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { CompletedCardsToggle } from '../components/planner/CompletedCardsToggle';
 import type { CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
+import { openPhoneChat } from './phoneSessionNavigation';
 
 /** Home actions use the existing native root header slots. */
 export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackParamList, 'Daily'>) {
@@ -28,6 +29,6 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
       </LiquidGlassButton>
     </View>,
   }); }, [navigation, t, cardDisplay.includeCompleted, cardDisplay.onChange]);
-  return <CardHomeScreen ref={boardRef} externalHeader cardDisplay={cardDisplay} onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })} />;
+  return <CardHomeScreen ref={boardRef} externalHeader cardDisplay={cardDisplay} onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })}
+    onSessionCreated={id => { openPhoneChat(navigation, id); }} />;
 }
-
