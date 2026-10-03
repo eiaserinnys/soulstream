@@ -117,9 +117,12 @@ test("main handoff keeps the exhausted model selected and submits it", async ({ 
   await expect(option).toHaveAttribute("aria-pressed", "true");
   await page.screenshot({ path: path.join(output, "main-execution-picker-1440.png") });
   await page.keyboard.press("Escape");
+  await expect(page.locator(".v3-card-execution-picker")).toBeHidden();
   await expect(composer.getByText(preset.label, { exact: true })).toHaveClass("text-destructive");
   await composer.getByRole("textbox", { name: "세션 첫 메시지" }).fill("소진 모델을 선택해 시작");
   await expect(composer.getByRole("button", { name: "세션 시작", exact: true })).toBeEnabled();
+  await expect(composer.getByRole("button", { name: "실행 조합 선택", exact: true })).toContainText("로젤린");
+  await expect(composer.getByText(preset.label, { exact: true })).toHaveClass("text-destructive");
   await page.screenshot({ path: path.join(output, "main-selected-1440.png") });
   await composer.getByRole("button", { name: "세션 시작", exact: true }).click();
   await expect.poll(() => payloads.length).toBe(1);
