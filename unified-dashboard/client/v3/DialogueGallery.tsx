@@ -29,6 +29,7 @@ export function DialogueGallery({ platform, groups, description }: {
       <FolderPanelHeader title="다이얼로그 비교" inline backLabel="컴포넌트 검수로 돌아가기"
         onBack={() => window.location.assign("/components")} onRename={async () => {}} actions={null}/>
       <div className="v3-detail-scroll v3-dialogue-gallery-content">
+        <div className="v3-dialogue-controls">
         <nav className="v3-dialogue-links" aria-label="검수 화면">
           <Button variant="link" render={<a href="/dialogues" aria-current={platform === "web" ? "page" : undefined}/>}>웹</Button>
           <Button variant="link" render={<a href="/dialogues/ios" aria-current={platform === "ios" ? "page" : undefined}/>}>iOS</Button>
@@ -38,6 +39,7 @@ export function DialogueGallery({ platform, groups, description }: {
           <Input aria-label="다이얼로그 이름 검색" placeholder="다이얼로그 이름 검색" value={query}
             onChange={event => setQuery(event.target.value)}/>
           <p className="v3-components-label">{description}</p>
+        </div>
         </div>
         {filtered.map(group => <section className="v3-dialogue-group" key={group.id} aria-labelledby={`dialogue-group-${group.id}`}>
           <h2 id={`dialogue-group-${group.id}`}>{group.title}</h2>
@@ -71,7 +73,7 @@ function DialoguePreview({ item }: { item: DialogueGalleryItem }) {
       </DashboardIconCap> : null}
     </div>
     {item.src ? <div className="v3-dialogue-preview">
-      {visible ? <iframe src={item.src} title={item.title}/> : null}
+      {visible ? <iframe src={embeddedSource(item.src)} title={item.title}/> : null}
     </div> : item.onOpen ? <div className="v3-dialogue-native">
       <p className="v3-components-label">{item.description}</p>
       <Button variant="outline" onClick={item.onOpen}>확인창 열기</Button>
@@ -80,4 +82,10 @@ function DialoguePreview({ item }: { item: DialogueGalleryItem }) {
       <p className="v3-components-label">{item.description}</p>
     </details>}
   </div>;
+}
+
+function embeddedSource(src: string) {
+  const url = new URL(src, window.location.href);
+  url.searchParams.set("embedded", "1");
+  return `${url.pathname}${url.search}${url.hash}`;
 }
