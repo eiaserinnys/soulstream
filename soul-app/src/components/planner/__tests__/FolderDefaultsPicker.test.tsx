@@ -44,3 +44,19 @@ test('기존 환경의 확인 연타는 한 번만 저장하고 모델 미지정
   act(() => { fireEvent.press(button); fireEvent.press(button); });
   expect(save).toHaveBeenCalledTimes(1); expect(save).toHaveBeenCalledWith(value); expect(close).toHaveBeenCalledTimes(1);
 });
+test('소진 모델을 선택한 폴더 기본값도 그대로 저장한다', async () => {
+  const save = jest.fn();
+  const exhaustedApi = { ...api, listModelPresets: jest.fn().mockResolvedValue({
+    model_presets: [{ id: 'model-a', label: 'A', available: true, reason: 'quota_exhausted' }],
+  }) };
+  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(1));
+  const screen = render(<FolderDefaultsPicker api={exhaustedApi as any}
+    value={{ nodeId: 'node-a', agentId: 'agent-a' }} onSave={save} onClose={jest.fn()} />);
+  await waitFor(() => expect(exhaustedApi.listModelPresets).toHaveBeenCalled());
+  act(() => fireEvent.press(screen.getByTestId('new-task-default-model')));
+  expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledWith(
+    expect.objectContaining({ destructiveButtonIndex: [1], disabledButtonIndices: [] }), expect.any(Function));
+  expect(screen.getByLabelText('기본 환경 확인')).toBeEnabled();
+  fireEvent.press(screen.getByLabelText('기본 환경 확인'));
+  expect(save).toHaveBeenCalledWith({ nodeId: 'node-a', agentId: 'agent-a', modelPreset: 'model-a' });
+});

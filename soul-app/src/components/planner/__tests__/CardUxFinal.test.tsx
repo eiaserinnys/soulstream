@@ -71,8 +71,8 @@ test('오늘·폴더는 같은 행이고 초상과 완료 캡은 같은 44 토�
   const cap = StyleSheet.flatten(screen.getByTestId(`card-${card.id}-완료-visual`).props.style);
   expect(avatar.width).toBe(44); expect(avatar.height).toBe(cap.height); expect(avatar.width).toBe(cap.width);
 });
-test('오늘 전송은 선택한 폴더·노드·모델로 세션을 만들고 카드를 만들지 않는다', async () => {
-  const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }), listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }] }), listModelPresets: jest.fn().mockResolvedValue({ model_presets: [{ id: 'sol', label: 'Sol', available: true }] }), createSession: jest.fn().mockResolvedValue({ agentSessionId: 'new-session' }), createCard: jest.fn() };
+test.each([null, 'quota_exhausted'])('오늘 전송은 선택한 폴더·노드·모델로 세션을 만들고 카드를 만들지 않는다: %s', async reason => {
+  const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }), listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }] }), listModelPresets: jest.fn().mockResolvedValue({ model_presets: [{ id: 'sol', label: 'Sol', available: true, reason }] }), createSession: jest.fn().mockResolvedValue({ agentSessionId: 'new-session' }), createCard: jest.fn() };
   const screen = render(<TodayCardComposer api={api as any} />);
   await waitFor(() => expect(screen.getByText(/로젤린/)).toBeTruthy());
   fireEvent.changeText(screen.getByLabelText('세션 첫 메시지'), '  시작 메시지  ');
@@ -82,10 +82,10 @@ test('오늘 전송은 선택한 폴더·노드·모델로 세션을 만들고 �
   expect(useSessionStore.getState().sessions['new-session'].agentId).toBe('roselin');
 });
 
-test('실행 시트는 세 목록을 독립 선택하고 노드 변경 시 같은 에이전트를 유지한다', async () => {
+test.each([null, 'quota_exhausted'])('실행 시트는 세 목록을 독립 선택하고 노드 변경 시 같은 에이전트를 유지한다: %s', async reason => {
   const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }, { nodeId: 'node-2' }] }),
     listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }, { id: 'other', name: '다른 에이전트', default_preset: 'luna' }] }),
-    listModelPresets: jest.fn().mockImplementation((id) => Promise.resolve({ model_presets: [{ id: 'sol', label: 'Sol', available: true }, { id: id === 'node-1' ? 'luna' : 'other-model', label: id === 'node-1' ? 'Luna' : '다른 모델', available: true }] })) };
+    listModelPresets: jest.fn().mockImplementation((id) => Promise.resolve({ model_presets: [{ id: 'sol', label: 'Sol', available: true, reason }, { id: id === 'node-1' ? 'luna' : 'other-model', label: id === 'node-1' ? 'Luna' : '다른 모델', available: true, reason }] })) };
   const save = jest.fn();
   const screen = render(<ExecutionSelectionSheet api={api as any} value={{ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: 'sol' }} onSave={save} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByLabelText('모델 Luna')).toBeTruthy());

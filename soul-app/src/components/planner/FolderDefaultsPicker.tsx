@@ -63,7 +63,7 @@ export function FolderDefaultsPicker({ api, value, onSave, onClose }: {
       <GroupedGlassSheet>
         <SessionSelectionRow testID="new-task-default-node" label="노드" value={node ?? '미지정'} accessibilityLabel="기본 노드" styles={styles} onPress={pickNode} />
         <SessionSelectionRow testID="new-task-default-agent" label="에이전트" value={agent ?? '미지정'} accessibilityLabel="기본 에이전트" styles={styles} disabled={!node} onPress={pickAgent} />
-        <SessionSelectionRow testID="new-task-default-model" label="모델" value={selection.selectedModelPresetId ?? '미지정'} accessibilityLabel="기본 모델" styles={styles} disabled={!node} onPress={pickModel} />
+        <SessionSelectionRow testID="new-task-default-model" label="모델" value={<Text style={selection.selectedModelPresetId && selection.effectiveModelPreset?.reason === 'quota_exhausted' ? { color: t.colors.errorText } : undefined}>{selection.selectedModelPresetId ?? '미지정'}</Text>} accessibilityLabel="기본 모델" styles={styles} disabled={!node} onPress={pickModel} />
       </GroupedGlassSheet>
       {!valid ? <Text style={styles.selectionError} accessibilityRole="alert">기본 담당은 노드와 에이전트를 모두 선택하고 사용 가능한 모델을 지정해야 합니다.</Text> : null}
       <TouchableOpacity accessibilityLabel="기본 환경 제거" style={styles.headerButton} onPress={() => finish(undefined)}><Text style={styles.headerAction}>제거하고 상속 사용</Text></TouchableOpacity>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
 import { ActionSheetIOS, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import {
@@ -142,7 +143,7 @@ export function FolderDefaultAssignment({
       </TouchableOpacity>
       <TouchableOpacity style={styles.row} onPress={pickModel}>
         <Text style={styles.label}>모델</Text>
-        <Text style={styles.value}>{selection.selectedModelPresetName}</Text>
+        <Text style={styles.value}><SelectedModelPresetName selection={selection} /></Text>
       </TouchableOpacity>
       {selection.selectedModelPresetUsageWarning ? (
         <Text style={styles.warningBadge}>사용량 확인 지연</Text>

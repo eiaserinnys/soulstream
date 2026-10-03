@@ -23,6 +23,7 @@ import { ExecutionSelectionSheet } from './ExecutionSelectionSheet';
 import { FolderSelectionSheet } from './FolderSelectionSheet';
 import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { SessionSelectionRow } from './SessionSelectionRow';
+import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
 import { makeStyles } from './SessionSuccessionSheet.styles';
 
 export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { api: ApiClient | null; onClose(): void; folderId?: string }) {
@@ -137,7 +138,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
               <View style={styles.disclosureBody}>
                 <Text style={styles.rowTitle}>실행 대상</Text>
                 <Text style={styles.meta}>{selection.selectedAgentName}, {selection.selectedNodeName}</Text>
-                <Text style={styles.meta}>{selection.selectedModelPresetName}</Text>
+                <Text style={styles.meta}><SelectedModelPresetName selection={selection} /></Text>
               </View>
               <Text style={styles.disclosureAction}>변경 ›</Text>
             </TouchableOpacity>

@@ -10,6 +10,7 @@ const agents: AgentInfo[] = [{ id: "roselin", name: "로젤린" }, { id: "seosoy
 const catalog: NodeModelPresetCatalog = {
   nodeId: "components-local", status: "ready", presets: [
     { id: "sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
+    { id: "exhausted-sol", label: "Sol (사용량 소진 예시)", backend: "codex", available: true, reason: "quota_exhausted", reason_label: "7일 사용량 제한", resets_at: null, usage_warning: false },
     { id: "unavailable", label: "사용 불가 샘플", backend: "codex", available: false, reason: "disabled", reason_label: "사용 불가", resets_at: null, usage_warning: false },
   ],
 };
