@@ -71,6 +71,13 @@ function startupSideIdentity(
 }
 
 describe("deployment env identity", () => {
+  it("ignores the retired disabled external ingress line at build and startup", () => {
+    const declared = { ...DECLARED_ENV, MCP_EXTERNAL_INGRESS_ENABLED: "false" };
+    expect(parseEnv(declared)).toEqual(parseEnv(DECLARED_ENV));
+    expect(buildSideIdentity(declared)).toBe(buildSideIdentity());
+    expect(startupSideIdentity(declared)).toBe(startupSideIdentity());
+  });
+
   it("survives the clean build environment meeting the live service process env", () => {
     expect(startupSideIdentity()).toBe(buildSideIdentity());
   });
