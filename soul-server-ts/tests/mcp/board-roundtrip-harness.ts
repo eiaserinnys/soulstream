@@ -137,12 +137,9 @@ export async function createBoardRoundtripHarness() {
       actorKind: "agent", actorSessionId: "header-session", idempotencyKey: "seed-view" });
     events.length = 0;
   }
-  async function call(legacy: boolean, name: string, input: Record<string, unknown>, context: McpRequestContext) {
+  async function call(name: string, input: Record<string, unknown>, context: McpRequestContext) {
     const server = new McpServer({ name: "board-parity", version: "1" });
-    const legacyCatalog = "registerCatalogToolsLegacy" in catalog ? catalog.registerCatalogToolsLegacy : catalog.registerCatalogTools;
-    const legacyCustom = "registerCustomViewToolsLegacy" in customView ? customView.registerCustomViewToolsLegacy : customView.registerCustomViewTools;
-    if (legacy) { legacyCatalog(server, runtime); legacyCustom(server, runtime); }
-    else { catalog.registerCatalogTools(server, runtime); customView.registerCustomViewTools(server, runtime); }
+    catalog.registerCatalogTools(server, runtime); customView.registerCustomViewTools(server, runtime);
     const client = new Client({ name: "board-client", version: "1" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {

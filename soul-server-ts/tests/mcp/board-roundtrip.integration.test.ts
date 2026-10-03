@@ -75,27 +75,22 @@ describe("folder-board-custom-view MCP roundtrip", () => {
   let h: Awaited<ReturnType<typeof createBoardRoundtripHarness>>;
   beforeAll(async () => { h = await createBoardRoundtripHarness(); }, 60_000);
   afterAll(async () => { await h?.cleanup(); });
-  async function parity(name: string, args: Record<string, unknown>, requestContext = context, fails = false) {
-    await h.seed(); const old = await h.call(true, name, args, requestContext); const oldEvents = structuredClone(h.events);
-    expect(old.isError === true, `legacy ${name}`).toBe(fails);
-    await h.seed(); const next = await h.call(false, name, args, requestContext);
-    expect(serializeResult(name, old)).toMatchSnapshot(name);
-    expect(JSON.stringify(maskEvents(name, oldEvents))).toMatchSnapshot(`${name} events`);
-    assertParity(name, old, next);
-    expect(maskEvents(name, h.events)).toEqual(maskEvents(name, oldEvents));
+  async function roundtrip(name: string, args: Record<string, unknown>, requestContext = context, fails = false) {
+    await h.seed(); const next = await h.call(name, args, requestContext);
+    expect(next.isError === true, name).toBe(fails);
+    expect(serializeResult(name, next)).toMatchSnapshot(name);
+    expect(JSON.stringify(maskEvents(name, h.events))).toMatchSnapshot(`${name} events`);
     return next;
   }
   it.each(cases)("preserves %s", async (_label, name, args, fails = false, requestContext = context) => {
-    await parity(name, args, requestContext, fails);
+    await roundtrip(name, args, requestContext, fails);
   });
   it.each(["browse_folder", "search_folder_items"])("uses the owning node's profile for %s", async name => {
     await h.seed(); h.distinguishRemoteNames(true);
     const args = { folder_id: "00000000-0000-4000-8000-000000000001", ...(name === "search_folder_items" ? { query: "원격" } : {}) };
     try {
-      const old = await h.call(true, name, args, context);
-      const next = await h.call(false, name, args, context);
-      const items = (result: typeof old) => (result.structuredContent as { items: { agent_session_id?: string; agent?: { id: string; name: string } }[] }).items;
-      expect(items(old).find(item => item.agent_session_id === "remote")?.agent?.name).toBe("로젤린");
+      const next = await h.call(name, args, context);
+      const items = (result: Awaited<ReturnType<typeof h.call>>) => (result.structuredContent as { items: { agent_session_id?: string; agent?: { id: string; name: string } }[] }).items;
       expect(items(next).find(item => item.agent_session_id === "remote")?.agent?.name).toBe("다른 노드 이름");
       if (name === "browse_folder") expect(items(next).find(item => item.agent_session_id === "header-session")?.agent?.name).toBe("로젤린");
     } finally { h.distinguishRemoteNames(false); }
@@ -103,22 +98,17 @@ describe("folder-board-custom-view MCP roundtrip", () => {
   it("queries agent profiles once per node within each tool call", async () => {
     await h.seed(); h.listAgentProfiles.mockClear();
     const args = { folder_id: "00000000-0000-4000-8000-000000000001" };
-    const first = await h.call(false, "browse_folder", args, context);
+    const first = await h.call("browse_folder", args, context);
     expect(first.isError).not.toBe(true);
     const sessions = (first.structuredContent as { items: { type: string; node_id?: string }[] }).items.filter(item => item.type === "session");
     expect(sessions.filter(item => item.node_id === "test-node").length).toBeGreaterThan(1);
     expect(h.listAgentProfiles.mock.calls.map(([nodeId]) => nodeId).sort()).toEqual(["other-node", "test-node"]);
-    await h.call(false, "browse_folder", args, context);
+    await h.call("browse_folder", args, context);
     expect(h.listAgentProfiles.mock.calls.map(([nodeId]) => nodeId).sort()).toEqual(["other-node", "other-node", "test-node", "test-node"]);
   });
   it("records the legacy revision conflict and reports the actual revision on the new path", async () => {
     const args = { ...patch, expected_revision: 999 };
-    await h.seed(); const old = await h.call(true, "patch_custom_view", args, context);
-    const oldMessage = "custom view revision conflict for cv-1: expected 999, actual 999";
-    expect(old.isError).toBe(true);
-    expect(old.content).toEqual([{ type: "text", text: oldMessage }]);
-    expect(old.structuredContent).toEqual({ error: oldMessage });
-    await h.seed(); const next = await h.call(false, "patch_custom_view", args, context);
+    await h.seed(); const next = await h.call("patch_custom_view", args, context);
     const actualMessage = "custom view revision conflict for cv-1: expected 999, actual 1";
     expect(next.isError).toBe(true);
     expect(next.content).toEqual([{ type: "text", text: actualMessage }]);
@@ -126,9 +116,9 @@ describe("folder-board-custom-view MCP roundtrip", () => {
   });
   it("includes archived views only when requested", async () => {
     await h.seed(); await h.h.sql`UPDATE board_custom_views SET archived=TRUE WHERE id='cv-1'`;
-    for (const legacy of [true, false]) {
-      const hidden = await h.call(legacy, "browse_folder", { folder_id: "00000000-0000-4000-8000-000000000001" }, context);
-      const shown = await h.call(legacy, "browse_folder", { folder_id: "00000000-0000-4000-8000-000000000001", include_archived: true }, context);
+    {
+      const hidden = await h.call("browse_folder", { folder_id: "00000000-0000-4000-8000-000000000001" }, context);
+      const shown = await h.call("browse_folder", { folder_id: "00000000-0000-4000-8000-000000000001", include_archived: true }, context);
       const items = (result: typeof hidden) => (result.structuredContent as { items: { type: string; archived: boolean }[] }).items;
       expect(items(hidden).some(item => item.type === "custom_view")).toBe(false);
       expect(items(shown).find(item => item.type === "custom_view")).toMatchObject({ archived: true });
@@ -136,41 +126,36 @@ describe("folder-board-custom-view MCP roundtrip", () => {
   });
   it("records the legacy targetFolderId failure and actually moves on the new path", async () => {
     const args = { ...move, folder_id: "00000000-0000-4000-8000-000000000002", x: 13, y: 31 };
-    await h.seed(); const old = await h.call(true, "move_board_item_to_folder", args, context);
-    expect(old.isError).toBe(true);
-    expect(old.content[0]).toMatchObject({ text: expect.stringContaining('"path": [\n      "folderId"\n    ]') });
-    await h.seed(); const next = await h.call(false, "move_board_item_to_folder", args, context);
+    await h.seed(); const next = await h.call("move_board_item_to_folder", args, context);
     expect(next.isError).not.toBe(true);
     expect(next.structuredContent).toMatchObject({ ok: true, board_item: { id: "markdown:doc-1", folderId: "00000000-0000-4000-8000-000000000002", x: 20, y: 40 }, idempotency_key: "move" });
     expect(await h.projectionHost.getBoardItemById("markdown:doc-1")).toMatchObject({ folderId: "00000000-0000-4000-8000-000000000002", x: 20, y: 40 });
   });
   it("creates once for the same custom-view key and emits no duplicate notification", async () => {
-    const run = async (legacy: boolean) => {
-      await h.seed(); const first = await h.call(legacy, "create_custom_view", view, context);
+    const run = async () => {
+      await h.seed(); const first = await h.call("create_custom_view", view, context);
       const count = h.events.length;
-      const second = await h.call(legacy, "create_custom_view", view, context);
+      const second = await h.call("create_custom_view", view, context);
       expect(second.structuredContent).toHaveProperty("idempotent", true);
       expect(h.events).toHaveLength(count);
       return [first, second];
     };
-    const old = await run(true); const next = await run(false);
-    old.forEach((result, index) => {
+    const next = await run();
+    next.forEach((result, index) => {
       expect(serializeResult("create_custom_view", result)).toMatchSnapshot(`create_custom_view ${index}`);
-      assertParity("create_custom_view", result, next[index]);
     });
   });
   it("preserves the 2000-item search scan boundary", async () => {
-    const run = async (legacy: boolean) => {
+    const run = async () => {
       await h.seed();
       await h.h.sql`INSERT INTO markdown_documents(id,title,body,version)
         SELECT 'bulk-'||n,'bulk','검색',1 FROM generate_series(1,2001) n`;
       await h.h.sql`INSERT INTO board_items(id,folder_id,item_type,item_id,x,y,metadata)
         SELECT 'markdown:bulk-'||n,'00000000-0000-4000-8000-000000000001','markdown','bulk-'||n,0,0,'{}'::jsonb FROM generate_series(1,2001) n`;
-      return h.call(legacy, "search_folder_items", { folder_id: "00000000-0000-4000-8000-000000000001", query: "검색", limit: 80 }, context);
+      return h.call("search_folder_items", { folder_id: "00000000-0000-4000-8000-000000000001", query: "검색", limit: 80 }, context);
     };
-    const old = await run(true); const next = await run(false);
-    expect(serializeResult("search_folder_items", old)).toMatchSnapshot("search_folder_items");
-    assertParity("search_folder_items", old, next);
+    const next = await run();
+    expect(serializeResult("search_folder_items", next)).toMatchSnapshot("search_folder_items");
     expect(next.structuredContent).toMatchObject({ truncated: true, scan_limit: 2000, scanned_items: 2000, page: { limit: 50 } });
   });
 });
@@ -208,21 +193,10 @@ function serializeResult(tool: string, result: unknown): string {
     return { ...item, text: JSON.stringify(mask(tool, parsed), null, 2) };
   }), ...(value.structuredContent === undefined ? {} : { structuredContent: mask(tool, value.structuredContent) }) }, null, 2);
 }
-function assertParity(tool: string, old: unknown, next: unknown) { expect(serializeResult(tool, next)).toBe(serializeResult(tool, old)); }
-describe("board comparator detects violations", () => {
-  const result = (value: Record<string, unknown>, spaces = 2) => ({ content: [{ type: "text", text: JSON.stringify(value, null, spaces) }], structuredContent: value });
-  it.each(["content", "structuredContent", "isError"])("detects changed %s", key => {
-    const old = { content: [{ type: "text", text: "ok" }], structuredContent: { result: "ok" }, isError: false };
-    expect(() => assertParity("get_markdown_document", old, { ...old, [key]: "broken" })).toThrow();
-  });
-  it("detects key order, indentation, unmasked IDs and errors", () => {
-    expect(() => assertParity("get_markdown_document", result({ id: "a", title: "문서" }), result({ title: "문서", id: "a" }))).toThrow();
-    expect(() => assertParity("get_markdown_document", result({ id: "a" }), result({ id: "a" }, 4))).toThrow();
-    expect(() => assertParity("get_markdown_document", result({ id: "a" }), result({ id: "b" }))).toThrow();
-    expect(() => assertParity("get_markdown_document", { content: [{ type: "text", text: "missing" }], isError: true }, { content: [{ type: "text", text: " missing" }], isError: true })).toThrow();
-  });
+describe("board result masking", () => {
   it("masks only document generation fields and time", () => {
-    assertParity("create_markdown_document", result({ document: { id: "a", createdAt: "a" }, boardItem: { id: "markdown:a", itemId: "a" } }),
-      result({ document: { id: "b", createdAt: "b" }, boardItem: { id: "markdown:b", itemId: "b" } }));
+    const value = { document: { id: "generated", createdAt: "now" }, boardItem: { id: "markdown:generated", itemId: "generated" }, existingId: "keep" };
+    expect(mask("create_markdown_document", value)).toEqual({ document: { id: "<random-id>", createdAt: "<time>" }, boardItem: { id: "<random-id>", itemId: "<random-id>" }, existingId: "keep" });
+    expect(mask("get_markdown_document", value)).toEqual({ ...value, document: { id: "generated", createdAt: "<time>" } });
   });
 });

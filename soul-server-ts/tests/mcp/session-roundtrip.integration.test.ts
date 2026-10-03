@@ -2,10 +2,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { registerSessionQueryTools, registerSessionQueryToolsLegacy } from "../../src/mcp/tools/session_query.js";
-import { registerSessionMgmtTools, registerSessionNameToolsLegacy } from "../../src/mcp/tools/session_mgmt.js";
-import { registerCatalogTools, registerDeleteSessionToolLegacy } from "../../src/mcp/tools/catalog.js";
-import { registerOrchestratorTools } from "../../src/mcp/orchestrator_tools.js";
+import { registerSessionQueryTools } from "../../src/mcp/tools/session_query.js";
+import { registerSessionMgmtTools } from "../../src/mcp/tools/session_mgmt.js";
+import { registerCatalogTools } from "../../src/mcp/tools/catalog.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
 import { createSessionRoundtripFixture } from "./session-roundtrip-fixture.js";
 
@@ -43,19 +42,14 @@ const errors: [string, Record<string, unknown>][] = [
 ];
 
 // No random values are returned by these 12 tools. No fields (including dates) are masked.
-export function assertSessionParity(old: unknown, next: unknown) { expect(JSON.stringify(next)).toBe(JSON.stringify(old)); }
 
 describe("session MCP roundtrip", () => {
   let h: Awaited<ReturnType<typeof createSessionRoundtripFixture>>;
   beforeAll(async () => { h = await createSessionRoundtripFixture(); });
   afterAll(async () => { await h?.app.close(); });
-  async function call(legacy: boolean, name: string, args: Record<string, unknown>, context = parent) {
+  async function call(name: string, args: Record<string, unknown>, context = parent) {
     const server = new McpServer({ name: "session-parity", version: "1" });
-    if (legacy) {
-      registerSessionQueryToolsLegacy(server, h.runtime); registerSessionNameToolsLegacy(server, h.runtime); registerDeleteSessionToolLegacy(server, h.runtime);
-    } else {
-      registerSessionQueryTools(server, h.runtime); registerSessionMgmtTools(server, h.runtime); registerCatalogTools(server, h.runtime);
-    }
+    registerSessionQueryTools(server, h.runtime); registerSessionMgmtTools(server, h.runtime); registerCatalogTools(server, h.runtime);
     const client = new Client({ name: "session-parity-client", version: "1" });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     try {
@@ -63,30 +57,22 @@ describe("session MCP roundtrip", () => {
       return await withMcpRequestContext(context, () => client.callTool({ name, arguments: args }));
     } finally { await client.close(); await server.close(); }
   }
-  async function compare(name: string, args: Record<string, unknown>, context = parent, settings = {}) {
-    h.reset(settings); const old = await call(true, name, args, context);
-    const oldRecords = structuredClone(h.observations()); const oldNotifications = structuredClone(h.notifications);
-    const oldKeys = [...h.renameKeys];
-    h.reset(settings); const next = await call(false, name, args, context);
-    expect(JSON.stringify(old)).toMatchSnapshot(name);
-    expect(JSON.stringify({ observations: oldRecords, notifications: oldNotifications, renameKeys: oldKeys })).toMatchSnapshot(`${name} effects`);
-    assertSessionParity(old, next); expect(h.observations()).toEqual(oldRecords);
-    expect(h.notifications).toEqual(oldNotifications); expect(h.renameKeys).toEqual(oldKeys);
+  async function roundtrip(name: string, args: Record<string, unknown>, context = parent, settings = {}) {
+    h.reset(settings); const next = await call(name, args, context);
+    expect(JSON.stringify(next)).toMatchSnapshot(name);
+    expect(JSON.stringify({ observations: h.observations(), notifications: h.notifications, renameKeys: h.renameKeys })).toMatchSnapshot(`${name} effects`);
     expect(h.paths).toContain(`/api/mcp/host/${name}`);
     expect(h.paths.filter(p => p.startsWith("/api/session-data/host/"))).toEqual([]);
     return next;
   }
   it("preserves local deletion and its notification", async () => {
-    h.reset(); const old = await call(true, "delete_session", { session_id: "other" });
-    const notices = structuredClone(h.notifications);
-    h.reset(); const next = await call(false, "delete_session", { session_id: "other" });
-    expect(JSON.stringify(old)).toMatchSnapshot("delete_session");
-    expect(JSON.stringify(notices)).toMatchSnapshot("delete_session notifications");
-    assertSessionParity(old, next); expect(h.notifications).toEqual(notices);
+    h.reset(); const next = await call("delete_session", { session_id: "other" });
+    expect(JSON.stringify(next)).toMatchSnapshot("delete_session");
+    expect(JSON.stringify(h.notifications)).toMatchSnapshot("delete_session notifications");
     expect(h.sessions().other).toBeUndefined(); expect(h.paths).not.toContain("/api/mcp/host/delete_session");
   });
   it("relays remote terminal deletion and notifies once", async () => {
-    h.reset(); const result = await call(false, "delete_session", { session_id: "child" });
+    h.reset(); const result = await call("delete_session", { session_id: "child" });
     expect(result.structuredContent).toEqual({ ok: true, session_id: "child" });
     expect(h.sessions().child).toBeUndefined(); expect(h.notifications).toEqual([{ deleted: "child" }]);
     expect(h.paths).toContain("/api/mcp/host/delete_session");
@@ -95,46 +81,46 @@ describe("session MCP roundtrip", () => {
     h.reset(); const orch = h.runtime.orch;
     h.runtime.orch = { ...orch!, baseUrl: "http://127.0.0.1:1" };
     try {
-      const result = await call(false, "delete_session", { session_id: "child" });
+      const result = await call("delete_session", { session_id: "child" });
       expect(result.isError).toBe(true); expect(result.structuredContent).toEqual({ error: "fetch failed" });
       expect(h.sessions().child).toBeDefined(); expect(h.notifications).toEqual([]);
     } finally { h.runtime.orch = orch; }
   });
   it("refuses remote running deletion without stopping a runner", async () => {
-    h.reset({ status: "running" }); const result = await call(false, "delete_session", { session_id: "child" });
+    h.reset({ status: "running" }); const result = await call("delete_session", { session_id: "child" });
     expect(result.isError).toBe(true);
     expect((result.content as { text: string }[])[0].text).toBe("Session child on node remote is running; stop it before deleting it");
     expect(h.sessions().child).toBeDefined(); expect(h.notifications).toEqual([]);
   });
-  it.each(successes)("preserves %s success %j", async (name, args) => { const result = await compare(name, args); expect(result.isError).not.toBe(true); });
-  it.each(errors)("preserves %s error %j", async (name, args) => { const result = await compare(name, args); expect(result.isError).toBe(true); });
+  it.each(successes)("preserves %s success %j", async (name, args) => { const result = await roundtrip(name, args); expect(result.isError).not.toBe(true); });
+  it.each(errors)("preserves %s error %j", async (name, args) => { const result = await roundtrip(name, args); expect(result.isError).toBe(true); });
   it.each(["turn_summaries", "empty"])("preserves story fallback %s", async story => {
-    await compare("get_session_story", { session_id: "child", include_highlight: true }, parent, { story });
-    await compare("get_session_highlight", { session_id: "child" }, parent, { story });
+    await roundtrip("get_session_story", { session_id: "child", include_highlight: true }, parent, { story });
+    await roundtrip("get_session_highlight", { session_id: "child" }, parent, { story });
   });
   it.each([
     ["get_all", "list_sessions", { folder_name: "폴더" }],
     ["rename_session", "set_session_name", { session_id: "child", name: "새 이름" }],
     ["cogito", "search_sessions", { query: "needle" }],
   ] as const)("preserves %s boundary failure", async (failure, name, args) => {
-    const result = await compare(name, args, parent, { failure }); expect(result.isError).toBe(true);
+    const result = await roundtrip(name, args, parent, { failure }); expect(result.isError).toBe(true);
   });
-  it("preserves partial session search", async () => { await compare("search_sessions", { query: "needle" }, parent, { partial: true }); });
+  it("preserves partial session search", async () => { await roundtrip("search_sessions", { query: "needle" }, parent, { partial: true }); });
   it.each([external, {}])("preserves query and mutation for identity %j", async context => {
-    await compare("get_session_event", { session_id: "child", event_id: 4, caller_session_id: "parent" }, context);
-    await compare("search_sessions", { query: "needle" }, context);
-    await compare("search_session_history", { query: "needle" }, context);
-    await compare("set_session_name", { session_id: "child", name: "이름" }, context);
+    await roundtrip("get_session_event", { session_id: "child", event_id: 4, caller_session_id: "parent" }, context);
+    await roundtrip("search_sessions", { query: "needle" }, context);
+    await roundtrip("search_session_history", { query: "needle" }, context);
+    await roundtrip("set_session_name", { session_id: "child", name: "이름" }, context);
   });
   it.each([{}, { caller: null }, { status: "running" }])("preserves child observation conditions %j", async settings => {
-    await compare("get_session_event", { session_id: "child", event_id: 4 }, parent, settings);
+    await roundtrip("get_session_event", { session_id: "child", event_id: 4 }, parent, settings);
     expect(h.observations().length).toBe(Object.keys(settings).length === 0 ? 1 : 0);
   });
   it("does not observe a partial child revision", async () => {
-    await compare("get_session_event", { session_id: "child", event_id: 1 }); expect(h.observations()).toEqual([]);
+    await roundtrip("get_session_event", { session_id: "child", event_id: 1 }); expect(h.observations()).toEqual([]);
   });
   it("refuses a child result when the revision changed during observation", async () => {
-    const result = await compare("get_session_event", { session_id: "child", event_id: 4 }, parent, { mismatch: true }); expect(result.isError).toBe(true);
+    const result = await roundtrip("get_session_event", { session_id: "child", event_id: 4 }, parent, { mismatch: true }); expect(result.isError).toBe(true);
   });
   it.each(["get", "list_summary", "event_read_page", "event_count", "event_read_one", "story", "story_search_metadata", "turn_summary_count", "turn_summary_range", "history_search", "turn_excerpt", "record_observed_child_completions"])("preserves repository error %s", async failure => {
     const target: Record<string, [string, Record<string, unknown>]> = {
@@ -145,19 +131,6 @@ describe("session MCP roundtrip", () => {
       turn_summary_range: ["get_session_turn_summaries", { session_id: "child", mode: "index", turn_number: 3 }],
     };
     const [name, args] = target[failure] ?? ["get_session_event", { session_id: "child", event_id: 4 }];
-    const result = await compare(name, args, parent, { failure }); expect(result.isError).toBe(true);
-  });
-});
-describe("session parity comparator", () => {
-  it.each(["content", "structuredContent", "isError"])("detects changed %s", key => {
-    const old = { content: [{ type: "text", text: "ok" }], structuredContent: { session_id: "child" }, isError: false };
-    expect(() => assertSessionParity(old, { ...old, [key]: "broken" })).toThrow();
-  });
-  it("detects key order, whitespace, IDs, timestamps and error text", () => {
-    const old = { content: [{ type: "text", text: '{\n  "a": 1,\n  "b": 2\n}' }] };
-    for (const text of ['{"a":1,"b":2}', '{\n  "b": 2,\n  "a": 1\n}', "other error"]) {
-      expect(() => assertSessionParity(old, { content: [{ type: "text", text }] })).toThrow();
-    }
-    expect(() => assertSessionParity({ session_id: "child", updated_at: "old" }, { session_id: "other", updated_at: "new" })).toThrow();
+    const result = await roundtrip(name, args, parent, { failure }); expect(result.isError).toBe(true);
   });
 });
