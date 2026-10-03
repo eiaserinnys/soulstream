@@ -34,9 +34,10 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
       VALUES ('owned','f','a','담당 카드','요청','todo','session','owner')`;
     await h.sql`UPDATE sessions SET card_id='owned' WHERE session_id='subtask'`;
+    const sql=createBoardYjsSqlAdapter(h.liveSql);
 
-    expect(await readAssignedCardContext(h.sql,'owner')).toMatchObject({total:1,cards:[{id:'owned',status:'todo'}]});
-    expect(await readAssignedCardContext(h.sql,'subtask')).toMatchObject({total:0,cards:[]});
+    expect(await readAssignedCardContext(sql,'owner')).toMatchObject({total:1,cards:[{id:'owned',status:'todo'}]});
+    expect(await readAssignedCardContext(sql,'subtask')).toMatchObject({total:0,cards:[]});
   });
   it("captures state and owner under lock, independent of stale pre-lock read or post-commit reassignment",async()=>{
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_session_id) VALUES ('locked','f','100','경합','요청','todo','other')`;
