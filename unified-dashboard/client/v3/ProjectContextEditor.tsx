@@ -3,6 +3,7 @@ import {
   useCallback,
   useMemo,
   useState,
+  useRef,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
@@ -18,6 +19,7 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import {
   ProjectAtomFields,
+  isProjectAtomValid,
   ProjectSessionDefaultsFields,
 } from "./ProjectContextFormFields";
 import {
@@ -66,6 +68,7 @@ export function ProjectContextEditor({
 }) {
   const [editor, setEditor] = useState<EditorState>(()=> initialEditor === "atom-add" ? emptyAtomEditor() : initialEditor === "atom-edit" && snapshot.atomReferences[0] ? atomEditor(snapshot.atomReferences[0]) : initialEditor === "defaults-add" ? emptyDefaultsEditor() : initialEditor === "defaults-edit" && snapshot.sessionDefaults[0] ? defaultsEditor(snapshot.sessionDefaults[0]) : null);
   const [addingGuidance, setAddingGuidance] = useState(false);
+  const committing = useRef(false);
   const [pending, setPending] = useState(false);
   const [modelPresetValid, setModelPresetValid] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -98,17 +101,22 @@ export function ProjectContextEditor({
       setMessage(`저장 실패 · ${errorText(cause)}`);
       throw cause;
     } finally {
+      committing.current = false;
       setPending(false);
     }
   };
 
   const commit = async () => {
-    if (!editor || pending || (editor.kind === "defaults" && !modelPresetValid)) return;
+    if (!editor || committing.current || (editor.kind === "defaults" && !modelPresetValid) || (editor.kind === "atom" && !isProjectAtomValid(editor))) return;
+    committing.current = true;
     setPending(true);
     setMessage(null);
     try {
       if (editor.kind === "atom") {
-        await saveProjectAtomReference(api, pageId, editor);
+        const duplicate = snapshot.atomReferences.find(item => item.instance === editor.instance && item.nodeId === editor.nodeId);
+        await saveProjectAtomReference(api, pageId, { ...editor, blockId: duplicate?.blockId ?? editor.blockId });
+      } else if (!editor.agentId && !editor.nodeId && !editor.modelPreset) {
+        if (editor.blockId) await deleteProjectContextBlock(api, pageId, editor.blockId);
       } else {
         await saveProjectSessionDefaults(api, pageId, {
           blockId: editor.blockId,
@@ -123,6 +131,7 @@ export function ProjectContextEditor({
     } catch (cause) {
       setMessage(`저장 실패 · ${errorText(cause)}`);
     } finally {
+      committing.current = false;
       setPending(false);
     }
   };
@@ -139,6 +148,7 @@ export function ProjectContextEditor({
     } catch (cause) {
       setMessage(`삭제 실패 · ${errorText(cause)}`);
     } finally {
+      committing.current = false;
       setPending(false);
     }
   };
@@ -151,7 +161,7 @@ export function ProjectContextEditor({
         <DashboardIconCap size="small" label="guidance 추가" disabled={pending || addingGuidance} onClick={() => setAddingGuidance(true)}><FilePlus2 className="h-4 w-4"/></DashboardIconCap>
         <Popover
           open={editor?.kind === "atom" && editor.blockId === null}
-          onOpenChange={(open) => setEditor(open ? emptyAtomEditor() : null)}
+          onOpenChange={(open) => { if (!committing.current) setEditor(open ? emptyAtomEditor() : null); }}
         >
           <PopoverTrigger render={<DashboardIconCap size="small" label="atom 추가" disabled={pending}><Network className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
           <ContextPopover>
@@ -164,6 +174,7 @@ export function ProjectContextEditor({
           <Popover
             open={editor?.kind === "defaults" && editor.blockId === null}
             onOpenChange={(open) => {
+              if (committing.current) return;
               setModelPresetValid(true);
               setEditor(open ? emptyDefaultsEditor() : null);
             }}
@@ -183,7 +194,7 @@ export function ProjectContextEditor({
           <Popover
             key={reference.blockId}
             open={editor?.kind === "atom" && editor.blockId === reference.blockId}
-            onOpenChange={(open) => setEditor(open ? atomEditor(reference) : null)}
+            onOpenChange={(open) => { if (!committing.current) setEditor(open ? atomEditor(reference) : null); }}
           >
             <PopoverTrigger
               type="button"
@@ -206,6 +217,7 @@ export function ProjectContextEditor({
             key={defaults.blockId}
             open={editor?.kind === "defaults" && editor.blockId === defaults.blockId}
             onOpenChange={(open) => {
+              if (committing.current) return;
               setModelPresetValid(true);
               setEditor(open ? defaultsEditor(defaults) : null);
             }}
@@ -285,14 +297,17 @@ function AtomEditorFields({
   onSave(): void;
   onDelete?: () => void;
 }) {
+  const [open, setOpen] = useState(editor.instance === "atom");
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("ready");
   return (
     <div className="v3-project-context-editor" data-editor-presentation="popover">
       <ProjectAtomFields request={request}
+        selectorOpen={open} onSelectorOpenChange={setOpen} onSelectorStatusChange={setStatus}
         value={editor}
         disabled={pending}
         onChange={(value) => setEditor({ ...editor, ...value })}
       />
-      <EditorActions pending={pending} onCancel={onCancel} onSave={onSave} onDelete={onDelete} />
+      <EditorActions pending={pending} invalid={open || status !== "ready" || !isProjectAtomValid(editor)} onCancel={onCancel} onSave={onSave} onDelete={onDelete} />
     </div>
   );
 }
@@ -335,7 +350,7 @@ function DefaultsEditorFields({
         onModelPresetValidityChange={onModelPresetValidityChange}
         onError={(message) => onError(message)}
       />
-      <EditorActions pending={pending || !modelPresetValid} onCancel={onCancel} onSave={onSave} />
+      <EditorActions pending={pending} invalid={!modelPresetValid} onCancel={onCancel} onSave={onSave} />
     </div>
   );
 }
@@ -387,13 +402,13 @@ function emptyDefaultsEditor(): DefaultsEditorState {
   };
 }
 
-function EditorActions({ pending, onCancel, onSave, onDelete }: { pending: boolean; onCancel(): void; onSave(): void; onDelete?: () => void }) {
+function EditorActions({ pending, invalid = false, onCancel, onSave, onDelete }: { pending: boolean; invalid?: boolean; onCancel(): void; onSave(): void; onDelete?: () => void }) {
   return (
     <div className="v3-project-context-editor-actions">
       {onDelete ? <Button variant="destructive-outline" disabled={pending} onClick={onDelete}>삭제</Button> : null}
       <span />
       <Button variant="ghost" disabled={pending} onClick={onCancel}>취소</Button>
-      <Button disabled={pending} onClick={onSave}>{pending ? "저장 중…" : "저장"}</Button>
+      <Button disabled={pending || invalid} onClick={onSave}>{pending ? "저장 중…" : "저장"}</Button>
     </div>
   );
 }

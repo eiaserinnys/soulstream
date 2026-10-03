@@ -4,11 +4,13 @@ import type { ProjectPageDetails } from "./project-page-details";
 
 export interface ProjectFormGuidance {
   blockId: string | null;
+  draftId?: string;
   text: string;
 }
 
 export interface ProjectFormAtomReference {
   blockId: string | null;
+  draftId?: string;
   instance: "atom" | "atom-nl";
   nodeId: string;
   nodeTitle: string;
@@ -20,6 +22,7 @@ export interface ProjectFormAtomReference {
 
 export interface ProjectFormSessionDefaults {
   blockId: string | null;
+  draftId?: string;
   agentId: string;
   nodeId: string;
   modelPreset: string;

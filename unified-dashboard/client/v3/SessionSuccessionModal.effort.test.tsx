@@ -103,7 +103,7 @@ afterEach(() => {
   useOrchestratorStore.setState({ nodes: new Map(), connectionStatus: "connecting" });
 });
 
-function mountWithSession(session: Record<string, unknown> | null, presetId = "claude-opus") {
+function mountWithSession(session: Record<string, unknown> | null, presetId = "claude-opus", overrides: Partial<Parameters<typeof SessionSuccessionModal>[0]> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   flushSync(() => {
     root.render(createElement(
@@ -121,6 +121,7 @@ function mountWithSession(session: Record<string, unknown> | null, presetId = "c
         currentSession: session as never,
         onClose: () => {},
         onCreated: () => {},
+        ...overrides,
       }),
     ));
   });
@@ -278,12 +279,13 @@ describe("SessionSuccessionModal reasoning effort", () => {
     expect(createDashboardSession.mock.calls[0]?.[0]).not.toHaveProperty("reasoningEffort");
 
     createDashboardSession.mockClear();
+    flushSync(() => root.render(null)); mount(); await settle();
     const select = effortSelect();
     flushSync(() => setSelect(select!, "low"));
     await settle();
     expect(effortSelect()?.value).toBe("low");
 
-    flushSync(() => start?.click());
+    flushSync(() => startButton()?.click());
     await settle();
     expect(createDashboardSession.mock.calls[0]?.[0]).toMatchObject({
       reasoningEffort: "low",
@@ -432,6 +434,7 @@ describe("preset with efforts but no advertised default", () => {
     // And picking a level is not a one-way door: the preset has no default of
     // its own, so "기본값" has to stay on the list.
     createDashboardSession.mockClear();
+    flushSync(() => root.render(null)); mount(); await settle();
     flushSync(() => setSelect(effortSelect()!, "low"));
     await settle();
     expect(effortSelect()?.value).toBe("low");
@@ -490,4 +493,27 @@ describe("SessionSuccessionModal attachments", () => {
     expect(startButton()?.disabled).toBe(true);
     startButton()?.click(); expect(createDashboardSession).not.toHaveBeenCalled();
   });
+});
+
+it("blocks concurrent session starts and closing, then preserves the draft on an uncertain failure", async () => {
+  stubFetch([OPUS]);
+  let reject!: (error: Error) => void;
+  createDashboardSession.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+  const onClose = vi.fn();
+  mountWithSession(null, "claude-opus", { onClose });
+  await settle();
+  const instruction = document.body.querySelector<HTMLTextAreaElement>('[aria-label="초기 지시"]')!;
+  flushSync(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(instruction, "유지할 지시");
+    instruction.dispatchEvent(new Event("input", { bubbles: true }));
+    startButton()?.click(); startButton()?.click();
+  });
+  await settle();
+  expect(createDashboardSession).toHaveBeenCalledTimes(1);
+  flushSync(() => document.body.querySelector<HTMLButtonElement>('[aria-label="승계 닫기"]')!.click());
+  expect(onClose).not.toHaveBeenCalled();
+  reject(new Error("응답을 받지 못했습니다")); await settle();
+  expect(instruction.value).toBe("유지할 지시");
+  expect(createDashboardSession).toHaveBeenCalledTimes(1);
+  expect(onClose).not.toHaveBeenCalled();
 });
