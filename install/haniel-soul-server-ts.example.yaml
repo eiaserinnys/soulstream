@@ -70,14 +70,6 @@ install:
           default: 'false'
         - key: MCP_REQUIRE_AUTH
           default: 'true'
-          default: 'false'
-        # Connector-facing nodes only: change the flag above to true and
-        # uncomment all four entries below together. Leaving the optional keys
-        # absent keeps ordinary worker installs non-interactive and disabled.
-        #   default: /mcp/external-llm
-        #   default: external-llm
-        #   default: External LLM
-        #   prompt: "connector 전용 MCP bearer (AUTH_BEARER_TOKEN과 다른 비밀값)"
         - key: ENVIRONMENT
           default: production
         - key: LOG_LEVEL

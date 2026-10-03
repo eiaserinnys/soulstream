@@ -6,28 +6,20 @@ The current reflection source of truth is the TypeScript `soul-server-ts` MCP se
 
 ## Connecting
 
-The TS MCP server uses Streamable HTTP and is mounted at `MCP_PATH` on the TS node. The default path is:
-
-```
-http://localhost:4205/mcp   (Streamable HTTP transport)
-```
-
-`MCP_STATELESS_TRANSPORT_ENABLED=false` preserves the public route's existing stateful transport by default. Set it to `true` during the restart-safe cutover to use the SDK's stateless mode: each POST receives a fresh transport, no `Mcp-Session-Id` is issued, and GET/DELETE return 405 because this server does not use server-initiated notifications or elicitation. The public endpoint is a server-fixed external principal with source `llm`; request headers cannot change its authority/source or establish a parent session.
-
-An authenticated connector can use a second server-fixed route by enabling `MCP_EXTERNAL_INGRESS_ENABLED` and supplying all of `MCP_EXTERNAL_INGRESS_PATH`, `MCP_EXTERNAL_INGRESS_SOURCE`, `MCP_EXTERNAL_INGRESS_DISPLAY_NAME`, and `MCP_EXTERNAL_INGRESS_BEARER_TOKEN`. The route is always stateless and always has external authority. Its bearer must differ from `AUTH_BEARER_TOKEN`, its path must differ from public/internal MCP paths, and partial enabled configuration fails startup. The default is disabled, so nodes without these variables retain their existing route set. Attribution source controls review/display policy only; it never grants internal MCP permissions.
+The worker exposes Streamable HTTP only on its authenticated internal listener. The public listener has no generic or dedicated MCP route. Dot connects to the orchestrator's credential-bound external ingress, which owns its 63-tool listing, subscription state, and outbound messages. See [connector ownership](external-llm-ingress-rollout.md) and [dot subscriptions](dot-mcp-events.md).
 
 Soulstream's own Claude SDK clients use the separate `${MCP_PATH}/internal` route (default `/mcp/internal`). It is mounted only on a second listener hard-bound to `127.0.0.1:MCP_INTERNAL_PORT`; the public listener has no internal route. `MCP_INTERNAL_PORT` defaults deterministically to `PORT+1` and must differ from `PORT`. The internal route is always stateless: every POST gets a fresh transport, agent-session ownership is applied from the node-local request, and stale `Mcp-Session-Id` values cannot strand a runner after host restart.
 
 The Claude SDK HTTP MCP configuration accepts a URL but no Unix-domain-socket transport option, so the internal boundary uses a dedicated loopback TCP listener. nginx and every other public reverse proxy must forward only `PORT` and must never forward `MCP_INTERNAL_PORT`. Known internal server names (`soulstream`, `soulstream-cogito`, `soul-server-ts`) are rewritten to the node-local internal URL when Claude SDK options are built. External MCP servers and legacy SSE URLs are unchanged.
 
-Add it to `.mcp.json` in the workspace:
+Node-local clients configure the internal listener and authentication in their private MCP configuration. The illustrative endpoint below is node-local:
 
 ```json
 {
   "mcpServers": {
     "soul-server-ts": {
       "type": "streamable_http",
-      "url": "http://localhost:4205/mcp"
+      "url": "http://localhost:4206/mcp/internal"
     }
   }
 }

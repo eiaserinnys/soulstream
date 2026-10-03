@@ -1,32 +1,34 @@
-# External LLM ingress rollout
+# External LLM ingress ownership
 
-This change separates MCP authority from review attribution. Generic public MCP remains an external principal with source `llm`; a credential-bound connector route may use source `external-llm`. Both are subject to the same destructive-tool block, parent removal, and `llm` mutation actor rules.
+The orchestrator owns the dot connector's MCP ingress, subscriptions, and outbound delivery. Workers expose only their authenticated, node-local internal MCP listener. Their public listener has no MCP route, including the retired generic and dedicated external paths.
 
-Authenticated direct HTTP provenance is fixed by the server as well: a verified dashboard cookie becomes `browser`, and a verified dashboard JWT bearer becomes `soul-app`. In both cases the verified JWT identity replaces body-supplied attribution, so an identified user cannot evade review by submitting `source=system` or `source=llm`. Opaque service-bearer integrations retain their explicitly supplied attribution after service authentication.
+## Configuration
 
-## Compatibility and order
+Configure these names on the orchestrator through the private deployment configuration channel; values do not belong in this document:
 
-1. Run one central Haniel release through `deploy/release-manifest.json`. Migration 091 is an internal phase of that release, not a manual SQL prerequisite: Haniel builds and preflights, quiesces the exact central writer set, verifies its receipt, and lets the release executor take the advisory lock and journal the ordered migration apply. Do not run `091_system_settings.sql` directly or bypass the release executor. Its `ON CONFLICT DO NOTHING` seed never overwrites an existing policy.
-2. Let the same central release start the new orchestrator before its local worker. On `eiaserinnys`, the `soulstream` repository owns both services, but `soulstream-soul-server-ts` declares `after: soulstream-orch-server`; Haniel waits for orchestrator readiness before starting the worker. Old remote workers omit `callerInfo`, so the new host preserves their legacy review values without reading the new table. This keeps the migration/code rollout non-blocking.
-3. After the central authority release and its post-start verification succeed, deploy worker-only nodes one at a time with `deploy/release-manifest-worker.json`. That manifest has no migration phase. New workers send `callerInfo`, keep legacy review fields only for old-orchestrator compatibility, and replace their provisional Task values with the central host response. The enforced central release → remote workers order avoids the temporary old-host policy limitation.
-4. Enable the dedicated ingress only on the connector-facing node after path, source, display name, and a distinct local bearer are present. Keep the existing tunnel upstream unchanged until the central and remote worker gates pass, so external traffic is cut over last. Other nodes leave the ingress disabled.
+- `NODE_NAME` is required when enabling external ingress.
+- `MCP_EXTERNAL_INGRESS_ENABLED`, `MCP_EXTERNAL_INGRESS_PATH`, `MCP_EXTERNAL_INGRESS_SOURCE`, `MCP_EXTERNAL_INGRESS_DISPLAY_NAME`, and `MCP_EXTERNAL_INGRESS_BEARER_TOKEN` configure the credential-bound connector.
+- `MCP_ALLOWED_HOSTS` limits accepted Host headers.
+- `MCP_EXTERNAL_EVENTS_STATE_FILE` enables the persistent subscription store.
 
-Code rollback does not remove `system_settings`; old code ignores the additive table and fields. Existing sessions are never reclassified or backfilled. If the policy row is missing or corrupt, new central-wire registrations fail before insert with an actionable 503 while legacy workers remain compatible during rollout.
+The dedicated bearer must differ from `AUTH_BEARER_TOKEN`. Keep credentials, callback addresses, state-file contents, and tunnel registration identifiers out of source and reports. Preserve the existing subscription file and credential owner when updating the orchestrator; no worker subscription implementation remains.
 
-Roll workers back before the orchestrator. A registration first committed through the central-policy wire contract must not be retried by an old worker, because old code ignores the returned central decision and could later project its provisional review state. The new orchestrator rejects that downgrade replay with `409` (fail closed); restart it on new worker code rather than changing the idempotency key. The opposite transition remains compatible: a new worker replaying a receipt first committed by legacy code receives and applies the original legacy decision without a policy reread.
+## Tools and attribution
 
-## Existing OpenAI tunnel cutover
+The dot inventory consists of the 63 shared definitions with `audience: "all"`. The frozen inventory lives in `orch-server-ts/tests/fixtures/mcp_external_tool_inventory.json`. Internal-only definitions are absent from listing and calls are refused before execution.
 
-Operating inspection established that the tunnel process keeps its public registration identity/control credential separately from its local MCP upstream and extra headers. Preserve the existing public tunnel ID, public connector URL, control-plane credential, and tunnel binary. Change only the local MCP upstream to the dedicated ingress, provide the new local bearer through the service's secret mechanism, remove the obsolete caller-origin header, and restart the tunnel after the worker route is healthy.
+Eight card writes are available: `create_card`, `update_card_brief`, `add_card_report`, `add_card_comment`, `set_card_status`, `request_card_review`, `ask_card_question`, and `move_card`. Their actor is `llm`, without an agent session. Dot comments are recorded as the user's spoken input. Answers to dot-created card questions are stored on the card and are not pushed to dot. `start_card_work` remains internal-only.
 
-Do not copy tunnel IDs, bearer values, or control-plane credentials into source, PR text, logs, or evidence documents. Verification should report only key presence, endpoint class, and redacted fingerprints when needed.
+Sessions and messages originating at the connector retain caller source `external-llm` when routed to a worker. This metadata survives removal of the worker's external MCP principal. The orchestrator's connector supplies the external execution context; worker forwarding bodies accept only `principal: "internal"`.
 
-Claude.ai gateway construction is not part of this rollout. A future vendor-supported transport or gateway may target the same vendor-neutral `external-llm` ingress and credential boundary.
+## Rolling updates
+
+Worker forwards retain the `principal` field with its internal value. An old orchestrator accepts a new worker's body, and a new orchestrator accepts an old worker's internal body. The contract test is `orch-server-ts/tests/mcp-worker-version-compat.test.ts`.
+
+A retired `MCP_EXTERNAL_INGRESS_ENABLED` line in a worker environment file is ignored by configuration parsing and release environment identity. Remove that line after deployment through the normal private configuration process. Other retired connector keys are no longer worker settings.
 
 ## Verification
 
-- Confirm the policy table/seed and current version before worker rollout.
-- Confirm generic `llm` and dedicated `external-llm` both reject destructive tools, discard caller parent IDs, and write `actor_kind=llm`.
-- Confirm the dedicated bearer cannot authenticate the generic route and the service bearer cannot authenticate the dedicated route.
-- Confirm a dedicated-ingress session stores source `external-llm`, receives the central review decision, and appears in review only after reaching a terminal state.
-- Confirm tunnel public registration identifiers are unchanged after the local upstream switch without printing their values.
+Confirm the internal inventory remains 106 tools and the connector remains 63 tools. Check connector authentication, rejection of internal-only calls without executor invocation, subscription discovery, an explicit send to a verified recipient, and unsubscribe. Worker forwards from any node use the orchestrator for recipient listing and outbound sends.
+
+The subscription compatibility fixture was written by the retired worker implementation with synthetic data. The orchestrator test reads it with the same credential owner and verifies recipient identity, expiration, send, and unsubscribe without a new challenge. Local tests do not establish a live dot subscription; operational acceptance requires the actual connector and recipient.
