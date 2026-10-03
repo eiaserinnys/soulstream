@@ -175,6 +175,18 @@ describe("WorktreeGit", () => {
       .toMatchObject({ kind: "external" });
   });
 
+  it("explains a missing repository and names the repositories this node has", async () => {
+    const { projectsRoot } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+
+    const error = await worktrees.list("no-such-repo").catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: "REPOSITORY_NOT_FOUND" });
+    const message = (error as Error).message;
+    expect(message).toContain('Repository "no-such-repo" was not found on this node');
+    expect(message).toContain("Available repo_id values: demo");
+  });
+
   it("never deletes a same-name branch recreated after the deletion marker committed", async () => {
     const { projectsRoot, repo } = makeRepository();
     const remote = join(projectsRoot, "remote.git");

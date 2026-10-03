@@ -647,7 +647,12 @@ export class WorktreeGit {
       || !existsSync(gitPath)
       || !lstatSync(gitPath).isDirectory()
     ) {
-      throw new WorktreeGitError("REPOSITORY_NOT_FOUND", candidate);
+      const available = this.listRepositoryIds();
+      throw new WorktreeGitError(
+        "REPOSITORY_NOT_FOUND",
+        `Repository "${repoId}" was not found on this node (no Git checkout at ${candidate}). `
+          + `Available repo_id values: ${available.join(", ") || "(none)"}`,
+      );
     }
     return realpathSync(candidate);
   }
