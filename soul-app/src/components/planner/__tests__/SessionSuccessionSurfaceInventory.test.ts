@@ -11,6 +11,8 @@ test('새 세션·새 카드 공통 입력과 새 세션 sheet 제품 마운트�
     /<SessionSuccessionSheet\b/,
     new Set(['components/planner/SessionSuccessionSheet.tsx']),
   )).toEqual([
+    // 검수 갤러리는 복제 없이 실제 sheet를 직접 마운트합니다.
+    'component-review/ReviewDialogues.tsx',
     'components/planner/SessionSuccessionHost.tsx',
   ]);
 

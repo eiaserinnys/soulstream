@@ -49,7 +49,9 @@ export function App() {
 
   return (
     <Suspense fallback={null}>
-      {pathname === "/components/ios" || pathname === "/components/ios/"
+      {pathname === "/dialogues/ios" || pathname === "/dialogues/ios/"
+        ? <IosComponentsReviewPage section="dialogues" />
+        : pathname === "/components/ios" || pathname === "/components/ios/"
         ? <IosComponentsReviewPage />
         : pathname === "/dialogues" || pathname === "/dialogues/" ? <DialoguesReviewPage />
         : pathname === "/components" ? <ComponentsReviewLayout /> : <V3DashboardLayout />}

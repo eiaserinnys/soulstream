@@ -1,5 +1,6 @@
 import type { ApiClient } from '../api/client';
 import { createReviewApi, folders } from './fixtures';
+import { dialogueApi } from './dialogue-fixtures';
 
 // Metro selects this only in component-review. Actual entry shells keep their
 // production components and receive public data at the transport boundary.
@@ -11,4 +12,7 @@ const api = {
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
 };
-export function createApiClient(): ApiClient { return api as unknown as ApiClient; }
+export function createApiClient(): ApiClient {
+  return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'dialogues'
+    ? dialogueApi : api as unknown as ApiClient;
+}

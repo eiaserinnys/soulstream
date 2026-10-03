@@ -22,6 +22,10 @@ import { ReviewLongFolders } from './ReviewLongFolders';
 import { ReviewAutoRefresh } from './ReviewAutoRefresh';
 import { ReviewCardImages } from './ReviewCardImages';
 import { folders } from './fixtures';
+import { ReviewDialogues } from './ReviewDialogues';
+import { dialogueFolders, dialogueSessions, reviewSessionPortraits } from './dialogue-fixtures';
+import { useUIStore } from '../store/uiStore';
+import { FolderWorkspaceReadOverlay } from '../components/planner/FolderWorkspaceReadOverlay';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -37,17 +41,21 @@ const sections = [
   { value: 'longFolders', label: '긴 폴더 목록' },
   { value: 'autoRefresh', label: '자동 갱신' },
   { value: 'cardImages', label: '카드 이미지' },
+  { value: 'dialogues', label: '다이얼로그' },
 ] as const;
 type Section = typeof sections[number]['value'];
 
 export function initializeReview() {
   const entryShell = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'entryShell';
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
-  useSettingsStore.setState({ serverUrl: cardImages ? window.location.origin : entryShell ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
-  useSessionStore.setState({ catalog: { folders, sessions: {} }, catalogLoadState: 'ready' });
+  const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
+  useSettingsStore.setState({ serverUrl: cardImages ? window.location.origin : entryShell || dialogues ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  const fixtureSessions = Object.fromEntries(reviewSessionPortraits(dialogueSessions).map(session => [session.agentSessionId, session]));
+  useSessionStore.setState({ catalog: { folders: dialogues ? dialogueFolders : folders, sessions: dialogues ? fixtureSessions : {} }, ...(dialogues ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
 }
 
 function Gallery() {
+  const overlayVisible = useUIStore(state => state.folderOverlayVisible);
   const t = useTokens();
   const { width, height } = useWindowDimensions();
   const device = useDeviceType();
@@ -66,7 +74,7 @@ function Gallery() {
   if (section === 'entryShell') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewEntryShell /></View>;
   if (section === 'longFolders') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewLongFolders /></View>;
   if (section === 'autoRefresh') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewAutoRefresh /></View>;
-  return <ScrollView testID="component-review" style={{ flex: 1, backgroundColor: t.colors.background }}
+  return <View style={{ flex: 1 }}><ScrollView testID="component-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={style} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
     <View style={{ gap: t.spacing.sm }}>
       <Text accessibilityRole="header" style={{ ...t.foundation.typography.navigation, color: t.colors.textPrimary }}>
@@ -83,16 +91,23 @@ function Gallery() {
       </Text>
     </View>
     <SettingsSegmentedControl<Section> id="review-section" value={section} onChange={(next) => {
+      if (next === 'dialogues' || section === 'dialogues') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('section', next);
+        window.history.replaceState(null, '', url);
+        initializeReview();
+      }
       if (next === 'entryShell') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
       if (next === 'cardImages') useSettingsStore.setState({ serverUrl: window.location.origin });
       setSection(next);
-    }} options={sections} />
+    }} options={sections} wrap={section === 'dialogues'} />
+    {section === 'dialogues' ? <ReviewDialogues /> : null}
     {section === 'rows' ? <ReviewRows /> : section === 'chat' ? <ReviewChat />
       : section === 'cardImages' ? <ReviewCardImages serverUrl={window.location.origin} bundledImages />
       : section === 'project' ? <ReviewProject /> : section === 'settings' ? <ReviewSettings />
         : section === 'boardActions' ? <ReviewBoardActions />
-          : section === 'postit' ? <ReviewPostIt /> : <ReviewSurfaces />}
-  </ScrollView>;
+          : section === 'postit' ? <ReviewPostIt /> : section === 'dialogues' ? null : <ReviewSurfaces />}
+  </ScrollView>{section === 'dialogues' && overlayVisible ? <FolderWorkspaceReadOverlay /> : null}</View>;
 }
 
 export function ComponentReview() {
