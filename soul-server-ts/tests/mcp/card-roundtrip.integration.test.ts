@@ -56,7 +56,7 @@ const cases: readonly [string, string, Record<string, unknown>, McpRequestContex
   ["work no execution", "start_card_work", status, { callerSessionId: "argument-session" }, true],
 ];
 
-describe("card legacy and orchestrator MCP parity", () => {
+describe("card orchestrator MCP roundtrip", () => {
   let h: PagePostgresHarness;
   let app: ReturnType<typeof Fastify>;
   let runtime: McpRuntime;
@@ -111,7 +111,7 @@ describe("card legacy and orchestrator MCP parity", () => {
       return await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: input as Record<string, unknown> }));
     } finally { await client.close(); await server.close(); }
   }
-  it("intentionally opens external report writes while preserving the legacy refusal", async () => {
+  it("allows external report writes with an llm audit actor", async () => {
     const input = { card_id: "card-1", title: "외부", format: "markdown", body: "보고" };
     await seed();
     expect((await call(true, "add_card_report", input, external)).isError).toBe(true);
@@ -124,6 +124,7 @@ describe("card legacy and orchestrator MCP parity", () => {
     await seed(); const old = await call(true, name, input, requestContext);
     expect(old.isError === true).toBe(fails);
     await seed(); const next = await call(false, name, input, requestContext);
+    expect(serializeResult(name, old)).toMatchSnapshot();
     assertParity(name, old, next);
     if (_label === "create success") expect((await h.sql`SELECT * FROM cards WHERE title='새 카드'`)[0]).toMatchObject({ assignee_kind: "agent", assignee_agent_id: "roselin", node_id: "test-node", model_preset: "sol" });
     if (_label === "create duplicate assignee") for (const result of [old, next]) expect(JSON.stringify(result)).toContain("card-1");

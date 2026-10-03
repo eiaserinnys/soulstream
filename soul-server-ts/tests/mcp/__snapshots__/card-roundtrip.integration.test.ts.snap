@@ -1,0 +1,1395 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`card orchestrator MCP roundtrip > preserves brief success 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-a\\",\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"경과\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"todo\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"card-1\\",\\n    \\"operationType\\": \\"update_card\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"<random-id>\\",\\n    \\"payloadJson\\": {\\n      \\"brief\\": \\"경과\\"\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-a",
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "경과",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "todo",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 2,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "card-1",
+      "operationType": "update_card",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "<random-id>",
+      "payloadJson": {
+        "brief": "경과"
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves comment default spoken 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"id\\": \\"<random-id>\\",\\n  \\"cardId\\": \\"card-1\\",\\n  \\"authorKind\\": \\"user\\",\\n  \\"authorId\\": null,\\n  \\"sessionId\\": \\"header-session\\",\\n  \\"kind\\": \\"spoken\\",\\n  \\"body\\": \\"사용자 발언\\",\\n  \\"deliveredAt\\": null,\\n  \\"createdAt\\": \\"<time>\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "id": "<random-id>",
+    "cardId": "card-1",
+    "authorKind": "user",
+    "authorId": null,
+    "sessionId": "header-session",
+    "kind": "spoken",
+    "body": "사용자 발언",
+    "deliveredAt": null,
+    "createdAt": "<time>"
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves comment reply 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"id\\": \\"<random-id>\\",\\n  \\"cardId\\": \\"card-1\\",\\n  \\"authorKind\\": \\"agent\\",\\n  \\"authorId\\": null,\\n  \\"sessionId\\": \\"header-session\\",\\n  \\"kind\\": \\"comment\\",\\n  \\"body\\": \\"에이전트 답변\\",\\n  \\"deliveredAt\\": null,\\n  \\"createdAt\\": \\"<time>\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "id": "<random-id>",
+    "cardId": "card-1",
+    "authorKind": "agent",
+    "authorId": null,
+    "sessionId": "header-session",
+    "kind": "comment",
+    "body": "에이전트 답변",
+    "deliveredAt": null,
+    "createdAt": "<time>"
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves create duplicate assignee 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "이미 카드 card-1의 담당입니다. A/S는 그 카드에 커멘트로, 새 업무는 assignee를 생략하고 queue=true로 새 카드를 만듭니다."
+    }
+  ],
+  "structuredContent": {
+    "error": "이미 카드 card-1의 담당입니다. A/S는 그 카드에 커멘트로, 새 업무는 assignee를 생략하고 queue=true로 새 카드를 만듭니다.",
+    "code": "INVALID_CARD_REQUEST"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves create success 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-a\\",\\n  \\"card\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"n\\",\\n    \\"queuePositionKey\\": \\"V\\",\\n    \\"title\\": \\"새 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [\\n      {\\n        \\"name\\": \\"이미지\\",\\n        \\"path\\": \\"image.png\\",\\n        \\"nodeId\\": \\"node\\",\\n        \\"mimeType\\": \\"image/png\\"\\n      }\\n    ],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": \\"test-node\\",\\n    \\"modelPreset\\": \\"sol\\",\\n    \\"assigneeKind\\": \\"agent\\",\\n    \\"assigneeAgentId\\": \\"roselin\\",\\n    \\"assigneeSessionId\\": null,\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"queued\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"원문\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"<random-id>\\",\\n    \\"operationType\\": \\"create_card\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"<random-id>\\",\\n    \\"payloadJson\\": {\\n      \\"brief\\": \\"\\",\\n      \\"queue\\": true,\\n      \\"title\\": \\"새 카드\\",\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"request\\": \\"원문\\",\\n      \\"assignee\\": {\\n        \\"kind\\": \\"agent\\",\\n        \\"agentId\\": \\"roselin\\"\\n      },\\n      \\"attachments\\": [\\n        {\\n          \\"name\\": \\"이미지\\",\\n          \\"path\\": \\"image.png\\",\\n          \\"nodeId\\": \\"node\\",\\n          \\"mimeType\\": \\"image/png\\"\\n        }\\n      ],\\n      \\"modelPreset\\": \\"sol\\"\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-a",
+    "card": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "positionKey": "n",
+      "queuePositionKey": "V",
+      "title": "새 카드",
+      "request": "원문",
+      "attachments": [
+        {
+          "name": "이미지",
+          "path": "image.png",
+          "nodeId": "node",
+          "mimeType": "image/png"
+        }
+      ],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": "test-node",
+      "modelPreset": "sol",
+      "assigneeKind": "agent",
+      "assigneeAgentId": "roselin",
+      "assigneeSessionId": null,
+      "assigneeUserId": null,
+      "status": "queued",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 1,
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "원문",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "<random-id>",
+      "operationType": "create_card",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "<random-id>",
+      "payloadJson": {
+        "brief": "",
+        "queue": true,
+        "title": "새 카드",
+        "nodeId": "test-node",
+        "request": "원문",
+        "assignee": {
+          "kind": "agent",
+          "agentId": "roselin"
+        },
+        "attachments": [
+          {
+            "name": "이미지",
+            "path": "image.png",
+            "nodeId": "node",
+            "mimeType": "image/png"
+          }
+        ],
+        "modelPreset": "sol"
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves external query 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"todo\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": null,\\n    \\"updatedEventId\\": null,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"reports\\": [\\n    {\\n      \\"id\\": \\"seed-report\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"title\\": \\"기존 보고\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"본문\\",\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"questions\\": [\\n    {\\n      \\"id\\": \\"seed-question\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"text\\": \\"기존 질문\\",\\n      \\"options\\": null,\\n      \\"answer\\": null,\\n      \\"askedAt\\": \\"<time>\\",\\n      \\"answeredAt\\": null,\\n      \\"answeredBy\\": null\\n    }\\n  ],\\n  \\"comments\\": [\\n    {\\n      \\"id\\": \\"seed-comment\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"authorKind\\": \\"user\\",\\n      \\"authorId\\": null,\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"kind\\": \\"spoken\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"deliveredAt\\": null,\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"sessions\\": [\\n    {\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"displayName\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"agentId\\": \\"roselin\\",\\n      \\"status\\": \\"running\\",\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"callerSessionId\\": null,\\n      \\"updatedAt\\": \\"<time>\\"\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "todo",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 1,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": null,
+      "updatedEventId": null,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "reports": [
+      {
+        "id": "seed-report",
+        "cardId": "card-1",
+        "title": "기존 보고",
+        "format": "markdown",
+        "body": "본문",
+        "sessionId": "header-session",
+        "createdAt": "<time>"
+      }
+    ],
+    "questions": [
+      {
+        "id": "seed-question",
+        "cardId": "card-1",
+        "sessionId": "header-session",
+        "text": "기존 질문",
+        "options": null,
+        "answer": null,
+        "askedAt": "<time>",
+        "answeredAt": null,
+        "answeredBy": null
+      }
+    ],
+    "comments": [
+      {
+        "id": "seed-comment",
+        "cardId": "card-1",
+        "authorKind": "user",
+        "authorId": null,
+        "sessionId": "header-session",
+        "kind": "spoken",
+        "body": "기존 발언",
+        "deliveredAt": null,
+        "createdAt": "<time>"
+      }
+    ],
+    "sessions": [
+      {
+        "sessionId": "header-session",
+        "cardId": "card-1",
+        "displayName": null,
+        "nodeId": "test-node",
+        "agentId": "roselin",
+        "status": "running",
+        "createdAt": "<time>",
+        "callerSessionId": null,
+        "updatedAt": "<time>"
+      }
+    ]
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves get missing 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\"detail\\":{\\"error\\":{\\"code\\":\\"CARD_NOT_FOUND\\"}}}"
+    }
+  ],
+  "structuredContent": {
+    "error": "{\\"detail\\":{\\"error\\":{\\"code\\":\\"CARD_NOT_FOUND\\"}}}",
+    "code": "CARD_NOT_FOUND"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves get success 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"todo\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": null,\\n    \\"updatedEventId\\": null,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"reports\\": [\\n    {\\n      \\"id\\": \\"seed-report\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"title\\": \\"기존 보고\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"본문\\",\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"questions\\": [\\n    {\\n      \\"id\\": \\"seed-question\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"text\\": \\"기존 질문\\",\\n      \\"options\\": null,\\n      \\"answer\\": null,\\n      \\"askedAt\\": \\"<time>\\",\\n      \\"answeredAt\\": null,\\n      \\"answeredBy\\": null\\n    }\\n  ],\\n  \\"comments\\": [\\n    {\\n      \\"id\\": \\"seed-comment\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"authorKind\\": \\"user\\",\\n      \\"authorId\\": null,\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"kind\\": \\"spoken\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"deliveredAt\\": null,\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"sessions\\": [\\n    {\\n      \\"sessionId\\": \\"header-session\\",\\n      \\"cardId\\": \\"card-1\\",\\n      \\"displayName\\": null,\\n      \\"nodeId\\": \\"test-node\\",\\n      \\"agentId\\": \\"roselin\\",\\n      \\"status\\": \\"running\\",\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"callerSessionId\\": null,\\n      \\"updatedAt\\": \\"<time>\\"\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "todo",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 1,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": null,
+      "updatedEventId": null,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "reports": [
+      {
+        "id": "seed-report",
+        "cardId": "card-1",
+        "title": "기존 보고",
+        "format": "markdown",
+        "body": "본문",
+        "sessionId": "header-session",
+        "createdAt": "<time>"
+      }
+    ],
+    "questions": [
+      {
+        "id": "seed-question",
+        "cardId": "card-1",
+        "sessionId": "header-session",
+        "text": "기존 질문",
+        "options": null,
+        "answer": null,
+        "askedAt": "<time>",
+        "answeredAt": null,
+        "answeredBy": null
+      }
+    ],
+    "comments": [
+      {
+        "id": "seed-comment",
+        "cardId": "card-1",
+        "authorKind": "user",
+        "authorId": null,
+        "sessionId": "header-session",
+        "kind": "spoken",
+        "body": "기존 발언",
+        "deliveredAt": null,
+        "createdAt": "<time>"
+      }
+    ],
+    "sessions": [
+      {
+        "sessionId": "header-session",
+        "cardId": "card-1",
+        "displayName": null,
+        "nodeId": "test-node",
+        "agentId": "roselin",
+        "status": "running",
+        "createdAt": "<time>",
+        "callerSessionId": null,
+        "updatedAt": "<time>"
+      }
+    ]
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves internal no session 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller session id is required for card mutation. Send x-soulstream-agent-session-id."
+    }
+  ],
+  "structuredContent": {
+    "error": "caller session id is required for card mutation. Send x-soulstream-agent-session-id."
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves list all 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"cards\\": [\\n    {\\n      \\"id\\": \\"card-1\\",\\n      \\"folderId\\": \\"cards-a\\",\\n      \\"positionKey\\": \\"a0\\",\\n      \\"queuePositionKey\\": null,\\n      \\"title\\": \\"기존 카드\\",\\n      \\"request\\": \\"원문\\",\\n      \\"attachments\\": [],\\n      \\"brief\\": \\"\\",\\n      \\"blockedKind\\": null,\\n      \\"blockedDetail\\": null,\\n      \\"nodeId\\": null,\\n      \\"modelPreset\\": null,\\n      \\"assigneeKind\\": \\"session\\",\\n      \\"assigneeAgentId\\": null,\\n      \\"assigneeSessionId\\": \\"header-session\\",\\n      \\"assigneeUserId\\": null,\\n      \\"status\\": \\"todo\\",\\n      \\"statusChangedAt\\": \\"<time>\\",\\n      \\"archived\\": false,\\n      \\"version\\": 1,\\n      \\"createdSessionId\\": null,\\n      \\"createdEventId\\": null,\\n      \\"updatedSessionId\\": null,\\n      \\"updatedEventId\\": null,\\n      \\"completedKind\\": null,\\n      \\"completedSessionId\\": null,\\n      \\"completedEventId\\": null,\\n      \\"completedUserId\\": null,\\n      \\"completedAt\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"latestActivity\\": {\\n        \\"kind\\": \\"instruction\\",\\n        \\"format\\": \\"markdown\\",\\n        \\"body\\": \\"기존 발언\\",\\n        \\"createdAt\\": \\"<time>\\"\\n      }\\n    },\\n    {\\n      \\"id\\": \\"card-done\\",\\n      \\"folderId\\": \\"cards-a\\",\\n      \\"positionKey\\": \\"a1\\",\\n      \\"queuePositionKey\\": null,\\n      \\"title\\": \\"완료 카드\\",\\n      \\"request\\": \\"완료 원문\\",\\n      \\"attachments\\": [],\\n      \\"brief\\": \\"\\",\\n      \\"blockedKind\\": null,\\n      \\"blockedDetail\\": null,\\n      \\"nodeId\\": null,\\n      \\"modelPreset\\": null,\\n      \\"assigneeKind\\": \\"session\\",\\n      \\"assigneeAgentId\\": null,\\n      \\"assigneeSessionId\\": \\"argument-session\\",\\n      \\"assigneeUserId\\": null,\\n      \\"status\\": \\"done\\",\\n      \\"statusChangedAt\\": \\"<time>\\",\\n      \\"archived\\": false,\\n      \\"version\\": 1,\\n      \\"createdSessionId\\": null,\\n      \\"createdEventId\\": null,\\n      \\"updatedSessionId\\": null,\\n      \\"updatedEventId\\": null,\\n      \\"completedKind\\": null,\\n      \\"completedSessionId\\": null,\\n      \\"completedEventId\\": null,\\n      \\"completedUserId\\": null,\\n      \\"completedAt\\": \\"<time>\\",\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"latestActivity\\": {\\n        \\"kind\\": \\"instruction\\",\\n        \\"format\\": \\"markdown\\",\\n        \\"body\\": \\"완료 원문\\",\\n        \\"createdAt\\": \\"<time>\\"\\n      }\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "cards": [
+      {
+        "id": "card-1",
+        "folderId": "cards-a",
+        "positionKey": "a0",
+        "queuePositionKey": null,
+        "title": "기존 카드",
+        "request": "원문",
+        "attachments": [],
+        "brief": "",
+        "blockedKind": null,
+        "blockedDetail": null,
+        "nodeId": null,
+        "modelPreset": null,
+        "assigneeKind": "session",
+        "assigneeAgentId": null,
+        "assigneeSessionId": "header-session",
+        "assigneeUserId": null,
+        "status": "todo",
+        "statusChangedAt": "<time>",
+        "archived": false,
+        "version": 1,
+        "createdSessionId": null,
+        "createdEventId": null,
+        "updatedSessionId": null,
+        "updatedEventId": null,
+        "completedKind": null,
+        "completedSessionId": null,
+        "completedEventId": null,
+        "completedUserId": null,
+        "completedAt": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "latestActivity": {
+          "kind": "instruction",
+          "format": "markdown",
+          "body": "기존 발언",
+          "createdAt": "<time>"
+        }
+      },
+      {
+        "id": "card-done",
+        "folderId": "cards-a",
+        "positionKey": "a1",
+        "queuePositionKey": null,
+        "title": "완료 카드",
+        "request": "완료 원문",
+        "attachments": [],
+        "brief": "",
+        "blockedKind": null,
+        "blockedDetail": null,
+        "nodeId": null,
+        "modelPreset": null,
+        "assigneeKind": "session",
+        "assigneeAgentId": null,
+        "assigneeSessionId": "argument-session",
+        "assigneeUserId": null,
+        "status": "done",
+        "statusChangedAt": "<time>",
+        "archived": false,
+        "version": 1,
+        "createdSessionId": null,
+        "createdEventId": null,
+        "updatedSessionId": null,
+        "updatedEventId": null,
+        "completedKind": null,
+        "completedSessionId": null,
+        "completedEventId": null,
+        "completedUserId": null,
+        "completedAt": "<time>",
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "latestActivity": {
+          "kind": "instruction",
+          "format": "markdown",
+          "body": "완료 원문",
+          "createdAt": "<time>"
+        }
+      }
+    ]
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves list done 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"cards\\": [\\n    {\\n      \\"id\\": \\"card-done\\",\\n      \\"folderId\\": \\"cards-a\\",\\n      \\"positionKey\\": \\"a1\\",\\n      \\"queuePositionKey\\": null,\\n      \\"title\\": \\"완료 카드\\",\\n      \\"request\\": \\"완료 원문\\",\\n      \\"attachments\\": [],\\n      \\"brief\\": \\"\\",\\n      \\"blockedKind\\": null,\\n      \\"blockedDetail\\": null,\\n      \\"nodeId\\": null,\\n      \\"modelPreset\\": null,\\n      \\"assigneeKind\\": \\"session\\",\\n      \\"assigneeAgentId\\": null,\\n      \\"assigneeSessionId\\": \\"argument-session\\",\\n      \\"assigneeUserId\\": null,\\n      \\"status\\": \\"done\\",\\n      \\"statusChangedAt\\": \\"<time>\\",\\n      \\"archived\\": false,\\n      \\"version\\": 1,\\n      \\"createdSessionId\\": null,\\n      \\"createdEventId\\": null,\\n      \\"updatedSessionId\\": null,\\n      \\"updatedEventId\\": null,\\n      \\"completedKind\\": null,\\n      \\"completedSessionId\\": null,\\n      \\"completedEventId\\": null,\\n      \\"completedUserId\\": null,\\n      \\"completedAt\\": \\"<time>\\",\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"latestActivity\\": {\\n        \\"kind\\": \\"instruction\\",\\n        \\"format\\": \\"markdown\\",\\n        \\"body\\": \\"완료 원문\\",\\n        \\"createdAt\\": \\"<time>\\"\\n      }\\n    }\\n  ],\\n  \\"nextCursor\\": null\\n}"
+    }
+  ],
+  "structuredContent": {
+    "cards": [
+      {
+        "id": "card-done",
+        "folderId": "cards-a",
+        "positionKey": "a1",
+        "queuePositionKey": null,
+        "title": "완료 카드",
+        "request": "완료 원문",
+        "attachments": [],
+        "brief": "",
+        "blockedKind": null,
+        "blockedDetail": null,
+        "nodeId": null,
+        "modelPreset": null,
+        "assigneeKind": "session",
+        "assigneeAgentId": null,
+        "assigneeSessionId": "argument-session",
+        "assigneeUserId": null,
+        "status": "done",
+        "statusChangedAt": "<time>",
+        "archived": false,
+        "version": 1,
+        "createdSessionId": null,
+        "createdEventId": null,
+        "updatedSessionId": null,
+        "updatedEventId": null,
+        "completedKind": null,
+        "completedSessionId": null,
+        "completedEventId": null,
+        "completedUserId": null,
+        "completedAt": "<time>",
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "latestActivity": {
+          "kind": "instruction",
+          "format": "markdown",
+          "body": "완료 원문",
+          "createdAt": "<time>"
+        }
+      }
+    ],
+    "nextCursor": null
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves list folder 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"cards\\": [\\n    {\\n      \\"id\\": \\"card-1\\",\\n      \\"folderId\\": \\"cards-a\\",\\n      \\"positionKey\\": \\"a0\\",\\n      \\"queuePositionKey\\": null,\\n      \\"title\\": \\"기존 카드\\",\\n      \\"request\\": \\"원문\\",\\n      \\"attachments\\": [],\\n      \\"brief\\": \\"\\",\\n      \\"blockedKind\\": null,\\n      \\"blockedDetail\\": null,\\n      \\"nodeId\\": null,\\n      \\"modelPreset\\": null,\\n      \\"assigneeKind\\": \\"session\\",\\n      \\"assigneeAgentId\\": null,\\n      \\"assigneeSessionId\\": \\"header-session\\",\\n      \\"assigneeUserId\\": null,\\n      \\"status\\": \\"todo\\",\\n      \\"statusChangedAt\\": \\"<time>\\",\\n      \\"archived\\": false,\\n      \\"version\\": 1,\\n      \\"createdSessionId\\": null,\\n      \\"createdEventId\\": null,\\n      \\"updatedSessionId\\": null,\\n      \\"updatedEventId\\": null,\\n      \\"completedKind\\": null,\\n      \\"completedSessionId\\": null,\\n      \\"completedEventId\\": null,\\n      \\"completedUserId\\": null,\\n      \\"completedAt\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"latestActivity\\": {\\n        \\"kind\\": \\"instruction\\",\\n        \\"format\\": \\"markdown\\",\\n        \\"body\\": \\"기존 발언\\",\\n        \\"createdAt\\": \\"<time>\\"\\n      }\\n    },\\n    {\\n      \\"id\\": \\"card-done\\",\\n      \\"folderId\\": \\"cards-a\\",\\n      \\"positionKey\\": \\"a1\\",\\n      \\"queuePositionKey\\": null,\\n      \\"title\\": \\"완료 카드\\",\\n      \\"request\\": \\"완료 원문\\",\\n      \\"attachments\\": [],\\n      \\"brief\\": \\"\\",\\n      \\"blockedKind\\": null,\\n      \\"blockedDetail\\": null,\\n      \\"nodeId\\": null,\\n      \\"modelPreset\\": null,\\n      \\"assigneeKind\\": \\"session\\",\\n      \\"assigneeAgentId\\": null,\\n      \\"assigneeSessionId\\": \\"argument-session\\",\\n      \\"assigneeUserId\\": null,\\n      \\"status\\": \\"done\\",\\n      \\"statusChangedAt\\": \\"<time>\\",\\n      \\"archived\\": false,\\n      \\"version\\": 1,\\n      \\"createdSessionId\\": null,\\n      \\"createdEventId\\": null,\\n      \\"updatedSessionId\\": null,\\n      \\"updatedEventId\\": null,\\n      \\"completedKind\\": null,\\n      \\"completedSessionId\\": null,\\n      \\"completedEventId\\": null,\\n      \\"completedUserId\\": null,\\n      \\"completedAt\\": \\"<time>\\",\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"latestActivity\\": {\\n        \\"kind\\": \\"instruction\\",\\n        \\"format\\": \\"markdown\\",\\n        \\"body\\": \\"완료 원문\\",\\n        \\"createdAt\\": \\"<time>\\"\\n      }\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "cards": [
+      {
+        "id": "card-1",
+        "folderId": "cards-a",
+        "positionKey": "a0",
+        "queuePositionKey": null,
+        "title": "기존 카드",
+        "request": "원문",
+        "attachments": [],
+        "brief": "",
+        "blockedKind": null,
+        "blockedDetail": null,
+        "nodeId": null,
+        "modelPreset": null,
+        "assigneeKind": "session",
+        "assigneeAgentId": null,
+        "assigneeSessionId": "header-session",
+        "assigneeUserId": null,
+        "status": "todo",
+        "statusChangedAt": "<time>",
+        "archived": false,
+        "version": 1,
+        "createdSessionId": null,
+        "createdEventId": null,
+        "updatedSessionId": null,
+        "updatedEventId": null,
+        "completedKind": null,
+        "completedSessionId": null,
+        "completedEventId": null,
+        "completedUserId": null,
+        "completedAt": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "latestActivity": {
+          "kind": "instruction",
+          "format": "markdown",
+          "body": "기존 발언",
+          "createdAt": "<time>"
+        }
+      },
+      {
+        "id": "card-done",
+        "folderId": "cards-a",
+        "positionKey": "a1",
+        "queuePositionKey": null,
+        "title": "완료 카드",
+        "request": "완료 원문",
+        "attachments": [],
+        "brief": "",
+        "blockedKind": null,
+        "blockedDetail": null,
+        "nodeId": null,
+        "modelPreset": null,
+        "assigneeKind": "session",
+        "assigneeAgentId": null,
+        "assigneeSessionId": "argument-session",
+        "assigneeUserId": null,
+        "status": "done",
+        "statusChangedAt": "<time>",
+        "archived": false,
+        "version": 1,
+        "createdSessionId": null,
+        "createdEventId": null,
+        "updatedSessionId": null,
+        "updatedEventId": null,
+        "completedKind": null,
+        "completedSessionId": null,
+        "completedEventId": null,
+        "completedUserId": null,
+        "completedAt": "<time>",
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "latestActivity": {
+          "kind": "instruction",
+          "format": "markdown",
+          "body": "완료 원문",
+          "createdAt": "<time>"
+        }
+      }
+    ]
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves list status 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"cards\\": [\\n    {\\n      \\"id\\": \\"card-1\\",\\n      \\"folderId\\": \\"cards-a\\",\\n      \\"positionKey\\": \\"a0\\",\\n      \\"queuePositionKey\\": null,\\n      \\"title\\": \\"기존 카드\\",\\n      \\"request\\": \\"원문\\",\\n      \\"attachments\\": [],\\n      \\"brief\\": \\"\\",\\n      \\"blockedKind\\": null,\\n      \\"blockedDetail\\": null,\\n      \\"nodeId\\": null,\\n      \\"modelPreset\\": null,\\n      \\"assigneeKind\\": \\"session\\",\\n      \\"assigneeAgentId\\": null,\\n      \\"assigneeSessionId\\": \\"header-session\\",\\n      \\"assigneeUserId\\": null,\\n      \\"status\\": \\"todo\\",\\n      \\"statusChangedAt\\": \\"<time>\\",\\n      \\"archived\\": false,\\n      \\"version\\": 1,\\n      \\"createdSessionId\\": null,\\n      \\"createdEventId\\": null,\\n      \\"updatedSessionId\\": null,\\n      \\"updatedEventId\\": null,\\n      \\"completedKind\\": null,\\n      \\"completedSessionId\\": null,\\n      \\"completedEventId\\": null,\\n      \\"completedUserId\\": null,\\n      \\"completedAt\\": null,\\n      \\"createdAt\\": \\"<time>\\",\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"latestActivity\\": {\\n        \\"kind\\": \\"instruction\\",\\n        \\"format\\": \\"markdown\\",\\n        \\"body\\": \\"기존 발언\\",\\n        \\"createdAt\\": \\"<time>\\"\\n      }\\n    }\\n  ]\\n}"
+    }
+  ],
+  "structuredContent": {
+    "cards": [
+      {
+        "id": "card-1",
+        "folderId": "cards-a",
+        "positionKey": "a0",
+        "queuePositionKey": null,
+        "title": "기존 카드",
+        "request": "원문",
+        "attachments": [],
+        "brief": "",
+        "blockedKind": null,
+        "blockedDetail": null,
+        "nodeId": null,
+        "modelPreset": null,
+        "assigneeKind": "session",
+        "assigneeAgentId": null,
+        "assigneeSessionId": "header-session",
+        "assigneeUserId": null,
+        "status": "todo",
+        "statusChangedAt": "<time>",
+        "archived": false,
+        "version": 1,
+        "createdSessionId": null,
+        "createdEventId": null,
+        "updatedSessionId": null,
+        "updatedEventId": null,
+        "completedKind": null,
+        "completedSessionId": null,
+        "completedEventId": null,
+        "completedUserId": null,
+        "completedAt": null,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "latestActivity": {
+          "kind": "instruction",
+          "format": "markdown",
+          "body": "기존 발언",
+          "createdAt": "<time>"
+        }
+      }
+    ]
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves move success 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-b\\",\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-b\\",\\n    \\"positionKey\\": \\"V\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"todo\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"card-1\\",\\n    \\"operationType\\": \\"move_card\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"<random-id>\\",\\n    \\"payloadJson\\": {\\n      \\"folder_id\\": \\"cards-b\\",\\n      \\"after_card_id\\": null\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-b",
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-b",
+      "positionKey": "V",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "todo",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 2,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "card-1",
+      "operationType": "move_card",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "<random-id>",
+      "payloadJson": {
+        "folder_id": "cards-b",
+        "after_card_id": null
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves mutation missing 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\"detail\\":{\\"error\\":{\\"code\\":\\"CARD_NOT_FOUND\\"}}}"
+    }
+  ],
+  "structuredContent": {
+    "error": "{\\"detail\\":{\\"error\\":{\\"code\\":\\"CARD_NOT_FOUND\\"}}}",
+    "code": "CARD_NOT_FOUND"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves question no options 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-a\\",\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": \\"question\\",\\n    \\"blockedDetail\\": \\"판단?\\",\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"blocked\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"card-1\\",\\n    \\"operationType\\": \\"ask_card_question\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"<random-id>\\",\\n    \\"payloadJson\\": {\\n      \\"text\\": \\"판단?\\",\\n      \\"options\\": null\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false,\\n  \\"guidance\\": \\"질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-a",
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": "question",
+      "blockedDetail": "판단?",
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "blocked",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 2,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "card-1",
+      "operationType": "ask_card_question",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "<random-id>",
+      "payloadJson": {
+        "text": "판단?",
+        "options": null
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false,
+    "guidance": "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다."
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves question options 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-a\\",\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": \\"question\\",\\n    \\"blockedDetail\\": \\"판단?\\",\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"blocked\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"card-1\\",\\n    \\"operationType\\": \\"ask_card_question\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"<random-id>\\",\\n    \\"payloadJson\\": {\\n      \\"text\\": \\"판단?\\",\\n      \\"options\\": [\\n        \\"진행\\",\\n        \\"중단\\"\\n      ]\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false,\\n  \\"guidance\\": \\"질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.\\"\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-a",
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": "question",
+      "blockedDetail": "판단?",
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "blocked",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 2,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "card-1",
+      "operationType": "ask_card_question",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "<random-id>",
+      "payloadJson": {
+        "text": "판단?",
+        "options": [
+          "진행",
+          "중단"
+        ]
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false,
+    "guidance": "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다."
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves reply mismatch 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller_session_id must match the authenticated request session header"
+    }
+  ],
+  "structuredContent": {
+    "error": "caller_session_id must match the authenticated request session header"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves report success 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-a\\",\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"todo\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": null,\\n    \\"updatedEventId\\": null,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"report\\",\\n      \\"format\\": \\"html\\",\\n      \\"body\\": \\"<p>증거</p>\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"card-1\\",\\n    \\"operationType\\": \\"add_card_report\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"<random-id>\\",\\n    \\"payloadJson\\": {\\n      \\"body\\": \\"<p>증거</p>\\",\\n      \\"title\\": \\"보고\\",\\n      \\"format\\": \\"html\\"\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-a",
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "todo",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 1,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": null,
+      "updatedEventId": null,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "report",
+        "format": "html",
+        "body": "<p>증거</p>",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "card-1",
+      "operationType": "add_card_report",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "<random-id>",
+      "payloadJson": {
+        "body": "<p>증거</p>",
+        "title": "보고",
+        "format": "html"
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves review success 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-a\\",\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"review\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"card-1\\",\\n    \\"operationType\\": \\"set_card_status\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"<random-id>\\",\\n    \\"payloadJson\\": {\\n      \\"status\\": \\"review\\",\\n      \\"blocked_kind\\": null,\\n      \\"blocked_detail\\": null\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-a",
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "review",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 2,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "card-1",
+      "operationType": "set_card_status",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "<random-id>",
+      "payloadJson": {
+        "status": "review",
+        "blocked_kind": null,
+        "blocked_detail": null
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves status mismatch 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller_session_id must match the authenticated request session header"
+    }
+  ],
+  "structuredContent": {
+    "error": "caller_session_id must match the authenticated request session header"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves status success 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-a\\",\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"running\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"card-1\\",\\n    \\"operationType\\": \\"set_card_status\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"status-key\\",\\n    \\"payloadJson\\": {\\n      \\"status\\": \\"running\\",\\n      \\"blocked_kind\\": null,\\n      \\"blocked_detail\\": null\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-a",
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "running",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 2,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "card-1",
+      "operationType": "set_card_status",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "status-key",
+      "payloadJson": {
+        "status": "running",
+        "blocked_kind": null,
+        "blocked_detail": null
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves system create 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "System folders cannot own cards"
+    }
+  ],
+  "structuredContent": {
+    "error": "System folders cannot own cards",
+    "code": "FOLDER_OPERATION_FAILED"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves system move 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "System folders cannot own cards"
+    }
+  ],
+  "structuredContent": {
+    "error": "System folders cannot own cards",
+    "code": "FOLDER_OPERATION_FAILED"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves version conflict 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder card version conflict: card-1 expected version 999, actual version 1"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder card version conflict: card-1 expected version 999, actual version 1",
+    "code": "CARD_VERSION_CONFLICT"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves work mismatch 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller_session_id must match the authenticated request session header"
+    }
+  ],
+  "structuredContent": {
+    "error": "caller_session_id must match the authenticated request session header"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves work no execution 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "Current work execution required; orchestration purpose cannot start work"
+    }
+  ],
+  "structuredContent": {
+    "error": "Current work execution required; orchestration purpose cannot start work"
+  },
+  "isError": true
+}"
+`;
+
+exports[`card orchestrator MCP roundtrip > preserves work success 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folderId\\": \\"cards-a\\",\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"positionKey\\": \\"a0\\",\\n    \\"queuePositionKey\\": null,\\n    \\"title\\": \\"기존 카드\\",\\n    \\"request\\": \\"원문\\",\\n    \\"attachments\\": [],\\n    \\"brief\\": \\"\\",\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null,\\n    \\"nodeId\\": null,\\n    \\"modelPreset\\": null,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"status\\": \\"running\\",\\n    \\"statusChangedAt\\": \\"<time>\\",\\n    \\"archived\\": false,\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"updatedSessionId\\": \\"header-session\\",\\n    \\"updatedEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"latestActivity\\": {\\n      \\"kind\\": \\"instruction\\",\\n      \\"format\\": \\"markdown\\",\\n      \\"body\\": \\"기존 발언\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"targetKind\\": \\"card\\",\\n    \\"targetId\\": \\"card-1\\",\\n    \\"operationType\\": \\"start_card_work\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"status-key\\",\\n    \\"payloadJson\\": {\\n      \\"execution\\": {\\n        \\"registrationId\\": \\"registration\\",\\n        \\"executionCommandId\\": \\"command\\"\\n      }\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folderId": "cards-a",
+    "card": {
+      "id": "card-1",
+      "folderId": "cards-a",
+      "positionKey": "a0",
+      "queuePositionKey": null,
+      "title": "기존 카드",
+      "request": "원문",
+      "attachments": [],
+      "brief": "",
+      "blockedKind": null,
+      "blockedDetail": null,
+      "nodeId": null,
+      "modelPreset": null,
+      "assigneeKind": "session",
+      "assigneeAgentId": null,
+      "assigneeSessionId": "header-session",
+      "assigneeUserId": null,
+      "status": "running",
+      "statusChangedAt": "<time>",
+      "archived": false,
+      "version": 2,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "updatedSessionId": "header-session",
+      "updatedEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "latestActivity": {
+        "kind": "instruction",
+        "format": "markdown",
+        "body": "기존 발언",
+        "createdAt": "<time>"
+      }
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "cards-a",
+      "targetKind": "card",
+      "targetId": "card-1",
+      "operationType": "start_card_work",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "status-key",
+      "payloadJson": {
+        "execution": {
+          "registrationId": "registration",
+          "executionCommandId": "command"
+        }
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;

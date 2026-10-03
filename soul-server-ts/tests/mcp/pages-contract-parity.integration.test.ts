@@ -81,7 +81,7 @@ const cases: Case[] = [
   ["skill external", "search_skills", { query: "skill-1" }, external],
 ];
 
-describe("pages/live/skills legacy and MCP host parity", () => {
+describe("pages/live/skills MCP host roundtrip", () => {
   let h: PagePostgresHarness;
   let app: ReturnType<typeof Fastify>;
   let service: PageYjsService;
@@ -163,6 +163,7 @@ describe("pages/live/skills legacy and MCP host parity", () => {
     expect(old.isError === true).toBe(error);
     await seed(); const before = hostCalls; let next: any;
     for (let i = 0; i < repeats; i++) next = await call(false, name, input, ctx);
+    expect(serialize(name === "upsert_page_markdown" && input.title ? "upsert_page_markdown:new" : name, old)).toMatchSnapshot();
     assertParity(name === "upsert_page_markdown" && input.title ? "upsert_page_markdown:new" : name, old, next);
     if (!error) expect(hostCalls - before).toBe(repeats);
     if (name === "create_page" && ctx === external) expect(next.structuredContent.operation).toMatchObject({ actor_kind: "llm", actor_session_id: null });

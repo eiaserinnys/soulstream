@@ -1,0 +1,725 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`folder object orchestrator MCP roundtrip > prefers the trimmed argument session over the header 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"name\\": \\"이름\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"archived\\": false,\\n    \\"status\\": \\"open\\",\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"pageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"pageVersion\\": 2\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"10000000-0000-4000-8000-000000000003\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"targetKind\\": \\"folder\\",\\n    \\"targetId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"operationType\\": \\"update_folder\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"argument-session\\",\\n    \\"actorEventId\\": null,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"tool-change\\",\\n    \\"payloadJson\\": {\\n      \\"title\\": \\"이름\\",\\n      \\"page_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"request\\": {\\n        \\"actor\\": {\\n          \\"actorKind\\": \\"agent\\",\\n          \\"actorUserId\\": null,\\n          \\"actorSessionId\\": \\"argument-session\\"\\n        },\\n        \\"update\\": {\\n          \\"name\\": \\"이름\\"\\n        },\\n        \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n        \\"idempotencyKey\\": \\"tool-change\\",\\n        \\"expectedVersion\\": 1\\n      },\\n      \\"archived\\": false,\\n      \\"page_operation_id\\": \\"10000000-0000-4000-8000-000000000004\\"\\n    },\\n    \\"reason\\": \\"mutate folder project identity\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "이름",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "archived": false,
+      "status": "open",
+      "version": 2,
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "pageId": "00000000-0000-4000-8000-000000000001",
+      "pageVersion": 2
+    },
+    "operation": {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "targetKind": "folder",
+      "targetId": "00000000-0000-4000-8000-000000000001",
+      "operationType": "update_folder",
+      "actorKind": "agent",
+      "actorSessionId": "argument-session",
+      "actorEventId": null,
+      "actorUserId": null,
+      "idempotencyKey": "tool-change",
+      "payloadJson": {
+        "title": "이름",
+        "page_id": "00000000-0000-4000-8000-000000000001",
+        "request": {
+          "actor": {
+            "actorKind": "agent",
+            "actorUserId": null,
+            "actorSessionId": "argument-session"
+          },
+          "update": {
+            "name": "이름"
+          },
+          "folderId": "00000000-0000-4000-8000-000000000001",
+          "idempotencyKey": "tool-change",
+          "expectedVersion": 1
+        },
+        "archived": false,
+        "page_operation_id": "10000000-0000-4000-8000-000000000004"
+      },
+      "reason": "mutate folder project identity",
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves archive_folder for {"folder_id":"00000000-0000-4000-8000-000000000001","expected_version":1,"idempotency_key":"tool-change"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"name\\": \\"기존 폴더\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"archived\\": true,\\n    \\"status\\": \\"open\\",\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"pageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"pageVersion\\": 2\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"10000000-0000-4000-8000-000000000003\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"targetKind\\": \\"folder\\",\\n    \\"targetId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"operationType\\": \\"archive_folder\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": null,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"tool-change\\",\\n    \\"payloadJson\\": {\\n      \\"title\\": \\"기존 폴더\\",\\n      \\"page_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"request\\": {\\n        \\"actor\\": {\\n          \\"actorKind\\": \\"agent\\",\\n          \\"actorUserId\\": null,\\n          \\"actorSessionId\\": \\"header-session\\"\\n        },\\n        \\"update\\": {},\\n        \\"archived\\": true,\\n        \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n        \\"idempotencyKey\\": \\"tool-change\\",\\n        \\"expectedVersion\\": 1\\n      },\\n      \\"archived\\": true,\\n      \\"page_operation_id\\": \\"10000000-0000-4000-8000-000000000004\\"\\n    },\\n    \\"reason\\": \\"mutate folder project identity\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "기존 폴더",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "archived": true,
+      "status": "open",
+      "version": 2,
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "pageId": "00000000-0000-4000-8000-000000000001",
+      "pageVersion": 2
+    },
+    "operation": {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "targetKind": "folder",
+      "targetId": "00000000-0000-4000-8000-000000000001",
+      "operationType": "archive_folder",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": null,
+      "actorUserId": null,
+      "idempotencyKey": "tool-change",
+      "payloadJson": {
+        "title": "기존 폴더",
+        "page_id": "00000000-0000-4000-8000-000000000001",
+        "request": {
+          "actor": {
+            "actorKind": "agent",
+            "actorUserId": null,
+            "actorSessionId": "header-session"
+          },
+          "update": {},
+          "archived": true,
+          "folderId": "00000000-0000-4000-8000-000000000001",
+          "idempotencyKey": "tool-change",
+          "expectedVersion": 1
+        },
+        "archived": true,
+        "page_operation_id": "10000000-0000-4000-8000-000000000004"
+      },
+      "reason": "mutate folder project identity",
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves create_folder for {"name":"문맥","idempotency_key":"tool-context","initial_context":{"guidance":"지시","atom_references":[{"instance":"atom","node_id":"reference","node_title":"제목","depth":1,"titles_only":false}],"session_defaults":{"agent_id":"roselin","node_id":"test-node","model_preset":"sol"}}} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"name\\": \\"문맥\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"archived\\": false,\\n    \\"status\\": \\"open\\",\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 2,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"pageId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"pageVersion\\": 1\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"10000000-0000-4000-8000-000000000003\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"targetKind\\": \\"folder\\",\\n    \\"targetId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"operationType\\": \\"create_folder\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": null,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"tool-context\\",\\n    \\"payloadJson\\": {\\n      \\"page_id\\": \\"00000000-0000-4000-8000-000000000002\\",\\n      \\"request\\": {\\n        \\"name\\": \\"문맥\\",\\n        \\"actor\\": {\\n          \\"actorKind\\": \\"agent\\",\\n          \\"actorUserId\\": null,\\n          \\"actorSessionId\\": \\"header-session\\"\\n        },\\n        \\"idempotencyKey\\": \\"tool-context\\",\\n        \\"initialContext\\": {\\n          \\"guidance\\": \\"지시\\",\\n          \\"atomReferences\\": [\\n            {\\n              \\"depth\\": 1,\\n              \\"nodeId\\": \\"reference\\",\\n              \\"instance\\": \\"atom\\",\\n              \\"nodeTitle\\": \\"제목\\",\\n              \\"titlesOnly\\": false\\n            }\\n          ],\\n          \\"sessionDefaults\\": {\\n            \\"nodeId\\": \\"test-node\\",\\n            \\"agentId\\": \\"roselin\\",\\n            \\"modelPreset\\": \\"sol\\"\\n          }\\n        }\\n      },\\n      \\"page_operation_id\\": \\"10000000-0000-4000-8000-000000000004\\"\\n    },\\n    \\"reason\\": \\"create folder project identity\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "문맥",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000002",
+      "archived": false,
+      "status": "open",
+      "version": 1,
+      "createdSessionId": "header-session",
+      "createdEventId": 2,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "folderId": "00000000-0000-4000-8000-000000000002",
+      "pageId": "00000000-0000-4000-8000-000000000002",
+      "pageVersion": 1
+    },
+    "operation": {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "folderId": "00000000-0000-4000-8000-000000000002",
+      "targetKind": "folder",
+      "targetId": "00000000-0000-4000-8000-000000000002",
+      "operationType": "create_folder",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": null,
+      "actorUserId": null,
+      "idempotencyKey": "tool-context",
+      "payloadJson": {
+        "page_id": "00000000-0000-4000-8000-000000000002",
+        "request": {
+          "name": "문맥",
+          "actor": {
+            "actorKind": "agent",
+            "actorUserId": null,
+            "actorSessionId": "header-session"
+          },
+          "idempotencyKey": "tool-context",
+          "initialContext": {
+            "guidance": "지시",
+            "atomReferences": [
+              {
+                "depth": 1,
+                "nodeId": "reference",
+                "instance": "atom",
+                "nodeTitle": "제목",
+                "titlesOnly": false
+              }
+            ],
+            "sessionDefaults": {
+              "nodeId": "test-node",
+              "agentId": "roselin",
+              "modelPreset": "sol"
+            }
+          }
+        },
+        "page_operation_id": "10000000-0000-4000-8000-000000000004"
+      },
+      "reason": "create folder project identity",
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves create_folder for {"name":"새 폴더","idempotency_key":"tool-create"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"name\\": \\"새 폴더\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"archived\\": false,\\n    \\"status\\": \\"open\\",\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 2,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"pageId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"pageVersion\\": 1\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"10000000-0000-4000-8000-000000000003\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"targetKind\\": \\"folder\\",\\n    \\"targetId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"operationType\\": \\"create_folder\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": null,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"tool-create\\",\\n    \\"payloadJson\\": {\\n      \\"page_id\\": \\"00000000-0000-4000-8000-000000000002\\",\\n      \\"request\\": {\\n        \\"name\\": \\"새 폴더\\",\\n        \\"actor\\": {\\n          \\"actorKind\\": \\"agent\\",\\n          \\"actorUserId\\": null,\\n          \\"actorSessionId\\": \\"header-session\\"\\n        },\\n        \\"idempotencyKey\\": \\"tool-create\\"\\n      },\\n      \\"page_operation_id\\": \\"10000000-0000-4000-8000-000000000004\\"\\n    },\\n    \\"reason\\": \\"create folder project identity\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "새 폴더",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000002",
+      "archived": false,
+      "status": "open",
+      "version": 1,
+      "createdSessionId": "header-session",
+      "createdEventId": 2,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "folderId": "00000000-0000-4000-8000-000000000002",
+      "pageId": "00000000-0000-4000-8000-000000000002",
+      "pageVersion": 1
+    },
+    "operation": {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "folderId": "00000000-0000-4000-8000-000000000002",
+      "targetKind": "folder",
+      "targetId": "00000000-0000-4000-8000-000000000002",
+      "operationType": "create_folder",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": null,
+      "actorUserId": null,
+      "idempotencyKey": "tool-create",
+      "payloadJson": {
+        "page_id": "00000000-0000-4000-8000-000000000002",
+        "request": {
+          "name": "새 폴더",
+          "actor": {
+            "actorKind": "agent",
+            "actorUserId": null,
+            "actorSessionId": "header-session"
+          },
+          "idempotencyKey": "tool-create"
+        },
+        "page_operation_id": "10000000-0000-4000-8000-000000000004"
+      },
+      "reason": "create folder project identity",
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves get_folder for {"folder_id":"00000000-0000-4000-8000-000000000001"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"settings\\": {},\\n    \\"name\\": \\"기존 폴더\\",\\n    \\"sortOrder\\": 0,\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"archived\\": false,\\n    \\"status\\": \\"open\\",\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"cards\\": []\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "settings": {},
+      "name": "기존 폴더",
+      "sortOrder": 0,
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "archived": false,
+      "status": "open",
+      "version": 1,
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "updatedAt": "<time>",
+      "createdAt": "<time>"
+    },
+    "cards": []
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves get_folder for {"folder_id":"missing"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "null"
+    }
+  ],
+  "structuredContent": {
+    "result": null
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves list_child_folders for {} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"items\\": [\\n    {\\n      \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"settings\\": {},\\n      \\"name\\": \\"기존 폴더\\",\\n      \\"sortOrder\\": 0,\\n      \\"parentFolderId\\": null,\\n      \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"archived\\": false,\\n      \\"status\\": \\"open\\",\\n      \\"version\\": 1,\\n      \\"createdSessionId\\": \\"header-session\\",\\n      \\"createdEventId\\": 1,\\n      \\"completedKind\\": null,\\n      \\"completedSessionId\\": null,\\n      \\"completedEventId\\": null,\\n      \\"completedUserId\\": null,\\n      \\"completedAt\\": null,\\n      \\"updatedAt\\": \\"<time>\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"nextCursor\\": null\\n}"
+    }
+  ],
+  "structuredContent": {
+    "items": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "settings": {},
+        "name": "기존 폴더",
+        "sortOrder": 0,
+        "parentFolderId": null,
+        "projectPageId": "00000000-0000-4000-8000-000000000001",
+        "archived": false,
+        "status": "open",
+        "version": 1,
+        "createdSessionId": "header-session",
+        "createdEventId": 1,
+        "completedKind": null,
+        "completedSessionId": null,
+        "completedEventId": null,
+        "completedUserId": null,
+        "completedAt": null,
+        "updatedAt": "<time>",
+        "createdAt": "<time>"
+      }
+    ],
+    "nextCursor": null
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves list_folder_operations for {"folder_id":"00000000-0000-4000-8000-000000000001"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"items\\": [\\n    {\\n      \\"id\\": \\"10000000-0000-4000-8000-000000000001\\",\\n      \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"targetKind\\": \\"folder\\",\\n      \\"targetId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"operationType\\": \\"create_folder\\",\\n      \\"actorKind\\": \\"agent\\",\\n      \\"actorSessionId\\": \\"header-session\\",\\n      \\"actorEventId\\": null,\\n      \\"actorUserId\\": null,\\n      \\"idempotencyKey\\": \\"seed\\",\\n      \\"payloadJson\\": {\\n        \\"page_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n        \\"request\\": {\\n          \\"name\\": \\"기존 폴더\\",\\n          \\"actor\\": {\\n            \\"actorKind\\": \\"agent\\",\\n            \\"actorSessionId\\": \\"header-session\\"\\n          },\\n          \\"idempotencyKey\\": \\"seed\\"\\n        },\\n        \\"page_operation_id\\": \\"10000000-0000-4000-8000-000000000002\\"\\n      },\\n      \\"reason\\": \\"create folder project identity\\",\\n      \\"createdAt\\": \\"<time>\\"\\n    }\\n  ],\\n  \\"nextCursor\\": null\\n}"
+    }
+  ],
+  "structuredContent": {
+    "items": [
+      {
+        "id": "10000000-0000-4000-8000-000000000001",
+        "folderId": "00000000-0000-4000-8000-000000000001",
+        "targetKind": "folder",
+        "targetId": "00000000-0000-4000-8000-000000000001",
+        "operationType": "create_folder",
+        "actorKind": "agent",
+        "actorSessionId": "header-session",
+        "actorEventId": null,
+        "actorUserId": null,
+        "idempotencyKey": "seed",
+        "payloadJson": {
+          "page_id": "00000000-0000-4000-8000-000000000001",
+          "request": {
+            "name": "기존 폴더",
+            "actor": {
+              "actorKind": "agent",
+              "actorSessionId": "header-session"
+            },
+            "idempotencyKey": "seed"
+          },
+          "page_operation_id": "10000000-0000-4000-8000-000000000002"
+        },
+        "reason": "create folder project identity",
+        "createdAt": "<time>"
+      }
+    ],
+    "nextCursor": null
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves llm actor for external callers and ignores both session IDs 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"name\\": \\"외부\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"archived\\": false,\\n    \\"status\\": \\"open\\",\\n    \\"version\\": 1,\\n    \\"createdSessionId\\": null,\\n    \\"createdEventId\\": null,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"pageId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"pageVersion\\": 1\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"10000000-0000-4000-8000-000000000003\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"targetKind\\": \\"folder\\",\\n    \\"targetId\\": \\"00000000-0000-4000-8000-000000000002\\",\\n    \\"operationType\\": \\"create_folder\\",\\n    \\"actorKind\\": \\"llm\\",\\n    \\"actorSessionId\\": null,\\n    \\"actorEventId\\": null,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"external\\",\\n    \\"payloadJson\\": {\\n      \\"page_id\\": \\"00000000-0000-4000-8000-000000000002\\",\\n      \\"request\\": {\\n        \\"name\\": \\"외부\\",\\n        \\"actor\\": {\\n          \\"actorKind\\": \\"llm\\",\\n          \\"actorUserId\\": null,\\n          \\"actorSessionId\\": null\\n        },\\n        \\"idempotencyKey\\": \\"external\\"\\n      },\\n      \\"page_operation_id\\": \\"10000000-0000-4000-8000-000000000004\\"\\n    },\\n    \\"reason\\": \\"create folder project identity\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "외부",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000002",
+      "archived": false,
+      "status": "open",
+      "version": 1,
+      "createdSessionId": null,
+      "createdEventId": null,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "folderId": "00000000-0000-4000-8000-000000000002",
+      "pageId": "00000000-0000-4000-8000-000000000002",
+      "pageVersion": 1
+    },
+    "operation": {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "folderId": "00000000-0000-4000-8000-000000000002",
+      "targetKind": "folder",
+      "targetId": "00000000-0000-4000-8000-000000000002",
+      "operationType": "create_folder",
+      "actorKind": "llm",
+      "actorSessionId": null,
+      "actorEventId": null,
+      "actorUserId": null,
+      "idempotencyKey": "external",
+      "payloadJson": {
+        "page_id": "00000000-0000-4000-8000-000000000002",
+        "request": {
+          "name": "외부",
+          "actor": {
+            "actorKind": "llm",
+            "actorUserId": null,
+            "actorSessionId": null
+          },
+          "idempotencyKey": "external"
+        },
+        "page_operation_id": "10000000-0000-4000-8000-000000000004"
+      },
+      "reason": "create folder project identity",
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves rename_folder for {"folder_id":"00000000-0000-4000-8000-000000000001","expected_version":1,"idempotency_key":"tool-change","name":"새 이름"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"name\\": \\"새 이름\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"archived\\": false,\\n    \\"status\\": \\"open\\",\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"pageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"pageVersion\\": 2\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"10000000-0000-4000-8000-000000000003\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"targetKind\\": \\"folder\\",\\n    \\"targetId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"operationType\\": \\"update_folder\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": null,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"tool-change\\",\\n    \\"payloadJson\\": {\\n      \\"title\\": \\"새 이름\\",\\n      \\"page_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"request\\": {\\n        \\"actor\\": {\\n          \\"actorKind\\": \\"agent\\",\\n          \\"actorUserId\\": null,\\n          \\"actorSessionId\\": \\"header-session\\"\\n        },\\n        \\"update\\": {\\n          \\"name\\": \\"새 이름\\"\\n        },\\n        \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n        \\"idempotencyKey\\": \\"tool-change\\",\\n        \\"expectedVersion\\": 1\\n      },\\n      \\"archived\\": false,\\n      \\"page_operation_id\\": \\"10000000-0000-4000-8000-000000000004\\"\\n    },\\n    \\"reason\\": \\"mutate folder project identity\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "새 이름",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "archived": false,
+      "status": "open",
+      "version": 2,
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "pageId": "00000000-0000-4000-8000-000000000001",
+      "pageVersion": 2
+    },
+    "operation": {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "targetKind": "folder",
+      "targetId": "00000000-0000-4000-8000-000000000001",
+      "operationType": "update_folder",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": null,
+      "actorUserId": null,
+      "idempotencyKey": "tool-change",
+      "payloadJson": {
+        "title": "새 이름",
+        "page_id": "00000000-0000-4000-8000-000000000001",
+        "request": {
+          "actor": {
+            "actorKind": "agent",
+            "actorUserId": null,
+            "actorSessionId": "header-session"
+          },
+          "update": {
+            "name": "새 이름"
+          },
+          "folderId": "00000000-0000-4000-8000-000000000001",
+          "idempotencyKey": "tool-change",
+          "expectedVersion": 1
+        },
+        "archived": false,
+        "page_operation_id": "10000000-0000-4000-8000-000000000004"
+      },
+      "reason": "mutate folder project identity",
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves rename_folder for {"folder_id":"00000000-0000-4000-8000-000000000001","expected_version":999,"idempotency_key":"tool-change","name":"충돌"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder host rename_folder failed: folder folder version conflict: 00000000-0000-4000-8000-000000000001 expected version 999, actual version 1"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder host rename_folder failed: folder folder version conflict: 00000000-0000-4000-8000-000000000001 expected version 999, actual version 1"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves rename_folder for {"folder_id":"claude","expected_version":1,"idempotency_key":"tool-change","name":"시스템"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder host rename_folder failed: System folders cannot be changed"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder host rename_folder failed: System folders cannot be changed"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves rename_folder for {"folder_id":"missing","expected_version":1,"idempotency_key":"tool-change","name":"없음"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "folder host rename_folder failed: Folder not found"
+    }
+  ],
+  "structuredContent": {
+    "error": "folder host rename_folder failed: Folder not found"
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves set_folder_status for {"folder_id":"00000000-0000-4000-8000-000000000001","expected_version":1,"idempotency_key":"tool-change","status":"completed"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"settings\\": {},\\n    \\"name\\": \\"기존 폴더\\",\\n    \\"sortOrder\\": 0,\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"archived\\": false,\\n    \\"status\\": \\"completed\\",\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"completedKind\\": \\"agent\\",\\n    \\"completedSessionId\\": \\"header-session\\",\\n    \\"completedEventId\\": 1,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"<random-id>\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"targetKind\\": \\"folder\\",\\n    \\"targetId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"operationType\\": \\"set_folder_status\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": 1,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"tool-change\\",\\n    \\"payloadJson\\": {\\n      \\"status\\": \\"completed\\"\\n    },\\n    \\"reason\\": null,\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "settings": {},
+      "name": "기존 폴더",
+      "sortOrder": 0,
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "archived": false,
+      "status": "completed",
+      "version": 2,
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "completedKind": "agent",
+      "completedSessionId": "header-session",
+      "completedEventId": 1,
+      "completedUserId": null,
+      "completedAt": "<time>",
+      "updatedAt": "<time>",
+      "createdAt": "<time>"
+    },
+    "operation": {
+      "id": "<random-id>",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "targetKind": "folder",
+      "targetId": "00000000-0000-4000-8000-000000000001",
+      "operationType": "set_folder_status",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": 1,
+      "actorUserId": null,
+      "idempotencyKey": "tool-change",
+      "payloadJson": {
+        "status": "completed"
+      },
+      "reason": null,
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves the missing internal actor error 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "caller session id is required for folder mutation tools. Send x-soulstream-agent-session-id."
+    }
+  ],
+  "structuredContent": {
+    "error": "caller session id is required for folder mutation tools. Send x-soulstream-agent-session-id."
+  },
+  "isError": true
+}"
+`;
+
+exports[`folder object orchestrator MCP roundtrip > preserves unarchive_folder for {"folder_id":"00000000-0000-4000-8000-000000000001","expected_version":1,"idempotency_key":"tool-change"} 1`] = `
+"{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\\n  \\"folder\\": {\\n    \\"id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"name\\": \\"기존 폴더\\",\\n    \\"sortOrder\\": 0,\\n    \\"settings\\": {},\\n    \\"parentFolderId\\": null,\\n    \\"projectPageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"archived\\": false,\\n    \\"status\\": \\"open\\",\\n    \\"version\\": 2,\\n    \\"createdSessionId\\": \\"header-session\\",\\n    \\"createdEventId\\": 1,\\n    \\"createdAt\\": \\"<time>\\",\\n    \\"updatedAt\\": \\"<time>\\",\\n    \\"completedKind\\": null,\\n    \\"completedSessionId\\": null,\\n    \\"completedEventId\\": null,\\n    \\"completedUserId\\": null,\\n    \\"completedAt\\": null,\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"pageId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"pageVersion\\": 2\\n  },\\n  \\"operation\\": {\\n    \\"id\\": \\"10000000-0000-4000-8000-000000000003\\",\\n    \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"targetKind\\": \\"folder\\",\\n    \\"targetId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n    \\"operationType\\": \\"update_folder\\",\\n    \\"actorKind\\": \\"agent\\",\\n    \\"actorSessionId\\": \\"header-session\\",\\n    \\"actorEventId\\": null,\\n    \\"actorUserId\\": null,\\n    \\"idempotencyKey\\": \\"tool-change\\",\\n    \\"payloadJson\\": {\\n      \\"title\\": \\"기존 폴더\\",\\n      \\"page_id\\": \\"00000000-0000-4000-8000-000000000001\\",\\n      \\"request\\": {\\n        \\"actor\\": {\\n          \\"actorKind\\": \\"agent\\",\\n          \\"actorUserId\\": null,\\n          \\"actorSessionId\\": \\"header-session\\"\\n        },\\n        \\"update\\": {},\\n        \\"archived\\": false,\\n        \\"folderId\\": \\"00000000-0000-4000-8000-000000000001\\",\\n        \\"idempotencyKey\\": \\"tool-change\\",\\n        \\"expectedVersion\\": 1\\n      },\\n      \\"archived\\": false,\\n      \\"page_operation_id\\": \\"10000000-0000-4000-8000-000000000004\\"\\n    },\\n    \\"reason\\": \\"mutate folder project identity\\",\\n    \\"createdAt\\": \\"<time>\\"\\n  },\\n  \\"idempotent\\": false\\n}"
+    }
+  ],
+  "structuredContent": {
+    "folder": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "기존 폴더",
+      "sortOrder": 0,
+      "settings": {},
+      "parentFolderId": null,
+      "projectPageId": "00000000-0000-4000-8000-000000000001",
+      "archived": false,
+      "status": "open",
+      "version": 2,
+      "createdSessionId": "header-session",
+      "createdEventId": 1,
+      "createdAt": "<time>",
+      "updatedAt": "<time>",
+      "completedKind": null,
+      "completedSessionId": null,
+      "completedEventId": null,
+      "completedUserId": null,
+      "completedAt": null,
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "pageId": "00000000-0000-4000-8000-000000000001",
+      "pageVersion": 2
+    },
+    "operation": {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "folderId": "00000000-0000-4000-8000-000000000001",
+      "targetKind": "folder",
+      "targetId": "00000000-0000-4000-8000-000000000001",
+      "operationType": "update_folder",
+      "actorKind": "agent",
+      "actorSessionId": "header-session",
+      "actorEventId": null,
+      "actorUserId": null,
+      "idempotencyKey": "tool-change",
+      "payloadJson": {
+        "title": "기존 폴더",
+        "page_id": "00000000-0000-4000-8000-000000000001",
+        "request": {
+          "actor": {
+            "actorKind": "agent",
+            "actorUserId": null,
+            "actorSessionId": "header-session"
+          },
+          "update": {},
+          "archived": false,
+          "folderId": "00000000-0000-4000-8000-000000000001",
+          "idempotencyKey": "tool-change",
+          "expectedVersion": 1
+        },
+        "archived": false,
+        "page_operation_id": "10000000-0000-4000-8000-000000000004"
+      },
+      "reason": "mutate folder project identity",
+      "createdAt": "<time>"
+    },
+    "idempotent": false
+  }
+}"
+`;

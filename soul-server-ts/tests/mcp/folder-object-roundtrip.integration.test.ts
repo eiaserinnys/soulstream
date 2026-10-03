@@ -40,7 +40,7 @@ const cases = [
 ] as const;
 
 // Actual SDK, host routes, services and disposable PG, as in page-roundtrip.integration.test.ts.
-describe("folder object legacy and orchestrator MCP parity", () => {
+describe("folder object orchestrator MCP roundtrip", () => {
   let h: PagePostgresHarness;
   let identity: FolderProjectIdentityService;
   let app: ReturnType<typeof Fastify>;
@@ -100,6 +100,7 @@ describe("folder object legacy and orchestrator MCP parity", () => {
   async function parity(name: string, input: object, requestContext = context) {
     await seed(); const old = await call(true, name, input, requestContext);
     await seed(); const next = await call(false, name, input, requestContext);
+    expect(serializeResult(name, old)).toMatchSnapshot();
     assertParity(name, old, next);
     return next;
   }
