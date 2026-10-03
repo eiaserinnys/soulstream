@@ -219,9 +219,7 @@ async function main(): Promise<void> {
           port: env.PORT,
           mcpEnabled: env.MCP_ENABLED,
           mcpPath: env.MCP_ENABLED ? env.MCP_PATH : undefined,
-          mcpStatelessTransportEnabled: env.MCP_ENABLED
-            ? env.MCP_STATELESS_TRANSPORT_ENABLED
-            : undefined,
+          mcpStatelessTransportEnabled: env.MCP_ENABLED ? true : undefined,
         },
         "HTTP listening",
       );

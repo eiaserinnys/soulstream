@@ -8,10 +8,9 @@
 
 | 프로세스 | 환경 변수 | 기본값 | 역할 | 의존·제약 |
 |---|---|---:|---|---|
-| soul-server (= soul-server-ts) | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | 새 세션을 session-per-process 러너에서 실행 | ON이면 state/artifact/releases 세 경로 필수. MCP가 켜져 있으면 stateless도 ON이어야 함 |
-| soul-server (= soul-server-ts) | `MCP_ENABLED` | `false` | Streamable HTTP MCP route 활성화 | stateless를 켜려면 먼저 ON. production에서는 `MCP_REQUIRE_AUTH=true`와 bearer token 필수 |
+| soul-server (= soul-server-ts) | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | 새 세션을 session-per-process 러너에서 실행 | ON이면 state/artifact/releases 세 경로 필수. 내부 MCP transport는 항상 stateless |
+| soul-server (= soul-server-ts) | `MCP_ENABLED` | `false` | 내부 Streamable HTTP MCP route 활성화 | production에서는 `MCP_REQUIRE_AUTH=true`와 bearer token 필수 |
 | soul-server (= soul-server-ts) | `MCP_INTERNAL_PORT` | `PORT+1` | 내부 Claude SDK 전용 loopback 리스너 | 배포 전 노드별 포트 점유를 실측하고 충돌 시 free 포트를 env에 선반영. `127.0.0.1`에만 bind하며 nginx·외부 프록시에 절대 노출하지 않음 |
-| soul-server (= soul-server-ts) | `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | LLM 전용 `/mcp`에서 process-local session map 제거 | `MCP_ENABLED=true` 필수. runner+MCP 컷오버에서는 ON 필수. 내부 Claude SDK의 별도 `/mcp/internal`은 이 값과 무관하게 항상 stateless |
 | orch-server (= orch-server-ts) | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | runner node disconnect 시 inventory 재접속 유예 사용 | soul-server와 독립적으로 설정 가능 |
 | soul-server (= soul-server-ts) | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | bootstrap registration grace period | reaper interval보다 길게 유지 |
 | orch-server (= orch-server-ts) | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | runner node disconnect 뒤 inventory 재접속 유예 창 | 노드 운영 조건에 맞게 설정 |
@@ -26,7 +25,7 @@
 2. soul-server 빌드 산출물에 `dist/runner/package.json`, `dist/runner/runner_entry.js`가 있고 release isolation 검증이 통과했는지 확인한다.
 3. soul-server의 실제 runner 진행 lease와 orch의 disconnect 재접속 유예 창을 각 노드 운영 조건에 맞게 설정한다.
 4. orch에서 `SOUL_RUNNER_PROCESS_ENABLED=true`를 설정하고 orch를 재시작한다.
-5. MCP를 쓰는 soul-server는 `MCP_ENABLED=true`, `MCP_STATELESS_TRANSPORT_ENABLED=true`, production auth 설정을 먼저 적용한다. `MCP_INTERNAL_PORT`는 명시하거나 `PORT+1` 파생값을 사용하되, nginx 설정에 이 포트를 추가하지 않았는지 확인한다. LLM 클라이언트는 public listener의 stateless `/mcp`, 러너의 Claude SDK를 포함한 내부 소비자는 별도 loopback listener의 stateless `/mcp/internal`로 분리된다. 내부 route는 host 재시작 뒤 stale `Mcp-Session-Id`가 와도 request-scoped transport로 처리한다.
+5. MCP를 쓰는 soul-server는 `MCP_ENABLED=true`와 production auth 설정을 먼저 적용한다. `MCP_INTERNAL_PORT`는 명시하거나 `PORT+1` 파생값을 사용하되, nginx 설정에 이 포트를 추가하지 않았는지 확인한다. 내부 Claude SDK와 러너 소비자는 loopback listener의 stateless `/mcp/internal`을 사용하며, host 재시작 뒤 stale `Mcp-Session-Id`도 request-scoped transport로 처리한다.
 6. soul-server별 state/artifact/releases 경로와 권한을 준비한 뒤 `SOUL_RUNNER_PROCESS_ENABLED=true`로 재시작한다. 한 state 디렉토리는 pid+프로세스 시작 identity로 증명된 단일 host만 소유하며, 기존 host가 살아 있으면 새 host가 복구 스캔 전에 기동을 거부한다. 기동 중 현재 release materialization이 실패하면 서버가 명시적으로 실패한다.
 7. node registration에서 `runner_process_v1=true`가 광고되고 runner inventory 재접속이 동작하는지 확인한다.
 

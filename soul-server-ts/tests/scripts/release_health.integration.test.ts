@@ -36,7 +36,7 @@ beforeEach(async () => {
     catalogService: {}, orch: { baseUrl: hostUrl, headers: { authorization: "Bearer health-test" } },
   } as unknown as McpRuntime;
   worker = await buildServer({ host: "127.0.0.1", port: 0, nodeId: runtime.nodeId, logger,
-    mcp: { runtime, path: "/health-mcp/", statelessTransport: false,
+    mcp: { runtime, path: "/health-mcp/",
       auth: { requireAuth: true, bearerToken: "health-test", allowedHosts: ["127.0.0.1", "localhost"] } } });
   const publicUrl = await worker.listen({ host: "127.0.0.1", port: 0 });
   const internalUrl = await startInternalMcpServer(worker.internalMcpServer!, 0);

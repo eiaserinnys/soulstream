@@ -10,7 +10,6 @@ export function buildMcpServerOptions(
   return {
     runtime,
     path: env.MCP_PATH,
-    statelessTransport: env.MCP_STATELESS_TRANSPORT_ENABLED,
     auth: {
       requireAuth: env.MCP_REQUIRE_AUTH,
       bearerToken: env.AUTH_BEARER_TOKEN,

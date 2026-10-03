@@ -42,8 +42,6 @@ export const EnvSchema = z
     /** LLM proxy provider keys. Optional — route mounts only for configured providers. */
     LLM_OPENAI_API_KEY: z.string().optional(),
     LLM_ANTHROPIC_API_KEY: z.string().optional(),
-    TYPESAFE_API_KEY: z.string().optional(),
-    SKILL_CATALOG_NODE_ID: z.string().uuid().optional(),
     /**
      * Codex API 키 (Phase B-2). optional — 미설정 시 Codex SDK가 ~/.codex/auth.json
      * (ChatGPT 구독 OAuth) fallback. production strict 미요구 — credential default
@@ -174,15 +172,6 @@ export const EnvSchema = z
      */
     MCP_INTERNAL_PORT: z.coerce.number().int().positive().max(65_535).optional(),
     /**
-     * Stateless Streamable HTTP mode. Separate cutover flag because MCP is shared
-     * by in-process and runner-backed sessions. Default false preserves the
-     * process-local Mcp-Session-Id map until rollout is explicitly enabled.
-     */
-    MCP_STATELESS_TRANSPORT_ENABLED: z
-      .union([z.literal("true"), z.literal("false")])
-      .default("false")
-      .transform((v) => v === "true"),
-    /**
      * MCP 호출에 bearer auth 강제. superRefine으로 production + MCP_ENABLED일 때 강제.
      */
     MCP_REQUIRE_AUTH: z
@@ -304,26 +293,6 @@ export const EnvSchema = z
           });
         }
       }
-    }
-    if (env.MCP_STATELESS_TRANSPORT_ENABLED && !env.MCP_ENABLED) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["MCP_ENABLED"],
-        message:
-          "MCP_ENABLED must be true when MCP_STATELESS_TRANSPORT_ENABLED=true",
-      });
-    }
-    if (
-      env.SOUL_RUNNER_PROCESS_ENABLED
-      && env.MCP_ENABLED
-      && !env.MCP_STATELESS_TRANSPORT_ENABLED
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["MCP_STATELESS_TRANSPORT_ENABLED"],
-        message:
-          "MCP_STATELESS_TRANSPORT_ENABLED must be true when runner process mode and MCP are enabled",
-      });
     }
     if (env.WORKTREE_MCP_ENABLED) {
       if (!env.WORKTREE_PROJECTS_ROOT) {

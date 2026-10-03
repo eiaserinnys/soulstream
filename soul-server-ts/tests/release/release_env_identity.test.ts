@@ -78,6 +78,19 @@ describe("deployment env identity", () => {
     expect(startupSideIdentity(declared)).toBe(startupSideIdentity());
   });
 
+  it("ignores retired worker settings in old environment documents", () => {
+    const declared = {
+      ...DECLARED_ENV,
+      TYPESAFE_API_KEY: "legacy-typesafe-key",
+      SKILL_CATALOG_NODE_ID: "11111111-2222-4333-8444-555555555555",
+      MCP_STATELESS_TRANSPORT_ENABLED: "false",
+    };
+
+    expect(parseEnv(declared)).toEqual(parseEnv(DECLARED_ENV));
+    expect(buildSideIdentity(declared)).toBe(buildSideIdentity());
+    expect(startupSideIdentity(declared)).toBe(startupSideIdentity());
+  });
+
   it("survives the clean build environment meeting the live service process env", () => {
     expect(startupSideIdentity()).toBe(buildSideIdentity());
   });
@@ -153,19 +166,10 @@ describe("deployment env identity", () => {
     }
   });
 
-  it("declares the Typesafe credential and skill catalog node with their right kinds", () => {
-    expect(releaseEnvAllowlistEntry("TYPESAFE_API_KEY")).toMatchObject({
-      owner: "typesafe",
-      kind: "credential",
-      identity_scope: "deployment",
-      normalization: "presence",
-    });
-    expect(releaseEnvAllowlistEntry("SKILL_CATALOG_NODE_ID")).toMatchObject({
-      owner: "atom",
-      kind: "non_secret",
-      identity_scope: "deployment",
-      normalization: "string",
-    });
+  it("does not include retired worker settings in release configuration", () => {
+    expect(releaseEnvAllowlistEntry("TYPESAFE_API_KEY")).toBeUndefined();
+    expect(releaseEnvAllowlistEntry("SKILL_CATALOG_NODE_ID")).toBeUndefined();
+    expect(releaseEnvAllowlistEntry("MCP_STATELESS_TRANSPORT_ENABLED")).toBeUndefined();
   });
 });
 

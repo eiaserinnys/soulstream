@@ -63,11 +63,6 @@ export function buildConfigReflection(runtime: McpRuntime): ConfigReflectionEntr
       sensitive: false,
       defaultValue: "PORT+1 (derived)",
     }),
-    envEntry("MCP_STATELESS_TRANSPORT_ENABLED", {
-      required: false,
-      sensitive: false,
-      defaultValue: "false",
-    }),
     envEntry("MCP_REQUIRE_AUTH", {
       required: false,
       sensitive: false,
