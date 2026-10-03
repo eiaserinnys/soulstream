@@ -118,5 +118,3 @@ function serializeResult(tool: string, result: unknown): string {
     return { ...item, text: JSON.stringify(mask(tool, parsed), null, 2) };
   }), ...(value.structuredContent === undefined ? {} : { structuredContent: mask(tool, value.structuredContent) }) }, null, 2);
 }
-describe("card result masking", () => {
-});

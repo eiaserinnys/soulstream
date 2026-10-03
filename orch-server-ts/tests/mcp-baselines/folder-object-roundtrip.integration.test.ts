@@ -114,6 +114,3 @@ function serializeResult(tool: string, result: unknown): string {
     ...(value.structuredContent === undefined ? {} : { structuredContent: mask(tool, value.structuredContent) }),
   }, null, 2);
 }
-
-describe("folder result masking", () => {
-});

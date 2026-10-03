@@ -117,5 +117,3 @@ function serialize(tool: string, value: any) {
     return { ...item, text: JSON.stringify(mask(tool, parsed), null, 2) };
   }), ...(value.structuredContent === undefined ? {} : { structuredContent: mask(tool, value.structuredContent) }) });
 }
-describe("page result masking", () => {
-});
