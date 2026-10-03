@@ -28,6 +28,8 @@ import {
   type ProjectPageDetails,
 } from "./project-page-details";
 
+import { modelPresetSelectionState } from "../lib/model-presets";
+import { useNodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import { CreationDisclosure } from "./CreationDisclosure";
 import type { ProjectContextSaveSession } from "./project-form-actions";
 
@@ -81,8 +83,13 @@ export function ProjectDialog({
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState(false);
-  const [assignmentValid, setAssignmentValid] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const defaultsNode = value.sessionDefaults?.nodeId ?? "";
+  const suppliedCatalog = assignment?.modelPresetCatalog.nodeId === defaultsNode ? assignment.modelPresetCatalog : null;
+  const internalCatalog = useNodeModelPresetCatalog(suppliedCatalog ? "" : defaultsNode, setError);
+  const catalog = suppliedCatalog ?? internalCatalog;
+  const assignmentValid = modelPresetSelectionState(value.sessionDefaults?.modelPreset ?? "", catalog.presets,
+    catalog.nodeId === defaultsNode && catalog.status === "ready").valid;
   const effectiveFolder = target?.mode === "edit" ? target.folder : createdFolder;
 
   useEffect(() => {
@@ -92,7 +99,6 @@ export function ProjectDialog({
     setCreatedFolder(null);
     setError(null);
     setLoadFailed(false);
-    setAssignmentValid(true);
     if (!target) return;
     if (target.mode === "create") {
       setPrevious(EMPTY_DETAILS);
@@ -180,7 +186,7 @@ export function ProjectDialog({
           <div hidden={editor !== null}>
           {loading ? <p aria-busy="true">프로젝트 설정을 불러오는 중…</p> : loadFailed ? null : (
             <ProjectFormFields key={target?.mode === "edit" ? target.folder.id : "create"}
-              value={value} disabled={pending} onChange={setValue} onEdit={openEditor} />
+              value={value} disabled={pending} defaultsInvalid={!assignmentValid} onChange={setValue} onEdit={openEditor} />
           )}
           </div>
           {error ? <p className="v3-project-star-error" role="alert">{error}</p> : null}
@@ -202,8 +208,7 @@ export function ProjectDialog({
                 } else {
                   const item = editor.value;
                   setValue({ ...value, sessionDefaults: item.agentId || item.nodeId || item.modelPreset ? item : null });
-                  setAssignmentValid(true);
-                }
+                              }
                 closeEditor();
               }}>{editor.kind === "atom" && editor.index === null ? "자료 추가" : "확인"}</Button>
           </> : <>
@@ -218,8 +223,8 @@ export function ProjectDialog({
   );
 }
 
-function ProjectFormFields({ value, disabled, onChange, onEdit }: {
-  value: ProjectFormValue; disabled: boolean; onChange(value: ProjectFormValue): void;
+function ProjectFormFields({ value, disabled, defaultsInvalid, onChange, onEdit }: {
+  value: ProjectFormValue; disabled: boolean; defaultsInvalid: boolean; onChange(value: ProjectFormValue): void;
   onEdit(editor: Editor, trigger: HTMLElement): void;
 }) {
   const guidanceInputs = useRef<Array<HTMLTextAreaElement | null>>([]);
@@ -260,7 +265,7 @@ function ProjectFormFields({ value, disabled, onChange, onEdit }: {
           value: { blockId: null, instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false, limit: null } }, event.currentTarget)}>atom에서 추가</Button>
       </fieldset>
     </CreationDisclosure>
-    <CreationDisclosure className="project-context-disclosure" title="기본 실행 환경" summary="이 폴더에서 사용할 에이전트와 모델" defaultExpanded={value.sessionDefaults !== null}>
+    <CreationDisclosure className="project-context-disclosure" title="기본 실행 환경" invalid={defaultsInvalid} summary="이 폴더에서 사용할 에이전트와 모델" defaultExpanded={value.sessionDefaults !== null}>
       <fieldset><legend className="sr-only">기본 에이전트</legend>
         {value.sessionDefaults ? <p>{value.sessionDefaults.agentId || "에이전트 상속"} / {value.sessionDefaults.nodeId || "노드 상속"} / {value.sessionDefaults.modelPreset || "모델 상속"}</p> : null}
         <Button variant="outline" disabled={disabled} onClick={event => onEdit({ kind: "defaults", value: value.sessionDefaults ? { ...value.sessionDefaults } : { blockId: null, agentId: "", nodeId: "", modelPreset: "" } }, event.currentTarget)}>{value.sessionDefaults ? "기본 실행 환경 편집" : "＋ 기본 에이전트"}</Button>

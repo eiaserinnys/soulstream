@@ -120,6 +120,18 @@ describe("ProjectDialog shared form", () => {
     expect(onSaveContext.mock.calls[0][2].sessionDefaults).toBeNull();
   });
 
+  it("requires correction of a saved unavailable model before any folder save", async () => {
+    vi.mocked(fetchProjectPageDetails).mockResolvedValueOnce({ ...existingDetails, sessionDefaults: [{blockId: "defaults", scope: "project", agentId: "roselin", nodeId: "sample-node", modelPreset: "missing"}] });
+    render({ mode: "edit", folder: {id: "existing", name: "이름", projectPageId: "existing", status: "open", version: 1, archived: false, sortOrder: 0} });
+    await vi.waitFor(() => expect(button("기본 실행 환경 편집")).toBeTruthy());
+    expect(button("저장").disabled).toBe(true);
+    const summary = [...document.body.querySelectorAll('summary')].find(item => item.textContent?.includes("기본 실행 환경"))!;
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    flushSync(() => button("기본 실행 환경 편집").click());
+    await vi.waitFor(() => expect(button("확인").disabled).toBe(true));
+    expect(document.body.textContent).toContain("선택한 모델");
+  });
+
   function change(element: Element, value: string) {
     const prototype = element.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
     flushSync(() => {
