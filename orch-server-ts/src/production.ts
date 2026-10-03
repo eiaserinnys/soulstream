@@ -1,3 +1,4 @@
+import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
 import type { McpHostOptions } from "./mcp/types.js";
 import { createLiveJevCardObservation } from "./cards/live_jev_card_observation.js";
 import { serviceTokenAccessWithoutEmail } from "./runtime/live_dashboard_access_provider.js";
@@ -592,7 +593,16 @@ export async function createLiveProductionApplication(
     onTick:()=>cardDispatchRuntime.dispatcher.tick(),
   });
   recurringJobScheduler = recurringJobWiring.scheduler;
+  const externalEvents = config.mcp_external_events_state_file ? await ExternalEventsService.open({
+    path: config.mcp_external_events_state_file, owner: credentialOwner(config.mcp_external_ingress_path!, config.mcp_external_ingress_bearer_token!),
+  }) : undefined;
   const app = createApp({
+    externalEvents,
+    ...(config.mcp_external_ingress_enabled ? { externalIngress: {
+      path: config.mcp_external_ingress_path!, nodeId: config.node_name!, source: config.mcp_external_ingress_source!,
+      displayName: config.mcp_external_ingress_display_name!,
+      auth: { requireAuth: true, bearerToken: config.mcp_external_ingress_bearer_token!, allowedHosts: config.mcp_allowed_hosts! },
+    } } : {}),
     ...buildProductionRouteOptions(
       appConfig,
       runtimeServices,

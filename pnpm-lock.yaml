@@ -28,6 +28,15 @@ importers:
       '@hocuspocus/server':
         specifier: 3.4.4
         version: 3.4.4(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
+      '@modelcontextprotocol/node':
+        specifier: 2.1.0
+        version: 2.1.0(@modelcontextprotocol/server@2.2.0)(hono@4.12.19)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.3.6)
+      '@modelcontextprotocol/server':
+        specifier: 2.2.0
+        version: 2.2.0
       '@soulstream/agent-profile-contract':
         specifier: workspace:*
         version: link:../packages/agent-profile-contract
@@ -55,12 +64,18 @@ importers:
       google-auth-library:
         specifier: 10.9.0
         version: 10.9.0
+      ipaddr.js:
+        specifier: 2.5.0
+        version: 2.5.0
       openai:
         specifier: 6.37.0
         version: 6.37.0(ws@8.20.0)(zod@4.3.6)
       postgres:
         specifier: 3.4.9
         version: 3.4.9
+      standardwebhooks:
+        specifier: 1.1.1
+        version: 1.1.1
       y-protocols:
         specifier: 1.0.6
         version: 1.0.6(yjs@13.6.27)
@@ -77,6 +92,9 @@ importers:
       '@hocuspocus/provider':
         specifier: 3.4.4
         version: 3.4.4(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
+      '@modelcontextprotocol/client':
+        specifier: 2.2.0
+        version: 2.2.0
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15

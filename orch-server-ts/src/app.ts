@@ -1,3 +1,4 @@
+import { registerExternalEventsRoutes, type ExternalIngressConfig } from "./mcp/external_events_transport.js";
 import { registerMcpHostRoutes } from "./mcp/mcp_host_routes.js";
 import type { McpHostOptions } from "./mcp/types.js";
 import { registerCardOrchestrationRoutes, type CardOrchestrationRouteOptions } from "./cards/card_orchestration_routes.js";
@@ -223,6 +224,8 @@ export type CreateAppOptions = {
   scheduleHostRoutes?: ScheduleHostRouteOptions;
   recurringJobRoutes?: RecurringJobRouteOptions;
   recurringJobHostRoutes?: RecurringJobHostRouteOptions;
+  externalIngress?: ExternalIngressConfig;
+  externalEvents?: import("./external_events/service.js").ExternalEventsService;
   mcpHostRoutes?: Omit<McpHostOptions, "recurringJobs" | "cardOrchestration" | "cluster"> & { cluster: Omit<McpHostOptions["cluster"], "logger"> } & Partial<Pick<McpHostOptions, "recurringJobs" | "cardOrchestration">>;
   persistenceHostRoutes?: PersistenceHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
@@ -240,7 +243,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerCorsBoundary(app, options.corsAllowedOrigins);
   }
   if (options.productionAuth !== undefined) {
-    registerProductionAuthGuard(app, options.productionAuth);
+    registerProductionAuthGuard(app, { ...options.productionAuth, externalMcpPath: options.externalIngress?.path });
   }
 
   if (options.exposeLocalHealthRoute) {
@@ -298,14 +301,22 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.recurringJobRoutes !== undefined) {
     registerRecurringJobRoutes(app, options.recurringJobRoutes);
   }
-  if (options.mcpHostRoutes) registerMcpHostRoutes(app, { ...options.mcpHostRoutes, environment: options.config.environment,
+  if (options.mcpHostRoutes) {
+    const mcpOptions: McpHostOptions = { ...options.mcpHostRoutes, environment: options.config.environment,
     sessionMessages: options.sessionActionCommandRoutes ?? options.mcpHostRoutes.sessionMessages,
+    externalLlm: { service: options.externalEvents, getSession: options.mcpHostRoutes.cluster.readSession },
     cluster: { ...options.mcpHostRoutes.cluster, logger: app.log },
     recurringJobs: options.recurringJobHostRoutes ?? options.mcpHostRoutes.recurringJobs!,
     cardOrchestration: options.cardOrchestrationRoutes ?? options.mcpHostRoutes.cardOrchestration!,
     ...(options.pageYjsRoutes ? { pages: { service: options.pageYjsRoutes.createService(app.log), logger: app.log } } : {}),
     ...(options.mcpHostRoutes.skills ? { skills: { ...options.mcpHostRoutes.skills, logger: app.log } } : {}),
-  });
+    };
+    registerMcpHostRoutes(app, mcpOptions);
+    if (options.externalIngress) {
+      const close = registerExternalEventsRoutes(app, mcpOptions, options.externalIngress);
+      app.addHook("onClose", async () => { await close(); });
+    }
+  }
   if (options.recurringJobHostRoutes !== undefined) {
     registerRecurringJobHostRoutes(app, {
       ...options.recurringJobHostRoutes,

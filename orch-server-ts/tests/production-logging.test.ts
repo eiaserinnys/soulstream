@@ -57,6 +57,8 @@ describe("production operations logging", () => {
       request.log.info({
         headers: request.headers,
         token: "route-token-secret",
+        MCP_EXTERNAL_INGRESS_BEARER_TOKEN: "external-ingress-log-probe",
+        config: { mcp_external_ingress_bearer_token: "external-config-log-probe" },
       }, "sensitive logging probe");
       return { ok: true };
     });
@@ -118,6 +120,8 @@ describe("production operations logging", () => {
     expect(raw).not.toContain("authorization-secret");
     expect(raw).not.toContain("cookie-secret");
     expect(raw).not.toContain("route-token-secret");
+    expect(raw).not.toContain("external-ingress-log-probe");
+    expect(raw).not.toContain("external-config-log-probe");
   });
 
   it("keeps development and test request logging silent", async () => {

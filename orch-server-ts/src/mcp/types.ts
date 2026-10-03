@@ -18,6 +18,8 @@ import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 
 export interface McpCallContext {
+  /** Set only by the orchestrator's own external ingress; never accepted from the worker forward body. */
+  externalCaller?: { source: string; displayName: string };
   signal?: AbortSignal;
   principal: "internal" | "external";
   callerSessionId: string | null;
@@ -30,6 +32,7 @@ export interface McpCallContext {
 
 export interface McpHostOptions {
   sessionMessages?: SessionActionCommandRouteOptions;
+  externalLlm?: { service?: import("../external_events/service.js").ExternalEventsService; getSession(id: string): Promise<unknown | null> };
   sessions?: SessionMcpDependencies;
   authBearerToken: string;
   recurringJobs: RecurringJobHostRouteOptions;
