@@ -18,6 +18,12 @@ const availablePreset = {
 };
 
 describe("model preset presentation", () => {
+  it("keeps an exhausted model selectable and renders its name alone", () => {
+    const exhausted = { ...availablePreset, reason: "quota_exhausted",
+      reason_label: "주간 사용량 제한", resets_at: "2030-01-02T03:04:00.000Z" };
+    expect(modelPresetOptionLabel(exhausted)).toBe(exhausted.label);
+    expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });

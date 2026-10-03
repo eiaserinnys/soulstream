@@ -6,7 +6,7 @@ import "./v3-cards.css";
 /** One layout for the operational handoff and the local review sample. */
 export function CardHandoffView({composer,folderLabel,executionLabel,folderOpen,onFolderOpenChange,executionOpen,onExecutionOpenChange,folderPicker,executionPicker,folderButtonLabel,error}: {
  composer:ComponentProps<typeof CardComposer>;
- folderLabel:string;executionLabel:string;folderButtonLabel?:string;
+ folderLabel:string;executionLabel:ReactNode;folderButtonLabel?:string;
  folderOpen:boolean;onFolderOpenChange(open:boolean):void;
  executionOpen:boolean;onExecutionOpenChange(open:boolean):void;
  folderPicker:ReactNode;executionPicker:ReactNode;error?:string|null;

@@ -171,7 +171,8 @@ export function resolvePresetAvailability(
   if (!exhausted) return availablePreset(base, false);
   return {
     ...base,
-    available: false,
+    // Exhausted subscription quota is display information; paid credits may still run.
+    available: true,
     reason: "quota_exhausted",
     reason_label: quotaReasonLabel(exhausted),
     resets_at:

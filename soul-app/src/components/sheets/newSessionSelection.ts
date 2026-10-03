@@ -23,6 +23,7 @@ export interface NewSessionActionSheet {
   cancelButtonIndex: number;
   title: string;
   disabledButtonIndices?: number[];
+  destructiveButtonIndex?: number[];
 }
 
 type CancelledSelection = { cancelled: true };
@@ -135,6 +136,8 @@ export function buildModelPresetActionSheet(
     cancelButtonIndex: options.length - 1,
     disabledButtonIndices: presets.flatMap((preset, index) =>
       preset.available ? [] : [index + 1]),
+    destructiveButtonIndex: presets.flatMap((preset, index) =>
+      preset.reason === 'quota_exhausted' ? [index + 1] : []),
     title: '모델 선택',
   };
 }
@@ -204,6 +207,7 @@ export function formatModelPresetLabel(
   preset: ModelPresetAvailability,
   includeUsageWarning = true,
 ): string {
+  if (preset.reason === 'quota_exhausted') return preset.label;
   const availability = !preset.available && preset.reason_label
     ? `${preset.label} (${preset.reason_label})`
     : preset.label;

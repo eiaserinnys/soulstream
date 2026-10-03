@@ -2,6 +2,7 @@
 // this card change extracts only the shared selection row. Broader splitting is separate work.
 import { captureAuthScope, isAuthScopeCurrent } from '../../lib/auth-scope';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
+import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
@@ -437,7 +438,7 @@ function SessionSuccessionSheetContent({
               <View style={styles.disclosureBody}>
                 <Text style={styles.rowTitle}>실행 대상</Text>
                 <Text style={styles.meta}>{selection.selectedAgentName}, {selection.selectedNodeName}</Text>
-                <Text style={styles.meta}>{selection.selectedModelPresetName}{presetSupportsEffort(effortPreset) ? `, ${effortRowValue(effortPreset, selectedEffort)}` : ''}</Text>
+                <Text style={styles.meta}><SelectedModelPresetName selection={selection} />{presetSupportsEffort(effortPreset) ? `, ${effortRowValue(effortPreset, selectedEffort)}` : ''}</Text>
               </View>
               <Text style={styles.disclosureAction}>{executionNeedsAttention ? '확인 필요' : showExecution ? '접기 ⌃' : '변경 ⌄'}</Text>
             </TouchableOpacity>
@@ -445,7 +446,7 @@ function SessionSuccessionSheetContent({
             {!selection.effectiveNodeId || !selection.agentId ? <Text style={styles.selectionError}>노드와 에이전트를 선택해 주세요.</Text> : null}
             <SelectionRow disabled={submitting} testID="succession-selection-node" label="노드" value={selection.selectedNodeName} onPress={pickNode} styles={styles} />
             <SelectionRow disabled={submitting} testID="succession-selection-agent" label="에이전트" value={selection.selectedAgentName} onPress={pickAgent} styles={styles} />
-            <SelectionRow disabled={submitting} testID="succession-selection-model" label="모델" value={selection.selectedModelPresetName} onPress={pickModel} styles={styles} />
+            <SelectionRow disabled={submitting} testID="succession-selection-model" label="모델" value={<SelectedModelPresetName selection={selection} />} onPress={pickModel} styles={styles} />
             {presetSupportsEffort(effortPreset) ? (
               <SelectionRow
                 testID="succession-selection-effort"
