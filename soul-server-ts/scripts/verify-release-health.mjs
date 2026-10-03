@@ -41,6 +41,20 @@ function localBaseUrl(env) {
   return new URL(`http://${host}:${required(env, "PORT")}`);
 }
 
+// This unbundled deployment script cannot import the TypeScript endpoint helper
+// from the worker bundle. release_health.integration.test.ts compares this
+// calculation with parseEnv + localInternalMcpUrl, including custom paths/ports.
+export function deriveInternalMcpHealthUrl(env) {
+  const port = env.MCP_INTERNAL_PORT === undefined
+    ? Number(required(env, "PORT")) + 1
+    : Number(required(env, "MCP_INTERNAL_PORT"));
+  const path = required(env, "MCP_PATH");
+  const normalized = path.endsWith("/") ? path.slice(0, -1) : path;
+  const url = new URL(`http://127.0.0.1:${port}`);
+  url.pathname = normalized.endsWith("/internal") ? normalized : `${normalized}/internal`;
+  return url;
+}
+
 async function fetchHealth(url, fetchImpl) {
   const response = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
@@ -147,7 +161,7 @@ export async function verifyReleaseHealth(
   }
   const base = localBaseUrl(env);
   const soulHealthUrl = new URL("/health", base);
-  const mcpUrl = new URL(required(env, "MCP_PATH"), base);
+  const mcpUrl = deriveInternalMcpHealthUrl(env);
   const token = required(env, "AUTH_BEARER_TOKEN");
   if (scope === "standalone") {
     const [soul, mcp] = await Promise.all([

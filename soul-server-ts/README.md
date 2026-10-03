@@ -118,10 +118,11 @@ pnpm --dir soul-server-ts build
 pnpm --dir soul-server-ts start
 ```
 
-The default health URL is `http://127.0.0.1:4205/health`. If MCP is enabled,
-its public default URL is `http://127.0.0.1:4205/mcp`. Soulstream's own
-Claude SDK clients are rewritten to `http://127.0.0.1:4205/mcp/internal` so
-the stateless public cutover cannot discard agent ownership or internal tools.
+The default health URL is `http://127.0.0.1:4205/health`. MCP is available only
+on `http://127.0.0.1:4206/mcp/internal` by default, using `MCP_INTERNAL_PORT`
+(or `PORT+1`) and the internal path derived from `MCP_PATH`. The public listener
+has no MCP route. Release readiness checks use this internal listener to ping,
+list tools, and perform a read forwarded to the orchestrator.
 
 ## Persistence and releases
 

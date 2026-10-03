@@ -6,6 +6,8 @@ The current reflection source of truth is the TypeScript `soul-server-ts` MCP se
 
 ## Connecting
 
+Release readiness checks ping, list tools, and perform a forwarded read through the node-local internal MCP listener.
+
 The worker exposes Streamable HTTP only on its authenticated internal listener. The public listener has no generic or dedicated MCP route. Dot connects to the orchestrator's credential-bound external ingress, which owns its 63-tool listing, subscription state, and outbound messages. See [connector ownership](external-llm-ingress-rollout.md) and [dot subscriptions](dot-mcp-events.md).
 
 Soulstream's own Claude SDK clients use the separate `${MCP_PATH}/internal` route (default `/mcp/internal`). It is mounted only on a second listener hard-bound to `127.0.0.1:MCP_INTERNAL_PORT`; the public listener has no internal route. `MCP_INTERNAL_PORT` defaults deterministically to `PORT+1` and must differ from `PORT`. The internal route is always stateless: every POST gets a fresh transport, agent-session ownership is applied from the node-local request, and stale `Mcp-Session-Id` values cannot strand a runner after host restart.

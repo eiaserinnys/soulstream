@@ -140,7 +140,7 @@ In a second terminal, start the worker from the repository root so it loads `.en
 node soul-server-ts/dist/main.js
 ```
 
-The dashboard and orchestrator health endpoint are available at `http://127.0.0.1:5200/` and `http://127.0.0.1:5200/api/health`. The worker health endpoint defaults to `http://127.0.0.1:4205/health`, and its optional MCP endpoint defaults to `http://127.0.0.1:4205/mcp`.
+The dashboard and orchestrator health endpoint are available at `http://127.0.0.1:5200/` and `http://127.0.0.1:5200/api/health`. The worker health endpoint defaults to `http://127.0.0.1:4205/health`, and its node-local internal MCP endpoint defaults to `http://127.0.0.1:4206/mcp/internal`. The public worker listener has no MCP route.
 
 ## Configuration model
 
