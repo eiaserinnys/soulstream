@@ -104,6 +104,30 @@ it("rolls back sessions, cards and snapshots when a card move fails inside the t
   expect(committed).not.toHaveBeenCalled();
 });
 
+it("returns the same success result without changing snapshots, projections, sessions or cards", async () => {
+  const snapshotRows = await harness.sql`SELECT * FROM board_yjs_documents ORDER BY name`;
+  const boardRows = await harness.sql`SELECT * FROM board_items ORDER BY id`;
+  const sessionRows = await harness.sql`SELECT * FROM sessions ORDER BY session_id`;
+  const cardRows = await harness.sql`SELECT * FROM cards ORDER BY id`;
+  const operationRows = await harness.sql`SELECT * FROM folder_operations ORDER BY id`;
+  const store = vi.spyOn(repository, "storeBoardYjsSnapshot");
+  const sync = vi.spyOn(repository, "syncBoardYjsReplica");
+  committed.mockClear();
+  try {
+    await expect(move.moveSessionsToFolder(["root", "child"], "target")).resolves.toEqual({
+      count: 3, sessionIds: ["child", "grandchild", "root"],
+    });
+    expect(await harness.sql`SELECT * FROM board_yjs_documents ORDER BY name`).toEqual(snapshotRows);
+    expect(await harness.sql`SELECT * FROM board_items ORDER BY id`).toEqual(boardRows);
+    expect(await harness.sql`SELECT * FROM sessions ORDER BY session_id`).toEqual(sessionRows);
+    expect(await harness.sql`SELECT * FROM cards ORDER BY id`).toEqual(cardRows);
+    expect(await harness.sql`SELECT * FROM folder_operations ORDER BY id`).toEqual(operationRows);
+    expect(store).not.toHaveBeenCalled();
+    expect(sync).not.toHaveBeenCalled();
+    expect(committed).not.toHaveBeenCalled();
+  } finally { store.mockRestore(); sync.mockRestore(); }
+});
+
 it("rejects an unassigned destination for a tree with assigned cards without a partial move", async () => {
   const before = await harness.sql`SELECT session_id,folder_id FROM sessions ORDER BY session_id`;
   const snapshots = await harness.sql`SELECT name,snapshot FROM board_yjs_documents ORDER BY name`;
@@ -112,4 +136,16 @@ it("rejects an unassigned destination for a tree with assigned cards without a p
   expect(await harness.sql`SELECT session_id,folder_id FROM sessions ORDER BY session_id`).toEqual(before);
   expect(await harness.sql`SELECT name,snapshot FROM board_yjs_documents ORDER BY name`).toEqual(snapshots);
   expect(committed).not.toHaveBeenCalled();
+});
+
+it.each(["child", "card"])("moves when only the %s DB assignment differs from the target live board", async different => {
+  if (different === "child") await harness.sql`UPDATE sessions SET folder_id='source' WHERE session_id='child'`;
+  else await harness.sql`UPDATE cards SET folder_id='source' WHERE id='root-card'`;
+  committed.mockClear();
+  await move.moveSessionsToFolder(["root"], "target");
+  expect(await harness.sql`SELECT DISTINCT folder_id FROM sessions WHERE session_id IN ('root','child','grandchild')`)
+    .toEqual([{ folder_id: "target" }]);
+  expect(await harness.sql`SELECT DISTINCT folder_id FROM cards WHERE id <> 'unrelated-card'`)
+    .toEqual([{ folder_id: "target" }]);
+  expect(committed).toHaveBeenCalledOnce();
 });

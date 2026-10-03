@@ -33,6 +33,23 @@ export class BoardYjsMoveRepository {
     return await listSessionBoardItems(await this.sqlResolver.resolveSql(), sessionId);
   }
 
+  async areSessionAssignmentsInFolder(sessionIds: readonly string[], folderId: string | null): Promise<boolean> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<{ unchanged: boolean }[]>`
+      SELECT (
+        (SELECT COUNT(*) = cardinality(${sql.array(sessionIds)}::text[])
+          AND COALESCE(bool_and(folder_id IS NOT DISTINCT FROM ${folderId}), false)
+         FROM sessions WHERE session_id = ANY(${sql.array(sessionIds)}::text[]))
+        AND NOT EXISTS (
+          SELECT 1 FROM cards
+          WHERE assignee_session_id = ANY(${sql.array(sessionIds)}::text[])
+            AND folder_id IS DISTINCT FROM ${folderId}
+        )
+      ) AS unchanged
+    `;
+    return rows[0]!.unchanged;
+  }
+
   async commitBoardItemMove(input: {
     boardApplications: readonly BoardYjsDocumentApplication[];
   }): Promise<void> {

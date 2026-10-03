@@ -22,6 +22,7 @@ export interface SessionTreeMoveCommit { cards: readonly MovedAssignedCard[]; fo
 interface SessionBoardMoveRepositoryPort {
   listSessionMoveTree(sessionIds: readonly string[]): Promise<string[]>;
   listSessionBoardItems(sessionId: string): Promise<CatalogBoardItemRow[]>;
+  areSessionAssignmentsInFolder(sessionIds: readonly string[], folderId: string | null): Promise<boolean>;
   commitSessionMove(input: {
     sessionId: string;
     sessionIds: readonly string[];
@@ -94,12 +95,16 @@ export class SessionBoardMoveService {
       const boardItems = (await Promise.all(sessionIds.map(id =>
         this.config.repository.listSessionBoardItems(id)))).flat();
       let committed: SessionTreeMoveCommit = {cards:[],folderIds:[]};
+      let didCommit = false;
       const moved = await this.config.board.withSessionBoardMoveApplications(
         {
           sessionId: input.sessionId,
           sessionIds,
           boardItems,
           targetScope: input.targetScope,
+          areAssignmentsInTargetFolder: () => this.config.repository.areSessionAssignmentsInFolder(
+            sessionIds, input.targetScope?.folderId ?? null,
+          ),
           ...(input.position ? { position: input.position } : {}),
         },
         async ({ movedBoardItem, boardApplications }) => {
@@ -109,9 +114,11 @@ export class SessionBoardMoveService {
             folderId: input.targetScope?.folderId ?? null,
             boardApplications,
           }) ?? {cards:[],folderIds:[]};
+          didCommit = true;
           return movedBoardItem;
         },
       );
+      if (!didCommit) return { moved, sessionIds };
       // withSessionBoardMoveApplications returns only after BoardYjsMoveRepository's transaction
       // (Yjs application + session_assign_folder) and the live Yjs update both succeed.
       await this.config.onCardsMoveCommitted?.(committed.cards);
