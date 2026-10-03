@@ -229,6 +229,43 @@ describe("ControlInboxRuntime", () => {
     store.close();
   });
 
+  it("durably deduplicates a long-running mutation and replays its result", async () => {
+    const frames: Array<Record<string, unknown>> = [];
+    const work: ControlInboxDispatchWork[] = [];
+    const store = await makeStore();
+    const runtime = new ControlInboxRuntime({
+      store,
+      nodeId: "node-a",
+      mainHeartbeatAgeMs: () => 0,
+      postWork: (item) => work.push(item),
+    });
+    runtime.initialize();
+    await runtime.connect(async (frame) => frames.push(frame));
+    const command = {
+      type: "rollback_agents_config",
+      requestId: "req-rollback-agents-config",
+      snapshotId: "snapshot-1",
+    };
+
+    await runtime.handleCommand(command);
+    await runtime.handleCommand(command);
+    expect(work).toHaveLength(1);
+    expect(work[0]).toMatchObject({ durable: true });
+
+    await runtime.handleDomainResult(work[0]!.workId, {
+      type: "rollback_agents_config",
+      ok: true,
+    });
+    await runtime.handleCommand(command);
+
+    expect(work).toHaveLength(1);
+    expect(frames).toContainEqual(expect.objectContaining({
+      type: "control_result",
+      requestId: "req-rollback-agents-config",
+    }));
+    store.close();
+  });
+
   it("uses main heartbeat freshness for health while stalled mutations remain admitted", async () => {
     const frames: Array<Record<string, unknown>> = [];
     const work: ControlInboxDispatchWork[] = [];
