@@ -55,7 +55,10 @@ export function registerFolderWorkspaceRoutes(app: FastifyInstance, options: Fol
         if (!await allowed(request, options, folderId)) return failure(reply, 403, "FOLDER_ACCESS_DENIED", "Folder access denied");
         if (!options.cardServiceProvider) throw new Error("Folder service is not configured");
         const service = await options.cardServiceProvider();
-        if (kind === "snapshot") return reply.send(await readFolderSnapshot(service, folderId, request.query.cardId, request.query.view,request.query.includeCompleted !== "false"));
+        if (kind === "snapshot") return reply.send(await readFolderSnapshot(
+          service, folderId, request.query.cardId, request.query.view, request.query.includeCompleted !== "false",
+          { includeArchived: request.query.includeArchived, limit: request.query.limit, cursor: request.query.cursor },
+        ));
         const limit = z.coerce.number().int().min(1).max(200).parse(request.query.limit ?? 50);
         const offset = z.coerce.number().int().nonnegative().parse(request.query.cursor ?? 0);
         const includeArchived = z.enum(["true", "false"]).parse(request.query.includeArchived ?? "false") === "true";

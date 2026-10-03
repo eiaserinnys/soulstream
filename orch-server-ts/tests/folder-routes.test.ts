@@ -41,6 +41,43 @@ describe("unified folder HTTP and host contracts", () => {
     const outline = await app.inject("/api/folders/f?view=outline&cardId=i");
     expect(outline.json().cards[0]).not.toHaveProperty("request");
   });
+  it("filters and pages outline snapshots from validated HTTP query values", async () => {
+    const { app, getFolder } = setup();
+    getFolder.mockImplementation(async () => ({ folder: row, cards: [
+      { ...item, id: "active-a", archived: false, status: "todo", latest_activity: null },
+      { ...item, id: "archived-a", archived: true, status: "todo", latest_activity: null },
+      { ...item, id: "active-done", archived: false, status: "done", latest_activity: null },
+    ] }));
+
+    const defaultOutline = await app.inject("/api/folders/f?view=outline&limit=1&cursor=1");
+    expect(defaultOutline.statusCode).toBe(200);
+    expect(defaultOutline.json()).toMatchObject({
+      view: "outline", includeArchived: false, totalCards: 2, returnedCount: 1, nextCursor: null,
+      cards: [{ id: "active-done", status: "done", archived: false }],
+    });
+
+    const archivedOutline = await app.inject("/api/folders/f?view=outline&includeArchived=true&limit=1&cursor=1");
+    expect(archivedOutline.statusCode).toBe(200);
+    expect(archivedOutline.json()).toMatchObject({
+      view: "outline", includeArchived: true, totalCards: 3, returnedCount: 1, nextCursor: "2",
+      cards: [{ id: "archived-a", archived: true }],
+    });
+    expect(getFolder).toHaveBeenLastCalledWith("f", true);
+    expect((await app.inject("/api/folders/f?view=outline&includeArchived=sometimes")).statusCode).toBe(422);
+
+    const fullWithListOptions = await app.inject("/api/folders/f?includeArchived=true&limit=1&cursor=1");
+    expect(fullWithListOptions.statusCode).toBe(200);
+    expect(fullWithListOptions.json()).not.toHaveProperty("view");
+    expect(fullWithListOptions.json().cards.map((card: { id: string }) => card.id)).toEqual(["active-a", "archived-a", "active-done"]);
+
+    const direct = await app.inject("/api/folders/f?view=outline&cardId=archived-a&includeArchived=false&limit=invalid&cursor=-1");
+    expect(direct.statusCode).toBe(200);
+    expect(direct.json()).toMatchObject({
+      view: "outline", includeArchived: true, totalCards: 1, returnedCount: 1, nextCursor: null,
+      cards: [{ id: "archived-a", archived: true }],
+    });
+    expect(direct.json().cards[0]).not.toHaveProperty("request");
+  });
   it("creates through the identity owner and returns the agreed mutation envelope", async () => {
     const { app, identity } = setup();
     const response = await app.inject({ method: "POST", url: "/api/folders", payload: { name: "새 폴더", idempotencyKey: "new" } });

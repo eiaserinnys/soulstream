@@ -3,7 +3,7 @@ import { cardOperationSchemas, executeCardOperation, type CardOperation } from "
 import type { CardControlPlaneService } from "../cards/card_control_plane_service.js";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
-import { serializeCardMutation, serializeCardRow, serializeFolderSnapshot } from "./folder_contracts.js";
+import { serializeCardMutation, serializeCardRow, serializeFolderSnapshot, type FolderOutlinePageOptions } from "./folder_contracts.js";
 
 export interface FolderOperationServices {
   cards: CardControlPlaneService;
@@ -72,9 +72,35 @@ export async function executeFolderOperation(
   return serializeCardMutation(result);
 }
 
-export async function readFolderSnapshot(service: CardControlPlaneService, folderId: string, cardId?: string, view?: string, includeCompleted = true) {
+export interface FolderSnapshotReadOptions {
+  includeArchived?: unknown;
+  limit?: unknown;
+  cursor?: unknown;
+}
+
+export async function readFolderSnapshot(
+  service: CardControlPlaneService,
+  folderId: string,
+  cardId?: string,
+  view?: string,
+  includeCompleted = true,
+  options: FolderSnapshotReadOptions = {},
+) {
   z.enum(["full", "outline"]).parse(view ?? "full");
   const snapshot = await service.getFolder(folderId,includeCompleted);
   if (!snapshot) throw Object.assign(new Error("Folder not found"), { statusCode: 404 });
-  return serializeFolderSnapshot(snapshot, cardId, view === "outline");
+  const outline = view === "outline";
+  const directCard = Boolean(cardId);
+  const page = outline && !directCard ? normalizeFolderOutlineOptions(options) : undefined;
+  return serializeFolderSnapshot(snapshot, cardId, outline, page);
+}
+
+function normalizeFolderOutlineOptions(options: FolderSnapshotReadOptions): FolderOutlinePageOptions {
+  const includeArchived = z.union([
+    z.boolean(),
+    z.enum(["true", "false"]).transform(value => value === "true"),
+  ]).default(false).parse(options.includeArchived);
+  const limit = z.coerce.number().int().min(1).max(50).default(20).parse(options.limit);
+  const cursor = z.string().regex(/^\d+$/).default("0").parse(options.cursor);
+  return { includeArchived, limit, offset: Number(cursor) };
 }
