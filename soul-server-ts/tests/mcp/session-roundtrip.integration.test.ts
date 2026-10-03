@@ -45,7 +45,7 @@ const errors: [string, Record<string, unknown>][] = [
 // No random values are returned by these 12 tools. No fields (including dates) are masked.
 export function assertSessionParity(old: unknown, next: unknown) { expect(JSON.stringify(next)).toBe(JSON.stringify(old)); }
 
-describe("session legacy and orchestrator MCP parity", () => {
+describe("session MCP roundtrip", () => {
   let h: Awaited<ReturnType<typeof createSessionRoundtripFixture>>;
   beforeAll(async () => { h = await createSessionRoundtripFixture(); });
   afterAll(async () => { await h?.app.close(); });
@@ -68,6 +68,8 @@ describe("session legacy and orchestrator MCP parity", () => {
     const oldRecords = structuredClone(h.observations()); const oldNotifications = structuredClone(h.notifications);
     const oldKeys = [...h.renameKeys];
     h.reset(settings); const next = await call(false, name, args, context);
+    expect(JSON.stringify(old)).toMatchSnapshot(name);
+    expect(JSON.stringify({ observations: oldRecords, notifications: oldNotifications, renameKeys: oldKeys })).toMatchSnapshot(`${name} effects`);
     assertSessionParity(old, next); expect(h.observations()).toEqual(oldRecords);
     expect(h.notifications).toEqual(oldNotifications); expect(h.renameKeys).toEqual(oldKeys);
     expect(h.paths).toContain(`/api/mcp/host/${name}`);
@@ -78,6 +80,8 @@ describe("session legacy and orchestrator MCP parity", () => {
     h.reset(); const old = await call(true, "delete_session", { session_id: "other" });
     const notices = structuredClone(h.notifications);
     h.reset(); const next = await call(false, "delete_session", { session_id: "other" });
+    expect(JSON.stringify(old)).toMatchSnapshot("delete_session");
+    expect(JSON.stringify(notices)).toMatchSnapshot("delete_session notifications");
     assertSessionParity(old, next); expect(h.notifications).toEqual(notices);
     expect(h.sessions().other).toBeUndefined(); expect(h.paths).not.toContain("/api/mcp/host/delete_session");
   });

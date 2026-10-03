@@ -71,7 +71,7 @@ const cases: readonly [string, string, Record<string, unknown>, boolean?, McpReq
   ["explicit trimmed session", "create_custom_view", { ...view, caller_session_id: " argument-session " }],
 ];
 
-describe("folder-board-custom-view MCP old/new parity", () => {
+describe("folder-board-custom-view MCP roundtrip", () => {
   let h: Awaited<ReturnType<typeof createBoardRoundtripHarness>>;
   beforeAll(async () => { h = await createBoardRoundtripHarness(); }, 60_000);
   afterAll(async () => { await h?.cleanup(); });
@@ -79,6 +79,8 @@ describe("folder-board-custom-view MCP old/new parity", () => {
     await h.seed(); const old = await h.call(true, name, args, requestContext); const oldEvents = structuredClone(h.events);
     expect(old.isError === true, `legacy ${name}`).toBe(fails);
     await h.seed(); const next = await h.call(false, name, args, requestContext);
+    expect(serializeResult(name, old)).toMatchSnapshot(name);
+    expect(JSON.stringify(maskEvents(name, oldEvents))).toMatchSnapshot(`${name} events`);
     assertParity(name, old, next);
     expect(maskEvents(name, h.events)).toEqual(maskEvents(name, oldEvents));
     return next;
@@ -152,7 +154,10 @@ describe("folder-board-custom-view MCP old/new parity", () => {
       return [first, second];
     };
     const old = await run(true); const next = await run(false);
-    old.forEach((result, index) => assertParity("create_custom_view", result, next[index]));
+    old.forEach((result, index) => {
+      expect(serializeResult("create_custom_view", result)).toMatchSnapshot(`create_custom_view ${index}`);
+      assertParity("create_custom_view", result, next[index]);
+    });
   });
   it("preserves the 2000-item search scan boundary", async () => {
     const run = async (legacy: boolean) => {
@@ -164,6 +169,7 @@ describe("folder-board-custom-view MCP old/new parity", () => {
       return h.call(legacy, "search_folder_items", { folder_id: "00000000-0000-4000-8000-000000000001", query: "검색", limit: 80 }, context);
     };
     const old = await run(true); const next = await run(false);
+    expect(serializeResult("search_folder_items", old)).toMatchSnapshot("search_folder_items");
     assertParity("search_folder_items", old, next);
     expect(next.structuredContent).toMatchObject({ truncated: true, scan_limit: 2000, scanned_items: 2000, page: { limit: 50 } });
   });
