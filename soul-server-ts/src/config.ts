@@ -5,7 +5,6 @@ import { isAbsolute } from "node:path";
 import {
   assertRunnerStateDirectoryCompatible,
 } from "./runner/runner_process_paths.js";
-import { internalMcpPath } from "./mcp/endpoint_paths.js";
 import {
   DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS,
   DEFAULT_APP_SERVER_STARTUP_TIMEOUT_MS,
@@ -364,10 +363,4 @@ export type Env = z.infer<typeof EnvSchema>;
  */
 export function parseEnv(raw: NodeJS.ProcessEnv | Record<string, unknown>): Env {
   return EnvSchema.parse(raw);
-}
-
-function normalizedHttpPath(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  const trimmed = value.trim().replace(/\/+$/, "");
-  return trimmed || "/";
 }

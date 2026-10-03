@@ -4,9 +4,9 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import pino from "pino";
 import { describe, expect, it } from "vitest";
 import { AgentRegistry } from "../../src/agent_registry.js";
+import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildMcpServer } from "../../src/mcp/server.js";
-import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 
 
 function makeRuntime(): McpRuntime {
@@ -24,9 +24,6 @@ function makeRuntime(): McpRuntime {
     agentConfigService: {},
     mcpConfigService: {},
     catalogService: {},
-    folderService: {},
-    customViewService: {},
-    pageHostClient: {},
     worktreeService: {},
     orch: { baseUrl: "https://orchestrator.example", headers: {} },
     logger: pino({ level: "silent" }),

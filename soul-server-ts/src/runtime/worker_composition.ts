@@ -9,7 +9,6 @@ import { createAssignedCardSnapshotRecorder } from "../context/assigned_card_sna
 import { DefaultPageContextAssembler } from "../context/page_context_assembler.js";
 import { HostPageContextRepository } from "../context/page_context_repository.js";
 import { AncestorPageContextResolver } from "../context/page_context_resolver.js";
-import { CustomViewService } from "../custom_view/custom_view_service.js";
 import {
   ClaudeRuntimeHostClient,
   SessionDeliveryHostClient,
@@ -327,10 +326,7 @@ export async function composeWorkerRuntime(
     db,
     broadcaster,
     boardYjsService,
-    folderService,
-    sessionMutations,
   );
-  const customViewService = new CustomViewService(db, boardYjsService, broadcaster);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),
     ...(env.LLM_ANTHROPIC_API_KEY
@@ -367,8 +363,6 @@ export async function composeWorkerRuntime(
     agentConfigService,
     mcpConfigService,
     catalogService,
-    folderService,
-    customViewService,
     logger,
     orch: orchProxyConfig,
     ...(worktreeService ? { worktreeService } : {}),

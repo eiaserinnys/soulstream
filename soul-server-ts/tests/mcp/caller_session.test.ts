@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import {
-  MISSING_REMOTE_CALLER_SESSION_ID_ERROR,
-  requireRemoteCallerAttribution,
-  resolveEffectiveCallerSessionId,
-  resolveMcpCallerAttribution,
-  resolveMcpMutationActor,
+  resolveMcpCallerAttribution
 } from "../../src/mcp/tools/caller_session.js";
-import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 
 function makeRuntime(): McpRuntime {
   return {
@@ -42,17 +38,5 @@ describe("MCP caller attribution", () => {
       source: "agent",
       agent_id: "codex-default",
     }));
-  });
-
-  it("origin 없는 기존 클라이언트는 부모 세션 없이 remote 위임할 수 없다", () => {
-    const result = withMcpRequestContext(
-      {},
-      () => requireRemoteCallerAttribution(makeRuntime(), undefined),
-    );
-
-    expect(result).toEqual({
-      ok: false,
-      error: MISSING_REMOTE_CALLER_SESSION_ID_ERROR,
-    });
   });
 });

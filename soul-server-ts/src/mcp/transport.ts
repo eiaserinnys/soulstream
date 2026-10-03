@@ -15,9 +15,9 @@
  */
 import { randomUUID } from "node:crypto";
 
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { checkMcpAuth, type McpAuthConfig } from "./auth.js";
 import {
@@ -329,32 +329,4 @@ function writeJsonRpcError(
       id: null,
     }),
   );
-}
-
-function writeJsonRpcResult(
-  reply: FastifyReply,
-  id: string | number | null,
-  result: unknown,
-): void {
-  const raw = reply.raw;
-  if (raw.headersSent) return;
-  raw.statusCode = 200;
-  raw.setHeader("content-type", "application/json");
-  raw.end(JSON.stringify({ jsonrpc: "2.0", result, id }));
-}
-
-function requestId(body: unknown): string | number | null {
-  if (
-    typeof body === "object"
-    && body !== null
-    && "id" in body
-    && (
-      typeof body.id === "string"
-      || typeof body.id === "number"
-      || body.id === null
-    )
-  ) {
-    return body.id;
-  }
-  return null;
 }

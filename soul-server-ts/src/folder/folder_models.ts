@@ -1,5 +1,4 @@
 import type {
-  CardAssigneeFields,
   FolderOperationTargetKind,
 } from "../db/session_db_types.js";
 
@@ -17,11 +16,4 @@ export class FolderVersionConflict extends Error {
     );
     this.name = "FolderVersionConflict";
   }
-}
-
-export interface CardAssigneeInput {
-  kind: CardAssigneeFields["assignee_kind"];
-  agentId?: string | null;
-  sessionId?: string | null;
-  userId?: string | null;
 }

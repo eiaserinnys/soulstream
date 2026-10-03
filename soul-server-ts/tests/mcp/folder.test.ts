@@ -2,16 +2,16 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { jsonResult } from "../../src/mcp/result.js";
-import * as persistenceHostTransport from "../../src/control_plane/persistence_host_transport.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
+import * as persistenceHostTransport from "../../src/control_plane/persistence_host_transport.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import type { FolderService } from "../../src/folder/folder_service.js";
+import { jsonResult } from "../../src/mcp/result.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildInternalMcpServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
-import type { FolderService } from "../../src/folder/folder_service.js";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildInternalMcpServer>>[] = [];
@@ -38,7 +38,6 @@ function runtime(folderService?: Partial<FolderService>, catalogService?: Partia
     onResume: () => undefined,
     agentRegistry: new AgentRegistry([]),
     catalogService: (catalogService ?? {}) as CatalogService,
-    folderService: folderService as FolderService,
     logger: logger(),
     orch: { baseUrl: "http://orch.test", headers: { authorization: "Bearer service-token" } },
   };

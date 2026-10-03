@@ -8,7 +8,6 @@ import type { OrchProxyConfig } from "../mcp/runtime.js";
 export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
 
 export const ORCH_HOST_REQUEST_TIMEOUT_MS = 10_000;
-export const ORCH_NODE_COMMAND_TIMEOUT_MS = 35_000;
 
 export type { OrchErrorEnvelope } from "@soulstream/mcp-contract";
 

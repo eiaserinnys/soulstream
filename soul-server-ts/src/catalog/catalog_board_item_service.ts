@@ -15,7 +15,6 @@ export interface CatalogBoardItemMoveResult {
 }
 
 export interface CatalogBoardYjsPort {
-  moveSessionToFolder(sessionId: string, folderId: string | null): Promise<CatalogBoardItemRow | null>;
   updateBoardItemPosition(folderId: string, boardItemId: string, x: number, y: number): Promise<void>;
   moveBoardItemToFolder(input: {
     boardItem: CatalogBoardItemRow;
@@ -49,10 +48,6 @@ export class CatalogBoardItemService {
     private readonly boardYjsService: CatalogBoardYjsPort | undefined,
     private readonly broadcastCatalog: (delta?: CatalogMutationDelta) => Promise<void>,
   ) {}
-
-  async moveSessionToFolder(sessionId: string, folderId: string | null): Promise<CatalogBoardItemRow | null> {
-    return await this.requireBoard().moveSessionToFolder(sessionId, folderId);
-  }
 
   async updateBoardItemPosition(boardItemId: string, x: number, y: number): Promise<void> {
     const snappedX = snapBoardPosition(x);
