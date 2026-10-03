@@ -4,6 +4,7 @@ import type { CardDetail } from '../api/cardTypes';
 import { cardFixture } from '../test-support/cards';
 import { CardTimeline } from '../components/planner/CardTimeline';
 import { UserMessage } from '../components/events/UserMessage';
+import { AssistantMessage } from '../components/events/AssistantMessage';
 import { AttachmentImage } from '../components/AttachmentImage';
 import { Asset } from 'expo-asset';
 import { useTokens } from '../theme';
@@ -29,14 +30,23 @@ export function ReviewCardImages({ serverUrl, bundledImages = false }: { serverU
     { id: 'app-absolute', cardId: card.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment',
       body: `앱에서 저장한 절대 URL 커멘트\n\n![앱 첨부](${absolute})`, createdAt: '2026-10-02T00:02:00Z' },
   ] };
+  const widthCard = cardFixture({ id: 'report-width', request: '보고를 펼쳐 읽어 주세요.', status: 'review', assigneeAgentId: null, createdAt: at });
+  const widthDetail: CardDetail = { card: widthCard, sessions: [],
+    questions: [{ id: 'width-question', cardId: widthCard.id, sessionId: 'public-session', text: '확인해 주시겠습니까?', options: null, answer: null, askedAt: at }],
+    reports: [{ id: 'width-report', cardId: widthCard.id, title: '이미지 없는 보고', format: 'markdown', createdAt: at,
+      body: '**이미지 없는 한국어 보고입니다.** 자세히를 눌러도 질문과 같은 넓은 말풍선 안에서 본문을 읽을 수 있어야 합니다.\n\n접힌 보고와 펼친 보고의 가로 폭을 비교합니다. 다시 접은 뒤에도 폭과 아바타, 본문 여백이 그대로 유지되는지 확인합니다.' }],
+    comments: [{ id: 'width-comment', cardId: widthCard.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '확인했습니다.', createdAt: at }],
+  };
   return <ScrollView testID="card-image-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={{ padding: t.foundation.pageInset, gap: t.uiSpacing.lg }} showsVerticalScrollIndicator={false}>
     <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>공개 fixture · RN web 배치와 조작 검수입니다. 네이티브 인증은 별도 계약으로 확인합니다.</Text>
+    <View testID="review-report-width"><CardTimeline detail={widthDetail} onChooseAnswer={() => {}} /></View>
     <View testID="review-image-timeline"><CardTimeline detail={detail} onChooseAnswer={() => {}} /></View>
     <View testID="review-unchanged-chat">
       <UserMessage event={{ id: 'public-chat', type: 'user_message', data: { text: '기존 채팅 첨부 비교', attachments: bundledImages ? [] : ['/review/one.png'], node_id: 'public-node' } }}>
         {bundledImages ? <AttachmentImage source={require('../../assets/icon.png')} accessibilityLabel="기존 채팅 첨부" /> : null}
       </UserMessage>
+      <AssistantMessage event={{ id: 'public-short-message', type: 'assistant_message', data: { text: '확인했습니다.' } }} />
     </View>
   </ScrollView>;
 }

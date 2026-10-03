@@ -6,7 +6,18 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { once } = require('node:events');
 
-const [playwrightPath, beforeRoot, afterRoot, evidenceRoot, browserPath] = process.argv.slice(2);
+function assertStableWidth(rects) {
+  for (const rect of rects.slice(1)) assert(Math.abs(rect.width - rects[0].width) <= 1, 'report fold width must stay within 1px');
+}
+if (process.argv[2] === '--self-test') {
+  assertStableWidth([{ width: 300 }, { width: 300.5 }, { width: 300 }]);
+  assert.throws(() => assertStableWidth([{ width: 300 }, { width: 90 }, { width: 300 }]), /report fold width/);
+  assert.throws(() => assertStableWidth([{ width: 300 }, { width: 300 }, { width: 90 }]), /report fold width/);
+  console.log('report width checker: stable accepted, expanded and refolded shrink rejected');
+  process.exit(0);
+}
+
+const [playwrightPath, beforeRoot, afterRoot, evidenceRoot, browserPath, scope] = process.argv.slice(2);
 if (!browserPath) throw new Error('Playwright, before/after bundle, evidence, browser paths required');
 const { chromium } = require(path.resolve(playwrightPath));
 const appRoot = path.resolve(__dirname, '..');
@@ -51,7 +62,54 @@ async function run(browser, base, mode, name, viewport) {
   await page.goto(base + prefix + 'index.html');
   await page.getByTestId('card-image-review').waitFor();
   await page.evaluate(() => document.fonts.ready);
-  const report = page.getByTestId('assistant-message-bubble');
+  const metric = async locator => locator.evaluate(el => {
+    const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+    return { x: r.x, y: r.y, width: r.width, height: r.height,
+      paddingLeft: s.paddingLeft, paddingRight: s.paddingRight, flexGrow: s.flexGrow, maxWidth: s.maxWidth };
+  });
+  const widthSample = page.getByTestId('review-report-width');
+  const widthReport = widthSample.getByTestId('card-fold-report-width-report').getByTestId('assistant-message-bubble');
+  const neighborMetrics = async () => {
+    const bubbles = widthSample.getByTestId('assistant-message-bubble');
+    return { question: await metric(bubbles.nth(0)), comment: await metric(bubbles.nth(2)) };
+  };
+  await widthSample.scrollIntoViewIfNeeded();
+  const collapsed = await metric(widthReport);
+  const neighbors = await neighborMetrics();
+  await page.screenshot({ path: path.join(output, `${name}-${mode}-width-collapsed.png`) });
+  await widthReport.getByText('자세히', { exact: true }).click();
+  await widthSample.getByTestId('card-report-markdown-width-report').waitFor();
+  await widthReport.getByText('접힌 보고와 펼친 보고의 가로 폭을 비교합니다.', { exact: false }).waitFor();
+  const expanded = await metric(widthReport);
+  const expandedNeighbors = await neighborMetrics();
+  await page.screenshot({ path: path.join(output, `${name}-${mode}-width-expanded.png`) });
+  await widthReport.getByText('접기', { exact: true }).click();
+  const refolded = await metric(widthReport);
+  await page.screenshot({ path: path.join(output, `${name}-${mode}-width-refolded.png`) });
+  const shortChat = page.getByTestId('review-unchanged-chat').getByTestId('assistant-message-bubble');
+  const shortMessage = await metric(shortChat);
+  const widthRecord = { mode, name, viewport, collapsed, expanded, refolded, neighbors, expandedNeighbors, shortMessage };
+  if (mode === 'after') {
+    assertStableWidth([collapsed, expanded, refolded]);
+    assert.equal(expanded.flexGrow, '1');
+    for (const key of ['question', 'comment']) {
+      for (const field of ['width', 'paddingLeft', 'paddingRight', 'flexGrow', 'maxWidth'])
+        assert.equal(expandedNeighbors[key][field], neighbors[key][field], `${key} ${field} must stay unchanged while expanding`);
+    }
+    const before = result.cases.find(item => item.name === name && item.mode === 'before');
+    for (const key of ['question', 'comment', 'shortMessage']) {
+      const current = key === 'shortMessage' ? shortMessage : neighbors[key];
+      const previous = key === 'shortMessage' ? before.shortMessage : before.neighbors[key];
+      for (const field of ['x', 'width', 'paddingLeft', 'paddingRight', 'flexGrow', 'maxWidth'])
+        assert.equal(current[field], previous[field], `${key} ${field} must stay unchanged across the fix`);
+    }
+  }
+  if (scope === 'width-only') {
+    result.cases.push(widthRecord);
+    await context.close();
+    return;
+  }
+  const report = page.getByTestId('review-image-timeline').getByTestId('assistant-message-bubble');
   const shot = part => page.screenshot({ path: path.join(output, name + '-' + mode + '-' + part + '.png') });
   const imagesLoaded = async locator => {
     await locator.evaluate(async el => {
@@ -63,8 +121,7 @@ async function run(browser, base, mode, name, viewport) {
   };
   await imagesLoaded(report);
   await shot('collapsed');
-  const metric = async locator => locator.evaluate(el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });
-  const record = { mode, name, viewport, collapsedImages: await report.locator('[data-testid^="card-report-thumbnail"]').count(), bubble: await metric(report) };
+  const record = { ...widthRecord, collapsedImages: await report.locator('[data-testid^="card-report-thumbnail"]').count(), bubble: await metric(report) };
   if (mode === 'after') {
     assert.equal(record.collapsedImages, 2);
     assert.equal(await imagesLoaded(report), 2);
@@ -126,7 +183,7 @@ async function run(browser, base, mode, name, viewport) {
       for (const [name, viewport] of [['phone', { width: 390, height: 844 }], ['tablet', { width: 1194, height: 834 }]])
         await run(browser, base, mode, name, viewport);
     }
-    for (const name of ['phone', 'tablet']) {
+    for (const name of scope === 'width-only' ? [] : ['phone', 'tablet']) {
       const before = await fs.readFile(path.join(output, name + '-before-chat.png'));
       const after = await fs.readFile(path.join(output, name + '-after-chat.png'));
       assert(before.equals(after), name + ' existing chat screenshot must be unchanged');

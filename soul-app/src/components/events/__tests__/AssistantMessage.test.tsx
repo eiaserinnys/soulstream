@@ -22,6 +22,7 @@ jest.mock('expo-web-browser', () => ({
 }));
 
 import { render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import {
   AssistantMessage,
@@ -48,6 +49,17 @@ const session = (overrides: Partial<Session> = {}): Session => ({
 afterEach(() => {
   jest.restoreAllMocks();
   jest.clearAllMocks();
+});
+
+test('말풍선 폭은 기본 내용 폭을 유지하고 fill에서만 가용 폭을 채운다', () => {
+  const event = ev('assistant_message', { text: '짧은 메시지' });
+  const screen = render(<AssistantMessage event={event} />);
+  const base = StyleSheet.flatten(screen.getByTestId('assistant-message-bubble').props.style);
+  expect(base.flexGrow).toBeUndefined();
+  screen.rerender(<AssistantMessage event={event} bubbleWidth="content" />);
+  expect(StyleSheet.flatten(screen.getByTestId('assistant-message-bubble').props.style)).toEqual(base);
+  screen.rerender(<AssistantMessage event={event} bubbleWidth="fill" />);
+  expect(StyleSheet.flatten(screen.getByTestId('assistant-message-bubble').props.style)).toEqual({ ...base, flexGrow: 1 });
 });
 
 describe('extractText (F-G)', () => {

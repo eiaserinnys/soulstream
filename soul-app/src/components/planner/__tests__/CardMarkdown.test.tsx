@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, renderHook } from '@testing-library/react-native';
+import { fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { useTokens } from '../../../theme';
 import { useSettingsStore } from '../../../store/settingsStore';
@@ -13,8 +13,33 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esM
 import { AssistantMessage } from '../../events/AssistantMessage';
 import { PlannerMarkdownText } from '../PlannerMarkdownText';
 import { CardReportView } from '../CardReportView';
+import { CardTimeline } from '../CardTimeline';
+import { cardFixture } from '../../../test-support/cards';
 
 afterEach(() => useSettingsStore.setState({ appearance: 'system' }));
+
+test('보고 폭 계약은 접기와 펼치기에서 같고 질문과 에이전트 커멘트는 내용 폭을 유지한다', () => {
+  const card = cardFixture({ id: 'width-card', request: '지시', assigneeAgentId: 'roselin', createdAt: '2026-10-01T00:00:00Z' });
+  const screen = render(<CardTimeline detail={{ card, sessions: [],
+    reports: [{ id: 'width', cardId: card.id, title: '보고', format: 'markdown', body: '이미지가 없는 긴 한국어 보고 본문을 펼쳐도 말풍선 폭이 유지되어야 합니다.', createdAt: '2026-10-01T00:02:00Z' }],
+    questions: [{ id: 'question', cardId: card.id, sessionId: 'roselin-session', text: '짧은 질문', options: null, answer: null, askedAt: '2026-10-01T00:01:00Z' }],
+    comments: [{ id: 'comment', cardId: card.id, authorKind: 'agent', authorId: 'roselin', sessionId: null, kind: 'comment', body: '짧은 커멘트', createdAt: '2026-10-01T00:03:00Z' }],
+  }} onChooseAnswer={() => {}} />);
+  const bubbleStyle = () => StyleSheet.flatten(within(screen.getByTestId('card-fold-report-width')).getByTestId('assistant-message-bubble').props.style);
+  const collapsed = bubbleStyle();
+  expect(collapsed).toMatchObject({ flexGrow: 1, flexShrink: 1, maxWidth: '86%' });
+  const neighbors = () => screen.getAllByTestId('assistant-message-bubble').filter((_, index) => index !== 1).map(bubble => StyleSheet.flatten(bubble.props.style));
+  const before = neighbors();
+  expect(before).toHaveLength(2);
+  for (const style of before) expect(style.flexGrow).toBeUndefined();
+  fireEvent.press(screen.getByLabelText('report-width 자세히'));
+  expect(screen.getByTestId('card-report-markdown-width')).toBeTruthy();
+  expect(bubbleStyle()).toEqual(collapsed);
+  expect(neighbors()).toEqual(before);
+  fireEvent.press(screen.getByLabelText('report-width 접기'));
+  expect(screen.queryByTestId('card-report-markdown-width')).toBeNull();
+  expect(bubbleStyle()).toEqual(collapsed);
+});
 
 test.each([
   [390, 'light', 17, 22],
