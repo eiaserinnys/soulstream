@@ -22,6 +22,7 @@ import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle
 import { CopyableAssistantMarkdown } from './CopyableAssistantMarkdown';
 
 interface Props {
+  bubbleWidth?: 'content' | 'fill';
   messageKind?: React.ReactNode;
   children?: React.ReactNode;
   event: SessionEvent;
@@ -53,6 +54,7 @@ function openAssistantLink({ url }: { url: string }) {
 export function AssistantMessage({
   event,
   session,
+  bubbleWidth = 'content',
   messageKind,
   children,
   selectionModel,
@@ -120,7 +122,7 @@ export function AssistantMessage({
           <Text style={styles.avatarFallbackText}>{fallbackChar}</Text>
         </View>
       )}
-      <View testID="assistant-message-bubble" style={styles.bubble}>
+      <View testID="assistant-message-bubble" style={bubbleWidth === 'fill' ? [styles.bubble, { flexGrow: 1 }] : styles.bubble}>
         {/*
           react-native-enriched-markdown — Software Mansion 제작 Fabric 네이티브 마크다운 렌더러.
           외부 링크는 SFSafariViewController(expo-web-browser.openBrowserAsync)로 통일.
