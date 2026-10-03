@@ -9,6 +9,63 @@ const phase = process.env.WEB_CARD_QA_PHASE ?? "after";
 const preset = { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex", available: true,
   reason: "quota_exhausted", reason_label: "7일 사용량 제한", resets_at: null, usage_warning: false };
 mkdirSync(output, { recursive: true });
+for (const width of [1440, 390, 320]) test(`handoff chips stay on one line ${width}`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
+  await page.addInitScript(() => {
+    localStorage.setItem("soul-dashboard-theme", "dark"); localStorage.setItem("ls.webglGlass", "0");
+    localStorage.setItem("cards-p1-handoff", JSON.stringify({folderId:"folder-amber",nodeId:"eiaserinnys",agentId:"roselin_codex",modelPreset:"codex-6.1-sol"}));
+  });
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true });
+  let longNames = false;
+  await page.route("**/api/folders", route => route.fulfill({json:{folders:[{
+    id:"folder-amber",name:longNames ? "아주 긴 폴더 이름을 사용하는 작업 공간 ".repeat(3) : "소울스트림",
+    parentFolderId:null,positionKey:"a",archived:false,projectPageId:"project-amber",
+  }],sessions:{}}}));
+  await page.route("**/api/nodes/*/agents", route => route.fulfill({json:{agents:[{id:"roselin_codex",
+    name:longNames ? "아주 긴 실행 에이전트 이름 ".repeat(3) : "로젤린",backend:"codex",default_preset:preset.id}]}}));
+  await page.route("**/api/nodes/*/model-presets", route => route.fulfill({json:{model_presets:[preset]}}));
+  const records = [];
+  for (const names of ["short", "long"]) {
+    longNames = names === "long";
+    await page.goto("/");
+    const handoff = page.getByTestId("card-home").locator(".v3-today-handoff");
+    const input = handoff.getByRole("textbox", {name:"세션 첫 메시지"});
+    await expect(input).toBeVisible();
+    await expect(handoff.locator(".v3-card-handoff-folder")).toContainText(longNames ? "아주 긴 폴더" : "소울스트림");
+    await expect(handoff.locator(".v3-card-handoff-execution")).toContainText(longNames ? "아주 긴 실행" : "로젤린");
+    await page.evaluate(() => document.fonts.ready);
+    const chips = await handoff.locator(".v3-card-handoff-controls").evaluate(el => {
+      const row = el.getBoundingClientRect();
+      return { row:{x:row.x,right:row.right,y:row.y,height:row.height}, items:[...el.children].map(node => {
+        const r=node.getBoundingClientRect(), label=node.firstElementChild!, arrow=node.lastElementChild!;
+        return {x:r.x,right:r.right,y:r.y,height:r.height,labelWidth:label.getBoundingClientRect().width,
+          labelScrollWidth:label.scrollWidth,arrowWidth:arrow.getBoundingClientRect().width};
+      })};
+    });
+    const geometry = await inputGeometry(handoff);
+    records.push({names,chips,geometry});
+    await page.screenshot({path:path.join(output,`${phase}-chips-${names}-${width}.png`),animations:"disabled"});
+    writeFileSync(path.join(output,`${phase}-chips-${width}.json`),JSON.stringify(records,null,2));
+    expect(chips.items).toHaveLength(2);
+    expect(chips.items[0].y).toBe(chips.items[1].y);
+    for (const chip of chips.items) {
+      expect(chip.height).toBe(chips.row.height);
+      expect(chip.right).toBeLessThanOrEqual(chips.row.right + 1);
+      expect(chip.labelWidth).toBeGreaterThan(0); expect(chip.arrowWidth).toBeGreaterThan(0);
+    }
+    expect(geometry.innerGap).toBe(4); expect(geometry.outerGap).toBe(12);
+    await handoff.locator(".v3-card-handoff-folder").click();
+    await expect(page.locator(".v3-card-folder-picker")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await handoff.getByRole("button", {name:"실행 조합 선택",exact:true}).click();
+    await expect(page.locator(".v3-card-execution-picker")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await input.fill("입력 본문의 여러 줄은 허용합니다.\n긴 작성문을 유지합니다.");
+    await expect(input).toHaveValue(/긴 작성문을 유지합니다/);
+    await expect(handoff.getByRole("button",{name:"세션 시작",exact:true})).toBeEnabled();
+  }
+});
 async function inputGeometry(scope: Locator) {
   return scope.evaluate(el => {
     const rect = (selector: string) => {

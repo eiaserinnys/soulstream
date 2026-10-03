@@ -67,9 +67,9 @@
 .v3-today-handoff { flex: none; border-top: thin solid var(--v3-stroke-default); padding-top: var(--v3-space-3); }
 .v3-card-handoff { display: flex; flex-direction: column; gap: var(--v3-space-1); }
 
-.v3-card-handoff-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--v3-card-gap); min-width: 0; }
+.v3-card-handoff-controls { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--v3-card-gap); min-width: 0; }
 .v3-shell .v3-card-handoff-chip {
-  display: inline-flex; flex: none; min-width: 0; align-items: center; gap: var(--v3-card-gap);
+  display: inline-flex; flex: 0 1 auto; min-width: 0; align-items: center; gap: var(--v3-card-gap);
   height: var(--v3-space-7); padding: 0 calc(var(--v3-space-2) + var(--v3-space-2) / 4);
   border: thin solid var(--v3-stroke-default);
   color: var(--v3-text-secondary); cursor: pointer;
@@ -78,11 +78,9 @@
 }
 .v3-card-handoff-chip > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .v3-shell .v3-card-handoff-folder { max-width: min(100%, calc(var(--v3-control-height) * 3 + var(--v3-space-8))); color: var(--v3-text-primary); }
-.v3-shell .v3-card-handoff-execution { flex-shrink: 1; }
 
 @media (max-width: 760px) {
  .v3-shell .v3-planner-scroll:has(> .v3-planner-column--daily) { padding-inline: var(--v3-space-3); padding-bottom: var(--v3-space-3); }
- .v3-shell .v3-card-handoff-execution { flex: 1; }
 
  .v3-shell .v3-today-list > .v3-date-head { flex-direction: row; flex-wrap: wrap; align-items: center; }
  .v3-today-list .v3-date-head p { flex-basis: 100%; order: 1; }
