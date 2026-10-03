@@ -1,3 +1,4 @@
+import { prepareCardReminderSchema } from "./card-reminder-postgres-fixture.js";
 import { readFile } from "node:fs/promises";
 import { CardOrchestrationRepository } from "../src/cards/card_orchestration_repository.js";
 import { endedCardWork } from "../src/cards/card_work_lifecycle.js";
@@ -15,6 +16,7 @@ describe("explicit manual card work", () => {
   beforeAll(async () => {
     h = await createPagePostgresHarness();
     await prepareCardWorkSchema(h);
+    await prepareCardReminderSchema(h);
     await h.sql`INSERT INTO folders(id,name) VALUES('work','작업')`;
     await h.sql`INSERT INTO sessions(session_id,node_id,status,execution_registration_id,execution_command_id) VALUES('owner','node','running','registration','command'),('other','node','running','other-reg','other-command')`;
     await h.sql`UPDATE sessions SET agent_id='profile',model_preset='model'`;
@@ -97,7 +99,7 @@ describe("explicit manual card work", () => {
     expect(ended.map(r=>r.card_id)).toContain(id);
     expect(ended.map(r=>r.card_id)).not.toContain(untouched);
     const warnings:string[]=[];
-    const dispatcher=new CardDispatcher({repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>warnings.push(m),
       orchestration:{enabled:async()=>enabled,ownsSession:async()=>false,kick:async()=>{}}});
@@ -120,7 +122,7 @@ describe("explicit manual card work", () => {
     await recordWorkReceipt(h,"owner","error",null,"limit_hit");
     const ended=await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner");
     expect(ended.find(w=>w.card_id===id)?.terminal_session).toMatchObject({status:"error",termination_reason:"limit_hit"});
-    const dispatcher=new CardDispatcher({repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>{throw new Error(m);},
       orchestration:{enabled:async()=>true,ownsSession:async()=>false,kick:async()=>{}}});

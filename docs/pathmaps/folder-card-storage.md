@@ -58,8 +58,21 @@
 | 담당 확정 | `card_assignee.ts:claimableCardSessions` | agent 담당이고 담당 세션이 비어 있을 때, 같은 카드·에이전트에 소속되며 caller가 같은 카드 소속이 아닌 세션만 수동 착수·상태 변경·reply에서 claim한다. 원래 작업과 한 트랜잭션이고 감사 payload에 `claimed_assignee=true`가 남는다. 자동배정 영수증·버전 검증은 기존 경로를 유지한다. |
 | 새 업무 생성 | `mcp-contract/src/card_tools.ts` → `mcp/card_handlers.ts` → `card_operations.ts` → `createCard` | 선택 `brief`와 호출자 `idempotency_key`를 받는다. agent 세션이 assignee 키를 생략하면 그 세션의 agent/node/model preset을 읽는다. 명시한 assignee(null 포함)는 그대로 두고, 사용자·외부 LLM의 기본값은 유지한다. 새 업무는 assignee를 생략하고 queue=true로 만든다. |
 | A/S | `assigned_card_context.ts`, `card_change_notification.ts`, `card_prompt.ts` | 보관 제외 담당 현황에 완료·취소도 나온다. 완료 카드 사용자 커멘트는 담당 세션에 전달하고 상태를 자동으로 바꾸지 않는다. 완료로의 상태 변경 알림은 계속 억제한다. |
-| 상태 시점 | `cards.status_changed_at`, service `patch` | 실제 상태가 바뀔 때만 DB NOW()를 기록한다. brief·동일 상태 재기록·담당 변경은 시점을 유지한다. 리마인더 구현은 별도 PR에서 이 값을 소비한다. |
+| 상태 시점 | `cards.status_changed_at`, service `patch` | 실제 상태가 바뀔 때만 DB NOW()를 기록한다. brief·동일 상태 재기록·담당 변경은 시점을 유지한다. 상태 리마인더는 이 시점을 소비한다. |
 
 `115_single_card_assignee.sql`은 기존 상태 시점을 updated_at으로 한 번만 채운다. 다중 담당은 created_at DESC, id의 C 정렬 DESC로 마지막 생성 카드만 남긴다. 사용자 지정 한 줄 예외는 세션 `41ecc1b4`의 카드 `dcf30b19`를 우선하며 해당 담당 관계가 없거나 보관이면 일반 규칙으로 돌아간다. 다른 진행 중 카드를 우선하는 규칙은 없다.
 
 해제 카드마다 `release_card_assignee` 감사 행에 이전 담당과 남긴 카드, 적용 규칙을 남긴다. 해제는 assignee_kind·assignee_session_id·version만 바꾸고 상태·내용·updated_at·완료 출처·보고·질문·커멘트는 보존한다. 보관 카드는 정리와 인덱스 모두에서 제외한다. migration 재실행과 schema.sql 재적용은 상태 시점을 다시 채우지 않는다.
+
+
+## 담당 세션 상태 리마인더
+
+| 경로 | 구현 | 계약 |
+| :-- | :-- | :-- |
+| 뿌리·트리 조회 | `card_dispatch_repository.ts` → `card_status_reminder_repository.ts` | 뿌리는 assignee_session_id, 비어 있으면 claimableCardSessions의 첫 행이다. caller_session_id 후손을 재귀 조회하며 다른 보관되지 않은 카드 담당 세션과 그 아래를 제외한다. initializing·running만 활동 중이다. |
+| 진행 중 안내 | 커밋된 세션 갱신 → `CardDispatcher.sessionEnded` → `card_status_reminder.ts` | 담당 뿌리가 completed 또는 한도 외 error로 끝났고 후손이 돌고 있으며 카드가 running이 아니면 진행 중 여부를 확인하도록 안내한다. 자식 종료만으로 보내지 않는다. |
+| 멈춤 안내 | 담당 뿌리 종료와 기존 60초 `CardDispatcher.tick` | running 카드의 트리가 모두 멈췄고 뿌리 종료 영수증이 상태 시점보다 뒤이면 막힘·검수·재개를 안내한다. interrupted와 limit_hit 뿌리는 깨우지 않는다. 자동배정 설정과 무관하게 tick에서 확인하며 최대 2건을 보낸다. |
+| 미완료 통지 판정 | `session_deliveries`, `session_delivery_relation_consumptions`, `event_ingress_receipts` | 트리로 향하는 pending 전달이 30분 미만이면 보류한다. 완료 통지 대상 후손의 relation이 장부와 소비 기록 양쪽에 없고 종료 커밋이 5분 미만이면 보류한다. 30분·5분은 고장 판단 상한이며 정상 경로에 기다리는 시간을 더하지 않는다. |
+| 전달·중복 억제 | `CardDispatcherOptions.deliveryExists` → `SessionDeliveryRepository.get`, 기존 sendMessage → `sendCardChangeOnce` | ID는 `card-reminder:{cardId}:{kind}:{상태 시점의 epoch 마이크로초}:{rootSessionId}`다. 어느 상태든 같은 전달 행이 있으면 재전송하지 않는다. 수신자는 뿌리, actorKind와 caller_info.source는 system이다. pending 행 재전송은 기존 전달 경로가 담당한다. |
+
+뿌리 종료 계기에서는 세션 기본 키 조회로 종료 상태를 먼저 확인하고 실행 중 갱신은 카드 후보·트리 사실 조회를 생략한다. 리마인더 점검 전체의 예외는 warn으로 격리해 기존 한도·종료·자동배정 처리를 이어 간다. 판정과 전송은 기존 디스패처 enqueue 체인에서 카드 mutation과 순서를 맞춘다. 실패는 warn으로 남기고 다음 tick과 기존 전달 처리에 맡긴다. 리마인더는 카드 상태를 바꾸지 않으며 새 타이머·표·재시도 계층을 만들지 않는다. brief 갱신·같은 상태 재기록·디스패처 재시작에도 같은 상태 시점의 리마인더가 반복되지 않는다.

@@ -1,3 +1,4 @@
+import { prepareCardReminderSchema } from "./card-reminder-postgres-fixture.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
@@ -42,6 +43,7 @@ describe("card dispatch and session lifecycle", () => {
         h = await createPagePostgresHarness();
         await h.sql `INSERT INTO folders(id,name) VALUES ('dispatch-folder','실험')`;
         await h.sql `ALTER TABLE sessions ADD COLUMN model_preset TEXT, ADD COLUMN metadata JSONB, ADD COLUMN termination_reason TEXT, ADD COLUMN termination_event_id INTEGER`;
+        await prepareCardReminderSchema(h);
         await h.sql `CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
         await h.sql `INSERT INTO system_settings(setting_key,value,updated_by) VALUES ('card_dispatch','{"nodeConcurrency":{"default":1}}','migration')`;
@@ -53,7 +55,7 @@ describe("card dispatch and session lifecycle", () => {
                 }[]> `SELECT event_append(${p.sessionId},${p.eventType},${p.payload},${p.searchableText},${p.createdAt},${p.dedupeKey ?? null}) AS id`;
                 return rows[0]!.id;
             } }, undefined, change => dispatcher.acceptMutation(change));
-        dispatcher = new CardDispatcher({ repository: repo, cards: async () => cards,
+        dispatcher = new CardDispatcher({ deliveryExists: async () => false, repository: repo, cards: async () => cards,
             resolveTarget: card => ({ nodeId: card.node_id ?? 'eiaserinnys', agentId: card.assignee_agent_id!, modelPreset: card.model_preset ?? 'default-model',
                 available, reason: available ? null : '사용량 제한' }), launch, sendMessage: messages, notify, warn });
     }, 60000);

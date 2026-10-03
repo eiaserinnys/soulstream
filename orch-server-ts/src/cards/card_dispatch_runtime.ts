@@ -63,6 +63,7 @@ export async function createCardDispatchRuntime(options: {
   const legacyOptions: import("./card_dispatcher.js").CardDispatcherOptions = {
     repository: new CardDispatchRepository(resolveSql),
     cards: serviceProvider,
+    deliveryExists: async id => !!await new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient).get(id),
     warn: options.warn,
     resolveTarget: (card, modelPreset) => {
       // Central agent identities have no default-node field; the configured card node wins, then the documented default.
