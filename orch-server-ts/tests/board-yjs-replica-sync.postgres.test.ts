@@ -81,6 +81,24 @@ describe("board Y.Doc set-based replica sync (PostgreSQL)", () => {
     `).resolves.toEqual([{ board_items: replica.boardItems, markdown_documents: replica.markdownDocuments }]);
   });
 
+  it("prunes only omitted items in the selected folder, including an empty replica", async () => {
+    await harness.sql`INSERT INTO folders (id, name) VALUES ('prune', 'Prune'), ('prune-other', 'Other')`;
+    const replica = fixture("prune", 2);
+    await save("prune", replica);
+    await save("prune-other", fixture("prune-other", 1));
+    const otherBefore = (await readRows(harness, "prune-other")).boardItems;
+
+    replica.boardItems = replica.boardItems.slice(0, 1);
+    await save("prune", replica);
+    expect((await readRows(harness, "prune")).boardItems.map((row) => row.id))
+      .toEqual([replica.boardItems[0]!.id]);
+    expect((await readRows(harness, "prune-other")).boardItems).toEqual(otherBefore);
+
+    await save("prune", { boardItems: [], markdownDocuments: [] });
+    expect((await readRows(harness, "prune")).boardItems).toEqual([]);
+    expect((await readRows(harness, "prune-other")).boardItems).toEqual(otherBefore);
+  });
+
   it("executes six statements for both 1 and 200 items/documents, skipping empty upserts", async () => {
     await harness.sql`INSERT INTO folders (id, name) VALUES ('small', 'Small'), ('large', 'Large'), ('empty', 'Empty')`;
     const small = await save("small", fixture("small", 1));

@@ -143,6 +143,32 @@ describe("PageRepository PostgreSQL link projection", () => {
       target_title_key: "original title",
     });
   }, 30_000);
+  it("prunes only omitted links in the selected source blocks, including an empty link list", async () => {
+    const source = page("prune-links-page", "Prune Links", [{
+      id: "prune-links-block", text: "[[Missing One]] [[Missing Two]]",
+    }]);
+    await store(repository, source);
+    await store(repository, page("prune-links-other-page", "Other Links", [{
+      id: "prune-links-other-block", text: "[[Missing Other]]",
+    }]));
+    const read = async (blockId: string) => harness.sql`
+      SELECT * FROM block_links WHERE source_block_id = ${blockId} ORDER BY ordinal
+    `;
+    const otherBefore = await read("prune-links-other-block");
+
+    await store(repository, page(source.page.id, source.page.title, [{
+      id: "prune-links-block", text: "[[Missing One]]",
+    }]));
+    expect((await read("prune-links-block")).map((row) => row.id))
+      .toEqual(["block-link:prune-links-block:0"]);
+    expect(await read("prune-links-other-block")).toEqual(otherBefore);
+
+    await store(repository, page(source.page.id, source.page.title, [{
+      id: "prune-links-block", text: "No links",
+    }]));
+    expect(await read("prune-links-block")).toEqual([]);
+    expect(await read("prune-links-other-block")).toEqual(otherBefore);
+  });
 });
 
 async function store(repository: PageRepository, replica: PageYjsReplica): Promise<void> {

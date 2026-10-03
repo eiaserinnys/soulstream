@@ -22,9 +22,12 @@ export async function syncBoardYjsReplicaWithSql(
     `;
   } else {
     await sql`
-      DELETE FROM board_items
-      WHERE folder_id = ${scope.folderId}
-        AND id <> ALL(${sql.array(boardItemIds)})
+      DELETE FROM board_items b
+      WHERE b.folder_id = ${scope.folderId}
+        AND NOT EXISTS (
+          SELECT 1 FROM unnest(${sql.array(boardItemIds)}::text[]) AS keep(id)
+          WHERE keep.id = b.id
+        )
     `;
   }
   if (projectedReplica.boardItems.length > 0) {

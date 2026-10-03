@@ -93,9 +93,12 @@ export async function reconcileBlockProjection(
     await sql`DELETE FROM blocks WHERE page_id = ${replica.page.id}`;
   } else {
     await sql`
-      DELETE FROM blocks
-      WHERE page_id = ${replica.page.id}
-        AND id <> ALL(${sql.array(blockIds)})
+      DELETE FROM blocks b
+      WHERE b.page_id = ${replica.page.id}
+        AND NOT EXISTS (
+          SELECT 1 FROM unnest(${sql.array(blockIds)}::text[]) AS keep(id)
+          WHERE keep.id = b.id
+        )
     `;
   }
   for (const block of replica.blocks) {

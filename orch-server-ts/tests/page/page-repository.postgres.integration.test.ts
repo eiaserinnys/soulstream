@@ -151,4 +151,35 @@ describe("PageRepository PostgreSQL replica integration", () => {
     `;
     expect(rolledBackPage).toBe(0);
   });
+  it("prunes only omitted blocks in the selected page, including an empty replica", async () => {
+    const selected = {
+      page: { ...replica.page, id: "prune-page", title: "Prune" },
+      blocks: replica.blocks.map((block, index) => ({
+        ...block, id: `prune-block-${index}`, parentId: null,
+      })),
+    };
+    const other = {
+      page: { ...replica.page, id: "prune-other-page", title: "Other" },
+      blocks: [{ ...replica.blocks[0]!, id: "prune-other-block", parentId: null }],
+    };
+    const save = async (value: typeof selected) => repository.storePageYjsState({
+      documentName: `page:${value.page.id}`,
+      snapshot: new TextEncoder().encode(JSON.stringify(value)),
+      replica: value,
+    });
+    const read = async (pageId: string) => sql`
+      SELECT * FROM blocks WHERE page_id = ${pageId} ORDER BY id
+    `;
+    await save(selected);
+    await save(other);
+    const otherBefore = await read(other.page.id);
+
+    await save({ ...selected, blocks: selected.blocks.slice(0, 1) });
+    expect((await read(selected.page.id)).map((row) => row.id)).toEqual(["prune-block-0"]);
+    expect(await read(other.page.id)).toEqual(otherBefore);
+
+    await save({ ...selected, blocks: [] });
+    expect(await read(selected.page.id)).toEqual([]);
+    expect(await read(other.page.id)).toEqual(otherBefore);
+  });
 });
