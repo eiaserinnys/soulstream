@@ -1,6 +1,5 @@
 // This route inventory shares existing validation/portrait helpers; splitting it is deferred to preserve the parallel extraction boundary.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type {
   ModelPresetAvailability,
   ModelPresetAvailabilityService,
@@ -89,11 +88,6 @@ export type NodeAgentProfileProvider = {
 export type NodeAgentProfileRouteOptions = {
   provider: NodeAgentProfileProvider;
   modelPresetProvider?: Pick<ModelPresetAvailabilityService, "listForNode">;
-  worktreeProvider?: {
-    invoke(nodeId: string, operation: "list" | "create" | "remove" | "delete-branch", input: Record<string, unknown>): Promise<unknown>;
-  };
-  worktreeAuthBearerToken?: string;
-  environment?: string;
 };
 
 export class NodeAgentProfileRouteError extends Error {
@@ -138,49 +132,12 @@ export const nodeAgentProfileRouteAuthRequirements = {
   "POST /api/nodes/:node_id/agents/context-preview": true,
   "GET /api/nodes/:node_id/oauth-profiles": true,
   "GET /api/nodes/:node_id/user/portrait": true,
-  "POST /api/nodes/:node_id/worktrees/list": true,
-  "POST /api/nodes/:node_id/worktrees/create": true,
-  "POST /api/nodes/:node_id/worktrees/remove": true,
-  "POST /api/nodes/:node_id/worktrees/delete-branch": true,
 } as const;
 
 export function registerNodeAgentProfileRoutes(
   app: FastifyInstance,
   options: NodeAgentProfileRouteOptions,
 ): void {
-  if (options.worktreeProvider) {
-    for (const operation of ["list", "create", "remove", "delete-branch"] as const) {
-      app.post<{ Params: NodeParams }>(
-        `/api/nodes/:node_id/worktrees/${operation}`,
-        async (request, reply) => {
-          const authorization = verifyServiceBearerAuthorization(
-            request.headers.authorization,
-            options.worktreeAuthBearerToken ?? "",
-            options.environment,
-          );
-          if (!authorization.ok) {
-            return reply.code(authorization.statusCode).send({
-              error: {
-                code: "WORKTREE_INTERNAL_AUTH_REQUIRED",
-                message: `service bearer is ${authorization.reason}`,
-              },
-            });
-          }
-          const body = parseObjectBody(request.body);
-          if (!body.ok) return validationError(reply, body);
-          try {
-            return reply.send(await options.worktreeProvider!.invoke(
-              nodeParams(request).node_id,
-              operation,
-              body.value,
-            ));
-          } catch (error) {
-            return sendConfigProviderError(reply, error);
-          }
-        },
-      );
-    }
-  }
   app.get<{ Params: NodeParams }>("/api/nodes/:node_id/agents", async (request, reply) => {
       const result = await executeNodeAgentProfileRoute(options, "agents", nodeParams(request).node_id, undefined);
       return reply.code(result.status).send(result.body);

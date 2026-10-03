@@ -309,11 +309,6 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeRuntimeDeleteSchedule",
         "ProviderUsageGet",
         "ReflectBrief",
-        "WorktreeList",
-        "WorktreeCreate",
-        "WorktreeRemove",
-        "WorktreeDeleteBranch",
-        "WorktreeResult",
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
         "NodeControlRegister",
@@ -325,7 +320,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 82
+    assert len(wire_types) == 77
 
     sse_types = {
         "SSEEventInit",
@@ -623,11 +618,6 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ClaudeRuntimeDeleteSchedule",
         "ProviderUsageGet",
         "ReflectBrief",
-        "WorktreeList",
-        "WorktreeCreate",
-        "WorktreeRemove",
-        "WorktreeDeleteBranch",
-        "WorktreeResult",
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
         "NodeControlRegister",

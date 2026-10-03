@@ -177,9 +177,6 @@ function createAllOptInRouteApp() {
       modelPresetProvider: {
         listForNode: () => [],
       },
-      worktreeProvider: {
-        invoke: async () => inert,
-      },
     },
     nodeClaudeAuthRoutes: inert,
     nodeSnapshotRoutes: inert,

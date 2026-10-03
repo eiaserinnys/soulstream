@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 158개 $defs (top-level wire 82 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 153개 $defs (top-level wire 77 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -80,12 +80,7 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeRuntimeListSchedules
   | ClaudeRuntimeDeleteSchedule
   | ProviderUsageGet
-  | ReflectBrief
-  | WorktreeList
-  | WorktreeCreate
-  | WorktreeRemove
-  | WorktreeDeleteBranch
-  | WorktreeResult;
+  | ReflectBrief;
 export type SessionLifecycleStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
 export type CallerInfoSource =
   | "agent"
@@ -2568,59 +2563,6 @@ export interface ReflectBrief {
   brief?: unknown;
   [k: string]: unknown;
 }
-/**
- * orch→노드: worktree 목록 조회.
- */
-export interface WorktreeList {
-  type: "worktree_list";
-  requestId?: string;
-  input?: {
-    [k: string]: unknown;
-  };
-  [k: string]: unknown;
-}
-/**
- * orch→노드: worktree 생성.
- */
-export interface WorktreeCreate {
-  type: "worktree_create";
-  requestId?: string;
-  input?: {
-    [k: string]: unknown;
-  };
-  [k: string]: unknown;
-}
-/**
- * orch→노드: worktree 디렉터리 제거.
- */
-export interface WorktreeRemove {
-  type: "worktree_remove";
-  requestId?: string;
-  input?: {
-    [k: string]: unknown;
-  };
-  [k: string]: unknown;
-}
-/**
- * orch→노드: 로컬 worktree branch 삭제.
- */
-export interface WorktreeDeleteBranch {
-  type: "worktree_delete_branch";
-  requestId?: string;
-  input?: {
-    [k: string]: unknown;
-  };
-  [k: string]: unknown;
-}
-/**
- * 노드→orch: worktree command 결과.
- */
-export interface WorktreeResult {
-  type: "worktree_result";
-  requestId: string;
-  result: unknown;
-  [k: string]: unknown;
-}
 
 /**
  * Event persistence policy generated from upstream.schema.json.
@@ -2881,10 +2823,6 @@ export const CONTROL_COMMAND_TYPES = [
   "apply_agent_profile_update",
   "list_agents_config_snapshots",
   "rollback_agents_config",
-  "worktree_list",
-  "worktree_create",
-  "worktree_remove",
-  "worktree_delete_branch",
 ] as const;
 export type ControlCommandType = (typeof CONTROL_COMMAND_TYPES)[number];
 

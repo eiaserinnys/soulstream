@@ -34,7 +34,6 @@ interface WorkerUpstreamCompositionParams {
   eventOutboxPump: EventOutboxPumpMux;
   runnerProcess: RunnerProcessComposition | undefined;
   runnerRecoveryCoordinator: RunnerRecoveryCoordinator | undefined;
-  worktreeService?: import("../worktree/worktree_service.js").WorktreeService;
   decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
   authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
 }
@@ -54,7 +53,6 @@ export function composeWorkerUpstreamAdapter({
   eventOutboxPump,
   runnerProcess,
   runnerRecoveryCoordinator,
-  worktreeService,
   decisionRunner,
   authorizeOrchestrationWorker,
 }: WorkerUpstreamCompositionParams): UpstreamAdapter {
@@ -97,7 +95,6 @@ export function composeWorkerUpstreamAdapter({
         logger,
       ),
       ...(agentProfileSource ? { agentProfileSource } : {}),
-      ...(worktreeService ? { worktreeService } : {}),
       ...(decisionRunner ? { decisionRunner } : {}),
       ...(authorizeOrchestrationWorker ? { authorizeOrchestrationWorker } : {}),
     },

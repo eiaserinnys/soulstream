@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 158개 $defs (top-level wire 82 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 153개 $defs (top-level wire 77 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -44,11 +44,7 @@
     "plan_agent_profile_update",
     "apply_agent_profile_update",
     "list_agents_config_snapshots",
-    "rollback_agents_config",
-    "worktree_list",
-    "worktree_create",
-    "worktree_remove",
-    "worktree_delete_branch"
+    "rollback_agents_config"
   ],
   "x-soulstream-event-ingress-rejection-codes": [
     "EVENT_INGRESS_TRANSIENT_FAILURE",
@@ -2236,61 +2232,6 @@
         "brief": {}
       }
     },
-    "WorktreeList": {
-      "type": "object",
-      "description": "orch→노드: worktree 목록 조회.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "worktree_list" },
-        "requestId": { "type": "string" },
-        "input": { "type": "object", "additionalProperties": true }
-      }
-    },
-    "WorktreeCreate": {
-      "type": "object",
-      "description": "orch→노드: worktree 생성.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "worktree_create" },
-        "requestId": { "type": "string" },
-        "input": { "type": "object", "additionalProperties": true }
-      }
-    },
-    "WorktreeRemove": {
-      "type": "object",
-      "description": "orch→노드: worktree 디렉터리 제거.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "worktree_remove" },
-        "requestId": { "type": "string" },
-        "input": { "type": "object", "additionalProperties": true }
-      }
-    },
-    "WorktreeDeleteBranch": {
-      "type": "object",
-      "description": "orch→노드: 로컬 worktree branch 삭제.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "worktree_delete_branch" },
-        "requestId": { "type": "string" },
-        "input": { "type": "object", "additionalProperties": true }
-      }
-    },
-    "WorktreeResult": {
-      "type": "object",
-      "description": "노드→orch: worktree command 결과.",
-      "required": ["type", "requestId", "result"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "worktree_result" },
-        "requestId": { "type": "string" },
-        "result": {}
-      }
-    },
     "SSEEventInit": {
       "type": "object",
       "description": "SSE: 세션 스트림 초기화. event 메시지의 event 키 안에 packed.",
@@ -3302,12 +3243,7 @@
     { "$ref": "#/$defs/ClaudeRuntimeListSchedules" },
     { "$ref": "#/$defs/ClaudeRuntimeDeleteSchedule" },
     { "$ref": "#/$defs/ProviderUsageGet" },
-    { "$ref": "#/$defs/ReflectBrief" },
-    { "$ref": "#/$defs/WorktreeList" },
-    { "$ref": "#/$defs/WorktreeCreate" },
-    { "$ref": "#/$defs/WorktreeRemove" },
-    { "$ref": "#/$defs/WorktreeDeleteBranch" },
-    { "$ref": "#/$defs/WorktreeResult" }
+    { "$ref": "#/$defs/ReflectBrief" }
   ],
   "discriminator": { "propertyName": "type" }
 }
