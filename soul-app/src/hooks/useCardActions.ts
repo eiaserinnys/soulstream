@@ -9,7 +9,7 @@ import { usePlannerStore } from '../store/plannerStore';
 
 export const cardOperationId = () => `soul-app-card-${Crypto.randomUUID()}`;
 
-export function useCardActions(api: ApiClient | null) {
+export function useCardActions(api: ApiClient | null, onError?: (cause: unknown) => void) {
   const lock = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -30,7 +30,10 @@ export function useCardActions(api: ApiClient | null) {
       }
       return true;
     } catch (cause) {
-      if (mounted.current && captureAuthScope().generation === scope) Alert.alert('카드 변경 실패', cause instanceof Error ? cause.message : String(cause));
+      if (mounted.current && captureAuthScope().generation === scope) {
+        if (onError) onError(cause);
+        else Alert.alert('카드 변경 실패', cause instanceof Error ? cause.message : String(cause));
+      }
       return false;
     } finally {
       lock.current = false;

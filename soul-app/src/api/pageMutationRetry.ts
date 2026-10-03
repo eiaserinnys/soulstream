@@ -15,7 +15,7 @@ export async function retryPageMutationVersionConflict<TState, TResult>(
   return mutate(await readFresh());
 }
 
-function isPageMutationVersionConflict(error: unknown): boolean {
+export function isPageMutationVersionConflict(error: unknown): boolean {
   if (!(error instanceof ApiHttpError) || error.status !== 409) return false;
   try {
     const body = JSON.parse(error.body) as {

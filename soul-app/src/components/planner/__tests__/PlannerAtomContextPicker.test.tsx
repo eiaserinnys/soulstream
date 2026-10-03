@@ -59,3 +59,29 @@ test('노드 행은 드릴다운하고 현재 노드도 같은 옵션으로 선�
     titlesOnly: false,
   }));
 });
+
+test('확인 연타는 부모 반영과 닫기를 한 번만 실행한다', async () => {
+  const onPicked = jest.fn(); const onClose = jest.fn();
+  const api = { listAtomRootNodes: jest.fn().mockResolvedValue([{ id: 'a', title: 'A' }]), listAtomNodeChildren: jest.fn() };
+  const screen = render(<PlannerAtomContextPicker visible api={api} onClose={onClose} onPicked={onPicked} />);
+  await act(async () => {});
+  fireEvent.press(screen.getByTestId('atom-picker-select-a'));
+  const confirm = screen.getByTestId('atom-picker-add-selected');
+  act(() => { fireEvent.press(confirm); fireEvent.press(confirm); });
+  expect(onPicked).toHaveBeenCalledTimes(1); expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('탐색 중이거나 조회 실패면 이전 선택을 확인할 수 없다', async () => {
+  const onPicked = jest.fn(); let reject!: (error: Error) => void;
+  const api = { listAtomRootNodes: jest.fn().mockResolvedValue([{ id: 'a', title: 'A' }]),
+    listAtomNodeChildren: jest.fn(() => new Promise((_, no) => { reject = no; })) };
+  const screen = render(<PlannerAtomContextPicker visible api={api} onClose={jest.fn()} onPicked={onPicked} />);
+  await act(async () => {});
+  fireEvent.press(screen.getByTestId('atom-picker-select-a'));
+  fireEvent.press(screen.getByTestId('atom-picker-drill-a'));
+  fireEvent.press(screen.getByTestId('atom-picker-add-selected'));
+  expect(onPicked).not.toHaveBeenCalled();
+  await act(async () => reject(new Error('조회 실패')));
+  fireEvent.press(screen.getByTestId('atom-picker-add-selected'));
+  expect(onPicked).not.toHaveBeenCalled();
+});

@@ -14,7 +14,7 @@ import { CardStatusMenu } from '../components/planner/CardStatusMenu';
 import { ImageViewerModal } from '../components/ImageViewerModal';
 import { DEFAULT_SEARCH_FILTERS } from '../store/searchStore';
 import { createSessionSuccessionFailureRecord } from '../lib/session-succession-diagnostics';
-import { operationId } from '../api/plannerMutationPort';
+import { createPlannerMutationPort } from '../api/plannerMutationPort';
 import { makeCard } from './fixtures';
 import { dialogueApi as api, dialogueFolder, dialogueFolders } from './dialogue-fixtures';
 import { type DialogueSample } from './dialogue-inventory';
@@ -37,8 +37,8 @@ export function ReviewDialogueSurface({ opened, onClose, onResult, preview = fal
       {opened === 'folder-picker' ? <FolderSelectionSheet api={api} onClose={close} onSelect={id => saved('선택: ' + id)} /> : null}
       {opened === 'execution-picker' ? <ExecutionSelectionSheet api={api} value={assignment} onClose={close} onSave={value => saved('메모리 실행: ' + value.agentId)} /> : null}
       {opened === 'folder-create' ? <NewFolderSheet visible api={api} folders={dialogueFolders} dailyDate="2026-10-03" defaultProjectPageId="public-page" onClose={close}
-        onSubmit={async input => { const response = await api.createFolder({ name: input.title, description: input.description, parentFolderId: input.folderId, initialContext: input.initialContext, idempotencyKey: operationId('review-folder') }); saved('메모리 폴더: ' + response.folder.name); return response; }} /> : null}
-      {opened === 'session-create' ? <SessionSuccessionSheet visible api={api} folder={dialogueFolder} predecessorSessionId="public-idle" onClose={close} onCreated={id => saved('메모리 세션: ' + id)} /> : null}
+        onSubmit={async input => { const response = await createPlannerMutationPort(api).createFolder(input); setResult('메모리 폴더: ' + response.folder.name); return response; }} /> : null}
+      {opened === 'session-create' ? <SessionSuccessionSheet visible api={api} folder={dialogueFolder} predecessorSessionId="public-idle" onClose={close} onCreated={id => setResult('메모리 세션: ' + id)} /> : null}
       {opened === 'session-diagnostic' ? <SessionSuccessionDiagnosticFallback visible api={api} folder={dialogueFolder} predecessorSessionId="public-idle" onClose={close} onCreated={id => saved('메모리 진단 세션: ' + id)}
         failure={createSessionSuccessionFailureRecord({ folderId: 'public-project', folderPageId: 'public-page', projectPageId: 'public-page', phase: 'render', error: new Error('공개 예시: 새 세션 화면을 열지 못했습니다.'), visible: true, predecessorSessionId: 'public-idle', folderBlockCount: 0, folderSessionCount: 1 })} /> : null}
       {opened === 'morning-review' ? <MorningReviewSheet visible api={api} today="2026-10-03" onClose={close} onAction={async (_, action) => { setResult('메모리 검토: ' + action); }} /> : null}

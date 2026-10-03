@@ -401,3 +401,18 @@ test('reasoningEffort가 없으면 요청에서 생략하여 노드가 preset �
   expect((api.createSession as jest.Mock).mock.calls[0]?.[0])
     .not.toHaveProperty('reasoningEffort');
 });
+
+test('생성 성공 뒤 오늘 반영 실패는 같은 생성 결과와 페이지 요청으로 재개한다', async () => {
+  const result = { folder: { id: 'new-folder' } };
+  const api = apiMock({ createFolder: jest.fn().mockResolvedValue(result),
+    getDailyPage: jest.fn().mockResolvedValue({ page }),
+    applyPageOperations: jest.fn().mockRejectedValueOnce(new Error('응답 유실')).mockResolvedValue({ page }) });
+  const port = createPlannerMutationPort(api);
+  const input = { title: '새 폴더', description: '설명', folderId: 'parent', projectPageId: 'parent-page', dailyDate: '2026-10-03',
+    creation: { idempotencyKey: 'stable-folder-key' } };
+  await expect(port.createFolder(input)).rejects.toThrow('응답 유실');
+  await expect(port.createFolder(input)).resolves.toEqual(result);
+  expect(api.createFolder).toHaveBeenCalledTimes(1);
+  expect(api.createFolder).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'stable-folder-key' }));
+  expect((api.applyPageOperations as jest.Mock).mock.calls[1]).toEqual((api.applyPageOperations as jest.Mock).mock.calls[0]);
+});
