@@ -1,0 +1,3632 @@
+[
+  {
+    "description": "담당 세션이 카드에 커멘트를 남긴다. mode=spoken(기본)은 사용자 발언 요약만 사용자가 말한 것처럼 기록하며 첫 줄에 정확히 \"아래는 사용자의 발언을 요약하여 옮긴 것입니다\"라고 표기한다. mode=reply는 담당 세션 자신의 답변만 에이전트 신원으로 기록한다. 두 내용을 엄밀하게 구분한다. 본문은 자동 변경하지 않으며 카드 상태도 바꾸지 않는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "spoken",
+            "reply"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "add_card_comment"
+  },
+  {
+    "description": "카드에 보고를 추가하며 보고를 고칠 때는 새 보고를 올린다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "markdown",
+            "html"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "title",
+        "format",
+        "body"
+      ],
+      "type": "object"
+    },
+    "name": "add_card_report"
+  },
+  {
+    "description": "폴더를 보관한다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "folder_id",
+        "expected_version",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "archive_folder"
+  },
+  {
+    "description": "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "ask_card_question"
+  },
+  {
+    "description": "페이지 변경 묶음을 하나의 CAS transaction으로 실행한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "operations": {
+          "items": {
+            "oneOf": [
+              {
+                "properties": {
+                  "op": {
+                    "const": "rename_page",
+                    "type": "string"
+                  },
+                  "title": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  },
+                  "op": {
+                    "const": "set_page_archived",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "archived"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "after_block_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "after_temp_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "block_type": {
+                    "default": "paragraph",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "collapsed": {
+                    "type": "boolean"
+                  },
+                  "op": {
+                    "const": "create_block",
+                    "type": "string"
+                  },
+                  "parent_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "parent_temp_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "properties": {
+                    "additionalProperties": {},
+                    "default": {},
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "temp_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "temp_id",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "after_block_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "after_temp_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "block_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "op": {
+                    "const": "move_block",
+                    "type": "string"
+                  },
+                  "parent_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "parent_temp_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "op",
+                  "block_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "block_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "op": {
+                    "const": "update_block_text",
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "block_id",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "block_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "block_type": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "op": {
+                    "const": "update_block_type_and_properties",
+                    "type": "string"
+                  },
+                  "properties": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "op",
+                  "block_id",
+                  "block_type",
+                  "properties"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "block_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "checked": {
+                    "type": "boolean"
+                  },
+                  "op": {
+                    "const": "set_check_state",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "block_id",
+                  "checked"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "page": {
+          "properties": {
+            "daily_date": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "type": "object"
+        },
+        "page_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "operations",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "batch_page_operations"
+  },
+  {
+    "description": "폴더 내부를 한 번에 브라우즈한다. 직접 자식 폴더, 세션 페이지, 문서/이미지/파일 보드 항목을 함께 반환.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "include_archived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "session_cursor": {
+          "default": 0,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "folder_id"
+      ],
+      "type": "object"
+    },
+    "name": "browse_folder"
+  },
+  {
+    "description": "요청 원문이 고정된 카드를 만들고 queue=true면 대기열에 넣는다. 새 업무는 queue=true로 대기에 올리고, assignee와 node_id와 model_preset을 생략하면 만든 세션과 같은 값이 들어가며, brief에 인계 내용을 적는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "assignee": {
+          "anyOf": [
+            {
+              "properties": {
+                "agent_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "enum": [
+                    "agent",
+                    "human",
+                    "session"
+                  ],
+                  "type": "string"
+                },
+                "session_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "user_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attachments": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "mimeType": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "nodeId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "path": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "nodeId",
+              "path",
+              "name",
+              "mimeType"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "model_preset": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "queue": {
+          "type": "boolean"
+        },
+        "request": {
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder_id",
+        "title",
+        "request"
+      ],
+      "type": "object"
+    },
+    "name": "create_card"
+  },
+  {
+    "description": "현재 MCP caller origin을 감사 actor로 하여 sandboxed HTML custom view board item을 생성한다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "html": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "default": "Custom view",
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "folder_id",
+        "html",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "create_custom_view"
+  },
+  {
+    "description": "현재 MCP caller session을 actor_kind='agent'로 하여 폴더를 생성한다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "initial_context": {},
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "parent_folder_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sort_order": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "create_folder"
+  },
+  {
+    "description": "현재 보드 폴더에 마크다운 문서와 보드 카드를 생성.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "folder_id",
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "create_markdown_document"
+  },
+  {
+    "description": "새 페이지를 생성한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "daily_date": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "create_page"
+  },
+  {
+    "description": "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. notify_completion=false는 카드가 추적 표면일 때 권장.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "agent_id": {
+          "type": "string"
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "type": "string"
+        },
+        "folder_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model_preset": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "notify_completion": {
+          "type": "boolean"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "name": "create_remote_agent_session"
+  },
+  {
+    "description": "trim + case-insensitive exact title로 페이지를 찾는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "find_page"
+  },
+  {
+    "description": "페이지를 가리키는 materialized backlink를 cursor 방식으로 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "cursor": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "include_self": {
+          "default": false,
+          "type": "boolean"
+        },
+        "kinds": {
+          "default": [
+            "mount",
+            "inline_page",
+            "block_ref"
+          ],
+          "items": {
+            "enum": [
+              "mount",
+              "inline_page",
+              "block_ref"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "page_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_backlinks"
+  },
+  {
+    "description": "카드 본문과 보고, 질문, 커멘트, 연결된 세션 목록을 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_card"
+  },
+  {
+    "description": "커스텀 뷰 HTML과 revision을 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "custom_view_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "custom_view_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_custom_view"
+  },
+  {
+    "description": "Asia/Seoul 기준 데일리 페이지를 멱등 get-or-create한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "date": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_daily_page"
+  },
+  {
+    "description": "폴더와 카드를 조회한다. view=outline 또는 card_id로 응답을 축약할 수 있다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "view": {
+          "default": "full",
+          "enum": [
+            "full",
+            "outline"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_folder"
+  },
+  {
+    "description": "폴더 시스템 프롬프트 조회.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "folder_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_folder_system_prompt"
+  },
+  {
+    "description": "마크다운 문서 본문 조회.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "document_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_markdown_document"
+  },
+  {
+    "description": "페이지와 선택적으로 블록 전체를 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "include_blocks": {
+          "default": true,
+          "type": "boolean"
+        },
+        "page_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_page"
+  },
+  {
+    "description": "페이지 블록 트리를 마크다운 텍스트로 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "include_block_ids": {
+          "default": false,
+          "type": "boolean"
+        },
+        "page_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_page_markdown"
+  },
+  {
+    "description": "특정 이벤트의 전문(truncation 없음)을 조회.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "event_id": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "event_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_session_event"
+  },
+  {
+    "description": "저장된 세션 하이라이트를 우선 조회하고, 스토리가 없으면 저장된 턴 요약으로 폴백한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_session_highlight"
+  },
+  {
+    "description": "세션 표시 이름 조회.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_session_name"
+  },
+  {
+    "description": "접힌 세션 줄거리와 아직 접히지 않은 턴 요약을 조회한다. 스토리가 없으면 저장된 턴 요약으로 폴백한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "include_highlight": {
+          "default": false,
+          "type": "boolean"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_session_story"
+  },
+  {
+    "description": "세션의 턴별 요약 (LLM 미사용, DB 이벤트 순회).",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "max_response_chars": {
+          "default": 500,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_session_summary"
+  },
+  {
+    "description": "세션 턴 요약을 개수(count), 단건(index), 범위(range) 모드로 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "from_turn_number": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "count",
+            "index",
+            "range"
+          ],
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "to_turn_number": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "turn_number": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id",
+        "mode"
+      ],
+      "type": "object"
+    },
+    "name": "get_session_turn_summaries"
+  },
+  {
+    "description": "폴더와 상태로 카드를 조회하고 folder_id가 없으면 모든 폴더를 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "todo",
+            "queued",
+            "blocked",
+            "running",
+            "review",
+            "done",
+            "cancelled"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_cards"
+  },
+  {
+    "description": "직접 자식 폴더를 페이지 단위로 조회한다. folder_id=null이면 최상위 폴더를 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "type": "string"
+        },
+        "folder_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "include_archived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_child_folders"
+  },
+  {
+    "description": "지정한 폴더의 커스텀 뷰 목록을 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "include_archived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "folder_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_custom_views"
+  },
+  {
+    "description": "폴더와 카드의 감사 기록을 최신순으로 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "folder_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_folder_operations"
+  },
+  {
+    "description": "전체 폴더 목록.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_folders"
+  },
+  {
+    "_meta": {
+      "openai/widgetAccessible": true,
+      "ui": {
+        "visibility": [
+          "app",
+          "model"
+        ]
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "현재 요청의 기존 Soulstream 권한으로 실제 카드를 다시 조회한다. 카드 화면의 읽기 전용 새로고침용이며 UI를 새로 열지 않는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "folder_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_live_cards",
+    "outputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "not": {
+            "required": [
+              "syncError"
+            ]
+          },
+          "required": [
+            "cards",
+            "total",
+            "truncated",
+            "sync"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "cards"
+                ]
+              },
+              {
+                "required": [
+                  "total"
+                ]
+              },
+              {
+                "required": [
+                  "truncated"
+                ]
+              },
+              {
+                "required": [
+                  "sync"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "syncError"
+          ]
+        }
+      ],
+      "properties": {
+        "cards": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assignee": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "preview": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "instruction",
+                      "report"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "maxLength": 500,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "text"
+                ],
+                "type": "object"
+              },
+              "status": {
+                "enum": [
+                  "todo",
+                  "queued",
+                  "blocked",
+                  "running",
+                  "review",
+                  "done",
+                  "cancelled",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status",
+              "assignee",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "sync": {
+          "additionalProperties": false,
+          "properties": {
+            "fetchedAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "folderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "limit": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "refreshSeconds": {
+              "const": 30,
+              "type": "number"
+            }
+          },
+          "required": [
+            "folderId",
+            "limit",
+            "refreshSeconds",
+            "fetchedAt"
+          ],
+          "type": "object"
+        },
+        "syncError": {
+          "additionalProperties": false,
+          "properties": {
+            "authorization": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "authorization"
+          ],
+          "type": "object"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "title": "Soulstream 카드 새로고침"
+  },
+  {
+    "description": "특정 노드의 에이전트 목록 조회.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_node_agents"
+  },
+  {
+    "description": "특정 노드가 광고한 모델 preset id와 현재 가용성·사용량 경고를 조회.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_node_model_presets"
+  },
+  {
+    "description": "오케스트레이터에 연결된 노드 목록 조회.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_nodes"
+  },
+  {
+    "description": "오케스트레이터를 통해 대상 노드의 agents.yaml snapshot 목록을 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_remote_agents_config_snapshots"
+  },
+  {
+    "description": "세션 이벤트 목록 페이지네이션. tool_content로 tool_use/tool_result 길이 제어 (Python 정합).",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "event_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "tool_content": {
+          "default": "truncate",
+          "enum": [
+            "truncate",
+            "full",
+            "omit"
+          ],
+          "type": "string"
+        },
+        "tool_truncate_chars": {
+          "default": 500,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_session_events"
+  },
+  {
+    "description": "세션 목록을 페이지네이션하여 조회한다. 경량 필드만 반환 (Python list_sessions 정합).",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "folder_id": {
+          "type": "string"
+        },
+        "folder_name": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "node_name": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_sessions"
+  },
+  {
+    "description": "기존 보드 항목을 다른 폴더로 이동한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "board_item_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "board_item_id",
+        "folder_id",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "move_board_item_to_folder"
+  },
+  {
+    "description": "카드를 다른 폴더로 옮기고 after_card_id 뒤에 놓는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "after_card_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "folder_id"
+      ],
+      "type": "object"
+    },
+    "name": "move_card"
+  },
+  {
+    "description": "폴더를 다른 부모 폴더 아래로 이동. parent_folder_id=null/미지정 → 루트로 이동.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "folder_id": {
+          "type": "string"
+        },
+        "parent_folder_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "folder_id"
+      ],
+      "type": "object"
+    },
+    "name": "move_folder"
+  },
+  {
+    "description": "세션들을 폴더로 이동. folder_id=null/미지정 → 폴더 해제.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "folder_id": {
+          "type": "string"
+        },
+        "session_ids": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "session_ids"
+      ],
+      "type": "object"
+    },
+    "name": "move_sessions_to_folder"
+  },
+  {
+    "description": "커스텀 뷰 HTML을 전체 replace로 갱신한다. expected_revision이 맞지 않으면 충돌로 실패한다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "custom_view_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "html": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "custom_view_id",
+        "expected_revision",
+        "html",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "patch_custom_view"
+  },
+  {
+    "description": "오케스트레이터를 통해 대상 노드에 agent profile 변경 계획(diff)만 요청한다. 파일 쓰기와 snapshot 생성은 하지 않는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "create_if_missing": {
+          "default": false,
+          "type": "boolean"
+        },
+        "includeTextDiff": {
+          "type": "boolean"
+        },
+        "include_text_diff": {
+          "type": "boolean"
+        },
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "profile": {
+          "properties": {
+            "agents_sdk": {
+              "properties": {
+                "agents": {
+                  "items": {
+                    "properties": {
+                      "handoff_description": {
+                        "type": "string"
+                      },
+                      "handoffs": {
+                        "default": [],
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "hosted_tools": {
+                        "default": [],
+                        "items": {
+                          "anyOf": [
+                            {
+                              "properties": {
+                                "allowed_domains": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "external_web_access": {
+                                  "type": "boolean"
+                                },
+                                "name": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "search_context_size": {
+                                  "enum": [
+                                    "low",
+                                    "medium",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "web_search",
+                                  "type": "string"
+                                },
+                                "user_location": {
+                                  "additionalProperties": {},
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "filters": {
+                                  "additionalProperties": {},
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "include_search_results": {
+                                  "type": "boolean"
+                                },
+                                "max_num_results": {
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "type": "integer"
+                                },
+                                "name": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "ranking_options": {
+                                  "additionalProperties": {},
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "type": {
+                                  "const": "file_search",
+                                  "type": "string"
+                                },
+                                "vector_store_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "vector_store_ids"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "container": {
+                                  "anyOf": [
+                                    {
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "additionalProperties": {},
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "include_outputs": {
+                                  "type": "boolean"
+                                },
+                                "name": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "code_interpreter",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "description": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "name": {
+                                  "const": "tool_search",
+                                  "type": "string"
+                                },
+                                "parameters": {
+                                  "anyOf": [
+                                    {},
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "type": {
+                                  "const": "tool_search",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "background": {
+                                  "type": "string"
+                                },
+                                "input_fidelity": {
+                                  "anyOf": [
+                                    {
+                                      "enum": [
+                                        "high",
+                                        "low"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "input_image_mask": {
+                                  "additionalProperties": {},
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "model": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "moderation": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "output_compression": {
+                                  "maximum": 100,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "output_format": {
+                                  "type": "string"
+                                },
+                                "partial_images": {
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "type": "integer"
+                                },
+                                "quality": {
+                                  "type": "string"
+                                },
+                                "size": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "image_generation",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "allowed_tools": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "authorization": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "connector_id": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "defer_loading": {
+                                  "type": "boolean"
+                                },
+                                "headers": {
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  },
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "require_approval": {
+                                  "anyOf": [
+                                    {
+                                      "const": "never",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "always",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "properties": {
+                                        "always": {
+                                          "properties": {
+                                            "read_only": {
+                                              "type": "boolean"
+                                            },
+                                            "tool_names": {
+                                              "items": {
+                                                "minLength": 1,
+                                                "type": "string"
+                                              },
+                                              "type": "array"
+                                            }
+                                          },
+                                          "type": "object"
+                                        },
+                                        "never": {
+                                          "properties": {
+                                            "read_only": {
+                                              "type": "boolean"
+                                            },
+                                            "tool_names": {
+                                              "items": {
+                                                "minLength": 1,
+                                                "type": "string"
+                                              },
+                                              "type": "array"
+                                            }
+                                          },
+                                          "type": "object"
+                                        }
+                                      },
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "server_description": {
+                                  "type": "string"
+                                },
+                                "server_label": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "server_url": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "hosted_mcp",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "server_label"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "type": "array"
+                      },
+                      "id": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "instructions": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "mcp_config": {
+                        "properties": {
+                          "convert_schemas_to_strict": {
+                            "type": "boolean"
+                          },
+                          "include_server_in_tool_names": {
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "mcp_servers": {
+                        "default": [],
+                        "items": {
+                          "anyOf": [
+                            {
+                              "properties": {
+                                "args": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "cache_tools_list": {
+                                  "type": "boolean"
+                                },
+                                "command": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "cwd": {
+                                  "type": "string"
+                                },
+                                "env": {
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  },
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "full_command": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "headers": {
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  },
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "name": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "timeout": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "type": {
+                                  "const": "stdio",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "cache_tools_list": {
+                                  "type": "boolean"
+                                },
+                                "headers": {
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  },
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "name": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "session_id": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "timeout": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "type": {
+                                  "const": "streamable_http",
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "url"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "cache_tools_list": {
+                                  "type": "boolean"
+                                },
+                                "headers": {
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  },
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "name": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "timeout": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "type": {
+                                  "const": "sse",
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "url"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "type": "array"
+                      },
+                      "model": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "tools": {
+                        "default": [],
+                        "items": {
+                          "properties": {
+                            "description": {
+                              "default": "",
+                              "type": "string"
+                            },
+                            "name": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "needs_approval": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "output": {
+                              "type": "string"
+                            },
+                            "parameters": {
+                              "additionalProperties": {},
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "name"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "instructions"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "entry_agent": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "guardrails": {
+                  "default": {
+                    "input_blocklist": [],
+                    "output_blocklist": []
+                  },
+                  "properties": {
+                    "input_blocklist": {
+                      "default": [],
+                      "items": {
+                        "properties": {
+                          "message": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "pattern": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "pattern"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "output_blocklist": {
+                      "default": [],
+                      "items": {
+                        "properties": {
+                          "message": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "pattern": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "pattern"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "max_turns": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "provider": {
+                  "properties": {
+                    "api_key_env": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "base_url": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "cache_responses_websocket_models": {
+                      "type": "boolean"
+                    },
+                    "organization": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "project": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "strict_feature_validation": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "const": "openai",
+                      "default": "openai",
+                      "type": "string"
+                    },
+                    "use_responses": {
+                      "type": "boolean"
+                    },
+                    "use_responses_websocket": {
+                      "type": "boolean"
+                    },
+                    "websocket_base_url": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "required": [
+                "entry_agent",
+                "agents"
+              ],
+              "type": "object"
+            },
+            "aliases": {
+              "items": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "properties": {
+                      "default_preset": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "id": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "allowed_tools": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "atom_contexts": {
+              "items": {
+                "properties": {
+                  "applies_when": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "depth": {
+                    "default": 3,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "include_ids": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "node_id": {
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "titles_only": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "node_id"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "backend": {
+              "enum": [
+                "claude",
+                "codex",
+                "openai-agents"
+              ],
+              "type": "string"
+            },
+            "claude_permission_mode": {
+              "enum": [
+                "default",
+                "acceptEdits",
+                "bypassPermissions",
+                "plan",
+                "dontAsk",
+                "auto"
+              ],
+              "type": "string"
+            },
+            "default_preset": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "disallowed_tools": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "max_turns": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "mcp_profile": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "model": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "portrait_path": {
+              "type": "string"
+            },
+            "workspace_dir": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "backend",
+            "workspace_dir"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "node_id",
+        "profile"
+      ],
+      "type": "object"
+    },
+    "name": "plan_remote_agent_profile_update"
+  },
+  {
+    "description": "오케스트레이터를 통해 연결된 TS 노드들의 reflect_brief를 집계한다. 로컬 reflect_brief(self-only)와 별도 도구다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "reflect_cluster_brief"
+  },
+  {
+    "description": "폴더 이름을 바꾼다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "folder_id",
+        "name",
+        "expected_version",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "rename_folder"
+  },
+  {
+    "description": "카드 상태를 검수 대기로 변경한다. 보고와 미답 질문은 상태 변경을 막지 않는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id"
+      ],
+      "type": "object"
+    },
+    "name": "request_card_review"
+  },
+  {
+    "description": "한 폴더 안에서 최근 갱신된 최대 2000개 세션과 마크다운의 표시명·제목·본문을 검색한다. truncated=true면 더 오래된 항목은 검색되지 않았다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "include_archived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 20,
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "query": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder_id",
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_folder_items"
+  },
+  {
+    "description": "이벤트 텍스트 검색 (BM25, Python SessionSearchEngine 정합). 툴 사용 기록은 event_types: [\"tool_start\",\"tool_result\"]를 명시해 검색한다. 세션 단위로 찾을 때는 search_sessions를 먼저 쓴다. 호출한 세션 자신의 이벤트는 session_ids에 직접 넣지 않는 한 결과에서 뺀다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "event_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "include_highlight": {
+          "default": false,
+          "type": "boolean"
+        },
+        "include_story": {
+          "default": false,
+          "type": "boolean"
+        },
+        "include_turn_summaries": {
+          "default": false,
+          "type": "boolean"
+        },
+        "query": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "search_session_id": {
+          "default": false,
+          "type": "boolean"
+        },
+        "session_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "top_k": {
+          "default": 10,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_session_history"
+  },
+  {
+    "description": "과거 세션을 뜻으로 찾는다. 검색어가 가리키는 작업이나 대화를 한 세션을 관련도 순으로 돌려준다. 원문 이벤트 조각(특정 문장, 도구 출력)이 필요하면 search_session_history를 쓴다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "folder_id": {
+          "type": "string"
+        },
+        "query": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "top_k": {
+          "default": 10,
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_sessions"
+  },
+  {
+    "description": "스킬 카탈로그에서 요청에 맞는 스킬을 적합도 순으로 찾는다. 주입된 카탈로그에 없는 절차성 요청일 때 body_node_id를 얻기 위해 쓴다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "limit": {
+          "default": 5,
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_skills"
+  },
+  {
+    "description": "대상 세션에 메시지 전달. running이면 현재 턴 개입을 먼저 시도하고, 지금 전달할 수 없을 때만 next_turn 큐로 보낸다. 결과의 delivered·reason·consumeWhen을 확인한다. 종료된 세션은 auto-resume. local 실패 시 orch /intervene fallback.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "target_session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_session_id",
+        "message"
+      ],
+      "type": "object"
+    },
+    "name": "send_message_to_session"
+  },
+  {
+    "description": "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "todo",
+            "queued",
+            "blocked",
+            "running",
+            "review",
+            "done",
+            "cancelled"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "status",
+        "expected_version",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "set_card_status"
+  },
+  {
+    "description": "폴더의 open/completed 상태를 설정한다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "completed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder_id",
+        "status",
+        "expected_version",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "set_folder_status"
+  },
+  {
+    "description": "세션 표시 이름 설정. 빈 문자열 → 제거. CatalogService 경유로 broadcastCatalog 자동.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "set_session_name"
+  },
+  {
+    "_meta": {
+      "openai/outputTemplate": "ui://soulstream/live-cards-v4.html",
+      "ui": {
+        "resourceUri": "ui://soulstream/live-cards-v4.html"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "현재 접근 가능한 실제 카드를 조회하고 동기화되는 읽기 전용 카드 화면을 연다. folder_id가 있으면 해당 폴더만 조회한다. 입력 카드 배열은 필요 없다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "folder_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "show_live_card_view",
+    "outputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "not": {
+            "required": [
+              "syncError"
+            ]
+          },
+          "required": [
+            "cards",
+            "total",
+            "truncated",
+            "sync"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "cards"
+                ]
+              },
+              {
+                "required": [
+                  "total"
+                ]
+              },
+              {
+                "required": [
+                  "truncated"
+                ]
+              },
+              {
+                "required": [
+                  "sync"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "syncError"
+          ]
+        }
+      ],
+      "properties": {
+        "cards": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assignee": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "preview": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "instruction",
+                      "report"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "maxLength": 500,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "text"
+                ],
+                "type": "object"
+              },
+              "status": {
+                "enum": [
+                  "todo",
+                  "queued",
+                  "blocked",
+                  "running",
+                  "review",
+                  "done",
+                  "cancelled",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status",
+              "assignee",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "sync": {
+          "additionalProperties": false,
+          "properties": {
+            "fetchedAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "folderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "limit": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "refreshSeconds": {
+              "const": 30,
+              "type": "number"
+            }
+          },
+          "required": [
+            "folderId",
+            "limit",
+            "refreshSeconds",
+            "fetchedAt"
+          ],
+          "type": "object"
+        },
+        "syncError": {
+          "additionalProperties": false,
+          "properties": {
+            "authorization": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "authorization"
+          ],
+          "type": "object"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "title": "Soulstream 실시간 카드 보기"
+  },
+  {
+    "description": "보관된 폴더를 복구한다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "folder_id",
+        "expected_version",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "unarchive_folder"
+  },
+  {
+    "description": "보드 항목 좌표 갱신. 좌표는 서버에서 20px 격자에 스냅된다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "board_item_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "board_item_id",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "name": "update_board_item_position"
+  },
+  {
+    "description": "카드의 해석된 요구사항과 진행 경과를 갱신한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "brief": {
+          "type": "string"
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "brief"
+      ],
+      "type": "object"
+    },
+    "name": "update_card_brief"
+  },
+  {
+    "description": "마크다운 문서 제목 또는 본문 수정.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "document_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "expected_version"
+      ],
+      "type": "object"
+    },
+    "name": "update_markdown_document"
+  },
+  {
+    "description": "마크다운으로 페이지 블록 전체를 명시적으로 교체한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "markdown": {
+          "type": "string"
+        },
+        "page_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "markdown",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "upsert_page_markdown"
+  }
+]
