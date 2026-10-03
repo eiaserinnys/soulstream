@@ -156,6 +156,7 @@ export function createPlannerActions(
       projectPageId: string;
       initialContext?: InitialFolderContext;
       dailyDate?: string;
+      creation?: import('../api/plannerMutationPort').FolderCreationAttempt;
     }) => {
       const client = requireApi();
       const result = await client.plannerMutations.createFolder({
@@ -166,7 +167,7 @@ export function createPlannerActions(
         const catalog = useSessionStore.getState().catalog;
         useSessionStore.setState({ catalog: {
           ...catalog,
-          folders: [...catalog.folders, result.folder],
+          folders: [...catalog.folders.filter((folder) => folder.id !== result.folder.id), result.folder],
         } });
         markChanged('folder');
       }

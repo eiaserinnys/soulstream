@@ -1,11 +1,11 @@
 // Existing succession state/context flow remains together to preserve its UX;
 // this card change extracts only the shared selection row. Broader splitting is separate work.
+import { captureAuthScope, isAuthScopeCurrent } from '../../lib/auth-scope';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   ActivityIndicator,
-  Alert,
   Platform,
   ScrollView,
   Text,
@@ -40,6 +40,7 @@ import { AttachmentPickerButton } from '../chat/AttachmentPickerButton';
 import { makeStyles as makeChatStyles } from '../chat/ChatBody.styles';
 import { SessionSuccessionErrorBoundary } from './SessionSuccessionErrorBoundary';
 import { SessionSuccessionDiagnosticFallback } from './SessionSuccessionDiagnosticFallback';
+import { SheetErrorNotice, sheetErrorDetail } from './SheetErrorNotice';
 import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { SessionSelectionRow as SelectionRow } from './SessionSelectionRow';
 import { GrowingMultilineInput } from './GrowingMultilineInput';
@@ -133,7 +134,13 @@ function SessionSuccessionSheetContent({
   const instructionDraft = usePersistentDraft('session-succession', [predecessor?.agentSessionId ?? folder.folderId], INITIAL_SESSION_PROMPT);
   const { value: initialInstruction, setValue: setInitialInstruction } = instructionDraft;
   const [attachmentSessionId, setAttachmentSessionId] = useState(() => pendingId('attachment'));
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const submissionCompleted = useRef(false);
   const [submitting, setSubmitting] = useState(false);
+  const submissionPending = useRef(false);
+  const [executionExpanded, setExecutionExpanded] = useState(
+    !assignmentDefaults.nodeId || !assignmentDefaults.agentId,
+  );
   // null = follow the selected preset's advertised default.
   const [selectedEffort, setSelectedEffort] = useState<string | null>(
     assignmentDefaults.reasoningEffort,
@@ -154,6 +161,7 @@ function SessionSuccessionSheetContent({
   const {
     attachments,
     uploading,
+    attachmentsReady,
     pickAttachment,
     removeAttachment,
     clearAttachments,
@@ -162,12 +170,15 @@ function SessionSuccessionSheetContent({
     sessionId: attachmentSessionId,
     nodeId: selection.effectiveNodeId ?? undefined,
     disabled: !visible || submitting || !selection.effectiveNodeId,
+    reuploadOnNodeChange: true,
   });
 
   useEffect(() => {
     const opening = visible && !wasVisible.current;
     wasVisible.current = visible;
     if (!opening) return;
+    submissionCompleted.current = false;
+    setSubmissionError(null);
     setIncludeFolderContext(true);
     setInheritPredecessor(Boolean(openingPredecessor.current));
     setAttachmentSessionId(pendingId('attachment'));
@@ -176,7 +187,7 @@ function SessionSuccessionSheetContent({
 
   useEffect(() => {
     clearAttachments();
-  }, [api, clearAttachments, selection.effectiveNodeId]);
+  }, [api, clearAttachments]);
 
   const contextSelection = buildSuccessionContextSelection({
     folder,
@@ -184,8 +195,10 @@ function SessionSuccessionSheetContent({
   });
 
   const pickNode = () => {
+    if (submissionPending.current) return;
     const sheet = buildNodeActionSheet(selection.nodes);
     ActionSheetIOS.showActionSheetWithOptions(sheet, (index) => {
+      if (submissionPending.current) return;
       const result = resolveNodeActionSheetSelection(
         index,
         selection.nodes,
@@ -196,8 +209,10 @@ function SessionSuccessionSheetContent({
   };
 
   const pickAgent = () => {
+    if (submissionPending.current) return;
     const sheet = buildAgentActionSheet(selection.agents);
     ActionSheetIOS.showActionSheetWithOptions(sheet, (index) => {
+      if (submissionPending.current) return;
       const result = resolveAgentActionSheetSelection(
         index,
         selection.agents,
@@ -242,10 +257,12 @@ function SessionSuccessionSheetContent({
   }, [visible]);
 
   const pickEffort = useCallback(() => {
+    if (submissionPending.current) return;
     const sheet = buildEffortActionSheet(effortPreset);
     ActionSheetIOS.showActionSheetWithOptions(
       { options: sheet.options, cancelButtonIndex: sheet.cancelButtonIndex, title: sheet.title },
       (index) => {
+        if (submissionPending.current) return;
         const picked = resolveEffortActionSheetSelection(effortPreset, index);
         if (picked === undefined) return;
         setSelectedEffort(picked);
@@ -254,8 +271,10 @@ function SessionSuccessionSheetContent({
   }, [effortPreset]);
 
   const pickModel = () => {
+    if (submissionPending.current) return;
     const sheet = buildModelPresetActionSheet(selection.modelPresets);
     ActionSheetIOS.showActionSheetWithOptions(sheet, (index) => {
+      if (submissionPending.current) return;
       const result = resolveModelPresetActionSheetSelection(
         index,
         selection.modelPresets,
@@ -269,12 +288,18 @@ function SessionSuccessionSheetContent({
 
   const submit = async () => {
     if (
-      !instructionDraft.ready
+      submissionPending.current
+      || submissionCompleted.current
+      || !attachmentsReady
+      || !instructionDraft.ready
       || !selection.effectiveNodeId
       || !selection.agentId
       || selection.modelPresetSelectionInvalid
       || effortUnsupported
     ) return;
+    const scope = captureAuthScope();
+    submissionPending.current = true;
+    setSubmissionError(null);
     setSubmitting(true);
     try {
       const response = await actions.createFolderSession({
@@ -297,13 +322,16 @@ function SessionSuccessionSheetContent({
           ? { attachmentPaths: attachments.map((attachment) => attachment.path) }
           : {}),
       });
+      if (!isAuthScopeCurrent(scope)) return;
       if (!response.agentSessionId) throw new Error('세션 생성 응답에 ID가 없습니다.');
+      submissionCompleted.current = true;
       instructionDraft.clearIfMatches(initialInstruction);
       onCreated(response.agentSessionId);
       closeSheet();
     } catch (error) {
-      Alert.alert('세션을 시작하지 못했습니다.', errorText(error));
+      if (isAuthScopeCurrent(scope)) setSubmissionError(sheetErrorDetail(error));
     } finally {
+      submissionPending.current = false;
       setSubmitting(false);
     }
   };
@@ -312,30 +340,40 @@ function SessionSuccessionSheetContent({
     clearAttachments();
     onClose();
   };
+  const requestClose = () => {
+    if (!submitting && !submissionPending.current) closeSheet();
+  };
   const canSubmit = Boolean(
     instructionDraft.ready && selection.effectiveNodeId
       && selection.agentId
       && !selection.modelPresetSelectionInvalid
       && !effortUnsupported
       && !submitting
-      && !uploading,
+      && attachmentsReady,
   );
+  const executionNeedsAttention = !selection.effectiveNodeId || !selection.agentId
+    || selection.modelPresetSelectionInvalid || (effortUnsupported && effortPreset !== null);
+  const showExecution = executionExpanded || executionNeedsAttention;
+  useEffect(() => {
+    // Keep the resolved choice in view after correcting an invalid selection.
+    if (executionNeedsAttention) setExecutionExpanded(true);
+  }, [executionNeedsAttention]);
   return (
     <AppModalSurface
       visible={visible}
       variant="expanded"
       modalId="modal_session_succession"
       presentationStyle="pageSheet"
-      onRequestClose={closeSheet}
+      onRequestClose={requestClose}
       safeAreaTestID="succession-safe-area"
     >
       <View testID="succession-header" style={styles.header}>
-            <TouchableOpacity style={styles.headerButton} onPress={closeSheet}><Text style={styles.headerAction}>취소</Text></TouchableOpacity>
+            <TouchableOpacity accessibilityLabel="세션 작성 취소" style={styles.headerButton} onPress={requestClose} disabled={submitting}><Text style={[styles.headerAction, submitting && styles.disabled]}>취소</Text></TouchableOpacity>
             <Text testID="succession-header-title" style={styles.title}>새 세션</Text>
-            <TouchableOpacity testID="succession-submit" style={styles.headerButton} onPress={submit} disabled={!canSubmit}>
+            <TouchableOpacity testID="succession-submit" accessibilityLabel="세션 시작" style={styles.headerButton} onPress={submit} disabled={!canSubmit}>
               {submitting
                 ? <ActivityIndicator color={t.colors.accent} />
-                : <Text style={[styles.headerAction, !canSubmit && styles.disabled]}>시작</Text>}
+                : <Text style={[styles.headerAction, !canSubmit && styles.disabled]}>세션 시작</Text>}
             </TouchableOpacity>
       </View>
       <View testID="succession-keyboard" style={styles.keyboard}>
@@ -347,16 +385,71 @@ function SessionSuccessionSheetContent({
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         >
-          <Text style={styles.folderTitle}>{folder.page.title}</Text>
+          <View style={styles.section} testID="succession-folder-scope">
+            <Text style={styles.meta}>세션을 시작할 폴더</Text>
+            <Text style={styles.folderTitle}>{folder.page.title}</Text>
+            {submissionError ? <SheetErrorNotice summary="세션을 시작하지 못했습니다. 초기 지시는 유지했습니다. 응답을 받지 못한 경우 세션 목록에서 결과를 확인해 주세요." detail={submissionError} /> : null}
+          <Text style={styles.purpose}>선택한 실행 대상이 이 폴더에서 바로 작업을 시작합니다.</Text>
+          </View>
 
-          <Text style={styles.sectionTitle}>노드 / 에이전트 / 모델</Text>
+          <View style={styles.section} testID="succession-request-section">
+            <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>초기 지시</Text><Text style={styles.required}>선택</Text></View>
+            <GroupedGlassSheet testID="succession-initial-instruction-group">
+              <View style={styles.formField}>
+                <AttachmentChips
+                  attachments={attachments}
+                  styles={chatStyles}
+                  textSecondaryColor={t.colors.textSecondary}
+                  textMutedColor={t.colors.textMuted}
+                  onRemove={removeAttachment}
+                  disabled={submitting}
+                />
+                <View style={styles.initialComposerRow}>
+                  <AttachmentPickerButton
+                    testID="succession-attachment-button"
+                    surfaceTestID="succession-attachment-visual"
+                    uploading={uploading}
+                    disabled={submitting || !selection.effectiveNodeId}
+                    onPress={pickAttachment}
+                  />
+                  <GrowingMultilineInput editable={instructionDraft.ready && !submitting}
+                    testID="succession-initial-instruction"
+                    value={initialInstruction}
+                    onChangeText={setInitialInstruction}
+                    outerScrollRef={contentScrollRef}
+                    minHeight={t.foundation.minHeight.memo}
+                    maxHeight={t.foundation.minHeight.memo * 2}
+                    verticalPadding={t.spacing.sm}
+                    placeholder="세션을 시작하자마자 수행할 지시…"
+                    placeholderTextColor={t.colors.textPlaceholder}
+                    style={styles.initialInput}
+                  />
+                </View>
+              </View>
+            </GroupedGlassSheet>
+          </View>
+
           <GroupedGlassSheet testID="succession-selection-group">
-            <SelectionRow testID="succession-selection-node" label="노드" value={selection.selectedNodeName} onPress={pickNode} styles={styles} />
-            <SelectionRow testID="succession-selection-agent" label="에이전트" value={selection.selectedAgentName} onPress={pickAgent} styles={styles} />
-            <SelectionRow testID="succession-selection-model" label="모델" value={selection.selectedModelPresetName} onPress={pickModel} styles={styles} />
+            <TouchableOpacity testID="succession-execution-disclosure" style={styles.disclosure}
+              accessibilityRole="button" accessibilityLabel="실행 설정"
+              accessibilityState={{ expanded: showExecution }} disabled={submitting || executionNeedsAttention}
+              onPress={() => setExecutionExpanded(current => !current)}>
+              <View style={styles.disclosureBody}>
+                <Text style={styles.rowTitle}>실행 대상</Text>
+                <Text style={styles.meta}>{selection.selectedAgentName}, {selection.selectedNodeName}</Text>
+                <Text style={styles.meta}>{selection.selectedModelPresetName}{presetSupportsEffort(effortPreset) ? `, ${effortRowValue(effortPreset, selectedEffort)}` : ''}</Text>
+              </View>
+              <Text style={styles.disclosureAction}>{executionNeedsAttention ? '확인 필요' : showExecution ? '접기 ⌃' : '변경 ⌄'}</Text>
+            </TouchableOpacity>
+            {showExecution ? <View testID="succession-execution-details" style={styles.disclosureDetails}>
+            {!selection.effectiveNodeId || !selection.agentId ? <Text style={styles.selectionError}>노드와 에이전트를 선택해 주세요.</Text> : null}
+            <SelectionRow disabled={submitting} testID="succession-selection-node" label="노드" value={selection.selectedNodeName} onPress={pickNode} styles={styles} />
+            <SelectionRow disabled={submitting} testID="succession-selection-agent" label="에이전트" value={selection.selectedAgentName} onPress={pickAgent} styles={styles} />
+            <SelectionRow disabled={submitting} testID="succession-selection-model" label="모델" value={selection.selectedModelPresetName} onPress={pickModel} styles={styles} />
             {presetSupportsEffort(effortPreset) ? (
               <SelectionRow
                 testID="succession-selection-effort"
+                disabled={submitting}
                 label="추론 강도"
                 value={effortRowValue(effortPreset, selectedEffort)}
                 onPress={pickEffort}
@@ -372,9 +465,10 @@ function SessionSuccessionSheetContent({
                 </Text>
                 <SelectionRow
                   testID="succession-effort-use-default"
+                  disabled={submitting}
                   label="이어받은 추론 강도"
                   value="기본값 사용"
-                  onPress={() => setSelectedEffort(null)}
+                  onPress={() => { if (!submissionPending.current) setSelectedEffort(null); }}
                   styles={styles}
                 />
               </>
@@ -387,63 +481,32 @@ function SessionSuccessionSheetContent({
                 선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.
               </Text>
             ) : null}
+            </View> : null}
           </GroupedGlassSheet>
 
-          <Text style={styles.sectionTitle}>컨텍스트</Text>
+          <Text style={styles.sectionTitle}>함께 가져갈 컨텍스트</Text>
           <GroupedGlassSheet testID="succession-context-group">
             <CheckRow
+              disabled={submitting}
               checked={includeFolderContext}
               testID="succession-check-task-context"
-              label="카드 본문"
+              label="폴더 본문과 컨텍스트"
               detail={contextChips.map((chip) => `${chip.icon} ${chip.label}`).join(' · ') || '연결된 컨텍스트 없음'}
-              onPress={() => setIncludeFolderContext((current) => !current)}
+              onPress={() => { if (!submissionPending.current) setIncludeFolderContext((current) => !current); }}
               styles={styles}
             />
             {predecessor ? (
               <CheckRow
+                disabled={submitting}
                 checked={inheritPredecessor}
                 label="이전 세션"
                 detail={getSessionDisplayName(predecessorSession, predecessor.agentSessionId)}
-                onPress={() => setInheritPredecessor((current) => !current)}
+                onPress={() => { if (!submissionPending.current) setInheritPredecessor((current) => !current); }}
                 styles={styles}
               />
             ) : null}
           </GroupedGlassSheet>
 
-          <Text style={styles.sectionTitle}>초기 지시</Text>
-          <GroupedGlassSheet testID="succession-initial-instruction-group">
-            <View style={styles.formField}>
-              <AttachmentChips
-                attachments={attachments}
-                styles={chatStyles}
-                textSecondaryColor={t.colors.textSecondary}
-                textMutedColor={t.colors.textMuted}
-                onRemove={removeAttachment}
-                disabled={submitting}
-              />
-              <View style={styles.initialComposerRow}>
-                <AttachmentPickerButton
-                  testID="succession-attachment-button"
-                  surfaceTestID="succession-attachment-visual"
-                  uploading={uploading}
-                  disabled={submitting || !selection.effectiveNodeId}
-                  onPress={pickAttachment}
-                />
-                <GrowingMultilineInput editable={instructionDraft.ready && !submitting}
-                  testID="succession-initial-instruction"
-                  value={initialInstruction}
-                  onChangeText={setInitialInstruction}
-                  outerScrollRef={contentScrollRef}
-                  minHeight={t.foundation.minHeight.memo}
-                  maxHeight={t.foundation.minHeight.memo * 2}
-                  verticalPadding={t.spacing.sm}
-                  placeholder="세션을 시작하자마자 수행할 지시…"
-                  placeholderTextColor={t.colors.textPlaceholder}
-                  style={styles.initialInput}
-                />
-              </View>
-            </View>
-          </GroupedGlassSheet>
         </ScrollView>
       </View>
     </AppModalSurface>
@@ -496,16 +559,17 @@ export function resolveSessionAssignmentDefaults(
   };
 }
 
-function CheckRow({ testID, checked, label, detail, onPress, styles }: {
+function CheckRow({ testID, checked, label, detail, onPress, styles, disabled }: {
   testID?: string;
   checked: boolean;
+  disabled?: boolean;
   label: string;
   detail?: string;
   onPress(): void;
   styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <TouchableOpacity testID={testID} style={styles.checkRow} onPress={onPress} accessibilityRole="checkbox" accessibilityState={{ checked }}>
+    <TouchableOpacity testID={testID} style={styles.checkRow} onPress={onPress} disabled={disabled} accessibilityRole="checkbox" accessibilityState={{ checked, disabled }}>
       <Text style={styles.check}>{checked ? '✓' : '○'}</Text>
       <View style={styles.checkBody}>
         <Text style={styles.rowTitle}>{label}</Text>
@@ -513,8 +577,4 @@ function CheckRow({ testID, checked, label, detail, onPress, styles }: {
       </View>
     </TouchableOpacity>
   );
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

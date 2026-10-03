@@ -173,7 +173,6 @@
     "components/planner/CardDetailSheet.tsx",
     "components/planner/FolderWorkspace.tsx",
     "components/planner/ProjectContextEditorView.tsx",
-    "components/planner/SessionSuccessionSheet.tsx",
     "components/planner/TodayCardComposer.tsx",
     "components/planner/plannerNativeUI.ts",
     "components/planner/projectManagement.ts",

@@ -97,11 +97,18 @@ test('실행 시트는 세 목록을 독립 선택하고 노드 변경 시 같�
   fireEvent.press(screen.getByLabelText('에이전트 다른 에이전트'));
   fireEvent.press(screen.getByLabelText('실행 대상 확인'));
   expect(save).toHaveBeenLastCalledWith({ folderId: 'folder-1', nodeId: 'node-1', agentId: 'other', modelPreset: 'luna' });
-  fireEvent.press(screen.getByLabelText('노드 node-2'));
-  await waitFor(() => expect(screen.getByLabelText('모델 다른 모델')).toBeTruthy());
-  expect(screen.queryByLabelText('모델 Luna')).toBeNull();
-  fireEvent.press(screen.getByLabelText('모델 다른 모델'));
   fireEvent.press(screen.getByLabelText('실행 대상 확인'));
+  expect(save).toHaveBeenCalledTimes(1);
+  // Actual callers unmount on confirmation and reopen with the saved assignment.
+  screen.unmount();
+  const reopened = render(<ExecutionSelectionSheet api={api as any} value={save.mock.calls[0][0]} onSave={save} onClose={jest.fn()} />);
+  await waitFor(() => expect(reopened.getByLabelText('노드 node-2')).toBeTruthy());
+  fireEvent.press(reopened.getByLabelText('노드 node-2'));
+  await waitFor(() => expect(reopened.getByLabelText('모델 다른 모델')).toBeTruthy());
+  expect(reopened.queryByLabelText('모델 Luna')).toBeNull();
+  fireEvent.press(reopened.getByLabelText('모델 다른 모델'));
+  fireEvent.press(reopened.getByLabelText('실행 대상 확인'));
+  expect(save).toHaveBeenCalledTimes(2);
   expect(save).toHaveBeenLastCalledWith({ folderId: 'folder-1', nodeId: 'node-2', agentId: 'other', modelPreset: 'other-model' });
 });
 test('+ 카드 시트는 제목·요청 원문을 todo로 저장한다', async () => {

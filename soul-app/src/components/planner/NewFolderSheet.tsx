@@ -12,6 +12,8 @@ import {
   View,
 } from 'react-native';
 import type { Folder } from '../../api/types';
+import { operationId, type FolderCreationAttempt } from '../../api/plannerMutationPort';
+import { ApiHttpError } from '../../api/clientCore';
 import type { ApiClient } from '../../api/client';
 import {
   emptyInitialFolderContext,
@@ -25,6 +27,8 @@ import { AppModalSurface } from '../AppModalSurface';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { buildNewFolderSubmission, projectOptionsFromFolders } from './newFolderCreation';
 import { InitialFolderContextEditor } from './InitialFolderContextEditor';
+import { SheetErrorNotice, sheetErrorDetail } from './SheetErrorNotice';
+import { FolderDefaultsPicker } from './FolderDefaultsPicker';
 import { PlannerAtomContextPicker } from './PlannerAtomContextPicker';
 import {
   captureAuthScope,
@@ -54,6 +58,7 @@ export function NewFolderSheet({
     projectPageId: string;
     initialContext: InitialFolderContext;
     dailyDate?: string;
+    creation?: FolderCreationAttempt;
   }): Promise<unknown>;
 }) {
   const t = useTokens();
@@ -69,9 +74,15 @@ export function NewFolderSheet({
   const [mountToday, setMountToday] = useState(true);
   const [initialContext, setInitialContext] = useState<InitialFolderContext>(emptyInitialFolderContext);
   const [assignmentIncomplete, setAssignmentIncomplete] = useState(false);
+  const [defaultsOpen, setDefaultsOpen] = useState(false);
   const [atomPickerOpen, setAtomPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const completedRef = useRef(false);
+  const submission = useRef<{ input: ReturnType<typeof buildNewFolderSubmission>; creation: FolderCreationAttempt; rejected?: boolean } | null>(null);
+  const [retryingSnapshot, setRetryingSnapshot] = useState(false);
+  const locked = submitting || retryingSnapshot;
   const wasVisible = useRef(false);
   const draftScopeGeneration = useRef(scopeGeneration);
   const openingDefaults = useRef({
@@ -90,12 +101,17 @@ export function NewFolderSheet({
     draftScopeGeneration.current = scopeGeneration;
     if (!visible || (!opening && !scopeChanged)) return;
     const defaults = openingDefaults.current;
+    submission.current = null;
+    submittingRef.current = false;
+    completedRef.current = false;
+    setRetryingSnapshot(false);
     setTitle('');
     setProjectPageId(defaults.defaultProjectPageId ?? defaults.firstProjectPageId);
     setMountToday(true);
     setInitialContext(emptyInitialFolderContext());
     setAssignmentIncomplete(false);
     setAtomPickerOpen(false);
+    setDefaultsOpen(false);
     setSubmitting(false);
     setError(null);
   }, [scopeGeneration, visible]);
@@ -124,14 +140,12 @@ export function NewFolderSheet({
   };
 
   const submit = async () => {
-    if (!ready) return;
+    if (!ready || submittingRef.current || completedRef.current) return;
     const scope = captureAuthScope();
-    const submittedDescription = description;
-    const submittedGuidance = guidanceDraft.value;
     const submittedGeneration = scopeGeneration;
     setError(null);
     try {
-      const input = buildNewFolderSubmission({
+      const candidate = buildNewFolderSubmission({
         title: visibleTitle,
         description: visibleDescription,
         selectedProjectPageId: visibleProjectPageId,
@@ -139,24 +153,38 @@ export function NewFolderSheet({
         dailyDate,
         initialContext: visibleInitialContext,
       }, options);
+      if (submission.current?.rejected && JSON.stringify(submission.current.input) !== JSON.stringify(candidate)) submission.current = null;
+      const input = submission.current?.input ?? candidate;
+      submission.current ??= { input, creation: { idempotencyKey: operationId('folder-create') } };
+      const attempt = submission.current;
+      submittingRef.current = true;
       setSubmitting(true);
-      await onSubmit(input);
+      await onSubmit({ ...attempt.input, creation: attempt.creation });
       if (isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration) {
-        descriptionDraft.clearIfMatches(submittedDescription);
-        guidanceDraft.clearIfMatches(submittedGuidance);
+        completedRef.current = true;
+        descriptionDraft.clearIfMatches(input.description);
+        guidanceDraft.clearIfMatches(input.initialContext.guidance);
         onClose();
       }
     } catch (cause) {
       if (isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        // Explicit rejection may be edited; an unknown response keeps its original request.
+        if (submission.current) {
+          submission.current.rejected = !submission.current.creation.result
+            && cause instanceof ApiHttpError && [400, 403, 404, 422].includes(cause.status);
+        }
+        setRetryingSnapshot(Boolean(submission.current && !submission.current.rejected));
+        setError(sheetErrorDetail(cause));
       }
     } finally {
       if (isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration) {
+        submittingRef.current = false;
         setSubmitting(false);
       }
     }
   };
 
+  const requestClose = () => { if (!submittingRef.current) onClose(); };
   const canSubmit = Boolean(
     ready && visibleTitle.trim() && visibleProjectPageId && !assignmentIncomplete && !submitting,
   );
@@ -178,10 +206,11 @@ export function NewFolderSheet({
       variant="expanded"
       modalId="modal_new_task"
       presentationStyle="pageSheet"
-      onRequestClose={() => atomPickerOpen ? setAtomPickerOpen(false) : onClose()}
+      onRequestClose={() => defaultsOpen ? setDefaultsOpen(false) : atomPickerOpen ? setAtomPickerOpen(false) : requestClose()}
       safeAreaTestID="new-task-safe-area"
     >
-      {atomPickerOpen ? (
+      {defaultsOpen ? <FolderDefaultsPicker api={api} value={visibleInitialContext.sessionDefaults}
+        onClose={() => setDefaultsOpen(false)} onSave={(sessionDefaults) => setInitialContext(current => ({ ...current, sessionDefaults }))} /> : atomPickerOpen ? (
         <PlannerAtomContextPicker
           visible
           api={api}
@@ -190,7 +219,7 @@ export function NewFolderSheet({
         />
       ) : <>
       <View testID="new-task-header" style={styles.header}>
-            <TouchableOpacity style={styles.headerButton} onPress={onClose}><Text style={styles.headerAction}>취소</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.headerButton} onPress={requestClose} disabled={submitting}><Text style={styles.headerAction}>취소</Text></TouchableOpacity>
             <Text testID="new-task-header-title" style={styles.headerTitle}>새 폴더</Text>
             <TouchableOpacity testID="new-task-submit" style={styles.headerButton} onPress={submit} disabled={!canSubmit}>
               {submitting
@@ -206,6 +235,7 @@ export function NewFolderSheet({
                   testID="new-task-project-selection"
                   style={styles.selection}
                   onPress={pickProject}
+                  disabled={locked}
                   accessibilityRole="button"
                   accessibilityLabel="상위 폴더 선택"
                 >
@@ -215,6 +245,7 @@ export function NewFolderSheet({
               <Text style={styles.label}>폴더 이름</Text>
               <View style={styles.field}>
                 <TextInput
+                  editable={!locked}
                   value={visibleTitle}
                   onChangeText={setTitle}
                   placeholder="폴더 이름"
@@ -226,7 +257,7 @@ export function NewFolderSheet({
               <Text style={styles.label}>설명</Text>
               <View style={styles.field}>
                 <TextInput
-                  editable={ready && !submitting}
+                  editable={ready && !locked}
                   value={visibleDescription}
                   onChangeText={setDescription}
                   placeholder="목표와 완료 조건을 적어두세요."
@@ -273,14 +304,16 @@ export function NewFolderSheet({
                 visible={visible && ownsDraft}
                 api={api}
                 value={visibleInitialContext}
-                disabled={submitting || !ready}
+                disabled={locked || !ready}
                 assignmentIncomplete={assignmentIncomplete}
                 onChange={(value) => { setInitialContext(value); guidanceDraft.setValue(value.guidance); }}
                 onAssignmentIncompleteChange={setAssignmentIncomplete}
                 onOpenAtomPicker={() => setAtomPickerOpen(true)}
+                onOpenDefaultsPicker={() => setDefaultsOpen(true)}
               />
               <TouchableOpacity
                 testID="new-task-today-row"
+                disabled={locked}
                 style={styles.todayRow}
                 onPress={() => setMountToday((current) => !current)}
                 accessibilityRole="checkbox"
@@ -292,7 +325,8 @@ export function NewFolderSheet({
                   <Text style={styles.meta}>{dailyDate}</Text>
                 </View>
               </TouchableOpacity>
-              {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
+              {retryingSnapshot ? <Text style={styles.meta}>이전 제출의 남은 저장을 다시 시도합니다. 폴더를 새로 만들지 않습니다.</Text> : null}
+              {error ? <SheetErrorNotice summary="폴더를 저장하지 못했습니다. 입력을 유지했습니다. 다시 시도해 주세요." detail={error} /> : null}
             </ScrollView>
       </AppKeyboardAvoidingView>
       </>}

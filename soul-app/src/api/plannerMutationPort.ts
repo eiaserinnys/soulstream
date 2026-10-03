@@ -13,7 +13,7 @@ import type { CreateSessionRequest, CreateSessionResponse } from './sessionEndpo
 import { requirePlannerFolderId } from './plannerFolderIdentity';
 import { loadAllPlannerBacklinks, pageMountBlockIds } from './plannerBacklinks';
 import { isPlannerDescriptionRoot } from '../lib/planner-description-blocks';
-import { retryPageMutationVersionConflict } from './pageMutationRetry';
+import { isPageMutationVersionConflict, retryPageMutationVersionConflict } from './pageMutationRetry';
 
 export interface PlannerMutationApi {
   getFolderSnapshot(folderId: string): Promise<FolderSnapshot>;
@@ -51,6 +51,14 @@ export interface PlannerMutationApi {
   acknowledgeSessionReview(sessionId: string): Promise<unknown>;
 }
 
+/** Owned by one submitted form snapshot, including retries after a lost response. */
+export interface FolderCreationAttempt {
+  idempotencyKey: string;
+  result?: FolderMutationResult;
+  dailyWrite?: { pageId: string; input: ApplyPageOperationsInput };
+  dailyComplete?: boolean;
+}
+
 export function createPlannerMutationPort(api: PlannerMutationApi) {
   return {
     createFolder: async (input: {
@@ -60,17 +68,38 @@ export function createPlannerMutationPort(api: PlannerMutationApi) {
       projectPageId: string;
       initialContext?: InitialFolderContext;
       dailyDate?: string;
+      creation?: FolderCreationAttempt;
     }) => {
-      const result = await api.createFolder({
+      const creation = input.creation ?? { idempotencyKey: operationId('folder-create') };
+      const result = creation.result ?? await api.createFolder({
         name: input.title,
         description: input.description,
         parentFolderId: input.folderId,
         initialContext: input.initialContext,
-        idempotencyKey: operationId('folder-create'),
+        idempotencyKey: creation.idempotencyKey,
       });
-      if (input.dailyDate) {
-        const daily = await api.getDailyPage(input.dailyDate);
-        await mountPage(api, daily.page.id, input.title, 'folder-daily-mount');
+      creation.result = result;
+      if (input.dailyDate && !creation.dailyComplete) {
+        if (!creation.dailyWrite) {
+          const daily = await api.getDailyPage(input.dailyDate);
+          const current = await api.getPage(daily.page.id);
+          if (!current.blocks.some((block) => mountTitle(block) === input.title)) {
+            creation.dailyWrite = { pageId: current.page.id, input: pageWrite(current, 'folder-daily-mount', [{
+              op: 'create_block', temp_id: operationId('folder-daily-mount-block'), parent_id: null,
+              after_block_id: lastRootId(current.blocks), block_type: 'paragraph', text: `[[${input.title}]]`,
+              properties: {}, collapsed: false,
+            }]) };
+          }
+        }
+        if (creation.dailyWrite) {
+          try { await api.applyPageOperations(creation.dailyWrite.pageId, creation.dailyWrite.input); }
+          catch (cause) {
+            // An explicit version rejection did not write; the next click reads a fresh page.
+            if (isPageMutationVersionConflict(cause)) creation.dailyWrite = undefined;
+            throw cause;
+          }
+        }
+        creation.dailyComplete = true;
       }
       return result;
     },
