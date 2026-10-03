@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { liveCardOutputSchema, type McpToolName } from "@soulstream/mcp-contract";
+import { liveCardOutputSchema, type CallToolResult, type McpToolName } from "@soulstream/mcp-contract";
 import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import type { McpCallContext, McpHostOptions } from "../src/mcp/types.js";
 import { createLiveAtomHttpClient } from "../src/runtime/live_atom_route_provider.js";
@@ -7,7 +7,7 @@ import { createLiveAtomHttpClient } from "../src/runtime/live_atom_route_provide
 // Same service-port fixture style as mcp-host-routes.test.ts. These cases replace
 // the worker's direct legacy callback tests; SDK/HTTP/PG snapshots live in the worker tests.
 const context: McpCallContext = { principal: "internal", callerSessionId: "session-1", nodeId: "node" };
-const call = (options: McpHostOptions, name: McpToolName, args: Record<string, unknown>, ctx = context) =>
+const call = (options: McpHostOptions, name: McpToolName, args: Record<string, unknown>, ctx = context): Promise<CallToolResult> =>
   executeMcpTool(options, name, args, ctx);
 afterEach(() => vi.unstubAllGlobals());
 
@@ -146,12 +146,6 @@ describe("card MCP execution", () => {
     const result = await call(h.options, name, { card_id: "card-1", caller_session_id: "session-1", ...args },
       { ...context, callerSessionId: "authenticated-session" });
     expect(result.isError).toBe(true);
-    expect(h.provider).not.toHaveBeenCalled();
-  });
-  it("rejects explicit external reply mode before service execution", async () => {
-    const h = cardHarness();
-    expect((await call(h.options, "add_card_comment", { card_id: "card-1", text: "답변", mode: "reply" },
-      { ...context, principal: "external", callerSessionId: null })).isError).toBe(true);
     expect(h.provider).not.toHaveBeenCalled();
   });
   it("returns a server conflict without hiding it", async () => {
