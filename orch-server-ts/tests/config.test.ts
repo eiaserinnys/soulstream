@@ -69,6 +69,10 @@ describe("orch-server-ts config scaffold", () => {
     });
 
     expect(config).toEqual({
+      mcp_external_ingress_enabled: false, mcp_external_ingress_path: undefined,
+      mcp_external_ingress_source: undefined, mcp_external_ingress_display_name: undefined,
+      mcp_external_ingress_bearer_token: undefined, mcp_external_events_state_file: undefined,
+      mcp_allowed_hosts: ["localhost", "127.0.0.1"],
       node_name: "orch-primary",
       host: "127.0.0.1",
       port: 5300,

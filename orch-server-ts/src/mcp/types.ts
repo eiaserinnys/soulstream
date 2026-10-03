@@ -30,6 +30,7 @@ export interface McpCallContext {
 
 export interface McpHostOptions {
   sessionMessages?: SessionActionCommandRouteOptions;
+  externalLlm?: { service?: import("../external_events/service.js").ExternalEventsService; getSession(id: string): Promise<unknown | null> };
   sessions?: SessionMcpDependencies;
   authBearerToken: string;
   recurringJobs: RecurringJobHostRouteOptions;

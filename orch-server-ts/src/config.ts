@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { loadExternalIngressEnvironment, EXTERNAL_INGRESS_ENVIRONMENT_VARIABLES, type ExternalIngressEnvironmentConfig } from "./config_external_ingress.js";
 import { DEFAULT_SKILL_CATALOG_NODE_ID } from "./skills/skill_catalog.js";
 
 import {
@@ -24,7 +25,7 @@ export type OrchServerTsConfig = Omit<
   readonly trustProxy?: typeof DEFAULT_TRUSTED_PROXY;
 };
 
-export type OrchServerEnvironmentConfig = {
+export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConfig> & {
   readonly node_name: string | null;
   readonly host: string;
   readonly port: number;
@@ -59,6 +60,7 @@ export type OrchServerEnvironmentConfig = {
 };
 
 export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
+  ...EXTERNAL_INGRESS_ENVIRONMENT_VARIABLES,
   "ENVIRONMENT",
   "CORS_ALLOWED_ORIGINS",
   "NODE_NAME",
@@ -127,6 +129,7 @@ export function loadOrchServerEnvironment(
     throw new Error("AUTH_BEARER_TOKEN must be set in production");
   }
   return {
+    ...loadExternalIngressEnvironment(env),
     node_name: optionalString(env.NODE_NAME),
     host: requiredString(env, "HOST"),
     port: parsePort(env.PORT),

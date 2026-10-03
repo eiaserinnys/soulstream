@@ -9,6 +9,8 @@ import { requestLogPath } from "./production_logging.js";
 
 export type ProductionAuthGuardOptions = {
   readonly resolveTokenAccess: AuthTokenResolver;
+  /** This dedicated route authenticates its own credential and Host. */
+  readonly externalMcpPath?: string;
 };
 
 export type ProductionRouteAuthIdentity = {
@@ -25,6 +27,7 @@ export function registerProductionAuthGuard(
 ): void {
   app.addHook("onRequest", async (request, reply) => {
     const routeUrl = request.routeOptions.url;
+    if (options.externalMcpPath !== undefined && routeUrl === options.externalMcpPath) return;
     const requestPath = request.url.split("?", 1)[0] ?? "/";
     if (
       routeUrl === undefined &&

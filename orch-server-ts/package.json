@@ -33,7 +33,12 @@
     "y-protocols": "1.0.6",
     "yjs": "13.6.27",
     "zod": "^4.3.6",
-    "@soulstream/mcp-contract": "workspace:*"
+    "@soulstream/mcp-contract": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/server": "2.2.0",
+    "@modelcontextprotocol/node": "2.1.0",
+    "standardwebhooks": "1.1.1",
+    "ipaddr.js": "2.5.0"
   },
   "devDependencies": {
     "@hocuspocus/provider": "3.4.4",
@@ -43,6 +48,7 @@
     "tsx": "^4.19.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@modelcontextprotocol/client": "2.2.0"
   }
 }
