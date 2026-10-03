@@ -1,6 +1,7 @@
 import {createPortal} from "react-dom";
-import { useMemo, useState } from "react";
-import { useIsMobile, FileAttachmentPreview, SessionContextMenu } from "@seosoyoung/soul-ui";
+import { useLayoutEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useIsMobile, FileAttachmentPreview, SessionContextMenu, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { FolderContextMenu } from "@seosoyoung/soul-ui/components/FolderContextMenu";
 import { MarkdownDocumentPanel } from "@seosoyoung/soul-ui/components/MarkdownDocumentPanel";
 import {
@@ -19,6 +20,7 @@ import { V3ContextMenu } from "./V3ContextMenu";
 import { dialoguesFolders, dialoguesAssignment, createDialoguesApi } from "./dialogues-api";
 import { reviewCard, reviewDetail, reviewFolder, reviewSession } from "./components-review-fixtures";
 import type { DialogueId } from "./dialogues-inventory";
+import { activateRunSession } from "./folder-workspace-run-model";
 import "./v3-card-board.css";
 export function DialoguesOverlaySamples({
   id,
@@ -32,6 +34,14 @@ export function DialoguesOverlaySamples({
   onChanged(): void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [selectedSession,setSelectedSession]=useState<SessionSummary>();
+  const [mobileTab,setMobileTab]=useState("projects");
+  const queryClient=useQueryClient();
+  useLayoutEffect(()=>{
+    if(id==="card-detail")queryClient.setQueryData(["sessions","ids",null,[reviewSession.agentSessionId]],{
+      pages:[{sessions:[reviewSession],total:1}],pageParams:[0],
+    });
+  },[id,queryClient]);
   const mobile = useIsMobile();
   const pageApi = useMemo(() => createPageApiClient({ fetch: api.request }), [api]);
   const folder = api.local.folder;
@@ -113,10 +123,13 @@ export function DialoguesOverlaySamples({
         sampleDetail={reviewDetail}
         folders={dialoguesFolders}
         onClose={onClose}
-        onOpenSession={() => done("샘플 세션 열기")}
+        onOpenSession={session=>{
+          activateRunSession(session,useDashboardStore.getState());setSelectedSession(session);setMobileTab("chat");
+          api.record("샘플 세션 열기");onChanged();
+        }}
         mobileMode={mobile}
-        mobileTab="projects"
-        activeSession={undefined}
+        mobileTab={mobileTab}
+        activeSession={selectedSession}
         chatInputDisabled
         historyEnabled={false}
         sessionStreamActive={false}

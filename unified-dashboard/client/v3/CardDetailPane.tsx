@@ -72,7 +72,7 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
   </header>
   <div className="v3-detail-gutter v3-task-detail-content v3-card-context">
    <section className="v3-detail-section"><div className="v3-task-default-values"><span>{agentName??"담당 미지정"}</span>{nodeId?<span>{nodeId}</span>:null}{model?<span>{model}</span>:null}</div></section>
-   <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} onOpenSession={onOpenSession}/></section>
+   <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} onOpenSession={onOpenSession}/></section>
   </div>
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs<"comments"|"content"> id={tabId} label="카드 보기" panelId={`${tabId}-panel`} tabs={[["comments","커멘트"],["content","내용"]]} value={tab} onChange={setTab}/></div>
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}

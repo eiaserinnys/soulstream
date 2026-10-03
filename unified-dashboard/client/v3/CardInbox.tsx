@@ -1,6 +1,6 @@
 import {CardCreateDialog} from "./CardCreateDialog";
 import { useState, type ReactNode } from "react";
-import { Button, DashboardIconCap, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { LayoutDashboard, List, Plus } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { groupCards } from "@seosoyoung/soul-ui/cards/card-api";
@@ -21,7 +21,7 @@ export function CardInbox({folders,initialBoard=false,actions}:{folders:readonly
  if(board)return <div className="v3-card-inbox" data-card-scope="all">
   <CardInboxBoard createdIds={createdIds} completion={{includeCompleted,onChange:setIncludeCompleted}} completed={completed}
    actions={<>{actions}<DashboardIconCap size="small" label="일반 보기" onClick={()=>setBoard(false)}><List className="h-4 w-4"/></DashboardIconCap></>}
-   draftAction={<Button variant="ghost" size="sm" aria-label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/>새 카드</Button>}/>
+   draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}/>
   {adding?<CardCreateDialog folders={folders} onCreated={id=>setCreatedIds(ids=>[...ids,id])} onClose={()=>setAdding(false)}/>:null}
  </div>;
  return <div className="v3-card-inbox">{adding?<CardCreateDialog folders={folders} onClose={()=>setAdding(false)}/>:null}<div className="v3-detail-section-head v3-folder-card-head"><h3>전체 카드</h3><span className="v3-spacer"/><CardCompletionFilter includeCompleted={includeCompleted} onChange={setIncludeCompleted}/><div className="v3-card-actions">{actions}<DashboardIconCap size="small" label="보드" onClick={()=>setBoard(true)}><LayoutDashboard className="h-4 w-4"/></DashboardIconCap><DashboardIconCap size="small" label="카드 추가" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap></div></div>{(["attention","running","queued"] as const).filter(group=>group==="attention"||groups[group].length>0).map(group=><section key={group} data-card-group={group}>

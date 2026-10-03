@@ -18,3 +18,12 @@ it("keeps six columns in order, excludes archived and cancelled, and hides only 
   expect(render(false)).not.toContain('data-board-column="done"'); expect(render(false)).not.toContain('data-sample="done"');
   expect(render(true)).toContain('data-sample="done"'); expect(full).toContain('data-sample="done"');
 });
+
+for (const count of [0, 2]) it(`keeps the draft creation action after the title and count (${count} drafts)`, () => {
+  const html = renderToStaticMarkup(createElement(CardBoard, {
+    cards: Array.from({length: count}, (_, index) => ({...reviewCard, id: `draft-${index}`, status: "todo" as const})),
+    renderCard: card => createElement("span", null, card.title),
+    draftAction: createElement("button", {"aria-label": "새 카드"}, "+"),
+  }));
+  expect(html).toMatch(new RegExp(`<h3>드래프트</h3><span>${count}개</span><button aria-label="새 카드">\\+</button></div>`));
+});

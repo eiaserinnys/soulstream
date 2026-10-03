@@ -13,7 +13,7 @@
   width: calc(var(--postit-width) + var(--v3-space-2));
   min-width: 0;
 }
-.v3-card-board-column > .v3-detail-section-head { flex-wrap: nowrap; }
+.v3-card-board-column > .v3-detail-section-head { flex-wrap: nowrap; min-height: var(--v3-space-8); align-items: center; }
 .v3-card-board-lane {
   display: flex;
   flex-direction: column;
