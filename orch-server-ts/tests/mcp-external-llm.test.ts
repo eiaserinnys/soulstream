@@ -50,7 +50,8 @@ describe("orchestrator owns external recipients and delivery", () => {
     const response = await app.inject({ method: "POST", url: "/api/mcp/host/send_to_external_llm", headers: { authorization: "Bearer test-host" },
       payload: { args: { recipient_id: "missing", text: "hello" }, context: { principal: "external", caller_session_id: "sender", node_id: "worker",
         externalCaller: { source: "dot", displayName: "forged" } } } });
-    expect(response.json()).toMatchObject({ structuredContent: { error: "internal_principal_required" } });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ detail: { error: { code: "INVALID_MCP_REQUEST" } } });
     expect(getSession).not.toHaveBeenCalled();
   });
   it("rejects external callers, including forged sender arguments", async () => {

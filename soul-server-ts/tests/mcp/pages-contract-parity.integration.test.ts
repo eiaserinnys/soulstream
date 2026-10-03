@@ -149,9 +149,9 @@ describe("pages/live/skills MCP host roundtrip", () => {
     expect(serialize(name === "upsert_page_markdown" && input.title ? "upsert_page_markdown:new" : name, next)).toMatchSnapshot();
     if (!error) expect(hostCalls - before).toBe(repeats);
   });
-  it("enforces external deletion on raw host calls", async () => {
+  it("rejects external identity in a raw host body", async () => {
     const response = await app.inject({ method: "POST", url: "/api/mcp/host/batch_page_operations", headers: { authorization: "Bearer token" }, payload: { args: { ...batch, operations: [{ op: "delete_block_subtree", block_id: "seed-block" }] }, context: { principal: "external", caller_session_id: "spoofed", node_id: "test" } } });
-    expect(response.statusCode).toBe(200); expect(response.json().isError).toBe(true);
+    expect(response.statusCode).toBe(422); expect(response.json()).toMatchObject({ detail: { error: { code: "INVALID_MCP_REQUEST" } } });
   });
   it("uses the catalog definition forwarding timeout", async () => {
     query = "";

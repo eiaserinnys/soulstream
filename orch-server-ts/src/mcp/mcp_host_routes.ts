@@ -9,7 +9,7 @@ export const mcpHostRouteAuthRequirements = { "POST /api/mcp/host/:tool": true }
 
 const requestSchema = z.object({
   args: z.record(z.string(), z.unknown()),
-  context: z.object({ principal: z.enum(["internal", "external"]), caller_session_id: z.string().nullable(), node_id: z.string().min(1),
+  context: z.object({ principal: z.literal("internal"), caller_session_id: z.string().nullable(), node_id: z.string().min(1),
     callerInfo: z.record(z.string(), z.unknown()).optional(),
     execution: z.object({ registrationId: z.string().min(1), executionCommandId: z.string().min(1) }).strict().optional() }),
 });
