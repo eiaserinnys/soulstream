@@ -29,7 +29,7 @@ export function FolderCardSection({folderId,folders=[],placement="inline"}:{fold
   {membership.error?<p role="alert" className="v3-card-error">{membership.error}<Button size="sm" variant="ghost" onClick={membership.retry}>다시 불러오기</Button></p>:null}
   {board?<CardBoardWorkspace title="현재 폴더 카드" cards={cards} completed={completed}
     actions={<DashboardIconCap size="small" label="일반 보기" onClick={()=>setBoard(false)}><List className="h-4 w-4"/></DashboardIconCap>}
-    draftAction={<Button size="sm" variant="ghost" aria-label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/>새 카드</Button>}
+    draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}
     renderCard={(card,handle,preview)=><PostItCard card={card} handle={handle} preview={preview} variant="compact"/>} completion={{includeCompleted,onChange:setIncludeCompleted}}/>
    :<><PostItGrid>{visibleCards.filter(card=>card.status!=="done").map(card=><PostItCard key={card.id} card={card}/>)}</PostItGrid>
      {includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=><PostItCard card={card}/>}/>:null}</>}

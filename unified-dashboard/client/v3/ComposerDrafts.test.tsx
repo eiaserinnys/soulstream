@@ -53,6 +53,12 @@ it("puts both selection buttons above the composer",async()=>{
   expect(controls.compareDocumentPosition(composer)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(controls.querySelectorAll(".v3-card-handoff-chip")).toHaveLength(2);
 });
+it("lets the handoff own its spacing while preserving the default comment composer",async()=>{
+  await render(main());
+  expect(container.querySelector('[data-testid="card-composer"]')!.classList.contains("pt-2")).toBe(false);
+  await render(<CardCommentInput cardId="a" pending={false} onSend={async()=>true}/>);
+  expect(container.querySelector('[data-testid="card-composer"]')!.classList.contains("pt-2")).toBe(true);
+});
 it("restores the main draft on remount and from persisted storage",async()=>{
   useDashboardStore.getState().setDraft(mainKey,"이전 초안");
   await render(main());expect(input().value).toBe("이전 초안");

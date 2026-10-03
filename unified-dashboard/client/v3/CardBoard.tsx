@@ -39,9 +39,8 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed}
       return left<right?-1:left>right?1:0;
     });
     return <CardBoardLane key={status} status={status} label={label} style={status==="done"?{width:doneWidth}:undefined}>
-      <div className="v3-detail-section-head"><h3>{label}</h3><span>{column.length}개{status==="done"?" 표시":""}</span></div>
+      <div className="v3-detail-section-head"><h3>{label}</h3><span>{column.length}개{status==="done"?" 표시":""}</span>{status==="todo"?draftAction:null}</div>
       {status==="done"&&completed?<CompletedCardGrid browser={completed} renderCard={card=><CardBoardItem card={card} renderCard={renderCard}/>}/>:<div className="v3-card-board-lane">
-        {status==="todo"?draftAction:null}
         {column.length ? column.map(card=><CardBoardItem key={card.id} card={card} renderCard={renderCard}/>)
         : <p className="v3-card-board-empty">카드가 없습니다</p>}
       </div>}

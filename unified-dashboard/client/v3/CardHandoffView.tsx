@@ -21,7 +21,7 @@ export function CardHandoffView({composer,folderLabel,executionLabel,folderOpen,
      <span>{executionLabel}</span><span aria-hidden="true">▾</span>
     </PopoverTrigger><PopoverPopup keepMounted side="top" align="start" sideOffset={8} className="v3-shell v3-card-execution-picker">{executionPicker}</PopoverPopup></Popover>
    </div>
-   <CardComposer {...composer}/>
+   <CardComposer {...composer} embedded/>
   </div>
  </div>{error?<p role="alert" className="v3-card-error">{error}</p>:null}</>;
 }
