@@ -1,6 +1,6 @@
 .owned-agents { display:flex; flex-direction:column; gap:var(--v3-space-4); font:var(--v3-type-body) var(--v3-font-family); }
 .owned-agents p { margin:0; }
-.owned-agents h3 { margin:0; font:inherit; font-weight:600; }
+.owned-agents h3 { margin:0; font:var(--v3-type-section) var(--v3-font-family); }
 .owned-agents-actions, .owned-agents-row, .owned-agents-key-row { display:flex; align-items:center; gap:var(--v3-space-2); }
 .owned-agents-actions { justify-content:flex-end; }
 .owned-agents-block { display:flex; flex-direction:column; gap:var(--v3-space-4); padding-bottom:var(--v3-space-4); border-bottom:1px solid var(--border); }
