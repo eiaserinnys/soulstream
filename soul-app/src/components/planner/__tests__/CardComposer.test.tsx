@@ -43,21 +43,22 @@ test('저장 실패는 원문을 유지해 다시 보낼 수 있게 한다', asy
   expect(Alert.alert).toHaveBeenCalledWith('카드 변경 실패', 'network');
 });
 
-test('오늘 입력창은 칩이 위 한 줄에 있고 글자·입력 확장 동작을 보존한다', () => {
+test('오늘 입력창의 iOS 높이·칩 배치 계약과 콘텐츠 이벤트 수신 후 정렬 계산', () => {
   const { StyleSheet } = require('react-native');
   const screen = render(<CardComposer api={{} as any} today />);
   const input = screen.getByLabelText('세션 첫 메시지');
   expect(input.props.placeholder).toBe('무엇을 시작할까요');
   expect(input.props.multiline).toBe(true);
   expect(input.props.textAlignVertical).toBe('center');
-  const initialHeight = StyleSheet.flatten(input.props.style).height;
+  const initialHeight = StyleSheet.flatten(input.props.style).minHeight;
+  expect(StyleSheet.flatten(input.props.style).height).toBeUndefined();
   expect(initialHeight).toBeGreaterThanOrEqual(48);
   fireEvent.changeText(input, '첫 줄\n둘째 줄');
-  // Native layout reports rendered content height after the controlled value changes.
+  // This checks alignment after event receipt, not native event delivery or growth.
   fireEvent(screen.getByLabelText('세션 첫 메시지'), 'contentSizeChange', {
     nativeEvent: { contentSize: { width: 200, height: initialHeight * 2 } },
   });
-  expect(StyleSheet.flatten(screen.getByLabelText('세션 첫 메시지').props.style).height).toBeGreaterThan(initialHeight);
+  expect(StyleSheet.flatten(screen.getByLabelText('세션 첫 메시지').props.style).height).toBeUndefined();
   expect(screen.getByLabelText('세션 첫 메시지').props.textAlignVertical).toBe('top');
   expect(StyleSheet.flatten(screen.getByTestId('card-composer-chips').props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
   const chips = screen.getByTestId('card-composer-chips');
@@ -71,7 +72,7 @@ test('오늘 입력창은 칩이 위 한 줄에 있고 글자·입력 확장 동
   expect(layout.gap + surfaceInset).toBeLessThan(layout.paddingBottom);
   expect(StyleSheet.flatten(screen.getByTestId('chat-composer-row').props.style)).toMatchObject({ paddingTop: 0, paddingBottom: 0 });
   fireEvent.changeText(screen.getByLabelText('세션 첫 메시지'), '');
-  expect(StyleSheet.flatten(screen.getByLabelText('세션 첫 메시지').props.style).height).toBe(initialHeight);
+  expect(StyleSheet.flatten(screen.getByLabelText('세션 첫 메시지').props.style).minHeight).toBe(initialHeight);
   expect(screen.getByLabelText('세션 시작').props.accessibilityState.disabled).toBe(true);
 });
 

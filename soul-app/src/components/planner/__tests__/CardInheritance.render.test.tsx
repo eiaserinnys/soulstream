@@ -112,7 +112,9 @@ test('오늘 입력은 ChatComposer의 한 줄 시작·폰트·버튼을 상속�
   const { result: dimensions } = renderHook(useWindowDimensions);
   const composer = createSessionVisualRoles(t.current).chat.composer;
   const lineHeight = t.current.chatFontSize.body * t.current.lineHeightRatio * dimensions.current.fontScale;
-  expect(flat(input.props.style).height).toBe(Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2));
+  // iOS style contract only: this renderer does not exercise native text layout.
+  expect(flat(input.props.style).minHeight).toBe(Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2));
+  expect(flat(input.props.style).height).toBeUndefined();
   expect(input.props.textAlignVertical).toBe('center');
   expect(screen.getByText(/로젤린 · node-1 · 자동 선택/)).toBeTruthy();
   expect(screen.getAllByTestId('chat-composer-send-button')).toHaveLength(1);

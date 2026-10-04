@@ -37,6 +37,7 @@ export function GrowingMultilineInput({
   onFocus,
   onBlur,
   onSelectionChange,
+  onLayout,
   ...props
 }: GrowingMultilineInputProps) {
   const measurement = useTextInputContentHeight(value, verticalPadding);
@@ -76,6 +77,7 @@ export function GrowingMultilineInput({
   );
 
   useEffect(() => {
+    if (Platform.OS === 'ios') return;
     const next = resolveGrowingInputLayout({
       contentHeight: contentHeight.current,
       minHeight,
@@ -86,6 +88,7 @@ export function GrowingMultilineInput({
   }, [maxHeight, minHeight, verticalPadding]);
 
   useEffect(() => {
+    if (Platform.OS === 'ios') return;
     allowNextShrink.current = value.length < previousValue.current.length;
     previousValue.current = value;
     if (value) return;
@@ -102,6 +105,10 @@ export function GrowingMultilineInput({
   const handleContentSizeChange = (
     event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>,
   ) => {
+    if (Platform.OS === 'ios') {
+      onContentSizeChange?.(event);
+      return;
+    }
     const measuredContentHeight = event.nativeEvent.contentSize.height;
     const next = resolveGrowingInputLayout({
       contentHeight: measuredContentHeight,
@@ -159,12 +166,24 @@ export function GrowingMultilineInput({
       style={[style, {
         minHeight,
         maxHeight,
-        height: layout.height,
+        // iOS owns intrinsic height; a JS height would prevent Fabric's layout/contentSize event.
+        ...(Platform.OS === 'ios' ? {} : { height: layout.height }),
         paddingHorizontal: 0,
         paddingVertical: verticalPadding,
         ...(Platform.OS === 'web' ? { whiteSpace: 'pre-wrap' } : {}),
       }]}
       onContentSizeChange={Platform.OS === 'web' ? undefined : handleContentSizeChange}
+      onLayout={Platform.OS === 'ios' ? (event) => {
+        const height = event.nativeEvent.layout.height;
+        const next = { height, scrollEnabled: height >= maxHeight };
+        const current = layoutRef.current;
+        if (next.height !== current.height || next.scrollEnabled !== current.scrollEnabled) {
+          layoutRef.current = next;
+          setLayout(next);
+          if (height > current.height || !next.scrollEnabled) scheduleOuterVisibility();
+        }
+        onLayout?.(event);
+      } : onLayout}
       onSelectionChange={handleSelectionChange}
       onFocus={(event) => {
         focused.current = true;

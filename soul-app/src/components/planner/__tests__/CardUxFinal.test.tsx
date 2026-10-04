@@ -8,9 +8,9 @@ jest.mock('../PlannerMarkdownText', () => ({ PlannerMarkdownText: ({ markdown }:
 jest.mock('../FolderSessionHistory', () => ({ FolderSessionHistory: ({ sessionIds, onOpenSession }: any) => require('react').createElement(require('react-native').Text, { testID: 'sessions', onPress: () => onOpenSession(sessionIds[0]) }, sessionIds.join(',')) }));
 jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }));
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
-import { useDeviceType } from '../../../theme';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
+import { StyleSheet, useWindowDimensions } from 'react-native';
+import { createSessionVisualRoles, useDeviceType, useTokens } from '../../../theme';
 import { CardAssignmentSheet } from '../CardAssignmentSheet';
 import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
 import { CardRow } from '../CardRow';
@@ -167,7 +167,14 @@ test('보고 미리보기는 HTML과 markdown의 전체 문단을 유지한 채 
   const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue({ ...detail, reports }) } as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText(/HTML 두 번째 문단/)).toBeTruthy());
   expect(screen.getByText(/HTML 두 번째 문단/).props.numberOfLines).toBe(3);
-  expect(StyleSheet.flatten(screen.getByLabelText('커멘트').props.style).minHeight).toBe(48);
+  const { result: t } = renderHook(useTokens);
+  const { result: dimensions } = renderHook(useWindowDimensions);
+  const composer = createSessionVisualRoles(t.current).chat.composer;
+  const lineHeight = t.current.chatFontSize.body * t.current.lineHeightRatio * dimensions.current.fontScale;
+  const inputStyle = StyleSheet.flatten(screen.getByLabelText('커멘트').props.style);
+  // iOS style contract only: this renderer does not exercise native text layout.
+  expect(inputStyle.minHeight).toBe(Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2));
+  expect(inputStyle.height).toBeUndefined();
 });
 
 test('드래프트 상세는 시작하기와 상태 메뉴를 노출하고 시작 뒤에도 열린다', async () => {

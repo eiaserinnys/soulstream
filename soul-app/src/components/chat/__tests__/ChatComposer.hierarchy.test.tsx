@@ -53,19 +53,17 @@ test.each([
   const input = screen.getByTestId('chat-composer-text-input');
   expect(StyleSheet.flatten(input.props.style)).toMatchObject({
     flex: 1,
-    minHeight: 48,
     maxHeight: 128,
   });
   expect(input.props.textAlignVertical).toBe('center');
   const deviceLineHeight = (dimensions.width >= 768 ? 18 : 17) * 1.3;
   const measuredLineHeight = deviceLineHeight * dimensions.fontScale;
-  expect(StyleSheet.flatten(input.props.style).height).toBe(Math.max(48, measuredLineHeight + 20));
-  const initialHeight = StyleSheet.flatten(input.props.style).height!;
+  expect(StyleSheet.flatten(input.props.style).minHeight).toBe(Math.max(48, measuredLineHeight + 20));
+  expect(StyleSheet.flatten(input.props.style).height).toBeUndefined();
   screen.rerender(composer('메시지\n둘째 줄'));
   fireEvent(screen.getByTestId('chat-composer-text-input'), 'contentSizeChange', { nativeEvent: { contentSize: { width: 200, height: measuredLineHeight * 2 + 20 } } });
   expect(screen.getByTestId('chat-composer-text-input').props.textAlignVertical).toBe('top');
-  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-text-input').props.style).height)
-    .toBeGreaterThan(initialHeight);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-text-input').props.style).height).toBeUndefined();
 
   for (const name of ['attach', 'send']) {
     expect(StyleSheet.flatten(screen.getByTestId(`chat-composer-${name}-button`).props.style))

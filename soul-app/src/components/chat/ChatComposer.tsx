@@ -65,6 +65,7 @@ export function ChatComposer({
   const multilineExpanded = measuredHeight > singleLineHeight + 1;
   const inputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight, measuredHeight));
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
+  const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
 
   return (
     <View
@@ -92,9 +93,16 @@ export function ChatComposer({
             ref={measurement.ref}
             onContentSizeChange={measurement.onContentSizeChange}
             testID="chat-composer-text-input"
-            style={[styles.composerTextInput, { height: inputHeight, paddingVertical: inputPadding,
+            // iOS Fabric emits contentSize only after layout changes: let native text layout grow first.
+            style={[styles.composerTextInput, {
+              ...(Platform.OS === 'ios' ? { minHeight: singleLineHeight } : { height: inputHeight }),
+              paddingVertical: inputPadding,
               ...(Platform.OS === 'web' ? { whiteSpace: 'pre-wrap' } : {}),
             }]}
+            onLayout={Platform.OS === 'ios' ? (event) => {
+              // Once capped, content may change without another contentSize event.
+              setIOSAtMaxHeight(event.nativeEvent.layout.height >= styles.composerTextInput.maxHeight);
+            } : undefined}
             value={input}
             onChangeText={onChangeInput}
             placeholder={placeholder}
@@ -102,7 +110,7 @@ export function ChatComposer({
             placeholderTextColor={t.colors.textPlaceholder}
             multiline
             {...(Platform.OS === 'web' ? { rows: 1 } : {})}
-            scrollEnabled={measuredHeight > styles.composerTextInput.maxHeight}
+            scrollEnabled={Platform.OS === 'ios' ? iosAtMaxHeight : measuredHeight > styles.composerTextInput.maxHeight}
             maxLength={4000}
             autoCorrect={false}
             spellCheck={false}
