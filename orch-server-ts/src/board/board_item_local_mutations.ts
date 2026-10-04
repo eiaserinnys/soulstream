@@ -45,13 +45,6 @@ export async function moveLocalBoardItem(
   });
 }
 
-export function findBoardItem(
-  boardItems: readonly BoardItemRecord[],
-  boardItemId: string,
-): BoardItemRecord | undefined {
-  return boardItems.find((item) => item.id === boardItemId);
-}
-
 function catalogBoardItem(item: BoardItemRecord): CatalogBoardItemRow {
   const folderId = stringOrNull(item.folderId);
   const itemType = boardItemTypeOrNull(item.itemType);

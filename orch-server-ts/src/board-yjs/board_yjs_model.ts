@@ -273,7 +273,7 @@ function normalizeMarkdownTitle(title: string): string {
   return title.trim() || "Untitled document";
 }
 
-function getMarkdownPreview(body: string): string {
+export function getMarkdownPreview(body: string): string {
   return body.replace(/\s+/g, " ").trim().slice(0, 180);
 }
 

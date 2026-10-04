@@ -48,8 +48,9 @@ type ProviderCall =
   | ["access"]
   | ["listFolders"]
   | ["listBoardItems", unknown]
-  | ["resolveContainer", unknown]
-  | ["catalog"];
+  | ["getBoardItemById", string]
+  | ["catalog"]
+  | ["resolveContainer", unknown];
 
 function createHarness(overrides: Partial<BoardItemRouteProvider> = {}) {
   const calls: ProviderCall[] = [];
@@ -63,6 +64,10 @@ function createHarness(overrides: Partial<BoardItemRouteProvider> = {}) {
       return [{ id: "item-1", folderId: "folder-a" }];
     },
 
+    async getBoardItemById(boardItemId) {
+      calls.push(["getBoardItemById", boardItemId]);
+      return boardItems.find((item) => item.id === boardItemId) ?? null;
+    },
     async getCatalogSnapshot() {
       calls.push(["catalog"]);
       return { folders, boardItems };
@@ -260,7 +265,12 @@ describe("board item route harness", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
-    expect(calls).toEqual([["access"], ["catalog"], ["catalog"]]);
+    expect(calls).toEqual([
+      ["access"],
+      ["listFolders"],
+      ["getBoardItemById", "item/one"],
+      ["getBoardItemById", "item/one"],
+    ]);
     expect(service.updateBoardItemPosition).toHaveBeenCalledWith(
       { folderId: "folder-a-child" },
       "item/one",
@@ -283,21 +293,22 @@ describe("board item route harness", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(calls).toEqual([["access"], ["catalog"]]);
+    expect(calls).toEqual([["access"], ["getBoardItemById", "item/one"]]);
     expect(service.updateBoardItemPosition).toHaveBeenCalledTimes(1);
 
     await app.close();
   });
 
   it("returns Python-compatible 404 when restricted source item is absent", async () => {
-    const { app, service } = createAppWithBoardItems(
+    const { app, calls, service } = createAppWithBoardItems(
       {
         restricted: true,
         allowedFolderIds: ["folder-a"],
       },
       {
-        async getCatalogSnapshot() {
-          return { folders, boardItems: [] };
+        async getBoardItemById(boardItemId) {
+          calls.push(["getBoardItemById", boardItemId]);
+          return null;
         },
       },
     );
@@ -310,6 +321,11 @@ describe("board item route harness", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ detail: "Board item not found" });
+    expect(calls).toEqual([
+      ["access"],
+      ["listFolders"],
+      ["getBoardItemById", "missing"],
+    ]);
     expect(service.updateBoardItemPosition).not.toHaveBeenCalled();
 
     await app.close();
@@ -335,7 +351,8 @@ describe("board item route harness", () => {
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([
       ["access"],
-      ["catalog"],
+      ["listFolders"],
+      ["getBoardItemById", "item/one"],
     ]);
     expect(service.moveBoardItemToContainer).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -345,6 +362,32 @@ describe("board item route harness", () => {
       }),
     );
 
+    await app.close();
+  });
+
+  it.each([
+    { label: "source", allowedFolderIds: ["folder-b"] },
+    { label: "target", allowedFolderIds: ["folder-a"] },
+  ])("preserves restricted $label folder checks before moving", async ({ allowedFolderIds }) => {
+    const { app, calls, service } = createAppWithBoardItems({
+      restricted: true,
+      allowedFolderIds,
+    });
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/board-items/item%2Fone/folder",
+      payload: { folderId: "folder-b", idempotencyKey: "idem-denied" },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ detail: "Folder access denied" });
+    expect(calls).toEqual([
+      ["access"],
+      ["listFolders"],
+      ["getBoardItemById", "item/one"],
+    ]);
+    expect(service.moveBoardItemToContainer).not.toHaveBeenCalled();
     await app.close();
   });
 
