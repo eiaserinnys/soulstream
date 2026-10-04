@@ -24,7 +24,7 @@ export function PostItCard({ api, card, variant = 'full', onOpen, onMenu }: {
   api: ApiClient | null; card: CardDto; variant?: PostItVariant; onOpen(target?: number): void; onMenu?(): void;
 }) {
   const t = useTokens();
-  const roles = createPostItRoles(t, variant);
+  const roles = createPostItRoles(t, variant, card.color ?? 'yellow');
   const openTarget = useRef<View>(null);
   const open = () => onOpen(Platform.OS === 'web' ? undefined : findNodeHandle(openTarget.current) ?? undefined);
   const [bodyLines, setBodyLines] = useState(roles.bodyLines);

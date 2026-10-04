@@ -2,6 +2,7 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { Alert } from 'react-native';
+import { CARD_COLORS } from '../../../../../packages/wire-schema/src/card_colors';
 import { cardFixture } from '../../../test-support/cards';
 import { PostItCard, postItRotation } from '../PostItCard';
 import { postItActivityText } from '../../../lib/postit-activity';
@@ -80,7 +81,7 @@ test('완료는 기존 version/opId 계약을 쓰고 실패하면 알리고 카�
    useSettingsStore.setState({ appearance });
    for (const variant of ['full', 'compact'] as const) {
     const screen = render(<PostItCard api={null} card={cardFixture()} variant={variant} onOpen={() => {}} />);
-    expect(screen.getByTestId('postit-card-card-1').props.style.backgroundColor).toBe('#fff4e5');
+    expect(screen.getByTestId('postit-card-card-1').props.style.backgroundColor).toBe(CARD_COLORS.yellow.hex);
     expect(screen.getByTestId('postit-body-card-1').props.style.color).toBe('#000000');
     screen.unmount();
    }

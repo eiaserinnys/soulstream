@@ -5,6 +5,7 @@ import {
   PHONE_CHAT_TYPOGRAPHY, PHONE_FOUNDATION, TABLET_CARD_LAYOUT,
   TABLET_CHAT_TYPOGRAPHY, TABLET_FOUNDATION, type DesignTokens,
 } from '../tokens';
+import { CARD_COLOR_KEYS, CARD_COLORS } from '../../../../packages/wire-schema/src/card_colors';
 
 // Follow plannerVisualRoles' fixture pattern; roles consume explicit device tokens.
 test.each(['phone', 'tablet'] as const)('%s paper follows feed typography while touch targets stay native', (device) => {
@@ -19,6 +20,10 @@ test.each(['phone', 'tablet'] as const)('%s paper follows feed typography while 
   const feed = createSessionVisualRoles(t);
   const compact = createPostItRoles(t, 'compact');
   const full = createPostItRoles(t);
+  for (const color of CARD_COLOR_KEYS) {
+    expect(createPostItRoles(t, 'full', color).paper).toBe(CARD_COLORS[color].hex);
+    expect(createPostItRoles(t, 'compact', color).paper).toBe(CARD_COLORS[color].hex);
+  }
   expect(compact.title).toMatchObject(feed.typography.title);
   expect(compact.body).toMatchObject({ fontSize: 15, lineHeight: 22 });
   expect(compact.label).toMatchObject({ fontSize: 13, lineHeight: 18 });

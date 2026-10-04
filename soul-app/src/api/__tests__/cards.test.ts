@@ -62,7 +62,7 @@ test('생성·완료·반려·대기·빼기·취소·이동·순서·담당·�
   }
   await api.moveCard('card/1', 'folder-2', 3, 'move');
   await api.reorderCardQueue('card/1', null, 3, 'order');
-  await api.updateCard('card/1', { assignee: { kind: 'agent', agentId: 'ariella' }, nodeId: 'node-2', modelPreset: null }, 3, 'assignment');
+  await api.updateCard('card/1', { assignee: { kind: 'agent', agentId: 'ariella' }, nodeId: 'node-2', modelPreset: null, color: 'lavender' }, 3, 'assignment');
   await api.answerCardQuestion('card/1', 'question/1', '네', 'answer');
   const calls = fetch.mock.calls.map(([url, init]) => ({ url, method: init?.method, body: JSON.parse(init?.body as string) }));
   expect(calls[0]).toMatchObject({ method: 'POST', body: { queue: true, folderId: 'folder-1', nodeId: 'node-1' } });
@@ -71,7 +71,7 @@ test('생성·완료·반려·대기·빼기·취소·이동·순서·담당·�
   expect(calls[2].body).toEqual({ status: 'running', expectedVersion: 3, idempotencyKey: 'status-running', reason: '반려 사유' });
   expect(calls[6].body).toEqual({ folderId: 'folder-2', expectedVersion: 3, idempotencyKey: 'move' });
   expect(calls[7]).toMatchObject({ url: 'https://cards.test/api/cards/card%2F1/queue-position', body: { afterCardId: null, expectedVersion: 3 } });
-  expect(calls[8]).toMatchObject({ method: 'PATCH', body: { modelPreset: null, assignee: { agentId: 'ariella' } } });
+  expect(calls[8]).toMatchObject({ method: 'PATCH', body: { modelPreset: null, color: 'lavender', expectedVersion: 3, idempotencyKey: 'assignment', assignee: { agentId: 'ariella' } } });
   expect(calls[9]).toEqual({ url: 'https://cards.test/api/cards/card%2F1/questions/question%2F1/answer', method: 'POST', body: { answer: '네', idempotencyKey: 'answer' } });
 });
 

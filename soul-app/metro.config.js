@@ -5,6 +5,7 @@ config.watchFolders = [
   ...(config.watchFolders ?? []),
   require('node:path').resolve(__dirname, '../packages/soul-ui/src/cards'),
   require('node:path').resolve(__dirname, '../packages/soul-ui/src/lib'),
+  require('node:path').resolve(__dirname, '../packages/wire-schema/src'),
 ];
 
 // react-native-webrtc@124.0.7 still imports event-target-shim/index even though

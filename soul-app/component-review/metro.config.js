@@ -5,6 +5,7 @@ config.watchFolders = [
   path.resolve(__dirname, '..'),
   path.resolve(__dirname, '../../packages/soul-ui/src/cards'),
   path.resolve(__dirname, '../../packages/soul-ui/src/lib'),
+  path.resolve(__dirname, '../../packages/wire-schema/src'),
 ];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, '../node_modules')];
 const client = path.resolve(__dirname, '../src/api/client.ts');

@@ -1,4 +1,5 @@
 import type { CatalogFolder, Session } from './types';
+import type { CardColor } from '../../../packages/wire-schema/src/card_colors';
 
 export type CardStatus = 'todo' | 'queued' | 'blocked' | 'running' | 'review' | 'done' | 'cancelled';
 export interface CardAttachment {
@@ -9,6 +10,7 @@ export interface CardAttachment {
 }
 export interface CardDto {
   id: string;
+  color?: CardColor;
   folderId: string;
   title: string;
   request: string;
@@ -83,6 +85,7 @@ export interface CardAssignment {
   modelPreset: string | null;
 }
 export interface CardPatch {
+  color?: CardColor;
   title?: string;
   assignee?: { kind: 'agent' | 'human' | 'session' | null; agentId?: string | null; userId?: string | null; sessionId?: string | null } | null;
   nodeId?: string | null;
