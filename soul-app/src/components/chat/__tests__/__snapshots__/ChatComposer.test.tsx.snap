@@ -162,6 +162,7 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
         multiline={true}
         onChangeText={[MockFunction]}
         onContentSizeChange={[Function]}
+        onLayout={[Function]}
         placeholder="메시지 입력..."
         placeholderTextColor="#666b70"
         scrollEnabled={false}
@@ -179,7 +180,7 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
               "paddingVertical": 10,
             },
             {
-              "height": 48,
+              "minHeight": 48,
               "paddingVertical": 12.95,
             },
           ]

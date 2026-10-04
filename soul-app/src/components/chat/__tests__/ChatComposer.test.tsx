@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { Platform, StyleSheet, Text } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -9,6 +9,9 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 }));
 
 import { ChatComposer } from '../ChatComposer';
+import * as inputMeasurement from '../useTextInputContentHeight';
+
+afterEach(() => jest.restoreAllMocks());
 
 function renderComposer(
   input = '',
@@ -64,7 +67,8 @@ describe('ChatComposer', () => {
     ]);
   });
 
-  test('자동 줄바꿈과 Enter의 측정 높이로 성장하고 삭제·clear하면 줄어든다', () => {
+  test('Android 콘텐츠 이벤트 수신 후 높이·정렬·스크롤 계산과 clear 계약', () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
     const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
     const screen = render(<ChatComposer {...props} input="" />);
     const field = () => screen.getByTestId('chat-composer-text-input');
@@ -96,7 +100,8 @@ describe('ChatComposer', () => {
     expect(field().props.scrollEnabled).toBe(false);
   });
 
-  test('복원된 긴 draft도 native 측정 직후 높이에 반영한다', () => {
+  test('Android 복원 draft의 콘텐츠 이벤트 수신 후 상한 계산', () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
     const draft = '복원할 긴 초안 '.repeat(30);
     const screen = renderComposer(draft);
     fireEvent(screen.getByTestId('chat-composer-text-input'), 'contentSizeChange', {
@@ -106,6 +111,49 @@ describe('ChatComposer', () => {
     expect(field.props.value).toBe(draft);
     expect(StyleSheet.flatten(field.props.style).height).toBe(128);
     expect(field.props.scrollEnabled).toBe(true);
+  });
+
+  test('iOS는 값을 바꿔도 고정 높이가 없고 layout 이벤트 수신으로 상한 스크롤을 정한다', () => {
+    const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
+    const screen = render(<ChatComposer {...props} input="" />);
+    const field = () => screen.getByTestId('chat-composer-text-input');
+    const layout = (height: number) => fireEvent(field(), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 200, height } } });
+    const button = StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style);
+    for (const value of ['', '한국어 연속 입력 '.repeat(20), '첫 줄\n둘째 줄\n셋째 줄\n넷째 줄', '한 줄', '']) {
+      screen.rerender(<ChatComposer {...props} input={value} />);
+      expect(StyleSheet.flatten(field().props.style)).toMatchObject({ minHeight: 48, maxHeight: 128 });
+      expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
+      expect(field().props.multiline).toBe(true);
+      expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(button);
+    }
+    screen.rerender(<ChatComposer {...props} input={'긴 글 '.repeat(100)} />);
+    layout(108);
+    expect(field().props.scrollEnabled).toBe(false);
+    // The cap must enable scrolling without a contentSizeChange event.
+    layout(128);
+    expect(field().props.scrollEnabled).toBe(true);
+    screen.rerender(<ChatComposer {...props} input={'더 긴 글 '.repeat(100)} />);
+    expect(field().props.scrollEnabled).toBe(true);
+    screen.rerender(<ChatComposer {...props} input="한 줄" />);
+    layout(48);
+    expect(field().props.scrollEnabled).toBe(false);
+    screen.rerender(<ChatComposer {...props} input="" />);
+    expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
+  });
+
+  test('웹 측정값 수신 후 기존 rows·줄바꿈·명시 높이·상한 계산 계약', () => {
+    jest.replaceProperty(Platform, 'OS', 'web');
+    // The hook's DOM measurement is mocked; this test covers only its consumer contract.
+    const measurement = jest.spyOn(inputMeasurement, 'useTextInputContentHeight');
+    measurement.mockReturnValue({ ref: { current: null }, contentHeight: 0, onContentSizeChange: undefined });
+    const screen = renderComposer('본문');
+    const field = () => screen.getByTestId('chat-composer-text-input');
+    expect(field().props.rows).toBe(1);
+    expect(StyleSheet.flatten(field().props.style)).toMatchObject({ height: 48, whiteSpace: 'pre-wrap' });
+    measurement.mockReturnValue({ ref: { current: null }, contentHeight: 250, onContentSizeChange: undefined });
+    screen.rerender(<ChatComposer input="긴 본문" onChangeInput={jest.fn()} onPickAttachment={jest.fn()} onSend={jest.fn()} uploading={false} sending={false} voiceControls={null} />);
+    expect(StyleSheet.flatten(field().props.style).height).toBe(128);
+    expect(field().props.scrollEnabled).toBe(true);
   });
 
   test('attach and send handlers stay wired while empty send remains disabled', () => {
