@@ -4,11 +4,13 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useDeviceType, useTokens } from '../theme';
 import { useSessionStore } from '../store/sessionStore';
+import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { ReviewRows } from './ReviewRows';
 import { ReviewChat } from './ReviewChat';
 import { ReviewProject } from './ReviewProject';
+import { ReviewNativeSettings } from './ReviewNativeSettings';
 import { ReviewSettings } from './ReviewSettings';
 import { ReviewSurfaces } from './ReviewSurfaces';
 import { ReviewBoard } from './ReviewBoard';
@@ -33,6 +35,7 @@ import { FolderWorkspaceReadOverlay } from '../components/planner/FolderWorkspac
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
   { value: 'project', label: '프로젝트' }, { value: 'settings', label: '선택·설정' },
+  { value: 'nativeSettings', label: '앱 설정' },
   { value: 'surfaces', label: '표면' },
   { value: 'board', label: '보드' },
   { value: 'boardActions', label: '보드 액션' },
@@ -53,8 +56,14 @@ export function initializeReview() {
   const entryShell = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'entryShell';
   const folderTabs = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'folderTabs';
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
+  const nativeSettings = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'nativeSettings';
+  const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
-  useSettingsStore.setState({ serverUrl: cardImages ? window.location.origin : entryShell || folderTabs || dialogues ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  if (nativeSettings) {
+    useAuthStore.setState({ jwt: firstNativeConnection ? null : 'public-review-fixture', authRejected: false });
+    if (new URLSearchParams(window.location.search).get('state') === 'photo-fallback') useSettingsStore.setState({ wallpaper: { mode: 'photo' } });
+  }
   const longSelection = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chips') === 'long';
   if (longSelection) useSettingsStore.setState({ cardAssignments: {
     [entryShell ? 'https://public-fixture.invalid' : '']: { folderId: folders[0].id, nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-exhausted-model' },
@@ -76,6 +85,7 @@ function Gallery() {
     padding: t.cardLayout.padding, gap: t.uiSpacing.xl,
     backgroundColor: t.colors.background,
   }), [t]);
+  if (section === 'nativeSettings') return <ReviewNativeSettings/>;
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
   if (section === 'boardConnected') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoardWorkspace/></View>;
   if (section === 'board') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoard/></View>;
@@ -101,7 +111,7 @@ function Gallery() {
       </Text>
     </View>
     <SettingsSegmentedControl<Section> id="review-section" value={section} onChange={(next) => {
-      if (next === 'dialogues' || section === 'dialogues') {
+      if (next === 'dialogues' || section === 'dialogues' || next === 'nativeSettings') {
         const url = new URL(window.location.href);
         url.searchParams.set('section', next);
         window.history.replaceState(null, '', url);

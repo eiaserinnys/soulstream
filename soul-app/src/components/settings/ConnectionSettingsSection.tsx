@@ -27,6 +27,7 @@ export function ConnectionSettingsSection({
   onServerTypeChange,
   onTest,
   onSave,
+  savedUrl, savedType, saved, hideSave,
 }: {
   flattened: boolean;
   url: string;
@@ -37,12 +38,14 @@ export function ConnectionSettingsSection({
   onServerTypeChange(value: ServerType): void;
   onTest(): void;
   onSave(): void;
+  savedUrl?: string; savedType?: ServerType; saved?: boolean; hideSave?: boolean;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
     <SettingsSection id="connection" title="연결" flattened={flattened}>
+      {savedUrl !== undefined ? <View style={styles.block}><Text style={styles.rowLabel}>현재 연결</Text><Text style={styles.result}>{savedUrl || '저장된 연결 없음'}</Text><Text style={styles.result}>{SERVER_OPTIONS.find(option => option.value === savedType)?.label}</Text>{saved ? <Text style={styles.ok}>이 기기에 연결 설정을 저장했습니다.</Text> : null}</View> : null}
       <View style={styles.block}>
         <Text style={styles.rowLabel}>서버 URL</Text>
         <TextInput
@@ -98,7 +101,7 @@ export function ConnectionSettingsSection({
               <Text style={styles.secondaryText}>연결 확인</Text>
             )}
           </GlassButton>
-          <GlassButton
+          {!hideSave ? <GlassButton
             variant="primary"
             testID="settings-save"
             surfaceTestID="settings-save-surface"
@@ -108,7 +111,7 @@ export function ConnectionSettingsSection({
             disabled={!url.trim()}
           >
             <Text style={styles.primaryText}>저장</Text>
-          </GlassButton>
+          </GlassButton> : null}
         </View>
       </View>
     </SettingsSection>
@@ -119,7 +122,7 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     block: { padding: t.cardLayout.padding, gap: t.spacing.md },
     rowLabel: {
-      ...t.foundation.typography.label,
+      ...t.foundation.typography.body,
       color: t.colors.textSecondary,
     },
     input: {

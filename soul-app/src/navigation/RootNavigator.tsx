@@ -13,7 +13,7 @@ import * as Notifications from 'expo-notifications';
 import { useSettingsStore } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
 import { createApiClient } from '../api/client';
-import { SettingsScreen } from '../screens/SettingsScreen';
+import { FirstConnectionSettingsScreen } from '../screens/SettingsScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { navigationRef } from './navigationRef';
 import {
@@ -347,7 +347,7 @@ export function RootNavigator({
   if (!serverUrl) {
     return (
       <AppWallpaperBackground serverUrl={serverUrl} wallpaper={wallpaper} jwt={jwt}>
-        <SettingsScreen showTitle />
+        <FirstConnectionSettingsScreen />
       </AppWallpaperBackground>
     );
   }

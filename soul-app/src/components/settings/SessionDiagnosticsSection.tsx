@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import {
   ActivityIndicator,
@@ -13,6 +13,7 @@ import {
   type AppDiagnosticFailureRecord,
 } from '../../lib/session-succession-diagnostics';
 import { useTokens, type DesignTokens } from '../../theme';
+import { settingsDiagnosticText } from './settingsDiagnosticText';
 import { SettingsSurface } from './SettingsSurface';
 
 export function SessionDiagnosticsSection({
@@ -22,32 +23,39 @@ export function SessionDiagnosticsSection({
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const revision = useRef(0);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; ++revision.current; }; }, []);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [records, setRecords] = useState<AppDiagnosticFailureRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
 
   const reload = useCallback(async () => {
+    const request = ++revision.current;
     setLoading(true);
     setReadError(null);
     setCopyStatus('idle');
     try {
-      setRecords((await readAppDiagnosticFailures()).slice().reverse());
+      const next = (await readAppDiagnosticFailures()).slice().reverse();
+      if (alive.current && request === revision.current) { setRecords(next); setExpanded(new Set()); }
     } catch (error) {
-      setReadError(errorText(error));
+      if (alive.current && request === revision.current) setReadError('다시 시도해 주세요.');
     } finally {
-      setLoading(false);
+      if (alive.current && request === revision.current) setLoading(false);
     }
   }, []);
 
   const copyAll = useCallback(async () => {
     if (records.length === 0 || copyStatus === 'copying') return;
+    const request = revision.current;
     setCopyStatus('copying');
     try {
-      await Clipboard.setStringAsync(formatAppDiagnosticFailures(records));
-      setCopyStatus('copied');
+      await Clipboard.setStringAsync(formatAppDiagnosticFailures(records.map(record => ({ ...record, error: { message: settingsDiagnosticText(record.error.message), stack: record.error.stack ? settingsDiagnosticText(record.error.stack) : null, componentStack: record.error.componentStack ? settingsDiagnosticText(record.error.componentStack) : null } }))));
+      if (alive.current && request === revision.current) setCopyStatus('copied');
     } catch {
-      setCopyStatus('error');
+      if (alive.current && request === revision.current) setCopyStatus('error');
     }
   }, [copyStatus, records]);
 
@@ -101,19 +109,20 @@ export function SessionDiagnosticsSection({
         {!loading && !readError && records.length === 0 ? (
           <Text style={styles.empty}>저장된 오류가 없습니다.</Text>
         ) : null}
-        {!loading && !readError ? records.map((record, index) => (
+        {!loading && !readError ? records.slice(0, 10).map((record, index) => (
           <View key={record.diagnosticId} style={styles.record}>
             <Text style={styles.meta}>
               {record.occurredAt} · {record.phase}
             </Text>
-            <Text selectable style={styles.message}>{record.error.message}</Text>
-            {record.error.stack || record.error.componentStack ? (
+            <Text selectable style={styles.message}>{settingsDiagnosticText(record.error.message)}</Text>
+            {record.error.stack || record.error.componentStack ? <TouchableOpacity testID={`session-diagnostic-expand-${index}`} accessibilityRole="button" accessibilityState={{ expanded: expanded.has(record.diagnosticId) }} style={styles.headingAction} onPress={() => setExpanded(current => { const next = new Set(current); if (next.has(record.diagnosticId)) next.delete(record.diagnosticId); else next.add(record.diagnosticId); return next; })}><Text style={styles.headingActionText}>{expanded.has(record.diagnosticId) ? '스택 접기' : '스택 펼쳐 보기'}</Text></TouchableOpacity> : null}
+            {expanded.has(record.diagnosticId) ? (
               <Text
                 testID={index === 0 ? 'session-diagnostic-stack' : undefined}
                 selectable
                 style={styles.stack}
               >
-                {[record.error.stack, record.error.componentStack].filter(Boolean).join('\n\n')}
+                {settingsDiagnosticText([record.error.stack, record.error.componentStack].filter(Boolean).join('\n\n'))}
               </Text>
             ) : null}
           </View>
@@ -131,13 +140,13 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     section: { gap: t.spacing.sm },
     headingRow: {
-      flexDirection: 'row',
+      flexDirection: 'row', flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'space-between',
     },
-    label: { color: t.colors.textPrimary, ...t.foundation.typography.label },
+    label: { color: t.colors.textPrimary, ...t.foundation.typography.body },
     headingActions: {
-      flexDirection: 'row',
+      flexDirection: 'row', flexWrap: 'wrap',
       alignItems: 'center',
       gap: t.spacing.xs,
     },
@@ -146,7 +155,7 @@ function makeStyles(t: DesignTokens) {
       justifyContent: 'center',
       paddingHorizontal: t.spacing.sm,
     },
-    headingActionText: { color: t.colors.accent, ...t.foundation.typography.label },
+    headingActionText: { color: t.colors.accent, ...t.foundation.typography.body },
     surface: { padding: t.cardLayout.padding, gap: t.spacing.md },
     record: { gap: t.spacing.xs },
     meta: { color: t.colors.textTertiary, ...t.foundation.typography.meta },

@@ -2,7 +2,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,6 +17,8 @@ import { useDeviceType, useTokens, type DesignTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { SettingsDivider, SettingsSection } from './SettingsSection';
 import { SettingsSegmentedControl } from './SettingsSegmentedControl';
+import { SettingsPhoto } from './SettingsPhoto';
+import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 
 const APPEARANCE_OPTIONS = [
   { value: 'system', label: '시스템' },
@@ -42,6 +43,7 @@ export function DisplaySettingsSection({
   wallpaper,
   wallpaperPreviewSource,
   savingBackground,
+  status,
   onAppearanceChange,
   onWallpaperModeChange,
   onPickBackground,
@@ -52,13 +54,16 @@ export function DisplaySettingsSection({
   wallpaper: WallpaperSettings;
   wallpaperPreviewSource: ImageSourcePropType | null;
   savingBackground: boolean;
+  status?: string | null;
   onAppearanceChange(value: Appearance): void;
   onWallpaperModeChange(value: WallpaperMode): void;
   onPickBackground(): void;
   onResetBackground(): void;
 }) {
   const t = useTokens();
-  const wide = useDeviceType() !== 'phone';
+  const deviceWide = useDeviceType() !== 'phone';
+  const workspace = useSettingsWorkspace();
+  const wide = workspace ? workspace.columns : deviceWide;
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
@@ -89,11 +94,11 @@ export function DisplaySettingsSection({
                 style={[styles.wallpaperTile, wide && styles.wallpaperTileWide, selected && styles.wallpaperTileSelected]}
                 onPress={() => onWallpaperModeChange(option.value)}
               >
-                <Ionicons
+                {option.value === 'photo' ? <SettingsPhoto testID="settings-wallpaper-photo-tile" source={wallpaperPreviewSource} style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: t.foundation.radius.field }}/> : <Ionicons
                   name={option.icon}
                   color={selected ? t.colors.accent : t.colors.textSecondary}
                   size={t.iconSize.prominent}
-                />
+                />}
                 <Text style={[styles.tileLabel, selected && styles.tileLabelSelected]}>
                   {option.label}
                 </Text>
@@ -110,15 +115,16 @@ export function DisplaySettingsSection({
             );
           })}
         </View>
+      </View>
         {wallpaper.mode === 'photo' ? (
-          <View style={styles.photoControls}>
-            {wallpaperPreviewSource ? (
-              <Image
-                testID="settings-wallpaper-preview"
+          <View style={[styles.block, styles.photoControls]}>
+            <Text style={styles.rowLabel}>내 사진</Text>
+            <SettingsPhoto
+                expandable testID="settings-wallpaper-preview"
                 source={wallpaperPreviewSource}
                 style={styles.wallpaperPreview}
               />
-            ) : null}
+            <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>{status ?? (wallpaper.customImage ? '내 사진을 사용 중입니다.' : '사진을 선택하면 바로 적용합니다.')}</Text>
             <View style={styles.actionRow}>
               <GlassButton
                 testID="settings-upload-background"
@@ -149,7 +155,6 @@ export function DisplaySettingsSection({
             </View>
           </View>
         ) : null}
-      </View>
     </SettingsSection>
   );
 }
@@ -158,7 +163,7 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     block: { padding: t.cardLayout.padding, gap: t.spacing.md },
     rowLabel: {
-      ...t.foundation.typography.label,
+      ...t.foundation.typography.body,
       color: t.colors.textSecondary,
     },
     wallpaperGrid: {

@@ -2,6 +2,7 @@ jest.mock('expo-document-picker', () => ({}));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-image-picker', () => ({ MediaTypeOptions: { Images: 'Images' } }));
 jest.mock('../../theme/useDeviceType', () => ({
+  TABLET_BREAKPOINT: 700,
   useDeviceType: () => 'phone',
   deviceTypeToBaseKey: () => 'phone',
 }));
@@ -34,7 +35,7 @@ jest.mock('../../components/SessionCardById', () => ({
 
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { act, render, renderHook } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { useTokens } from '../../theme/tokens';
 import { DailyPlannerScreen } from '../../screens/DailyPlannerScreen';
 import { SessionFeedScreen } from '../../screens/SessionFeedScreen';
@@ -76,12 +77,13 @@ test('phone bodies use their approved insets without adding duplicate page title
   expect(feedStyle.paddingHorizontal).toBe(t.foundation.pageInset);
   expect(feed.queryByText('📰 피드')).toBeNull();
 
-  const settings = render(<SettingsScreen showTitle={false} />);
+  const settings = render(<SettingsScreen category="connection" showAdmin={false} />);
+  fireEvent(settings.getByTestId('settings-safe-area'), 'layout', { nativeEvent: { layout: { width: 390 } } });
   const settingsStyle = StyleSheet.flatten(
-    settings.getByTestId('phone-settings-body').props.contentContainerStyle,
+    settings.getByTestId('settings-detail-connection').props.contentContainerStyle,
   );
   expect(settingsStyle.paddingHorizontal).toBe(t.foundation.pageInset);
-  expect(settings.queryByText('설정')).toBeNull();
+  expect(settings.getByTestId('settings-modal-header')).toBeTruthy();
 
   daily.unmount();
   feed.unmount();

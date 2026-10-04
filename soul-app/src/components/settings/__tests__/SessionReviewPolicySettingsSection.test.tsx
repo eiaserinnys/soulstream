@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));
@@ -81,7 +82,7 @@ test('loads and edits the global review source allowlist', async () => {
   expect(screen.getByText(/로그인한 브라우저 요청은 이 목록과 관계없이 항상 검수/)).toBeTruthy();
   expect(screen.getByText(/다음 신규 세션부터 모든 노드에 적용/)).toBeTruthy();
   expect(screen.queryByText(/user_id|email|display_name|ingress|MCP|·/)).toBeNull();
-  fireEvent.press(screen.getByTestId('review-policy-remove-external-llm'));
+  fireEvent(screen.getByTestId('review-policy-switch-external-llm'), 'valueChange', false);
   fireEvent.changeText(screen.getByTestId('review-policy-source-input'), 'clipper');
   fireEvent.press(screen.getByTestId('review-policy-add'));
   fireEvent.press(screen.getByTestId('review-policy-save'));
@@ -147,7 +148,7 @@ test.each([
   );
 
   await screen.findByTestId('review-policy-source-external-llm');
-  fireEvent.press(screen.getByTestId('review-policy-remove-external-llm'));
+  fireEvent(screen.getByTestId('review-policy-switch-external-llm'), 'valueChange', false);
   fireEvent.press(screen.getByTestId('review-policy-save'));
 
   expect(await screen.findByText(message)).toBeTruthy();
@@ -188,13 +189,13 @@ test('keeps browser conditional and refetches after a CAS conflict', async () =>
   fireEvent.press(screen.getByTestId('review-policy-add'));
   expect(await screen.findByText(/로그인한 브라우저 요청은 항상 검수/)).toBeTruthy();
 
-  fireEvent.press(screen.getByTestId('review-policy-remove-external-llm'));
+  fireEvent(screen.getByTestId('review-policy-switch-external-llm'), 'valueChange', false);
   fireEvent.press(screen.getByTestId('review-policy-save'));
   await waitFor(() => expect(api.getSessionReviewPolicy).toHaveBeenCalledTimes(2));
   expect(await screen.findByText(/최신 버전에 내 변경만 다시 적용했습니다/)).toBeTruthy();
   expect(screen.getByText(/현재 v5/)).toBeTruthy();
-  expect(screen.queryByTestId('review-policy-source-external-llm')).toBeNull();
-  expect(screen.queryByTestId('review-policy-source-slack')).toBeNull();
+  expect(screen.getByTestId('review-policy-switch-external-llm').props.value).toBe(false);
+  expect(screen.getByTestId('review-policy-switch-slack').props.value).toBe(false);
   expect(screen.getByTestId('review-policy-source-clipper')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('review-policy-save'));
@@ -219,14 +220,14 @@ test('locks source controls while a save is in flight', async () => {
   );
 
   await screen.findByTestId('review-policy-source-external-llm');
-  fireEvent.press(screen.getByTestId('review-policy-remove-external-llm'));
+  fireEvent(screen.getByTestId('review-policy-switch-external-llm'), 'valueChange', false);
   fireEvent.changeText(screen.getByTestId('review-policy-source-input'), 'clipper');
   fireEvent.press(screen.getByTestId('review-policy-save'));
 
   await waitFor(() => {
     expect(screen.getByTestId('review-policy-source-input').props.editable).toBe(false);
-    expect(screen.getByTestId('review-policy-remove-slack').props.accessibilityState)
-      .toEqual({ disabled: true });
+    expect(screen.getByTestId('review-policy-switch-slack').props.disabled)
+      .toBe(true);
     expect(screen.getByTestId('review-policy-add').props.accessibilityState)
       .toEqual({ disabled: true });
   });
@@ -267,12 +268,14 @@ test('locks source controls while a reload is in flight', async () => {
 
   await screen.findByTestId('review-policy-source-external-llm');
   fireEvent.changeText(screen.getByTestId('review-policy-source-input'), 'pending-source');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, actions) => { actions?.find(action => action.text === '버리기')?.onPress?.(); });
   fireEvent.press(screen.getByTestId('review-policy-reload'));
+  alert.mockRestore();
 
   await waitFor(() => {
     expect(screen.getByTestId('review-policy-source-input').props.editable).toBe(false);
-    expect(screen.getByTestId('review-policy-remove-slack').props.accessibilityState)
-      .toEqual({ disabled: true });
+    expect(screen.getByTestId('review-policy-switch-slack').props.disabled)
+      .toBe(true);
     expect(screen.getByTestId('review-policy-add').props.accessibilityState)
       .toEqual({ disabled: true });
     expect(screen.getByTestId('review-policy-reload').props.accessibilityState)
@@ -283,7 +286,16 @@ test('locks source controls while a reload is in flight', async () => {
 
   resolveReload(latestPayload);
   expect(await screen.findByTestId('review-policy-source-clipper')).toBeTruthy();
-  expect(screen.queryByTestId('review-policy-source-slack')).toBeNull();
-  expect(screen.queryByTestId('review-policy-source-external-llm')).toBeNull();
+  expect(screen.getByTestId('review-policy-switch-slack').props.value).toBe(false);
+  expect(screen.getByTestId('review-policy-switch-external-llm').props.value).toBe(false);
   expect(screen.getByText(/현재 v5/)).toBeTruthy();
+});
+
+test('server catalogue supplies independent switches without changing authority', async () => {
+  const screen = render(<SessionReviewPolicySettingsSection flattened serverUrl="https://soul.test"/>);
+  const switchControl = await screen.findByTestId('review-policy-switch-llm');
+  expect(switchControl.props.value).toBe(false);
+  fireEvent(switchControl, 'valueChange', true);
+  expect(screen.getByTestId('review-policy-switch-llm').props.value).toBe(true);
+  expect(api.updateSessionReviewPolicy).not.toHaveBeenCalled();
 });

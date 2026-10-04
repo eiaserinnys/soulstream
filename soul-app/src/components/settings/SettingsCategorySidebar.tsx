@@ -4,8 +4,8 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTokens, type DesignTokens } from '../../theme';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './settingsCategories';
 
-export function SettingsCategorySidebar({ selected, onSelect, showAdmin = false, compact = false }: {
-  selected: SettingsCategory | null; onSelect(value: SettingsCategory): void; showAdmin?: boolean; compact?: boolean;
+export function SettingsCategorySidebar({ selected, onSelect, showAdmin = false, compact = false, dirty = [] }: {
+  selected: SettingsCategory | null; onSelect(value: SettingsCategory): void; showAdmin?: boolean; compact?: boolean; dirty?: readonly SettingsCategory[];
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -21,6 +21,7 @@ export function SettingsCategorySidebar({ selected, onSelect, showAdmin = false,
           <View style={compact && styles.iconCap}><Ionicons name={category.icon} size={t.iconSize.standard} color={active ? t.colors.accent : t.colors.textSecondary}/></View>
           <View style={styles.labels}><Text style={[styles.label, active && styles.activeLabel]}>{category.label}</Text>
             {compact ? <Text style={styles.description}>{category.description}</Text> : null}
+            {dirty.includes(category.id) ? <Text style={styles.description}>미저장</Text> : null}
           </View>
           {compact || active ? <Ionicons name="chevron-forward" size={t.iconSize.compact} color={t.colors.textSecondary}/> : null}
         </TouchableOpacity>;
@@ -31,7 +32,7 @@ export function SettingsCategorySidebar({ selected, onSelect, showAdmin = false,
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     // Preserve the existing iPad settings sidebar width.
-    sidebar: { width: 240, padding: t.spacing.md, gap: t.spacing.lg, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: t.colors.border, backgroundColor: t.colors.surfaceMuted },
+    sidebar: { width: 240, padding: t.spacing.md, gap: t.spacing.lg, backgroundColor: t.colors.surfaceMuted },
     compact: { width: '100%', padding: t.foundation.pageInset, paddingTop: t.spacing.sm, backgroundColor: 'transparent', borderRightWidth: 0, gap: t.spacing.lg },
     group: { gap: t.spacing.sm },
     groupTitle: { ...t.foundation.typography.meta, fontWeight: '600', color: t.colors.textSecondary, paddingHorizontal: t.spacing.sm },

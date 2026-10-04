@@ -195,7 +195,7 @@ test('phone 업무 저장은 body 제목을 복제하지 않고 native route tit
     .toBe('새 제목');
 });
 
-test('Settings tab wrapper만 body title을 끄고 onboarding과 modal 계약을 보존한다', () => {
+test('Settings shared workspace owns the header and first connection uses connection-only entry', () => {
   renderStackNavigators();
   const settingsScreen = getNativeStackCaptures()[4].screens[0];
   render(React.createElement(settingsScreen.component, {
@@ -204,10 +204,10 @@ test('Settings tab wrapper만 body title을 끄고 onboarding과 modal 계약을
   }));
 
   expect(mockSettingsScreen).toHaveBeenLastCalledWith(expect.objectContaining({ showTitle: false }));
-  expect(read('../RootNavigator.tsx')).toContain('<SettingsScreen showTitle />');
+  expect(settingsScreen.options.headerShown).toBe(false);
+  expect(read('../RootNavigator.tsx')).toContain('<FirstConnectionSettingsScreen />');
   const settingsModal = read('../../components/settings/SettingsModal.tsx');
   expect(settingsModal).toContain('<SettingsScreen');
-  expect(settingsModal).toContain('showTitle={false}');
   expect(settingsModal).toMatch(/<SettingsScreen\b[^>]*\bflattened\b/s);
 });
 

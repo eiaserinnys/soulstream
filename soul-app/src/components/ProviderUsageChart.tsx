@@ -5,6 +5,7 @@ import type {
   ProviderQuota,
   ProviderUsageSnapshot,
 } from '../api/claudeAuthTypes';
+import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
 import { useTokens } from '../theme';
 
 const PROVIDER_LABELS: Record<ProviderName, string> = {
@@ -14,7 +15,7 @@ const PROVIDER_LABELS: Record<ProviderName, string> = {
 };
 
 export function formatResetsAt(epochSeconds: number | null): string | null {
-  if (!epochSeconds) return null;
+  if (epochSeconds === null) return null;
   const d = new Date(epochSeconds * 1000);
   const sameDay = d.toDateString() === new Date().toDateString();
   return d.toLocaleString(
@@ -27,11 +28,14 @@ export function formatResetsAt(epochSeconds: number | null): string | null {
 
 export function quotaAmount(quota: ProviderQuota): string | null {
   if (quota.remaining !== null && quota.limit !== null) {
-    return `${quota.remaining.toLocaleString()} / ${quota.limit.toLocaleString()} 남음`;
+    return `${quota.remaining.toLocaleString(undefined, { maximumFractionDigits: 20 })} / ${quota.limit.toLocaleString(undefined, { maximumFractionDigits: 20 })} 남음`;
   }
   if (quota.used !== null && quota.limit !== null) {
-    return `${quota.used.toLocaleString()} / ${quota.limit.toLocaleString()} 사용`;
+    return `${quota.used.toLocaleString(undefined, { maximumFractionDigits: 20 })} / ${quota.limit.toLocaleString(undefined, { maximumFractionDigits: 20 })} 사용`;
   }
+  if (quota.remaining !== null) return `${quota.remaining.toLocaleString(undefined, { maximumFractionDigits: 20 })} 남음`;
+  if (quota.used !== null) return `${quota.used.toLocaleString(undefined, { maximumFractionDigits: 20 })} 사용`;
+  if (quota.remainingPercent !== null) return `${quota.remainingPercent}% 남음`;
   return null;
 }
 
@@ -53,7 +57,7 @@ export function ProviderUsageChart({
   if (providers.length === 0) {
     return (
       <Text
-        style={{ color: t.colors.textTertiary, ...t.foundation.typography.meta }}
+        style={{ color: t.colors.textTertiary, ...t.foundation.typography.body }}
       >
         사용량 데이터 없음
       </Text>
@@ -74,12 +78,14 @@ export function ProviderUsageChart({
             style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: t.spacing.xs,
             }}
           >
             <Text
               style={{
                 color: t.colors.textTertiary,
-                ...t.foundation.typography.meta,
+                ...t.foundation.typography.body,
               }}
             >
               {PROVIDER_LABELS[provider]}
@@ -87,19 +93,19 @@ export function ProviderUsageChart({
             <Text
               style={{
                 color: t.colors.textSecondary,
-                ...t.foundation.typography.meta,
+                ...t.foundation.typography.body,
               }}
             >
               {limits.status === 'error'
                 ? '오류'
-                : limits.quotas.length > 0
-                  ? limits.planType ?? 'OAuth'
-                  : 'OAuth 없음'}
+                : limits.status === 'not_configured'
+                  ? 'OAuth 없음'
+                  : limits.planType ?? '조회됨'}
             </Text>
           </View>
           {limits.quotas.length === 0 ? (
-            <Text style={{ color: t.colors.textTertiary, ...t.foundation.typography.meta }}>
-              {limits.error ?? '조회 가능한 사용량 없음'}
+            <Text style={{ color: t.colors.textTertiary, ...t.foundation.typography.body }}>
+              {limits.error ? safeErrorDetail(limits.error) : '조회 가능한 사용량 없음'}
             </Text>
           ) : (
             limits.quotas.map((quota) => {
@@ -110,22 +116,23 @@ export function ProviderUsageChart({
                 <View
                   key={quota.id}
                   testID={`usage-bar-${quota.id}`}
+                  accessible accessibilityLabel={[quota.label, quota.usedPercent !== null ? `${quota.usedPercent}%` : null, amount, reset ? `초기화: ${reset}` : null].filter(Boolean).join(' · ')}
                   style={{ marginTop: t.spacing.sm }}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <Text
                       style={{
                         color: t.colors.textTertiary,
-                        ...t.foundation.typography.meta,
+                        ...t.foundation.typography.body,
                         flex: 1,
                       }}
                       numberOfLines={1}
                     >
                       {quota.label}
                     </Text>
-                    <Text style={{ color: t.colors.textSecondary, ...t.foundation.typography.meta }}>
+                    <Text style={{ color: t.colors.textSecondary, ...t.foundation.typography.body }}>
                       {quota.usedPercent !== null
-                        ? `${Math.round(quota.usedPercent)}%`
+                        ? `${quota.usedPercent}%`
                         : amount ?? '-'}
                     </Text>
                   </View>
@@ -139,16 +146,17 @@ export function ProviderUsageChart({
                       }}
                     >
                       <View
+                        testID={`usage-fill-${quota.id}`}
                         style={{
                           height: '100%',
-                          width: `${used}%`,
+                          width: `${Math.max(0, Math.min(100, used))}%`,
                           backgroundColor: barColor(used),
                         }}
                       />
                     </View>
                   )}
                   {(reset || amount) && (
-                    <Text style={{ color: t.colors.textTertiary, ...t.foundation.typography.meta }}>
+                    <Text style={{ color: t.colors.textTertiary, ...t.foundation.typography.body }}>
                       {amount ? `${amount}${reset ? ' · ' : ''}` : ''}
                       {reset ? `초기화: ${reset}` : ''}
                     </Text>

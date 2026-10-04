@@ -29,7 +29,7 @@ jest.mock('../../screens/ProjectListScreen', () => ({
 }));
 jest.mock('../../screens/SessionFeedScreen', () => ({ SessionFeedScreen: () => null }));
 jest.mock('../../screens/ChatScreen', () => ({ ChatScreen: () => null }));
-jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null }));
+jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null, FirstConnectionSettingsScreen: () => null }));
 jest.mock('../../components/planner/FolderWorkspace', () => ({ FolderWorkspace: () => null }));
 jest.mock('../phonePanelHistory', () => ({
   PhonePanelHistoryProvider: ({ children }: { children: unknown }) => children,

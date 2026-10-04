@@ -23,7 +23,7 @@ jest.mock('../../screens/LoginScreen', () => {
     LoginScreen: () => ReactModule.createElement(Text, { testID: 'login-screen' }, 'Login'),
   };
 });
-jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null }));
+jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null, FirstConnectionSettingsScreen: () => null }));
 jest.mock('../../services/pushNotifications', () => ({
   ensurePushRegistered: jest.fn(async () => undefined),
   deregisterFromServer: jest.fn(async () => undefined),

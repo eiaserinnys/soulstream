@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Switch,
   StyleSheet,
   Text,
   TextInput,
@@ -13,9 +14,12 @@ import type {
   SessionReviewPolicyPayload,
   SessionReviewSourceCatalogEntry,
 } from '../../api/settingsEndpoints';
+import { useAuthStore } from '../../store/authStore';
 import { useTokens, type DesignTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { SettingsSection } from './SettingsSection';
+import { useSettingsSaveScope, confirmSettingsDiscard } from './SettingsWorkspaceContext';
+import { safeErrorDetail } from '../../../../packages/soul-ui/src/lib/safe-error-detail';
 
 const SOURCE_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 const UNSAFE_SOURCE_COPY = /\b(?:user_id|email|display_name|ingress|mcp|parent)\b|권한|도구|상위\s*요청|알림|·/i;
@@ -70,8 +74,11 @@ export function SessionReviewPolicySettingsSection({
   flattened: boolean;
   serverUrl: string;
 }) {
+  const jwt = useAuthStore(state => state.jwt);
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const revision = useRef(0);
+  const [forbidden, setForbidden] = useState(false);
   const [payload, setPayload] = useState<SessionReviewPolicyPayload | null>(null);
   const [sources, setSources] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
@@ -94,10 +101,12 @@ export function SessionReviewPolicySettingsSection({
       setError('서버 연결을 먼저 설정해 주세요.');
       return;
     }
+    const request = ++revision.current;
     setLoading(true);
     setError(null);
     try {
       const next = await createApiClient(serverUrl).getSessionReviewPolicy();
+      if (request !== revision.current) return;
       setPayload(next);
       setSources(conflict
         ? rebaseSourceChanges(
@@ -108,18 +117,21 @@ export function SessionReviewPolicySettingsSection({
         : next.policy.sourceAllowlist);
       setMessage(
         conflict
-          ? '다른 관리자가 먼저 저장했습니다. 최신 버전에 내 변경만 다시 적용했습니다. 확인 후 저장해 주세요.'
+          ? `다른 관리자가 먼저 저장했습니다. 최신 버전에 내 변경만 다시 적용했습니다. 확인 후 저장해 주세요. 추가: ${conflict.draftSources.filter(source => !conflict.baseSources.includes(source)).join(', ') || '없음'} / 제거: ${conflict.baseSources.filter(source => !conflict.draftSources.includes(source)).join(', ') || '없음'}`
           : null,
       );
     } catch (cause) {
+      if (request !== revision.current) return;
+      if (cause instanceof ApiHttpError && cause.status === 403) { setForbidden(true); workspace?.select('display'); }
       setError(errorMessage(cause, '검수 정책을 불러오지 못했습니다.'));
     } finally {
-      setLoading(false);
+      if (request === revision.current) setLoading(false);
     }
-  }, [serverUrl]);
+  }, [serverUrl, jwt]);
 
   useEffect(() => {
-    void load();
+    setForbidden(false); void load();
+    return () => { ++revision.current; };
   }, [load]);
 
   function addSource() {
@@ -147,6 +159,7 @@ export function SessionReviewPolicySettingsSection({
 
   async function save() {
     if (!payload || !changed) return;
+    const request = revision.current;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -155,10 +168,13 @@ export function SessionReviewPolicySettingsSection({
         sourceAllowlist: sources,
         expectedVersion: payload.policy.version,
       });
+      if (request !== revision.current) return;
       setPayload(next);
       setSources(next.policy.sourceAllowlist);
       setMessage(`정책 v${next.policy.version}을 저장했습니다. 다음 신규 세션부터 모든 노드에 적용됩니다.`);
     } catch (cause) {
+      if (request !== revision.current) return;
+      if (cause instanceof ApiHttpError && cause.status === 403) { setForbidden(true); workspace?.select('display'); }
       if (cause instanceof ApiHttpError && cause.status === 409) {
         await load({
           baseSources: payload.policy.sourceAllowlist,
@@ -172,12 +188,23 @@ export function SessionReviewPolicySettingsSection({
     }
   }
 
+  const discard = () => { setSources(payload?.policy.sourceAllowlist ?? []); setDraft(''); setMessage(null); };
+  const workspace = useSettingsSaveScope('review-policy', { dirty: changed || Boolean(draft.trim()), busy: loading || saving, canSave: changed && !forbidden, saveLabel: '정책 저장', saveTestID: 'review-policy-save', save, discard });
+  const reload = () => {
+    if (changed || draft.trim()) confirmSettingsDiscard(() => { discard(); void load(); }, workspace ? () => workspace.select('review-policy') : undefined);
+    else void load();
+  };
+  const toggleSource = (source: string, selected: boolean) => {
+    if (selected && sources.length >= 64) { setError('검수 출처는 최대 64개까지 등록할 수 있습니다.'); return; }
+    setSources(current => selected ? [...current, source] : current.filter(item => item !== source)); setMessage(null);
+  };
+  const catalogSwitch = (source: string) => <Switch testID={`review-policy-switch-${source}`} accessibilityLabel={`${sourcePresentation(source, catalog.get(source)).label} 결과 검수`} value={sources.includes(source)} disabled={loading || saving || forbidden} onValueChange={selected => toggleSource(source, selected)}/>;
   return (
     <SettingsSection id="review-policy" title="세션 검수" flattened={flattened}>
       <View style={styles.block}>
         <Text style={styles.heading}>브라우저 로그인 요청</Text>
         <Text style={styles.help}>
-          로그인한 브라우저 요청은 이 목록과 관계없이 항상 검수됩니다.
+          로그인한 브라우저 요청은 이 목록과 관계없이 항상 검수됩니다. 새 세션의 실행 결과를 검수하며 실행 권한은 바꾸지 않습니다.
         </Text>
       </View>
 
@@ -193,7 +220,8 @@ export function SessionReviewPolicySettingsSection({
           <ActivityIndicator testID="review-policy-loading" color={t.colors.accent} />
         ) : null}
 
-        {sources.map((source) => {
+        {[...catalog.values()].filter(entry => entry.source !== 'browser').map(entry => <View key={entry.source} testID={`review-policy-source-${entry.source}`} style={styles.sourceRow}><View style={styles.sourceText}><Text style={styles.sourceTitle}>{sourcePresentation(entry.source, entry).label}</Text><Text style={styles.help}>{sourcePresentation(entry.source, entry).description}{entry.automatic && sources.includes(entry.source) ? ' 자동 요청 출처일 수 있으므로 포함 전 확인이 필요합니다.' : ''}</Text></View>{catalogSwitch(entry.source)}</View>)}
+        {sources.filter(source => !catalog.has(source)).map((source) => {
           const entry = catalog.get(source);
           const presentation = sourcePresentation(source, entry);
           return (
@@ -212,7 +240,7 @@ export function SessionReviewPolicySettingsSection({
                 accessibilityLabel={`${presentation.label} 제거`}
                 accessibilityState={{ disabled: loading || saving }}
                 style={styles.removeButton}
-                disabled={loading || saving}
+                disabled={loading || saving || forbidden}
                 onPress={() => setSources((current) =>
                   current.filter((item) => item !== source))}
               >
@@ -232,7 +260,7 @@ export function SessionReviewPolicySettingsSection({
             placeholderTextColor={t.colors.textPlaceholder}
             autoCapitalize="none"
             autoCorrect={false}
-            editable={!loading && !saving}
+            editable={!loading && !saving && !forbidden}
             onChangeText={setDraft}
             onSubmitEditing={addSource}
           />
@@ -263,25 +291,25 @@ export function SessionReviewPolicySettingsSection({
             testID="review-policy-reload"
             accessibilityLabel="검수 정책 다시 불러오기"
             style={styles.action}
-            onPress={() => void load()}
-            disabled={loading || saving}
+            onPress={reload}
+            disabled={loading || saving || forbidden}
           >
             <Text style={styles.secondaryText}>다시 불러오기</Text>
           </GlassButton>
-          <GlassButton
+          {!workspace ? <GlassButton
             variant="primary"
             testID="review-policy-save"
             accessibilityLabel="검수 정책 저장"
             style={styles.action}
             onPress={() => void save()}
-            disabled={!changed || loading || saving}
+            disabled={!changed || loading || saving || forbidden}
           >
             {saving ? (
               <ActivityIndicator size="small" color={t.colors.accentText} />
             ) : (
               <Text style={styles.primaryText}>정책 저장</Text>
             )}
-          </GlassButton>
+          </GlassButton> : null}
         </View>
       </View>
     </SettingsSection>
@@ -339,7 +367,7 @@ function errorMessage(cause: unknown, fallback: string): string {
       // Fall through to the stable client-facing fallback.
     }
   }
-  return cause instanceof Error && cause.message ? cause.message : fallback;
+  return cause instanceof Error && cause.message ? safeErrorDetail(cause.message) : fallback;
 }
 
 function formatTimestamp(value: string): string {
@@ -355,7 +383,7 @@ function makeStyles(t: DesignTokens) {
       borderTopColor: t.colors.border,
     },
     heading: {
-      ...t.foundation.typography.label,
+      ...t.foundation.typography.body,
       color: t.colors.textPrimary,
       fontWeight: '700',
     },
@@ -381,7 +409,7 @@ function makeStyles(t: DesignTokens) {
       fontWeight: '700',
     },
     sourceId: {
-      ...t.foundation.typography.label,
+      ...t.foundation.typography.body,
       color: t.colors.textMuted,
     },
     removeButton: {
@@ -396,7 +424,7 @@ function makeStyles(t: DesignTokens) {
       fontWeight: '600',
     },
     addRow: {
-      flexDirection: 'row',
+      flexDirection: 'row', flexWrap: 'wrap',
       alignItems: 'stretch',
       gap: t.spacing.sm,
     },
@@ -415,7 +443,7 @@ function makeStyles(t: DesignTokens) {
     },
     smallButton: { minWidth: 72 },
     metadata: {
-      ...t.foundation.typography.label,
+      ...t.foundation.typography.body,
       color: t.colors.textMuted,
     },
     message: {
