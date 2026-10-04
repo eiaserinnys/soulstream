@@ -86,6 +86,8 @@ async function mountCard(onSave: ReturnType<typeof vi.fn>) {
  const onClose=vi.fn(),onCreated=vi.fn();
  const upload={files:[{id:'file',file:new File(['내용'],'자료.txt'),path:'/uploaded',status:'success'}],isReady:true,isUploading:false,addFiles:vi.fn(),removeFile:vi.fn(),cancel:vi.fn(),resetLocal:vi.fn(),uploadedPaths:['/uploaded']} as any;
  await act(()=>root.render(<QueryClientProvider client={new QueryClient()}><CardCreateDialog folders={[{id:'f',name:'폴더'} as any]} initialFolderId="f" assignment={dialoguesAssignment} uploadController={upload} onSave={onSave} onClose={onClose} onCreated={onCreated}/></QueryClientProvider>));
+ const node=document.querySelector<HTMLSelectElement>('[aria-label="노드 선택"]')!;
+ await act(()=>{node.value='sample-node';node.dispatchEvent(new Event('change',{bubbles:true}));});
  const title=document.querySelector<HTMLInputElement>('[aria-label="카드 제목"]')!;
  const setTitle=async(value:string)=>act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(title,value);title.dispatchEvent(new Event('input',{bubbles:true}));});
  const save=document.querySelector<HTMLButtonElement>('[aria-label="카드 저장"]')!;
@@ -109,4 +111,32 @@ it('keeps completed execution settings on save failure and starts only after ato
  await act(async()=>{button.click();await Promise.resolve();});
  expect(save.mock.calls[1][0]).toEqual(save.mock.calls[0][0]);
  expect(start).toHaveBeenCalledWith(saved);expect(close).toHaveBeenCalledTimes(1);
+});
+
+
+it.each([true,false])('saves title and folder without execution settings (available nodes: %s)', async available=>{
+ const {CardCreateDialog}=await import('./CardCreateDialog');
+ const onSave=vi.fn().mockResolvedValue({id:'draft'}),onClose=vi.fn();
+ if(!available)useOrchestratorStore.setState({nodes:new Map()});
+ await act(()=>root.render(<QueryClientProvider client={new QueryClient()}><CardCreateDialog folders={[{id:'f',name:'폴더'} as any]} initialFolderId="f" onSave={onSave} onClose={onClose}/></QueryClientProvider>));
+ const title=document.querySelector<HTMLInputElement>('[aria-label="카드 제목"]')!;
+ await act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(title,'제목만');title.dispatchEvent(new Event('input',{bubbles:true}));});
+ const save=document.querySelector<HTMLButtonElement>('[aria-label="카드 저장"]')!;
+ expect(save.disabled).toBe(false);
+ await act(async()=>{save.click();await Promise.resolve();});
+ expect(onSave).toHaveBeenCalledWith(expect.objectContaining({title:'제목만',folderId:'f',request:'',nodeId:null,assignee:null,modelPreset:null,attachments:[],queue:false}));
+ expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+
+it('keeps execution settings save inside its modal when rendered by a clickable card',async()=>{
+ const {CardExecutionSettingsDialog}=await import('./CardExecutionSettings');
+ const {dialoguesAssignment}=await import('./dialogues-api');
+ const {reviewCard}=await import('./components-review-fixtures');
+ const card={...reviewCard,folderId:'f',assigneeSessionId:null,nodeId:'sample-node',assigneeAgentId:'roselin',modelPreset:'sample-sol'};
+ const outside=vi.fn();
+ await act(()=>root.render(<QueryClientProvider client={new QueryClient()}><div onClick={outside}><CardExecutionSettingsDialog card={card} folders={[{id:'f',name:'폴더'} as any]} assignment={dialoguesAssignment} startAfterSave onSave={async()=>card} onStart={async()=>{}} onClose={()=>{}}/></div></QueryClientProvider>));
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,30));});
+ await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="카드 설정 저장"]')!.click();await Promise.resolve();});
+ expect(outside).not.toHaveBeenCalled();
 });

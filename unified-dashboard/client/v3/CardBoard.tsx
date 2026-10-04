@@ -12,7 +12,7 @@ import type { CompletedBrowser } from "./use-completed-cards";
 export const boardColumns = [
   {status:"todo",label:"드래프트"}, {status:"queued",label:"대기"},
   {status:"running",label:"실행 중"}, {status:"blocked",label:"막힘"},
-  {status:"review",label:"검수 대기"}, {status:"done",label:"완료"},
+  {status:"review",label:"검수 대기"}, {status:"done",label:"완료"}, {status:"cancelled",label:"취소"},
 ] as const;
 
 /** Existing active lanes and a viewport-sized completed lane share card mutations. */
@@ -31,8 +31,8 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed}
     };
     measure();const observer=new ResizeObserver(measure);observer.observe(board);observer.observe(board.querySelector(".v3-completed-measure")!);return()=>observer.disconnect();
   },[]);
-  const visible=cards.filter(card=>!card.archived && card.status!=="cancelled");
-  return <CardBoardDnd cards={visible} renderCard={renderCard}><PostItGrid ref={root} {...pan} className="v3-card-board" variant="compact"><span className="v3-completed-measure" aria-hidden="true"/>{boardColumns.filter(({status})=>status!=="done"||completion?.includeCompleted!==false).map(({status,label})=>{
+  const visible=cards.filter(card=>!card.archived);
+  return <CardBoardDnd cards={visible} renderCard={renderCard}><PostItGrid ref={root} {...pan} className="v3-card-board" variant="compact"><span className="v3-completed-measure" aria-hidden="true"/>{boardColumns.filter(({status})=>completion?.includeCompleted!==false||(status!=="done"&&status!=="cancelled")).map(({status,label})=>{
     const column=visible.filter(card=>card.status===status).sort((a,b)=>{
       const left=status==="queued"?a.queuePositionKey??"":a.positionKey;
       const right=status==="queued"?b.queuePositionKey??"":b.positionKey;

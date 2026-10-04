@@ -119,7 +119,7 @@ test('phone card home header keeps only completion visibility, daily route remai
   const header = render(React.createElement(options.headerRight));
   expect(options.headerTitleAlign).toBe('left');
   expect(mockCardHomeProps).toHaveBeenLastCalledWith(expect.objectContaining({ externalHeader: true }));
-  expect(header.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
+  expect(header.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(true);
   expect(header.queryByLabelText('드래프트 카드 추가')).toBeNull();
   expect(header.queryByLabelText('기존 데일리 기록')).toBeNull();
   expect(header.queryByLabelText('보드 확대')).toBeNull();

@@ -49,7 +49,7 @@ export function CardBoardWorkspace({title,actions,initialExpanded=false,...board
         else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
       }
     }}>
-    <div className="v3-detail-section-head v3-folder-card-head"><h3>{title}</h3><span>{boardProps.cards.filter(card=>!card.archived&&card.status!=="cancelled"&&(boardProps.completion?.includeCompleted!==false||card.status!=="done")).length}개 표시</span>
+    <div className="v3-detail-section-head v3-folder-card-head"><h3>{title}</h3><span>{boardProps.cards.filter(card=>!card.archived&&(boardProps.completion?.includeCompleted!==false||(card.status!=="done"&&card.status!=="cancelled"))).length}개 표시</span>
       <span className="v3-spacer"/>
       {boardProps.completion?<CardCompletionFilter {...boardProps.completion} hiddenCount={boardProps.cards.filter(card=>!card.archived&&card.status==="done").length}/>:null}
       <div className="v3-card-actions">{expanded?null:actions}

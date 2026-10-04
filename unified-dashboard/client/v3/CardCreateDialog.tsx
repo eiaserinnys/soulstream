@@ -14,7 +14,7 @@ import {useFolderPickerStars} from "./use-folder-picker-stars";
 import {V3ErrorNotice} from "./V3ErrorNotice";
 
 export interface CreateCardInput {
- folderId:string;title:string;request:string;nodeId:string;assignee:{kind:"agent";agentId:string};modelPreset:string|null;
+ folderId:string;title:string;request:string;nodeId:string|null;assignee:{kind:"agent";agentId:string}|null;modelPreset:string|null;
  attachments:CardAttachment[];queue:false;idempotencyKey:string;
 }
 export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,onSave,uploadController,assignment,starredFolderIds,executionSettings}: {
@@ -39,16 +39,16 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
  const onAgentChange=useCallback((value:AgentInfo|null)=>{if(attempt.current)return;setAgent(value);if(!explicitPreset.current)setModelPreset(value?.default_preset??"");},[]);
  const onPresetChange=useCallback((value:string)=>{if(attempt.current)return;explicitPreset.current=true;setModelPreset(value);},[]);
  const locked=pending||uncertain;
- const ready=!pending&&(uncertain?!!attempt.current:executionSettings?(!!folderId&&(!modelPreset||valid)&&(!executionSettings.startAfterSave||!!nodeId&&!!agentId&&valid)):!!title.trim()&&!!folderId&&!!nodeId&&agent?.id===agentId&&valid&&upload.isReady);
+ const ready=!pending&&(uncertain?!!attempt.current:executionSettings?(!!folderId&&(!modelPreset||valid)&&(!executionSettings.startAfterSave||!!nodeId&&!!agentId&&valid)):!!title.trim()&&!!folderId&&upload.isReady&&(!upload.files.length||!!nodeId));
  const close=async()=>{if(submitting.current||attempt.current)return;await upload.cancel();onClose();};
  const save=async()=>{
   if(!ready||submitting.current||completed.current)return;submitting.current=true;setPending(true);setError(null);
   try {
-   if(!attempt.current)attempt.current={idempotencyKey:cardMutationKey(),folderId,title:title.trim(),request,nodeId,assignee:{kind:"agent" as const,agentId},modelPreset:modelPreset||null,queue:false as const,
+   if(!attempt.current)attempt.current={idempotencyKey:cardMutationKey(),folderId,title:title.trim(),request,nodeId:nodeId||null,assignee:agentId?{kind:"agent" as const,agentId}:null,modelPreset:modelPreset||null,queue:false as const,
     attachments:upload.files.map(file=>({nodeId,path:file.path!,name:file.file.name,mimeType:file.file.type||"application/octet-stream"}))};
    const input=attempt.current;
    if(executionSettings){
-    await executionSettings.onSave({folderId:input.folderId,nodeId:input.nodeId||null,agentId:input.assignee.agentId||null,modelPreset:input.modelPreset},input.idempotencyKey);
+    await executionSettings.onSave({folderId:input.folderId,nodeId:input.nodeId||null,agentId:input.assignee?.agentId||null,modelPreset:input.modelPreset},input.idempotencyKey);
     completed.current=true;onClose();return;
    }
    const card=await (onSave??useCardStore.getState().create)(input);
@@ -61,7 +61,7 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
  };
  const uploadError=upload.files.find(file=>file.status==="error")?.errorMessage;
  return <Dialog open onOpenChange={open=>{if(!open)void close();}}>
-  <DialogPopup className="v3-surface v3-succession-modal v3-card-create-dialog max-w-[640px]" closeProps={{"aria-label":executionSettings?"카드 설정 닫기":"새 카드 닫기",disabled:locked}}>
+  <DialogPopup onClick={event=>event.stopPropagation()} className="v3-surface v3-succession-modal v3-card-create-dialog max-w-[640px]" closeProps={{"aria-label":executionSettings?"카드 설정 닫기":"새 카드 닫기",disabled:locked}}>
    <DialogHeader className="v3-succession-head"><span aria-hidden="true">＋</span><DialogTitle>{executionSettings?"카드 실행 설정":"새 카드"}</DialogTitle></DialogHeader>
    <DialogPanel className="v3-succession-body" scrollFade={false}>
     {error||uploadError?<V3ErrorNotice className="v3-succession-error" message={error?(uncertain?"카드 저장 결과를 확인하지 못했습니다.":"카드를 저장하지 못했습니다."):"첨부를 업로드하지 못했습니다."} detail={error||uploadError}/>:null}
@@ -77,7 +77,7 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
      <label className="v3-creation-text-field"><strong>요청 내용 <small>선택</small></strong><textarea ref={textarea} aria-label="요청 원문" placeholder="수행할 요청을 적어주세요" rows={1} className="v3-creation-request max-h-[120px]" value={request} disabled={locked} onChange={event=>{if(!attempt.current)setRequest(event.target.value);}} onPaste={event=>{if(nodeId&&!locked)handleClipboardFiles(event,upload.addFiles);}}/></label>
      <fieldset className="contents" disabled={locked}><SessionAttachmentFields files={upload.files} pending={locked} nodeId={nodeId} isUploading={upload.isUploading} addFiles={files=>{if(!attempt.current)upload.addFiles(files);}} removeFile={id=>{if(!attempt.current)upload.removeFile(id);}}/></fieldset>
      </>:null}
-     <CreationDisclosure title="실행 환경" invalid={!valid || !nodeId || !agentId} summary={`${nodeId || "노드 선택"} / ${agent?.name ?? "에이전트 선택"} / ${modelPreset || "기본 모델"}`}><section><AgentNodeAssignmentFields data={assignment} presentation="session" fallbackToAvailable nodeId={nodeId} agentId={agentId} modelPreset={modelPreset} disabled={locked}
+     <CreationDisclosure title={executionSettings?"실행 환경":"실행 환경 (선택)"} invalid={!!executionSettings&&(!valid || !nodeId || !agentId)} summary={`${nodeId || "노드 선택"} / ${agent?.name ?? "에이전트 선택"} / ${modelPreset || "기본 모델"}`}><section><AgentNodeAssignmentFields data={assignment} presentation="session" fallbackToAvailable={!!executionSettings} nodeId={nodeId} agentId={agentId} modelPreset={modelPreset} disabled={locked}
       onNodeIdChange={onNodeChange} onAgentIdChange={value=>{if(!attempt.current)setAgentId(value);}} onAgentInfoChange={onAgentChange} onModelPresetChange={onPresetChange} onModelPresetValidityChange={setValid} onError={setError}/></section></CreationDisclosure>
 
     </div>

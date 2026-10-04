@@ -13,10 +13,10 @@ import { useCardStore } from '../../../store/cardStore';
 const cards = (['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'] as const)
   .map((status) => cardFixture({ id: status, title: status, status }));
 
-test('6열 순서와 개수를 유지하고 보관·취소는 보드에서 제외한다', () => {
+test('7열 순서와 개수를 유지하고 보관은 보드에서 제외한다', () => {
   const screen = render(<CardBoard api={null} cards={[...cards, cardFixture({ id: 'archived', archived: true })]} onOpen={() => {}} />);
   expect(screen.getAllByTestId(/^card-board-column-/).map((column) => column.props.testID))
-    .toEqual(['todo', 'queued', 'running', 'blocked', 'review', 'done'].map((status) => `card-board-column-${status}`));
+    .toEqual(['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'].map((status) => `card-board-column-${status}`));
   expect(screen.queryByTestId('card-board-stages')).toBeNull();
   for (const [status, label] of [['todo', '드래프트'], ['review', '검수 대기']] as const) {
     const lane = within(screen.getByTestId(`card-board-column-${status}`));
@@ -27,7 +27,7 @@ test('6열 순서와 개수를 유지하고 보관·취소는 보드에서 제�
     expect(count.props.children).toBe(status === 'todo' ? '1개' : 1);
     expect(lane.getByTestId(`postit-card-${status}`)).toBeTruthy();
   }
-  expect(screen.queryByTestId('postit-card-cancelled')).toBeNull();
+  expect(screen.getByTestId('postit-card-cancelled')).toBeTruthy();
   expect(screen.queryByTestId('postit-card-archived')).toBeNull();
   expect(screen.getByTestId('card-board-count-done').props.children).toBe('1개 표시');
 });
@@ -43,10 +43,12 @@ test('폴더 행/보드의 같은 controlled 옵션은 완료만 숨기고 숨�
   expect(screen.queryByTestId('card-row-done')).toBeNull();
   expect(screen.getByTestId('card-row-cancelled')).toBeTruthy();
   expect(screen.queryByTestId('card-board-column-done')).toBeNull();
-  fireEvent.press(screen.getByLabelText('완료 숨김'));
+  expect(screen.queryByTestId('card-board-column-cancelled')).toBeNull();
+  fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
   expect(screen.getByTestId('card-row-done')).toBeTruthy();
   expect(screen.getByTestId('postit-card-done')).toBeTruthy();
-  expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(false);
+  expect(screen.getByTestId('postit-card-cancelled')).toBeTruthy();
+  expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(false);
 });
 
 test.each([{ items: [] }, { items: cards.filter((card) => card.status === 'done') }])('완료 0개/전부 완료의 빈 상태에도 5열이 남는다', ({ items }) => {

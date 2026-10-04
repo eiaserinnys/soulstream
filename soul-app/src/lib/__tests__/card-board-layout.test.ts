@@ -3,8 +3,12 @@ import { boardLaneGeometry, boardDropStatus, boardVisibleColumns, boardSnapOffse
 test('completed grid owns variable lane boundaries for snap, drop and maximum scroll', () => {
   const columns=boardVisibleColumns(true);
   const g=boardLaneGeometry(1100,256,8,false,columns,8);
-  expect(g.lanes.at(-1)?.width).toBe(3*256+2*8+16);
-  const done=g.lanes.at(-1)!;
+  expect(g.lanes.find(lane=>lane.status==='done')?.width).toBe(3*256+2*8+16);
+  const done=g.lanes.find(lane=>lane.status==='done')!;
+  const cancelled=g.lanes.at(-1)!;
+  expect(cancelled.status).toBe('cancelled');
+  expect(cancelled.width).toBe(g.laneWidth);
+  expect(boardDropStatus(100,100,{x:0,y:0,width:1100,height:600},g,cancelled.start,'review',columns)).toBe('cancelled');
   const frame={x:0,y:0,width:1100,height:600};
   expect(boardDropStatus(100,100,frame,g,done.start,'review',columns)).toBe('done');
   expect(boardSnapOffsets(1100,g,columns.length).at(-1)).toBe(g.maxScroll);
@@ -22,7 +26,7 @@ test.each([390, 430])('phone %s: ordinary lanes align left and final lane ends a
   expect(g.inset + g.stride * 2 - offsets[2]).toBe(g.inset);
   expect(g.inset + g.stride * 4 - offsets[4] + g.laneWidth).toBe(width - g.inset);
   const shown = boardSnapOffsets(width, g, boardVisibleColumns(true).length);
-  expect(g.inset + g.stride * 5 - shown[5] + g.laneWidth).toBe(width - g.inset);
+  expect(g.inset + g.stride * 6 - shown[6] + g.laneWidth).toBe(width - g.inset);
   expect(BOARD_COLUMNS[4][0]).toBe('review');
 });
 
