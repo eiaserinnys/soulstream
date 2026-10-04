@@ -176,6 +176,10 @@ for (const width of [1440, 390])
     await page.keyboard.press("Tab");
     await page.keyboard.press("Shift+Tab");
     await page.mouse.click(4, 4);
+    await page.keyboard.type("c");
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.type("배경 입력 차단");
+    await expect(page.getByRole("dialog")).toHaveCount(1);
     await expect(dialog).toBeVisible();
     await expect(heading).toBeFocused();
     await expect(input).toHaveValue("카드 커멘트 초안 유지");
@@ -252,7 +256,7 @@ test("new build automatically reloads and restores the persisted text draft", as
   const input = page.getByRole("textbox", { name: "세션 첫 메시지" });
   await input.fill("새 버전 이후 텍스트 초안");
   let reloads = 0;
-  await page.route("**/v3", async (route) => {
+  await page.route(page.url(), async (route) => {
     if (route.request().isNavigationRequest()) {
       reloads++;
       await request.post(control + "/close");

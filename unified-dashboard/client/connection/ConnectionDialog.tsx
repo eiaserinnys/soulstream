@@ -84,11 +84,11 @@ export function ConnectionDialog({
       }
     };
     const holdInput = (event: Event) => {
-      if (!popup.current?.contains(event.target as Node)) {
-        event.preventDefault();
-        event.stopPropagation();
-        title.current?.focus();
-      }
+      // This dialog has no editable content; composition must not reach a
+      // previously focused input while the non-editable title holds focus.
+      event.preventDefault();
+      event.stopPropagation();
+      title.current?.focus();
     };
     document.addEventListener("pointerdown", holdFocus, true);
     document.addEventListener("keydown", holdKeys, true);
