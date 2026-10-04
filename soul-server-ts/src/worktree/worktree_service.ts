@@ -1,13 +1,15 @@
+// This file intentionally exceeds 500 lines: it owns the worktree lifecycle boundary where
+// ownership records and repository lock transitions must stay coordinated. Shared setup checks
+// live in worktree_setup.ts.
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, realpathSync, symlinkSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
 import { WorktreeGit, WorktreeGitError } from "./worktree_git.js";
-import { GitProcessError } from "./worktree_process.js";
 import { RepositoryLock } from "./worktree_repository_lock.js";
+import { defaultWorktreeSetupMode, setupSharedDependencies } from "./worktree_setup.js";
 import type {
-  ManagedWorktreePath,
   WorktreeHost,
   WorktreeRecord,
   WorktreeSetupMode,
@@ -32,6 +34,11 @@ export interface CreateWorktreeInput {
   startPoint?: string;
   adoptPath?: string;
   expectedHead?: string;
+  setup?: WorktreeSetupMode;
+  requireSetup?: boolean;
+}
+
+interface ResolvedCreateWorktreeInput extends CreateWorktreeInput {
   setup: WorktreeSetupMode;
   requireSetup: boolean;
 }
@@ -108,6 +115,9 @@ export class WorktreeService implements WorktreeExecutionResolver {
           adoptionAllowed: discovered.kind === "unmanaged" && discovered.lockedReason === undefined,
           lockReason: discovered.lockedReason ?? null,
           activeSessionId: record?.activeSessionId ?? null,
+          setupMode: record?.setupMode ?? null,
+          setupRequired: record?.setupRequired ?? null,
+          setupStatus: record?.setupStatus ?? null,
           remoteStatus: "unknown",
           observedAt,
         });
@@ -130,6 +140,9 @@ export class WorktreeService implements WorktreeExecutionResolver {
         mutableByCaller: record.mutableByCaller ?? false,
         adoptionAllowed: false,
         activeSessionId: record.activeSessionId ?? null,
+        setupMode: record.setupMode,
+        setupRequired: record.setupRequired,
+        setupStatus: record.setupStatus,
         remoteStatus: "unknown",
         observedAt,
       });
@@ -145,7 +158,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   private async createWithinDeadline(input: CreateWorktreeInput): Promise<Record<string, unknown>> {
-    validateCreateInput(input);
+    validateRepoId(input.repoId);
     const knownRecords = await this.options.host.list({
       actorSessionId: input.actorSessionId,
       nodeId: this.options.nodeId,
@@ -155,34 +168,18 @@ export class WorktreeService implements WorktreeExecutionResolver {
       record.branch === input.branch
       && record.state === "ready"
       && record.mutableByCaller === true);
+    const repoPath = join(this.options.projectsRoot, input.repoId);
+    const effectiveInput = resolveCreateInput(input, repoPath, existing);
+    validateCreateInput(effectiveInput);
     if (existing) {
       await this.options.git.resolveManagedWorkspace({
         repoId: existing.repoId,
         path: existing.canonicalPath,
         worktreeId: existing.worktreeIdentity,
       });
-      if (existing.setupMode !== input.setup || existing.setupRequired !== input.requireSetup) {
-        throw new WorktreeServiceError(
-          "WORKTREE_SETUP_CONTRACT_MISMATCH",
-          "Existing worktree setup contract differs from the request",
-        );
-      }
-      if (existing.setupStatus !== "failed") return createResult(existing, true, false, []);
       const commonDirectory = await this.options.git.commonDirectory(input.repoId);
       return await this.options.lock.withLock(commonDirectory, async () => {
-        const setup = await setupSharedDependencies({
-          projectsRoot: this.options.projectsRoot,
-          repoId: input.repoId,
-          worktreePath: existing.canonicalPath,
-          mode: existing.setupMode,
-        }, this.options.git);
-        const updated = await this.options.host.updateSetup({
-          actorSessionId: input.actorSessionId,
-          worktreeId: existing.id,
-          setupStatus: setup.status,
-          managedPaths: setup.managedPaths,
-        });
-        return createResult(updated, true, false, setup.warnings);
+        return await this.refreshExistingSetup(effectiveInput, existing);
       });
     }
 
@@ -204,31 +201,9 @@ export class WorktreeService implements WorktreeExecutionResolver {
           path: lockedExisting.canonicalPath,
           worktreeId: lockedExisting.worktreeIdentity,
         });
-        if (
-          lockedExisting.setupMode !== input.setup
-          || lockedExisting.setupRequired !== input.requireSetup
-        ) {
-          throw new WorktreeServiceError(
-            "WORKTREE_SETUP_CONTRACT_MISMATCH",
-            "Existing worktree setup contract differs from the request",
-          );
-        }
-        if (lockedExisting.setupStatus !== "failed") {
-          return createResult(lockedExisting, true, false, []);
-        }
-        const setup = await setupSharedDependencies({
-          projectsRoot: this.options.projectsRoot,
-          repoId: input.repoId,
-          worktreePath: lockedExisting.canonicalPath,
-          mode: lockedExisting.setupMode,
-        }, this.options.git);
-        const updated = await this.options.host.updateSetup({
-          actorSessionId: input.actorSessionId,
-          worktreeId: lockedExisting.id,
-          setupStatus: setup.status,
-          managedPaths: setup.managedPaths,
-        });
-        return createResult(updated, true, false, setup.warnings);
+        const lockedInput = resolveCreateInput(input, repoPath, lockedExisting);
+        validateCreateInput(lockedInput);
+        return await this.refreshExistingSetup(lockedInput, lockedExisting);
       }
       const orphan = (await this.options.git.list(input.repoId)).find((entry) =>
         entry.kind === "managed"
@@ -248,58 +223,85 @@ export class WorktreeService implements WorktreeExecutionResolver {
         }
         const setup = await setupSharedDependencies({
           projectsRoot: this.options.projectsRoot,
-          repoId: input.repoId,
+          repoId: effectiveInput.repoId,
           worktreePath: orphan.path,
-          mode: input.setup,
+          mode: effectiveInput.setup,
+          operation: "create",
         }, this.options.git);
         const recovered = await this.options.host.register({
-          actorSessionId: input.actorSessionId,
+          actorSessionId: effectiveInput.actorSessionId,
           id: orphan.identity!,
           nodeId: this.options.nodeId,
-          repoId: input.repoId,
+          repoId: effectiveInput.repoId,
           canonicalPath: orphan.path,
-          branch: input.branch,
+          branch: effectiveInput.branch,
           createdFromSha: orphan.head,
-          setupMode: input.setup,
-          setupRequired: input.requireSetup,
+          setupMode: effectiveInput.setup,
+          setupRequired: effectiveInput.requireSetup,
           setupStatus: setup.status,
           managedPaths: setup.managedPaths,
           worktreeIdentity: orphan.identity!,
         });
+        throwIfRequiredSetupFailed(recovered, setup.warnings);
         return createResult(recovered, true, input.mode === "adopt", setup.warnings, true);
       }
-      const created = input.mode === "adopt"
-        ? await this.adopt(input, worktreeId)
+      const created = effectiveInput.mode === "adopt"
+        ? await this.adopt(effectiveInput, worktreeId)
         : await this.options.git.create({
-            actorSessionId: input.actorSessionId,
-            repoId: input.repoId,
-            branch: input.branch,
-            mode: input.mode,
+            actorSessionId: effectiveInput.actorSessionId,
+            repoId: effectiveInput.repoId,
+            branch: effectiveInput.branch,
+            mode: effectiveInput.mode,
             worktreeId,
-            ...(input.startPoint ? { startPoint: input.startPoint } : {}),
+            ...(effectiveInput.startPoint ? { startPoint: effectiveInput.startPoint } : {}),
           });
       const setup = await setupSharedDependencies({
         projectsRoot: this.options.projectsRoot,
-        repoId: input.repoId,
+        repoId: effectiveInput.repoId,
         worktreePath: created.path,
-        mode: input.setup,
+        mode: effectiveInput.setup,
+        operation: "create",
       }, this.options.git);
       const record = await this.options.host.register({
-        actorSessionId: input.actorSessionId,
+        actorSessionId: effectiveInput.actorSessionId,
         id: worktreeId,
         nodeId: this.options.nodeId,
-        repoId: input.repoId,
+        repoId: effectiveInput.repoId,
         canonicalPath: created.path,
-        branch: input.branch,
+        branch: effectiveInput.branch,
         createdFromSha: created.head,
-        setupMode: input.setup,
-        setupRequired: input.requireSetup,
+        setupMode: effectiveInput.setup,
+        setupRequired: effectiveInput.requireSetup,
         setupStatus: setup.status,
         managedPaths: setup.managedPaths,
         worktreeIdentity: worktreeId,
       });
-      return createResult(record, false, input.mode === "adopt", setup.warnings);
+      throwIfRequiredSetupFailed(record, setup.warnings);
+      return createResult(record, false, effectiveInput.mode === "adopt", setup.warnings);
     });
+  }
+
+  private async refreshExistingSetup(
+    input: ResolvedCreateWorktreeInput,
+    existing: WorktreeRecord,
+  ): Promise<Record<string, unknown>> {
+    if (existing.setupMode === "none") return createResult(existing, true, false, []);
+    const setup = await setupSharedDependencies({
+      projectsRoot: this.options.projectsRoot,
+      repoId: input.repoId,
+      worktreePath: existing.canonicalPath,
+      mode: existing.setupMode,
+      operation: "reuse",
+      previouslyManagedPaths: existing.managedPaths,
+    }, this.options.git);
+    const updated = await this.options.host.updateSetup({
+      actorSessionId: input.actorSessionId,
+      worktreeId: existing.id,
+      setupStatus: setup.status,
+      managedPaths: setup.managedPaths,
+    });
+    throwIfRequiredSetupFailed(updated, setup.warnings);
+    return createResult(updated, true, false, setup.warnings);
   }
 
   async remove(input: { actorSessionId: string; worktreeId: string }): Promise<Record<string, unknown>> {
@@ -508,7 +510,40 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 }
 
-function validateCreateInput(input: CreateWorktreeInput): void {
+function resolveCreateInput(
+  input: CreateWorktreeInput,
+  repoPath: string,
+  existing?: WorktreeRecord,
+): ResolvedCreateWorktreeInput {
+  if (existing) {
+    if (
+      (input.setup !== undefined && input.setup !== existing.setupMode)
+      || (input.requireSetup !== undefined && input.requireSetup !== existing.setupRequired)
+    ) {
+      throw new WorktreeServiceError(
+        "WORKTREE_SETUP_CONTRACT_MISMATCH",
+        "Existing worktree setup contract differs from the request",
+      );
+    }
+    return { ...input, setup: existing.setupMode, requireSetup: existing.setupRequired };
+  }
+
+  const setup = input.setup ?? (
+    input.mode === "adopt" ? "none" : defaultWorktreeSetupMode(repoPath)
+  );
+  const requireSetup = input.requireSetup ?? (
+    input.mode === "adopt" ? false : setup === "shared_dependencies"
+  );
+  return { ...input, setup, requireSetup };
+}
+
+function validateRepoId(repoId: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(repoId)) {
+    throw new WorktreeServiceError("INVALID_REPO_ID", `Invalid repo_id: ${repoId}`);
+  }
+}
+
+function validateCreateInput(input: ResolvedCreateWorktreeInput): void {
   if (input.requireSetup && input.setup === "none") {
     throw new WorktreeServiceError(
       "INVALID_REQUEST",
@@ -523,71 +558,18 @@ function validateCreateInput(input: CreateWorktreeInput): void {
   }
 }
 
-async function setupSharedDependencies(input: {
-  projectsRoot: string;
-  repoId: string;
-  worktreePath: string;
-  mode: WorktreeSetupMode;
-}, git: WorktreeGit): Promise<{
-  status: "not_requested" | "ready" | "failed";
-  managedPaths: ManagedWorktreePath[];
-  warnings: string[];
-}> {
-  if (input.mode === "none") {
-    return { status: "not_requested", managedPaths: [], warnings: [] };
-  }
-  const base = join(input.projectsRoot, input.repoId);
-  const managedPaths: ManagedWorktreePath[] = [];
-  const warnings: string[] = [];
-  for (const source of nodeModulesDirectories(base)) {
-    const relativePath = relative(base, source).replaceAll("\\", "/");
-    const link = join(input.worktreePath, relativePath);
-    const parent = join(link, "..");
-    if (!existsSync(parent)) continue;
-    try {
-      if (!await git.isIgnored(input.worktreePath, `${relativePath}/`)) continue;
-      const target = realpathSync(source);
-      if (existsSync(link)) {
-        const stat = lstatSync(link);
-        if (stat.isSymbolicLink() && realpathSync(link) === target) {
-          managedPaths.push({ path: relativePath, target });
-          continue;
-        }
-        warnings.push(`${relativePath}: destination already exists and is not the managed link`);
-        continue;
-      }
-      symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
-      managedPaths.push({ path: relativePath, target });
-    } catch (error) {
-      if (error instanceof GitProcessError && error.code === "PROCESS_TIMEOUT") throw error;
-      warnings.push(`${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  if (managedPaths.length === 0) {
-    warnings.push("shared node_modules setup found no linkable ignored dependency directory; the worktree was preserved");
-  }
-  return {
-    status: warnings.length === 0 ? "ready" : "failed",
-    managedPaths,
-    warnings,
-  };
-}
-
-function nodeModulesDirectories(base: string): string[] {
-  const found: string[] = [];
-  const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.name === ".git") continue;
-      const path = join(directory, entry.name);
-      if (entry.name === "node_modules") {
-        if (entry.isDirectory() || entry.isSymbolicLink()) found.push(path);
-        continue;
-      }
-      if (entry.isDirectory()) visit(path);
-    }
-  };
-  visit(base);
-  return found.sort();
+function throwIfRequiredSetupFailed(record: WorktreeRecord, warnings: string[]): void {
+  if (!record.setupRequired || record.setupStatus !== "failed") return;
+  throw new WorktreeServiceError(
+    "WORKTREE_SETUP_REQUIRED",
+    "Required shared test setup failed; the worktree and its registration were preserved",
+    {
+      worktreeId: record.id,
+      path: record.canonicalPath,
+      setupStatus: record.setupStatus,
+      warnings,
+    },
+  );
 }
 
 function overlaps(left: string, right: string): boolean {
@@ -618,6 +600,8 @@ function createResult(
     reused,
     recovered,
     adopted,
+    setupMode: record.setupMode,
+    setupRequired: record.setupRequired,
     setupStatus: record.setupStatus,
     warnings,
   };

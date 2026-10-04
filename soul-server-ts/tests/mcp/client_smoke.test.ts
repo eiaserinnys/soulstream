@@ -478,6 +478,18 @@ describe("MCP SDK client smoke", () => {
     });
     expect(result.tools.find((tool) => tool.name === "list_worktrees")?.annotations)
       .not.toMatchObject({ destructiveHint: true });
+    const createWorktreeTool = result.tools.find((tool) => tool.name === "create_worktree");
+    expect(createWorktreeTool?.description).toContain("pnpm@10.32.1");
+    expect(createWorktreeTool?.description)
+      .toContain("NODE_ENV=development npm --prefix soul-app ci --include=dev");
+    expect(createWorktreeTool?.inputSchema).toMatchObject({
+      type: "object",
+      required: ["repo_id", "branch", "mode"],
+      properties: {
+        setup: { enum: ["none", "shared_dependencies"], type: "string" },
+        require_setup: { type: "boolean" },
+      },
+    });
     for (const name of ["create_worktree", "remove_worktree", "delete_worktree_branch"]) {
       expect(result.tools.find((tool) => tool.name === name)?.annotations)
         .toMatchObject({ destructiveHint: true });
@@ -575,14 +587,15 @@ describe("MCP SDK client smoke", () => {
       },
     });
     expect(created.isError).not.toBe(true);
-    expect(worktreeCreate).toHaveBeenCalledWith(expect.objectContaining({
+    const createInput = worktreeCreate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(createInput).toMatchObject({
       actorSessionId: "session-owner",
       repoId: "soulstream",
       branch: "feature/mcp",
       mode: "new",
-      setup: "none",
-      requireSetup: false,
-    }));
+    });
+    expect(createInput).not.toHaveProperty("setup");
+    expect(createInput).not.toHaveProperty("requireSetup");
   });
 
   it("callTool('list_local_agents') → AgentRegistry 응답", async () => {

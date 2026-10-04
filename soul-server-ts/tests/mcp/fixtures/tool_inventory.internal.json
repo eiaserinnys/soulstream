@@ -1959,7 +1959,7 @@
     "annotations": {
       "destructiveHint": true
     },
-    "description": "새/기존 branch worktree를 만들거나 발견된 unmanaged worktree를 명시적으로 인계한다.",
+    "description": "새/기존 branch worktree를 만들거나 발견된 unmanaged worktree를 명시적으로 인계한다. pnpm 저장소는 setup 생략 시 shared_dependencies와 필수 준비를 사용한다. 필수 shared 준비가 실패하면 WORKTREE_SETUP_REQUIRED로 보존된 worktree ID와 경로를 반환한다. 복구 시 그 경로의 필요한 변경을 보존하고 점유 세션을 종료한 뒤 remove_worktree로 제거하고, 같은 브랜치를 mode=existing, setup=none으로 새 worktree에 만든 다음 반환 경로 안에서 독립 설치한다. 보존된 같은 ID/브랜치에 setup=none으로 재호출하면 WORKTREE_SETUP_CONTRACT_MISMATCH이며, 실패한 worktree에서 독립 설치만 해도 shared 계약과 실행 차단은 유지된다. shared ready는 연결된 의존성과 직접 선언된 package-local Vitest/Jest 실행 파일의 존재와 실행 가능 여부만 확인한다. soul-app Jest는 별도 npm 준비가 필요하고 workspace import 및 의존성 버전 호환은 별도로 검증한다. 오래된 base나 의존성 변경이 있는 작업은 처음부터 setup=none으로 만들고 반환 경로 안에서 독립 설치한다. setup=none은 의존성 링크를 만들지 않는다. 독립 pnpm 설치는 반환된 경로 안에서 `corepack pnpm@10.32.1 install --frozen-lockfile`을 사용한다. soul-app은 별도 npm 프로젝트이므로 setup=none으로 만들고 `NODE_ENV=development npm --prefix soul-app ci --include=dev`를 실행한다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -1995,11 +1995,9 @@
           "type": "string"
         },
         "require_setup": {
-          "default": false,
           "type": "boolean"
         },
         "setup": {
-          "default": "none",
           "enum": [
             "none",
             "shared_dependencies"
