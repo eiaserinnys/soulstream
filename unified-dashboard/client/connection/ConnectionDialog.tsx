@@ -68,11 +68,36 @@ export function ConnectionDialog({
     const holdFocus = (event: PointerEvent) => {
       if (!popup.current?.contains(event.target as Node)) {
         event.preventDefault();
+        event.stopPropagation();
+        title.current?.focus();
+      }
+    };
+    const holdKeys = (event: KeyboardEvent) => {
+      // The focused title must not trigger dashboard shortcuts behind the modal.
+      event.stopPropagation();
+      if (
+        ["Escape", "Tab"].includes(event.key) ||
+        !popup.current?.contains(event.target as Node)
+      ) {
+        event.preventDefault();
+        title.current?.focus();
+      }
+    };
+    const holdInput = (event: Event) => {
+      if (!popup.current?.contains(event.target as Node)) {
+        event.preventDefault();
+        event.stopPropagation();
         title.current?.focus();
       }
     };
     document.addEventListener("pointerdown", holdFocus, true);
-    return () => document.removeEventListener("pointerdown", holdFocus, true);
+    document.addEventListener("keydown", holdKeys, true);
+    document.addEventListener("beforeinput", holdInput, true);
+    return () => {
+      document.removeEventListener("pointerdown", holdFocus, true);
+      document.removeEventListener("keydown", holdKeys, true);
+      document.removeEventListener("beforeinput", holdInput, true);
+    };
   }, [open]);
   return (
     <Dialog
@@ -88,13 +113,6 @@ export function ConnectionDialog({
         className="approved-dialog max-w-sm"
         showCloseButton={false}
         initialFocus={title}
-        onKeyDownCapture={(event) => {
-          if (["Escape", "Tab"].includes(event.key)) {
-            event.preventDefault();
-            event.stopPropagation();
-            title.current?.focus();
-          }
-        }}
       >
         <DialogHeader>
           <div className="dialog-confirm-icon">
