@@ -53,7 +53,7 @@ export function CardStatusMenu({ api, card, onClose }: {
   const visibleError = readError ?? error;
   return <><CardTransitionSettings api={api} action={action} onExecuted={onClose}/><AppModalSurface visible={!action.settingsCard} modalId="modal_card_assignment" variant="compact" onRequestClose={() => { active.current = false; onClose(); }}>
     <ScrollView testID="card-status-menu" contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <Text style={styles.heading} numberOfLines={2}>{card.title} · {colorSelection ? '카드 색상' : '상태 이동'}</Text>
+      <Text style={styles.heading} numberOfLines={2}>{`${card.title} (${colorSelection ? '카드 색상' : '상태 이동'})`}</Text>
       {!detail && !readError ? <ActivityIndicator color={t.colors.accent} /> : null}
       {action.execution && action.execution.phase !== 'pending' ? <><Text style={styles.error}>{action.execution.message}</Text><GlassButton disabled={pending} onPress={() => { void move('running'); }}><Text style={styles.body}>{action.execution.phase === 'delayed' ? '다시 확인' : '다시 시도'}</Text></GlassButton></> : null}
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
