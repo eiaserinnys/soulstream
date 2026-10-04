@@ -104,7 +104,7 @@ export function ConnectionDialog({
               <WifiOff className="size-5" aria-hidden="true" />
             )}
           </div>
-          <DialogTitle ref={title} tabIndex={-1}>
+          <DialogTitle ref={title} tabIndex={-1} className="outline-none">
             {text[0]}
           </DialogTitle>
           <DialogDescription>{text[1]}</DialogDescription>

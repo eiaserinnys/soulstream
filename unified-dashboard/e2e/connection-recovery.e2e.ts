@@ -5,7 +5,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 import type { CardRow } from "../../packages/soul-ui/src/cards/card-types";
 const output = resolve("../.local/connection-recovery");
 mkdirSync(output, { recursive: true });
-const control = "http://127.0.0.1:52107";
+const control = process.env.CONNECTION_QA_CONTROL_URL!;
 const card: CardRow = {
   id: "connection-card",
   folderId: "folder-amber",
@@ -29,15 +29,13 @@ const card: CardRow = {
   updatedAt: "2026-10-04T00:00:00Z",
 };
 async function setup(page: Page) {
-  await page
-    .context()
-    .addCookies([
-      {
-        name: "connection-qa",
-        value: "authenticated",
-        url: "http://127.0.0.1:52108",
-      },
-    ]);
+  await page.context().addCookies([
+    {
+      name: "connection-qa",
+      value: "authenticated",
+      url: process.env.CONNECTION_QA_BASE_URL!,
+    },
+  ]);
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await page.addInitScript(() => {
     localStorage.setItem("soul-dashboard-theme", "dark");
@@ -71,10 +69,16 @@ async function setup(page: Page) {
   await page.route("**/api/sessions/stream*", (route) => route.continue());
   await page.route("**/api/health", (route) => route.continue());
   let offline = false;
-  await page.route("**/api/**", route => {
+  await page.route("**/api/**", (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/health" || path === "/api/sessions/stream") return route.continue();
-    if (offline) return route.fulfill({status:503,contentType:"application/json",body:'{"error":"isolated deployment fixture offline"}'});
+    if (path === "/api/health" || path === "/api/sessions/stream")
+      return route.continue();
+    if (offline)
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: '{"error":"isolated deployment fixture offline"}',
+      });
     return route.fallback();
   });
   let cardReads = 0;
@@ -102,7 +106,12 @@ async function setup(page: Page) {
       }),
     });
   });
-  return { cardReads: () => cardReads, setOffline: (value: boolean) => { offline = value; } };
+  return {
+    cardReads: () => cardReads,
+    setOffline: (value: boolean) => {
+      offline = value;
+    },
+  };
 }
 test.beforeEach(async ({ request }) => {
   await request.post(control + "/close");
@@ -120,6 +129,7 @@ for (const width of [1440, 390])
     await expect(mainDraft).toBeVisible();
     await mainDraft.fill("전송 전 초안 유지");
     await page
+      .getByTestId("card-home")
       .getByRole("button", { name: "카드 연결 복구 확인 열기" })
       .click();
     const detail = page.getByTestId("card-detail");
@@ -128,12 +138,34 @@ for (const width of [1440, 390])
     await input.fill("카드 커멘트 초안 유지");
     await input.focus();
     const initialReads = fixture.cardReads();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const source = new EventSource("/api/sessions/stream");
+          const notices: unknown[] = [];
+          Object.assign(window, { connectionNotices: notices });
+          source.addEventListener("orchestrator_shutdown", (event) => {
+            notices.push(JSON.parse((event as MessageEvent).data));
+            source.close();
+          });
+          source.onopen = () => resolve();
+        }),
+    );
     await page.screenshot({
       path: `${output}/normal-${width}.png`,
       animations: "disabled",
     });
     await request.post(control + "/close");
     const dialog = page.getByRole("dialog");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as Window & { connectionNotices: unknown[] })
+              .connectionNotices.length,
+        ),
+      )
+      .toBe(1);
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("heading")).toHaveText(
       "소울스트림 오케스트레이터와의 연결이 끊겼습니다",
@@ -170,7 +202,16 @@ for (const width of [1440, 390])
     writeFileSync(
       `${output}/server-${width}.json`,
       JSON.stringify(
-        { evidence, cardReads: fixture.cardReads(), rectangle },
+        {
+          evidence,
+          notices: await page.evaluate(
+            () =>
+              (window as Window & { connectionNotices: unknown[] })
+                .connectionNotices,
+          ),
+          cardReads: fixture.cardReads(),
+          rectangle,
+        },
         null,
         2,
       ),
@@ -247,13 +288,11 @@ test("selected uploaded attachment defers a new build and releases the screen", 
       body: JSON.stringify({ path: "qa/keep.txt" }),
     }),
   );
-  await page
-    .locator('.v3-today-handoff input[type="file"]')
-    .setInputFiles({
-      name: "keep.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("keep attachment"),
-    });
+  await page.locator('.v3-today-handoff input[type="file"]').setInputFiles({
+    name: "keep.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("keep attachment"),
+  });
   await expect(page.locator(".v3-today-handoff")).toContainText("keep.txt");
   await request.post(control + "/close");
   await expect(page.getByRole("dialog")).toBeVisible();

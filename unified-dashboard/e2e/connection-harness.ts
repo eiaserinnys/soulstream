@@ -20,9 +20,11 @@ import { spawn } from "node:child_process";
 const root = resolve(import.meta.dirname, "../.."),
   dist = join(root, "unified-dashboard/dist");
 const buildId = await readDashboardBuildId(dist, "production");
+const serverPort = process.env.CONNECTION_QA_SERVER_PORT!,
+  controlPort = Number(process.env.CONNECTION_QA_CONTROL_PORT!),
+  nginxPort = process.env.CONNECTION_QA_NGINX_PORT!;
 let server:
-  | Awaited<ReturnType<typeof createProductionOrchestrator>>
-  | undefined;
+  Awaited<ReturnType<typeof createProductionOrchestrator>> | undefined;
 let lifecycle: OrchestratorLifecycle;
 let instance = 0;
 const events: string[] = [];
@@ -33,7 +35,7 @@ async function start(nextBuild = buildId) {
   server = await createProductionOrchestrator({
     config: loadOrchServerEnvironment({
       HOST: "127.0.0.1",
-      PORT: "52106",
+      PORT: serverPort,
       ENVIRONMENT: "test",
       DASHBOARD_DIR: dist,
       DATABASE_URL: "postgres://unused/unused",
@@ -103,7 +105,7 @@ snippet = snippet
 const config = join(temp, "nginx.conf");
 await writeFile(
   config,
-  `pid ${temp}/nginx.pid; error_log stderr; events {} http { include /etc/nginx/mime.types; access_log off; upstream netcup_core_soulstream_orchestrator {server 127.0.0.1:52106;} server { listen 127.0.0.1:52108; ${snippet} } }`,
+  `pid ${temp}/nginx.pid; error_log stderr; events {} http { include /etc/nginx/mime.types; access_log off; upstream netcup_core_soulstream_orchestrator {server 127.0.0.1:${serverPort};} server { listen 127.0.0.1:${nginxPort}; ${snippet} } }`,
 );
 const nginx = spawn(
   "/usr/sbin/nginx",
@@ -114,7 +116,15 @@ nginx.on("exit", (code) => {
   if (code && !stopping) process.exitCode = code;
 });
 const control = Fastify();
-control.get("/ready", () => ({ ready: true, build_id: buildId }));
+control.get("/ready", async (_request, reply) => {
+  try {
+    const response = await fetch(`http://127.0.0.1:${nginxPort}/api/health`);
+    if (!response.ok) throw new Error("nginx not ready");
+    return { ready: true, build_id: buildId };
+  } catch {
+    return reply.code(503).send({ ready: false });
+  }
+});
 control.get("/evidence", () => ({
   events,
   instance,
@@ -130,12 +140,16 @@ control.post("/start", async (request) => {
   if (!server) await start(body?.newBuild ? "b".repeat(40) : buildId);
   return { instance };
 });
-await control.listen({ host: "127.0.0.1", port: 52107 });
+await control.listen({ host: "127.0.0.1", port: controlPort });
 let stopping = false;
 async function stop() {
   if (stopping) return;
   stopping = true;
+  const nginxExit = new Promise<void>((resolve) =>
+    nginx.once("exit", () => resolve()),
+  );
   nginx.kill("SIGTERM");
+  await nginxExit;
   await server?.close();
   await control.close();
   await rm(temp, { recursive: true, force: true });
