@@ -43,11 +43,11 @@ it("locks an uncertain submission and replays the same snapshot after a lost res
   .mockRejectedValueOnce(new CardApiError('409 충돌',409)).mockResolvedValue({id:'created'});
  const {title,save,setTitle,onClose,onCreated,upload}=await mountCard(onSave);
  await setTitle('첫 카드');
- await act(()=>{save.click();save.click();});
+ await act(async()=>{save.click();save.click();await Promise.resolve();});
  expect(onSave).toHaveBeenCalledTimes(1);
  await act(()=>{document.querySelector<HTMLButtonElement>('[aria-label="새 카드 닫기"]')!.click();});
  expect(onClose).not.toHaveBeenCalled();
- await act(()=>reject(new Error('응답 손실')));
+ await act(async()=>{reject(new Error('응답 손실'));await Promise.resolve();});
  expect(title.disabled).toBe(true);
  expect(document.querySelector<HTMLTextAreaElement>('[aria-label="요청 원문"]')!.disabled).toBe(true);
  expect(document.querySelector<HTMLSelectElement>('[aria-label="노드 선택"]')!.disabled).toBe(true);
@@ -60,10 +60,10 @@ it("locks an uncertain submission and replays the same snapshot after a lost res
  expect(title.value).toBe('첫 카드');
  await act(()=>document.querySelector<HTMLButtonElement>('[aria-label="Remove file"]')!.click());
  expect(upload.removeFile).not.toHaveBeenCalled();expect(upload.resetLocal).not.toHaveBeenCalled();
- await act(()=>save.click());
+ await act(async()=>{save.click();await Promise.resolve();});
  expect(onSave.mock.calls[1][0]).toBe(onSave.mock.calls[0][0]);
  expect(title.disabled).toBe(true);
- await act(()=>{save.click();save.click();});
+ await act(async()=>{save.click();save.click();await Promise.resolve();});
  expect(onSave.mock.calls[2][0]).toBe(onSave.mock.calls[0][0]);
  expect(onSave.mock.calls[2][0]).toMatchObject({title:'첫 카드',attachments:[{path:'/uploaded'}]});
  expect(onCreated).toHaveBeenCalledTimes(1);expect(onClose).toHaveBeenCalledTimes(1);expect(upload.resetLocal).toHaveBeenCalledTimes(1);
@@ -72,10 +72,10 @@ it("locks an uncertain submission and replays the same snapshot after a lost res
 it("unlocks a definitively rejected card so corrected input gets a new key", async () => {
  const onSave=vi.fn().mockRejectedValueOnce(new CardApiError('요청을 수정하세요',422)).mockResolvedValue({id:'created'});
  const {title,save,setTitle,upload}=await mountCard(onSave);
- await setTitle('첫 카드');await act(()=>save.click());
+ await setTitle('첫 카드');await act(async()=>{save.click();await Promise.resolve();});
  expect(title.disabled).toBe(false);expect(upload.resetLocal).not.toHaveBeenCalled();
  expect(document.body.textContent).not.toContain('이미 저장되었을 수 있습니다');
- await setTitle('수정 카드');await act(()=>save.click());
+ await setTitle('수정 카드');await act(async()=>{save.click();await Promise.resolve();});
  expect(onSave.mock.calls[1][0].idempotencyKey).not.toBe(onSave.mock.calls[0][0].idempotencyKey);
  expect(onSave.mock.calls[1][0]).toMatchObject({title:'수정 카드',attachments:[{path:'/uploaded'}]});
 });
@@ -91,3 +91,22 @@ async function mountCard(onSave: ReturnType<typeof vi.fn>) {
  const save=document.querySelector<HTMLButtonElement>('[aria-label="카드 저장"]')!;
  return {title,save,setTitle,onClose,onCreated,upload};
 }
+
+it('keeps completed execution settings on save failure and starts only after atomic save',async()=>{
+ const {CardExecutionSettingsDialog}=await import('./CardExecutionSettings');
+ const {dialoguesAssignment}=await import('./dialogues-api');
+ const {reviewCard}=await import('./components-review-fixtures');
+ const card={...reviewCard,assigneeSessionId:null,folderId:'f',nodeId:'sample-node',assigneeAgentId:'roselin',modelPreset:null};
+ const saved={...card,modelPreset:'sample-sol',version:card.version+1};
+ const save=vi.fn().mockRejectedValueOnce(new CardApiError('저장 실패',422)).mockResolvedValue(saved),start=vi.fn(),close=vi.fn();
+ await act(()=>root.render(<QueryClientProvider client={new QueryClient()}><CardExecutionSettingsDialog card={card} folders={[{id:'f',name:'폴더'} as any]} assignment={dialoguesAssignment} startAfterSave onSave={save} onStart={start} onClose={close}/></QueryClientProvider>));
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,30));});
+ const button=document.querySelector<HTMLButtonElement>('[aria-label="카드 설정 저장"]')!;
+ expect(button.disabled).toBe(false);
+ await act(async()=>{button.click();await Promise.resolve();});
+ expect(start).not.toHaveBeenCalled();expect(close).not.toHaveBeenCalled();
+ expect(document.body.textContent).toContain('카드를 저장하지 못했습니다.');
+ await act(async()=>{button.click();await Promise.resolve();});
+ expect(save.mock.calls[1][0]).toEqual(save.mock.calls[0][0]);
+ expect(start).toHaveBeenCalledWith(saved);expect(close).toHaveBeenCalledTimes(1);
+});

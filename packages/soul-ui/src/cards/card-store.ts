@@ -1,3 +1,4 @@
+import {executeCard} from "./card-execution";
 import { create } from "zustand";
 import { cardRequest, cardPath, cardMutationKey, fetchCards } from "./card-api";
 import type { CardComment, CardDetail, CardRow } from "./card-types";
@@ -8,6 +9,7 @@ interface CardState {
   loadFolder(folderId: string): Promise<void>;
   loadCard(id: string): Promise<CardDetail>;
   mutate(id: string, suffix: string, body: object, method?: string): Promise<CardDetail>;
+  execute(id:string,version:number):Promise<CardDetail>;
   addComment(id: string, body: string, idempotencyKey: string): Promise<CardComment>;
   create(body: object): Promise<CardRow>;
   handleCardUpdated(event: {cardId: string; folderId: string}): Promise<CardDetail>;
@@ -37,6 +39,12 @@ export const useCardStore = create<CardState>((set,get) => ({
       set(state=>({errors:{...state.errors,[id]:error instanceof Error ? error.message : String(error)}}));
       throw error;
     }
+  },
+  async execute(id,version){
+    const result=await executeCard(id,version);get().putCards([result.card]);
+    const detail=await get().loadCard(id);
+    if(result.execution.state==='pending')throw new Error("실행 결과 확인 중입니다. 진행 중을 다시 선택하면 같은 요청으로 확인하고 미전달된 실행을 재시도합니다.");
+    return detail;
   },
   async addComment(id, body, idempotencyKey) {
     const optimistic: CardComment = {id:idempotencyKey,cardId:id,authorKind:"user",authorId:"",sessionId:null,kind:"comment",body,createdAt:new Date().toISOString()};

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 153개 $defs (top-level wire 77 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -44,6 +44,8 @@ export type SoulstreamUpstreamProtocol =
   | CreateCardOrchestrationDecision
   | PrepareCardOrchestrationDecision
   | Intervene
+  | EnsureSessionRunning
+  | EnsureSessionRunningAck
   | InterruptSession
   | AcknowledgeSessionReview
   | Respond
@@ -1826,6 +1828,26 @@ export interface Intervene {
   delivery_attempt_token?: string;
   [k: string]: unknown;
 }
+export interface EnsureSessionRunning {
+  type: "ensure_session_running";
+  agentSessionId: string;
+  text: string;
+  delivery_id: string;
+  requestId?: string;
+  attachment_paths?: string[];
+  caller_info?: CallerInfo;
+}
+export interface EnsureSessionRunningAck {
+  type: "ensure_session_running_ack";
+  requestId: string;
+  agentSessionId: string;
+  status: "ok";
+  state: "started" | "already_running";
+  execution: {
+    registrationId: string;
+    executionCommandId: string;
+  };
+}
 /**
  * orch→노드: 진행 중인 세션 turn 중단 명령.
  */
@@ -2795,6 +2817,7 @@ export const CONTROL_COMMAND_TYPES = [
   "approve_tool",
   "reject_tool",
   "intervene",
+  "ensure_session_running",
   "claude_runtime_list_tasks",
   "claude_runtime_task_output",
   "claude_runtime_stop_task",

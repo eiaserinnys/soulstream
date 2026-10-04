@@ -468,6 +468,10 @@
     {
       "id": "115_single_card_assignee.sql",
       "sha256": "fa9fa4d4e69c1fb2ffa51301ff6010f58664f755125dedfdd1f4d9d4fef46cd1"
+    },
+    {
+      "id": "116_card_execution_requests.sql",
+      "sha256": "57e7741e0dcfecccf6b704a9124adfb3a1f8654f8c05c8a62ad020d1e9765c10"
     }
   ]
 }

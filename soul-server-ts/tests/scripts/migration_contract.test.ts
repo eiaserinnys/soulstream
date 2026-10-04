@@ -280,15 +280,20 @@ describe("versioned migration contract", () => {
     expect(migrations.every((item) => !Object.hasOwn(item, "rollback_compatibility"))).toBe(true);
   });
 
-  it("keeps the recurring once migration, manifest checksum, and canonical schema aligned", async () => {
+  it("keeps the latest card execution migration and existing schema contracts aligned", async () => {
     const migrations = await loadMigrationManifest();
     const migration = migrations.find((item) => item.id === "106_recurring_jobs_once.sql");
     const removal = migrations.find((item) => item.id === "110_drop_checklist_enabled.sql");
+    const execution = migrations.at(-1);
     const schema = readFileSync(fileURLToPath(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migrations.at(-1)?.id).toBe("115_single_card_assignee.sql");
+    expect(execution?.id).toBe("116_card_execution_requests.sql");
+    expect(migrationSha256(execution!.sql)).toBe(execution!.sha256);
+    expect(execution!.sql).toContain("CREATE TABLE IF NOT EXISTS card_execution_requests");
+    expect(execution!.sql).toContain("CREATE UNIQUE INDEX IF NOT EXISTS uq_card_execution_pending ON card_execution_requests(card_id) WHERE state='pending'");
+    expect(schema).toContain(execution!.sql.trim());
     expect(migrations.find((item) => item.id === "114_card_attachments.sql")?.sql).toContain("ADD COLUMN attachments JSONB NOT NULL DEFAULT '[]'::jsonb");
     expect(schema).toMatch(/attachments\s+JSONB NOT NULL DEFAULT '\[\]'::jsonb/);
     expect(removal?.sql).toMatch(/ALTER TABLE folders DROP COLUMN checklist_enabled/i);

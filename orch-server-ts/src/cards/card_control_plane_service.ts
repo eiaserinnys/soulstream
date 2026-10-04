@@ -1,3 +1,4 @@
+import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
@@ -71,6 +72,30 @@ export class CardControlPlaneService {
     return this.mutateCard(params,"update_card",{ title:params.title,brief:params.brief,archived:params.archived,
       ...(Object.hasOwn(params,"assignee") ? assigneeToFields(params.assignee) : {}),node_id:params.nodeId,model_preset:params.modelPreset },
     async (sql,card,eventId,payload) => { await this.patch(sql,card,payload,params,eventId); });
+  }
+  async saveExecutionSettings(params:CardMutationParams & {folderId:string;nodeId:string|null;agentId:string|null;modelPreset:string|null}) {
+    const result=await this.mutateCard(params,"card_execution_settings",{folder_id:params.folderId,node_id:params.nodeId,agent_id:params.agentId,model_preset:params.modelPreset},async(sql,card,eventId)=>{
+      await assertNoPendingCardExecution(sql,card.id);
+      if(card.assignee_session_id) throw Object.assign(new Error("담당 세션이 연결된 카드의 설정은 변경할 수 없습니다."),{statusCode:409});
+      if(card.folder_id!==params.folderId) await applyCardMoveTx(sql,card,params.folderId,null,params,eventId);
+      await this.patch(sql,card,{node_id:params.nodeId,model_preset:params.modelPreset,...assigneeToFields(params.agentId?{kind:"agent",agentId:params.agentId}:null)},params,eventId);
+    });
+    if(result.snapshot.folder.id!==params.folderId) await this.broadcaster?.emitCardUpdated?.(params.cardId,params.folderId);
+    return {...result,snapshot:(await this.repo.getSnapshot(params.folderId))!};
+  }
+  /** User intent records real registration evidence; it is not an agent declaration. */
+  async recordUserExecution(params:CardMutationParams & {requestId:string;sessionId:string;execution?:CardWorkExecution}) {
+    return this.mutateCard(params,"execute_card",{request_id:params.requestId,session_id:params.sessionId,execution:params.execution},async(sql,card,eventId)=>{
+      const session=(await sql`SELECT card_id FROM sessions WHERE session_id=${params.sessionId} FOR SHARE`)[0];
+      if(session?.card_id!==card.id || card.assignee_session_id && card.assignee_session_id!==params.sessionId)
+        throw invalid("실행 세션과 카드 담당이 일치하지 않습니다.");
+      const stateChanged=(await sql`SELECT c.status_changed_at>r.updated_at AS changed FROM cards c
+        JOIN card_execution_requests r ON r.card_id=c.id WHERE c.id=${card.id} AND r.id=${params.requestId} AND r.session_id=${params.sessionId}`)[0]?.changed===true;
+      // Confirming startup is independent of a later formal review/completion.
+      await this.patch(sql,card,{assignee_kind:"session",assignee_session_id:params.sessionId,assignee_agent_id:null,
+        ...(params.execution&&!stateChanged?{status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
+          completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null}: {})},params,eventId);
+    });
   }
   async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null }) {
     return this.mutateCard(params,"set_card_status",{ status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null },async (sql,card,eventId,payload) => {
@@ -166,6 +191,7 @@ export class CardControlPlaneService {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
     return this.mutateCard(actor,"dispatch_card",{session_id:params.sessionId,node_id:params.nodeId},async(sql,card,eventId)=>{
       if (card.status !== "queued") throw invalid("Only queued cards may dispatch");
+      await assertNoPendingCardExecution(sql,card.id);
       await this.checkAdmission(sql,params);
       await this.patch(sql,card,{status:params.admission ? "queued" : "running",blocked_kind:null,blocked_detail:null,
         ...(!params.admission ? {queue_position_key:null} : {})},actor,eventId);
@@ -175,6 +201,7 @@ export class CardControlPlaneService {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
     return this.mutateCard(actor,"resume_card",{session_id:params.sessionId},async(sql,card,eventId)=>{
       if (card.status !== "blocked" || card.blocked_kind !== "limit") throw invalid("Only limit-blocked cards may resume");
+      await assertNoPendingCardExecution(sql,card.id);
       await this.checkAdmission(sql,{...params,nodeId:params.nodeId??card.node_id??"eiaserinnys"});
       await this.patch(sql,card,{status:params.admission ? "queued" : "running",blocked_kind:null,blocked_detail:null,
         ...(!params.admission ? {queue_position_key:null} : {})},actor,eventId);

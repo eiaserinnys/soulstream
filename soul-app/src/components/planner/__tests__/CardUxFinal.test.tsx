@@ -40,6 +40,7 @@ test('세션 → 좌우 말풍선 → 그 밖에 → 고정 입력 순서이며 
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('지시')).toBeTruthy());
   expect(screen.getByLabelText('완료')).toBeTruthy();
+  for (const label of ['폴더 변경', '담당 변경', '노드 변경', '모델 변경']) expect(screen.queryByLabelText(label)).toBeNull();
   for (const label of ['반려', '맡기기', '빼기', '더보기', '해석과 경과']) expect(screen.queryByLabelText(label) ?? screen.queryByText(label)).toBeNull();
   expect(screen.getAllByTestId('user-message-bubble')).toHaveLength(3);
   expect(screen.getAllByTestId('assistant-message-bubble')).toHaveLength(2);
@@ -124,9 +125,10 @@ test('+ 카드 시트는 제목·요청 원문을 todo로 저장한다', async (
     nodeId: 'node-1', assignee: { kind: 'agent', agentId: 'roselin' }, modelPreset: 'sol', attachments: [], idempotencyKey: expect.any(String) });
 });
 
-test.each(['담당 변경', '노드 변경', '모델 변경'])('%s 칩은 폴더 항목을 가진 한 시트를 열며 버전을 이어서 저장한다', async (label) => {
-  const moved = { ...card, folderId: 'folder-2', version: card.version + 1 };
-  const api = { getCard: jest.fn().mockResolvedValue(detail), moveCard: jest.fn().mockResolvedValue({ card: moved, folderId: moved.folderId }), updateCard: jest.fn().mockResolvedValue({ card: moved, folderId: moved.folderId }) };
+test.each(['폴더 변경', '담당 변경', '노드 변경', '모델 변경'])('배정 전 %s 칩은 같은 시트에서 설정을 원자적으로 저장한다', async (label) => {
+  const unassigned = { ...card, assigneeSessionId: null, assigneeKind: 'agent' as const };
+  const moved = { ...unassigned, folderId: 'folder-2', version: card.version + 1 };
+  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, card: unassigned, sessions: [] }), saveCardExecutionSettings: jest.fn().mockResolvedValue({ card: moved, folderId: moved.folderId }), moveCard: jest.fn(), updateCard: jest.fn() };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByLabelText(label)).toBeTruthy());
   fireEvent.press(screen.getByLabelText(label));
@@ -134,8 +136,9 @@ test.each(['담당 변경', '노드 변경', '모델 변경'])('%s 칩은 폴더
   expect(assignment.props.mode).toBe('edit');
   expect(assignment.props.includeFolder).not.toBe(false);
   await act(async () => assignment.props.onSave({ folderId: 'folder-2', nodeId: 'node-2', agentId: 'other', modelPreset: 'luna' }));
-  expect(api.moveCard).toHaveBeenCalledWith(card.id, 'folder-2', card.version, expect.any(String));
-  expect(api.updateCard).toHaveBeenCalledWith(card.id, expect.objectContaining({ nodeId: 'node-2', modelPreset: 'luna' }), moved.version, expect.any(String));
+  expect(api.saveCardExecutionSettings).toHaveBeenCalledWith(card.id, { folderId: 'folder-2', nodeId: 'node-2', agentId: 'other', modelPreset: 'luna' }, card.version, expect.any(String));
+  expect(api.moveCard).not.toHaveBeenCalled();
+  expect(api.updateCard).not.toHaveBeenCalled();
 });
 test('긴 지시를 펼치면 기존 첨부 이미지와 파일 링크를 표시한다', async () => {
   const request = '한 문단 지시 '.repeat(60) + '\n\n첨부: 이미지(https://test/capture.png)\n첨부: 파일(https://test/file.pdf)';

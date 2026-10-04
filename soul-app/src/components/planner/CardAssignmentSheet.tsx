@@ -15,9 +15,9 @@ import { useTokens } from '../../theme';
 import { FolderSelectionSheet } from './FolderSelectionSheet';
 import { cardStyles } from './Card.styles';
 
-export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assignment', includeFolder = true, folderOnly = false }: {
+export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assignment', includeFolder = true, folderOnly = false, startAfterSave = false }: {
   api: ApiClient | null; value: CardAssignment; onClose(): void;
-  onSave(value: CardAssignment): Promise<void>; mode?: 'assignment' | 'move' | 'edit'; includeFolder?: boolean; folderOnly?: boolean;
+  onSave(value: CardAssignment): Promise<void>; mode?: 'assignment' | 'move' | 'edit'; includeFolder?: boolean; folderOnly?: boolean; startAfterSave?: boolean;
 }) {
   const t = useTokens();
   const styles = useMemo(() => cardStyles(t), [t]);
@@ -74,8 +74,8 @@ export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assig
     if (!selection.selectedFolderId || pending) return;
     setPending(true); setError(null);
     try {
-      await onSave({ folderId: selection.selectedFolderId, nodeId: mode === 'edit' ? selection.selectedNodeId : selection.effectiveNodeId ?? null,
-        agentId: selection.agentId, modelPreset: selection.selectedModelPresetId });
+      await onSave({ folderId: selection.selectedFolderId, nodeId: mode === 'edit' && !startAfterSave ? selection.selectedNodeId : selection.effectiveNodeId ?? null,
+        agentId: selection.agentId, modelPreset: startAfterSave ? selection.effectiveModelPresetId : selection.selectedModelPresetId });
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setPending(false); }
@@ -98,7 +98,7 @@ export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assig
       {selection.modelPresetSelectionInvalid && mode !== 'move' && !folderOnly ? <Text style={styles.error}>선택한 모델을 이 노드에서 사용할 수 없습니다.</Text> : null}
       <View style={styles.actions}>
         <GlassButton onPress={onClose}><Text style={styles.body}>취소</Text></GlassButton>
-        <GlassButton onPress={() => { void save(); }} disabled={pending || !selection.selectedFolderId || (mode !== 'move' && !folderOnly && ((mode !== 'edit' && !selection.agentId) || selection.modelPresetSelectionInvalid))}>
+        <GlassButton onPress={() => { void save(); }} disabled={pending || !selection.selectedFolderId || (startAfterSave && (!selection.effectiveNodeId || !selection.agentId || !selection.effectiveModelPreset?.available)) || (mode !== 'move' && !folderOnly && ((mode !== 'edit' && !selection.agentId) || selection.modelPresetSelectionInvalid))}>
           <Text style={styles.actionText}>확인</Text>
         </GlassButton>
       </View>

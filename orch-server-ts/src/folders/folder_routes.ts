@@ -63,6 +63,7 @@ export type FolderRouteOptions = {
   authBearerToken?: string;
   environment?: string;
   cardServiceProvider?: () => Promise<CardControlPlaneService>;
+  cardExecutionServiceProvider?: () => Promise<import("../cards/card_execution_service.js").CardExecutionService>;
   controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
 };
 

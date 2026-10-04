@@ -541,6 +541,12 @@ export class TaskManager {
     return await this.interventionRoute.addIntervention(params, onResume);
   }
 
+  async ensureRunning(params: AddInterventionParams, onResume: StartExecutionCallback) {
+    const task = await this.resolveNotificationTask(params.agentSessionId);
+    if (task) assertGenericTaskExecution(task);
+    return this.interventionRoute.ensureRunning(params, onResume);
+  }
+
   private async resolveNotificationTask(sessionId: string): Promise<Task | null> {
     const active = this.tasks.get(sessionId);
     if (active) return active;

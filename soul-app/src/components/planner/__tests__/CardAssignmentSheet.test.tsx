@@ -58,3 +58,16 @@ test.each(['node-1', null])('상세 폴더 이동은 공통 선택기를 쓰고 
   fireEvent.press(screen.getByText('확인'));
   await waitFor(() => expect(onSave).toHaveBeenCalledWith({ folderId: 'folder-2', nodeId, agentId: 'roselin', modelPreset: null }));
 });
+
+test('실행 보완은 기본 노드와 기본 모델을 명시적으로 저장한다',async()=>{
+ useSettingsStore.setState({nodeId:'node-1'});
+ useSessionStore.setState({catalog:{folders:[{id:'folder-1',name:'폴더'}],sessions:{}} as any});
+ const api={listNodes:jest.fn().mockResolvedValue({nodes:[{nodeId:'node-1'}]}),
+  listNodeAgents:jest.fn().mockResolvedValue({agents:[{id:'roselin',name:'로젤린',default_preset:'sol'}]}),
+  listModelPresets:jest.fn().mockResolvedValue({model_presets:[{id:'sol',label:'Sol',available:true,reason:'quota_exhausted'}]})};
+ const save=jest.fn().mockResolvedValue(undefined);
+ const screen=render(<CardAssignmentSheet api={api as any} mode="edit" startAfterSave value={{folderId:'folder-1',nodeId:null,agentId:'roselin',modelPreset:null}} onClose={jest.fn()} onSave={save}/>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'확인'}).props.accessibilityState.disabled).toBe(false));
+ await act(async()=>fireEvent.press(screen.getByText('확인')));
+ expect(save).toHaveBeenCalledWith({folderId:'folder-1',nodeId:'node-1',agentId:'roselin',modelPreset:'sol'});
+});

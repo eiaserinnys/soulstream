@@ -3,6 +3,9 @@ import type { CardDetail, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/
 
 export interface CardStatusControl {
   pending: boolean;
+  assignment?: import("./AgentNodeAssignmentFields").AssignmentData;
+  folders?: readonly import("@seosoyoung/soul-ui").CatalogFolder[];
+  saveSettings?(value:import("@seosoyoung/soul-ui/cards/card-execution").CardExecutionSettings,key:string):Promise<CardRow>;
   load(): Promise<CardDetail>;
   change(card: CardRow, status: CardStatus, reason?: string): Promise<unknown>;
 }
@@ -10,7 +13,7 @@ export const cardStatusChoices = ["todo", "queued", "running", "blocked", "revie
 
 export async function performCardTransition(control:CardStatusControl,status:CardStatus,reason?:string,loaded?:CardDetail) {
   const detail=loaded??await control.load();
-  if(detail.card.status===status)return;
+  if(status!=="running"&&detail.card.status===status)return;
   await control.change(detail.card,status,reason);
 }
 
@@ -29,7 +32,7 @@ export function useCardStatusCoordinator(card:CardRow,control:CardStatusControl)
     finally {if(request===generation.current)setLoading(false);}
   };
   const commit=async(latest:CardDetail,status:CardStatus,reason?:string)=>{
-    if(status===latest.card.status)return;
+    if(status!=="running"&&status===latest.card.status)return;
     setPending(true);const request=generation.current;
     try {await performCardTransition(control,status,reason,latest);
       if(request===generation.current){close();}

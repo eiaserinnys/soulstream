@@ -118,11 +118,32 @@ export interface TaskInterventionRouteDeps {
  * public result forwarding, and onResume callback wiring.
  */
 export class TaskInterventionRoute {
+  private readonly ensuring = new Map<string, Promise<unknown>>();
   constructor(private readonly deps: TaskInterventionRouteDeps) {}
+
+  /** Explicit start intent never adds a message to an already live execution. */
+  async ensureRunning(params: AddInterventionParams, onResume: StartExecutionCallback) {
+    const previous = this.ensuring.get(params.agentSessionId);
+    const work = (async () => {
+      if (previous) await previous.catch(() => undefined);
+      const task = await this.resolveTask(params.agentSessionId);
+      await this.awaitInitializingTask(task);
+      const live = hasLiveExecutionEvidence(task);
+      if (!live) await this.addIntervention(params, onResume, true);
+      const execution = task.executionRegistration;
+      if (!execution) throw new Error("실행 등록을 확인하지 못했습니다. 같은 요청을 다시 확인하세요.");
+      return {state: live ? "already_running" as const : "started" as const, execution};
+    })();
+    this.ensuring.set(params.agentSessionId, work);
+    try {return await work;} finally {
+      if (this.ensuring.get(params.agentSessionId) === work) this.ensuring.delete(params.agentSessionId);
+    }
+  }
 
   async addIntervention(
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
+    ensureOnly = false,
   ): Promise<AddInterventionResult> {
     const request = this.deps.deliveryLedgerGate
       ? ensureHumanDeliveryIdentity(params)
@@ -218,7 +239,9 @@ export class TaskInterventionRoute {
         && hasPriorDispatchAttempt(admission.row)
         && !request.targetContentReceiptAbsent;
       let result: AddInterventionResult;
-      if (isRunning) {
+      if (isRunning && ensureOnly) {
+        result = {suppressed:true,deliveryId:request.deliveryId ?? "",reason:"already_running"};
+      } else if (isRunning) {
         result = heldHumanRetry
           ? await this.deps.runningInterventionTransition.queueOnly(task, message)
           : await this.deps.runningInterventionTransition.deliver(task, message, {

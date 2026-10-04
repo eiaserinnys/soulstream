@@ -1,3 +1,5 @@
+import { CardExecutionService } from "./card_execution_service.js";
+import { buildCardPrompt } from "./card_prompt.js";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { resolveCardSessionTarget } from "./card_session_target.js";
 import { sendCardChangeOnce } from "./card_change_delivery.js";
@@ -285,9 +287,43 @@ export async function createCardDispatchRuntime(options: {
       decisionEnded: (id) => coordinator.decisionEnded(id),
     },
   });
+  const executionService=new CardExecutionService({sql:await resolveSql(),cards:await serviceProvider(),
+    validate:async card=>{
+      try{
+      if(!card.node_id || !card.assignee_agent_id || !card.model_preset) throw Object.assign(new Error("폴더·노드·에이전트·모델을 선택한 뒤 실행하세요."),{statusCode:422});
+      const selection=options.router.selectNodeForCreate({nodeId:card.node_id,profileId:card.assignee_agent_id,modelPresetId:card.model_preset});
+      options.availability.requireAvailable(card.node_id,selection.modelPresetId!);
+      return {nodeId:card.node_id,agentId:selection.profileId,modelPreset:selection.modelPresetId!};
+      }catch(error){throw Object.assign(new Error(error instanceof Error?error.message:String(error)),{statusCode:422,code:"CARD_EXECUTION_SETTINGS_REQUIRED"});}
+    },
+    launch:async input=>{
+      const detail=(await (await serviceProvider()).getCard(input.cardId))!;
+      const folder=(await legacyOptions.repository.queued()).find(c=>c.id===input.cardId)?.folder_name
+        ?? (await (await serviceProvider()).getFolder(detail.card.folder_id))!.folder.name;
+      const answers=detail.questions.filter(q=>q.answer!==null).map(q=>`${String(q.text)} → ${String(q.answer)}`).join("\n");
+      const prompt=buildCardPrompt({cardId:input.cardId,title:detail.card.title,folderName:folder,request:detail.card.request,
+        brief:[detail.card.brief,answers].filter(Boolean).join("\n"),comments:detail.comments.filter(c=>c.author_kind==='user').map(c=>({createdAt:c.created_at as Date,body:String(c.body)})),
+        running:(await legacyOptions.repository.running()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name})),
+        queued:(await legacyOptions.repository.queued()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name}))});
+      return createRecurringSession({router:options.router,bridge:options.bridge,modelPresetAvailability:options.availability},
+        {sessionId:input.sessionId,prompt,cardId:input.cardId,folderId:input.target.folderId!,...input.target,
+          attachmentPaths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),callerInfo:{source:"browser"}});
+    },
+    ensure:async input=>{
+      const detail=(await (await serviceProvider()).getCard(input.cardId))!;
+      const routed=await options.router.routeExistingSessionPendingCommand({type:"ensure_session_running",agentSessionId:input.sessionId,
+        text:`카드 「${detail.card.title}」의 요청과 경과를 확인하고 이어서 수행하세요.`,delivery_id:`card-execution:${input.requestId}`,
+        attachment_paths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),caller_info:{source:"browser"}});
+      const result=await options.bridge.sendPendingCommand(routed);
+      if(result.status==='error' || result.type==='error')throw Object.assign(new Error(String(result.message??result.code)),{code:"NODE_REJECTED"});
+      if(!result.execution || !['started','already_running'].includes(String(result.state)))throw new Error("실행 등록 결과를 확인하지 못했습니다.");
+      return result as unknown as {state:"started"|"already_running";execution:import("./card_work_lifecycle.js").CardWorkExecution};
+    },
+  });
   return {
     dispatcher,
     serviceProvider,
+    executionServiceProvider:async()=>executionService,
     authorizeWorker:(input:Parameters<CardOrchestrationRepository["authorizeWorker"]>[0])=>orchestrationRepository.authorizeWorker(input),
     authorizeDecision: (
       input: Parameters<CardOrchestrationRepository["authorize"]>[0],

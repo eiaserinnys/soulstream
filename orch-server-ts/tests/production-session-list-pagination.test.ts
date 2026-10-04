@@ -187,6 +187,8 @@ async function createProductionHarness() {
   });
   const sql = Object.assign(query, {
     json: vi.fn((value: unknown) => ({ jsonValue: value })),
+    array: (values: readonly unknown[]) => values,
+    begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => callback(sql),
     listen: vi.fn(async () => ({ unlisten: vi.fn(async () => undefined) })),
   }) as unknown as LivePostgresSql;
   const sqlResolver: LiveDbSqlResolver = {

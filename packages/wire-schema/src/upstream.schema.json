@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 153개 $defs (top-level wire 77 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -17,6 +17,7 @@
     "approve_tool",
     "reject_tool",
     "intervene",
+    "ensure_session_running",
     "claude_runtime_list_tasks",
     "claude_runtime_task_output",
     "claude_runtime_stop_task",
@@ -1407,6 +1408,14 @@
           }
         }
       }
+    },
+    "EnsureSessionRunning": {
+      "type":"object", "required":["type","agentSessionId","text","delivery_id"],
+      "properties":{"type":{"const":"ensure_session_running"},"agentSessionId":{"type":"string"},"text":{"type":"string"},"delivery_id":{"type":"string"},"requestId":{"type":"string"},"attachment_paths":{"type":"array","items":{"type":"string"}},"caller_info":{"$ref":"#/$defs/CallerInfo"}}, "additionalProperties":false
+    },
+    "EnsureSessionRunningAck": {
+      "type":"object", "required":["type","requestId","agentSessionId","status","state","execution"],
+      "properties":{"type":{"const":"ensure_session_running_ack"},"requestId":{"type":"string"},"agentSessionId":{"type":"string"},"status":{"const":"ok"},"state":{"enum":["started","already_running"]},"execution":{"type":"object","required":["registrationId","executionCommandId"],"properties":{"registrationId":{"type":"string"},"executionCommandId":{"type":"string"}},"additionalProperties":false}},"additionalProperties":false
     },
     "Intervene": {
       "type": "object",
@@ -3207,6 +3216,8 @@
     { "$ref": "#/$defs/CreateCardOrchestrationDecision" },
     { "$ref": "#/$defs/PrepareCardOrchestrationDecision" },
     { "$ref": "#/$defs/Intervene" },
+    { "$ref": "#/$defs/EnsureSessionRunning" },
+    { "$ref": "#/$defs/EnsureSessionRunningAck" },
     { "$ref": "#/$defs/InterruptSession" },
     { "$ref": "#/$defs/AcknowledgeSessionReview" },
     { "$ref": "#/$defs/Respond" },

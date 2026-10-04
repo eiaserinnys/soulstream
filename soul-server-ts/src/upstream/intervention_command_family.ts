@@ -56,6 +56,13 @@ export function createInterventionCommandFamily(
     respond: (cmd) => handleRespond(deps, cmd as RespondCommand),
     approve_tool: (cmd) => handleToolApproval(deps, cmd as ToolApprovalCommand),
     reject_tool: (cmd) => handleToolApproval(deps, cmd as ToolApprovalCommand),
+    ensure_session_running: async (command) => {
+      const cmd=command as unknown as InterveneCmd;
+      if (!cmd.agentSessionId || !cmd.text || !cmd.delivery_id) throw new CommandDispatchError("ensure_session_running requires session, text and delivery_id");
+      const result=await deps.taskRuntimeCommands.ensureSessionRunning({agentSessionId:cmd.agentSessionId,text:cmd.text,deliveryId:cmd.delivery_id,callerInfo:cmd.caller_info,attachmentPaths:cmd.attachment_paths});
+      const requestId=cmd.requestId ?? cmd.request_id;
+      if(requestId) await deps.send({type:"ensure_session_running_ack",requestId,agentSessionId:cmd.agentSessionId,status:"ok",...result});
+    },
     intervene: (cmd) => handleIntervene(deps, cmd as InterveneCmd),
   };
 }
