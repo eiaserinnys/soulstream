@@ -63,7 +63,7 @@ export function DisplaySettingsSection({
   const t = useTokens();
   const deviceWide = useDeviceType() !== 'phone';
   const workspace = useSettingsWorkspace();
-  const wide = workspace ? workspace.columns : deviceWide;
+  const wide = workspace ? workspace.wide && !workspace.columns : deviceWide;
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (

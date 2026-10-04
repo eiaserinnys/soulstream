@@ -9,7 +9,7 @@ export function SettingsPhoto({ source, style, testID, expandable = false, ...pr
   useEffect(() => setFailed(false), [identity]);
   const resolved = !source || failed ? fallback : source;
   const image = <View testID={testID ? `${testID}-frame` : undefined} style={[style, { overflow: 'hidden' }]}>
-    <Image {...props} testID={testID} style={StyleSheet.absoluteFill} source={resolved} resizeMode="cover" onError={() => setFailed(true)}/>
+    <Image {...props} testID={testID} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} source={resolved} resizeMode="cover" onError={() => setFailed(true)}/>
   </View>;
   return <>{expandable ? <TouchableWithoutFeedback accessibilityRole="button" accessibilityLabel="배경 사진 확대" onPress={() => setOpen(true)}>{image}</TouchableWithoutFeedback> : image}{open ? <ImageViewerModal sources={[resolved]} initialIndex={0} onClose={() => setOpen(false)}/> : null}</>;
 

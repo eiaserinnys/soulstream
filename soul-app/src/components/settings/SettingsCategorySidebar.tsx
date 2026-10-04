@@ -10,7 +10,7 @@ export function SettingsCategorySidebar({ selected, onSelect, showAdmin = false,
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   return <View testID="settings-category-sidebar" style={[styles.sidebar, compact && styles.compact]}>
-    {['개인 환경', '작업과 실행', '서버 관리'].map(group => <View key={group} style={styles.group}>
+    {Array.from(new Set(SETTINGS_CATEGORIES.map(category => category.group))).map(group => <View key={group} style={styles.group}>
       <Text style={styles.groupTitle}>{group}</Text>
       <View style={compact && styles.groupCard}>
       {SETTINGS_CATEGORIES.filter(category => category.group === group && (category.id !== 'review-policy' || showAdmin)).map(category => {

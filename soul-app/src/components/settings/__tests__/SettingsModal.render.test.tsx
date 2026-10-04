@@ -17,6 +17,7 @@ test('iPad page sheet bounds sibling sidebar/detail beneath its header', () => {
   const screen = render(<SettingsModal visible onClose={jest.fn()}/>);
   expect(screen.UNSAFE_getByType(Modal).props.presentationStyle).toBe('pageSheet');
   expect(screen.getByTestId('settings-sidebar-scroll')).toBeTruthy();
+  expect(screen.getByText('관리와 문제 해결')).toBeTruthy();
   expect(screen.getByTestId('settings-detail-display')).toBeTruthy();
   expect(screen.getAllByTestId('settings-modal-header')).toHaveLength(1);
   expect(screen.getByTestId('settings-section-display').findAllByType(Text).some(text => text.props.children === '화면과 배경')).toBe(false);
