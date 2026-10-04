@@ -11,3 +11,14 @@ it('readonly cards retain the shared frame and text without activity labels, fak
  expect(html).not.toMatch(/<button|<img|status-chip|열기/);
  expect(html).toContain('data-card-readonly="true"');
 });
+
+it('uses the persisted paper color from the shared wire schema and keeps missing colors yellow',()=>{
+ const colored=renderToStaticMarkup(createElement(PostItCardView,{id:'pink-card',title:'연분홍 카드',status:'todo',fontSize:14,
+  activity:null,assigneeName:'담당',color:'pink'}));
+ const legacy=renderToStaticMarkup(createElement(PostItCardView,{id:'legacy-card',title:'기존 카드',status:'todo',fontSize:14,
+  activity:null,assigneeName:'담당'}));
+ expect(colored).toContain('data-card-color="pink"');
+ expect(colored).toContain('--postit-paper:#ffede8');
+ expect(legacy).toContain('data-card-color="yellow"');
+ expect(legacy).toContain('--postit-paper:#fff7c6');
+});

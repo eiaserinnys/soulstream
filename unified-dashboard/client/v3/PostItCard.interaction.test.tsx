@@ -45,7 +45,7 @@ it("opens the ordered card context menu and routes a selected status through the
   expect(menu.textContent).not.toContain(reviewCard.id);
   expect(menu.textContent).toContain("카드 상태 변경");
   expect([...menu.querySelectorAll<HTMLElement>('[data-slot="menu-item"]')].map(item=>item.textContent?.trim())).toEqual([
-    "카드 ID 복사","드래프트","대기","실행 중","막힘","검수 대기","완료","취소",
+    "카드 ID 복사","카드 색상 변경","드래프트","대기","실행 중","막힘","검수 대기","완료","취소",
   ]);
   await act(async()=>{menu.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click();await Promise.resolve();});
   expect(writeText).toHaveBeenCalledWith(reviewCard.id);
@@ -61,6 +61,24 @@ it("opens the dedicated menu with the keyboard context-menu command",async()=>{
  const open=element.querySelector<HTMLButtonElement>(".v3-postit-open")!;
  await act(()=>open.dispatchEvent(new KeyboardEvent("keydown",{bubbles:true,cancelable:true,key:"F10",shiftKey:true})));
  expect(document.querySelector('[data-slot="menu-popup"]')?.textContent).toContain("카드 상태 변경");
+});
+
+it("opens color editing from the card context menu and PATCHes the latest version",async()=>{
+  const card={...reviewCard,color:"yellow" as const};
+  const latest={...reviewDetail,card:{...card,version:12}};
+  const loadCard=vi.fn().mockResolvedValue(latest),mutate=vi.fn().mockResolvedValue(latest);
+  useCardStore.setState({loadCard,mutate});
+  await act(()=>root.render(<PostItCard card={card}/>));
+  const paper=element.querySelector<HTMLElement>('.v3-postit-card')!;
+  await act(()=>paper.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:40,clientY:30})));
+  const menu=document.querySelector<HTMLElement>('[data-slot="menu-popup"]')!;
+  expect(menu.textContent).toContain("카드 색상 변경");
+  const colorAction=[...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item=>item.textContent?.trim()==="카드 색상 변경")!;
+  await act(async()=>{colorAction.click();await new Promise(done=>setTimeout(done,20));});
+  const colorChoice=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(item=>item.textContent?.trim()==="민트")!;
+  await act(async()=>{colorChoice.click();await new Promise(done=>setTimeout(done,20));});
+  expect(mutate).toHaveBeenCalledWith(card.id,"",{color:"mint",expectedVersion:12},"PATCH");
+  expect(document.querySelector('[data-card-status-picker]')).toBeNull();
 });
 
 it.each([14,17,18] as const)("updates card and grid proportions from chat preference %i", async fontSize => {

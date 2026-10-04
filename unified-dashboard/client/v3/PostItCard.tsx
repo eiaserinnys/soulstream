@@ -56,7 +56,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
     onSelect:()=>statusHandle.current?.request(status as CardStatus),
   })):[];
   return <>
-    <Paper id={card.id} title={card.title} status={card.status} fontSize={fontSize} variant={variant}
+    <Paper id={card.id} title={card.title} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
       activity={activity?{kind:activity.kind,text:cardActivityPreview(activity)}:null}
       assigneeName={name} onOpen={onOpen} error={error}
       avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait}
@@ -69,7 +69,10 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
         if(target){event.preventDefault();event.stopPropagation();setContextTarget(target);}
       }}/>
     <V3ContextMenu target={contextTarget} onClose={()=>setContextTarget(null)}
-      actions={statusControl?[{label:"카드 ID 복사",onSelect:()=>navigator.clipboard.writeText(card.id)}]:[]}
+      actions={statusControl?[
+        {label:"카드 ID 복사",onSelect:()=>navigator.clipboard.writeText(card.id)},
+        ...(statusControl.changeColor?[{label:"카드 색상 변경",separatorBefore:true,onSelect:()=>statusHandle.current?.requestColor()}]:[]),
+      ]:[]}
       groups={statusControl?[{label:"카드 상태 변경",actions:statusActions}]:[]}/>
   </>;
 }

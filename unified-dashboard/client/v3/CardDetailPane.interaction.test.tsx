@@ -94,6 +94,20 @@ it("reopens a completed detail through the existing status menu without reports"
  expect(execute).toHaveBeenCalledWith("inherit",8);expect(mutate).not.toHaveBeenCalled();
 });
 
+it("PATCHes a color chosen from the detail pane with the freshly loaded card version",async()=>{
+ const latest={...detail,card:{...card,color:"blue" as const,version:9}};
+ const loadCard=vi.fn().mockResolvedValue(latest),mutate=vi.fn().mockResolvedValue(latest);
+ useCardStore.setState({byId:{inherit:latest.card},details:{inherit:latest},loadCard,mutate});
+ await render();
+ await act(async()=>container.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]')!.click());
+ const colorRow=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(button=>button.textContent==="카드 색상: 하늘")!;
+ await act(async()=>colorRow.click());
+ const mint=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(button=>button.textContent==="민트")!;
+ await act(async()=>mint.click());
+ expect(mutate).toHaveBeenCalledWith("inherit","",{color:"mint",expectedVersion:9},"PATCH");
+ expect(container.querySelector('[data-card-status-picker]')).toBeNull();
+});
+
 
 it("shows editable settings for agent preassignment and hides only settings after assignment",async()=>{
  const unassigned={...card,assigneeKind:"agent" as const,assigneeSessionId:null};

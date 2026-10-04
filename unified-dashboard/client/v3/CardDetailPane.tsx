@@ -14,7 +14,7 @@ import { DetailTabs } from "./DetailTabs";
 import { CardTimeline } from "./CardTimeline";
 import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
-import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardColor, CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 export { cardRequestMarkdown } from "./card-request-markdown";
 export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSessionId,sampleDetail,sampleExecution}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState}) {
  const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
@@ -76,6 +76,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
     saveSettings:sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setLocalSample(current=>current?{...current,card:saved}:current);return saved;}:undefined,
     load:()=>sampleDetail ? Promise.resolve(localSample!) : useCardStore.getState().loadCard(cardId),
     change:async(latest,status,reason)=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}:current);else if(status==="running")await useCardStore.getState().execute(cardId,latest.version);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
+    changeColor:async(latest,color:CardColor)=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,color,version:latest.version+1}}:current);else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH");},
    }}/>
    <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,title}}:current);else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
    <div className="v3-folder-header-actions"><DashboardIconCap label={actionLabel} disabled={pending||execution?.phase==='pending'} onClick={()=>{if(execution||startable)statusPicker.current?.request('running');else void complete();}}>{execution?.phase==='pending'?<LoaderCircle className="h-4 w-4 animate-spin"/>:execution?<RotateCw className="h-4 w-4"/>:startable?<Play className="h-4 w-4"/>:<Check className="h-4 w-4"/>}</DashboardIconCap></div>

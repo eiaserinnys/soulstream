@@ -19,7 +19,6 @@
   --postit-footer-gap: calc(var(--v3-space-4) * var(--postit-scale) - (var(--postit-footer-height) - 32px * var(--postit-scale)));
   --postit-ink: #2e3d39;
   --postit-muted: #59635a;
-  --postit-paper: #fff7c6;
 }
 .v3-postit-grid {
   display: grid;

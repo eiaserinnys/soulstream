@@ -2,6 +2,7 @@ import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from 
 import {CardApiError} from "@seosoyoung/soul-ui/cards/card-api";
 import {CardExecutionSettingsDialog} from "./CardExecutionSettings";
 import { useEffect, useState, useMemo, useImperativeHandle, useSyncExternalStore, type Ref } from "react";
+import {CARD_COLORS, CARD_COLOR_KEYS} from "@seosoyoung/soul-ui/cards/card-types";
 import { Button, useDashboardStore, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
 import type { CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
@@ -12,7 +13,7 @@ import "./v3-card-status-picker.css";
 export type { CardStatusControl } from "./card-status-coordinator";
 import { cardStatusChoices, useCardStatusCoordinator, type CardStatusControl } from "./card-status-coordinator";
 import { useCardBoardLayer } from "./card-board-layer";
-export interface CardStatusHandle { request(status?:CardStatus):void; }
+export interface CardStatusHandle { request(status?:CardStatus):void; requestColor():void; }
 
 /** The existing status popup hosts all transition entry points. */
 export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activator}: {
@@ -30,12 +31,12 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
     try{return await control.change(latest,status,reason);}
     catch(error){if(status==='running'&&!latest.assigneeSessionId&&error instanceof CardApiError&&error.code==='CARD_EXECUTION_SETTINGS_REQUIRED'){setSettingsCard(latest);return;}throw error;}
   }});
-  const {open,changeOpen,detail,loading,busy,error,refresh,unavailable,change}=state;
+  const {open,view,changeOpen,detail,loading,busy,error,refresh,unavailable,change,changeColor,showColors,showStatuses}=state;
   // Base UI's Viewport remeasures content when the active trigger payload changes.
-  const popupContent=useMemo(()=>({error,execution,loading}),[error,execution,loading]);
+  const popupContent=useMemo(()=>({error,execution,loading,detail,view}),[error,execution,loading,detail,view]);
   const layer=useCardBoardLayer();
   useEffect(()=>{if(open)return layer?.claim();},[layer,open]);
-  useImperativeHandle(ref,()=>({request:status=>{void state.request(status);}}));
+  useImperativeHandle(ref,()=>({request:status=>{void state.request(status);},requestColor:()=>{void state.requestColor();}}));
   useEffect(()=>{activator?.onPopupOpenChange(open);},[activator?.onPopupOpenChange,open]);
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
   return <>{settingsCard?<CardExecutionSettingsDialog card={settingsCard} folders={folders} startAfterSave assignment={control.assignment} onSave={control.saveSettings} onStart={saved=>control.change(saved,"running")} onClose={()=>setSettingsCard(null)}/>:null}<Popover open={open} onOpenChange={(next,details)=>{
@@ -55,9 +56,19 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
         {execution && execution.phase!=='pending'?<><p role={execution.phase==='error'?'alert':'status'}>{execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?'다시 확인':'다시 시도'}</Button></>:null}
         {loading ? <p role="status">불러오는 중…</p> : null}
         {error ? <><p role={error.startsWith("실행 결과")?"status":"alert"}>{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? "갱신 후 재시도" : "다시 불러오기"}</Button></> : null}
-        <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"
-          aria-pressed={status === (detail?.card.status ?? card.status)} disabled={unavailable}
-          onClick={() => void change(status)}>{cardStatusLabel({...card, status,blockedKind:null,blockedDetail:null})}</Button>)}</div>
+        {view==="status"?<>
+          <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"
+            aria-pressed={status === (detail?.card.status ?? card.status)} disabled={unavailable}
+            onClick={() => void change(status)}>{cardStatusLabel({...card, status,blockedKind:null,blockedDetail:null})}</Button>)}</div>
+          {control.changeColor?<Button variant="menu" aria-pressed="false" disabled={unavailable} onClick={showColors}>
+            카드 색상: {CARD_COLORS[detail?.card.color??card.color??"yellow"].name}
+          </Button>:null}
+        </>:<>
+          <div aria-label="카드 색상 목록">{CARD_COLOR_KEYS.map(color=><Button key={color} variant="menu"
+            aria-pressed={color===(detail?.card.color??card.color??"yellow")} disabled={unavailable}
+            onClick={()=>void changeColor(color)}>{CARD_COLORS[color].name}</Button>)}</div>
+          <Button variant="ghost" disabled={busy} onClick={showStatuses}>돌아가기</Button>
+        </>}
       </div>
     </PopoverPopup>
   </Popover></>;
