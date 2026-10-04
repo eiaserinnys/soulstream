@@ -81,24 +81,13 @@ async function runScenarioPage(page, scenario, viewport) {
   await frame.getByTestId(`task-run-row-${firstLastId}`).waitFor();
   const initial = await frame.evaluate(() => ({
     requests: window.__folderSessionPageRequests ?? [],
-    rows: [...document.querySelectorAll('[data-testid^="task-run-depth-"]')].map(row => ({
-      id: row.getAttribute('data-testid'), top: row.getBoundingClientRect().top,
-      bottom: row.getBoundingClientRect().bottom,
-    })),
-    list: (() => {
-      const owner = document.querySelector('[data-testid="task-workspace-scroll"]');
-      const style = owner && getComputedStyle(owner);
-      return owner ? { rect: owner.getBoundingClientRect().toJSON(), scrollTop: owner.scrollTop,
-        scrollHeight: owner.scrollHeight, clientHeight: owner.clientHeight, overflowY: style?.overflowY,
-        viewport: { width: window.innerWidth, height: window.innerHeight } } : null;
-    })(),
+    rows: [...document.querySelectorAll('[data-testid^="task-run-depth-"]')]
+      .map(row => row.getAttribute('data-testid')),
   }));
   const scenarioEvidence = {
     scenario, viewport, stage: 'initial-render',
     initialRequests: summarizeRequests(initial.requests),
-    initialRowIds: initial.rows.map(row => row.id),
-    initialRows: initial.rows,
-    initialGeometry: initial.list,
+    initialRowIds: initial.rows,
   };
   evidence.scenarios.push(scenarioEvidence);
 
