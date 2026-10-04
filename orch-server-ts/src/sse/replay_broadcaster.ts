@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-export type SnapshotRefetchReason = "ring_gap" | "instance_mismatch";
+export type SnapshotRefetchReason = "ring_gap" | "instance_mismatch" | "catchup_overflow";
 
 export const SNAPSHOT_REFETCH_REASONS = [
   "ring_gap",
