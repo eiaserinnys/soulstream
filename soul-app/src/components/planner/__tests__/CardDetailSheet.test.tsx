@@ -49,6 +49,17 @@ beforeEach(async () => {
   useNodeConnectivityStore.getState().reset();
 });
 afterEach(() => jest.restoreAllMocks());
+test('상세 패널의 기존 상태 진입점에서 같은 색상 선택 메뉴를 연다', async () => {
+  const colored = { ...detail, card: { ...card, color: 'blue' } };
+  const api = { getCard: jest.fn().mockResolvedValue(colored) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
+
+  await act(async () => fireEvent.press(screen.getByLabelText('상태 변경')));
+  await waitFor(() => expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy());
+  expect(api.getCard).toHaveBeenCalledWith(card.id);
+});
+
 test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 접혀 있다', async () => {
   const api = { getCard: jest.fn().mockResolvedValue(detail), answerCardQuestion: jest.fn().mockResolvedValue({ card, folderId: card.folderId }) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);

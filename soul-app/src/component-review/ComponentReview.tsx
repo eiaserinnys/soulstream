@@ -16,6 +16,7 @@ import { ReviewSurfaces } from './ReviewSurfaces';
 import { ReviewBoard } from './ReviewBoard';
 import { ReviewBoardActions } from './ReviewBoardActions';
 import { ReviewPostIt } from './ReviewPostIt';
+import { ReviewCardColors } from './ReviewCardColors';
 import { ReviewBoardWorkspace } from './ReviewBoardWorkspace';
 import { ReviewCardHome } from './ReviewCardHome';
 import {ReviewFolderWorkspace} from './ReviewFolderWorkspace';
@@ -40,6 +41,7 @@ const sections = [
   { value: 'board', label: '보드' },
   { value: 'boardActions', label: '보드 액션' },
   { value: 'postit', label: '포스트잇' },
+  { value: 'cardColors', label: '카드 색상' },
   { value: 'boardConnected', label: '보드 연결' },
   { value: 'cardHome', label: '카드 홈' },
   {value:'folderWorkspace',label:'폴더 카드'},
@@ -88,6 +90,7 @@ function Gallery() {
   }), [t]);
   if (section === 'nativeSettings') return <ReviewNativeSettings/>;
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
+  if (section === 'cardColors') return <ReviewCardColors />;
   if (section === 'boardConnected') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoardWorkspace/></View>;
   if (section === 'board') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoard/></View>;
   if(section==='folderWorkspace')return <View style={{flex:1,backgroundColor:t.colors.background}}><ReviewFolderWorkspace/></View>;

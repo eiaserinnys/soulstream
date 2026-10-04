@@ -3,10 +3,12 @@ import { Text, View } from 'react-native';
 import { useTokens } from '../theme';
 import { PostItCard } from '../components/planner/PostItCard';
 import { makeCard } from './fixtures';
+import { CARD_COLOR_KEYS, CARD_COLORS } from '../../../packages/wire-schema/src/card_colors';
 
 export function ReviewPostIt() {
   const t = useTokens();
-  return <View testID="postit-size-comparison" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.uiSpacing.xl }}>
+  return <View style={{ gap: t.uiSpacing.xl }}>
+    <View testID="postit-size-comparison" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.uiSpacing.xl }}>
     {(['full', 'compact'] as const).flatMap((variant) => (['report', 'instruction'] as const).flatMap((kind) => (['short', 'long'] as const).map((title) => {
       const key = `${variant}-${kind}-${title}`;
       const card = { ...makeCard('review'), title: title === 'short' ? '짧은 제목' : '같은 긴 제목으로 두 줄 자연 높이와 말줄임을 확인하는 카드',
@@ -17,5 +19,15 @@ export function ReviewPostIt() {
         <PostItCard api={null} card={card} variant={variant} onOpen={() => {}} />
       </View>;
     })))}
+    </View>
+    <View testID="postit-color-review" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.uiSpacing.xl }}>
+      {CARD_COLOR_KEYS.map(color => {
+        const card = { ...makeCard('todo'), id: `review-postit-color-${color}`, title: `${CARD_COLORS[color].name} 카드`, color };
+        return <View key={color} style={{ gap: t.uiSpacing.sm }}>
+          <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>{CARD_COLORS[color].name}</Text>
+          <PostItCard api={null} card={card} onOpen={() => {}} />
+        </View>;
+      })}
+    </View>
   </View>;
 }

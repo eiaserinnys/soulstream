@@ -4,6 +4,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { CardStatusMenu } from '../CardStatusMenu';
 import { cardFixture } from '../../../test-support/cards';
+import { createCardColorReviewClient } from '../../../component-review/fixture-client';
 
 test('menu failure stays visible, successful explicit move closes only after save', async () => {
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
@@ -52,4 +53,73 @@ test('취소는 한 번 표시하고 실행 없이 취소 상태만 저장한다
   expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'cancelled', 3, expect.any(String), undefined);
   expect(api.executeCard).not.toHaveBeenCalled();
   expect(close).toHaveBeenCalledTimes(1);
+});
+
+test('색상 선택은 메뉴에서 실제 PATCH를 보내고 다시 조회한 카드에도 유지한다', async () => {
+  const fixture = createCardColorReviewClient('success');
+  const initialVersion = fixture.card.version;
+  const close = jest.fn();
+  const screen = render(<CardStatusMenu api={fixture.api} card={fixture.card} onClose={close} />);
+  await waitFor(() => expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy());
+
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 색상: 하늘')));
+  expect(screen.getByTestId('card-color-selection')).toBeTruthy();
+  expect(screen.getByTestId('card-color-option-blue').props.accessibilityState).toMatchObject({ selected: true });
+  await act(async () => fireEvent.press(screen.getByTestId('card-color-option-lavender')));
+
+  await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+  expect(fixture.calls).toHaveLength(1);
+  expect(fixture.calls[0]).toMatchObject({
+    id: fixture.card.id,
+    patch: { color: 'lavender' },
+    expectedVersion: initialVersion,
+  });
+  expect(fixture.calls[0].idempotencyKey).toMatch(/^soul-app-card-/);
+  expect((await fixture.api.getCard(fixture.card.id)).card).toMatchObject({ color: 'lavender', status: 'todo', version: initialVersion + 1 });
+});
+
+test('뒤로 돌아가면 기존 색을 유지하고 현재 색 선택은 PATCH 없이 닫는다', async () => {
+  const fixture = createCardColorReviewClient('success');
+  const close = jest.fn();
+  const screen = render(<CardStatusMenu api={fixture.api} card={fixture.card} onClose={close} />);
+  await waitFor(() => expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy());
+
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 색상: 하늘')));
+  await act(async () => fireEvent.press(screen.getByTestId('card-color-back')));
+  expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 색상: 하늘')));
+  await act(async () => fireEvent.press(screen.getByTestId('card-color-option-blue')));
+
+  expect(fixture.calls).toHaveLength(0);
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
+test('저장 실패는 색 선택 화면에 남고 다시 조회하면 서버의 현재 색을 보여준다', async () => {
+  const fixture = createCardColorReviewClient('error');
+  const close = jest.fn();
+  const screen = render(<CardStatusMenu api={fixture.api} card={fixture.card} onClose={close} />);
+  await waitFor(() => expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy());
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 색상: 하늘')));
+  await act(async () => fireEvent.press(screen.getByTestId('card-color-option-lavender')));
+
+  await waitFor(() => expect(screen.getByText('공개 예시: 색상을 저장하지 못했습니다.')).toBeTruthy());
+  expect(close).not.toHaveBeenCalled();
+  expect(screen.getByTestId('card-color-selection')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 다시 조회')));
+  await waitFor(() => expect(screen.getByTestId('card-color-option-blue').props.accessibilityState).toMatchObject({ selected: true }));
+  expect(fixture.calls).toHaveLength(1);
+});
+
+test('저장 중에는 색 선택 행을 비활성화하고 추가 PATCH를 막는다', async () => {
+  const fixture = createCardColorReviewClient('pending');
+  const close = jest.fn();
+  const screen = render(<CardStatusMenu api={fixture.api} card={fixture.card} onClose={close} />);
+  await waitFor(() => expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy());
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 색상: 하늘')));
+  await act(async () => fireEvent.press(screen.getByTestId('card-color-option-lavender')));
+
+  await waitFor(() => expect(screen.getByTestId('card-color-option-lavender').props.accessibilityState).toMatchObject({ disabled: true }));
+  fireEvent.press(screen.getByTestId('card-color-option-lavender'));
+  expect(fixture.calls).toHaveLength(1);
+  expect(close).not.toHaveBeenCalled();
 });

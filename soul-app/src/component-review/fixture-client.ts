@@ -1,4 +1,5 @@
 import type { ApiClient } from '../api/client';
+import type { CardDto, CardMutationResult, CardPatch } from '../api/cardTypes';
 import {
   createReviewApi,
   entryShellCatalogSessions,
@@ -6,6 +7,7 @@ import {
   entryShellSessions,
   folderTabReviewFolders,
   folders,
+  makeCard,
   starredFolders,
 } from './fixtures';
 import { nativeSettingsReviewApi } from './native-settings-fixtures';
@@ -36,6 +38,39 @@ const entryShellApi = {
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
 };
+
+export type CardColorReviewMode = 'success' | 'pending' | 'error';
+
+export function createCardColorReviewClient(mode: CardColorReviewMode = 'success') {
+  let card: CardDto = { ...makeCard('todo'), id: 'public-card-color', color: 'blue' };
+  let reads = 0;
+  const calls: Array<{ id: string; patch: CardPatch; expectedVersion: number; idempotencyKey: string }> = [];
+  const base = createReviewApi('normal', { home: true });
+  const reviewApi = {
+    ...base,
+    getCard: async (id: string) => {
+      if (id !== card.id) return base.getCard(id);
+      reads += 1;
+      return { card: { ...card }, reports: [], comments: [], questions: [], sessions: [] };
+    },
+    updateCard: async (id: string, patch: CardPatch, expectedVersion: number, idempotencyKey: string): Promise<CardMutationResult> => {
+      calls.push({ id, patch: { ...patch }, expectedVersion, idempotencyKey });
+      if (id !== card.id) throw new Error('알 수 없는 색상 공개 예시 카드');
+      if (!patch.color || !idempotencyKey) throw new Error('색상과 idempotencyKey가 필요합니다.');
+      if (mode === 'pending') return new Promise<CardMutationResult>(() => {});
+      if (mode === 'error') throw new Error('공개 예시: 색상을 저장하지 못했습니다.');
+      if (expectedVersion !== card.version) throw new Error('공개 예시: 버전 충돌');
+      card = { ...card, ...patch, version: card.version + 1 };
+      return { folderId: card.folderId, card: { ...card } };
+    },
+  };
+  return {
+    api: reviewApi as unknown as ApiClient,
+    get card() { return { ...card }; },
+    calls,
+    get readCount() { return reads; },
+  };
+}
 export function createApiClient(): ApiClient {
   const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
   if (section === 'folderTabs') {
@@ -43,6 +78,7 @@ export function createApiClient(): ApiClient {
     return { ...api, getCatalog: async () => ({ folders: empty ? [] : folderTabReviewFolders, sessions: {}, sessionList: [], total: 0 }),
       getStarredFolders: async () => ({ items: empty ? [] : starredFolders, nextCursor: null }) } as unknown as ApiClient;
   }
+  if (section === 'cardColors') return createCardColorReviewClient().api;
   if (section === 'nativeSettings') return nativeSettingsApi;
   if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
   if (section === 'dialogues') return dialogueApi;
