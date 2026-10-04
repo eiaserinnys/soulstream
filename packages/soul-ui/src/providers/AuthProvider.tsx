@@ -194,7 +194,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const configRes = await orchestratorFetch(fetch,"/api/auth/config", {
           credentials: "same-origin",
         });
-        if (!configRes.ok) throw new Error(`Config fetch failed: ${configRes.status}`);
+        if (!configRes.ok) throw Object.assign(new Error(`Config fetch failed: ${configRes.status}`), {status: configRes.status});
         const config = await configRes.json();
 
         if (!isMounted) return;
@@ -207,7 +207,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           const statusRes = await orchestratorFetch(fetch,"/api/auth/status", {
             credentials: "same-origin",
           });
-          if (!statusRes.ok) throw new Error(`Status fetch failed: ${statusRes.status}`);
+          if (!statusRes.ok) throw Object.assign(new Error(`Status fetch failed: ${statusRes.status}`), {status: statusRes.status});
           const status = await statusRes.json();
 
           if (!isMounted) return;

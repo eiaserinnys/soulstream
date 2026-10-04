@@ -80,10 +80,10 @@ export function createPlannerDataDependencies(
       });
       if (!response.ok) {
         const detail = await plannerResponseDetail(response);
-        throw new Error([
+        throw Object.assign(new Error([
           `플래너 요청 실패 (${response.status})`,
           detail,
-        ].filter(Boolean).join("\n"));
+        ].filter(Boolean).join("\n")), {status: response.status});
       }
       return await response.json();
     },

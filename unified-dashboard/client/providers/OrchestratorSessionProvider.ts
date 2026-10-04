@@ -86,7 +86,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
 
 async function fetchSessionPage(options?: FetchSessionsOptions): Promise<SessionListResult> {
   const res = await orchestratorFetch(fetch,buildFetchSessionsUrl("/api/sessions", options));
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), {status: res.status});
 
   const data: {
     sessions?: Array<Record<string, unknown>>;

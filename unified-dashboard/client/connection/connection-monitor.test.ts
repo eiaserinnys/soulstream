@@ -5,9 +5,47 @@ import {
   requestOrchestratorCheck,
   notifyOrchestratorShutdown,
   orchestratorFetch,
+  registerConnectionRecovery,
+  resynchronizeDashboard,
 } from "@seosoyoung/soul-ui/lib/orchestrator-connection";
 
 describe("connection owner", () => {
+  it("leaves planner and session permission errors on their existing surfaces after recovery", async () => {
+    const { createPlannerDataDependencies } =
+      await import("../v3/planner-data");
+    const { OrchestratorSessionProvider } =
+      await import("../providers/OrchestratorSessionProvider");
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(
+        async () => new Response("Forbidden", { status: 403 }),
+      );
+    const planner = createPlannerDataDependencies(fetcher);
+    const provider = new OrchestratorSessionProvider();
+    const disposePlanner = registerConnectionRecovery(async () => {
+      await planner.fetchPlanner("/api/planner/today");
+    });
+    const disposeSessions = registerConnectionRecovery(async () => {
+      await provider.fetchSessions();
+    });
+    try {
+      await expect(resynchronizeDashboard()).resolves.toBeUndefined();
+      await expect(
+        planner.fetchPlanner("/api/planner/today"),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(provider.fetchSessions()).rejects.toMatchObject({
+        status: 403,
+      });
+      fetcher.mockImplementation(
+        async () => new Response("Unavailable", { status: 503 }),
+      );
+      await expect(resynchronizeDashboard()).rejects.toThrow();
+    } finally {
+      disposePlanner();
+      disposeSessions();
+      fetcher.mockRestore();
+    }
+  });
   it("coalesces hints, polls only while disconnected and restores without reload", async () => {
     let finish!: (response: Response) => void;
     const fetch = vi.fn(
