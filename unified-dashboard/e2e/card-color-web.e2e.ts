@@ -1,12 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type { CardDetail, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { reviewCard, reviewDetail } from "../client/v3/components-review-fixtures";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const output = path.resolve("../../../.local/artifacts/20261005-card-color-web");
-const reviewOutput = path.resolve("../.local/artifacts/20261005-ux-color-review");
+const reviewOutput = path.resolve("../.local/artifacts/20261005-0605-color-sol-remediation");
 mkdirSync(output, { recursive: true });
 mkdirSync(reviewOutput, { recursive: true });
 
@@ -76,6 +77,9 @@ async function capture(page: Page, name: string) {
 async function captureReview(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: path.join(reviewOutput, `${name}.png`), animations: "disabled" });
+  const picker=page.locator('[data-card-status-picker][data-open]');
+  const metrics=await picker.evaluate(node=>{const style=getComputedStyle(node);return {box:node.getBoundingClientRect().toJSON(),background:style.backgroundColor,readingToken:style.getPropertyValue('--popover'),backdrop:style.backdropFilter,rows:[...node.querySelectorAll('button')].map(row=>({text:row.textContent,focused:row===document.activeElement,pressed:row.getAttribute('aria-pressed'),disabled:row.disabled,box:row.getBoundingClientRect().toJSON()}))};});
+  appendFileSync(path.join(reviewOutput, "captures.jsonl"), JSON.stringify({name,at:new Date().toISOString(),head:execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim(),viewport:page.viewportSize(),metrics})+"\n");
 }
 
 async function expectPickerInsideViewport(page: Page, width: number) {
@@ -147,7 +151,7 @@ for (const width of [390, 1440]) test(`stored card colors from list and detail a
 });
 
 for (const width of [390, 1440]) test(`color picker focus and selection indicator at ${width}px`, async ({ page }) => {
-  const { paper } = await prepare(page, width);
+  const { paper, writes } = await prepare(page, width);
   let picker;
   if (width === 1440) {
     await paper.locator(".v3-postit-open").click({ button: "right" });
@@ -156,33 +160,48 @@ for (const width of [390, 1440]) test(`color picker focus and selection indicato
   } else {
     await paper.getByRole("button", { name: "카드 상태 변경" }).click();
     const colorEntry = page.locator("[data-card-status-picker]").getByRole("button", { name: "카드 색상: 노랑", exact: true });
-    await colorEntry.focus();
+    for(let index=0;index<12&&!await colorEntry.evaluate(node=>node===document.activeElement);index++)await page.keyboard.press("Tab");
+    await expect(colorEntry).toBeFocused();
     await page.keyboard.press("Enter");
     picker = page.locator("[data-card-status-picker][data-open]");
   }
   await expect(picker).toBeVisible();
   const yellow = picker.getByRole("button", { name: "노랑", exact: true });
   await expect(yellow).toHaveAttribute("aria-pressed", "true");
+  // Settle both the popup's queued frame and layout focus before checking stability.
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
   await expect(yellow).toBeFocused();
   await expect(yellow.locator("svg[aria-hidden=true]")).toHaveCount(1);
   await expect(picker).toHaveClass(/glass-strong/);
   await expect(picker).toHaveClass(/glass-chrome/);
   const bounds = await picker.boundingBox();
   expect(bounds).not.toBeNull();
+  expect(bounds!.width).toBe(128);
+  if(width===1440)await expect(page.locator('[data-slot="popover-positioner"]').last()).toHaveAttribute('data-align','start');
+  const triggerBounds=await paper.getByRole('button',{name:'카드 상태 변경',exact:true}).boundingBox();
+  if(width===1440)expect(Math.abs(bounds!.x-triggerBounds!.x)).toBeLessThanOrEqual(1);
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.y).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width + 1);
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(1001);
   await captureReview(page, `color-focus-${width}`);
-  if (width === 390) {
-    for (const label of ["연분홍", "민트", "하늘", "연보라", "돌아가기"]) {
-      await page.keyboard.press("Tab");
-      await expect(picker.getByRole("button", { name: label, exact: true })).toBeFocused();
-    }
-  } else {
+  await expect(yellow).toBeFocused();
+  for (const label of ["연분홍", "민트", "하늘", "연보라", "돌아가기"]) {
+    await page.keyboard.press("Tab");
+    await expect(picker.getByRole("button", { name: label, exact: true })).toBeFocused();
+  }
+  await page.keyboard.press("Enter");
+  await expect(picker.getByRole("button",{name:"카드 색상: 노랑",exact:true})).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  expect(writes).toHaveLength(0);
+  if (width === 1440) {
     await page.goto("/components");
     const sample = page.getByTestId("postit-card-samples").locator("article.v3-postit-card").first();
     await sample.getByRole("button", { name: "카드 상태 변경" }).click();
+    const sampleStatus=page.locator("[data-card-status-picker][data-open]");
+    await expect(sampleStatus.getByRole("button",{name:"드래프트",exact:true})).toBeVisible();
+    await captureReview(page,"components-review-status-picker-1440");
     await page.locator("[data-card-status-picker][data-open]").getByRole("button", { name: "카드 색상: 노랑", exact: true }).click();
     const samplePicker = page.locator("[data-card-status-picker][data-open]");
     const selectedSampleColor = samplePicker.getByRole("button", { name: "노랑", exact: true });
@@ -193,8 +212,8 @@ for (const width of [390, 1440]) test(`color picker focus and selection indicato
   }
 });
 
-test("detail conflict keeps the color picker readable at 390px", async ({ page }) => {
-  const { paper } = await prepare(page, 390, true);
+for(const width of [390,1440])test(`detail conflict keeps the color picker readable at ${width}px`, async ({ page }) => {
+  const { paper } = await prepare(page, width, true);
   await paper.locator(".v3-postit-open").click();
   const detailPane = page.getByTestId("card-detail");
   await expect(detailPane).toBeVisible();
@@ -222,19 +241,19 @@ test("detail conflict keeps the color picker readable at 390px", async ({ page }
       background: style.backgroundColor,
       strong: resolveColor(style.getPropertyValue("--glass-surface-strong")),
       dense: resolveColor(style.getPropertyValue("--v3-glass-dense")),
-      cardSurface: resolveColor(style.getPropertyValue("--lg-card")),
+      readingSurface: resolveColor(style.getPropertyValue("--popover")),
     };
   });
-  expect(surfaces.background).toBe(surfaces.cardSurface);
-  expect(surfaces.strong).toBe(surfaces.dense);
+  expect(surfaces.background).toBe(surfaces.readingSurface);
+  expect(surfaces.strong).toBe(surfaces.readingSurface);
   await page.evaluate(() => document.fonts.ready);
   await expect.poll(async () => {
     const box = await picker.boundingBox();
-    return box !== null && box.x >= 0 && box.x + box.width <= 391 && box.y >= 0 && box.y + box.height <= 1001;
+    return box !== null && box.x >= 0 && box.x + box.width <= width+1 && box.y >= 0 && box.y + box.height <= 1001;
   }).toBe(true);
   const bounds = await picker.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(391);
-  await captureReview(page, "color-error-surface-390");
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width+1);
+  await captureReview(page, `color-error-surface-${width}`);
 });

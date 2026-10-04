@@ -318,8 +318,7 @@
 }
 
 .v3-card-status-picker {
-  --control-surface: var(--lg-card);
-  --glass-chrome-surface-strong: var(--v3-glass-dense);
+  --glass-chrome-surface-strong: var(--popover);
 }
 
 .v3-task-detail-layout {

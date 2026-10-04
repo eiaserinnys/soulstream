@@ -69,7 +69,7 @@ it("moves focus to the current color on entry and preserves a later keyboard cho
  await act(()=>root.render(<CardStatusPicker card={reviewCard} control={control} onOpen={onOpen}/>));
  expect(document.activeElement).toBe(button("연보라"));
 });
-it("focuses the current enabled color after requestColor finishes loading",async()=>{
+it("waits for requestColor loading without focusing Back, then focuses the current color once",async()=>{
  const d=detail();d.card.color="blue";
  let resolve!:(value:CardDetail)=>void;
  const load=vi.fn().mockReturnValue(new Promise<CardDetail>(done=>{resolve=done;}));
@@ -77,10 +77,18 @@ it("focuses the current enabled color after requestColor finishes loading",async
  await act(()=>root.render(<CardStatusPicker card={reviewCard} control={{pending:false,load,change,changeColor}} onOpen={onOpen} ref={handle}/>));
  await act(async()=>{handle.current?.requestColor();await Promise.resolve();});
  expect(button("하늘").disabled).toBe(true);
- await act(async()=>{resolve(d);await Promise.resolve();});
- await new Promise(done=>setTimeout(done,10));
- expect(button("하늘").disabled).toBe(false);
- expect(document.activeElement).toBe(button("하늘"));
+ await act(async()=>{await new Promise(done=>setTimeout(done,40));});
+ expect(document.activeElement).not.toBe(button("돌아가기"));
+ const currentFocus=vi.spyOn(button("하늘"),"focus");
+ vi.useFakeTimers();
+ try {
+  await act(async()=>{resolve(d);await Promise.resolve();});
+  expect(button("하늘").disabled).toBe(false);
+  expect(document.activeElement).toBe(button("하늘"));
+  expect(currentFocus).toHaveBeenCalledTimes(1);
+  await act(()=>root.render(<CardStatusPicker card={reviewCard} control={{pending:false,load,change,changeColor}} onOpen={onOpen} ref={handle}/>));
+  expect(currentFocus).toHaveBeenCalledTimes(1);
+ } finally {vi.useRealTimers();currentFocus.mockRestore();}
 });
 it("keeps a color conflict in the existing error and refresh flow before another save",async()=>{
  const d=detail();d.card.color="blue";

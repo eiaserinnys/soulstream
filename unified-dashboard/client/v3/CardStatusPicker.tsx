@@ -46,7 +46,7 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
   const initialColorFocus=useCallback(()=>{
     const selected=colorButtonRefs.current.get(currentColor);
     if(selected&&!selected.disabled)return selected;
-    return CARD_COLOR_KEYS.map(color=>colorButtonRefs.current.get(color)).find(button=>button&&!button.disabled)??null;
+    return CARD_COLOR_KEYS.map(color=>colorButtonRefs.current.get(color)).find(button=>button&&!button.disabled)??false;
   },[currentColor]);
   useLayoutEffect(()=>{
     const enteringColor=previousView.current!=="color"&&view==="color";
@@ -56,11 +56,8 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
     if(!pendingColorFocus.current||!open||view!=="color"||unavailable)return;
     const selected=colorButtonRefs.current.get(currentColor);
     const target=selected&&!selected.disabled?selected:CARD_COLOR_KEYS.map(color=>colorButtonRefs.current.get(color)).find(button=>button&&!button.disabled);
-    if(!target)return;
-    const focusTimeout=window.setTimeout(()=>{
-      if(open&&view==="color"&&target.isConnected&&!target.disabled){target.focus();pendingColorFocus.current=false;}
-    },0);
-    return ()=>window.clearTimeout(focusTimeout);
+    if(!target||!target.isConnected)return;
+    target.focus();pendingColorFocus.current=false;
   },[open,view,detail,loading,unavailable,currentColor]);
   // Base UI's Viewport remeasures content when the active trigger payload changes.
   const popupContent=useMemo(()=>({error,execution,loading,detail,view}),[error,execution,loading,detail,view]);
