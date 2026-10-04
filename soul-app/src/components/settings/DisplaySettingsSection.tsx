@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   StyleSheet,
   Text,
@@ -61,6 +62,12 @@ export function DisplaySettingsSection({
   onResetBackground(): void;
 }) {
   const t = useTokens();
+  const sourceIdentity = JSON.stringify(wallpaperPreviewSource);
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  useEffect(() => setFailedSource(null), [sourceIdentity]);
+  const photoFailed = failedSource === sourceIdentity;
+  useEffect(() => { if (photoFailed) AccessibilityInfo.announceForAccessibility('사진을 불러오지 못해 예시 이미지를 표시합니다.'); }, [photoFailed]);
+  const onPhotoFailure = useCallback((failed: boolean) => { if (failed) setFailedSource(sourceIdentity); }, [sourceIdentity]);
   const deviceWide = useDeviceType() !== 'phone';
   const workspace = useSettingsWorkspace();
   const wide = workspace ? workspace.wide && !workspace.columns : deviceWide;
@@ -94,7 +101,7 @@ export function DisplaySettingsSection({
                 style={[styles.wallpaperTile, wide && styles.wallpaperTileWide, selected && styles.wallpaperTileSelected]}
                 onPress={() => onWallpaperModeChange(option.value)}
               >
-                {option.value === 'photo' ? <SettingsPhoto testID="settings-wallpaper-photo-tile" source={wallpaperPreviewSource} style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: t.foundation.radius.field }}/> : <Ionicons
+                {option.value === 'photo' ? <SettingsPhoto testID="settings-wallpaper-photo-tile" source={wallpaperPreviewSource} onFailureChange={onPhotoFailure} style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: t.foundation.radius.field }}/> : <Ionicons
                   name={option.icon}
                   color={selected ? t.colors.accent : t.colors.textSecondary}
                   size={t.iconSize.prominent}
@@ -121,10 +128,10 @@ export function DisplaySettingsSection({
             <Text style={styles.rowLabel}>내 사진</Text>
             <SettingsPhoto
                 expandable testID="settings-wallpaper-preview"
-                source={wallpaperPreviewSource}
+                source={wallpaperPreviewSource} onFailureChange={onPhotoFailure}
                 style={styles.wallpaperPreview}
               />
-            <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>{status ?? (wallpaper.customImage ? '내 사진을 사용 중입니다.' : '사진을 선택하면 바로 적용합니다.')}</Text>
+            <Text accessibilityLiveRegion="polite" style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>{photoFailed ? '사진을 불러오지 못해 예시 이미지를 표시합니다.' : status ?? (wallpaper.customImage ? '내 사진이 설정돼 있습니다.' : '사진을 선택하면 바로 적용합니다.')}</Text>
             <View style={styles.actionRow}>
               <GlassButton
                 testID="settings-upload-background"

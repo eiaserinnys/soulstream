@@ -103,7 +103,11 @@ test('Claude authorization code submission preserves the existing API contract',
   await waitFor(() =>
     expect(screen.getByTestId('claude-code-input')).toBeTruthy(),
   );
-  fireEvent.changeText(screen.getByTestId('claude-code-input'), ' code ');
+  const code = screen.getByLabelText('인증 코드');
+  const before = StyleSheet.flatten(code.props.style).borderColor;
+  fireEvent(code, 'focus');
+  expect(StyleSheet.flatten(screen.getByLabelText('인증 코드').props.style).borderColor).not.toBe(before);
+  fireEvent.changeText(code, ' code ');
   await act(async () => {
     fireEvent.press(screen.getByTestId('claude-code-confirm'));
   });

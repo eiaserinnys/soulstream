@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   StyleSheet,
   Text,
@@ -31,6 +32,10 @@ export function SessionDiagnosticsSection({
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
+
+  const copyMessage = copyStatus === 'copied' ? '전체 JSON을 클립보드에 복사했습니다.'
+    : copyStatus === 'error' ? '클립보드에 복사하지 못했습니다. 다시 시도해 주세요.' : null;
+  useEffect(() => { if (copyMessage) AccessibilityInfo.announceForAccessibility(copyMessage); }, [copyMessage]);
 
   const reload = useCallback(async () => {
     const request = ++revision.current;
@@ -99,6 +104,8 @@ export function SessionDiagnosticsSection({
           </TouchableOpacity>
         </View>
       </View>
+      <Text style={styles.empty}>앱과 기기 정보 및 관련 폴더·프로젝트·세션 식별자를 포함한 전체 JSON을 클립보드에 복사합니다.</Text>
+      {copyMessage ? <Text accessibilityLiveRegion="polite" accessibilityRole={copyStatus === 'error' ? 'alert' : 'text'} style={copyStatus === 'error' ? styles.error : styles.success}>{copyMessage}</Text> : null}
       <SettingsSurface flattened={flattened} role="glassSoft" style={styles.surface}>
         {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
         {!loading && readError ? (
@@ -162,6 +169,7 @@ function makeStyles(t: DesignTokens) {
     message: { color: t.colors.error, ...t.foundation.typography.body },
     stack: { color: t.colors.textSecondary, ...t.foundation.typography.meta },
     empty: { color: t.colors.textTertiary, ...t.foundation.typography.body },
+    success: { color: t.colors.successText, ...t.foundation.typography.body },
     error: { color: t.colors.error, ...t.foundation.typography.body },
   });
 }

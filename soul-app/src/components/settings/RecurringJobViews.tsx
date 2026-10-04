@@ -1,3 +1,4 @@
+import { useTextInputContentHeight } from '../chat/useTextInputContentHeight';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -10,6 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 
 import {
@@ -213,7 +215,7 @@ export function RecurringJobEditor({
       if (isVersionConflict(cause) && job) {
         const refreshed = await loadExisting({ preserveDraft: true });
         setError(refreshed
-          ? '다른 변경을 반영했습니다. 입력은 보존했습니다. 최신 버전으로 다시 저장하세요.'
+          ? '다른 곳에서 작업이 변경됐습니다. 내 입력은 보존했습니다. 다시 저장하면 그 변경을 내 입력으로 덮어씁니다.'
           : '동시 수정은 감지됐지만 최신 버전을 불러오지 못했습니다. 입력은 보존했습니다. 새로고침 후 다시 저장하세요.');
       } else setError(errorMessage(cause));
     } finally { if (request === identityRevision.current) setSaving(false); }
@@ -358,7 +360,18 @@ function sessionAction(run: RecurringJobRunDto): { label: string; canOpen: boole
 
 function Input({ label, ...props }: { label: string } & React.ComponentProps<typeof TextInput>) {
   const t = useTokens(); const styles = useMemo(() => makeStyles(t), [t]);
-  return <View><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} style={[styles.input, props.multiline && styles.multiline]} placeholderTextColor={t.colors.textPlaceholder} {...props} /></View>;
+  const [focused, setFocused] = useState(false);
+  const { fontScale } = useWindowDimensions();
+  const lineHeight = t.foundation.typography.body.lineHeight * fontScale;
+  const measurement = useTextInputContentHeight(props.multiline ? props.value ?? '' : '', lineHeight);
+  const singleLine = Math.max(t.hitTarget.min, lineHeight + t.spacing.sm * 2 + styles.input.borderWidth * 2);
+  const height = Math.max(singleLine, props.value ? measurement.contentHeight + styles.input.borderWidth * 2 : 0);
+  const expanded = height > singleLine;
+  return <View><Text style={styles.label}>{label}</Text><TextInput {...props} accessibilityLabel={label}
+    ref={props.multiline ? measurement.ref : undefined} onContentSizeChange={props.multiline ? measurement.onContentSizeChange : undefined}
+    scrollEnabled={props.multiline ? false : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+    style={[styles.input, props.multiline && { height, paddingVertical: expanded ? t.spacing.sm : (singleLine - lineHeight - styles.input.borderWidth * 2) / 2, textAlignVertical: expanded ? 'top' : 'center' }, focused && { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }]}
+    placeholderTextColor={t.colors.textPlaceholder} /></View>;
 }
 function Action({ label, onPress, disabled, primary = false, testID }: { label: string; onPress(): void; disabled?: boolean; primary?: boolean; testID?: string }) {
   const t = useTokens(); const styles = useMemo(() => makeStyles(t), [t]);
@@ -381,4 +394,4 @@ function errorMessage(cause: unknown): string {
 }
 function isVersionConflict(cause: unknown): cause is ApiHttpError { return cause instanceof ApiHttpError && cause.status === 409; }
 
-function makeStyles(t: DesignTokens) { return StyleSheet.create({ block: { gap: t.spacing.sm }, editor: { paddingBottom: t.spacing.xl, gap: t.spacing.md }, headerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }, grow: { flex: 1, minWidth: 0 }, heading: { ...t.foundation.typography.body, fontWeight: '700', color: t.colors.textPrimary }, label: { ...t.foundation.typography.body, color: t.colors.textSecondary, marginBottom: t.spacing.xs }, help: { ...t.foundation.typography.body, color: t.colors.textMuted }, error: { ...t.foundation.typography.body, color: t.colors.error }, jobRow: { flexDirection: 'row', gap: t.spacing.sm, alignItems: 'center', minHeight: t.hitTarget.min, paddingVertical: t.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.colors.border }, jobName: { ...t.foundation.typography.body, color: t.colors.textPrimary }, disclosure: { color: t.colors.textMuted, fontSize: t.iconSize.standard }, input: { minHeight: t.hitTarget.min, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, borderRadius: t.foundation.radius.field, color: t.colors.textPrimary, paddingHorizontal: t.spacing.sm, paddingVertical: t.spacing.sm, ...t.foundation.typography.body }, multiline: { minHeight: 92, textAlignVertical: 'top' }, optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs, marginBottom: t.spacing.sm }, option: { minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, justifyContent: 'center', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, borderRadius: t.foundation.radius.field, paddingHorizontal: t.spacing.sm, paddingVertical: t.spacing.xs }, optionSelected: { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }, optionText: { ...t.foundation.typography.body, color: t.colors.textSecondary }, optionTextSelected: { color: t.colors.textPrimary, fontWeight: '700' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm }, action: { minHeight: t.hitTarget.min, justifyContent: 'center', alignItems: 'center', paddingHorizontal: t.spacing.md, borderRadius: t.foundation.radius.field, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, actionPrimary: { backgroundColor: t.colors.accent, borderColor: t.colors.accent }, actionText: { ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }, actionTextPrimary: { color: t.colors.accentText }, disabled: { opacity: 0.45 }, preview: { gap: t.spacing.xs, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, backgroundColor: t.colors.surfaceMuted } }); }
+function makeStyles(t: DesignTokens) { return StyleSheet.create({ block: { gap: t.spacing.sm }, editor: { paddingBottom: t.spacing.xl, gap: t.spacing.md }, headerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }, grow: { flex: 1, minWidth: 0 }, heading: { ...t.foundation.typography.body, fontWeight: '700', color: t.colors.textPrimary }, label: { ...t.foundation.typography.body, color: t.colors.textSecondary, marginBottom: t.spacing.xs }, help: { ...t.foundation.typography.body, color: t.colors.textMuted }, error: { ...t.foundation.typography.body, color: t.colors.error }, jobRow: { flexDirection: 'row', gap: t.spacing.sm, alignItems: 'center', minHeight: t.hitTarget.min, paddingVertical: t.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.colors.border }, jobName: { ...t.foundation.typography.body, color: t.colors.textPrimary }, disclosure: { color: t.colors.textMuted, fontSize: t.iconSize.standard }, input: { minHeight: t.hitTarget.min, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, borderRadius: t.foundation.radius.field, color: t.colors.textPrimary, paddingHorizontal: t.spacing.sm, paddingVertical: t.spacing.sm, ...t.foundation.typography.body }, optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs, marginBottom: t.spacing.sm }, option: { minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, justifyContent: 'center', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, borderRadius: t.foundation.radius.field, paddingHorizontal: t.spacing.sm, paddingVertical: t.spacing.xs }, optionSelected: { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }, optionText: { ...t.foundation.typography.body, color: t.colors.textSecondary }, optionTextSelected: { color: t.colors.textPrimary, fontWeight: '700' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm }, action: { minHeight: t.hitTarget.min, justifyContent: 'center', alignItems: 'center', paddingHorizontal: t.spacing.md, borderRadius: t.foundation.radius.field, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, actionPrimary: { backgroundColor: t.colors.accent, borderColor: t.colors.accent }, actionText: { ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }, actionTextPrimary: { color: t.colors.accentText }, disabled: { opacity: 0.45 }, preview: { gap: t.spacing.xs, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, backgroundColor: t.colors.surfaceMuted } }); }

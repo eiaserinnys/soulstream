@@ -243,7 +243,7 @@ export function SettingsContent({
 
   useSettingsSaveScope('connection', {
     dirty: urlInput.trim() !== serverUrl || typeInput !== serverType,
-    canSave: Boolean(urlInput.trim()), saveTestID: 'settings-save',
+    canSave: Boolean(urlInput.trim()), saveLabel: '연결 저장', saveTestID: 'settings-save',
     save: handleSave,
     discard: () => { setUrlInput(serverUrl); setTypeInput(serverType); setTestResult(null); setConnectionSaved(false); ++testRevision.current; setTesting(false); },
   });
@@ -287,6 +287,7 @@ export function SettingsContent({
               result={testResult}
               savedUrl={serverUrl}
               savedType={serverType}
+              runtimeMode={mode}
               saved={connectionSaved}
               hideSave={Boolean(workspace)}
               onUrlChange={(value) => {

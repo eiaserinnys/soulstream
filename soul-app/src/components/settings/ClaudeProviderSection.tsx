@@ -51,6 +51,7 @@ export function ClaudeProviderSection({
   const [loginLoading, setLoginLoading] = useState(false);
   const [showCodeInput, setShowCodeInput] = useState(false);
   const [codeValue, setCodeValue] = useState('');
+  const [codeFocused, setCodeFocused] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [claudeError, setClaudeError] = useState<string | null>(null);
 
@@ -232,7 +233,9 @@ export function ClaudeProviderSection({
           </Text>
           <TextInput
             testID="claude-code-input"
-            style={styles.codeInput}
+            accessibilityLabel="인증 코드"
+            onFocus={() => setCodeFocused(true)} onBlur={() => setCodeFocused(false)}
+            style={[styles.codeInput, codeFocused && { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }]}
             value={codeValue}
             onChangeText={setCodeValue}
             placeholder="YSrAXqZq...#7RVDts..."

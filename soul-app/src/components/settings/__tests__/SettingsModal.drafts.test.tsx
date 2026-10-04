@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { SettingsModal } from '../SettingsModal';
@@ -136,9 +136,33 @@ test('사진 로딩 오류는 렌더링 대체 그림만 바꾸고 설정과 인
   const image = screen.getByTestId('settings-wallpaper-preview');
   expect(image.props.source).toEqual({ uri: 'file://before.jpg' });
   fireEvent(image, 'error');
+  expect(screen.getByText('사진을 불러오지 못해 예시 이미지를 표시합니다.').props.accessibilityLiveRegion).toBe('polite');
+  fireEvent(screen.getByTestId('settings-wallpaper-preview'), 'load');
+  expect(screen.getByText('사진을 불러오지 못해 예시 이미지를 표시합니다.')).toBeTruthy();
   expect(screen.getByTestId('settings-wallpaper-preview').props.source).toEqual(require('../../../../assets/settings-wallpaper-fallback.jpg'));
   expect(useSettingsStore.getState().wallpaper).toEqual({ mode: 'photo', customImage: 'file://before.jpg' });
   await act(async () => useSettingsStore.setState({ wallpaper: { mode: 'photo', customImage: 'file://next.jpg' } }));
   expect(screen.getByTestId('settings-wallpaper-preview').props.source).toEqual({ uri: 'file://next.jpg' });
   expect(api.putUserPreferences).not.toHaveBeenCalled();
+  expect(screen.queryByText('사진을 불러오지 못해 예시 이미지를 표시합니다.')).toBeNull();
+});
+
+test('연결 저장 전 URL 변경 영향과 실제 mode를 분류 라벨과 구분한다', async () => {
+  api.getConfig.mockResolvedValueOnce({ mode: 'orchestrator' });
+  const screen = render(<SettingsModal visible onClose={jest.fn()}/>);
+  await act(async () => {});
+  fireEvent.press(screen.getByTestId('settings-category-connection'));
+  expect(screen.getByText('확인된 실행 모드: 오케스트레이터')).toBeTruthy();
+  expect(screen.getByText('저장 유형: 소울 서버')).toBeTruthy();
+  expect(screen.getByText('서버 유형은 저장 분류이며 서버 실행 모드를 바꾸지 않습니다.')).toBeTruthy();
+  const input = screen.getByLabelText('서버 URL');
+  const before = StyleSheet.flatten(input.props.style).borderColor;
+  fireEvent(input, 'focus');
+  expect(StyleSheet.flatten(screen.getByLabelText('서버 URL').props.style).borderColor).not.toBe(before);
+  fireEvent(input, 'blur');
+  expect(StyleSheet.flatten(screen.getByLabelText('서버 URL').props.style).borderColor).toBe(before);
+  fireEvent.changeText(input, 'https://other.test');
+  expect(screen.getByText('연결을 저장하면 현재 로그인이 초기화됩니다. 새 서버에 다시 로그인해 주세요.')).toBeTruthy();
+  expect(screen.getByLabelText('연결 저장')).toBeTruthy();
+  expect(useAuthStore.getState().jwt).toBe('test-auth');
 });
