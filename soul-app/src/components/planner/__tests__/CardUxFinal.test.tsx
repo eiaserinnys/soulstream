@@ -170,11 +170,22 @@ test('보고 미리보기는 HTML과 markdown의 전체 문단을 유지한 채 
   expect(StyleSheet.flatten(screen.getByLabelText('커멘트').props.style).minHeight).toBe(48);
 });
 
-test('검수 전 카드에도 완료 동작과 상태 메뉴를 노출한다', async () => {
-  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue({ ...detail, card: { ...card, status: 'todo' } }) } as any} cardId={card.id} onClose={jest.fn()} />);
+test('드래프트 상세는 시작하기와 상태 메뉴를 노출하고 시작 뒤에도 열린다', async () => {
+  const source = { ...card, status: 'todo' };
+  const started = { ...source, status: 'running', version: source.version + 1 };
+  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, card: source }),
+    executeCard: jest.fn().mockResolvedValue({ card: started, execution: { requestId: 'ux-request', sessionId: 'root', state: 'started' } }) };
+  const close = jest.fn();
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={close} />);
   await waitFor(() => expect(screen.getByText('할 일')).toBeTruthy());
-  expect(screen.getByLabelText('완료')).toBeTruthy();
+  expect(screen.getByLabelText('시작하기')).toBeTruthy();
+  expect(screen.queryByLabelText('완료')).toBeNull();
   expect(screen.getByLabelText('상태 변경')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('시작하기')));
+  expect(api.executeCard).toHaveBeenCalledWith(card.id, source.version, expect.any(String));
+  expect(screen.getByLabelText('완료')).toBeTruthy();
+  expect(useCardStore.getState().rows[card.id].status).toBe('running');
+  expect(close).not.toHaveBeenCalled();
 });
 
 

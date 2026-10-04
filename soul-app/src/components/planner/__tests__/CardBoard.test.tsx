@@ -8,6 +8,7 @@ import { CardBoard } from '../CardBoard';
 import { FolderCardList } from '../FolderCardList';
 import { CompletedCardsToggle } from '../CompletedCardsToggle';
 import { ReviewBoardActions } from '../../../component-review/ReviewBoardActions';
+import { useCardStore } from '../../../store/cardStore';
 
 const cards = (['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'] as const)
   .map((status) => cardFixture({ id: status, title: status, status }));
@@ -80,20 +81,36 @@ test('보드의 시간과 완료 액션은 보조정보 옆 한 행이며 같은
 });
 
 
-test('drop execute pending keeps the original lane and shows a retry notice',async()=>{
+test('drop execute pending shows acceptance then observes the same request in the running lane',async()=>{
   const {Alert}=require('react-native');
   const {act}=require('@testing-library/react-native');
   const {BoardDragCard}=require('../BoardDragCard');
   const source=cardFixture({id:'drop-pending'});
+  const accepted={...source,status:'running' as const,version:source.version+1,assigneeKind:'session' as const,assigneeSessionId:'drop-session'};
   const api={getCard:jest.fn().mockResolvedValue({card:source,reports:[],questions:[],sessions:[]}),
-    executeCard:jest.fn().mockResolvedValue({card:source,folderId:source.folderId,execution:{requestId:'drop-request',sessionId:'drop-session',state:'pending'}})};
+    executeCard:jest.fn().mockResolvedValue({card:accepted,execution:{requestId:'drop-request',sessionId:'drop-session',state:'pending'}}),
+    getCardExecution:jest.fn().mockResolvedValue({card:accepted,execution:{requestId:'drop-request',sessionId:'drop-session',state:'started'}})};
   const alert=jest.spyOn(Alert,'alert').mockImplementation(()=>{});
-  const screen=render(<CardBoard phone={false} api={api as any} cards={[source]} onOpen={()=>{}}/>);
-  fireEvent(screen.getByTestId('card-board-frame'),'layout',{nativeEvent:{layout:{width:1400,height:600}}});
-  await act(async()=>screen.UNSAFE_getAllByType(BoardDragCard)[0].props.onDrop({absoluteX:650,absoluteY:200,x:0,y:0}));
-  expect(api.executeCard).toHaveBeenCalledTimes(1);
-  expect(alert).toHaveBeenCalledWith('카드 변경 실패',expect.stringContaining('같은 요청'));
-  expect(within(screen.getByTestId('card-board-column-todo')).getByTestId('postit-card-drop-pending')).toBeTruthy();
-  expect(within(screen.getByTestId('card-board-column-running')).queryByTestId('postit-card-drop-pending')).toBeNull();
-  alert.mockRestore();
+  // Board cards are controlled by the same store updated by execution results.
+  function Sample(){const current=useCardStore(state=>state.rows[source.id]??source);return <CardBoard phone={false} api={api as any} cards={[current]} onOpen={()=>{}}/>;}
+  jest.useFakeTimers();
+  try {
+    const screen=render(<Sample/>);
+    fireEvent(screen.getByTestId('card-board-frame'),'layout',{nativeEvent:{layout:{width:1400,height:600}}});
+    await act(async()=>screen.UNSAFE_getAllByType(BoardDragCard)[0].props.onDrop({absoluteX:650,absoluteY:200,x:0,y:0}));
+    expect(api.executeCard).toHaveBeenCalledTimes(1);
+    expect(api.getCardExecution).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
+    expect(within(screen.getByTestId('card-board-column-todo')).queryByTestId('postit-card-drop-pending')).toBeNull();
+    const lane=within(screen.getByTestId('card-board-column-running'));
+    expect(lane.getByTestId('postit-card-drop-pending')).toBeTruthy();
+    expect(lane.getByText('시작 중…')).toBeTruthy();
+    await act(async()=>jest.advanceTimersByTimeAsync(1000));
+    expect(api.getCardExecution).toHaveBeenCalledWith(source.id,'drop-request');
+    expect(api.executeCard).toHaveBeenCalledTimes(1);
+    expect(lane.queryByText('시작 중…')).toBeNull();
+    expect(lane.getByTestId('postit-card-drop-pending')).toBeTruthy();
+    expect(useCardStore.getState().rows[source.id].assigneeSessionId).toBe('drop-session');
+    expect(alert).not.toHaveBeenCalled();
+  } finally {jest.useRealTimers();alert.mockRestore();}
 });
