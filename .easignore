@@ -14,6 +14,11 @@
 !/packages/soul-ui/src/lib
 /packages/soul-ui/src/lib/*
 !/packages/soul-ui/src/lib/safe-error-detail.ts
+!/packages/wire-schema
+/packages/wire-schema/*
+!/packages/wire-schema/src
+/packages/wire-schema/src/*
+!/packages/wire-schema/src/card_colors.ts
 
 # .easignore replaces all .gitignore files, including soul-app/.gitignore.
 node_modules/
