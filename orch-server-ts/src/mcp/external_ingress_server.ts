@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { mcpToolDefinitions, LIVE_CARD_RESOURCE, errorResult } from "@soulstream/mcp-contract";
+import { mcpToolDefinitions, recurringJobTools, LIVE_CARD_RESOURCE, errorResult } from "@soulstream/mcp-contract";
 import { widgetHtml } from "../../../plugins/chatgpt-card-renderer/src/widget-html.js";
 import { executeMcpTool } from "./tool_executor.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
@@ -17,9 +17,12 @@ export function guardExternalToolCall(name: string, args: unknown) {
 export function buildExternalMcpServer(options: McpHostOptions, context: McpCallContext) {
   const server = new McpServer({ name: "soul-server-ts", version: "0.0.1" });
   for (const definition of mcpToolDefinitions) {
-    if (definition.audience !== "all") continue;
+    if (definition.audience !== "all" && !(context.ownedAgent && definition.name in recurringJobTools)) continue;
     const externalInputSchema = "externalInputSchema" in definition ? definition.externalInputSchema : undefined;
-    const config = externalInputSchema ? { ...definition.config, inputSchema: externalInputSchema } : definition.config;
+    const inputSchema = externalInputSchema ?? definition.config.inputSchema;
+    const config = definition.name in recurringJobTools
+      ? { ...definition.config, inputSchema: Object.fromEntries(Object.entries(inputSchema).filter(([key]) => key !== "caller_session_id")) }
+      : externalInputSchema ? { ...definition.config, inputSchema: externalInputSchema } : definition.config;
     server.registerTool(definition.name, config, args => executeMcpTool(options, definition.name, args, context));
   }
   server.registerResource("soulstream-live-cards", LIVE_CARD_RESOURCE, {}, async () => ({ contents: [{

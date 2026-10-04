@@ -23,6 +23,8 @@ import { registerSessionMgmtTools } from "./tools/session_mgmt.js";
 import { registerSessionQueryTools } from "./tools/session_query.js";
 import { registerSkillsTools } from "./tools/skills.js";
 import { registerWorktreeTools } from "./tools/worktree.js";
+import { ownedAgentTools } from "@soulstream/mcp-contract";
+import { registerOrchestratorTools } from "./orchestrator_tools.js";
 import { registerExternalLlmTools } from "./tools/external_llm.js";
 
 export function buildMcpServer(runtime: McpRuntime): McpServer {
@@ -45,6 +47,7 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerPageTools(inventoryServer, runtime);
   registerWorktreeTools(inventoryServer, runtime);
   registerRecurringJobTools(inventoryServer, runtime);
+  registerOrchestratorTools(inventoryServer, runtime, Object.values(ownedAgentTools));
   registerCardOrchestrationTools(inventoryServer, runtime);
   registerExternalLlmTools(inventoryServer, runtime);
   return server;

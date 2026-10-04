@@ -100,6 +100,14 @@ describe("recurring-job MCP tools", () => {
       run_at: "2026-09-30T09:00:00+09:00",
     });
   });
+  it("forwards an evicted session identity for central recovery without requiring memory email", async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ jobs: [] })); vi.stubGlobal("fetch", fetch);
+    const { call } = register();
+    expect((await withMcpRequestContext({ callerSessionId: "evicted-session" }, () => call("list_recurring_jobs", {}))).isError).not.toBe(true);
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+    expect(body.context.caller_session_id).toBe("evicted-session");
+    expect(body.context.callerInfo).not.toHaveProperty("email");
+  });
 });
 
 function register() {

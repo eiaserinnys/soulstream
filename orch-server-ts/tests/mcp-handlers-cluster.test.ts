@@ -166,7 +166,7 @@ it("rejects every recurring operation for an untrusted external caller", async (
   const f = fixture();
   const required = { job_id: "job-1", expected_version: 1, ...createInput, run_at: "2026-09-29T09:00:00+09:00" };
   for (const name of Object.keys(recurringJobTools) as Array<keyof typeof recurringJobTools>) {
-    expect(await f.call(name, { ...required, caller_session_id: "also-spoofed" }, { ...context, principal: "external", callerSessionId: "spoofed-session" })).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("untrusted external or LLM") } });
+    expect(await f.call(name, { ...required, caller_session_id: "also-spoofed" }, { ...context, principal: "external", callerSessionId: "spoofed-session" })).toMatchObject({ isError: true, structuredContent: { error: "Recurring-job tools require a registered external agent." } });
   }
 });
 
@@ -198,7 +198,8 @@ it("uses the verified normal caller-session actor for query, creation, and updat
   const create = vi.fn(async () => ({ jobId: "job-1" }));
   const update = vi.fn(async () => ({ jobId: "job-1", version: 2 }));
   f.options.recurringJobs = { service: { list, create, update } } as never;
-  const c = { ...context, callerSessionId: "caller-session", callerInfo: { email: "owner@example.com" } };
+  f.options.resolveSessionOwner = vi.fn(async () => ({ ownerEmail: "owner@example.com", callerInfo }));
+  const c = { ...context, callerSessionId: "caller-session", callerInfo: { email: "unverified@example.com" } };
   expect((await f.call("list_recurring_jobs", {}, c)).isError).not.toBe(true);
   expect(await f.call("create_recurring_job", createInput, c)).toMatchObject({ structuredContent: { job: { job_id: "job-1" } } });
   expect(await f.call("update_recurring_job", { job_id: "job-1", expected_version: 1, enabled: true }, c)).toMatchObject({ structuredContent: { job: { job_id: "job-1", version: 2 } } });
@@ -206,4 +207,5 @@ it("uses the verified normal caller-session actor for query, creation, and updat
   expect(list).toHaveBeenCalledWith(actor, false);
   expect(create).toHaveBeenCalledWith(actor, expect.objectContaining({ name: "music recommendation", idempotencyKey: "recurring:create:1", enabled: false }));
   expect(update).toHaveBeenCalledWith(actor, "job-1", { expectedVersion: 1, enabled: true });
+  expect(f.options.resolveSessionOwner).toHaveBeenCalledWith("caller-session");
 });

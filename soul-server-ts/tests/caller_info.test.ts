@@ -4,6 +4,15 @@ import {
   buildAgentCallerInfo,
   buildCallerInfoFromCallerSession,
 } from "../src/caller_info.js";
+
+it("retains validated external ownership evidence on an internal delegation without changing agent user_id", () => {
+  const result = buildCallerInfoFromCallerSession({ nodeId: "node",
+    taskManager: { getTask: () => ({ profileId: "roselin", callerInfo: { source: "dot", email: "person@example.test", external_agent_id: "registered-dot" } }) },
+    agentRegistry: { get: () => ({ id: "roselin", name: "로젤린" }) },
+  }, "stored-parent");
+  expect(result).toMatchObject({ source: "agent", agent_id: "roselin", user_id: "roselin", display_name: "로젤린",
+    email: "person@example.test", external_agent_id: "registered-dot" });
+});
 import { assertRunnerJsonValue } from "../src/runner/frame_protocol.js";
 import type { CallerInfo } from "../src/task/task_models.js";
 

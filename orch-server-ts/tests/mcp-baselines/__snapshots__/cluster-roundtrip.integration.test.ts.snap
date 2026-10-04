@@ -50,11 +50,11 @@ exports[`cluster MCP roundtrip > preserves recurring external mutation > result 
   "content": [
     {
       "type": "text",
-      "text": "Recurring-job tools are not available to untrusted external or LLM callers."
+      "text": "Recurring-job tools require a registered external agent."
     }
   ],
   "structuredContent": {
-    "error": "Recurring-job tools are not available to untrusted external or LLM callers."
+    "error": "Recurring-job tools require a registered external agent."
   },
   "isError": true
 }"
@@ -69,11 +69,11 @@ exports[`cluster MCP roundtrip > preserves recurring external query > result 1`]
   "content": [
     {
       "type": "text",
-      "text": "Recurring-job tools are not available to untrusted external or LLM callers."
+      "text": "Recurring-job tools require a registered external agent."
     }
   ],
   "structuredContent": {
-    "error": "Recurring-job tools are not available to untrusted external or LLM callers."
+    "error": "Recurring-job tools require a registered external agent."
   },
   "isError": true
 }"

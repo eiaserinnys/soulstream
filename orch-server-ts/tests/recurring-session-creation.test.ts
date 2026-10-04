@@ -14,6 +14,14 @@ import type { SessionCommandRouter } from "../src/session/session_command_router
 const sessionId = "81d61f13-b99b-4c58-9830-55487618e4dc";
 
 describe("recurring session creation", () => {
+  it("preserves stored external provenance and owner without a live initiating session", async () => {
+    const callerInfo = { source: "dot", agent_id: "registered-dot", external_agent_id: "registered-dot", email: "person@example.test" };
+    const createSession = vi.fn((_payload: unknown) => ({ node: { nodeId: "node-a" }, command: { requestId: "request" }, modelPresetId: "preset-a" }));
+    const sendPendingCommand = vi.fn(async () => ({ type: "session_created", agentSessionId: sessionId }));
+    await createRecurringSession({ router: { createSession, waitForCreatedSession: async () => true } as unknown as SessionCommandRouter,
+      bridge: { sendPendingCommand } as unknown as SessionCommandTransportBridge }, { ...input(), callerInfo });
+    expect(createSession.mock.calls[0]![0]).toMatchObject({ caller_info: callerInfo });
+  });
   it("rejects an invalid persisted session ID before it can create a node command", async () => {
     const createSession = vi.fn();
 

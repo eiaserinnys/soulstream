@@ -1,3 +1,4 @@
+import { withVerifiedSessionOwner } from "../session/session_owner.js";
 import { STATUS_CODES } from "node:http";
 import { recurringJobTools, errorResult, jsonResult, readOrchErrorEnvelopeText, type CallToolResult } from "@soulstream/mcp-contract";
 import { executeRecurringJobHostOperation } from "../recurring-jobs/recurring_job_host_routes.js";
@@ -6,15 +7,24 @@ import type { McpCallContext, McpHostOptions } from "./types.js";
 type Args = Record<string, unknown>;
 type Handler = (options: McpHostOptions, args: Args, context: McpCallContext) => Promise<CallToolResult>;
 const invoke = (operation: string, body: (args: Args) => Args): Handler => async (options, args, context) => {
-  if (context.principal === "external") return errorResult("Recurring-job tools are not available to untrusted external or LLM callers.");
   const explicit = typeof args.caller_session_id === "string" ? args.caller_session_id.trim() : "";
-  const actorId = explicit || context.callerSessionId;
-  if (!actorId) return errorResult("A trusted Soulstream caller session is required for recurring-job tools.");
-  const email = context.callerInfo?.email;
-  if (typeof email !== "string" || !email.trim()) return errorResult("The trusted caller session has no verified owner email for recurring-job access.");
   try {
+    let actor;
+    if (context.principal === "external") {
+      if (!context.ownedAgent) return errorResult("Recurring-job tools require a registered external agent.");
+      actor = { ownerEmail: context.ownedAgent.ownerEmail, actorId: context.ownedAgent.agentId,
+        callerInfo: context.callerInfo!, source: "external-llm" as const };
+    } else {
+      if (explicit && context.callerSessionId && explicit !== context.callerSessionId)
+        return errorResult("caller_session_id does not match authenticated session");
+      const id = context.callerSessionId || explicit;
+      if (!id) return errorResult("A trusted Soulstream caller session is required for recurring-job tools.");
+      const owner = await options.resolveSessionOwner?.(id);
+      if (!owner) return errorResult("The trusted caller session has no verified owner email for recurring-job access.");
+      actor = { ownerEmail: owner.ownerEmail, actorId: id, callerInfo: withVerifiedSessionOwner(context.callerInfo, owner)!, source: "agent" as const };
+    }
     const response = await executeRecurringJobHostOperation(options.recurringJobs.service, operation, {
-      actor: { ownerEmail: email, actorId, callerInfo: context.callerInfo, source: "agent" }, ...body(args),
+      actor, ...body(args),
     });
     const serialized = JSON.parse(JSON.stringify(response.body));
     if (response.status !== 200) {

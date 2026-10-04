@@ -1,3 +1,6 @@
+import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
+import { OwnedAgentService } from "./owned-agents/service.js";
+import { createSessionOwnerResolver } from "./session/session_owner.js";
 import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
 import type { McpHostOptions } from "./mcp/types.js";
 import { createLiveJevCardObservation } from "./cards/live_jev_card_observation.js";
@@ -531,6 +534,14 @@ export async function createLiveProductionApplication(
       processEnv: ephemeralProcessEnv,
     }),
   };
+  const ownedAgentRepository = new SqlOwnedAgentRepository(sqlResolver);
+  const ownedAgentService = new OwnedAgentService(ownedAgentRepository,
+    dbCatalogRepository.adminUsersRepository.findUserByEmail, config.mcp_external_ingress_bearer_token);
+  const resolveSessionOwner = createSessionOwnerResolver({
+    getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
+    findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
+    findExternalAgent: ownedAgentService.findAgent,
+  });
   const orchestrationAccess = createCardOrchestrationAccess({
     getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
     listFolders: async () => providers.folderRoutes.provider.listFolders(),
@@ -600,9 +611,11 @@ export async function createLiveProductionApplication(
   }) : undefined;
   const app = createApp({
     externalEvents,
+    ownedAgentRoutes: { currentEmail: providers.adminUsersRoutes.provider.currentEmail, service: ownedAgentService },
+    resolveSessionOwner,
     ...(config.mcp_external_ingress_enabled ? { externalIngress: {
       path: config.mcp_external_ingress_path!, nodeId: config.node_name!, source: config.mcp_external_ingress_source!,
-      displayName: config.mcp_external_ingress_display_name!,
+      displayName: config.mcp_external_ingress_display_name!, ownedAgents: ownedAgentService,
       auth: { requireAuth: true, bearerToken: config.mcp_external_ingress_bearer_token!, allowedHosts: config.mcp_allowed_hosts! },
     } } : {}),
     ...buildProductionRouteOptions(

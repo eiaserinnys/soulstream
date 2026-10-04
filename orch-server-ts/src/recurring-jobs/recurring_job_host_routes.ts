@@ -119,7 +119,7 @@ function actorValue(value: unknown): RecurringJobActor | null {
     typeof actor.ownerEmail !== "string" || !actor.ownerEmail.trim() ||
     typeof actor.actorId !== "string" || !actor.actorId.trim() ||
     !actor.callerInfo || typeof actor.callerInfo !== "object" || Array.isArray(actor.callerInfo) ||
-    (source !== "browser" && source !== "soul-app" && source !== "agent" && source !== "scheduler")
+    (source !== "browser" && source !== "soul-app" && source !== "agent" && source !== "scheduler" && source !== "external-llm")
   ) return null;
   return {
     ownerEmail: actor.ownerEmail,

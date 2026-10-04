@@ -2,6 +2,7 @@ import { sessionMessageHandlers } from "./session_message_handlers.js";
 import { externalLlmHandlers } from "./external_llm_handlers.js";
 import { clusterHandlers } from "./cluster_handlers.js";
 import { cardOrchestrationHandlers } from "./card_orchestration_handlers.js";
+import { ownedAgentHandlers } from "./owned_agent_handlers.js";
 import { recurringJobHandlers } from "./recurring_job_handlers.js";
 import { z } from "zod";
 import { mcpToolDefinitions, errorResult, type McpToolName } from "@soulstream/mcp-contract";
@@ -20,6 +21,7 @@ export const mcpToolHandlers = {
   ...clusterHandlers,
   ...cardOrchestrationHandlers,
   ...recurringJobHandlers,
+  ...ownedAgentHandlers,
   ...folderObjectHandlers,
   ...cardHandlers,
   ...boardHandlers,
