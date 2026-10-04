@@ -27,7 +27,7 @@ export type AuthorizeOrchestrationWorker = (request: OrchestrationWorkerAdmissio
 
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
-  taskManager: Pick<TaskManager, "createTask" | "addIntervention">;
+  taskManager: Pick<TaskManager, "createTask" | "addIntervention"> & Partial<Pick<TaskManager, "ensureRunning">>;
   taskExecutor: Pick<TaskExecutor, "startNewExecution">;
   logger: Logger;
   modelCatalog?: Pick<ModelCatalog, "resolve">;
@@ -264,6 +264,18 @@ export class TaskRuntimeCommands {
       },
       (task, activation) => this.startResumedTask(task, activation),
     );
+  }
+
+  async ensureSessionRunning(params: InterveneRuntimeParams) {
+    if (!params.deliveryId) throw new Error("ensure_session_running requires deliveryId");
+    if (!this.deps.taskManager.ensureRunning) throw new Error("ensure running is unavailable");
+    return this.deps.taskManager.ensureRunning({
+      agentSessionId: params.agentSessionId, text: params.text,
+      user: params.user ?? "upstream", callerInfo:params.callerInfo,
+      attachmentPaths:params.attachmentPaths,deliveryId:params.deliveryId,
+      deliveryIntent:"durable_next_turn",source:"card_execution",
+      completionId:params.deliveryId,relationKey:params.deliveryId,
+    }, (task,activation)=>this.startResumedTask(task,activation));
   }
 
   private async authorizeWorker(sessionId: string, marker?: OrchestrationWorkerAdmission, cardId?: string | null): Promise<void> {

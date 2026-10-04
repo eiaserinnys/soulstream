@@ -182,12 +182,13 @@ function createFakeSql(row: Record<string, unknown>): { sql: LivePostgresSql } {
     if (text.includes("session_get_all")) return [row];
     return [];
   });
-  return {
-    sql: Object.assign(query, {
+  const sql = Object.assign(query, {
       json: (value: unknown) => value,
+      array: (values: readonly unknown[]) => values,
+      begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => callback(sql),
       listen: vi.fn(async () => ({ unlisten: vi.fn(async () => undefined) })),
-    }) as unknown as LivePostgresSql,
-  };
+    }) as unknown as LivePostgresSql;
+  return { sql };
 }
 
 async function waitForRestSession(

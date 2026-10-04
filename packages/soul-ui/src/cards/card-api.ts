@@ -1,10 +1,10 @@
 import type { CardAssignment, CardRow } from "./card-types";
-export class CardApiError extends Error { constructor(message: string, readonly status: number) { super(message); } }
+export class CardApiError extends Error { constructor(message: string, readonly status: number, readonly code?:string) { super(message); } }
 export async function cardRequest<T>(path: string, method = "GET", body?: object): Promise<T> {
   const response = await fetch(path, { method, credentials: "same-origin", headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new CardApiError(payload?.detail?.error?.message ?? payload?.message ?? `카드 요청 실패 (${response.status})`, response.status);
+    throw new CardApiError(payload?.detail?.error?.message ?? payload?.message ?? `카드 요청 실패 (${response.status})`, response.status,payload?.detail?.error?.code);
   }
   return response.json() as Promise<T>;
 }

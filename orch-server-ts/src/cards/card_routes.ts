@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { allowed } from "./card_route_body.js";
+import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { FolderRouteOptions } from "../folders/folder_routes.js";
 import { dashboardFolderActor } from "../folders/folder_workspace_routes.js";
@@ -16,9 +19,35 @@ const mutations:readonly ["POST" | "PATCH",string,CardOperation][]=[
 ];
 export const cardRouteAuthRequirements:Record<string,boolean>=Object.fromEntries([
   ...mutations.map(([method,path])=>[`${method} ${path}`,true]),
+  ["POST /api/cards/:id/execute",true],["GET /api/cards/:id/execution",true],["POST /api/cards/:id/execution-settings",true],
   ["GET /api/cards",true],["GET /api/cards/:id",true],["GET /api/cards/:id/reports",true],
 ]);
 export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOptions) {
+  const mutation=z.object({expectedVersion:z.number().int().positive(),idempotencyKey:z.string().min(1)}).strict();
+  const settings=mutation.extend({folderId:z.string().min(1),nodeId:z.string().nullable(),agentId:z.string().nullable(),modelPreset:z.string().nullable()});
+  for(const operation of ['execute','execution','execution-settings'] as const){
+    app.route<{Params:{id:string};Querystring:{requestId?:string}}>({method:operation==='execution'?'GET':'POST',url:`/api/cards/:id/${operation}`,handler:async(request,reply)=>{
+      try{
+        const service=await options.cardServiceProvider!();
+        const detail=await service.getCard(request.params.id);
+        if(!detail)throw Object.assign(new Error("Card not found"),{statusCode:404});
+        await allowed(options,()=>options.accessProvider.resolveAccess(request),detail.card.folder_id);
+        const actor=await cardActor(request,options);
+        if(actor.actorKind!=='user')throw Object.assign(new Error("사용자 실행 경로입니다."),{statusCode:403});
+        if(operation==='execution-settings'){
+          const body=settings.parse(request.body);
+          await allowed(options,()=>options.accessProvider.resolveAccess(request),body.folderId);
+          await service.saveExecutionSettings({...body,...actor,cardId:request.params.id});
+          return {card:serializeCardRow((await service.getCard(request.params.id))!.card)};
+        }
+        if(!options.cardExecutionServiceProvider)throw Object.assign(new Error("Card execution unavailable"),{statusCode:503});
+        const executor=await options.cardExecutionServiceProvider();
+        const result=operation==='execute'?await executor.execute({...mutation.parse(request.body),...actor,cardId:request.params.id})
+          :await executor.observe(request.params.id,z.string().min(1).parse(request.query.requestId),actor);
+        return reply.code(result.execution.state==='pending'?202:200).send({...result,card:serializeCardRow(result.card)});
+      }catch(error){const failure=cardRouteErrorResponse(error);return reply.code(failure.status).send(failure.body);}
+    }});
+  }
   app.get<{ Querystring: { folderId?: string; status?: string } }>("/api/cards", async (request, reply) => {
     try { return await listCardRouteBody(options, request.query, () => options.accessProvider.resolveAccess(request)); }
     catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }

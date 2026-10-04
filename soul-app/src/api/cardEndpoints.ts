@@ -1,6 +1,6 @@
 import type { ApiRequestContext } from './clientCore';
 import type { CompletedCardParams } from '../../../packages/soul-ui/src/cards/completed-cards';
-import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment, CardAttachment } from './cardTypes';
+import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment, CardAttachment, CardAssignment, CardExecutionResult } from './cardTypes';
 
 export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestContext) {
   const path = (id: string) => `${base}/api/cards/${encodeURIComponent(id)}`;
@@ -22,6 +22,11 @@ export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestCon
         .then((response) => readJson<CardComment>(response, 'addCardComment')),
     createCard: (body: { folderId: string; title: string; request: string; queue?: boolean;
       assignee?: CardPatch['assignee']; nodeId?: string | null; modelPreset?: string | null; attachments?: CardAttachment[]; idempotencyKey: string }) => write(`${base}/api/cards`, { ...body, attachments: body.attachments ?? [] }),
+    executeCard: (id:string,expectedVersion:number,idempotencyKey:string)=>authFetch(path(id)+'/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedVersion,idempotencyKey})})
+      .then(response=>readJson<CardExecutionResult>(response,'executeCard')).then(result=>({...result,folderId:result.card.folderId})),
+    getCardExecution: (id:string,requestId:string)=>authFetch(path(id)+'/execution?requestId='+encodeURIComponent(requestId))
+      .then(response=>readJson<CardExecutionResult>(response,'getCardExecution')).then(result=>({...result,folderId:result.card.folderId})),
+    saveCardExecutionSettings:(id:string,value:CardAssignment,expectedVersion:number,idempotencyKey:string)=>write(path(id)+'/execution-settings',{...value,expectedVersion,idempotencyKey}),
     setCardStatus: (id: string, status: CardStatus, expectedVersion: number, idempotencyKey: string, reason?: string) =>
       write(`${path(id)}/status`, { status, expectedVersion, idempotencyKey, ...(reason ? { reason } : {}) }),
     updateCard: (id: string, patch: CardPatch, expectedVersion: number, idempotencyKey: string) =>

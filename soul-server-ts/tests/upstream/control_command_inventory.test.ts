@@ -31,7 +31,7 @@ describe("control command inventory", () => {
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(41);
+    expect(inventoryTypes).toHaveLength(42);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -72,6 +72,7 @@ describe("control command inventory", () => {
       { type: "respond", family: "intervention", policy: "durable_mutation" },
       { type: "approve_tool", family: "intervention", policy: "durable_mutation" },
       { type: "reject_tool", family: "intervention", policy: "durable_mutation" },
+      { type: "ensure_session_running", family: "intervention", policy: "durable_mutation" },
       { type: "intervene", family: "intervention", policy: "durable_mutation" },
       { type: "claude_runtime_list_tasks", family: "claude-runtime", policy: "bounded_result" },
       { type: "claude_runtime_task_output", family: "claude-runtime", policy: "bounded_result" },

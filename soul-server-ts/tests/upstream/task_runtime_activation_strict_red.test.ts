@@ -188,3 +188,20 @@ describe("UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION", () => {
     });
   });
 });
+
+
+describe('user ensure_session_running activation',()=>{
+  it('uses one actual registered activation and adds no live message on repeated ensure',async()=>{
+    const h=makeHarness();
+    const task=await h.taskManager.createTask({agentSessionId:'ensure-runtime-session',prompt:'card request',profileId:agent.id});
+    task.status='completed';task.lastEventId=7;task.terminalEventId=7;
+    const request={agentSessionId:task.agentSessionId,text:'continue card request',deliveryId:'card-execution:fixed-request'};
+    const result=await h.runtime.ensureSessionRunning(request);
+    expect(result.state).toBe('started');
+    expect(result.execution.registrationId).toBeTruthy();
+    expect(h.persistenceDouble.recordExecutionRegistrationAndWaitForApplication).toHaveBeenCalledTimes(1);
+    // This proof is returned by the activation owner, rather than the create ACK.
+    if(task.executionPromise)await task.executionPromise;
+    expect(h.executeInputs.map(input=>input.prompt)).toEqual(['continue card request']);
+  });
+});

@@ -14,10 +14,11 @@ test('보고 없이 보관·완료 카드도 사유 없이 이동한다', () => 
 test.each(['todo', 'queued', 'running', 'review', 'done', 'cancelled'] as const)('미답 질문이 있어도 %s 상태를 저장한다', async (next) => {
   const source = cardFixture({ status: 'blocked', blockedKind: 'question' });
   const latest = detail({ card: source, reports: [], questions: [{ answer: null } as any] });
-  const api = { getCard: jest.fn().mockResolvedValue(latest), setCardStatus: jest.fn().mockResolvedValue({ card: { ...source, status: next } }) };
+  const api = { getCard: jest.fn().mockResolvedValue(latest), setCardStatus: jest.fn().mockResolvedValue({ card: { ...source, status: next } }),executeCard:jest.fn().mockResolvedValue({card:{...source,status:next},execution:{requestId:'req',state:'started'}}) };
   expect(cardTransitionProblem(latest, next)).toBeNull();
   await performCardTransition(api as any, source, next, `question-${next}`);
-  expect(api.setCardStatus).toHaveBeenCalledWith(source.id, next, source.version, `question-${next}`, undefined);
+  if(next==='running')expect(api.executeCard).toHaveBeenCalledWith(source.id,source.version,`question-${next}`);
+  else expect(api.setCardStatus).toHaveBeenCalledWith(source.id, next, source.version, `question-${next}`, undefined);
 });
 
 test('명시 조작 때 최신 버전으로 저장하고 중복 호출은 쓰지 않는다', async () => {
@@ -50,4 +51,21 @@ test('변경된 출발 상태는 write를 막고 실패 뒤 다시 시도할 수
   api.setCardStatus.mockRejectedValueOnce(new Error('저장 실패')).mockResolvedValue({ card: cardFixture({ status: 'queued' }) });
   await expect(performCardTransition(api as any, cardFixture(), 'queued', 'b')).rejects.toThrow('저장 실패');
   await expect(performCardTransition(api as any, cardFixture(), 'queued', 'c')).resolves.toHaveProperty('card.status', 'queued');
+});
+
+
+test('running intent is available even when status is running',()=>{
+  expect(cardTransitionProblem(detail({card:cardFixture({status:'running'})}),'running')).toBeNull();
+});
+
+
+test('lost response retains the same operation key; pending explicitly retries the same request',async()=>{
+ const source=cardFixture({id:'lost-response',status:'running',assigneeSessionId:'owner'});
+ const pending={card:source,execution:{requestId:'fixed-request',sessionId:'owner',state:'pending'}};
+ const api={getCard:jest.fn().mockResolvedValue(detail({card:source})),executeCard:jest.fn().mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce(pending).mockResolvedValue({...pending,execution:{...pending.execution,state:'already_running'}}),getCardExecution:jest.fn().mockResolvedValue({...pending,execution:{...pending.execution,state:'already_running'}})};
+ await expect(performCardTransition(api as any,source,'running','first-key')).rejects.toThrow('response lost');
+ await expect(performCardTransition(api as any,source,'running','second-key')).rejects.toThrow('확인 중');
+ expect(api.executeCard.mock.calls[0]).toEqual(api.executeCard.mock.calls[1]);
+ await performCardTransition(api as any,source,'running','third-key');
+ expect(api.executeCard).toHaveBeenCalledTimes(3);expect(api.executeCard.mock.calls[2]).toEqual(api.executeCard.mock.calls[0]);expect(api.getCardExecution).not.toHaveBeenCalled();
 });

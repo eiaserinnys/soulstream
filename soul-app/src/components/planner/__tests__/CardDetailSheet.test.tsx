@@ -170,11 +170,21 @@ test('카드 생성은 요청 본문만 복원하고 제목은 기존 빈 값으
 
 test.each([{nativeHeader:true},{inline:true}])('완료 상세에서도 기존 메뉴로 사유 없이 재착수한다 %s',async presentation=>{
   const completed={...detail,card:{...card,status:'done' as const},reports:[],questions:[]};
-  const api={getCard:jest.fn().mockResolvedValue(completed),setCardStatus:jest.fn().mockResolvedValue({card:{...completed.card,status:'running'}})};
+  const api={getCard:jest.fn().mockResolvedValue(completed),executeCard:jest.fn().mockResolvedValue({card:{...completed.card,status:'running'},folderId:card.folderId,execution:{requestId:'resume-card',sessionId:'owner',state:'started'}})};
   const screen=render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={jest.fn()}/>);
   await waitFor(()=>expect(screen.getByLabelText('상태 변경')).toBeTruthy());
   await act(async()=>fireEvent.press(screen.getByLabelText('상태 변경')));
   await waitFor(()=>expect(screen.getByLabelText('실행 중로 이동')).toBeTruthy());
   await act(async()=>fireEvent.press(screen.getByLabelText('실행 중로 이동')));
-  expect(api.setCardStatus).toHaveBeenCalledWith(card.id,'running',card.version,expect.any(String),undefined);
+  expect(api.executeCard).toHaveBeenCalledWith(card.id,card.version,expect.any(String));
+});
+
+
+test('assigned settings disappear while native status/complete and sessions remain',async()=>{
+ const assigned={...card,assigneeKind:'session' as const,assigneeSessionId:'s1'};
+ const api={getCard:jest.fn().mockResolvedValue({...detail,card:assigned})};
+ const screen=render(<CardDetailContent api={api as any} cardId={card.id} nativeHeader onClose={jest.fn()}/>);
+ await waitFor(()=>expect(screen.getByText('원문')).toBeTruthy());
+ for(const label of ['폴더 변경','담당 변경','노드 변경','모델 변경'])expect(screen.queryByLabelText(label)).toBeNull();
+ expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-sessions')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
 });

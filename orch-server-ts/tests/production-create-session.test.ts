@@ -327,7 +327,12 @@ describe("production create-session route", () => {
 async function createProductionHarness() {
   const sql = Object.assign(
     vi.fn(async () => []),
-    { listen: vi.fn() },
+    {
+      listen: vi.fn(),
+      json: (value: unknown) => value,
+      array: (values: readonly unknown[]) => values,
+      begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => callback(sql),
+    },
   ) as unknown as LivePostgresSql;
   const sqlResolver: LiveDbSqlResolver = {
     resolveSql: vi.fn(async () => sql),

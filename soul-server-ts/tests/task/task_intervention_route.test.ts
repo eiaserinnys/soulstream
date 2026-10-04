@@ -1352,3 +1352,33 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
   });
 });
+
+
+describe("explicit ensure running", () => {
+  const params = {agentSessionId:"sess-intervention",text:"카드를 이어서 수행하세요.",deliveryId:"ensure-request",deliveryIntent:"durable_next_turn" as const,source:"card_execution"};
+  it("live execution receives no message or new execution", async () => {
+    const task=makeTask({executionRegistration:{registrationId:"reg",executionCommandId:"cmd"}});
+    const subject=makeSubject([task]);
+    const start=vi.fn();
+    const result=await subject.route.ensureRunning(params,start);
+    expect(result).toMatchObject({state:"already_running",execution:{registrationId:"reg",executionCommandId:"cmd"}});
+    expect(subject.runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(subject.runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+    expect(subject.autoResumeTransition.resume).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+  it.each(["completed","running"] as const)("resumes stopped/stale %s once across concurrent calls",async status=>{
+    const task=makeTask({status,runner:undefined});
+    const subject=makeSubject([task]);
+    const resume=vi.mocked(subject.autoResumeTransition.resume);
+    resume.mockImplementation(async()=>{task.status="running";task.executionRegistration={registrationId:"new",executionCommandId:"new-cmd"};return {autoResumed:true};});
+    const results=await Promise.all([subject.route.ensureRunning(params,vi.fn()),subject.route.ensureRunning({...params,deliveryId:"second"},vi.fn())]);
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(results.map(r=>r.state)).toEqual(["started","already_running"]);
+    expect(subject.runningInterventionTransition.deliver).not.toHaveBeenCalled();
+  });
+  it("does not call activation success without execution registration",async()=>{
+    const subject=makeSubject([makeTask({status:"completed",runner:undefined})]);
+    await expect(subject.route.ensureRunning(params,vi.fn())).rejects.toThrow("등록");
+  });
+});

@@ -1,3 +1,4 @@
+import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
@@ -115,6 +116,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
     setFrame((old) => ({ ...old, width, height }));
     frameRef.current?.measureInWindow((x, y) => setFrame({ x, y, width, height }));
   }}>
+    <CardTransitionSettings api={api} action={action}/>
     <ScrollView ref={scroll} horizontal testID="card-board" style={{ flex: 1 }} showsHorizontalScrollIndicator={false}
       scrollEnabled={!drag} snapToOffsets={phone ? boardSnapOffsets(viewport, geometry, columns.length) : undefined} decelerationRate={phone ? 'fast' : 'normal'}
       disableIntervalMomentum={phone} contentOffset={initialContentOffset.current} scrollEventThrottle={16}

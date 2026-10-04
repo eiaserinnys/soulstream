@@ -179,6 +179,7 @@
     "components/settings/ClaudeProviderSection.tsx",
     "components/settings/RecurringJobViews.tsx",
     "hooks/useCardActions.ts",
+    "hooks/useCardTransition.ts",
     "hooks/useCardComments.ts",
     "hooks/useChatAttachments.ts",
     "hooks/usePlannerContextMenus.ts",

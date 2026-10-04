@@ -1,3 +1,5 @@
+import {dialoguesAssignment} from "./dialogues-api";
+import {CardExecutionSettings} from "./CardExecutionSettings";
 import {useLocalDialogueUpload} from "./use-local-dialogue-upload";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { DashboardIconCap, MarkdownContent, useAuth, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
@@ -13,7 +15,7 @@ import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 export { cardRequestMarkdown } from "./card-request-markdown";
-export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;focus?:string|null;sampleDetail?:CardDetail}) {
+export function CardDetailPane({cardId,folders,onClose,onOpenSession,sampleDetail}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;focus?:string|null;sampleDetail?:CardDetail}) {
  const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
  const [localSample,setLocalSample]=useState(sampleDetail);
  const sampleUpload=useLocalDialogueUpload();
@@ -64,14 +66,16 @@ export function CardDetailPane({cardId,onClose,onOpenSession,sampleDetail}: {car
   <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
    <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
    <CardStatusPicker card={card} onOpen={()=>{}} control={{pending,
+    assignment:sampleDetail?dialoguesAssignment:undefined,folders,
+    saveSettings:sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setLocalSample(current=>current?{...current,card:saved}:current);return saved;}:undefined,
     load:()=>sampleDetail ? Promise.resolve(localSample!) : useCardStore.getState().loadCard(cardId),
-    change:async(latest,status,reason)=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,status}}:current);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
+    change:async(latest,status,reason)=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}:current);else if(status==="running")await useCardStore.getState().execute(cardId,latest.version);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
    }}/>
    <FolderTitleEditor title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,title}}:current);else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
    <div className="v3-folder-header-actions"><DashboardIconCap label="완료" disabled={pending} onClick={()=>void complete()}><Check className="h-4 w-4"/></DashboardIconCap></div>
   </header>
   <div className="v3-detail-gutter v3-task-detail-content v3-card-context">
-   <section className="v3-detail-section"><div className="v3-task-default-values"><span>{agentName??"담당 미지정"}</span>{nodeId?<span>{nodeId}</span>:null}{model?<span>{model}</span>:null}</div></section>
+   {!card.assigneeSessionId?<section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setLocalSample(current=>current?{...current,card:saved}:current);return saved;}:undefined}/></section>:null}
    <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} onOpenSession={onOpenSession}/></section>
   </div>
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs<"comments"|"content"> id={tabId} label="카드 보기" panelId={`${tabId}-panel`} tabs={[["comments","커멘트"],["content","내용"]]} value={tab} onChange={setTab}/></div>

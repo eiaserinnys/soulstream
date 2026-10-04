@@ -9,7 +9,7 @@ test('menu failure stays visible, successful explicit move closes only after sav
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   const card = cardFixture({ status: 'review', version: 9 });
   const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }),
-    setCardStatus: jest.fn().mockRejectedValueOnce(new Error('저장 실패')).mockResolvedValue({ card: { ...card, status: 'running', version: 10 } }) };
+    executeCard: jest.fn().mockRejectedValueOnce(new Error('저장 실패')).mockResolvedValue({ card: { ...card, status: 'running', version: 10 }, execution: {requestId:'request',sessionId:'session',state:'started'} }) };
   const close = jest.fn();
   const screen = render(<CardStatusMenu api={api as any} card={card} onClose={close} />);
   await waitFor(() => expect(screen.getByLabelText('실행 중로 이동')).toBeTruthy());
@@ -18,7 +18,7 @@ test('menu failure stays visible, successful explicit move closes only after sav
   expect(screen.queryByLabelText('재실행 사유')).toBeNull();
   expect(screen.getByText('저장 실패')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('실행 중로 이동')));
-  expect(api.setCardStatus).toHaveBeenLastCalledWith(card.id, 'running', 9, expect.any(String), undefined);
+  expect(api.executeCard).toHaveBeenLastCalledWith(card.id, 9, expect.any(String));
   expect(close).toHaveBeenCalledTimes(1);
   jest.restoreAllMocks();
 });

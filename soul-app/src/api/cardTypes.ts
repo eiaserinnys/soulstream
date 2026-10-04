@@ -88,3 +88,5 @@ export interface CardPatch {
   nodeId?: string | null;
   modelPreset?: string | null;
 }
+
+export interface CardExecutionResult extends CardMutationResult {card:CardDto;execution:{requestId:string;sessionId:string;state:'started'|'already_running'|'pending'}}

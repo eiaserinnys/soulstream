@@ -78,3 +78,22 @@ test('보드의 시간과 완료 액션은 보조정보 옆 한 행이며 같은
   expect(screen.getByTestId('card-row-compare-review')).toBeTruthy();
   expect(screen.getByTestId('card-row-compare-running')).toBeTruthy();
 });
+
+
+test('drop execute pending keeps the original lane and shows a retry notice',async()=>{
+  const {Alert}=require('react-native');
+  const {act}=require('@testing-library/react-native');
+  const {BoardDragCard}=require('../BoardDragCard');
+  const source=cardFixture({id:'drop-pending'});
+  const api={getCard:jest.fn().mockResolvedValue({card:source,reports:[],questions:[],sessions:[]}),
+    executeCard:jest.fn().mockResolvedValue({card:source,folderId:source.folderId,execution:{requestId:'drop-request',sessionId:'drop-session',state:'pending'}})};
+  const alert=jest.spyOn(Alert,'alert').mockImplementation(()=>{});
+  const screen=render(<CardBoard phone={false} api={api as any} cards={[source]} onOpen={()=>{}}/>);
+  fireEvent(screen.getByTestId('card-board-frame'),'layout',{nativeEvent:{layout:{width:1400,height:600}}});
+  await act(async()=>screen.UNSAFE_getAllByType(BoardDragCard)[0].props.onDrop({absoluteX:650,absoluteY:200,x:0,y:0}));
+  expect(api.executeCard).toHaveBeenCalledTimes(1);
+  expect(alert).toHaveBeenCalledWith('카드 변경 실패',expect.stringContaining('같은 요청'));
+  expect(within(screen.getByTestId('card-board-column-todo')).getByTestId('postit-card-drop-pending')).toBeTruthy();
+  expect(within(screen.getByTestId('card-board-column-running')).queryByTestId('postit-card-drop-pending')).toBeNull();
+  alert.mockRestore();
+});

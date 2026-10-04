@@ -618,6 +618,7 @@ export async function createLiveProductionApplication(
       new LiveDatabaseSchemaProvider(sqlResolver),
       { enabled: config.atom_enabled, serverUrl: config.atom_server_url, apiKey: config.atom_api_key,
         nodeId: config.skill_catalog_node_id, typesafeApiKey: config.typesafe_api_key, httpClient: providers.atomRoutes.httpClient },
+      cardDispatchRuntime.executionServiceProvider,
     ),
     r2SettingsRoutes: {
       currentEmail: providers.adminUsersRoutes.provider.currentEmail,
@@ -829,6 +830,7 @@ export function buildProductionRouteOptions(
   folderControlPlaneServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["controlPlaneServiceProvider"],
   databaseSchemaProvider?: PublicDatabaseSchemaProvider,
   mcpSkills?: McpHostOptions["skills"],
+  cardExecutionServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["cardExecutionServiceProvider"],
 ): CreateAppOptions {
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
   if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
@@ -899,6 +901,7 @@ export function buildProductionRouteOptions(
     } : {}),
     folderRoutes: {
       ...providers.folderRoutes,
+      ...(cardExecutionServiceProvider ? {cardExecutionServiceProvider} : {}),
       ...(cardServiceProvider ? { cardServiceProvider } : {}),
       authBearerToken: config.authBearerToken,
       ...(folderProjectIdentityService

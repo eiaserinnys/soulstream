@@ -257,6 +257,7 @@ def test_schema_has_all_message_types() -> None:
         "SessionDeleted",
         "ErrorMessage",
         "InterveneAck",
+        "EnsureSessionRunningAck",
         "InterruptSessionAck",
         "RespondAck",
         "ToolApprovalAck",
@@ -273,6 +274,7 @@ def test_schema_has_all_message_types() -> None:
         "CreateCardOrchestrationDecision",
         "PrepareCardOrchestrationDecision",
         "Intervene",
+        "EnsureSessionRunning",
         "InterruptSession",
         "Respond",
         "ApproveTool",
@@ -320,7 +322,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 77
+    assert len(wire_types) == 79
 
     sse_types = {
         "SSEEventInit",
@@ -566,6 +568,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "SessionDeleted",
         "ErrorMessage",
         "InterveneAck",
+        "EnsureSessionRunningAck",
         "InterruptSessionAck",
         "RespondAck",
         "ToolApprovalAck",
@@ -582,6 +585,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "CreateCardOrchestrationDecision",
         "PrepareCardOrchestrationDecision",
         "Intervene",
+        "EnsureSessionRunning",
         "InterruptSession",
         "Respond",
         "ApproveTool",
