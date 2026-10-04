@@ -13,6 +13,7 @@ import { useUIStore } from '../../../store/uiStore';
 import { useSearchStore } from '../../../store/searchStore';
 
 const mockOpenPlannerSessionWorkspace = jest.fn();
+const mockOpenFeedSessionCardWorkspace = jest.fn();
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../SidebarPane', () => ({
@@ -41,6 +42,9 @@ jest.mock('../../planner/FolderWorkspaceReadOverlay', () => ({
 jest.mock('../../../lib/planner-folder-workspace', () => ({
   openPlannerSessionWorkspace: (...args: unknown[]) => mockOpenPlannerSessionWorkspace(...args),
 }));
+jest.mock('../../../lib/session-feed-card-workspace', () => ({
+  openFeedSessionCardWorkspace: (...args: unknown[]) => mockOpenFeedSessionCardWorkspace(...args),
+}));
 jest.mock('../../../screens/SearchScreen', () => ({
   SearchScreen: ({ onOpenSession }: {
     onOpenSession: (sessionId: string, eventId?: number, storyOpenRequestId?: number) => void;
@@ -53,6 +57,7 @@ jest.mock('../../../screens/SearchScreen', () => ({
 describe('iPad v3 planner shell', () => {
   beforeEach(() => {
     mockOpenPlannerSessionWorkspace.mockClear();
+    mockOpenFeedSessionCardWorkspace.mockClear();
     useSearchStore.getState().reset();
     useUIStore.setState({ folderOverlayVisible: false });
   });
@@ -75,12 +80,7 @@ describe('iPad v3 planner shell', () => {
     expect(frame.findByProps({ testID: 'task-workspace-overlay' })).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('planner-sessions'));
-    expect(mockOpenPlannerSessionWorkspace).toHaveBeenCalledWith(
-      'session-1',
-      undefined,
-      undefined,
-      'feed',
-    );
+    expect(mockOpenFeedSessionCardWorkspace).toHaveBeenCalledWith('session-1');
   });
 
   it('검색 세션 선택도 피드와 같은 업무 resolver entrypoint와 event/story 문맥을 사용한다', () => {
@@ -140,12 +140,7 @@ describe('iPad v3 planner shell', () => {
     expectPanelRadius(screen.getByTestId('split-panel-session'), 24);
 
     fireEvent.press(screen.getByTestId('planner-sessions'));
-    expect(mockOpenPlannerSessionWorkspace).toHaveBeenCalledWith(
-      'session-1',
-      undefined,
-      undefined,
-      'feed',
-    );
+    expect(mockOpenFeedSessionCardWorkspace).toHaveBeenCalledWith('session-1');
   });
 
   it.each([

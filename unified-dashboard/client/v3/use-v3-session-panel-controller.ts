@@ -6,6 +6,8 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
+import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 
 import { loadPlannerFolderById, type PlannerFolder } from "./planner-data";
 import type { FolderSectionFocusRequest } from "./FolderSectionNavigation";
@@ -33,6 +35,8 @@ export function useV3SessionPanelController({
   onClearFolder,
   setChatOpen,
   notify,
+  openCard,
+  clearCard,
 }: {
   api: PageApiClient;
   catalog: CatalogState | null;
@@ -42,6 +46,8 @@ export function useV3SessionPanelController({
   onClearFolder(): void;
   setChatOpen: Dispatch<SetStateAction<boolean>>;
   notify(message: string): void;
+  openCard(cardId: string, placement?: "overlay", focus?: string | null, initialSessionId?: string | null): void;
+  clearCard(): void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const focusRequestSequence = useRef(0);
@@ -123,6 +129,31 @@ export function useV3SessionPanelController({
     return openSessionForRequest(session, requestSequence);
   }, [openSessionForRequest]);
 
+  const openFeedSession = useCallback(async (session: SessionSummary) => {
+    const requestSequence = ++openRequestSequence.current;
+    try {
+      const cardId = session.cardId || (await cardRequest<{ cards: CardRow[] }>(
+        `/api/cards?${new URLSearchParams({ includeCompleted: "true" })}`,
+      )).cards.find((card) => card.assigneeSessionId === session.agentSessionId)?.id;
+      if (requestSequence !== openRequestSequence.current) return false;
+      if (cardId) {
+        activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
+        setFocusEventId(null, session.agentSessionId);
+        openCard(cardId, "overlay", null, session.agentSessionId);
+        setChatOpen(true);
+        setWorkspaceFolderError(null);
+        setFocusRequest(null);
+        return true;
+      }
+      clearCard();
+      return openSessionForRequest(session, requestSequence);
+    } catch (error) {
+      if (requestSequence !== openRequestSequence.current) return false;
+      notify(`세션의 연결 카드를 확인하지 못했습니다 · ${errorText(error)}`);
+      return false;
+    }
+  }, [clearCard, notify, openCard, openSessionForRequest, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen, setFocusEventId]);
+
   const openSessionById = useCallback(async (
     sessionId: string,
     focusEventId: number | null,
@@ -161,6 +192,7 @@ export function useV3SessionPanelController({
     workspaceFolderError,
     resize,
     openSession,
+    openFeedSession,
     openSessionById,
     clearFocusRequest,
     acknowledgeFocusRequest,

@@ -6,10 +6,11 @@ import { SessionRunList } from "./SessionRunList";
 
 export interface CardSessionSelection {source:'automatic'|'user'}
 
-export function CardSessionHistory({ sessionIds, onOpenSession, collapsedLimit, assigneeSessionId }: {
+export function CardSessionHistory({ sessionIds, onOpenSession, collapsedLimit, assigneeSessionId, initialSessionId }: {
   sessionIds: readonly string[];
   collapsedLimit?: number;
   assigneeSessionId?: string | null;
+  initialSessionId?: string | null;
   onOpenSession(session: SessionSummary, selection?:CardSessionSelection): void;
 }) {
   const openMenu = useSessionMenu();
@@ -28,15 +29,17 @@ export function CardSessionHistory({ sessionIds, onOpenSession, collapsedLimit, 
   const resolved = useMemo(() => resolveRunSessions({
       sessionIds, catalogSessions: catalog?.sessionList ?? [],
       targetedSessions: targeted.sessions, targetedLoading: targeted.loading,
-    }), [catalog?.sessionList, sessionIds, targeted.sessions, targeted.loading]);
+  }), [catalog?.sessionList, sessionIds, targeted.sessions, targeted.loading]);
   const tree = useMemo(() => buildRunTree(sessionIds, resolved.sessions, resolved.loadStateById), [sessionIds, resolved]);
   useEffect(() => {
-    if (sessionChosen.current || !assigneeSessionId) return;
-    const assignee = resolved.sessions.find(session => session.agentSessionId === assigneeSessionId);
-    if (!assignee) return;
+    if (sessionChosen.current) return;
+    const preferredSessionId = initialSessionId ?? assigneeSessionId;
+    if (!preferredSessionId) return;
+    const preferred = resolved.sessions.find(session => session.agentSessionId === preferredSessionId);
+    if (!preferred) return;
     sessionChosen.current = true;
-    onOpenSession(assignee,{source:'automatic'});
-  }, [assigneeSessionId, resolved.sessions, onOpenSession]);
+    onOpenSession(preferred,{source:'automatic'});
+  }, [assigneeSessionId, initialSessionId, resolved.sessions, onOpenSession]);
   const openSession = (session: SessionSummary) => {
     sessionChosen.current = true;
     onOpenSession(session,{source:'user'});

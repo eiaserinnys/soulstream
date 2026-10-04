@@ -72,6 +72,8 @@ beforeEach(() => {
     cardBoardExpanded: false,
     activeSessionId: null,
     focusEventId: null,
+    initialCardSessionId: null,
+    cardSessionSelectionHandled: false,
     sessionFolderResolution: null,
   });
 });
@@ -157,6 +159,69 @@ test('업무 오버레이 루트가 하위 콘텐츠보다 높은 modal 계층�
   expect(style.position).toBe('absolute');
   expect(style.zIndex).toBeGreaterThan(0);
   expect(overlay.props.pointerEvents).toBe('auto');
+});
+
+test('피드에서 선택한 소속 세션은 담당 세션보다 우선하고 상세 지연 뒤에도 유지한다', async () => {
+  const detail = cardDetail('card-feed', 'owner');
+  useSessionStore.setState({ sessions: {
+    owner: { agentSessionId: 'owner', displayName: '담당 세션' } as Session,
+    child: { agentSessionId: 'child', displayName: '선택한 소속 세션' } as Session,
+  } });
+  useUIStore.getState().openCardOverlay('card-feed', 'child');
+
+  const screen = render(<FolderWorkspaceReadOverlay />);
+  expect(useUIStore.getState().activeSessionId).toBe('child');
+
+  await act(async () => {
+    useCardStore.getState().putDetail({ ...detail, card: { ...detail.card, title: '늦게 도착한 상세' } });
+  });
+  expect(useUIStore.getState().activeSessionId).toBe('child');
+
+  await act(async () => {
+    useUIStore.getState().openCardOverlay('card-feed', 'child-2');
+  });
+  expect(screen.getByTestId('overlay-card-detail')).toBeTruthy();
+  expect(useUIStore.getState().activeSessionId).toBe('child-2');
+});
+
+test('피드 초기 세션을 소비한 뒤 수동 선택은 overlay 재마운트에도 유지한다', async () => {
+  useCardStore.getState().putDetail(cardDetail('card-feed', 'owner'));
+  useCardStore.getState().putDetail(cardDetail('card-owner', 'owner'));
+  useUIStore.getState().openCardOverlay('card-feed', 'child');
+
+  const firstMount = render(<FolderWorkspaceReadOverlay />);
+  expect(useUIStore.getState().activeSessionId).toBe('child');
+
+  await act(async () => useUIStore.getState().setActiveSessionId('owner'));
+  expect(useUIStore.getState().activeSessionId).toBe('owner');
+
+  firstMount.unmount();
+  const afterRotation = render(<FolderWorkspaceReadOverlay />);
+
+  expect(useUIStore.getState().activeSessionId).toBe('owner');
+
+  afterRotation.unmount();
+  await act(async () => useUIStore.getState().openCardOverlay('card-owner'));
+  const normalOpen = render(<FolderWorkspaceReadOverlay />);
+  expect(useUIStore.getState().activeSessionId).toBe('owner');
+
+  await act(async () => useUIStore.getState().setActiveSessionId('child'));
+  normalOpen.unmount();
+  render(<FolderWorkspaceReadOverlay />);
+
+  expect(useUIStore.getState().activeSessionId).toBe('child');
+});
+
+test('일반 카드 열기는 기존처럼 카드 담당 세션을 자동 선택한다', () => {
+  useCardStore.getState().putDetail(cardDetail('card-owner', 'owner'));
+  useUIStore.getState().openCardOverlay('card-owner');
+
+  render(<FolderWorkspaceReadOverlay />);
+
+  expect(useUIStore.getState()).toMatchObject({
+    activeSessionId: 'owner',
+    initialCardSessionId: null,
+  });
 });
 
 test('업무 오버레이 시트는 glassSoft 24pt 네 모서리와 둥근 shadow frame을 공유한다', () => {

@@ -16,7 +16,7 @@ import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 export { cardRequestMarkdown } from "./card-request-markdown";
-export function CardDetailPane({cardId,folders,onClose,onOpenSession,sampleDetail,sampleExecution}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState}) {
+export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSessionId,sampleDetail,sampleExecution}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState}) {
  const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
  const [localSample,setLocalSample]=useState(sampleDetail);
  const sampleUpload=useLocalDialogueUpload();
@@ -35,7 +35,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,sampleDetai
  const execution=sampleExecution??observedExecution;
  const startable=card?.status==='todo'||card?.status==='queued';
  const actionLabel=execution?.phase==='pending'?'시작 중…':execution?(execution.phase==='delayed'?'다시 확인':'다시 시도'):startable?'시작하기':'완료';
- const sessionIds=useMemo(()=>[...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId]:[]),...(detail?.sessions.map(session=>session.sessionId)??[])])],[card?.assigneeSessionId,detail?.sessions]);
+ const sessionIds=useMemo(()=>[...new Set([...(initialSessionId?[initialSessionId]:[]),...(card?.assigneeSessionId ? [card.assigneeSessionId]:[]),...(detail?.sessions.map(session=>session.sessionId)??[])])],[card?.assigneeSessionId,detail?.sessions,initialSessionId]);
  const assignee=catalog?.sessionList?.find(session=>session.agentSessionId===card?.assigneeSessionId) ?? detail?.sessions.find(session=>session.sessionId===card?.assigneeSessionId);
  const nodeId=assignee?.nodeId ?? card?.nodeId;
  const agentId=assignee?.agentId ?? card?.assigneeAgentId;
@@ -82,7 +82,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,sampleDetai
   </header>
   <div className="v3-detail-gutter v3-task-detail-content v3-card-context">
    {!card.assigneeSessionId?<section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setLocalSample(current=>current?{...current,card:saved}:current);return saved;}:undefined}/></section>:null}
-   <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={cardId} sessionIds={sessionIds} collapsedLimit={3} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} onOpenSession={onOpenSession}/></section>
+   <section className="v3-detail-section v3-card-session-history" data-card-section="sessions"><CardSessionHistory key={`${cardId}:${initialSessionId??""}`} sessionIds={sessionIds} collapsedLimit={3} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} initialSessionId={initialSessionId} onOpenSession={onOpenSession}/></section>
   </div>
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs<"comments"|"content"> id={tabId} label="카드 보기" panelId={`${tabId}-panel`} tabs={[["comments","커멘트"],["content","내용"]]} value={tab} onChange={setTab}/></div>
   {execution && execution.phase!=="pending"?<p role={execution.phase==="error"?"alert":"status"} className="v3-card-error">{execution.message}</p>:null}

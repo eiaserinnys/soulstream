@@ -30,9 +30,28 @@ export const sessions: Session[] = [
       kind: 'input_request', requestedAt: time, title: '공개 질문 예시', body: '확인해주세요.',
       requiresDetail: false }] },
 ];
-export const entryShellSessions: Session[] = Array.from({ length: 20 }, (_, index) => ({
-  ...sessions[0], agentSessionId: `public-shell-session-${index}`, displayName: `공개 예시 세션 ${index + 1}`,
+export const entryShellFolders: CatalogFolder[] = Array.from({ length: 20 }, (_, index) => ({
+  ...folders[0], id: `public-shell-folder-${index}`,
+  name: `공개 예시 폴더 ${String(index + 1).padStart(2, '0')}`,
+  projectPageId: `public-shell-page-${index}`, sortOrder: index,
 }));
+export const entryShellCardId = 'public-shell-card-owner';
+export const entryShellSessions: Session[] = Array.from({ length: 20 }, (_, index) => ({
+  ...sessions[0],
+  agentSessionId: `public-shell-session-${index}`,
+  displayName: [
+    '담당 카드에 연결된 공개 세션',
+    '카드 작업에 소속된 공개 세션',
+    '폴더에 연결된 공개 세션',
+    '폴더 없는 공개 세션',
+  ][index] ?? `공개 예시 세션 ${index + 1}`,
+  folderId: index === 3 ? null : entryShellFolders[index === 1 ? 0 : index].id,
+  ...(index === 1 ? { cardId: entryShellCardId, callerSessionId: 'public-shell-session-0' } : {}),
+}));
+export const entryShellCatalogSessions = Object.fromEntries(entryShellSessions.map((session) => [
+  session.agentSessionId,
+  { folderId: session.folderId ?? null, displayName: session.displayName },
+]));
 export function makeCard(status: CardStatus): CardDto {
   return { id: 'public-' + status, folderId: folders[0].id,
     title: '현재 카드 행을 검수하는 공개 예시', request: '공개 fixture로 표시와 동작을 확인합니다.',
@@ -59,11 +78,25 @@ export const fixtureOptions = [
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
-export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
+export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; entryShell?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
   folderSessionPages?: FolderSessionPageScenario;
   onFolderSessionPageRequest?(pageId: string, cursor: string | null, releaseResponse?: () => void): void;
   onCreateCard?(body: Parameters<ApiClient['createCard']>[0]): void } = {}) {
   const cards = new Map(initialCards.map((card) => [card.id, { ...card }]));
+  if (options.entryShell) {
+    const card = {
+      ...makeCard('running'),
+      id: entryShellCardId,
+      folderId: entryShellFolders[0].id,
+      title: '피드 선택으로 열리는 공개 연결 카드',
+      request: '담당 세션과 소속 세션을 각각 선택해 채팅 대상을 확인합니다.',
+      assigneeKind: 'session' as const,
+      assigneeSessionId: entryShellSessions[0].agentSessionId,
+      nodeId: 'public-node',
+      modelPreset: 'public-model',
+    };
+    cards.set(card.id, card);
+  }
   const folderSessionPageSize = options.folderSessionPages === 'many' ? 20 : 2;
   const folderSessionCount = options.folderSessionPages === 'many' ? 60
     : options.folderSessionPages === 'short' ? 6 : 0;
@@ -83,6 +116,9 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     };
   });
   const reviewSessions = [...sessions, ...entryShellSessions, ...folderSessions];
+  const entryShellFolderFor = (id: string) => options.entryShell
+    ? entryShellFolders.find((folder) => folder.id === id)
+    : undefined;
   if(options.manyCompleted)for(let index=0;index<1000;index++)cards.set(`completed-${index}`,{...makeCard('done'),id:`completed-${index}`,title:index%10===0?'검색할 긴 완료 카드 제목입니다. 같은 폭과 본문을 유지합니다.':'완료 카드 '+index,completedAt:new Date(Date.now()-index*10*60*1000).toISOString()});
   if (options.home) for (let index = 1; index <= 4; index++) cards.set(`public-review-${index}`, { ...makeCard('review'), id: `public-review-${index}`, title: `검수할 공개 예시 ${index}`, latestActivity: { kind: 'report', body: '같은 제목과 본문으로 카드 크기와 읽기 흐름을 확인합니다.', format: 'markdown', createdAt: time } });
   if(options.assignment)for(const [id,card] of cards){
@@ -109,9 +145,13 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     getTimeline: async () => read({ messages: [], next_cursor: null }),
     // Mock upload only: the sample asset is served by the review export.
     uploadAttachment: async (_sessionId, nodeId, file) => ({ path: file.uri, filename: file.name, node_id: nodeId }),
-    getPage:async id=>read({page:{...starredFolders[0].page,id},blocks:[],stateVector:''}),
-    getPlannerFolder:async (id,query)=>read({folder:{...folders[0],id,projectPageId:'public-page'},page:{...starredFolders[0].page,id:'public-page'},blocks:[],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done')),subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}}),
-    getFolderSnapshot:async (id,query)=>read({folder:folders[0],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done'))}),
+    getPage:async id=>read({page:{...starredFolders[0].page,id,title:entryShellFolders.find((folder) => folder.projectPageId === id)?.name ?? starredFolders[0].page.title},blocks:[],stateVector:''}),
+    getPlannerFolder:async (id,query)=>{
+      const folder = entryShellFolderFor(id) ?? { ...folders[0], id, projectPageId: 'public-page' };
+      const pageId = folder.projectPageId ?? 'public-page';
+      return read({folder,page:{...starredFolders[0].page,id:pageId,title:folder.name},blocks:[],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done')),subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}});
+    },
+    getFolderSnapshot:async (id,query)=>read({folder:entryShellFolderFor(id) ?? folders[0],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done'))}),
     getPlannerToday:async()=>read({daily:{page:starredFolders[0].page,blocks:[],stateVector:''},attention:[],running:[],queued:[],projects:[],memoBlocks:[],folders:[],reviewSessionIds:[]}),
     getPlannerFolderSessions:async(pageId,cursor)=>{
       let releaseResponse:(()=>void)|undefined;
@@ -139,7 +179,9 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     getCard: async (id) => {
       const card = cards.get(id);
       if (!card) throw new Error('알 수 없는 공개 예시 카드');
-      return { card, reports: card.status === 'review' || card.status === 'done' ? [{ id: `report-${id}`, cardId: id, title: '공개 보고', format: 'markdown', body: '변경을 확인해 주세요.', createdAt: time }] : [], comments: [{id:'public-comment',cardId:id,authorKind:'user',authorId:'public-user',sessionId:null,kind:'comment',body:'요청과 결과를 확인합니다.',createdAt:time}], questions: card.blockedKind === 'question' ? [{ id: 'public-question', cardId: id, sessionId: 'public-session', text: '공개 질문입니다.', options: null, answer: null, askedAt: time }] : [], sessions:card.assigneeSessionId?[{...sessions[0],status:options.assignment==='live'?'running':'completed',cardId:id,nodeId:'public-node',agentId:'public-agent'}]:[] };
+      return { card, reports: card.status === 'review' || card.status === 'done' ? [{ id: `report-${id}`, cardId: id, title: '공개 보고', format: 'markdown', body: '변경을 확인해 주세요.', createdAt: time }] : [], comments: [{id:'public-comment',cardId:id,authorKind:'user',authorId:'public-user',sessionId:null,kind:'comment',body:'요청과 결과를 확인합니다.',createdAt:time}], questions: card.blockedKind === 'question' ? [{ id: 'public-question', cardId: id, sessionId: 'public-session', text: '공개 질문입니다.', options: null, answer: null, askedAt: time }] : [], sessions:options.entryShell
+        ? reviewSessions.filter((session) => session.agentSessionId === card.assigneeSessionId || session.cardId === id)
+        : card.assigneeSessionId?[{...sessions[0],status:options.assignment==='live'?'running':'completed',cardId:id,nodeId:'public-node',agentId:'public-agent'}]:[] };
     },
     createCard: async (body) => {
       options.onCreateCard?.(body);

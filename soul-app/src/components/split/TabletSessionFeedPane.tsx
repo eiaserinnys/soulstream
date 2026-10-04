@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { openPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
+import { openFeedSessionCardWorkspace } from '../../lib/session-feed-card-workspace';
 import { SessionFeedScreen } from '../../screens/SessionFeedScreen';
 import { useTokens, type DesignTokens } from '../../theme';
 import { RootSectionHeaderTitle } from '../navigation/RootSectionHeaderTitle';
@@ -79,7 +80,7 @@ export function TabletSessionFeedPane() {
           <SessionFeedScreen
             active={!folderOverlayVisible}
             onOpenSession={(sessionId) =>
-              openPlannerSessionWorkspace(sessionId, undefined, undefined, 'feed')
+              openFeedSessionCardWorkspace(sessionId)
             }
           />
         )}
