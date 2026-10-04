@@ -5,10 +5,10 @@ import {
   Text,
   Image,
   StyleSheet,
-  Animated,
   Pressable,
   type GestureResponderEvent,
 } from 'react-native';
+import Animated, { interpolate, interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Session } from '../api/types';
 import { getSessionDisplayName } from '../lib/session-display-name';
@@ -30,6 +30,7 @@ import { getSessionFeedActivityTimestamp } from '../lib/session-feed-activity';
 
 export interface SessionCardProps {
   session: Session;
+  animationActive?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
   testID?: string;
@@ -61,6 +62,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function SessionCardView({
   session,
+  animationActive = true,
   onPress,
   onLongPress,
   testID = 'session-card-pressable',
@@ -118,47 +120,40 @@ export function SessionCardView({
     review;
   const [cardWidth, setCardWidth] = useState(0);
   const { pulse, shimmer, reducedMotion, appActive, animationEnabled } =
-    useSessionCardAnimation({ isRunning });
+    useSessionCardAnimation({ isRunning, animationActive });
 
   const successHex = t.colors.statusRunning;
 
-  // foreground running 세션에만 animation을 적용한다.
-  const animatedCardStyle =
-    animationEnabled
-      ? {
-          backgroundColor: pulse.interpolate({
-            inputRange: [0, 1],
-            outputRange: [withAlpha(successHex, 0), withAlpha(successHex, 0.07)],
-          }),
-          borderColor: pulse.interpolate({
-            inputRange: [0, 1],
-            outputRange: [
-              withAlpha(successHex, 0.12),
-              withAlpha(successHex, 0.5),
-            ],
-          }),
-          shadowColor: successHex,
-          shadowOffset: { width: 0, height: 0 },
-          shadowRadius: 14,
-          shadowOpacity: pulse.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, 0.14],
-          }),
-          // Android 정적 근사 (styles.card.elevation:0을 오버라이드).
-          // elevation은 Animated 보간이 제한적이라 고정값으로 근사.
-          elevation: 4,
-        }
-      : null;
-
-  const shimmerTranslate = shimmer.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-cardWidth, cardWidth],
-  });
+  // Endpoints and RGB/alpha interpolation match the existing card animation.
+  const backgroundRange = [withAlpha(successHex, 0), withAlpha(successHex, 0.07)];
+  const borderRange = [withAlpha(successHex, 0.12), withAlpha(successHex, 0.5)];
+  const staticBorder = styles.card.borderColor;
+  const staticBackground = styles.card.backgroundColor;
+  const staticShadowOpacity = styles.card.shadowOpacity;
+  const staticElevation = styles.card.elevation;
+  // Explicit resets also clear web inline styles after reduced motion/tab changes.
+  const animatedCardStyle = useAnimatedStyle(() => ({
+    backgroundColor: animationEnabled
+      ? interpolateColor(pulse.value, [0, 1], backgroundRange, 'RGB', { gamma: 1 })
+      : staticBackground,
+    borderColor: animationEnabled
+      ? interpolateColor(pulse.value, [0, 1], borderRange, 'RGB', { gamma: 1 })
+      : staticBorder,
+    shadowColor: successHex,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 14,
+    shadowOpacity: animationEnabled ? interpolate(pulse.value, [0, 1], [0, 0.14]) : staticShadowOpacity,
+    elevation: animationEnabled ? 4 : staticElevation,
+  }));
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(shimmer.value, [0, 1], [-cardWidth, cardWidth]) }],
+  }));
   const showShimmer = shouldRenderSessionCardShimmer({
     isRunning,
     reducedMotion,
     appActive,
     cardWidth,
+    animationActive,
   });
 
   const acknowledgeReview = (event: GestureResponderEvent) => {
@@ -231,11 +226,10 @@ export function SessionCardView({
           ]}
         >
           <Animated.View
-            style={{
+            style={[{
               width: '100%',
               height: '100%',
-              transform: [{ translateX: shimmerTranslate }],
-            }}
+            }, shimmerStyle]}
           >
             <LinearGradient
               // 웹 정본: linear-gradient(105deg, transparent 30%, success 10% 50%, transparent 70%).

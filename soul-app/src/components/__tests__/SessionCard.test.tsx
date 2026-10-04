@@ -1,6 +1,7 @@
 import React from 'react';
 import { Animated, StyleSheet, Text } from 'react-native';
-import { render, act } from '@testing-library/react-native';
+import { cancelAnimation } from 'react-native-reanimated';
+import { render, act, fireEvent } from '@testing-library/react-native';
 import { AccessibilityInfo } from 'react-native';
 import { SessionCard } from '../SessionCard';
 import type { Session } from '../../api/types';
@@ -42,6 +43,26 @@ beforeEach(() => {
 });
 
 describe('SessionCard', () => {
+  it('animationActive reaches the real view/hook without changing the running status or click action', async () => {
+    const onPress = jest.fn();
+    const session = makeSession({ status: 'running' });
+    const view = render(<SessionCard session={session} onPress={onPress} animationActive={false} />);
+    await view.findByText('테스트 세션');
+    act(() => triggerLayout(view.getByTestId, 320));
+    expect(view.queryByTestId('session-card-shimmer-layer')).toBeNull();
+    expect(view.getByText('실행 중')).toBeTruthy();
+    expect(StyleSheet.flatten(view.getByTestId('session-card-pressable').props.style).borderColor).toBe('transparent');
+    fireEvent.press(view.getByTestId('session-card-pressable'));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    view.rerender(<SessionCard session={session} onPress={onPress} animationActive />);
+    expect(view.getByTestId('session-card-shimmer-layer')).toBeTruthy();
+    view.rerender(<SessionCard session={session} onPress={onPress} animationActive={false} />);
+    expect(view.queryByTestId('session-card-shimmer-layer')).toBeNull();
+    const inactiveStyle = StyleSheet.flatten(view.getByTestId('session-card-pressable').props.style);
+    expect(inactiveStyle.borderColor).toBe('transparent');
+    expect(inactiveStyle.backgroundColor).toBe('transparent');
+    expect(inactiveStyle.shadowOpacity).toBe(0);
+  });
   it('idle 상태에서는 shimmer 레이어를 렌더하지 않는다', async () => {
     const { queryByTestId, findByText } = render(
       <SessionCard session={makeSession({ status: 'idle' })} onPress={jest.fn()} />,
@@ -128,7 +149,7 @@ describe('SessionCard', () => {
   });
 
   it('inactive 전이 콜백 안에서 pulse와 shimmer를 동기 정지한다', async () => {
-    const stopSpy = jest.spyOn(Animated.Value.prototype, 'stopAnimation');
+    const stopSpy = cancelAnimation as jest.Mock;
     try {
       const { getByTestId, findByText } = render(
         <SessionCard
@@ -148,7 +169,7 @@ describe('SessionCard', () => {
         expect(stopSpy).toHaveBeenCalledTimes(2);
       });
     } finally {
-      stopSpy.mockRestore();
+      stopSpy.mockClear();
     }
   });
 
