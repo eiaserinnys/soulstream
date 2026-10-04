@@ -40,9 +40,9 @@ afterEach(async()=>{await act(()=>root.unmount());container.remove();useCardStor
 it("opens the catalog assignee once and preserves a manually selected linked session on updates",async()=>{
   useDashboardStore.setState({catalog:{sessionList:[owner,child]} as never});
   const open=vi.fn();await render(open);
-  expect(open).toHaveBeenCalledTimes(1);expect(open).toHaveBeenCalledWith(owner);
+  expect(open).toHaveBeenCalledTimes(1);expect(open).toHaveBeenCalledWith(owner,{source:'automatic'});
   await act(()=>container.querySelector<HTMLButtonElement>('[data-session-id="child"] button')!.click());
-  expect(open).toHaveBeenLastCalledWith(child);
+  expect(open).toHaveBeenLastCalledWith(child,{source:'user'});
   await act(()=>useDashboardStore.setState({catalog:{sessionList:[{...owner,eventCount:2},child]} as never}));
   await render(value=>open(value));
   expect(open).toHaveBeenCalledTimes(2);
@@ -51,7 +51,7 @@ it("waits for the existing targeted lookup when the assignee is absent from the 
   lookup.sessions=[child];lookup.loading=true;
   const open=vi.fn();await render(open);expect(open).not.toHaveBeenCalled();
   lookup.sessions=[child,owner];lookup.loading=false;await render(open);
-  expect(open).toHaveBeenCalledTimes(1);expect(open).toHaveBeenCalledWith(owner);
+  expect(open).toHaveBeenCalledTimes(1);expect(open).toHaveBeenCalledWith(owner,{source:'automatic'});
 });
 it.each([
   {assigneeKind:null,assigneeSessionId:null},

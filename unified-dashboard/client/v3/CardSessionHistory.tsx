@@ -4,11 +4,13 @@ import { orchestratorSessionProvider } from "../providers";
 import { buildRunTree, resolveRunSessions } from "./folder-workspace-run-model";
 import { SessionRunList } from "./SessionRunList";
 
+export interface CardSessionSelection {source:'automatic'|'user'}
+
 export function CardSessionHistory({ sessionIds, onOpenSession, collapsedLimit, assigneeSessionId }: {
   sessionIds: readonly string[];
   collapsedLimit?: number;
   assigneeSessionId?: string | null;
-  onOpenSession(session: SessionSummary): void;
+  onOpenSession(session: SessionSummary, selection?:CardSessionSelection): void;
 }) {
   const openMenu = useSessionMenu();
   const [expanded,setExpanded] = useState(false);
@@ -33,11 +35,11 @@ export function CardSessionHistory({ sessionIds, onOpenSession, collapsedLimit, 
     const assignee = resolved.sessions.find(session => session.agentSessionId === assigneeSessionId);
     if (!assignee) return;
     sessionChosen.current = true;
-    onOpenSession(assignee);
+    onOpenSession(assignee,{source:'automatic'});
   }, [assigneeSessionId, resolved.sessions, onOpenSession]);
   const openSession = (session: SessionSummary) => {
     sessionChosen.current = true;
-    onOpenSession(session);
+    onOpenSession(session,{source:'user'});
   };
   let remaining = collapsedLimit ?? Infinity;
   const trim = (nodes: typeof tree): typeof tree => nodes.flatMap(node => {

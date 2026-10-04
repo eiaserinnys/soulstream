@@ -9,14 +9,14 @@ import { cardMutationKey } from "@seosoyoung/soul-ui/cards/card-api";
 import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution";
 import { CardStatusPicker, type CardStatusHandle } from "./CardStatusPicker";
 import { FolderTitleEditor } from "./FolderTitleEditor";
-import { CardSessionHistory } from "./CardSessionHistory";
+import { CardSessionHistory, type CardSessionSelection } from "./CardSessionHistory";
 import { DetailTabs } from "./DetailTabs";
 import { CardTimeline } from "./CardTimeline";
 import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 export { cardRequestMarkdown } from "./card-request-markdown";
-export function CardDetailPane({cardId,folders,onClose,onOpenSession,sampleDetail,sampleExecution}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary):void;focus?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState}) {
+export function CardDetailPane({cardId,folders,onClose,onOpenSession,sampleDetail,sampleExecution}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState}) {
  const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
  const [localSample,setLocalSample]=useState(sampleDetail);
  const sampleUpload=useLocalDialogueUpload();
