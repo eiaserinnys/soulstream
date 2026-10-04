@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
-import { CardStatusPicker } from "./CardStatusPicker";
+import { CardStatusPicker, type CardStatusHandle } from "./CardStatusPicker";
 import { reviewCard } from "./components-review-fixtures";
 
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
@@ -26,6 +26,8 @@ it("loads only on explicit opens and allows reportless review",async()=>{
 it("aligns the status popup to the chip start edge",async()=>{
  await render();await click("카드 상태 변경");
  expect(document.querySelector('[data-slot="popover-positioner"]')?.getAttribute("data-align")).toBe("start");
+ expect(document.querySelector('[data-card-status-picker]')?.classList.contains("glass-strong")).toBe(true);
+ expect(document.querySelector('[data-card-status-picker]')?.classList.contains("glass-chrome")).toBe(true);
 });
 it("allows every state with unanswered questions, without a restart reason",async()=>{
  const d=detail();d.reports=[];d.questions=[{id:"q",text:"질문",options:null,answer:null,askedAt:"",answeredAt:null}];
@@ -48,10 +50,37 @@ it("changes the stored color through the same picker using the freshly loaded ca
  await click("카드 상태 변경");await click("카드 색상: 민트");
  expect(document.querySelector('[aria-label="카드 색상 목록"]')).not.toBeNull();
  expect(button("민트").getAttribute("aria-pressed")).toBe("true");
+ expect(button("민트").querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+ expect(button("노랑").querySelector('svg[aria-hidden="true"]')).toBeNull();
  await click("연보라");
  expect(changeColor).toHaveBeenCalledWith(d.card,"lavender");
  expect(document.querySelector('[data-card-status-picker]')).toBeNull();
  expect(c.change).not.toHaveBeenCalled();
+});
+it("moves focus to the current color on entry and preserves a later keyboard choice",async()=>{
+ const d=detail();d.card.color="mint";
+ const load=vi.fn().mockResolvedValue(d),change=vi.fn().mockResolvedValue(undefined),changeColor=vi.fn().mockResolvedValue(undefined),onOpen=vi.fn();
+ const control={pending:false,load,change,changeColor};
+ await act(()=>root.render(<CardStatusPicker card={reviewCard} control={control} onOpen={onOpen}/>));
+ await click("카드 상태 변경");await click("카드 색상: 민트");
+ await new Promise(done=>setTimeout(done,10));
+ expect(document.activeElement).toBe(button("민트"));
+ button("연보라").focus();
+ await act(()=>root.render(<CardStatusPicker card={reviewCard} control={control} onOpen={onOpen}/>));
+ expect(document.activeElement).toBe(button("연보라"));
+});
+it("focuses the current enabled color after requestColor finishes loading",async()=>{
+ const d=detail();d.card.color="blue";
+ let resolve!:(value:CardDetail)=>void;
+ const load=vi.fn().mockReturnValue(new Promise<CardDetail>(done=>{resolve=done;}));
+ const change=vi.fn(),changeColor=vi.fn(),onOpen=vi.fn(),handle:{current:CardStatusHandle|null}={current:null};
+ await act(()=>root.render(<CardStatusPicker card={reviewCard} control={{pending:false,load,change,changeColor}} onOpen={onOpen} ref={handle}/>));
+ await act(async()=>{handle.current?.requestColor();await Promise.resolve();});
+ expect(button("하늘").disabled).toBe(true);
+ await act(async()=>{resolve(d);await Promise.resolve();});
+ await new Promise(done=>setTimeout(done,10));
+ expect(button("하늘").disabled).toBe(false);
+ expect(document.activeElement).toBe(button("하늘"));
 });
 it("keeps a color conflict in the existing error and refresh flow before another save",async()=>{
  const d=detail();d.card.color="blue";

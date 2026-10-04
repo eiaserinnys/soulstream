@@ -1,10 +1,11 @@
 import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution";
 import {CardApiError} from "@seosoyoung/soul-ui/cards/card-api";
 import {CardExecutionSettingsDialog} from "./CardExecutionSettings";
-import { useEffect, useState, useMemo, useImperativeHandle, useSyncExternalStore, type Ref } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo, useImperativeHandle, useSyncExternalStore, type Ref } from "react";
+import { Check } from "lucide-react";
 import {CARD_COLORS, CARD_COLOR_KEYS} from "@seosoyoung/soul-ui/cards/card-types";
 import { Button, useDashboardStore, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
-import type { CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardColor, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
 import { cardStatusLabel } from "./CardActions";
 import { StatusChip } from "./StatusChip";
@@ -24,6 +25,10 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
   const catalogFolders=useDashboardStore(s=>s.catalog?.folders);
   const folders=control.folders??catalogFolders??[];
   const [settingsCard,setSettingsCard]=useState<CardRow|null>(null);
+  const colorButtonRefs=useRef(new Map<CardColor,HTMLButtonElement>());
+  const colorButtonRefCallbacks=useRef(new Map<CardColor,(node:HTMLButtonElement|null)=>void>());
+  const pendingColorFocus=useRef(false);
+  const previousView=useRef<"status"|"color">("status");
   const state=useCardStatusCoordinator(card,{...control,change:async(latest,status,reason)=>{
     if(status==='running'&&!latest.assigneeSessionId&&(!latest.nodeId||!latest.assigneeAgentId||!latest.modelPreset)){
       setSettingsCard(latest);return;
@@ -32,6 +37,31 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
     catch(error){if(status==='running'&&!latest.assigneeSessionId&&error instanceof CardApiError&&error.code==='CARD_EXECUTION_SETTINGS_REQUIRED'){setSettingsCard(latest);return;}throw error;}
   }});
   const {open,view,changeOpen,detail,loading,busy,error,refresh,unavailable,change,changeColor,showColors,showStatuses}=state;
+  const currentColor=detail?.card.color??card.color??"yellow";
+  const colorButtonRef=(color:CardColor)=>{
+    let callback=colorButtonRefCallbacks.current.get(color);
+    if(!callback){callback=node=>{if(node)colorButtonRefs.current.set(color,node);else colorButtonRefs.current.delete(color);};colorButtonRefCallbacks.current.set(color,callback);}
+    return callback;
+  };
+  const initialColorFocus=useCallback(()=>{
+    const selected=colorButtonRefs.current.get(currentColor);
+    if(selected&&!selected.disabled)return selected;
+    return CARD_COLOR_KEYS.map(color=>colorButtonRefs.current.get(color)).find(button=>button&&!button.disabled)??null;
+  },[currentColor]);
+  useLayoutEffect(()=>{
+    const enteringColor=previousView.current!=="color"&&view==="color";
+    previousView.current=view;
+    if(view!=="color")pendingColorFocus.current=false;
+    if(enteringColor)pendingColorFocus.current=true;
+    if(!pendingColorFocus.current||!open||view!=="color"||unavailable)return;
+    const selected=colorButtonRefs.current.get(currentColor);
+    const target=selected&&!selected.disabled?selected:CARD_COLOR_KEYS.map(color=>colorButtonRefs.current.get(color)).find(button=>button&&!button.disabled);
+    if(!target)return;
+    const focusTimeout=window.setTimeout(()=>{
+      if(open&&view==="color"&&target.isConnected&&!target.disabled){target.focus();pendingColorFocus.current=false;}
+    },0);
+    return ()=>window.clearTimeout(focusTimeout);
+  },[open,view,detail,loading,unavailable,currentColor]);
   // Base UI's Viewport remeasures content when the active trigger payload changes.
   const popupContent=useMemo(()=>({error,execution,loading,detail,view}),[error,execution,loading,detail,view]);
   const layer=useCardBoardLayer();
@@ -51,7 +81,7 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
       >
       <StatusChip label={execution?.phase==="pending"?"시작 중…":cardStatusLabel(card)} tone={tone}/>
     </PopoverTrigger>
-    <PopoverPopup align="start" className="v3-surface v3-card-status-picker min-w-32 max-w-(--available-width)" data-card-status-picker onClick={event => event.stopPropagation()}>
+    <PopoverPopup align="start" className="v3-surface v3-card-status-picker glass-strong glass-chrome min-w-32 max-w-(--available-width)" data-card-status-picker onClick={event => event.stopPropagation()} initialFocus={view==="color"?initialColorFocus:undefined}>
       <div className="v3-card-status-picker-content">
         {execution && execution.phase!=='pending'?<><p role={execution.phase==='error'?'alert':'status'}>{execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?'다시 확인':'다시 시도'}</Button></>:null}
         {loading ? <p role="status">불러오는 중…</p> : null}
@@ -64,9 +94,15 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
             카드 색상: {CARD_COLORS[detail?.card.color??card.color??"yellow"].name}
           </Button>:null}
         </>:<>
-          <div aria-label="카드 색상 목록">{CARD_COLOR_KEYS.map(color=><Button key={color} variant="menu"
-            aria-pressed={color===(detail?.card.color??card.color??"yellow")} disabled={unavailable}
-            onClick={()=>void changeColor(color)}>{CARD_COLORS[color].name}</Button>)}</div>
+          <div aria-label="카드 색상 목록">{CARD_COLOR_KEYS.map(color=>{
+            const selected=color===currentColor;
+            return <Button key={color} ref={colorButtonRef(color)} variant="menu"
+              aria-pressed={selected} disabled={unavailable}
+              onClick={()=>void changeColor(color)}>
+              <span className="inline-flex size-4 shrink-0 items-center justify-center">{selected?<Check className="size-4" aria-hidden="true"/>:null}</span>
+              <span>{CARD_COLORS[color].name}</span>
+            </Button>;
+          })}</div>
           <Button variant="ghost" disabled={busy} onClick={showStatuses}>돌아가기</Button>
         </>}
       </div>
