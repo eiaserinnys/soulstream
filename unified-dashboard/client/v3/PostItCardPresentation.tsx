@@ -12,20 +12,18 @@ export function PostItGrid({children,className='',variant='default',fontSize,...
  return <div {...props} className={`v3-postit-grid${variant==='compact'?' v3-postit-grid--compact':''} ${className}`} style={postItScale(fontSize)}>{children}</div>;
 }
 
-/** Shared paper presentation. The owner supplies preferences, navigation and actions. */
-export function PostItCardView({id,title,status,fontSize,activity,assigneeName,avatar,statusContent,actions,twoActions=false,
+/** Shared paper presentation. The owner supplies preferences, navigation and status. */
+export function PostItCardView({id,title,status,fontSize,activity,assigneeName,avatar,statusContent,
  onOpen,error,variant='default',readOnly=false,showStatus=true,supplement,...props}:Omit<HTMLAttributes<HTMLElement>,'id'|'title'>&{
  id:string;title:string;status:string;fontSize:number;activity:PostItActivity|null;assigneeName:string;
- avatar?:ReactNode;statusContent?:ReactNode;actions?:ReactNode;twoActions?:boolean;
+ avatar?:ReactNode;statusContent?:ReactNode;
  onOpen?:()=>void;error?:string;variant?:PostItVariant;readOnly?:boolean;showStatus?:boolean;supplement?:string;
 }) {
- const hasActions=!readOnly&&Boolean(actions);
  const text=<>
   <span className="v3-postit-title" title={title}>{title}</span>
-  <span className="v3-postit-latest-label">{activity?activity.kind==='report'?'마지막 보고':'마지막 지시':'지시·보고'}</span>
   <span className={`v3-postit-body${activity?'':' v3-postit-empty'}`}>{activity?.text??'아직 지시나 보고가 없습니다'}</span>
  </>;
- return <article {...props} className={`v3-postit-card${hasActions?' v3-postit-card--actions':''}${hasActions&&twoActions?' v3-postit-card--two-actions':''}${variant==='compact'?' v3-postit-card--compact':''}`}
+ return <article {...props} className={`v3-postit-card${variant==='compact'?' v3-postit-card--compact':''}`}
   data-card-id={id} data-card-size={variant} data-card-status={status} data-card-readonly={readOnly||undefined}
   style={{...postItScale(fontSize),'--postit-rotation':`${postItRotation(id)}deg`} as CSSProperties}>
   {readOnly?<div className="v3-postit-open">{text}</div>:<button type="button" className="v3-postit-open" aria-label={`카드 ${title} 열기`} onClick={onOpen}>{text}</button>}
@@ -34,7 +32,6 @@ export function PostItCardView({id,title,status,fontSize,activity,assigneeName,a
    {!readOnly&&showStatus?statusContent:null}
    {supplement?<span className="v3-postit-supplement">{supplement}</span>:null}
   </div>
-  {hasActions?<div className="v3-postit-actions">{actions}</div>:null}
   {error?<span className="v3-postit-error" role="alert">{error}</span>:null}
  </article>;
 }

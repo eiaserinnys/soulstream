@@ -19,5 +19,5 @@ export function CardInboxBoard({actions,draftAction,createdIds=[],completion:con
   </V3ErrorNotice>:null;
   if(loading)return notice??<p className="v3-card-board-empty" role="status">카드를 불러오는 중…</p>;
   return <>{notice}<CardBoardWorkspace title="전체 카드" actions={actions} draftAction={draftAction} cards={[...cards,...completed.cards]} completion={completion} completed={completed}
-    renderCard={(card,handle,preview)=><PostItCard card={card} handle={handle} preview={preview} variant="compact"/>}/></>;
+    renderCard={card=><PostItCard card={card} variant="compact"/>}/></>;
 }

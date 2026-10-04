@@ -16,7 +16,7 @@ async function pan(page:Page,board:Locator,area:'header'|'paper'|'empty'='header
   const after=await board.evaluate(el=>el.scrollLeft);
   return {before,after};
 }
-test('mouse pan main inline and narrow fullscreen preserves tap menu vertical scroll and grip DnD',async({page})=>{
+test('mouse pan main inline and narrow fullscreen preserves tap, status menus, and vertical scroll',async({page})=>{
   await page.setViewportSize({width:1440,height:1000});const s=await fixture(page),board=s.board;
   await capture(page,'main-1440');const first=await pan(page,board);
   expect(first.after-first.before).toBeGreaterThan(80);expect(s.writes).toHaveLength(0);
@@ -29,13 +29,18 @@ test('mouse pan main inline and narrow fullscreen preserves tap menu vertical sc
   await expect.poll(()=>lane.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
   await board.evaluate(el=>el.scrollLeft=0);await lane.evaluate(el=>el.scrollTop=0);
   const card=board.locator('[data-card-id="home-0-0"]');await card.click({button:'right'});
-  const menu=page.locator('[data-card-status-picker]');await expect(menu).toBeVisible();
-  expect(await menu.innerText()).not.toContain('대기:');expect(await menu.innerText()).not.toContain('보고가 필요합니다');
-  await capture(page,'menu-1440');await page.keyboard.press('Escape');
-  const grip=card.locator('.v3-card-board-grip'),source=await grip.boundingBox(),dest=await board.locator('[data-board-column="queued"]').boundingBox();
-  await page.mouse.move(source!.x+source!.width/2,source!.y+source!.height/2);await page.mouse.down();await page.mouse.move(dest!.x+dest!.width/2,dest!.y+100,{steps:14});await page.mouse.up();
+  const contextMenu=page.locator('[data-slot="menu-popup"]');await expect(contextMenu).toBeVisible();
+  await expect(contextMenu.locator('[data-slot="menu-item"]').allTextContents()).resolves.toEqual([
+    '카드 ID 복사','드래프트','대기','실행 중','막힘','검수 대기','완료','취소',
+  ]);
+  await capture(page,'context-menu-1440');await page.keyboard.press('Escape');await expect(contextMenu).toBeHidden();
+  const trigger=card.getByRole('button',{name:'카드 상태 변경'});await trigger.click();
+  const menu=page.locator('[data-card-status-picker][data-open]');await expect(menu).toBeVisible();
+  expect(await menu.innerText()).not.toContain('보고가 필요합니다');await capture(page,'status-picker-1440');
+  await menu.getByRole('button',{name:'대기',exact:true}).click();
   await expect(board.locator('[data-board-column="queued"] [data-card-id="home-0-0"]')).toHaveCount(1);
-  expect(s.writes).toHaveLength(1);await expect(page.getByTestId('card-detail')).toHaveCount(0);
+  expect(s.writes).toHaveLength(1);expect(s.writes[0]).toMatchObject({id:'home-0-0',body:{status:'queued'}});
+  await expect(page.getByTestId('card-detail')).toHaveCount(0);
   await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'보드 확대',exact:true}).click();
   const expanded=page.getByRole('dialog',{name:'전체 카드 보드'}).locator('.v3-card-board');await expanded.evaluate(el=>el.scrollLeft=0);
   const narrow=await pan(page,expanded);expect(narrow.after).toBeGreaterThan(80);await capture(page,'expanded-390');

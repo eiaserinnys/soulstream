@@ -5,7 +5,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 import { DEFAULT_CHAT_FONT_SIZE } from "../../packages/soul-ui/src/lib/chat-typography";
 import { reviewCard } from "../client/v3/components-review-fixtures";
 
-const output=path.resolve("../../../.local/artifacts/20261001-postit-product");
+const output=path.resolve("../../../.local/artifacts/20261005-card-content-status-menu");
 const phase=process.env.POSTIT_PHASE??"after";
 const finishOnly=process.env.POSTIT_FINISH_ONLY==="1";
 const folderOnly=process.env.POSTIT_FOLDER_ONLY==="1";
@@ -57,11 +57,22 @@ async function prepare(page:Page,width:number,theme:"dark"|"light") {
 async function capture(page:Page,name:string) {
   await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(output,`${phase}-${name}.png`),animations:"disabled"});
 }
+async function waitForStableCardRects(page:Page,ids:string[]) {
+  await page.waitForFunction(cardIds=>new Promise<void>(resolve=>{
+    let previous="",stable=0;
+    const frame=()=>{
+      const current=cardIds.map(id=>document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)?.getBoundingClientRect().toJSON()).map(rect=>JSON.stringify(rect)).join("|");
+      stable=current===previous?stable+1:0;previous=current;
+      if(stable>=3)resolve();else requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }),ids);
+}
 async function geometry(page:Page) {
   return page.locator(".v3-postit-card").evaluateAll(nodes=>nodes.map(node=>{
     const card=node as HTMLElement,r=card.getBoundingClientRect(),s=getComputedStyle(card);
     const open=card.querySelector<HTMLElement>(".v3-postit-open")!,body=card.querySelector<HTMLElement>(".v3-postit-body")!,footer=card.querySelector<HTMLElement>(".v3-postit-footer")!;
-    return {id:card.dataset.cardId,width:card.offsetWidth,height:card.offsetHeight,box:{x:r.x,y:r.y,right:r.right,bottom:r.bottom},transform:s.transform,
+    return {id:card.dataset.cardId,variant:card.dataset.cardSize,width:card.offsetWidth,height:card.offsetHeight,box:{x:r.x,y:r.y,right:r.right,bottom:r.bottom},transform:s.transform,
       bodyHeight:getComputedStyle(body).lineHeight,bodyFont:getComputedStyle(body).fontSize,
       footerTrack:footer.offsetTop,bodyTrack:body.offsetTop,padding:getComputedStyle(open).padding,
       action:card.querySelector<HTMLElement>(".dashboard-icon-cap")?.offsetWidth??null};
@@ -75,8 +86,8 @@ for(const width of [390,1440,1920]) test(`main and folder at ${width}`,async({pa
   if(phase!=="before"&&!folderOnly) {
     if(!finishOnly) {
     expect(state.detailReads).toHaveLength(0);
-    const metrics=await geometry(page);expect(metrics.length).toBe(6);
-    metrics.forEach(card=>{expect(card.width).toBe(Math.round(320*DEFAULT_CHAT_FONT_SIZE/17));expect(card.height).toBe(Math.round(280*DEFAULT_CHAT_FONT_SIZE/17));expect(card.bodyFont).toBe(`${DEFAULT_CHAT_FONT_SIZE}px`);expect(parseFloat(card.bodyHeight)).toBeCloseTo(25*DEFAULT_CHAT_FONT_SIZE/17,2);expect(card.footerTrack).toBeGreaterThan(card.bodyTrack);if(card.action)expect(card.action).toBe(32);});
+    const metrics=await geometry(page);expect(metrics.length).toBe(7);
+    metrics.forEach(card=>{const frame=card.variant==="compact"?0.8:1;expect(card.width).toBe(Math.round(320*DEFAULT_CHAT_FONT_SIZE/17*frame));expect(card.height).toBe(Math.round(280*DEFAULT_CHAT_FONT_SIZE/17*frame));expect(card.bodyFont).toBe(`${DEFAULT_CHAT_FONT_SIZE}px`);expect(parseFloat(card.bodyHeight)).toBeCloseTo(25*DEFAULT_CHAT_FONT_SIZE/17,2);expect(card.footerTrack).toBeGreaterThan(card.bodyTrack);if(card.action)expect(card.action).toBe(32);});
     expect(state.external).toEqual([]);
     const rotations=metrics.map(card=>card.transform);
     await page.reload();await expect(page.locator(".v3-postit-card").first()).toBeVisible();
@@ -85,24 +96,57 @@ for(const width of [390,1440,1920]) test(`main and folder at ${width}`,async({pa
     const card=page.locator('.v3-postit-card[data-card-id="qa-postit-0"]');
     await card.locator(".v3-postit-open").focus();await page.keyboard.press("Enter");
     await expect(page.getByTestId("card-detail")).toBeVisible();await page.getByRole("button",{name:"카드 닫기",exact:true}).click();
-    await card.getByRole("button",{name:"완료",exact:true}).click();
+    const statusTrigger=card.getByRole("button",{name:"카드 상태 변경"});await statusTrigger.click();
+    await page.locator("[data-card-status-picker][data-open]").getByRole("button",{name:"완료",exact:true}).click();
     await expect(card).toHaveCount(0);
     expect(state.mutations[0]).toMatchObject({id:"qa-postit-0",suffix:"/status",body:{status:"done",expectedVersion:1}});
     expect(state.cards[0].status).toBe("done");
     await expect(page.getByTestId("card-detail")).toHaveCount(0);
-    if(verifyDrag) {
-    const handle=page.locator('.v3-postit-card[data-card-id="qa-postit-3"] button[aria-label$="순서 변경"]');
-    await handle.scrollIntoViewIfNeeded();await handle.focus();
-    const other=page.locator('.v3-postit-card[data-card-id="qa-postit-8"]');
-    const firstBox=await page.locator('.v3-postit-card[data-card-id="qa-postit-3"]').boundingBox(),otherBox=await other.boundingBox();
-    await page.keyboard.press("Space");
-    await expect(page.locator("[role=status]")).toContainText("qa-postit-3");
-    await page.keyboard.press(Math.abs(otherBox!.y-firstBox!.y)<20?"ArrowRight":"ArrowDown");
-    await expect(page.locator("[role=status]")).toContainText("droppable area qa-postit-8");
-    await page.keyboard.press("Space");
-    await expect.poll(()=>state.mutations.filter(m=>m.suffix==="/queue-position").length).toBe(1);
-    expect(state.mutations.find(m=>m.suffix==="/queue-position")).toMatchObject({id:"qa-postit-3",body:{afterCardId:"qa-postit-8",expectedVersion:1}});
-    await expect(page.getByTestId("card-detail")).toHaveCount(0);
+    if(verifyDrag&&width===1440) {
+      await page.getByRole("button",{name:"일반 보기",exact:true}).click();
+      const queueMutations=()=>state.mutations.filter(m=>m.suffix==="/queue-position");
+      const first=page.locator('.v3-postit-card[data-card-id="qa-postit-3"]'),firstChip=first.getByRole("button",{name:"카드 상태 변경"});
+      const other=page.locator('.v3-postit-card[data-card-id="qa-postit-8"]');
+      await expect(firstChip).toHaveCSS("touch-action","none");
+      const source=await firstChip.boundingBox(),destination=await other.boundingBox();
+      await page.mouse.move(source!.x+source!.width/2,source!.y+source!.height/2);await page.mouse.down();
+      await page.mouse.move(destination!.x+destination!.width/2,destination!.y+destination!.height/2,{steps:8});await page.mouse.up();
+      await expect.poll(()=>state.mutations.filter(m=>m.suffix==="/queue-position").length).toBe(1);
+      expect(queueMutations()[0]).toMatchObject({id:"qa-postit-3",suffix:"/queue-position",body:{afterCardId:"qa-postit-8",expectedVersion:1}});
+      await expect.poll(()=>page.locator('[data-card-group="queued"] .v3-postit-card').evaluateAll(nodes=>nodes.map(n=>(n as HTMLElement).dataset.cardId))).toEqual(["qa-postit-8","qa-postit-3"]);
+      await waitForStableCardRects(page,["qa-postit-3","qa-postit-8"]);
+      await expect(page.locator("[data-card-status-picker][data-open]")).toHaveCount(0);await expect(page.getByTestId("card-detail")).toHaveCount(0);
+
+      const targetBox=await other.boundingBox(),movedBox=await first.boundingBox();await firstChip.focus();await page.keyboard.press("Space");
+      await expect(firstChip).toHaveAttribute("aria-pressed","true");
+      const key=Math.abs(targetBox!.y-movedBox!.y)<20?(targetBox!.x>movedBox!.x?"ArrowRight":"ArrowLeft"):(targetBox!.y>movedBox!.y?"ArrowDown":"ArrowUp");
+      await page.keyboard.press(key);await expect(page.locator('[role="status"]').filter({hasText:"droppable area qa-postit-8"})).toHaveCount(1);await page.keyboard.press("Space");
+      await expect(firstChip).not.toHaveAttribute("aria-pressed","true");
+      await expect.poll(()=>state.mutations.filter(m=>m.suffix==="/queue-position").length).toBe(2);
+      expect(queueMutations()[1]).toMatchObject({id:"qa-postit-3",suffix:"/queue-position",body:{afterCardId:null,expectedVersion:2}});
+      await expect.poll(()=>page.locator('[data-card-group="queued"] .v3-postit-card').evaluateAll(nodes=>nodes.map(n=>(n as HTMLElement).dataset.cardId))).toEqual(["qa-postit-3","qa-postit-8"]);
+      await waitForStableCardRects(page,["qa-postit-3","qa-postit-8"]);
+      await expect(page.getByTestId("card-detail")).toHaveCount(0);
+
+      const nextTarget=await other.boundingBox(),nextMoved=await first.boundingBox();await firstChip.focus();await page.keyboard.press("Space");
+      await expect(firstChip).toHaveAttribute("aria-pressed","true");
+      const nextKey=Math.abs(nextTarget!.y-nextMoved!.y)<20?(nextTarget!.x>nextMoved!.x?"ArrowRight":"ArrowLeft"):(nextTarget!.y>nextMoved!.y?"ArrowDown":"ArrowUp");
+      await page.keyboard.press(nextKey);await page.keyboard.press("Enter");
+      await expect(firstChip).not.toHaveAttribute("aria-pressed","true");
+      await expect.poll(()=>state.mutations.filter(m=>m.suffix==="/queue-position").length).toBe(3);
+      expect(queueMutations()[2]).toMatchObject({id:"qa-postit-3",suffix:"/queue-position",body:{afterCardId:"qa-postit-8",expectedVersion:3}});
+      await expect.poll(()=>page.locator('[data-card-group="queued"] .v3-postit-card').evaluateAll(nodes=>nodes.map(n=>(n as HTMLElement).dataset.cardId))).toEqual(["qa-postit-8","qa-postit-3"]);
+      await expect(page.locator("[data-card-status-picker][data-open]")).toHaveCount(0);await expect(page.getByTestId("card-detail")).toHaveCount(0);
+
+      await firstChip.click();const statusPopup=page.locator("[data-card-status-picker][data-open]");
+      await expect(statusPopup).toBeVisible();const queuedOrder=await page.locator('[data-card-group="queued"] .v3-postit-card').evaluateAll(nodes=>nodes.map(n=>(n as HTMLElement).dataset.cardId));
+      const queuedBefore=state.mutations.filter(m=>m.suffix==="/queue-position").length,statusBefore=state.mutations.filter(m=>m.suffix==="/status").length;
+      await statusPopup.getByRole("button",{name:"대기",exact:true}).focus();await page.keyboard.press("ArrowDown");await page.keyboard.press("Space");
+      await expect(statusPopup).toBeVisible();
+      await expect.poll(()=>page.locator('[data-card-group="queued"] .v3-postit-card').evaluateAll(nodes=>nodes.map(n=>(n as HTMLElement).dataset.cardId))).toEqual(queuedOrder);
+      expect(state.mutations.filter(m=>m.suffix==="/queue-position")).toHaveLength(queuedBefore);
+      expect(state.mutations.filter(m=>m.suffix==="/status")).toHaveLength(statusBefore);
+      await page.keyboard.press("Escape");await expect(statusPopup).toHaveCount(0);
     }
   }
   if(width<760){await page.getByTestId("v3-mobile-tab-projects").click();await page.getByTestId("v3-mobile-project-list").getByRole("button",{name:"소울스트림",exact:true}).click();}
@@ -111,7 +155,7 @@ for(const width of [390,1440,1920]) test(`main and folder at ${width}`,async({pa
   if(folderOnly)expect(state.mutations).toHaveLength(0);
   await capture(page,`folder-${width}`);
   if(phase!=="before") {
-    const metrics=await geometry(page);metrics.forEach(card=>{expect(card.width).toBe(Math.round(320*DEFAULT_CHAT_FONT_SIZE/17));expect(card.height).toBe(Math.round(280*DEFAULT_CHAT_FONT_SIZE/17));expect(card.footerTrack).toBeGreaterThan(card.bodyTrack);});
+    const metrics=await geometry(page);metrics.forEach(card=>{const frame=card.variant==="compact"?0.8:1;expect(card.width).toBe(Math.round(320*DEFAULT_CHAT_FONT_SIZE/17*frame));expect(card.height).toBe(Math.round(280*DEFAULT_CHAT_FONT_SIZE/17*frame));expect(card.footerTrack).toBeGreaterThan(card.bodyTrack);});
     writeFileSync(path.join(output,`metrics-${width}.json`),JSON.stringify(metrics,null,2));
   }
 });
@@ -120,9 +164,15 @@ test("components samples and light paper readability",async({page})=>{
   test.skip(phase==="before"||finishOnly||folderOnly);
   const state=await prepare(page,1440,"light");await page.goto("/components");
   const samples=page.locator('[data-component="PostItCardView / PostItGrid"]');await samples.scrollIntoViewIfNeeded();
-  await expect(samples.locator(".v3-postit-card")).toHaveCount(7);await capture(page,"components-light-1440");
-  await samples.getByRole("button",{name:"완료",exact:true}).click();
-  await expect(page.locator("p[role=status]")).toContainText("포스트잇 완료");
+  await expect(samples.locator(".v3-postit-card")).toHaveCount(14);await capture(page,"components-light-1440");
+  const reviewSample=samples.locator('[data-card-id="postit-sample-3"]');
+  await reviewSample.getByRole("button",{name:"카드 상태 변경"}).first().click();
+  await page.locator("[data-card-status-picker]").getByRole("button",{name:"완료",exact:true}).click();
+  await expect.poll(()=>reviewSample.evaluateAll(nodes=>nodes.map(node=>(node as HTMLElement).dataset.cardStatus))).toEqual(["done","done"]);
+  const readOnly=page.getByTestId("readonly-card-list-sample");await readOnly.scrollIntoViewIfNeeded();
+  await expect(readOnly.locator(".v3-postit-card")).toHaveCount(8);
+  await expect(readOnly.locator(".v3-postit-card button, .v3-postit-card [data-slot='status-chip']")).toHaveCount(0);
+  await capture(page,"readonly-light-1440");
   expect(state.detailReads).toEqual([]);
 });
 
@@ -165,7 +215,7 @@ for(const width of [390,1920]) test(`keyboard drag diagnosis at ${width}`,async(
       return false;
     })).toBe(true);
     await snapshot("visible-before-start");
-    const handle=first.getByRole("button",{name:/순서 변경$/});await handle.focus();await page.keyboard.press("Space");
+    const handle=first.getByRole("button",{name:"카드 상태 변경"});await handle.focus();await page.keyboard.press("Space");
     await expect(handle).toHaveAttribute("aria-pressed","true");
     await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
     await snapshot("active-measured");

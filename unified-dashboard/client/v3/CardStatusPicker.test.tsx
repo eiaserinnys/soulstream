@@ -23,6 +23,10 @@ it("loads only on explicit opens and allows reportless review",async()=>{
  expect(button("검수 대기").disabled).toBe(false);expect(document.body.textContent).not.toContain("보고가 필요합니다");expect(document.body.textContent).not.toContain("대기: 담당 에이전트");
  await click("드래프트");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
+it("aligns the status popup to the chip start edge",async()=>{
+ await render();await click("카드 상태 변경");
+ expect(document.querySelector('[data-slot="popover-positioner"]')?.getAttribute("data-align")).toBe("start");
+});
 it("allows every state with unanswered questions, without a restart reason",async()=>{
  const d=detail();d.reports=[];d.questions=[{id:"q",text:"질문",options:null,answer:null,askedAt:"",answeredAt:null}];
  const c=await render(vi.fn().mockResolvedValue(d));await click("카드 상태 변경");

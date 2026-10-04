@@ -13,10 +13,10 @@ export function useBoardPan(): HTMLAttributes<HTMLDivElement> {
   return {
     onPointerDown(event) {
       suppressClick.current = false; pointer.current = null;
-      // The explicit grip/actions own DnD and menus. Paper body/footer can pan.
+      // Footer controls own clicks. Paper body/footer can pan.
       const target = event.target as Element;
       if (event.button !== 0 || event.pointerType === "touch" || event.currentTarget.scrollWidth <= event.currentTarget.clientWidth
-        || target.closest(".v3-card-board-grip, .v3-postit-actions, input, textarea, a")
+        || target.closest("input, textarea, a")
         || target.closest("button") && !target.closest(".v3-postit-open")) return;
       pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY, scroll: event.currentTarget.scrollLeft, active: false };
     },

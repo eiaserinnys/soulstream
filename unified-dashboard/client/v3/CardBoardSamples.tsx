@@ -1,6 +1,6 @@
 import {dialoguesAssignment} from "./dialogues-api";
 import {createPortal} from "react-dom";
-import { useCallback,useMemo,useState, type ReactNode } from "react";
+import { useCallback,useMemo,useState } from "react";
 import { Button, DashboardIconCap, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
@@ -54,7 +54,7 @@ export function CardBoardSamples() {
   const completed=useCompletedCards(undefined,includeCompleted,loader);
   const visibleCards=[...cards.filter(card=>card.status!=='done'),...completed.cards];
   const doneCount=cards.filter(card=>card.status==="done").length;
-  const renderCard=(card:typeof cards[number],variant:PostItVariant="compact",handle?:ReactNode,preview=false)=><PostItCardView card={card} variant={variant} activity={card.latestActivity} handle={handle} assignee={reviewSession}
+  const renderCard=(card:typeof cards[number],variant:PostItVariant="compact")=><PostItCardView card={card} variant={variant} activity={card.latestActivity} assignee={reviewSession}
     onOpen={()=>{
       // Seed the existing ID query with review fixtures; keep the operational resolver.
       queryClient.setQueryData(["sessions","ids",null,[reviewSession.agentSessionId]],{
@@ -62,8 +62,7 @@ export function CardBoardSamples() {
       });
       setSelectedSession(undefined);setMobileTab("projects");setSelected(card.id);
     }}
-    completion={preview?undefined:{pending:false,onComplete:()=>setStatuses(previous=>({...previous,[card.id]:"done"}))}}
-    statusControl={preview?undefined:{pending:false,folders:reviewFolders,assignment:dialoguesAssignment,
+    statusControl={{pending:false,folders:reviewFolders,assignment:dialoguesAssignment,
       saveSettings:async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setSettings(previous=>({...previous,[card.id]:saved}));return saved;},load:async()=>({card,reports:card.status==="todo"?[]:[{id:"sample-report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
       questions:card.status==="blocked"?[{id:"sample-question",text:"질문",answer:null,options:null,askedAt:card.createdAt,answeredAt:null}]:[],sessions:[]}),
       change:async(latest,status)=>{setStatuses(previous=>({...previous,[card.id]:status}));if(status==='running')setSettings(previous=>({...previous,[card.id]:{...latest,assigneeKind:'session',assigneeSessionId:reviewSession.agentSessionId}}));}}}/>;
@@ -87,7 +86,7 @@ export function CardBoardSamples() {
     <div className="v3-detail-section-head">{(['unassigned','partial','agent','assigned','live'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={assignmentScenario===value} onClick={()=>{setSelected(null);setSettings({});setAssignmentScenario(value);}}>{{unassigned:'담당 없음',partial:'부분 설정',agent:'에이전트 지정',assigned:'담당 연결',live:'실행 중'}[value]}</Button>)}</div>
     <div className="v3-detail-section-head">{(['normal','todo','queued','pending'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={startExample===value} onClick={()=>{setStartExample(value);setSelected(cards[0].id);}}>{{normal:'기본 상세',todo:'드래프트 상세',queued:'대기 상세',pending:'시작 확인 중'}[value]}</Button>)}</div>
     <div className="v3-detail-section-head">{(["short","long"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={conversation===value} onClick={()=>setConversation(value)}>{value==="short"?"짧은 커멘트":"긴 커멘트"}</Button>)}</div>
-    {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={(card,handle,preview)=>renderCard(card as typeof cards[number],"compact",handle,preview)} completion={{includeCompleted,onChange}}
+    {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={card=>renderCard(card as typeof cards[number],"compact")} completion={{includeCompleted,onChange}}
       draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}/>
       : <><PostItGrid>{cards.filter(card=>card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=>renderCard(card as typeof cards[number],"default")}/>:null}</>}
     {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleExecution={startExample==='pending'?{phase:'pending',message:'시작 중…'}:undefined} sampleDetail={{...reviewDetail,card:{...selectedCard,...(startExample==='todo'||startExample==='queued'?{status:startExample}:startExample==='pending'?{status:'running' as const}:{}),brief:conversation==="short"?"내부 요약을 접지 않고 표시합니다.":"내부 요약을 접지 않고 표시합니다.\n\n".repeat(30)},sessions:[{sessionId:reviewSession.agentSessionId,cardId:selectedCard.id,displayName:reviewSession.displayName??null,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:assignmentSession.status,createdAt:reviewCard.createdAt,updatedAt:reviewCard.updatedAt,callerSessionId:null}],comments:Array.from({length:conversation==="short"?1:20},(_,index)=>({id:`detail-comment-${index}`,cardId:selectedCard.id,authorKind:"user",authorId:"sample",sessionId:null,kind:"comment",body:`커멘트 ${index+1}: 탭을 바꾸어도 작성 중 문장과 첨부는 유지됩니다.`,createdAt:reviewCard.createdAt})),questions:[{id:"detail-question",text:"내용을 확인했나요?",options:["확인했습니다"],answer:"확인했습니다",askedAt:reviewCard.createdAt,answeredAt:reviewCard.createdAt}]}} folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={(session,selection)=>{

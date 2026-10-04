@@ -1,22 +1,43 @@
 import { useState } from "react";
+import { CardQueue } from "@seosoyoung/soul-ui/cards/CardQueue";
+import type { CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import { PostItCardView, PostItGrid } from "./PostItCard";
 import { reviewCard, reviewSession, reviewTitle } from "./components-review-fixtures";
 
-/** The product presentation, with local sample callbacks and no operational writes. */
+/** The product paper and status picker, with local status and queue state only. */
 export function PostItCardSamples({onOpen}:{onOpen(label:string):void}) {
-  const [statuses,setStatuses]=useState<Record<string,import("@seosoyoung/soul-ui/cards/card-types").CardStatus>>({});
-  return <PostItGrid>{(["todo","queued","blocked","running","review","done","cancelled"] as const).map((status,index)=>{
-    const card={...reviewCard,id:`postit-sample-${index}`,status:statuses[`postit-sample-${index}`]??status,
-      title:index===0||index===4?reviewTitle:`포스트잇 ${status}`,blockedKind:status==="blocked"?"question" as const:null,
-      assigneeKind:index===2?null:reviewCard.assigneeKind};
-    return <PostItCardView key={card.id} card={card} assignee={index===2?undefined:reviewSession}
-      activity={index===1?null:{kind:index===0?"instruction":"report",format:"markdown",
-        body:index===3?"짧은 실제 원문 미리보기입니다.":"제목과 본문이 길어도 같은 크기와 푸터 위치를 유지합니다. 원문을 요약하거나 새로운 사실을 만들지 않습니다. 네 줄 뒤의 내용은 카드 상세에서 확인합니다. ".repeat(3)}}
-      onOpen={()=>onOpen("포스트잇 카드")}
-      statusControl={{pending:false,
-        load:async()=>({card,reports: index===1?[]:[{id:"local-report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
-          questions:status==="blocked"?[{id:"local-question",text:"샘플 질문",options:null,answer:null,askedAt:card.createdAt,answeredAt:null}]:[],sessions:[]}),
-        change:async(_,next)=>{setStatuses(previous=>({...previous,[card.id]:next}));}}}
-      completion={{pending:false,onComplete:()=>{setStatuses(previous=>({...previous,[card.id]:"done"}));onOpen("포스트잇 완료");}}}/>;
-  })}</PostItGrid>;
+  const [statuses,setStatuses]=useState<Record<string,CardStatus>>({});
+  const [queueOrder,setQueueOrder]=useState(["postit-queued-a","postit-queued-b"]);
+  const statusesToShow=["todo","blocked","running","review","done","cancelled"] as const;
+  const cards=statusesToShow.map((status,index)=>({
+    ...reviewCard,id:`postit-sample-${index}`,status:statuses[`postit-sample-${index}`]??status,
+    title:index===0||index===3?reviewTitle:`포스트잇 ${status}`,blockedKind:status==="blocked"?"question" as const:null,
+    assigneeKind:index===1?null:reviewCard.assigneeKind,
+    latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
+      body:"같은 카드 원문을 라벨 없이 표시합니다. 긴 제목과 본문이 있어도 푸터 위치와 카드 크기는 유지됩니다. ".repeat(4),createdAt:reviewCard.createdAt},
+  }));
+  const queuedSources=["postit-queued-a","postit-queued-b"].map((id,index)=>({...reviewCard,id,status:"queued" as const,
+    title:index===0?"긴 제목의 대기 카드 순서 이동":"다음 대기 카드",queuePositionKey:index===0?"a":"b",
+    latestActivity:{kind:"instruction" as const,format:"markdown" as const,body:"하단 상태 칩에서 메뉴를 열고 칩을 끌어 대기 순서를 바꿉니다. ".repeat(3),createdAt:reviewCard.createdAt},
+  })).sort((a,b)=>queueOrder.indexOf(a.id)-queueOrder.indexOf(b.id)).filter(card=>(statuses[card.id]??card.status)==="queued");
+  const renderCard=(card:CardRow,variant:"default"|"compact")=><PostItCardView card={{...card,status:statuses[card.id]??card.status}} variant={variant}
+    activity={card.latestActivity??null} assignee={card.assigneeKind?reviewSession:undefined} onOpen={()=>onOpen("포스트잇 카드")}
+    statusControl={{pending:false,load:async()=>({card:{...card,status:statuses[card.id]??card.status},reports:[],questions:[],sessions:[]}),
+      change:async(_latest,status)=>{setStatuses(previous=>({...previous,[card.id]:status}));}}}/>;
+  return <div className="v3-postit-card-samples" data-testid="postit-card-samples">
+    <div className="v3-postit-size-comparison">
+      <div><p className="v3-components-label">기본 카드 · 제목과 본문</p><PostItGrid>{cards.map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid></div>
+      <div><p className="v3-components-label">compact 카드 · 같은 본문</p><PostItGrid variant="compact">{cards.map(card=><div key={card.id}>{renderCard(card,"compact")}</div>)}</PostItGrid></div>
+    </div>
+    <section aria-label="대기 카드 순서 변경">
+      <div className="v3-detail-section-head"><h3>대기 순서와 상태 메뉴</h3><span>칩을 끌면 순서를 바꿉니다</span></div>
+      <PostItGrid><CardQueue layout="grid" activatorMode="status-chip" cards={queuedSources} onReorder={ids=>setQueueOrder([...ids])}
+        renderRow={(card,_handle,activator)=><PostItCardView card={{...card,status:statuses[card.id]??card.status}} variant="default"
+          activity={card.latestActivity??null} assignee={reviewSession} onOpen={()=>onOpen("대기 카드")}
+          statusActivator={activator} statusControl={{pending:false,
+            load:async()=>({card:{...card,status:statuses[card.id]??card.status},reports:[],questions:[],sessions:[]}),
+            change:async(_latest,status)=>{setStatuses(previous=>({...previous,[card.id]:status}));}}}/>}/>
+      </PostItGrid>
+    </section>
+  </div>;
 }
