@@ -1407,12 +1407,7 @@ async function expectNoBackend(
   sql: ReturnType<typeof postgres>,
   pid: number,
 ): Promise<void> {
-  const active = await sql`
-    SELECT 1 FROM pg_stat_activity
-    WHERE datname = current_database()
-        AND pid = ${pid}
-  `;
-  expect(active).toHaveLength(0);
+  await waitForNoBackend(sql, pid);
 }
 
 async function waitForNoBackend(
