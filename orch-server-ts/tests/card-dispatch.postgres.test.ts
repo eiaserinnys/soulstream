@@ -212,7 +212,7 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.drain();
         expect((await cards.getCard(id))!.card.status).toBe('running');
     });
-    it("requeues answered questions from finished sessions and includes the answer in the next prompt", async () => {
+    it("keeps running after delivering an answer to a finished question session", async () => {
         const { id, sessionId } = await start();
         await cards.askQuestion({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, text: '방향?', idempotencyKey: key() });
         await dispatcher.drain();
@@ -220,8 +220,8 @@ describe("card dispatch and session lifecycle", () => {
         const q = (await cards.getCard(id))!.questions[0]!;
         await cards.answerQuestion({ ...human, cardId: id, questionId: String(q.id), answer: 'A', idempotencyKey: key() });
         await dispatcher.drain();
-        expect(launch).toHaveBeenCalledTimes(2);
-        expect(launch.mock.calls[1]![0]).toHaveProperty('prompt', expect.stringContaining('방향? → A'));
+        expect(launch).toHaveBeenCalledTimes(1);
+        expect((await cards.getCard(id))!.card.status).toBe('running');
         expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('방향? → A'));
     });
     it("delivers a late answer with attachments to a live session after completion without changing status", async () => {

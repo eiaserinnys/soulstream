@@ -104,3 +104,10 @@ it("shows editable settings for agent preassignment and hides only settings afte
  expect(container.querySelector('button[aria-label="완료"]')).not.toBeNull();
  expect(container.querySelector('[data-card-section="sessions"]')).not.toBeNull();expect(container.querySelector('textarea')).not.toBeNull();
 });
+
+it.each(['todo','queued'] as const)('starts a %s detail through the existing status controller and stays open',async status=>{
+ const source={...card,status};const latest={...detail,card:source};const execute=vi.fn().mockResolvedValue({card:{...source,status:'running'},execution:{state:'pending',requestId:'req',sessionId:'owner'}});
+ useCardStore.setState({byId:{inherit:source},details:{inherit:latest},loadCard:vi.fn().mockResolvedValue(latest),execute});
+ const close=await render();await act(async()=>{container.querySelector<HTMLButtonElement>('[aria-label="시작하기"]')!.click();});
+ expect(execute).toHaveBeenCalledWith('inherit',1);expect(close).not.toHaveBeenCalled();expect(document.querySelector('[data-card-status-picker]')).toBeNull();
+});

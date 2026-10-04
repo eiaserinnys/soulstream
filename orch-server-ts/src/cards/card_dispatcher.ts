@@ -169,7 +169,7 @@ export class CardDispatcher {
                     else await this.deliver(card,String(q!.session_id),answer);
                 } catch (error) { this.options.warn(`card ${card.id} answer delivery failed: ${String(error)}`); }
             }
-            if (autoResumed && (!questionSession?.status || isTerminalSessionStatus(questionSession.status))) {
+            if (autoResumed && !questionSession) {
                 const latest=await cards.getCard(card.id);
                 if (latest?.card.status === "running" && latest.card.version === change.committedCard!.version)
                     await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: latest.card.version });

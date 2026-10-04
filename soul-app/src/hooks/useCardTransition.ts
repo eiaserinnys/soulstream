@@ -3,7 +3,7 @@ import {Alert} from 'react-native';
 import {useCardStore} from '../store/cardStore';
 import type { ApiClient } from '../api/client';
 import type { CardDto, CardStatus, CardAssignment } from '../api/cardTypes';
-import { CardExecutionSettingsRequired, cardWritePending, performCardTransition, subscribeCardWrites } from '../lib/card-transition';
+import { CardExecutionSettingsRequired, cardExecutionState, cardWritePending, performCardTransition, subscribeCardWrites } from '../lib/card-transition';
 import { cardOperationId, useCardActions } from './useCardActions';
 import { captureAuthScope } from '../lib/auth-scope';
 
@@ -18,6 +18,7 @@ export function useCardTransition(api: ApiClient | null, cardId: string) {
   });
   const [error, setError] = useState<string | null>(null);
   const pending = useSyncExternalStore(subscribeCardWrites, () => cardWritePending(cardId), () => false);
+  const execution = useSyncExternalStore(subscribeCardWrites, () => cardExecutionState(cardId), () => undefined);
   const transition = (card: CardDto, next: CardStatus, reason?: string, isActive?: () => boolean) => {
     if (!api || pending) return Promise.resolve(false);
     const scope = captureAuthScope().generation;
@@ -40,5 +41,5 @@ export function useCardTransition(api: ApiClient | null, cardId: string) {
     const result=await performCardTransition(api,saved.card,'running',cardOperationId());
     if(result.card)setSettingsCard(null);
   };
-  return { transition, pending, error,settingsCard,setSettingsCard:(value:CardDto|null)=>{if(!value)settingsKey.current=null;setSettingsCard(value);},saveSettingsAndExecute };
+  return { transition, pending, execution, error,settingsCard,setSettingsCard:(value:CardDto|null)=>{if(!value)settingsKey.current=null;setSettingsCard(value);},saveSettingsAndExecute };
 }

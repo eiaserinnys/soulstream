@@ -1,5 +1,6 @@
 import { SessionMenuProvider } from "./SessionMenuProvider";
 import { CardWorkspace } from "./CardWorkspace";
+import type { CardSessionSelection } from "./CardSessionHistory";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
@@ -467,11 +468,11 @@ function V3DashboardContent() {
     }
     await selectFolder(folder, "page" in page ? page : undefined);
   };
-  const openSession = useCallback((session: SessionSummary) => {
+  const openSession = useCallback((session: SessionSummary, selection?:CardSessionSelection) => {
     clearSessionPanelFocus();
     activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
     setChatOpen(true);
-    if (mobileMode && (selectedFolderId || cardNavigation.cardId)) setMobileTab("chat");
+    if (selection?.source !== 'automatic' && mobileMode && (selectedFolderId || cardNavigation.cardId)) setMobileTab("chat");
   }, [cardNavigation.cardId, clearSessionPanelFocus, mobileMode, selectedFolderId, setActiveSession, setActiveSessionSummary, setActiveTab]);
   const {
     saveMemo,

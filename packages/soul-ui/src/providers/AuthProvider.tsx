@@ -19,6 +19,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { resetCardExecutions } from "../cards/card-execution";
 import { clearAllDetailCursorStores } from "./detail-cursor-store";
 
 export interface DashboardAccess {
@@ -123,6 +124,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (!authenticated && isAuthenticatedRef.current) {
         clearAllDetailCursorStores();
+        resetCardExecutions();
       }
       isAuthenticatedRef.current = authenticated;
       authRejectedRef.current = !authenticated;
@@ -137,6 +139,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return promise;
   }, []);
 
+  useEffect(() => { resetCardExecutions(); }, [isAuthenticated, user?.email]);
+
   const logout = useCallback(async () => {
     const res = await fetch("/api/auth/logout", {
       method: "POST",
@@ -144,6 +148,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     });
     if (!res.ok) throw new Error(`Logout failed: ${res.status}`);
     clearAllDetailCursorStores();
+    resetCardExecutions();
     isAuthenticatedRef.current = false;
     authRejectedRef.current = true;
     setIsAuthenticated(false);
@@ -235,6 +240,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     initialize();
 
     return () => {
+      resetCardExecutions();
       isMounted = false;
       isProviderMountedRef.current = false;
       if (lifecycleGenerationRef.current === generation) lifecycleGenerationRef.current += 1;

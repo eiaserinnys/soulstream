@@ -16,9 +16,14 @@ test('menu failure stays visible, successful explicit move closes only after sav
   await act(async () => fireEvent.press(screen.getByLabelText('실행 중로 이동')));
   expect(close).not.toHaveBeenCalled();
   expect(screen.queryByLabelText('재실행 사유')).toBeNull();
-  expect(screen.getByText('저장 실패')).toBeTruthy();
-  await act(async () => fireEvent.press(screen.getByLabelText('실행 중로 이동')));
-  expect(api.executeCard).toHaveBeenLastCalledWith(card.id, 9, expect.any(String));
+  const reason = '연결을 확인한 뒤 다시 시도해 주세요.';
+  expect(screen.getAllByText(reason).length).toBeGreaterThan(0);
+  expect(screen.queryByText('저장 실패')).toBeNull();
+  expect(Alert.alert).toHaveBeenCalledWith('카드 변경 실패', reason);
+  const firstRequest = api.executeCard.mock.calls[0];
+  await act(async () => fireEvent.press(screen.getByText('다시 시도')));
+  expect(api.executeCard).toHaveBeenCalledTimes(2);
+  expect(api.executeCard).toHaveBeenLastCalledWith(...firstRequest);
   expect(close).toHaveBeenCalledTimes(1);
   jest.restoreAllMocks();
 });

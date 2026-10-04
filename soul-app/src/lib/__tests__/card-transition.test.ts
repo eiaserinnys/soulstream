@@ -1,6 +1,8 @@
 import { cardFixture } from '../../test-support/cards';
 import type { CardDetail } from '../../api/cardTypes';
-import { cardTransitionProblem, performCardTransition } from '../card-transition';
+import {useAuthStore} from '../../store/authStore';
+import {ApiHttpError} from '../../api/clientCore';
+import { cardExecutionState, cardTransitionProblem, performCardTransition } from '../card-transition';
 
 const detail = (overrides: Partial<CardDetail> = {}): CardDetail => ({ card: cardFixture(), reports: [], questions: [], sessions: [], ...overrides });
 
@@ -28,6 +30,7 @@ test('명시 조작 때 최신 버전으로 저장하고 중복 호출은 쓰지
   const first = performCardTransition(api as any, cardFixture(), 'queued', 'operation');
   await Promise.resolve();
   await expect(performCardTransition({ ...api } as any, cardFixture(), 'queued', 'duplicate')).rejects.toThrow('저장 중');
+  await expect(performCardTransition(api as any, cardFixture(), 'running', 'different-intent')).rejects.toThrow('저장 중');
   expect(api.setCardStatus).toHaveBeenCalledWith('card-1', 'queued', 7, 'operation', undefined);
   finish({ card: cardFixture({ version: 8, status: 'queued' }), folderId: 'folder-1' });
   await first;
@@ -59,13 +62,34 @@ test('running intent is available even when status is running',()=>{
 });
 
 
-test('lost response retains the same operation key; pending explicitly retries the same request',async()=>{
- const source=cardFixture({id:'lost-response',status:'running',assigneeSessionId:'owner'});
- const pending={card:source,execution:{requestId:'fixed-request',sessionId:'owner',state:'pending'}};
- const api={getCard:jest.fn().mockResolvedValue(detail({card:source})),executeCard:jest.fn().mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce(pending).mockResolvedValue({...pending,execution:{...pending.execution,state:'already_running'}}),getCardExecution:jest.fn().mockResolvedValue({...pending,execution:{...pending.execution,state:'already_running'}})};
- await expect(performCardTransition(api as any,source,'running','first-key')).rejects.toThrow('response lost');
- await expect(performCardTransition(api as any,source,'running','second-key')).rejects.toThrow('확인 중');
- expect(api.executeCard.mock.calls[0]).toEqual(api.executeCard.mock.calls[1]);
- await performCardTransition(api as any,source,'running','third-key');
- expect(api.executeCard).toHaveBeenCalledTimes(3);expect(api.executeCard.mock.calls[2]).toEqual(api.executeCard.mock.calls[0]);expect(api.getCardExecution).not.toHaveBeenCalled();
+test('pending is accepted and later observes the same request without another POST',async()=>{
+ jest.useFakeTimers();
+ const source=cardFixture({id:'pending-start',status:'todo',assigneeSessionId:'owner'});
+ const accepted={card:{...source,status:'running',version:2},execution:{requestId:'fixed-request',sessionId:'owner',state:'pending'}};
+ const api={getCard:jest.fn().mockResolvedValue(detail({card:source})),executeCard:jest.fn().mockResolvedValue(accepted),getCardExecution:jest.fn().mockResolvedValue({...accepted,execution:{...accepted.execution,state:'started'}})};
+ await expect(performCardTransition(api as any,source,'running','first')).resolves.toEqual(accepted);
+ await jest.advanceTimersByTimeAsync(1000);
+ expect(api.executeCard).toHaveBeenCalledTimes(1);expect(api.getCardExecution).toHaveBeenCalledWith(source.id,'fixed-request');
+ jest.useRealTimers();
+});
+
+test('thirty-second delay checks the same request again, while auth changes stop observation',async()=>{
+ jest.useFakeTimers();
+ const source=cardFixture({id:'delayed-app',assigneeSessionId:'owner'});
+ const result={card:source,execution:{requestId:'delay-request',sessionId:'owner',state:'pending'}};
+ const api={getCard:jest.fn().mockResolvedValue(detail({card:source})),executeCard:jest.fn().mockResolvedValue(result),getCardExecution:jest.fn().mockResolvedValue(result)};
+ await performCardTransition(api as any,source,'running','first');await jest.advanceTimersByTimeAsync(30000);
+ expect(cardExecutionState(source.id)?.phase).toBe('delayed');
+ await performCardTransition(api as any,source,'running','confirm');expect(api.executeCard).toHaveBeenCalledTimes(1);expect(api.getCardExecution).toHaveBeenLastCalledWith(source.id,'delay-request');
+ useAuthStore.setState({jwt:'changed-auth'});const count=api.getCardExecution.mock.calls.length;
+ await jest.advanceTimersByTimeAsync(30000);expect(api.getCardExecution).toHaveBeenCalledTimes(count);expect(cardExecutionState(source.id)).toBeUndefined();jest.useRealTimers();
+});
+test('a real execution failure stops observation with an everyday reason',async()=>{
+ jest.useFakeTimers();
+ const source=cardFixture({id:'failed-app',assigneeSessionId:'owner'});
+ const result={card:source,execution:{requestId:'fail-request',sessionId:'owner',state:'pending'}};
+ const api={getCard:jest.fn().mockResolvedValue(detail({card:source})),executeCard:jest.fn().mockResolvedValue(result),getCardExecution:jest.fn().mockRejectedValue(new ApiHttpError('internal idempotency delivery',422,''))};
+ await performCardTransition(api as any,source,'running','first');await jest.advanceTimersByTimeAsync(1000);
+ expect(cardExecutionState(source.id)).toMatchObject({phase:'error',message:'카드를 시작하지 못했습니다. 다시 시도해 주세요.'});
+ await jest.advanceTimersByTimeAsync(30000);expect(api.getCardExecution).toHaveBeenCalledTimes(1);jest.useRealTimers();
 });

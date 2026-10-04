@@ -25,6 +25,7 @@ export function useCardActions(api: ApiClient | null, onError?: (cause: unknown)
       usePlannerStore.getState().invalidate('folder');
       if (result.card) {
         useCardStore.getState().putCard(result.card);
+        if ('execution' in result && (result.execution as {state:string}).state === 'pending') return true;
         try { await refreshCard(api, result.card.id); }
         catch (cause) { console.warn('카드 변경 저장 후 재조회 실패', cause); }
       }
