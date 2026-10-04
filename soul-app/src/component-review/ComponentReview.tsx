@@ -17,11 +17,12 @@ import { ReviewPostIt } from './ReviewPostIt';
 import { ReviewBoardWorkspace } from './ReviewBoardWorkspace';
 import { ReviewCardHome } from './ReviewCardHome';
 import {ReviewFolderWorkspace} from './ReviewFolderWorkspace';
+import { ReviewFolderTabs } from './ReviewFolderTabs';
 import { ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewLongFolders } from './ReviewLongFolders';
 import { ReviewAutoRefresh } from './ReviewAutoRefresh';
 import { ReviewCardImages } from './ReviewCardImages';
-import { folders } from './fixtures';
+import { folders, folderTabReviewFolders } from './fixtures';
 import { getDialoguePreviewSample } from './dialogue-inventory';
 import { ReviewDialoguePreview } from './ReviewDialoguePreview';
 import { ReviewDialogues } from './ReviewDialogues';
@@ -39,6 +40,7 @@ const sections = [
   { value: 'boardConnected', label: '보드 연결' },
   { value: 'cardHome', label: '카드 홈' },
   {value:'folderWorkspace',label:'폴더 카드'},
+  { value: 'folderTabs', label: '폴더 탭' },
   { value: 'entryShell', label: '앱 홈 조합' },
   { value: 'longFolders', label: '긴 폴더 목록' },
   { value: 'autoRefresh', label: '자동 갱신' },
@@ -49,15 +51,16 @@ type Section = typeof sections[number]['value'];
 
 export function initializeReview() {
   const entryShell = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'entryShell';
+  const folderTabs = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'folderTabs';
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
-  useSettingsStore.setState({ serverUrl: cardImages ? window.location.origin : entryShell || dialogues ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: cardImages ? window.location.origin : entryShell || folderTabs || dialogues ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   const longSelection = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chips') === 'long';
   if (longSelection) useSettingsStore.setState({ cardAssignments: {
     [entryShell ? 'https://public-fixture.invalid' : '']: { folderId: folders[0].id, nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-exhausted-model' },
   } });
   const fixtureSessions = Object.fromEntries(reviewSessionPortraits(dialogueSessions).map(session => [session.agentSessionId, session]));
-  useSessionStore.setState({ catalog: { folders: dialogues ? dialogueFolders : longSelection ? folders.map((folder, index) => index === 0 ? { ...folder, name: '아주 긴 프로젝트 폴더 이름으로 한 줄 말줄임을 확인합니다' } : folder) : folders, sessions: dialogues ? fixtureSessions : {} }, ...(dialogues ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
+  useSessionStore.setState({ catalog: { folders: folderTabs ? (new URLSearchParams(window.location.search).get('state') === 'empty' ? [] : folderTabReviewFolders) : dialogues ? dialogueFolders : longSelection ? folders.map((folder, index) => index === 0 ? { ...folder, name: '아주 긴 프로젝트 폴더 이름으로 한 줄 말줄임을 확인합니다' } : folder) : folders, sessions: dialogues ? fixtureSessions : {} }, ...(dialogues ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
 }
 
 function Gallery() {
@@ -77,6 +80,7 @@ function Gallery() {
   if (section === 'boardConnected') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoardWorkspace/></View>;
   if (section === 'board') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoard/></View>;
   if(section==='folderWorkspace')return <View style={{flex:1,backgroundColor:t.colors.background}}><ReviewFolderWorkspace/></View>;
+  if (section === 'folderTabs') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewFolderTabs /></View>;
   if (section === 'entryShell') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewEntryShell /></View>;
   if (section === 'longFolders') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewLongFolders /></View>;
   if (section === 'autoRefresh') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewAutoRefresh /></View>;
@@ -103,7 +107,7 @@ function Gallery() {
         window.history.replaceState(null, '', url);
         initializeReview();
       }
-      if (next === 'entryShell') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
+      if (next === 'entryShell' || next === 'folderTabs') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
       if (next === 'cardImages') useSettingsStore.setState({ serverUrl: window.location.origin });
       setSection(next);
     }} options={sections} wrap={section === 'dialogues'} />

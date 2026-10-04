@@ -54,7 +54,7 @@ test('linked phone search result preserves task context and exact event in chat'
   await expect(openPhoneSearchSession(navigation, 'session-1', 42))
     .resolves.toBe(true);
 
-  expect(navigate).toHaveBeenNthCalledWith(1, 'ProjectTab', {
+  expect(navigate).toHaveBeenNthCalledWith(1, 'FolderTab', {
     screen: 'FolderWorkspace',
     params: {
       folderPageId: 'resolved-task-page',

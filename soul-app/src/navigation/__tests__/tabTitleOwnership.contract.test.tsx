@@ -76,15 +76,14 @@ beforeEach(async () => {
   useSettingsStore.setState({ cardIncludeCompleted: {} });
 });
 
-test('6개 phone root route는 emoji 없는 shared icon+title을 단독 소유한다', () => {
+test('5개 phone root route는 emoji 없는 shared icon+title을 단독 소유한다', () => {
   renderStackNavigators();
   const stacks = getNativeStackCaptures();
   const roots = stacks.map((capture) => capture.screens[0]);
 
   expect(roots.map((screen) => [screen.name, screen.options.title])).toEqual([
     ['Daily', '카드'],
-    ['Starred', '중요 작업'],
-    ['ProjectList', '프로젝트'],
+    ['FolderList', '폴더'],
     ['Feed', '피드'],
     ['Chat', '챗'],
     ['Settings', '설정'],
@@ -129,7 +128,7 @@ test('phone card home header keeps only completion visibility, daily route remai
 
 test('Feed phone root는 native title을 보존하되 large title과 toolbar 검색 통합을 허용하지 않는다', () => {
   renderStackNavigators();
-  const feedScreen = getNativeStackCaptures()[3]!.screens[0]!;
+  const feedScreen = getNativeStackCaptures()[2]!.screens[0]!;
   const navigation = { setOptions: jest.fn(), navigate: jest.fn() };
   render(React.createElement(feedScreen.component, {
     route: { key: 'feed', name: 'Feed' },
@@ -159,7 +158,7 @@ test('긴 한국어 동적 project/task/chat title은 native options.title에 �
   renderStackNavigators();
   const longProject = '아주 긴 한국어 프로젝트 이름이 말줄임되어야 하는 경우';
   const longFolder = '아주 긴 한국어 업무 이름이 말줄임되어야 하는 경우';
-  const projectScreens = getNativeStackCaptures()[2].screens;
+  const projectScreens = getNativeStackCaptures()[1].screens;
 
   expect(projectScreens).toHaveLength(3);
   expect(projectScreens[2].name).toBe('CardDetail');
@@ -175,7 +174,7 @@ test('긴 한국어 동적 project/task/chat title은 native options.title에 �
 
 test('phone 업무 저장은 body 제목을 복제하지 않고 native route title을 갱신한다', () => {
   renderStackNavigators();
-  const folderScreen = getNativeStackCaptures()[2].screens[1];
+  const folderScreen = getNativeStackCaptures()[1].screens[1];
   const navigation = { setParams: jest.fn(), getParent: jest.fn() };
   render(React.createElement(folderScreen.component, {
     route: {
@@ -198,7 +197,7 @@ test('phone 업무 저장은 body 제목을 복제하지 않고 native route tit
 
 test('Settings tab wrapper만 body title을 끄고 onboarding과 modal 계약을 보존한다', () => {
   renderStackNavigators();
-  const settingsScreen = getNativeStackCaptures()[5].screens[0];
+  const settingsScreen = getNativeStackCaptures()[4].screens[0];
   render(React.createElement(settingsScreen.component, {
     route: { key: 'settings', name: 'Settings' },
     navigation: {},

@@ -1,7 +1,6 @@
 export const ROOT_TAB_ORDER = [
   'DailyTab',
-  'StarredTab',
-  'ProjectTab',
+  'FolderTab',
   'FeedTab',
   'ChatTab',
   'SettingsTab',

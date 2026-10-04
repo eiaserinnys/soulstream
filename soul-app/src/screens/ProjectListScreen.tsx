@@ -39,12 +39,14 @@ export function ProjectHeaderAddButton() {
 }
 
 export function ProjectListScreen({
+  embedded = false,
   onOpenProject,
 }: {
+  embedded?: boolean;
   onOpenProject?: (folder: Folder, projectPageId: string) => void;
 }) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, embedded), [t, embedded]);
   const folders = useSessionStore((state) => state.catalog.folders);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
@@ -129,13 +131,13 @@ export function ProjectListScreen({
     </View>
   );
 }
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, embedded = false) {
   const planner = createPlannerVisualRoles(t);
   return StyleSheet.create({
     container: { flex: 1, overflow: 'hidden' },
     panelFrame: {
       position: 'absolute',
-      top: t.uiSpacing.lg,
+      top: embedded ? planner.sectionRhythm.before : t.uiSpacing.lg,
       left: planner.pageInset,
       right: planner.pageInset,
       borderRadius: t.foundation.radius.card,
@@ -149,7 +151,7 @@ function makeStyles(t: DesignTokens) {
     emptyScroll: { flex: 1 },
     emptyContent: {
       paddingHorizontal: planner.pageInset,
-      paddingVertical: t.uiSpacing.lg,
+      paddingVertical: embedded ? planner.sectionRhythm.before : t.uiSpacing.lg,
       gap: t.cardLayout.gap,
     },
     headerAction: {

@@ -43,6 +43,8 @@ export function makeCard(status: CardStatus): CardDto {
     archived: false, version: 1, createdAt: time, updatedAt: time,completedAt:status==='done'?new Date().toISOString():null };
 }
 export const initialCards = (['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'] as const).map(makeCard);
+export const folderTabReviewFolders: CatalogFolder[] = folders.map(folder => ({ ...folder, projectPageId: folder.id }));
+
 export const starredFolders: PlannerFolder[] = folders.map((folder) => ({
   page: { id: folder.id, title: folder.name, dailyDate: null, version: 1,
     archived: false, metadata: {}, createdAt: time, updatedAt: time },
