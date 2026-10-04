@@ -46,6 +46,7 @@ export function FolderDetailPane({
   runHistoryTotal,
   runHistoryHasMore,
   runHistoryLoading,
+  runHistoryFailed = false,
   activeSessionId,
   markdownDocumentsRevision,
   focusRequest,
@@ -77,6 +78,7 @@ export function FolderDetailPane({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
+  runHistoryFailed?: boolean;
   activeSessionId: string | null;
   markdownDocumentsRevision: number;
   focusRequest: FolderSectionFocusRequest | null;
@@ -294,6 +296,7 @@ export function FolderDetailPane({
                 )}
                 runHistoryHasMore={runHistoryHasMore}
                 runHistoryLoading={runHistoryLoading}
+                runHistoryFailed={runHistoryFailed}
                 activeSessionId={activeSessionId}
                 onLoadMoreRuns={onLoadMoreRuns}
                 onOpenSession={onOpenSession}

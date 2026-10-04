@@ -324,10 +324,11 @@ function V3DashboardContent() {
   });
   const runSessionResolution = useMemo(() => resolveRunSessions({
     sessionIds: plannerSessionIds,
+    fallbackSessions: folderSessions.state?.items ?? [],
     catalogSessions,
     targetedSessions: targetedRunSessions,
     targetedLoading: targetedRunSessionsLoading,
-  }), [catalogSessions, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
+  }), [catalogSessions, folderSessions.state?.items, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
   const sessions = runSessionResolution.sessions;
   const cursorScope = `${window.location.origin}|${user?.email ?? "anonymous"}`;
   const cardChatVisible = Boolean(cardNavigation.cardId && chatOpen && (!mobileMode || mobileTab === "chat"));
@@ -594,6 +595,7 @@ function V3DashboardContent() {
               runHistoryTotal={workspaceFolderEntry.sessionIds.length}
               runHistoryHasMore={Boolean(folderSessions.state?.nextCursor)}
               runHistoryLoading={Boolean(folderSessions.state?.loadingMore)}
+              runHistoryFailed={Boolean(folderSessions.state?.loadFailed)}
               activeSessionId={activeSessionKey}
               markdownDocumentsRevision={markdownDocumentsRevision}
               focusRequest={sessionPanel.focusRequest}
@@ -648,6 +650,7 @@ function V3DashboardContent() {
           runHistoryTotal={workspaceFolderEntry?.sessionIds.length ?? 0}
           runHistoryHasMore={Boolean(folderSessions.state?.nextCursor)}
           runHistoryLoading={Boolean(folderSessions.state?.loadingMore)}
+          runHistoryFailed={Boolean(folderSessions.state?.loadFailed)}
           onLoadMoreRuns={folderSessions.loadMore}
           activeSession={activeSession}
           focusRequest={sessionPanel.focusRequest}

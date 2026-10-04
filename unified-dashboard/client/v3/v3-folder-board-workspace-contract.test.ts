@@ -125,7 +125,8 @@ describe("task board panel resize, overlay height, and session list contract", (
     expect(resources).toContain("RichSessionRow");
     // 위임 세션은 기본 노출되고, 페이지 밖 과거 세션에도 도달할 수 있다.
     expect(resources).toContain("useState(true)");
-    expect(resources).toContain("v3-folder-board-load-more-runs");
+    expect(resources).toContain("RunHistoryAutoLoader");
+    expect(resources).not.toContain("이전 세션 더 보기");
     // no longer framed/labelled as a "delegation relation".
     expect(resources).not.toContain("위임 관계");
     expect(resources).not.toContain("아직 위임된 세션이 없습니다");

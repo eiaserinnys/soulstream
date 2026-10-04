@@ -174,16 +174,19 @@ function containerCallerChainReturnsTo(
 
 export function resolveRunSessions({
   sessionIds,
+  fallbackSessions = [],
   catalogSessions,
   targetedSessions,
   targetedLoading,
 }: {
   sessionIds: readonly string[];
+  fallbackSessions?: readonly SessionSummary[];
   catalogSessions: readonly SessionSummary[];
   targetedSessions: readonly SessionSummary[];
   targetedLoading: boolean;
 }): RunSessionResolution {
-  const byId = new Map(catalogSessions.map((session) => [session.agentSessionId, session]));
+  const byId = new Map(fallbackSessions.map((session) => [session.agentSessionId, session]));
+  for (const session of catalogSessions) byId.set(session.agentSessionId, session);
   for (const session of targetedSessions) byId.set(session.agentSessionId, session);
   const loadStateById = new Map<string, RunSessionLoadState>();
   for (const sessionId of sessionIds) {

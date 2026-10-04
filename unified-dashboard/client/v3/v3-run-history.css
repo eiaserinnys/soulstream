@@ -5,9 +5,20 @@
 }
 
 .v3-run-load-more {
+  position: relative;
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: var(--v3-space-2);
   padding-top: 8px;
+}
+
+.v3-run-load-sentinel {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .v3-run-row {
