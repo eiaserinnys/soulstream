@@ -104,7 +104,7 @@ export function SessionDiagnosticsSection({
           </TouchableOpacity>
         </View>
       </View>
-      <Text style={styles.empty}>앱과 기기 정보 및 관련 폴더·프로젝트·세션 식별자를 포함한 전체 JSON을 클립보드에 복사합니다.</Text>
+      <Text style={styles.empty}>앱과 기기 정보 및 관련 폴더, 프로젝트, 세션 식별자를 포함한 전체 JSON을 클립보드에 복사합니다.</Text>
       {copyMessage ? <Text accessibilityLiveRegion="polite" accessibilityRole={copyStatus === 'error' ? 'alert' : 'text'} style={copyStatus === 'error' ? styles.error : styles.success}>{copyMessage}</Text> : null}
       <SettingsSurface flattened={flattened} role="glassSoft" style={styles.surface}>
         {loading ? <ActivityIndicator color={t.colors.accent} /> : null}

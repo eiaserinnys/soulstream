@@ -65,7 +65,7 @@ test('전체 진단 기록을 한 번에 복사하고 성공 상태를 표시한
       }),
     ],
   });
-  expect(screen.getByText('앱과 기기 정보 및 관련 폴더·프로젝트·세션 식별자를 포함한 전체 JSON을 클립보드에 복사합니다.')).toBeTruthy();
+  expect(screen.getByText('앱과 기기 정보 및 관련 폴더, 프로젝트, 세션 식별자를 포함한 전체 JSON을 클립보드에 복사합니다.')).toBeTruthy();
   expect(screen.getByText('전체 JSON을 클립보드에 복사했습니다.').props.accessibilityLiveRegion).toBe('polite');
   expect(copied.records[0]).toMatchObject({ app: expect.any(Object), device: expect.any(Object) });
   expect(screen.getByText('복사됨')).toBeTruthy();
