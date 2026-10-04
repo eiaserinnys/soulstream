@@ -39,3 +39,17 @@ test('menu failure stays visible, successful explicit move closes only after sav
   await act(async () => fireEvent.press(screen.getByLabelText('검수 대기로 이동')));
   expect(api.setCardStatus).toHaveBeenCalled();
  });
+
+test('취소는 한 번 표시하고 실행 없이 취소 상태만 저장한다', async () => {
+  const card = cardFixture({ status: 'todo', version: 3 });
+  const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }),
+    setCardStatus: jest.fn().mockResolvedValue({ card: { ...card, status: 'cancelled', version: 4 } }), executeCard: jest.fn() };
+  const close = jest.fn();
+  const screen = render(<CardStatusMenu api={api as any} card={card} onClose={close} />);
+  await waitFor(() => expect(screen.getAllByLabelText('취소로 이동')).toHaveLength(1));
+  await act(async () => fireEvent.press(screen.getByLabelText('취소로 이동')));
+  expect(api.setCardStatus).toHaveBeenCalledTimes(1);
+  expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'cancelled', 3, expect.any(String), undefined);
+  expect(api.executeCard).not.toHaveBeenCalled();
+  expect(close).toHaveBeenCalledTimes(1);
+});

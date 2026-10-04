@@ -56,7 +56,7 @@ test.each([1, 2])('iPad fontScale %s custom headers keep one-line tail, semantic
   const mainTitle = main.getByTestId('root-header-title-DailyTab');
   const mainIcon = main.getByTestId('root-header-icon-DailyTab');
   const menu = main.getByLabelText('메뉴');
-  const hideCompleted = main.getByLabelText('완료 숨김');
+  const hideCompleted = main.getByLabelText('완료·취소 숨김');
   const expand = main.getByLabelText('보드 확대');
   expect(main.queryByLabelText('데일리 기록')).toBeNull();
   expect(mainTitle.props.children).toBe('카드');

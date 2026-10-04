@@ -34,8 +34,8 @@ test('카드 홈은 저장된 데일리 선택을 무시하고 전체 보드와 
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
   expect(mockList).toHaveBeenCalledWith(undefined,{includeCompleted:false});
   expect(screen.getByTestId('postit-card-draft')).toBeTruthy();
-  expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
-  await act(async () => fireEvent.press(screen.getByLabelText('완료 숨김')));
+  expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(true);
+  await act(async () => fireEvent.press(screen.getByLabelText('완료·취소 숨김')));
   await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   expect(screen.queryByLabelText('데일리 기록')).toBeNull();
   expect(screen.queryByLabelText('기존 데일리 기록')).toBeNull();
@@ -68,7 +68,7 @@ test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await waitFor(() => expect(mockList).toHaveBeenCalledWith('folder-1',{includeCompleted:false}));
   expect(screen.queryByTestId('postit-card-card-1')).toBeNull();
-  await act(async () => fireEvent.press(screen.getByLabelText('완료 숨김')));
+  await act(async () => fireEvent.press(screen.getByLabelText('완료·취소 숨김')));
   await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   await act(async () => fireEvent.press(screen.getByLabelText('기존 보기')));
   expect(screen.getByText('true')).toBeTruthy();
@@ -101,7 +101,7 @@ test('상태 저장 후 상세 row가 합쳐져도 인증 목록의 최신 활�
   const { latestActivity: _activity, ...detailRow } = card;
   await act(async () => useCardStore.getState().putCard({ ...detailRow, version: card.version + 1, status: 'done' }));
   expect(screen.queryByText(/최신 보고 원문/)).toBeNull();
-  await act(async () => fireEvent.press(screen.getByLabelText('완료 숨김')));
+  await act(async () => fireEvent.press(screen.getByLabelText('완료·취소 숨김')));
   await waitFor(()=>expect(screen.getByText(/최신 보고 원문/)).toBeTruthy());
 });
 
