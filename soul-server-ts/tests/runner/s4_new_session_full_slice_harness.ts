@@ -151,6 +151,10 @@ export class ProductionFullSliceHarness {
         PORT: "0",
         DATABASE_URL: this.postgres.databaseUrl,
         ENVIRONMENT: "production",
+        DASHBOARD_DIR: fileURLToPath(new URL(
+          "../../../orch-server-ts/tests/fixtures/dashboard-build",
+          import.meta.url,
+        )),
         CORS_ALLOWED_ORIGINS: "http://127.0.0.1",
         AUTH_BEARER_TOKEN: AUTH_TOKEN,
         GOOGLE_CLIENT_ID: "full-slice-google-client",
