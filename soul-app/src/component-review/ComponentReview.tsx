@@ -1,7 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  SafeAreaFrameContext,
+  SafeAreaInsetsContext,
+  SafeAreaProvider,
+  type EdgeInsets,
+  type Rect,
+} from 'react-native-safe-area-context';
 import { useDeviceType, useTokens } from '../theme';
 import { useSessionStore } from '../store/sessionStore';
 import { useAuthStore } from '../store/authStore';
@@ -136,5 +142,28 @@ function Gallery() {
 
 export function ComponentReview() {
   const sample = typeof window !== 'undefined' ? getDialoguePreviewSample(window.location.search) : null;
-  return <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider>{sample ? <ReviewDialoguePreview sample={sample} /> : <Gallery />}</SafeAreaProvider></GestureHandlerRootView>;
+  const { width, height } = useWindowDimensions();
+  const safeAreaFixture = getNativeSettingsSafeAreaFixture(
+    typeof window !== 'undefined' ? window.location.search : '',
+    width,
+    height,
+  );
+  const content = sample ? <ReviewDialoguePreview sample={sample} /> : <Gallery />;
+  return <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider>
+    {safeAreaFixture ? <SafeAreaFrameContext.Provider value={safeAreaFixture.frame}>
+      <SafeAreaInsetsContext.Provider value={safeAreaFixture.insets}>{content}</SafeAreaInsetsContext.Provider>
+    </SafeAreaFrameContext.Provider> : content}
+  </SafeAreaProvider></GestureHandlerRootView>;
+}
+
+function getNativeSettingsSafeAreaFixture(search: string, width: number, height: number): { frame: Rect; insets: EdgeInsets } | null {
+  const params = new URLSearchParams(search);
+  if (params.get('section') !== 'nativeSettings' || params.get('safeArea') !== 'fixture') return null;
+
+  return {
+    frame: { x: 0, y: 0, width, height },
+    insets: width >= 768
+      ? { top: 24, right: 20, bottom: 24, left: 20 }
+      : { top: 59, right: 24, bottom: 34, left: 24 },
+  };
 }

@@ -92,6 +92,20 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+test('non-flattened settings reserves the top safe area with the existing edges', async () => {
+  mockApi.getConfig.mockResolvedValue({ mode: 'single', nodeId: 'me' });
+  const screen = render(<SettingsScreen showAdmin={false} />);
+
+  await waitFor(() => {
+    expect(screen.getByTestId('settings-safe-area').props.edges).toEqual({
+      top: 'additive',
+      right: 'additive',
+      bottom: 'additive',
+      left: 'additive',
+    });
+  });
+});
+
 describe('SettingsScreen — 익명 연결 테스트', () => {
   let targetStatus: number;
   let fetchMock: jest.Mock;

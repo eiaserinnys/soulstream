@@ -20,6 +20,18 @@ test('iPad page sheet bounds sibling sidebar/detail beneath its header', () => {
   expect(screen.getByText('관리와 문제 해결')).toBeTruthy();
   expect(screen.getByTestId('settings-detail-display')).toBeTruthy();
   expect(screen.getAllByTestId('settings-modal-header')).toHaveLength(1);
+  expect(screen.getByTestId('settings-safe-area').props.edges).toEqual({
+    top: 'off',
+    right: 'off',
+    bottom: 'off',
+    left: 'off',
+  });
+  expect(screen.getByTestId('settings-modal-safe-area').props.edges).toEqual({
+    top: 'additive',
+    right: 'additive',
+    bottom: 'additive',
+    left: 'additive',
+  });
   expect(screen.getByTestId('settings-section-display').findAllByType(Text).some(text => text.props.children === '화면과 배경')).toBe(false);
   for (const surface of screen.UNSAFE_getAllByType(SettingsSurface)) expect(surface.props.flattened).toBe(true);
   expect(screen.UNSAFE_getByType(Modal).props.supportedOrientations).toEqual(['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']);

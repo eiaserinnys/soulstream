@@ -74,7 +74,7 @@ export function SettingsScreen({ extraBottomPadding = 0, flattened = false, cate
   }, [scopes]);
   const context = useMemo(() => ({ category: active, wide, columns: width - (wide ? 240 : 0) >= TABLET_BREAKPOINT, jobs, setJobs, register, select: setCategory, guard, changeConnection }), [active, wide, width, jobs, register, guard, changeConnection]);
   return <SettingsWorkspaceContext.Provider value={context}>
-    <SafeAreaView testID="settings-safe-area" style={styles.root} edges={flattened ? [] : ['left', 'right', 'bottom']} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+    <SafeAreaView testID="settings-safe-area" style={styles.root} edges={flattened ? [] : ['left', 'right', 'bottom', 'top']} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
       <AppKeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View testID="settings-modal-header" style={styles.header}>
           {!connectionOnly && !wide && active ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>설정</Text></TouchableOpacity> : null}
