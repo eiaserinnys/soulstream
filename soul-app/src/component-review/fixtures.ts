@@ -91,6 +91,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
   if (options.completed) for (const [id, card] of cards) {
     if (options.completed === 'none' ? card.status === 'done' : card.status !== 'done') cards.delete(id);
   }
+  if (options.folderSessionPages === 'short') cards.clear();
   const read = async <T,>(value: T): Promise<T> => {
     if (state === 'error') throw new Error('공개 예시: 목록을 불러오지 못했습니다.');
     if (state === 'loading') return new Promise(() => {});

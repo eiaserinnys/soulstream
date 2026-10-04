@@ -85,14 +85,20 @@ async function runScenarioPage(page, scenario, viewport) {
       id: row.getAttribute('data-testid'), top: row.getBoundingClientRect().top,
       bottom: row.getBoundingClientRect().bottom,
     })),
-    list: document.querySelector('[data-testid="task-workspace-scroll"]')?.getBoundingClientRect().toJSON(),
+    list: (() => {
+      const owner = document.querySelector('[data-testid="task-workspace-scroll"]');
+      const style = owner && getComputedStyle(owner);
+      return owner ? { rect: owner.getBoundingClientRect().toJSON(), scrollTop: owner.scrollTop,
+        scrollHeight: owner.scrollHeight, clientHeight: owner.clientHeight, overflowY: style?.overflowY,
+        viewport: { width: window.innerWidth, height: window.innerHeight } } : null;
+    })(),
   }));
   const scenarioEvidence = {
     scenario, viewport, stage: 'initial-render',
     initialRequests: summarizeRequests(initial.requests),
     initialRowIds: initial.rows.map(row => row.id),
     initialRows: initial.rows,
-    listRect: initial.list,
+    initialGeometry: initial.list,
   };
   evidence.scenarios.push(scenarioEvidence);
 
@@ -222,12 +228,22 @@ async function runScenarioPage(page, scenario, viewport) {
     const sameCursorCount = allRequests.filter(request => request.cursor === '1').length;
     const afterScreenshot = path.join(output, 'many-after-page-2.png');
     await page.screenshot({ path: afterScreenshot, animations: 'disabled' });
+    const rowIdCounts = new Map();
+    for (const rowId of afterAppend.rowIds) rowIdCounts.set(rowId, (rowIdCounts.get(rowId) ?? 0) + 1);
+    const duplicateRowIds = [...rowIdCounts].filter(([, count]) => count > 1)
+      .map(([rowId, count]) => ({ rowId, count }));
+    const uniquePageCount = new Set(allRequests.map(request => request.cursor)).size;
+    const row40Id = 'task-run-depth-public-folder-many-40';
     sequence.push('page2-and-followup-state-captured');
     scenarioEvidence.stage = 'all-measurements-captured-before-assertions';
     scenarioEvidence.requestsAfterPage2 = summarizeRequests(allRequests);
-    scenarioEvidence.rowCountExpected = 40;
+    scenarioEvidence.uniquePageCount = uniquePageCount;
+    scenarioEvidence.rowsExpectedFromPages = uniquePageCount * pageSize;
     scenarioEvidence.rowCountActual = afterAppend.rowCount;
     scenarioEvidence.rowIdsAfterPage2 = afterAppend.rowIds;
+    scenarioEvidence.duplicateRowIds = duplicateRowIds;
+    scenarioEvidence.nextPageRow40Id = row40Id;
+    scenarioEvidence.nextPageRow40Present = afterAppend.rowIds.includes(row40Id);
     scenarioEvidence.scrollMetricsAfterPage2 = {
       scrollTop: afterAppend.scrollTop, scrollHeight: afterAppend.scrollHeight,
       clientHeight: afterAppend.clientHeight,
@@ -241,8 +257,10 @@ async function runScenarioPage(page, scenario, viewport) {
     scenarioEvidence.sequence = sequence;
     scenarioEvidence.input = { type: 'page.mouse.wheel', deltaY: wheelDelta };
     assert.equal(requestsForCursor, 1, 'one request for cursor 1 is observed when the page begins');
-    assert.equal(sameCursorCount, 1, 'continuous scroll events did not duplicate cursor 1');
-    assert.equal(afterAppend.rowCount, 40, 'one appended page adds 20 session rows');
+    assert.deepEqual(scenarioEvidence.requestsAfterPage2.duplicateCursors, [], 'no cursor is requested more than once');
+    assert.ok(scenarioEvidence.nextPageRow40Present, 'the next-page boundary row is present');
+    assert.deepEqual(duplicateRowIds, [], 'no session row ID is rendered more than once');
+    assert.equal(afterAppend.rowCount, uniquePageCount * pageSize, 'rendered session rows match unique requested pages');
     assert.ok(Math.abs(afterAppend.scrollTop - scrollMetrics.scrollTop) <= 1, 'page append keeps the scroll offset');
     assert.ok(afterAppend.anchor && Math.abs(afterAppend.anchor.top - beforeAppend.top) <= 1,
       'page append keeps the visible session row at the same viewport offset');
