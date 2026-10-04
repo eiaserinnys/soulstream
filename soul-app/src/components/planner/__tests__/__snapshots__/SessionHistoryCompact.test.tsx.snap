@@ -103,6 +103,7 @@ exports[`폴더 기본 세션 목록 렌더는 보완 전과 같다 1`] = `
         style={
           {
             "alignItems": "center",
+            "backgroundColor": "transparent",
             "borderColor": "transparent",
             "borderRadius": 12,
             "borderWidth": 0.5,
@@ -113,6 +114,13 @@ exports[`폴더 기본 세션 목록 렌더는 보완 전과 같다 1`] = `
             "overflow": "hidden",
             "paddingHorizontal": 16,
             "paddingVertical": 16,
+            "shadowColor": "#34c759",
+            "shadowOffset": {
+              "height": 0,
+              "width": 0,
+            },
+            "shadowOpacity": 0,
+            "shadowRadius": 14,
           }
         }
         testID="task-run-row-root"
@@ -407,6 +415,7 @@ exports[`폴더 기본 세션 목록 렌더는 보완 전과 같다 1`] = `
         style={
           {
             "alignItems": "center",
+            "backgroundColor": "transparent",
             "borderColor": "transparent",
             "borderRadius": 12,
             "borderWidth": 0.5,
@@ -417,6 +426,13 @@ exports[`폴더 기본 세션 목록 렌더는 보완 전과 같다 1`] = `
             "overflow": "hidden",
             "paddingHorizontal": 16,
             "paddingVertical": 16,
+            "shadowColor": "#34c759",
+            "shadowOffset": {
+              "height": 0,
+              "width": 0,
+            },
+            "shadowOpacity": 0,
+            "shadowRadius": 14,
           }
         }
         testID="task-run-row-child"

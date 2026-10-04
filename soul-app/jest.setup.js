@@ -6,13 +6,18 @@ jest.mock('react-native-reanimated', () => {
   return {
     __esModule: true,
     default: Animated,
-    useSharedValue: (initialValue) => ({ value: initialValue }),
+    useSharedValue: (initialValue) => require('react').useRef({ value: initialValue }).current,
     useAnimatedStyle: (updater) => updater(),
     // GestureDetector still initializes this hook for runOnJS gestures.
     useEvent: (callback) => callback,
     runOnJS: (callback) => callback,
     useFrameCallback: jest.fn(),
     interpolateColor: (_value, _inputRange, outputRange) => outputRange[0],
+    interpolate: (value, [start, end], [from, to]) => from + (to - from) * (value - start) / (end - start),
+    withTiming: jest.fn((value) => value),
+    withRepeat: jest.fn(() => 0),
+    cancelAnimation: jest.fn(),
+    Easing: require('react-native').Easing,
   };
 });
 
