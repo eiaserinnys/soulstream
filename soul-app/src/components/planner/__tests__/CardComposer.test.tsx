@@ -53,6 +53,10 @@ test('오늘 입력창은 칩이 위 한 줄에 있고 글자·입력 확장 동
   const initialHeight = StyleSheet.flatten(input.props.style).height;
   expect(initialHeight).toBeGreaterThanOrEqual(48);
   fireEvent.changeText(input, '첫 줄\n둘째 줄');
+  // Native layout reports rendered content height after the controlled value changes.
+  fireEvent(screen.getByLabelText('세션 첫 메시지'), 'contentSizeChange', {
+    nativeEvent: { contentSize: { width: 200, height: initialHeight * 2 } },
+  });
   expect(StyleSheet.flatten(screen.getByLabelText('세션 첫 메시지').props.style).height).toBeGreaterThan(initialHeight);
   expect(screen.getByLabelText('세션 첫 메시지').props.textAlignVertical).toBe('top');
   expect(StyleSheet.flatten(screen.getByTestId('card-composer-chips').props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
@@ -67,6 +71,7 @@ test('오늘 입력창은 칩이 위 한 줄에 있고 글자·입력 확장 동
   expect(layout.gap + surfaceInset).toBeLessThan(layout.paddingBottom);
   expect(StyleSheet.flatten(screen.getByTestId('chat-composer-row').props.style)).toMatchObject({ paddingTop: 0, paddingBottom: 0 });
   fireEvent.changeText(screen.getByLabelText('세션 첫 메시지'), '');
+  expect(StyleSheet.flatten(screen.getByLabelText('세션 첫 메시지').props.style).height).toBe(initialHeight);
   expect(screen.getByLabelText('세션 시작').props.accessibilityState.disabled).toBe(true);
 });
 
