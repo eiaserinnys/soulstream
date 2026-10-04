@@ -9,9 +9,9 @@ export function ConfigCategoryNav({ categories, extraTabs = [], activeCategory, 
 }) {
   const all = [...extraTabs, ...categories];
   const groups = [
-    { label: "개인 환경", items: all.filter(item => item.name === "appearance") },
+    { label: "개인 환경", items: all.filter(item => item.name === "appearance" || item.name === "owned_agents") },
     { label: "작업과 실행", items: all.filter(item => execution.has(item.name)) },
-    { label: "서버 관리", items: all.filter(item => item.name !== "appearance" && !execution.has(item.name)) },
+    { label: "서버 관리", items: all.filter(item => item.name !== "appearance" && item.name !== "owned_agents" && !execution.has(item.name)) },
   ];
   return <nav aria-label="설정 카테고리" data-testid="config-category-nav" className="config-category-nav">
     {groups.filter(group => group.items.length).map(group => <section key={group.label}>

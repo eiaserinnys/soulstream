@@ -40,6 +40,10 @@
       "label": "설정",
       "source": "settings/SettingsModal.tsx"
     },
+    "owned-agents": {
+      "label": "내 에이전트",
+      "source": "settings/OwnedAgentsSettingsSection.tsx"
+    },
     "task-output": {
       "label": "작업 출력",
       "source": "chat/ClaudeRuntimeTasksStrip.tsx"
@@ -102,6 +106,7 @@
       "title": "설정과 출력",
       "ids": [
         "settings",
+        "owned-agents",
         "task-output"
       ]
     },

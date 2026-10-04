@@ -7,6 +7,7 @@ import { useUIStore } from '../store/uiStore';
 import { useTokens } from '../theme';
 import { dialogueApi, reviewTask, reviewTaskOutput } from './dialogue-fixtures';
 import type { DialogueSample } from './dialogue-inventory';
+import { ReviewOwnedAgents } from './ReviewOwnedAgents';
 
 // Owners keep their real internal open/close behavior, rather than copied forms.
 export function ReviewDialogueOwners({ opened, preview = false, onClose }: { opened: DialogueSample | null; preview?: boolean; onClose(): void }) {
@@ -18,6 +19,7 @@ export function ReviewDialogueOwners({ opened, preview = false, onClose }: { ope
       sessionId: 'public-idle', sessionState: 'idle', runtimeSessionId: null, updatedAt: 1, tasks: [reviewTask],
     });
   }, [opened]);
+  if (opened === 'owned-agents') return <ReviewOwnedAgents />;
   if (opened === 'task-output' && preview) return <ClaudeRuntimeTaskOutputModal output={reviewTaskOutput} onClose={onClose} />;
   if (opened === 'task-output') return <ClaudeRuntimeTasksStrip sessionId="public-idle" api={dialogueApi} />;
   if (opened === 'board-expanded') return <View style={{ flex: 1, position: 'relative', gap: t.uiSpacing.md }}>

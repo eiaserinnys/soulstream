@@ -32,6 +32,7 @@ import {
 } from "@seosoyoung/soul-ui";
 import { NodePanel } from "./NodePanel";
 import { UserManagementTab } from "./UserManagementTab";
+import { OwnedAgentsTab } from "./OwnedAgentsTab";
 import { AgentProfileEditorTab } from "./AgentProfileEditorTab";
 import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
@@ -48,6 +49,7 @@ const CHAT_TAB_NAME = "chat";
 const NODES_TAB_NAME = "nodes";
 const USERS_TAB_NAME = "users";
 const AGENTS_TAB_NAME = "agents";
+const OWNED_AGENTS_TAB_NAME = "owned_agents";
 const SESSION_REVIEW_TAB_NAME = "session_review";
 const USAGE_LOG_TAB_NAME = "usage_log";
 const RECURRING_JOBS_TAB_NAME = "recurring_jobs";
@@ -98,6 +100,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
   const extraTabs = useMemo(() => {
     return [
       { name: "appearance", label: "화면과 읽기" },
+      { name: OWNED_AGENTS_TAB_NAME, label: "내 에이전트" },
       { name: NODES_TAB_NAME, label: "노드" },
       { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
       { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
@@ -133,12 +136,14 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     selectedTab === SESSION_REVIEW_TAB_NAME ||
     selectedTab === USAGE_LOG_TAB_NAME ||
     selectedTab === AGENTS_TAB_NAME ||
+    selectedTab === OWNED_AGENTS_TAB_NAME ||
     selectedTab === USERS_TAB_NAME;
   const hasTabs = categories.length > 0 || extraTabs.length > 0;
 
   const activeLabel = selectedTab === "appearance" ? "화면과 읽기" : [...categories, ...extraTabs].find(tab => tab.name === selectedTab)?.label ?? "설정";
   const descriptions: Record<string, string> = {
     appearance: "나에게 편안한 배경과 대화 글자 크기를 고릅니다.",
+    owned_agents: "내 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.",
     nodes: "작업을 실행할 기기와 연결 상태를 확인합니다.", agents: "에이전트의 프로필과 기본 실행 환경을 관리합니다.",
     recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
     users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
@@ -201,6 +206,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                 <CardDispatchTab api={api?.cards} orchestration={api?.orchestration} />
               ) : selectedTab === AGENTS_TAB_NAME ? (
                 <AgentProfileEditorTab request={api?.request} />
+              ) : selectedTab === OWNED_AGENTS_TAB_NAME ? (
+                open && !mobileIndex ? <OwnedAgentsTab request={api?.request} /> : null
               ) : selectedTab === USERS_TAB_NAME ? (
                 <UserManagementTab request={api?.request} initialEditor={userEditor} />
               ) : activeCategory ? (

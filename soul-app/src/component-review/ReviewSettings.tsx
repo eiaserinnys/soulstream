@@ -11,6 +11,7 @@ import { ConnectionSettingsSection } from '../components/settings/ConnectionSett
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { createReviewApi, fixtureOptions, type FixtureState } from './fixtures';
 import { ReviewSection } from './ReviewSection';
+import { ReviewOwnedAgents } from './ReviewOwnedAgents';
 
 export function ReviewSettings() {
   const t = useTokens();
@@ -25,7 +26,9 @@ export function ReviewSettings() {
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const labelStyle = { ...t.foundation.typography.body, color: t.colors.textPrimary };
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('panel') === 'owned-agents') return <ReviewOwnedAgents />;
   return <>
+    <ReviewOwnedAgents />
     <ReviewSection title="폴더·에이전트 선택">
       <SettingsSegmentedControl<FixtureState> id="review-selector-state" value={state} onChange={(value) => {
         usePlannerStore.setState({ starred: { items: [], nextCursor: null }, loading: {}, error: {} });
