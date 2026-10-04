@@ -3,13 +3,8 @@ import { createHash } from "node:crypto";
 import type { CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
 import type { CustomViewRow, BoardProjectionHost, CustomViewWithBoardItem } from "../board-yjs/board_projection_types.js";
 import type { FolderRow } from "./board_catalog_types.js";
-import {
-  boardItemsDelta,
-  serializeCatalogFolders,
-  type CatalogBoardItemsDelta,
-  type CatalogFolderRecord,
-  type CatalogSessionsDelta,
-} from "./board_catalog_delta.js";
+import { boardItemsDelta } from "./board_catalog_delta.js";
+import type { CatalogDelta } from "../runtime/catalog_delta_broadcaster.js";
 import {
   CustomViewRevisionConflictError,
 } from "../board-yjs/board_projection_types.js";
@@ -36,11 +31,7 @@ export interface CustomViewBoardYjsPort extends Pick<BoardProjectionHost, "getCu
 }
 
 export interface CustomViewBroadcasterPort {
-  emitCatalogUpdated?(
-    folders: readonly CatalogFolderRecord[],
-    sessionsDelta: CatalogSessionsDelta,
-    boardItemsDelta: CatalogBoardItemsDelta,
-  ): Promise<void>;
+  emitCatalogUpdated?(delta: CatalogDelta): Promise<void>;
   emitCustomViewUpdated?(
     actorSessionId: string,
     customViewId: string,
@@ -182,11 +173,9 @@ export class CustomViewService {
     result: CustomViewMutationResult,
   ): Promise<void> {
     if (result.idempotent) return;
-    await this.broadcaster?.emitCatalogUpdated?.(
-      serializeCatalogFolders(await this.db.getAllFolders()),
-      {},
-      boardItemsDelta([result.boardItem]),
-    );
+    await this.broadcaster?.emitCatalogUpdated?.({
+      boardItemsDelta: boardItemsDelta([result.boardItem]),
+    });
     if (actorSessionId) {
       await this.broadcaster?.emitCustomViewUpdated?.(
         actorSessionId,

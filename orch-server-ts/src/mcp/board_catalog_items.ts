@@ -57,6 +57,7 @@ export class CatalogBoardItemService {
     const snappedY = snapBoardPosition(y);
     const boardItem = await this.db.getBoardItemById(boardItemId);
     if (!boardItem) throw new Error(`board item not found: ${boardItemId}`);
+    if (boardItem.x === snappedX && boardItem.y === snappedY) return;
     await this.requireBoard().updateBoardItemPosition(boardItem.folderId, boardItemId, snappedX, snappedY);
     await this.broadcastCatalog({ boardItems: [{ ...boardItem, x: snappedX, y: snappedY }] });
   }
@@ -79,7 +80,6 @@ export class CatalogBoardItemService {
     if (!boardItem) {
       const enrolled = await this.enrollGeneratedSessionBoardItem(params.boardItemId, params.folderId, position);
       if (!enrolled) throw new Error(`board item not found: ${params.boardItemId}`);
-      await this.broadcastCatalog({ sessionIds: [enrolled.itemId], boardItems: [enrolled] });
       return { boardItem: enrolled, enrolled: true };
     }
     if ((boardItem.membershipKind ?? "primary") !== "primary") {
@@ -101,10 +101,9 @@ export class CatalogBoardItemService {
       ...(position ? { position } : {}),
       idempotencyKey: params.idempotencyKey,
     });
-    await this.broadcastCatalog({
-      sessionIds: moved.itemType === "session" ? [moved.itemId] : [],
-      boardItems: [moved],
-    });
+    if (moved.itemType !== "session") {
+      await this.broadcastCatalog({ boardItems: [moved] });
+    }
     return { boardItem: moved, enrolled: false };
   }
 

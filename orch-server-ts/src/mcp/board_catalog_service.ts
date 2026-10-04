@@ -174,10 +174,6 @@ export class CatalogService {
     for (const sessionId of sessionIds) {
       await this.boardItems.moveSessionToFolder(sessionId, folderId);
     }
-    const movedBoardItems = (await Promise.all(
-      sessionIds.map((sessionId) => this.db.getPrimarySessionBoardItem(sessionId)),
-    )).filter((item): item is CatalogBoardItemRow => item !== null);
-    await this.broadcastCatalog({ sessionIds, boardItems: movedBoardItems });
   }
 
   /**
@@ -239,11 +235,10 @@ export class CatalogService {
         sessionsDelta[session.session_id] = sessionAssignmentFromRow(session);
       }
     }
-    await this.broadcaster.emitCatalogUpdated(
-      serializeCatalogFolders(await this.db.getAllFolders()),
+    await this.broadcaster.emitCatalogUpdated({
       sessionsDelta,
-      boardItemsDelta(delta.boardItems, delta.deletedBoardItemIds),
-    );
+      boardItemsDelta: boardItemsDelta(delta.boardItems, delta.deletedBoardItemIds),
+    });
   }
 
   async updateBoardItemPosition(

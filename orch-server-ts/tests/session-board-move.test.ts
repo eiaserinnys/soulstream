@@ -123,6 +123,7 @@ describe("SessionBoardMoveService", () => {
       sessionId: "session-a",
       sessionIds: ["session-a"],
       folderId: "folder-target",
+      movedBoardItem: moved,
     });
     expect(order).toEqual(["commit", "broadcast"]);
   });

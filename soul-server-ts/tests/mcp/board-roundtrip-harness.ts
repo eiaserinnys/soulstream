@@ -18,6 +18,9 @@ import { SqlFolderProjectIdentityRepository } from "../../../orch-server-ts/src/
 import { FolderProjectIdentityService } from "../../../orch-server-ts/src/folders/folder_project_identity_service.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
+import { createLiveFolderProvider } from "../../../orch-server-ts/src/runtime/live_folder_route_provider.js";
+import { broadcastTargetedSessionCatalogDelta } from "../../../orch-server-ts/src/runtime/live_session_catalog_mutation_broadcaster.js";
+import { InMemorySseReplayBroadcaster, type SessionStreamEvent } from "../../../orch-server-ts/src/sse/replay_broadcaster.js";
 import { SessionBoardMoveService } from "../../../orch-server-ts/src/session/session_board_move_service.js";
 import { createFullSchemaPostgresHarness } from "../../../orch-server-ts/tests/board_yjs_postgres_harness.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
@@ -35,6 +38,13 @@ import * as customView from "../../src/mcp/tools/custom_view.js";
 export async function createBoardRoundtripHarness() {
   const h = await createFullSchemaPostgresHarness();
   const resolver = createLiveDbSqlResolver({ sql: h.sql as never });
+  const folderProvider = createLiveFolderProvider(resolver);
+  const events: unknown[] = [];
+  const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
+  vi.spyOn(broadcaster, "append").mockImplementation(event => {
+    events.push(event);
+    return { id: "test-event", payload: event } as never;
+  });
   const sql = createBoardYjsSqlAdapter(h.sql as never);
   const cards = new CardControlPlaneService(sql, { appendEventTx: async () => 1 }, {
     emitFolderUpdated: async () => {}, emitCardUpdated: async () => {},
@@ -59,12 +69,16 @@ export async function createBoardRoundtripHarness() {
       moveSessionBoardItem: input => mover.moveSessionBoardItem(input),
       persistBoardItemMove: input => moves.commitBoardItemMove(input),
     });
-    mover = new SessionBoardMoveService({ board, repository: moves });
+    mover = new SessionBoardMoveService({ board, repository: moves,
+      onBoardMoveCommitted: async ({ sessionIds, movedBoardItem }) => {
+        await broadcastTargetedSessionCatalogDelta(folderProvider, broadcaster, sessionIds,
+          movedBoardItem ? { [movedBoardItem.id]: movedBoardItem } : {});
+      },
+    });
   };
   makeBoard();
   const app = Fastify();
   const host = { authBearerToken: "service-token", projectionHost, createService: () => board };
-  const events: unknown[] = [];
   let distinguishRemote = false;
   const listAgentProfiles = vi.fn(async (nodeId: string) => ({ roselin: { name: distinguishRemote && nodeId === "other-node" ? "다른 노드 이름" : "로젤린" } }));
   const oldBroadcaster = {
@@ -84,7 +98,8 @@ export async function createBoardRoundtripHarness() {
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
     board: { host: { ...host, get service() { return board; } }, getSession: (id: string) => sessionReads.getSession(id),
       listAgentProfiles,
-      broadcaster: { append: (event: unknown) => { events.push(event); } },
+      broadcaster,
+      catalogFolderProvider: folderProvider,
     },
   } as never;
 

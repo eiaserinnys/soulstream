@@ -4,6 +4,7 @@ import { CustomViewService } from "./board_custom_view_service.js";
 import { createBoardLocalPorts } from "./board_local_ports.js";
 import type { FolderBrowseItem } from "./board_folder_browse.js";
 import { dispatchNodeRegistryEventsToSessionBroadcaster } from "../runtime/node_session_event_dispatcher.js";
+import { broadcastCatalogDelta, type CatalogDelta } from "../runtime/catalog_delta_broadcaster.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, any>;
@@ -251,9 +252,8 @@ function services(options: McpHostOptions, context: McpCallContext) {
     }], options.board.broadcaster);
   };
   const broadcaster = {
-    emitCatalogUpdated: async (folders: unknown, sessions_delta: unknown, board_items_delta: unknown) => {
-      emit({ type: "catalog_updated", folders, sessions_delta, board_items_delta });
-    },
+    emitCatalogUpdated: (delta: CatalogDelta) =>
+      broadcastCatalogDelta(options.board.catalogFolderProvider, options.board.broadcaster, delta),
     emitCustomViewUpdated: async (agentSessionId: string, customViewId: string, boardItemId: string, revision: number) => {
       emit({ type: "event", agentSessionId, event: { type: "custom_view_updated", customViewId, boardItemId, revision } });
     },

@@ -1,5 +1,6 @@
 import type { CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
 import type { FolderRow } from "./board_catalog_types.js";
+import type { SessionAssignmentRecord } from "../folders/folder_routes.js";
 
 export interface CatalogFolderRecord {
   id: string;
@@ -11,10 +12,7 @@ export interface CatalogFolderRecord {
   createdAt?: string;
 }
 
-export interface CatalogSessionAssignment {
-  folderId: string | null;
-  displayName: string | null;
-}
+export type CatalogSessionAssignment = SessionAssignmentRecord;
 
 export type CatalogSessionsDelta =
   Record<string, CatalogSessionAssignment | null>;
