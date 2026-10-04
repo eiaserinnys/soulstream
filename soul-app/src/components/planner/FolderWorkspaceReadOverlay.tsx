@@ -42,8 +42,8 @@ function FolderWorkspaceOverlayContent() {
   const visible = useUIStore((state) => state.folderOverlayVisible);
   const cardId = useUIStore((state) => state.selectedCardId);
   const initialCardSessionId = useUIStore((state) => state.initialCardSessionId);
+  const cardSessionSelectionHandled = useUIStore((state) => state.cardSessionSelectionHandled);
   const detail = useCardStore((state) => cardId ? state.details[cardId] : undefined);
-  const initializedCardSession = useRef<string | null>(null);
   const pageId = useUIStore((state) => state.selectedFolderPageId);
   const sessionId = useUIStore((state) => state.activeSessionId);
   const resolution = useUIStore((state) => state.sessionFolderResolution);
@@ -51,6 +51,7 @@ function FolderWorkspaceOverlayContent() {
   const storyOpenRequestId = useUIStore((state) => state.storyOpenRequestId);
   const close = useUIStore((state) => state.closeFolderOverlay);
   const setActiveSessionId = useUIStore((state) => state.setActiveSessionId);
+  const initializeCardSessionSelection = useUIStore((state) => state.initializeCardSessionSelection);
   const session = useSessionStore((state) => (
     sessionId ? state.sessions[sessionId] : undefined
   ));
@@ -66,18 +67,19 @@ function FolderWorkspaceOverlayContent() {
 
   // Feed-selected sessions win once; normal card opens keep assignee-first behavior.
   useEffect(() => {
-    if (!visible || !cardId) { initializedCardSession.current = null; return; }
-    const initialKey = `${cardId}:${initialCardSessionId ?? ''}`;
-    if (!detail || initializedCardSession.current === initialKey) return;
-    initializedCardSession.current = initialKey;
-    if (initialCardSessionId) {
-      setActiveSessionId(initialCardSessionId);
-      return;
-    }
-    if (detail.card.assigneeKind === 'session' && detail.card.assigneeSessionId) {
-      setActiveSessionId(detail.card.assigneeSessionId);
-    }
-  }, [visible, cardId, detail, initialCardSessionId, setActiveSessionId]);
+    if (!visible || !cardId || !detail || cardSessionSelectionHandled) return;
+    const assigneeSessionId = detail.card.assigneeKind === 'session'
+      ? detail.card.assigneeSessionId
+      : null;
+    initializeCardSessionSelection(cardId, initialCardSessionId || assigneeSessionId || null);
+  }, [
+    visible,
+    cardId,
+    detail,
+    initialCardSessionId,
+    cardSessionSelectionHandled,
+    initializeCardSessionSelection,
+  ]);
 
   useEffect(() => {
     Animated.timing(progress, {

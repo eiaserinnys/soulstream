@@ -49,7 +49,9 @@ interface UIState {
   selectedFolderPageId: string | null;
   selectedCardId: string | null;
   initialCardSessionId: string | null;
+  cardSessionSelectionHandled: boolean;
   openCardOverlay: (cardId: string, initialSessionId?: string | null) => void;
+  initializeCardSessionSelection: (cardId: string, sessionId: string | null) => void;
   clearCardOverlay: () => void;
   /** iPad 설정 모달. 사이드바와 외부 딥링크가 같은 상태를 사용한다. */
   settingsVisible: boolean;
@@ -149,6 +151,7 @@ export const useUIStore = create<UIState>()(
       selectedFolderPageId: null,
       selectedCardId: null,
       initialCardSessionId: null,
+      cardSessionSelectionHandled: false,
       settingsVisible: false,
       folderOverlayVisible: false,
       cardBoardExpanded: false,
@@ -191,14 +194,35 @@ export const useUIStore = create<UIState>()(
       openCardOverlay: (cardId, initialSessionId) => set((state) => ({
         selectedCardId: cardId,
         initialCardSessionId: initialSessionId ?? null,
+        cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: initialSessionId ?? state.activeSessionId,
       })),
-      clearCardOverlay: () => set({ selectedCardId: null, initialCardSessionId: null }),
+      initializeCardSessionSelection: (cardId, sessionId) => set((state) => {
+        if (
+          !state.folderOverlayVisible
+          || state.selectedCardId !== cardId
+          || state.cardSessionSelectionHandled
+        ) return state;
+        return {
+          cardSessionSelectionHandled: true,
+          ...(sessionId ? {
+            activeSessionId: sessionId,
+            focusEventId: null,
+            storyOpenRequestId: null,
+          } : {}),
+        };
+      }),
+      clearCardOverlay: () => set({
+        selectedCardId: null,
+        initialCardSessionId: null,
+        cardSessionSelectionHandled: false,
+      }),
       openFolderOverlay: (pageId, sessionId, eventId, storyOpenRequestId) => set((state) => ({
         selectedFolderPageId: pageId,
         selectedCardId: null,
         initialCardSessionId: null,
+        cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: sessionId === undefined ? state.activeSessionId : sessionId,
         focusEventId: eventId ?? null,
@@ -209,6 +233,7 @@ export const useUIStore = create<UIState>()(
         selectedFolderPageId: null,
         selectedCardId: null,
         initialCardSessionId: null,
+        cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: sessionId,
         focusEventId: eventId ?? null,
@@ -219,6 +244,7 @@ export const useUIStore = create<UIState>()(
         selectedFolderPageId: null,
         selectedCardId: null,
         initialCardSessionId: null,
+        cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: sessionId,
         focusEventId: eventId ?? null,
@@ -235,6 +261,7 @@ export const useUIStore = create<UIState>()(
         selectedFolderPageId: null,
         selectedCardId: null,
         initialCardSessionId: null,
+        cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: sessionId,
         focusEventId: eventId,
@@ -265,6 +292,7 @@ export const useUIStore = create<UIState>()(
           selectedFolderPageId: null,
           selectedCardId: null,
           initialCardSessionId: null,
+          cardSessionSelectionHandled: false,
           folderOverlayVisible: false,
           activeSessionId: null,
           focusEventId: null,
@@ -277,6 +305,7 @@ export const useUIStore = create<UIState>()(
       closeFolderOverlay: () => set({
         selectedCardId: null,
         initialCardSessionId: null,
+        cardSessionSelectionHandled: false,
         folderOverlayVisible: false,
         storyOpenRequestId: null,
       }),

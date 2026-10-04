@@ -73,6 +73,7 @@ beforeEach(() => {
     activeSessionId: null,
     focusEventId: null,
     initialCardSessionId: null,
+    cardSessionSelectionHandled: false,
     sessionFolderResolution: null,
   });
 });
@@ -181,6 +182,34 @@ test('피드에서 선택한 소속 세션은 담당 세션보다 우선하고 �
   });
   expect(screen.getByTestId('overlay-card-detail')).toBeTruthy();
   expect(useUIStore.getState().activeSessionId).toBe('child-2');
+});
+
+test('피드 초기 세션을 소비한 뒤 수동 선택은 overlay 재마운트에도 유지한다', async () => {
+  useCardStore.getState().putDetail(cardDetail('card-feed', 'owner'));
+  useCardStore.getState().putDetail(cardDetail('card-owner', 'owner'));
+  useUIStore.getState().openCardOverlay('card-feed', 'child');
+
+  const firstMount = render(<FolderWorkspaceReadOverlay />);
+  expect(useUIStore.getState().activeSessionId).toBe('child');
+
+  await act(async () => useUIStore.getState().setActiveSessionId('owner'));
+  expect(useUIStore.getState().activeSessionId).toBe('owner');
+
+  firstMount.unmount();
+  const afterRotation = render(<FolderWorkspaceReadOverlay />);
+
+  expect(useUIStore.getState().activeSessionId).toBe('owner');
+
+  afterRotation.unmount();
+  await act(async () => useUIStore.getState().openCardOverlay('card-owner'));
+  const normalOpen = render(<FolderWorkspaceReadOverlay />);
+  expect(useUIStore.getState().activeSessionId).toBe('owner');
+
+  await act(async () => useUIStore.getState().setActiveSessionId('child'));
+  normalOpen.unmount();
+  render(<FolderWorkspaceReadOverlay />);
+
+  expect(useUIStore.getState().activeSessionId).toBe('child');
 });
 
 test('일반 카드 열기는 기존처럼 카드 담당 세션을 자동 선택한다', () => {
