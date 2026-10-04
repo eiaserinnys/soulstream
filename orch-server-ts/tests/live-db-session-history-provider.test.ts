@@ -45,7 +45,7 @@ describe("live DB session history provider", () => {
         ];
       }
       if (text.includes("last_event_id")) return [{ last_event_id: 12 }];
-      if (text.includes("event_stream_raw")) {
+      if (text.includes("semantic_receipt.effect_applied")) {
         return [
           { id: 11, event_type: "text_delta", payload_text: "{\"text\":\"a\"}" },
           {
@@ -91,7 +91,7 @@ describe("live DB session history provider", () => {
       "SELECT COUNT(*)::int FROM events WHERE session_id = ? AND parent_event_id IS NULL",
       "SELECT * FROM events_viewport(?, ?, ?)",
       "SELECT COALESCE(MAX(id), 0)::int AS last_event_id FROM events WHERE session_id = ?",
-      "SELECT raw_event.*, semantic_receipt.effect_applied FROM event_stream_raw(?, ?) AS raw_event LEFT JOIN LATERAL ( SELECT (receipt.effect_application->>'applied')::boolean AS effect_applied FROM event_ingress_receipts AS receipt WHERE receipt.session_id = ? AND receipt.event_id = raw_event.id AND receipt.effect_application IS NOT NULL ORDER BY receipt.created_at ASC, receipt.source_seq ASC LIMIT 1 ) AS semantic_receipt ON TRUE ORDER BY raw_event.id ASC",
+      "SELECT raw_event.id, raw_event.event_type, raw_event.payload::text AS payload_text, semantic_receipt.effect_applied FROM events AS raw_event LEFT JOIN LATERAL ( SELECT (receipt.effect_application->>'applied')::boolean AS effect_applied FROM event_ingress_receipts AS receipt WHERE receipt.session_id = ? AND receipt.event_id = raw_event.id AND receipt.effect_application IS NOT NULL ORDER BY receipt.created_at ASC, receipt.source_seq ASC LIMIT 1 ) AS semantic_receipt ON TRUE WHERE raw_event.session_id = ? AND raw_event.id > ? AND (?::integer IS NULL OR raw_event.id <= ?) ORDER BY raw_event.id ASC LIMIT ?",
     ]);
   });
 
@@ -447,7 +447,7 @@ describe("live DB session history provider", () => {
 
   it("replays DB raw events through the route filter for finalized app-server fragments", async () => {
     const harness = createSqlHarness((text) =>
-      text.includes("event_stream_raw")
+      text.includes("semantic_receipt.effect_applied")
         ? [
             {
               id: 2,

@@ -115,7 +115,7 @@ export type SessionFeedUpdateWire = SessionFeedDelta & {
   readonly review_state?: "not_required" | "needs_review" | "acknowledged";
 };
 
-export type SessionHistoryResetReason = "cursor_ahead" | "history_gap";
+export type SessionHistoryResetReason = "cursor_ahead" | "history_gap" | "catchup_overflow";
 
 export type SessionHistorySyncWire = {
   readonly type: "history_sync";
