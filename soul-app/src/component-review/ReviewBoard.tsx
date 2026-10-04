@@ -11,7 +11,7 @@ import { useCardDisplay } from '../hooks/useCardDisplay';
 import { useCompletedCards } from '../hooks/useCompletedCards';
 import { CompletedCardCollection } from '../components/planner/CompletedCardCollection';
 
-type Scenario = 'mixed' | 'none' | 'all';
+type Scenario = 'mixed' | 'empty' | 'none' | 'all';
 type Scope = 'folder' | 'global';
 type Layout = 'rows' | 'board';
 const exampleCards = initialCards.map((card) => ({ ...card,
@@ -30,14 +30,14 @@ export function ReviewBoard() {
   const [layout, setLayout] = useState<Layout>('board');
   const { includeCompleted, onChange: setIncludeCompleted } = useCardDisplay(scope === 'folder' ? initialCards[0].folderId : undefined);
   const [selected, setSelected] = useState('');
-  const api=useMemo(()=>createReviewApi('normal',{manyCompleted:true,...scenario==='none'?{completed:'none' as const}:scenario==='all'?{completed:'only' as const}:{}}),[scenario]);
+  const api=useMemo(()=>createReviewApi('normal',{emptyCards:scenario === 'empty',manyCompleted:scenario !== 'empty',...scenario==='none'?{completed:'none' as const}:scenario==='all'?{completed:'only' as const}:{}}),[scenario]);
   const completed=useCompletedCards(api,scope==='folder'?initialCards[0].folderId:undefined,includeCompleted);
-  const cards = scenario === 'none' ? exampleCards.filter((card) => card.status !== 'done')
+  const cards = scenario === 'empty' ? [] : scenario === 'none' ? exampleCards.filter((card) => card.status !== 'done')
     : scenario === 'all' ? exampleCards.filter((card) => card.status === 'done') : exampleCards;
   const completedCount = cards.filter((card) => card.status === 'done').length;
   return <View style={{ flex:1,gap: t.uiSpacing.md }}>
     <SettingsSegmentedControl<Scenario> id="board-scenario" value={scenario} onChange={setScenario}
-      options={[{ value: 'mixed', label: '혼합' }, { value: 'none', label: '완료 0개' }, { value: 'all', label: '전부 완료' }]} />
+      options={[{ value: 'mixed', label: '혼합' }, { value: 'empty', label: '빈 보드' }, { value: 'none', label: '완료 0개' }, { value: 'all', label: '전부 완료' }]} />
     <SettingsSegmentedControl<Scope> id="board-scope" value={scope} onChange={setScope}
       options={[{ value: 'folder', label: '현재 폴더' }, { value: 'global', label: '전체' }]} />
     <SettingsSegmentedControl<Layout> id="board-layout" value={layout} onChange={setLayout}
@@ -47,7 +47,7 @@ export function ReviewBoard() {
       <CompletedCardsToggle includeCompleted={includeCompleted} completedCount={completedCount} onChange={setIncludeCompleted} />
     </View>
     {layout === 'board' ? <View testID="review-board-frame" style={{flex:1}}>
-      <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} completed={completed} includeCompleted={includeCompleted} onOpen={setSelected} />
+      <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} completed={completed} includeCompleted={includeCompleted} hideEmptyLanes onOpen={setSelected} />
     </View> : <><FolderCardList api={api} cards={cards} includeCompleted={false} onOpen={setSelected} />{includeCompleted?<CompletedCardCollection api={api} browser={completed} onOpen={setSelected}/>:null}</>}
     {selected ? <Text testID="review-board-selection" style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>선택한 카드: {selected}</Text> : null}
   </View>;

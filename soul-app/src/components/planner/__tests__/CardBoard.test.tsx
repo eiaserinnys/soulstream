@@ -51,11 +51,37 @@ test('폴더 행/보드의 같은 controlled 옵션은 완료만 숨기고 숨�
   expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(false);
 });
 
-test.each([{ items: [] }, { items: cards.filter((card) => card.status === 'done') }])('완료 0개/전부 완료의 빈 상태에도 5열이 남는다', ({ items }) => {
-  const screen = render(<CardBoard api={null} cards={items} includeCompleted={false} onOpen={() => {}} />);
+test.each([{ items: [] }, { items: cards.filter((card) => card.status === 'done') }])('expanded 보드는 완료 0개/전부 완료에도 기존 5개 빈 레인을 유지한다', ({ items }) => {
+  const screen = render(<CardBoard api={null} cards={items} includeCompleted={false} hideEmptyLanes={false} onOpen={() => {}} />);
   expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(5);
   expect(screen.queryByTestId('postit-card-done')).toBeNull();
   expect(screen.getAllByText('카드가 없습니다.').length).toBeGreaterThanOrEqual(5);
+});
+
+test('main 보드는 비보관 카드가 있는 레인만 남기고 모두 비면 빈 안내를 유지한다', () => {
+  const screen = render(<CardBoard api={null} cards={[
+    cardFixture({ id: 'todo-main', status: 'todo' }),
+    cardFixture({ id: 'queued-main', status: 'queued' }),
+    cardFixture({ id: 'archived-main', status: 'running', archived: true }),
+  ]} hideEmptyLanes onOpen={() => {}} />);
+  expect(screen.getAllByTestId(/^card-board-column-/).map(column => column.props.testID))
+    .toEqual(['card-board-column-todo', 'card-board-column-queued']);
+  expect(screen.getByTestId('postit-card-todo-main')).toBeTruthy();
+  expect(screen.queryByTestId('postit-card-archived-main')).toBeNull();
+
+  screen.rerender(<CardBoard phone hideEmptyLanes api={null} cards={[]} onOpen={() => {}} />);
+  expect(screen.queryAllByTestId(/^card-board-column-/)).toHaveLength(0);
+  expect(screen.getByText('카드가 없습니다.')).toBeTruthy();
+  expect(screen.getByTestId('card-board').props.snapToOffsets).toEqual([]);
+});
+
+test('hideEmptyLanes 이후에도 완료·취소 두 레인은 기존 토글로 함께 숨긴다', () => {
+  const screen = render(<CardBoard api={null} cards={cards} hideEmptyLanes includeCompleted={false} onOpen={() => {}} />);
+  expect(screen.queryByTestId('card-board-column-done')).toBeNull();
+  expect(screen.queryByTestId('card-board-column-cancelled')).toBeNull();
+  screen.rerender(<CardBoard api={null} cards={cards} hideEmptyLanes includeCompleted onOpen={() => {}} />);
+  expect(screen.getByTestId('card-board-column-done')).toBeTruthy();
+  expect(screen.getByTestId('card-board-column-cancelled')).toBeTruthy();
 });
 
 test('목록 활동 원문과 요청을 표시하고 상세는 카드 탭 전까지 조회하지 않는다', async () => {
@@ -94,7 +120,8 @@ test('drop execute pending shows acceptance then observes the same request in th
     getCardExecution:jest.fn().mockResolvedValue({card:accepted,execution:{requestId:'drop-request',sessionId:'drop-session',state:'started'}})};
   const alert=jest.spyOn(Alert,'alert').mockImplementation(()=>{});
   // Board cards are controlled by the same store updated by execution results.
-  function Sample(){const current=useCardStore(state=>state.rows[source.id]??source);return <CardBoard phone={false} api={api as any} cards={[current]} onOpen={()=>{}}/>;}
+  function Sample(){const current=useCardStore(state=>state.rows[source.id]??source);return <CardBoard phone={false} api={api as any} cards={[current]}
+    initialPosition={{x:0,lane:'todo',lanes:{}}} onOpen={()=>{}}/>;}
   jest.useFakeTimers();
   try {
     const screen=render(<Sample/>);

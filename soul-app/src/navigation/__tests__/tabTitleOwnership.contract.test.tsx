@@ -109,7 +109,7 @@ test('5개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
   }
 });
 
-test('phone card home header keeps only completion visibility, daily route remains stored', () => {
+test('phone card home header keeps create and completion actions, daily route remains stored', () => {
   renderStackNavigators();
   const dailyScreen = getNativeStackCaptures()[0]!.screens[0]!;
   const navigation = { setOptions: jest.fn(), navigate: jest.fn() };
@@ -120,7 +120,8 @@ test('phone card home header keeps only completion visibility, daily route remai
   expect(options.headerTitleAlign).toBe('left');
   expect(mockCardHomeProps).toHaveBeenLastCalledWith(expect.objectContaining({ externalHeader: true }));
   expect(header.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(true);
-  expect(header.queryByLabelText('드래프트 카드 추가')).toBeNull();
+  fireEvent.press(header.getByLabelText('드래프트 카드 추가'));
+  expect(mockOpenCardCreate).toHaveBeenCalledTimes(1);
   expect(header.queryByLabelText('기존 데일리 기록')).toBeNull();
   expect(header.queryByLabelText('보드 확대')).toBeNull();
   expect(getNativeStackCaptures()[0]!.screens.some((screen) => screen.name === 'DailyHistory')).toBe(true);

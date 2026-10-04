@@ -13,6 +13,7 @@ import {
   type SurfaceRoleName,
 } from '../theme/surfaceRoles';
 import { AppGlassCard } from './AppGlassCard';
+import { TabletSafeAreaFrame } from './split/TabletSafeAreaFrame';
 import { recordModalVisibility } from '../lib/session-diagnostics-api';
 import type { ModalDiagnosticSource } from '../lib/session-diagnostics-core';
 
@@ -51,6 +52,10 @@ type AppModalSurfaceProps = AppModalSurfaceCommonProps & (
       variant: 'popover';
       presentationStyle?: never;
     }
+  | {
+      variant: 'board';
+      presentationStyle?: never;
+    }
 );
 
 interface AppModalPresentation {
@@ -75,16 +80,17 @@ export function AppModalSurface({
   safeAreaTestID,
 }: AppModalSurfaceProps) {
   const previousVisible = useRef(false);
-  useEffect(() => {
-    if (previousVisible.current !== visible) {
-      recordModalVisibility(modalId, variant, visible);
-      previousVisible.current = visible;
-    }
-  }, [modalId, variant, visible]);
-
   const compact = variant === 'compact';
   const popover = variant === 'popover';
+  const board = variant === 'board';
   const presentation = resolveAppModalPresentation(variant, presentationStyle);
+  const diagnosticVariant = board ? 'expanded' : variant;
+  useEffect(() => {
+    if (previousVisible.current !== visible) {
+      recordModalVisibility(modalId, diagnosticVariant, visible);
+      previousVisible.current = visible;
+    }
+  }, [modalId, diagnosticVariant, visible]);
   return (
     <Modal
       visible={visible}
@@ -102,7 +108,9 @@ export function AppModalSurface({
             ? styles.compactViewport
             : popover
               ? styles.popoverViewport
-              : styles.expandedViewport,
+              : board
+                ? styles.boardViewport
+                : styles.expandedViewport,
         ]}
       >
         {compact || popover ? (
@@ -114,47 +122,55 @@ export function AppModalSurface({
             onPress={onRequestClose}
           />
         ) : null}
-        <AppGlassCard
-          role={presentation.surfaceRole}
-          testID={surfaceTestID}
-          style={
-            compact
-              ? styles.compactSurface
-              : popover
-                ? styles.popoverSurface
-                : styles.expandedSurface
-          }
-        >
-          <SafeAreaView
-            testID={safeAreaTestID}
-            edges={
-              compact
-                ? ['bottom', 'left', 'right']
-                : popover
-                  ? []
-                  : undefined
-            }
+        {board ? (
+          <TabletSafeAreaFrame>
+            <AppGlassCard role={presentation.surfaceRole} testID={surfaceTestID} style={styles.expandedSurface}>
+              <View testID={safeAreaTestID} style={styles.boardContent}>{children}</View>
+            </AppGlassCard>
+          </TabletSafeAreaFrame>
+        ) : (
+          <AppGlassCard
+            role={presentation.surfaceRole}
+            testID={surfaceTestID}
             style={
               compact
-                ? styles.compactSafeArea
+                ? styles.compactSurface
                 : popover
-                  ? styles.popoverSafeArea
-                  : styles.expandedSafeArea
+                  ? styles.popoverSurface
+                  : styles.expandedSurface
             }
           >
-            {children}
-          </SafeAreaView>
-        </AppGlassCard>
+            <SafeAreaView
+              testID={safeAreaTestID}
+              edges={
+                compact
+                  ? ['bottom', 'left', 'right']
+                  : popover
+                    ? []
+                    : undefined
+              }
+              style={
+                compact
+                  ? styles.compactSafeArea
+                  : popover
+                    ? styles.popoverSafeArea
+                    : styles.expandedSafeArea
+              }
+            >
+              {children}
+            </SafeAreaView>
+          </AppGlassCard>
+        )}
       </View>
     </Modal>
   );
 }
 
 export function resolveAppModalPresentation(
-  variant: 'compact' | 'expanded' | 'popover',
+  variant: 'compact' | 'expanded' | 'popover' | 'board',
   presentationStyle?: NativeSheetPresentationStyle,
 ): AppModalPresentation {
-  if (variant === 'compact' || variant === 'popover') {
+  if (variant === 'compact' || variant === 'popover' || variant === 'board') {
     return {
       transparent: true,
       presentationStyle: 'overFullScreen',
@@ -189,6 +205,7 @@ const styles = StyleSheet.create({
     minHeight: DESIGN_HIT_TARGET.min,
   },
   expandedViewport: {},
+  boardViewport: { backgroundColor: MODAL_BACKDROP_COLOR },
   compactSurface: {
     width: '100%',
     maxHeight: '60%',
@@ -206,4 +223,5 @@ const styles = StyleSheet.create({
   compactSafeArea: { flexShrink: 1 },
   popoverSafeArea: { flexShrink: 1 },
   expandedSafeArea: { flex: 1 },
+  boardContent: { flex: 1 },
 });

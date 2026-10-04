@@ -59,11 +59,10 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     openExpanded: () => setExpanded({ ...position.current, lanes: { ...position.current.lanes } }) }), []);
   const closeExpanded = () => { setExpanded(null); onExpandedClose?.(); };
   const completedCount = completed.cards.length;
-  const board = (initialPosition?: BoardPosition, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
+  const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
     bottomInset={expandedBoard ? 0 : bottomInset}
-    includeCompleted={cardDisplay.includeCompleted} initialPosition={initialPosition}
-    onCreate={() => setAdding(true)}
-    onPositionChange={expandedBoard ? undefined : (next) => { position.current = next; }}
+    includeCompleted={cardDisplay.includeCompleted} hideEmptyLanes={!expandedBoard} initialPosition={initialPosition}
+    onPositionChange={(next) => { position.current = next; }}
     onOpen={(id, target) => {
       if (expandedBoard && phone) closeExpanded();
       if (expandedBoard && !phone && typeof document !== 'undefined') detailFocus.current = document.activeElement as HTMLElement;
@@ -72,6 +71,10 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     }} />;
   const heading = (expandedBoard = false) => <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : t.cardLayout.padding, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.sm }}>
     <View style={{ flexGrow: 1 }}><PlannerSectionHeader title={folderId ? '현재 폴더 · 카드' : '전체 · 카드'} /></View>
+    <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} testID="card-board-create"
+      surfaceTestID="card-board-create-visual" accessibilityLabel="드래프트 카드 추가" onPress={() => setAdding(true)}>
+      <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+    </LiquidGlassButton>
     <CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted} completedCount={completedCount} onChange={cardDisplay.onChange} />
     {!phone ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel={expanded ? '보드 확대 닫기' : '보드 확대'} onPress={() => expanded ? closeExpanded() : setExpanded({ ...position.current, lanes: { ...position.current.lanes } })}>
       <Ionicons name={expanded ? 'close-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
@@ -86,7 +89,9 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     {board()}
     {loading && !expanded ? <AutomaticRefreshIndicator testID="card-board-auto-progress" style={{ top: 0, right: 0 }} /> : null}
     {adding ? <CardCreateSheet api={api} folderId={folderId} onClose={() => setAdding(false)} /> : null}
-    {expanded ? <AppModalSurface visible modalId="modal_card_detail" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => {
+    {expanded ? <AppModalSurface visible modalId="modal_card_detail" {...(phone
+      ? { variant: 'expanded' as const, presentationStyle: 'pageSheet' as const }
+      : { variant: 'board' as const })} onRequestClose={() => {
       if (useUIStore.getState().folderOverlayVisible) useUIStore.getState().closeFolderOverlay();
       else closeExpanded();
     }}>

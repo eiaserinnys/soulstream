@@ -109,6 +109,10 @@ export function MainListPane({
           )}
         </View>
         {view === 'board' && !effectiveShowSearch ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+          <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+            accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
+            <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+          </LiquidGlassButton>
           <CompletedCardsToggle {...cardDisplay} />
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="보드 확대" onPress={() => boardRef.current?.openExpanded()}>
             <Ionicons name="expand-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />

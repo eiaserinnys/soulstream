@@ -1,4 +1,4 @@
-import { boardLaneGeometry, boardDropStatus, boardVisibleColumns, boardSnapOffsets, BOARD_COLUMNS } from '../card-board-layout';
+import { boardLaneGeometry, boardLaneOffset, boardDropStatus, boardVisibleColumns, boardSnapOffsets, BOARD_COLUMNS } from '../card-board-layout';
 
 test('completed grid owns variable lane boundaries for snap, drop and maximum scroll', () => {
   const columns=boardVisibleColumns(true);
@@ -35,6 +35,15 @@ test('wide viewport snap offsets clamp and deduplicate without end spacers', () 
   const offsets = boardSnapOffsets(1210, g, boardVisibleColumns(false).length);
   expect(offsets).toEqual([0, (g.stride * 4 + g.laneWidth) - 1210]);
   expect(offsets.length).toBe(new Set(offsets).size);
+});
+
+test('empty board has no scroll offsets and invalid lane offsets resolve to the origin', () => {
+  const columns = [] as const;
+  const geometry = boardLaneGeometry(800, 256, 8, false, columns);
+  expect(geometry.lanes).toEqual([]);
+  expect(geometry.maxScroll).toBe(0);
+  expect(boardLaneOffset(0, 800, geometry, 0)).toBe(0);
+  expect(boardSnapOffsets(800, geometry, 0)).toEqual([]);
 });
 
 test('drop uses viewport and scroll position, excludes outside and source lane', () => {

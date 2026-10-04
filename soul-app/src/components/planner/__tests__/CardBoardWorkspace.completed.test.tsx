@@ -22,7 +22,7 @@ test('tablet panel uses phone lanes and inset, while expanded board keeps wide g
   const screen = render(<CardBoardWorkspace ref={ref} api={null} bottomInset={120} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
   expect(screen.queryByTestId('card-board-stages')).toBeNull();
   expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingHorizontal).toBe(0);
-  const scroll = screen.getByTestId('card-board-scroll-review');
+  const scroll = screen.getByTestId('card-board-scroll-todo');
   expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(136);
   expect(StyleSheet.flatten(screen.getByTestId('card-board-scroll-done').props.contentContainerStyle).paddingBottom).toBe(136);
   fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: 140, y: 0 } } });
@@ -30,6 +30,9 @@ test('tablet panel uses phone lanes and inset, while expanded board keeps wide g
   const expanded = within(screen.getByTestId('card-board-expanded'));
   expect(expanded.queryByTestId('card-board-stages')).toBeNull();
   expect(StyleSheet.flatten(expanded.getByTestId('card-board-scroll-review').props.contentContainerStyle).paddingBottom).toBe(16);
+  expect(expanded.getAllByTestId(/^card-board-column-/)).toHaveLength(7);
+  expect(screen.UNSAFE_getByType(AppModalSurface).props.variant).toBe('board');
+  expect(screen.UNSAFE_getByType(AppModalSurface).props.presentationStyle).toBeUndefined();
 });
 function Sample({ folderId }: { folderId?: string }) {
   const [includeCompleted, onChange] = useState(false);
@@ -78,11 +81,11 @@ test.each([undefined, 'folder-1'])('전체/폴더 %s: 기본 완료·취소 숨�
   expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(true);
   expect(screen.queryByTestId('postit-card-done')).toBeNull();
   expect(screen.getByTestId('postit-card-todo')).toBeTruthy();
-  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(5);
+  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(1);
   expect(screen.queryByTestId('card-board-column-done')).toBeNull();
   fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
   expect(screen.getByTestId('postit-card-done')).toBeTruthy();
-  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(7);
+  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(2);
   expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(false);
   fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
   fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
@@ -130,6 +133,28 @@ test('expanded tablet keeps the mounted board and its position underneath detail
   expect(useUIStore.getState().cardBoardExpanded).toBe(false);
 });
 
+test('completed lane vertical position survives expansion and reopens at the saved location', () => {
+  mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo', status: 'todo' })];
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null}
+    cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
+
+  fireEvent.scroll(screen.getByTestId('card-board-scroll-done'), { nativeEvent: {
+    contentOffset: { x: 0, y: 180 }, layoutMeasurement: { width: 800, height: 500 }, contentSize: { width: 800, height: 1000 }, timestamp: 1,
+  } });
+  act(() => ref.current!.openExpanded());
+  let expanded = within(screen.getByTestId('card-board-expanded'));
+  expect(expanded.getByTestId('card-board-scroll-done').props.contentOffset).toEqual({ x: 0, y: 180 });
+
+  fireEvent.scroll(expanded.getByTestId('card-board-scroll-done'), { nativeEvent: {
+    contentOffset: { x: 0, y: 260 }, layoutMeasurement: { width: 1200, height: 700 }, contentSize: { width: 1200, height: 1000 }, timestamp: 2,
+  } });
+  fireEvent.press(expanded.getByLabelText('보드 확대 닫기'));
+  act(() => ref.current!.openExpanded());
+  expanded = within(screen.getByTestId('card-board-expanded'));
+  expect(expanded.getByTestId('card-board-scroll-done').props.contentOffset).toEqual({ x: 0, y: 260 });
+});
+
 test.each(['phone', 'tablet'])('확대 닫힘 %s은 선택적 콜백을 한 번 호출하고 공개 handle로 다시 열린다', device => {
   mockDevice = device;
   mockCards = [cardFixture({ id: 'todo' })];
@@ -150,9 +175,45 @@ test.each(['phone', 'tablet'])('확대 닫힘 %s은 선택적 콜백을 한 번 
 
 test.each([undefined, 'folder-1'])('empty draft creation retains scope %s in the existing sheet', folderId => {
   mockCards = [];
-  const screen = render(<CardBoardWorkspace api={null} folderId={folderId} externalHeader cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={jest.fn()} />);
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null} folderId={folderId} externalHeader cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={jest.fn()} />);
   expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingTop).toBe(8);
-  expect(screen.getAllByLabelText('드래프트 카드 추가')).toHaveLength(1);
-  fireEvent.press(screen.getByLabelText('드래프트 카드 추가'));
+  expect(screen.queryAllByTestId(/^card-board-column-/)).toHaveLength(0);
+  expect(screen.queryByLabelText('드래프트 카드 추가')).toBeNull();
+  act(() => ref.current!.openCreate());
   expect(screen.UNSAFE_getByType(require('../CardCreateSheet').CardCreateSheet).props.folderId).toBe(folderId);
+});
+
+test('empty main board owns the create action in the workspace heading and expanded tablet keeps empty lanes', () => {
+  mockDevice = 'tablet'; mockCards = [];
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null}
+    cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={jest.fn()} />);
+  expect(screen.queryAllByTestId(/^card-board-column-/)).toHaveLength(0);
+  expect(screen.getByText('카드가 없습니다.')).toBeTruthy();
+  expect(screen.getByLabelText('드래프트 카드 추가')).toBeTruthy();
+  expect(screen.getByLabelText('보드 확대')).toBeTruthy();
+
+  act(() => ref.current!.openExpanded());
+  const expanded = within(screen.getByTestId('card-board-expanded'));
+  expect(expanded.getAllByTestId(/^card-board-column-/)).toHaveLength(5);
+  expect(expanded.getByLabelText('드래프트 카드 추가')).toBeTruthy();
+  expect(expanded.getAllByText('카드가 없습니다.')).toHaveLength(5);
+  fireEvent.press(expanded.getByLabelText('드래프트 카드 추가'));
+  expect(screen.UNSAFE_getByType(require('../CardCreateSheet').CardCreateSheet)).toBeTruthy();
+});
+
+test('external header keeps the parent create and expand actions for an empty board', () => {
+  mockDevice = 'tablet'; mockCards = [];
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null} externalHeader
+    cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={jest.fn()} />);
+  expect(screen.queryByLabelText('드래프트 카드 추가')).toBeNull();
+  act(() => ref.current!.openCreate());
+  const createSheet = screen.UNSAFE_getByType(require('../CardCreateSheet').CardCreateSheet);
+  expect(createSheet.props.folderId).toBeUndefined();
+  act(() => createSheet.props.onClose());
+  act(() => ref.current!.openExpanded());
+  expect(screen.getByTestId('card-board-expanded')).toBeTruthy();
+  expect(screen.UNSAFE_getByType(AppModalSurface).props.variant).toBe('board');
 });

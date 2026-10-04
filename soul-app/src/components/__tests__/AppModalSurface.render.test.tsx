@@ -68,6 +68,27 @@ test('expanded modal keeps the requested native presentation in the same surface
     .toEqual(['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']);
 });
 
+test('board modal uses transparent overlay and the shared tablet inset frame', () => {
+  const screen = render(
+    <AppModalSurface visible variant="board" modalId="modal_card_detail" onRequestClose={jest.fn()}
+      surfaceTestID="board-surface">
+      <View testID="board-content" />
+    </AppModalSurface>,
+  );
+  expect(screen.UNSAFE_getByType(Modal).props).toMatchObject({
+    transparent: true,
+    presentationStyle: 'overFullScreen',
+  });
+  expect(screen.getByTestId('tablet-safe-area-frame')).toBeTruthy();
+  const frameStyle = StyleSheet.flatten(screen.getByTestId('tablet-safe-area-frame').props.style);
+  expect(frameStyle.paddingTop).toBe(frameStyle.paddingHorizontal);
+  expect(frameStyle.paddingBottom).toBe(frameStyle.paddingHorizontal);
+  expect(screen.getByTestId('tablet-safe-area-content')).toBeTruthy();
+  expect(screen.getByTestId('board-surface')).toBeTruthy();
+  expect(screen.getByTestId('board-content')).toBeTruthy();
+  expect(screen.queryByTestId('app-modal-backdrop')).toBeNull();
+});
+
 test('popover modal anchors a compact glass surface at the tablet top edge', () => {
   const screen = render(
     <AppModalSurface
@@ -149,6 +170,11 @@ test('modal host와 표면 종류는 레이어 책임에 따라 한 계약으로
     surfaceRole: 'nativeSheet',
   });
   expect(resolveAppModalPresentation('popover')).toEqual({
+    transparent: true,
+    presentationStyle: 'overFullScreen',
+    surfaceRole: 'modal',
+  });
+  expect(resolveAppModalPresentation('board')).toEqual({
     transparent: true,
     presentationStyle: 'overFullScreen',
     surfaceRole: 'modal',

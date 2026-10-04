@@ -78,11 +78,11 @@ export const fixtureOptions = [
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
-export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; entryShell?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
+export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; entryShell?: boolean; emptyReview?: boolean; emptyCards?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
   folderSessionPages?: FolderSessionPageScenario;
   onFolderSessionPageRequest?(pageId: string, cursor: string | null, releaseResponse?: () => void): void;
   onCreateCard?(body: Parameters<ApiClient['createCard']>[0]): void } = {}) {
-  const cards = new Map(initialCards.map((card) => [card.id, { ...card }]));
+  const cards = new Map((options.emptyCards ? [] : initialCards).map((card) => [card.id, { ...card }]));
   if (options.entryShell) {
     const card = {
       ...makeCard('running'),

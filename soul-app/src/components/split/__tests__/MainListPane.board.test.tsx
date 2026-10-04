@@ -42,6 +42,8 @@ test('카드 홈은 저장된 데일리 선택을 무시하고 전체 보드와 
   expect(screen.queryByLabelText('카드 보드')).toBeNull();
   expect(screen.getByLabelText('보드 확대')).toBeTruthy();
   expect(screen.getAllByLabelText('드래프트 카드 추가')).toHaveLength(1);
+  fireEvent.press(screen.getByLabelText('드래프트 카드 추가'));
+  expect(screen.getByLabelText('카드 제목')).toBeTruthy();
 
 });
 
