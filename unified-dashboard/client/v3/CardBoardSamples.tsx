@@ -39,14 +39,19 @@ export function CardBoardSamples() {
   const [mobileTab,setMobileTab]=useState<MobilePlannerTab>("projects");
   const [adding,setAdding]=useState(false);
   const mobileMode=useMobilePlannerMode();
-  const cards=useMemo(()=>scenario==="empty"?[]:boardColumns.flatMap(({status},index)=>Array.from({length:index===0?4:status==='done'?1000:1},(_,copy)=>({
-    ...reviewCard,...assignmentCard,...settings[`board-${index}-${copy}`],id:`board-${index}-${copy}`,status:statuses[`board-${index}-${copy}`]??(assignmentScenario==='live'?'running':scenario==="done"?"done":status),
-    title:index===0?reviewTitle:`${boardColumns[index].label} 카드`,blockedKind:status==="blocked"?"question" as const:null,
-    completedAt:new Date(Date.now()-copy*10*60*1000).toISOString(),
-    latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
-      body:"긴 본문이 있어도 카드와 열의 폭을 줄이지 않습니다. 최신 원문은 네 줄까지 읽고 상세에서 이어 봅니다. ".repeat(5),createdAt:reviewCard.createdAt},
-  }))).filter(card=>(scenario!=="none"||card.status!=="done")
-    &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="review"||card.status==="done")),[scenario,statuses,assignmentScenario,settings]);
+  const cards=useMemo(()=>{
+    if(scenario==="empty")return [];
+    const seeds=boardColumns.flatMap(({status},index)=>Array.from({length:index===0?4:status==='done'?1000:1},(_,copy)=>({
+      ...reviewCard,...assignmentCard,...settings[`board-${index}-${copy}`],id:`board-${index}-${copy}`,status:assignmentScenario==='live'?'running':scenario==="done"?"done":status,
+      title:index===0?reviewTitle:`${boardColumns[index].label} 카드`,blockedKind:status==="blocked"?"question" as const:null,
+      completedAt:new Date(Date.now()-copy*10*60*1000).toISOString(),
+      latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
+        body:"긴 본문이 있어도 카드와 열의 폭을 줄이지 않습니다. 최신 원문은 네 줄까지 읽고 상세에서 이어 봅니다. ".repeat(5),createdAt:reviewCard.createdAt},
+    })));
+    return seeds.filter(card=>(scenario!=="none"||card.status!=="done")
+      &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="review"||card.status==="done"))
+      .map(card=>({...card,status:statuses[card.id]??card.status}));
+  },[scenario,statuses,assignmentScenario,settings]);
   const loader=useCallback<CompletedPageLoader>(async params=>{
     const result=cards.filter(card=>card.status==='done'&&(!params.completedFrom||card.completedAt>=params.completedFrom)&&(!params.completedBefore||card.completedAt<params.completedBefore)&&(`${card.title} ${card.request}`.toLocaleLowerCase().includes((params.q??'').toLocaleLowerCase()))).sort((a,b)=>b.completedAt.localeCompare(a.completedAt)||b.id.localeCompare(a.id));
     const offset=Number(params.cursor??0),limit=params.limit??60;

@@ -1,15 +1,17 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DashboardIconCap } from "@seosoyoung/soul-ui";
 import { Maximize2, X } from "lucide-react";
 import { CardBoard, boardColumns } from "./CardBoard";
 import { CardCompletionFilter } from "./CardCompletionFilter";
+import { CompletedCardBrowserControls, CompletedCardBrowserFeedback, type CompletedGridSnapshot } from "./CompletedCardGrid";
 import { CardBoardLayerContext } from "./card-board-layer";
 import { useCardNavigation } from "./card-navigation";
 
 type BoardStatus = (typeof boardColumns)[number]["status"];
 type BoardScrollAnchor = { status: BoardStatus; delta: number };
-type BoardSnapshot = { focus: HTMLElement | null; horizontal: BoardScrollAnchor | null; vertical: Partial<Record<BoardStatus, number>> };
+type BoardLaneScrollPosition = number|CompletedGridSnapshot;
+type BoardSnapshot = { focus: HTMLElement | null; horizontal: BoardScrollAnchor | null; vertical: Partial<Record<BoardStatus, BoardLaneScrollPosition>> };
 
 function contentLeft(board:HTMLElement) {
   const padding=parseFloat(getComputedStyle(board).paddingLeft)||0;
@@ -55,37 +57,57 @@ function restoreHorizontalAnchor(board:HTMLElement, anchor:BoardScrollAnchor|nul
   return captureHorizontalAnchor(board,target.status)??target;
 }
 
-function saveVerticalScroll(board:HTMLElement, positions:Partial<Record<BoardStatus,number>>) {
+function saveVerticalScroll(board:HTMLElement, positions:Partial<Record<BoardStatus,BoardLaneScrollPosition>>) {
   for(const column of boardColumnsIn(board)) {
+    const status=column.dataset.boardColumn as BoardStatus;
+    if(status==="done")continue;
     const lane=column.querySelector<HTMLElement>(".v3-card-board-lane");
-    if(lane)positions[column.dataset.boardColumn as BoardStatus]=lane.scrollTop;
+    if(lane)positions[status]=lane.scrollTop;
   }
 }
 
-function restoreVerticalScroll(board:HTMLElement, positions:Partial<Record<BoardStatus,number>>) {
+function restoreVerticalScroll(board:HTMLElement, positions:Partial<Record<BoardStatus,BoardLaneScrollPosition>>) {
   for(const column of boardColumnsIn(board)) {
     const status=column.dataset.boardColumn as BoardStatus;
+    if(status==="done")continue;
     const lane=column.querySelector<HTMLElement>(".v3-card-board-lane");
-    if(lane)lane.scrollTop=positions[status]??0;
+    if(lane)lane.scrollTop=typeof positions[status]==="number"?positions[status]:0;
   }
 }
 
 /** One mounted board owns its scope, option and scroll even while expanded. */
-export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=false,...boardProps}:ComponentProps<typeof CardBoard>&{title:string;actions?:ReactNode;initialExpanded?:boolean}) {
+export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=false,...boardProps}:Omit<ComponentProps<typeof CardBoard>,"completedGridSnapshot"|"onCompletedGridSnapshotChange">&{title:string;actions?:ReactNode;initialExpanded?:boolean}) {
   const [expanded,setExpanded]=useState(initialExpanded);
+  const [completedGridSnapshot,setCompletedGridSnapshot]=useState<CompletedGridSnapshot|null>(null);
   const detailOpen=useCardNavigation(state=>state.cardId!==null);
   const root=useRef<HTMLDivElement>(null);
   const nestedLayers=useRef(0);
   const layer=useMemo(()=>({claim(){nestedLayers.current++;return ()=>{nestedLayers.current--;};}}),[]);
   const snapshot=useRef<BoardSnapshot|null>(null);
   const currentAnchor=useRef<BoardScrollAnchor|null>(null);
-  const verticalPositions=useRef<Partial<Record<BoardStatus,number>>>({});
+  const verticalPositions=useRef<Partial<Record<BoardStatus,BoardLaneScrollPosition>>>({});
   const mainStatuses=useRef<BoardStatus[]|null>(null);
   const previousExpanded=useRef(expanded);
+  const completedResetKey=boardProps.completed?.resetKey;
+  const previousCompletedResetKey=useRef(completedResetKey);
   const completionStatuses=boardColumns.filter(({status})=>boardProps.completion?.includeCompleted!==false||(status!=="done"&&status!=="cancelled"));
-  const populatedStatuses=completionStatuses.filter(({status})=>boardProps.cards.some(card=>!card.archived&&card.status===status));
+  const populatedStatuses=completionStatuses.filter(({status})=>status==="done"&&boardProps.completed
+    ?boardProps.completed.cards.length>0
+    :boardProps.cards.some(card=>!card.archived&&card.status===status));
   const renderedStatuses=expanded?completionStatuses.map(({status})=>status):populatedStatuses.map(({status})=>status);
   const renderedStatusKey=renderedStatuses.join(",");
+
+  const rememberCompletedGridSnapshot=useCallback((snapshot:CompletedGridSnapshot)=>{
+    if(!expanded)verticalPositions.current.done=snapshot;
+  },[expanded]);
+
+  useLayoutEffect(()=>{
+    if(previousCompletedResetKey.current===completedResetKey)return;
+    previousCompletedResetKey.current=completedResetKey;
+    delete verticalPositions.current.done;
+    if(snapshot.current)delete snapshot.current.vertical.done;
+    setCompletedGridSnapshot(null);
+  },[completedResetKey]);
 
   const expand=()=>{
     const board=root.current!.querySelector<HTMLElement>(".v3-card-board")!;
@@ -93,9 +115,15 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
     const horizontal=captureHorizontalAnchor(board)??currentAnchor.current;
     currentAnchor.current=horizontal;
     snapshot.current={focus:document.activeElement as HTMLElement,horizontal,vertical:{...verticalPositions.current}};
+    const doneSnapshot=verticalPositions.current.done;
+    setCompletedGridSnapshot(doneSnapshot&&typeof doneSnapshot!=="number"?doneSnapshot:null);
     setExpanded(true);
   };
-  const collapse=()=>setExpanded(false);
+  const collapse=()=>{
+    const doneSnapshot=snapshot.current?.vertical.done;
+    setCompletedGridSnapshot(doneSnapshot&&typeof doneSnapshot!=="number"?doneSnapshot:null);
+    setExpanded(false);
+  };
 
   useLayoutEffect(()=>{
     const element=root.current;
@@ -107,7 +135,7 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
       if(target.classList.contains("v3-card-board"))currentAnchor.current=captureHorizontalAnchor(target)??currentAnchor.current;
       else if(target.classList.contains("v3-card-board-lane")) {
         const status=target.closest<HTMLElement>("[data-board-column]")?.dataset.boardColumn as BoardStatus|undefined;
-        if(status)verticalPositions.current[status]=target.scrollTop;
+        if(status&&status!=="done")verticalPositions.current[status]=target.scrollTop;
       }
     };
     element.addEventListener("scroll",rememberScroll,true);
@@ -145,11 +173,13 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
         currentAnchor.current=restoreHorizontalAnchor(board,anchor,renderedStatuses);
         for(const column of boardColumnsIn(board)) {
           const status=column.dataset.boardColumn as BoardStatus;
+          if(status==="done")continue;
           const lane=column.querySelector<HTMLElement>(".v3-card-board-lane");
           if(!lane)continue;
           if(previous.includes(status))verticalPositions.current[status]=lane.scrollTop;
           else {
-            lane.scrollTop=verticalPositions.current[status]??0;
+            const position=verticalPositions.current[status];
+            lane.scrollTop=typeof position==="number"?position:0;
             verticalPositions.current[status]=lane.scrollTop;
           }
         }
@@ -184,7 +214,11 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
           :<DashboardIconCap size="small" label="보드 확대" onClick={expand}><Maximize2 className="h-4 w-4"/></DashboardIconCap>}
       </div>
     </div>
-    <CardBoard {...boardProps} hideEmptyLanes={!expanded}/>
+    {!expanded&&boardProps.completion?.includeCompleted&&boardProps.completed?<>
+      <CompletedCardBrowserControls browser={boardProps.completed}/>
+      <CompletedCardBrowserFeedback browser={boardProps.completed}/>
+    </>:null}
+    <CardBoard {...boardProps} hideEmptyLanes={!expanded} completedGridSnapshot={completedGridSnapshot} onCompletedGridSnapshotChange={rememberCompletedGridSnapshot}/>
   </div>;
   // Escapes backdrop-filter containing blocks while inheriting the actual shell tokens.
   const shell=root.current?.closest(".v3-shell");
