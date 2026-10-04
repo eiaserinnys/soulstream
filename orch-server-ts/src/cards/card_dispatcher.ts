@@ -198,12 +198,9 @@ export class CardDispatcher {
             return;
         const cards = await this.options.cards();
         const detail = await cards.getCard(session.card_id);
-        if (!detail || detail.card.status !== "running")
+        if (!detail || detail.card.status !== "running" || detail.card.assignee_session_id !== sessionId)
             return;
         if (await this.options.repository.hasExplicitWork(session.card_id)) return;
-        // A superseded session must not terminate the newer run of the same card.
-        if ((await this.options.repository.latestSession(session.card_id))?.session_id !== sessionId)
-            return;
         if (!isUsageLimitTermination(session)) return;
         await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: session.card_id, expectedVersion: detail.card.version,
             status: "blocked", blockedKind: "limit", blockedDetail: "세션 사용량 한도" });
@@ -211,7 +208,7 @@ export class CardDispatcher {
     private async resumeLimits(): Promise<void> {
         const cards = await this.options.cards();
         for (const card of await this.options.repository.limited()) {
-            const session = await this.options.repository.latestSession(card.id);
+            const session = card.assignee_session_id ? await this.options.repository.ownerSession(card.assignee_session_id) : null;
             const target = this.options.resolveTarget(card, session?.model_preset);
             if (!target.available)
                 continue;
@@ -220,7 +217,7 @@ export class CardDispatcher {
             if ((occupancy[target.nodeId] ?? 0) >= (settings.nodeConcurrency[target.nodeId] ?? settings.nodeConcurrency.default))
                 continue;
             if (session && isUsageLimitTermination(session)) {
-                try { cardAttachmentPaths(card.attachments ?? [], session.node_id); } catch(error) {
+                try { cardAttachmentPaths(card.attachments ?? [], session.node_id!); } catch(error) {
                     await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId:card.id,expectedVersion:card.version,status:"blocked",blockedKind:"no_report",blockedDetail:String(error)});
                     continue;
                 }
@@ -251,10 +248,7 @@ export class CardDispatcher {
                 break;
             queue = queue.filter(c => c.id !== card.id);
             const target = targets.get(card.id)!;
-            if (!target.available) {
-                await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "blocked", blockedKind: "limit", blockedDetail: target.reason, expectedVersion: card.version });
-                continue;
-            }
+            if (!target.available) continue;
             const detail = await cards.getCard(card.id);
             if (!detail || detail.card.status !== "queued")
                 continue;
