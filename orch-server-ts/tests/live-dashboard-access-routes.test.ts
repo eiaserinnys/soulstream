@@ -212,6 +212,7 @@ function createBoardItemProvider(): BoardItemRouteProvider {
   return {
     listFolders: vi.fn(async () => folders),
     listBoardItems: vi.fn(async () => [{ id: "item-child", folderId: "folder-a-child" }]),
+    getBoardItemById: vi.fn(async () => null),
 
     getCatalogSnapshot: vi.fn(async () => ({
       folders,

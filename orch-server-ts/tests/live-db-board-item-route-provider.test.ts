@@ -12,6 +12,31 @@ type SqlCall = {
 };
 
 describe("live DB board item route provider", () => {
+  it("looks up one board item by id without reading the whole catalog", async () => {
+    const harness = createSqlHarness((text) => text.includes("FROM board_items")
+      ? [boardItemRow({ id: "item-target", x: "12", y: "34" })]
+      : []);
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(repository.boardItemRouteProvider.getBoardItemById("item-target"))
+      .resolves.toEqual({
+        id: "item-target",
+        folderId: "folder-a",
+        membershipKind: "primary",
+        itemType: "session",
+        itemId: "sess-1",
+        x: 12,
+        y: 34,
+        metadata: {},
+        createdAt: "2026-07-09T00:00:00.000Z",
+        updatedAt: "2026-07-09T00:00:00.000Z",
+      });
+    expect(harness.normalizedCalls()).toEqual([
+      "SELECT * FROM board_items WHERE id = ? LIMIT 1",
+    ]);
+    expect(harness.calls[0]?.values).toEqual(["item-target"]);
+  });
+
   it("lists folder-scoped primary board items with Python catalog serialization", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("folder_get_all")) return [folderRow()];
@@ -156,10 +181,16 @@ function createSqlHarness(
   rowsFor: (text: string, values: unknown[]) => readonly Record<string, unknown>[] = () => [],
 ) {
   const calls: SqlCall[] = [];
-  const sql = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+  const sqlCall = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
     calls.push({ text, values });
     return rowsFor(text, values);
+  });
+  const sql = Object.assign(sqlCall, {
+    json: (value: unknown) => value,
+    array: (values: readonly unknown[]) => values,
+    begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) =>
+      await callback(sqlCall as unknown as LivePostgresSql),
   }) as unknown as LivePostgresSql;
 
   return {

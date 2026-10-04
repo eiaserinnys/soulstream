@@ -135,6 +135,7 @@ function boardItemProvider(input: {
   return {
     listFolders: vi.fn(async () => folders),
     listBoardItems: vi.fn(async () => boardItems),
+    getBoardItemById: vi.fn(async () => boardItems[0] ?? null),
 
     getCatalogSnapshot: vi.fn(async () => ({ folders, boardItems })),
   };

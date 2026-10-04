@@ -6,7 +6,6 @@ import {
   type BoardYjsHostProxyRouteOptions,
 } from "./board_yjs_host_proxy.js";
 import {
-  findBoardItem,
   moveLocalBoardItem,
   updateLocalBoardItemPosition,
 } from "./board_item_local_mutations.js";
@@ -42,6 +41,9 @@ export type BoardItemRouteProvider = {
   listBoardItems: (
     query: BoardItemListQuery,
   ) => Promise<readonly BoardItemRecord[]> | readonly BoardItemRecord[];
+  getBoardItemById: (
+    boardItemId: string,
+  ) => Promise<BoardItemRecord | null> | BoardItemRecord | null;
   getCatalogSnapshot: () =>
     | Promise<BoardItemCatalogSnapshot>
     | BoardItemCatalogSnapshot;
@@ -116,19 +118,19 @@ export function registerBoardItemRoutes(
 
       const boardItemId = boardItemParams(request).board_item_id;
       const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
+      let folders: readonly BoardItemFolderRecord[] = [];
       if (access.restricted) {
-        const snapshot = await options.provider.getCatalogSnapshot();
-        const boardItem = findBoardItem(snapshot.boardItems, boardItemId);
-        if (boardItem === undefined) return boardItemNotFound(reply);
-        if (!isFolderAllowed(access, snapshot.folders, stringOrNull(boardItem.folderId))) {
+        folders = await options.provider.listFolders();
+        const boardItem = await options.provider.getBoardItemById(boardItemId);
+        if (boardItem === null) return boardItemNotFound(reply);
+        if (!isFolderAllowed(access, folders, stringOrNull(boardItem.folderId))) {
           return folderAccessDenied(reply);
         }
       }
 
       try {
-        const snapshot = await options.provider.getCatalogSnapshot();
-        const boardItem = findBoardItem(snapshot.boardItems, boardItemId);
-        if (boardItem === undefined) return boardItemNotFound(reply);
+        const boardItem = await options.provider.getBoardItemById(boardItemId);
+        if (boardItem === null) return boardItemNotFound(reply);
         await updateLocalBoardItemPosition(
           app, options.hostProxy, boardItem, boardItemId, body.value.x, body.value.y,
         );
@@ -147,14 +149,14 @@ export function registerBoardItemRoutes(
 
       const boardItemId = boardItemParams(request).board_item_id;
       const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
-      const snapshot = await options.provider.getCatalogSnapshot();
-      const boardItem = findBoardItem(snapshot.boardItems, boardItemId);
-      if (boardItem === undefined) return boardItemNotFound(reply);
-      if (!isFolderAllowed(access, snapshot.folders, stringOrNull(boardItem.folderId))) {
+      const folders = access.restricted ? await options.provider.listFolders() : [];
+      const boardItem = await options.provider.getBoardItemById(boardItemId);
+      if (boardItem === null) return boardItemNotFound(reply);
+      if (!isFolderAllowed(access, folders, stringOrNull(boardItem.folderId))) {
         return folderAccessDenied(reply);
       }
 
-      if (!isFolderAllowed(access, snapshot.folders, body.value.folderId)) return folderAccessDenied(reply);
+      if (!isFolderAllowed(access, folders, body.value.folderId)) return folderAccessDenied(reply);
       try {
         const position = body.value.x !== undefined && body.value.y !== undefined
           ? { x: body.value.x, y: body.value.y }

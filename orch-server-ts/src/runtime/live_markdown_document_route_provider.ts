@@ -1,6 +1,5 @@
 import {
   MarkdownDocumentRouteError,
-  type CustomViewRecord,
   type MarkdownDocumentRecord,
   type MarkdownDocumentRouteProvider,
 } from "../board/markdown_document_routes.js";
@@ -10,11 +9,13 @@ import {
 } from "../board/board_item_routes.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
+import { CustomViewProjectionRepository } from "../board-yjs/custom_view_projection_repository.js";
 
 export function createLiveMarkdownDocumentRouteProvider(
   sqlResolver: LiveDbSqlResolver,
   folderProvider: LiveFolderProvider,
 ): MarkdownDocumentRouteProvider {
+  const customViews = new CustomViewProjectionRepository(sqlResolver);
   return {
     listFolders: folderProvider.listFolders,
     async getMarkdownDocument(documentId) {
@@ -40,28 +41,20 @@ export function createLiveMarkdownDocumentRouteProvider(
       return rows[0] ? serializeMarkdownDocumentRow(rows[0]) : null;
     },
     async getCustomView(customViewId) {
-      const sql = await sqlResolver.resolveSql();
-      const rows = await sql`
-        SELECT
-          cv.id,
-          cv.board_item_id,
-          bi.folder_id,
-          cv.title,
-          cv.html,
-          cv.revision,
-          cv.archived,
-          cv.created_session_id,
-          cv.created_event_id,
-          cv.updated_session_id,
-          cv.updated_event_id,
-          cv.created_at,
-          cv.updated_at
-        FROM board_custom_views cv
-        JOIN board_items bi ON bi.id = cv.board_item_id
-        WHERE cv.id = ${customViewId}
-        LIMIT 1
-      `;
-      return rows[0] ? serializeCustomViewRow(rows[0]) : null;
+      const result = await customViews.getCustomView(customViewId);
+      if (!result) return null;
+      const { customView, boardItem } = result;
+      return {
+        id: customView.id,
+        boardItemId: customView.boardItemId,
+        folderId: boardItem.folderId,
+        title: customView.title,
+        html: customView.html,
+        revision: customView.revision,
+        archived: customView.archived,
+        ...(customView.createdAt === undefined ? {} : { createdAt: customView.createdAt }),
+        ...(customView.updatedAt === undefined ? {} : { updatedAt: customView.updatedAt }),
+      };
     },
   };
 }
@@ -83,23 +76,6 @@ function serializeMarkdownDocumentRow(row: Record<string, unknown>): MarkdownDoc
   return record;
 }
 
-function serializeCustomViewRow(row: Record<string, unknown>): CustomViewRecord {
-  const record: CustomViewRecord = {
-    id: String(row.id ?? ""),
-    boardItemId: String(row.board_item_id ?? row.boardItemId ?? ""),
-    folderId: String(row.folder_id ?? row.folderId ?? ""),
-    title: stringOrNull(row.title),
-    html: String(row.html ?? ""),
-    revision: numberValue(row.revision) ?? 1,
-    archived: booleanValue(row.archived) ?? false,
-  };
-  const createdAt = timestampString(row.created_at ?? row.createdAt);
-  if (createdAt !== undefined) record.createdAt = createdAt;
-  const updatedAt = timestampString(row.updated_at ?? row.updatedAt);
-  if (updatedAt !== undefined) record.updatedAt = updatedAt;
-  return record;
-}
-
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
@@ -107,13 +83,6 @@ function stringOrNull(value: unknown): string | null {
 function numberValue(value: unknown): number | undefined {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function booleanValue(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") return value;
-  if (value === "true" || value === "t") return true;
-  if (value === "false" || value === "f") return false;
-  return undefined;
 }
 
 function timestampString(value: unknown): string | undefined {

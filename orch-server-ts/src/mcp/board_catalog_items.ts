@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import { nextBoardPosition as firstAvailableBoardPosition, getMarkdownPreview } from "../board-yjs/board_yjs_model.js";
 import type { CatalogBoardItemRow, MarkdownDocumentRow } from "../board-yjs/board_yjs_types.js";
 import type { BoardMcpStore } from "./board_catalog_types.js";
 import type { CatalogMutationDelta } from "./board_catalog_delta.js";
 
 const BOARD_GRID_SIZE = 20;
-const BOARD_TILE_WIDTH = 280;
-const BOARD_TILE_HEIGHT = 160;
-const BOARD_DEFAULT_COLUMNS = 4;
 
 export interface CatalogBoardItemMoveResult {
   boardItem: CatalogBoardItemRow;
@@ -181,15 +179,7 @@ export class CatalogBoardItemService {
   }
 
   private async nextBoardPosition(folderId: string): Promise<[number, number]> {
-    const occupied = new Set((await this.db.getBoardItemsByFolder(folderId))
-      .map((item) => `${item.x}:${item.y}`));
-    let index = 0;
-    while (true) {
-      const x = (index % BOARD_DEFAULT_COLUMNS) * BOARD_TILE_WIDTH;
-      const y = Math.floor(index / BOARD_DEFAULT_COLUMNS) * BOARD_TILE_HEIGHT;
-      if (!occupied.has(`${x}:${y}`)) return [x, y];
-      index += 1;
-    }
+    return firstAvailableBoardPosition(await this.db.getBoardItemsByFolder(folderId));
   }
 
   private async enrollGeneratedSessionBoardItem(
@@ -219,9 +209,4 @@ function snapBoardPosition(value: number): number {
 function isMovableBoardItemType(itemType: CatalogBoardItemRow["itemType"]): boolean {
   return itemType === "session" || itemType === "markdown" ||
     itemType === "asset" || itemType === "custom_view" || itemType === "subfolder";
-}
-
-// Same legacy preview as catalog_board_item_service and Board Yjs's private model helper.
-function getMarkdownPreview(body: string): string {
-  return body.replace(/\s+/g, " ").trim().slice(0, 180);
 }

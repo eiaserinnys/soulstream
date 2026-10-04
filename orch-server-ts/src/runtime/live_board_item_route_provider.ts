@@ -3,6 +3,7 @@ import {
   type BoardItemRecord,
   type BoardItemRouteProvider,
 } from "../board/board_item_routes.js";
+import { BoardProjectionReadRepository } from "../board-yjs/board_projection_read_repository.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 
@@ -10,6 +11,7 @@ export function createLiveBoardItemRouteProvider(
   sqlResolver: LiveDbSqlResolver,
   folderProvider: LiveFolderProvider,
 ): BoardItemRouteProvider {
+  const boardItems = new BoardProjectionReadRepository(sqlResolver);
   return {
     listFolders: folderProvider.listFolders,
     async listBoardItems(query) {
@@ -36,6 +38,9 @@ export function createLiveBoardItemRouteProvider(
         return rows.flatMap(serializeBoardItemRow);
       }
       return [];
+    },
+    async getBoardItemById(boardItemId) {
+      return await boardItems.getBoardItemById(boardItemId) as BoardItemRecord | null;
     },
     async getCatalogSnapshot() {
       return {
