@@ -33,6 +33,7 @@ function PopoverPopup({
   alignOffset = 0,
   tooltipStyle = false,
   keepMounted = false,
+  sticky = false,
   anchor,
   ...props
 }: PopoverPrimitive.Popup.Props & {
@@ -42,6 +43,7 @@ function PopoverPopup({
   alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
   tooltipStyle?: boolean;
   keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
+  sticky?: PopoverPrimitive.Positioner.Props["sticky"];
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
 }) {
   return (
@@ -50,6 +52,7 @@ function PopoverPopup({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
+        sticky={sticky}
         className="z-[var(--v3-layer-popover,51)] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
         data-slot="popover-positioner"
         side={side}

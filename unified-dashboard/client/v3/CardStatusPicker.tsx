@@ -47,7 +47,7 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
       >
       <StatusChip label={execution?.phase==="pending"?"시작 중…":cardStatusLabel(card)} tone={tone}/>
     </PopoverTrigger>
-    <PopoverPopup align="start" className="v3-card-status-picker w-max min-w-32 max-w-(--available-width)" data-card-status-picker onClick={event => event.stopPropagation()}>
+    <PopoverPopup align="start" sticky className="v3-surface v3-card-status-picker w-fit min-w-32 max-w-(--available-width)" data-card-status-picker onClick={event => event.stopPropagation()}>
       <div className="v3-card-status-picker-content">
         {execution && execution.phase!=='pending'?<><p role={execution.phase==='error'?'alert':'status'}>{execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?'다시 확인':'다시 시도'}</Button></>:null}
         {loading ? <p role="status">불러오는 중…</p> : null}
