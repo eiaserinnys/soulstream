@@ -1224,3 +1224,36 @@ describe('client recurring job endpoints', () => {
     expect(archiveBody).toEqual({ expected_version: 4 });
   });
 });
+
+describe('client.getCatalog full feed pagination', () => {
+  it('follows existing offset pages when limit=0 is capped by the server', async () => {
+    const rows = Array.from({ length: 201 }, (_, n) => ({ agentSessionId: `s-${n}` }));
+    const response = (body: unknown) => ({
+      ok: true, status: 200, json: async () => body,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+    });
+    const fetchMock = jest.fn().mockResolvedValueOnce(response({ folders: [], sessions: {} }))
+      .mockResolvedValueOnce(response({ sessions: rows.slice(0, 200), total: 201 }))
+      .mockResolvedValueOnce(response({ sessions: rows.slice(200), total: 201 }));
+    (global as any).fetch = fetchMock;
+    const result = await createApiClient(BASE).getCatalog({ feed_only: true, limit: 0 });
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+      `${BASE}/api/folders`,
+      `${BASE}/api/sessions?feed_only=true&limit=0`,
+      `${BASE}/api/sessions?feed_only=true&limit=0&offset=200`,
+    ]);
+    expect(result.sessionList).toHaveLength(201);
+    expect(Object.keys(result.sessions)).toHaveLength(201);
+    expect(result.total).toBe(201);
+  });
+  it('rejects an incomplete feed when pagination makes no progress', async () => {
+    const response = (body: unknown) => ({
+      ok: true, status: 200, json: async () => body,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+    });
+    (global as any).fetch = jest.fn().mockResolvedValueOnce(response({ folders: [], sessions: {} }))
+      .mockResolvedValueOnce(response({ sessions: [{ agentSessionId: 's-0' }], total: 201 }))
+      .mockResolvedValueOnce(response({ sessions: [], total: 201 }));
+    await expect(createApiClient(BASE).getCatalog({ feed_only: true, limit: 0 })).rejects.toThrow(/incomplete/i);
+  });
+});

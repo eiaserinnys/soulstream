@@ -7,6 +7,7 @@ import type {
   Folder,
   Session,
 } from '../api/types';
+import { isCompleteSessionSnapshot } from '../lib/session-snapshot-completeness';
 import { filterFeedSessions } from '../lib/feed-filter';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSessionStore } from '../store/sessionStore';
@@ -34,6 +35,7 @@ type InitialDeltaEvent =
 
 type SessionListPayload = {
   sessions?: unknown[];
+  total?: number;
 };
 
 const FEED_CATALOG_PARAMS = { feed_only: true, limit: 0 } as const;
@@ -115,6 +117,7 @@ export function useSessionsStream() {
     instanceId?: string;
     events: Array<{ type: string; data: any; eid?: string }>;
   } | null>(null);
+  const pendingStreamMetaRef = useRef<{ boundary?: string; instanceId?: string }>({});
   const cursorlessSnapshotRef = useRef<{ instanceId?: string } | null>(null);
   const initialCatalogReadyRef = useRef(false);
   const initialCatalogFailedRef = useRef(false);
@@ -134,6 +137,7 @@ export function useSessionsStream() {
     refetchTokenRef.current += 1;
     recoveryRef.current = null;
     cursorlessSnapshotRef.current = null;
+    pendingStreamMetaRef.current = {};
     initialCatalogReadyRef.current = false;
     initialCatalogFailedRef.current = false;
     initialCatalogPendingRef.current = false;
@@ -147,7 +151,7 @@ export function useSessionsStream() {
   );
 
   const applySessionListFallback = useCallback((d: SessionListPayload) => {
-    if (!isCurrentScope()) return;
+    if (!isCurrentScope() || !isCompleteSessionSnapshot(d.sessions, d.total)) return;
     const rawSessions = Array.isArray(d?.sessions) ? d.sessions : [];
     const sessions = rawSessions
       .map((raw: unknown) => toSession(raw as Record<string, unknown>))
@@ -244,7 +248,10 @@ export function useSessionsStream() {
     [applyCatalogDeltaEvent],
   );
 
-  const applySnapshot = useCallback((cat: Catalog & { sessionList?: unknown[] }) => {
+  const applySnapshot = useCallback((cat: Catalog & { sessionList?: unknown[]; total?: number }) => {
+    if (!isCompleteSessionSnapshot(cat.sessionList, cat.total)) {
+      throw new Error('[useSessionsStream] incomplete feed snapshot');
+    }
     const store = useSessionStore.getState();
     const catalog = { folders: cat.folders, sessions: cat.sessions };
     // Scoped feed membership is authoritative, while open detail caches survive.
@@ -254,67 +261,6 @@ export function useSessionsStream() {
       store.mergeSessions(filteredFeedSnapshot(list, catalog));
     }
   }, []);
-
-  // 마운트(또는 명시 재시도/serverUrl 변경) 시 초기 상태를 folders/sessions로 페치한다.
-  // REST가 실패해도 SSE session_list가 있으면 snapshot fallback을 적용한다. 둘 다 없으면
-  // empty와 구분되는 오류 상태로 전환해 사용자가 다시 시도할 수 있게 한다.
-  useEffect(() => {
-    if (!api) return;
-    let cancelled = false;
-    const myToken = ++refetchTokenRef.current;
-    const controller = new AbortController();
-    initialCatalogPendingRef.current = true;
-    pendingInitialDeltaEventsRef.current = [];
-
-    api
-      .getCatalog(FEED_CATALOG_PARAMS, { signal: controller.signal })
-      .then((cat) => {
-        if (cancelled || myToken !== refetchTokenRef.current || !isCurrentScope()) return;
-        applySnapshot(cat);
-        const pending = pendingInitialDeltaEventsRef.current;
-        pendingInitialDeltaEventsRef.current = [];
-        initialCatalogPendingRef.current = false;
-        for (const event of pending) {
-          applyCatalogDeltaEvent(event.type, event.data);
-        }
-        initialCatalogReadyRef.current = true;
-        initialCatalogFailedRef.current = false;
-        pendingSessionListRef.current = null;
-      })
-      .catch((err) => {
-        if (cancelled || myToken !== refetchTokenRef.current || !isCurrentScope()) return;
-        initialCatalogPendingRef.current = false;
-        initialCatalogReadyRef.current = false;
-        initialCatalogFailedRef.current = true;
-        pendingInitialDeltaEventsRef.current = [];
-        const pendingSessionList = pendingSessionListRef.current;
-        if (pendingSessionList) {
-          applySessionListFallback(pendingSessionList);
-        } else if (!useSessionStore.getState().catalogReady) {
-          useSessionStore.getState().markCatalogLoadFailed();
-        }
-        console.warn('[useSessionsStream] initial catalog fetch failed:', err);
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      refetchTokenRef.current += 1;
-      recoveryRef.current = null;
-      initialCatalogPendingRef.current = false;
-      initialCatalogReadyRef.current = false;
-      initialCatalogFailedRef.current = false;
-      pendingInitialDeltaEventsRef.current = [];
-      pendingSessionListRef.current = null;
-    };
-  }, [
-    api,
-    applyCatalogDeltaEvent,
-    applySessionListFallback,
-    applySnapshot,
-    catalogRetryRequest,
-    isCurrentScope,
-  ]);
 
   const applyStreamEvent = useCallback((type: string, d: any) => {
     switch (type) {
@@ -399,11 +345,76 @@ export function useSessionsStream() {
     recoveryRef.current = null;
   }, []);
 
+  // 마운트(또는 명시 재시도/serverUrl 변경) 시 초기 상태를 folders/sessions로 페치한다.
+  // REST가 실패해도 SSE session_list가 있으면 snapshot fallback을 적용한다. 둘 다 없으면
+  // empty와 구분되는 오류 상태로 전환해 사용자가 다시 시도할 수 있게 한다.
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    const myToken = ++refetchTokenRef.current;
+    const controller = new AbortController();
+    initialCatalogPendingRef.current = true;
+    pendingInitialDeltaEventsRef.current = [];
+
+    api
+      .getCatalog(FEED_CATALOG_PARAMS, { signal: controller.signal })
+      .then((cat) => {
+        if (cancelled || myToken !== refetchTokenRef.current || !isCurrentScope()) return;
+        applySnapshot(cat);
+        const pending = pendingInitialDeltaEventsRef.current;
+        pendingInitialDeltaEventsRef.current = [];
+        initialCatalogPendingRef.current = false;
+        for (const event of pending) {
+          applyCatalogDeltaEvent(event.type, event.data);
+        }
+        initialCatalogReadyRef.current = true;
+        initialCatalogFailedRef.current = false;
+        pendingSessionListRef.current = null;
+      })
+      .catch((err) => {
+        if (cancelled || myToken !== refetchTokenRef.current || !isCurrentScope()) return;
+        initialCatalogPendingRef.current = false;
+        initialCatalogReadyRef.current = false;
+        initialCatalogFailedRef.current = true;
+        pendingInitialDeltaEventsRef.current = [];
+        const pendingSessionList = pendingSessionListRef.current;
+        if (pendingSessionList && !isCompleteSessionSnapshot(pendingSessionList.sessions, pendingSessionList.total)) {
+          refetchCatalog(pendingStreamMetaRef.current.boundary, pendingStreamMetaRef.current.instanceId);
+        } else if (pendingSessionList) {
+          applySessionListFallback(pendingSessionList);
+        } else if (!useSessionStore.getState().catalogReady) {
+          useSessionStore.getState().markCatalogLoadFailed();
+        }
+        console.warn('[useSessionsStream] initial catalog fetch failed:', err);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      refetchTokenRef.current += 1;
+      recoveryRef.current = null;
+      initialCatalogPendingRef.current = false;
+      initialCatalogReadyRef.current = false;
+      initialCatalogFailedRef.current = false;
+      pendingInitialDeltaEventsRef.current = [];
+      pendingSessionListRef.current = null;
+    };
+  }, [
+    api,
+    applyCatalogDeltaEvent,
+    applySessionListFallback,
+    applySnapshot,
+    catalogRetryRequest,
+    isCurrentScope,
+    refetchCatalog,
+  ]);
+
   useSSEStream({
     diagnosticsSource: 'feed_stream',
     consumerFailureRef,
     onConnecting: () => {
       cancelRecovery();
+      pendingStreamMetaRef.current = {};
       cursorlessSnapshotRef.current = initialCatalogReadyRef.current
         && lastEventIdRef.current === undefined ? {} : null;
     },
@@ -424,6 +435,10 @@ export function useSessionsStream() {
       if (!isCurrentScope()) return;
       const d = data as any;
       if (type === 'stream_meta') {
+        pendingStreamMetaRef.current = {
+          instanceId: d?.instance_id,
+          boundary: d?.latest_id === undefined ? undefined : String(d.latest_id),
+        };
         // With a committed cursor, the route emits replay_gap for mismatches.
         // Metadata alone must not commit a new coordinate or start a second REST.
         if (cursorlessSnapshotRef.current) cursorlessSnapshotRef.current.instanceId = d?.instance_id;
@@ -432,6 +447,15 @@ export function useSessionsStream() {
       }
       if (type === 'replay_gap') {
         refetchCatalog(String(d?.latest_id ?? 0), d?.instance_id ?? instanceIdRef.current);
+        return;
+      }
+      if (type === 'session_list' && !isCompleteSessionSnapshot(d?.sessions, d?.total)) {
+        if (recoveryRef.current) return;
+        if (initialCatalogPendingRef.current) pendingSessionListRef.current = d;
+        else if (cursorlessSnapshotRef.current || initialCatalogFailedRef.current) {
+          cursorlessSnapshotRef.current = null;
+          refetchCatalog(pendingStreamMetaRef.current.boundary, pendingStreamMetaRef.current.instanceId);
+        }
         return;
       }
       const recovery = recoveryRef.current;
