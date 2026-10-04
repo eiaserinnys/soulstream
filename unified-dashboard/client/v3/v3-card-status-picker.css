@@ -1,4 +1,4 @@
-.v3-card-status-picker-content { display: grid; width: max-content; gap: var(--v3-space-2); max-width: min(calc(var(--v3-control-height) * 8), 100%); font: var(--v3-type-body) var(--v3-font-family); }
+.v3-card-status-picker-content { display: grid; gap: var(--v3-space-2); max-width: calc(var(--v3-control-height) * 8); font: var(--v3-type-body) var(--v3-font-family); }
 .v3-card-status-picker-content [aria-label="카드 상태 목록"] { display: grid; width: max-content; max-width: 100%; }
 .v3-card-status-picker-content [aria-label="카드 상태 목록"] [data-slot="button"] { width: auto; }
 .v3-card-status-picker-content p { margin: 0; }

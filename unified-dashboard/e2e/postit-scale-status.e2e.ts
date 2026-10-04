@@ -126,6 +126,13 @@ for(const width of [390,1440])test(`status pointer keyboard retry and latest ver
  const longError=popup.getByRole("alert");await expect(longError).toContainText("version conflict");
  const longErrorSize=await longError.evaluate(node=>({width:node.clientWidth,scrollWidth:node.scrollWidth,height:node.clientHeight,lineHeight:parseFloat(getComputedStyle(node).lineHeight)}));
  expect(longErrorSize.scrollWidth).toBeLessThanOrEqual(longErrorSize.width);expect(longErrorSize.height).toBeGreaterThan(longErrorSize.lineHeight);
+ await expect.poll(async()=>{
+  const bounds=await popup.boundingBox();
+  return Boolean(bounds&&bounds.width>popupRect!.width&&bounds.x>=0&&bounds.x+bounds.width<=width&&bounds.y>=0&&bounds.y+bounds.height<=1000);
+ }).toBe(true);
+ const retry=popup.getByRole("button",{name:"갱신 후 재시도"});await expect(retry).toBeInViewport();await retry.click();await expect(longError).toHaveCount(0);
+ await expect(popup.getByRole("button",{name:"검수 대기",exact:true})).toBeEnabled();
+ await expect.poll(async()=>((await popup.boundingBox())?.width??Infinity)<(await card.boundingBox())!.width).toBe(true);
  await page.keyboard.press("Escape");await expect(secondTrigger).toBeFocused();
  await page.locator('.v3-postit-card[data-card-id="scale-2"]').getByRole("button",{name:"카드 상태 변경"}).click();await expect(popup).not.toContainText("질문에 답한 뒤 변경할 수 있습니다");
  for(const name of ["드래프트","대기","실행 중","막힘","검수 대기","완료","취소"])await expect(popup.getByRole("button",{name,exact:true})).toBeEnabled();
