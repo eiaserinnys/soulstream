@@ -15,7 +15,7 @@ export function FolderCardSection({folderId,folders=[],placement="inline"}:{fold
  const completed=useCompletedCards(folderId,includeCompleted);
  const cards=[...membership.cards,...completed.cards].filter(c=>!c.archived).sort((a,b)=>a.positionKey<b.positionKey?-1:a.positionKey>b.positionKey?1:0);
  const doneCount=cards.filter(card=>card.status==="done").length;
- const visibleCards=cards.filter(card=>(!board||card.status!=="cancelled")&&(includeCompleted||card.status!=="done"));
+ const visibleCards=cards.filter(card=>includeCompleted||(card.status!=="done"&&(!board||card.status!=="cancelled")));
 
  return <div className="v3-folder-cards" data-testid="folder-card-section">
   {!board?<div className="v3-detail-section-head v3-folder-card-head"><h3>카드</h3><span>{visibleCards.length}개 표시</span>

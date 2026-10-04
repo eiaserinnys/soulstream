@@ -76,3 +76,13 @@ test.each([true, false])('phone=%s has no status tabs and the empty draft headin
   fireEvent.press(draft.getByLabelText('드래프트 카드 추가'));
   expect(create).toHaveBeenCalledTimes(1);
 });
+
+
+test('취소 레인도 숨길 때 검수 대기로 돌아오고 펼친 보드에서 취소 위치를 복원한다',()=>{
+ const saved=jest.fn();const props={phone:true,api:null,cards:[],onOpen:()=>{},onPositionChange:saved};
+ const screen=render(<CardBoard {...props} includeCompleted initialPosition={{x:0,lane:'cancelled',lanes:{}}}/>);
+ fireEvent(screen.getByTestId('card-board-frame'),'layout',{nativeEvent:{layout:{width:390,height:600}}});
+ expect(saved.mock.calls.at(-1)[0].lane).toBe('cancelled');
+ screen.rerender(<CardBoard {...props} includeCompleted={false}/>);
+ expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
+});

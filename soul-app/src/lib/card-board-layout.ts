@@ -3,14 +3,14 @@ import { completedGridLayout } from '../../../packages/soul-ui/src/cards/complet
 
 export const BOARD_COLUMNS = [
   ['todo', '드래프트'], ['queued', '대기'], ['running', '실행 중'],
-  ['blocked', '막힘'], ['review', '검수 대기'], ['done', '완료'],
+  ['blocked', '막힘'], ['review', '검수 대기'], ['done', '완료'], ['cancelled', '취소'],
 ] as const;
 export const BOARD_LONG_PRESS_MS = 350;
 export const BOARD_DRAG_SLOP = 8; // Existing queue gesture threshold.
 export type BoardFrame = { x: number; y: number; width: number; height: number };
 export type BoardPosition = { x: number; lane?: CardStatus; lanes: Partial<Record<CardStatus, number>> };
 export function boardVisibleColumns(includeCompleted: boolean) {
-  return BOARD_COLUMNS.filter(([status]) => includeCompleted || status !== 'done');
+  return BOARD_COLUMNS.filter(([status]) => includeCompleted || (status !== 'done' && status !== 'cancelled'));
 }
 
 export function boardLaneGeometry(viewport: number, paperWidth: number, inset: number, phone: boolean,

@@ -72,20 +72,20 @@ test.each([
   expect(host.getByTestId('card-board')).toBe(board);
 });
 
-test.each([undefined, 'folder-1'])('전체/폴더 %s: 기본 완료 숨김은 완료 레인을 제외하고 상단 원형 액션으로 해제한다', (folderId) => {
+test.each([undefined, 'folder-1'])('전체/폴더 %s: 기본 완료·취소 숨김은 두 레인을 제외하고 상단 원형 액션으로 해제한다', (folderId) => {
   mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })];
   const screen = render(<Sample folderId={folderId} />);
-  expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
+  expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(true);
   expect(screen.queryByTestId('postit-card-done')).toBeNull();
   expect(screen.getByTestId('postit-card-todo')).toBeTruthy();
   expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(5);
   expect(screen.queryByTestId('card-board-column-done')).toBeNull();
-  fireEvent.press(screen.getByLabelText('완료 숨김'));
+  fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
   expect(screen.getByTestId('postit-card-done')).toBeTruthy();
-  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(6);
-  expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(false);
-  fireEvent.press(screen.getByLabelText('완료 숨김'));
-  fireEvent.press(screen.getByLabelText('완료 숨김'));
+  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(7);
+  expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(false);
+  fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
+  fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
   expect(screen.getByTestId('postit-card-done')).toBeTruthy();
 });
 
@@ -102,9 +102,9 @@ test('phone expanded selection dismisses the native sheet before its existing de
 test.each([{ cards: [] }, { cards: [cardFixture({ id: 'done', status: 'done' })] }])('완료 0개/전부 완료에서도 상단 옵션으로 해제한다', ({ cards }) => {
   mockCards = cards;
   const screen = render(<Sample />);
-  expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(true);
-  fireEvent.press(screen.getByLabelText('완료 숨김'));
-  expect(screen.getByLabelText('완료 숨김').props.accessibilityState.selected).toBe(false);
+  expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(true);
+  fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
+  expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(false);
   if (cards.length) expect(screen.getByTestId('postit-card-done')).toBeTruthy();
 });
 
