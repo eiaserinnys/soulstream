@@ -5,7 +5,7 @@ import { ThreePaneLayout } from '../components/split/ThreePaneLayout';
 import { TwoPaneWithDrawer } from '../components/split/TwoPaneWithDrawer';
 import { useDeviceType } from '../theme';
 import { useSessionStore } from '../store/sessionStore';
-import { folders, sessions } from './fixtures';
+import { folders, entryShellSessions } from './fixtures';
 
 /** Real phone tab/stack/home and tablet split tree. Metro injects fixture transport. */
 export function ReviewEntryShell() {
@@ -16,12 +16,9 @@ export function ReviewEntryShell() {
       ...folders[0], id: `public-shell-folder-${index}`, name: `공개 예시 폴더 ${String(index + 1).padStart(2, '0')}`,
       projectPageId: `public-shell-page-${index}`, sortOrder: index,
     }));
-    const fixtureSessions = Array.from({ length: 20 }, (_, index) => ({
-      ...sessions[0], agentSessionId: `public-shell-session-${index}`, displayName: `공개 예시 세션 ${index + 1}`,
-    }));
     const reviewFolders = useSessionStore.getState().catalog.folders.filter(folder => !folder.id.startsWith('public-shell-folder-'));
     useSessionStore.getState().setCatalog({ folders: [...reviewFolders, ...fixtureFolders], sessions: {} });
-    useSessionStore.getState().setSessions(fixtureSessions);
+    useSessionStore.getState().setSessions(entryShellSessions);
   }, [device]);
   return <NavigationContainer>{device === 'phone' ? <TabNavigator />
     : device === 'tabletLandscape' ? <ThreePaneLayout /> : <TwoPaneWithDrawer />}</NavigationContainer>;

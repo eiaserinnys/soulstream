@@ -7,7 +7,6 @@ import { dialogueApi } from './dialogue-fixtures';
 const api = {
   ...createReviewApi('normal', { home: true }),
   getCatalog: async () => ({ folders, sessions: {}, sessionList: [], total: 0 }),
-  getSessionsByIds: async () => ({ sessions: [], total: 0 }),
   getDailyHistory: async () => ({ dates: [] }),
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
