@@ -42,6 +42,8 @@ describe("production orchestrator entrypoint", () => {
     });
     const sql = Object.assign(schemaQuery, {
       json: (value: unknown) => value,
+      array: (values: readonly unknown[]) => values,
+      begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => callback(sql),
     }) as unknown as LivePostgresSql;
     const sqlResolver: LiveDbSqlResolver = {
       resolveSql: vi.fn(async () => sql),
@@ -67,7 +69,8 @@ describe("production orchestrator entrypoint", () => {
       version: "0.1.0",
       database_schema: databaseSchema,
     });
-    expect(sqlResolver.resolveSql).toHaveBeenCalledOnce();
+    // Health schema plus the execution and card-service SQL adapters share this resolver.
+    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(3);
     expect(schemaQuery).toHaveBeenCalledOnce();
 
     const systemPortrait = await application.app.inject({
@@ -185,6 +188,8 @@ describe("production orchestrator entrypoint", () => {
     await writeFile(join(dashboardDir, "assets", "app.js"), "window.dashboardReady = true;");
     const sql = Object.assign(async () => [], {
       json: (value: unknown) => value,
+      array: (values: readonly unknown[]) => values,
+      begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => callback(sql),
     }) as unknown as LivePostgresSql;
     const sqlResolver: LiveDbSqlResolver = {
       resolveSql: vi.fn(async () => sql),
