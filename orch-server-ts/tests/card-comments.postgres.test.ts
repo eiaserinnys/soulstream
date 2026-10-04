@@ -22,7 +22,8 @@ describe("card comments HTTP, storage, and delivery", () => {
 
   beforeAll(async () => {
     h = await createPagePostgresHarness();
-    await h.sql`ALTER TABLE sessions ADD COLUMN model_preset TEXT, ADD COLUMN metadata JSONB`;
+    await h.sql`ALTER TABLE sessions ADD COLUMN model_preset TEXT, ADD COLUMN metadata JSONB,
+      ADD COLUMN termination_reason TEXT, ADD COLUMN termination_event_id INTEGER`;
     await h.sql`INSERT INTO folders(id,name) VALUES ('comment-folder','커멘트')`;
     const sql = createBoardYjsSqlAdapter(h.liveSql);
     cards = new CardControlPlaneService(sql, {
