@@ -105,7 +105,7 @@ snippet = snippet
 const config = join(temp, "nginx.conf");
 await writeFile(
   config,
-  `pid ${temp}/nginx.pid; error_log stderr; events {} http { include /etc/nginx/mime.types; access_log off; upstream netcup_core_soulstream_orchestrator {server 127.0.0.1:${serverPort};} server { listen 127.0.0.1:${nginxPort}; ${snippet} } }`,
+  `pid ${temp}/nginx.pid; error_log stderr; events {} http { include /etc/nginx/mime.types; access_log off; upstream netcup_core_soulstream_orchestrator {server 127.0.0.1:${serverPort};} server { listen 127.0.0.1:${nginxPort}; ${snippet} location = /sw.js { proxy_pass http://127.0.0.1:${controlPort}/sw.js; add_header Cache-Control "no-cache"; } } }`,
 );
 const nginx = spawn(
   "/usr/sbin/nginx",
@@ -116,6 +116,17 @@ nginx.on("exit", (code) => {
   if (code && !stopping) process.exitCode = code;
 });
 const control = Fastify();
+let swRevision = 0;
+// Exercise real browser worker activation with the generated worker; only a comment changes.
+control.get("/sw.js", async (_request, reply) =>
+  reply
+    .type("application/javascript")
+    .send(
+      (await readFile(join(dist, "sw.js"), "utf8")) +
+        `\n// isolated revision ${swRevision}\n`,
+    ),
+);
+control.post("/sw-update", async () => ({ revision: ++swRevision }));
 control.get("/ready", async (_request, reply) => {
   try {
     const response = await fetch(`http://127.0.0.1:${nginxPort}/api/health`);

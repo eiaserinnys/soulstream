@@ -20,7 +20,7 @@ describe("connection owner", () => {
       .mockImplementation(
         async () => new Response("Forbidden", { status: 403 }),
       );
-    const planner = createPlannerDataDependencies(fetcher);
+    const planner = createPlannerDataDependencies(globalThis.fetch);
     const provider = new OrchestratorSessionProvider();
     const disposePlanner = registerConnectionRecovery(async () => {
       await planner.fetchPlanner("/api/planner/today");
