@@ -18,6 +18,7 @@ import { createSettingsEndpoints } from './settingsEndpoints';
 import { createUiEventsEndpoints } from './uiEventsEndpoints';
 import { createRecurringJobsEndpoints } from './recurringJobsEndpoints';
 import { createCardEndpoints } from './cardEndpoints';
+import { createOwnedAgentsEndpoints } from './ownedAgentsEndpoints';
 export type {
   RecurringJobDto,
   RecurringJobRunDto,
@@ -79,6 +80,7 @@ export function createApiClient(baseUrl: string, options?: ApiRequestContextOpti
     ...createUiEventsEndpoints(context),
     ...createRecurringJobsEndpoints(context),
     ...createCardEndpoints(context),
+    ...createOwnedAgentsEndpoints(context),
   };
   return {
     ...endpoints,

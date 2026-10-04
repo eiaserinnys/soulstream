@@ -1,4 +1,5 @@
 import type { ConfigModalApi } from "../components/ConfigModal";
+import { createOwnedAgentsFixture } from "./owned-agents-fixture";
 import type { RecurringJob, RecurringJobRun } from "../lib/recurring-jobs";
 import type { AssignmentData } from "./AgentNodeAssignmentFields";
 import { reviewFolder, reviewFolders } from "./components-review-fixtures";
@@ -178,6 +179,7 @@ export function createDialoguesApi() {
       } satisfies RecurringJobRun;
     },
   };
+  const ownedAgents = createOwnedAgentsFixture(new URLSearchParams(window.location.search).get('ownedState') ?? 'normal');
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
     const path = url.pathname;
@@ -185,6 +187,7 @@ export function createDialoguesApi() {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     requests.push({ path, method });
     if (method !== "GET") record(`${method} ${path}`);
+    if (path.startsWith('/api/owned-agents')) return ownedAgents(input, init);
     let value: unknown;
     if (path === "/cogito/briefs") value = {status:"ok",node_count:1,nodes:[{node_id:"sample-node",status:"ok",data:{status:"ok"}}]};
     else if (path === "/api/config/settings") {
