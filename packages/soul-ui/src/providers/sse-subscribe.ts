@@ -1,3 +1,4 @@
+import {requestOrchestratorCheck} from "../lib/orchestrator-connection";
 /**
  * createSSESubscribe - 재사용 가능한 SSE 구독 유틸리티
  *
@@ -141,6 +142,7 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
         return;
       }
       if (eventSource !== es) return;
+      requestOrchestratorCheck();
 
       log(`connection error → closing. attempt=${reconnectAttempt}/${maxReconnectAttempts}`);
       es.close();

@@ -1,3 +1,4 @@
+import {orchestratorFetch,registerConnectionRecovery} from "../lib/orchestrator-connection";
 /**
  * AuthProvider - 인증 상태 Context Provider
  *
@@ -116,7 +117,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const generation = lifecycleGenerationRef.current;
 
     const request = (async () => {
-      const res = await fetch("/api/auth/status", { credentials: "same-origin" });
+      const res = await orchestratorFetch(fetch,"/api/auth/status", { credentials: "same-origin" });
       if (!res.ok) throw new Error(`Auth status check failed: ${res.status}`);
       const status = await res.json();
       if (!isProviderMountedRef.current || lifecycleGenerationRef.current !== generation) return;
@@ -142,7 +143,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => { resetCardExecutions(); }, [isAuthenticated, user?.email]);
 
   const logout = useCallback(async () => {
-    const res = await fetch("/api/auth/logout", {
+    const res = await orchestratorFetch(fetch,"/api/auth/logout", {
       method: "POST",
       credentials: "same-origin",
     });
@@ -157,7 +158,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const devLogin = useCallback(
     async (email: string, name?: string) => {
-      const res = await fetch("/api/auth/dev-login", {
+      const res = await orchestratorFetch(fetch,"/api/auth/dev-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, name }),
@@ -187,10 +188,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
     globalThis.fetch = observedFetch;
 
-    async function initialize() {
+    async function initialize(recovery = false) {
       try {
         // 1. /api/auth/config로 인증 활성 여부 확인
-        const configRes = await fetch("/api/auth/config", {
+        const configRes = await orchestratorFetch(fetch,"/api/auth/config", {
           credentials: "same-origin",
         });
         if (!configRes.ok) throw new Error(`Config fetch failed: ${configRes.status}`);
@@ -203,7 +204,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         if (config.authEnabled) {
           // 2. 인증 활성 → /api/auth/status로 현재 인증 상태 확인
-          const statusRes = await fetch("/api/auth/status", {
+          const statusRes = await orchestratorFetch(fetch,"/api/auth/status", {
             credentials: "same-origin",
           });
           if (!statusRes.ok) throw new Error(`Status fetch failed: ${statusRes.status}`);
@@ -223,6 +224,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setUser(null);
         }
       } catch (err) {
+        if (recovery) throw err;
         // 통신 실패 시 폴백: 접근 거부 (fail-closed)
         console.error("Auth initialization failed:", err);
         if (isMounted) {
@@ -238,8 +240,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     initialize();
+    const unregisterRecovery = registerConnectionRecovery(() => initialize(true));
 
     return () => {
+      unregisterRecovery();
       resetCardExecutions();
       isMounted = false;
       isProviderMountedRef.current = false;

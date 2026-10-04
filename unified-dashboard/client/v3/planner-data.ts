@@ -1,3 +1,4 @@
+import {orchestratorFetch} from "@seosoyoung/soul-ui/lib/orchestrator-connection";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type {
@@ -73,7 +74,7 @@ export function createPlannerDataDependencies(
 ): PlannerDataDependencies {
   return {
     fetchPlanner: async (path) => {
-      const response = await fetchImplementation(path, {
+      const response = await orchestratorFetch(fetchImplementation,path, {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
       });
@@ -87,7 +88,7 @@ export function createPlannerDataDependencies(
       return await response.json();
     },
     saveStarredFolderOrder: async (pageId, beforePageId) => {
-      const response = await fetchImplementation("/api/planner/starred-folders/order", {
+      const response = await orchestratorFetch(fetchImplementation,"/api/planner/starred-folders/order", {
         method: "PATCH",
         credentials: "same-origin",
         headers: {

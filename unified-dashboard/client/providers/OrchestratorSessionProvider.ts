@@ -1,3 +1,4 @@
+import {orchestratorFetch} from "@seosoyoung/soul-ui/lib/orchestrator-connection";
 /**
  * OrchestratorSessionProvider - unified-dashboard용 세션 Provider
  *
@@ -52,7 +53,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
 
   async fetchFolderCounts(): Promise<Record<string, number>> {
     try {
-      const res = await fetch("/api/sessions/folder-counts");
+      const res = await orchestratorFetch(fetch,"/api/sessions/folder-counts");
       if (!res.ok) return {};
       const data: { counts: Record<string, number> } = await res.json();
       return data.counts ?? {};
@@ -84,7 +85,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
 }
 
 async function fetchSessionPage(options?: FetchSessionsOptions): Promise<SessionListResult> {
-  const res = await fetch(buildFetchSessionsUrl("/api/sessions", options));
+  const res = await orchestratorFetch(fetch,buildFetchSessionsUrl("/api/sessions", options));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
   const data: {

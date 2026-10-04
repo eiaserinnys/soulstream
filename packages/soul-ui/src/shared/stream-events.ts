@@ -164,6 +164,7 @@ export interface ReplayGapStreamEvent {
 export interface CardUpdatedStreamEvent { type: "card_updated"; cardId: string; folderId: string; lastEventId?: string }
 
 export type SessionStreamEvent =
+  | OrchestratorShutdownStreamEvent
   | SessionListStreamEvent
   | SessionCreatedStreamEvent
   | SessionUpdatedStreamEvent
@@ -176,3 +177,7 @@ export type SessionStreamEvent =
   | PageUpdatedStreamEvent
   | StreamMetaStreamEvent
   | ReplayGapStreamEvent;
+
+export interface OrchestratorShutdownStreamEvent {
+  type:"orchestrator_shutdown";build_id:string;instance_id:string;draining:true;healthy:false;ready:false;lastEventId?:string;
+}

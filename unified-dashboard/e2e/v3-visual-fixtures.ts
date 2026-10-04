@@ -1224,3 +1224,6 @@ export const fixtureTitles = {
   carryoverTask: pages.carryover.title,
   project: pages.project.title,
 };
+
+/** The connection harness serves this snapshot over the real SSE route. */
+export const connectionQaSessions = sessions;

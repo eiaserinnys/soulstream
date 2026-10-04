@@ -1,0 +1,8 @@
+--- a/etc/nginx/sites-available/netcup-core-endpoints.conf
++++ b/etc/nginx/sites-available/netcup-core-endpoints.conf
+@@ -99,4 +99 @@
+-    location / {
+-        proxy_pass http://netcup_core_soulstream_orchestrator;
+-        include /etc/nginx/snippets/netcup-core-proxy.conf;
+-    }
++    include /etc/nginx/snippets/soulstream-dashboard-connection-recovery.conf;

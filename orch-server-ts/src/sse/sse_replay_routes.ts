@@ -106,7 +106,13 @@ async function sendSseReplayStream<TPayload extends object>(
     if (replaySeenIds.has(event.id)) return;
     const frame = await filteredReplayEventFrame(request, options, event);
     if (frame !== null) {
-      livePush?.(formatSseFrame(frame));
+      if (frame.event === "orchestrator_shutdown") {
+        // The write callback completes before forceCloseConnections can close sockets.
+        await new Promise<void>((resolve, reject) => {
+          reply.raw.write(formatSseFrame(frame), error => error ? reject(error) : resolve());
+        });
+        liveStream?.push(null);
+      } else livePush?.(formatSseFrame(frame));
     }
   };
   const destroyLiveStream = (error: unknown) => {
@@ -117,6 +123,7 @@ async function sendSseReplayStream<TPayload extends object>(
     livePushChain = livePushChain
       .then(() => pushLiveEvent(event))
       .catch(destroyLiveStream);
+    return livePushChain;
   };
   const unsubscribe = options.replayOnlyForTests
     ? undefined
@@ -126,7 +133,7 @@ async function sendSseReplayStream<TPayload extends object>(
           return;
         }
         if (!replaySeenIds.has(event.id)) {
-          enqueueLiveEvent(event);
+          return enqueueLiveEvent(event);
         }
       });
 

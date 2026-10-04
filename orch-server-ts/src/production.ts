@@ -3,6 +3,7 @@ import { OwnedAgentService } from "./owned-agents/service.js";
 import { createSessionOwnerResolver } from "./session/session_owner.js";
 import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
 import type { McpHostOptions } from "./mcp/types.js";
+import {OrchestratorLifecycle,readDashboardBuildId} from "./runtime/orchestrator_lifecycle.js";
 import { createLiveJevCardObservation } from "./cards/live_jev_card_observation.js";
 import { serviceTokenAccessWithoutEmail } from "./runtime/live_dashboard_access_provider.js";
 import type { SqlClient } from "./control_plane/control_plane_types.js";
@@ -117,6 +118,7 @@ export type ProductionApplication = {
   readonly app: FastifyInstance;
   readonly startBackground: () => Promise<void>;
   readonly closeResources: () => Promise<void>;
+  readonly beginShutdown?: () => Promise<void>;
 };
 
 export type ProductionApplicationFactory = (
@@ -197,6 +199,7 @@ export async function createLiveProductionApplication(
   context: { readonly warn: (message: string) => void },
   overrides: LiveProductionApplicationOverrides = {},
 ): Promise<ProductionApplication> {
+  const buildId=await readDashboardBuildId(config.dashboard_dir,config.environment);
   const appConfig = toOrchServerTsConfig(config);
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
@@ -609,6 +612,7 @@ export async function createLiveProductionApplication(
   const externalEvents = config.mcp_external_events_state_file ? await ExternalEventsService.open({
     path: config.mcp_external_events_state_file, owner: credentialOwner(config.mcp_external_ingress_path!, config.mcp_external_ingress_bearer_token!),
   }) : undefined;
+  const lifecycle=new OrchestratorLifecycle(buildId,runtimeServices.sessionBroadcaster);
   const app = createApp({
     externalEvents,
     ownedAgentRoutes: { currentEmail: providers.adminUsersRoutes.provider.currentEmail, service: ownedAgentService },
@@ -634,6 +638,7 @@ export async function createLiveProductionApplication(
       { enabled: config.atom_enabled, serverUrl: config.atom_server_url, apiKey: config.atom_api_key,
         nodeId: config.skill_catalog_node_id, typesafeApiKey: config.typesafe_api_key, httpClient: providers.atomRoutes.httpClient },
       cardDispatchRuntime.executionServiceProvider,
+      lifecycle,
     ),
     r2SettingsRoutes: {
       currentEmail: providers.adminUsersRoutes.provider.currentEmail,
@@ -721,6 +726,7 @@ export async function createLiveProductionApplication(
   let resourcesClosed = false;
   return {
     app,
+    beginShutdown:()=>lifecycle.beginShutdown(),
     startBackground: async () => {
       await sessionReconciliation.start();
       await recurringJobScheduler?.start();
@@ -733,6 +739,7 @@ export async function createLiveProductionApplication(
       usageSummaryService.start();
       maintenanceService.start();
       turnSummaryPipeline?.start?.();
+      lifecycle.markReady();
     },
     async closeResources() {
       if (resourcesClosed) return;
@@ -846,6 +853,7 @@ export function buildProductionRouteOptions(
   databaseSchemaProvider?: PublicDatabaseSchemaProvider,
   mcpSkills?: McpHostOptions["skills"],
   cardExecutionServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["cardExecutionServiceProvider"],
+  lifecycle?: OrchestratorLifecycle,
 ): CreateAppOptions {
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
   if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
@@ -943,6 +951,7 @@ export function buildProductionRouteOptions(
     nodeWsRoute: providers.runtime.nodeWsRoute,
     publicStatusRoutes: {
       ...providers.publicStatusRoutes,
+      lifecycle,
       configProvider: providers.configProviders.publicStatusRoutes.configProvider,
       ...(databaseSchemaProvider ? { databaseSchemaProvider } : {}),
     },
@@ -997,6 +1006,7 @@ export function buildProductionRouteOptions(
 }
 
 async function closeApplication(application: ProductionApplication): Promise<void> {
+  await application.beginShutdown?.();
   let appCloseError: unknown;
   try {
     await application.app.close();

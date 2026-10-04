@@ -19,9 +19,11 @@ import type {
   SessionStreamEvent,
   SessionUpdatedStreamEvent,
   StreamMetaStreamEvent,
+  OrchestratorShutdownStreamEvent,
 } from "../shared/stream-events";
 
 export interface SessionStreamHandlers {
+  onOrchestratorShutdown?: (event:OrchestratorShutdownStreamEvent)=>void;
   /** 타입별 처리가 끝난 뒤 모든 stream event를 한 경계에서 관찰한다. */
   onEvent?: (event: SessionStreamEvent) => void;
   onSessionList?: (event: SessionListStreamEvent) => void;
@@ -46,6 +48,9 @@ export function dispatchSessionStreamEvent(
   handlers: SessionStreamHandlers,
 ): void {
   switch (event.type) {
+    case "orchestrator_shutdown":
+      handlers.onOrchestratorShutdown?.(event);
+      break;
     case "session_list":
       handlers.onSessionList?.(event);
       break;

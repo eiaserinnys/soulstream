@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useFileUpload, type UseFileUploadReturn } from "./useFileUpload";
+import {hasPendingDashboardMutations} from "../pending-mutation-registry";
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let latest: UseFileUploadReturn;
 function Harness({ url, sessionId }: { url: string; sessionId: string }) {
@@ -60,5 +61,10 @@ describe("upload destination changes", () => {
     await act(() => latest.restoreUploadedFiles([{ id: "retry", file, path: "/A/retry.png", status: "done" }]));
     expect(latest.uploadedPaths).toEqual(["/A/retry.png"]); expect(requests).toHaveLength(0);
     await act(() => latest.removeFile("retry")); expect(latest.files).toEqual([]);
+  });
+  it("protects selected attachments during upload and after completion until removed",async()=>{
+    await render("/A");await add();expect(hasPendingDashboardMutations()).toBe(true);
+    await finish(0,"/A/image.png");expect(hasPendingDashboardMutations()).toBe(true);
+    await act(()=>latest.removeFile(latest.files[0].id));expect(hasPendingDashboardMutations()).toBe(false);
   });
 });

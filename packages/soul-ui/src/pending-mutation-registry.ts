@@ -4,9 +4,10 @@ export interface PendingMutationHandle {
 }
 
 const pendingMutations = new Set<symbol>();
+const pendingAttachments = new Set<symbol>();
 const idleListeners = new Set<() => void>();
 
-export function createPendingMutationHandle(): PendingMutationHandle {
+export function createPendingMutationHandle(kind: "edit" | "attachment" = "edit"): PendingMutationHandle {
   const id = Symbol("pending-mutation");
   let disposed = false;
   return {
@@ -14,8 +15,10 @@ export function createPendingMutationHandle(): PendingMutationHandle {
       if (disposed) return;
       if (pending) {
         pendingMutations.add(id);
+        if (kind === "attachment") pendingAttachments.add(id);
       } else {
         pendingMutations.delete(id);
+        pendingAttachments.delete(id);
         notifyIfIdle();
       }
     },
@@ -23,6 +26,7 @@ export function createPendingMutationHandle(): PendingMutationHandle {
       if (disposed) return;
       disposed = true;
       pendingMutations.delete(id);
+      pendingAttachments.delete(id);
       notifyIfIdle();
     },
   };
@@ -31,6 +35,7 @@ export function createPendingMutationHandle(): PendingMutationHandle {
 export function hasPendingDashboardMutations(): boolean {
   return pendingMutations.size > 0;
 }
+export function hasPendingDashboardAttachments(): boolean { return pendingAttachments.size > 0; }
 
 export async function waitForDashboardMutationsToFlush(
   timeoutMs = 10_000,

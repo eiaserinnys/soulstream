@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
+import {notifyOrchestratorShutdown,requestOrchestratorCheck} from "../lib/orchestrator-connection";
 import type {
   CatalogUpdatedStreamEvent,
   CustomViewUpdatedStreamEvent,
@@ -46,6 +47,7 @@ import {
  * 나머지 id 부착 이벤트는 Last-Event-ID resume 대상.
  */
 const SESSION_STREAM_EVENT_TYPES = [
+  "orchestrator_shutdown",
   "stream_meta",
   "session_list",
   "session_created",
@@ -132,6 +134,7 @@ export function useSessionStreamSSE(options: UseSessionStreamSSEOptions): void {
     for (const eventType of SESSION_STREAM_EVENT_TYPES) {
       eventSource.addEventListener(eventType, (e: MessageEvent) => {
         const enriched = parseStreamMessage(e.data, e.lastEventId);
+        if(enriched?.type==="orchestrator_shutdown")notifyOrchestratorShutdown();
         if (enriched) dispatchSessionStreamEvent(enriched, optionsRef.current);
       });
     }
@@ -140,6 +143,7 @@ export function useSessionStreamSSE(options: UseSessionStreamSSEOptions): void {
       // 서버의 named `event: error`도 onerror에 MessageEvent로 전달된다.
       // 연결 상태 오류가 아니므로 인증 상태를 재확인하지 않는다.
       if (event instanceof MessageEvent) return;
+      requestOrchestratorCheck();
       if (eventSourceRef.current !== eventSource) return;
       try {
         optionsRef.current.onConnectionError?.();

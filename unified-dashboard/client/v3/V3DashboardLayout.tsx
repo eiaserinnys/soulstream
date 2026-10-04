@@ -1,3 +1,7 @@
+import {flushSync} from "react-dom";
+import {useQueryClient} from "@tanstack/react-query";
+import {useCardStore} from "@seosoyoung/soul-ui/cards/card-store";
+import {registerConnectionRecovery} from "../connection/connection-monitor";
 import { SessionMenuProvider } from "./SessionMenuProvider";
 import { CardWorkspace } from "./CardWorkspace";
 import type { CardSessionSelection } from "./CardSessionHistory";
@@ -39,7 +43,7 @@ import { activateRunSession, resolveRunSessions } from "./folder-workspace-run-m
 import { buildMobileFolderOptions, errorText, recentDates } from "./v3-dashboard-utils";
 import { usePlannerCollections } from "./use-v3-planner-reads";
 import { useProjectFolderController } from "./use-project-folder-controller";
-import { useV3PageInvalidationKey, useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
+import { invalidateV3, useV3PageInvalidationKey, useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
 import { useFolderParentMoveController } from "./use-folder-parent-move-controller";
 import {
   parseSessionSearchIntent,
@@ -59,6 +63,7 @@ export function V3DashboardLayout() {
 }
 function V3DashboardContent() {
   const cardNavigation = useCardNavigation();
+  const queryClient = useQueryClient();
   const today = useTodayDate();
   const dates = useMemo(() => recentDates(today), [today]);
   const api = useMemo(() => createPageApiClient(), []);
@@ -167,6 +172,7 @@ function V3DashboardContent() {
     moveFolderParent: moveLoadedFolderParent,
     refreshDaily,
     refreshFolder,
+    waitForReads,
   } = usePlannerCollections({
     api,
     dependencies: dataDependencies,
@@ -178,6 +184,16 @@ function V3DashboardContent() {
     refreshKeys: plannerInvalidationKeys,
     notify,
   });
+  useEffect(() => registerConnectionRecovery(async () => {
+    flushSync(() => invalidateV3("replay"));
+    await Promise.all([
+      waitForReads(),
+      queryClient.refetchQueries({queryKey: ["v3-review-queue"], type: "active"}, {cancelRefetch: false, throwOnError: true}),
+      queryClient.refetchQueries({queryKey: ["sessions"], type: "active"}, {cancelRefetch: false, throwOnError: true}),
+      ...(cardNavigation.cardId ? [useCardStore.getState().loadCard(cardNavigation.cardId)] : []),
+    ]);
+  }), [cardNavigation.cardId, queryClient, waitForReads]);
+
   const folderAggregate = project.data?.folder.id === selectedFolderId ? project.data : null;
   const folderSessions = useFolderSessions({
     dependencies: dataDependencies,
