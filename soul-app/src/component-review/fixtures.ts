@@ -52,7 +52,7 @@ export const fixtureOptions = [
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
-export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
+export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
   onCreateCard?(body: Parameters<ApiClient['createCard']>[0]): void } = {}) {
   const cards = new Map(initialCards.map((card) => [card.id, { ...card }]));
   if(options.manyCompleted)for(let index=0;index<1000;index++)cards.set(`completed-${index}`,{...makeCard('done'),id:`completed-${index}`,title:index%10===0?'검색할 긴 완료 카드 제목입니다. 같은 폭과 본문을 유지합니다.':'완료 카드 '+index,completedAt:new Date(Date.now()-index*10*60*1000).toISOString()});
@@ -124,9 +124,9 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       if(options.failWrites)throw new Error('공개 예시: 실행 실패. 기존 상태를 유지합니다.');
       const current=cards.get(id)!;const already=current.status==='running'&&!!current.assigneeSessionId;
       const card={...current,status:'running' as const,assigneeKind:'session' as const,assigneeSessionId:'public-running',version:current.version+1};cards.set(id,card);
-      return {card,folderId:card.folderId,execution:{requestId:key,sessionId:'public-running',state:already?'already_running' as const:'started' as const}};
+      return {card,folderId:card.folderId,execution:{requestId:key,sessionId:'public-running',state:options.pendingExecution?'pending' as const:already?'already_running' as const:'started' as const}};
     },
-    getCardExecution:async(id,key)=>({card:cards.get(id)!,folderId:cards.get(id)!.folderId,execution:{requestId:key,sessionId:'public-running',state:'started'}}),
+    getCardExecution:async(id,key)=>({card:cards.get(id)!,folderId:cards.get(id)!.folderId,execution:{requestId:key,sessionId:'public-running',state:options.pendingExecution?'pending':'started'}}),
     getStarredFolders: async () => read({ items: state === 'empty' ? [] : starredFolders, nextCursor: null }),
     listNodes: async () => read({ nodes: state === 'empty' ? [] : [{ nodeId: 'public-node' }, { nodeId: 'public-other-node' }] }),
     listNodeAgents: async () => read({ agents: state === 'empty' ? [] : [

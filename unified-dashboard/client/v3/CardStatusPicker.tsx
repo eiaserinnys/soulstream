@@ -1,6 +1,7 @@
+import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution";
 import {CardApiError} from "@seosoyoung/soul-ui/cards/card-api";
 import {CardExecutionSettingsDialog} from "./CardExecutionSettings";
-import { useEffect, useState, useImperativeHandle, type Ref } from "react";
+import { useEffect, useState, useImperativeHandle, useSyncExternalStore, type Ref } from "react";
 import { Button, useDashboardStore, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
 import type { CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import { cardStatusLabel } from "./CardActions";
@@ -14,9 +15,11 @@ import { useCardBoardLayer } from "./card-board-layer";
 export interface CardStatusHandle { request(status?:CardStatus):void; }
 
 /** The existing status popup hosts all transition entry points. */
-export function CardStatusPicker({card,control,onOpen,ref,onBusyChange}: {
-  card:CardRow;control:CardStatusControl;onOpen():void;ref?:Ref<CardStatusHandle>;onBusyChange?(busy:boolean):void;
+export function CardStatusPicker({card,control,onOpen,ref,onBusyChange,sampleExecution}: {
+  card:CardRow;control:CardStatusControl;onOpen():void;ref?:Ref<CardStatusHandle>;onBusyChange?(busy:boolean):void;sampleExecution?:CardExecutionState;
 }) {
+  const observedExecution=useSyncExternalStore(subscribeCardExecution,()=>cardExecutionState(card.id),()=>undefined);
+  const execution=sampleExecution??observedExecution;
   const catalogFolders=useDashboardStore(s=>s.catalog?.folders);
   const folders=control.folders??catalogFolders??[];
   const [settingsCard,setSettingsCard]=useState<CardRow|null>(null);
@@ -41,10 +44,11 @@ export function CardStatusPicker({card,control,onOpen,ref,onBusyChange}: {
   }}>
     <PopoverTrigger className="v3-postit-status-trigger" aria-label="카드 상태 변경" disabled={control.pending}
       onClick={event => event.stopPropagation()}>
-      <StatusChip label={cardStatusLabel(card)} tone={tone}/>
+      <StatusChip label={execution?.phase==="pending"?"시작 중…":cardStatusLabel(card)} tone={tone}/>
     </PopoverTrigger>
     <PopoverPopup align="end" className="v3-card-status-picker" data-card-status-picker onClick={event => event.stopPropagation()}>
       <div className="v3-card-status-picker-content">
+        {execution && execution.phase!=='pending'?<><p role={execution.phase==='error'?'alert':'status'}>{execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?'다시 확인':'다시 시도'}</Button></>:null}
         {loading ? <p role="status">불러오는 중…</p> : null}
         {error ? <><p role={error.startsWith("실행 결과")?"status":"alert"}>{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? "갱신 후 재시도" : "다시 불러오기"}</Button></> : null}
         <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"

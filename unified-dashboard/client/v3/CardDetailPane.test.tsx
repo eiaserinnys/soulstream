@@ -29,11 +29,12 @@ describe("card final UX",()=>{
   expect(html).not.toContain('aria-label="카드 섹션"');
 
  });
- it.each(["review","running","todo","queued"])("has only one completion button, enabled for every state (%s)",status=>{
+ it.each(["review","running","todo","queued"])("uses the existing action for startable and completion states (%s)",status=>{
   seed(status);const html=renderPane();
-  expect(html).toMatch(/<button[^>]*aria-label="완료"/);
+  const label=status==='todo'||status==='queued'?'시작하기':'완료';
+  expect(html).toContain('aria-label="'+label+'"');
   expect(html).not.toContain('aria-label="반려"');expect(html).not.toContain('aria-label="맡기기"');
-  const button=html.match(/<button[^>]*aria-label="완료"[^>]*>/)![0];
+  const button=html.match(new RegExp('<button[^>]*aria-label="'+label+'"[^>]*>'))![0];
   expect(button.includes('disabled=""')).toBe(false);
  });
  it("shows the first three linked sessions and a remaining count using the folder tree",()=>{

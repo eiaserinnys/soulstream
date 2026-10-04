@@ -188,3 +188,17 @@ test('assigned settings disappear while native status/complete and sessions rema
  for(const label of ['폴더 변경','담당 변경','노드 변경','모델 변경'])expect(screen.queryByLabelText(label)).toBeNull();
  expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-sessions')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
 });
+
+test.each(['todo','queued'] as const)('상세 %s 시작은 접수 후 화면을 유지하고 실패 알림 없이 시작 중을 보인다',async status=>{
+ jest.useFakeTimers();
+ const source={...card,id:`start-detail-${status}`,status};const current={...detail,card:source,questions:[]};
+ const result={card:{...source,status:'running',version:5},folderId:source.folderId,execution:{requestId:`detail-${status}`,sessionId:'owner',state:'pending'}};
+ const api={getCard:jest.fn().mockResolvedValue(current),executeCard:jest.fn().mockResolvedValue(result),getCardExecution:jest.fn().mockResolvedValue({...result,execution:{...result.execution,state:'started'}})};
+ const alert=jest.spyOn(Alert,'alert').mockImplementation(()=>{}),onClose=jest.fn();
+ const screen=render(<CardDetailContent api={api as any} cardId={source.id} onClose={onClose}/>);
+ await act(async()=>{await Promise.resolve();});
+ await act(async()=>fireEvent.press(screen.getByLabelText('시작하기')));
+ expect(api.executeCard).toHaveBeenCalledTimes(1);expect(screen.getByLabelText('시작 중…')).toBeTruthy();expect(onClose).not.toHaveBeenCalled();expect(alert).not.toHaveBeenCalled();
+ await act(async()=>{await jest.advanceTimersByTimeAsync(1000);});
+ expect(screen.queryByLabelText('시작 중…')).toBeNull();expect(onClose).not.toHaveBeenCalled();jest.useRealTimers();
+});

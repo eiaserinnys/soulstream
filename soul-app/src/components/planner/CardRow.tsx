@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import {cardExecutionState,subscribeCardWrites} from '../../lib/card-transition';
+import React, { useMemo, useSyncExternalStore } from 'react';
 import { Image, Text, Pressable, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
@@ -23,13 +24,14 @@ import { CardReportView } from './CardReportView';
 
 export function CardStatusChip({ card, title = false, board = false, colors }: { card: CardDto; title?: boolean; board?: boolean; colors?: ColorScheme }) {
   const t = useTokens();
+  const execution = useSyncExternalStore(subscribeCardWrites, () => cardExecutionState(card.id), () => undefined);
   const palette = colors ?? t.colors;
   const color = colors ? card.status === 'review' ? palette.link : card.status === 'running' ? palette.successText
     : card.status === 'blocked' ? palette.warningText : palette.textMuted
     : card.status === 'review' ? t.colors.accent : card.status === 'running' ? t.colors.success
     : card.status === 'blocked' ? t.colors.warning : t.colors.textMuted;
   return <Text style={{ ...t.foundation.typography.meta, color, ...(title ? { ...t.foundation.typography.cardTitle, marginRight: t.uiSpacing.sm } : {}), fontWeight: '700' }} numberOfLines={1}>
-    {board && card.status === 'todo' ? '드래프트' : board && card.status === 'review' ? '검수 대기'
+    {execution?.phase === 'pending' ? '시작 중…' : board && card.status === 'todo' ? '드래프트' : board && card.status === 'review' ? '검수 대기'
       : card.status === 'blocked' && card.blockedKind === 'question' ? (board ? '막힘 · 질문' : '질문') : CARD_STATUS_LABEL[card.status]}
   </Text>;
 }

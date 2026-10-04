@@ -69,6 +69,9 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const card = detail?.card;
+  const startable = card?.status === 'todo' || card?.status === 'queued';
+  const startPhase = statusAction.execution?.phase;
+  const actionLabel = startPhase === 'pending' ? '시작 중…' : startPhase ? (startPhase === 'delayed' ? '다시 확인' : '다시 시도') : startable ? '시작하기' : '완료';
   const timelineStamp = detail ? `${detail.questions.length}:${detail.reports.length}:${detail.comments?.length ?? 0}` : '';
   const scrollStamp = useRef('');
   const assigned = useSessionStore((state) => card?.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined)
@@ -127,9 +130,10 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="모델 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{assigned?.modelPreset ?? card.modelPreset ?? '기본 모델'}</Text></CompactTouchTarget>
           </>:null}
         </View>
-        <CompactTouchTarget accessibilityRole="button" accessibilityLabel="완료" accessibilityState={{ disabled: locked || !api }} disabled={locked || !api}
-          surfaceStyle={[styles.done, (locked || !api) && styles.disabled]} onPress={() => { void status('done'); }}><Text style={styles.doneText}>완료</Text></CompactTouchTarget>
+        <CompactTouchTarget accessibilityRole="button" accessibilityLabel={actionLabel} accessibilityState={{ disabled: locked || !api || startPhase === 'pending' }} disabled={locked || !api || startPhase === 'pending'}
+          surfaceStyle={[styles.done, (locked || !api || startPhase === 'pending') && styles.disabled]} onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}><Text style={styles.doneText}>{actionLabel}</Text></CompactTouchTarget>
       </View> : null}
+      {statusAction.execution && statusAction.execution.phase !== 'pending' ? <Text style={styles.error}>{statusAction.execution.message}</Text> : null}
     </View>
     <ScrollView testID="card-detail-scroll" ref={scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"
       onContentSizeChange={() => { if (timelineStamp && scrollStamp.current !== timelineStamp) { scrollStamp.current = timelineStamp; scroll.current?.scrollToEnd({ animated: false }); } }}>
