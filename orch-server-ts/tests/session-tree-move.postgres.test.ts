@@ -115,7 +115,7 @@ it("returns the same success result without changing snapshots, projections, ses
   committed.mockClear();
   try {
     await expect(move.moveSessionsToFolder(["root", "child"], "target")).resolves.toEqual({
-      count: 3, sessionIds: ["child", "grandchild", "root"],
+      count: 3, sessionIds: ["child", "grandchild", "root"], didCommit: false,
     });
     expect(await harness.sql`SELECT * FROM board_yjs_documents ORDER BY name`).toEqual(snapshotRows);
     expect(await harness.sql`SELECT * FROM board_items ORDER BY id`).toEqual(boardRows);
