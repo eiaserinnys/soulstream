@@ -47,14 +47,36 @@ export const starredFolders: PlannerFolder[] = folders.map((folder) => ({
 }));
 export type AssignmentScenario = 'unassigned' | 'partial' | 'agent' | 'assigned' | 'live';
 export type FixtureState = 'normal' | 'empty' | 'error' | 'loading';
+export type FolderSessionPageScenario = 'many' | 'short';
 export const fixtureOptions = [
   { value: 'normal', label: '기본' }, { value: 'empty', label: '빈 목록' },
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
 export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; emptyReview?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
+  folderSessionPages?: FolderSessionPageScenario;
+  onFolderSessionPageRequest?(pageId: string, cursor: string | null, releaseResponse?: () => void): void;
   onCreateCard?(body: Parameters<ApiClient['createCard']>[0]): void } = {}) {
   const cards = new Map(initialCards.map((card) => [card.id, { ...card }]));
+  const folderSessionPageSize = options.folderSessionPages === 'many' ? 20 : 2;
+  const folderSessionCount = options.folderSessionPages === 'many' ? 60
+    : options.folderSessionPages === 'short' ? 6 : 0;
+  const folderSessions: Session[] = Array.from({ length: folderSessionCount }, (_, index) => {
+    const id = `public-folder-${options.folderSessionPages}-${String(index + 1).padStart(2, '0')}`;
+    return {
+      agentSessionId: id,
+      displayName: `공개 폴더 세션 ${String(index + 1).padStart(2, '0')}`,
+      status: 'completed',
+      createdAt: new Date(Date.parse(time) - index * 60_000).toISOString(),
+      updatedAt: new Date(Date.parse(time) - index * 60_000).toISOString(),
+      folderId: folders[0].id,
+      nodeId: 'public-node',
+      agentId: 'public-agent',
+      agentName: '예시 에이전트',
+      backend: 'codex',
+    };
+  });
+  const reviewSessions = [...sessions, ...folderSessions];
   if(options.manyCompleted)for(let index=0;index<1000;index++)cards.set(`completed-${index}`,{...makeCard('done'),id:`completed-${index}`,title:index%10===0?'검색할 긴 완료 카드 제목입니다. 같은 폭과 본문을 유지합니다.':'완료 카드 '+index,completedAt:new Date(Date.now()-index*10*60*1000).toISOString()});
   if (options.home) for (let index = 1; index <= 4; index++) cards.set(`public-review-${index}`, { ...makeCard('review'), id: `public-review-${index}`, title: `검수할 공개 예시 ${index}`, latestActivity: { kind: 'report', body: '같은 제목과 본문으로 카드 크기와 읽기 흐름을 확인합니다.', format: 'markdown', createdAt: time } });
   if(options.assignment)for(const [id,card] of cards){
@@ -69,6 +91,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
   if (options.completed) for (const [id, card] of cards) {
     if (options.completed === 'none' ? card.status === 'done' : card.status !== 'done') cards.delete(id);
   }
+  if (options.folderSessionPages === 'short') cards.clear();
   const read = async <T,>(value: T): Promise<T> => {
     if (state === 'error') throw new Error('공개 예시: 목록을 불러오지 못했습니다.');
     if (state === 'loading') return new Promise(() => {});
@@ -81,7 +104,21 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     getPlannerFolder:async (id,query)=>read({folder:{...folders[0],id,projectPageId:'public-page'},page:{...starredFolders[0].page,id:'public-page'},blocks:[],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done')),subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}}),
     getFolderSnapshot:async (id,query)=>read({folder:folders[0],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done'))}),
     getPlannerToday:async()=>read({daily:{page:starredFolders[0].page,blocks:[],stateVector:''},attention:[],running:[],queued:[],projects:[],memoBlocks:[],folders:[],reviewSessionIds:[]}),
-    getPlannerFolderSessions:async()=>read({items:[],nextCursor:null}),
+    getPlannerFolderSessions:async(pageId,cursor)=>{
+      let releaseResponse:(()=>void)|undefined;
+      const gatedResponse=options.folderSessionPages==='many'&&cursor==='1'
+        ?new Promise<void>(resolve=>{releaseResponse=resolve;})
+        :null;
+      options.onFolderSessionPageRequest?.(pageId,cursor??null,releaseResponse);
+      const pageIndex=cursor===undefined?0:Number(cursor);
+      const start=pageIndex*folderSessionPageSize;
+      const items=folderSessions.slice(start,start+folderSessionPageSize)
+        .map(session=>({agentSessionId:session.agentSessionId}));
+      const result={items,nextCursor:start+folderSessionPageSize<folderSessions.length?String(pageIndex+1):null};
+      if(gatedResponse)await gatedResponse;
+      else if(options.folderSessionPages)await new Promise(resolve=>setTimeout(resolve,120));
+      return read(result);
+    },
     getPlannerFolderSubfolders:async()=>read({items:[],nextCursor:null}),
     getFolderBoardItems:async()=>read([]),
     listCards: async (folderId,query) => read({ cards: state === 'empty' ? [] : [...cards.values()].filter((card) => (!folderId || card.folderId === folderId)&&(query?.includeCompleted!==false||card.status!=='done')) }),
@@ -113,7 +150,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       cards.set(id, card);
       return { folderId: card.folderId, card };
     },
-    getSessionsByIds:async()=>read(sessions),
+    getSessionsByIds:async(sessionIds)=>read(reviewSessions.filter(session=>sessionIds.includes(session.agentSessionId))),
     saveCardExecutionSettings:async(id,value,expectedVersion)=>{
       if(options.failWrites)throw new Error('공개 예시: 저장 실패');
       const current=cards.get(id)!;

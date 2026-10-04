@@ -334,3 +334,138 @@ test('실행 이력 기본 표면에 아바타·상태·시간·에이전트·�
   expect(rowStyle.minHeight).toBe(112);
   expect(rowStyle.paddingVertical).toBe(16);
 });
+
+test('끝 근처 신호는 다음 페이지를 요청하고 더 보기 버튼은 표시하지 않는다', () => {
+  const loadMore = jest.fn();
+  const nearEndRef = { current: null as (() => void) | null };
+  mockUsePlannerFolderRuns.mockReturnValue({
+    data: { items: [], nextCursor: 'next', total: 1 },
+    loading: false,
+    error: null,
+    loadMore,
+  });
+  const screen = render(
+    <FolderSessionHistory api={null} folderId="task-1" nearEndRef={nearEndRef} />,
+  );
+
+  expect(screen.queryByText('더 보기')).toBeNull();
+  act(() => nearEndRef.current?.());
+
+  expect(loadMore).toHaveBeenCalledTimes(1);
+  screen.unmount();
+  expect(nearEndRef.current).toBeNull();
+});
+
+test('첫 페이지 로딩 중 온 끝 근처 신호는 cursor가 준비된 뒤 한 번 처리한다', async () => {
+  const loadMore = jest.fn();
+  const nearEndRef = { current: null as (() => void) | null };
+  mockUsePlannerFolderRuns.mockReturnValue({
+    data: { items: [], nextCursor: null, total: 0 },
+    loading: true,
+    error: null,
+    loadMore,
+  });
+  const screen = render(
+    <FolderSessionHistory api={null} folderId="task-1" nearEndRef={nearEndRef} />,
+  );
+
+  act(() => nearEndRef.current?.());
+  expect(loadMore).not.toHaveBeenCalled();
+
+  mockUsePlannerFolderRuns.mockReturnValue({
+    data: { items: [], nextCursor: 'next', total: 1 },
+    loading: false,
+    error: null,
+    loadMore,
+  });
+  screen.rerender(
+    <FolderSessionHistory api={null} folderId="task-1" nearEndRef={nearEndRef} />,
+  );
+
+  await waitFor(() => expect(loadMore).toHaveBeenCalledTimes(1));
+});
+
+test('페이지 오류 뒤에는 자동 요청이 멈추고 재시도만 다음 페이지를 요청한다', () => {
+  const loadMore = jest.fn();
+  const nearEndRef = { current: null as (() => void) | null };
+  mockUsePlannerFolderRuns.mockReturnValue({
+    data: { items: [], nextCursor: 'next', total: 1 },
+    loading: false,
+    error: '페이지를 불러오지 못했습니다.',
+    loadMore,
+  });
+  const screen = render(
+    <FolderSessionHistory api={null} folderId="task-1" nearEndRef={nearEndRef} />,
+  );
+
+  act(() => nearEndRef.current?.());
+  expect(loadMore).not.toHaveBeenCalled();
+  expect(screen.getByText('다시 시도')).toBeTruthy();
+  expect(screen.queryByText('더 보기')).toBeNull();
+
+  fireEvent.press(screen.getByTestId('task-run-history-retry'));
+  expect(loadMore).toHaveBeenCalledTimes(1);
+});
+
+test('cursor가 없거나 명시적 sessionIds를 쓰는 경로는 끝 근처 신호로 페이지를 요청하지 않는다', () => {
+  const loadMore = jest.fn();
+  const nearEndRef = { current: null as (() => void) | null };
+  mockUsePlannerFolderRuns.mockReturnValue({
+    data: { items: [], nextCursor: null, total: 0 },
+    loading: false,
+    error: null,
+    loadMore,
+  });
+  const first = render(
+    <FolderSessionHistory api={null} folderId="task-1" nearEndRef={nearEndRef} />,
+  );
+
+  act(() => nearEndRef.current?.());
+  expect(loadMore).not.toHaveBeenCalled();
+
+  mockUsePlannerFolderRuns.mockReturnValue({
+    data: { items: [], nextCursor: 'next', total: 1 },
+    loading: false,
+    error: null,
+    loadMore,
+  });
+  first.rerender(
+    <FolderSessionHistory api={null} sessionIds={['explicit-session']} nearEndRef={nearEndRef} />,
+  );
+  act(() => nearEndRef.current?.());
+
+  expect(loadMore).not.toHaveBeenCalled();
+  expect(first.getByTestId('task-run-row-explicit-session')).toBeTruthy();
+});
+
+test('폴더를 바꾸면 이전 목록에서 보류한 끝 근처 신호를 새 폴더에 쓰지 않는다', () => {
+  const firstLoadMore = jest.fn();
+  const secondLoadMore = jest.fn();
+  const nearEndRef = { current: null as (() => void) | null };
+  const pages = new Map([
+    ['first-folder', {
+      data: { items: [], nextCursor: null, total: 0 },
+      loading: true,
+      error: null,
+      loadMore: firstLoadMore,
+    }],
+    ['second-folder', {
+      data: { items: [], nextCursor: 'next', total: 1 },
+      loading: false,
+      error: null,
+      loadMore: secondLoadMore,
+    }],
+  ]);
+  mockUsePlannerFolderRuns.mockImplementation((_api: unknown, folderId: string) => pages.get(folderId));
+  const screen = render(
+    <FolderSessionHistory api={null} folderId="first-folder" nearEndRef={nearEndRef} />,
+  );
+
+  act(() => nearEndRef.current?.());
+  screen.rerender(
+    <FolderSessionHistory api={null} folderId="second-folder" nearEndRef={nearEndRef} />,
+  );
+
+  expect(firstLoadMore).not.toHaveBeenCalled();
+  expect(secondLoadMore).not.toHaveBeenCalled();
+});
