@@ -16,6 +16,7 @@ import type { FolderAccess } from "../folders/folder_route_access.js";
 import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_proxy.js";
 import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes.js";
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
+import type { CatalogDeltaFolderProvider } from "../runtime/catalog_delta_broadcaster.js";
 
 export interface McpCallContext {
   signal?: AbortSignal;
@@ -53,6 +54,7 @@ export interface McpHostOptions {
     getSession: (id: string) => Promise<{ folder_id: string | null } | null>;
     listAgentProfiles: NodeAgentProfileProvider["listAgentProfiles"];
     broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
+    catalogFolderProvider: CatalogDeltaFolderProvider;
   };
 }
 

@@ -4,7 +4,7 @@ import type {
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
-import { deletedBoardItemsDelta } from "./catalog_delta_broadcaster.js";
+import { deletedBoardItemsDelta, type CatalogBoardItemsDelta } from "./catalog_delta_broadcaster.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 
 export function withSessionCatalogMutationBroadcasts(
@@ -50,7 +50,8 @@ export async function broadcastTargetedSessionCatalogDelta(
   folderProvider: Pick<LiveFolderProvider, "listFolders" | "listSessionAssignmentsByIds">,
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
   sessionIds: readonly string[],
+  boardItemsDelta: CatalogBoardItemsDelta = {},
 ): Promise<void> {
   const sessionsDelta = await folderProvider.listSessionAssignmentsByIds(sessionIds);
-  await broadcastCatalogSnapshot(folderProvider, broadcaster, { sessionsDelta });
+  await broadcastCatalogSnapshot(folderProvider, broadcaster, { sessionsDelta, boardItemsDelta });
 }

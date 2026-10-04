@@ -15,6 +15,7 @@ import { createApp, type CreateAppOptions } from "./app.js";
 import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
 import { BoardYjsMoveRepository } from "./board-yjs/board_yjs_move_repository.js";
 import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
+import type { CatalogBoardItemRow } from "./board-yjs/board_yjs_types.js";
 import { createBoardProjectionHost } from "./board-yjs/board_projection_host.js";
 import { PageRepository } from "./page/page_repository.js";
 import { PageYjsService } from "./page/page_service.js";
@@ -205,7 +206,7 @@ export async function createLiveProductionApplication(
   };
   let boardYjsService: BoardYjsService | undefined;
   let emitBoardYjsSessionCatalogDelta:
-    | ((sessionIds: readonly string[]) => Promise<void>)
+    | ((sessionIds: readonly string[], movedBoardItem: CatalogBoardItemRow | null) => Promise<void>)
     | undefined;
   const boardYjsMoveRepository = new BoardYjsMoveRepository(sqlResolver);
   const sessionBoardMoveService = new SessionBoardMoveService({
@@ -227,11 +228,11 @@ export async function createLiveProductionApplication(
         runtimeServices.sessionBroadcaster.append({type:"card_updated",cardId:card.cardId,folderId:card.folderId});
       }
     },
-    onBoardMoveCommitted: async ({ sessionIds }) => {
+    onBoardMoveCommitted: async ({ sessionIds, movedBoardItem }) => {
       if (!emitBoardYjsSessionCatalogDelta) {
         throw new Error("Board/Yjs catalog delta emitter is not initialized");
       }
-      await emitBoardYjsSessionCatalogDelta(sessionIds);
+      await emitBoardYjsSessionCatalogDelta(sessionIds, movedBoardItem);
     },
   });
   const sessionDeletionService = new SessionDeletionService({
@@ -435,11 +436,12 @@ export async function createLiveProductionApplication(
       }),
     },
   });
-  emitBoardYjsSessionCatalogDelta = async (sessionIds) =>
+  emitBoardYjsSessionCatalogDelta = async (sessionIds, movedBoardItem) =>
     await broadcastTargetedSessionCatalogDelta(
       dbCatalogRepository.folderRouteProvider,
       runtimeServices.sessionBroadcaster,
       sessionIds,
+      movedBoardItem ? { [movedBoardItem.id]: movedBoardItem } : {},
     );
   publishReconciledSessionUpdate = (update) => {
     const message = {
@@ -875,6 +877,7 @@ export function buildProductionRouteOptions(
           getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
           listAgentProfiles: nodeId => providers.nodeAgentProfileRoutes.provider.listAgentProfiles(nodeId),
           broadcaster: runtime.sessionBroadcaster,
+          catalogFolderProvider: { listFolders: () => providers.folderRoutes.provider.listFolders() },
         },
         sessions: {
           repositoryProvider: persistenceRepositoryProvider,

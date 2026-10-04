@@ -44,6 +44,7 @@ export class SessionBoardMoveService {
       sessionId: string;
       sessionIds: readonly string[];
       folderId: string | null;
+      movedBoardItem: CatalogBoardItemRow | null;
     }) => Promise<void>;
   }) {}
 
@@ -128,6 +129,7 @@ export class SessionBoardMoveService {
           sessionId: input.sessionId,
           sessionIds,
           folderId: input.targetScope?.folderId ?? null,
+          movedBoardItem: moved,
         });
       }
       return { moved, sessionIds };
