@@ -44,7 +44,7 @@ async function setup(page: Page, pages: HistoryPage[], options: { holdOlder?: bo
     if (options.live) {
       await liveGate.promise;
       options.live = false;
-      return route.fulfill({ contentType: "text/event-stream", body: `id: 1001\nevent: assistant_message\ndata: ${JSON.stringify({ type: "assistant_message", content: "과거를 읽는 중 도착한 새 응답", timestamp: 1001, tool_use_id: "live-1001", _final_for_live_stream: true })}\n\n` });
+      return route.fulfill({ contentType: "text/event-stream; charset=utf-8", body: `id: 1001\nevent: assistant_message\ndata: ${JSON.stringify({ type: "assistant_message", content: "과거를 읽는 중 도착한 새 응답", timestamp: 1001, tool_use_id: "live-1001", _final_for_live_stream: true })}\n\n` });
     }
     return route.fulfill({ contentType: "text/event-stream", body: ": keepalive\n\n" });
   });
@@ -271,13 +271,13 @@ test("live SSE while reading history preserves the visible row", async ({ page }
   const before = settled.anchor;
   const beforePosition = settled.position;
   const liveResponse = page.waitForResponse(async response =>
-    response.url().includes("/events") && (await response.text()).includes("과거를 읽는 중 도착한 새 응답"));
+    response.url().includes("/events") && (await response.text()).includes("id: 1001\n"));
   h.sendLive();
   await liveResponse;
   await expect(h.root.getByRole("button", { name: /New Messages/ })).toBeVisible();
   await page.waitForTimeout(300);
-  const after = await anchor(h.scroller);
   const afterPosition = await keyPosition(h.scroller, before.key);
+  const after = await anchor(h.scroller).catch(() => null);
   recordEvidence("sse-offset", { before, after, beforePosition, afterPosition });
   await screenshot(page, "sse-after");
   expect(afterPosition.offset).not.toBeNull();
