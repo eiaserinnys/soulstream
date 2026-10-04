@@ -11,6 +11,7 @@ function messageTime(timestamp: string): bigint {
 
 /** Protect only the preview owner; status/read/name and attention still merge normally. */
 export function preserveNewestLastMessage(existing: Session | undefined, incoming: Session): Session {
+  if (existing?.lastMessage === incoming.lastMessage) return incoming;
   const current = normalizeFeedLastMessage(existing?.lastMessage);
   if (!current) return incoming;
   const next = normalizeFeedLastMessage(incoming.lastMessage);

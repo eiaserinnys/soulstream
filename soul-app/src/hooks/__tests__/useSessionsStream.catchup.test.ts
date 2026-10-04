@@ -202,3 +202,23 @@ test('background cancels pending recovery without committing its cursor or late 
   expect(useSessionStore.getState().sessions.s.lastMessage?.preview).toBe('preview-1000');
   hook.unmount();
 });
+
+test('foreground before any durable event consumes the cursorless SSE snapshot without REST', async () => {
+  mockGetCatalog.mockResolvedValueOnce(snapshot(1000));
+  const hook = renderHook(() => useSessionsStream());
+  await act(async () => {});
+  emit('stream_meta', { instance_id: 'old', latest_id: 0 });
+  const first = source();
+  lifecycle();
+  expect(source()).not.toBe(first);
+  expect(source().url).not.toContain('lastEventId=');
+  const latest = snapshot(1002).sessionList[0];
+  latest.status = 'idle';
+  emit('stream_meta', { instance_id: 'old', latest_id: 201 });
+  emit('session_list', { sessions: [latest] });
+  expect(mockGetCatalog).toHaveBeenCalledTimes(1);
+  expect(useSessionStore.getState().sessions.s).toMatchObject({
+    status: 'idle', lastMessage: { preview: 'preview-1002' },
+  });
+  hook.unmount();
+});

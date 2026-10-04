@@ -75,7 +75,7 @@ function catalogWithSessionAssignments(
   catalog: Catalog,
   sessions: Session[],
 ): Catalog {
-  const assignments = { ...catalog.sessions };
+  const assignments: Catalog['sessions'] = {};
   for (const session of sessions) {
     if (!session.agentSessionId) continue;
     assignments[session.agentSessionId] = {
@@ -115,6 +115,7 @@ export function useSessionsStream() {
     instanceId?: string;
     events: Array<{ type: string; data: any; eid?: string }>;
   } | null>(null);
+  const cursorlessSnapshotRef = useRef<{ instanceId?: string } | null>(null);
   const initialCatalogReadyRef = useRef(false);
   const initialCatalogFailedRef = useRef(false);
   // initial REST snapshot과 SSE delta의 병합 규칙:
@@ -132,6 +133,7 @@ export function useSessionsStream() {
     instanceIdRef.current = undefined;
     refetchTokenRef.current += 1;
     recoveryRef.current = null;
+    cursorlessSnapshotRef.current = null;
     initialCatalogReadyRef.current = false;
     initialCatalogFailedRef.current = false;
     initialCatalogPendingRef.current = false;
@@ -323,6 +325,17 @@ export function useSessionsStream() {
         applyAndBufferInitialDelta({ type, data: d });
         break;
       case 'session_list':
+        // A reconnect before the first durable ID is a fresh server connection.
+        // Consume its snapshot; metadata alone still cannot advance the cursor.
+        if (cursorlessSnapshotRef.current) {
+          applySessionListFallback(d);
+          if (cursorlessSnapshotRef.current.instanceId) {
+            instanceIdRef.current = cursorlessSnapshotRef.current.instanceId;
+          }
+          cursorlessSnapshotRef.current = null;
+          usePlannerStore.getState().invalidate('replay');
+          break;
+        }
         if (initialCatalogReadyRef.current) break;
         if (initialCatalogPendingRef.current) pendingSessionListRef.current = d;
         else if (initialCatalogFailedRef.current) applySessionListFallback(d);
@@ -389,7 +402,11 @@ export function useSessionsStream() {
   useSSEStream({
     diagnosticsSource: 'feed_stream',
     consumerFailureRef,
-    onConnecting: cancelRecovery,
+    onConnecting: () => {
+      cancelRecovery();
+      cursorlessSnapshotRef.current = initialCatalogReadyRef.current
+        && lastEventIdRef.current === undefined ? {} : null;
+    },
     onSuspending: cancelRecovery,
     urlBuilder: () =>
       api
@@ -409,7 +426,8 @@ export function useSessionsStream() {
       if (type === 'stream_meta') {
         // With a committed cursor, the route emits replay_gap for mismatches.
         // Metadata alone must not commit a new coordinate or start a second REST.
-        if (!instanceIdRef.current && d?.instance_id) instanceIdRef.current = d.instance_id;
+        if (cursorlessSnapshotRef.current) cursorlessSnapshotRef.current.instanceId = d?.instance_id;
+        else if (!instanceIdRef.current && d?.instance_id) instanceIdRef.current = d.instance_id;
         return;
       }
       if (type === 'replay_gap') {
