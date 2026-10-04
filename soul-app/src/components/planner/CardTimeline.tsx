@@ -54,7 +54,7 @@ function TimelineMessage({ entry, event, session, kind, onChooseAnswer }: {
   const label = expanded ? '접기' : entry.report ? '자세히' : '더 보기';
   const body = <TimelineBody entry={entry} expanded={expanded} onChooseAnswer={onChooseAnswer} />;
   const message = entry.user ? <UserMessage event={event} session={session} messageKind={kind}>{body}</UserMessage>
-    : <AssistantMessage event={event} session={session} messageKind={kind}>{body}</AssistantMessage>;
+    : <AssistantMessage event={event} session={session} messageKind={kind} bubbleWidth={entry.report ? 'fill' : 'content'}>{body}</AssistantMessage>;
   return fold ? <TouchableWithoutFeedback testID={`card-fold-${entry.id}`} accessibilityRole="button" accessibilityLabel={`${entry.id} ${label}`}
     onPress={() => setExpanded((old) => !old)}><View>{message}</View></TouchableWithoutFeedback> : message;
 }
