@@ -1,5 +1,6 @@
 import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
+import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
@@ -68,9 +69,9 @@ export class CardControlPlaneService {
     if (!result.idempotent) this.onMutation?.({result});
     return result;
   }
-  async patchCard(params: CardMutationParams & { title?: string; brief?: string; archived?: boolean; assignee?: CardAssigneeInput | null; nodeId?: string | null; modelPreset?: string | null }) {
+  async patchCard(params: CardMutationParams & { title?: string; brief?: string; archived?: boolean; assignee?: CardAssigneeInput | null; nodeId?: string | null; modelPreset?: string | null; color?: CardColor }) {
     return this.mutateCard(params,"update_card",{ title:params.title,brief:params.brief,archived:params.archived,
-      ...(Object.hasOwn(params,"assignee") ? assigneeToFields(params.assignee) : {}),node_id:params.nodeId,model_preset:params.modelPreset },
+      ...(Object.hasOwn(params,"assignee") ? assigneeToFields(params.assignee) : {}),node_id:params.nodeId,model_preset:params.modelPreset,color:params.color },
     async (sql,card,eventId,payload) => { await this.patch(sql,card,payload,params,eventId); });
   }
   async saveExecutionSettings(params:CardMutationParams & {folderId:string;nodeId:string|null;agentId:string|null;modelPreset:string|null}) {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CARD_STATUSES } from "@soulstream/wire-schema";
+import { CARD_COLOR_KEYS } from "@soulstream/wire-schema/card-colors";
 import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import type { FolderActorParams } from "./control_plane/card_types.js";
 import { serializeCardMutation, serializeCardRow } from "../folders/folder_contracts.js";
@@ -10,7 +11,7 @@ const mutation=z.object({ expectedVersion:z.number().int().positive(),idempotenc
 const append=z.object({ idempotencyKey:id });
 export const cardOperationSchemas={
   create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
-  update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
+  update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),color:z.enum(CARD_COLOR_KEYS).optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
   start_card_work:mutation.extend({execution:z.object({registrationId:id,executionCommandId:id}).strict()}),
   set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional() }),
   move_card:mutation.extend({ folderId:id,afterCardId:id.nullable().optional() }),

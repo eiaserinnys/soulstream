@@ -9,6 +9,7 @@ export type SqlClient = RepositorySql & {
 };
 
 import type { CardStatus } from "@soulstream/wire-schema";
+import type { CardColor } from "@soulstream/wire-schema/card-colors";
 
 export type { CardStatus } from "@soulstream/wire-schema";
 
@@ -48,6 +49,7 @@ export interface FolderRow extends Record<string, unknown> {
 
 export interface CardRow extends CardAssigneeFields {
   id: string;
+  color: CardColor;
   folder_id: string;
   position_key: string;
   title: string;

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+import { CARD_COLOR_KEYS } from "@soulstream/wire-schema/card-colors";
 
 import {
   buildMigrationPlan,
@@ -466,4 +467,17 @@ describe("versioned migration contract", () => {
    expect(schema).toContain(owned.sql.trim());
    expect(owned.sql).toContain("owner_email TEXT NOT NULL REFERENCES users(email)");
    expect(owned.sql).toContain("token_hash TEXT NOT NULL UNIQUE");
+ });
+
+ it("pins card color migration and schema keys to the shared palette", async () => {
+   const migrations = await loadMigrationManifest();
+   const color = migrations.find(item => item.id === "118_card_color.sql");
+   const schema = readFileSync(fileURLToPath(new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url)), "utf8");
+   expect(color).toBeDefined();
+   expect(schema).toContain(color!.sql.trim());
+   const checkValues = color!.sql.match(/CHECK \(color IN \(([^)]+)\)\)/)?.[1];
+   const defaultValues = color!.sql.match(/ARRAY\[([^\]]+)\]/)?.[1];
+   const keysIn = (value: string | undefined) => [...(value ?? "").matchAll(/'([^']+)'/g)].map(match => match[1]);
+   expect(keysIn(checkValues)).toEqual(CARD_COLOR_KEYS);
+   expect(keysIn(defaultValues)).toEqual(CARD_COLOR_KEYS);
  });
