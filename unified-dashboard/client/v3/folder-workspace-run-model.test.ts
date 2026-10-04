@@ -219,6 +219,33 @@ describe("run tree projection", () => {
     ).toEqual(["caller-child"]);
   });
 
+  it("renders paginated sessions immediately and prefers catalog then targeted updates", () => {
+    const fallback = { ...session("page-hit", "2026-07-13T10:00:00Z"), displayName: "페이지 응답" };
+    const pending = resolveRunSessions({
+      sessionIds: ["page-hit", "missing"],
+      fallbackSessions: [fallback],
+      catalogSessions: [],
+      targetedSessions: [],
+      targetedLoading: true,
+    });
+    expect(pending.loadStateById.get("page-hit")).toBe("ready");
+    expect(pending.loadStateById.get("missing")).toBe("loading");
+    expect(pending.sessions).toEqual([fallback]);
+
+    const catalog = { ...fallback, displayName: "카탈로그 응답" };
+    const targeted = { ...fallback, displayName: "최신 상세 응답" };
+    const resolved = resolveRunSessions({
+      sessionIds: ["page-hit"], fallbackSessions: [fallback],
+      catalogSessions: [catalog], targetedSessions: [targeted], targetedLoading: false,
+    });
+    expect(resolved.sessions).toEqual([targeted]);
+    const catalogOnly = resolveRunSessions({
+      sessionIds: ["page-hit"], fallbackSessions: [fallback],
+      catalogSessions: [catalog], targetedSessions: [], targetedLoading: true,
+    });
+    expect(catalogOnly.sessions).toEqual([catalog]);
+  });
+
   it("projects catalog hits, targeted loading misses, and terminal misses separately", () => {
     const catalog = [session("catalog-hit", "2026-07-13T10:00:00Z")];
     const loading = resolveRunSessions({

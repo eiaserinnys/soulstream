@@ -324,10 +324,11 @@ function V3DashboardContent() {
   });
   const runSessionResolution = useMemo(() => resolveRunSessions({
     sessionIds: plannerSessionIds,
+    fallbackSessions: folderSessions.state?.items ?? [],
     catalogSessions,
     targetedSessions: targetedRunSessions,
     targetedLoading: targetedRunSessionsLoading,
-  }), [catalogSessions, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
+  }), [catalogSessions, folderSessions.state?.items, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
   const sessions = runSessionResolution.sessions;
   const cursorScope = `${window.location.origin}|${user?.email ?? "anonymous"}`;
   const cardChatVisible = Boolean(cardNavigation.cardId && chatOpen && (!mobileMode || mobileTab === "chat"));
