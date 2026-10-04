@@ -25,7 +25,7 @@ describe("session move no-op", () => {
       : path === "folder"
         ? await f.move.moveSessionToFolder("root", "target")
         : await f.move.moveSessionBoardItem({ sessionId: "root", targetScope: { folderId: "target" }, position: { x: 10, y: 20 } });
-    expect(result).toEqual(path === "batch" ? { count: 2, sessionIds: ["root", "child"] } : item("root"));
+    expect(result).toEqual(path === "batch" ? { count: 2, sessionIds: ["root", "child"], didCommit: false } : item("root"));
     expect(f.repository.storeBoardYjsSnapshot).not.toHaveBeenCalled();
     expect(f.repository.project).not.toHaveBeenCalled();
     expect(f.commit).not.toHaveBeenCalled();

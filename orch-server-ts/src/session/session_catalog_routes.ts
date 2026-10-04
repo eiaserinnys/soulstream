@@ -31,6 +31,8 @@ export type SessionEventCard = {
 export type MoveSessionsResult = {
   sessionIds?: readonly string[];
   count?: number;
+  /** Internal commit decision; route responses serialize only their existing fields. */
+  didCommit?: boolean;
 };
 
 export type SessionCatalogProvider = {
