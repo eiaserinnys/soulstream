@@ -23,11 +23,11 @@ describe('phone panel history', () => {
   test('ChatTab 재포커스와 같은 Chat stack 안의 세션 전환은 직전 panel을 덮지 않는다', () => {
     const history = createPhonePanelHistory();
 
-    history.recordFocus('ProjectTab');
+    history.recordFocus('FolderTab');
     history.recordFocus('ChatTab');
     history.recordFocus('ChatTab');
 
-    expect(history.getReturnTab()).toBe('ProjectTab');
+    expect(history.getReturnTab()).toBe('FolderTab');
   });
 
   test('이력 없는 최초 ChatTab 진입은 FeedTab으로 귀결한다', () => {
@@ -52,9 +52,9 @@ describe('phone panel history', () => {
       </PhonePanelHistoryProvider>,
     );
     const first = captured!;
-    first.recordFocus('ProjectTab');
+    first.recordFocus('FolderTab');
     first.recordFocus('ChatTab');
-    expect(first.getReturnTab()).toBe('ProjectTab');
+    expect(first.getReturnTab()).toBe('FolderTab');
 
     screen.rerender(
       <PhonePanelHistoryProvider key="account-b">

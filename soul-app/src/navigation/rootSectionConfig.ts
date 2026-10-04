@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 export type RootSectionKey =
+  | 'FolderTab'
   | 'DailyTab'
   | 'StarredTab'
   | 'ProjectTab'
@@ -14,6 +15,7 @@ export interface RootSectionDefinition {
 }
 
 export const ROOT_SECTION_CONFIG: Record<RootSectionKey, RootSectionDefinition> = {
+  FolderTab: { title: '폴더', icon: 'folder-outline' },
   DailyTab: { title: '카드', icon: 'grid-outline' },
   StarredTab: { title: '중요 작업', icon: 'star-outline' },
   ProjectTab: { title: '프로젝트', icon: 'folder-outline' },
