@@ -16,7 +16,7 @@
 
 | 운영 입력 / 연결 위치 | 역할 / 대상 | 제거 시점 |
 |---|---|---|
-| 세션 대화 / ChatBody | chat / nodeId, sessionId | 전달 성공 확인 후 제출 원문 일치 |
+| 세션 대화 / ChatBody | chat / nodeId, sessionId | 전송 시작(입력창을 비우는 순간). 실패한 글은 실패 말풍선의 되돌리기로 입력창과 초안에 복원 |
 | 메인 신규 세션 / TodayCardComposer | main-composer / 없음 | 생성 완료 처리 성공 |
 | 폴더 맡기기 / CardComposer | folder-compose / folderId 또는 all | 카드 생성 성공 |
 | 카드 커멘트·실제 서술형 질문 답변 / CardDetailContent | card-comment / cardId | 커멘트·답변 저장 성공 |
@@ -33,7 +33,7 @@
 
 데일리 API에는 folderId가 없으므로 신규 메모는 실제 날짜별 `daily.page.id`와 날짜로 구분합니다. 날짜는 메모의 대상이며 날짜 필터를 저장하는 기능은 추가하지 않습니다.
 
-대화는 기존 optimistic 표시와 첨부 정리를 유지합니다. 전송 시작 시 화면 입력은 비우되 영속 원문은 전달이 확인될 때까지 남습니다. 자동 재전송·outbox는 추가하지 않습니다. 메모·폴더 설명·프로젝트 지침은 기존 `mergeServerDraft`와 저장 큐 정책을 유지합니다.
+대화는 기존 optimistic 표시와 첨부 정리를 유지합니다. 전송 시작 시 입력창과 영속 초안을 함께 비우며, 실패한 글은 실패 말풍선의 되돌리기로 입력창과 초안에 복원합니다. 자동 재전송·outbox는 추가하지 않습니다. 메모·폴더 설명·프로젝트 지침은 기존 `mergeServerDraft`와 저장 큐 정책을 유지합니다.
 
 ## 이번 변경의 제외 범위
 

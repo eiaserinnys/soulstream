@@ -1,9 +1,15 @@
 import React from 'react';
-import { AppState, View } from 'react-native';
-import { act, render } from '@testing-library/react-native';
+import { AppState, Pressable, TextInput, View } from 'react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 
 const mockRenderChatEventList = jest.fn();
 const mockRenderChatComposer = jest.fn();
+const mockApiClient = {
+  sessionEventsUrl: jest.fn(() => 'https://server.test/api/sessions/sess-1/events'),
+  intervene: jest.fn(),
+};
+let mockSendPromise: Promise<void> | undefined;
+let mockRestorePendingEventId: string | undefined;
 const mockRenderRealtimeVoiceControls = jest.fn((_props: unknown) => null);
 const mockUseChatAttachments = jest.fn((_options?: unknown) => ({
   attachments: [],
@@ -11,6 +17,7 @@ const mockUseChatAttachments = jest.fn((_options?: unknown) => ({
   pickAttachment: jest.fn(),
   removeAttachment: jest.fn(),
   clearAttachments: jest.fn(),
+  restoreAttachments: jest.fn(),
 }));
 const mockUseChatSendFlow = jest.fn((_options?: unknown) => ({
   sending: false,
@@ -39,25 +46,47 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
 jest.mock('../ChatEventList', () => {
   const React = require('react');
-  const { View } = require('react-native');
+  const { Pressable, View } = require('react-native');
   return {
     ChatEventList: (props: any) => {
       mockRenderChatEventList(props);
-      return React.createElement(View, { testID: 'chat-event-list' });
+      return React.createElement(
+        View,
+        { testID: 'chat-event-list' },
+        React.createElement(Pressable, {
+          testID: 'chat-event-list-restore-pending',
+          onPress: () => props.onRestorePending(mockRestorePendingEventId),
+        }),
+      );
     },
   };
 });
 
 jest.mock('../ChatComposer', () => {
   const React = require('react');
-  const { View } = require('react-native');
+  const { Pressable, TextInput, View } = require('react-native');
   return {
     ChatComposer: (props: any) => {
       mockRenderChatComposer(props);
-      return React.createElement(View, {
-        testID: 'chat-composer',
-        accessibilityState: { disabled: props.disabled },
-      });
+      return React.createElement(
+        View,
+        {
+          testID: 'chat-composer',
+          accessibilityState: { disabled: props.disabled },
+        },
+        React.createElement(TextInput, {
+          testID: 'chat-composer-input',
+          value: props.input,
+          onChangeText: props.onChangeInput,
+          editable: !props.disabled,
+        }),
+        React.createElement(Pressable, {
+          testID: 'chat-send-button',
+          onPress: () => {
+            mockSendPromise = props.onSend();
+          },
+        }),
+      );
     },
   };
 });
@@ -79,11 +108,7 @@ jest.mock('../../../hooks/useSSEStream', () => ({
   useSSEStream: jest.fn(),
 }));
 
-jest.mock('../../../api/client', () => ({
-  createApiClient: () => ({
-    sessionEventsUrl: jest.fn(() => 'https://server.test/api/sessions/sess-1/events'),
-  }),
-}));
+jest.mock('../../../api/client', () => ({ createApiClient: () => mockApiClient }));
 
 jest.mock('../../../hooks/useChatAttachments', () => ({
   useChatAttachments: (options: unknown) => mockUseChatAttachments(options),
@@ -104,6 +129,11 @@ import { useChatStore } from '../../../store/chatStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
+import { useAuthStore } from '../../../store/authStore';
+import { useDraftStore } from '../../../store/draftStore';
+
+const realUseChatSendFlow = jest.requireActual('../useChatSendFlow').useChatSendFlow as
+  typeof import('../useChatSendFlow').useChatSendFlow;
 
 const SID = 'sess-chatbody-subscription';
 const OTHER_SID = 'sess-other';
@@ -154,6 +184,23 @@ function resetStores() {
   useNodeConnectivityStore.getState().reset();
 }
 
+async function preparePersistentChatDrafts() {
+  await useAuthStore.persist.rehydrate();
+  await useSettingsStore.persist.rehydrate();
+  await useDraftStore.persist.rehydrate();
+  useAuthStore.setState({
+    jwt: `header.${Buffer.from(JSON.stringify({ email: 'chat@example.com', sub: 'chat@example.com', exp: 9999999999 })).toString('base64url')}.signature`,
+  });
+  useSettingsStore.setState({ serverUrl: 'https://chat.example' });
+  useDraftStore.setState({ drafts: {} });
+}
+
+function persistentChatDraftKey(sessionId: string) {
+  // In this harness ChatBody's draft target can lack session node metadata at mount.
+  const nodeId = useSessionStore.getState().sessions[sessionId]?.nodeId;
+  return JSON.stringify(['https://chat.example', 'chat@example.com', 'chat', [nodeId ?? null, sessionId]]);
+}
+
 async function renderSettled() {
   const view = render(
     <View>
@@ -183,6 +230,14 @@ function latestSseOptions() {
 describe('ChatBody store subscription boundary', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSendPromise = undefined;
+    mockRestorePendingEventId = undefined;
+    mockUseChatSendFlow.mockImplementation(() => ({
+      sending: false,
+      sendError: null,
+      handleSend: jest.fn(),
+    }));
+    mockApiClient.intervene.mockReset();
     mockHistoryState.current = {
       historyLoading: false,
       reachedTop: true,
@@ -1790,5 +1845,151 @@ describe('ChatBody store subscription boundary', () => {
 
     expect(view.getByTestId('chat-composer').props.accessibilityState.disabled).toBe(false);
     expect(view.queryByTestId('chat-offline-input-notice')).toBeNull();
+  });
+
+  test('알 수 없는 전송 결과 뒤 같은 ChatBody를 다시 열어도 보낸 글은 입력창에 돌아오지 않는다', async () => {
+    await preparePersistentChatDrafts();
+
+    let resolveIntervene!: (value: { delivered: null; outcome: 'unknown' }) => void;
+    const request = new Promise<{ delivered: null; outcome: 'unknown' }>((resolve) => {
+      resolveIntervene = resolve;
+    });
+    mockApiClient.intervene.mockReturnValue(request);
+    mockUseChatSendFlow.mockImplementation(((options: any) => realUseChatSendFlow(options)) as any);
+
+    const message = '유휴 세션으로 보낸 원문';
+    const view = render(
+      <View>
+        <ChatBody sessionId={SID} />
+      </View>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.changeText(view.getByTestId('chat-composer-input'), message);
+    expect(useDraftStore.getState().drafts[persistentChatDraftKey(SID)]).toBe(message);
+    fireEvent.press(view.getByTestId('chat-send-button'));
+
+    expect(mockApiClient.intervene).toHaveBeenCalledWith(SID, message, undefined);
+    expect(view.getByTestId('chat-composer-input').props.value).toBe('');
+    expect(useDraftStore.getState().drafts[persistentChatDraftKey(SID)]).toBeUndefined();
+
+    await act(async () => {
+      resolveIntervene({ delivered: null, outcome: 'unknown' });
+      await mockSendPromise;
+    });
+    view.unmount();
+
+    const reopened = render(
+      <View>
+        <ChatBody sessionId={SID} />
+      </View>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(reopened.getByTestId('chat-composer-input').props.value).toBe('');
+    reopened.unmount();
+  });
+
+  test('실패 말풍선의 되돌리기는 원문을 입력창과 영속 초안에 복원한다', async () => {
+    await preparePersistentChatDrafts();
+    mockApiClient.intervene.mockResolvedValue({ delivered: null, outcome: 'unknown' });
+    mockUseChatSendFlow.mockImplementation(((options: any) => realUseChatSendFlow(options)) as any);
+
+    const message = '되돌릴 실패 원문';
+    const view = render(
+      <View>
+        <ChatBody sessionId={SID} />
+      </View>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.changeText(view.getByTestId('chat-composer-input'), message);
+    fireEvent.press(view.getByTestId('chat-send-button'));
+    await act(async () => {
+      await mockSendPromise;
+    });
+
+    const pending = useChatStore.getState().pendingOptimisticBySession[SID];
+    expect(pending?.pendingStatus).toBe('failed');
+    mockRestorePendingEventId = pending?.id;
+    fireEvent.press(view.getByTestId('chat-event-list-restore-pending'));
+
+    expect(view.getByTestId('chat-composer-input').props.value).toBe(message);
+    expect(useDraftStore.getState().drafts[persistentChatDraftKey(SID)]).toBe(message);
+    view.unmount();
+
+    const reopened = render(
+      <View>
+        <ChatBody sessionId={SID} />
+      </View>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(reopened.getByTestId('chat-composer-input').props.value).toBe(message);
+    reopened.unmount();
+  });
+
+  test('보내지 않은 세션 초안은 재마운트와 세션 전환 뒤에도 각 세션에 남는다', async () => {
+    await preparePersistentChatDrafts();
+    useSessionStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        [OTHER_SID]: {
+          agentSessionId: OTHER_SID,
+          nodeId: 'node-1',
+          displayName: 'Other session',
+          status: 'idle',
+          createdAt: '2026-05-23T00:00:00Z',
+          updatedAt: '2026-05-23T00:00:00Z',
+        },
+      },
+    }));
+
+    const view = render(
+      <View>
+        <ChatBody sessionId={SID} />
+      </View>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.changeText(view.getByTestId('chat-composer-input'), '세션 A 초안');
+    view.unmount();
+
+    const reopened = render(
+      <View>
+        <ChatBody sessionId={SID} />
+      </View>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(reopened.getByTestId('chat-composer-input').props.value).toBe('세션 A 초안');
+    reopened.rerender(
+      <View>
+        <ChatBody sessionId={OTHER_SID} />
+      </View>,
+    );
+    expect(reopened.getByTestId('chat-composer-input').props.value).toBe('');
+    fireEvent.changeText(reopened.getByTestId('chat-composer-input'), '세션 B 초안');
+    reopened.rerender(
+      <View>
+        <ChatBody sessionId={SID} />
+      </View>,
+    );
+    expect(reopened.getByTestId('chat-composer-input').props.value).toBe('세션 A 초안');
+    reopened.rerender(
+      <View>
+        <ChatBody sessionId={OTHER_SID} />
+      </View>,
+    );
+    expect(reopened.getByTestId('chat-composer-input').props.value).toBe('세션 B 초안');
+    reopened.unmount();
   });
 });
