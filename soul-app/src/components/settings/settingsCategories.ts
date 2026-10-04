@@ -3,6 +3,7 @@ import type React from 'react';
 
 export type SettingsCategory =
   | 'display'
+  | 'owned-agents'
   | 'connection'
   | 'backends'
   | 'recurring-jobs'
@@ -19,6 +20,7 @@ export interface SettingsCategoryDefinition {
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
   { id: 'display', label: '화면과 배경', group: '개인 환경', description: '외양, 배경', icon: 'color-palette-outline' },
+  { id: 'owned-agents', label: '내 에이전트', group: '개인 환경', description: '이름과 연결 키 관리', icon: 'people-outline' },
   { id: 'connection', label: '서버 연결', group: '작업과 실행', description: '서버 주소와 연결 확인', icon: 'server-outline' },
   { id: 'backends', label: 'AI 연결과 사용량', group: '작업과 실행', description: 'AI 백엔드와 인증 상태', icon: 'terminal-outline' },
   { id: 'recurring-jobs', label: '반복 작업', group: '작업과 실행', description: '일정과 다음 실행', icon: 'repeat-outline' },
