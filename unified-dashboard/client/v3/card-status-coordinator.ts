@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CardDetail, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardColor, CardDetail, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 
 export interface CardStatusControl {
   pending: boolean;
@@ -8,6 +8,7 @@ export interface CardStatusControl {
   saveSettings?(value:import("@seosoyoung/soul-ui/cards/card-execution").CardExecutionSettings,key:string):Promise<CardRow>;
   load(): Promise<CardDetail>;
   change(card: CardRow, status: CardStatus, reason?: string): Promise<unknown>;
+  changeColor?(card: CardRow, color: CardColor): Promise<unknown>;
 }
 export const cardStatusChoices = ["todo", "queued", "running", "blocked", "review", "done", "cancelled"] as const;
 
@@ -19,11 +20,12 @@ export async function performCardTransition(control:CardStatusControl,status:Car
 
 export function useCardStatusCoordinator(card:CardRow,control:CardStatusControl) {
   const [open,setOpen]=useState(false),[detail,setDetail]=useState<CardDetail|null>(null);
+  const [view,setView]=useState<"status"|"color">("status");
   const [loading,setLoading]=useState(false),[pending,setPending]=useState(false);
   const [error,setError]=useState("");
   const generation=useRef(0),writing=useRef(false);
   useEffect(()=>()=>{generation.current++;},[card.id]);
-  const close=()=>{generation.current++;setOpen(false);setDetail(null);setLoading(false);};
+  const close=()=>{generation.current++;setOpen(false);setDetail(null);setLoading(false);setView("status");};
   const refresh=async()=>{
     const request=++generation.current;setDetail(null);setError("");setLoading(true);
     try {const latest=await control.load();if(request!==generation.current)return null;
@@ -41,9 +43,14 @@ export function useCardStatusCoordinator(card:CardRow,control:CardStatusControl)
   };
   const request=async(status?:CardStatus)=>{
     if(writing.current||control.pending)return;
-    writing.current=true;setOpen(true);
+    writing.current=true;setOpen(true);setView("status");
     try {const latest=await refresh();if(latest&&status)await commit(latest,status);}
     finally {writing.current=false;}
+  };
+  const requestColor=async()=>{
+    if(!control.changeColor||writing.current||control.pending)return;
+    writing.current=true;setOpen(true);setView("color");
+    try {await refresh();}finally{writing.current=false;}
   };
   const changeOpen=(next:boolean)=>{if(next===open)return;if(next)void request();else close();};
   const busy=pending||control.pending;
@@ -52,5 +59,16 @@ export function useCardStatusCoordinator(card:CardRow,control:CardStatusControl)
     if(unavailable||writing.current||!detail)return;
     writing.current=true;try {await commit(detail,status,reason);}finally{writing.current=false;}
   };
-  return {open,changeOpen,request,detail,loading,pending,busy,error,refresh,unavailable,change};
+  const changeColor=async(color:CardColor)=>{
+    if(!control.changeColor||unavailable||writing.current||!detail)return;
+    const currentColor=detail.card.color??card.color??"yellow";
+    if(color===currentColor){close();return;}
+    writing.current=true;setPending(true);const request=generation.current;
+    try {await control.changeColor(detail.card,color);if(request===generation.current)close();}
+    catch(failure){if(request===generation.current)setError(failure instanceof Error?failure.message:String(failure));}
+    finally {setPending(false);writing.current=false;}
+  };
+  const showColors=()=>{if(control.changeColor&&!unavailable&&!writing.current)setView("color");};
+  const showStatuses=()=>setView("status");
+  return {open,view,changeOpen,request,requestColor,detail,loading,pending,busy,error,refresh,unavailable,change,changeColor,showColors,showStatuses};
 }

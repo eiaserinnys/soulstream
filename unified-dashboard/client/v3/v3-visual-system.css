@@ -317,6 +317,10 @@
   --glass-chrome-surface-strong: var(--v3-glass-detail);
 }
 
+.v3-card-status-picker {
+  --glass-chrome-surface-strong: var(--popover);
+}
+
 .v3-task-detail-layout {
   grid-template-columns: var(--v3-detail-nav-column) minmax(0, 1fr);
   gap: var(--v3-space-6);
