@@ -141,7 +141,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
               </View>
               <Text style={styles.disclosureAction}>변경 ›</Text>
             </TouchableOpacity>
-            {!selection.effectiveNodeId || !selection.agentId ? <Text style={styles.meta}>실행 대상은 카드를 시작할 때 선택할 수 있습니다.</Text> : null}
+            {!selection.effectiveNodeId || !selection.agentId ? <Text style={[styles.selectionError, styles.meta]}>실행 대상은 카드를 시작할 때 선택할 수 있습니다.</Text> : null}
             {selection.modelPresetSelectionInvalid ? <Text style={styles.selectionError} accessibilityRole="alert">선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.</Text> : null}
           </GroupedGlassSheet>
         </ScrollView>
