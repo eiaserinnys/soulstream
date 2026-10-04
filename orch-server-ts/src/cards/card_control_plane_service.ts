@@ -101,7 +101,7 @@ export class CardControlPlaneService {
     return this.mutateCard(params,"set_card_status",{ status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null },async (sql,card,eventId,payload) => {
       const claim=params.actorKind === "agent" ? await this.claim(sql,card,params.actorSessionId,payload) : {};
       if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId))
-        throw Object.assign(new Error("Only the assignee session may change card status"), {statusCode:403});
+        throw Object.assign(new Error("Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work."), {statusCode:403});
       await this.patch(sql,card,{ ...claim,status:params.status,
         blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
         queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id) : params.status === "blocked" && params.blockedKind === "limit" ? card.queue_position_key : null,
@@ -111,13 +111,13 @@ export class CardControlPlaneService {
     });
   }
   async startCardWork(params: CardMutationParams & { execution: CardWorkExecution }) {
-    if (params.actorKind !== "agent" || !params.actorSessionId) throw invalidWork("Only the assignee session may start work");
+    if (params.actorKind !== "agent" || !params.actorSessionId) throw invalidWork("Only the current assignee session may start work. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
     return this.mutateCard(params,"start_card_work",{execution:params.execution},async(sql,card,eventId,payload)=>{
       await validateWorkExecution(sql,params.actorSessionId!,params.execution);
       const dispatch = await acceptQueuedWork(sql,card,params.actorSessionId!,params.execution);
       const claim=dispatch ? {} : await this.claim(sql,card,params.actorSessionId,payload);
       if (card.assignee_session_id !== params.actorSessionId && !dispatch)
-        throw invalidWork("Only the assignee session may start work");
+        throw invalidWork("Only the current assignee session may start work. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
       await this.patch(sql,card,{...claim,status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
         completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null,
         ...(dispatch ? {assignee_kind:"session",assignee_session_id:params.actorSessionId,assignee_agent_id:null} : {})},params,eventId);
@@ -157,7 +157,7 @@ export class CardControlPlaneService {
       ...(reply ? {author_kind:"agent",session_id:params.actorSessionId} : {}) },async (sql,card,eventId,payload) => {
       const claim=reply ? await this.claim(sql,card,params.actorSessionId,payload) : {};
       if (reply && (card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId))
-        throw invalid("Only the assignee session may reply to a card comment");
+        throw invalid("Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
       if (Object.keys(claim).length) await this.patch(sql,card,claim,params,eventId);
       await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body)
         VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body})`;
