@@ -35,6 +35,33 @@ test('phone initially shows review even empty, snaps by lane and preserves posit
   expect(paper.width).toBeLessThan(StyleSheet.flatten(screen.getByTestId('card-board-column-todo').props.style).width);
 });
 
+test('main starts at the first visible lane and keeps the selected status when visible lanes shift', () => {
+  const saved = jest.fn();
+  const queued = cardFixture({ id: 'queued-only', status: 'queued' });
+  const review = cardFixture({ id: 'review-only', status: 'review' });
+  const screen = render(<CardBoard phone hideEmptyLanes api={null} cards={[queued, review]}
+    initialPosition={{ x: 0, lane: 'review', lanes: { review: 48 } }} onOpen={() => {}} onPositionChange={saved} />);
+  fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
+  expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
+  expect(screen.getAllByTestId(/^card-board-column-/).map(column => column.props.testID))
+    .toEqual(['card-board-column-queued', 'card-board-column-review']);
+
+  screen.rerender(<CardBoard phone hideEmptyLanes api={null} cards={[queued]}
+    onOpen={() => {}} onPositionChange={saved} />);
+  expect(screen.getAllByTestId(/^card-board-column-/).map(column => column.props.testID))
+    .toEqual(['card-board-column-queued']);
+  expect(saved.mock.calls.at(-1)[0]).toMatchObject({ lane: 'queued', x: 0, lanes: { review: 48 } });
+});
+
+test('main with one non-review card opens on its first visible lane', () => {
+  const saved = jest.fn();
+  const screen = render(<CardBoard phone hideEmptyLanes api={null} cards={[cardFixture({ id: 'queued-only', status: 'queued' })]}
+    onOpen={() => {}} onPositionChange={saved} />);
+  fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
+  expect(saved.mock.calls.at(-1)[0].lane).toBe('queued');
+  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(1);
+});
+
 test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 검수 대기로 되돌린다', () => {
   const saved = jest.fn();
   const screen = render(<CardBoard phone api={null} cards={[]} includeCompleted onOpen={() => {}} onPositionChange={saved} />);
@@ -52,7 +79,7 @@ test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 검
 
  test('pointer mouse pan changes horizontal position before longpress, vertical motion and secondary click do not', () => {
   const saved=jest.fn(),open=jest.fn();
-  const screen=render(<CardBoard phone={false} api={null} cards={[cardFixture()]} onOpen={open} onPositionChange={saved} />);
+  const screen=render(<CardBoard phone={false} api={null} cards={[cardFixture()]} initialPosition={{x:0,lane:'todo',lanes:{}}} onOpen={open} onPositionChange={saved} />);
   const frame=screen.getByTestId('card-board-frame');
   fireEvent(frame,'layout',{nativeEvent:{layout:{width:600,height:500}}});
   fireEvent(frame,'pointerDown',{nativeEvent:{pointerType:'mouse',button:0,pointerId:1,pageX:500,pageY:80}});
@@ -66,15 +93,13 @@ test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 검
   expect(saved.mock.calls.at(-1)[0].x).toBe(100);
  });
 
-test.each([true, false])('phone=%s has no status tabs and the empty draft heading owns creation', phone => {
-  const create = jest.fn();
-  const screen = render(<CardBoard phone={phone} api={null} cards={[]} includeCompleted={false} onOpen={() => {}} onCreate={create} />);
+test.each([true, false])('phone=%s has no status tabs or lane-owned create action', phone => {
+  const screen = render(<CardBoard phone={phone} api={null} cards={[]} includeCompleted={false} onOpen={() => {}} />);
   expect(screen.queryByTestId('card-board-stages')).toBeNull();
   const draft = require('@testing-library/react-native').within(screen.getByTestId('card-board-column-todo'));
   expect(draft.getByText(/드래프트/)).toBeTruthy();
   expect(draft.getByTestId('card-board-count-todo').props.children).toBe('0개');
-  fireEvent.press(draft.getByLabelText('드래프트 카드 추가'));
-  expect(create).toHaveBeenCalledTimes(1);
+  expect(screen.queryByLabelText('드래프트 카드 추가')).toBeNull();
 });
 
 

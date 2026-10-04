@@ -29,6 +29,7 @@ export function boardLaneGeometry(viewport: number, paperWidth: number, inset: n
 }
 
 export function boardLaneOffset(index: number, viewport: number, geometry: ReturnType<typeof boardLaneGeometry>, count: number) {
+  if (count <= 0 || index < 0 || index >= count || geometry.lanes.length < count) return 0;
   const last=geometry.lanes[count-1];
   const max = Math.max(0,last.start+last.width+geometry.inset*2-viewport);
   return Math.max(0, Math.min(max, geometry.lanes[index].start));
@@ -39,6 +40,7 @@ export function boardSnapOffsets(viewport: number, geometry: ReturnType<typeof b
 }
 
 export function boardNearestLane(offset: number, offsets: readonly number[]) {
+  if (offsets.length === 0) return 0;
   return offsets.reduce((nearest, value, index) => Math.abs(value - offset) <= Math.abs(offsets[nearest] - offset) ? index : nearest, 0);
 }
 
