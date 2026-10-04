@@ -1,3 +1,4 @@
+import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
 import { ProjectAtomFields, isProjectAtomValid, type ProjectAtomFieldValue } from "./ProjectContextFormFields";
 import {CreationDisclosure} from "./CreationDisclosure";
 import {SessionAttachmentFields} from "./SessionAttachmentFields";
@@ -102,6 +103,8 @@ export function SessionSuccessionModal({
   const [atomValue, setAtomValue] = useState<ProjectAtomFieldValue>({instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false});
   const {nodeId: atomNodeId, nodeTitle: atomNodeTitle} = atomValue;
   const [initialInstruction, setInitialInstruction] = useState("");
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  useTextareaAutoHeight(textarea, initialInstruction, 14);
   const [selectedNodeId, setSelectedNodeId] = useState(resolvedDefaults.nodeId ?? "");
   const [selectedAgentId, setSelectedAgentId] = useState(resolvedDefaults.agentId ?? "");
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
@@ -279,14 +282,16 @@ export function SessionSuccessionModal({
           <div hidden={atomDraft !== null}>
           <fieldset disabled={pending} className="v3-succession-context-editor">
             <div className="v3-form-context"><span>시작할 폴더</span><strong>{folderTitle}</strong></div>
-            <label>
+            <label className="v3-creation-text-field">
               <strong>무엇을 시작할까요?</strong>
               <textarea
+                ref={textarea}
+                className="v3-creation-request max-h-[120px]"
                 aria-label="초기 지시"
                 autoFocus
                 value={initialInstruction}
                 disabled={pending}
-                rows={4}
+                rows={1}
                 placeholder="세션을 시작하자마자 수행할 지시…"
                 onChange={(event) => setInitialInstruction(event.target.value)}
                 onPaste={event => { if (uploadUrl && !pending) handleClipboardFiles(event, addFiles); }}

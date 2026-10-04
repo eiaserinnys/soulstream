@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 let mockDimensions = { width: 390, height: 844, scale: 3, fontScale: 1 };
@@ -62,6 +62,7 @@ test.each([
   expect(StyleSheet.flatten(input.props.style).height).toBe(Math.max(48, measuredLineHeight + 20));
   const initialHeight = StyleSheet.flatten(input.props.style).height!;
   screen.rerender(composer('메시지\n둘째 줄'));
+  fireEvent(screen.getByTestId('chat-composer-text-input'), 'contentSizeChange', { nativeEvent: { contentSize: { width: 200, height: measuredLineHeight * 2 + 20 } } });
   expect(screen.getByTestId('chat-composer-text-input').props.textAlignVertical).toBe('top');
   expect(StyleSheet.flatten(screen.getByTestId('chat-composer-text-input').props.style).height)
     .toBeGreaterThan(initialHeight);

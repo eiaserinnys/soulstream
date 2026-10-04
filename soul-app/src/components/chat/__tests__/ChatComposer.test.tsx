@@ -64,26 +64,48 @@ describe('ChatComposer', () => {
     ]);
   });
 
-  test('빈 입력·긴 비개행은 한 줄이고 Enter 후 본문만 자라며 삭제하면 복귀한다', () => {
+  test('자동 줄바꿈과 Enter의 측정 높이로 성장하고 삭제·clear하면 줄어든다', () => {
     const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
     const screen = render(<ChatComposer {...props} input="" />);
-    const inputStyle = () => StyleSheet.flatten(screen.getByTestId('chat-composer-text-input').props.style);
+    const field = () => screen.getByTestId('chat-composer-text-input');
+    const inputStyle = () => StyleSheet.flatten(field().props.style);
     const rowStyle = () => StyleSheet.flatten(screen.getByTestId('chat-composer-content-row').props.style);
+    const measure = (height: number) => fireEvent(field(), 'contentSizeChange', { nativeEvent: { contentSize: { width: 200, height } } });
     const initialHeight = inputStyle().height;
     expect(initialHeight).toBe(48);
+    expect(field().props.scrollEnabled).toBe(false);
     expect(rowStyle().alignItems).toBe('center');
     const button = StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style);
-    const longText = '개행 없이 초안을 그대로 유지합니다. '.repeat(40);
-    screen.rerender(<ChatComposer {...props} input={longText} />);
+    for (const text of ['개행 없는 긴 문장 '.repeat(20), '첫 줄\n둘째 줄\n셋째 줄\n넷째 줄']) {
+      screen.rerender(<ChatComposer {...props} input={text} />);
+      measure(110);
+      expect(inputStyle().height).toBe(110);
+      expect(field().props.textAlignVertical).toBe('top');
+      expect(rowStyle().alignItems).toBe('flex-end');
+      expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(button);
+      screen.rerender(<ChatComposer {...props} input="한 줄" />);
+      measure(42);
+      expect(inputStyle().height).toBe(initialHeight);
+    }
+    screen.rerender(<ChatComposer {...props} input={'긴 글 '.repeat(200)} />);
+    measure(250);
+    expect(inputStyle().height).toBe(128);
+    expect(field().props.scrollEnabled).toBe(true);
+    screen.rerender(<ChatComposer {...props} input="" />);
     expect(inputStyle().height).toBe(initialHeight);
-    expect(screen.getByTestId('chat-composer-text-input').props.value).toBe(longText);
-    screen.rerender(<ChatComposer {...props} input={'첫 줄\n둘째 줄'} />);
-    expect(inputStyle().height).toBeGreaterThan(initialHeight!);
-    expect(screen.getByTestId('chat-composer-text-input').props.textAlignVertical).toBe('top');
-    expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(button);
-    screen.rerender(<ChatComposer {...props} input="첫 줄" />);
-    expect(inputStyle().height).toBe(initialHeight);
-    expect(rowStyle().alignItems).toBe('center');
+    expect(field().props.scrollEnabled).toBe(false);
+  });
+
+  test('복원된 긴 draft도 native 측정 직후 높이에 반영한다', () => {
+    const draft = '복원할 긴 초안 '.repeat(30);
+    const screen = renderComposer(draft);
+    fireEvent(screen.getByTestId('chat-composer-text-input'), 'contentSizeChange', {
+      nativeEvent: { contentSize: { width: 200, height: 250 } },
+    });
+    const field = screen.getByTestId('chat-composer-text-input');
+    expect(field.props.value).toBe(draft);
+    expect(StyleSheet.flatten(field.props.style).height).toBe(128);
+    expect(field.props.scrollEnabled).toBe(true);
   });
 
   test('attach and send handlers stay wired while empty send remains disabled', () => {

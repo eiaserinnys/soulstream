@@ -627,3 +627,16 @@
   .v3-context-option-settings { grid-column: 2 / -1; grid-row: 2; justify-content: flex-start; }
   .v3-context-option--selected > .v3-context-remove { grid-column: 3; grid-row: 1; }
 }
+
+.v3-succession-context-editor > label.v3-creation-text-field {
+  padding: var(--v3-space-4);
+  gap: var(--v3-space-2);
+}
+/* The form owns its outer inset; keep Input's default inner inset for textarea too. */
+.v3-succession-context-editor .v3-creation-request {
+  padding: var(--v3-space-2) calc(var(--v3-space-3) - 1px);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+.v3-creation-text-field > textarea {
+  resize: none;
+}

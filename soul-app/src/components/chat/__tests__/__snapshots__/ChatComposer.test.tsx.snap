@@ -161,9 +161,10 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
         maxLength={4000}
         multiline={true}
         onChangeText={[MockFunction]}
+        onContentSizeChange={[Function]}
         placeholder="메시지 입력..."
         placeholderTextColor="#666b70"
-        scrollEnabled={true}
+        scrollEnabled={false}
         spellCheck={false}
         style={
           [

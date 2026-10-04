@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+import { useTextInputContentHeight } from '../chat/useTextInputContentHeight';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   TextInput,
@@ -37,6 +39,7 @@ export function GrowingMultilineInput({
   onSelectionChange,
   ...props
 }: GrowingMultilineInputProps) {
+  const measurement = useTextInputContentHeight(value, verticalPadding);
   const contentHeight = useRef(0);
   const focused = useRef(false);
   const previousValue = useRef(value);
@@ -46,7 +49,6 @@ export function GrowingMultilineInput({
     contentHeight: 0,
     minHeight,
     maxHeight,
-    verticalPadding,
   });
   const layoutRef = useRef<GrowingInputLayout>(initialLayout);
   const [layout, setLayout] = useState<GrowingInputLayout>(initialLayout);
@@ -78,7 +80,6 @@ export function GrowingMultilineInput({
       contentHeight: contentHeight.current,
       minHeight,
       maxHeight,
-      verticalPadding,
     });
     layoutRef.current = next;
     setLayout(next);
@@ -106,11 +107,10 @@ export function GrowingMultilineInput({
       contentHeight: measuredContentHeight,
       minHeight,
       maxHeight,
-      verticalPadding,
     });
     const current = layoutRef.current;
     const isShrink = next.height < current.height;
-    const acceptsMeasurement = !isShrink || allowNextShrink.current;
+    const acceptsMeasurement = Platform.OS === 'web' || !isShrink || allowNextShrink.current;
     const activeLayout = acceptsMeasurement ? next : current;
     const heightIncreased = acceptsMeasurement && next.height > current.height;
 
@@ -135,6 +135,12 @@ export function GrowingMultilineInput({
     onContentSizeChange?.(event);
   };
 
+  useEffect(() => {
+    if (Platform.OS === 'web') handleContentSizeChange({
+      nativeEvent: { contentSize: { width: 0, height: measurement.contentHeight } },
+    } as NativeSyntheticEvent<TextInputContentSizeChangeEventData>);
+  }, [measurement.contentHeight]);
+
   const handleSelectionChange = (
     event: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
   ) => {
@@ -145,6 +151,7 @@ export function GrowingMultilineInput({
   return (
     <TextInput
       {...props}
+      ref={measurement.ref}
       value={value}
       multiline
       allowFontScaling
@@ -153,8 +160,11 @@ export function GrowingMultilineInput({
         minHeight,
         maxHeight,
         height: layout.height,
+        paddingHorizontal: 0,
+        paddingVertical: verticalPadding,
+        ...(Platform.OS === 'web' ? { whiteSpace: 'pre-wrap' } : {}),
       }]}
-      onContentSizeChange={handleContentSizeChange}
+      onContentSizeChange={Platform.OS === 'web' ? undefined : handleContentSizeChange}
       onSelectionChange={handleSelectionChange}
       onFocus={(event) => {
         focused.current = true;
@@ -174,16 +184,14 @@ function resolveGrowingInputLayout({
   contentHeight,
   minHeight,
   maxHeight,
-  verticalPadding,
 }: {
   contentHeight: number;
   minHeight: number;
   maxHeight: number;
-  verticalPadding: number;
 }): GrowingInputLayout {
-  const measuredHeight = Math.ceil(contentHeight + verticalPadding * 2);
+  const measuredHeight = Math.ceil(contentHeight);
   return {
     height: Math.min(maxHeight, Math.max(minHeight, measuredHeight)),
-    scrollEnabled: measuredHeight >= maxHeight,
+    scrollEnabled: measuredHeight > maxHeight,
   };
 }

@@ -15,14 +15,16 @@ test('네 줄부터 여덟 줄 contentSize를 최소·최대 사이의 실제 �
     minHeight: 112,
     maxHeight: 224,
     height: 112,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
   });
   expect(input.props.scrollEnabled).toBe(false);
 
   fireContentSizeChange(input, 120);
-  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(136);
+  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(120);
 
   fireContentSizeChange(screen.getByTestId('growing-input'), 176);
-  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(192);
+  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(176);
 
   fireContentSizeChange(screen.getByTestId('growing-input'), 260);
   expect(style(screen.getByTestId('growing-input').props.style).height).toBe(224);
@@ -36,7 +38,7 @@ test('최대 높이 반영 뒤 다음 frame에 바깥을 정렬하고 TextInput�
   fireEvent(input, 'focus');
   scrollToEnd.mockClear();
 
-  fireContentSizeChange(input, 208);
+  fireContentSizeChange(input, 240);
   const capped = screen.getByTestId('growing-input');
   expect(style(capped.props.style).height).toBe(224);
   expect(capped.props.scrollEnabled).toBe(true);
@@ -61,7 +63,7 @@ test('연속 높이 변화는 하나의 frame으로 합쳐 마지막 렌더 높�
   scrollToEnd.mockClear();
   fireContentSizeChange(screen.getByTestId('growing-input'), 120);
   fireContentSizeChange(screen.getByTestId('growing-input'), 176);
-  fireContentSizeChange(screen.getByTestId('growing-input'), 208);
+  fireContentSizeChange(screen.getByTestId('growing-input'), 240);
 
   expect(style(screen.getByTestId('growing-input').props.style).height).toBe(224);
   expect(scrollToEnd).not.toHaveBeenCalled();
@@ -125,7 +127,7 @@ test('실제 value 삭제 뒤에는 입력 높이를 줄인다', () => {
   const { screen, rerender } = renderInput(initialValue);
 
   fireContentSizeChange(screen.getByTestId('growing-input'), 176);
-  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(192);
+  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(176);
 
   rerender(nextValue);
   fireContentSizeChange(screen.getByTestId('growing-input'), 40);
@@ -140,16 +142,16 @@ test('같은 value의 교차하는 iOS 축소 재측정은 높이를 되돌리�
   const { screen } = renderInput('같은 값\n'.repeat(6));
 
   fireContentSizeChange(screen.getByTestId('growing-input'), 144);
-  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(160);
+  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(144);
 
   fireContentSizeChange(screen.getByTestId('growing-input'), 112);
-  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(160);
+  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(144);
 
   fireContentSizeChange(screen.getByTestId('growing-input'), 145);
-  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(161);
+  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(145);
 
   fireContentSizeChange(screen.getByTestId('growing-input'), 111);
-  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(161);
+  expect(style(screen.getByTestId('growing-input').props.style).height).toBe(145);
 });
 
 function renderInput(initialValue: string) {
