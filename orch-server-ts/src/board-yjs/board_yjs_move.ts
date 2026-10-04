@@ -109,7 +109,7 @@ export async function withStagedSessionBoardMove(
     (item.membershipKind ?? "primary") === "primary"
   );
   const unchanged = await readSessionMoveNoop(hocuspocus, input, primaryItems);
-  if (unchanged) return unchanged;
+  if (unchanged !== undefined) return unchanged;
   const scopes = sessionMoveScopes(primaryItems, input.targetScope);
   if (scopes.length === 0) {
     await persist({ movedBoardItem: null, boardApplications: [] });
@@ -175,11 +175,16 @@ async function readSessionMoveNoop(
   hocuspocus: Hocuspocus,
   input: SessionBoardMoveInput,
   primaryItems: readonly CatalogBoardItemRow[],
-): Promise<CatalogBoardItemRow | null> {
+): Promise<CatalogBoardItemRow | null | undefined> {
   const scope = input.targetScope;
-  if (!scope || !input.areAssignmentsInTargetFolder || input.sessionIds.length === 0 ||
-    primaryItems.some(item => item.folderId !== scope.folderId)) return null;
-  if (!(await input.areAssignmentsInTargetFolder())) return null;
+  if (!input.areAssignmentsInTargetFolder || input.sessionIds.length === 0) return undefined;
+  // A detached tree has no board result; undefined means a move is still needed.
+  if (!scope) {
+    return primaryItems.length === 0 && await input.areAssignmentsInTargetFolder()
+      ? null : undefined;
+  }
+  if (primaryItems.some(item => item.folderId !== scope.folderId)) return undefined;
+  if (!(await input.areAssignmentsInTargetFolder())) return undefined;
 
   // A DirectConnection would store on disconnect even when nothing changed.
   // createDocument returns the existing live document or loads it through the
@@ -193,9 +198,9 @@ async function readSessionMoveNoop(
     for (const sessionId of input.sessionIds) {
       const item = items.get(`session:${sessionId}`);
       if (!item || item.item_type !== "session" || item.item_id !== sessionId ||
-        (item.membership_kind ?? "primary") !== "primary") return null;
+        (item.membership_kind ?? "primary") !== "primary") return undefined;
       if (sessionId === input.sessionId && input.position &&
-        (Number(item.x) !== input.position.x || Number(item.y) !== input.position.y)) return null;
+        (Number(item.x) !== input.position.x || Number(item.y) !== input.position.y)) return undefined;
     }
     const root = items.get(`session:${input.sessionId}`)!;
     return {

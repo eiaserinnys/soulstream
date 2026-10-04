@@ -88,6 +88,33 @@ describe("public board notification integrity", () => {
     expect(deltas()).toHaveLength(0);
   });
 
+  it.each(["tree", "child-only", "primary-only"])("commits a real null detach once and skips repeated writes and notifications (%s)", async state => {
+    await h.seed();
+    const root = state === "child-only" ? "generated" : "header-session";
+    await h.h.sql`INSERT INTO sessions(session_id,node_id,status,agent_id,folder_id,caller_session_id)
+      VALUES('child','test-node','running','roselin',${state === "primary-only" ? null : source},${root})`;
+    if (state !== "tree") await h.h.sql`UPDATE sessions SET folder_id=NULL WHERE session_id=${root}`;
+    h.sessionMoveCommit.mockClear();
+    const args = { session_ids: [root] };
+    const first = await call("move_sessions_to_folder", args);
+    expect(h.sessionMoveCommit).toHaveBeenCalledOnce();
+    expect(deltas()).toHaveLength(1);
+    await assertFolders(deltas()[0]!);
+    expect(Object.keys(deltas()[0]!.sessions_delta).sort()).toEqual(["child", root].sort());
+    for (const assignment of Object.values(deltas()[0]!.sessions_delta)) expect(assignment.folderId).toBeNull();
+    const assignments = await h.h.sql`SELECT session_id,folder_id,xmin::text FROM sessions WHERE session_id IN (${root},'child') ORDER BY session_id`;
+    expect(assignments.every(row => row.folder_id === null)).toBe(true);
+    expect(await h.h.sql`SELECT id FROM board_items WHERE item_type='session' AND membership_kind='primary' AND item_id IN (${root},'child')`).toEqual([]);
+    const documents = await h.h.sql`SELECT name,revision FROM board_yjs_documents ORDER BY name`;
+    h.events.length = 0;
+    h.sessionMoveCommit.mockClear();
+    expect(await call("move_sessions_to_folder", args)).toEqual(first);
+    expect(h.sessionMoveCommit).not.toHaveBeenCalled();
+    expect(deltas()).toHaveLength(0);
+    expect(await h.h.sql`SELECT session_id,folder_id,xmin::text FROM sessions WHERE session_id IN (${root},'child') ORDER BY session_id`).toEqual(assignments);
+    expect(await h.h.sql`SELECT name,revision FROM board_yjs_documents ORDER BY name`).toEqual(documents);
+  });
+
   it("retains non-session moves and the separate custom-view event without replay notifications", async () => {
     await h.seed();
     await call("move_board_item_to_folder", { board_item_id: "markdown:doc-1", folder_id: target, idempotency_key: "document-move" });

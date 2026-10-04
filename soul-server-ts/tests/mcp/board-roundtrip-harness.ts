@@ -58,6 +58,7 @@ export async function createBoardRoundtripHarness() {
   const repository = new BoardYjsRepository(resolver);
   const projectionHost = createBoardProjectionHost(resolver, repository);
   const moves = new BoardYjsMoveRepository(resolver);
+  const sessionMoveCommit = vi.spyOn(moves, "commitSessionMove");
   const sessionReads = new SessionReadRepository(h.sql);
   let board: BoardYjsService;
   let mover: SessionBoardMoveService;
@@ -161,7 +162,7 @@ export async function createBoardRoundtripHarness() {
       return await withMcpRequestContext(context, () => client.callTool({ name, arguments: input }));
     } finally { await client.close(); await server.close(); }
   }
-  return { executionOptions, seed, call, events, h, projectionHost, listAgentProfiles,
+  return { executionOptions, seed, call, events, h, projectionHost, listAgentProfiles, sessionMoveCommit,
     distinguishRemoteNames(value: boolean) { distinguishRemote = value; },
     async cleanup() { await board.close(); await app.close(); await h.cleanup(); } };
 }
