@@ -476,6 +476,10 @@
     {
       "id": "117_owned_external_agents.sql",
       "sha256": "e7a565c0ab1ec5287f83b2136e10eba0c9773ff4e9c6dc18820f4880b1a950c2"
+    },
+    {
+      "id": "118_card_color.sql",
+      "sha256": "a6a1fe05ac45ff4dc1f3355348c9d03d39c1e3a72a853cce78bc5b980ef1e6f3"
     }
   ]
 }

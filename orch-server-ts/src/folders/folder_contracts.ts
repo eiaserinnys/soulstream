@@ -39,6 +39,7 @@ function serializeFolderOutlineCard(card: FolderSnapshot["cards"][number]) {
   const activity = row.latestActivity;
   return {
     id:row.id,
+    color:row.color,
     title:row.title,
     status:row.status,
     archived:row.archived,
