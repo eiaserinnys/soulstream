@@ -98,6 +98,7 @@ describe("card dispatch and session lifecycle", () => {
             expect((await app.inject({method:"GET",url:`/api/cards/${id}`})).json().card.attachments).toEqual(attachments);
             expect(launch).toHaveBeenCalledWith(expect.objectContaining({attachments}));
             const sessionId=launch.mock.calls[0]![0].sessionId;
+            await cards.patchCard({ ...human, cardId: id, assignee: { kind: 'session', sessionId } });
             available=false;await terminal(sessionId,"limit_hit");available=true;await dispatcher.checkLimits();await dispatcher.drain();
             expect(messages).toHaveBeenCalledWith(sessionId,expect.any(String),undefined,undefined,attachments);
         } finally {await app.close();}
@@ -133,6 +134,7 @@ describe("card dispatch and session lifecycle", () => {
             await runtime.dispatcher.drain();
             expect(createSession).toHaveBeenCalledWith(expect.objectContaining({attachment_paths:[attachments[0]!.path]}),expect.anything());
             const sessionId=createSession.mock.calls[0]![0].agentSessionId;
+            await service.patchCard({ ...human, cardId: created.operation.target_id, assignee: { kind: 'session', sessionId } });
             await h.sql`UPDATE sessions SET status='error',termination_reason='limit_hit',termination_event_id=1 WHERE session_id=${sessionId}`;
             await h.sql`UPDATE cards SET status='blocked',blocked_kind='limit' WHERE id=${created.operation.target_id}`;
             await runtime.dispatcher.checkLimits();await runtime.dispatcher.drain();
@@ -263,15 +265,16 @@ describe("card dispatch and session lifecycle", () => {
         await cards.answerQuestion({...human,cardId:id,questionId:String(q.id),answer:'예',idempotencyKey:key()});await dispatcher.drain();
         expect((await cards.getCard(id))!.card.status).toBe(change==='completion'?'done':'running');expect(launch).toHaveBeenCalledOnce();expect(warn).not.toHaveBeenCalled();
     });
-    it("blocks unavailable presets and resumes the same limit-hit session when available", async () => {
+    it("keeps unavailable presets queued and resumes only after the assigned session hits its limit", async () => {
         available = false;
         const id = await make('한도', true);
-        expect((await cards.getCard(id))!.card).toMatchObject({ status: 'blocked', blocked_kind: 'limit' });
+        expect((await cards.getCard(id))!.card).toMatchObject({ status: 'queued', blocked_kind: null });
         expect(launch).not.toHaveBeenCalled();
         available = true;
         await dispatcher.checkLimits();
         await dispatcher.drain();
         const sessionId = String((await cards.getCard(id))!.sessions[0]!.session_id);
+        await cards.patchCard({ ...human, cardId: id, assignee: { kind: 'session', sessionId } });
         available = false;
         await terminal(sessionId, 'limit_hit');
         expect((await cards.getCard(id))!.card.blocked_kind).toBe('limit');

@@ -386,12 +386,12 @@ export class CardOrchestrationCoordinator {
       } as DispatchCard;
       const target = await this.resolve(card);
       if (!target.available) continue;
-      const latestSession =
-        card.status === "blocked" && card.blocked_kind === "limit"
-          ? await this.options.dispatch.latestSession(card.id)
+      const ownerSession =
+        card.status === "blocked" && card.blocked_kind === "limit" && card.assignee_session_id
+          ? await this.options.dispatch.ownerSession(card.assignee_session_id)
           : null;
-      const resume = !!latestSession && isUsageLimitTermination(latestSession);
-      const sessionId = target.sessionId ?? (resume ? latestSession!.session_id : randomUUID());
+      const resume = !!ownerSession && isUsageLimitTermination(ownerSession);
+      const sessionId = target.sessionId ?? (resume ? ownerSession!.session_id : randomUUID());
       const input: Record<string, unknown> = {
         sessionId,
         cardId: card.id,
@@ -404,7 +404,7 @@ export class CardOrchestrationCoordinator {
         resume,
         existingSession: !!target.sessionId || resume,
         ...((target.sessionId || resume) ? {deliveryId: `card-admission:${run.id}:${card.id}`} : {}),
-        priorTerminationEventId: latestSession?.termination_event_id ?? null,
+        priorTerminationEventId: ownerSession?.termination_event_id ?? null,
         prompt: buildCardPrompt({
           cardId: card.id,
           title: card.title,
