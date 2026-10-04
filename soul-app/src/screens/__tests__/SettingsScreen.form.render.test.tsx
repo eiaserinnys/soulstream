@@ -69,7 +69,7 @@ test.each([
   fireEvent.press(screen.getByTestId('settings-category-connection'));
   for (const id of ['settings-server-input', 'settings-test-connection', 'settings-save']) expect(style(screen.getByTestId(id).props.style)).not.toHaveProperty('height');
   expect(style(screen.getByTestId('settings-server-input').props.style).minHeight).toBe(52);
-  expect(screen.getByTestId('settings-save').props.accessibilityLabel).toBe('저장');
+  expect(screen.getByTestId('settings-save').props.accessibilityLabel).toBe('연결 저장');
   const content = style(screen.getByTestId('settings-detail-connection').props.contentContainerStyle);
   expect(content.paddingHorizontal).toBe(20);
 

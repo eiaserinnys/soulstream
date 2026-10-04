@@ -2,7 +2,7 @@
 // No localStorage, native storage, or production settings are read or written.
 const items = new Map<string, string>();
 // A public failure record for the real diagnostics read/copy component.
-if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('state') === 'diagnostic-record') {
+if (typeof window !== 'undefined' && new URLSearchParams(window.location?.search ?? '').get('state') === 'diagnostic-record') {
   items.set('soul-app.session-succession-diagnostics.v1', JSON.stringify({ schemaVersion: 1, pending: [{
     schemaVersion: 1, diagnosticId: 'public-diagnostic', occurredAt: '2026-10-05T00:00:00Z', phase: 'render',
     folderId: 'public-folder', folderPageId: 'public-folder-page', projectPageId: 'public-project',
