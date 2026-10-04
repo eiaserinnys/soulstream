@@ -4,6 +4,8 @@ import {
   DialogPopup,
   Menu,
   MenuItem,
+  MenuGroup,
+  MenuGroupLabel,
   MenuPopup,
   MenuSeparator,
   useIsMobile,
@@ -16,13 +18,20 @@ export interface V3ContextMenuTarget {
   y: number;
 }
 
+export interface V3ContextMenuGroup {
+  label:string;
+  actions:readonly V3ContextMenuAction[];
+}
+
 export function V3ContextMenu({
   target,
   actions,
+  groups = [],
   onClose,
 }: {
   target: V3ContextMenuTarget | null;
   actions: readonly V3ContextMenuAction[];
+  groups?:readonly V3ContextMenuGroup[];
   onClose(): void;
 }) {
   const isMobile = useIsMobile();
@@ -68,6 +77,13 @@ export function V3ContextMenu({
                 </button>
               </div>
             ))}
+            {groups.map((group,index)=><div key={`${group.label}-${index}`}>
+              <div className="my-1 border-t border-border" />
+              <strong className="block px-3 py-2 text-sm font-semibold">{group.label}</strong>
+              {group.actions.map(action=><button key={action.label} type="button"
+                className={`w-full rounded-md px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-64${action.destructive?" text-destructive":""}`}
+                disabled={action.disabled} onClick={event=>select(action,event)}>{action.label}</button>)}
+            </div>)}
           </div>
         </DialogPopup>
       </Dialog>
@@ -89,6 +105,15 @@ export function V3ContextMenu({
             </MenuItem>
           </Fragment>
         ))}
+        {groups.map((group,index)=><Fragment key={`${group.label}-${index}`}>
+          <MenuSeparator />
+          <MenuGroup>
+            <MenuGroupLabel className="font-semibold text-foreground">{group.label}</MenuGroupLabel>
+            {group.actions.map(action=><MenuItem key={action.label} disabled={action.disabled}
+              variant={action.destructive?"destructive":"default"}
+              onClick={event=>select(action,event)}>{action.label}</MenuItem>)}
+          </MenuGroup>
+        </Fragment>)}
       </MenuPopup>
     </Menu>
   );

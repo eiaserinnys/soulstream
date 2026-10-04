@@ -74,7 +74,12 @@ for(const viewport of [{name:"desktop",width:1440,height:900},{name:"narrow",wid
   if(process.env.CARD_HANDOFF_LAYOUT)await page.getByRole("textbox",{name:"무엇을 맡길까요"}).press("Enter");
   else await page.locator('.v3-card-handoff').getByRole("button",{name:"맡기기",exact:true}).click();
   await expect(inbox.locator('[data-card-group="queued"] [data-card-id="created"]')).toBeVisible();expect(calls.find(c=>c.path==="/api/cards")?.body).toMatchObject({folderId:"folder-amber",title:"공유 코드 확인",request:"공유 코드 확인",assignee:{kind:"agent",agentId:"roselin_codex"},nodeId:"eiaserinnys",modelPreset:"qa-standard",queue:true,idempotencyKey:expect.any(String)});
-  const handle=inbox.getByRole("button",{name:"공유 코드 확인 순서 변경"});await handle.scrollIntoViewIfNeeded();await handle.focus();await page.keyboard.press("Space");await expect(handle).toHaveAttribute("aria-pressed","true");await page.keyboard.press("ArrowUp");await expect(inbox.getByRole("status")).toContainText("queued");await page.keyboard.press("Space");await expect.poll(()=>calls.some(c=>c.path.endsWith("/queue-position")&&c.body.afterCardId===null)).toBe(true);
+  const queue=inbox.locator('[data-card-group="queued"]'),created=queue.locator('[data-card-id="created"]'),existing=queue.locator('[data-card-id="queued"]');
+  const activator=created.getByRole("button",{name:"카드 상태 변경"});await activator.scrollIntoViewIfNeeded();await activator.focus();await page.keyboard.press("Space");await expect(activator).toHaveAttribute("aria-pressed","true");
+  const source=await created.boundingBox(),target=await existing.boundingBox();
+  const key=Math.abs(source!.y-target!.y)<20?(source!.x>target!.x?"ArrowLeft":"ArrowRight"):(source!.y>target!.y?"ArrowUp":"ArrowDown");
+  await page.keyboard.press(key);await expect(inbox.getByRole("status")).toContainText("queued");await page.keyboard.press("Space");
+  await expect(activator).not.toHaveAttribute("aria-pressed","true");await expect.poll(()=>calls.some(c=>c.path.endsWith("/queue-position")&&c.body.afterCardId===null)).toBe(true);
   await inbox.getByRole("button",{name:"카드 공유 코드 확인 열기"}).click();const pane=page.getByTestId("card-detail");await expect(pane).toBeVisible();await expect(pane.getByText("공유 코드 확인",{exact:true})).toHaveCount(2);
   await page.evaluate(async()=>{await fetch("/api/cards/created/questions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:"어느 환경인가요?",options:["개발","운영"],idempotencyKey:"fixture-question"})});(window as any).emitCard("created");});
   await pane.getByRole("button",{name:"개발",exact:true}).click();await pane.getByRole("button",{name:"확인",exact:true}).click();await expect(pane.getByText("답: 개발")).toBeVisible();

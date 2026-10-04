@@ -10,7 +10,8 @@ it("uses the complete original body and reserves the same footer for empty cards
     card: reviewCard, activity: { kind: "report", format: "markdown", body }, onOpen() {},
   }));
   expect(html).toContain(body);
-  expect(html).toContain("마지막 보고");
+  expect(html).not.toContain("v3-postit-latest-label");
+  expect(html).not.toContain("마지막 보고");
   expect(html).toContain('aria-label="카드 카드 행 기본 열기"');
   expect(html).toContain("v3-postit-footer");
   const empty = renderToStaticMarkup(createElement(PostItCardView, {
@@ -27,15 +28,13 @@ it("keeps deterministic corksheet rotations within the five approved angles", ()
   expect(postItRotation(reviewCard.id)).toBe(postItRotation(reviewCard.id));
 });
 
-it("keeps completion as a separate small button without nesting it in the open button", () => {
+it("removes the separate completion action while keeping the status area outside the open button", () => {
   const html = renderToStaticMarkup(createElement(PostItCardView, {
     card: { ...reviewCard, status: "review" }, activity: null, onOpen() {},
-    completion: { pending: false, onComplete() {} },
   }));
-  expect(html).toContain('aria-label="완료"');
-  expect(html).toContain("dashboard-icon-cap--small");
-  expect(html.match(/<button/g)).toHaveLength(2);
-  expect(html.indexOf("</button>")).toBeLessThan(html.indexOf('aria-label="완료"'));
+  expect(html).not.toContain('aria-label="완료"');
+  expect(html.match(/<button/g)).toHaveLength(1);
+  expect(html).toContain("v3-postit-footer");
 });
 
 it("offers an explicit compact presentation while the default card keeps its existing frame", () => {

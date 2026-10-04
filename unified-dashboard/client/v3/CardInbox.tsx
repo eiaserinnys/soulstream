@@ -28,6 +28,6 @@ export function CardInbox({folders,initialBoard=false,actions}:{folders:readonly
   <div className="v3-section-head"><h2>{{attention:"확인할 것",running:"진행 중",queued:"대기열"}[group]}</h2><span>{groups[group].length}</span></div>
 
   {group==="attention"&&empty?<div className="v3-card-inbox-empty"><strong>지금은 확인할 것이 없습니다</strong><span>아래에서 새 세션을 시작하세요.</span></div>:null}
-  <PostItGrid>{group==="queued"?<CardQueue layout="grid" cards={groups.queued} renderRow={(card,handle)=><PostItCard card={card} handle={handle}/>}/>:groups[group].map(card=><PostItCard key={card.id} card={card}/>)}</PostItGrid>
+  <PostItGrid>{group==="queued"?<CardQueue layout="grid" activatorMode="status-chip" cards={groups.queued} renderRow={(card,_handle,activator)=><PostItCard card={card} statusActivator={activator}/>}/>:groups[group].map(card=><PostItCard key={card.id} card={card}/>)}</PostItGrid>
  </section>)}{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=><PostItCard card={card}/>}/>:null}</div>;
 }

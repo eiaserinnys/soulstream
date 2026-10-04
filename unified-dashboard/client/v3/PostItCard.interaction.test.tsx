@@ -12,8 +12,16 @@ import { reviewCard, reviewDetail } from "./components-review-fixtures";
 let element:HTMLDivElement,root:Root;
 const original = { ...useCardStore.getState() };
 const originalOpen = useCardNavigation.getState().open;
-beforeEach(() => { element=document.createElement("div");document.body.append(element);root=createRoot(element); });
-afterEach(async () => { await act(()=>root.unmount());element.remove();useCardStore.setState(original);useCardNavigation.setState({open:originalOpen}); });
+const originalClipboard=Object.getOwnPropertyDescriptor(navigator,"clipboard");
+beforeEach(() => {
+  vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
+  element=document.createElement("div");document.body.append(element);root=createRoot(element);
+});
+afterEach(async () => {
+  await act(()=>root.unmount());element.remove();useCardStore.setState(original);useCardNavigation.setState({open:originalOpen});
+  if(originalClipboard)Object.defineProperty(navigator,"clipboard",originalClipboard);else Reflect.deleteProperty(navigator,"clipboard");
+  vi.unstubAllGlobals();
+});
 
 it("opens the whole card and never fetches per-card detail on list mount", async () => {
   const open=vi.fn(),loadCard=vi.fn();
@@ -24,17 +32,35 @@ it("opens the whole card and never fetches per-card detail on list mount", async
   expect(open).toHaveBeenCalledWith(reviewCard.id,"overlay");
 });
 
-it("keeps the review action independent, pending-disabled, and retryable after failure", async () => {
-  const open=vi.fn();let reject!: (error:Error)=>void;
-  const mutate=vi.fn().mockReturnValueOnce(new Promise((_,fail)=>{reject=fail;})).mockResolvedValue({});
-  useCardStore.setState({mutate,loadCard:vi.fn().mockResolvedValue({...reviewDetail,card:{...reviewCard,status:"review"},questions:[]})});useCardNavigation.setState({open});
+it("opens the ordered card context menu and routes a selected status through the existing mutation", async () => {
+  const writeText=vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
+  const mutate=vi.fn().mockResolvedValue({});
+  useCardStore.setState({mutate,loadCard:vi.fn().mockResolvedValue({...reviewDetail,card:{...reviewCard,status:"review"},questions:[]})});
   await act(()=>root.render(<PostItCard card={{...reviewCard,status:"review"}}/>));
-  const button=element.querySelector<HTMLButtonElement>('button[aria-label="완료"]')!;
-  await act(async()=>{button.click();await Promise.resolve();});expect(button.disabled).toBe(true);expect(open).not.toHaveBeenCalled();
-  expect(mutate).toHaveBeenCalledWith(reviewCard.id,"/status",{status:"done",expectedVersion:reviewCard.version});
-  await act(async()=>{reject(new Error("저장 실패"));await Promise.resolve();});
-  expect(button.disabled).toBe(false);
-  await act(async()=>{button.click();await Promise.resolve();});expect(mutate).toHaveBeenCalledTimes(2);
+  const card=element.querySelector<HTMLElement>('.v3-postit-card')!;
+  await act(()=>card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:40,clientY:30})));
+  const menu=document.querySelector<HTMLElement>('[data-slot="menu-popup"]')!;
+  expect(menu.textContent).toContain("카드 ID 복사");
+  expect(menu.textContent).not.toContain(reviewCard.id);
+  expect(menu.textContent).toContain("카드 상태 변경");
+  expect([...menu.querySelectorAll<HTMLElement>('[data-slot="menu-item"]')].map(item=>item.textContent?.trim())).toEqual([
+    "카드 ID 복사","드래프트","대기","실행 중","막힘","검수 대기","완료","취소",
+  ]);
+  await act(async()=>{menu.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click();await Promise.resolve();});
+  expect(writeText).toHaveBeenCalledWith(reviewCard.id);
+  await act(()=>card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:40,clientY:30})));
+  const reopened=document.querySelector<HTMLElement>('[data-slot="menu-popup"]')!;
+  const queued=[...reopened.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item=>item.textContent?.trim()==="대기")!;
+  await act(async()=>{queued.click();await Promise.resolve();await Promise.resolve();});
+  expect(mutate).toHaveBeenCalledWith(reviewCard.id,"/status",{status:"queued",expectedVersion:reviewCard.version});
+});
+
+it("opens the dedicated menu with the keyboard context-menu command",async()=>{
+ await act(()=>root.render(<PostItCard card={reviewCard}/>));
+ const open=element.querySelector<HTMLButtonElement>(".v3-postit-open")!;
+ await act(()=>open.dispatchEvent(new KeyboardEvent("keydown",{bubbles:true,cancelable:true,key:"F10",shiftKey:true})));
+ expect(document.querySelector('[data-slot="menu-popup"]')?.textContent).toContain("카드 상태 변경");
 });
 
 it.each([14,17,18] as const)("updates card and grid proportions from chat preference %i", async fontSize => {
