@@ -2,13 +2,17 @@ import { createApiClient } from '../api/client';
 import { useSessionStore } from '../store/sessionStore';
 import { useUIStore } from '../store/uiStore';
 import { captureAuthScope, isAuthScopeCurrent } from './auth-scope';
-import { openPlannerSessionWorkspace } from './planner-folder-workspace';
+import {
+  cancelPlannerSessionWorkspaceOpen,
+  openPlannerSessionWorkspace,
+} from './planner-folder-workspace';
 
 let requestSequence = 0;
 
 /** Resolve a feed session's card before using the existing folder or standalone opener. */
 export async function openFeedSessionCardWorkspace(sessionId: string): Promise<boolean> {
   const sequence = ++requestSequence;
+  cancelPlannerSessionWorkspaceOpen();
   const scope = captureAuthScope();
   if (!scope.serverUrl) {
     useUIStore.getState().openSessionResolutionError(

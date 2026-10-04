@@ -8,11 +8,13 @@ const mockApi = {
   listCards: jest.fn(),
 };
 const mockOpenPlannerSessionWorkspace = jest.fn();
+const mockCancelPlannerSessionWorkspaceOpen = jest.fn();
 
 jest.mock('../../api/client', () => ({
   createApiClient: jest.fn(() => mockApi),
 }));
 jest.mock('../planner-folder-workspace', () => ({
+  cancelPlannerSessionWorkspaceOpen: () => mockCancelPlannerSessionWorkspaceOpen(),
   openPlannerSessionWorkspace: (...args: unknown[]) => mockOpenPlannerSessionWorkspace(...args),
 }));
 
@@ -54,6 +56,24 @@ test('피드 세션의 cardId를 먼저 사용해 선택한 소속 세션과 함
     folderOverlayVisible: true,
   });
   expect(mockOpenPlannerSessionWorkspace).not.toHaveBeenCalled();
+  expect(mockCancelPlannerSessionWorkspaceOpen).toHaveBeenCalledTimes(1);
+});
+
+test('새 feed 선택은 느린 이전 폴더 열기를 먼저 취소한다', async () => {
+  const order: string[] = [];
+  mockCancelPlannerSessionWorkspaceOpen.mockImplementation(() => order.push('cancel'));
+  mockApi.getSessionsByIds.mockImplementation(async (ids: string[]) => {
+    order.push('resolve-session');
+    return [{ agentSessionId: ids[0], cardId: 'card-new', folderId: 'folder-1' }];
+  });
+
+  await openFeedSessionCardWorkspace('feed-new');
+
+  expect(order).toEqual(['cancel', 'resolve-session']);
+  expect(useUIStore.getState()).toMatchObject({
+    selectedCardId: 'card-new',
+    activeSessionId: 'feed-new',
+  });
 });
 
 test('cardId가 없으면 완료 카드도 포함한 목록에서 담당 세션 관계를 찾는다', async () => {
