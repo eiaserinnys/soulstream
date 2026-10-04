@@ -1,9 +1,9 @@
 /**
- * ChatView 과거 메시지 buffer와 bounded viewport fill controller.
+ * ChatView 과거 메시지 buffer와 viewport fill controller.
  *
  * timeline page는 라이브 SSE와 같은 event processor를 거쳐 store.tree에 합쳐진다.
  * 초기 진입, Virtuoso startReached, viewport geometry 재평가, 수동 재시도는 모두
- * requestOlder 하나로 시작되는 controller run을 사용한다. 페이지 수는 안전 상한일 뿐,
+ * requestOlder 하나로 시작되는 controller run을 사용한다.
  * 자동 진행 여부는 공개 scroller DOM의 화면 분량으로만 결정한다.
  */
 
@@ -22,8 +22,6 @@ import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 
 /** 초기 로드 / prepend 페이지 크기 (soul-app ChatBody.tsx:43과 동기화 — atom 88d8c640) */
 export const HISTORY_PAGE_SIZE = 100;
-/** 한 번의 자동/수동 fill run에서 성공적으로 받을 수 있는 최대 page 수. */
-export const MAX_VIEWPORT_FILL_PAGES = 5;
 /** 화면을 채운 뒤 reverse scroll을 바로 재개할 수 있게 남기는 여유. */
 export const VIEWPORT_FILL_MARGIN_PX = 200;
 
@@ -58,7 +56,7 @@ export const CHAT_HISTORY_EVENT_TYPES = [
   "away_summary",
 ] as const;
 
-export type HistoryLoadBlockReason = "cap" | "error";
+export type HistoryLoadBlockReason = "error";
 export type HistoryRequestSource = "automatic" | "manual";
 export type HistoryPageOutcome =
   | "fetched"
@@ -87,6 +85,7 @@ interface FillRun {
   generation: HistoryGeneration;
   pagesFetched: number;
   awaitingCommit: boolean;
+  requestedScrollHeight: number | null;
   source: HistoryRequestSource | "initial";
 }
 
@@ -243,6 +242,7 @@ export function useMessageHistoryBuffer(
       abortController,
     };
     activeRequestRef.current = requestOwner;
+    run.requestedScrollHeight = scrollerRef.current?.scrollHeight ?? null;
     setLoading(true);
     try {
       const data = await fetchHistoryPage(
@@ -322,7 +322,7 @@ export function useMessageHistoryBuffer(
         if (isActiveGeneration(generation)) setLoading(false);
       }
     }
-  }, [isActiveGeneration, updateBlockedReason, updateReachedTop]);
+  }, [isActiveGeneration, scrollerRef, updateBlockedReason, updateReachedTop]);
 
   const loadNextPage = useCallback(async (run: FillRun): Promise<HistoryPageOutcome> => {
     const outcome = await requestHistoryPage(run);
@@ -349,6 +349,7 @@ export function useMessageHistoryBuffer(
       generation,
       pagesFetched: 0,
       awaitingCommit: false,
+      requestedScrollHeight: null,
       source,
     };
     fillRunRef.current = run;
@@ -364,40 +365,30 @@ export function useMessageHistoryBuffer(
     const generation = resolveCommittedGeneration(activationTarget);
     if (generation === null || activeRequestRef.current !== null) return;
 
-    const scroller = scrollerRef.current;
-    if (scroller === null) return;
-    const filled = hasFilledHistoryViewport(scroller, VIEWPORT_FILL_MARGIN_PX);
-    if (filled === null) return;
-
     const run = fillRunRef.current;
-    if (filled) {
+    const scroller = scrollerRef.current;
+    if (scroller === null) {
       if (run?.awaitingCommit) fillRunRef.current = null;
       return;
     }
-    if (reachedTopRef.current || blockedReasonRef.current !== null) return;
-
-    if (run === null) {
-      // Geometry is evidence only for a run that an explicit user action
-      // already opened. Mount-time startReached/layout must never restart one.
-      return;
-    }
-    if (run.generation !== generation) return;
-    if (!run.awaitingCommit) return;
-    if (run.pagesFetched >= MAX_VIEWPORT_FILL_PAGES) {
+    const filled = hasFilledHistoryViewport(scroller, VIEWPORT_FILL_MARGIN_PX);
+    if (filled === null || run === null) return;
+    if (run.generation !== generation || !run.awaitingCommit) return;
+    const heightDidNotGrow = run.requestedScrollHeight !== null
+      && scroller.scrollHeight <= run.requestedScrollHeight;
+    if (filled && !heightDidNotGrow) {
       fillRunRef.current = null;
-      updateBlockedReason("cap");
       return;
     }
+    if (reachedTopRef.current || blockedReasonRef.current !== null) return;
 
     run.awaitingCommit = false;
     void loadNextPage(run);
   }, [
     activationTarget,
-    beginFillRun,
     loadNextPage,
     resolveCommittedGeneration,
     scrollerRef,
-    updateBlockedReason,
   ]);
 
   useLayoutEffect(() => {

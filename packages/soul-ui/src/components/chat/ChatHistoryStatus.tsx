@@ -3,7 +3,6 @@ import type { HistoryLoadBlockReason } from "./useMessageHistoryBuffer";
 interface ChatHistoryStatusProps {
   loading: boolean;
   reachedTop: boolean;
-  canLoadOlder?: boolean;
   blockedReason: HistoryLoadBlockReason | null;
   onRetry: () => void;
   showReachedTop?: boolean;
@@ -11,12 +10,11 @@ interface ChatHistoryStatusProps {
 
 /**
  * Virtuoso Header와 0행 fallback이 공유하는 과거 대화 상태 표면.
- * cap과 error는 같은 명시적 사용자 재시도 경로로 수렴한다.
+ * 오류에서만 사용자 재시도 버튼을 표시한다.
  */
 export function ChatHistoryStatus({
   loading,
   reachedTop,
-  canLoadOlder = false,
   blockedReason,
   onRetry,
   showReachedTop = true,
@@ -30,7 +28,7 @@ export function ChatHistoryStatus({
           onClick={onRetry}
           className="rounded-md border border-glass-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
         >
-          {loading ? "이전 대화 불러오는 중..." : "이전 대화 더 불러오기"}
+          {loading ? "이전 대화 불러오는 중..." : "이전 대화를 불러오지 못했습니다. 다시 시도"}
         </button>
       </div>
     );
@@ -48,20 +46,6 @@ export function ChatHistoryStatus({
     return (
       <div className="px-3 py-2 text-center text-muted-foreground text-sm opacity-60">
         {"\u2014"} Beginning of conversation {"\u2014"}
-      </div>
-    );
-  }
-
-  if (canLoadOlder) {
-    return (
-      <div className="flex justify-center px-3 py-2">
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-md border border-glass-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          이전 대화 더 불러오기
-        </button>
       </div>
     );
   }
