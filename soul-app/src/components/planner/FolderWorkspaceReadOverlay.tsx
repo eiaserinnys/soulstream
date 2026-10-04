@@ -41,8 +41,9 @@ function FolderWorkspaceOverlayContent() {
   const { width: screenWidth } = useWindowDimensions();
   const visible = useUIStore((state) => state.folderOverlayVisible);
   const cardId = useUIStore((state) => state.selectedCardId);
+  const initialCardSessionId = useUIStore((state) => state.initialCardSessionId);
   const detail = useCardStore((state) => cardId ? state.details[cardId] : undefined);
-  const initializedCard = useRef<string | null>(null);
+  const initializedCardSession = useRef<string | null>(null);
   const pageId = useUIStore((state) => state.selectedFolderPageId);
   const sessionId = useUIStore((state) => state.activeSessionId);
   const resolution = useUIStore((state) => state.sessionFolderResolution);
@@ -63,15 +64,20 @@ function FolderWorkspaceOverlayContent() {
   );
   const requestClose = () => coordinateFolderWorkspaceClose(pageId, close);
 
-  // Opening a card selects its assignee once; refreshes preserve manual choices.
+  // Feed-selected sessions win once; normal card opens keep assignee-first behavior.
   useEffect(() => {
-    if (!visible || !cardId) { initializedCard.current = null; return; }
-    if (!detail || initializedCard.current === cardId) return;
-    initializedCard.current = cardId;
+    if (!visible || !cardId) { initializedCardSession.current = null; return; }
+    const initialKey = `${cardId}:${initialCardSessionId ?? ''}`;
+    if (!detail || initializedCardSession.current === initialKey) return;
+    initializedCardSession.current = initialKey;
+    if (initialCardSessionId) {
+      setActiveSessionId(initialCardSessionId);
+      return;
+    }
     if (detail.card.assigneeKind === 'session' && detail.card.assigneeSessionId) {
       setActiveSessionId(detail.card.assigneeSessionId);
     }
-  }, [visible, cardId, detail, setActiveSessionId]);
+  }, [visible, cardId, detail, initialCardSessionId, setActiveSessionId]);
 
   useEffect(() => {
     Animated.timing(progress, {

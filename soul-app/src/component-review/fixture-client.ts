@@ -1,5 +1,13 @@
 import type { ApiClient } from '../api/client';
-import { createReviewApi, folders, starredFolders, folderTabReviewFolders } from './fixtures';
+import {
+  createReviewApi,
+  entryShellCatalogSessions,
+  entryShellFolders,
+  entryShellSessions,
+  folderTabReviewFolders,
+  folders,
+  starredFolders,
+} from './fixtures';
 import { nativeSettingsReviewApi } from './native-settings-fixtures';
 import { dialogueApi } from './dialogue-fixtures';
 import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
@@ -16,13 +24,27 @@ const api = {
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
 };
+const entryShellApi = {
+  ...createReviewApi('normal', { home: true, entryShell: true }),
+  getCatalog: async () => ({
+    folders: entryShellFolders,
+    sessions: entryShellCatalogSessions,
+    sessionList: entryShellSessions,
+    total: entryShellSessions.length,
+  }),
+  getDailyHistory: async () => ({ dates: [] }),
+  getStarredFolders: async () => ({ items: [], nextCursor: null }),
+  catalogStreamUrl: () => '', nodeStreamUrl: () => '',
+};
 export function createApiClient(): ApiClient {
-  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'folderTabs') {
+  const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
+  if (section === 'folderTabs') {
     const empty = new URLSearchParams(window.location.search).get('state') === 'empty';
     return { ...api, getCatalog: async () => ({ folders: empty ? [] : folderTabReviewFolders, sessions: {}, sessionList: [], total: 0 }),
       getStarredFolders: async () => ({ items: empty ? [] : starredFolders, nextCursor: null }) } as unknown as ApiClient;
   }
-  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'nativeSettings') return nativeSettingsApi;
-  return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'dialogues'
-    ? dialogueApi : api as unknown as ApiClient;
+  if (section === 'nativeSettings') return nativeSettingsApi;
+  if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
+  if (section === 'dialogues') return dialogueApi;
+  return api as unknown as ApiClient;
 }

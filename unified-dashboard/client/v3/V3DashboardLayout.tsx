@@ -247,6 +247,8 @@ function V3DashboardContent() {
     onClearFolder: clearProject,
     setChatOpen,
     notify,
+    openCard: cardNavigation.open,
+    clearCard: cardNavigation.close,
   });
   const attemptedSessionIntent = useRef<string | null>(null);
   useEffect(() => {
@@ -645,8 +647,8 @@ function V3DashboardContent() {
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
         <DragHandle onDrag={sessionPanel.resize} widthPx={V3_PANEL_GAP_PX} />
       </div>
-      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openSession} onAcknowledged={acknowledgeReview} />
-      {cardNavigation.cardId ? <CardWorkspace cardId={cardNavigation.cardId} folders={catalog?.folders??[]} onClose={closeCardWorkspace} onOpenSession={openSession}
+      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openFeedSession} onAcknowledged={acknowledgeReview} />
+      {cardNavigation.cardId ? <CardWorkspace cardId={cardNavigation.cardId} initialSessionId={cardNavigation.initialSessionId} folders={catalog?.folders??[]} onClose={closeCardWorkspace} onOpenSession={openSession}
         mobileMode={mobileMode} mobileTab={mobileTab} activeSession={chatOpen?activeSession:undefined}
         chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}
         sessionStreamActive={detailActive} sessionConnectionStatus={sessionConnectionStatus} reconnectSession={reconnectSession} onAcknowledgedReview={acknowledgeReview}/> : null}

@@ -6,6 +6,7 @@ beforeEach(() => {
     settingsVisible: false,
     selectedFolderPageId: null,
     folderOverlayVisible: false,
+    initialCardSessionId: null,
     activeSessionId: null,
     focusEventId: null,
     storyOpenRequestId: null,
@@ -181,6 +182,24 @@ test('iPad 카드는 폴더 패널 자리에 열고 오른쪽 세션과 포커�
   expect(useUIStore.getState()).toMatchObject({ selectedCardId: 'card-1', folderOverlayVisible: true, activeSessionId: 'right-session', focusEventId: 42 });
   useUIStore.getState().openFolderOverlay('folder-page');
   expect(useUIStore.getState().selectedCardId).toBeNull();
+});
+
+test('피드에서 연 카드는 클릭한 세션을 초기 채팅으로 고정하고 일반 카드 열기는 초기값을 비운다', () => {
+  useUIStore.getState().openCardOverlay('card-feed', 'session-feed');
+
+  expect(useUIStore.getState()).toMatchObject({
+    selectedCardId: 'card-feed',
+    initialCardSessionId: 'session-feed',
+    activeSessionId: 'session-feed',
+    folderOverlayVisible: true,
+  });
+
+  useUIStore.getState().openCardOverlay('card-row');
+
+  expect(useUIStore.getState()).toMatchObject({
+    selectedCardId: 'card-row',
+    initialCardSessionId: null,
+  });
 });
 test('middle-pane choices and composer height are nonpersistent, with global board as default', () => {
   useUIStore.getState().setMainPaneView('global', 'existing');

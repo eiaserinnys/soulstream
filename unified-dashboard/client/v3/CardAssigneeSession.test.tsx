@@ -20,14 +20,15 @@ const card = {id:"a",folderId:"f",title:"담당 대화 카드",request:"요청",
   blockedKind:null,version:1,createdAt:"2026-10-01",updatedAt:"2026-10-01",assigneeKind:"session",
   assigneeSessionId:"owner",nodeId:"eiaserinnys",assigneeAgentId:"roselin"} as CardDetail["card"];
 let container:HTMLDivElement, root:Root;
+const linked = (sessionId:string, cardId:string):CardDetail["sessions"][number] => ({sessionId,cardId,displayName:sessionId,
+  nodeId:"eiaserinnys",agentId:"roselin",status:"completed",createdAt:"2026-10-01",updatedAt:"2026-10-01",callerSessionId:"owner"});
 const put = (value=card) => {
-  const detail:CardDetail = {card:value,sessions:[{sessionId:"child",cardId:value.id,displayName:"child",
-    nodeId:"eiaserinnys",agentId:"roselin",status:"completed",createdAt:"2026-10-01",updatedAt:"2026-10-01",callerSessionId:"owner"}],
+  const detail:CardDetail = {card:value,sessions:[linked("child",value.id),linked("sibling",value.id)],
     comments:[],reports:[],questions:[]};
   useCardStore.setState(state=>({byId:{...state.byId,[value.id]:value},details:{...state.details,[value.id]:detail}}));
 };
-const render = (open: (session:SessionSummary)=>void, id="a") => act(()=>root.render(
-  <CardDetailPane cardId={id} folders={[]} onClose={()=>{}} onOpenSession={open}/>));
+const render = (open: (session:SessionSummary)=>void, id="a", initialSessionId?:string) => act(()=>root.render(
+  <CardDetailPane cardId={id} folders={[]} onClose={()=>{}} onOpenSession={open} initialSessionId={initialSessionId}/>));
 beforeEach(()=>{
   (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
   lookup.sessions=[];lookup.loading=false;
@@ -65,4 +66,20 @@ it("opens B's assignee when navigating directly from card A to card B",async()=>
   put({...card,id:"b",assigneeSessionId:second.agentSessionId});
   const open=vi.fn();await render(open);await render(open,"b");
   expect(open.mock.calls.map(([value])=>value.agentSessionId)).toEqual(["owner","second-owner"]);
+});
+
+it("selects the feed session before the card assignee, waits for delayed detail, and follows a second feed click",async()=>{
+  useDashboardStore.setState({catalog:{sessionList:[owner]} as never});
+  lookup.sessions=[];lookup.loading=true;
+  const open=vi.fn();await render(open,"a","child");
+  expect(open).not.toHaveBeenCalled();
+
+  lookup.sessions=[child,{...session("sibling"),callerSessionId:"owner"}];lookup.loading=false;
+  await render(open,"a","child");
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(open).toHaveBeenLastCalledWith(child,{source:"automatic"});
+
+  await render(open,"a","sibling");
+  expect(open).toHaveBeenCalledTimes(2);
+  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({agentSessionId:"sibling"}),{source:"automatic"});
 });
