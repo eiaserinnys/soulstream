@@ -40,6 +40,39 @@ test('floating coverage adds to the feed bottom padding and returns to baseline 
 
 const mockSessionCard = SessionCard as jest.Mock;
 
+test('only visible rows in the active feed animate, with stable callbacks and unchanged rows preserved', () => {
+  seed([session('first', '2026-07-25T11:00:00Z'), session('second', '2026-07-25T10:00:00Z')]);
+  const view = render(<SessionFeedScreen active />);
+  const list = () => view.getByTestId('phone-feed-body').props;
+  const callback = list().onViewableItemsChanged;
+  const config = list().viewabilityConfig;
+  const latest = (id: string) => mockSessionCard.mock.calls.filter(([p]) => p.session.agentSessionId === id).at(-1)?.[0];
+  expect(latest('first').animationActive).toBe(false);
+  expect(latest('second').animationActive).toBe(false);
+  const visible = (ids: string[]) => ({ viewableItems: ids.map((id) => ({
+    isViewable: true, item: list().data.find((row: any) => row.sessionId === id),
+  })) });
+  act(() => callback(visible(['first'])));
+  expect(latest('first').animationActive).toBe(true);
+  expect(latest('second').animationActive).toBe(false);
+  mockSessionCard.mockClear();
+  act(() => callback(visible(['first', 'second'])));
+  expect(latest('first')).toBeUndefined();
+  expect(latest('second').animationActive).toBe(true);
+  mockSessionCard.mockClear();
+  act(() => callback(visible(['second', 'first'])));
+  expect(mockSessionCard).not.toHaveBeenCalled();
+  view.rerender(<SessionFeedScreen active={false} />);
+  expect(latest('first').animationActive).toBe(false);
+  expect(latest('second').animationActive).toBe(false);
+  view.rerender(<SessionFeedScreen active />);
+  expect(latest('first').animationActive).toBe(true);
+  act(() => callback(visible(['second'])));
+  expect(latest('first').animationActive).toBe(false);
+  expect(list().onViewableItemsChanged).toBe(callback);
+  expect(list().viewabilityConfig).toBe(config);
+});
+
 function session(
   agentSessionId: string,
   updatedAt: string,

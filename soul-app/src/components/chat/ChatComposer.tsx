@@ -60,12 +60,16 @@ export function ChatComposer({
   const composer = createSessionVisualRoles(t).chat.composer;
   const lineHeight = t.chatFontSize.body * t.lineHeightRatio * fontScale;
   const singleLineHeight = Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2);
+  const isEmpty = input.length === 0;
   const measurement = useTextInputContentHeight(input, lineHeight);
   const measuredHeight = input ? measurement.contentHeight : 0;
   const multilineExpanded = measuredHeight > singleLineHeight + 1;
   const inputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight, measuredHeight));
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
   const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
+  React.useLayoutEffect(() => {
+    if (isEmpty) setIOSAtMaxHeight(false);
+  }, [isEmpty]);
 
   return (
     <View
@@ -93,9 +97,11 @@ export function ChatComposer({
             ref={measurement.ref}
             onContentSizeChange={measurement.onContentSizeChange}
             testID="chat-composer-text-input"
-            // iOS Fabric emits contentSize only after layout changes: let native text layout grow first.
+            // Empty iOS inputs collapse immediately; text keeps native intrinsic growth.
             style={[styles.composerTextInput, {
-              ...(Platform.OS === 'ios' ? { minHeight: singleLineHeight } : { height: inputHeight }),
+              ...(Platform.OS === 'ios'
+                ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
+                : { height: inputHeight }),
               paddingVertical: inputPadding,
               ...(Platform.OS === 'web' ? { whiteSpace: 'pre-wrap' } : {}),
             }]}
@@ -110,7 +116,7 @@ export function ChatComposer({
             placeholderTextColor={t.colors.textPlaceholder}
             multiline
             {...(Platform.OS === 'web' ? { rows: 1 } : {})}
-            scrollEnabled={Platform.OS === 'ios' ? iosAtMaxHeight : measuredHeight > styles.composerTextInput.maxHeight}
+            scrollEnabled={Platform.OS === 'ios' ? !isEmpty && iosAtMaxHeight : measuredHeight > styles.composerTextInput.maxHeight}
             maxLength={4000}
             autoCorrect={false}
             spellCheck={false}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
   type ListRenderItemInfo,
+  type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createApiClient } from '../api/client';
@@ -93,6 +94,14 @@ export function SessionFeedScreen({
   const handleLongPress = useCallback((sessionId: string) => {
     openSessionMenuRef.current({ sessionId });
   }, []);
+  const [visibleSessionIds, setVisibleSessionIds] = useState<ReadonlySet<string>>(() => new Set());
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken<FeedRow>[] }) => {
+    const next = new Set(viewableItems.flatMap(({ item, isViewable }) =>
+      isViewable && item.kind === 'session' ? [item.sessionId] : []));
+    setVisibleSessionIds(previous => previous.size === next.size && [...next].every(id => previous.has(id))
+      ? previous : next);
+  }, []);
   const renderItem = useCallback(({ item }: ListRenderItemInfo<FeedRow>) => {
     if (item.kind === 'heading') {
       return <Text style={styles.heading}>{item.title} · {item.count}</Text>;
@@ -103,11 +112,12 @@ export function SessionFeedScreen({
     return (
       <SessionCardById
         sessionId={item.sessionId}
+        animationActive={active && visibleSessionIds.has(item.sessionId)}
         onPress={handleOpenSession}
         onLongPress={handleLongPress}
       />
     );
-  }, [handleLongPress, handleOpenSession, styles.empty, styles.heading]);
+  }, [active, visibleSessionIds, handleLongPress, handleOpenSession, styles.empty, styles.heading]);
   const renderEmpty = useCallback(() => {
     if (catalogLoadState === 'loading') {
       return (
@@ -154,6 +164,8 @@ export function SessionFeedScreen({
             ? insets.bottom + t.hitTarget.min + t.spacing.md : t.spacing.md) + bottomInset },
         ]}
         renderItem={renderItem}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         ListEmptyComponent={renderEmpty}
       />
       <SessionSuccessionHost

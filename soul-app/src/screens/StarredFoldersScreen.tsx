@@ -13,22 +13,24 @@ import { createSurfaceRoles } from '../theme/surfaceRoles';
 
 export function StarredFoldersScreen({
   active = true,
+  embedded = false,
   onOpenFolder,
 }: {
+  embedded?: boolean;
   active?: boolean;
   onOpenFolder?: (folder: PlannerFolder) => void;
 }) {
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  return <StarredFoldersWorkspace api={api} active={active} onOpenFolder={onOpenFolder} />;
+  return <StarredFoldersWorkspace api={api} active={active} embedded={embedded} onOpenFolder={onOpenFolder} />;
 }
 
 /** Same production content with an explicit API, also used by the local review fixture. */
-export function StarredFoldersWorkspace({ api, active = true, onOpenFolder }: {
-  api: ApiClient | null; active?: boolean; onOpenFolder?: (folder: PlannerFolder) => void;
+export function StarredFoldersWorkspace({ api, active = true, embedded = false, onOpenFolder }: {
+  api: ApiClient | null; active?: boolean; embedded?: boolean; onOpenFolder?: (folder: PlannerFolder) => void;
 }) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, embedded), [t, embedded]);
   const starred = usePlannerStarred(api, active);
   const menus = usePlannerContextMenus(api);
   const [dragging, setDragging] = useState(false);
@@ -81,11 +83,11 @@ export function StarredFoldersWorkspace({ api, active = true, onOpenFolder }: {
   );
 }
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, embedded: boolean) {
   const roles = createSurfaceRoles(t);
   const planner = createPlannerVisualRoles(t);
   return StyleSheet.create({
-    frame: { flex: 1, position: 'relative', paddingTop: t.uiSpacing.xl, ...roles.canvas.tokenStyle },
+    frame: { flex: 1, position: 'relative', paddingTop: embedded ? planner.sectionRhythm.before : t.uiSpacing.xl, ...roles.canvas.tokenStyle },
     container: { flex: 1, ...roles.canvas.tokenStyle },
     content: { paddingHorizontal: planner.pageInset, paddingBottom: planner.pageInset },
   });

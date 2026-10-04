@@ -77,9 +77,9 @@ describe('AuthenticatedAppSubtree auth generation boundary', () => {
     fireEvent.press(screen.getByTestId('mutate-route'));
     fireEvent.press(screen.getByTestId('mutate-draft'));
     const firstHistory = mockLatestPhoneHistory!;
-    firstHistory.recordFocus('ProjectTab');
+    firstHistory.recordFocus('FolderTab');
     firstHistory.recordFocus('ChatTab');
-    expect(firstHistory.getReturnTab()).toBe('ProjectTab');
+    expect(firstHistory.getReturnTab()).toBe('FolderTab');
 
     screen.rerender(
       <AuthenticatedAppSubtree generation="account-a-1" device="phone" />,

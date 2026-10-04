@@ -52,7 +52,11 @@ test.each(['phone', 'tabletLandscape'] as const)('%s 카드 행은 세션 카드
   const screen = render(<><SessionCard embedded session={root} onPress={jest.fn()} /><CardRow today api={null} card={card} onOpen={jest.fn()} /></>);
   const row = flat(screen.getByTestId(`card-row-${card.id}-layout`).props.style);
   const session = flat(screen.getByTestId('session-card-pressable').props.style);
-  expect(row).toEqual(session);
+  // A disabled session pulse retains shadow metadata with zero opacity; it
+  // does not alter the shared frame or its visible static surface.
+  const { shadowColor, shadowOffset, shadowRadius, ...staticSession } = session;
+  expect(row).toEqual(staticSession);
+  expect(session.shadowOpacity).toBe(0);
   const avatar = flat(screen.getByTestId(`card-${card.id}-avatar`).props.style);
   expect(avatar.height).toBe(flat(screen.getByTestId('session-card-agent-avatar').props.style).height);
   const cardTitle = flat(screen.getByText(card.title).props.style);
@@ -114,7 +118,7 @@ test('오늘 입력은 ChatComposer의 한 줄 시작·폰트·버튼을 상속�
   const lineHeight = t.current.chatFontSize.body * t.current.lineHeightRatio * dimensions.current.fontScale;
   // iOS style contract only: this renderer does not exercise native text layout.
   expect(flat(input.props.style).minHeight).toBe(Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2));
-  expect(flat(input.props.style).height).toBeUndefined();
+  expect(flat(input.props.style).height).toBe(flat(input.props.style).minHeight);
   expect(input.props.textAlignVertical).toBe('center');
   expect(screen.getByText(/로젤린 · node-1 · 자동 선택/)).toBeTruthy();
   expect(screen.getAllByTestId('chat-composer-send-button')).toHaveLength(1);

@@ -28,8 +28,9 @@ const LEGACY_UI = [
   'components/sheets/NewSessionSheet.tsx',
   'screens/FeedScreen.tsx',
   'screens/FolderContentsScreen.tsx',
-  'screens/FolderListScreen.tsx',
 ] as const;
+// FolderListScreen now composes the current starred/project screens with the
+// approved segmented control; its behavior is covered by FolderListScreen.test.
 
 const LEGACY_HELPERS = [
   'components/sheets/useRecordingAttachment.ts',
@@ -48,8 +49,8 @@ describe('N5 production coverage closure', () => {
     }
   });
 
-  test('legacy 8 UI files and 3 imperative helpers cannot re-enter production', () => {
-    expect(LEGACY_UI).toHaveLength(8);
+  test('legacy 7 UI files and 3 imperative helpers cannot re-enter production', () => {
+    expect(LEGACY_UI).toHaveLength(7);
     expect(LEGACY_HELPERS).toHaveLength(3);
     for (const file of [...LEGACY_UI, ...LEGACY_HELPERS]) {
       expect(fs.existsSync(path.join(SRC_ROOT, file))).toBe(false);
@@ -57,10 +58,10 @@ describe('N5 production coverage closure', () => {
     }
   });
 
-  test('seven navigator factories and one AnimatedPressable adapter stay non-surface ledger entries', () => {
+  test('six navigator factories and one AnimatedPressable adapter stay non-surface ledger entries', () => {
     const navigation = read('navigation/TabNavigator.tsx');
     const sessionCard = read('components/SessionCardView.tsx');
-    expect(navigation.match(/=\s*createNativeStackNavigator</g) ?? []).toHaveLength(6);
+    expect(navigation.match(/=\s*createNativeStackNavigator</g) ?? []).toHaveLength(5);
     expect(navigation.match(/=\s*createBottomTabNavigator</g) ?? []).toHaveLength(1);
     expect(sessionCard.match(/Animated\.createAnimatedComponent\(Pressable\)/g) ?? [])
       .toHaveLength(1);

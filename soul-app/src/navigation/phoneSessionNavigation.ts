@@ -42,7 +42,7 @@ export function openPhoneChat(
   return true;
 }
 
-/** Keep the resolved task on the Project stack, then open the exact chat result. */
+/** Keep the resolved task on the Folder stack, then open the exact chat result. */
 export async function openPhoneSearchSession(
   navigation: PhoneStackNavigation,
   sessionId: string,
@@ -57,7 +57,7 @@ export async function openPhoneSearchSession(
     const folder = await resolvePlannerSessionFolder(sessionId);
     if (requestId !== latestSearchOpenRequest) return false;
     if (folder) {
-      tabs.navigate('ProjectTab', {
+      tabs.navigate('FolderTab', {
         screen: 'FolderWorkspace',
         params: {
           folderPageId: folder.page.id,

@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useTokens, type DesignTokens } from '../../theme';
+import React, { useMemo, useState } from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { createPrimitiveRoles, useTokens, type DesignTokens } from '../../theme';
 
 export interface SettingsSegmentOption<T extends string> {
   value: T;
@@ -22,6 +22,7 @@ export function SettingsSegmentedControl<T extends string>({
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const [focusedValue, setFocusedValue] = useState<T | null>(null);
 
   return (
     <View style={[styles.track, wrap && styles.wrapTrack]}>
@@ -34,7 +35,10 @@ export function SettingsSegmentedControl<T extends string>({
             accessibilityRole="button"
             accessibilityLabel={option.label}
             accessibilityState={{ selected }}
+            {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
             style={[styles.hitTarget, wrap && styles.wrapHitTarget]}
+            onFocus={() => setFocusedValue(option.value)}
+            onBlur={() => setFocusedValue(null)}
             onPress={() => onChange(option.value)}
           >
             <View
@@ -45,6 +49,11 @@ export function SettingsSegmentedControl<T extends string>({
               <Text numberOfLines={wrap ? 1 : undefined} style={[styles.label, selected && styles.selectedLabel]}>
                 {option.label}
               </Text>
+              <View
+                testID={`settings-segment-${id}-${option.value}-focus`}
+                pointerEvents="none"
+                style={[styles.focusRing, focusedValue === option.value && styles.focused]}
+              />
             </View>
           </TouchableOpacity>
         );
@@ -54,6 +63,7 @@ export function SettingsSegmentedControl<T extends string>({
 }
 
 function makeStyles(t: DesignTokens) {
+  const segment = createPrimitiveRoles(t).segment;
   return StyleSheet.create({
     track: {
       flexDirection: 'row',
@@ -66,6 +76,8 @@ function makeStyles(t: DesignTokens) {
       flex: 1,
       minHeight: t.hitTarget.min,
       justifyContent: 'center',
+      // Chromium still paints auto outlines at zero width; use a solid style.
+      ...(Platform.OS === 'web' ? { outlineStyle: 'solid' as const, outlineWidth: 0 } : {}),
     },
     wrapTrack: { flexWrap: 'wrap' },
     wrapHitTarget: { flex: 0, flexShrink: 0, flexBasis: 'auto' },
@@ -84,6 +96,14 @@ function makeStyles(t: DesignTokens) {
       borderColor: t.colors.accent,
       borderWidth: StyleSheet.hairlineWidth,
     },
+    // Overlay the existing visual so focus never changes its padding or size.
+    focusRing: {
+      ...StyleSheet.absoluteFill,
+      borderRadius: segment.radius,
+      borderWidth: 2,
+      borderColor: 'transparent',
+    },
+    focused: { borderColor: segment.focusedColor },
     label: {
       ...t.foundation.typography.body,
       color: t.colors.textSecondary,

@@ -61,8 +61,8 @@ describe('phone session navigation', () => {
   test('지연 조회된 직전 root tab으로 이동하고 parent가 없으면 명시적으로 실패한다', () => {
     const navigate = jest.fn();
 
-    expect(openPreviousPhonePanel({ getParent: () => ({ navigate }) }, 'ProjectTab')).toBe(true);
-    expect(navigate).toHaveBeenCalledWith('ProjectTab');
+    expect(openPreviousPhonePanel({ getParent: () => ({ navigate }) }, 'FolderTab')).toBe(true);
+    expect(navigate).toHaveBeenCalledWith('FolderTab');
     expect(openPreviousPhonePanel({ getParent: () => undefined }, 'FeedTab')).toBe(false);
   });
 

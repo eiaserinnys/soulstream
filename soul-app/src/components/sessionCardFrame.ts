@@ -21,6 +21,9 @@ export function makeSessionCardStyles(t: DesignTokens, embedded: boolean, small 
       borderRadius: t.radius.md,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'transparent',
+      // Explicit form of the existing transparent background/no-shadow defaults.
+      backgroundColor: 'transparent',
+      shadowOpacity: 0,
       overflow: 'hidden',
       elevation: 0,
     },

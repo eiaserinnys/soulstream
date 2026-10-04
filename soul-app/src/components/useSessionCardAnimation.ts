@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AccessibilityInfo,
-  Animated,
   AppState,
-  Platform,
   type AppStateStatus,
 } from 'react-native';
+import { cancelAnimation, Easing, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import {
   isForegroundAppState,
   shouldRunSessionCardAnimation,
@@ -13,10 +12,12 @@ import {
 
 interface UseSessionCardAnimationOptions {
   isRunning: boolean;
+  animationActive?: boolean;
 }
 
 export function useSessionCardAnimation({
   isRunning,
+  animationActive = true,
 }: UseSessionCardAnimationOptions) {
   // reduced-motion 게이트 — iOS 접근성 "동작 줄이기" ON 시 breathe/shimmer 미실행.
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -38,17 +39,19 @@ export function useSessionCardAnimation({
   const [appActive, setAppActive] = useState(
     isForegroundAppState(AppState.currentState),
   );
-  const pulse = useRef(new Animated.Value(0)).current;
-  const shimmer = useRef(new Animated.Value(0)).current;
+  const pulse = useSharedValue(0);
+  const shimmer = useSharedValue(0);
 
   // inactive/background에서는 무한 loop를 중지하고 active 복귀 때 재개한다.
-  // AppState 콜백 안에서 즉시 stopAnimation을 호출해 effect cleanup을 기다리는 tick을 막는다.
+  // AppState 콜백 안에서 즉시 cancelAnimation을 호출해 effect cleanup을 기다리는 tick을 막는다.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s: AppStateStatus) => {
       const active = isForegroundAppState(s);
       if (!active) {
-        pulse.stopAnimation();
-        shimmer.stopAnimation();
+        cancelAnimation(pulse);
+        cancelAnimation(shimmer);
+        pulse.value = 0;
+        shimmer.value = 0;
       }
       setAppActive(active);
     });
@@ -59,52 +62,26 @@ export function useSessionCardAnimation({
     isRunning,
     reducedMotion,
     appActive,
+    animationActive,
   });
 
-  // breathe 펄스 — 0 ↔ 1 반복(3s 사이클). useNativeDriver=false인 이유:
-  // backgroundColor / borderColor / shadowOpacity 보간은 native driver가 미지원.
+  // RN Animated.timing's default is inOut(ease), not Reanimated's inOut(quad).
+  // Both loops run in the UI runtime without per-frame JS callbacks.
   useEffect(() => {
-    pulse.stopAnimation();
-    if (!animationEnabled) {
-      pulse.setValue(0);
-      return;
+    const stop = () => {
+      cancelAnimation(pulse);
+      cancelAnimation(shimmer);
+      pulse.value = 0;
+      shimmer.value = 0;
+    };
+    stop();
+    if (animationEnabled) {
+      const easing = Easing.inOut(Easing.ease);
+      pulse.value = withRepeat(withTiming(1, { duration: 1500, easing }), -1, true);
+      shimmer.value = withRepeat(withTiming(1, { duration: 2800, easing }), -1, false);
     }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: false,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 1500,
-          useNativeDriver: false,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isRunning, reducedMotion, appActive, animationEnabled, pulse]);
-
-  // shimmer translateX -cardWidth → +cardWidth (2.8s). Width is intentionally
-  // handled by the caller's interpolation so layout changes do not restart the loop.
-  useEffect(() => {
-    shimmer.stopAnimation();
-    if (!animationEnabled) {
-      shimmer.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.timing(shimmer, {
-        toValue: 1,
-        duration: 2800,
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isRunning, reducedMotion, appActive, animationEnabled, shimmer]);
+    return stop;
+  }, [animationEnabled, pulse, shimmer]);
 
   return {
     pulse,

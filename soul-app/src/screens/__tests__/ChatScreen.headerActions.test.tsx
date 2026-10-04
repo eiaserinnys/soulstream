@@ -100,7 +100,7 @@ test('session이 있는 phone Chat header menu는 44×44 touch target과 기존 
   expect(mockOpenSessionMenu).toHaveBeenCalledWith({ sessionId: 'session-1' });
 });
 
-test('header 선렌더 뒤 focus history가 바뀌어도 press 순간 최신 ProjectTab으로 돌아간다', () => {
+test('header 선렌더 뒤 focus history가 바뀌어도 press 순간 최신 FolderTab으로 돌아간다', () => {
   useSessionStore.setState({
     sessions: {
       'session-1': {
@@ -133,7 +133,7 @@ test('header 선렌더 뒤 focus history가 바뀌어도 press 순간 최신 Pro
   const headerLeft = render(React.createElement(options.headerLeft));
   expect(headerLeft.getByTestId('mock-chat-status-dot')).toBeTruthy();
 
-  capturedHistory!.recordFocus('ProjectTab');
+  capturedHistory!.recordFocus('FolderTab');
   capturedHistory!.recordFocus('ChatTab');
   const back = headerLeft.getByLabelText('이전 패널로 돌아가기');
   const style = StyleSheet.flatten(back.props.style);
@@ -144,7 +144,7 @@ test('header 선렌더 뒤 focus history가 바뀌어도 press 순간 최신 Pro
 
   fireEvent.press(back);
 
-  expect(navigate).toHaveBeenCalledWith('ProjectTab');
+  expect(navigate).toHaveBeenCalledWith('FolderTab');
 });
 
 test.each([

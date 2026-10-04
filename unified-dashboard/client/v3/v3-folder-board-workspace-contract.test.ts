@@ -24,12 +24,14 @@ describe("task board r3 workspace contract", () => {
 
   it("composes the three workspace areas from existing product components", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
     const resources = read("./FolderBoardResourcePane.tsx");
 
     expect(workspace).toContain('data-testid="v3-folder-board-resources"');
     expect(workspace).toContain('data-testid="v3-folder-board-canvas"');
     expect(workspace).toContain('chatTestId="v3-folder-board-chat"');
-    expect(workspace).toContain('data-testid="v3-folder-board-document-overlay"');
+    expect(workspace).toContain("<FolderDocumentOverlay");
+    expect(overlay).toContain('data-testid="v3-folder-board-document-overlay"');
     expect(workspace).toContain("<MarkdownDocumentPanel");
     expect(workspace).toContain("<WorkspaceSessionColumn");
     expect(read("./WorkspaceSessionColumn.tsx")).toContain("<ChatView");
@@ -106,10 +108,13 @@ describe("task board panel resize, overlay height, and session list contract", (
 
   it("opens the document overlay at 40% and caps expansion at 95% of the board area (🔴19)", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
     const css = read("./v3-folder-board.css");
 
-    expect(workspace).toContain("is-expanded");
-    expect(workspace).toContain("aria-pressed={overlayExpanded}");
+    expect(workspace).toContain("expanded={overlayExpanded}");
+    expect(workspace).toMatch(/onToggleExpanded=\{\(\) => setOverlayExpanded\(current\s*=>\s*!current\)\}/);
+    expect(overlay).toContain("is-expanded");
+    expect(overlay).toContain("aria-pressed={expanded}");
     expect(css).toMatch(/\.v3-folder-board-document-overlay\s*{[^}]*height:\s*40%;/s);
     // 확장 상한은 보드 영역(grid track) 높이의 95% — 이전 90%를 대체(🔴19).
     expect(css).toMatch(/\.v3-folder-board-document-overlay\.is-expanded\s*{[^}]*height:\s*95%;/s);
@@ -136,10 +141,13 @@ describe("task board panel resize, overlay height, and session list contract", (
 describe("document overlay animation, close policy, and close button contract", () => {
   it("animates the overlay open/close and defers unmount to the close animation", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
     const css = read("./v3-folder-board.css");
 
     expect(workspace).toContain("onAnimationEnd={handleOverlayAnimationEnd}");
-    expect(workspace).toContain("is-closing");
+    expect(workspace).toContain("closing={overlayClosing}");
+    expect(overlay).toContain("onAnimationEnd={onAnimationEnd}");
+    expect(overlay).toContain("is-closing");
     expect(workspace).toContain("requestCloseOverlay");
     expect(workspace).toContain("prefersReducedMotion");
     expect(css).toMatch(/@keyframes\s+v3-folder-board-overlay-in/);
@@ -150,24 +158,29 @@ describe("document overlay animation, close policy, and close button contract", 
 
   it("shrinks (not closes) the overlay on central board interactions; only X closes (🔴20)", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
 
     // 🔴20: 보드 영역 상호작용은 닫지 않고 기본 높이(40%)로 축소한다.
     expect(workspace).toMatch(/v3-folder-board-canvas[\s\S]*onMouseDownCapture=\{\(\) => \{ if \(activeFolderDocumentId\) requestShrinkOverlay\(\); \}\}/);
     expect(workspace).toContain("const requestShrinkOverlay");
     expect(workspace).toContain("setOverlayExpanded(false)");
     // 완전 닫기(requestCloseOverlay)는 X 버튼에만 남는다.
-    expect(workspace).toMatch(/data-testid="v3-folder-board-document-overlay-close"[\s\S]*onClick=\{requestCloseOverlay\}/);
+    expect(workspace).toContain("onClose={requestCloseOverlay}");
+    expect(overlay).toMatch(/data-testid="v3-folder-board-document-overlay-close"[\s\S]*onClick=\{onClose\}/);
     // 중앙 캔버스 핸들러는 close가 아니라 shrink를 호출한다.
     expect(workspace).toMatch(/v3-folder-board-canvas"[\s\S]{0,200}?onMouseDownCapture=\{\(\) => \{ if \(activeFolderDocumentId\) requestShrinkOverlay\(\); \}\}/);
   });
 
   it("adds an explicit close button beside the expand/shrink toggle", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
 
-    expect(workspace).toContain('data-testid="v3-folder-board-document-overlay-close"');
-    expect(workspace).toContain('data-testid="v3-folder-board-document-overlay-expand"');
+    expect(overlay).toContain('data-testid="v3-folder-board-document-overlay-close"');
+    expect(overlay).toContain('data-testid="v3-folder-board-document-overlay-expand"');
     // expand/shrink stays a height toggle; close uses the animated path.
-    expect(workspace).toContain("onClick={requestCloseOverlay}");
+    expect(workspace).toContain("onClose={requestCloseOverlay}");
+    expect(overlay).toContain("onClick={onClose}");
+    expect(overlay).toContain("onClick={onToggleExpanded}");
   });
 
   it("keeps MarkdownDocumentPanel in the task board overlay, outside the task chat inspector", () => {
@@ -193,11 +206,12 @@ describe("task board editor refine (🔴18~24) contract", () => {
 
   it("makes the overlay top bar a horizontal drag handle clamped to the board (🔴22)", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
     const css = read("./v3-folder-board.css");
 
     // 탑바(헤더) mousedown이 드래그를 시작하고, 버튼 위 mousedown은 제외한다.
-    expect(workspace).toContain("handleOverlayHeaderMouseDown");
-    expect(workspace).toMatch(/v3-chat-header"\s+onMouseDown=\{handleOverlayHeaderMouseDown\}/);
+    expect(workspace).toContain("onHeaderMouseDown={handleOverlayHeaderMouseDown}");
+    expect(overlay).toMatch(/v3-chat-header"\s+onMouseDown=\{onHeaderMouseDown\}/);
     expect(workspace).toContain('closest("button")');
     // 오프셋은 setProperty로만 반영(인라인 style 리터럴 금지 계약 유지).
     expect(workspace).toContain('setProperty("--v3-overlay-offset-x"');
@@ -228,6 +242,7 @@ describe("task board markdown edit routing and reader refresh", () => {
     const dashboardBoardView = read("../components/BoardWorkspaceView.tsx");
     const boardPane = read("./FolderBoardPane.tsx");
     const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
 
     expect(menus).toContain("onRequestMarkdownEdit?.(markdownContextMenu.item.documentId)");
     expect(boardView).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");
@@ -238,7 +253,8 @@ describe("task board markdown edit routing and reader refresh", () => {
     );
     expect(workspace).toContain("onRequestMarkdownEdit={handleRequestMarkdownEdit}");
     expect(workspace).toContain("pendingEditId={pendingFolderDocumentEditId}");
-    expect(workspace).toContain('data-testid="v3-folder-board-document-overlay"');
+    expect(workspace).toContain("<FolderDocumentOverlay");
+    expect(overlay).toContain('data-testid="v3-folder-board-document-overlay"');
     expect(workspace).not.toContain("pendingBoardDocumentEditId");
   });
 
@@ -265,6 +281,7 @@ describe("task board markdown edit routing and reader refresh", () => {
 describe("task board editor refine 3rd round (🔴26~28) contract", () => {
   it("keeps the overlay open when a chat session is selected; only X closes it (🔴26)", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
 
     // openSession은 편집 오버레이를 닫지 않는다. task 로컬 문서 ID를 그대로 보존한다.
     expect(workspace).toMatch(
@@ -272,8 +289,9 @@ describe("task board editor refine 3rd round (🔴26~28) contract", () => {
     );
     expect(workspace).not.toContain("setActiveBoardDocument");
     // 완전 닫기는 여전히 X 버튼(requestCloseOverlay)에만 있다(🔴20 축소와 공존).
-    expect(workspace).toMatch(
-      /data-testid="v3-folder-board-document-overlay-close"[\s\S]*onClick=\{requestCloseOverlay\}/,
+    expect(workspace).toContain("onClose={requestCloseOverlay}");
+    expect(overlay).toMatch(
+      /data-testid="v3-folder-board-document-overlay-close"[\s\S]*onClick=\{onClose\}/,
     );
   });
 
