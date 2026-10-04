@@ -687,7 +687,7 @@ export function ChatView({
         // Follow 버튼 상태가 사용자 의도 정본이다. scalar "auto"는 Virtuoso 내부
         // at-bottom 판정이 false로 흔들리면 버튼이 켜져 있어도 따라가지 않으므로,
         // callback 형태로 명시적 follow 의도를 반환한다.
-        followOutput={resolveVirtuosoFollowOutput}
+        followOutput={isFollowing ? resolveVirtuosoFollowOutput : false}
         atBottomStateChange={(atBottom) => {
           const isInitialBottomFocusPending =
             activeSessionKey !== null &&

@@ -851,9 +851,7 @@ describe("ChatView long-session initial bottom focus", () => {
     (virtuosoMock.props?.totalListHeightChanged as (() => void) | undefined)?.();
 
     expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("manual");
-    expect(
-      (virtuosoMock.props?.followOutput as (() => "auto" | false) | undefined)?.(),
-    ).toBe(false);
+    expect(virtuosoMock.props?.followOutput).toBe(false);
     expect(nativeScrollTo).not.toHaveBeenCalled();
     expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
   });
@@ -960,7 +958,10 @@ describe("ChatView long-session initial bottom focus", () => {
       value: 900,
     });
 
-    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    flushSync(() => {
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    });
+    expect(virtuosoMock.props?.followOutput).toBe(false);
     expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
     const followButton = Array.from(container.querySelectorAll("button")).find(
       (candidate) => candidate.textContent?.includes("Follow"),
@@ -973,6 +974,7 @@ describe("ChatView long-session initial bottom focus", () => {
     scroller.scrollTop = 0;
     (virtuosoMock.props?.startReached as (() => void) | undefined)?.();
     expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+    expect(virtuosoMock.props?.followOutput).toBeTypeOf("function");
     expect(
       (virtuosoMock.props?.followOutput as (() => "auto" | false) | undefined)?.(),
     ).toBe("auto");
@@ -1119,9 +1121,7 @@ describe("ChatView long-session initial bottom focus", () => {
       index: targetDataIndex,
       align: "center",
     });
-    expect(
-      (virtuosoMock.props?.followOutput as (() => "auto" | false) | undefined)?.(),
-    ).toBe(false);
+    expect(virtuosoMock.props?.followOutput).toBe(false);
 
     (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void) | undefined)?.(false);
     (virtuosoMock.props?.itemsRendered as (() => void) | undefined)?.();
