@@ -40,8 +40,17 @@ export function makeStyles(t: DesignTokens) {
     },
     composerContentRow: {
       minHeight: sessionRoles.chat.composer.contentMinHeight,
+      flexDirection: 'column',
+    },
+    composerControlsRow: {
+      minHeight: sessionRoles.chat.composer.hitTarget,
       flexDirection: 'row',
-      alignItems: 'flex-end',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    composerRightControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
       gap: sessionRoles.chat.composer.controlGap,
     },
     composerControlFrame: {
@@ -104,7 +113,6 @@ export function makeStyles(t: DesignTokens) {
       flexShrink: 1,
     },
     composerTextInput: {
-      flex: 1,
       color: c.textPrimary,
       minHeight: sessionRoles.chat.composer.contentMinHeight,
       maxHeight: 128,

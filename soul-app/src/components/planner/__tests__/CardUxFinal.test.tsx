@@ -76,6 +76,9 @@ test.each([null, 'quota_exhausted'])('오늘 전송은 선택한 폴더·노드�
   const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }), listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }] }), listModelPresets: jest.fn().mockResolvedValue({ model_presets: [{ id: 'sol', label: 'Sol', available: true, reason }] }), createSession: jest.fn().mockResolvedValue({ agentSessionId: 'new-session' }), createCard: jest.fn() };
   const screen = render(<TodayCardComposer api={api as any} />);
   await waitFor(() => expect(screen.getByText(/로젤린/)).toBeTruthy());
+  const contentRow = screen.getByTestId('chat-composer-content-row');
+  expect(contentRow.props.style.flexDirection).toBe('column');
+  expect(screen.getByTestId('chat-composer-controls-row')).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('세션 첫 메시지'), '  시작 메시지  ');
   await act(async () => fireEvent.press(screen.getByLabelText('세션 시작')));
   expect(api.createSession).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: 'sol', prompt: '  시작 메시지  ' }));

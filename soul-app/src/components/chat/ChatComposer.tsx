@@ -85,14 +85,7 @@ export function ChatComposer({
         testID="chat-composer-box"
         style={styles.composerBox}
       >
-        <View testID="chat-composer-content-row" style={[styles.composerContentRow, { alignItems: multilineExpanded ? 'flex-end' : 'center' }]}>
-          <AttachmentPickerButton
-            testID="chat-composer-attach-button"
-            surfaceTestID="chat-composer-attach-visual"
-            uploading={uploading}
-            disabled={controlsDisabled}
-            onPress={onPickAttachment}
-          />
+        <View testID="chat-composer-content-row" style={styles.composerContentRow}>
           <TextInput
             ref={measurement.ref}
             onContentSizeChange={measurement.onContentSizeChange}
@@ -124,37 +117,48 @@ export function ChatComposer({
             editable={!disabled}
             accessibilityState={{ disabled }}
           />
-          {interruptControls}
-          <View testID="chat-composer-voice-slot" style={styles.voiceSlot}>
-            {voiceControls}
+          <View testID="chat-composer-controls-row" style={styles.composerControlsRow}>
+            <AttachmentPickerButton
+              testID="chat-composer-attach-button"
+              surfaceTestID="chat-composer-attach-visual"
+              uploading={uploading}
+              disabled={controlsDisabled}
+              onPress={onPickAttachment}
+            />
+            <View style={styles.composerRightControls}>
+              {interruptControls}
+              <View testID="chat-composer-voice-slot" style={styles.voiceSlot}>
+                {voiceControls}
+              </View>
+              <CompactTouchTarget
+                testID="chat-composer-send-button"
+                surfaceTestID="chat-composer-send-visual"
+                accessibilityRole="button"
+                accessibilityLabel={sendAccessibilityLabel}
+                accessibilityState={{ disabled: !canSend }}
+                disabled={!canSend}
+                frameStyle={styles.composerControlFrame}
+                surfaceStyle={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+                onPress={() => {
+                  if (canSend) onSend();
+                }}
+              >
+                {sending ? (
+                  <ActivityIndicator
+                    testID="chat-composer-send-spinner"
+                    size="small"
+                    color={t.colors.accentText}
+                  />
+                ) : (
+                  <Ionicons
+                    name="send"
+                    size={t.iconSize.standard}
+                    color={canSend ? t.colors.accentText : t.colors.textMuted}
+                  />
+                )}
+              </CompactTouchTarget>
+            </View>
           </View>
-          <CompactTouchTarget
-            testID="chat-composer-send-button"
-            surfaceTestID="chat-composer-send-visual"
-            accessibilityRole="button"
-            accessibilityLabel={sendAccessibilityLabel}
-            accessibilityState={{ disabled: !canSend }}
-            disabled={!canSend}
-            frameStyle={styles.composerControlFrame}
-            surfaceStyle={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-            onPress={() => {
-              if (canSend) onSend();
-            }}
-          >
-            {sending ? (
-              <ActivityIndicator
-                testID="chat-composer-send-spinner"
-                size="small"
-                color={t.colors.accentText}
-              />
-            ) : (
-              <Ionicons
-                name="send"
-                size={t.iconSize.standard}
-                color={canSend ? t.colors.accentText : t.colors.textMuted}
-              />
-            )}
-          </CompactTouchTarget>
         </View>
       </GlassSurface>
     </View>
