@@ -27,6 +27,7 @@ export function FolderSessionHistory({
   sessionSummaries = [],
   onOpenSession,
   onLongPressSession,
+  nearEndRef,
 }: {
   api: ApiClient | null;
   folderId?: string | null;
@@ -36,6 +37,7 @@ export function FolderSessionHistory({
   sessionSummaries?: readonly PlannerSessionSummary[];
   onOpenSession?: (sessionId: string) => void;
   onLongPressSession?: (sessionId: string) => void;
+  nearEndRef?: React.MutableRefObject<(() => void) | null>;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -45,6 +47,29 @@ export function FolderSessionHistory({
     folderId,
     active && !!folderId && !explicitSessionIds,
   );
+  const wantMoreRef = useRef(false);
+  const tryLoad = useCallback(() => {
+    if (!wantMoreRef.current || explicitSessionIds || !data?.nextCursor || loading || error) return;
+    wantMoreRef.current = false;
+    void loadMore();
+  }, [data?.nextCursor, error, explicitSessionIds, loadMore, loading]);
+  const handleNearEnd = useCallback(() => {
+    wantMoreRef.current = true;
+    tryLoad();
+  }, [tryLoad]);
+  useEffect(() => {
+    wantMoreRef.current = false;
+  }, [folderId]);
+  useEffect(() => {
+    if (!nearEndRef) return undefined;
+    nearEndRef.current = handleNearEnd;
+    return () => {
+      if (nearEndRef.current === handleNearEnd) nearEndRef.current = null;
+    };
+  }, [handleNearEnd, nearEndRef]);
+  useEffect(() => {
+    tryLoad();
+  }, [tryLoad]);
   const catalogSessions = useSessionStore((state) => state.sessions);
   const nodesReady = useNodeConnectivityStore((state) => state.ready);
   const connectedNodeIds = useNodeConnectivityStore((state) => state.connectedNodeIds);
@@ -198,9 +223,9 @@ export function FolderSessionHistory({
       })}
       {!explicitSessionIds && loading ? <ActivityIndicator color={t.colors.accent} /> : null}
       {!explicitSessionIds && error ? <Text style={styles.error}>{error}</Text> : null}
-      {!explicitSessionIds && data?.nextCursor && !loading ? (
-        <TouchableOpacity style={styles.moreAction} onPress={loadMore}>
-          <Text style={styles.more}>더 보기</Text>
+      {!explicitSessionIds && data?.nextCursor && !loading && error ? (
+        <TouchableOpacity testID="task-run-history-retry" style={styles.moreAction} onPress={loadMore}>
+          <Text style={styles.more}>다시 시도</Text>
         </TouchableOpacity>
       ) : null}
     </View>

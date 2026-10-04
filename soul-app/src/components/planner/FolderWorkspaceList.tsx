@@ -13,10 +13,14 @@ import { CompletedCardFilters } from './CompletedCardFilters';
 import { PostItCard } from './PostItCard';
 import { CardDetailSheet } from './CardDetailSheet';
 
+export function isListNearEnd(contentHeight:number,offsetY:number,layoutHeight:number):boolean {
+  return layoutHeight>0&&contentHeight-(offsetY+layoutHeight)<=layoutHeight*0.5;
+}
+
 /** One vertical native list owns the folder and completed rows; no nested virtual scroll. */
-export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledDisplay,header,footer,contentContainerStyle,onOpenSession}:{
+export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledDisplay,header,footer,contentContainerStyle,onOpenSession,onNearEnd}:{
   api:ApiClient|null;folderId:string;active:boolean;cardDisplay?:FolderCardDisplay;header:ReactNode;footer:ReactNode;
-  contentContainerStyle:StyleProp<ViewStyle>;onOpenSession?(id:string):void;
+  contentContainerStyle:StyleProp<ViewStyle>;onOpenSession?(id:string):void;onNearEnd?():void;
 }) {
   const t=useTokens(),paper=createPostItRoles(t,'compact'),window=useWindowDimensions();
   const localDisplay=useCardDisplay(folderId),display=controlledDisplay??localDisplay;
@@ -24,7 +28,12 @@ export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledD
   const [width,setWidth]=useState(window.width),[selected,setSelected]=useState<string|null>(null);
   const columns=completedGridLayout(width-2*t.foundation.pageInset,paper.width,paper.gap,0).columns;
   const list=useRef<FlatList<CardDto>>(null);
+  const scrollMetrics=useRef({offsetY:0,layoutHeight:0,contentHeight:0});
   const currentBrowser=useRef(browser);currentBrowser.current=browser;
+  const checkNearEnd=()=>{
+    const {contentHeight,offsetY,layoutHeight}=scrollMetrics.current;
+    if(isListNearEnd(contentHeight,offsetY,layoutHeight))onNearEnd?.();
+  };
   const onVisibleRows=useCallback(({viewableItems}:{viewableItems:ViewToken<CardDto>[]})=>{
     const current=currentBrowser.current,last=current.cards.at(-1);
     if(last&&viewableItems.some(row=>row.isViewable&&row.item.id===last.id))current.loadMore();
@@ -32,7 +41,10 @@ export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledD
   useEffect(()=>{if(display.includeCompleted)list.current?.scrollToOffset({offset:0,animated:false});},[browser.resetKey]);
   return <>
     <FlatList ref={list} testID="task-workspace-scroll" key={columns} style={{flex:1}} data={browser.cards} numColumns={columns}
-      onLayout={event=>setWidth(event.nativeEvent.layout.width)} contentContainerStyle={[contentContainerStyle,{gap:paper.gap}]} keyboardShouldPersistTaps="handled"
+      onLayout={event=>{setWidth(event.nativeEvent.layout.width);scrollMetrics.current.layoutHeight=event.nativeEvent.layout.height;checkNearEnd();}}
+      onScroll={event=>{scrollMetrics.current.offsetY=event.nativeEvent.contentOffset.y;checkNearEnd();}}
+      onContentSizeChange={(_,height)=>{scrollMetrics.current.contentHeight=height;checkNearEnd();}} scrollEventThrottle={16}
+      contentContainerStyle={[contentContainerStyle,{gap:paper.gap}]} keyboardShouldPersistTaps="handled"
       keyExtractor={card=>card.id} columnWrapperStyle={columns>1?{gap:paper.gap}:undefined}
       initialNumToRender={columns*2} maxToRenderPerBatch={columns*2} windowSize={5} showsVerticalScrollIndicator={false}
       ListHeaderComponent={<View style={{gap:t.spacing.lg}}>{header}{display.includeCompleted?<View style={{gap:t.uiSpacing.sm}}>

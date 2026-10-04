@@ -96,6 +96,10 @@ export function FolderWorkspace({
   const parentPageId = folders.find((candidate) => candidate.id === folder?.parentFolderId)?.projectPageId ?? null;
   const projectPageDetail = usePlannerPageDetail(api, parentPageId, active);
   const scopeGeneration = useAuthScopeGeneration();
+  const sessionNearEndRef = useRef<(() => void) | null>(null);
+  const notifySessionNearEnd = useCallback(() => {
+    sessionNearEndRef.current?.();
+  }, []);
   const draftOwnerKey = `${scopeGeneration}\u0000${folderPageId}`;
   const scopedApi = useMemo(() => {
     if (!api) return null;
@@ -412,7 +416,7 @@ export function FolderWorkspace({
           ) : null}
         </TabletPaneHeader>
       ) : null}
-      <FolderWorkspaceList api={api} folderId={folderSummary.folderId} active={active} cardDisplay={cardDisplay} onOpenSession={onOpenSession}
+      <FolderWorkspaceList api={api} folderId={folderSummary.folderId} active={active} cardDisplay={cardDisplay} onOpenSession={onOpenSession} onNearEnd={notifySessionNearEnd}
         contentContainerStyle={styles.content}
         header={<>
         {pageDetail.error ? <Text style={styles.error}>{pageDetail.error}</Text> : null}
@@ -538,6 +542,7 @@ export function FolderWorkspace({
             api={api}
             folderId={folderSummary.folderId}
             active={active}
+            nearEndRef={sessionNearEndRef}
             sessionSummaries={folderSummary.sessions}
             onOpenSession={onOpenSession}
             onLongPressSession={(sessionId) => menus.openSessionMenu({
