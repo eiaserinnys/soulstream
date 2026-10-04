@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -27,6 +27,7 @@ export function ConnectionSettingsSection({
   onServerTypeChange,
   onTest,
   onSave,
+  savedUrl, savedType, saved, hideSave, runtimeMode = null,
 }: {
   flattened: boolean;
   url: string;
@@ -37,17 +38,23 @@ export function ConnectionSettingsSection({
   onServerTypeChange(value: ServerType): void;
   onTest(): void;
   onSave(): void;
+  runtimeMode?: 'single' | 'orchestrator' | null;
+  savedUrl?: string; savedType?: ServerType; saved?: boolean; hideSave?: boolean;
 }) {
   const t = useTokens();
+  const [focused, setFocused] = useState(false);
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
     <SettingsSection id="connection" title="연결" flattened={flattened}>
+      {savedUrl !== undefined ? <View style={styles.block}><Text style={styles.rowLabel}>현재 연결</Text><Text style={styles.result}>{savedUrl || '저장된 연결 없음'}</Text><Text style={styles.result}>저장 유형: {SERVER_OPTIONS.find(option => option.value === savedType)?.label ?? '미확인'}</Text><Text style={styles.result}>확인된 실행 모드: {runtimeMode === 'orchestrator' ? '오케스트레이터' : runtimeMode === 'single' ? '단일 서버' : '미확인'}</Text>{saved ? <Text style={styles.ok}>이 기기에 연결 설정을 저장했습니다.</Text> : null}</View> : null}
       <View style={styles.block}>
         <Text style={styles.rowLabel}>서버 URL</Text>
         <TextInput
           testID="settings-server-input"
-          style={styles.input}
+          accessibilityLabel="서버 URL"
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+          style={[styles.input, focused && { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }]}
           value={url}
           onChangeText={onUrlChange}
           placeholder="http://192.168.0.1:8080"
@@ -56,10 +63,12 @@ export function ConnectionSettingsSection({
           autoCorrect={false}
           keyboardType="url"
         />
+        {savedUrl !== undefined && url.trim() !== savedUrl ? <Text style={styles.rowLabel}>연결을 저장하면 현재 로그인이 초기화됩니다. 새 서버에 다시 로그인해 주세요.</Text> : null}
       </View>
       <SettingsDivider />
       <View style={styles.block}>
         <Text style={styles.rowLabel}>서버 유형</Text>
+        <Text style={styles.rowLabel}>서버 유형은 저장 분류이며 서버 실행 모드를 바꾸지 않습니다.</Text>
         <SettingsSegmentedControl
           id="server"
           value={serverType}
@@ -98,17 +107,17 @@ export function ConnectionSettingsSection({
               <Text style={styles.secondaryText}>연결 확인</Text>
             )}
           </GlassButton>
-          <GlassButton
+          {!hideSave ? <GlassButton
             variant="primary"
             testID="settings-save"
             surfaceTestID="settings-save-surface"
-            accessibilityLabel="저장"
+            accessibilityLabel="연결 저장"
             style={styles.action}
             onPress={onSave}
             disabled={!url.trim()}
           >
-            <Text style={styles.primaryText}>저장</Text>
-          </GlassButton>
+            <Text style={styles.primaryText}>연결 저장</Text>
+          </GlassButton> : null}
         </View>
       </View>
     </SettingsSection>
@@ -119,7 +128,7 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     block: { padding: t.cardLayout.padding, gap: t.spacing.md },
     rowLabel: {
-      ...t.foundation.typography.label,
+      ...t.foundation.typography.body,
       color: t.colors.textSecondary,
     },
     input: {

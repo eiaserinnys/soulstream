@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 import { openPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
 import { useTokens } from '../../theme';
+import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 import { SettingsSection } from './SettingsSection';
 import {
   RecurringJobEditor,
@@ -26,7 +27,27 @@ export function RecurringJobsSettingsSection({
   onOpenRecurringJobs?: () => void;
 }) {
   const t = useTokens();
-  const [panel, setPanel] = useState<WidePanel>({ kind: 'list' });
+  const workspace = useSettingsWorkspace();
+  const [localPanel, setLocalPanel] = useState<WidePanel>({ kind: 'list' });
+  const panel = workspace?.jobs ?? localPanel;
+  const setPanel = workspace?.setJobs ?? setLocalPanel;
+  const [editorId, setEditorId] = useState<string | undefined>();
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const [listRevision, setListRevision] = useState(0);
+  const [hasEditor, setHasEditor] = useState(false);
+  const openEditor = (jobId?: string) => {
+    const open = () => { setEditorId(jobId); if (editorId !== jobId) setHistoryId(null); setHasEditor(true); setPanel({ kind: 'editor', jobId }); };
+    if (workspace && hasEditor && editorId !== jobId) workspace.guard('recurring-jobs', open); else open();
+  };
+  if (workspace) {
+    const hidden = (kind: WidePanel['kind']) => panel.kind !== kind;
+    const page = (kind: WidePanel['kind']) => ({ style: { flex: 1, minHeight: 0, display: hidden(kind) ? 'none' as const : 'flex' as const }, accessibilityElementsHidden: hidden(kind), importantForAccessibility: hidden(kind) ? 'no-hide-descendants' as const : 'auto' as const, contentContainerStyle: { padding: t.foundation.pageInset, gap: t.spacing.md }, keyboardShouldPersistTaps: 'handled' as const });
+    return <View testID="wide-recurring-jobs-panel" style={{ flex: 1, minHeight: 0 }}>
+      <ScrollView {...page('list')} testID="settings-jobs-list-scroll"><RecurringJobsList serverUrl={serverUrl} onCreate={() => openEditor()} onEdit={job => openEditor(job.job_id)} refreshKey={listRevision}/></ScrollView>
+      {hasEditor ? <ScrollView {...page('editor')} testID="settings-jobs-editor-scroll"><RecurringJobEditor key={editorId ?? 'new'} serverUrl={serverUrl} jobId={editorId} onDone={() => { setHasEditor(false); setListRevision(value => value + 1); setPanel({ kind: 'list' }); }} onOpenHistory={jobId => { setHistoryId(jobId); setPanel({ kind: 'history', jobId }); }}/></ScrollView> : null}
+      {historyId ? <ScrollView {...page('history')} testID="settings-jobs-history-scroll"><RecurringJobHistory serverUrl={serverUrl} jobId={historyId} onOpenSession={sessionId => openPlannerSessionWorkspace(sessionId)}/></ScrollView> : null}
+    </View>;
+  }
   if (onOpenRecurringJobs) {
     return <SettingsSection id="recurring-jobs" title="반복 작업" flattened={flattened}>
       <View style={{ gap: t.spacing.sm, padding: t.cardLayout.padding }}>

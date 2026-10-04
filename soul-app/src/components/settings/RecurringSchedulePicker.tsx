@@ -87,7 +87,7 @@ export function RecurringSchedulePicker({
         <Text style={styles.label}>매월 날짜</Text>
         <ChoiceRow
           selected={null}
-          options={Array.from({ length: 31 }, (_, index) => ({ id: String(index + 1), label: `${index + 1}일` }))}
+          options={Array.from({ length: 31 }, (_, index) => ({ id: String(index + 1), label: String(index + 1) }))}
           onSelect={(selectedDay) => {
             const day = Number(selectedDay);
             patch({ monthDays: value.monthDays.includes(day)
@@ -95,6 +95,7 @@ export function RecurringSchedulePicker({
               : [...value.monthDays, day] });
           }}
           selectedMany={new Set(value.monthDays.map(String))}
+          grid
           testIDPrefix="recurring-schedule-month-day"
         />
       </View> : null}
@@ -108,26 +109,33 @@ function ChoiceRow({
   options,
   onSelect,
   testIDPrefix,
+  grid = false,
 }: {
   selected: string | null;
   selectedMany?: ReadonlySet<string>;
   options: Array<{ id: string; label: string }>;
   onSelect(value: string): void;
   testIDPrefix: string;
+  grid?: boolean;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  return <View style={styles.options}>{options.map((option) => {
+  const renderOption = (option: { id: string; label: string }) => {
     const active = selected === option.id || selectedMany?.has(option.id) === true;
     return <TouchableOpacity
       key={option.id}
       testID={`${testIDPrefix}-${option.id}`}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      style={[styles.option, active && styles.optionSelected]}
+      style={[styles.option, grid && { flex: 1, minWidth: 0, paddingHorizontal: 0 }, active && styles.optionSelected]}
       onPress={() => onSelect(option.id)}
     ><Text style={[styles.optionText, active && styles.optionTextSelected]}>{option.label}</Text></TouchableOpacity>;
-  })}</View>;
+  };
+  if (grid) return <View testID="recurring-month-grid" style={{ gap: t.spacing.xs }}>{Array.from({ length: Math.ceil(options.length / 7) }, (_, row) => <View key={row} style={{ flexDirection: 'row' }}>{Array.from({ length: 7 }, (_, column) => {
+    const option = options[row * 7 + column];
+    return option ? renderOption(option) : <View key={`empty-${column}`} style={{ flex: 1 }}/>;
+  })}</View>)}</View>;
+  return <View style={styles.options}>{options.map(renderOption)}</View>;
 }
 
 function ChoiceButton({ label, onPress, testID }: { label: string; onPress(): void; testID?: string }) {
@@ -141,8 +149,8 @@ function ChoiceButton({ label, onPress, testID }: { label: string; onPress(): vo
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     block: { gap: t.spacing.xs },
-    label: { ...t.foundation.typography.meta, color: t.colors.textSecondary, marginTop: t.spacing.xs },
-    help: { ...t.foundation.typography.meta, color: t.colors.textMuted },
+    label: { ...t.foundation.typography.body, color: t.colors.textSecondary, marginTop: t.spacing.xs },
+    help: { ...t.foundation.typography.body, color: t.colors.textMuted },
     input: {
       minHeight: t.hitTarget.min,
       borderWidth: StyleSheet.hairlineWidth,
@@ -169,7 +177,7 @@ function makeStyles(t: DesignTokens) {
       paddingVertical: t.spacing.xs,
     },
     optionSelected: { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint },
-    optionText: { ...t.foundation.typography.meta, color: t.colors.textSecondary },
+    optionText: { ...t.foundation.typography.body, color: t.colors.textSecondary },
     optionTextSelected: { color: t.colors.textPrimary, fontWeight: '700' },
     addButton: {
       alignSelf: 'flex-start',

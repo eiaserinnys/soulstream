@@ -1,33 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, ScrollView, Text, View } from 'react-native';
-import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { BackHandler, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
-import { createApiClient } from '../api/client';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
-import { AIBackendSettingsSection } from '../components/settings/AIBackendSettingsSection';
-import { ConnectionSettingsSection } from '../components/settings/ConnectionSettingsSection';
-import { DiagnosticsSettingsSection } from '../components/settings/DiagnosticsSettingsSection';
-import { DisplaySettingsSection } from '../components/settings/DisplaySettingsSection';
-import { SessionReviewPolicySettingsSection } from '../components/settings/SessionReviewPolicySettingsSection';
-import { RecurringJobsSettingsSection } from '../components/settings/RecurringJobsSettingsSection';
-import type { SettingsCategory } from '../components/settings/settingsCategories';
+import { GlassButton } from '../components/GlassSurface';
+import { SettingsCategorySidebar } from '../components/settings/SettingsCategorySidebar';
+import { SETTINGS_CATEGORIES, type SettingsCategory } from '../components/settings/settingsCategories';
+import { SettingsWorkspaceContext, confirmSettingsDiscard, type SettingsSaveScope, type SettingsJobDestination } from '../components/settings/SettingsWorkspaceContext';
 import { useDashboardAdminStatus } from '../components/settings/useDashboardAdminStatus';
-import { resolveBackgroundImageSource } from '../lib/wallpaper-source';
-import { useAuthStore } from '../store/authStore';
-import {
-  useSettingsStore,
-  type Appearance,
-  type ServerType,
-  type WallpaperMode,
-  type WallpaperSettings,
-} from '../store/settingsStore';
-import { useTokens } from '../theme';
-import { makeSettingsStyles } from './SettingsScreen.styles';
-
-type NodeInfo = Awaited<
-  ReturnType<ReturnType<typeof createApiClient>['listNodes']>
->['nodes'][number];
+import { TABLET_BREAKPOINT, useTokens, type DesignTokens } from '../theme';
+import { SettingsContent } from './SettingsContent';
 
 interface Props {
   extraBottomPadding?: number;
@@ -37,282 +19,94 @@ interface Props {
   preserveSections?: boolean;
   showAdmin?: boolean;
   onOpenRecurringJobs?: () => void;
+  onClose?: () => void;
+  connectionOnly?: boolean;
+  registerCloseRequest?: (close: () => void) => void;
 }
 
-export function SettingsScreen({
-  extraBottomPadding = 0,
-  showTitle = true,
-  flattened = false,
-  category,
-  preserveSections = false,
-  showAdmin,
-  onOpenRecurringJobs,
-}: Props = {}) {
+/** All three entry points share this stable host and the production form controllers. */
+export function SettingsScreen({ extraBottomPadding = 0, flattened = false, category: initialCategory, showAdmin, onClose, connectionOnly = false, registerCloseRequest }: Props = {}) {
   const t = useTokens();
-  const styles = useMemo(() => makeSettingsStyles(t), [t]);
-  const {
-    serverUrl,
-    serverType,
-    setSettings,
-    nodeId,
-    setNodeId,
-    appearance,
-    setAppearance,
-    wallpaper,
-    setWallpaper,
-    setWallpaperMode,
-    applyUserPreferences,
-  } = useSettingsStore();
-  const jwt = useAuthStore((state) => state.jwt);
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const window = useWindowDimensions();
+  const [width, setWidth] = useState(window.width);
+  const wide = !connectionOnly && width >= TABLET_BREAKPOINT;
   const detectedAdmin = useDashboardAdminStatus(showAdmin === undefined);
-  const canManageReviewPolicy = showAdmin ?? detectedAdmin;
-  const [urlInput, setUrlInput] = useState(serverUrl);
-  const [typeInput, setTypeInput] = useState<ServerType>(serverType);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    ok: boolean;
-    msg: string;
-  } | null>(null);
-  const [mode, setMode] = useState<'single' | 'orchestrator' | null>(null);
-  const [nodes, setNodes] = useState<NodeInfo[]>([]);
-  const [loadingNodes, setLoadingNodes] = useState(false);
-  const backgroundPending = useRef(false);
-  const [savingBackground, setSavingBackground] = useState(false);
-
+  const isAdmin = showAdmin ?? detectedAdmin;
+  const [category, setCategory] = useState<SettingsCategory | null>(connectionOnly ? 'connection' : initialCategory ?? null);
+  const [jobs, setJobs] = useState<SettingsJobDestination>({ kind: 'list' });
+  const [scopes, setScopes] = useState<Partial<Record<SettingsCategory, SettingsSaveScope>>>({});
+  const register = useCallback((id: SettingsCategory, scope: SettingsSaveScope | null) => setScopes(current => {
+    const next = { ...current }; if (scope) next[id] = scope; else delete next[id]; return next;
+  }), []);
+  const active = category ?? (wide ? 'display' : null);
+  useEffect(() => { if (!isAdmin && category === 'review-policy') setCategory('display'); }, [category, isAdmin]);
+  const guard = useCallback((id: SettingsCategory, action: () => void) => {
+    const scope = scopes[id];
+    if (scope?.dirty) confirmSettingsDiscard(() => { scope.discard(); action(); }, () => setCategory(id));
+    else action();
+  }, [scopes]);
+  const close = useCallback(() => {
+    const dirty = SETTINGS_CATEGORIES.find(item => scopes[item.id]?.dirty);
+    if (dirty) confirmSettingsDiscard(() => { Object.values(scopes).forEach(scope => scope?.discard()); onClose?.(); }, () => setCategory(dirty.id));
+    else onClose?.();
+  }, [scopes, onClose]);
+  useEffect(() => { registerCloseRequest?.(close); }, [close, registerCloseRequest]);
+  const back = useCallback(() => {
+    if (active === 'recurring-jobs' && jobs.kind !== 'list') {
+      if (jobs.kind === 'history') setJobs({ kind: 'editor', jobId: jobs.jobId });
+      else guard('recurring-jobs', () => setJobs({ kind: 'list' }));
+    } else setCategory(null);
+  }, [active, jobs, guard]);
   useEffect(() => {
-    if (!serverUrl) return;
-    setMode(null);
-    setNodes([]);
-    const api = createApiClient(serverUrl);
-    api
-      .getConfig()
-      .then((config) => {
-        setMode(config.mode);
-        if (config.nodeId) setNodeId(config.nodeId);
-        if (config.mode === 'orchestrator') {
-          setLoadingNodes(true);
-          api
-            .listNodes()
-            .then((result) => setNodes(result.nodes))
-            .catch(() => {})
-            .finally(() => setLoadingNodes(false));
-        }
-      })
-      .catch(() => {});
-  }, [serverUrl, setNodeId]);
-
-  async function handleTest() {
-    const url = urlInput.trim();
-    if (!url) return;
-    setTesting(true);
-    setTestResult(null);
-    try {
-      // 설정 중 입력한 URL은 현재 서버와 다를 수 있으므로 공개 연결 확인은 익명으로 한다.
-      const config = await createApiClient(url, { authToken: null }).getConfig();
-      setTestResult({ ok: true, msg: `연결됨: ${config.mode} 모드` });
-    } catch (error: any) {
-      setTestResult({
-        ok: false,
-        msg: `연결 실패: ${error?.message ?? '알 수 없는 오류'}`,
-      });
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  function handleSave() {
-    const url = urlInput.trim();
-    if (!url) return;
-    if (url !== serverUrl) useAuthStore.getState().clear();
-    setSettings(url, typeInput);
-  }
-
-  async function savePreferences(
-    nextAppearance: Appearance,
-    nextWallpaper: WallpaperSettings,
-    options: { clearBackground?: boolean } = {},
-  ) {
-    if (!serverUrl || !useAuthStore.getState().jwt) return;
-    try {
-      const response = await createApiClient(serverUrl).putUserPreferences(
-        { appearance: nextAppearance, wallpaper: nextWallpaper },
-        options,
-      );
-      applyUserPreferences(response.preferences);
-    } catch {
-      // Offline and single-node fallback: AsyncStorage remains the local source.
-    }
-  }
-
-  async function handleAppearanceChange(next: Appearance) {
-    setAppearance(next);
-    await savePreferences(next, wallpaper);
-  }
-
-  async function handleWallpaperModeChange(next: WallpaperMode) {
-    if (backgroundPending.current) return;
-    const nextWallpaper =
-      next === 'photo'
-        ? { ...wallpaper, mode: 'photo' as const }
-        : { mode: next };
-    setWallpaperMode(next);
-    await savePreferences(appearance, nextWallpaper, {
-      clearBackground: next !== 'photo',
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!connectionOnly && (category || jobs.kind !== 'list')) { back(); return true; }
+      return false;
     });
-  }
-
-  async function handlePickBackground() {
-    if (backgroundPending.current) return;
-    backgroundPending.current = true;
-    setSavingBackground(true);
-    try {
-      const permission =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('권한 필요', '사진 라이브러리 접근 권한을 허용해주세요.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.9,
-      });
-      if (result.canceled || result.assets.length === 0) return;
-      const asset = result.assets[0];
-      const nextWallpaper = {
-        mode: 'photo' as const,
-        customImage: asset.uri,
-      };
-      setWallpaper(nextWallpaper);
-      if (!serverUrl || !useAuthStore.getState().jwt) return;
-
-      const api = createApiClient(serverUrl);
-      const uploaded = await api.uploadUserBackground({
-        uri: asset.uri,
-        name: asset.fileName ?? `wallpaper-${Date.now()}.jpg`,
-        type: asset.mimeType ?? 'image/jpeg',
-      });
-      const saved = await api.putUserPreferences({
-        appearance,
-        wallpaper: uploaded.wallpaper,
-      });
-      applyUserPreferences(saved.preferences);
-    } catch (error: any) {
-      Alert.alert('배경 저장 실패', safeErrorDetail(error?.message ?? String(error)));
-    } finally {
-      backgroundPending.current = false;
-      setSavingBackground(false);
-    }
-  }
-
-  async function handleResetBackground() {
-    if (backgroundPending.current) return;
-    const nextWallpaper = { mode: 'bokeh' as const };
-    setWallpaper(nextWallpaper);
-    await savePreferences(appearance, nextWallpaper, {
-      clearBackground: true,
-    });
-  }
-
-  const wallpaperPreviewSource = resolveBackgroundImageSource(
-    serverUrl,
-    wallpaper.customImage,
-    jwt,
-  );
-  const includes = (candidate: SettingsCategory) =>
-    category === undefined || category === candidate;
-
-  return (
-    <SafeAreaView
-      testID="settings-safe-area"
-      style={styles.flex}
-      edges={flattened ? [] : ['left', 'right', 'bottom']}
-    >
-      <AppKeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          testID="phone-settings-body"
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[
-            styles.container,
-            { paddingBottom: t.spacing.xl + extraBottomPadding },
-          ]}
-        >
-          {showTitle ? <Text style={styles.title}>설정</Text> : null}
-          {(preserveSections || includes('display')) ? (
-            <View style={!includes('display') ? { display: 'none' } : undefined}>
-            <DisplaySettingsSection
-              flattened={flattened}
-              appearance={appearance}
-              wallpaper={wallpaper}
-              wallpaperPreviewSource={wallpaperPreviewSource}
-              savingBackground={savingBackground}
-              onAppearanceChange={(value) =>
-                void handleAppearanceChange(value)
-              }
-              onWallpaperModeChange={(value) =>
-                void handleWallpaperModeChange(value)
-              }
-              onPickBackground={() => void handlePickBackground()}
-              onResetBackground={() => void handleResetBackground()}
-            />
-            </View>
-          ) : null}
-          {(preserveSections || includes('connection')) ? (
-            <View style={!includes('connection') ? { display: 'none' } : undefined}>
-            <ConnectionSettingsSection
-              flattened={flattened}
-              url={urlInput}
-              serverType={typeInput}
-              testing={testing}
-              result={testResult}
-              onUrlChange={(value) => {
-                setUrlInput(value);
-                setTestResult(null);
-              }}
-              onServerTypeChange={setTypeInput}
-              onTest={() => void handleTest()}
-              onSave={handleSave}
-            />
-            </View>
-          ) : null}
-          {(preserveSections || includes('backends')) ? (
-            <View style={!includes('backends') ? { display: 'none' } : undefined}>
-            <AIBackendSettingsSection
-              flattened={flattened}
-              serverUrl={serverUrl}
-              mode={mode}
-              currentNodeId={nodeId}
-              nodes={nodes}
-              loadingNodes={loadingNodes}
-            />
-            </View>
-          ) : null}
-          {(preserveSections || includes('recurring-jobs')) ? (
-            <View style={!includes('recurring-jobs') ? { display: 'none' } : undefined}>
-            <RecurringJobsSettingsSection
-              flattened={flattened}
-              serverUrl={serverUrl}
-              onOpenRecurringJobs={onOpenRecurringJobs}
-            />
-            </View>
-          ) : null}
-          {(preserveSections || includes('review-policy')) && canManageReviewPolicy ? (
-            <View style={!includes('review-policy') ? { display: 'none' } : undefined}>
-            <SessionReviewPolicySettingsSection
-              flattened={flattened}
-              serverUrl={serverUrl}
-            />
-            </View>
-          ) : null}
-          {(preserveSections || includes('diagnostics')) ? (
-            <View style={!includes('diagnostics') ? { display: 'none' } : undefined}>
-            <DiagnosticsSettingsSection flattened={flattened} />
-            </View>
-          ) : null}
-        </ScrollView>
+    return () => subscription.remove();
+  }, [category, jobs.kind, connectionOnly, back]);
+  const title = connectionOnly ? '서버에 연결' : active ? SETTINGS_CATEGORIES.find(item => item.id === active)?.label : '설정';
+  const scope = active && (active !== 'recurring-jobs' || jobs.kind === 'editor') ? scopes[active] : null;
+  const changeConnection = useCallback((action: () => void) => {
+    const dirty = SETTINGS_CATEGORIES.find(item => item.id !== 'connection' && scopes[item.id]?.dirty);
+    if (dirty) confirmSettingsDiscard(() => { Object.entries(scopes).forEach(([id, scope]) => { if (id !== 'connection') scope?.discard(); }); action(); }, () => setCategory(dirty.id));
+    else action();
+  }, [scopes]);
+  const context = useMemo(() => ({ category: active, wide, columns: width - (wide ? 240 : 0) >= TABLET_BREAKPOINT, jobs, setJobs, register, select: setCategory, guard, changeConnection }), [active, wide, width, jobs, register, guard, changeConnection]);
+  return <SettingsWorkspaceContext.Provider value={context}>
+    <SafeAreaView testID="settings-safe-area" style={styles.root} edges={flattened ? [] : ['left', 'right', 'bottom']} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+      <AppKeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View testID="settings-modal-header" style={styles.header}>
+          {!connectionOnly && !wide && active ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>설정</Text></TouchableOpacity> : null}
+          {active === 'recurring-jobs' && jobs.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>{jobs.kind === 'history' ? '편집' : '목록'}</Text></TouchableOpacity> : null}
+          <Text style={styles.title}>{title}</Text>
+          {onClose ? <TouchableOpacity testID="settings-modal-close" accessibilityRole="button" accessibilityLabel="설정 닫기" style={styles.headerAction} onPress={close}><Text style={styles.actionText}>완료</Text></TouchableOpacity> : null}
+        </View>
+        <View testID={wide ? 'settings-wide-layout' : 'settings-compact-layout'} style={[styles.body, wide && styles.wide]}>
+          <ScrollView testID={wide ? 'settings-sidebar-scroll' : 'settings-phone-index'} style={[wide ? styles.sidebar : styles.root, (connectionOnly || (!wide && active)) && styles.hidden]} accessibilityElementsHidden={connectionOnly || (!wide && active !== null)} importantForAccessibility={connectionOnly || (!wide && active !== null) ? 'no-hide-descendants' : 'auto'} contentContainerStyle={styles.index}>
+            {!wide ? <View style={styles.introduction}><Text style={styles.introTitle}>내 작업 환경</Text><Text style={styles.help}>변경할 항목을 선택하세요.</Text></View> : null}
+            <SettingsCategorySidebar compact={!wide} selected={active} onSelect={setCategory} showAdmin={isAdmin} dirty={Object.keys(scopes).filter(id => scopes[id as SettingsCategory]?.dirty) as SettingsCategory[]}/>
+          </ScrollView>
+          <View style={[styles.root, !active && styles.hidden]} accessibilityElementsHidden={!active} importantForAccessibility={!active ? 'no-hide-descendants' : 'auto'}>
+            <SettingsContent flattened category={active ?? 'display'} showAdmin={isAdmin} connectionOnly={connectionOnly}/>
+            {scope ? <View testID="settings-active-footer" style={[styles.footer, { paddingBottom: t.spacing.md + extraBottomPadding }]}>
+              {scope.dirty ? <GlassButton accessibilityLabel="변경 버리기" onPress={() => active && guard(active, () => undefined)} style={styles.footerAction}><Text style={styles.actionText}>변경 버리기</Text></GlassButton> : null}
+              <GlassButton variant="primary" testID={scope.saveTestID ?? 'settings-scope-save'} accessibilityLabel={scope.saveLabel ?? '저장'} disabled={scope.busy || scope.canSave === false} onPress={() => void scope.save()} style={styles.footerAction}><Text style={styles.primaryText}>{scope.busy ? '처리 중…' : scope.saveLabel ?? '저장'}</Text></GlassButton>
+            </View> : null}
+          </View>
+        </View>
       </AppKeyboardAvoidingView>
     </SafeAreaView>
-  );
+  </SettingsWorkspaceContext.Provider>;
 }
+function makeStyles(t: DesignTokens) { return StyleSheet.create({
+  root: { flex: 1, minHeight: 0, minWidth: 0 }, body: { flex: 1, minHeight: 0 }, wide: { flexDirection: 'row' }, hidden: { display: 'none' },
+  sidebar: { width: 240, flexGrow: 0, borderRightWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted }, index: { paddingBottom: t.spacing.xl },
+  header: { minHeight: t.hitTarget.min + t.spacing.sm, paddingHorizontal: t.foundation.pageInset, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm },
+  headerAction: { minHeight: t.hitTarget.min, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: t.spacing.xxs },
+  title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }, actionText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' }, primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
+  introduction: { padding: t.foundation.pageInset, gap: t.spacing.sm }, introTitle: { ...t.foundation.typography.section, color: t.colors.textPrimary }, help: { ...t.foundation.typography.body, color: t.colors.textSecondary },
+  footer: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm, padding: t.cardLayout.padding, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, footerAction: { flexGrow: 1 },
+}); }
+
+export function FirstConnectionSettingsScreen() { return <SettingsScreen connectionOnly showTitle/>; }

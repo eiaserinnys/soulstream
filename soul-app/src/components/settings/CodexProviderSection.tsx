@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import type { ProviderUsageSnapshot } from '../../api/claudeAuthTypes';
 import { useTokens, type DesignTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
+import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 import { ProviderUsageChart } from '../ProviderUsageChart';
 
 export function CodexProviderSection({
@@ -16,11 +17,12 @@ export function CodexProviderSection({
   usageError: string | null;
   onRefreshUsage(): void;
 }) {
+  const workspace = useSettingsWorkspace();
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
-    <View testID="backend-provider-codex" style={styles.provider}>
+    <View testID="backend-provider-codex" style={[styles.provider, workspace && { paddingTop: 0, marginTop: 0, borderTopWidth: 0 }]}>
       <View style={styles.headingRow}>
         <Text style={styles.title}>Codex</Text>
         <GlassButton
@@ -60,6 +62,7 @@ function makeStyles(t: DesignTokens) {
     headingRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      flexWrap: 'wrap',
       gap: t.spacing.md,
     },
     title: {

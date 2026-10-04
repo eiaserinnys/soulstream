@@ -56,11 +56,11 @@ function makeStyles(t: DesignTokens) {
       paddingHorizontal: t.spacing.sm,
     },
     text: {
-      ...t.foundation.typography.meta,
+      ...t.foundation.typography.body,
       color: t.colors.textSecondary,
     },
     error: {
-      ...t.foundation.typography.meta,
+      ...t.foundation.typography.body,
       color: t.colors.errorText,
       marginTop: t.spacing.xs,
     },

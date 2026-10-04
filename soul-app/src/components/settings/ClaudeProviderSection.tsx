@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,7 @@ import type {
   ProviderUsageSnapshot,
 } from '../../api/claudeAuthTypes';
 import { useTokens, type DesignTokens } from '../../theme';
+import { useAuthStore } from '../../store/authStore';
 import { GlassButton } from '../GlassSurface';
 import { ProviderUsageChart } from '../ProviderUsageChart';
 
@@ -26,6 +27,7 @@ export function ClaudeProviderSection({
   usageError,
   onRefreshUsage,
   onTokenDeleted,
+  separateUsage = false,
 }: {
   nodeId: string;
   serverUrl: string;
@@ -34,9 +36,13 @@ export function ClaudeProviderSection({
   usageError: string | null;
   onRefreshUsage(): void;
   onTokenDeleted(): void;
+  separateUsage?: boolean;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const jwt = useAuthStore(state => state.jwt);
+  const revision = useRef(0);
+  const [authReload, setAuthReload] = useState(0);
   const [authStatus, setAuthStatus] = useState<{ has_token: boolean } | null>(
     null,
   );
@@ -45,52 +51,50 @@ export function ClaudeProviderSection({
   const [loginLoading, setLoginLoading] = useState(false);
   const [showCodeInput, setShowCodeInput] = useState(false);
   const [codeValue, setCodeValue] = useState('');
+  const [codeFocused, setCodeFocused] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [claudeError, setClaudeError] = useState<string | null>(null);
 
   useEffect(() => {
+    const request = ++revision.current;
+    setAuthStatus(null); setProfile(null); setShowCodeInput(false); setCodeValue(''); setSubmitting(false); setLoginLoading(false); setClaudeError(null);
     if (!serverUrl || !nodeId) return;
     setLoadingAuth(true);
-    createApiClient(serverUrl)
-      .getClaudeAuthStatus(nodeId)
-      .then(setAuthStatus)
-      .catch(() => {})
-      .finally(() => setLoadingAuth(false));
-  }, [serverUrl, nodeId]);
-
-  useEffect(() => {
-    if (!authStatus?.has_token) return;
-    createApiClient(serverUrl)
-      .getClaudeProfile(nodeId)
-      .then(setProfile)
-      .catch(() => {});
-  }, [authStatus?.has_token, serverUrl, nodeId]);
+    void (async () => {
+      try {
+        const api = createApiClient(serverUrl);
+        const status = await api.getClaudeAuthStatus(nodeId);
+        if (request !== revision.current) return;
+        setAuthStatus(status);
+        if (status.has_token) {
+          const next = await api.getClaudeProfile(nodeId);
+          if (request === revision.current) setProfile(next);
+        }
+      } catch { if (request === revision.current) setClaudeError('계정 정보를 불러오지 못했습니다. 다시 시도해 주세요.'); }
+      finally { if (request === revision.current) setLoadingAuth(false); }
+    })();
+    return () => { ++revision.current; };
+  }, [serverUrl, nodeId, jwt, authReload]);
 
   async function handleRelogin() {
+    const request = revision.current;
     setLoginLoading(true);
     setClaudeError(null);
     try {
       const { authUrl } = await createApiClient(serverUrl).startClaudeAuth(
         nodeId,
       );
-      WebBrowser.openBrowserAsync(authUrl)
-        .then(() => setShowCodeInput(true))
-        .catch((error) => {
-          console.warn('[ClaudeProviderSection] openBrowserAsync failed:', error);
-          setClaudeError('브라우저를 열 수 없습니다.');
-        });
-    } catch (error: any) {
-      setClaudeError(
-        error?.message ?? '인증 URL을 가져오는 중 오류가 발생했습니다.',
-      );
-    } finally {
-      setLoginLoading(false);
-    }
+      if (request !== revision.current) return;
+      await WebBrowser.openBrowserAsync(authUrl);
+      if (request === revision.current) setShowCodeInput(true);
+    } catch { if (request === revision.current) setClaudeError('인증 브라우저를 열지 못했습니다. 다시 시도해 주세요.'); }
+    finally { if (request === revision.current) setLoginLoading(false); }
   }
 
   async function handleSubmitCode() {
     const code = codeValue.trim();
     if (!code) return;
+    const request = revision.current;
     setSubmitting(true);
     setClaudeError(null);
     try {
@@ -98,29 +102,29 @@ export function ClaudeProviderSection({
         nodeId,
         code,
       );
+      if (request !== revision.current) return;
       if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        setClaudeError(data?.detail ?? '코드 제출 중 오류가 발생했습니다.');
+        setClaudeError('코드를 확인하고 다시 제출해 주세요.');
         return;
       }
       setShowCodeInput(false);
       setCodeValue('');
-      setAuthStatus(
-        await createApiClient(serverUrl).getClaudeAuthStatus(nodeId),
-      );
+      setAuthReload(value => value + 1);
     } catch (error: any) {
-      setClaudeError(error?.message ?? '오류가 발생했습니다.');
+      if (request === revision.current) setClaudeError('인증에 실패했습니다. 다시 시도해 주세요.');
     } finally {
-      setSubmitting(false);
+      if (request === revision.current) setSubmitting(false);
     }
   }
 
   async function handleDeleteToken() {
+    const request = revision.current;
     setClaudeError(null);
     try {
       const response = await createApiClient(serverUrl).deleteClaudeToken(
         nodeId,
       );
+      if (request !== revision.current) return;
       if (!response.ok) {
         setClaudeError(`토큰 삭제 실패 (HTTP ${response.status})`);
         return;
@@ -129,22 +133,23 @@ export function ClaudeProviderSection({
       setProfile(null);
       onTokenDeleted();
     } catch (error: any) {
-      setClaudeError(error?.message ?? '토큰 삭제 중 오류가 발생했습니다.');
+      if (request === revision.current) setClaudeError('토큰 삭제 중 오류가 발생했습니다.');
     }
   }
 
   function confirmDeleteToken() {
+    const request = revision.current;
     Alert.alert(
       '토큰 삭제',
-      '저장된 인증 토큰을 삭제합니다. 계속하시겠습니까?',
+      `${nodeId}의 Claude 인증 토큰을 삭제합니다. 계속하시겠습니까?`,
       [
         { text: '취소', style: 'cancel' },
-        { text: '삭제', style: 'destructive', onPress: handleDeleteToken },
+        { text: '삭제', style: 'destructive', onPress: () => { if (request === revision.current) void handleDeleteToken(); } },
       ],
     );
   }
 
-  const error = claudeError ?? usageError;
+  const error = claudeError ?? (separateUsage ? null : usageError);
 
   return (
     <View testID="backend-provider-claude" style={styles.provider}>
@@ -170,12 +175,13 @@ export function ClaudeProviderSection({
               {authStatus?.has_token ? '✓' : '—'}
             </Text>
             <Text style={styles.statusText}>
-              {authStatus?.has_token ? '인증됨' : '미인증'}
+              {authStatus === null ? '조회 실패' : authStatus.has_token ? '인증됨' : '미인증'}
             </Text>
           </View>
         )}
       </View>
 
+      {claudeError ? <GlassButton accessibilityLabel="계정 다시 조회" onPress={() => setAuthReload(value => value + 1)}><Text style={styles.actionText}>계정 다시 조회</Text></GlassButton> : null}
       {!showCodeInput ? (
         <View style={styles.actionRow}>
           <GlassButton
@@ -194,7 +200,7 @@ export function ClaudeProviderSection({
               </Text>
             )}
           </GlassButton>
-          <GlassButton
+          {!separateUsage ? <GlassButton
             testID="claude-usage-action"
             surfaceTestID="claude-usage-action-surface"
             style={styles.action}
@@ -207,7 +213,7 @@ export function ClaudeProviderSection({
             ) : (
               <Text style={styles.actionText}>사용량</Text>
             )}
-          </GlassButton>
+          </GlassButton> : null}
           {authStatus?.has_token ? (
             <GlassButton
               testID="claude-delete-action"
@@ -227,7 +233,9 @@ export function ClaudeProviderSection({
           </Text>
           <TextInput
             testID="claude-code-input"
-            style={styles.codeInput}
+            accessibilityLabel="인증 코드"
+            onFocus={() => setCodeFocused(true)} onBlur={() => setCodeFocused(false)}
+            style={[styles.codeInput, codeFocused && { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }]}
             value={codeValue}
             onChangeText={setCodeValue}
             placeholder="YSrAXqZq...#7RVDts..."
@@ -257,6 +265,7 @@ export function ClaudeProviderSection({
               style={styles.action}
               contentStyle={styles.buttonContent}
               onPress={() => {
+                ++revision.current; setSubmitting(false); setLoginLoading(false);
                 setShowCodeInput(false);
                 setCodeValue('');
                 setClaudeError(null);
@@ -268,7 +277,7 @@ export function ClaudeProviderSection({
         </View>
       )}
 
-      {usage ? <ProviderUsageChart usage={usage} providers={['claude']} /> : null}
+      {!separateUsage && usage ? <ProviderUsageChart usage={usage} providers={['claude']} /> : null}
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
@@ -280,10 +289,11 @@ export function ClaudeProviderSection({
 
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
-    provider: { paddingTop: t.spacing.lg, gap: t.spacing.md },
+    provider: { gap: t.spacing.md },
     headingRow: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
+      alignItems: 'center',
+      flexWrap: 'wrap',
       gap: t.spacing.md,
     },
     headingCopy: { flex: 1 },
@@ -299,7 +309,7 @@ function makeStyles(t: DesignTokens) {
       gap: t.spacing.sm,
     },
     email: {
-      ...t.foundation.typography.meta,
+      ...t.foundation.typography.body,
       color: t.colors.textTertiary,
       flex: 1,
     },
@@ -324,7 +334,7 @@ function makeStyles(t: DesignTokens) {
       fontWeight: '800',
     },
     statusText: {
-      ...t.foundation.typography.meta,
+      ...t.foundation.typography.body,
       color: t.colors.textSecondary,
     },
     actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm },

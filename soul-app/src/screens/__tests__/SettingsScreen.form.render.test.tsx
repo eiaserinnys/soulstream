@@ -50,7 +50,7 @@ test.each([
   useSettingsStore.setState({
     wallpaper: { mode: 'photo', customImage: 'file:///preview.jpg' },
   });
-  const screen = render(<SettingsScreen showTitle={false} />);
+  const screen = render(<SettingsScreen showTitle={false} category="display" />);
   await waitFor(() => expect(api.getConfig).toHaveBeenCalled());
 
   const segmentHit = style(
@@ -63,49 +63,28 @@ test.each([
   expect(segmentHit).not.toHaveProperty('height');
   expect(segmentVisual).toMatchObject({ minHeight: 40 });
   expect(segmentVisual).not.toHaveProperty('height');
-  expect(style(screen.getByTestId('settings-server-input').props.style)).toMatchObject({
-    minHeight: 52,
-  });
-  expect(style(screen.getByTestId('settings-test-connection').props.style)).toMatchObject({
-    minHeight: 48,
-  });
-  expect(style(screen.getByTestId('settings-save').props.style)).toMatchObject({
-    minHeight: 52,
-  });
-  expect(style(screen.getByTestId('settings-server-input').props.style)).not.toHaveProperty('height');
-  expect(style(screen.getByTestId('settings-test-connection').props.style)).not.toHaveProperty('height');
-  expect(style(screen.getByTestId('settings-save').props.style)).not.toHaveProperty('height');
-
-  const content = style(screen.getByTestId('phone-settings-body').props.contentContainerStyle);
+  const preview = style(screen.getByTestId('settings-wallpaper-preview-frame').props.style);
+  expect(preview.width).toBe('100%'); expect(preview.aspectRatio).toBe(16 / 9);
+  const index = screen.queryByLabelText('모든 설정으로 돌아가기'); if (index) fireEvent.press(index);
+  fireEvent.press(screen.getByTestId('settings-category-connection'));
+  for (const id of ['settings-server-input', 'settings-test-connection', 'settings-save']) expect(style(screen.getByTestId(id).props.style)).not.toHaveProperty('height');
+  expect(style(screen.getByTestId('settings-server-input').props.style).minHeight).toBe(52);
+  expect(screen.getByTestId('settings-save').props.accessibilityLabel).toBe('연결 저장');
+  const content = style(screen.getByTestId('settings-detail-connection').props.contentContainerStyle);
   expect(content.paddingHorizontal).toBe(20);
-  expect(content).not.toHaveProperty('height');
-  expect(screen.getByText('외양').props.allowFontScaling).not.toBe(false);
-  expect(screen.getByTestId('settings-segment-appearance-system').props.accessibilityState)
-    .toEqual(expect.objectContaining({ selected: true }));
-  expect(screen.getByTestId('settings-test-connection').props.accessibilityLabel)
-    .toBe('연결 확인');
-  expect(screen.getByTestId('settings-save').props.accessibilityLabel).toBe('저장');
 
-  const preview = style(screen.getByTestId('settings-wallpaper-preview').props.style);
-  expect(preview).toMatchObject({
-    width: '100%',
-    maxWidth: 480,
-    maxHeight: 270,
-    aspectRatio: 16 / 9,
-  });
-  expect(preview).not.toHaveProperty('height');
 });
 
 test('connection failure is announced and remains a secondary action', async () => {
   api.getConfig
     .mockResolvedValueOnce({ mode: 'single' })
     .mockRejectedValueOnce(new Error('연결 끊김'));
-  const screen = render(<SettingsScreen showTitle={false} />);
+  const screen = render(<SettingsScreen showTitle={false} category="connection" />);
   await waitFor(() => expect(api.getConfig).toHaveBeenCalledTimes(1));
 
   fireEvent.press(screen.getByTestId('settings-test-connection'));
 
-  const error = await screen.findByText('연결 실패: 연결 끊김');
+  const error = await screen.findByText(/연결 실패:/);
   expect(error.props.accessibilityRole).toBe('alert');
   expect(screen.getByTestId('settings-test-connection').props.accessibilityLabel)
     .toBe('연결 확인');

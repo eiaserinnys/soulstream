@@ -62,7 +62,7 @@ test('루트 배경은 appearance와 wallpaper store를 직접 구독해 변경 
 
 test('루트와 설정 preview는 같은 wallpaper source 정본을 사용한다', () => {
   const rootSource = fs.readFileSync(path.resolve(__dirname, '../RootNavigator.tsx'), 'utf8');
-  const settingsSource = fs.readFileSync(path.resolve(__dirname, '../../screens/SettingsScreen.tsx'), 'utf8');
+  const settingsSource = fs.readFileSync(path.resolve(__dirname, '../../screens/SettingsContent.tsx'), 'utf8');
 
   expect(rootSource).toContain("from '../lib/wallpaper-source'");
   expect(settingsSource).toContain("from '../lib/wallpaper-source'");

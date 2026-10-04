@@ -370,7 +370,7 @@ function SettingsNavigator() {
   const t = useTokens();
   return (
     <SettingsStack.Navigator screenOptions={stackScreenOptions(t)}>
-      <SettingsStack.Screen name="Settings" component={PhoneSettingsScreen} options={rootScreenOptions('SettingsTab')} />
+      <SettingsStack.Screen name="Settings" component={PhoneSettingsScreen} options={{ ...rootScreenOptions('SettingsTab'), headerShown: false }} />
       <SettingsStack.Screen name="RecurringJobs" component={RecurringJobsScreen} options={{ title: '반복 작업' }} />
       <SettingsStack.Screen name="RecurringJobEditor" component={RecurringJobEditorScreen} options={{ title: '반복 작업 편집' }} />
       <SettingsStack.Screen name="RecurringJobHistory" component={RecurringJobHistoryScreen} options={{ title: '실행 이력' }} />
@@ -379,7 +379,7 @@ function SettingsNavigator() {
 }
 
 export function PhoneSettingsScreen({ navigation }: NativeStackScreenProps<SettingsStackParamList, 'Settings'>) {
-  return <SettingsScreen showTitle={false} onOpenRecurringJobs={() => navigation.navigate('RecurringJobs')} />;
+  return <SettingsScreen showTitle={false} />;
 }
 
 const Tab = createBottomTabNavigator<RootTabParamList>();

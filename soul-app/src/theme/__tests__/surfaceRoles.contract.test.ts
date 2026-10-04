@@ -296,9 +296,9 @@ describe('surface role contract', () => {
   test('설정 modal은 자식 surface에 flattened 문맥을 전달한다', () => {
     const modal = read('components/settings/SettingsModal.tsx');
     expect(modal).toContain('<SettingsScreen');
-    expect(modal).toContain('showTitle={false}');
     expect(modal).toMatch(/<SettingsScreen\b[^>]*\bflattened\b/s);
-    expect(read('screens/SettingsScreen.tsx')).toContain('flattened={flattened}');
+    expect(read('screens/SettingsScreen.tsx')).toContain('<SettingsContent flattened');
+    expect(read('screens/SettingsContent.tsx')).toContain('flattened={flattened}');
     expect(read('components/settings/SettingsSurface.tsx')).toContain(
       'function SettingsSurface',
     );
@@ -323,7 +323,10 @@ describe('surface role contract', () => {
   });
 
   test('설정 modal은 자식 화면 제목을 숨겨 제목을 한 번만 표시한다', () => {
-    expect(read('components/settings/SettingsModal.tsx')).toContain('showTitle={false}');
+    const modal = read('components/settings/SettingsModal.tsx');
+    expect(modal).not.toContain('<Text');
+    expect(read('screens/SettingsScreen.tsx').match(/testID="settings-modal-header"/g)).toHaveLength(1);
+    expect(read('components/settings/SettingsSection.tsx')).toContain('!workspace ? <Text');
   });
 
   test('업무 행은 grouped outer surface 안에 새 glass를 중첩하지 않는다', () => {

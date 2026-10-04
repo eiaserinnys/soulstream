@@ -50,7 +50,7 @@ describe('surface roles v0.1', () => {
     }
   });
 
-  test('N8 뒤 canonical glass 역할은 6 files / 8 sites이고 두 default를 독립 검증한다', () => {
+  test('N8 뒤 canonical glass 역할은 6 files / 9 sites이고 두 default를 독립 검증한다', () => {
     const appGlass = read('components/AppGlassCard.tsx');
     expect(appGlass).toMatch(/function AppGlassCard\(\{\s*children,\s*role = 'glassCard'/);
     expect(appGlass).toMatch(/function AppGlassPressable\(\{\s*children,\s*role = 'glassCard'/);
@@ -74,7 +74,7 @@ describe('surface roles v0.1', () => {
     expect(currentRoleFiles).toHaveLength(6);
     expect(currentRoleFiles.reduce((count, source) => count + (
       source.match(/(?:role\s*=\s*['"]glass(?:Soft|Card|Dense)['"]|roles\.glass(?:Soft|Card|Dense))/g)?.length ?? 0
-    ), 0)).toBe(8);
+    ), 0)).toBe(9);
 
     for (const file of [
       'components/split/SplitPanelSurface.tsx',
