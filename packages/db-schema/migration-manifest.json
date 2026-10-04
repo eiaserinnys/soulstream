@@ -480,6 +480,10 @@
     {
       "id": "118_card_color.sql",
       "sha256": "a6a1fe05ac45ff4dc1f3355348c9d03d39c1e3a72a853cce78bc5b980ef1e6f3"
+    },
+    {
+      "id": "119_clear_stale_pending_attentions.sql",
+      "sha256": "4f89cf7c56f8a56f776df6517c81b15f2e26699961358b4c09ce8d136ba1e4e4"
     }
   ]
 }
