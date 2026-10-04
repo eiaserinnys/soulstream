@@ -37,7 +37,7 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
   server.registerTool(
     "create_worktree",
     {
-      description: "새/기존 branch worktree를 만들거나 발견된 unmanaged worktree를 명시적으로 인계한다.",
+      description: "새/기존 branch worktree를 만들거나 발견된 unmanaged worktree를 명시적으로 인계한다. pnpm 저장소는 생략 시 shared_dependencies와 필수 준비를 사용하고, package-local Vitest/Jest 실행 파일이 없으면 WORKTREE_SETUP_REQUIRED로 보존된 워크트리 ID와 경로를 반환한다. setup=none은 의존성 링크를 만들지 않는다. 독립 설치는 반환된 경로 안에서 `corepack pnpm@10.32.1 install --frozen-lockfile`을 사용한다. soul-app은 별도 npm 프로젝트이므로 setup=none으로 만들고 `NODE_ENV=development npm --prefix soul-app ci --include=dev`를 실행한다.",
       annotations: { destructiveHint: true },
       inputSchema: {
         repo_id: z.string().min(1),
@@ -46,8 +46,8 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
         start_point: z.string().min(1).optional(),
         adopt_path: z.string().min(1).optional(),
         expected_head: z.string().min(1).optional(),
-        setup: z.enum(["none", "shared_dependencies"]).default("none"),
-        require_setup: z.boolean().default(false),
+        setup: z.enum(["none", "shared_dependencies"]).optional(),
+        require_setup: z.boolean().optional(),
         caller_session_id: z.string().min(1).optional(),
       },
     },
@@ -62,8 +62,8 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
           ...(start_point ? { startPoint: start_point } : {}),
           ...(adopt_path ? { adoptPath: adopt_path } : {}),
           ...(expected_head ? { expectedHead: expected_head } : {}),
-          setup,
-          requireSetup: require_setup,
+          ...(setup !== undefined ? { setup } : {}),
+          ...(require_setup !== undefined ? { requireSetup: require_setup } : {}),
         }));
       } catch (error) {
         return worktreeError(error);

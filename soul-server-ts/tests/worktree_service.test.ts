@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -12,11 +13,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorktreeGit } from "../src/worktree/worktree_git.js";
 import { RepositoryLock } from "../src/worktree/worktree_repository_lock.js";
-import { WorktreeService } from "../src/worktree/worktree_service.js";
+import { WorktreeService, WorktreeServiceError } from "../src/worktree/worktree_service.js";
 import type { WorktreeHost, WorktreeRecord } from "../src/worktree/worktree_types.js";
 
 const roots: string[] = [];
@@ -56,7 +57,54 @@ function fixture(active: string[] = []) {
   return { projectsRoot, repo, host, service };
 }
 
+function configurePnpmRepo(
+  repo: string,
+  uiManifest: Record<string, unknown> = { name: "ui", devDependencies: { vitest: "*" } },
+) {
+  writeFileSync(join(repo, "package.json"), JSON.stringify({ packageManager: "pnpm@10.32.1" }));
+  writeFileSync(join(repo, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+  writeFileSync(join(repo, "packages", "ui", "package.json"), JSON.stringify(uiManifest));
+}
+
+function commitFixtureChanges(repo: string) {
+  git(repo, "add", "-A");
+  git(repo, "commit", "-m", "configure worktree setup fixture");
+}
+
+function addRunner(repo: string, packagePath: string, runner: "vitest" | "jest" = "vitest") {
+  const executable = join(repo, packagePath, "node_modules", ".bin", runner);
+  mkdirSync(dirname(executable), { recursive: true });
+  writeFileSync(executable, "#!/bin/sh\nexit 0\n");
+  chmodSync(executable, 0o755);
+  return executable;
+}
+
+async function captureWorktreeError(operation: Promise<unknown>): Promise<WorktreeServiceError> {
+  try {
+    await operation;
+  } catch (error) {
+    if (error instanceof WorktreeServiceError) return error;
+    throw error;
+  }
+  throw new Error("Expected worktree operation to fail");
+}
+
 describe("WorktreeService", () => {
+  it("rejects invalid repository IDs before reading setup defaults", async () => {
+    const { service, host } = fixture();
+    const list = vi.spyOn(host, "list");
+
+    const failure = await captureWorktreeError(service.create({
+      actorSessionId: "owner",
+      repoId: "../outside",
+      branch: "feature/invalid-repo-id",
+      mode: "new",
+    }));
+
+    expect(failure.code).toBe("INVALID_REPO_ID");
+    expect(list).not.toHaveBeenCalled();
+  });
+
   it("creates, reuses, lists and removes only a clean owned worktree", async () => {
     const { service, host } = fixture();
     const created = await service.create({
@@ -108,6 +156,9 @@ describe("WorktreeService", () => {
           worktreeId: created.worktreeId,
           discoveryKind: "managed_missing",
           dbState: "removed",
+          setupMode: "none",
+          setupRequired: false,
+          setupStatus: "not_requested",
         }),
       ]));
   });
@@ -232,41 +283,331 @@ describe("WorktreeService", () => {
     })).rejects.toMatchObject({ code: "WORKTREE_BRANCH_MISMATCH" });
   });
 
-  it("retries a required shared-dependency setup without deleting real node_modules", async () => {
+  it("defaults new pnpm worktrees to required shared setup and preserves failure details", async () => {
     const { repo, service, host } = fixture();
+    configurePnpmRepo(repo);
+    rmSync(join(repo, "pnpm-workspace.yaml"));
+    commitFixtureChanges(repo);
+    const failure = await captureWorktreeError(service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-required",
+      mode: "new",
+    }));
+    expect(failure.code).toBe("WORKTREE_SETUP_REQUIRED");
+    expect(failure.details).toMatchObject({
+      setupStatus: "failed",
+      warnings: expect.arrayContaining([expect.stringContaining("packages/ui")]),
+    });
+    const details = failure.details!;
+    const record = host.records.get(String(details.worktreeId));
+    expect(record).toMatchObject({
+      canonicalPath: details.path,
+      setupMode: "shared_dependencies",
+      setupRequired: true,
+      setupStatus: "failed",
+    });
+    expect(existsSync(String(details.path))).toBe(true);
+
+    const explicitShared = await captureWorktreeError(service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-explicit-shared-required",
+      mode: "new",
+      setup: "shared_dependencies",
+    }));
+    expect(explicitShared.code).toBe("WORKTREE_SETUP_REQUIRED");
+    expect(host.records.get(String(explicitShared.details?.worktreeId))?.setupRequired).toBe(true);
+  });
+
+  it("uses pnpm-workspace.yaml as a default signal", async () => {
+    const { repo, service, host } = fixture();
+    configurePnpmRepo(repo);
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "demo" }));
+    commitFixtureChanges(repo);
+
+    const failure = await captureWorktreeError(service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-pnpm-workspace-default",
+      mode: "new",
+    }));
+
+    expect(failure.code).toBe("WORKTREE_SETUP_REQUIRED");
+    expect(host.records.get(String(failure.details?.worktreeId))).toMatchObject({
+      setupMode: "shared_dependencies",
+      setupRequired: true,
+    });
+  });
+
+  it("keeps non-pnpm repository defaults at none and optional", async () => {
+    const { service, host } = fixture();
     const created = await service.create({
       actorSessionId: "owner",
       repoId: "demo",
-      branch: "feature/setup-retry",
+      branch: "feature/setup-non-pnpm-default",
       mode: "new",
-      setup: "shared_dependencies",
-      requireSetup: true,
     });
-    expect(created).toMatchObject({ setupStatus: "failed" });
 
-    mkdirSync(join(repo, "node_modules"));
-    writeFileSync(join(repo, "node_modules", "base-only.txt"), "preserve");
-    mkdirSync(join(repo, "packages", "ui", "node_modules"));
-    writeFileSync(join(repo, "packages", "ui", "node_modules", "ui-only.txt"), "preserve");
-    const retried = await service.create({
+    expect(created).toMatchObject({
+      setupMode: "none",
+      setupRequired: false,
+      setupStatus: "not_requested",
+    });
+    expect(host.records.get(String(created.worktreeId))).toMatchObject({
+      setupMode: "none",
+      setupRequired: false,
+    });
+  });
+
+  it("keeps explicit none independent in a pnpm repo and exposes the stored setup state", async () => {
+    const { repo, service } = fixture();
+    configurePnpmRepo(repo);
+    commitFixtureChanges(repo);
+    const created = await service.create({
       actorSessionId: "owner",
       repoId: "demo",
-      branch: "feature/setup-retry",
+      branch: "feature/setup-none",
+      mode: "new",
+      setup: "none",
+    });
+    expect(created).toMatchObject({
+      setupMode: "none",
+      setupRequired: false,
+      setupStatus: "not_requested",
+    });
+    expect(existsSync(join(String(created.path), "packages", "ui", "node_modules"))).toBe(false);
+    const listed = await service.list({ actorSessionId: "owner", repoId: "demo" });
+    expect(listed).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: created.path,
+        setupMode: "none",
+        setupRequired: false,
+        setupStatus: "not_requested",
+      }),
+      expect.objectContaining({
+        discoveryKind: "base",
+        setupMode: null,
+        setupRequired: null,
+        setupStatus: null,
+      }),
+    ]));
+  });
+
+  it("marks a shared setup ready only when a declared package-local runner is executable", async () => {
+    const { repo, service } = fixture();
+    configurePnpmRepo(repo);
+    const sourceRunner = addRunner(repo, "packages/ui");
+    commitFixtureChanges(repo);
+
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-runner-ready",
       mode: "new",
       setup: "shared_dependencies",
       requireSetup: true,
     });
-    expect(retried.warnings).toEqual([]);
-    expect(retried).toMatchObject({ reused: true, setupStatus: "ready" });
-    expect(host.records.get(String(created.worktreeId))?.managedPaths.map(({ path }) => path))
-      .toEqual(["node_modules", "packages/ui/node_modules"]);
 
-    await expect(service.remove({
+    const linkedModules = join(String(created.path), "packages", "ui", "node_modules");
+    expect(created).toMatchObject({ setupStatus: "ready", setupMode: "shared_dependencies", setupRequired: true });
+    expect(lstatSync(linkedModules).isSymbolicLink()).toBe(true);
+    expect(realpathSync(join(linkedModules, ".bin", "vitest"))).toBe(realpathSync(sourceRunner));
+  });
+
+  it("rejects a missing source runner with its package path", async () => {
+    const { repo, service, host } = fixture();
+    configurePnpmRepo(repo);
+    mkdirSync(join(repo, "packages", "ui", "node_modules"), { recursive: true });
+    commitFixtureChanges(repo);
+
+    const failure = await captureWorktreeError(service.create({
       actorSessionId: "owner",
-      worktreeId: String(created.worktreeId),
-    })).resolves.toMatchObject({ removed: true });
-    expect(existsSync(join(repo, "node_modules", "base-only.txt"))).toBe(true);
-    expect(existsSync(join(repo, "packages", "ui", "node_modules", "ui-only.txt"))).toBe(true);
+      repoId: "demo",
+      branch: "feature/setup-runner-missing",
+      mode: "new",
+      setup: "shared_dependencies",
+      requireSetup: true,
+    }));
+
+    expect(failure.code).toBe("WORKTREE_SETUP_REQUIRED");
+    expect(failure.details?.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining("packages/ui"),
+      expect.stringContaining("vitest"),
+    ]));
+    expect(host.records.get(String(failure.details?.worktreeId))?.setupStatus).toBe("failed");
+
+    const optional = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-runner-optional",
+      mode: "new",
+      setup: "shared_dependencies",
+      requireSetup: false,
+    });
+    expect(optional).toMatchObject({
+      setupMode: "shared_dependencies",
+      setupRequired: false,
+      setupStatus: "failed",
+    });
+    expect(optional.warnings).toEqual(expect.arrayContaining([expect.stringContaining("packages/ui")]));
+  });
+
+  it("inherits omitted setup settings and does not repair a missing link during reuse", async () => {
+    const { repo, service, host } = fixture();
+    configurePnpmRepo(repo);
+    addRunner(repo, "packages/ui");
+    commitFixtureChanges(repo);
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-stale-link",
+      mode: "new",
+      setup: "shared_dependencies",
+      requireSetup: false,
+    });
+    const linkedModules = join(String(created.path), "packages", "ui", "node_modules");
+    rmSync(linkedModules);
+
+    const reused = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-stale-link",
+      mode: "existing",
+    });
+
+    expect(reused).toMatchObject({
+      worktreeId: created.worktreeId,
+      reused: true,
+      setupMode: "shared_dependencies",
+      setupRequired: false,
+      setupStatus: "failed",
+    });
+    expect(reused.warnings).toEqual(expect.arrayContaining([expect.stringContaining("packages/ui") ]));
+    expect(existsSync(linkedModules)).toBe(false);
+    expect(host.records.get(String(created.worktreeId))?.setupStatus).toBe("failed");
+
+    const mismatch = await captureWorktreeError(service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-stale-link",
+      mode: "existing",
+      setup: "none",
+    }));
+    expect(mismatch.code).toBe("WORKTREE_SETUP_CONTRACT_MISMATCH");
+  });
+
+  it("does not repair a previously failed optional setup during reuse", async () => {
+    const { repo, service, host } = fixture();
+    configurePnpmRepo(repo);
+    commitFixtureChanges(repo);
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-failed-reuse",
+      mode: "new",
+      setup: "shared_dependencies",
+      requireSetup: false,
+    });
+    expect(created).toMatchObject({ setupStatus: "failed" });
+    addRunner(repo, "packages/ui");
+
+    const reused = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-failed-reuse",
+      mode: "existing",
+    });
+
+    expect(reused).toMatchObject({
+      worktreeId: created.worktreeId,
+      setupMode: "shared_dependencies",
+      setupRequired: false,
+      setupStatus: "failed",
+    });
+    expect(existsSync(join(String(created.path), "packages", "ui", "node_modules"))).toBe(false);
+    expect(host.records.get(String(created.worktreeId))?.managedPaths).toEqual([]);
+  });
+
+  it("rechecks a required runner before returning a reused ready worktree", async () => {
+    const { repo, service, host } = fixture();
+    configurePnpmRepo(repo);
+    const sourceRunner = addRunner(repo, "packages/ui");
+    commitFixtureChanges(repo);
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-stale-runner",
+      mode: "new",
+      setup: "shared_dependencies",
+      requireSetup: true,
+    });
+    writeFileSync(sourceRunner, "#!/bin/sh\nexit 0\n");
+    chmodSync(sourceRunner, 0o644);
+
+    const failure = await captureWorktreeError(service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-stale-runner",
+      mode: "existing",
+    }));
+
+    expect(failure.code).toBe("WORKTREE_SETUP_REQUIRED");
+    expect(failure.details).toMatchObject({ worktreeId: created.worktreeId, setupStatus: "failed" });
+    expect(failure.details?.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining("packages/ui"),
+      expect.stringContaining("executable"),
+    ]));
+    expect(host.records.get(String(created.worktreeId))?.setupStatus).toBe("failed");
+  });
+
+  it("does not link or inspect Jest from an independent npm subproject", async () => {
+    const { repo, service, host } = fixture();
+    configurePnpmRepo(repo, { name: "ui" });
+    const app = join(repo, "soul-app");
+    mkdirSync(app, { recursive: true });
+    writeFileSync(join(app, "package.json"), JSON.stringify({ name: "soul-app", devDependencies: { jest: "*" } }));
+    writeFileSync(join(app, "package-lock.json"), "{}\n");
+    addRunner(repo, "soul-app", "jest");
+    mkdirSync(join(repo, "packages", "ui", "node_modules"), { recursive: true });
+    commitFixtureChanges(repo);
+
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/setup-independent-npm",
+      mode: "new",
+      setup: "shared_dependencies",
+      requireSetup: true,
+    });
+
+    expect(created).toMatchObject({ setupStatus: "ready" });
+    expect(host.records.get(String(created.worktreeId))?.managedPaths.map(({ path }) => path))
+      .not.toContain("soul-app/node_modules");
+    expect(existsSync(join(String(created.path), "soul-app", "node_modules"))).toBe(false);
+  });
+
+  it("keeps adoption defaults at none without changing existing links", async () => {
+    const { projectsRoot, repo, service } = fixture();
+    configurePnpmRepo(repo);
+    const unmanaged = join(projectsRoot, "demo--adopt-default");
+    git(repo, "worktree", "add", "-b", "feature/adopt-default", unmanaged, "HEAD");
+
+    const adopted = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/adopt-default",
+      mode: "adopt",
+      adoptPath: unmanaged,
+      expectedHead: git(unmanaged, "rev-parse", "HEAD"),
+    });
+
+    expect(adopted).toMatchObject({
+      adopted: true,
+      setupMode: "none",
+      setupRequired: false,
+      setupStatus: "not_requested",
+    });
   });
 
   it("refuses removal while an attached or retained runner still owns the cwd", async () => {
