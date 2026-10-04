@@ -43,6 +43,7 @@ export function FolderWorkspace({
   runHistoryTotal,
   runHistoryHasMore,
   runHistoryLoading,
+  runHistoryFailed = false,
   onLoadMoreRuns,
   activeSession,
   focusRequest,
@@ -89,6 +90,7 @@ export function FolderWorkspace({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
+  runHistoryFailed?: boolean;
   onLoadMoreRuns(): Promise<void>;
   activeSession: SessionSummary | undefined;
   focusRequest: FolderSectionFocusRequest | null;
@@ -259,6 +261,7 @@ export function FolderWorkspace({
         runHistoryTotal={runHistoryTotal}
         runHistoryHasMore={runHistoryHasMore}
         runHistoryLoading={runHistoryLoading}
+        runHistoryFailed={runHistoryFailed}
         activeSession={activeSession}
         chatInputDisabled={chatInputDisabled}
         fileUploadUrl={fileUploadUrl}
@@ -304,6 +307,7 @@ export function FolderWorkspace({
           runHistoryTotal={runHistoryTotal}
           runHistoryHasMore={runHistoryHasMore}
           runHistoryLoading={runHistoryLoading}
+          runHistoryFailed={runHistoryFailed}
           activeSessionId={activeSessionKey}
           markdownDocumentsRevision={markdownDocumentsRevision}
           focusRequest={focusRequest}

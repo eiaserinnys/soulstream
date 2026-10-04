@@ -58,6 +58,7 @@ export function FolderBoardWorkspace({
   runHistoryTotal,
   runHistoryHasMore,
   runHistoryLoading,
+  runHistoryFailed = false,
   activeSession,
   chatInputDisabled,
   fileUploadUrl,
@@ -86,6 +87,7 @@ export function FolderBoardWorkspace({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
+  runHistoryFailed?: boolean;
   activeSession: SessionSummary | undefined;
   chatInputDisabled: boolean;
   fileUploadUrl: string | undefined;
@@ -447,6 +449,7 @@ export function FolderBoardWorkspace({
             runHistoryTotal={runHistoryTotal}
             runHistoryHasMore={runHistoryHasMore}
             runHistoryLoading={runHistoryLoading}
+            runHistoryFailed={runHistoryFailed}
             activeSessionId={activeSessionKey}
             boardItems={boardItems}
             openedResources={resourceState.openedResources}

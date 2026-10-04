@@ -10,10 +10,10 @@ import {
   type MarkdownDocument,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { ChevronLeft, ChevronRight, ChevronsDown, Plus, SquarePen } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, SquarePen } from "lucide-react";
 
 import { RichSessionRow } from "./RichSessionRow";
-import { loadMoreRunsPreservingScroll } from "./FolderSessionHistory";
+import { RunHistoryAutoLoader } from "./RunHistoryAutoLoader";
 import { fetchInlineMarkdown } from "./folder-inline-board-api";
 import {
   buildFolderBoardResourceTabs,
@@ -37,6 +37,7 @@ export function FolderBoardResourcePane({
   runHistoryTotal,
   runHistoryHasMore,
   runHistoryLoading,
+  runHistoryFailed = false,
   activeSessionId,
   boardItems,
   openedResources,
@@ -57,6 +58,7 @@ export function FolderBoardResourcePane({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
+  runHistoryFailed?: boolean;
   activeSessionId: string | null;
   boardItems: readonly CatalogBoardItem[];
   openedResources: readonly FolderBoardResourceSelection[];
@@ -109,6 +111,7 @@ export function FolderBoardResourcePane({
             runHistoryTotal={runHistoryTotal}
             runHistoryHasMore={runHistoryHasMore}
             runHistoryLoading={runHistoryLoading}
+            runHistoryFailed={runHistoryFailed}
             activeSessionId={activeSessionId}
             onOpenSession={onOpenSession}
             onLoadMoreRuns={onLoadMoreRuns}
@@ -228,6 +231,7 @@ function FolderBoardSessionTree({
   runHistoryTotal,
   runHistoryHasMore,
   runHistoryLoading,
+  runHistoryFailed = false,
   activeSessionId,
   onOpenSession,
   onLoadMoreRuns,
@@ -240,6 +244,7 @@ function FolderBoardSessionTree({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
+  runHistoryFailed?: boolean;
   activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
   onLoadMoreRuns(): Promise<void>;
@@ -278,20 +283,8 @@ function FolderBoardSessionTree({
           ))}
         </div>
       )}
-      {runHistoryHasMore ? (
-        <div className="v3-run-load-more">
-          <DashboardIconCap
-            label="이전 세션 더 보기"
-            data-testid="v3-folder-board-load-more-runs"
-            disabled={runHistoryLoading}
-            onClick={(event) => {
-              void loadMoreRunsPreservingScroll(event.currentTarget, onLoadMoreRuns);
-            }}
-          >
-            <ChevronsDown className="h-4 w-4" aria-hidden="true" />
-          </DashboardIconCap>
-        </div>
-      ) : null}
+      <RunHistoryAutoLoader hasMore={runHistoryHasMore} loading={runHistoryLoading}
+        failed={runHistoryFailed} onLoadMore={onLoadMoreRuns} testId="v3-folder-board-history-auto-loader" />
     </div>
   );
 }

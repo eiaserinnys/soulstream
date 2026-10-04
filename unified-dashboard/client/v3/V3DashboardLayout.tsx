@@ -594,6 +594,7 @@ function V3DashboardContent() {
               runHistoryTotal={workspaceFolderEntry.sessionIds.length}
               runHistoryHasMore={Boolean(folderSessions.state?.nextCursor)}
               runHistoryLoading={Boolean(folderSessions.state?.loadingMore)}
+              runHistoryFailed={Boolean(folderSessions.state?.loadFailed)}
               activeSessionId={activeSessionKey}
               markdownDocumentsRevision={markdownDocumentsRevision}
               focusRequest={sessionPanel.focusRequest}
@@ -648,6 +649,7 @@ function V3DashboardContent() {
           runHistoryTotal={workspaceFolderEntry?.sessionIds.length ?? 0}
           runHistoryHasMore={Boolean(folderSessions.state?.nextCursor)}
           runHistoryLoading={Boolean(folderSessions.state?.loadingMore)}
+          runHistoryFailed={Boolean(folderSessions.state?.loadFailed)}
           onLoadMoreRuns={folderSessions.loadMore}
           activeSession={activeSession}
           focusRequest={sessionPanel.focusRequest}

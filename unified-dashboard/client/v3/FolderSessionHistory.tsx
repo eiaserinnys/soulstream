@@ -4,7 +4,7 @@ import {
   useSessionMenu,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { ChevronsDown, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { retainEqualValue } from "@seosoyoung/soul-ui";
 
 import {
@@ -25,6 +25,7 @@ import {
   type SuccessionDocumentOption,
 } from "./SessionSuccessionModal";
 import { SessionRunList } from "./SessionRunList";
+import { RunHistoryAutoLoader } from "./RunHistoryAutoLoader";
 import "./v3-run-history.css";
 
 export function FolderSessionHistory({
@@ -41,6 +42,7 @@ export function FolderSessionHistory({
   runHistoryTotal,
   runHistoryHasMore,
   runHistoryLoading,
+  runHistoryFailed = false,
   activeSessionId,
   onLoadMoreRuns,
   onOpenSession,
@@ -59,6 +61,7 @@ export function FolderSessionHistory({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
+  runHistoryFailed?: boolean;
   activeSessionId: string | null;
   onLoadMoreRuns(): Promise<void>;
   onOpenSession(session: SessionSummary): void;
@@ -91,12 +94,6 @@ export function FolderSessionHistory({
   const openSessionMenu = useSessionMenu();
 
 
-  const loadMoreRuns = async (event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    await loadMoreRunsPreservingScroll(event.currentTarget, onLoadMoreRuns);
-  };
-
   const openRunContextMenu = (session: SessionSummary, event: MouseEvent<HTMLDivElement>) => {
     openSessionMenu(session.agentSessionId,event);
   };
@@ -112,18 +109,8 @@ export function FolderSessionHistory({
       {tree.length === 0 ? <p className="v3-detail-empty">아직 실행된 세션이 없습니다.</p> : null}
       <SessionRunList tree={tree} activeSessionId={activeSessionId}
         onOpenSession={onOpenSession} onContextMenu={openRunContextMenu} />
-      {runHistoryHasMore ? (
-        <div className="v3-run-load-more">
-          <DashboardIconCap
-            label="이전 세션 더 보기"
-            data-testid="v3-load-more-runs"
-            disabled={runHistoryLoading}
-            onClick={(event) => { void loadMoreRuns(event); }}
-          >
-            <ChevronsDown className="h-4 w-4" aria-hidden="true" />
-          </DashboardIconCap>
-        </div>
-      ) : null}
+      <RunHistoryAutoLoader hasMore={runHistoryHasMore} loading={runHistoryLoading}
+        failed={runHistoryFailed} onLoadMore={onLoadMoreRuns} testId="v3-run-history-auto-loader" />
       {successionOpen ? (
         <SessionSuccessionModal
           folderTitle={folderTitle}
@@ -150,24 +137,4 @@ export function getRunSessionRenamePrefill(
   sessionId: string,
 ): string {
   return sessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? "";
-}
-
-export async function loadMoreRunsPreservingScroll(
-  trigger: HTMLElement,
-  loadMore: () => Promise<void>,
-  scheduleFrame: (callback: FrameRequestCallback) => number = requestAnimationFrame,
-): Promise<void> {
-  const detailScroller = trigger.closest<HTMLElement>(".v3-detail-scroll");
-  const scroller = detailScroller && detailScroller.scrollHeight > detailScroller.clientHeight
-    ? detailScroller
-    : trigger.closest<HTMLElement>(".v3-planner-scroll");
-  const scrollTop = scroller?.scrollTop;
-  await loadMore();
-  if (!scroller || scrollTop === undefined) return;
-  await new Promise<void>((resolve) => {
-    scheduleFrame(() => {
-      scroller.scrollTop = scrollTop;
-      resolve();
-    });
-  });
 }

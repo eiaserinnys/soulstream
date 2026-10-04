@@ -42,6 +42,8 @@ describe("FolderBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
 
   beforeEach(() => {
     resetV3InvalidationForTest();
+    // DOM unit tests cover the retry action; real intersection timing is covered by Chromium.
+    vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -50,6 +52,7 @@ describe("FolderBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
   afterEach(() => {
     flushSync(() => root.unmount());
     document.body.replaceChildren();
+    vi.unstubAllGlobals();
   });
 
   function render(onSessionContextMenu: (session: SessionSummary, event: unknown) => void) {
@@ -101,7 +104,7 @@ describe("FolderBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("위임 세션을 기본 펼침으로 보여주고 다음 페이지에 도달할 수 있다", () => {
+  it("위임 세션을 기본 펼침으로 보여주고 페이지 오류를 다시 시도할 수 있다", () => {
     const delegated: SessionSummary = {
       ...session,
       agentSessionId: "s-child",
@@ -121,6 +124,7 @@ describe("FolderBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
           ["s-child", "ready"],
         ])}
         runHistoryTotal={38}
+        runHistoryFailed
         runHistoryHasMore
         runHistoryLoading={false}
         activeSessionId={null}
@@ -137,7 +141,7 @@ describe("FolderBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
     expect(container.querySelector('[data-session-id="s-child"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="1개 위임 세션 접기"]')
       ?.getAttribute("aria-expanded")).toBe("true");
-    const loadMore = container.querySelector<HTMLButtonElement>('[data-testid="v3-folder-board-load-more-runs"]');
+    const loadMore = container.querySelector<HTMLButtonElement>('[aria-label="다시 시도"]');
     expect(loadMore).not.toBeNull();
     flushSync(() => loadMore?.click());
     expect(onLoadMoreRuns).toHaveBeenCalledTimes(1);
