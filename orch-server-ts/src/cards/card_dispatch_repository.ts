@@ -61,8 +61,8 @@ export class CardDispatchRepository {
       GROUP BY op.payload_json->>'node_id'`;
         return Object.fromEntries(rows.map(row => [row.node_id, row.count]));
     }
-    async ownerSession(id:string):Promise<CardOwnerSession | null> {
-        return (await (await this.resolveSql())<CardOwnerSession[]>`SELECT session_id,node_id,agent_id,model_preset,status,metadata FROM sessions WHERE session_id=${id}`)[0]??null;
+    async ownerSession(id:string):Promise<(CardOwnerSession & Pick<CardSession,"termination_reason" | "termination_event_id">) | null> {
+        return (await (await this.resolveSql())<(CardOwnerSession & Pick<CardSession,"termination_reason" | "termination_event_id">)[]>`SELECT session_id,node_id,agent_id,model_preset,status,metadata,termination_reason,termination_event_id FROM sessions WHERE session_id=${id}`)[0]??null;
     }
     async capacitySessionIds() { return new Set((await cardCapacitySessions(await this.resolveSql())).map(r=>r.session_id)); }
     async hasExplicitWork(cardId:string) {
