@@ -63,7 +63,7 @@ export function cardRouteErrorResponse(error: unknown) {
   return { status: failure.status, body: { detail: { error: { code: failure.code, message: failure.message } } } };
 }
 
-async function allowed(options: CardRouteBodyOptions, resolveAccess: ResolveAccess, folderId: string) {
+export async function allowed(options: CardRouteBodyOptions, resolveAccess: ResolveAccess, folderId: string) {
   const [access, folders] = await Promise.all([resolveAccess(), options.provider.listFolders()]);
   if (!isFolderAllowed(normalizeAccess(access), folders, folderId))
     throw Object.assign(new Error("Folder access denied"), { statusCode: 403, code: "FOLDER_ACCESS_DENIED" });

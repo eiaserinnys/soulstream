@@ -1,3 +1,4 @@
+import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
@@ -19,7 +20,8 @@ export function CardStatusMenu({ api, card, onClose }: {
   const [detail, setDetail] = useState<CardDetail | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
   const active = useRef(true);
-  const { transition, pending, error } = useCardTransition(api, card.id);
+  const action=useCardTransition(api,card.id);
+  const { transition, pending, error }=action;
   const read = async () => {
     if (!api) return;
     const scope = captureAuthScope().generation;
@@ -33,7 +35,7 @@ export function CardStatusMenu({ api, card, onClose }: {
     const ok = await transition(detail.card, next, undefined, () => active.current);
     if (ok && active.current) onClose();
   };
-  return <AppModalSurface visible modalId="modal_card_assignment" variant="compact" onRequestClose={() => { active.current = false; onClose(); }}>
+  return <><CardTransitionSettings api={api} action={action} onExecuted={onClose}/><AppModalSurface visible={!action.settingsCard} modalId="modal_card_assignment" variant="compact" onRequestClose={() => { active.current = false; onClose(); }}>
     <ScrollView testID="card-status-menu" contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <Text style={styles.heading} numberOfLines={2}>{card.title} · 상태 이동</Text>
       {!detail && !readError ? <ActivityIndicator color={t.colors.accent} /> : null}
@@ -49,5 +51,5 @@ export function CardStatusMenu({ api, card, onClose }: {
       }) : null}
       <GlassButton accessibilityLabel="상태 메뉴 닫기" onPress={() => { active.current = false; onClose(); }}><Text style={styles.body}>닫기</Text></GlassButton>
     </ScrollView>
-  </AppModalSurface>;
+  </AppModalSurface></>;
 }

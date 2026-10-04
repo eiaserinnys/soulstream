@@ -49,7 +49,7 @@ export function CardBoardDnd({children,cards,renderCard}:{children:ReactNode;car
         setActiveId(null);
         if(!over)return;
         const status=over.data.current?.status as CardStatus|undefined;
-        if(status && status!==active.data.current?.status)transitions.request(String(active.id),status);
+        if(status && (status==='running'||status!==active.data.current?.status))transitions.request(String(active.id),status);
       }}>
       {children}
       {overlayHost.current?createPortal(overlay,overlayHost.current):overlay}

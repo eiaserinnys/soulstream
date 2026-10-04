@@ -5,7 +5,7 @@ export const cardStatusLabels:Record<string,string>={todo:"할 일",queued:"대�
 
 /** Uses transaction-captured state, rather than a newer read or the comment's spoken author projection. */
 export function buildCardChangeNotification(change:CardMutationChange,comment?:Record<string,unknown>,fallbackSessionId?:string | null) {
-  if (change.result.idempotent || !change.committedCard) return null;
+  if (change.result.operation.operation_type === "execute_card" || change.result.idempotent || !change.committedCard) return null;
   const {result,committedCard:card,previousStatus,previousAssigneeSessionId}=change;
   const op=result.operation;
   const kind=op.operation_type === "add_card_comment" ? "comment" : "state";

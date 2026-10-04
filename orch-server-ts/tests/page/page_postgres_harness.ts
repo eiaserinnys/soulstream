@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 
 import { startPostgresTestContainer } from
@@ -519,6 +520,7 @@ CREATE TABLE folder_operations (
 );
 CREATE UNIQUE INDEX uq_folder_ops_idem ON folder_operations(idempotency_key) WHERE idempotency_key IS NOT NULL;
   `);
+  await sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/116_card_execution_requests.sql",import.meta.url),"utf8"));
 }
 
 async function assertSafeExternalDatabase(url: string): Promise<void> {

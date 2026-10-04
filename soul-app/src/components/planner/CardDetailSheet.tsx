@@ -1,3 +1,4 @@
+import {CardTransitionSettings} from './CardTransitionSettings';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Platform, ScrollView, Text, View } from 'react-native';
@@ -64,6 +65,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const [otherExpanded, setOtherExpanded] = useState(false);
   const [sessionsExpanded, setSessionsExpanded] = useState(false);
   const scroll = useRef<ScrollView>(null);
+  const assignmentAttempt=useRef<{key:string;value:string}|null>(null);
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const card = detail?.card;
@@ -107,6 +109,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   };
   const sessionIds = [...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId] : []), ...(detail?.sessions ?? []).map((session) => session.agentSessionId)])];
   return <><AppKeyboardAvoidingView testID="card-detail-container" behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={folderStyles.container}>
+    <CardTransitionSettings api={api} action={statusAction}/>
     <View testID="card-detail-header" style={styles.header}>
       {!nativeHeader && <View style={styles.headerRow}>
         <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose}><Text style={styles.glyph}>‹</Text></GlassButton>
@@ -116,10 +119,13 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
       {card ? <View style={styles.headerRow}>
         <View style={styles.chips}>
           {nativeHeader ? <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api} onPress={() => setStatusMenuOpen(true)}><CardStatusChip card={card} /></CompactTouchTarget> : null}
+          {!card.assigneeSessionId?<>
+          <CompactTouchTarget accessibilityRole="button" accessibilityLabel="폴더 변경" disabled={locked || !api} onPress={()=>setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{useSessionStore.getState().catalog.folders.find(f=>f.id===card.folderId)?.name??card.folderId}</Text></CompactTouchTarget>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="담당 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}>{avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.chipAvatar} /> : <Text style={styles.chipText}>{avatar.fallbackChar}</Text>}
             <Text style={styles.chipText} numberOfLines={1}>{card.assigneeKind === 'human' ? card.assigneeUserId : resolveSessionAgentLabel(identity)}</Text></CompactTouchTarget>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="노드 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{nodeId ?? '노드 미지정'}</Text></CompactTouchTarget>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="모델 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{assigned?.modelPreset ?? card.modelPreset ?? '기본 모델'}</Text></CompactTouchTarget>
+          </>:null}
         </View>
         <CompactTouchTarget accessibilityRole="button" accessibilityLabel="완료" accessibilityState={{ disabled: locked || !api }} disabled={locked || !api}
           surfaceStyle={[styles.done, (locked || !api) && styles.disabled]} onPress={() => { void status('done'); }}><Text style={styles.doneText}>완료</Text></CompactTouchTarget>
@@ -146,18 +152,13 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
         onPickAttachment={pickAttachment} onSend={() => { void send(); }} uploading={attachments.uploading} sending={comments.pending || pending}
         disabled={locked || !api} voiceControls={null} />
     </View>
-    {assignmentOpen && card ? <CardAssignmentSheet api={api} mode="edit" value={{ folderId: card.folderId, nodeId: card.nodeId,
+    {assignmentOpen && card && !card.assigneeSessionId ? <CardAssignmentSheet api={api} mode="edit" value={{ folderId: card.folderId, nodeId: card.nodeId,
       agentId: card.assigneeAgentId, modelPreset: card.modelPreset }} onClose={() => setAssignmentOpen(false)} onSave={async (next) => {
         if (!api) return;
-        let version = card.version;
-        if (next.folderId !== card.folderId) {
-          const ok = await run(async () => { const result = await api.moveCard(card.id, next.folderId, version, cardOperationId()); if (!result.card) throw new Error('이동한 카드를 찾을 수 없습니다.'); version = result.card.version; return result; });
-          if (!ok) throw new Error('폴더 이동을 저장하지 못했습니다.');
-        }
-        if (next.agentId !== card.assigneeAgentId || next.nodeId !== card.nodeId || next.modelPreset !== card.modelPreset) {
-          const ok = await run(() => api.updateCard(card.id, { ...(next.agentId !== card.assigneeAgentId ? { assignee: { kind: 'agent', agentId: next.agentId } } : {}), nodeId: next.nodeId, modelPreset: next.modelPreset }, version, cardOperationId()));
-          if (!ok) throw new Error('담당 변경을 저장하지 못했습니다.');
-        }
+        const serialized=JSON.stringify(next);
+        if(!assignmentAttempt.current||assignmentAttempt.current.value!==serialized)assignmentAttempt.current={key:cardOperationId(),value:serialized};
+        const ok=await run(()=>api.saveCardExecutionSettings(card.id,next,card.version,assignmentAttempt.current!.key));
+        if(!ok)throw new Error('실행 설정을 저장하지 못했습니다.');
       }} /> : null}
   </AppKeyboardAvoidingView>
     {statusMenuOpen && card ? <CardStatusMenu api={api} card={card} onClose={() => setStatusMenuOpen(false)} /> : null}

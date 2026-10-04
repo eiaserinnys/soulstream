@@ -49,5 +49,5 @@ export function boardDropStatus(x: number, y: number, frame: BoardFrame, geometr
   const index = geometry.lanes.slice(0,columns.length).findIndex(lane=>local>=lane.start&&local<=lane.start+lane.width);
   if (index < 0) return null;
   const next = columns[index][0];
-  return next === from ? null : next;
+  return next === from && next !== 'running' ? null : next;
 }

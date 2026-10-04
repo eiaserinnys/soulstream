@@ -39,6 +39,7 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("respond", "intervention", "durable_mutation"),
   entry("approve_tool", "intervention", "durable_mutation"),
   entry("reject_tool", "intervention", "durable_mutation"),
+  entry("ensure_session_running", "intervention", "durable_mutation"),
   entry("intervene", "intervention", "durable_mutation"),
   entry("claude_runtime_list_tasks", "claude-runtime", "bounded_result"),
   entry("claude_runtime_task_output", "claude-runtime", "bounded_result"),

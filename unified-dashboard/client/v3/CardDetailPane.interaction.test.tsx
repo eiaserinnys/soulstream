@@ -85,11 +85,22 @@ it("shows structured request attachments and opens the existing image viewer",as
 
 it("reopens a completed detail through the existing status menu without reports",async()=>{
  const completed={...card,status:"done" as const,version:8};const current={...detail,card:completed,reports:[]};
- const loadCard=vi.fn().mockResolvedValue(current),mutate=vi.fn().mockResolvedValue(undefined);
- useCardStore.setState({byId:{inherit:completed},details:{inherit:current},loadCard,mutate});
+ const loadCard=vi.fn().mockResolvedValue(current),mutate=vi.fn().mockResolvedValue(undefined),execute=vi.fn().mockResolvedValue(current);
+ useCardStore.setState({byId:{inherit:completed},details:{inherit:current},loadCard,mutate,execute});
  await act(()=>root.render(<CardDetailPane cardId="inherit" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()}/>));
  await act(async()=>container.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]')!.click());
  const move=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(button=>button.textContent==="실행 중")!;
  await act(async()=>move.click());
- expect(mutate).toHaveBeenCalledWith("inherit","/status",{status:"running",expectedVersion:8});
+ expect(execute).toHaveBeenCalledWith("inherit",8);expect(mutate).not.toHaveBeenCalled();
+});
+
+
+it("shows editable settings for agent preassignment and hides only settings after assignment",async()=>{
+ const unassigned={...card,assigneeKind:"agent" as const,assigneeSessionId:null};
+ useCardStore.setState({byId:{inherit:unassigned},details:{inherit:{...detail,card:unassigned}},loadCard:vi.fn().mockResolvedValue({...detail,card:unassigned})});
+ await render();expect(container.querySelector('button[aria-label="카드 실행 설정 편집"]')).not.toBeNull();
+ await act(()=>useCardStore.setState({byId:{inherit:card},details:{inherit:detail}}));
+ expect(container.querySelector('button[aria-label="카드 실행 설정 편집"]')).toBeNull();
+ expect(container.querySelector('button[aria-label="완료"]')).not.toBeNull();
+ expect(container.querySelector('[data-card-section="sessions"]')).not.toBeNull();expect(container.querySelector('textarea')).not.toBeNull();
 });
