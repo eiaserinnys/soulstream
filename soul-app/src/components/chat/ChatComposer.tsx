@@ -1,3 +1,4 @@
+import { useTextInputContentHeight } from './useTextInputContentHeight';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -58,12 +59,11 @@ export function ChatComposer({
   const { fontScale } = useWindowDimensions();
   const composer = createSessionVisualRoles(t).chat.composer;
   const lineHeight = t.chatFontSize.body * t.lineHeightRatio * fontScale;
-  // Soft wrapping keeps the field one line tall; only explicit Enter grows it.
-  const lines = input.split('\n').length;
-  const multilineExpanded = lines > 1;
   const singleLineHeight = Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2);
-  const inputHeight = Math.min(styles.composerTextInput.maxHeight,
-    Math.max(singleLineHeight, lines * lineHeight + composer.inputPaddingVertical * 2));
+  const measurement = useTextInputContentHeight(input, lineHeight);
+  const measuredHeight = input ? measurement.contentHeight : 0;
+  const multilineExpanded = measuredHeight > singleLineHeight + 1;
+  const inputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight, measuredHeight));
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
 
   return (
@@ -89,9 +89,11 @@ export function ChatComposer({
             onPress={onPickAttachment}
           />
           <TextInput
+            ref={measurement.ref}
+            onContentSizeChange={measurement.onContentSizeChange}
             testID="chat-composer-text-input"
             style={[styles.composerTextInput, { height: inputHeight, paddingVertical: inputPadding,
-              ...(Platform.OS === 'web' ? { whiteSpace: multilineExpanded ? 'pre-wrap' : 'pre' } : {}),
+              ...(Platform.OS === 'web' ? { whiteSpace: 'pre-wrap' } : {}),
             }]}
             value={input}
             onChangeText={onChangeInput}
@@ -100,7 +102,7 @@ export function ChatComposer({
             placeholderTextColor={t.colors.textPlaceholder}
             multiline
             {...(Platform.OS === 'web' ? { rows: 1 } : {})}
-            scrollEnabled
+            scrollEnabled={measuredHeight > styles.composerTextInput.maxHeight}
             maxLength={4000}
             autoCorrect={false}
             spellCheck={false}

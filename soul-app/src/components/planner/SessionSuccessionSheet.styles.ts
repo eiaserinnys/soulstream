@@ -96,14 +96,15 @@ export function makeStyles(t: DesignTokens) {
     checkBody: { flex: 1, gap: t.spacing.xxs },
     rowTitle: { color: t.colors.textPrimary, ...t.foundation.typography.cardTitle },
     meta: { color: t.colors.textTertiary, ...t.foundation.typography.meta },
-    formField: { padding: t.spacing.sm, gap: t.spacing.sm },
+    formField: { padding: t.cardLayout.padding, gap: t.spacing.sm },
     initialComposerRow: {
       flexDirection: 'row',
       alignItems: 'flex-end',
       gap: t.spacing.sm,
     },
+    initialComposerInput: { flex: 1 },
     initialInput: {
-      flex: 1,
+      padding: 0,
       color: t.colors.textPrimary,
       fontSize: t.chatFontSize.body,
       lineHeight: t.chatFontSize.body * t.lineHeightRatio,

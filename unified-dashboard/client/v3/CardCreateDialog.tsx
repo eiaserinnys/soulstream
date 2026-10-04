@@ -70,11 +70,11 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
      <section><strong>폴더</strong><Popover open={folderOpen} onOpenChange={setFolderOpen}><PopoverTrigger render={<Button variant="outline" disabled={locked}/>} aria-label="폴더 선택">{folders.find(f=>f.id===folderId)?.name??"폴더 선택"}</PopoverTrigger>
       <PopoverPopup className="v3-surface v3-card-folder-picker" side="bottom" align="start"><FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={folderId} disabledFolderIds={new Set(["claude","llm"])} pending={locked} onSelect={folder=>{if(attempt.current)return;setFolderId(folder.id);setFolderOpen(false);}}/></PopoverPopup>
      </Popover></section>
-     <p className="v3-form-intent">{executionSettings?(executionSettings.startAfterSave?"설정을 저장한 뒤 카드를 실행합니다.":"카드 실행 설정을 저장합니다."):"할 일을 드래프트로 남깁니다. 저장해도 바로 실행되지 않습니다."}</p>
+     <p className="v3-form-intent">{executionSettings?(executionSettings.startAfterSave?"설정을 저장한 뒤 카드를 실행합니다.":"카드 실행 설정을 저장합니다."):"드래프트로 저장한 뒤 카드에서 시작할 수 있습니다."}</p>
      {!executionSettings?<>
 
-     <label><strong>카드 제목</strong><Input autoFocus aria-label="카드 제목" placeholder="카드 제목" value={title} onChange={event=>{if(!attempt.current)setTitle(event.target.value);}} disabled={locked}/></label>
-     <label><strong>요청 내용 <small>선택</small></strong><textarea ref={textarea} aria-label="요청 원문" placeholder="수행할 요청을 적어주세요" rows={1} className="max-h-[120px]" value={request} disabled={locked} onChange={event=>{if(!attempt.current)setRequest(event.target.value);}} onPaste={event=>{if(nodeId&&!locked)handleClipboardFiles(event,upload.addFiles);}}/></label>
+     <label className="v3-creation-text-field"><strong>카드 제목</strong><Input autoFocus aria-label="카드 제목" placeholder="카드 제목" value={title} onChange={event=>{if(!attempt.current)setTitle(event.target.value);}} disabled={locked}/></label>
+     <label className="v3-creation-text-field"><strong>요청 내용 <small>선택</small></strong><textarea ref={textarea} aria-label="요청 원문" placeholder="수행할 요청을 적어주세요" rows={1} className="v3-creation-request max-h-[120px]" value={request} disabled={locked} onChange={event=>{if(!attempt.current)setRequest(event.target.value);}} onPaste={event=>{if(nodeId&&!locked)handleClipboardFiles(event,upload.addFiles);}}/></label>
      <fieldset className="contents" disabled={locked}><SessionAttachmentFields files={upload.files} pending={locked} nodeId={nodeId} isUploading={upload.isUploading} addFiles={files=>{if(!attempt.current)upload.addFiles(files);}} removeFile={id=>{if(!attempt.current)upload.removeFile(id);}}/></fieldset>
      </>:null}
      <CreationDisclosure title="실행 환경" invalid={!valid || !nodeId || !agentId} summary={`${nodeId || "노드 선택"} / ${agent?.name ?? "에이전트 선택"} / ${modelPreset || "기본 모델"}`}><section><AgentNodeAssignmentFields data={assignment} presentation="session" fallbackToAvailable nodeId={nodeId} agentId={agentId} modelPreset={modelPreset} disabled={locked}

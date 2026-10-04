@@ -423,7 +423,7 @@ function SessionSuccessionSheetContent({
                     verticalPadding={t.spacing.sm}
                     placeholder="세션을 시작하자마자 수행할 지시…"
                     placeholderTextColor={t.colors.textPlaceholder}
-                    style={styles.initialInput}
+                    style={[styles.initialInput, styles.initialComposerInput]}
                   />
                 </View>
               </View>

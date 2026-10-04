@@ -103,7 +103,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
           keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
           {errorDetail ? <SheetErrorNotice summary="카드를 저장하지 못했습니다. 입력을 유지했습니다. 다시 저장해 주세요." detail={errorDetail} /> : null}
           {retryingSnapshot ? <Text style={styles.purpose}>저장 결과를 확인하지 못했습니다. 같은 내용으로 다시 저장하여 결과를 확인합니다.</Text> : null}
-          <Text style={styles.purpose}>할 일을 드래프트로 저장합니다. 실행은 대기열에 넣은 뒤 시작됩니다.</Text>
+          <Text style={styles.purpose}>드래프트로 저장한 뒤 카드에서 시작할 수 있습니다.</Text>
           <GroupedGlassSheet>
             <SessionSelectionRow label="저장할 폴더" value={folders.find((folder) => folder.id === folderId)?.name ?? '폴더 선택'}
               accessibilityLabel="카드 폴더 선택" styles={styles} disabled={locked || files.uploading} onPress={() => setSelecting('folder')} />
@@ -112,7 +112,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
             <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>카드 제목</Text><Text style={styles.required}>필수</Text></View>
             <GroupedGlassSheet><View style={styles.formField}>
               <TextInput accessibilityLabel="카드 제목" placeholder="제목" value={title} onChangeText={setTitle}
-                style={[styles.initialInput, { minHeight: t.foundation.minHeight.field, textAlignVertical: 'center' }]}
+                style={[styles.initialInput, { textAlignVertical: 'center' }]}
                 placeholderTextColor={t.colors.textPlaceholder} editable={!locked} />
           </View></GroupedGlassSheet>
           </View>

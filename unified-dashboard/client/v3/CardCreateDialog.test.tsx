@@ -31,7 +31,7 @@ it("opens the complete card dialog from the general list",async()=>{
  expect(dialog.querySelector('[data-slot="dialog-header"]')).not.toBeNull();
  expect(dialog.querySelector('[data-slot="dialog-footer"]')).not.toBeNull();
  expect(dialog.querySelector('[aria-label="카드 저장"]')?.textContent).toBe("드래프트 저장");
- expect(dialog.textContent).toContain("저장해도 바로 실행되지 않습니다");
+ expect(dialog.textContent).toContain("드래프트로 저장한 뒤 카드에서 시작할 수 있습니다.");
  const request=dialog.querySelector('[aria-label="요청 원문"]')!, execution=dialog.querySelector('details')!;
  expect(request.compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
  expect(dialog.querySelector('input[type="file"]')!.compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
