@@ -110,12 +110,36 @@ async function keyPosition(scroller: Locator, key: string) {
     return {
       key: targetKey,
       offset: rects.length ? Math.min(...rects.map(row => row.top)) - viewport.top : null,
+      visible: rects.length > 0 && Math.max(...rects.map(row => row.bottom)) > viewport.top
+        && Math.min(...rects.map(row => row.top)) < viewport.bottom,
       viewportTop: viewport.top,
       scrollTop: el.scrollTop,
       scrollHeight: el.scrollHeight,
       retention: { ...((el as HTMLElement).dataset) },
     };
   }, key);
+}
+async function settledVisiblePosition(scroller: Locator) {
+  let previous: Awaited<ReturnType<typeof keyPosition>> | null = null;
+  let settled: { anchor: Awaited<ReturnType<typeof anchor>>; position: Awaited<ReturnType<typeof keyPosition>> } | null = null;
+  let stableObservations = 0;
+  await expect.poll(async () => {
+    try {
+      const current = await anchor(scroller);
+      const position = await keyPosition(scroller, current.key);
+      const stable = position.visible && position.offset !== null && previous?.key === position.key
+        && previous.offset !== null && Math.abs(position.offset - previous.offset) <= 0.5;
+      stableObservations = stable ? stableObservations + 1 : 0;
+      previous = position;
+      settled = { anchor: current, position };
+      return stableObservations >= 2;
+    } catch {
+      previous = null;
+      stableObservations = 0;
+      return false;
+    }
+  }, { intervals: [100] }).toBe(true);
+  return settled!;
 }
 function recordEvidence(name: string, measurements: unknown) {
   writeFileSync(path.join(evidence, `${name}.json`), `${JSON.stringify(measurements, null, 2)}\n`, "utf8");
@@ -152,10 +176,9 @@ test("long entry, wheel pagination, retention, rapid input and history end", asy
   const after = await anchor(h.scroller);
   const afterPosition = await keyPosition(h.scroller, before.key);
   recordEvidence("prepend-offset", { before, after, beforePosition, afterPosition, cursors: h.cursors });
-  expect.soft(after.key).toBe(before.key);
-  expect.soft(afterPosition.offset).not.toBeNull();
-  expect.soft(Math.abs((afterPosition.offset ?? Infinity) - beforePosition.offset!)).toBeLessThanOrEqual(2);
-  expect.soft(Math.abs(after.offset - before.offset)).toBeLessThanOrEqual(2);
+  expect(afterPosition.offset).not.toBeNull();
+  expect(afterPosition.visible).toBe(true);
+  expect(Math.abs((afterPosition.offset ?? Infinity) - beforePosition.offset!)).toBeLessThanOrEqual(2);
   await screenshot(page, "wheel-loaded");
   await wheelToTop(page, h.scroller);
   await expect.poll(() => h.cursors.length).toBe(3);
@@ -223,9 +246,10 @@ test("late A response cannot enter session B", async ({ page }) => {
   await page.route("**/cogito/search**", route => route.fulfill({ json: {
     results: [],
     session_results: [{ session_id: "run-beta-1", title: "모바일 탭 구현", excerpt: "전환할 세션 B", updated_at: "2026-10-04T00:00:00Z",
-      evidence: [], session_url: "/?session=run-beta-1" }],
+      evidence: [], session_url: "/?session=run-beta-1",
+      best_match: { event_id: null, match_source: "session_title", excerpt: "전환할 세션 B" } }],
   } }));
-  await page.getByRole("button", { name: "Open session search" }).click();
+  await page.keyboard.press("Control+K");
   const search = page.getByRole("dialog", { name: "세션 기록 검색" });
   await search.getByPlaceholder("검색어를 입력하세요...").fill("모바일");
   await search.getByText("전환할 세션 B", { exact: true }).click();
@@ -243,19 +267,21 @@ test("live SSE while reading history preserves the visible row", async ({ page }
   await expect.poll(() => bottomDistance(h.scroller)).toBeLessThanOrEqual(2);
   await movePointer(page, h.scroller);
   await page.mouse.wheel(0, -500);
-  await page.waitForTimeout(400);
-  const before = await anchor(h.scroller);
-  const beforePosition = await keyPosition(h.scroller, before.key);
+  const settled = await settledVisiblePosition(h.scroller);
+  const before = settled.anchor;
+  const beforePosition = settled.position;
+  const liveResponse = page.waitForResponse(async response =>
+    response.url().includes("/events") && (await response.text()).includes("과거를 읽는 중 도착한 새 응답"));
   h.sendLive();
+  await liveResponse;
   await expect(h.root.getByRole("button", { name: /New Messages/ })).toBeVisible();
   await page.waitForTimeout(300);
   const after = await anchor(h.scroller);
   const afterPosition = await keyPosition(h.scroller, before.key);
   recordEvidence("sse-offset", { before, after, beforePosition, afterPosition });
   await screenshot(page, "sse-after");
-  expect.soft(after.key).toBe(before.key);
-  expect.soft(afterPosition.offset).not.toBeNull();
-  expect.soft(Math.abs((afterPosition.offset ?? Infinity) - beforePosition.offset!)).toBeLessThanOrEqual(2);
-  expect.soft(Math.abs(after.offset - before.offset)).toBeLessThanOrEqual(2);
+  expect(afterPosition.offset).not.toBeNull();
+  expect(afterPosition.visible).toBe(true);
+  expect(Math.abs((afterPosition.offset ?? Infinity) - beforePosition.offset!)).toBeLessThanOrEqual(2);
   expect(await bottomDistance(h.scroller)).toBeGreaterThan(100);
 });
