@@ -204,7 +204,10 @@ test('Settings shared workspace owns the header and first connection uses connec
     navigation: {},
   }));
 
-  expect(mockSettingsScreen).toHaveBeenLastCalledWith(expect.objectContaining({ showTitle: false }));
+  expect(mockSettingsScreen).toHaveBeenLastCalledWith(expect.objectContaining({
+    showTitle: false,
+    bottomSafeAreaOwner: 'parent',
+  }));
   expect(settingsScreen.options.headerShown).toBe(false);
   expect(read('../RootNavigator.tsx')).toContain('<FirstConnectionSettingsScreen />');
   const settingsModal = read('../../components/settings/SettingsModal.tsx');

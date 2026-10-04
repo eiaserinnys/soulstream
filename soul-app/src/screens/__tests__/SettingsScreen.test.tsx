@@ -27,7 +27,7 @@ jest.mock('../../components/AppGlassCard', () => {
 });
 
 import { createApiClient } from '../../api/client';
-import { SettingsScreen } from '../SettingsScreen';
+import { FirstConnectionSettingsScreen, SettingsScreen } from '../SettingsScreen';
 import { resetAuthScopeForTest } from '../../lib/auth-scope';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -92,15 +92,29 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('non-flattened settings reserves the top safe area with the existing edges', async () => {
+test('first connection keeps screen-owned insets on all four edges', async () => {
   mockApi.getConfig.mockResolvedValue({ mode: 'single', nodeId: 'me' });
-  const screen = render(<SettingsScreen showAdmin={false} />);
+  const screen = render(<FirstConnectionSettingsScreen />);
 
   await waitFor(() => {
     expect(screen.getByTestId('settings-safe-area').props.edges).toEqual({
       top: 'additive',
       right: 'additive',
       bottom: 'additive',
+      left: 'additive',
+    });
+  });
+});
+
+test('parent-owned bottom inset keeps the screen top and side insets', async () => {
+  mockApi.getConfig.mockResolvedValue({ mode: 'single', nodeId: 'me' });
+  const screen = render(<SettingsScreen showAdmin={false} bottomSafeAreaOwner="parent" />);
+
+  await waitFor(() => {
+    expect(screen.getByTestId('settings-safe-area').props.edges).toEqual({
+      top: 'additive',
+      right: 'additive',
+      bottom: 'off',
       left: 'additive',
     });
   });
