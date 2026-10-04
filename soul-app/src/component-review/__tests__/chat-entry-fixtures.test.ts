@@ -1,5 +1,5 @@
 import { createApiClient } from '../fixture-client';
-import { createReviewApi, sessions } from '../fixtures';
+import { createReviewApi, sessions, entryShellSessions } from '../fixtures';
 
 // Metro runs this client in a browser; jest-expo provides window without location.
 beforeAll(() => {
@@ -9,7 +9,15 @@ beforeAll(() => {
 it('entry shell session lookup inherits the existing array contract', async () => {
   const api = createApiClient();
   expect(await api.getSessionsByIds(['public-running'])).toEqual([sessions[0]]);
-  expect(await api.getSessionsByIds(['public-shell-session-0'])).toEqual([]);
+  expect(await api.getSessionsByIds(['public-unknown'])).toEqual([]);
+});
+
+it('entry shell first-row lookup returns the same public list data', async () => {
+  const firstRow = entryShellSessions[0];
+  expect(firstRow).toEqual({ ...sessions[0], agentSessionId: 'public-shell-session-0', displayName: '공개 예시 세션 1' });
+  expect(entryShellSessions).toHaveLength(20);
+  expect(sessions).toHaveLength(5);
+  expect(await createApiClient().getSessionsByIds([firstRow.agentSessionId])).toEqual([firstRow]);
 });
 
 it.each([

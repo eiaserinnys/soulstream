@@ -30,6 +30,9 @@ export const sessions: Session[] = [
       kind: 'input_request', requestedAt: time, title: '공개 질문 예시', body: '확인해주세요.',
       requiresDetail: false }] },
 ];
+export const entryShellSessions: Session[] = Array.from({ length: 20 }, (_, index) => ({
+  ...sessions[0], agentSessionId: `public-shell-session-${index}`, displayName: `공개 예시 세션 ${index + 1}`,
+}));
 export function makeCard(status: CardStatus): CardDto {
   return { id: 'public-' + status, folderId: folders[0].id,
     title: '현재 카드 행을 검수하는 공개 예시', request: '공개 fixture로 표시와 동작을 확인합니다.',
@@ -77,7 +80,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       backend: 'codex',
     };
   });
-  const reviewSessions = [...sessions, ...folderSessions];
+  const reviewSessions = [...sessions, ...entryShellSessions, ...folderSessions];
   if(options.manyCompleted)for(let index=0;index<1000;index++)cards.set(`completed-${index}`,{...makeCard('done'),id:`completed-${index}`,title:index%10===0?'검색할 긴 완료 카드 제목입니다. 같은 폭과 본문을 유지합니다.':'완료 카드 '+index,completedAt:new Date(Date.now()-index*10*60*1000).toISOString()});
   if (options.home) for (let index = 1; index <= 4; index++) cards.set(`public-review-${index}`, { ...makeCard('review'), id: `public-review-${index}`, title: `검수할 공개 예시 ${index}`, latestActivity: { kind: 'report', body: '같은 제목과 본문으로 카드 크기와 읽기 흐름을 확인합니다.', format: 'markdown', createdAt: time } });
   if(options.assignment)for(const [id,card] of cards){
