@@ -115,6 +115,44 @@ describe("public board notification integrity", () => {
     expect(await h.h.sql`SELECT name,revision FROM board_yjs_documents ORDER BY name`).toEqual(documents);
   });
 
+  it.each(["batch", "single"])("skips repeated null detach writes and notifications through the real REST %s route", async path => {
+    await h.seed();
+    await h.h.sql`INSERT INTO sessions(session_id,node_id,status,agent_id,folder_id,caller_session_id)
+      VALUES('child','test-node','running','roselin',${source},'header-session')`;
+    const url = path === "batch" ? "/api/sessions/folder" : "/api/sessions/header-session";
+    const payload = path === "batch" ? { sessionIds: ["header-session"], folderId: null } : { folderId: null };
+    h.sessionMoveCommit.mockClear();
+    const first = await h.rest(url, payload);
+    expect(first).toEqual({ status: 200, body: path === "batch"
+      ? { success: true, count: 2, sessionIds: ["child", "header-session"] } : { ok: true } });
+    expect(h.sessionMoveCommit).toHaveBeenCalledOnce();
+    expect(deltas()).toHaveLength(1);
+    await assertFolders(deltas()[0]!);
+    for (const assignment of Object.values(deltas()[0]!.sessions_delta)) expect(assignment.folderId).toBeNull();
+    const assignments = await h.h.sql`SELECT session_id,folder_id,xmin::text FROM sessions ORDER BY session_id`;
+    const documents = await h.h.sql`SELECT name,revision FROM board_yjs_documents ORDER BY name`;
+    h.events.length = 0;
+    h.sessionMoveCommit.mockClear();
+    expect(await h.rest(url, payload)).toEqual(first);
+    expect(h.sessionMoveCommit).not.toHaveBeenCalled();
+    expect(deltas()).toHaveLength(0);
+    expect(await h.h.sql`SELECT session_id,folder_id,xmin::text FROM sessions ORDER BY session_id`).toEqual(assignments);
+    expect(await h.h.sql`SELECT name,revision FROM board_yjs_documents ORDER BY name`).toEqual(documents);
+  });
+
+  it("keeps a mixed REST rename notification when its null folder move is unchanged", async () => {
+    await h.seed();
+    await h.rest("/api/sessions/header-session", { folderId: null });
+    h.events.length = 0;
+    h.sessionMoveCommit.mockClear();
+    expect(await h.rest("/api/sessions/header-session", { folderId: null, displayName: "이름 변경" }))
+      .toEqual({ status: 200, body: { ok: true } });
+    expect(h.sessionMoveCommit).not.toHaveBeenCalled();
+    expect(deltas()).toHaveLength(1);
+    expect(deltas()[0]!.sessions_delta["header-session"]).toMatchObject({ folderId: null, displayName: "이름 변경" });
+    expect(await h.h.sql`SELECT display_name FROM sessions WHERE session_id='header-session'`).toEqual([{ display_name: "이름 변경" }]);
+  });
+
   it("retains non-session moves and the separate custom-view event without replay notifications", async () => {
     await h.seed();
     await call("move_board_item_to_folder", { board_item_id: "markdown:doc-1", folder_id: target, idempotency_key: "document-move" });

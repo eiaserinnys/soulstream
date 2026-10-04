@@ -11,6 +11,7 @@ import {
 } from "../board/board_access.js";
 import type {
   SessionCatalogProvider,
+  MoveSessionsResult,
 } from "../session/session_catalog_routes.js";
 import type { PushSessionReviewState } from "../push/push_notifier.js";
 import {
@@ -138,7 +139,7 @@ export type CreateLiveDbCatalogRepositoryOptions = {
     moveSessionsToFolder(
       sessionIds: readonly string[],
       folderId: string | null,
-    ): Promise<{ count: number; sessionIds: string[] }>;
+    ): Promise<{ count: number; sessionIds: string[]; didCommit?: boolean }>;
   };
 };
 
@@ -531,7 +532,7 @@ function createSessionCatalogProvider(
       return await sessionMoves.moveSessionsToFolder(sessionIds, folderId);
     },
     async updateSessionCatalog(sessionId, update) {
-      let moved: { count: number; sessionIds: string[] } | undefined;
+      let moved: MoveSessionsResult | undefined;
       if (hasOwn(update, "folderId")) {
         if (!sessionMoves) throw new Error("session board move service is required");
         moved = await sessionMoves.moveSessionsToFolder([sessionId], update.folderId ?? null);
@@ -541,6 +542,7 @@ function createSessionCatalogProvider(
         await sql`
           SELECT session_rename(${sessionId}, ${update.displayName ?? null})
         `;
+        if (moved) return { ...moved, didCommit: true };
       }
       return moved;
     },

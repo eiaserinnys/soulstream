@@ -18,8 +18,10 @@ import { SqlFolderProjectIdentityRepository } from "../../../orch-server-ts/src/
 import { FolderProjectIdentityService } from "../../../orch-server-ts/src/folders/folder_project_identity_service.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
+import { createLiveDbCatalogRepository } from "../../../orch-server-ts/src/runtime/live_db_catalog_repository.js";
 import { createLiveFolderProvider } from "../../../orch-server-ts/src/runtime/live_folder_route_provider.js";
-import { broadcastTargetedSessionCatalogDelta } from "../../../orch-server-ts/src/runtime/live_session_catalog_mutation_broadcaster.js";
+import { broadcastTargetedSessionCatalogDelta, withSessionCatalogMutationBroadcasts } from "../../../orch-server-ts/src/runtime/live_session_catalog_mutation_broadcaster.js";
+import { registerSessionCatalogRoutes } from "../../../orch-server-ts/src/session/session_catalog_routes.js";
 import { InMemorySseReplayBroadcaster, type SessionStreamEvent } from "../../../orch-server-ts/src/sse/replay_broadcaster.js";
 import { SessionBoardMoveService } from "../../../orch-server-ts/src/session/session_board_move_service.js";
 import { createFullSchemaPostgresHarness } from "../../../orch-server-ts/tests/board_yjs_postgres_harness.js";
@@ -79,6 +81,12 @@ export async function createBoardRoundtripHarness() {
   };
   makeBoard();
   const app = Fastify();
+  const catalogRepository = createLiveDbCatalogRepository({ sqlResolver: resolver,
+    sessionMoves: { moveSessionsToFolder: (ids, folderId) => mover.moveSessionsToFolder(ids, folderId) },
+  });
+  registerSessionCatalogRoutes(app, { provider: withSessionCatalogMutationBroadcasts(
+    catalogRepository.sessionCatalogProvider, folderProvider, broadcaster,
+  ) });
   const host = { authBearerToken: "service-token", projectionHost, createService: () => board };
   let distinguishRemote = false;
   const listAgentProfiles = vi.fn(async (nodeId: string) => ({ roselin: { name: distinguishRemote && nodeId === "other-node" ? "다른 노드 이름" : "로젤린" } }));
@@ -163,6 +171,13 @@ export async function createBoardRoundtripHarness() {
     } finally { await client.close(); await server.close(); }
   }
   return { executionOptions, seed, call, events, h, projectionHost, listAgentProfiles, sessionMoveCommit,
+    async rest(url: string, payload: Record<string, unknown>) {
+      const response = await fetch(new URL(url, baseUrl), { method: "PUT",
+        headers: { "content-type": "application/json", authorization: "Bearer service-token" },
+        body: JSON.stringify(payload),
+      });
+      return { status: response.status, body: await response.json() };
+    },
     distinguishRemoteNames(value: boolean) { distinguishRemote = value; },
     async cleanup() { await board.close(); await app.close(); await h.cleanup(); } };
 }

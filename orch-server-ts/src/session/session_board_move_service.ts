@@ -61,12 +61,12 @@ export class SessionBoardMoveService {
   }
 
   async moveSessionsToFolder(sessionIds: readonly string[], folderId: string | null) {
-    if (!sessionIds.length) return { count: 0, sessionIds: [] };
+    if (!sessionIds.length) return { count: 0, sessionIds: [], didCommit: false };
     const result = await this.moveRoots(sessionIds, {
       sessionId: sessionIds[0]!,
       targetScope: folderId === null ? null : { folderId },
     }, false);
-    return { count: result.sessionIds.length, sessionIds: result.sessionIds };
+    return { count: result.sessionIds.length, sessionIds: result.sessionIds, didCommit: result.didCommit };
   }
 
   async moveSessionBoardItem(input: {
@@ -85,10 +85,10 @@ export class SessionBoardMoveService {
       position?: { x: number; y: number };
     },
     emitBoardCatalogDelta: boolean,
-  ): Promise<{ moved: CatalogBoardItemRow | null; sessionIds: string[] }> {
+  ): Promise<{ moved: CatalogBoardItemRow | null; sessionIds: string[]; didCommit: boolean }> {
     const sessionIds = await this.config.repository.listSessionMoveTree(roots);
     const lockedIds = [...sessionIds].sort();
-    const lock = async (index: number): Promise<{ moved: CatalogBoardItemRow | null; sessionIds: string[] }> =>
+    const lock = async (index: number): Promise<{ moved: CatalogBoardItemRow | null; sessionIds: string[]; didCommit: boolean }> =>
       index < sessionIds.length
         ? this.withSessionLock(lockedIds[index]!, () => lock(index + 1))
         : work();
@@ -119,7 +119,7 @@ export class SessionBoardMoveService {
           return movedBoardItem;
         },
       );
-      if (!didCommit) return { moved, sessionIds };
+      if (!didCommit) return { moved, sessionIds, didCommit };
       // withSessionBoardMoveApplications returns only after BoardYjsMoveRepository's transaction
       // (Yjs application + session_assign_folder) and the live Yjs update both succeed.
       await this.config.onCardsMoveCommitted?.(committed.cards);
@@ -132,7 +132,7 @@ export class SessionBoardMoveService {
           movedBoardItem: moved,
         });
       }
-      return { moved, sessionIds };
+      return { moved, sessionIds, didCommit };
     };
     return await lock(0);
   }

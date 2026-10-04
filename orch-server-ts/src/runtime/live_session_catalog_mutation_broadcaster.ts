@@ -22,12 +22,12 @@ export function withSessionCatalogMutationBroadcasts(
     },
     async moveSessionsToFolder(sessionIds, folderId, callerInfo) {
       const result = await provider.moveSessionsToFolder(sessionIds, folderId, callerInfo);
-      await broadcastSessions(result?.sessionIds ?? sessionIds);
+      if (result?.didCommit !== false) await broadcastSessions(result?.sessionIds ?? sessionIds);
       return result;
     },
     async updateSessionCatalog(sessionId, update, callerInfo) {
       const result = await provider.updateSessionCatalog(sessionId, update, callerInfo);
-      await broadcastSessions(result?.sessionIds ?? [sessionId]);
+      if (result?.didCommit !== false) await broadcastSessions(result?.sessionIds ?? [sessionId]);
       return result;
     },
     async deleteSession(sessionId, callerInfo) {
