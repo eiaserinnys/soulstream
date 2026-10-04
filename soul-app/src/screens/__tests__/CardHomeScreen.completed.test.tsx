@@ -17,7 +17,7 @@ import { CompletedCardsToggle } from '../../components/planner/CompletedCardsTog
 
 const mockApi = { listCards: jest.fn(), listCompletedCards: jest.fn(), getCard: jest.fn(), setCardStatus: jest.fn() };
 test('home composer floats over the board and measured height reserves lane scroll space only', async () => {
-  mockApi.listCards.mockResolvedValue({ cards: [] });
+  mockApi.listCards.mockResolvedValue({ cards: [cardFixture({ id: 'composer-review', status: 'review' })] });
   const screen = render(<CardHomeScreen onOpen={() => {}} onSessionCreated={() => {}} />);
   await waitFor(() => expect(mockApi.listCards).toHaveBeenCalled());
   const dock = screen.getByTestId('home-session-composer-dock');
@@ -58,18 +58,26 @@ test('전체 홈과 폴더 선호를 따로 유지하고 홈 재마운트에도 
 
 test('완료 표시 중 드롭 저장 후 숨김·재마운트·다시 표시해도 완료 상태를 보존한다', async () => {
   const card = cardFixture({ status: 'review', version: 7 });
+  const existingCompleted = cardFixture({ id: 'existing-done', status: 'done', completedAt: new Date().toISOString() });
   mockApi.listCards.mockResolvedValue({ cards: [card] });
+  mockApi.listCompletedCards.mockResolvedValue({ cards: [existingCompleted], nextCursor: null });
   mockApi.getCard.mockResolvedValue({ card, reports: [], questions: [], sessions: [] });
   mockApi.setCardStatus.mockImplementation(async()=>{const done={...card,status:'done',version:8,completedAt:new Date().toISOString()};mockApi.listCards.mockResolvedValue({cards:[]});mockApi.listCompletedCards.mockResolvedValue({cards:[done],nextCursor:null});mockApi.getCard.mockResolvedValue({card:done,reports:[],questions:[],sessions:[]});return {card:done,folderId:card.folderId};});
   let screen = render(<CardHomeScreen onOpen={() => {}} />);
   await waitFor(() => expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
+  await waitFor(() => expect(screen.getByTestId('card-board-column-done')).toBeTruthy());
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 1210, height: 600 } } });
-  const width = StyleSheet.flatten(screen.getByTestId('card-board-column-done').props.style).width;
   const contentStyle = StyleSheet.flatten(screen.getByTestId('card-board').props.contentContainerStyle);
-  const normalWidth = StyleSheet.flatten(screen.getByTestId('card-board-column-todo').props.style).width;
-  const maxScroll = normalWidth * 6 + width + contentStyle.gap * 6 + contentStyle.paddingHorizontal * 2 - 1210;
-  const doneX = contentStyle.paddingHorizontal + (normalWidth + contentStyle.gap) * 5 - maxScroll + width / 2;
+  const columns = screen.getAllByTestId(/^card-board-column-/);
+  const widths = columns.map(column => StyleSheet.flatten(column.props.style).width as number);
+  const doneIndex = columns.findIndex(column => column.props.testID === 'card-board-column-done');
+  expect(doneIndex).toBeGreaterThanOrEqual(0);
+  const width = widths[doneIndex];
+  const laneStart = widths.slice(0, doneIndex).reduce((total, laneWidth) => total + laneWidth + contentStyle.gap, 0);
+  const maxScroll = Math.max(0, widths.reduce((total, laneWidth) => total + laneWidth, 0)
+    + contentStyle.gap * (widths.length - 1) + contentStyle.paddingHorizontal * 2 - 1210);
+  const doneX = contentStyle.paddingHorizontal + laneStart - maxScroll + width / 2;
   fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: maxScroll, y: 0 } } });
   await act(async () => fireGestureHandler(getByGestureTestId('board-drag-card-1'), [
     { state: State.BEGAN }, { state: State.ACTIVE, absoluteX: doneX, absoluteY: 100 },

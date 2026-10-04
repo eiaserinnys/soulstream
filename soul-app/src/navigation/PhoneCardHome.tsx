@@ -6,6 +6,8 @@ import { useTokens } from '../theme';
 import { useCardDisplay } from '../hooks/useCardDisplay';
 import { CardHomeScreen } from '../screens/CardHomeScreen';
 import { CompletedCardsToggle } from '../components/planner/CompletedCardsToggle';
+import { LiquidGlassButton } from '../components/LiquidGlassButton';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
 import { openPhoneChat } from './phoneSessionNavigation';
 
@@ -18,6 +20,10 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
     headerTitleAlign: 'left',
     headerLeft: () => null,
     headerRight: () => <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+        accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
+        <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+      </LiquidGlassButton>
       <CompletedCardsToggle {...cardDisplay} />
     </View>,
   }); }, [navigation, t, cardDisplay.includeCompleted, cardDisplay.onChange]);

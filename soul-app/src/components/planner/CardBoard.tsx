@@ -69,6 +69,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const previousLayout = useRef({ stride: geometry.stride, viewport, includeCompleted, laneSignature, hideEmptyLanes });
   const initialized = useRef(false);
   const completedList=useRef<FlatList<CardDto>>(null);
+  const completedResetKey = useRef(completed?.resetKey);
   const laneScrolls = useRef<Partial<Record<CardDto['status'], ScrollView | null>>>({});
   const savePosition = () => onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
   useEffect(() => {
@@ -115,7 +116,13 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const dragRef = useRef(drag); dragRef.current = drag;
   const edgeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [menu, setMenu] = useState<{ card: CardDto; } | null>(null);
-  useEffect(()=>{completedList.current?.scrollToOffset({offset:0,animated:false});},[completed?.resetKey]);
+  useEffect(()=>{
+    if (completedResetKey.current === completed?.resetKey) return;
+    completedResetKey.current = completed?.resetKey;
+    position.current.lanes.done = 0;
+    completedList.current?.scrollToOffset({ offset: 0, animated: false });
+    savePosition();
+  },[completed?.resetKey]);
   const action = useCardTransition(api, drag?.card.id ?? '');
   const moveTo = (x: number, animated: boolean) => {
     if (offsetsRef.current.length === 0) return;
@@ -183,6 +190,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
           {status==='done'?<>
             {completed?<View style={{paddingHorizontal:t.uiSpacing.sm}}><CompletedCardFilters browser={completed}/></View>:null}
             <FlatList ref={completedList} key={geometry.completedColumns} testID="card-board-scroll-done" style={{flex:1}}
+              contentOffset={{ x: 0, y: position.current.lanes.done ?? 0 }}
               data={items} numColumns={geometry.completedColumns} keyExtractor={card=>card.id} renderItem={({item})=><View style={{width:paper.width,marginBottom:paper.gap}}>{renderItem(item)}</View>}
               columnWrapperStyle={geometry.completedColumns>1?{gap:paper.gap}:undefined}
               contentContainerStyle={{paddingHorizontal:t.uiSpacing.sm,paddingTop:t.uiSpacing.xs,paddingBottom:t.cardLayout.padding + bottomInset}}
