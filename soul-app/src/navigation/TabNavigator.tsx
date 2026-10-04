@@ -379,7 +379,7 @@ function SettingsNavigator() {
 }
 
 export function PhoneSettingsScreen({ navigation }: NativeStackScreenProps<SettingsStackParamList, 'Settings'>) {
-  return <SettingsScreen showTitle={false} />;
+  return <SettingsScreen showTitle={false} bottomSafeAreaOwner="parent" />;
 }
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
