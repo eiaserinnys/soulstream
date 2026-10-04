@@ -1,6 +1,7 @@
 import type {
   SessionHistoryProvider,
   SessionHistoryRawEvent,
+  SessionHistoryReplayRange,
   SessionTimelineEventType,
 } from "../session/session_history_service.js";
 import { SESSION_TIMELINE_EVENT_TYPES } from "../session/session_history_service.js";
@@ -174,11 +175,13 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
   async *streamEventsRaw(
     sessionId: string,
     afterId: number,
+    range?: SessionHistoryReplayRange,
   ): AsyncIterable<SessionHistoryRawEvent> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql`
-      SELECT raw_event.*, semantic_receipt.effect_applied
-      FROM event_stream_raw(${sessionId}, ${afterId}) AS raw_event
+      SELECT raw_event.id, raw_event.event_type, raw_event.payload::text AS payload_text,
+        semantic_receipt.effect_applied
+      FROM events AS raw_event
       LEFT JOIN LATERAL (
         SELECT (receipt.effect_application->>'applied')::boolean AS effect_applied
         FROM event_ingress_receipts AS receipt
@@ -188,7 +191,12 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
         ORDER BY receipt.created_at ASC, receipt.source_seq ASC
         LIMIT 1
       ) AS semantic_receipt ON TRUE
+      WHERE raw_event.session_id = ${sessionId}
+        AND raw_event.id > ${afterId}
+        AND (${range?.throughId ?? null}::integer IS NULL
+          OR raw_event.id <= ${range?.throughId ?? null})
       ORDER BY raw_event.id ASC
+      LIMIT ${range?.limit ?? null}
     `;
     for (const row of rows) {
       const sessionEffectApplied = typeof row.effect_applied === "boolean"

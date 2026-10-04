@@ -6,17 +6,18 @@ import {
 } from "../sse/sse_stream.js";
 import {
   SessionHistoryReadService,
-  filterFinalizedAppServerReplayEvents,
   type SessionHistoryProvider,
-  type SessionHistoryRawEvent,
 } from "./session_history_service.js";
+import {
+  buildSessionHistoryInitialState,
+  type SessionHistoryInitialState,
+  type SessionHistorySseFrame,
+} from "./session_history_initial_state.js";
 import { parseTimelineEventTypesQuery } from "./session_history_query.js";
 import {
   SessionResourceAccessError,
   type SessionResourceAccessProvider,
 } from "./session_resource_access.js";
-import { shouldPublishSessionEventSemantically } from
-  "./session_event_semantic_publication.js";
 import { registerSessionTurnSummaryRoute } from
   "./session_turn_summary_routes.js";
 import { registerSessionConversationContextRoute } from
@@ -71,12 +72,6 @@ type QueryParseResult<TValue> =
   | QueryParseError;
 
 type QueryParseError = { ok: false; field: string; message: string };
-
-type SessionHistorySseFrame = {
-  event: string;
-  data: string;
-  id?: string | number;
-};
 
 const DEFAULT_LIMIT = 50;
 const MIN_LIMIT = 1;
@@ -276,7 +271,10 @@ async function sendSessionEventsStream(
         streams: [],
       };
   try {
-    history = await buildSessionHistoryInitialState(request, service, sessionId);
+    history = await buildSessionHistoryInitialState(
+      service, sessionId, resolveSessionHistoryAfterId(request),
+      queryValue(request.query, "snapshotCatchup") === "1",
+    );
     const frames = [...history.frames];
     if (liveTextSnapshot.throughLiveSeq > 0 || liveTextSnapshot.streams.length > 0) {
       frames.push({
@@ -352,79 +350,9 @@ async function sendSessionEventsStream(
   }
 }
 
-type SessionHistoryInitialState = {
-  readonly frames: SessionHistorySseFrame[];
-  readonly afterId: number;
-  readonly lastStoredId: number;
-  lastSeenEventId: number;
-  readonly resetReason?: SessionHistoryResetReason;
-};
-
 export type SessionHistoryEventCursor = {
   lastSeenEventId: number;
 };
-
-async function buildSessionHistoryInitialState(
-  request: FastifyRequest,
-  service: SessionHistoryReadService,
-  sessionId: string,
-): Promise<SessionHistoryInitialState> {
-  const frames: SessionHistorySseFrame[] = [
-    {
-      event: "init",
-      data: JSON.stringify({ agentSessionId: sessionId }),
-    },
-  ];
-  const afterId = resolveSessionHistoryAfterId(request);
-  const durableWatermark = await service.readLastEventId(sessionId);
-
-  if (afterId === 0) {
-    return {
-      frames,
-      afterId,
-      lastStoredId: durableWatermark,
-      lastSeenEventId: durableWatermark,
-    };
-  }
-
-  let firstStoredId: number | undefined;
-  let lastReplayedId = 0;
-  const replayEvents: SessionHistoryRawEvent[] = [];
-  for await (const event of service.streamEventsRaw(sessionId, afterId)) {
-    if (event.eventId <= afterId) continue;
-    firstStoredId ??= event.eventId;
-    lastReplayedId = Math.max(lastReplayedId, event.eventId);
-    replayEvents.push(event);
-  }
-
-  const semanticReplayEvents = replayEvents.filter((event) =>
-    shouldPublishSessionEventSemantically({
-      eventType: event.eventType,
-      sessionEffectApplied: event.sessionEffectApplied,
-    }));
-  for (const event of filterFinalizedAppServerReplayEvents(semanticReplayEvents)) {
-    frames.push({
-      event: event.eventType,
-      id: event.eventId,
-      data: event.payloadText,
-    });
-  }
-  const effectiveDurableWatermark = Math.max(durableWatermark, lastReplayedId);
-  const resetReason = afterId > effectiveDurableWatermark
-    ? "cursor_ahead" as const
-    : afterId < effectiveDurableWatermark &&
-        (firstStoredId === undefined || firstStoredId > afterId + 1)
-      ? "history_gap" as const
-      : undefined;
-  const lastStoredId = Math.max(afterId, effectiveDurableWatermark);
-  return {
-    frames,
-    afterId,
-    lastStoredId,
-    lastSeenEventId: Math.max(afterId, lastStoredId),
-    ...(resetReason === undefined ? {} : { resetReason }),
-  };
-}
 
 function liveSessionEventFrame(
   envelope: Record<string, unknown>,

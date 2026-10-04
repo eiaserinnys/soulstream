@@ -22,6 +22,11 @@ export type SessionHistoryRawEvent = {
   sessionEffectApplied?: boolean;
 };
 
+export type SessionHistoryReplayRange = {
+  readonly limit?: number;
+  readonly throughId?: number;
+};
+
 const SESSION_TIMELINE_EVENT_TYPE_SET = new Set<string>(SESSION_TIMELINE_EVENT_TYPES);
 
 export function isSessionTimelineEventType(value: string): value is SessionTimelineEventType {
@@ -55,6 +60,7 @@ export type SessionHistoryProvider = {
   streamEventsRaw: (
     sessionId: string,
     afterId: number,
+    range?: SessionHistoryReplayRange,
   ) => AsyncIterable<SessionHistoryRawEvent>;
 };
 
@@ -127,8 +133,14 @@ export class SessionHistoryReadService {
     return this.provider.readLastEventId(sessionId);
   }
 
-  streamEventsRaw(sessionId: string, afterId: number): AsyncIterable<SessionHistoryRawEvent> {
-    return this.provider.streamEventsRaw(sessionId, afterId);
+  streamEventsRaw(
+    sessionId: string,
+    afterId: number,
+    range?: SessionHistoryReplayRange,
+  ): AsyncIterable<SessionHistoryRawEvent> {
+    return range === undefined
+      ? this.provider.streamEventsRaw(sessionId, afterId)
+      : this.provider.streamEventsRaw(sessionId, afterId, range);
   }
 }
 
