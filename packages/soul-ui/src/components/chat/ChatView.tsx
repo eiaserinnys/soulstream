@@ -1,5 +1,6 @@
 /**
  * ChatView - SSE 이벤트를 시간순 채팅 로그로 표시
+ * 500줄 초과: 기존 채팅 렌더·follow·검색·입력의 소유 경계를 유지하는 국소 이력 로드 수리입니다.
  *
  * 트리를 flat 메시지 리스트로 변환하여 DM 스타일 채팅 UI로 렌더링한다.
  * 하단에 ChatInput을 배치하여 인터벤션/리줌 메시지를 전송한다.
@@ -8,7 +9,7 @@
  * - react-virtuoso + `alignToBottom + followOutput="auto"` 로 "첫 paint가 이미 최하단" 을 달성.
  *   이동 궤적 없이 하단 고정.
  * - prepend는 virtuoso 공식 패턴 `firstItemIndex -= N` (store.chatPrependedCount 참조 — 정본은 store).
- * - 과거 로드는 startReached/viewport geometry/수동 재시도가 하나의 bounded controller를 사용.
+ * - 과거 로드는 startReached/viewport geometry/수동 재시도가 하나의 controller를 사용.
  * - focusEventId 하이라이트는 `itemsRendered` 콜백에서 Virtuoso 행 key로 찾는다.
  * - 세션 전환은 Virtuoso `key={activeSessionKey}` 재마운트로 처리.
  *
@@ -25,7 +26,8 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
-import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
+import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
+import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 import {
   areMessageGroupsRenderEqual,
   findFocusIndex,
@@ -215,13 +217,12 @@ export function ChatView({
   const clearOlderHistoryIntent = useCallback(() => {
     olderHistoryIntentSessionRef.current = null;
   }, []);
-  const consumeOlderHistoryIntent = useCallback((scroller: HTMLElement | null) => {
+  const requestOlderDuringExploration = useCallback((scroller: HTMLElement | null) => {
     if (
       activeSessionKey === null
       || olderHistoryIntentSessionRef.current !== activeSessionKey
-      || (scroller !== null && scroller.scrollTop > 48)
+      || (scroller !== null && scroller.scrollTop > 800)
     ) return;
-    olderHistoryIntentSessionRef.current = null;
     requestOlderRef.current("automatic");
   }, [activeSessionKey]);
   const handleUserViewportInput = useCallback((event: Event) => {
@@ -235,7 +236,7 @@ export function ChatView({
       bottomFocusedSessionRef.current = activeSessionKey;
       isFollowingRef.current = false;
       setIsFollowing(false);
-      consumeOlderHistoryIntent(scroller);
+      requestOlderDuringExploration(scroller);
     };
 
     if (event.type === "pointerdown") {
@@ -264,6 +265,7 @@ export function ChatView({
         pointerScrollStartRef.current = null;
         markOlderExploration();
       }
+      requestOlderDuringExploration(scroller);
       return;
     }
     if (event.type === "touchstart") {
@@ -311,7 +313,7 @@ export function ChatView({
         clearOlderHistoryIntent();
       }
     }
-  }, [activeSessionKey, clearOlderHistoryIntent, consumeOlderHistoryIntent]);
+  }, [activeSessionKey, clearOlderHistoryIntent, requestOlderDuringExploration]);
   const {
     scrollerRef,
     bindScrollerElement,
@@ -432,6 +434,14 @@ export function ChatView({
     setIsFollowing(false);
     history.requestOlder("manual");
   }, [activeSessionKey, clearOlderHistoryIntent, history.requestOlder]);
+  useEffect(() => {
+    if (
+      timelineItems.length === 0
+      && history.canLoadOlder
+      && !history.loading
+      && history.blockedReason === null
+    ) history.requestOlder("automatic");
+  }, [history.canLoadOlder, history.loading, history.blockedReason, history.requestOlder, timelineItems.length]);
   const notifyHistoryViewportGeometry = history.notifyViewportGeometry;
   const bindChatScroller = useCallback((ref: HTMLElement | Window | null) => {
     if (!(ref instanceof HTMLElement)) {
@@ -598,7 +608,6 @@ export function ChatView({
       <ChatHistoryStatus
         loading={history.loading}
         reachedTop={history.reachedTop}
-        canLoadOlder={history.canLoadOlder}
         blockedReason={history.blockedReason}
         onRetry={requestOlderManually}
         showReachedTop={timelineItems.length > 0}
@@ -652,7 +661,6 @@ export function ChatView({
           <ChatHistoryStatus
             loading={history.loading}
             reachedTop={history.reachedTop}
-            canLoadOlder={history.canLoadOlder}
             blockedReason={history.blockedReason}
             onRetry={requestOlderManually}
             showReachedTop={false}
@@ -701,7 +709,14 @@ export function ChatView({
           setShowNewMessage(false);
         }}
         startReached={() => {
-          consumeOlderHistoryIntent(null);
+          if (olderHistoryIntentSessionRef.current === activeSessionKey) {
+            requestOlderDuringExploration(null);
+          } else {
+            const scroller = scrollerRef.current;
+            if (scroller !== null && hasFilledHistoryViewport(scroller, VIEWPORT_FILL_MARGIN_PX) === false) {
+              history.requestOlder("automatic");
+            }
+          }
         }}
         totalListHeightChanged={handleTotalListHeightChanged}
         /**

@@ -15,7 +15,6 @@ import { flattenTree } from "../../lib/flatten-tree";
 import { groupMessages } from "../../lib/grouping";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import {
-  MAX_VIEWPORT_FILL_PAGES,
   useMessageHistoryBuffer,
   type UseMessageHistoryBufferResult,
 } from "./useMessageHistoryBuffer";
@@ -196,7 +195,7 @@ async function requestOlder(source: "automatic" | "manual"): Promise<void> {
   });
 }
 
-describe("useMessageHistoryBuffer bounded viewport fill", () => {
+describe("useMessageHistoryBuffer viewport fill", () => {
   let root: Root;
   let container: HTMLDivElement;
   let scroller: HTMLDivElement;
@@ -240,7 +239,7 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
   });
 
-  it("초기 visible page는 geometry만으로 prefill하지 않고 startReached 뒤 bounded fill을 연다", async () => {
+  it("초기 visible page 뒤 startReached의 자동 요청으로 화면 채움을 연다", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(page(
         Array.from({ length: 100 }, (_, index) => 200 - index),
@@ -264,7 +263,7 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("초기 state-only page 뒤에는 명시적 이전 대화 요청으로 진행한다", async () => {
+  it("초기 state-only page 뒤에는 0행 화면의 자동 요청으로 진행한다", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(page([2], "cursor-1", "result"))
       .mockResolvedValueOnce(page([1], null));
@@ -279,7 +278,7 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     await notifyGeometry();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    await requestOlder("manual");
+    await requestOlder("automatic");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(1);
     expect(latest?.reachedTop).toBe(true);
@@ -405,7 +404,7 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(latest?.blockedReason).toBeNull();
   });
 
-  it("viewport가 다시 underfill되어도 새 사용자 요청 전에는 run을 재개하지 않는다", async () => {
+  it("높이가 늘어 닫힌 run은 geometry만으로 재시작하지 않고 다음 자동 요청을 기다린다", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(page([2], "cursor-1"))
       .mockResolvedValueOnce(page([1], "cursor-2"))
@@ -415,6 +414,7 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
 
     await renderSession("sess-resized");
     await requestOlder("automatic");
+    setGeometry(scroller, { clientHeight: 600, scrollHeight: 1000 });
     await notifyGeometry();
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
@@ -426,30 +426,47 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("한 run의 5 page cap에서 멈추고 수동 성공은 새 budget으로 latch를 해제한다", async () => {
+  it("화면 미충족 run은 5페이지를 넘겨도 이력 끝까지 이어 받는다", async () => {
     const fetchMock = vi.fn();
-    for (let pageIndex = 0; pageIndex <= MAX_VIEWPORT_FILL_PAGES + 1; pageIndex += 1) {
-      fetchMock.mockResolvedValueOnce(page(
-        [100 - pageIndex],
-        `cursor-${pageIndex + 1}`,
-      ));
+    for (let index = 0; index < 8; index += 1) {
+      fetchMock.mockResolvedValueOnce(page([100 - index], index === 7 ? null : `cursor-${index + 1}`));
     }
     vi.stubGlobal("fetch", fetchMock);
-
-    await renderSession("sess-cap");
+    await renderSession("sess-fill");
     await requestOlder("automatic");
-    for (let pageIndex = 1; pageIndex < MAX_VIEWPORT_FILL_PAGES; pageIndex += 1) {
-      await notifyGeometry();
-    }
-    await notifyGeometry();
-
-    expect(fetchMock).toHaveBeenCalledTimes(MAX_VIEWPORT_FILL_PAGES + 1);
-    expect(latest?.blockedReason).toBe("cap");
-
-    await requestOlder("manual");
-
-    expect(fetchMock).toHaveBeenCalledTimes(MAX_VIEWPORT_FILL_PAGES + 2);
+    for (let index = 0; index < 6; index += 1) await notifyGeometry();
+    expect(fetchMock).toHaveBeenCalledTimes(8);
     expect(latest?.blockedReason).toBeNull();
+    expect(latest?.reachedTop).toBe(true);
+  });
+
+  it("채워진 화면에서도 높이가 늘지 않은 페이지는 이어 받는다", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page([100], "cursor-1", "tool_start"))
+      .mockResolvedValueOnce(page([99], "cursor-2", "tool_start"))
+      .mockResolvedValueOnce(page([98], null));
+    vi.stubGlobal("fetch", fetchMock);
+    setGeometry(scroller, { clientHeight: 600, scrollHeight: 900 });
+    await renderSession("sess-no-growth");
+    await requestOlder("automatic");
+    await notifyGeometry();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(latest?.reachedTop).toBe(true);
+  });
+
+  it("scroller 없는 반영 뒤 run을 닫아 다음 자동 요청을 허용한다", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page([3], "cursor-1", "result"))
+      .mockResolvedValueOnce(page([2], "cursor-2", "result"))
+      .mockResolvedValueOnce(page([1], null));
+    vi.stubGlobal("fetch", fetchMock);
+    scrollerRef = { current: null };
+    await renderSession("sess-no-scroller");
+    await requestOlder("automatic");
+    await notifyGeometry();
+    await requestOlder("automatic");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(latest?.reachedTop).toBe(true);
   });
 
   it.each([
