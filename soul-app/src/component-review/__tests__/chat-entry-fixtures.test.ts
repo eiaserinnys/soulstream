@@ -1,10 +1,12 @@
 import { createApiClient } from '../fixture-client';
 import { createReviewApi, sessions, entryShellCardId, entryShellFolders, entryShellSessions } from '../fixtures';
 
+const setReviewSection = (section: string) => {
+  Object.defineProperty(window, 'location', { configurable: true, value: { search: `?section=${section}` } });
+};
+
 // Metro runs this client in a browser; jest-expo provides window without location.
-beforeAll(() => {
-  Object.defineProperty(window, 'location', { configurable: true, value: { search: '?section=entryShell' } });
-});
+beforeAll(() => setReviewSection('entryShell'));
 
 it('entry shell session lookup inherits the existing array contract', async () => {
   const api = createApiClient();
@@ -59,4 +61,18 @@ it.each([
   expect(resumed).not.toContain('event: user_message');
   expect(resumed).toContain('event: assistant_message');
   expect(resumed).toContain('"session_id":"public-shell-session-1"');
+});
+
+it('native settings review client keeps settings and owned-agent APIs together', async () => {
+  setReviewSection('nativeSettings');
+  try {
+    const api = createApiClient();
+    expect(await api.getProviderUsage('public-node')).toMatchObject({ providers: { claude: { status: 'auto' } } });
+    expect(await api.listOwnedAgents()).toMatchObject({
+      agents: [],
+      existingConnection: { configured: true, registered: false },
+    });
+  } finally {
+    setReviewSection('entryShell');
+  }
 });
