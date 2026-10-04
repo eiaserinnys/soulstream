@@ -1,10 +1,11 @@
 import React from 'react';
-import { Modal } from 'react-native';
+import { Modal, Text } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));
+import { SettingsSurface } from '../SettingsSurface';
 import { SettingsModal } from '../SettingsModal';
 import { createApiClient } from '../../../api/client';
 import { useAuthStore } from '../../../store/authStore';
@@ -17,6 +18,9 @@ test('iPad page sheet bounds sibling sidebar/detail beneath its header', () => {
   expect(screen.UNSAFE_getByType(Modal).props.presentationStyle).toBe('pageSheet');
   expect(screen.getByTestId('settings-sidebar-scroll')).toBeTruthy();
   expect(screen.getByTestId('settings-detail-display')).toBeTruthy();
+  expect(screen.getAllByTestId('settings-modal-header')).toHaveLength(1);
+  expect(screen.getByTestId('settings-section-display').findAllByType(Text).some(text => text.props.children === '화면과 배경')).toBe(false);
+  for (const surface of screen.UNSAFE_getAllByType(SettingsSurface)) expect(surface.props.flattened).toBe(true);
   expect(screen.UNSAFE_getByType(Modal).props.supportedOrientations).toEqual(['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']);
 });
 test('compact width opens the index, then returns from a detail without closing', () => {

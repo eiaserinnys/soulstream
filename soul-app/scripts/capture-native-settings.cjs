@@ -128,7 +128,12 @@ async function main() {
             await page.evaluate(() => { for (const { el, fontSize, lineHeight } of window.__reviewTextStyles) { el.style.fontSize = fontSize; el.style.lineHeight = lineHeight; } delete window.__reviewTextStyles; });
           }
           const metrics = await page.getByTestId('settings-modal-header').evaluate(el => { const rect = el.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; });
-          result.viewports.push({ entry, category, viewport, header: metrics });
+          const groups = await detail.evaluate(el => {
+            const section = el.querySelector('[data-testid^="settings-section-"]');
+            const frames = Array.from(section?.firstElementChild?.children ?? []);
+            return frames.slice(0, 2).map(frame => { const r = frame.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, width: r.width, height: r.height }; });
+          });
+          result.viewports.push({ entry, category, viewport, header: metrics, groups });
         }
       }
       for (const state of ['photo-fallback', 'nodes-error', 'usage-error', 'empty']) {

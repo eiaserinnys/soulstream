@@ -85,6 +85,7 @@ export function SessionReviewPolicySettingsSection({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [conflictAttention, setConflictAttention] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const changed = payload !== null
@@ -115,6 +116,7 @@ export function SessionReviewPolicySettingsSection({
           next.policy.sourceAllowlist,
         )
         : next.policy.sourceAllowlist);
+      setConflictAttention(Boolean(conflict));
       setMessage(
         conflict
           ? `다른 관리자가 먼저 저장했습니다. 최신 버전에 내 변경만 다시 적용했습니다. 확인 후 저장해 주세요. 추가: ${conflict.draftSources.filter(source => !conflict.baseSources.includes(source)).join(', ') || '없음'} / 제거: ${conflict.baseSources.filter(source => !conflict.draftSources.includes(source)).join(', ') || '없음'}`
@@ -154,7 +156,7 @@ export function SessionReviewPolicySettingsSection({
       : [...current, source]);
     setDraft('');
     setError(null);
-    setMessage(null);
+    setConflictAttention(false); setMessage(null);
   }
 
   async function save() {
@@ -162,7 +164,7 @@ export function SessionReviewPolicySettingsSection({
     const request = revision.current;
     setSaving(true);
     setError(null);
-    setMessage(null);
+    setConflictAttention(false); setMessage(null);
     try {
       const next = await createApiClient(serverUrl).updateSessionReviewPolicy({
         sourceAllowlist: sources,
@@ -171,6 +173,7 @@ export function SessionReviewPolicySettingsSection({
       if (request !== revision.current) return;
       setPayload(next);
       setSources(next.policy.sourceAllowlist);
+      setConflictAttention(false);
       setMessage(`정책 v${next.policy.version}을 저장했습니다. 다음 신규 세션부터 모든 노드에 적용됩니다.`);
     } catch (cause) {
       if (request !== revision.current) return;
@@ -281,7 +284,7 @@ export function SessionReviewPolicySettingsSection({
             {formatTimestamp(payload.policy.updatedAt)}
           </Text>
         ) : null}
-        {message ? <Text style={styles.message}>{message}</Text> : null}
+        {message ? <Text accessibilityRole={conflictAttention ? "alert" : undefined} style={[styles.message, conflictAttention && { color: t.colors.warningText }]}>{message}</Text> : null}
         {error ? (
           <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
         ) : null}

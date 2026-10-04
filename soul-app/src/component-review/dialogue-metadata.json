@@ -59,6 +59,10 @@
     "image-viewer": {
       "label": "이미지 확대",
       "source": "ImageViewerModal.tsx"
+    },
+    "settings-target": {
+      "label": "설정 실행 대상",
+      "source": "settings/SettingsOptionRow.tsx"
     }
   },
   "details": {
@@ -89,7 +93,8 @@
         "assignment",
         "folder-picker",
         "execution-picker",
-        "search-filter"
+        "search-filter",
+        "settings-target"
       ]
     },
     {
@@ -183,15 +188,16 @@
     "components/planner/projectManagement.ts",
     "components/settings/ClaudeProviderSection.tsx",
     "components/settings/RecurringJobViews.tsx",
+    "components/settings/SettingsWorkspaceContext.tsx",
     "hooks/useCardActions.ts",
-    "hooks/useCardTransition.ts",
     "hooks/useCardComments.ts",
+    "hooks/useCardTransition.ts",
     "hooks/useChatAttachments.ts",
     "hooks/usePlannerContextMenus.ts",
     "navigation/RootNavigator.tsx",
     "navigation/phoneSessionNavigation.ts",
     "screens/DailyPlannerScreen.tsx",
-    "screens/SettingsScreen.tsx",
+    "screens/SettingsContent.tsx",
     "screens/StarredFoldersScreen.tsx"
   ]
 }

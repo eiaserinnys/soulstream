@@ -71,7 +71,7 @@ test('전체 진단 기록을 한 번에 복사하고 성공 상태를 표시한
 
 test('화면과 전체 JSON 복사는 오류의 민감값을 제거하고 관련 오류 식별자는 유지한다', async () => {
   await enqueueGlobalAppFailure(createGlobalAppFailureRecord(
-    new Error('Authorization: Bearer secret-example token=secret-token'),
+    new Error('Authorization: Bearer secret-example token=secret-token\nHTTP 500 {"token":"secret-json","accessToken":"secret-access"}\nCookie: first=secret-first; second=secret-second\nrequestId=public-request'),
     { occurredAt: new Date('2026-10-04T00:00:00Z') },
   ));
   const screen = render(<SessionDiagnosticsSection/>);
@@ -79,7 +79,8 @@ test('화면과 전체 JSON 복사는 오류의 민감값을 제거하고 관련
   await waitFor(() => expect(Clipboard.setStringAsync).toHaveBeenCalled());
   const copied = jest.mocked(Clipboard.setStringAsync).mock.calls[0][0];
   expect(copied).not.toContain('secret-example');
-  expect(copied).not.toContain('secret-token');
+  for (const value of ['secret-token', 'secret-json', 'secret-access', 'secret-first', 'secret-second']) expect(copied).not.toContain(value);
+  expect(copied).toContain('public-request');
   expect(JSON.parse(copied).records[0].occurredAt).toBe('2026-10-04T00:00:00.000Z');
   expect(JSON.stringify(screen.toJSON())).not.toContain('secret-example');
 });

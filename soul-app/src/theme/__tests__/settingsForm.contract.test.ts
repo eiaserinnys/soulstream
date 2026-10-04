@@ -40,7 +40,7 @@ describe('N5 settings and adaptive overlay contract', () => {
     expect(read('components/planner/NewFolderSheet.tsx')).toContain('<AppKeyboardAvoidingView');
     expect(read('components/planner/SessionSuccessionSheet.tsx'))
       .toContain("automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}");
-    expect(read('components/settings/SettingsModal.tsx')).toContain('showTitle={false}');
+    expect(read('components/settings/SettingsModal.tsx')).toContain('<SettingsScreen flattened');
     for (const file of [
       'components/chat/ChatBody.tsx',
       'components/planner/NewFolderSheet.tsx',

@@ -192,7 +192,7 @@ test('keeps browser conditional and refetches after a CAS conflict', async () =>
   fireEvent(screen.getByTestId('review-policy-switch-external-llm'), 'valueChange', false);
   fireEvent.press(screen.getByTestId('review-policy-save'));
   await waitFor(() => expect(api.getSessionReviewPolicy).toHaveBeenCalledTimes(2));
-  expect(await screen.findByText(/최신 버전에 내 변경만 다시 적용했습니다/)).toBeTruthy();
+  expect((await screen.findByText(/최신 버전에 내 변경만 다시 적용했습니다/)).props.accessibilityRole).toBe('alert');
   expect(screen.getByText(/현재 v5/)).toBeTruthy();
   expect(screen.getByTestId('review-policy-switch-external-llm').props.value).toBe(false);
   expect(screen.getByTestId('review-policy-switch-slack').props.value).toBe(false);
