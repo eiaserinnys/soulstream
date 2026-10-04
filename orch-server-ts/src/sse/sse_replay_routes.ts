@@ -149,11 +149,10 @@ async function sendSseReplayStream<TPayload extends object>(
     for (const frame of initialFrames) {
       push(formatSseFrame(frame));
     }
-    initialFlushed = true;
-    for (const event of pendingLiveEvents) {
-      await pushLiveEvent(event);
-    }
+    // Queue the entire initial tail before allowing new live events onto the same chain.
+    for (const event of pendingLiveEvents) enqueueLiveEvent(event);
     pendingLiveEvents = [];
+    initialFlushed = true;
 
     const keepalive = setInterval(() => {
       push(": keepalive\n\n");
@@ -191,14 +190,16 @@ async function buildInitialFrames<TPayload extends object>(
   }
 
   const replay = options.broadcaster.replayFromCursor(cursor);
-  if (replay.gap) {
+  const snapshotCatchup = (request.query as Record<string, unknown>).snapshotCatchup === "1";
+  const overflow = snapshotCatchup && replay.events.length > 200;
+  if (replay.gap || overflow) {
     frames.push({
       event: "replay_gap",
       data: {
         type: "replay_gap",
         latest_id: replay.latestId,
         instance_id: replay.instanceId,
-        reason: replay.gapReason,
+        reason: overflow ? "catchup_overflow" : replay.gapReason,
       },
     });
     return frames;

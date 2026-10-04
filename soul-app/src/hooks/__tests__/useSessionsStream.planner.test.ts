@@ -103,7 +103,7 @@ test('session_updated는 sessionStore를 먼저 패치한 뒤 planner source에 
   expect(callOrder).toEqual(['session-store', 'planner-invalidation']);
 });
 
-test('stream_meta instance_id 교체는 replay source로 planner 정본을 무효화한다', () => {
+test('stream_meta만으로 planner를 무효화하거나 복구를 시작하지 않는다', () => {
   renderHook(() => useSessionsStream());
 
   act(() => capturedStreamOptions.onEvent('stream_meta', {
@@ -116,8 +116,7 @@ test('stream_meta instance_id 교체는 replay source로 planner 정본을 무�
     instance_id: 'instance-b',
     latest_id: 20,
   }));
-  expect(mockInvalidatePlanner).toHaveBeenCalledTimes(1);
-  expect(mockInvalidatePlanner).toHaveBeenCalledWith('replay');
+  expect(mockInvalidatePlanner).not.toHaveBeenCalled();
 });
 
 test('page_updated는 version dedup 없이 수신마다 page source를 무효화한다', () => {

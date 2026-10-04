@@ -388,7 +388,7 @@ describe('useSessionsStream — Last-Event-ID resume', () => {
     expect(mockSessionStoreActions.mergeSessions).not.toHaveBeenCalled();
   });
 
-  test('두 번째 stream_meta에서 instance_id가 바뀌면 refetch + lastEventId 점프', async () => {
+  test('instance mismatch는 replay_gap 한 경로로 복구한 뒤 cursor를 확정한다', async () => {
     jest.useFakeTimers();
     mockGetCatalog.mockResolvedValue({
       folders: [],
@@ -404,8 +404,11 @@ describe('useSessionsStream — Last-Event-ID resume', () => {
 
     const first = globalThis.__lastSSEInstance;
     first.triggerEvent('stream_meta', { instance_id: 'inst-A', latest_id: 100 });
-    // 두 번째: 인스턴스가 바뀜 → refetch + 점프.
+    // metadata는 대기하고 replay_gap에서 한 번 복구한다.
     first.triggerEvent('stream_meta', { instance_id: 'inst-B', latest_id: 250 });
+    expect(mockGetCatalog).toHaveBeenCalledTimes(1);
+    first.triggerEvent('replay_gap', { instance_id: 'inst-B', latest_id: 250, reason: 'instance_mismatch' });
+    await act(async () => { await Promise.resolve(); });
     expect(mockGetCatalog).toHaveBeenCalledTimes(2);
 
     // 점프 좌표 검증: 다음 reconnect URL에 ?lastEventId=250 부착되는지.
@@ -444,7 +447,8 @@ describe('useSessionsStream — Last-Event-ID resume', () => {
       limit: 0,
     });
 
-    // 점프 좌표 검증.
+    // snapshot 성공 후 좌표 검증.
+    await act(async () => { await Promise.resolve(); });
     first.triggerError({ xhrStatus: 500 });
     jest.runOnlyPendingTimers();
     const second = globalThis.__lastSSEInstance;
@@ -1065,8 +1069,9 @@ describe('useSessionsStream — scoped gap snapshot은 피드 membership만 reco
     sse.triggerEvent('catalog_updated', excludedCatalogDeltaWire, '101');
     // 첫 stream_meta — ref만 채움 (refetch 없음).
     sse.triggerEvent('stream_meta', { instance_id: 'inst-A', latest_id: 100 });
-    // 두 번째 stream_meta — instance 교체 → refetch.
+    // instance 교체는 뒤따르는 replay_gap으로 한 번 복구한다.
     sse.triggerEvent('stream_meta', { instance_id: 'inst-B', latest_id: 250 });
+    sse.triggerEvent('replay_gap', { instance_id: 'inst-B', latest_id: 250, reason: 'instance_mismatch' });
     await act(async () => {
       await Promise.resolve();
     });
@@ -1453,7 +1458,7 @@ describe('useSessionsStream — initial catalog REST와 SSE delta race', () => {
   });
 });
 
-describe('useSessionsStream — AppState 게이트로 catalog 능동 refetch', () => {
+describe('useSessionsStream — AppState 복귀는 SSE replay로 복원', () => {
   function fireAppState(state: 'active' | 'background' | 'inactive') {
     const listeners = (globalThis as any).__appStateListeners ?? [];
     for (const fn of listeners) fn(state);
@@ -1465,7 +1470,7 @@ describe('useSessionsStream — AppState 게이트로 catalog 능동 refetch', (
     AppStateMock.currentState = 'active';
   });
 
-  test('background → inactive → active 전이 시 getCatalog가 추가 호출된다', async () => {
+  test('background → inactive → active 전이 시 REST 추가 호출 없이 재연결한다', async () => {
     mockGetCatalog.mockResolvedValue({
       folders: [],
       sessions: {},
@@ -1480,7 +1485,7 @@ describe('useSessionsStream — AppState 게이트로 catalog 능동 refetch', (
     });
     expect(mockGetCatalog).toHaveBeenCalledTimes(1);
 
-    // background → inactive → active 전이 → refetchCatalogOnGap 호출 → getCatalog 추가 호출
+    // background → inactive → active 전이는 SSE만 재연결한다.
     await act(async () => {
       fireAppState('background');
       fireAppState('inactive');
@@ -1488,7 +1493,7 @@ describe('useSessionsStream — AppState 게이트로 catalog 능동 refetch', (
       await Promise.resolve();
     });
 
-    expect(mockGetCatalog).toHaveBeenCalledTimes(2);
+    expect(mockGetCatalog).toHaveBeenCalledTimes(1);
   });
 
   test('background 복귀의 scoped snapshot도 exclude된 열린 상세 cache를 지우지 않는다', async () => {

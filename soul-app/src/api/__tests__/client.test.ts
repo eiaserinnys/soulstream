@@ -1076,10 +1076,10 @@ describe('client atom endpoints and stream urls', () => {
       `${BASE}/api/sessions/sess/1/events?snapshotCatchup=1`,
     );
     expect(api.catalogStreamUrl('last event', 'instance/1')).toBe(
-      `${BASE}/api/sessions/stream?lastEventId=last+event&instanceId=instance%2F1`,
+      `${BASE}/api/sessions/stream?snapshotCatchup=1&lastEventId=last+event&instanceId=instance%2F1`,
     );
     expect(api.catalogStreamUrl('last event', 'instance/1', { feedOnly: true })).toBe(
-      `${BASE}/api/sessions/stream?feed_only=true&lastEventId=last+event&instanceId=instance%2F1`,
+      `${BASE}/api/sessions/stream?snapshotCatchup=1&feed_only=true&lastEventId=last+event&instanceId=instance%2F1`,
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });

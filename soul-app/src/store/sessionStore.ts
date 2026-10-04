@@ -6,6 +6,7 @@ import type {
   Folder,
   SessionEndedReconciliation,
 } from '../api/types';
+import { preserveNewestLastMessage } from '../lib/session-last-message';
 import { filterFeedSessions } from '../lib/feed-filter';
 import { getSessionFeedActivityMs } from '../lib/session-feed-activity';
 import {
@@ -300,7 +301,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
         session,
         state.pendingAttentionVersionsBySession[sessionId],
       );
-      const nextSession = attention.session;
+      const nextSession = preserveNewestLastMessage(existing, attention.session);
       if (shallowEqualSession(existing, nextSession)) return state;
       const sessions = { ...state.sessions, [sessionId]: nextSession };
       const shouldRecomputeFeed = hasListAffectingChange(existing, nextSession);
@@ -341,7 +342,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
           s,
           nextAttentionVersions[s.agentSessionId],
         );
-        const nextSession = attention.session;
+        const nextSession = preserveNewestLastMessage(existing, attention.session);
         if (shallowEqualSession(existing, nextSession)) continue;
         changed = true;
         if (hasListAffectingChange(existing, nextSession)) shouldRecomputeFeed = true;
@@ -373,7 +374,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
     set((state) => {
       const existing = state.sessions[agentSessionId];
       if (!existing) return state; // delta만으로는 entry 못 만든다 → skip
-      const nextSession = { ...existing, ...partial };
+      const nextSession = preserveNewestLastMessage(existing, { ...existing, ...partial });
       if (shallowEqualSession(existing, nextSession)) return state;
       const sessions = {
         ...state.sessions,

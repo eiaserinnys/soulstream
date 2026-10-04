@@ -16,7 +16,7 @@ export function createStreamEndpoints({ base }: ApiRequestContext) {
       instanceId?: string,
       scope?: { feedOnly?: boolean },
     ): string => {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ snapshotCatchup: '1' });
       if (scope?.feedOnly) params.set('feed_only', 'true');
       if (lastEventId) params.set('lastEventId', lastEventId);
       if (instanceId) params.set('instanceId', instanceId);
