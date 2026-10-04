@@ -2,6 +2,7 @@ import type { ApiClient } from '../api/client';
 import type { CardDto, CardStatus } from '../api/cardTypes';
 import type { CatalogFolder, Session, SessionEvent } from '../api/types';
 import type { PlannerFolder } from '../api/plannerTypes';
+import { reviewSessionEventsUrl } from './chat-fixtures';
 
 // Invented public data only. No IDs or assets from an actual account.
 const time = '2026-10-01T00:00:00Z';
@@ -97,7 +98,10 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     if (state === 'loading') return new Promise(() => {});
     return value;
   };
-  const api: Pick<ApiClient, 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'executeCard' | 'getCardExecution' | 'saveCardExecutionSettings' | 'getSessionsByIds' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+  const api: Pick<ApiClient, 'sessionEventsUrl' | 'getTimeline' | 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'executeCard' | 'getCardExecution' | 'saveCardExecutionSettings' | 'getSessionsByIds' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+    sessionEventsUrl: reviewSessionEventsUrl,
+    // Entry-shell chat receives its public messages through actual SSE parsing.
+    getTimeline: async () => read({ messages: [], next_cursor: null }),
     // Mock upload only: the sample asset is served by the review export.
     uploadAttachment: async (_sessionId, nodeId, file) => ({ path: file.uri, filename: file.name, node_id: nodeId }),
     getPage:async id=>read({page:{...starredFolders[0].page,id},blocks:[],stateVector:''}),
