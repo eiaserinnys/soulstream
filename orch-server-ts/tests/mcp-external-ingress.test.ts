@@ -22,9 +22,9 @@ const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.restoreAllMocks(); });
 const ingress = { path: "/dot", nodeId: "test-node", source: "dot", displayName: "Dot ingress",
   auth: { requireAuth: true, bearerToken: "test-dot", allowedHosts: [] as string[] } };
-async function web(options = {} as McpHostOptions) {
+async function web(options = {} as McpHostOptions, config = ingress as import("../src/mcp/external_events_transport.js").ExternalIngressConfig) {
   const app = Fastify();
-  const close = registerExternalEventsRoutes(app, options, ingress);
+  const close = registerExternalEventsRoutes(app, options, config);
   await app.listen({ host: "127.0.0.1", port: 0 });
   cleanup.push(async () => { await close(); await app.close(); });
   const address = app.server.address(); if (!address || typeof address === "string") throw new Error("No TCP port");
@@ -165,6 +165,28 @@ describe("orchestrator dedicated external MCP ingress", () => {
     const response = await app.inject({ method: "POST", url: "/dot", headers: { authorization: `Bearer ${token}`, host }, payload: {} });
     expect(response.statusCode).toBe(status);
     expect(response.json()).toEqual({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized" } });
+  });
+  it("modern request-scoped Events retain registered dot ids and isolate new key subscriptions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "owned-dot-events-")); cleanup.push(() => rm(dir, { recursive: true, force: true }));
+    const post = vi.fn(async (_url: string, body: string) => ({ status: 200, body: JSON.stringify({ challenge: JSON.parse(body).challenge }) }));
+    const service = await ExternalEventsService.open({ path: join(dir, "state.json"), owner: credentialOwner(ingress.path, ingress.auth.bearerToken), post });
+    const subscription = { name: "soulstream.message.created", arguments: { recipient_label: "Dot" },
+      delivery: { mode: "webhook", url: "https://receiver.example/events", secret: `whsec_${Buffer.alloc(32, 8).toString("base64")}` } };
+    const legacy = await service.subscribe(subscription);
+    const ownedAgents = { authenticate: async (token: string) => ({ agentId: token === "test-dot" ? "dot" : "new-agent", credentialId: "credential", ownerEmail: "person@example.test" }) } as never;
+    const { url } = await web({ externalLlm: { service, getSession: async () => ({}) } } as unknown as McpHostOptions, { ...ingress, ownedAgents });
+    const dot = await connect("modern", url);
+    const peer = new ModernClient({ name: "peer", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
+    await peer.connect(new ModernTransport(url, { requestInit: { headers: { authorization: "Bearer new-test-key" } } })); cleanup.push(() => peer.close());
+    const result = z.object({}).passthrough();
+    expect((await dot.request({ method: "events/subscribe", params: subscription }, result)).id).toBe(legacy.id);
+    await peer.request({ method: "events/unsubscribe", params: subscription }, result);
+    expect(service.recipients()[0]!.recipient_id).toBe(legacy.id);
+    const created = await peer.request({ method: "events/subscribe", params: subscription }, result);
+    expect(created.id).not.toBe(legacy.id);
+    expect(service.allRecipients()).toHaveLength(2);
+    await peer.request({ method: "events/unsubscribe", params: subscription }, result);
+    expect(service.allRecipients().map(r => r.recipient_id)).toEqual([legacy.id]);
   });
 });
 

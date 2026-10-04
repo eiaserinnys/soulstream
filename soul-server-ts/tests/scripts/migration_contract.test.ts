@@ -284,7 +284,7 @@ describe("versioned migration contract", () => {
     const migrations = await loadMigrationManifest();
     const migration = migrations.find((item) => item.id === "106_recurring_jobs_once.sql");
     const removal = migrations.find((item) => item.id === "110_drop_checklist_enabled.sql");
-    const execution = migrations.at(-1);
+    const execution = migrations.find(item => item.id === "116_card_execution_requests.sql");
     const schema = readFileSync(fileURLToPath(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
@@ -456,3 +456,14 @@ describe("versioned migration contract", () => {
   });
 
 });
+
+ it("pins owned external agent migration and fresh schema together", async () => {
+   const migrations = await loadMigrationManifest();
+   const owned = migrations.find(item => item.id === "117_owned_external_agents.sql")!;
+   const schema = readFileSync(fileURLToPath(new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url)), "utf8");
+   expect(Boolean(owned)).toBe(true);
+   expect(migrationSha256(owned.sql) === owned.sha256).toBe(true);
+   expect(schema).toContain(owned.sql.trim());
+   expect(owned.sql).toContain("owner_email TEXT NOT NULL REFERENCES users(email)");
+   expect(owned.sql).toContain("token_hash TEXT NOT NULL UNIQUE");
+ });

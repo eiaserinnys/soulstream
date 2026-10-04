@@ -48,6 +48,8 @@ export interface BuildAgentCallerInfoParams {
   portraitPath?: string | null;
   /** 원 caller(browser/JWT)의 email. service-token orch access 평가에서 신원으로 쓰인다. */
   email?: string | null;
+  /** Registered external ownership proof; does not identify the internal sender. */
+  externalAgentId?: string | null;
 }
 
 /**
@@ -62,7 +64,7 @@ export interface BuildAgentCallerInfoParams {
 export function buildAgentCallerInfo(
   params: BuildAgentCallerInfoParams,
 ): AgentCallerInfo {
-  const { agentNode, agentId, agentName, portraitPath, email } = params;
+  const { agentNode, agentId, agentName, portraitPath, email, externalAgentId } = params;
   const aid = agentId ?? undefined;
   const aname = agentName ?? undefined;
   const sourceEmail = email ?? undefined;
@@ -83,6 +85,7 @@ export function buildAgentCallerInfo(
     }),
     ...(avatarUrl === undefined ? {} : { avatar_url: avatarUrl }),
     ...(sourceEmail === undefined ? {} : { email: sourceEmail }),
+    ...(externalAgentId ? { external_agent_id: externalAgentId } : {}),
   };
 }
 
@@ -131,6 +134,7 @@ export function buildCallerInfoFromCallerSession(deps: {
       ? `/api/agents/${callerProfile?.id ?? callerTask.profileId}/portrait`
       : callerProfile?.portrait_path ?? null,
     email: extractEmail(callerTask?.callerInfo),
+    externalAgentId: typeof callerTask?.callerInfo?.external_agent_id === "string" ? callerTask.callerInfo.external_agent_id : undefined,
   });
 }
 

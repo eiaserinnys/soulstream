@@ -701,6 +701,23 @@ describe("RecurringJobService", () => {
     });
   });
 
+  it("stores external provenance, enforces the same owner ACL and dispatches without a live caller session", async () => {
+    const callerInfo = { source: "dot", external_agent_id: "registered-dot", agent_id: "registered-dot", email: actor.ownerEmail };
+    const external = { ...actor, actorId: "registered-dot", source: "external-llm" as const, callerInfo };
+    const repository = memoryRepository();
+    const launch = vi.fn(async () => ({ state: "running" as const, resolvedModelPreset: null }));
+    const service = new RecurringJobService({ repository, now: () => new Date("2026-09-21T00:00:00.000Z"), newId: sequentialIds(),
+      launcher: { isNodeConnected: () => true, createRecurringSession: launch, findDurableSession: async () => null } });
+    const job = await service.create(external, createInput());
+    expect(job.executionCaller).toEqual(callerInfo);
+    expect((await service.list(external)).map(j => j.jobId)).toEqual([job.jobId]);
+    const stranger = { ...external, ownerEmail: "stranger@example.com" };
+    expect(await service.list(stranger)).toEqual([]);
+    await expect(service.get(stranger, job.jobId)).rejects.toMatchObject({ statusCode: 404 });
+    await service.runManual(external, job.jobId, "external-run");
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ job: expect.objectContaining({ executionCaller: callerInfo }) }));
+  });
+
   it("passes the verified actor and resolved target through the shared target gate", async () => {
     const validateTarget = vi.fn(async () => undefined);
     const service = new RecurringJobService({

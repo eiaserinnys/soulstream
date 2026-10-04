@@ -1,3 +1,4 @@
+import { registerOwnedAgentRoutes, type OwnedAgentRouteOptions } from "./owned-agents/routes.js";
 import { registerExternalEventsRoutes, type ExternalIngressConfig } from "./mcp/external_events_transport.js";
 import { registerMcpHostRoutes } from "./mcp/mcp_host_routes.js";
 import type { McpHostOptions } from "./mcp/types.js";
@@ -225,6 +226,8 @@ export type CreateAppOptions = {
   recurringJobRoutes?: RecurringJobRouteOptions;
   recurringJobHostRoutes?: RecurringJobHostRouteOptions;
   externalIngress?: ExternalIngressConfig;
+  ownedAgentRoutes?: OwnedAgentRouteOptions;
+  resolveSessionOwner?: McpHostOptions["resolveSessionOwner"];
   externalEvents?: import("./external_events/service.js").ExternalEventsService;
   mcpHostRoutes?: Omit<McpHostOptions, "recurringJobs" | "cardOrchestration" | "cluster"> & { cluster: Omit<McpHostOptions["cluster"], "logger"> } & Partial<Pick<McpHostOptions, "recurringJobs" | "cardOrchestration">>;
   persistenceHostRoutes?: PersistenceHostRouteOptions;
@@ -298,7 +301,8 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerRecurringJobRoutes(app, options.recurringJobRoutes);
   }
   if (options.mcpHostRoutes) {
-    const mcpOptions: McpHostOptions = { ...options.mcpHostRoutes, environment: options.config.environment,
+    const mcpOptions: McpHostOptions = { ...options.mcpHostRoutes,
+    ownedAgents: options.ownedAgentRoutes?.service, resolveSessionOwner: options.resolveSessionOwner ?? options.mcpHostRoutes.resolveSessionOwner, environment: options.config.environment,
     sessionMessages: options.sessionActionCommandRoutes ?? options.mcpHostRoutes.sessionMessages,
     ...(options.mcpHostRoutes.cluster?.readSession ? { externalLlm: {
       service: options.externalEvents, getSession: options.mcpHostRoutes.cluster.readSession,
@@ -358,6 +362,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerAuthRoutes(app, options.authRoutes);
   }
   if (options.r2SettingsRoutes) registerR2SettingsRoutes(app, options.r2SettingsRoutes);
+  if (options.ownedAgentRoutes) registerOwnedAgentRoutes(app, options.ownedAgentRoutes);
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
   }

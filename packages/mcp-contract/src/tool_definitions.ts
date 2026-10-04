@@ -2,6 +2,7 @@ import { sessionMessageTools } from "./session_message_tools.js";
 import { externalLlmTools } from "./external_llm_tools.js";
 import { clusterTools } from "./multi_node.js";
 import { cardOrchestrationTools } from "./card_orchestration.js";
+import { ownedAgentTools } from "./owned_agents.js";
 import { recurringJobTools } from "./recurring_jobs.js";
 import type { z } from "zod";
 import { boardTools } from "./board_tools.js";
@@ -48,6 +49,7 @@ export const mcpTools = {
   ...clusterTools,
   ...cardOrchestrationTools,
   ...recurringJobTools,
+  ...ownedAgentTools,
   ...folderObjectTools,
   ...cardTools,
   ...boardTools,

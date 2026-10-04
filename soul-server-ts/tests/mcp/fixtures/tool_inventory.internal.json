@@ -5358,6 +5358,27 @@
     "name": "reflect_service"
   },
   {
+    "description": "현재 영속 사용자 신원과 관리자 권한으로 기존 외부 MCP 연결을 중앙 등록한다. 키 원문이나 소유자 이메일은 입력받지 않는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "register_existing_mcp_agent"
+  },
+  {
     "annotations": {
       "destructiveHint": true
     },

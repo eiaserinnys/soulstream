@@ -26,10 +26,13 @@ export interface McpCallContext {
   callerInfo?: Record<string, unknown>;
   /** Set only by the orchestrator's own external ingress; never accepted from the worker forward body. */
   externalCaller?: { source: string; displayName: string };
+  ownedAgent?: { agentId: string; ownerEmail: string; credentialId: string };
   execution?: { registrationId: string; executionCommandId: string };
 }
 
 export interface McpHostOptions {
+  resolveSessionOwner?: import("../session/session_owner.js").SessionOwnerResolver;
+  ownedAgents?: import("../owned-agents/service.js").OwnedAgentService;
   sessionMessages?: SessionActionCommandRouteOptions;
   externalLlm?: { service?: import("../external_events/service.js").ExternalEventsService; getSession(id: string): Promise<unknown | null> };
   sessions?: SessionMcpDependencies;

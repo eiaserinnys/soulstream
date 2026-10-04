@@ -18,7 +18,7 @@ export type RecurringJobActor = {
   readonly ownerEmail: string;
   readonly actorId: string;
   readonly callerInfo: Readonly<Record<string, unknown>>;
-  readonly source: "browser" | "soul-app" | "agent" | "scheduler";
+  readonly source: "browser" | "soul-app" | "agent" | "scheduler" | "external-llm";
   readonly isAdmin?: boolean;
 };
 

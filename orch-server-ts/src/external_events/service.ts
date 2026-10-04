@@ -20,16 +20,23 @@ export class ExternalEventsService {
   static async open(options: { path: string; owner: string; post?: WebhookPost; now?: () => number }) {
     return new ExternalEventsService(await SubscriptionStore.open(options.path), options.owner, options.post ?? postWebhook, options.now ?? Date.now);
   }
+  scoped(owner: string) { return new ExternalEventsService(this.store, owner, this.post, this.now); }
+  allRecipients() { return this.store.values().filter(r => r.active && r.expiresAt > this.now()).map(r => this.recipient(r)); }
+  async sendToRecipient(id: string, text: string, sender: string, title?: string) {
+    const record = this.store.get(id);
+    return record ? this.scoped(record.owner).send(id, text, sender, title) : noRecipient;
+  }
+  private recipient(record: SubscriptionRecord) {
+    return { recipient_id: record.id, recipient_label: record.arguments.recipient_label,
+      expires_at: new Date(record.expiresAt).toISOString(), ...(record.lastDelivery ? { last_delivery: record.lastDelivery } : {}) };
+  }
   private valid(record: SubscriptionRecord | undefined): record is SubscriptionRecord {
     return Boolean(record && record.owner === this.owner && record.active && record.expiresAt > this.now());
   }
   recipients() {
-    return this.store.values().filter(record => this.valid(record)).map(record => ({
-      recipient_id: record.id, recipient_label: record.arguments.recipient_label,
-      expires_at: new Date(record.expiresAt).toISOString(),
-      ...(record.lastDelivery ? { last_delivery: record.lastDelivery } : {}),
-    }));
+    return this.store.values().filter(record => this.valid(record)).map(record => this.recipient(record));
   }
+
   private headers(secret: string, id: string, eventId: string, body: string, previous?: SubscriptionRecord["previousSecret"]) {
     const signedAt = new Date();
     const signatures = [new Webhook(secret).sign(eventId, signedAt, body)];

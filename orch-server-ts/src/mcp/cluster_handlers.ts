@@ -1,3 +1,4 @@
+import { withVerifiedSessionOwner } from "../session/session_owner.js";
 import { STATUS_CODES } from "node:http";
 import { clusterTools, errorResult, jsonResult, readOrchErrorEnvelopeText, type CallToolResult } from "@soulstream/mcp-contract";
 import { SERVICE_CALLER } from "../auth/service_caller.js";
@@ -62,7 +63,11 @@ export const clusterHandlers = {
     if (a.notify_completion !== undefined) body.notify_completion = a.notify_completion;
     // resolveStructuralCallerSessionId retains the caller even for notify_completion=false.
     if (callerSessionId) body.caller_session_id = callerSessionId;
-    body.caller_info = c.callerInfo;
+    if (callerSessionId && o.resolveSessionOwner) {
+      if (explicit && c.callerSessionId && explicit !== c.callerSessionId) return errorResult("caller_session_id does not match authenticated session");
+      try { body.caller_info = withVerifiedSessionOwner(c.callerInfo, await o.resolveSessionOwner(callerSessionId)); }
+      catch { return errorResult("Durable caller identity temporarily unavailable"); }
+    } else body.caller_info = c.callerInfo;
     try { return jsonResult(await request("POST", "/api/sessions", () => executeCreateSessionRoute(o.cluster.sessions, SERVICE_CALLER, JSON.parse(JSON.stringify(body)), o.cluster.logger))); }
     catch (error) {
       const message = error instanceof Error ? error.message : String(error);
