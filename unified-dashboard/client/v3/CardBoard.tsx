@@ -15,8 +15,8 @@ export const boardColumns = [
 ] as const;
 
 /** Existing active lanes and a viewport-sized completed lane share card mutations. */
-export function CardBoard({cards, renderCard, completion, draftAction,completed}: {
-  cards: readonly CardRow[]; renderCard(card:CardRow):ReactNode; draftAction?:ReactNode; completion?:CardCompletionOption;completed?:CompletedBrowser;
+export function CardBoard({cards, renderCard, completion, draftAction,completed,hideEmptyLanes=false}: {
+  cards: readonly CardRow[]; renderCard(card:CardRow):ReactNode; draftAction?:ReactNode; completion?:CardCompletionOption;completed?:CompletedBrowser;hideEmptyLanes?:boolean;
 }) {
   const pan = useBoardPan();
   const root=useRef<HTMLDivElement>(null);
@@ -31,8 +31,11 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed}
     measure();const observer=new ResizeObserver(measure);observer.observe(board);observer.observe(board.querySelector(".v3-completed-measure")!);return()=>observer.disconnect();
   },[]);
   const visible=cards.filter(card=>!card.archived);
-  return <PostItGrid ref={root} {...pan} className="v3-card-board" variant="compact"><span className="v3-completed-measure" aria-hidden="true"/>{boardColumns.filter(({status})=>completion?.includeCompleted!==false||(status!=="done"&&status!=="cancelled")).map(({status,label})=>{
-    const column=visible.filter(card=>card.status===status).sort((a,b)=>{
+  const columns=boardColumns.filter(({status})=>completion?.includeCompleted!==false||(status!=="done"&&status!=="cancelled")).map(column=>({
+    ...column,cards:visible.filter(card=>card.status===column.status),
+  })).filter(column=>!hideEmptyLanes||column.cards.length>0);
+  return <PostItGrid ref={root} {...pan} className="v3-card-board" variant="compact"><span className="v3-completed-measure" aria-hidden="true"/>{columns.length===0&&hideEmptyLanes?<p className="v3-card-board-empty">카드가 없습니다</p>:null}{columns.map(({status,label,cards:column})=>{
+    const sorted=column.sort((a,b)=>{
       const left=status==="queued"?a.queuePositionKey??"":a.positionKey;
       const right=status==="queued"?b.queuePositionKey??"":b.positionKey;
       return left<right?-1:left>right?1:0;
@@ -40,7 +43,7 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed}
     return <section key={status} className="v3-card-board-column" data-board-column={status} aria-label={label} style={status==="done"?{width:doneWidth}:undefined}>
       <div className="v3-detail-section-head"><h3>{label}</h3><span>{column.length}개{status==="done"?" 표시":""}</span>{status==="todo"?draftAction:null}</div>
       {status==="done"&&completed?<CompletedCardGrid browser={completed} renderCard={card=>renderCard(card)}/>:<div className="v3-card-board-lane">
-        {column.length ? column.map(card=><Fragment key={card.id}>{renderCard(card)}</Fragment>)
+        {sorted.length ? sorted.map(card=><Fragment key={card.id}>{renderCard(card)}</Fragment>)
         : <p className="v3-card-board-empty">카드가 없습니다</p>}
       </div>}
     </section>;

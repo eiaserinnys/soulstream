@@ -5,10 +5,12 @@ import {installV3VisualQaRoutes} from "./v3-visual-fixtures";
 import {reviewCard,reviewTitle} from "../client/v3/components-review-fixtures";
 import {DEFAULT_USER_PREFERENCES} from "../../packages/soul-ui/src/lib/user-preferences";
 const output=path.resolve("../../../.local/artifacts/20261002-card-home-web");
+const emptyLanesOutput=path.resolve("../../../.local/artifacts/20261005-card-empty-lanes");
+const emptyLanesPhase=process.env.CARD_EMPTY_PHASE??"after";
 const seed=()=>["todo","queued","running","blocked","review","done"].flatMap((status,index)=>Array.from({length:index===0?4:1},(_,copy)=>({...reviewCard,id:`home-${index}-${copy}`,folderId:"folder-amber",status:status as typeof reviewCard.status,
  title:status==="todo"?reviewTitle:`${status} 카드`,latestActivity:{kind:status==="todo"?"instruction" as const:"report" as const,format:"markdown" as const,body:"긴 한국어 원문과 제목이 있어도 열과 카드 폭을 유지합니다. 마지막 지시와 보고는 카드 상세에서 이어 봅니다. ".repeat(6),createdAt:reviewCard.createdAt}})));
-async function fixture(page:Page,fontSize=17){
- const cards=seed(),reads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
+async function fixture(page:Page,fontSize=17,initialCards=seed()){
+ const cards=initialCards,reads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
  let failure=false,delay=false;
  await page.addInitScript(()=>{localStorage.setItem("ls.webglGlass","0");Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>{},active:null,addEventListener:()=>{}})});
   const Native=EventSource,sources:EventSource[]=[];let sequence=0;
@@ -20,7 +22,11 @@ async function fixture(page:Page,fontSize=17){
  await page.route("**/api/auth/status",route=>route.fulfill({json:{authenticated:true,user:{email:"home@example.test",name:"검수"}}}));
  await page.route("**/api/user/preferences",route=>route.fulfill({json:{email:"home@example.test",preferences:{...DEFAULT_USER_PREFERENCES,chatFontSize:fontSize},hasBackground:false}}));
  await page.route("**/api/cards",async route=>{
-  if(route.request().method()==="GET")return route.fulfill({json:{cards}});
+  if(route.request().method()==="GET"){
+   const url=new URL(route.request().url()),folderId=url.searchParams.get("folderId"),status=url.searchParams.get("status");
+   const listed=cards.filter(card=>!folderId||card.folderId===folderId).filter(card=>status==="done"?card.status==="done":card.status!=="done");
+   return route.fulfill({json:{cards:listed,nextCursor:null}});
+  }
   const body=route.request().postDataJSON();creates.push(body);
   if(failure)return route.fulfill({status:409,json:{message:"fixture create conflict"}});
   const card={...reviewCard,id:"created",folderId:body.folderId,title:body.title,request:body.request,status:"todo" as const};cards.push(card);return route.fulfill({status:201,json:{card}});
@@ -39,11 +45,93 @@ async function fixture(page:Page,fontSize=17){
    questions:card.id==="home-3-0"?[{id:"q",text:"질문",answer:null,options:null,askedAt:"",answeredAt:null}]:[],sessions:[]}});
  });
  await page.goto("/");await expect(page.getByTestId("card-home")).toBeVisible();
- const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board.locator("[data-board-column]")).toHaveCount(6);
+ const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board).toBeVisible();
  return {cards,reads,writes,creates,board,setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;}};
 }
 const boardTarget=(page:Page)=>page.locator('.v3-card-board-column[data-board-column="queued"]');
 const capture=async(page:Page,name:string)=>{mkdirSync(output,{recursive:true});await page.screenshot({path:path.join(output,`${name}.png`),animations:"disabled"});};
+const captureEmptyLanes=async(page:Page,name:string)=>{mkdirSync(emptyLanesOutput,{recursive:true});await page.screenshot({path:path.join(emptyLanesOutput,`${name}.png`),animations:"disabled"});};
+
+test("main and folder boards hide empty lanes and restore the current lane across membership changes",async({page})=>{
+ const laneCards=Array.from({length:6},(_,index)=>({...reviewCard,id:`running-${index}`,folderId:"folder-amber",title:`실행 카드 ${index+1}`,status:"running" as const,positionKey:String(index)}));
+ const cards=[...laneCards,{...reviewCard,id:"review-card",folderId:"folder-amber",title:"검수 카드",status:"review" as const},
+  {...reviewCard,id:"done-card",folderId:"folder-amber",title:"완료한 카드",status:"done" as const,completedAt:reviewCard.createdAt},
+  {...reviewCard,id:"cancelled-card",folderId:"folder-amber",title:"취소한 카드",status:"cancelled" as const}];
+ await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:"reduce"});
+ const state=await fixture(page,17,cards),home=page.getByTestId("card-home"),board=state.board;
+ await captureEmptyLanes(page,`${emptyLanesPhase}-390-main`);
+ await page.setViewportSize({width:1440,height:1000});await captureEmptyLanes(page,`${emptyLanesPhase}-1440-main`);
+ await page.setViewportSize({width:390,height:844});
+ const columnStatuses=()=>board.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")));
+ expect(await columnStatuses()).toEqual(["running","review"]);
+ const create=home.locator(".v3-card-actions").getByRole("button",{name:"새 카드",exact:true});await expect(create).toBeVisible();
+ const running=board.locator('[data-board-column="running"]'),runningLane=running.locator(".v3-card-board-lane");
+ await runningLane.hover();await page.mouse.wheel(0,500);await expect.poll(()=>runningLane.evaluate(element=>element.scrollTop)).toBeGreaterThan(0);
+ const originalRunningX=(await running.boundingBox())!.x,originalRunningScroll=await runningLane.evaluate(element=>element.scrollTop);
+ await create.click();const dialog=page.getByRole("dialog");await expect(dialog).toBeVisible();
+ await dialog.getByRole("textbox",{name:"카드 제목"}).fill("새 드래프트");
+ await dialog.getByRole("button",{name:"폴더 선택",exact:true}).click();
+ await page.locator(".v3-card-folder-picker").getByRole("tab",{name:"전체",exact:true}).click();
+ await page.locator(".v3-card-folder-picker").getByRole("button",{name:"소울스트림",exact:true}).click();
+ await dialog.getByRole("button",{name:"카드 저장",exact:true}).click();
+ const draft=board.locator('[data-card-id="created"]');await expect(draft).toBeVisible();
+ expect(await columnStatuses()).toEqual(["todo","running","review"]);
+ expect(Math.abs((await running.boundingBox())!.x-originalRunningX)).toBeLessThanOrEqual(1);
+ expect(await runningLane.evaluate(element=>element.scrollTop)).toBe(originalRunningScroll);
+ await draft.getByRole("button",{name:"카드 상태 변경",exact:true}).click();
+ const todoX=(await board.locator('[data-board-column="todo"]').boundingBox())!.x;
+ const picker=page.locator("[data-card-status-picker]");await picker.getByRole("button",{name:"대기",exact:true}).click();
+ await expect(board.locator('[data-board-column="queued"] [data-card-id="created"]')).toHaveCount(1);
+ await expect(board.locator('[data-board-column="todo"]')).toHaveCount(0);
+ expect(await columnStatuses()).toEqual(["queued","running","review"]);
+ expect(Math.abs((await board.locator('[data-board-column="queued"]').boundingBox())!.x-todoX)).toBeLessThanOrEqual(1);
+ expect(await runningLane.evaluate(element=>element.scrollTop)).toBe(originalRunningScroll);
+ const completion=home.getByRole("switch",{name:"완료·취소 숨김"});
+ await completion.click();await expect(board.locator('[data-board-column="done"]')).toHaveCount(1);await expect(board.locator('[data-board-column="cancelled"]')).toHaveCount(1);
+ await completion.click();await expect(board.locator('[data-board-column="done"]')).toHaveCount(0);await expect(board.locator('[data-board-column="cancelled"]')).toHaveCount(0);
+ expect(await columnStatuses()).toEqual(["queued","running","review"]);
+ await captureEmptyLanes(page,`${emptyLanesPhase}-390-transition`);
+ await page.setViewportSize({width:1440,height:1000});await captureEmptyLanes(page,`${emptyLanesPhase}-1440-transition`);
+ await page.setViewportSize({width:390,height:844});
+ const mainScroll=await board.evaluate(element=>element.scrollLeft),mainRunningScroll=await runningLane.evaluate(element=>element.scrollTop),mainX=(await running.boundingBox())!.x;
+ await home.getByRole("button",{name:"보드 확대",exact:true}).click();
+ const expanded=page.getByRole("dialog",{name:"전체 카드 보드",exact:true}),expandedBoard=expanded.locator(".v3-card-board");
+ await expect(expanded).toBeVisible();
+ expect(await expandedBoard.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","queued","running","blocked","review"]);
+ const expandedActions=expanded.locator(".v3-card-actions"),expandedRunning=expandedBoard.locator('[data-board-column="running"]'),expandedRunningLane=expandedRunning.locator(".v3-card-board-lane");
+ await expect(expandedActions.getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
+ await expect(expandedActions.getByRole("button",{name:"기록",exact:true})).toHaveCount(0);
+ await expect(expandedRunningLane).toHaveJSProperty("scrollTop",mainRunningScroll);
+ expect(Math.abs((await expandedRunning.boundingBox())!.x-mainX)).toBeLessThanOrEqual(1);
+ await expandedBoard.evaluate(element=>element.scrollLeft=element.scrollWidth);
+ await expandedRunningLane.evaluate(element=>element.scrollTop=0);
+ await expandedActions.getByRole("button",{name:"확대 닫기",exact:true}).click();await expect(expanded).toHaveCount(0);
+ await expect.poll(()=>board.evaluate(element=>element.scrollLeft)).toBe(mainScroll);
+ expect(Math.abs((await running.boundingBox())!.x-mainX)).toBeLessThanOrEqual(1);
+ expect(await runningLane.evaluate(element=>element.scrollTop)).toBe(mainRunningScroll);
+ await captureEmptyLanes(page,`${emptyLanesPhase}-390-restored`);
+
+ await page.setViewportSize({width:1440,height:1000});
+ await page.getByTestId("v3-all-projects").getByRole("button",{name:"소울스트림",exact:true}).click();
+ const folder=page.getByTestId("folder-card-section"),folderBoard=folder.locator(".v3-card-board");await expect(folderBoard).toBeVisible();
+ expect(await folderBoard.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["queued","running","review"]);
+ await expect(folder.locator(".v3-card-actions").getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
+ await folder.getByRole("button",{name:"보드 확대",exact:true}).click();
+ const folderExpanded=page.getByRole("dialog",{name:"현재 폴더 카드 보드",exact:true});
+ expect(await folderExpanded.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","queued","running","blocked","review"]);
+ await expect(folderExpanded.locator(".v3-card-actions").getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
+ await folderExpanded.getByRole("button",{name:"확대 닫기",exact:true}).click();
+ await expect(folderExpanded).toHaveCount(0);
+
+ await page.goto("/components");const sample=page.getByTestId("card-board-sample"),sampleBoard=sample.locator(".v3-card-board");
+ await sample.getByRole("button",{name:"빈 보드",exact:true}).click();
+ await expect(sampleBoard.locator("[data-board-column]")).toHaveCount(0);
+ await expect(sampleBoard.locator(".v3-card-board-empty")).toHaveCount(1);
+ await expect(sample.locator(".v3-card-actions").getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
+ await sample.getByRole("button",{name:"혼합",exact:true}).click();
+ expect(await sampleBoard.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","running","review"]);
+ expect(state.writes).toHaveLength(1);
+});
 for(const [width,font] of [[390,17],[1210,14],[1440,17],[1920,18]])test(`product layout ${width} font ${font}`,async({page})=>{
  await page.setViewportSize({width,height:width===1210?834:1000});await page.emulateMedia({reducedMotion:"reduce"});
  const state=await fixture(page,font),home=page.getByTestId("card-home");await page.evaluate(()=>document.fonts.ready);
