@@ -645,7 +645,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-test('optimistic chat clearing keeps the persisted text until confirmation and preserves later typing', async () => {
+test('optimistic chat clearing removes the submitted draft at send start and preserves later typing', async () => {
   await useAuthStore.persist.rehydrate(); await useSettingsStore.persist.rehydrate(); await useDraftStore.persist.rehydrate();
   useAuthStore.setState({ jwt: `header.${Buffer.from(JSON.stringify({ email: 'chat@example.com' })).toString('base64url')}.signature` });
   useSettingsStore.setState({ serverUrl: 'https://chat.example' });
@@ -655,13 +655,13 @@ test('optimistic chat clearing keeps the persisted text until confirmation and p
   const hook = renderHook(() => {
     const draft = usePersistentDraft('chat', ['node-1', SID], '');
     return { draft, send: useChatSendFlow({ api: api as any, sessionId: SID, session: makeSession(), attachments: [],
-      clearAttachments: jest.fn(), scrollToBottom: jest.fn(), onSendConfirmed: draft.clearIfMatches }) };
+      clearAttachments: jest.fn(), scrollToBottom: jest.fn() }) };
   });
   act(() => hook.result.current.draft.setValue('전송할 원문'));
-  const clearVisible = jest.fn(); let sending!: Promise<void>;
+  const clearVisible = jest.fn(() => hook.result.current.draft.clear()); let sending!: Promise<void>;
   act(() => { sending = hook.result.current.send.handleSend('전송할 원문', clearVisible); });
   expect(clearVisible).toHaveBeenCalled();
-  expect(hook.result.current.draft.value).toBe('전송할 원문');
+  expect(hook.result.current.draft.value).toBe('');
   act(() => hook.result.current.draft.setValue('새 입력'));
   await act(async () => { confirm({ delivered: true, outcome: 'delivered' }); await sending; });
   expect(hook.result.current.draft.value).toBe('새 입력');

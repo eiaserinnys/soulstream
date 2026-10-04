@@ -142,7 +142,7 @@ export function ChatBody({
     connectedNodeIds,
   }) : false);
 
-  const [input, setInput] = useState('');
+  const input = inputDraft.value;
   const [interrupting, setInterrupting] = useState(false);
   const [snapshotGeneration, setSnapshotGeneration] = useState(0);
   const [highlightedItemKey, setHighlightedItemKey] = useState<string | null>(
@@ -166,7 +166,6 @@ export function ChatBody({
   const appForeground = useAppForegroundLifecycle();
   const detailedNetworkActive = active && appForeground;
   const inputRef = useRef(input);
-  inputRef.current = input;
   const composeFlowRef = useRef<{
     flowId: string;
     sessionId: string;
@@ -204,8 +203,8 @@ export function ChatBody({
   const clearComposerInput = useCallback(() => {
     inputRef.current = '';
     composeFlowRef.current = null;
-    setInput('');
-  }, []);
+    inputDraft.clear();
+  }, [inputDraft.clear]);
 
   const handleInputChange = useCallback((value: string) => {
     const previous = inputRef.current;
@@ -223,7 +222,6 @@ export function ChatBody({
     }
     if (previous && !value) composeFlowRef.current = null;
     inputRef.current = value;
-    setInput(value);
     inputDraft.setValue(value);
   }, [sessionId, inputDraft.setValue]);
 
@@ -261,6 +259,10 @@ export function ChatBody({
     if (previous && previous !== sessionId) abandonComposer('session_change');
     previousSessionIdRef.current = sessionId;
   }, [abandonComposer, sessionId]);
+
+  useEffect(() => {
+    inputRef.current = input;
+  }, [input]);
 
   useEffect(() => {
     const visible = detailedNetworkActive;
@@ -416,17 +418,11 @@ export function ChatBody({
     pendingCatchupQueueRef.current = [];
     pendingSnapshotBaselineRef.current = null;
     clearStreamingEvents(sessionId);
-    clearComposerInput();
+    composeFlowRef.current = null;
     clearAttachments();
     // sendError 리셋은 useChatSendFlow가 sessionId 변경 시 자동 처리한다 (정본 이동에 따른 책임 이동).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, api]);
-
-  useEffect(() => {
-    if (!inputDraft.ready) return;
-    inputRef.current = inputDraft.value;
-    setInput(inputDraft.value);
-  }, [inputDraft.key, inputDraft.value, inputDraft.ready, api]);
 
   useEffect(() => {
     return () => {
@@ -565,7 +561,6 @@ export function ChatBody({
     disabled: inputDisabled,
     scrollToBottom: requestBottomFollow,
     onUsageEvent: handleSendUsage,
-    onSendConfirmed: inputDraft.clearIfMatches,
   });
 
   const handleRetryPending = useCallback((eventId: string) => {
@@ -575,8 +570,6 @@ export function ChatBody({
   const handleRestorePending = useCallback((eventId: string) => {
     const restored = restorePendingOptimistic(eventId, inputRef.current);
     if (!restored) return;
-    inputRef.current = restored.inputText;
-    setInput(restored.inputText);
     inputDraft.setValue(restored.inputText);
     if (!composeFlowRef.current && sessionId) {
       const flowId = createUiUsageFlowId();

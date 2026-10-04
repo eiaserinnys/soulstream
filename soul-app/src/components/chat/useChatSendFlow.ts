@@ -43,7 +43,6 @@ export interface UseChatSendFlowDeps {
   disabled?: boolean;
   /** UI 사용 로그용 최소 송신 사실. 원문·첨부 경로는 전달하지 않는다. */
   onUsageEvent?: (event: ChatSendUsageEvent) => void;
-  onSendConfirmed?: (originalText: string) => void;
 }
 
 export type ChatSendUsageEvent =
@@ -109,7 +108,6 @@ export function useChatSendFlow(
     scrollToBottom,
     disabled = false,
     onUsageEvent,
-    onSendConfirmed,
   } = deps;
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
@@ -250,7 +248,6 @@ export function useChatSendFlow(
         });
         return;
       }
-      if (pending.originalText !== undefined) onSendConfirmed?.(pending.originalText);
       reportUsage(onUsageEvent, {
         kind: 'result',
         status: 'ok',
