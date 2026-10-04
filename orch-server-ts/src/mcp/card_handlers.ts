@@ -35,6 +35,18 @@ export const cardHandlers = {
       status: a.status, expectedVersion: a.expected_version, idempotencyKey: a.idempotency_key, reason: a.reason,
     }, agent(a, c, true));
   }),
+  transfer_card_assignee: (o, a, c) => run(async () => {
+    if (c.principal === "external") throw new Error("card mutation requires an agent session");
+    if (!c.callerSessionId) throw new Error("authenticated request session header is required for card assignee handoff");
+    matchingHeader(a, c);
+    const actor = agent(a, c, true);
+    if (actor.actorKind !== "agent" || actor.actorSessionId !== c.callerSessionId)
+      throw new Error("card assignee handoff requires the authenticated agent session");
+    return mutation(o.cards, "update_card", String(a.card_id), {
+      assignee: { kind: "session", sessionId: a.target_session_id },
+      expectedVersion: a.expected_version, idempotencyKey: a.idempotency_key, reason: a.reason,
+    }, actor);
+  }),
   start_card_work: (o, a, c) => run(async () => {
     if (c.principal === "external") throw new Error("card mutation requires an agent session");
     matchingHeader(a, c);

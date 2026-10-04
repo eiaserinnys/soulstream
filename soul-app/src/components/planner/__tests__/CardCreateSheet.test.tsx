@@ -68,7 +68,7 @@ test('실제 선택기와 첨부를 사용하며 실패 뒤 모든 입력을 보
 });
 
 
-test('폴더 범위와 드래프트 목적을 밝히고 필수 요청 옆에 첨부를 둔다', async () => {
+test('폴더 범위와 드래프트 목적을 밝히고 선택 요청 옆에 첨부를 둔다', async () => {
   const api = {
     listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }),
     listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }] }),
@@ -78,11 +78,12 @@ test('폴더 범위와 드래프트 목적을 밝히고 필수 요청 옆에 첨
   await waitFor(() => expect(screen.getByText('Sol')).toBeTruthy());
   expect(screen.getByText('드래프트 저장')).toBeTruthy();
   expect(screen.getByLabelText('카드 폴더 선택')).toBeTruthy();
-  expect(screen.getAllByText('필수')).toHaveLength(2);
+  expect(screen.getAllByText('필수')).toHaveLength(1);
+  expect(screen.getByText('선택')).toBeTruthy();
   expect(within(screen.getByTestId('card-create-request-section')).getByLabelText('첨부 추가')).toBeTruthy();
   expect(screen.getByLabelText('카드 저장')).toBeDisabled();
   fireEvent.changeText(screen.getByLabelText('카드 제목'), '제목만 있는 카드');
-  expect(screen.getByLabelText('카드 저장')).toBeDisabled();
+  expect(screen.getByLabelText('카드 저장')).toBeEnabled();
   fireEvent.changeText(screen.getByLabelText('요청 원문'), '수행할 요청');
   await waitFor(() => expect(screen.getByLabelText('카드 저장')).toBeEnabled());
   const sections = screen.UNSAFE_getByType(ScrollView).props.children.filter(Boolean)
@@ -99,7 +100,8 @@ test('요약된 실행 대상에서도 사용할 수 없는 모델의 사유는 
   const screen = render(<CardCreateSheet api={api as any} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.')).toBeTruthy());
   expect(screen.getByLabelText('실행 대상 선택')).toBeEnabled();
-  expect(screen.getByLabelText('카드 저장')).toBeDisabled();
+  fireEvent.changeText(screen.getByLabelText('카드 제목'),'모델 확인은 실행할 때');
+  expect(screen.getByLabelText('카드 저장')).toBeEnabled();
 });
 
 
@@ -159,4 +161,17 @@ test('명시적 거절 후 같은 제출은 같은 키이고 입력을 고친 �
   await act(async () => fireEvent.press(screen.getByLabelText('카드 저장')));
   expect(api.createCard.mock.calls[2][0].idempotencyKey).not.toBe(api.createCard.mock.calls[0][0].idempotencyKey);
   expect(api.createCard.mock.calls[2][0].request).toBe('고친 요청');
+});
+
+
+test('제목과 폴더만 저장하며 실행 대상은 자동으로 채우지 않는다', async()=>{
+ useSettingsStore.setState({cardAssignments:{}});
+ const card=cardFixture({nodeId:null,assigneeAgentId:null,modelPreset:null});
+ const api={listNodes:jest.fn().mockResolvedValue({nodes:[]}),createCard:jest.fn().mockResolvedValue({card}),getCard:jest.fn().mockResolvedValue({card,reports:[],questions:[],sessions:[]})};
+ const close=jest.fn();const screen=render(<CardCreateSheet api={api as any} folderId="folder-1" onClose={close}/>);
+ fireEvent.changeText(screen.getByLabelText('카드 제목'),'제목만');
+ await waitFor(()=>expect(screen.getByLabelText('카드 저장')).toBeEnabled());
+ await act(async()=>fireEvent.press(screen.getByLabelText('카드 저장')));
+ expect(api.createCard).toHaveBeenCalledWith(expect.objectContaining({title:'제목만',folderId:'folder-1',request:'',nodeId:null,assignee:null,modelPreset:null,queue:false,attachments:[]}));
+ expect(close).toHaveBeenCalledTimes(1);
 });

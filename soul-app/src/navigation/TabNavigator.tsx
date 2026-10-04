@@ -17,8 +17,8 @@ import {
   DailyPlannerScreen,
   type DailyPlannerScreenHandle,
 } from '../screens/DailyPlannerScreen';
-import { StarredFoldersScreen } from '../screens/StarredFoldersScreen';
-import { ProjectHeaderAddButton, ProjectListScreen } from '../screens/ProjectListScreen';
+import { FolderListScreen, type FolderListTab } from '../screens/FolderListScreen';
+import { ProjectHeaderAddButton } from '../screens/ProjectListScreen';
 import { SessionFeedScreen } from '../screens/SessionFeedScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { ChatScreen } from '../screens/ChatScreen';
@@ -71,8 +71,7 @@ function TabBarGlassBackground() {
 
 export type RootTabParamList = {
   DailyTab: undefined;
-  StarredTab: undefined;
-  ProjectTab: NavigatorScreenParams<ProjectStackParamList> | undefined;
+  FolderTab: NavigatorScreenParams<FolderStackParamList> | undefined;
   FeedTab: NavigatorScreenParams<FeedStackParamList> | undefined;
   ChatTab: {
     screen: 'Chat';
@@ -92,13 +91,8 @@ export type DailyStackParamList = {
   FolderWorkspace: { folderPageId: string; folderTitle: string; folderId?: string };
   CardDetail: { cardId: string };
 };
-export type StarredStackParamList = {
-  Starred: undefined;
-  FolderWorkspace: { folderPageId: string; folderTitle: string; folderId?: string };
-  CardDetail: { cardId: string };
-};
-export type ProjectStackParamList = {
-  ProjectList: undefined;
+export type FolderStackParamList = {
+  FolderList: undefined;
   FolderWorkspace: { folderPageId: string; folderTitle: string; folderId?: string };
   CardDetail: { cardId: string };
 };
@@ -122,8 +116,7 @@ export type SettingsStackParamList = {
 };
 
 const DailyStack = createNativeStackNavigator<DailyStackParamList>();
-const StarredStack = createNativeStackNavigator<StarredStackParamList>();
-const ProjectStack = createNativeStackNavigator<ProjectStackParamList>();
+const FolderStack = createNativeStackNavigator<FolderStackParamList>();
 const FeedStack = createNativeStackNavigator<FeedStackParamList>();
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
@@ -195,51 +188,20 @@ function DailyNavigator() {
   );
 }
 
-function PhoneStarredScreen({ navigation }: NativeStackScreenProps<StarredStackParamList, 'Starred'>) {
-  return (
-    <StarredFoldersScreen
-      active={useIsFocused()}
-      onOpenFolder={(folder) => navigation.navigate('FolderWorkspace', {
-        folderPageId: folder.page.id,
-        folderTitle: folder.page.title,
-        folderId: folder.folderId,
-      })}
-    />
-  );
+function PhoneFolderListScreen({ navigation }: NativeStackScreenProps<FolderStackParamList, 'FolderList'>) {
+  const onTabChange = useCallback((tab: FolderListTab) => {
+    navigation.setOptions({ headerRight: () => tab === 'all' ? <ProjectHeaderAddButton /> : null });
+  }, [navigation]);
+  return <FolderListScreen active={useIsFocused()} onTabChange={onTabChange}
+    onOpenFolder={(folder) => navigation.navigate('FolderWorkspace', {
+      folderPageId: folder.page.id, folderTitle: folder.page.title, folderId: folder.folderId,
+    })}
+    onOpenProject={(folder, projectPageId) => navigation.navigate('FolderWorkspace', {
+      folderPageId: projectPageId, folderTitle: folder.name, folderId: folder.id,
+    })} />;
 }
 
-function PhoneStarredFolderWorkspace({ route, navigation }: NativeStackScreenProps<StarredStackParamList, 'FolderWorkspace'>) {
-  return <PhoneFolderWorkspace folderPageId={route.params.folderPageId} folderId={route.params.folderId} navigation={navigation} />;
-}
-
-function StarredNavigator() {
-  const t = useTokens();
-  return (
-    <StarredStack.Navigator screenOptions={stackScreenOptions(t)}>
-      <StarredStack.Screen name="Starred" component={PhoneStarredScreen} options={rootScreenOptions('StarredTab')} />
-      <StarredStack.Screen
-        name="FolderWorkspace"
-        component={PhoneStarredFolderWorkspace}
-        options={({ route }) => ({ title: route.params.folderTitle })}
-      />
-      <StarredStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드' }} />
-    </StarredStack.Navigator>
-  );
-}
-
-function PhoneProjectListScreen({ navigation }: NativeStackScreenProps<ProjectStackParamList, 'ProjectList'>) {
-  return (
-    <ProjectListScreen
-      onOpenProject={(folder, projectPageId) => navigation.navigate('FolderWorkspace', {
-        folderPageId: projectPageId,
-        folderTitle: folder.name,
-        folderId: folder.id,
-      })}
-    />
-  );
-}
-
-function PhoneProjectFolderWorkspace({ route, navigation }: NativeStackScreenProps<ProjectStackParamList, 'FolderWorkspace'>) {
+function PhoneFolderListWorkspace({ route, navigation }: NativeStackScreenProps<FolderStackParamList, 'FolderWorkspace'>) {
   return <PhoneFolderWorkspace folderPageId={route.params.folderPageId} folderId={route.params.folderId} navigation={navigation} />;
 }
 
@@ -274,22 +236,22 @@ export function PhoneFolderWorkspace({ folderPageId, folderId, navigation }: { f
   );
 }
 
-function ProjectNavigator() {
+function FolderNavigator() {
   const t = useTokens();
   return (
-    <ProjectStack.Navigator screenOptions={stackScreenOptions(t)}>
-      <ProjectStack.Screen
-        name="ProjectList"
-        component={PhoneProjectListScreen}
-        options={{ ...rootScreenOptions('ProjectTab'), headerRight: () => <ProjectHeaderAddButton /> }}
+    <FolderStack.Navigator screenOptions={stackScreenOptions(t)}>
+      <FolderStack.Screen
+        name="FolderList"
+        component={PhoneFolderListScreen}
+        options={rootScreenOptions('FolderTab')}
       />
-      <ProjectStack.Screen
+      <FolderStack.Screen
         name="FolderWorkspace"
-        component={PhoneProjectFolderWorkspace}
+        component={PhoneFolderListWorkspace}
         options={({ route }) => ({ title: route.params.folderTitle })}
       />
-      <ProjectStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드' }} />
-    </ProjectStack.Navigator>
+      <FolderStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드' }} />
+    </FolderStack.Navigator>
   );
 }
 
@@ -368,7 +330,7 @@ function PhoneSearchScreen({
         )
       }
       onOpenFolder={(result) =>
-        tabs?.navigate('ProjectTab', {
+        tabs?.navigate('FolderTab', {
           screen: 'FolderWorkspace',
           params: {
             folderPageId: result.projectPageId,
@@ -427,8 +389,7 @@ const TAB_COMPONENTS: Record<
   React.ComponentType<any>
 > = {
   DailyTab: DailyNavigator,
-  StarredTab: StarredNavigator,
-  ProjectTab: ProjectNavigator,
+  FolderTab: FolderNavigator,
   FeedTab: FeedNavigator,
   // 빌드 26: 키보드 등장 시 탭 바 숨김은 ChatScreen 내부에서 useFocusEffect +
   // Keyboard 리스너로 처리한다. 시작 시점 리스너는 iOS 26.3.1 + RN New Arch에서

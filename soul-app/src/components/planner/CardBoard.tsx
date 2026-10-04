@@ -56,7 +56,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
     } else if (initialized.current && (previousLayout.current.stride !== geometry.stride
       || previousLayout.current.viewport !== viewport || previousLayout.current.includeCompleted !== includeCompleted)) {
-      // Visibility/font/viewport changes keep the same lane; hidden done returns to review.
+      // Visibility/font/viewport changes keep the same lane; hidden done/cancelled returns to review.
       const lane = columns.findIndex(([status]) => status === position.current.lane);
       const index = lane < 0 ? columns.length - 1 : lane;
       position.current.lane = columns[index][0];
@@ -78,7 +78,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const completedList=useRef<FlatList<CardDto>>(null);
   useEffect(()=>{completedList.current?.scrollToOffset({offset:0,animated:false});},[completed?.resetKey]);
   const action = useCardTransition(api, drag?.card.id ?? '');
-  const active = cards.filter((card) => !card.archived && card.status !== 'cancelled');
+  const active = cards.filter((card) => !card.archived);
   const savePosition = () => onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
   const moveTo = (x: number, animated: boolean) => {
     const max = offsetsRef.current[offsetsRef.current.length - 1];

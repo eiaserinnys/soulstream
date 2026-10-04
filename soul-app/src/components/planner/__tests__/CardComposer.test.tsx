@@ -51,7 +51,7 @@ test('오늘 입력창의 iOS 높이·칩 배치 계약과 콘텐츠 이벤트 �
   expect(input.props.multiline).toBe(true);
   expect(input.props.textAlignVertical).toBe('center');
   const initialHeight = StyleSheet.flatten(input.props.style).minHeight;
-  expect(StyleSheet.flatten(input.props.style).height).toBeUndefined();
+  expect(StyleSheet.flatten(input.props.style).height).toBe(initialHeight);
   expect(initialHeight).toBeGreaterThanOrEqual(48);
   fireEvent.changeText(input, '첫 줄\n둘째 줄');
   // This checks alignment after event receipt, not native event delivery or growth.

@@ -42,7 +42,7 @@ export function CardStatusMenu({ api, card, onClose }: {
       {action.execution && action.execution.phase !== 'pending' ? <><Text style={styles.error}>{action.execution.message}</Text><GlassButton disabled={pending} onPress={() => { void move('running'); }}><Text style={styles.body}>{action.execution.phase === 'delayed' ? '다시 확인' : '다시 시도'}</Text></GlassButton></> : null}
       {readError || error ? <Text accessibilityRole="alert" style={styles.error}>{readError ?? error}</Text> : null}
       {readError || error ? <GlassButton accessibilityLabel="상태 다시 조회" onPress={() => { void read(); }}><Text style={styles.body}>다시 조회</Text></GlassButton> : null}
-      {detail ? ([...BOARD_COLUMNS, ['cancelled', '취소']] as const).map(([next, label]) => {
+      {detail ? BOARD_COLUMNS.map(([next, label]) => {
         const problem = cardTransitionProblem(detail, next);
         return <View key={next} style={{ gap: t.uiSpacing.xs }}>
           <GlassButton accessibilityLabel={`${label}로 이동`} disabled={pending || !!problem} onPress={() => { void move(next); }}>

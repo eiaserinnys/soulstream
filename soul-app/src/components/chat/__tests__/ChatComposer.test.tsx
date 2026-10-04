@@ -113,7 +113,7 @@ describe('ChatComposer', () => {
     expect(field.props.scrollEnabled).toBe(true);
   });
 
-  test('iOS는 값을 바꿔도 고정 높이가 없고 layout 이벤트 수신으로 상한 스크롤을 정한다', () => {
+  test('iOS는 빈 입력만 한 줄 높이를 지정하고 실제 입력의 상한 스크롤은 layout으로 정한다', () => {
     const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
     const screen = render(<ChatComposer {...props} input="" />);
     const field = () => screen.getByTestId('chat-composer-text-input');
@@ -122,7 +122,7 @@ describe('ChatComposer', () => {
     for (const value of ['', '한국어 연속 입력 '.repeat(20), '첫 줄\n둘째 줄\n셋째 줄\n넷째 줄', '한 줄', '']) {
       screen.rerender(<ChatComposer {...props} input={value} />);
       expect(StyleSheet.flatten(field().props.style)).toMatchObject({ minHeight: 48, maxHeight: 128 });
-      expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
+      expect(StyleSheet.flatten(field().props.style).height).toBe(value.length === 0 ? 48 : undefined);
       expect(field().props.multiline).toBe(true);
       expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(button);
     }
@@ -138,7 +138,37 @@ describe('ChatComposer', () => {
     layout(48);
     expect(field().props.scrollEnabled).toBe(false);
     screen.rerender(<ChatComposer {...props} input="" />);
-    expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
+    expect(StyleSheet.flatten(field().props.style).height).toBe(48);
+  });
+
+  test.each(['가', ' ', '\n'])('iOS 최대 높이 → 빈 값 → 첫 입력 %j → 긴 입력의 JS 계약', (firstInput) => {
+    // JS props/style only: layout events are supplied, not produced by native typing.
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
+    const screen = render(<ChatComposer {...props} input={'긴 글 '.repeat(100)} />);
+    const field = () => screen.getByTestId('chat-composer-text-input');
+    const style = () => StyleSheet.flatten(field().props.style);
+    const singleLineHeight = style().minHeight;
+    const layoutAtCap = () => fireEvent(field(), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 200, height: style().maxHeight } } });
+
+    layoutAtCap();
+    expect(field().props.scrollEnabled).toBe(true);
+    expect(style().height).toBeUndefined();
+
+    screen.rerender(<ChatComposer {...props} input="" />);
+    expect(style().height).toBe(singleLineHeight);
+    expect(field().props.scrollEnabled).toBe(false);
+
+    // No shrinking layout event: the first input must not inherit the old cap state.
+    screen.rerender(<ChatComposer {...props} input={firstInput} />);
+    expect(style().height).toBeUndefined();
+    expect(field().props.scrollEnabled).toBe(false);
+
+    screen.rerender(<ChatComposer {...props} input={'다시 긴 글 '.repeat(100)} />);
+    expect(style().height).toBeUndefined();
+    expect(field().props.scrollEnabled).toBe(false);
+    layoutAtCap();
+    expect(field().props.scrollEnabled).toBe(true);
   });
 
   test('웹 측정값 수신 후 기존 rows·줄바꿈·명시 높이·상한 계산 계약', () => {

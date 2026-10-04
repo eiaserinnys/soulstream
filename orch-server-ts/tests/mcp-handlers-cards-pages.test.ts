@@ -155,6 +155,37 @@ describe("card MCP execution", () => {
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).toContain("낡은 카드 버전");
   });
+  it("transfers a card through the existing update mutation and keeps the caller as actor", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "transfer_card_assignee", {
+      card_id: "card-1", target_session_id: "successor-session", expected_version: 3,
+      idempotency_key: "handoff-1", reason: "successor takes over", caller_session_id: "session-1",
+    });
+    expect(result.isError).not.toBe(true);
+    expect(h.service.patchCard).toHaveBeenCalledWith(expect.objectContaining({
+      cardId: "card-1", assignee: { kind: "session", sessionId: "successor-session" },
+      expectedVersion: 3, idempotencyKey: "handoff-1", reason: "successor takes over",
+      actorKind: "agent", actorSessionId: "session-1",
+    }));
+  });
+  it("rejects a handoff caller that conflicts with the authenticated session header", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "transfer_card_assignee", {
+      card_id: "card-1", target_session_id: "successor-session", expected_version: 3,
+      idempotency_key: "handoff-1", caller_session_id: "successor-session",
+    }, { ...context, callerSessionId: "session-1" });
+    expect(result.isError).toBe(true);
+    expect(h.provider).not.toHaveBeenCalled();
+  });
+  it("requires an authenticated internal session header for handoff", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "transfer_card_assignee", {
+      card_id: "card-1", target_session_id: "successor-session", expected_version: 3,
+      idempotency_key: "handoff-1", caller_session_id: "session-1",
+    }, { ...context, callerSessionId: null });
+    expect(result.isError).toBe(true);
+    expect(h.provider).not.toHaveBeenCalled();
+  });
 });
 
 describe("live card MCP execution", () => {

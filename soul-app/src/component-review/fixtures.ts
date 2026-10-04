@@ -2,6 +2,7 @@ import type { ApiClient } from '../api/client';
 import type { CardDto, CardStatus } from '../api/cardTypes';
 import type { CatalogFolder, Session, SessionEvent } from '../api/types';
 import type { PlannerFolder } from '../api/plannerTypes';
+import { reviewSessionEventsUrl } from './chat-fixtures';
 
 // Invented public data only. No IDs or assets from an actual account.
 const time = '2026-10-01T00:00:00Z';
@@ -29,6 +30,9 @@ export const sessions: Session[] = [
       kind: 'input_request', requestedAt: time, title: '공개 질문 예시', body: '확인해주세요.',
       requiresDetail: false }] },
 ];
+export const entryShellSessions: Session[] = Array.from({ length: 20 }, (_, index) => ({
+  ...sessions[0], agentSessionId: `public-shell-session-${index}`, displayName: `공개 예시 세션 ${index + 1}`,
+}));
 export function makeCard(status: CardStatus): CardDto {
   return { id: 'public-' + status, folderId: folders[0].id,
     title: '현재 카드 행을 검수하는 공개 예시', request: '공개 fixture로 표시와 동작을 확인합니다.',
@@ -39,6 +43,8 @@ export function makeCard(status: CardStatus): CardDto {
     archived: false, version: 1, createdAt: time, updatedAt: time,completedAt:status==='done'?new Date().toISOString():null };
 }
 export const initialCards = (['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'] as const).map(makeCard);
+export const folderTabReviewFolders: CatalogFolder[] = folders.map(folder => ({ ...folder, projectPageId: folder.id }));
+
 export const starredFolders: PlannerFolder[] = folders.map((folder) => ({
   page: { id: folder.id, title: folder.name, dailyDate: null, version: 1,
     archived: false, metadata: {}, createdAt: time, updatedAt: time },
@@ -76,7 +82,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       backend: 'codex',
     };
   });
-  const reviewSessions = [...sessions, ...folderSessions];
+  const reviewSessions = [...sessions, ...entryShellSessions, ...folderSessions];
   if(options.manyCompleted)for(let index=0;index<1000;index++)cards.set(`completed-${index}`,{...makeCard('done'),id:`completed-${index}`,title:index%10===0?'검색할 긴 완료 카드 제목입니다. 같은 폭과 본문을 유지합니다.':'완료 카드 '+index,completedAt:new Date(Date.now()-index*10*60*1000).toISOString()});
   if (options.home) for (let index = 1; index <= 4; index++) cards.set(`public-review-${index}`, { ...makeCard('review'), id: `public-review-${index}`, title: `검수할 공개 예시 ${index}`, latestActivity: { kind: 'report', body: '같은 제목과 본문으로 카드 크기와 읽기 흐름을 확인합니다.', format: 'markdown', createdAt: time } });
   if(options.assignment)for(const [id,card] of cards){
@@ -97,7 +103,10 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     if (state === 'loading') return new Promise(() => {});
     return value;
   };
-  const api: Pick<ApiClient, 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'executeCard' | 'getCardExecution' | 'saveCardExecutionSettings' | 'getSessionsByIds' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+  const api: Pick<ApiClient, 'sessionEventsUrl' | 'getTimeline' | 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'executeCard' | 'getCardExecution' | 'saveCardExecutionSettings' | 'getSessionsByIds' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+    sessionEventsUrl: reviewSessionEventsUrl,
+    // Entry-shell chat receives its public messages through actual SSE parsing.
+    getTimeline: async () => read({ messages: [], next_cursor: null }),
     // Mock upload only: the sample asset is served by the review export.
     uploadAttachment: async (_sessionId, nodeId, file) => ({ path: file.uri, filename: file.name, node_id: nodeId }),
     getPage:async id=>read({page:{...starredFolders[0].page,id},blocks:[],stateVector:''}),

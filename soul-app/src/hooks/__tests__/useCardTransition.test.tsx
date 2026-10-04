@@ -33,3 +33,15 @@ test('pending closes the settings chooser on acceptance and exposes confirmation
  await act(async()=>{await jest.advanceTimersByTimeAsync(1000);});
  expect(api.executeCard).toHaveBeenCalledTimes(1);expect(api.getCardExecution).toHaveBeenCalledWith(card.id,'pending-request');jest.useRealTimers();
 });
+
+
+test('담당 세션이 있는 카드는 생성 설정 없이 재개하며 취소 기록은 실행을 중단하지 않는다',async()=>{
+ const card=cardFixture({id:'assigned-no-settings',assigneeSessionId:'owner',nodeId:null,assigneeAgentId:null,modelPreset:null});
+ const api={getCard:jest.fn().mockResolvedValue({card,reports:[],questions:[],sessions:[]}),executeCard:jest.fn().mockResolvedValue({card,execution:{requestId:'resume',sessionId:'owner',state:'already_running'}}),setCardStatus:jest.fn().mockResolvedValue({card:{...card,status:'cancelled'}})};
+ const hook=renderHook(()=>useCardTransition(api as any,card.id));
+ await act(async()=>{expect(await hook.result.current.transition(card,'running')).toBe(true);});
+ expect(hook.result.current.settingsCard).toBeNull();expect(hook.result.current.error).toBeNull();expect(api.executeCard).toHaveBeenCalledTimes(1);
+ await act(async()=>{expect(await hook.result.current.transition(card,'cancelled')).toBe(true);});
+ expect(api.setCardStatus).toHaveBeenCalledWith(card.id,'cancelled',card.version,expect.any(String),undefined);
+ expect(api.executeCard).toHaveBeenCalledTimes(1);
+});

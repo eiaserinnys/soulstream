@@ -20,6 +20,7 @@ export function TabletSessionFeedPane() {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchActive = useSearchStore((state) => state.tabletActive);
+  const folderOverlayVisible = useUIStore((state) => state.folderOverlayVisible);
 
   return (
     <>
@@ -76,6 +77,7 @@ export function TabletSessionFeedPane() {
           />
         ) : (
           <SessionFeedScreen
+            active={!folderOverlayVisible}
             onOpenSession={(sessionId) =>
               openPlannerSessionWorkspace(sessionId, undefined, undefined, 'feed')
             }

@@ -4,6 +4,7 @@ import { SessionCard } from './SessionCard';
 
 interface Props {
   sessionId: string;
+  animationActive?: boolean;
   onPress: (sessionId: string) => void;
   onLongPress?: (sessionId: string) => void;
   accessibilityLabelPrefix?: string;
@@ -11,6 +12,7 @@ interface Props {
 
 export const SessionCardById = memo(function SessionCardById({
   sessionId,
+  animationActive,
   onPress,
   onLongPress,
   accessibilityLabelPrefix,
@@ -26,6 +28,7 @@ export const SessionCardById = memo(function SessionCardById({
   return (
     <SessionCard
       session={session}
+      animationActive={animationActive}
       onPress={handlePress}
       onLongPress={onLongPress ? handleLongPress : undefined}
       accessibilityLabelPrefix={accessibilityLabelPrefix}

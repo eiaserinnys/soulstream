@@ -1,11 +1,11 @@
-import type { HistoricalMessage } from '../api/historyTypes';
 import type { ApiClient } from '../api/client';
 import type { PlannerFolder, PlannerSessionSummary } from '../api/plannerTypes';
 import type { Session, ClaudeRuntimeTaskOutputResponse } from '../api/types';
 import type { CardDto } from '../api/cardTypes';
 import { Asset } from 'expo-asset';
 import { createPlannerMutationPort } from '../api/plannerMutationPort';
-import { createReviewApi, folders, sessions, starredFolders, message } from './fixtures';
+import { createReviewApi, folders, sessions, starredFolders } from './fixtures';
+import { dialogueMessages } from './chat-fixtures';
 
 export const dialogueFolders = folders.map(folder => ({ ...folder, projectPageId: folder.id === 'public-project' ? 'public-page' : 'public-child-page' }));
 export const dialogueSessions = sessions.map((session): Session & PlannerSessionSummary => ({ ...session, folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model', predecessorSessionId: null, sessionType: 'interactive', reviewState: session.reviewState ?? 'not_required' }));
@@ -29,15 +29,6 @@ export function reviewSessionPortraits(items: typeof dialogueSessions) {
 function withReviewSession(card: CardDto) {
   return card.assigneeAgentId === 'public-agent' ? { ...card, assigneeKind: 'session' as const, assigneeSessionId: 'public-idle' } : card;
 }
-
-const dialogueMessages: HistoricalMessage[] = [
-  { id: 2, parent_event_id: 1, event_type: 'assistant_message',
-    payload: message('assistant_message', '담당 세션의 대화입니다. 카드 요청과 입력창을 함께 확인할 수 있습니다.').data,
-    created_at: '2026-10-03T16:00:01Z' },
-  { id: 1, parent_event_id: null, event_type: 'user_message',
-    payload: message('user_message', '이 카드의 담당 대화를 오른쪽에서 보여주세요.').data,
-    created_at: '2026-10-03T16:00:00Z' },
-];
 
 // Explicit review transport. Methods operate on public in-memory data; there
 // is no HTTP client, dynamic fallback, or production mutation behind this object.

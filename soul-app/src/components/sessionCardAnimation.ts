@@ -2,6 +2,7 @@ import type { AppStateStatus } from 'react-native';
 
 export interface SessionCardAnimationGate {
   isRunning: boolean;
+  animationActive?: boolean;
   reducedMotion: boolean;
   appActive: boolean;
 }
@@ -25,8 +26,9 @@ export function shouldRunSessionCardAnimation({
   isRunning,
   reducedMotion,
   appActive,
+  animationActive = true,
 }: SessionCardAnimationGate): boolean {
-  return isRunning && !reducedMotion && appActive;
+  return isRunning && !reducedMotion && appActive && animationActive;
 }
 
 export function shouldRenderSessionCardShimmer({

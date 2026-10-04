@@ -35,8 +35,8 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
   const folders = useSessionStore((state) => state.catalog.folders);
   const [folderId, setFolderId] = useState(initialFolderId ?? remembered?.folderId ?? '');
   const [execution, setExecution] = useState<CardAssignment>(() => ({ folderId: initialFolderId ?? remembered?.folderId ?? '',
-    nodeId: remembered?.nodeId ?? settings.nodeId, agentId: remembered?.agentId ?? null, modelPreset: remembered?.modelPreset ?? null }));
-  const selection = useNewSessionSelection({ visible: true, api, folders, settingsNodeId: settings.nodeId,
+    nodeId: remembered?.nodeId ?? null, agentId: remembered?.agentId ?? null, modelPreset: remembered?.modelPreset ?? null }));
+  const selection = useNewSessionSelection({ visible: true, api, folders, settingsNodeId: null,
     defaultNodeId: execution.nodeId, defaultAgentId: execution.agentId,
     // Mirror the confirmed picker defaults; the picker owns node transitions.
     defaultModelPresetId: execution.modelPreset });
@@ -57,14 +57,13 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
     disabled: locked, reuploadOnNodeChange: true });
   const scroll = useRef<ScrollView>(null);
   const canSave = !!api && draft.ready && !pending && files.attachmentsReady && !!folderId
-    && !!title.trim() && !!request.trim() && !!selection.effectiveNodeId && !!selection.agentId
-    && !selection.modelPresetSelectionInvalid;
+    && !!title.trim() && (!files.attachments.length || !!selection.effectiveNodeId);
   const save = async () => {
     if (!api || !canSave || saving.current || completed.current) return;
     saving.current = true;
     setErrorDetail(null);
     const candidate = { folderId, title: title.trim(), request, queue: false,
-      nodeId: assignment.nodeId, assignee: { kind: 'agent' as const, agentId: assignment.agentId! }, modelPreset: assignment.modelPreset,
+      nodeId: assignment.nodeId, assignee: assignment.agentId ? { kind: 'agent' as const, agentId: assignment.agentId } : null, modelPreset: assignment.modelPreset,
       attachments: cardFiles(files.attachments) };
     const previous = submission.current;
     const { idempotencyKey: _key, ...previousPayload } = previous?.payload ?? {};
@@ -117,7 +116,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
           </View></GroupedGlassSheet>
           </View>
           <View style={styles.section} testID="card-create-request-section">
-            <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>요청</Text><Text style={styles.required}>필수</Text></View>
+            <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>요청</Text><Text style={styles.required}>선택</Text></View>
             <GroupedGlassSheet><View style={styles.formField}>
               <AttachmentChips attachments={files.attachments} onRemove={files.removeAttachment} disabled={locked}
                 styles={chat} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
@@ -136,13 +135,13 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
               accessibilityHint="노드, 에이전트와 모델을 선택합니다" style={styles.disclosure}
               disabled={locked || files.uploading} onPress={() => setSelecting('execution')}>
               <View style={styles.disclosureBody}>
-                <Text style={styles.rowTitle}>실행 대상</Text>
+                <Text style={styles.rowTitle}>실행 대상 (선택)</Text>
                 <Text style={styles.meta}>{selection.selectedAgentName}, {selection.selectedNodeName}</Text>
                 <Text style={styles.meta}><SelectedModelPresetName selection={selection} /></Text>
               </View>
               <Text style={styles.disclosureAction}>변경 ›</Text>
             </TouchableOpacity>
-            {!selection.effectiveNodeId || !selection.agentId ? <Text style={styles.selectionError} accessibilityRole="alert">저장하려면 노드와 에이전트를 선택해 주세요.</Text> : null}
+            {!selection.effectiveNodeId || !selection.agentId ? <Text style={[styles.selectionError, styles.meta]}>실행 대상은 카드를 시작할 때 선택할 수 있습니다.</Text> : null}
             {selection.modelPresetSelectionInvalid ? <Text style={styles.selectionError} accessibilityRole="alert">선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.</Text> : null}
           </GroupedGlassSheet>
         </ScrollView>
