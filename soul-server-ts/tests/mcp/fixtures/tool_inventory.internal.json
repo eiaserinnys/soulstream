@@ -6284,6 +6284,48 @@
     "name": "stop_claude_background_task"
   },
   {
+    "description": "공식 카드 PATCH와 같은 카드 변경 권한을 가진 인증된 내부 작업 세션이 호출하며, 현재 담당 여부와 무관하게 카드 담당을 지정 세션으로 명시적으로 변경한다. 호출자와 지정 담당 세션을 이력에 구분해 기록한다. 카드 상태나 실행 프로세스는 바꾸지 않으며, 지정 세션은 별도로 start_card_work를 호출해야 한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "target_session_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "target_session_id",
+        "expected_version",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "transfer_card_assignee"
+  },
+  {
     "description": "보관된 폴더를 복구한다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
     "execution": {
       "taskSupport": "forbidden"

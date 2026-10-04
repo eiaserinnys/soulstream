@@ -18,6 +18,7 @@ import { createLiveDashboardAccessProvider, serviceTokenAccessWithoutEmail } fro
 const context: McpRequestContext = { callerSessionId: "header-session" };
 const status = { card_id: "card-1", expected_version: 1, idempotency_key: "status-key" };
 const execution = { registrationId: "registration", executionCommandId: "command" };
+const successorExecution = { registrationId: "successor-registration", executionCommandId: "successor-command" };
 // Reuses the folder roundtrip SDK/HTTP/PG harness and card-work-start's real schema setup.
 const cases: readonly [string, string, Record<string, unknown>, McpRequestContext?, boolean?][] = [
   ["create success", "create_card", { folder_id: "cards-a", title: "새 카드", request: "원문", queue: true,
@@ -30,6 +31,8 @@ const cases: readonly [string, string, Record<string, unknown>, McpRequestContex
   ["list status", "list_cards", { status: "todo" }],
   ["list done", "list_cards", { status: "done" }],
   ["get success", "get_card", { card_id: "card-1" }],
+  ["assignee handoff", "transfer_card_assignee", { card_id: "card-1", target_session_id: "successor-session",
+    expected_version: 1, idempotency_key: "handoff-key", reason: "successor takes over" }],
   ["brief success", "update_card_brief", { card_id: "card-1", brief: "경과" }],
   ["report success", "add_card_report", { card_id: "card-1", title: "보고", format: "html", body: "<p>증거</p>" }],
   ["comment default spoken", "add_card_comment", { card_id: "card-1", text: "사용자 발언" }],
@@ -78,7 +81,9 @@ describe("card orchestrator MCP roundtrip", () => {
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
     const logger = { warn: vi.fn() } as never;
-    runtime = { nodeId: "test-node", orch, logger, taskManager: { getTask: (id: string) => id === "header-session" ? { executionRegistration: execution } : undefined } } as unknown as McpRuntime;
+    runtime = { nodeId: "test-node", orch, logger, taskManager: { getTask: (id: string) =>
+      id === "header-session" ? { executionRegistration: execution }
+        : id === "successor-session" ? { executionRegistration: successorExecution } : undefined } } as unknown as McpRuntime;
   }, 60_000);
   afterAll(async () => { await app?.close(); await h?.cleanup(); });
   async function seed() {
@@ -86,7 +91,9 @@ describe("card orchestrator MCP roundtrip", () => {
     await h.sql`TRUNCATE folders,sessions,folder_operations RESTART IDENTITY CASCADE`;
     await h.sql`INSERT INTO folders(id,name) VALUES ('cards-a','A'),('cards-b','B'),('claude','System')`;
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status,execution_registration_id,execution_command_id)
-      VALUES ('header-session','test-node','roselin','sol','running','registration','command'),('argument-session','test-node',NULL,NULL,'running',NULL,NULL)`;
+      VALUES ('header-session','test-node','roselin','sol','running','registration','command'),
+      ('argument-session','test-node',NULL,NULL,'running',NULL,NULL),
+      ('successor-session','test-node','roselin','sol','running','successor-registration','successor-command')`;
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,assignee_kind,assignee_session_id,status,completed_at)
       VALUES ('card-1','cards-a','a0','기존 카드','원문','session','header-session','todo',NULL),
       ('card-done','cards-a','a1','완료 카드','완료 원문','session','argument-session','done','2026-10-01T00:00:00Z')`;
@@ -113,6 +120,61 @@ describe("card orchestrator MCP roundtrip", () => {
     if (_label === "create duplicate assignee") expect(JSON.stringify(next)).toContain("card-1");
     if (name === "ask_card_question" && !fails) expect(next.structuredContent).toHaveProperty("guidance", "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
   });
+  it("supports handoff by a new internal session after the prior assignee stops", async () => {
+    await seed();
+    await h.sql`UPDATE sessions SET status='interrupted',execution_registration_id=NULL,execution_command_id=NULL
+      WHERE session_id='header-session'`;
+    const successorContext = { callerSessionId: "successor-session" };
+    const handoff = { card_id: "card-1", target_session_id: "successor-session", expected_version: 1,
+      idempotency_key: "successor-handoff", reason: "successor takes over" };
+    const transferred = await call("transfer_card_assignee", handoff, successorContext);
+    expect(transferred.isError).not.toBe(true);
+    expect(await h.sql`SELECT assignee_session_id,status,version,updated_session_id FROM cards WHERE id='card-1'`)
+      .toEqual([expect.objectContaining({ assignee_session_id: "successor-session", status: "todo", version: 2, updated_session_id: "successor-session" })]);
+    expect(await h.sql`SELECT operation_type,actor_session_id,idempotency_key FROM folder_operations WHERE idempotency_key='successor-handoff'`)
+      .toEqual([expect.objectContaining({ operation_type: "update_card", actor_session_id: "successor-session", idempotency_key: "successor-handoff" })]);
+
+    const replay = await call("transfer_card_assignee", handoff, successorContext);
+    expect(replay.isError).not.toBe(true);
+    expect(replay.structuredContent).toMatchObject({ idempotent: true });
+    const stale = await call("transfer_card_assignee", { ...handoff, idempotency_key: "stale-handoff" }, successorContext);
+    expect(stale.isError).toBe(true);
+
+    const oldStatus = await call("set_card_status", { card_id: "card-1", status: "running", expected_version: 2,
+      idempotency_key: "old-status" }, context);
+    expect(oldStatus.isError).toBe(true);
+    expect(JSON.stringify(oldStatus)).toContain("transfer_card_assignee");
+    const oldReply = await call("add_card_comment", { card_id: "card-1", text: "이전 담당의 답변", mode: "reply" }, context);
+    expect(oldReply.isError).toBe(true);
+    expect(JSON.stringify(oldReply)).toContain("transfer_card_assignee");
+
+    const started = await call("start_card_work", { card_id: "card-1", expected_version: 2, idempotency_key: "successor-start" }, successorContext);
+    expect(started.isError).not.toBe(true);
+    const statusChanged = await call("set_card_status", { card_id: "card-1", status: "review", expected_version: 3,
+      idempotency_key: "successor-status" }, successorContext);
+    expect(statusChanged.isError).not.toBe(true);
+    const replied = await call("add_card_comment", { card_id: "card-1", text: "새 담당의 답변", mode: "reply" }, successorContext);
+    expect(replied.isError).not.toBe(true);
+    expect(await h.sql`SELECT author_kind,session_id,body FROM card_comments WHERE body='새 담당의 답변'`)
+      .toEqual([expect.objectContaining({ author_kind: "agent", session_id: "successor-session", body: "새 담당의 답변" })]);
+  });
+  it("retains target-session FK and one-card validation on handoff", async () => {
+    await seed();
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,assignee_kind,assignee_session_id,status)
+      VALUES ('successor-card','cards-a','a2','이미 맡은 카드','원문','session','successor-session','todo')`;
+    const occupied = await call("transfer_card_assignee", { card_id: "card-1", target_session_id: "successor-session",
+      expected_version: 1, idempotency_key: "occupied-handoff" }, context);
+    expect(occupied.isError).toBe(true);
+    expect(JSON.stringify(occupied)).toContain("successor-card");
+    expect(await h.sql`SELECT assignee_session_id FROM cards WHERE id='card-1'`)
+      .toEqual([expect.objectContaining({ assignee_session_id: "header-session" })]);
+
+    const missing = await call("transfer_card_assignee", { card_id: "card-1", target_session_id: "missing-session",
+      expected_version: 1, idempotency_key: "missing-handoff" }, context);
+    expect(missing.isError).toBe(true);
+    expect(await h.sql`SELECT assignee_session_id FROM cards WHERE id='card-1'`)
+      .toEqual([expect.objectContaining({ assignee_session_id: "header-session" })]);
+  });
 });
 
 // Paths are relative to both parsed content JSON and structuredContent; seed IDs are never masked.
@@ -127,6 +189,7 @@ const randomIdPaths: Record<string, readonly string[]> = {
   add_card_comment: ["id"],
   set_card_status: ["operation.id"],
   start_card_work: ["operation.id"],
+  transfer_card_assignee: ["operation.id"],
   request_card_review: ["operation.id", "operation.idempotencyKey"],
   ask_card_question: ["operation.id", "operation.idempotencyKey"],
   move_card: ["operation.id", "operation.idempotencyKey"],

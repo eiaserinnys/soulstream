@@ -33,6 +33,10 @@ export const cardTools = {
     description: "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다.",
     inputSchema: {...scope,status:z.enum(CARD_STATUSES),expected_version:z.number().int().positive(),idempotency_key:id,reason:z.string().optional()},
   }, audience: "all" },
+  transfer_card_assignee: { name: "transfer_card_assignee", config: {
+    description: "공식 카드 PATCH와 같은 카드 변경 권한을 가진 인증된 내부 작업 세션이 호출하며, 현재 담당 여부와 무관하게 카드 담당을 지정 세션으로 명시적으로 변경한다. 호출자와 지정 담당 세션을 이력에 구분해 기록한다. 카드 상태나 실행 프로세스는 바꾸지 않으며, 지정 세션은 별도로 start_card_work를 호출해야 한다.",
+    inputSchema: {...scope,target_session_id:id,expected_version:z.number().int().positive(),idempotency_key:id,reason:z.string().optional()},
+  }, audience: "internal" },
   start_card_work: { name: "start_card_work", config: {
     description: "현재 담당 카드의 작업 착수를 명시합니다. 수동 착수는 모든 상태에서 가능하며 사유는 선택입니다. 실제 자동배정 실행일 때만 배정 승인과 해당 실행의 전달 소비를 확인합니다. 실행 신원은 런타임에서 제공합니다.",
     inputSchema: {...scope,expected_version:z.number().int().positive(),idempotency_key:id,reason:id.optional()},
