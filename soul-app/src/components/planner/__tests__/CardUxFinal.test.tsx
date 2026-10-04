@@ -174,7 +174,7 @@ test('보고 미리보기는 HTML과 markdown의 전체 문단을 유지한 채 
   const inputStyle = StyleSheet.flatten(screen.getByLabelText('커멘트').props.style);
   // iOS style contract only: this renderer does not exercise native text layout.
   expect(inputStyle.minHeight).toBe(Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2));
-  expect(inputStyle.height).toBeUndefined();
+  expect(inputStyle.height).toBe(inputStyle.minHeight);
 });
 
 test('드래프트 상세는 시작하기와 상태 메뉴를 노출하고 시작 뒤에도 열린다', async () => {
