@@ -6,6 +6,7 @@ import { VitePWA } from "vite-plugin-pwa";
 
 import { DASHBOARD_PWA_OPTIONS } from "./pwa-config";
 import { version as dashboardVersion } from "./package.json";
+import {dashboardBuildIdentity,dashboardBuildManifest} from "./build-identity";
 
 function requireDevProxyApiBase(env: Record<string, string | undefined>): string {
   const apiBase = env.VITE_API_BASE?.trim();
@@ -23,16 +24,19 @@ function requireDevProxyApiBase(env: Record<string, string | undefined>): string
 export default defineConfig(({ command, mode }: ConfigEnv) => {
   const env = { ...loadEnv(mode, __dirname, ""), ...process.env };
   const devProxyTarget = command === "serve" ? requireDevProxyApiBase(env) : undefined;
+  const buildId=dashboardBuildIdentity(command,__dirname);
 
   return {
     define: {
       // 사용 로그의 appVersion 정본. 별도 env 를 새로 만들지 않고
       // 이미 있는 패키지 버전을 빌드 타임에 박는다.
       __DASHBOARD_VERSION__: JSON.stringify(dashboardVersion),
+      __DASHBOARD_BUILD_ID__: JSON.stringify(buildId),
     },
     plugins: [
       tailwindcss(),
       react(),
+      dashboardBuildManifest(buildId),
       VitePWA(DASHBOARD_PWA_OPTIONS),
     ],
     root: ".",

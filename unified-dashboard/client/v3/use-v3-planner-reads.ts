@@ -76,6 +76,15 @@ export function usePlannerCollections({
   const [starredFoldersLoadingMore, setStarredFoldersLoadingMore] = useState(false);
   const [subfoldersLoadingMore, setSubfoldersLoadingMore] = useState(false);
   const [mutationRefresh, setMutationRefresh] = useState({ daily: 0, project: 0 });
+  const pendingReads = useRef(new Set<Promise<unknown>>());
+  const trackRead = useCallback(<T,>(read: Promise<T>): Promise<T> => {
+    pendingReads.current.add(read);
+    void read.finally(() => pendingReads.current.delete(read)).catch(() => undefined);
+    return read;
+  }, []);
+  const waitForReads = useCallback(async () => {
+    await Promise.all([...pendingReads.current]);
+  }, []);
   const dailyRef = useRef(daily);
   const projectRef = useRef(project);
   const starredFolderIndexRef = useRef(starredFolderIndex);
@@ -113,11 +122,11 @@ export function usePlannerCollections({
     setStarredLoadedRefreshKey(null);
     const previous = starredFolderIndexRef.current.data;
     setStarredFolderIndex(beginPlannerLoad);
-    void loadConfirmedResult({
+    void trackRead(loadConfirmedResult({
       previous,
       load: () => loadStarredFolders(dependencies, {}),
       clearsVisibleContent: (current, next) => current.items.length > 0 && next.items.length === 0,
-    }).then((data) => {
+    })).then((data) => {
       if (active && isStarredFolderRequestCurrent({
         expectedRefreshKey: refreshKey,
         currentRefreshKey: starredRefreshKeyRef.current,
@@ -173,11 +182,11 @@ export function usePlannerCollections({
     let active = true;
     const previous = dailyRef.current.data;
     setDaily(beginPlannerLoad);
-    void loadConfirmedResult({
+    void trackRead(loadConfirmedResult({
       previous,
       load: () => loadDailyPlanner(api, selectedDate, dependencies),
       clearsVisibleContent: (current, next) => current.folders.length > 0 && next.folders.length === 0,
-    }).then((data) => {
+    })).then((data) => {
       if (active) {
         setDaily((current) => completePlannerLoad(current, data));
         if (selectedDate === today) {
@@ -245,11 +254,11 @@ export function usePlannerCollections({
     setProject((current) => current.data?.project.id === selectedProject.id
       ? beginPlannerLoad(current)
       : { status: "loading", data: null, message: null });
-    void loadConfirmedResult({
+    void trackRead(loadConfirmedResult({
       previous,
       load: () => loadFolderPlanner(api, selectedFolderId, selectedProject, dependencies),
       clearsVisibleContent: (current, next) => current.subfolders.length > 0 && next.subfolders.length === 0,
-    }).then((data) => {
+    })).then((data) => {
       if (active) setProject((current) => completePlannerLoad(current, data));
     }).catch((error: unknown) => {
       if (active) setProject((current) => failPlannerLoad(current, errorText(error)));
@@ -372,6 +381,7 @@ export function usePlannerCollections({
   }, [dependencies, notify, project.data, selectedFolderId, subfoldersLoadingMore]);
 
   return {
+    waitForReads,
     daily,
     todayFolderIds,
     setFolderTodayPresence,

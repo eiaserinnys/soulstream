@@ -60,4 +60,5 @@ run_heavy_command npm --prefix "$app_dir/soul-app" run export:components
 test -f "$app_dir/soul-server-ts/dist/main.js"
 test -f "$app_dir/orch-server-ts/dist/production_main.js"
 test -f "$app_dir/unified-dashboard/dist/index.html"
+test -f "$app_dir/unified-dashboard/dist/build-info.json"
 test -f "$app_dir/unified-dashboard/dist/assets/ios-components/index.html"

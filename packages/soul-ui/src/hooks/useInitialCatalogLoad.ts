@@ -1,3 +1,4 @@
+import {orchestratorFetch,registerConnectionRecovery} from "../lib/orchestrator-connection";
 /**
  * useInitialCatalogLoad - `/api/folders`에서 최초 catalog 골격을 가져와
  * dashboard store에 주입하고, 적절한 기본 폴더를 선택한다.
@@ -60,7 +61,7 @@ export function useInitialCatalogLoad(enabled: boolean): CatalogLoadState {
     const controller = new AbortController();
     setLoadState({ status: "loading", message: null });
 
-    fetch("/api/folders", { signal: controller.signal })
+    const load = () => orchestratorFetch(fetch,"/api/folders", { signal: controller.signal })
       .then((r) => {
         if (r.ok) return r.json();
         const error = new Error(`folders fetch failed: HTTP ${r.status}`);
@@ -103,7 +104,10 @@ export function useInitialCatalogLoad(enabled: boolean): CatalogLoadState {
         setLoadState({ status: kind, message });
       });
 
+    void load();
+    const unregisterRecovery = registerConnectionRecovery(load);
     return () => {
+      unregisterRecovery();
       controller.abort();
     };
   }, [enabled]);

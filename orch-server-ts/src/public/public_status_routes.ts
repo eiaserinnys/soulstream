@@ -43,6 +43,7 @@ export type PublicStatusRouteOptions = {
   startTimeSeconds?: number;
   nowSeconds?: () => number;
   healthVersion?: string;
+  lifecycle?: {snapshot(): {healthy:boolean;ready:boolean;draining:boolean;instance_id:string;build_id:string}};
 };
 
 export const publicStatusRouteAuthRequirements = {
@@ -67,6 +68,7 @@ export function registerPublicStatusRoutes(
     return {
       status: "ok",
       version: healthVersion,
+      ...options.lifecycle?.snapshot(),
       uptime_seconds: Math.max(0, Math.trunc(nowSeconds() - startTimeSeconds)),
       ...(databaseSchema === undefined ? {} : { database_schema: databaseSchema }),
     };
@@ -90,8 +92,8 @@ export function registerPublicStatusRoutes(
   app.get("/api/status", async () => {
     const config = await options.configProvider.getConfig();
     return {
-      is_draining: false,
-      healthy: true,
+      is_draining: options.lifecycle?.snapshot().draining ?? false,
+      healthy: options.lifecycle?.snapshot().healthy ?? true,
       atom_enabled: config.atomEnabled,
     };
   });

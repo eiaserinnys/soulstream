@@ -50,7 +50,7 @@ export type SessionStreamEvent = {
   [key: string]: unknown;
 };
 
-type SseEventListener<TPayload extends object> = (event: SseReplayEvent<TPayload>) => void;
+type SseEventListener<TPayload extends object> = (event: SseReplayEvent<TPayload>) => void | Promise<void>;
 
 const DEFAULT_RING_MAXLEN = 1000;
 
@@ -79,6 +79,7 @@ export class InMemorySseReplayBroadcaster<
   private latestId = 0;
   private readonly ring: Array<SseReplayEvent<TPayload>> = [];
   private readonly listeners = new Set<SseEventListener<TPayload>>();
+  private readonly pendingWrites = new Set<Promise<void>>();
 
   constructor(options: SseReplayBroadcasterOptions = {}) {
     const ringMaxlen = options.ringMaxlen ?? DEFAULT_RING_MAXLEN;
@@ -150,10 +151,18 @@ export class InMemorySseReplayBroadcaster<
     this.trimRing();
 
     for (const listener of this.listeners) {
-      listener(event);
+      const result = listener(event);
+      if (result) {
+        this.pendingWrites.add(result);
+        void result.finally(() => this.pendingWrites.delete(result)).catch(() => undefined);
+      }
     }
 
     return event;
+  }
+
+  async flush(): Promise<void> {
+    await Promise.all([...this.pendingWrites]);
   }
 
   replaySince(

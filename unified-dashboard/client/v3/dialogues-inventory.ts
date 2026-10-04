@@ -1,5 +1,6 @@
 /** Live web dialog variants. Desktop selection menus and tooltips are not independent dialogs. */
 export const dialoguesInventory = [
+  ...(["planned", "disconnected", "checking", "recovering", "new-version"] as const).map(phase => ({section: "settings" as const, id: `connection-${phase}` as const, name: `연결 안내 · ${phase}`, component: "ConnectionDialog"})),
   {
     section: "folders",
     id: "project-create",

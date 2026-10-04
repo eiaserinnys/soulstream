@@ -11,6 +11,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { uploadSessionFile } from "./uploadSessionFile";
+import {createPendingMutationHandle,type PendingMutationHandle} from "../pending-mutation-registry";
 
 export interface UploadDestination {
   uploadUrl: string;
@@ -58,12 +59,19 @@ export function useFileUpload({
 }: UseFileUploadOptions): UseFileUploadReturn {
   const [entries, setEntries] = useState<UploadedFile[]>([]);
   const entriesRef = useRef(entries);
+  const pendingMutationRef=useRef<PendingMutationHandle|null>(null);
+  useEffect(()=>{
+    const handle=createPendingMutationHandle("attachment");pendingMutationRef.current=handle;
+    handle.setPending(entriesRef.current.length>0);
+    return()=>{handle.dispose();pendingMutationRef.current=null;};
+  },[]);
   const destinationRef = useRef<UploadDestination>({ uploadUrl, sessionId });
   destinationRef.current = { uploadUrl, sessionId };
   const previousDestinationRef = useRef(destinationRef.current);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const updateFiles = useCallback((update: (files: UploadedFile[]) => UploadedFile[]) => {
     entriesRef.current = update(entriesRef.current);
+    pendingMutationRef.current?.setPending(entriesRef.current.length>0);
     setEntries(entriesRef.current);
   }, []);
   const resetLocal = useCallback(() => {

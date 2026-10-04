@@ -18,7 +18,7 @@ export interface FolderPickerProps {
 
 export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, selectedFolderId, pending, onSelect }: FolderPickerProps) {
   const id = useId();
-  const [tab, setTab] = useState<"starred" | "all">(() => starredFolderIds.length ? "starred" : "all");
+  const [tab, setTab] = useState<"starred" | "all">("starred");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const normalized = query.trim().toLocaleLowerCase();

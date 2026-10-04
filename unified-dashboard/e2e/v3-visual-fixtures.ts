@@ -598,6 +598,9 @@ export async function installV3VisualQaRoutes(
       });
     }
 
+    if (path === "/api/health") return fulfillJson(route, {
+      healthy: true, ready: true, draining: false, build_id: "dev",
+    });
     if (path === "/api/auth/config") return fulfillJson(route, { authEnabled: false, devModeEnabled: false });
     if (path === "/api/auth/status") return fulfillJson(route, { authenticated: true, user: null });
     if (path === "/api/cards" && request.method() === "GET") {
@@ -1224,3 +1227,6 @@ export const fixtureTitles = {
   carryoverTask: pages.carryover.title,
   project: pages.project.title,
 };
+
+/** The connection harness serves this snapshot over the real SSE route. */
+export const connectionQaSessions = sessions;

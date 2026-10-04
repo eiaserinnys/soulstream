@@ -13,6 +13,7 @@ import { AuthProvider } from "@seosoyoung/soul-ui/providers";
 import { AuthGate } from "@seosoyoung/soul-ui/components/auth";
 import { registerDashboardServiceWorker } from "./pwa/register-dashboard-service-worker";
 import { UiEventsRuntime } from "./lib/UiEventsRuntime";
+import {ConnectionBoundary} from "./connection/ConnectionBoundary";
 
 void registerDashboardServiceWorker();
 
@@ -35,6 +36,7 @@ if (!root) throw new Error("Root element not found");
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      <ConnectionBoundary>
       <AuthProvider>
         <AuthGate loginTitle="Soul Dashboard">
           <ToastProvider>
@@ -44,6 +46,7 @@ createRoot(root).render(
           </ToastProvider>
         </AuthGate>
       </AuthProvider>
+      </ConnectionBoundary>
     </QueryClientProvider>
   </StrictMode>,
 );

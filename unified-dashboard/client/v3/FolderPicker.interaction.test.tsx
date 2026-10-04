@@ -32,6 +32,7 @@ describe("FolderPicker", () => {
 
   it("starts collapsed, expands matching ancestors, and restores local expansion after search", () => {
     render([], ["root"]);
+    click(tab("전체"));
     expect(tab("전체").getAttribute("aria-selected")).toBe("true");
     expect(rows()).toEqual(["other", "root"]);
     expect(row("root").hasAttribute("aria-disabled")).toBe(false);
@@ -45,6 +46,24 @@ describe("FolderPicker", () => {
     search("");
     expect(rows()).toEqual(["other", "root", "child"]);
     expect(localStorage.getItem("soulstream:folder-tree:expanded:v1:root")).toBeNull();
+  });
+
+  it("starts on stars even when empty and keeps stars as their data arrives", () => {
+    const onSelect = vi.fn();
+    render([], [], onSelect);
+    expect(tab("별표").getAttribute("aria-selected")).toBe("true");
+    expect(rows()).toEqual([]);
+    render(["other"], [], onSelect);
+    expect(tab("별표").getAttribute("aria-selected")).toBe("true");
+    expect(rows()).toEqual(["other"]);
+    click(row("other").querySelector("button")!);
+    expect(onSelect).toHaveBeenCalledWith(folders[3]);
+    click(tab("전체"));
+    expect(rows()).toEqual(["other", "root"]);
+    flushSync(() => root.unmount());
+    root = createRoot(container);
+    render([], [], onSelect);
+    expect(tab("별표").getAttribute("aria-selected")).toBe("true");
   });
 
   function render(starredFolderIds: string[], disabledFolderIds: string[], onSelect = vi.fn()) {

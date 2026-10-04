@@ -1,3 +1,4 @@
+import {orchestratorFetch} from "../lib/orchestrator-connection";
 import type {
   BlockDto,
   BrowserBacklinkPageDto,
@@ -174,7 +175,7 @@ export function createPageApiClient(options: {
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     let response: Response;
     try {
-      response = await fetchImplementation(`${baseUrl}${path}`, {
+      response = await orchestratorFetch(fetchImplementation,`${baseUrl}${path}`, {
         credentials: "same-origin",
         headers: init?.body === undefined
           ? { Accept: "application/json", ...init?.headers }

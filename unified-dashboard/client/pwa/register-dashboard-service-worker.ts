@@ -1,3 +1,4 @@
+import {createDashboardReloadCoordinator,dashboardReloadCoordinator} from "./dashboard-reload";
 import {
   hasPendingDashboardMutations,
   waitForDashboardMutationsToFlush,
@@ -35,12 +36,14 @@ type UpdateEnvironment = {
   readonly warn: (message: string, error?: unknown) => void;
   readonly hasPendingEdits: () => boolean;
   readonly flushPendingEdits: () => Promise<boolean>;
+  readonly reloadCoordinator?: ReturnType<typeof createDashboardReloadCoordinator>;
 };
 
 export async function registerDashboardServiceWorker(
   environment: UpdateEnvironment = browserEnvironment(),
 ): Promise<() => void> {
   const { serviceWorker, document } = environment;
+  const reloadCoordinator=environment.reloadCoordinator??createDashboardReloadCoordinator(environment);
   if (!serviceWorker) return () => undefined;
 
   const onMessage: EventListener = (rawEvent) => {
@@ -48,21 +51,13 @@ export async function registerDashboardServiceWorker(
     const data = activationMessage(event.data);
     if (!data) return;
     const source = event.source as ActivationSource | null;
-    const respond = () => {
-      if (!environment.hasPendingEdits()) {
-        source?.postMessage({ type: APPROVE_RELOAD_MESSAGE, token: data.token });
-        return;
-      }
-      source?.postMessage({ type: DEFER_RELOAD_MESSAGE, token: data.token });
-      showUpdateBanner(document, async () => {
-        if (!await environment.flushPendingEdits()) return false;
-        if (source) {
-          afterWorkerActivation(source, () => source.postMessage({ type: APPROVE_RELOAD_MESSAGE, token: data.token }));
-        } else {
-          environment.reload();
-        }
-        return true;
-      });
+    const approve=()=>{
+      if(source)afterWorkerActivation(source,()=>source.postMessage({ type: APPROVE_RELOAD_MESSAGE, token: data.token }));
+      else environment.reload();
+    };
+    const respond=()=>{
+      if(environment.hasPendingEdits())source?.postMessage({type:DEFER_RELOAD_MESSAGE,token:data.token});
+      void reloadCoordinator.request(approve,false);
     };
     // Defer immediately; approval must not start navigation inside activate.
     if (source && !environment.hasPendingEdits()) afterWorkerActivation(source, respond);
@@ -134,62 +129,13 @@ function activationMessage(value: unknown): { token: string } | null {
     : null;
 }
 
-function showUpdateBanner(document: Document, apply: () => Promise<boolean>): void {
-  if (document.querySelector("[data-sw-update-banner]")) return;
-  const banner = document.createElement("div");
-  banner.dataset.swUpdateBanner = "true";
-  banner.setAttribute("role", "status");
-  Object.assign(banner.style, {
-    position: "fixed",
-    right: "16px",
-    bottom: "16px",
-    zIndex: "2147483647",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    padding: "12px 14px",
-    borderRadius: "12px",
-    background: "#171717",
-    color: "#fff",
-    boxShadow: "0 8px 30px rgba(0, 0, 0, 0.35)",
-    font: "14px/1.4 system-ui, sans-serif",
-  });
-  const message = document.createElement("span");
-  message.textContent = "새 버전이 준비됐습니다. 편집 내용을 확인한 뒤 적용하세요.";
-  const action = document.createElement("button");
-  action.type = "button";
-  action.dataset.swUpdateAction = "true";
-  action.textContent = "새 버전 적용";
-  Object.assign(action.style, {
-    border: "1px solid rgba(255, 255, 255, 0.35)",
-    borderRadius: "8px",
-    padding: "6px 10px",
-    background: "#fff",
-    color: "#111",
-    cursor: "pointer",
-    font: "inherit",
-    fontWeight: "600",
-  });
-  action.addEventListener("click", () => {
-    action.disabled = true;
-    action.textContent = "편집 저장 중…";
-    void apply().then((approved) => {
-      if (approved) return;
-      action.disabled = false;
-      action.textContent = "다시 시도";
-      message.textContent = "편집 저장이 아직 끝나지 않았습니다. 잠시 후 다시 시도하세요.";
-    });
-  });
-  banner.append(message, action);
-  document.body.appendChild(banner);
-}
-
 function browserEnvironment(): UpdateEnvironment {
   return {
     serviceWorker: "serviceWorker" in navigator
       ? navigator.serviceWorker as unknown as ServiceWorkerContainerLike
       : undefined,
     document,
+    reloadCoordinator:dashboardReloadCoordinator(),
     reload: () => window.location.reload(),
     setInterval: (callback, timeout) => window.setInterval(callback, timeout),
     clearInterval: (id) => window.clearInterval(id),

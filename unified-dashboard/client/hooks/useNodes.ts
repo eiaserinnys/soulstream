@@ -1,3 +1,4 @@
+import {requestOrchestratorCheck} from "@seosoyoung/soul-ui/lib/orchestrator-connection";
 /**
  * useNodes - /api/nodes/stream SSE 노드 변경 이벤트 구독 (unified-dashboard)
  *
@@ -50,6 +51,7 @@ export function useNodes(onConnectionError?: () => void) {
 
       connection.onerror = (event) => {
         if (disposed || es !== connection || event instanceof MessageEvent) return;
+        requestOrchestratorCheck();
         try {
           onConnectionError?.();
         } catch (error) {

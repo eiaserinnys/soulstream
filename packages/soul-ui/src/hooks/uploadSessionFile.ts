@@ -1,3 +1,4 @@
+import {orchestratorFetch} from "../lib/orchestrator-connection";
 const LARGE_FILE_THRESHOLD = 64 * 1024 ** 2;
 const MAX_FILE_SIZE = 5 * 1024 ** 3;
 const PART_SIZE = 16 * 1024 ** 2;
@@ -30,12 +31,12 @@ export async function uploadSessionFile(input: UploadInput): Promise<string> {
     const form = new FormData();
     form.append("file", file);
     form.append("session_id", sessionId);
-    return attachmentPath(await jsonResponse(await fetch(uploadUrl, { method: "POST", body: form, signal })));
+    return attachmentPath(await jsonResponse(await orchestratorFetch(fetch,uploadUrl, { method: "POST", body: form, signal })));
   }
   let init: MultipartInit | undefined;
   const partsController = new AbortController();
   const partSignal = AbortSignal.any([signal, partsController.signal]);
-  const post = (action: string, body: unknown, requestSignal: AbortSignal) => fetch(multipartUrl(uploadUrl, action), {
+  const post = (action: string, body: unknown, requestSignal: AbortSignal) => orchestratorFetch(fetch,multipartUrl(uploadUrl, action), {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body), signal: requestSignal,
   });
@@ -54,7 +55,7 @@ export async function uploadSessionFile(input: UploadInput): Promise<string> {
         const index = next++;
         const part = init!.parts[index]!;
         const start = index * PART_SIZE;
-        const response = await fetch(part.uploadUrl, { method: "PUT",
+        const response = await orchestratorFetch(fetch,part.uploadUrl, { method: "PUT",
           body: file.slice(start, Math.min(start + PART_SIZE, file.size)), signal: partSignal });
         if (!response.ok) throw new Error(`첨부 part 업로드 실패 (${response.status})`);
         const etag = response.headers.get("ETag");

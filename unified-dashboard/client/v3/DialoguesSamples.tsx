@@ -1,3 +1,4 @@
+import {ConnectionDialog} from "../connection/ConnectionDialog";
 import { RenameSessionDialog } from "@seosoyoung/soul-ui/components/RenameSessionDialog";
 import { useMemo, useState } from "react";
 import {
@@ -51,6 +52,7 @@ export function DialoguesSamples({
     if (!open) onClose();
   };
   const stars: readonly string[] = [];
+  if (id.startsWith("connection-")) return <ConnectionDialog snapshot={{phase: id.slice("connection-".length) as "planned" | "disconnected" | "checking" | "recovering" | "new-version", fresh: false}}/>;
   if (id === "project-create" || id === "project-edit")
     return (
       <ProjectDialog

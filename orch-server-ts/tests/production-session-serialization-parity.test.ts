@@ -262,6 +262,7 @@ function minimalEnvironment(): Record<string, string> {
     HOST: "127.0.0.1",
     DATABASE_URL: "postgres://unused@localhost/unused",
     ENVIRONMENT: "production",
+    DASHBOARD_DIR: fileURLToPath(new URL("./fixtures/dashboard-build", import.meta.url)),
     CORS_ALLOWED_ORIGINS: "http://127.0.0.1",
     AUTH_BEARER_TOKEN: "production-service-token",
     GOOGLE_CLIENT_ID: "dashboard-google-client",
