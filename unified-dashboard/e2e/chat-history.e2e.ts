@@ -119,14 +119,14 @@ async function keyPosition(scroller: Locator, key: string) {
     };
   }, key);
 }
-async function settledVisiblePosition(scroller: Locator) {
+async function settledVisiblePosition(scroller: Locator, targetKey?: string) {
   let previous: Awaited<ReturnType<typeof keyPosition>> | null = null;
   let settled: { anchor: Awaited<ReturnType<typeof anchor>>; position: Awaited<ReturnType<typeof keyPosition>> } | null = null;
   let stableObservations = 0;
   await expect.poll(async () => {
     try {
       const current = await anchor(scroller);
-      const position = await keyPosition(scroller, current.key);
+      const position = await keyPosition(scroller, targetKey ?? current.key);
       const stable = position.visible && position.offset !== null && previous?.key === position.key
         && previous.offset !== null && Math.abs(position.offset - previous.offset) <= 0.5;
       stableObservations = stable ? stableObservations + 1 : 0;
@@ -263,13 +263,23 @@ test("late A response cannot enter session B", async ({ page }) => {
 });
 
 test("live SSE while reading history preserves the visible row", async ({ page }) => {
-  const h = await setup(page, [historyPage(100, 40, null)], { live: true });
+  const h = await setup(page, [historyPage(100, 40, "older-60"), historyPage(60, 40, null)], { holdOlder: true, live: true });
   await expect.poll(() => bottomDistance(h.scroller)).toBeLessThanOrEqual(2);
-  await movePointer(page, h.scroller);
-  await page.mouse.wheel(0, -500);
-  const settled = await settledVisiblePosition(h.scroller);
-  const before = settled.anchor;
+  await wheelToTop(page, h.scroller);
+  await expect.poll(() => h.cursors.length).toBe(2);
+  await expect.poll(() => h.scroller.evaluate(el => el.scrollTop)).toBe(0);
+  const beforePrepend = await settledVisiblePosition(h.scroller);
+  h.releaseOlder();
+  await expect(h.root.getByText("대화 60", { exact: false }).first()).toBeAttached();
+  await expect.poll(() => h.scroller.getAttribute("data-chat-viewport-retention-pending")).not.toBe("true");
+  const settled = await settledVisiblePosition(h.scroller, beforePrepend.position.key);
+  const before = settled.position;
   const beforePosition = settled.position;
+  const viewportHeight = await h.scroller.evaluate(el => el.clientHeight);
+  const distanceBefore = await bottomDistance(h.scroller);
+  expect(beforePosition.offset).not.toBeNull();
+  expect(beforePosition.visible).toBe(true);
+  expect(distanceBefore).toBeGreaterThan(viewportHeight);
   const liveResponse = page.waitForResponse(async response =>
     response.url().includes("/events") && (await response.text()).includes("id: 1001\n"));
   h.sendLive();
@@ -278,10 +288,12 @@ test("live SSE while reading history preserves the visible row", async ({ page }
   await page.waitForTimeout(300);
   const afterPosition = await keyPosition(h.scroller, before.key);
   const after = await anchor(h.scroller).catch(() => null);
-  recordEvidence("sse-offset", { before, after, beforePosition, afterPosition });
+  const distanceAfter = await bottomDistance(h.scroller);
+  recordEvidence("sse-offset", { beforePrepend, before, after, beforePosition, afterPosition,
+    viewportHeight, distanceBefore, distanceAfter, cursors: h.cursors });
   await screenshot(page, "sse-after");
   expect(afterPosition.offset).not.toBeNull();
   expect(afterPosition.visible).toBe(true);
   expect(Math.abs((afterPosition.offset ?? Infinity) - beforePosition.offset!)).toBeLessThanOrEqual(2);
-  expect(await bottomDistance(h.scroller)).toBeGreaterThan(100);
+  expect(distanceAfter).toBeGreaterThan(viewportHeight);
 });
