@@ -7,6 +7,7 @@ import { AIBackendSettingsSection } from '../components/settings/AIBackendSettin
 import { ConnectionSettingsSection } from '../components/settings/ConnectionSettingsSection';
 import { DiagnosticsSettingsSection } from '../components/settings/DiagnosticsSettingsSection';
 import { DisplaySettingsSection } from '../components/settings/DisplaySettingsSection';
+import { OwnedAgentsSettingsSection } from '../components/settings/OwnedAgentsSettingsSection';
 import { SessionReviewPolicySettingsSection } from '../components/settings/SessionReviewPolicySettingsSection';
 import { RecurringJobsSettingsSection } from '../components/settings/RecurringJobsSettingsSection';
 import type { SettingsCategory } from '../components/settings/settingsCategories';
@@ -275,6 +276,15 @@ export function SettingsContent({
               onPickBackground={() => void handlePickBackground()}
               onResetBackground={() => void handleResetBackground()}
             />
+            </ScrollView>
+          ) : null}
+          {renderCategory('owned-agents') ? (
+            <ScrollView {...pageProps('owned-agents')}>
+              <OwnedAgentsSettingsSection
+                flattened={flattened}
+                serverUrl={serverUrl}
+                active={includes('owned-agents')}
+              />
             </ScrollView>
           ) : null}
           {renderCategory('connection') ? (

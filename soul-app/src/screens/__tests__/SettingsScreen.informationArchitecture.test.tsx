@@ -32,6 +32,8 @@ const api = {
   getClaudeProfile: jest.fn(),
   getProviderUsage: jest.fn(),
   getAuthStatus: jest.fn(),
+  listOwnedAgents: jest.fn(),
+  issueOwnedAgentKey: jest.fn(),
 };
 
 beforeEach(() => {
@@ -42,6 +44,8 @@ beforeEach(() => {
   api.getClaudeProfile.mockReset().mockResolvedValue(null);
   api.getProviderUsage.mockReset();
   api.getAuthStatus.mockReset();
+  api.listOwnedAgents.mockReset();
+  api.issueOwnedAgentKey.mockReset();
   useAuthStore.setState({ jwt: null });
   useSettingsStore.setState({
     serverUrl: 'https://soul.test',
@@ -59,6 +63,34 @@ test('admin categories are visible, and only the visited review form mounts', as
   fireEvent.press(await screen.findByTestId('settings-category-review-policy'));
   expect(screen.getByTestId('review-policy-section')).toBeTruthy();
   expect(api.getAuthStatus).toHaveBeenCalledTimes(1);
+});
+test('opens owned agents from the settings list and clears a one-time key when leaving', async () => {
+  api.listOwnedAgents.mockResolvedValue({ agents: [{
+    id: 'fixture-agent', name: '예시 에이전트', enabled: true, ownerEmail: 'hidden@example.invalid',
+    createdAt: '2026-10-04T00:00:00Z', updatedAt: '2026-10-04T00:00:00Z', keys: [],
+  }], existingConnection: { configured: true, registered: true, canRegister: false } });
+  api.issueOwnedAgentKey.mockResolvedValue({ credential: {
+    id: 'fixture-key', createdAt: '2026-10-04T00:00:00Z', lastUsedAt: null, revokedAt: null, isExistingConnection: false,
+  }, token: 'fixture-one-time-token' });
+  const screen = render(<SettingsScreen showAdmin={false}/>);
+  await act(async () => {});
+
+  fireEvent.press(screen.getByTestId('settings-category-owned-agents'));
+  expect(await screen.findByLabelText('선택 예시 에이전트')).toBeTruthy();
+  expect(api.listOwnedAgents).toHaveBeenCalledTimes(1);
+  expect(screen.queryByTestId('settings-active-footer')).toBeNull();
+
+  fireEvent.press(screen.getByLabelText('새 키 발급'));
+  expect(await screen.findByText('fixture-one-time-token')).toBeTruthy();
+
+  if (screen.queryByTestId('settings-wide-layout')) fireEvent.press(screen.getByTestId('settings-category-display'));
+  else fireEvent.press(screen.getByLabelText('모든 설정으로 돌아가기'));
+  expect(screen.queryByText('fixture-one-time-token')).toBeNull();
+  fireEvent.press(screen.getByTestId('settings-category-owned-agents'));
+  expect(await screen.findByLabelText('선택 예시 에이전트')).toBeTruthy();
+  expect(screen.queryByText('fixture-one-time-token')).toBeNull();
+  expect(api.listOwnedAgents).toHaveBeenCalledTimes(3);
+  expect(screen.queryByTestId('settings-active-footer')).toBeNull();
 });
 test('non-admin categories exclude the review policy', async () => {
   useAuthStore.setState({ jwt: 'native-jwt' }); api.getAuthStatus.mockResolvedValue({ authenticated: true, user: { isAdmin: false } });
