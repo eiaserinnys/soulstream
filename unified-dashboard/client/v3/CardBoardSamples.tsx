@@ -23,7 +23,7 @@ export function CardBoardSamples() {
   const queryClient=useQueryClient();
   const [scope,setScope]=useState<"folder"|"all">("folder");
   const [mode,setMode]=useState<"board"|"grid">("board");
-  const [scenario,setScenario]=useState<"mixed"|"none"|"done">("mixed");
+  const [scenario,setScenario]=useState<"mixed"|"none"|"done"|"empty">("mixed");
   const [assignmentScenario,setAssignmentScenario]=useState<'unassigned'|'partial'|'agent'|'assigned'|'live'>('assigned');
   const assignmentSession={...reviewSession,status:assignmentScenario==='live'?'running' as const:'completed' as const};
   const [settings,setSettings]=useState<Record<string,Partial<typeof reviewCard>>>({});
@@ -39,13 +39,19 @@ export function CardBoardSamples() {
   const [mobileTab,setMobileTab]=useState<MobilePlannerTab>("projects");
   const [adding,setAdding]=useState(false);
   const mobileMode=useMobilePlannerMode();
-  const cards=useMemo(()=>boardColumns.flatMap(({status},index)=>Array.from({length:index===0?4:status==='done'?1000:1},(_,copy)=>({
-    ...reviewCard,...assignmentCard,...settings[`board-${index}-${copy}`],id:`board-${index}-${copy}`,status:statuses[`board-${index}-${copy}`]??(assignmentScenario==='live'?'running':scenario==="done"?"done":status),
-    title:index===0?reviewTitle:`${boardColumns[index].label} 카드`,blockedKind:status==="blocked"?"question" as const:null,
-    completedAt:new Date(Date.now()-copy*10*60*1000).toISOString(),
-    latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
-      body:"긴 본문이 있어도 카드와 열의 폭을 줄이지 않습니다. 최신 원문은 네 줄까지 읽고 상세에서 이어 봅니다. ".repeat(5),createdAt:reviewCard.createdAt},
-  }))).filter(card=>scenario!=="none"||card.status!=="done"),[scenario,statuses,assignmentScenario,settings]);
+  const cards=useMemo(()=>{
+    if(scenario==="empty")return [];
+    const seeds=boardColumns.flatMap(({status},index)=>Array.from({length:index===0?4:status==='done'?1000:1},(_,copy)=>({
+      ...reviewCard,...assignmentCard,...settings[`board-${index}-${copy}`],id:`board-${index}-${copy}`,status:assignmentScenario==='live'?'running':scenario==="done"?"done":status,
+      title:index===0?reviewTitle:`${boardColumns[index].label} 카드`,blockedKind:status==="blocked"?"question" as const:null,
+      completedAt:new Date(Date.now()-copy*10*60*1000).toISOString(),
+      latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
+        body:"긴 본문이 있어도 카드와 열의 폭을 줄이지 않습니다. 최신 원문은 네 줄까지 읽고 상세에서 이어 봅니다. ".repeat(5),createdAt:reviewCard.createdAt},
+    })));
+    return seeds.filter(card=>(scenario!=="none"||card.status!=="done")
+      &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="review"||card.status==="done"))
+      .map(card=>({...card,status:statuses[card.id]??card.status}));
+  },[scenario,statuses,assignmentScenario,settings]);
   const loader=useCallback<CompletedPageLoader>(async params=>{
     const result=cards.filter(card=>card.status==='done'&&(!params.completedFrom||card.completedAt>=params.completedFrom)&&(!params.completedBefore||card.completedAt<params.completedBefore)&&(`${card.title} ${card.request}`.toLocaleLowerCase().includes((params.q??'').toLocaleLowerCase()))).sort((a,b)=>b.completedAt.localeCompare(a.completedAt)||b.id.localeCompare(a.id));
     const offset=Number(params.cursor??0),limit=params.limit??60;
@@ -66,7 +72,7 @@ export function CardBoardSamples() {
       saveSettings:async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setSettings(previous=>({...previous,[card.id]:saved}));return saved;},load:async()=>({card,reports:card.status==="todo"?[]:[{id:"sample-report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
       questions:card.status==="blocked"?[{id:"sample-question",text:"질문",answer:null,options:null,askedAt:card.createdAt,answeredAt:null}]:[],sessions:[]}),
       change:async(latest,status)=>{setStatuses(previous=>({...previous,[card.id]:status}));if(status==='running')setSettings(previous=>({...previous,[card.id]:{...latest,assigneeKind:'session',assigneeSessionId:reviewSession.agentSessionId}}));}}}/>;
-  const comparison={...cards[0],id:"board-size-comparison",status:statuses["board-size-comparison"]??(assignmentScenario==='live'?'running':"review") as CardStatus};
+  const comparison={...(cards[0]??reviewCard),id:"board-size-comparison",status:statuses["board-size-comparison"]??(assignmentScenario==='live'?'running':"review") as CardStatus};
   const selectedCard=selected===comparison.id?comparison:cards.find(card=>card.id===selected);
   const mobileTabsHost=selectedCard&&mobileMode?document.querySelector('.v3-shell.v3-components-page'):null;
   return <div className="v3-card-board-sample" data-testid="card-board-sample">
@@ -81,10 +87,10 @@ export function CardBoardSamples() {
     <div className="v3-detail-section-head">
       {(["folder","all"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={scope===value} onClick={()=>setScope(value)}>{value==="folder"?"현재 폴더":"전체"}</Button>)}
       {(["grid","board"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={mode===value} onClick={()=>setMode(value)}>{value==="grid"?"일반 보기":"보드"}</Button>)}
-      {(["mixed","none","done"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={scenario===value} onClick={()=>{setScenario(value);setStatuses({});}}>{{mixed:"혼합",none:"완료 0개",done:"전부 완료"}[value]}</Button>)}
+      {(["mixed","none","done","empty"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={scenario===value} onClick={()=>{setScenario(value);setStatuses({});}}>{{mixed:"혼합",none:"완료 0개",done:"전부 완료",empty:"빈 보드"}[value]}</Button>)}
     </div>
     <div className="v3-detail-section-head">{(['unassigned','partial','agent','assigned','live'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={assignmentScenario===value} onClick={()=>{setSelected(null);setSettings({});setAssignmentScenario(value);}}>{{unassigned:'담당 없음',partial:'부분 설정',agent:'에이전트 지정',assigned:'담당 연결',live:'실행 중'}[value]}</Button>)}</div>
-    <div className="v3-detail-section-head">{(['normal','todo','queued','pending'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={startExample===value} onClick={()=>{setStartExample(value);setSelected(cards[0].id);}}>{{normal:'기본 상세',todo:'드래프트 상세',queued:'대기 상세',pending:'시작 확인 중'}[value]}</Button>)}</div>
+    <div className="v3-detail-section-head">{(['normal','todo','queued','pending'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={startExample===value} onClick={()=>{setStartExample(value);setSelected(comparison.id);}}>{{normal:'기본 상세',todo:'드래프트 상세',queued:'대기 상세',pending:'시작 확인 중'}[value]}</Button>)}</div>
     <div className="v3-detail-section-head">{(["short","long"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={conversation===value} onClick={()=>setConversation(value)}>{value==="short"?"짧은 커멘트":"긴 커멘트"}</Button>)}</div>
     {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={card=>renderCard(card as typeof cards[number],"compact")} completion={{includeCompleted,onChange}}
       draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}/>

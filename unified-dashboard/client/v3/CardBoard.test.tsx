@@ -28,3 +28,31 @@ for (const count of [0, 2]) it(`keeps the draft creation action after the title 
   }));
   expect(html).toMatch(new RegExp(`<h3>드래프트</h3><span>${count}개</span><button aria-label="새 카드">\\+</button></div>`));
 });
+
+it("hides empty lanes after applying the completed filter when requested", () => {
+  const cards = [
+    {...reviewCard,id:"draft",status:"todo" as const},
+    {...reviewCard,id:"running",status:"running" as const},
+    {...reviewCard,id:"done",status:"done" as const},
+    {...reviewCard,id:"cancelled",status:"cancelled" as const},
+    {...reviewCard,id:"archived",status:"queued" as const,archived:true},
+  ];
+  const render = (includeCompleted:boolean) => renderToStaticMarkup(createElement(CardBoard, {
+    cards, renderCard: card => createElement("span", {"data-sample":card.id}, card.id),
+    completion: {includeCompleted,onChange:()=>undefined}, hideEmptyLanes:true,
+  }));
+  const visible = render(false);
+  expect([...visible.matchAll(/data-board-column="([^"]+)"/g)].map(match=>match[1])).toEqual(["todo","running"]);
+  expect(visible).not.toContain('data-sample="archived"');
+  const completed = render(true);
+  expect([...completed.matchAll(/data-board-column="([^"]+)"/g)].map(match=>match[1])).toEqual(["todo","running","done","cancelled"]);
+});
+
+it("shows one empty-board message when every lane is hidden", () => {
+  const html = renderToStaticMarkup(createElement(CardBoard, {
+    cards:[], renderCard:()=>null, hideEmptyLanes:true,
+  }));
+  expect([...html.matchAll(/class="v3-card-board-empty"/g)]).toHaveLength(1);
+  expect(html).toContain("카드가 없습니다");
+  expect(html).not.toMatch(/data-board-column=/);
+});
