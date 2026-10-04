@@ -28,7 +28,8 @@ test("renders the built v3 dashboard with its deterministic API fixture", async 
   await page.goto("/v3", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("textbox", { name: "세션 첫 메시지" })).toBeVisible();
   const inbox = page.locator(".v3-card-inbox");
-  await expect(inbox.locator("[data-board-column]")).toHaveCount(5);
+  await expect(inbox.locator("[data-board-column]")).toHaveCount(0);
+  await expect(inbox.locator(".v3-card-board-empty")).toHaveText("카드가 없습니다");
   await expect(inbox.locator('[data-board-column="done"]')).toHaveCount(0);
   await expect(inbox.getByRole("button", { name: "새 카드", exact: true })).toBeVisible();
   await expect(inbox.getByRole("button", { name: "보드 확대", exact: true })).toBeVisible();
