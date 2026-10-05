@@ -2856,6 +2856,9 @@
               ],
               "type": "string"
             },
+            "claude_auto_memory_enabled": {
+              "type": "boolean"
+            },
             "claude_permission_mode": {
               "enum": [
                 "default",
