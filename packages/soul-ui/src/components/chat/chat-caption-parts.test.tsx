@@ -37,9 +37,14 @@ describe("chat caption parts", () => {
     expect(button?.getAttribute("aria-expanded")).toBe("false");
     expect(button?.className).toContain("!text-xs");
     expect(button?.className).toContain("!font-medium");
+    expect(button?.classList.contains("max-w-full")).toBe(true);
+    expect(button?.classList.contains("w-full")).toBe(false);
+    expect(button?.className).toContain("h-6");
+    expect(button?.className).not.toContain("px-2");
     const contentId = button?.getAttribute("aria-controls");
     expect(contentId).toBeTruthy();
     expect(document.getElementById(contentId!)?.hasAttribute("hidden")).toBe(true);
+    expect(container.querySelector("[id]")?.className).toContain("mt-0.5");
 
     act(() => button?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 
@@ -80,6 +85,13 @@ describe("chat caption parts", () => {
     const separator = container.querySelector('[role="separator"]');
     expect(separator?.getAttribute("aria-label")).toBe("새 세대");
     expect(separator?.querySelectorAll('[aria-hidden="true"]')).toHaveLength(2);
+    expect(container.querySelector('[role="separator"]')?.className).toContain("my-10");
+    expect(container.querySelector('[role="separator"] [aria-hidden="true"]')?.className).toContain("border-input");
+    expect(
+      container.querySelector('[role="separator"] span:not([aria-hidden="true"])')?.className,
+    ).toContain("truncate");
+    expect(container.querySelector('[data-slot="labeled-divider-row"]')).not.toBeNull();
+    expect(container.querySelectorAll(".w-8")).toHaveLength(1);
     expect(container.querySelector("button")).toBeNull();
   });
 });

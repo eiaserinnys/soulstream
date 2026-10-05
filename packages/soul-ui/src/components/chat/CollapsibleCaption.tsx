@@ -25,7 +25,7 @@ export function CollapsibleCaption({
         <Button
           aria-controls={contentId}
           aria-expanded={expanded}
-          className="-ms-2 w-full justify-start gap-2 px-2 !text-xs !font-medium text-muted-foreground"
+          className="-ms-2 max-w-full h-6 sm:h-6 justify-start gap-2 !text-xs !font-medium text-muted-foreground"
           onClick={() => setExpanded((value) => !value)}
           size="xs"
           variant="ghost"
@@ -33,7 +33,7 @@ export function CollapsibleCaption({
           <span className="min-w-0 truncate text-left">{title}</span>
           <DisclosureActionIcon expanded={expanded} />
         </Button>
-        <div className="min-w-0 space-y-0.5" hidden={!expanded} id={contentId}>
+        <div className="mt-0.5 min-w-0 space-y-0.5" hidden={!expanded} id={contentId}>
           {children}
         </div>
       </div>

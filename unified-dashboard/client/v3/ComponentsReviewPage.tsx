@@ -238,13 +238,24 @@ export function ComponentsReviewPage() {
                 <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 0">
                   <div className="min-w-0 truncate text-xs text-muted-foreground">2점 이상인 후보가 없습니다.</div>
                 </CollapsibleCaption>
-                <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 제목이 좁은 화면에서 말줄임되는 샘플">
+                <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 제목이 좁은 화면에서 실제로 말줄임되는지 확인하는 긴 제목 샘플">
                   <div className="min-w-0 truncate text-xs text-muted-foreground">T38 · 제목과 본문이 좁은 화면에서도 한 줄로 말줄임되는 후보 내용 샘플 · 3/3</div>
                 </CollapsibleCaption>
-                <div className="flex gap-2 px-3 py-1">
-                  <span className="w-8 shrink-0" />
-                  <div className="min-w-0 flex-1"><LabeledDivider label="새 세대" /></div>
-                </div>
+                <AssistantMessage
+                  msg={{
+                    id: "caption-divider-before", role: "assistant", treeNodeId: "caption-divider-before",
+                    treeNodeType: "assistant_message", content: "이전 세대의 답변입니다.",
+                  }}
+                />
+                <LabeledDivider label="새 세대" />
+                <AssistantMessage
+                  msg={{
+                    id: "caption-divider-after", role: "assistant", treeNodeId: "caption-divider-after",
+                    treeNodeType: "assistant_message", content: "새 세대의 답변입니다.",
+                  }}
+                />
+                <LabeledDivider label="다음 대화" />
+                <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
               </div>
             </Sample>
           </section>
