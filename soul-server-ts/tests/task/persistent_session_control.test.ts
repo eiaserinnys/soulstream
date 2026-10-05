@@ -225,10 +225,12 @@ describe("PersistentSessionControl", () => {
           targetModelPreset: "claude-preset",
           targetReasoningEffort: "low",
           applyingFrom: "native-current",
+          previousModelPreset: "codex-source",
+          previousBackend: "codex",
         },
       },
     } as Partial<Task>);
-    const { control } = makeRolloverControl(task);
+    const { control, persistedEntries } = makeRolloverControl(task);
 
     await control.requestGenerationRollover(task.agentSessionId, {
       modelPreset: "codex-preset",
@@ -241,6 +243,17 @@ describe("PersistentSessionControl", () => {
       targetModelPreset: "codex-preset",
       targetReasoningEffort: "high",
       applyingFrom: "native-current",
+      previousModelPreset: "codex-source",
+      previousBackend: "codex",
+    });
+    expect(task.persistentGeneration?.pending?.requestedAt)
+      .not.toBe("2026-10-04T09:00:00.000Z");
+    expect(persistedEntries[0]?.value).toMatchObject({
+      pending: {
+        applying_from: "native-current",
+        previous_model_preset: "codex-source",
+        previous_backend: "codex",
+      },
     });
   });
 

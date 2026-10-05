@@ -10,6 +10,7 @@ import type { ClaudeDeliveryTranscriptReceiptReader } from
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import type {
   EngineFactory,
   RunnerProcessRuntimeFactory,
@@ -52,6 +53,7 @@ export interface TaskRuntimeCompositionParams {
   >;
   transientEventLogAggregator: TransientEventLogAggregator;
   worktreeResolver?: WorktreeExecutionResolver;
+  sessionMutations?: Pick<SessionMutationHost, "setModelSelection">;
 }
 
 export interface TaskRuntimeComposition {
@@ -160,6 +162,7 @@ export function composeTaskRuntime(
       await taskManager.resumeQueuedAfterTerminal(task, onResume);
     },
     params.worktreeResolver,
+    params.sessionMutations,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

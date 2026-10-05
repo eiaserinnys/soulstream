@@ -122,7 +122,7 @@ function laneRank(lane: InterventionPriorityLane): number {
   return lane === "high" ? 0 : 1;
 }
 
-function isRuntimeFollowup(message: InterventionMessage): boolean {
+export function isRuntimeFollowup(message: InterventionMessage): boolean {
   return message.deliveryIntent === "runtime_followup" ||
     message.source === LEGACY_RUNTIME_FOLLOWUP_SOURCE;
 }

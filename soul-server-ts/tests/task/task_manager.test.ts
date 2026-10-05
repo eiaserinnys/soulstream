@@ -5,6 +5,7 @@ import type { AgentRegistry } from "../../src/agent_registry.js";
 import type { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
 import type { SessionMutationHost } from "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import type {
   EnginePort,
   SupportsToolApproval,
@@ -285,6 +286,78 @@ describe("TaskManager model preset defaults", () => {
         modelPreset: "claude-opus",
       }),
     );
+  });
+
+  it("falls back to the profile backend when resolving a removed current preset for rollover", async () => {
+    const mocks = makeMocks();
+    const agentRegistry = {
+      get: vi.fn(() => ({
+        id: "source-agent",
+        name: "Source Agent",
+        backend: "claude",
+        default_preset: "source-preset",
+        workspace_dir: "/tmp/source-agent",
+      })),
+    } as unknown as AgentRegistry;
+    const modelCatalog = {
+      resolve: vi.fn((id: string) => {
+        if (id === "source-preset") {
+          return {
+            id,
+            label: "Source preset",
+            backend: "claude" as const,
+            model: "claude-source-model",
+            env: {},
+            supported_efforts: ["high" as const],
+            default_effort: "high" as const,
+          };
+        }
+        if (id === "codex-target") {
+          return {
+            id,
+            label: "Codex target",
+            backend: "codex" as const,
+            model: "codex-target-model",
+            env: {},
+            supported_efforts: ["high" as const],
+            default_effort: "high" as const,
+          };
+        }
+        throw new UnknownModelPresetError(id);
+      }),
+    };
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      mocks.persistence,
+      undefined,
+      agentRegistry,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      modelCatalog,
+    );
+    const task = await tm.createTask({
+      agentSessionId: "sess-removed-current-preset",
+      prompt: "continue",
+      profileId: "source-agent",
+      modelPreset: "source-preset",
+    });
+    task.persistent = true;
+    task.modelPreset = "removed-current-preset";
+    task.modelPresetBackend = undefined;
+
+    await expect(tm.persistentSessions.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-target",
+      reason: "manual",
+    })).resolves.toMatchObject({
+      sessionId: task.agentSessionId,
+      pendingGeneration: 2,
+      applies: "next_execution_start",
+    });
   });
 });
 
