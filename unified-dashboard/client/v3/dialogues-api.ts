@@ -1,5 +1,6 @@
 import type { ConfigModalApi } from "../components/ConfigModal";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
+import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
 import type { RecurringJob, RecurringJobRun } from "../lib/recurring-jobs";
 import type { AssignmentData } from "./AgentNodeAssignmentFields";
 import { reviewFolder, reviewFolders } from "./components-review-fixtures";
@@ -27,6 +28,16 @@ export const dialoguesAssignment: AssignmentData = {
         available: true,
         default_effort: "high",
         supported_efforts: ["low", "medium", "high"],
+        reason: null,
+        reason_label: null,
+        resets_at: null,
+        usage_warning: false,
+      },
+      {
+        id: "sample-opus",
+        label: "Opus",
+        backend: "claude",
+        available: true,
         reason: null,
         reason_label: null,
         resets_at: null,
@@ -180,6 +191,11 @@ export function createDialoguesApi() {
     },
   };
   const ownedAgents = createOwnedAgentsFixture(new URLSearchParams(window.location.search).get('ownedState') ?? 'normal');
+  const persistentSessions = createPersistentSessionsFixture({
+    scenario: new URLSearchParams(window.location.search).get("persistentState") ?? "normal",
+    nodeId: "sample-node",
+    folderId: dialoguesFolders[0]!.id,
+  });
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
     const path = url.pathname;
@@ -188,6 +204,7 @@ export function createDialoguesApi() {
     requests.push({ path, method });
     if (method !== "GET") record(`${method} ${path}`);
     if (path.startsWith('/api/owned-agents')) return ownedAgents(input, init);
+    if (path.startsWith("/api/persistent-sessions")) return persistentSessions(input, init);
     let value: unknown;
     if (path === "/cogito/briefs") value = {status:"ok",node_count:1,nodes:[{node_id:"sample-node",status:"ok",data:{status:"ok"}}]};
     else if (path === "/api/config/settings") {

@@ -189,6 +189,12 @@ export const dialoguesInventory = [
   },
   {
     section: "settings",
+    id: "confirm-persistent-session-release",
+    name: "영구 세션 해제 · browser confirm",
+    component: "confirmPersistentSessionRelease",
+  },
+  {
+    section: "settings",
     id: "ritual",
     name: "아침 정리",
     component: "RitualModal",

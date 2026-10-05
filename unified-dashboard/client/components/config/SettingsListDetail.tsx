@@ -83,6 +83,15 @@ export function SettingsDetailHeader({ title, subtitle, actions }: {
   );
 }
 
+export function SettingsGroupBox({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <div className="rounded border border-border p-3">
+      {title ? <p className="mb-2 text-sm font-medium">{title}</p> : null}
+      {children}
+    </div>
+  );
+}
+
 export function SettingsAlert({ children }: { children: ReactNode }) {
   return (
     <div role="alert" className="rounded border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">

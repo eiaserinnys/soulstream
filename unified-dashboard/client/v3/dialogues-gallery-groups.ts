@@ -10,5 +10,5 @@ export const webDialogueGroups: { id: string; title: string; ids: DialogueId[] }
   { id: "context", title: "컨텍스트", ids: ["atom-add", "atom-edit", "defaults-add", "defaults-edit"] },
   { id: "expand", title: "확대", ids: ["card-image", "file-image", "card-detail", "card-board", "document-overlay"] },
   { id: "mobile", title: "모바일 메뉴", ids: ["v3-sheet", "folder-sheet", "session-sheet"] },
-  { id: "native", title: "기본 확인창", ids: ["confirm-user", "confirm-recurring"] },
+  { id: "native", title: "기본 확인창", ids: ["confirm-user", "confirm-recurring", "confirm-persistent-session-release"] },
 ];

@@ -43,6 +43,7 @@ import { ChatTypographyTab } from "./ChatTypographyTab";
 import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
 import { UsageLogTab } from "./UsageLogTab";
 import { RecurringJobsTab } from "./RecurringJobsTab";
+import { PersistentSessionsTab } from "./PersistentSessionsTab";
 
 const LIQUID_GLASS_TAB_NAME = "liquid_glass";
 const CHAT_TAB_NAME = "chat";
@@ -53,6 +54,7 @@ const OWNED_AGENTS_TAB_NAME = "owned_agents";
 const SESSION_REVIEW_TAB_NAME = "session_review";
 const USAGE_LOG_TAB_NAME = "usage_log";
 const RECURRING_JOBS_TAB_NAME = "recurring_jobs";
+const PERSISTENT_TAB_NAME = "persistent";
 
 export interface ConfigModalApi {
   request: typeof fetch;
@@ -103,6 +105,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
       { name: OWNED_AGENTS_TAB_NAME, label: "내 에이전트" },
       { name: NODES_TAB_NAME, label: "노드" },
       { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
+      { name: PERSISTENT_TAB_NAME, label: "영구 에이전트 세션" },
       { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
       ...((api || user?.isAdmin) ? [
         { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
@@ -131,6 +134,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     selectedTab === CHAT_TAB_NAME ||
     selectedTab === NODES_TAB_NAME ||
     selectedTab === RECURRING_JOBS_TAB_NAME ||
+    selectedTab === PERSISTENT_TAB_NAME ||
     selectedTab === "file_storage" ||
     selectedTab === "card_dispatch" ||
     selectedTab === SESSION_REVIEW_TAB_NAME ||
@@ -145,7 +149,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     appearance: "나에게 편안한 배경과 대화 글자 크기를 고릅니다.",
     owned_agents: "내 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.",
     nodes: "작업을 실행할 기기와 연결 상태를 확인합니다.", agents: "에이전트의 프로필과 기본 실행 환경을 관리합니다.",
-    recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
+    recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", persistent: "Persistent Agent Session의 이름과 기본 모델을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
     users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
     file_storage: "첨부 파일을 보관할 저장소를 연결합니다.", usage_log: "사용 기록을 확인하고 필요한 범위로 좁힙니다.",
   };
@@ -196,6 +200,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                 </div>
               ) : selectedTab === RECURRING_JOBS_TAB_NAME ? (
                 <RecurringJobsTab api={api?.recurring} assignment={api?.assignment} />
+              ) : selectedTab === PERSISTENT_TAB_NAME ? (
+                <PersistentSessionsTab request={api?.request} assignment={api?.assignment} />
               ) : selectedTab === USAGE_LOG_TAB_NAME ? (
                 <UsageLogTab request={api?.request} />
               ) : selectedTab === SESSION_REVIEW_TAB_NAME ? (

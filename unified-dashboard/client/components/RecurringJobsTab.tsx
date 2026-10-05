@@ -30,6 +30,7 @@ import {
   SettingsAlert,
   SettingsDetailHeader,
   SettingsField,
+  SettingsGroupBox,
   SettingsListDetailFrame,
   SettingsListHeader,
   SettingsListRow,
@@ -240,8 +241,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor({ ...editor, enabled: event.target.checked })} />생성·저장 후 자동 실행</label>
         <SettingsMultilineField label="작업 내용" value={editor.prompt} onChange={(prompt) => setEditor({ ...editor, prompt })} />
 
-        <div className="rounded border border-border p-3">
-          <p className="mb-2 text-sm font-medium">실행 대상</p>
+        <SettingsGroupBox title="실행 대상">
           <AgentNodeAssignmentFields data={assignment}
             agentId={editor.agentId}
             nodeId={editor.nodeId}
@@ -252,7 +252,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
             onModelPresetChange={(modelPreset) => setEditor((current) => ({ ...current, modelPreset }))}
             onError={(next) => setError(next)}
           />
-        </div>
+        </SettingsGroupBox>
 
         <div className="grid gap-3 rounded border border-border p-3 sm:grid-cols-2">
           <NewSessionFolderSelector
