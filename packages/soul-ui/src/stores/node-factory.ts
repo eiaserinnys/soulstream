@@ -34,7 +34,6 @@ import type {
   TextNode,
 } from "@shared/types";
 import { formatRetryingErrorHistory } from "@shared/sse-events";
-import { isJevCardObservation } from "../../../wire-schema/src/card_observation";
 import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-content";
 import type { ProcessingContext } from "./processing-context";
@@ -398,13 +397,7 @@ export function createNodeFromEvent(
           },
         );
       }
-      if (!isJevCardObservation(event)) return null;
-      return makeNode(`card-observation-${eventId}`, "card_observation", event.content, {
-        completed: true,
-        observation: event,
-        finalResponseEventId: event.final_response_event_id,
-        timestamp: event.timestamp,
-      });
+      return null;
     }
 
     case "turn_summary": {

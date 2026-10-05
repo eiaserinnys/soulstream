@@ -153,9 +153,6 @@ export interface DebugEvent {
   message?: string;
   kind?: string;
   content?: string;
-  complete_event_id?: number;
-  final_response_event_id?: number;
-  details?: string[];
   capture?: unknown;
   timestamp?: number;
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
