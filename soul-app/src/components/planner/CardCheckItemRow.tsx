@@ -60,7 +60,7 @@ export function CardCheckItemRow({
   const imageSources = images.map((evidence) => cardImageSource(evidence.url, serverUrl, jwt));
   const running = item.display === 'doing';
   const color = statusColor(item, t);
-  const rowExpanded = expanded;
+  const rowExpanded = expanded || item.display === 'dropped';
 
   return (
     <View

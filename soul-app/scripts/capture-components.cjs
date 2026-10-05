@@ -177,8 +177,10 @@ async function captureAllChecked(page, base, { phone, shot, name }) {
   await page.getByTestId('card-check-items-confirmed-group').waitFor();
   await shot('all-checked');
   await shot('all-confirmed');
-  const requests = await page.evaluate(() => window.__cardChecksRequests ?? []);
-  assert.equal(requests.some((entry) => entry.kind === 'status' || entry.kind === 'complete'), false);
+  const mutations = await page.evaluate(() => window.__soulAppEntryShellCardMutations ?? null);
+  assert.ok(Array.isArray(mutations), '상태 변경 기록기가 연결되지 않았습니다.');
+  assert.equal(mutations.filter((entry) => entry.id === 'public-card-checks'
+    && (entry.method === 'setCardStatus' || entry.method === 'executeCard')).length, 0);
   result.interactions.push(`${name}: 전부 확인된 화면에서 완료 강조와 자동 상태 변경 없음`);
 }
 
@@ -316,9 +318,19 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
     await page.getByText('인계 노트 11의 공개 예시입니다.', { exact: true }).waitFor();
     assert.equal(await page.getByText('인계 노트 10의 공개 예시입니다.', { exact: true }).count(), 0);
     await shot('notes');
+    await page.getByTestId('settings-segment-card-detail-sessions').click();
+    await page.getByTestId('card-sessions').waitFor();
+    const chatHeader = page.getByTestId('tablet-chat-header');
+    const chatBefore = (await chatHeader.textContent())?.trim() ?? '';
     const sessionRow = page.getByTestId('task-run-row-public-shell-session-1');
-    if (await sessionRow.count()) await sessionRow.click();
-    await page.getByTestId('task-workspace-chat-pane').waitFor();
+    await sessionRow.waitFor();
+    await sessionRow.click();
+    await page.waitForFunction((previous) => {
+      const current = document.querySelector('[data-testid="tablet-chat-header"]')?.textContent?.trim() ?? '';
+      return current.length > 0 && current !== previous;
+    }, chatBefore);
+    const chatAfter = (await chatHeader.textContent())?.trim() ?? '';
+    assert.notEqual(chatAfter, chatBefore, '세션 행을 눌러도 오른쪽 대화가 바뀌지 않았습니다.');
     await page.getByLabel('뒤로').click();
     await page.waitForFunction(() => (document.querySelector('[data-testid="task-workspace-overlay"]')
       && getComputedStyle(document.querySelector('[data-testid="task-workspace-overlay"]')).pointerEvents === 'none')

@@ -21,7 +21,8 @@ import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCa
 import { formatRelativeTime } from '../../lib/relative-time';
 import { CardRequestView } from './CardRequestView';
 import { CardReportView } from './CardReportView';
-import { cardItemDisplayColor, summarizeCardItems } from '../../lib/card-check-item-summary';
+import { cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
+import { useCardStore } from '../../store/cardStore';
 import { withAlphaColor } from '../StatusPulseDecoration';
 
 export function CardStatusChip({ card, title = false, board = false, detail = false, colors }: { card: CardDto; title?: boolean; board?: boolean; detail?: boolean; colors?: ColorScheme }) {
@@ -50,12 +51,13 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
   const t = useTokens();
   const styles = useMemo(() => makeSessionCardStyles(t, true), [t]);
   const { detail } = useCardDetail(api, board ? null : card.id);
+  const pendingItemConfirmations = useCardStore((state) => state.pendingItemConfirmations[card.id] ?? EMPTY_PENDING_ITEM_CONFIRMATIONS);
   const folders = useSessionStore((state) => state.catalog.folders);
   const assigned = useSessionStore((state) => card.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
   const profile = useMemo(() => decodeAuthJwt(jwt), [jwt]);
-  const itemSummary = useMemo(() => summarizeCardItems(card.items), [card.items]);
+  const itemSummary = useMemo(() => summarizeCardItems(card.items, pendingItemConfirmations), [card.items, pendingItemConfirmations]);
   const agentId = assigned?.agentId ?? card.assigneeAgentId;
   const nodeId = assigned?.nodeId ?? card.nodeId;
   const identity = { agentSessionId: card.assigneeSessionId ?? card.id, agentId, agentName: assigned?.agentName,

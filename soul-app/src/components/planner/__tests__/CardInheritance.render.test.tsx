@@ -69,6 +69,8 @@ test.each(['phone', 'tabletLandscape'] as const)('%s 카드 행은 세션 카드
 });
 test('카드 배경은 폴더 컨테이너이고 small은 폴더 히스토리의 여백·초상·간격을 상속한다', async () => {
   const screen = await content();
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
+  await waitFor(() => expect(screen.getByTestId('card-sessions')).toBeTruthy());
   const { result } = renderHook(() => useTokens());
   expect(flat(screen.getByTestId('card-detail-container').props.style)).toMatchObject(makeFolderWorkspaceStyles(result.current).container);
   expect(screen.UNSAFE_getByType(FolderSessionHistory).props.compact).toBeUndefined();

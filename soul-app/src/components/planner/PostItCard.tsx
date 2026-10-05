@@ -20,7 +20,8 @@ import type { PlannerContextMenuAction } from '../../lib/planner-context-menu-mo
 import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCardDisplay';
 import { CardStatusChip } from './CardRow';
 import { CardStatusMenu } from './CardStatusMenu';
-import { cardItemDisplayColor, summarizeCardItems } from '../../lib/card-check-item-summary';
+import { cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
+import { useCardStore } from '../../store/cardStore';
 
 export function postItRotation(id: string) {
   return ((Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 5) - 2) * 0.4;
@@ -77,6 +78,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
   const [menu, setMenu] = useState<CardMenuState | null>(null);
   const [requestedStatus, setRequestedStatus] = useState<CardStatus | null>(null);
   const assigned = useSessionStore((state) => card.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
+  const pendingItemConfirmations = useCardStore((state) => state.pendingItemConfirmations[card.id] ?? EMPTY_PENDING_ITEM_CONFIRMATIONS);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
   const identity = {
@@ -92,7 +94,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
   const { transition, pending } = useCardTransition(api, card.id);
   const activity = card.latestActivity;
   const body = activity ? postItActivityText(activity) : card.request || '아직 지시나 보고가 없습니다.';
-  const itemSummary = summarizeCardItems(card.items);
+  const itemSummary = summarizeCardItems(card.items, pendingItemConfirmations);
   const canInteract = () => canPress() && !suppressDirectPress.current;
   const open = () => {
     if (!canInteract()) return;

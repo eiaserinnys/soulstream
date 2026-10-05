@@ -33,8 +33,15 @@ import { CardNowPanel } from './CardNowPanel';
 import { CardNotes } from './CardNotes';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { resolveTabletBottomSafeAreaPadding } from '../split/tabletShellInsets';
+import { summarizeCardItems } from '../../lib/card-check-item-summary';
 
 type CardDetailTab = 'items' | 'comments' | 'sessions' | 'notes';
+type CardDetailVisitState = {
+  cardId: string;
+  initialTab: CardDetailTab;
+  initiallyConfirmedIds: number[];
+  newlyConfirmedIds: number[];
+};
 
 export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
   api: ApiClient | null; cardId: string | null; onClose(): void; onOpenSession?(id: string): void;
@@ -75,6 +82,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const [dockHeight, setDockHeight] = useState(0);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   const [tabChoice, setTabChoice] = useState<{ cardId: string; value: CardDetailTab } | null>(null);
+  const [visitState, setVisitState] = useState<CardDetailVisitState | null>(null);
   const [targetChoice, setTargetChoice] = useState<{ cardId: string; item: CardCheckItem } | null>(null);
   const [unreadChoice, setUnreadChoice] = useState<{ cardId: string; value: boolean } | null>(null);
   const [noticeChoice, setNoticeChoice] = useState<{ cardId: string; value: boolean } | null>(null);
@@ -83,13 +91,23 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const card = detail?.card;
   const cardItems = itemActions.items;
-  const initialTab: CardDetailTab = cardItems.length > 0 ? 'items' : 'comments';
+  const firstVisit = detail?.card.id === cardId ? {
+    cardId,
+    initialTab: (detail.card.items?.length ?? 0) > 0 ? 'items' as const : 'comments' as const,
+    initiallyConfirmedIds: (detail.card.items ?? []).filter((item) => item.display === 'confirmed').map((item) => item.id),
+    newlyConfirmedIds: [],
+  } : null;
+  if (firstVisit && visitState?.cardId !== cardId) setVisitState(firstVisit);
+  const currentVisit = visitState?.cardId === cardId ? visitState : firstVisit;
+  const initialTab = currentVisit?.initialTab ?? 'comments';
   const tab = tabChoice?.cardId === cardId ? tabChoice.value : initialTab;
+  const itemSummary = useMemo(() => summarizeCardItems(cardItems, itemActions.pendingConfirmations),
+    [cardItems, itemActions.pendingConfirmations]);
   const targetItem = targetChoice?.cardId === cardId ? targetChoice.item : null;
   const commentUnread = unreadChoice?.cardId === cardId && unreadChoice.value;
   const sendNotice = noticeChoice?.cardId === cardId && noticeChoice.value;
-  const allConfirmed = cardItems.length > 0 && cardItems.every((item) => item.display === 'dropped' || itemActions.isConfirmed(item));
-  const needsReview = cardItems.filter((item) => item.display === 'reported' || item.display === 'changed').length;
+  const allConfirmed = itemSummary.total > 0 && itemSummary.unconfirmed.length === 0;
+  const needsReview = itemSummary.needsReview;
   const tabletLandscape = tablet && windowWidth > windowHeight;
   const startable = card?.status === 'todo' || card?.status === 'queued';
   const startPhase = statusAction.execution?.phase;
@@ -121,6 +139,19 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const setItemTarget = (item: CardCheckItem) => {
     setTargetChoice({ cardId, item });
     requestAnimationFrame(() => composer.current?.focus());
+  };
+  const setRecentConfirmation = (itemId: number, confirmed: boolean) => {
+    setVisitState((current) => {
+      if (current?.cardId !== cardId) return current;
+      const exists = current.newlyConfirmedIds.includes(itemId);
+      if (exists === confirmed) return current;
+      return {
+        ...current,
+        newlyConfirmedIds: confirmed
+          ? [...current.newlyConfirmedIds, itemId]
+          : current.newlyConfirmedIds.filter((id) => id !== itemId),
+      };
+    });
   };
   const onOverlapChange = useCallback((overlap: number) => setKeyboardOverlap(overlap), []);
   useEffect(() => {
@@ -214,6 +245,9 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
           {!detail ? <ActivityIndicator color={t.colors.accent} /> : null}
           {detail && tab === 'items' ? <CardCheckItems key={cardId} items={cardItems}
             pendingConfirmations={itemActions.pendingConfirmations} onConfirm={itemActions.confirm}
+            initiallyConfirmedIds={currentVisit?.initiallyConfirmedIds ?? []}
+            newlyConfirmedIds={currentVisit?.newlyConfirmedIds ?? []}
+            onRecentConfirmation={setRecentConfirmation}
             onSetTarget={setItemTarget} paneWidth={frameWidth} /> : null}
           {detail && tab === 'comments' ? <CardTimeline detail={detail} onChooseAnswer={chooseAnswer} /> : null}
           {detail && tab === 'sessions' ? <View testID="card-sessions" style={styles.sessions}>

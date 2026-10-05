@@ -11,12 +11,15 @@ const history: CardNowHistoryEntry[] = [
 
 test('이전·다음은 상황만 넘기고 최신 now 및 확인 항목 상태를 바꾸지 않는다', () => {
   const screen = render(<CardNowPanel now={now} history={history} />);
+  fireEvent(screen.getByTestId('card-now-panel'), 'layout', { nativeEvent: { layout: { width: 320, height: 140 } } });
   expect(screen.getByText(now.text)).toBeTruthy();
   fireEvent.press(screen.getByLabelText('이전 상황'));
   expect(screen.getByText('지난 확인입니다.')).toBeTruthy();
+  expect(screen.getByTestId('card-now-panel-frame').props.style).toEqual({ height: 140 });
   expect(screen.getByText('아래 확인 항목은 지금 상태입니다.')).toBeTruthy();
-  fireEvent.press(screen.getByLabelText('최신 상황'));
+  fireEvent.press(screen.getByLabelText('다음 상황'));
   expect(screen.getByText(now.text)).toBeTruthy();
+  expect(screen.getByTestId('card-now-panel-frame').props.style).toBeUndefined();
 });
 
 test('nowHistory 한 건은 현재 슬롯으로 바꾸어 그려 중복 이전 항목을 만들지 않는다', () => {

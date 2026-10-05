@@ -196,7 +196,7 @@ function DailyNavigator() {
         component={PhoneDailyFolderWorkspace}
         options={({ route }) => ({ title: route.params.folderTitle })}
       />
-      <DailyStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ headerShown: false }} />
+      <DailyStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
     </DailyStack.Navigator>
   );
 }
@@ -269,7 +269,7 @@ function FolderNavigator() {
         component={PhoneFolderListWorkspace}
         options={({ route }) => ({ title: route.params.folderTitle })}
       />
-      <FolderStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ headerShown: false }} />
+      <FolderStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
     </FolderStack.Navigator>
   );
 }

@@ -48,8 +48,13 @@ export function CardNowPanel({
 
   const showHistory = history.length > 1;
   const moveTo = (nextIndex: number) => {
+    if (nextIndex === entries.length - 1) {
+      setSelectedIndex(null);
+      setPinnedHeight(null);
+      return;
+    }
     if (selectedIndex === null) setPinnedHeight(currentHeight.current);
-    setSelectedIndex(nextIndex === entries.length - 1 ? null : nextIndex);
+    setSelectedIndex(nextIndex);
   };
   const completePrompt = allConfirmed && isLatest;
   const bandText = completePrompt

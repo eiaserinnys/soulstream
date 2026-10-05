@@ -90,7 +90,8 @@ const entryShellApi = {
 };
 
 function createCardChecksReviewApi(): ApiClient {
-  const params = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search);
+  const location = typeof window === 'undefined' ? undefined : window.location;
+  const params = new URLSearchParams(location?.search ?? '');
   const scenario = params.get('state') ?? 'normal';
   const legacy = scenario === 'legacy';
   const currentAt = '2026-10-05T01:00:00Z';
@@ -102,8 +103,8 @@ function createCardChecksReviewApi(): ApiClient {
     sessionId: cardChecksSessionId,
   };
   const itemAsset = Asset.fromModule(require('../../assets/icon.png')).uri;
-  const itemImage = typeof window !== 'undefined'
-    ? new URL(itemAsset, window.location.origin).href
+  const itemImage = location?.origin
+    ? new URL(itemAsset, location.origin).href
     : itemAsset;
   const itemState = (id: number): CardCheckItem => {
     const confirmedAll = scenario === 'all-confirmed' && id !== 7;
