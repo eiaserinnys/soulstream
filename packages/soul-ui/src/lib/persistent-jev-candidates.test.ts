@@ -29,6 +29,11 @@ describe("persistent Jev candidate projection", () => {
     }
     expect(formatPersistentJevCandidates({ selected: [] })).toEqual(["2점 이상인 후보가 없습니다."]);
     expect(isPersistentJevCandidatesDebugEvent({ ...raw, observation: { ...raw.observation, selected: [{ kind: "card" }] } })).toBe(false);
+    const card = { kind: "card", card_id: "card-1", label: "#412", line: "카드 한 줄", score: 0 };
+    expect(isPersistentJevCandidatesDebugEvent(event("input-a", 13, [card]))).toBe(false);
+    expect(isPersistentJevCandidatesDebugEvent(event("input-a", 14, [{ ...card, score: 1 }]))).toBe(false);
+    expect(isPersistentJevCandidatesDebugEvent(event("input-a", 15, Array.from({ length: 6 }, (_, index) => ({ ...card, card_id: `card-${index}` }))))).toBe(false);
+    expect(isPersistentJevCandidatesDebugEvent(event("input-a", 16, [{ ...card, unexpected: true }]))).toBe(false);
   });
 
   it("anchors late records below their exact loaded input and preserves distinct records", () => {

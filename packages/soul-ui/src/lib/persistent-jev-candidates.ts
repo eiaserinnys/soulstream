@@ -1,3 +1,5 @@
+import { isPersistentJevCandidatesDebugEvent as isWirePersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
+
 export interface PersistentJevCandidate {
   label: string;
   line: string;
@@ -17,25 +19,10 @@ export interface PersistentJevCandidatesProjectionItem {
   preparedInputId?: string;
 }
 
-/** Temporary web boundary guard; replace its body with the shared wire guard after PR #1271 merges. */
 export function isPersistentJevCandidatesDebugEvent(
   value: unknown,
 ): value is { type: "debug"; kind: "persistent_jev_candidates"; observation: PersistentJevObservation; timestamp?: number } {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const event = value as Record<string, unknown>;
-  if (event.type !== "debug" || event.kind !== "persistent_jev_candidates") return false;
-  const observation = event.observation;
-  if (observation === null || typeof observation !== "object" || Array.isArray(observation)) return false;
-  const raw = observation as Record<string, unknown>;
-  if (typeof raw.input_id !== "string" || raw.input_id.length === 0 || !Array.isArray(raw.selected) || raw.selected.length > 5) return false;
-  return raw.selected.every((candidate) => {
-    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) return false;
-    const row = candidate as Record<string, unknown>;
-    return (row.kind === "turn_summary" || row.kind === "card" || row.kind === "session")
-      && typeof row.label === "string"
-      && typeof row.line === "string"
-      && (row.score === 2 || row.score === 3);
-  });
+  return isWirePersistentJevCandidatesDebugEvent(value);
 }
 
 export function formatPersistentJevCandidates(observation: Pick<PersistentJevObservation, "selected">): string[] {

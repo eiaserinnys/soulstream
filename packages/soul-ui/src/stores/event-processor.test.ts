@@ -187,7 +187,13 @@ describe("processEventsBatch — dedup", () => {
     const ctx = createProcessingContext();
     const jevEvent = {
       type: "debug", kind: "persistent_jev_candidates", timestamp: 15,
-      observation: { input_id: "input-late", selected: [{ kind: "card", label: "#412", line: "카드 한 줄", score: 2 }] },
+      observation: {
+        input_id: "input-late",
+        selected: [{ kind: "card", card_id: "card-412", label: "#412", line: "카드 한 줄", score: 2 }],
+        candidate_counts: { turn_summaries: 0, cards: 1, search_sessions: 0, recent_completed_sessions: 0 },
+        model: "jev-latest",
+        latency_ms: 1,
+      },
     } as unknown as SoulSSEEvent;
     const first = processEventsBatch([{ event: jevEvent, eventId: 15 }], ctx, null, "sess-1", null, 0, true);
     expect(flattenTree(first.root)).toEqual([]);
