@@ -115,6 +115,22 @@ describe("card item confirmation",()=>{
   expect(useCardStore.getState().details.c.card).toEqual(newer);
   expect(useCardStore.getState().pendingItemConfirmations.c).toBeUndefined();
  });
+ it("stores first detail when a delayed GET arrives after confirmation",async()=>{
+  const current=card("c","running",{items:[makeItem(1,"doing")]});let finishGet!:(response:Response)=>void;
+  useCardStore.setState({byId:{c:current as never},details:{}});
+  const newer={...current,version:4,items:[makeItem(1,"confirmed")]};
+  const incoming={card:{...current,version:3},reports:[{id:"report"}],questions:[{id:"question"}],notes:[{id:"note"}],sessions:[{sessionId:"session"}],comments:[{id:"comment"}],nowHistory:[{text:"이력"}]};
+  vi.stubGlobal("fetch",vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{finishGet=resolve;}))
+   .mockResolvedValueOnce(new Response(JSON.stringify({card:newer}))));
+  const refresh=useCardStore.getState().loadCard("c");
+  await useCardStore.getState().confirmItem("c",1,true);
+  expect(useCardStore.getState().details.c).toBeUndefined();
+  finishGet(new Response(JSON.stringify(incoming)));
+  const result=await refresh;
+  expect(result).toEqual({...incoming,card:newer});
+  expect(useCardStore.getState().details.c).toBe(result);
+  expect(useCardStore.getState().byId.c).toEqual(newer);
+ });
  it("keeps a confirmed card and its folder when a delayed SSE GET arrives last",async()=>{
   const current=setup();let finishGet!:(response:Response)=>void;
   const newer={...current,version:4,folderId:"new-folder",items:[makeItem(1,"confirmed"),makeItem(2,"confirmed")]};
