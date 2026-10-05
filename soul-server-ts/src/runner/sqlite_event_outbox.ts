@@ -537,38 +537,41 @@ export class RunnerSqliteEventOutbox {
         `).get() as unknown as RunnerEventOutboxRow | undefined;
         if (!row) throw new Error("runner bootstrap record required before backend session rotation");
         const current = runnerRowToBootstrap(row);
+        const currentBackendSessionId = current.payload.backend_session_id;
         if (
-          current.payload.backend_session_id
-          !== backendSessionRotation.expectedBackendSessionId
+          currentBackendSessionId !== backendSessionRotation.expectedBackendSessionId
+          && currentBackendSessionId !== backendSessionRotation.backendSessionId
         ) {
           throw new Error("runner backend session rotation expected backend session ID mismatch");
         }
-        const rotatedUnsigned = {
-          stream_id: current.stream_id,
-          source_seq: current.source_seq,
-          session_id: current.session_id,
-          event_type: current.event_type,
-          payload: {
-            ...current.payload,
-            backend_session_id: backendSessionRotation.backendSessionId,
-          },
-          searchable_text: current.searchable_text,
-          created_at: current.created_at,
-          semantic_dedupe_key: current.semantic_dedupe_key,
-          session_effect: current.session_effect,
-        };
-        rotatedBootstrap = {
-          ...rotatedUnsigned,
-          payload_hash: computeEventOutboxPayloadHash(rotatedUnsigned),
-        };
-        this.database.prepare(`
-          UPDATE runner_event_outbox
-          SET payload_json = ?, payload_hash = ?
-          WHERE record_kind = 'bootstrap' AND source_seq = 1
-        `).run(
-          JSON.stringify(rotatedBootstrap.payload),
-          rotatedBootstrap.payload_hash,
-        );
+        if (currentBackendSessionId === backendSessionRotation.expectedBackendSessionId) {
+          const rotatedUnsigned = {
+            stream_id: current.stream_id,
+            source_seq: current.source_seq,
+            session_id: current.session_id,
+            event_type: current.event_type,
+            payload: {
+              ...current.payload,
+              backend_session_id: backendSessionRotation.backendSessionId,
+            },
+            searchable_text: current.searchable_text,
+            created_at: current.created_at,
+            semantic_dedupe_key: current.semantic_dedupe_key,
+            session_effect: current.session_effect,
+          };
+          rotatedBootstrap = {
+            ...rotatedUnsigned,
+            payload_hash: computeEventOutboxPayloadHash(rotatedUnsigned),
+          };
+          this.database.prepare(`
+            UPDATE runner_event_outbox
+            SET payload_json = ?, payload_hash = ?
+            WHERE record_kind = 'bootstrap' AND source_seq = 1
+          `).run(
+            JSON.stringify(rotatedBootstrap.payload),
+            rotatedBootstrap.payload_hash,
+          );
+        }
       }
       const sourceSeq = latestSequence(this.database) + 1;
       const unsigned = {

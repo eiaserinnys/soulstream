@@ -369,7 +369,8 @@ export class RunnerChildRuntime {
     }
     const event = frame.payload as SSEEventPayload;
     this.recordEngineProgress(event);
-    let effect = sessionIdEffect(event);
+    const sessionEffect = sessionIdEffect(event);
+    let effect = sessionEffect;
     let backendSessionRotation: {
       expectedBackendSessionId: string;
       backendSessionId: string;
@@ -387,8 +388,8 @@ export class RunnerChildRuntime {
         backendSessionRotation.backendSessionId,
       );
     }
-    const backendSessionId = effect?.kind === "set_backend_session_id"
-      ? effect.backend_session_id
+    const backendSessionId = sessionEffect?.kind === "set_backend_session_id"
+      ? sessionEffect.backend_session_id
       : null;
     const bootstrap = await this.outbox.readBootstrap();
     if (!bootstrap && requiresBackendSessionId(this.config.backend)) {
@@ -469,22 +470,22 @@ export class RunnerChildRuntime {
     command: Extract<RunnerCommandFrame, { kind: "execute" }>,
   ): Promise<void> {
     const bootstrap = await this.outbox.readBootstrap();
-    if (bootstrap) {
-      const rolloverFrom = command.params.backendSessionRolloverFrom;
-      if (rolloverFrom !== undefined) {
-        if (this.config.backend !== "claude") {
-          throw new Error("runner backend session rollover is Claude-only");
-        }
-        if (command.params.resumeSessionId !== undefined) {
-          throw new Error("runner backend session rollover cannot also resume");
-        }
-        if (bootstrap.payload.backend_session_id !== rolloverFrom) {
-          throw new Error("runner backend session rollover conflicts with durable bootstrap");
-        }
-        this.pendingBackendSessionRolloverFrom = rolloverFrom;
-        this.beginLifecycle(command.commandId);
-        return;
+    const rolloverFrom = command.params.backendSessionRolloverFrom;
+    if (rolloverFrom !== undefined) {
+      if (!requiresBackendSessionId(this.config.backend)) {
+        throw new Error("runner backend session rollover requires native session IDs");
       }
+      if (command.params.resumeSessionId !== undefined) {
+        throw new Error("runner backend session rollover cannot also resume");
+      }
+      if (bootstrap && bootstrap.payload.backend_session_id !== rolloverFrom) {
+        throw new Error("runner backend session rollover conflicts with durable bootstrap");
+      }
+      this.pendingBackendSessionRolloverFrom = rolloverFrom;
+      this.beginLifecycle(command.commandId);
+      return;
+    }
+    if (bootstrap) {
       const resumeSessionId = command.params.resumeSessionId;
       if (
         resumeSessionId !== undefined
@@ -494,9 +495,6 @@ export class RunnerChildRuntime {
       }
       this.beginLifecycle(command.commandId);
       return;
-    }
-    if (command.params.backendSessionRolloverFrom !== undefined) {
-      throw new Error("runner backend session rollover requires durable bootstrap");
     }
     if (command.params.resumeSessionId !== undefined) {
       await this.ensureBootstrap(command.params.resumeSessionId, command.commandId);
