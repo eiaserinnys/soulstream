@@ -51,12 +51,14 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
     if (!api || !canSend) return;
     if (submitting.current) return;
     const submitted = text;
+    const submittedAttachments = attachments.attachments;
     submitting.current = true; setPending(true);
     draft.clear();
+    attachments.clearAttachments();
     const scope = captureAuthScope().generation;
     try {
       const { payload, submitNodeId } = buildNewSessionCreatePayload({ text: submitted, selectedFolderId: value.folderId,
-        agentId: value.agentId, selectedNodeId: value.nodeId, settingsNodeId: settings.nodeId, attachments: attachments.attachments });
+        agentId: value.agentId, selectedNodeId: value.nodeId, settingsNodeId: settings.nodeId, attachments: submittedAttachments });
       const response = await api.createSession({ ...payload, modelPreset: value.modelPreset ?? labels.effectiveModelPresetId ?? undefined });
       if (captureAuthScope().generation !== scope) return;
       commitNewSessionCreation({ response, text: submitted, selectedFolderId: value.folderId, submitNodeId, agentId: value.agentId,
@@ -69,6 +71,7 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
       setUploadId(Crypto.randomUUID());
     } catch (cause) {
       setText(current => current && current !== submitted ? `${submitted}\n\n${current}` : submitted);
+      attachments.restoreAttachments(submittedAttachments);
       Alert.alert('세션 시작 실패', cause instanceof Error ? cause.message : String(cause));
     }
     finally { submitting.current = false; setPending(false); }

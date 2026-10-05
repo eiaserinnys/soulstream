@@ -45,17 +45,21 @@ function FolderCardComposer({ api, folderId, onCreated }: { api: ApiClient | nul
     if (!api || !text.trim() || locked) return;
     if (!value.folderId || !value.agentId) { setSelecting(true); return; }
     const submitted = text;
+    const submittedAttachments = attachments.attachments;
     let accepted = false;
-    const onAccepted = () => { accepted = true; draft.clear(); };
+    const onAccepted = () => { accepted = true; draft.clear(); attachments.clearAttachments(); };
     const ok = await run(() => api.createCard({ folderId: value.folderId, title: submitted.trim().split('\n')[0], request: submitted, queue: true,
       assignee: { kind: 'agent', agentId: value.agentId }, nodeId: value.nodeId, modelPreset: value.modelPreset,
-      attachments: cardFiles(attachments.attachments), idempotencyKey: cardOperationId() }), onAccepted);
+      attachments: cardFiles(submittedAttachments), idempotencyKey: cardOperationId() }), onAccepted);
     if (!ok) {
-      if (accepted) setText(current => current && current !== submitted ? `${submitted}\n\n${current}` : submitted);
+      if (accepted) {
+        setText(current => current && current !== submitted ? `${submitted}\n\n${current}` : submitted);
+        attachments.restoreAttachments(submittedAttachments);
+      }
       return;
     }
     settings.setCardAssignment(settings.serverUrl, value);
-    attachments.clearAttachments(); setUploadId(Crypto.randomUUID()); onCreated?.();
+    setUploadId(Crypto.randomUUID()); onCreated?.();
   };
   return <>
     <PlannerForegroundCard testID="card-composer">
