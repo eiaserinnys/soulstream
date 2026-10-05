@@ -794,7 +794,7 @@ def test_generation_started_event_contract() -> None:
     event_definition = schema["$defs"]["SSEEventGenerationStarted"]
     assert event_definition["additionalProperties"] is True
     assert schema["x-soulstream-event-durability"]["generation_started"] == "durable"
-    assert "generation_started" not in schema["x-soulstream-session-timeline-event-types"]
+    assert "generation_started" in schema["x-soulstream-session-timeline-event-types"]
 
 
 def test_control_command_inventory_names_are_schema_generated() -> None:

@@ -13,20 +13,34 @@ type SqlCall = {
 };
 
 describe("live DB session history provider", () => {
-  it("reloads only prepared-card debug observations", async () => {
-    const payload={type:"debug",kind:"assigned_card_context_snapshot",content:"담당 카드 입력 준비"};
+  it("reloads both supported debug observations through the three timeline cursor branches", async () => {
+    const payload={type:"debug",kind:"persistent_jev_candidates",observation:{input_id:"input-1"}};
+    const generationPayload={generation:2,reason:"user_requested",previous_generation:1,current_generation:2,checkpoint:{},timestamp:"2026-10-05T00:00:00Z"};
     const harness=createSqlHarness(text=>{
       if(text.includes("SELECT EXISTS")) return [{exists:true}];
       if(text.includes("event_type = ANY")) {
-        expect(text).toContain("payload->>'kind' = 'assigned_card_context_snapshot'");
-        return [{id:40,event_type:"debug",payload,created_at:new Date("2026-10-02T00:00:00Z")}];
+        expect(text).toContain("persistent_jev_candidates");
+        expect(text).toContain("assigned_card_context_snapshot");
+        return [
+          {id:41,event_type:"generation_started",payload:generationPayload,created_at:new Date("2026-10-03T00:00:00Z")},
+          {id:40,event_type:"debug",payload,created_at:new Date("2026-10-02T00:00:00Z")},
+        ];
       }
       return [];
     });
     const provider=createLiveDbCatalogRepository({sql:harness.sql}).sessionHistoryProvider;
-    const [rows]=await provider.readTimeline("sess-1",null,10);
-    expect(rows).toEqual([expect.objectContaining({event_type:"debug",payload:expect.objectContaining({kind:"assigned_card_context_snapshot"})})]);
-    expect(harness.calls.find(c=>c.text.includes("event_type = ANY"))?.values).toContainEqual(expect.arrayContaining(["debug"]));
+    for(const before of [null,"2026-10-04T00:00:00.000Z","2026-10-04T00:00:00.000Z,42"]){
+      const [rows]=await provider.readTimeline("sess-1",before,10);
+      expect(rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({event_type:"debug",payload}),
+        expect.objectContaining({event_type:"generation_started",payload:generationPayload}),
+      ]));
+    }
+    const filters=harness.calls.filter(c=>c.text.includes("event_type = ANY"));
+    expect(filters).toHaveLength(3);
+    for(const call of filters){
+      expect(call.values).toContainEqual(expect.arrayContaining(["debug","generation_started"]));
+    }
   });
   it("reads viewport, last id, and raw events using the canonical DB queries", async () => {
     const harness = createSqlHarness((text) => {

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 158개 $defs (top-level wire 81 + supporting/SSE 77). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 163개 $defs (top-level wire 81 + supporting/SSE 82). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -573,7 +573,80 @@ export interface SSEEventInputRequestResponded {
  */
 export interface SSEEventDebug {
   type: "debug";
+  observation?: PersistentJevObservation;
   [k: string]: unknown;
+}
+/**
+ * 입력 시점에 Jev가 고른 과거 자료 기록.
+ */
+export interface PersistentJevObservation {
+  input_id: string;
+  /**
+   * @maxItems 5
+   */
+  selected:
+    | []
+    | [PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate]
+    | [
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate
+      ]
+    | [
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate
+      ]
+    | [
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate
+      ]
+    | [
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate,
+        PersistentJevTurnSummaryCandidate | PersistentJevCardCandidate | PersistentJevSessionCandidate
+      ];
+  candidate_counts: PersistentJevCandidateCounts;
+  model: "jev-latest";
+  latency_ms: number;
+}
+export interface PersistentJevTurnSummaryCandidate {
+  kind: "turn_summary";
+  session_id: string;
+  summary_event_id: number;
+  turn_number: number;
+  label: string;
+  line: string;
+  score: number;
+}
+export interface PersistentJevCardCandidate {
+  kind: "card";
+  card_id: string;
+  card_number?: number;
+  label: string;
+  line: string;
+  score: number;
+}
+export interface PersistentJevSessionCandidate {
+  kind: "session";
+  session_id: string;
+  label: string;
+  line: string;
+  score: number;
+  /**
+   * @minItems 1
+   * @maxItems 2
+   */
+  sources?: ["search" | "recent_completed"] | ["search" | "recent_completed", "search" | "recent_completed"];
+}
+export interface PersistentJevCandidateCounts {
+  turn_summaries: number;
+  cards: number;
+  search_sessions: number;
+  recent_completed_sessions: number;
 }
 /**
  * SSE: 턴 종료.
@@ -2832,6 +2905,7 @@ export const SESSION_TIMELINE_EVENT_TYPES = [
   "credential_alert",
   "realtime_status",
   "realtime_transcript",
+  "generation_started",
 ] as const;
 export type SessionTimelineEventType = (typeof SESSION_TIMELINE_EVENT_TYPES)[number];
 

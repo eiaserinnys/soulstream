@@ -28,6 +28,15 @@ export interface RelevanceScore {
   score: number;
 }
 
+export interface ScorePersistentCandidatesInput {
+  query: string;
+  items: RelevanceItem[];
+  apiKey: string;
+  budgetMs: number;
+  signal?: AbortSignal;
+  fetchImpl?: typeof fetch;
+}
+
 interface TypesafeResponse {
   answers?: Record<string, { score?: unknown } | undefined>;
 }
@@ -94,5 +103,74 @@ export async function rankByRelevance({
       .sort((left, right) => right.score - left.score);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** A single strict Jev score request for the short-lived PAS observation path. */
+export async function scorePersistentCandidates({
+  query,
+  items,
+  apiKey,
+  budgetMs,
+  signal,
+  fetchImpl = fetch,
+}: ScorePersistentCandidatesInput): Promise<RelevanceScore[]> {
+  if (!Number.isInteger(budgetMs) || budgetMs <= 0 || budgetMs > 3_000) {
+    throw new Error("Persistent candidate score budget is invalid");
+  }
+  if (!apiKey) throw new Error("Typesafe API key is unavailable");
+  if (signal?.aborted) throw signal.reason ?? new Error("Persistent candidate scoring was cancelled");
+
+  const state = { request: query, candidates: items };
+  const questions = Object.fromEntries(items.map(({ key, text }) => [
+    key,
+    {
+      type: "score",
+      instructions: `request 처리에 대한 아래 후보의 유관도.\n후보: ${text}`,
+      criteria: SCORE_LEVELS,
+    },
+  ]));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("Persistent candidate score deadline exceeded")), budgetMs);
+  const forwardAbort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", forwardAbort, { once: true });
+  try {
+    let response: Response;
+    try {
+      response = await fetchImpl(TYPESAFE_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model: MODEL, state, questions }),
+        signal: controller.signal,
+      });
+    } catch {
+      throw new Error("Typesafe API request failed");
+    }
+    if (!response.ok) throw new Error(`Typesafe API request failed (${response.status})`);
+
+    let data: unknown;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error("Typesafe API returned invalid JSON");
+    }
+    const answers = typeof data === "object" && data !== null
+      ? (data as TypesafeResponse).answers
+      : undefined;
+    if (!answers) throw new Error("Typesafe API returned no scores");
+
+    return items.map(({ key }) => {
+      const score = answers[key]?.score;
+      if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 3) {
+        throw new Error("Typesafe API returned an invalid candidate score");
+      }
+      return { key, score };
+    });
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", forwardAbort);
   }
 }

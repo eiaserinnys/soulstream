@@ -26,6 +26,7 @@ function createHarness() {
 describe("session timeline event_types filter", () => {
   it("uses the shared timeline event inventory and excludes the schema-outside system event", () => {
     expect(isSessionTimelineEventType("system_message")).toBe(true);
+    expect(isSessionTimelineEventType("generation_started")).toBe(true);
     expect(isSessionTimelineEventType("system")).toBe(false);
   });
 
@@ -44,6 +45,19 @@ describe("session timeline event_types filter", () => {
       50,
       ["user_message", "assistant_message"],
     );
+    await app.close();
+  });
+
+  it("accepts generation_started for an explicit historical timeline page", async () => {
+    const { app, readTimeline } = createHarness();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/timeline?event_types=generation_started",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(readTimeline).toHaveBeenCalledWith("sess-1", null, 50, ["generation_started"]);
     await app.close();
   });
 
