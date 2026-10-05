@@ -65,7 +65,9 @@ export function CardCheckItemRow({
   const running = item.display === 'doing';
   const color = statusColor(item, t);
   const rowColor = item.display === 'confirmed' ? null : item.display === 'changed' ? t.colors.warning : color;
-  const metadata = [item.reportedAt ? formatCardTime(item.reportedAt) : '', item.from ? `${formatCardTime(item.from.at)} ${item.from.kind === 'spoken' ? '대화에서 추가' : '커멘트에서 추가'}`.trim() : ''].filter(Boolean).join(', ');
+  const metadata = [item.reportedAt ? formatCardTime(item.reportedAt) : '',
+    item.from ? `${formatCardTime(item.createdAt)} ${item.from.kind === 'spoken' ? '대화에서 추가' : '커멘트에서 추가'}`.trim()
+      : item.reportedAt ? '' : formatCardTime(item.createdAt)].filter(Boolean).join(', ');
   const rowExpanded = expanded || item.display === 'dropped';
 
   return (
@@ -182,7 +184,7 @@ export function CardCheckItemRow({
             {item.caveat ? <View style={styles.caveatRow}>
               <Ionicons testID={`card-check-item-${item.id}-caveat-icon`} name="warning-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.warningText} />
               <Text style={styles.caveat} testID={`card-check-item-${item.id}-caveat`}>{item.caveat}</Text>
-            </View> : null}
+            </View> : metadata ? <Text style={styles.source}>{metadata}</Text> : null}
             {item.display !== 'dropped' ? <CompactTouchTarget
               testID={`card-check-item-${item.id}-fix`}
               accessibilityLabel={`${item.id} ${item.title} 고칠 점 남기기`}
@@ -191,7 +193,6 @@ export function CardCheckItemRow({
               <Text style={styles.fixText}>고칠 점 남기기</Text>
             </CompactTouchTarget> : null}
           </View>
-          {metadata ? <Text style={styles.source}>{metadata}</Text> : null}
         </View>
       ) : null}
       {pending ? <Text accessibilityRole="text" style={styles.pending}>저장 중</Text> : null}
@@ -224,8 +225,8 @@ function makeStyles(t: DesignTokens) {
     dimTitle: { color: t.colors.textSecondary },
     droppedResult: { color: t.colors.textMuted },
     droppedTitle: { textDecorationLine: 'line-through', color: t.colors.textMuted },
-    status: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, flexShrink: 0, width: planner.typography.meta.fontSize * 6.6 },
-    statusBelow: { flexBasis: '100%', paddingLeft: t.uiSpacing.lg + t.uiSpacing.sm },
+    status: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: t.uiSpacing.xxs, flexShrink: 0, width: planner.typography.meta.fontSize * 6.6 },
+    statusBelow: { flexBasis: '100%', justifyContent: 'flex-start', paddingLeft: t.uiSpacing.lg + t.uiSpacing.sm },
     statusText: { ...planner.typography.meta, color: t.colors.textSecondary, fontWeight: '700' },
     runningDot: { width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.statusRunning },
     details: { paddingLeft: t.hitTarget.min, paddingRight: 0, paddingTop: t.uiSpacing.xs, gap: t.uiSpacing.xs },
@@ -244,9 +245,9 @@ function makeStyles(t: DesignTokens) {
     footer: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.xs },
     caveatRow: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, flexShrink: 1 },
     caveat: { ...planner.typography.meta, color: t.colors.warningText, flexShrink: 1 },
-    source: { ...planner.typography.meta, color: t.colors.textMuted },
+    source: { ...planner.typography.meta, color: t.colors.textMuted, flexShrink: 1 },
     fixFrame: { marginLeft: 'auto', flexShrink: 0 },
-    fixSurface: { minHeight: t.hitTarget.min, paddingHorizontal: t.uiSpacing.sm, borderRadius: t.foundation.radius.chip, justifyContent: 'center' },
+    fixSurface: { minHeight: t.hitTarget.min, paddingLeft: t.uiSpacing.sm, borderRadius: t.foundation.radius.chip, justifyContent: 'center' },
     fixText: { ...planner.typography.meta, color: t.colors.textSecondary, textDecorationLine: 'underline' },
     pending: { position: 'absolute', right: t.uiSpacing.sm, bottom: t.uiSpacing.xxs, ...planner.typography.meta, color: t.colors.textMuted },
   });

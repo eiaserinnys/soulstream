@@ -101,12 +101,29 @@ test('접힌 확인 항목이 서버에서 뺌으로 바뀌면 뺀 까닭을 펼
   expect(screen.getByText('뺀 근거')).toBeTruthy();
 });
 
- test('바뀐 까닭은 꼬리표 아래 본문으로, 보고와 대화 출처는 시각과 함께 보인다', () => {
+test('바뀐 까닭은 꼬리표 아래 본문으로, 출처는 항목 생성 시각을 쓴다', () => {
   const screen = render(<CardCheckItems items={[item(1, 'changed', {
-    reportedAt: '2026-10-05T08:00:00', from: { kind: 'spoken', at: '2026-10-05T06:47:00', commentId: 'c1' },
+    createdAt: '2026-10-05T06:47:00', reportedAt: '2026-10-05T08:00:00', from: { kind: 'spoken', at: '2026-10-05T09:30:00', commentId: 'c1' },
   })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
     onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
   expect(screen.getByText('확인한 뒤 바뀜')).toBeTruthy();
   expect(screen.getByText('다시 확인한 이유')).toBeTruthy();
   expect(screen.getByText('08:00, 06:47 대화에서 추가')).toBeTruthy();
+});
+
+test.each([
+  [null, null, null, '06:47'],
+  ['2026-10-05T08:00:00', null, null, '08:00'],
+  [null, { kind: 'comment', at: '2026-10-05T09:30:00', commentId: 'c1' }, null, '06:47 커멘트에서 추가'],
+  ['2026-10-05T08:00:00', null, '실기기 미확인', null],
+] as const)('아래 줄은 못 본 것을 우선하고 없으면 웹과 같은 시각을 보인다 (%s, %s, %s)', (reportedAt, from, caveat, expected) => {
+  const screen = render(<CardCheckItems items={[item(1, 'reported', {
+    createdAt: '2026-10-05T06:47:00', reportedAt, from, caveat,
+  })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+  if (expected) expect(screen.getByText(expected)).toBeTruthy();
+  else {
+    expect(screen.getByText('실기기 미확인')).toBeTruthy();
+    expect(screen.queryByText('08:00')).toBeNull();
+  }
 });

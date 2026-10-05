@@ -59,7 +59,7 @@ function NoteMessage({ note, sessions, assigneeSessionId }: { note: CardComment;
   return <View testID={`card-note-${note.id}`} style={styles.record}>
     <View style={styles.recordRow}>
       {avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.avatar} />
-        : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.name}>{avatar.fallbackChar}</Text></View>}
+        : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarFallbackText}>{avatar.fallbackChar}</Text></View>}
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.name} numberOfLines={1}>{resolveSessionAgentLabel(author)}</Text>
@@ -87,7 +87,8 @@ function makeNoteStyles(t: DesignTokens) {
     content: { flex: 1, minWidth: 0, gap: t.uiSpacing.xxs },
     header: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm },
     avatar: { width: t.avatarSize.message, height: t.avatarSize.message, borderRadius: t.foundation.radius.round },
-    avatarFallback: { backgroundColor: t.colors.surfaceCode, alignItems: 'center', justifyContent: 'center' },
+    avatarFallback: { backgroundColor: t.colors.border, alignItems: 'center', justifyContent: 'center' },
+    avatarFallbackText: { color: t.colors.textMuted, fontSize: t.fontSize.rowTitle, fontWeight: '600' },
     name: { ...t.foundation.typography.meta, color: t.colors.textSecondary, fontWeight: '700', flexShrink: 1 },
     owner: { ...t.foundation.typography.meta, fontWeight: '500', color: t.colors.textMuted },
     time: { ...t.foundation.typography.meta, fontWeight: '500', color: t.colors.textMuted, marginLeft: 'auto' },

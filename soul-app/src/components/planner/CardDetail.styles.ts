@@ -26,7 +26,7 @@ export function cardDetailStyles(t: DesignTokens) {
     sendNoticeSurface: { flex: 1, height: sendNoticeSurfaceHeight,
       borderWidth: StyleSheet.hairlineWidth, borderRadius: t.foundation.radius.round,
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-      gap: s.sm, paddingLeft: s.sm, paddingRight: s.xxs },
+      gap: s.sm, paddingHorizontal: s.sm },
     sendNoticeText: { ...type.meta, color: t.colors.textSecondary },
     empty: { ...type.body, color: t.colors.textSecondary },
     sessions: { gap: t.cardLayout.gap },

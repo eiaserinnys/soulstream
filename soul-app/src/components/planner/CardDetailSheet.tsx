@@ -234,7 +234,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
       </View>
       <View style={styles.bodyFrame}>
         <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
-          contentContainerStyle={[styles.content, { paddingBottom: dockHeight + dockBottom + t.uiSpacing.xxl }]}
+          contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
           onContentSizeChange={() => {
             if (tab === 'comments' && timelineStamp && scrollStamp.current !== timelineStamp) {

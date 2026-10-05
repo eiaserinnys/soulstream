@@ -93,7 +93,7 @@ export function CardNowPanel({
             <>
               <Text style={[styles.turnLabel, { color: completePrompt ? t.colors.statusCompleted : turnLabelColor }]}>{completePrompt ? '모두 확인했습니다' : turnLabel(entry.turn)}</Text>
               <Text numberOfLines={3} style={styles.turnText}>{bandText}</Text>
-              {completePrompt ? <GlassButton testID="card-now-complete" size="compact" disabled={completeDisabled || !onComplete} accessibilityLabel="완료" onPress={() => onComplete?.()}>
+              {completePrompt ? <GlassButton testID="card-now-complete" size="compact" variant="primary" borderRadius={t.foundation.radius.round} disabled={completeDisabled || !onComplete} accessibilityLabel="완료" onPress={() => onComplete?.()}>
                 <Text style={styles.completeText}>완료</Text>
               </GlassButton> : null}
             </>
@@ -155,7 +155,7 @@ function formatUpdatedAt(value: string): string {
 function makeStyles(t: DesignTokens) {
   const planner = createPlannerVisualRoles(t);
   return StyleSheet.create({
-    panel: { paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.lg, borderRadius: t.foundation.radius.field, gap: t.uiSpacing.sm },
+    panel: { paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.lg, gap: t.uiSpacing.sm },
     pastPanel: { borderStyle: 'dashed', borderColor: t.colors.warning },
     headerRow: { height: planner.typography.meta.lineHeight, justifyContent: 'center', paddingRight: t.hitTarget.min * 2 - t.uiSpacing.sm - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2 + t.uiSpacing.lg },
     headerLabels: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.uiSpacing.sm },
@@ -174,11 +174,11 @@ function makeStyles(t: DesignTokens) {
     agentTurn: { backgroundColor: withAlphaColor(t.colors.statusRunning, 0.12) },
     userTurn: { backgroundColor: withAlphaColor(t.colors.warning, 0.12) },
     outsideTurn: { backgroundColor: withAlphaColor(t.colors.statusIdle, 0.12) },
-    pastBand: { backgroundColor: 'transparent', justifyContent: 'space-between', paddingHorizontal: 0 },
+    pastBand: { backgroundColor: 'transparent', justifyContent: 'space-between', paddingHorizontal: 0, marginTop: 'auto' },
     completeBand: { backgroundColor: withAlphaColor(t.colors.statusCompleted, 0.12) },
     turnLabel: { ...planner.typography.meta, fontWeight: '700' },
     turnText: { ...planner.typography.body, color: t.colors.textPrimary, flex: 1, flexShrink: 1 },
-    completeText: { ...planner.typography.body, color: t.colors.accent, fontWeight: '600' },
+    completeText: { ...planner.typography.body, color: t.colors.accentText, fontWeight: '600' },
     latestFrame: { flexShrink: 0 },
     latestSurface: { minHeight: t.hitTarget.min, paddingHorizontal: t.uiSpacing.xs, justifyContent: 'center' },
     latestText: { ...planner.typography.meta, color: t.colors.accent },

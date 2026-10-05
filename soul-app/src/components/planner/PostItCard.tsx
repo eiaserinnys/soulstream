@@ -180,8 +180,9 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                   </Text>{' '}{body}
                 </>}
               </Text>
-              {card.now?.turn === 'user' ? <Text testID={`postit-${card.id}-ask-preview`} style={{ ...roles.body, color: roles.colors.warningText, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.foundation.radius.chip, paddingHorizontal: t.uiSpacing.xs, paddingVertical: t.uiSpacing.xxs }} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail">
-                <Text style={{ fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text>{card.now.ask ? `, ${card.now.ask}` : ''}
+              {card.now?.turn === 'user' ? <Text testID={`postit-${card.id}-ask-preview`} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
+                style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.foundation.radius.chip, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
+                <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text>{card.now.ask ? ` ${card.now.ask}` : ''}
               </Text> : null}
             </View>
           </Pressable>

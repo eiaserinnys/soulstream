@@ -21,7 +21,7 @@ import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCa
 import { formatRelativeTime } from '../../lib/relative-time';
 import { CardRequestView } from './CardRequestView';
 import { CardReportView } from './CardReportView';
-import { cardProgressText, cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
+import { cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
 import { useCardStore } from '../../store/cardStore';
 import { withAlphaColor } from '../StatusPulseDecoration';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
@@ -128,6 +128,6 @@ function CardItemSummary({ card, summary }: { card: CardDto; summary: ReturnType
     {summary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
         backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
-    <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{cardProgressText(summary)}</Text>
+    <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>확인 {summary.confirmed}</Text>
   </View>;
 }
