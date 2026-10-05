@@ -184,6 +184,79 @@ describe("persistent context evaluation", () => {
     expect(result.observation?.selected).toHaveLength(3);
   });
 
+  it("records the five highest unselected candidates and per-kind score maxima", async () => {
+    const repositories = createRepositories({
+      sessionIsPersistent: true,
+      inputEventId: 10,
+      allowedFolderIds: ["visible"],
+      turnSummaries: [],
+      cards: Array.from({ length: 6 }, (_, index) => ({
+        id: `card-${index}`,
+        number: index + 1,
+        title: `Card ${index + 1}`,
+        request: "Request text",
+        brief: "Brief text",
+      })),
+      recentCompletedSessions: [
+        { sessionId: "overlap", title: "Overlap", lastAssistantText: "Recent text" },
+        { sessionId: "recent-only", title: "Recent only", lastAssistantText: "Recent text" },
+      ],
+    }, true, "Turn summary text");
+    const searchProvider = {
+      search: async () => ({
+        search_status: { session_sources: { metadata: { status: "complete" } } },
+        session_results: [
+          { session_id: "overlap", folder_id: "visible", title: "Overlap", excerpt: "Search text" },
+          { session_id: "search-high", folder_id: "visible", title: "Search high", excerpt: "Search text" },
+          { session_id: "search-low", folder_id: "visible", title: "Search low", excerpt: "Search text" },
+        ],
+      }),
+    } as unknown as CogitoSearchProvider;
+    const scores = [1.9, 3.0, 2.8, 2.6, 2.4, 2.2, 1.4, 2.5, 2.9, 1.7, 1.6];
+    const service = createPersistentContextService({
+      candidates: repositories,
+      searchProvider,
+      typesafeApiKey: "test-key",
+      logMissingInput: vi.fn(),
+      logNullReason: vi.fn(),
+      fetchImpl: vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { state: { candidates: Array<{ key: string }> } };
+        return new Response(JSON.stringify({ answers: Object.fromEntries(
+          body.state.candidates.map(({ key }, index) => [key, { score: scores[index] }]),
+        ) }), { status: 200 });
+      }),
+    });
+
+    const result = await service.evaluatePersistentCandidates({
+      sessionId: "current", inputId: "input-10", request: "current request",
+      deadlineAt: Date.now() + 2_000, signal: new AbortController().signal,
+    });
+
+    expect(result.observation?.selected.map(({ kind, label, raw_score, sources }) => ({ kind, label, raw_score, sources }))).toEqual([
+      { kind: "card", label: "#1", raw_score: 3, sources: undefined },
+      { kind: "session", label: "Search high", raw_score: 2.9, sources: ["search"] },
+      { kind: "card", label: "#2", raw_score: 2.8, sources: undefined },
+      { kind: "card", label: "#3", raw_score: 2.6, sources: undefined },
+      { kind: "session", label: "Overlap", raw_score: 2.5, sources: ["search", "recent_completed"] },
+    ]);
+    expect(result.observation?.unselected_top).toEqual([
+      { kind: "card", label: "#4", raw_score: 2.4 },
+      { kind: "card", label: "#5", raw_score: 2.2 },
+      { kind: "turn_summary", label: "T1", raw_score: 1.9 },
+      { kind: "session", label: "Search low", raw_score: 1.7, sources: ["search"] },
+      { kind: "session", label: "Recent only", raw_score: 1.6, sources: ["recent_completed"] },
+    ]);
+    expect(result.observation?.top_raw_scores).toEqual({
+      turn_summaries: 1.9,
+      cards: 3,
+      search_sessions: 2.9,
+      recent_completed_sessions: 2.5,
+    });
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates", observation: result.observation,
+    })).toBe(true);
+  });
+
   it("uses expanded excerpts in provider order and filters sessions to allowed folders", async () => {
     const repositories = createRepositories({
       sessionIsPersistent: true,
@@ -433,6 +506,15 @@ describe("persistent context evaluation", () => {
 
     expect(result.observation?.selected).toEqual([]);
     expect(result.observation?.top_raw_score).toBe(1.9);
+    expect(result.observation?.unselected_top).toEqual([
+      { kind: "card", label: "#1", raw_score: 1.9 },
+    ]);
+    expect(result.observation?.top_raw_scores).toEqual({
+      turn_summaries: null,
+      cards: 1.9,
+      search_sessions: null,
+      recent_completed_sessions: null,
+    });
     expect(isPersistentJevCandidatesDebugEvent({
       type: "debug", kind: "persistent_jev_candidates", observation: result.observation,
     })).toBe(true);
