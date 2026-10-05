@@ -18,54 +18,72 @@ let jobs: RecurringJobDto[] = Array.from({ length: 12 }, (_, index) => ({
 const state = () => new URLSearchParams(window.location.search).get('state');
 
 // Persistent agent sessions. Ids, agents and presets match the public node fixtures served by dialogueApi.
-const pasSettings = (preset: string) => ({ default_model: { model_preset: preset, reasoning_effort: null }, fallback_model: null, show_generation_separator: true, show_character: true });
-const pasSession = (id: string, name: string, agentId: string, agentName: string, preset: string, current: string, pending: string | null): PersistentSessionResource => ({
-  session_id: id, display_name: name, node_id: 'public-node', folder_id: 'public-project', agent_id: agentId, agent_name: agentName, persistent: true, settings: pasSettings(preset),
-  runtime: { current_model: { model_preset: current, reasoning_effort: null, model: `${current}-내부 모델` }, pending: pending ? { target_model_preset: pending, target_reasoning_effort: null } : null },
+// The store keeps every session the way the server does: GET answers for released and plain sessions too, the list shows persistent ones only.
+type PasInit = { id: string; name: string; agentId: string; preset: string; effort?: string | null; current?: string; currentEffort?: string | null; pending?: { preset: string; effort: string | null } | null; folderId?: string; persistent?: boolean };
+const pasAgentNames: Record<string, string> = { 'public-agent': '공개 예시 에이전트', 'public-other-agent': '다른 예시 에이전트' };
+const pasSettings = (preset: string, effort: string | null) => ({ default_model: { model_preset: preset, reasoning_effort: effort }, fallback_model: null, show_generation_separator: true, show_character: true });
+const pasSession = (init: PasInit): PersistentSessionResource => ({
+  session_id: init.id, display_name: init.name, node_id: 'public-node', folder_id: init.folderId ?? 'public-project', agent_id: init.agentId, agent_name: pasAgentNames[init.agentId] ?? init.agentId,
+  persistent: init.persistent ?? true, settings: pasSettings(init.preset, init.effort ?? null),
+  runtime: { current_model: { model_preset: init.current ?? init.preset, reasoning_effort: init.currentEffort === undefined ? init.effort ?? null : init.currentEffort, model: `${init.current ?? init.preset}-내부 모델` },
+    pending: init.pending ? { target_model_preset: init.pending.preset, target_reasoning_effort: init.pending.effort } : null },
 });
-let persistentSessions: PersistentSessionResource[] = [
-  pasSession('review-pas-1', '공개 예시 관제 세션', 'public-agent', '공개 예시 에이전트', 'public-model', 'public-model', null),
-  pasSession('review-pas-2', '공개 예시 두 번째 영구 세션', 'public-other-agent', '다른 예시 에이전트', 'public-model', 'public-exhausted-model', 'public-model'),
-  pasSession('review-pas-3', '공개 예시 세 번째 영구 세션 이름이 길어지면 줄바꿈되거나 말줄임으로 끊깁니다', 'public-agent', '공개 예시 에이전트', 'public-exhausted-model', 'public-model', null),
-];
-const plainSessions = new Map<string, PersistentSessionResource>();
-const createDefaults: PersistentSessionCreateDefaults = {
-  node_id: 'public-node', preferred_agent_id: 'public-agent', settings: pasSettings('public-model'),
+const pasStore = new Map<string, PersistentSessionResource>([
+  pasSession({ id: 'review-pas-1', name: '공개 예시 관제 세션', agentId: 'public-agent', preset: 'public-model' }),
+  pasSession({ id: 'review-pas-2', name: '공개 예시 두 번째 영구 세션', agentId: 'public-other-agent', preset: 'public-model', current: 'public-exhausted-model', pending: { preset: 'public-model', effort: null } }),
+  pasSession({ id: 'review-pas-3', name: '공개 예시 세 번째 영구 세션 이름이 길어지면 줄바꿈되거나 말줄임으로 끊깁니다', agentId: 'public-agent', preset: 'public-exhausted-model', current: 'public-model' }),
+].map(item => [item.session_id, item]));
+const pasCreateDefaults: PersistentSessionCreateDefaults = {
+  node_id: 'public-node', preferred_agent_id: 'public-agent', settings: pasSettings('public-model', null),
   initial_instruction: '새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.', unavailable_reason: null,
 };
 const pasFailure = (status: number, code: string, message: string, extra: object = {}) => new ApiHttpError(`공개 예시 ${status}`, status, JSON.stringify({ error: { code, message }, ...extra }));
-const requirePas = (id: string) => { const found = persistentSessions.find(item => item.session_id === id); if (!found) throw pasFailure(404, 'SESSION_NOT_FOUND', '영구 에이전트 세션을 찾을 수 없습니다.'); return found; };
+const requirePas = (id: string) => { const found = pasStore.get(id); if (!found) throw pasFailure(404, 'SESSION_NOT_FOUND', '영구 에이전트 세션을 찾을 수 없습니다.'); return found; };
+const sameEffort = (a: string | null | undefined, b: string | null | undefined) => (a ?? null) === (b ?? null);
 const persistentSessionFixtures = {
   listPersistentSessions: async () => {
     if (state() === 'persistent-error') throw pasFailure(503, 'NODE_UNAVAILABLE', '영구 에이전트 세션을 불러오지 못했습니다.');
-    const sessions = state() === 'empty' ? [] : persistentSessions;
-    return { sessions, total: sessions.length, create_defaults: createDefaults };
+    const sessions = state() === 'empty' ? [] : [...pasStore.values()].filter(item => item.persistent);
+    return { sessions, total: sessions.length, create_defaults: pasCreateDefaults };
   },
-  getPersistentSession: async (id: string) => ({ session: requirePas(id) }),
+  getPersistentSession: async (id: string) => {
+    if (state() === 'persistent-load-error') throw pasFailure(503, 'NODE_UNAVAILABLE', '세션을 불러오지 못했습니다.');
+    return { session: requirePas(id) };
+  },
   updatePersistentSession: async (id: string, input: PersistentSessionWrite) => {
     if (state() === 'persistent-save-error') throw pasFailure(503, 'NODE_COMMAND_TIMEOUT', '노드가 응답하지 않았습니다.');
-    if ('enabled' in input && input.enabled === false) { const released = requirePas(id); persistentSessions = persistentSessions.filter(item => item.session_id !== id); return { session: { ...released, persistent: false }, model_change: 'none' as const }; }
-    const registering = plainSessions.get(id);
-    const base = registering ?? requirePas(id);
-    const model = input.settings.default_model;
-    const changed = model.model_preset !== base.runtime.current_model.model_preset && base.runtime.pending?.target_model_preset !== model.model_preset;
-    const saved: PersistentSessionResource = { ...base, display_name: input.display_name, persistent: true, settings: { ...base.settings, default_model: model },
-      runtime: { ...base.runtime, pending: changed ? { target_model_preset: model.model_preset, target_reasoning_effort: model.reasoning_effort } : base.runtime.pending } };
-    if (registering) { plainSessions.delete(id); persistentSessions = [...persistentSessions, saved]; }
-    else persistentSessions = persistentSessions.map(item => item.session_id === id ? saved : item);
+    const base = requirePas(id);
+    const enabled = 'enabled' in input ? input.enabled : undefined;
+    if (enabled === undefined && !base.persistent) throw pasFailure(409, 'NOT_PERSISTENT', '영구 에이전트 세션이 아닙니다.');
+    if (enabled === false) { pasStore.set(id, { ...base, persistent: false }); return { session: pasStore.get(id)!, model_change: 'none' as const }; }
+    if (!('settings' in input)) throw pasFailure(422, 'INVALID_REQUEST', 'settings.default_model이 필요합니다.');
+    // Same comparison as the worker: preset and applied effort, against the running model and against a pending target.
+    const target = input.settings.default_model;
+    const running = base.runtime.current_model;
+    const pending = base.runtime.pending;
+    const alreadyRunning = running.model_preset === target.model_preset && sameEffort(running.reasoning_effort, target.reasoning_effort);
+    const alreadyPending = Boolean(pending) && pending!.target_model_preset === target.model_preset && sameEffort(pending!.target_reasoning_effort, target.reasoning_effort);
+    const changed = !alreadyRunning && !alreadyPending;
+    const saved: PersistentSessionResource = { ...base, display_name: input.display_name, persistent: true, settings: { ...base.settings, default_model: target },
+      runtime: { ...base.runtime, pending: changed ? { target_model_preset: target.model_preset, target_reasoning_effort: target.reasoning_effort } : pending } };
+    pasStore.set(id, saved);
     return { session: saved, model_change: changed ? 'next_execution_start' as const : 'none' as const };
   },
   createPersistentSession: async (input: PersistentSessionCreate) => {
-    const created = pasSession(`review-pas-created-${persistentSessions.length + plainSessions.size}`, input.display_name, input.agent_id, input.agent_id, input.settings.default_model.model_preset, input.settings.default_model.model_preset, null);
+    const target = input.settings.default_model;
+    const created = pasSession({ id: `review-pas-created-${pasStore.size}`, name: input.display_name, agentId: input.agent_id, folderId: input.folder_id, preset: target.model_preset, effort: target.reasoning_effort });
+    const plain = { ...created, persistent: false };
     if (state() === 'persistent-registration-error') {
-      plainSessions.set(created.session_id, created);
+      pasStore.set(created.session_id, plain);
       throw pasFailure(503, 'PERSISTENT_REGISTRATION_FAILED', '이름과 설정을 기록하지 못했습니다.', { created_session: { session_id: created.session_id, display_name: input.display_name } });
     }
-    persistentSessions = [...persistentSessions, created];
+    if (state() === 'persistent-lost-response') { pasStore.set(created.session_id, created); throw new TypeError('Network request failed'); }
+    pasStore.set(created.session_id, created);
     return { session: created, creation: 'started' as const, warnings: [] };
   },
 };
 export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFixtures,
+  listModelPresets: async (nodeId: string) => { if (state() === 'persistent-targets-error') throw new Error('공개 예시 오류'); return dialogueApi.listModelPresets(nodeId); },
   getAuthStatus: async () => ({ authenticated: true, user: { isAdmin: true } }),
   listNodes: async () => { if (state() === 'nodes-error') throw new Error('공개 예시 오류'); return { nodes: Array.from({ length: 8 }, (_, index) => ({ nodeId: index === 0 ? 'public-node' : `public-node-${index}` })) }; },
   getProviderUsage: async () => { if (state() === 'usage-error') throw new Error('공개 예시 오류'); return usage; },

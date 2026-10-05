@@ -17,9 +17,10 @@ export interface PersistentSessionSettings {
 export interface PersistentSessionResource {
   session_id: string;
   display_name: string | null;
-  node_id: string;
+  /** The server reads both from the stored row, so an old or half-registered session can have neither. */
+  node_id: string | null;
   folder_id: string | null;
-  agent_id: string;
+  agent_id: string | null;
   agent_name?: string | null;
   persistent: boolean;
   settings: PersistentSessionSettings;

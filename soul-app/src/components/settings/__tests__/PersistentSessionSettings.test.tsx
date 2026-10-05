@@ -244,3 +244,45 @@ test('back goes editor, then the PAS list, then the settings list; unsaved input
   fireEvent.press(screen.getByLabelText('모든 설정으로 돌아가기'));
   expect(screen.getByTestId('settings-phone-index', { includeHiddenElements: true }).props.importantForAccessibility).toBe('auto');
 });
+
+test('after a lost create answer the session is not created again; only re-reading the list is offered', async () => {
+  api.createPersistentSession.mockRejectedValue(new TypeError('Network request failed'));
+  const screen = await openList();
+  fireEvent.press(screen.getByTestId('persistent-session-create'));
+  await screen.findByTestId('persistent-session-editor');
+  expect(await screen.findByText(/서버가 정한 첫 인사 문장/)).toBeTruthy();
+  fireEvent.changeText(screen.getByLabelText('세션 이름'), '응답이 사라질 세션');
+  fireEvent.press(await screen.findByText('폴더 A'));
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+  expect(await screen.findByText(/세션이 일반 세션으로 만들어졌을 수 있으니/)).toBeTruthy();
+  expect(api.createPersistentSession).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+  fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름을 바꿔도');
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+  await act(async () => {});
+  expect(api.createPersistentSession).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(screen.getByTestId('persistent-session-reread'));
+  await waitFor(() => expect(screen.queryByTestId('persistent-session-editor')).toBeNull());
+  expect(api.listPersistentSessions.mock.calls.length).toBeGreaterThanOrEqual(3);
+});
+
+test('a session without profile and node reads as missing information, skips the model list and still saves the name', async () => {
+  const bare = resource({ agent_id: null, agent_name: null, node_id: null });
+  api.listPersistentSessions.mockResolvedValue({ sessions: [bare], total: 1, create_defaults: createDefaults });
+  api.getPersistentSession.mockResolvedValue({ session: bare });
+  const screen = await openList();
+  expect(screen.getByText(/프로필 정보 없음 · model-a-real/)).toBeTruthy();
+  await openEditor(screen);
+  await waitFor(() => expect(screen.getByLabelText('세션 이름').props.value).toBe('관제 세션'));
+  expect(screen.getByText('프로필 정보 없음')).toBeTruthy();
+  expect(await screen.findByText(/이 세션의 노드를 알 수 없어 모델 목록을 불러올 수 없습니다/)).toBeTruthy();
+  expect(api.listModelPresets).not.toHaveBeenCalled();
+
+  fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름만 바꿈');
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
+    display_name: '이름만 바꿈', settings: { default_model: { model_preset: 'model-a', reasoning_effort: null } },
+  }));
+});

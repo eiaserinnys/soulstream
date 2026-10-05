@@ -27,6 +27,7 @@ import { SettingsSection } from './SettingsSection';
 import { useSettingsSaveScope } from './SettingsWorkspaceContext';
 
 const NO_MODEL = '모델 정보 없음';
+const NO_PROFILE = '프로필 정보 없음';
 
 export function PersistentSessionsList({
   serverUrl,
@@ -71,13 +72,13 @@ export function PersistentSessionsList({
         <Action label="새 세션" onPress={onCreate} testID="persistent-session-create" />
       </SettingsListHeader>
       {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
-      {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text><Action label="다시 시도" onPress={() => void load()} testID="persistent-sessions-retry" /></View> : null}
+      {error ? <View style={styles.block}><Text accessibilityRole="alert" style={styles.error}>{error}</Text><Action label="다시 시도" onPress={() => void load()} testID="persistent-sessions-retry" /></View> : null}
       {!loading && !error && sessions.length === 0 ? <Notice text="등록된 영구 에이전트 세션이 없습니다." /> : null}
       {sessions.map((session) => <SettingsListRow
         key={session.session_id}
         testID={`persistent-session-${session.session_id}`}
         title={session.display_name ?? '이름 없음'}
-        detail={`${session.agent_name ?? session.agent_id} · ${session.runtime.current_model.model ?? session.runtime.current_model.model_preset ?? NO_MODEL}`}
+        detail={`${session.agent_name ?? session.agent_id ?? NO_PROFILE} · ${session.runtime.current_model.model ?? session.runtime.current_model.model_preset ?? NO_MODEL}`}
         onPress={() => onEdit(session)}
       />)}
     </View>
@@ -87,7 +88,7 @@ export function PersistentSessionsList({
 type Draft = { name: string; agentId: string; modelPreset: string; folderId: string; firstMessage: string };
 const emptyDraft = (): Draft => ({ name: '', agentId: '', modelPreset: '', folderId: '', firstMessage: '' });
 const draftFromSession = (session: PersistentSessionResource): Draft => ({
-  ...emptyDraft(), name: session.display_name ?? '', agentId: session.agent_id, modelPreset: session.settings.default_model.model_preset ?? '',
+  ...emptyDraft(), name: session.display_name ?? '', agentId: session.agent_id ?? '', modelPreset: session.settings.default_model.model_preset ?? '',
 });
 const sameModel = (a: PersistentSessionModel, b: PersistentSessionModel) =>
   a.model_preset === b.model_preset && (a.reasoning_effort ?? null) === (b.reasoning_effort ?? null);
@@ -129,6 +130,8 @@ export function PersistentSessionEditor({
   const [registration, setRegistration] = useState<{ sessionId: string; name: string } | null>(null);
   const [responseLost, setResponseLost] = useState(false);
   const nodeId = session?.node_id ?? defaults?.node_id ?? '';
+  // The model list belongs to the session's node; without one there is nothing to ask.
+  const nodeMissing = Boolean(session && !session.node_id);
   useEffect(() => { if (error || registration || responseLost) onRevealError?.(); }, [error, registration, responseLost]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -202,7 +205,8 @@ export function PersistentSessionEditor({
 
   const loaded = Boolean(session ?? defaults);
   const dirty = loaded && JSON.stringify(draft) !== JSON.stringify(baseline);
-  const canSave = loaded && !loading && !loadError && Boolean(draft.name.trim() && draft.modelPreset)
+  // After a lost create answer the session may already exist; adding again would make a second one.
+  const canSave = loaded && !loading && !loadError && !responseLost && Boolean(draft.name.trim() && draft.modelPreset)
     && (Boolean(session) || (Boolean(draft.agentId && draft.folderId) && !loadingTargets));
   const save = async () => {
     if (saving || !canSave) return;
@@ -259,24 +263,25 @@ export function PersistentSessionEditor({
     : null;
   return <View testID="persistent-session-editor" style={styles.editor}>
     {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
-    {loadError ? <View><Text accessibilityRole="alert" style={styles.error}>{loadError}</Text><Action label="다시 불러오기" onPress={() => setReload((value) => value + 1)} testID="persistent-session-reload" /></View> : null}
+    {loadError ? <View style={styles.block}><Text accessibilityRole="alert" style={styles.error}>{loadError}</Text><Action label="다시 불러오기" onPress={() => setReload((value) => value + 1)} testID="persistent-session-reload" /></View> : null}
     {loaded ? <Text style={styles.heading}>{session ? session.display_name ?? '이름 없음' : '새 영구 에이전트 세션'}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {registration ? <View>
+    {registration ? <View style={styles.block}>
       <Text accessibilityRole="alert" style={styles.error}>세션은 만들어졌으나 등록하지 못했습니다. ({registration.name})</Text>
       <Action label="등록 다시 시도" disabled={saving || !canSave} onPress={() => void save()} testID="persistent-registration-retry" />
     </View> : null}
-    {responseLost ? <View>
+    {responseLost ? <View style={styles.block}>
       <Text style={styles.help}>응답을 받지 못했습니다. 세션이 일반 세션으로 만들어졌을 수 있으니 기존 세션 목록에서 확인해 주세요.</Text>
       <Action label="목록 다시 읽기" onPress={onDone} testID="persistent-session-reread" />
     </View> : null}
     {loaded ? <SettingsSection id="persistent-editor-groups" title="" flattened>
       <Group title="세션 설정">
         <Input label="세션 이름" value={draft.name} onChangeText={(name) => update({ name })} />
-        {session ? <ReadOnlyField label="프로필" value={session.agent_name ?? session.agent_id} /> : null}
+        {session ? <ReadOnlyField label="프로필" value={session.agent_name ?? session.agent_id ?? NO_PROFILE} /> : null}
         {defaults ? <ReadOnlyField label="실행 노드" value={defaults.node_id} /> : null}
         {loadingTargets ? <ActivityIndicator color={t.colors.accent} /> : null}
-        {targetsError ? <View><Text accessibilityRole="alert" style={styles.error}>{targetsError}</Text><Action label="다시 시도" onPress={() => setTargetsReload((value) => value + 1)} testID="persistent-targets-retry" /></View> : null}
+        {nodeMissing ? <Text accessibilityRole="alert" style={styles.error}>이 세션의 노드를 알 수 없어 모델 목록을 불러올 수 없습니다. 기본 모델은 지금 값 그대로 저장됩니다.</Text> : null}
+        {targetsError ? <View style={styles.block}><Text accessibilityRole="alert" style={styles.error}>{targetsError}</Text><Action label="다시 시도" onPress={() => setTargetsReload((value) => value + 1)} testID="persistent-targets-retry" /></View> : null}
         {defaultsNotice ? <Notice text={defaultsNotice} /> : null}
         {!session ? <>
           <Text style={styles.label}>프로필</Text>
@@ -299,7 +304,7 @@ export function PersistentSessionEditor({
         <Text style={styles.help}>비워 두면 서버가 정한 문장으로 시작합니다: {defaults.initial_instruction}</Text>
       </Group> : null}
     </SettingsSection> : null}
-    {session ? <View>
+    {session ? <View style={styles.block}>
       <View style={styles.actions}><Action label="영구 세션 해제" disabled={saving || loading} onPress={confirmRelease} testID="persistent-session-release" /></View>
       <Text style={styles.help}>해제해도 세션과 대화 기록은 남습니다.</Text>
     </View> : null}
