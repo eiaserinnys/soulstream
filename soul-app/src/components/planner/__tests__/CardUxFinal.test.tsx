@@ -24,7 +24,7 @@ import { useCardStore } from '../../../store/cardStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useUIStore } from '../../../store/uiStore';
-const card = cardFixture({ status: 'review', assigneeSessionId: 'root', assigneeKind: 'session' });
+const card = { ...cardFixture({ status: 'review', assigneeSessionId: 'root', assigneeKind: 'session' }), brief: '# 전달받은 요약' };
 const session = { displayName: '담당 세션', agentSessionId: 'root', agentId: 'roselin', agentName: '로젤린', agentPortraitUrl: 'https://test/agent.png', status: 'idle', createdAt: card.createdAt, updatedAt: card.updatedAt };
 const detail = { card, sessions: [session], reports: [{ id: 'r1', cardId: card.id, sessionId: 'root', title: '결과', body: '결론\n\n![첫 캡처](https://test/one.png)\n![두 캡처](https://test/two.png)\n![세 캡처](https://test/three.png)', format: 'markdown', createdAt: '2026-09-30T03:00:00Z' }],
   questions: [{ id: 'q1', cardId: card.id, sessionId: 'root', text: '질문 내용', answer: '답 내용', options: null, askedAt: '2026-09-30T01:00:00Z', answeredAt: '2026-09-30T02:00:00Z' }],
@@ -35,7 +35,7 @@ beforeEach(() => {
   useSessionStore.setState({ sessions: { root: session }, catalog: { sessions: {}, folders: [{ id: 'folder-1', name: '폴더', projectPageId: 'page-1' }] as any } });
   useSettingsStore.setState({ serverUrl: 'https://cards.test', nodeId: 'node-1', cardAssignments: { 'https://cards.test': { folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: 'sol' } } });
 });
-test('세션 → 좌우 말풍선 → 그 밖에 → 고정 입력 순서이며 완료만 보인다', async () => {
+test('옛 카드에서는 커멘트가 먼저 열리고 타임라인과 탭별 콘텐츠를 유지한다', async () => {
   const api = { getCard: jest.fn().mockResolvedValue(detail) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('지시')).toBeTruthy());
@@ -48,15 +48,21 @@ test('세션 → 좌우 말풍선 → 그 밖에 → 고정 입력 순서이며 
   expect(screen.queryByText(card.brief)).toBeNull();
   expect(screen.getByTestId('card-timeline').props.children.map((child: any) => child.key)).toEqual(['request', 'question-q1', 'answer-q1', 'report-r1', 'comment-c1']);
   expect(screen.getAllByTestId(/card-report-thumbnail/)).toHaveLength(2);
-  const children = screen.UNSAFE_getByType(require('react-native').ScrollView).props.children.filter(Boolean);
-  expect(children.map((child: any) => child.type === CardTimeline ? 'card-timeline' : child.props.testID)).toEqual(['card-sessions', 'card-timeline', 'card-other']);
+  expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
+  expect(screen.queryByTestId('card-sessions')).toBeNull();
+  expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
+  expect(screen.getByTestId('card-sessions')).toBeTruthy();
+  expect(screen.queryByTestId('card-timeline')).toBeNull();
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-notes'));
+  expect(screen.getByText(card.brief)).toBeTruthy();
 });
 test('커멘트는 즉시 표시하고 API 한 건으로 교체한다', async () => {
   let resolve: any;
   const api = { getCard: jest.fn().mockResolvedValue(detail), addCardComment: jest.fn(() => new Promise((done) => { resolve = done; })) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('지시')).toBeTruthy());
-  fireEvent.changeText(screen.getByLabelText('커멘트'), '새 커멘트');
+  fireEvent.changeText(screen.getByTestId('chat-composer-text-input'), '새 커멘트');
   await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
   expect(api.addCardComment).toHaveBeenCalledWith(card.id, { body: '새 커멘트', idempotencyKey: expect.any(String) });
   expect(screen.getByText('새 커멘트')).toBeTruthy();
@@ -174,7 +180,7 @@ test('보고 미리보기는 HTML과 markdown의 전체 문단을 유지한 채 
   const { result: dimensions } = renderHook(useWindowDimensions);
   const composer = createSessionVisualRoles(t.current).chat.composer;
   const lineHeight = t.current.chatFontSize.body * t.current.lineHeightRatio * dimensions.current.fontScale;
-  const inputStyle = StyleSheet.flatten(screen.getByLabelText('커멘트').props.style);
+  const inputStyle = StyleSheet.flatten(screen.getByTestId('chat-composer-text-input').props.style);
   // iOS style contract only: this renderer does not exercise native text layout.
   expect(inputStyle.minHeight).toBe(Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2));
   expect(inputStyle.height).toBe(inputStyle.minHeight);

@@ -15,6 +15,12 @@ import { retryPlannerSessionWorkspace } from '../../../lib/planner-folder-worksp
 import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-title-save';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
 
+let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindowDimensions,
+}));
+
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
@@ -55,6 +61,7 @@ jest.mock('../FolderSessionHistory', () => ({
 }));
 
 beforeEach(() => {
+  mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
   usePlannerStore.getState().resetForTest();
   useCardStore.setState({ rows: {}, details: {} });
   useSessionStore.setState({
@@ -256,6 +263,19 @@ test('업무 pane은 overlay 폭의 46%를 쓰되 좁고 넓은 iPad에서 clamp
   expect(resolveFolderPaneWidth(700, metrics)).toBe(340);
   expect(resolveFolderPaneWidth(820, metrics)).toBe(377);
   expect(resolveFolderPaneWidth(920, metrics)).toBe(420);
+});
+
+test.each([
+  [834, 1210, 375],
+  [1210, 834, 460],
+] as const)('카드 상세에서는 iPad %i×%i overlay 안에서 카드와 채팅 pane을 각각 %ipt로 나눈다', (width, height, expected) => {
+  mockWindowDimensions = { width, height, scale: 1, fontScale: 1 };
+  const detail = cardDetail(`card-split-${width}`, 'owner');
+  useCardStore.getState().putDetail(detail);
+  useUIStore.getState().openCardOverlay(detail.card.id);
+  const screen = render(<FolderWorkspaceReadOverlay />);
+  expect(StyleSheet.flatten(screen.getByTestId('task-workspace-task-pane').props.style).width).toBe(expected);
+  expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
 });
 
 test('the native board sheet and inline root exclusively host the same overlay', () => {

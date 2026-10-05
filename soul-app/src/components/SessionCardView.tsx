@@ -4,12 +4,10 @@ import {
   View,
   Text,
   Image,
-  StyleSheet,
   Pressable,
   type GestureResponderEvent,
 } from 'react-native';
-import Animated, { interpolate, interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
+import Animated from 'react-native-reanimated';
 import type { Session } from '../api/types';
 import { getSessionDisplayName } from '../lib/session-display-name';
 import { useTokens } from '../theme';
@@ -19,8 +17,7 @@ import {
   resolveSessionAgentLabel,
   resolveSessionModelLabel,
 } from './sessionCardDisplay';
-import { shouldRenderSessionCardShimmer } from './sessionCardAnimation';
-import { useSessionCardAnimation } from './useSessionCardAnimation';
+import { StatusPulseShimmer, useStatusPulseDecoration, withAlphaColor } from './StatusPulseDecoration';
 import { makeSessionCardStyles } from './sessionCardFrame';
 import { AppGlassCard } from './AppGlassCard';
 import { CompactTouchTarget } from './CompactTouchTarget';
@@ -43,15 +40,6 @@ export interface SessionCardProps {
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-// '#RRGGBB' + 0..1 알파 → '#RRGGBBAA'. CSS color-mix(success X%, transparent) 등가.
-function withAlpha(hex: string, alpha: number): string {
-  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255)
-    .toString(16)
-    .padStart(2, '0')
-    .toUpperCase();
-  return `${hex}${a}`;
-}
 
 const STATUS_LABELS: Record<string, string> = {
   running: '실행 중',
@@ -119,41 +107,16 @@ export function SessionCardView({
   const { acknowledge: acknowledgeSessionReview, inFlight: acknowledgingReview } =
     review;
   const [cardWidth, setCardWidth] = useState(0);
-  const { pulse, shimmer, reducedMotion, appActive, animationEnabled } =
-    useSessionCardAnimation({ isRunning, animationActive });
-
   const successHex = t.colors.statusRunning;
-
-  // Endpoints and RGB/alpha interpolation match the existing card animation.
-  const backgroundRange = [withAlpha(successHex, 0), withAlpha(successHex, 0.07)];
-  const borderRange = [withAlpha(successHex, 0.12), withAlpha(successHex, 0.5)];
-  const staticBorder = styles.card.borderColor;
-  const staticBackground = styles.card.backgroundColor;
-  const staticShadowOpacity = styles.card.shadowOpacity;
-  const staticElevation = styles.card.elevation;
-  // Explicit resets also clear web inline styles after reduced motion/tab changes.
-  const animatedCardStyle = useAnimatedStyle(() => ({
-    backgroundColor: animationEnabled
-      ? interpolateColor(pulse.value, [0, 1], backgroundRange, 'RGB', { gamma: 1 })
-      : staticBackground,
-    borderColor: animationEnabled
-      ? interpolateColor(pulse.value, [0, 1], borderRange, 'RGB', { gamma: 1 })
-      : staticBorder,
-    shadowColor: successHex,
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 14,
-    shadowOpacity: animationEnabled ? interpolate(pulse.value, [0, 1], [0, 0.14]) : staticShadowOpacity,
-    elevation: animationEnabled ? 4 : staticElevation,
-  }));
-  const shimmerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: interpolate(shimmer.value, [0, 1], [-cardWidth, cardWidth]) }],
-  }));
-  const showShimmer = shouldRenderSessionCardShimmer({
+  const decoration = useStatusPulseDecoration({
     isRunning,
-    reducedMotion,
-    appActive,
-    cardWidth,
     animationActive,
+    cardWidth,
+    successColor: successHex,
+    staticBackground: styles.card.backgroundColor,
+    staticBorder: styles.card.borderColor,
+    staticShadowOpacity: styles.card.shadowOpacity,
+    staticElevation: styles.card.elevation,
   });
 
   const acknowledgeReview = (event: GestureResponderEvent) => {
@@ -202,7 +165,7 @@ export function SessionCardView({
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
-        style={[styles.card, animatedCardStyle]}
+        style={[styles.card, decoration.animatedStyle]}
         onPress={onPress}
         onLongPress={onLongPress}
         onLayout={(e) => {
@@ -213,40 +176,8 @@ export function SessionCardView({
         }}
         android_ripple={{ color: t.colors.border }}
       >
-      {showShimmer && (
-        <View
-          testID="session-card-shimmer-layer"
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              borderRadius: t.radius.md,
-              overflow: 'hidden',
-              pointerEvents: 'none',
-            },
-          ]}
-        >
-          <Animated.View
-            style={[{
-              width: '100%',
-              height: '100%',
-            }, shimmerStyle]}
-          >
-            <LinearGradient
-              // 웹 정본: linear-gradient(105deg, transparent 30%, success 10% 50%, transparent 70%).
-              // RN LinearGradient는 deg 직접 지원 안 함 → start/end 좌표로 대각선 표현.
-              colors={[
-                'transparent',
-                withAlpha(successHex, 0.1),
-                'transparent',
-              ]}
-              locations={[0.3, 0.5, 0.7]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </Animated.View>
-        </View>
-      )}
+      {decoration.showShimmer ? <StatusPulseShimmer testID="session-card-shimmer-layer"
+        borderRadius={t.radius.md} color={decoration.shimmerColor} style={decoration.shimmerStyle} /> : null}
 
       {avatarView}
       <View style={styles.content}>
@@ -315,7 +246,7 @@ export function SessionCardView({
               testID="session-card-status-chip"
               style={[
                 styles.statusChip,
-                { backgroundColor: withAlpha(statusColor, 0.12) },
+                { backgroundColor: withAlphaColor(statusColor, 0.12) },
               ]}
             >
               <Text style={[styles.statusChipText, { color: statusColor }]}>

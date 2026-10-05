@@ -191,6 +191,7 @@
     "components/settings/SettingsWorkspaceContext.tsx",
     "hooks/useCardActions.ts",
     "hooks/useCardComments.ts",
+    "hooks/useCardItems.ts",
     "hooks/useCardTransition.ts",
     "hooks/useChatAttachments.ts",
     "hooks/usePlannerContextMenus.ts",

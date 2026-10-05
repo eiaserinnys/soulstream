@@ -51,6 +51,35 @@ test('카드 상세/목록은 서버 camelCase 행과 세션 연결을 보존한
   ]);
 });
 
+test('카드 확인 항목 응답과 예전 서버의 필드 생략을 보존한다', async () => {
+  const item = { id: 2, title: '검수', state: 'doing', result: null, evidence: [], caveat: null,
+    rev: 0, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: '', reportedAt: null,
+    display: 'doing' };
+  const now = { text: '검수 중', turn: 'agent', ask: null, updatedAt: '', sessionId: 'session-1' };
+  const withChecks = { ...detail, card: { ...cardFixture, items: [item], now }, notes: [], nowHistory: [] };
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValueOnce(response(withChecks))
+    .mockResolvedValueOnce(response(detail));
+  const api = createApiClient('https://cards.test');
+
+  expect(await api.getCard(cardFixture.id)).toMatchObject({ card: { items: [item], now }, notes: [], nowHistory: [] });
+  expect(await api.getCard(cardFixture.id)).toMatchObject({ card: { items: [], now: null }, notes: [], nowHistory: [] });
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+    'https://cards.test/api/cards/card%2F1', 'https://cards.test/api/cards/card%2F1',
+  ]);
+});
+
+test('항목 확인은 인코딩된 카드 경로와 confirmed 본문만 보내고 변경 envelope을 돌려준다', async () => {
+  const item = { id: 1, confirmed: { at: '2026-10-05T00:00:00Z', rev: 1 }, display: 'confirmed' };
+  const card = { ...cardFixture, items: [item] };
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(response({ folderId: card.folderId, card }));
+  const api = createApiClient('https://cards.test');
+
+  await expect(api.confirmCardItem(card.id, 1, true)).resolves.toEqual({ folderId: card.folderId, card });
+  expect(fetch.mock.calls[0][0]).toBe('https://cards.test/api/cards/card%2F1/items/1/confirm');
+  expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST' });
+  expect(JSON.parse(fetch.mock.calls[0][1]?.body as string)).toEqual({ confirmed: true });
+});
+
 test('생성·완료·반려·대기·빼기·취소·이동·순서·담당·답변은 서버 계약대로 보낸다', async () => {
   const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(response({ card: cardFixture, folderId: 'folder-1' }));
   const api = createApiClient('https://cards.test');
@@ -108,4 +137,17 @@ test('커멘트는 카드 comments wire를 보존하고 동일 키와 본문을 
   expect(url).toBe('https://cards.test/api/cards/card%2F1/comments');
   expect(init?.method).toBe('POST');
   expect(JSON.parse(init?.body as string)).toEqual({ body: '커멘트', idempotencyKey: 'comment-key' });
+});
+
+test('항목 커멘트는 itemId만 추가하고 기존 idempotency 계약을 유지한다', async () => {
+  const comment = { id: 'comment-item', cardId: cardFixture.id, authorKind: 'user', authorId: 'user',
+    sessionId: null, kind: 'comment', itemId: 4, body: '확인할 부분', createdAt: '' };
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(response(comment));
+  const api = createApiClient('https://cards.test');
+
+  await expect(api.addCardComment(cardFixture.id, { body: '확인할 부분', itemId: 4, idempotencyKey: 'item-comment' }))
+    .resolves.toEqual(comment);
+  expect(JSON.parse(fetch.mock.calls[0][1]?.body as string)).toEqual({
+    body: '확인할 부분', itemId: 4, idempotencyKey: 'item-comment',
+  });
 });

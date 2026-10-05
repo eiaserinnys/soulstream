@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -59,10 +60,10 @@ function FolderWorkspaceOverlayContent() {
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const progress = useRef(new Animated.Value(0)).current;
   const overlayWidth = Math.min(Math.floor(screenWidth * 0.9), 920);
-  const folderPaneWidth = resolveFolderPaneWidth(
-    overlayWidth,
-    t.tabletShell.folderPane,
-  );
+  const sheetWidth = overlayWidth + (cardId ? StyleSheet.hairlineWidth * 2 : 0);
+  const folderPaneWidth = cardId
+    ? Math.round(overlayWidth * 0.5)
+    : resolveFolderPaneWidth(overlayWidth, t.tabletShell.folderPane);
   const requestClose = () => coordinateFolderWorkspaceClose(pageId, close);
 
   // Feed-selected sessions win once; normal card opens keep assignee-first behavior.
@@ -86,13 +87,13 @@ function FolderWorkspaceOverlayContent() {
       toValue: visible ? 1 : 0,
       duration: ANIMATION_MS,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
+      useNativeDriver: Platform.OS !== 'web',
+  }).start();
   }, [progress, visible]);
 
   const translateX = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [overlayWidth, 0],
+    outputRange: [sheetWidth, 0],
   });
 
   return (
@@ -111,7 +112,7 @@ function FolderWorkspaceOverlayContent() {
         style={[
           styles.sheet,
           {
-            width: overlayWidth,
+            width: sheetWidth,
             transform: [{ translateX }],
           },
         ]}
@@ -190,7 +191,7 @@ function FolderWorkspaceOverlayContent() {
             </>
           )}
           </View>
-          <View style={styles.chatPane}>
+          <View testID="task-workspace-chat-pane" style={styles.chatPane}>
             <ChatPane active={visible} />
           </View>
         </AppGlassCard>

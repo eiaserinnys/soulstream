@@ -8,7 +8,7 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
 import { act, fireEvent, render, renderHook, userEvent, waitFor } from '@testing-library/react-native';
 import { ActionSheetIOS, Alert, StyleSheet } from 'react-native';
-import type { CardDetail, CardDto } from '../../../api/cardTypes';
+import type { CardCheckItem, CardDetail, CardDto } from '../../../api/cardTypes';
 import { useCardStore } from '../../../store/cardStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
@@ -79,6 +79,14 @@ const detail: CardDetail = { card, reports: [
   { id: 'older', cardId: card.id, title: '이전 보고', body: '이전 본문', format: 'markdown', createdAt: '2026-09-29' },
 ], questions: [{ id: 'question-1', cardId: card.id, sessionId: 's1', text: '어떤 색?', options: ['파랑', '빨강'], answer: null, askedAt: '' }],
   sessions: [{ agentSessionId: 's1', displayName: '실행 세션', status: 'idle', createdAt: '', updatedAt: '' }] };
+function checkItem(id: number, display: CardCheckItem['display']): CardCheckItem {
+  return {
+    id, title: `항목 ${id}`, state: display === 'confirmed' || display === 'reported' ? 'done' : 'todo',
+    result: null, evidence: [], caveat: null, rev: 1,
+    confirmed: display === 'confirmed' ? { at: '2026-10-05T01:00:00Z', rev: 1 } : null,
+    fixOpen: 0, reopened: null, from: null, createdAt: '', reportedAt: null, display,
+  };
+}
 
 beforeEach(async () => {
   await useAuthStore.persist.rehydrate();
@@ -112,13 +120,53 @@ test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 
   expect(screen.queryByTestId('card-report-html-latest')).toBeNull();
   fireEvent.press(screen.getByLabelText('report-latest 자세히'));
   expect(screen.getByTestId('card-report-html-latest')).toBeTruthy();
-  expect(screen.getByText('실행 세션')).toBeTruthy();
   fireEvent.press(screen.getByText('파랑'));
   await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
   expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1', '파랑', expect.any(String));
+  expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
+  expect(screen.getByText('실행 세션')).toBeTruthy();
 });
 
-test.each([{ nativeHeader: true }, { inline: true }])('상세 완료 성공은 store를 갱신한 뒤 기존 닫기로 복귀한다 %s', async (presentation) => {
+test('탭을 오가도 이 상세에서 새로 확인한 항목은 확인함 묶음으로 옮기지 않는다', async () => {
+  const items = [checkItem(1, 'confirmed'), checkItem(2, 'confirmed'), checkItem(3, 'todo')];
+  const sourceCard = { ...card, items };
+  const confirmedCard = { ...sourceCard, version: card.version + 1, items: items.map((item) => item.id === 3
+    ? { ...item, display: 'confirmed' as const, confirmed: { at: '2026-10-05T01:00:00Z', rev: item.rev } }
+    : item) };
+  const api = {
+    getCard: jest.fn().mockResolvedValue({ ...detail, card: sourceCard }),
+    confirmCardItem: jest.fn().mockResolvedValue({ card: confirmedCard, folderId: card.folderId }),
+  };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-item-checkbox-3')).toBeTruthy());
+
+  await act(async () => fireEvent.press(screen.getByLabelText('3 항목 3 확인')));
+  await waitFor(() => expect(useCardStore.getState().details[card.id]?.card.items?.[2].display).toBe('confirmed'));
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-comments'));
+  expect(screen.getByTestId('card-timeline')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-items'));
+
+  expect(screen.getByTestId('card-check-item-3')).toBeTruthy();
+  expect(screen.queryByText('확인함 3개')).toBeNull();
+});
+
+test('항목이 없는 카드의 커멘트 탭은 뒤늦게 항목이 와도 선택을 유지한다', async () => {
+  const emptyCard = { ...card, items: [] };
+  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, card: emptyCard }) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-timeline')).toBeTruthy());
+  expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
+
+  act(() => useCardStore.getState().putMutationCard({ ...emptyCard, version: card.version + 1, items: [checkItem(1, 'todo')] }));
+
+  expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
+  expect(screen.getByTestId('settings-segment-card-detail-items').props.accessibilityState.selected).toBe(false);
+  expect(screen.getByTestId('card-timeline')).toBeTruthy();
+  expect(screen.queryByTestId('card-check-items')).toBeNull();
+});
+
+test.each([{}, { inline: true }])('상세 완료 성공은 store를 갱신한 뒤 기존 닫기로 복귀한다 %s', async (presentation) => {
   const reviewing = { ...detail, questions: [], card: { ...card, status: 'review' as const } };
   const done = { ...card, status: 'done' as const, version: card.version + 1 };
   const api = { getCard: jest.fn().mockResolvedValueOnce(reviewing).mockResolvedValueOnce(reviewing).mockResolvedValue({ ...reviewing, card: done }),
@@ -127,7 +175,7 @@ test.each([{ nativeHeader: true }, { inline: true }])('상세 완료 성공은 s
   const screen = render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={onClose} />);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
   expect(screen.getByLabelText('상태 변경')).toBeTruthy();
-  if (!('nativeHeader' in presentation)) expect(screen.getByText('검수')).toBeTruthy();
+  expect(screen.getByText('검수')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('완료')));
   expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'done', card.version, expect.any(String), undefined);
   expect(onClose).toHaveBeenCalledTimes(1);
@@ -161,6 +209,7 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
   const onOpenSession = jest.fn();
   const { result } = renderHook(() => useTokens());
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={onClose} onOpenSession={onOpenSession} />);
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
   await waitFor(() => expect(screen.getByText('31개 더')).toBeTruthy());
   fireEvent.press(screen.getByText('31개 더'));
   await waitFor(() => expect(screen.getByTestId('task-run-row-run-33')).toBeTruthy());
@@ -223,7 +272,7 @@ test('카드 생성은 요청 본문만 복원하고 제목은 기존 빈 값으
 });
 
 
-test.each([{nativeHeader:true},{inline:true}])('완료 상세에서도 기존 메뉴로 사유 없이 재착수한다 %s',async presentation=>{
+test.each([{}, {inline:true}])('완료 상세에서도 기존 메뉴로 사유 없이 재착수한다 %s',async presentation=>{
   const completed={...detail,card:{...card,status:'done' as const},reports:[],questions:[]};
   const api={getCard:jest.fn().mockResolvedValue(completed),executeCard:jest.fn().mockResolvedValue({card:{...completed.card,status:'running'},folderId:card.folderId,execution:{requestId:'resume-card',sessionId:'owner',state:'started'}})};
   const screen=render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={jest.fn()}/>);
@@ -238,10 +287,12 @@ test.each([{nativeHeader:true},{inline:true}])('완료 상세에서도 기존 �
 test('assigned settings disappear while native status/complete and sessions remain',async()=>{
  const assigned={...card,assigneeKind:'session' as const,assigneeSessionId:'s1'};
  const api={getCard:jest.fn().mockResolvedValue({...detail,card:assigned})};
- const screen=render(<CardDetailContent api={api as any} cardId={card.id} nativeHeader onClose={jest.fn()}/>);
+ const screen=render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()}/>);
  await waitFor(()=>expect(screen.getByText('원문')).toBeTruthy());
  for(const label of ['폴더 변경','담당 변경','노드 변경','모델 변경'])expect(screen.queryByLabelText(label)).toBeNull();
- expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-sessions')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
+ expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
+ fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
+ expect(screen.getByTestId('card-sessions')).toBeTruthy();
 });
 
 test.each(['todo','queued'] as const)('상세 %s 시작은 접수 후 화면을 유지하고 실패 알림 없이 시작 중을 보인다',async status=>{

@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { DisclosureIcon } from '../DisclosureIcon';
+import { CompactTouchTarget } from '../CompactTouchTarget';
 
 export function PlannerSectionHeader({
   title,
@@ -22,7 +23,7 @@ export function PlannerSectionHeader({
   testID?: string;
   countTestID?: string;
   countSuffix?: string;
-  variant?: 'default' | 'board' | 'lane';
+  variant?: 'default' | 'board' | 'lane' | 'compact';
   actionLabel?: string;
   onAction?: () => void;
   extraAction?: { label: string; onPress(): void };
@@ -33,6 +34,14 @@ export function PlannerSectionHeader({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const board = variant === 'board';
+  if (variant === 'compact' && onToggle) return <CompactTouchTarget testID={testID} accessibilityRole="button"
+    accessibilityLabel={`${title} ${expanded ? '접기' : '펼치기'}`} accessibilityState={{ expanded }} onPress={onToggle}
+    frameStyle={styles.compactFrame} surfaceStyle={styles.compactRow}>
+    <Text style={styles.compactTitle} numberOfLines={1}>{title}</Text>
+    <View style={styles.compactDisclosure}>
+      <DisclosureIcon expanded={expanded === true} color={t.colors.textMuted} size={t.iconSize.compact} />
+    </View>
+  </CompactTouchTarget>;
   if (variant === 'lane') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={[styles.title, styles.countedTitle]}>
     {title + ' '}<Text testID={countTestID}>{`${count ?? 0}${countSuffix??'개'}`}</Text>
   </Text>;
@@ -69,6 +78,10 @@ function makeStyles(t: DesignTokens) {
   const planner = createPlannerVisualRoles(t);
   return StyleSheet.create({
     row: { minHeight: planner.minHeight.context, flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
+    compactFrame: { alignSelf: 'stretch' },
+    compactRow: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm },
+    compactTitle: { flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary },
+    compactDisclosure: { width: planner.actionColumn, height: planner.actionColumn, alignItems: 'center', justifyContent: 'center' },
     title: { color: t.colors.textPrimary, ...planner.typography.section },
     flexibleTitle: { flex: 1 },
     countedRow: { alignItems: 'baseline', gap: t.uiSpacing.sm },

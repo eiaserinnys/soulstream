@@ -38,6 +38,7 @@ import { ReviewDialogues } from './ReviewDialogues';
 import { dialogueFolders, dialogueSessions, reviewSessionPortraits } from './dialogue-fixtures';
 import { useUIStore } from '../store/uiStore';
 import { FolderWorkspaceReadOverlay } from '../components/planner/FolderWorkspaceReadOverlay';
+import { ReviewCardChecks } from './ReviewCardChecks';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -50,6 +51,7 @@ const sections = [
   { value: 'cardColors', label: '카드 색상' },
   { value: 'boardConnected', label: '보드 연결' },
   { value: 'cardHome', label: '카드 홈' },
+  { value: 'cardChecks', label: '카드 확인 항목' },
   {value:'folderWorkspace',label:'폴더 카드'},
   { value: 'folderTabs', label: '폴더 탭' },
   { value: 'entryShell', label: '앱 홈 조합' },
@@ -64,10 +66,11 @@ export function initializeReview() {
   const entryShell = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'entryShell';
   const folderTabs = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'folderTabs';
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
+  const cardChecks = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardChecks';
   const nativeSettings = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'nativeSettings';
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (nativeSettings) {
     useAuthStore.setState({ jwt: firstNativeConnection ? null : 'public-review-fixture', authRejected: false });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-error') useSettingsStore.setState({ wallpaper: { mode: 'photo', customImage: window.location.origin + '/assets/ios-components/unavailable-photo.jpg' } });
@@ -106,6 +109,7 @@ function Gallery() {
     backgroundColor: t.colors.background,
   }), [t]);
   if (section === 'nativeSettings') return <ReviewNativeSettings/>;
+  if (section === 'cardChecks') return <View testID="card-checks-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewCardChecks /></View>;
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
   if (section === 'cardColors') return <ReviewCardColors />;
   if (section === 'boardConnected') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoardWorkspace/></View>;
@@ -132,6 +136,13 @@ function Gallery() {
       </Text>
     </View>
     <SettingsSegmentedControl<Section> id="review-section" value={section} onChange={(next) => {
+      if (next === 'cardChecks') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('section', next);
+        url.searchParams.set('safeArea', 'fixture');
+        window.location.assign(url.toString());
+        return;
+      }
       if (next === 'dialogues' || section === 'dialogues' || next === 'nativeSettings') {
         const url = new URL(window.location.href);
         url.searchParams.set('section', next);
@@ -169,12 +180,18 @@ export function ComponentReview() {
 
 function getNativeSettingsSafeAreaFixture(search: string, width: number, height: number): { frame: Rect; insets: EdgeInsets } | null {
   const params = new URLSearchParams(search);
-  if (params.get('section') !== 'nativeSettings' || params.get('safeArea') !== 'fixture') return null;
+  if (params.get('safeArea') !== 'fixture') return null;
+  const cardChecks = params.get('section') === 'cardChecks';
+  if (!cardChecks && params.get('section') !== 'nativeSettings') return null;
 
   return {
     frame: { x: 0, y: 0, width, height },
-    insets: width >= 768
-      ? { top: 24, right: 20, bottom: 24, left: 20 }
-      : { top: 59, right: 24, bottom: 34, left: 24 },
+    insets: cardChecks
+      ? width >= 768
+        ? { top: 24, right: 0, bottom: 20, left: 0 }
+        : { top: 47, right: 0, bottom: 34, left: 0 }
+      : width >= 768
+        ? { top: 24, right: 20, bottom: 24, left: 20 }
+        : { top: 59, right: 24, bottom: 34, left: 24 },
   };
 }

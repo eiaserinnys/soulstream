@@ -39,7 +39,8 @@ export const CardTimeline = React.memo(function CardTimeline({ detail, onChooseA
       ...(question.answer === null ? [] : [{ id: `answer-${question.id}`, type: 'answer' as const, source: question, at: question.answeredAt ?? question.askedAt }]),
     ]),
     ...detail.reports.map((report): TimelineItem => ({ id: `report-${report.id}`, type: 'report', source: report, at: report.createdAt, sessionId: report.sessionId })),
-    ...(detail.comments ?? []).map((comment): TimelineItem => ({ id: `comment-${comment.id}`, type: 'comment', source: comment, at: comment.createdAt, sessionId: comment.sessionId })),
+    ...(detail.comments ?? []).filter((comment) => comment.kind !== 'note')
+      .map((comment): TimelineItem => ({ id: `comment-${comment.id}`, type: 'comment', source: comment, at: comment.createdAt, sessionId: comment.sessionId })),
   ].sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
   return <View testID="card-timeline" style={styles.timeline}>{items.map((item) => {
     const author = catalog[item.sessionId ?? ''] ?? detail.sessions.find((session) => session.agentSessionId === item.sessionId) ?? assigned;

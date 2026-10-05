@@ -6,7 +6,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { once } = require('node:events');
 
-const [playwrightPath, evidencePath, tabletSize] = process.argv.slice(2);
+const [playwrightPath, evidencePath, tabletSize, captureMode] = process.argv.slice(2);
 if (!playwrightPath || !evidencePath) throw new Error('Playwright path와 증거 경로가 필요합니다.');
 const { chromium, devices } = require(path.resolve(playwrightPath));
 const output = path.resolve(evidencePath);
@@ -147,6 +147,225 @@ async function runViewport(browser, base, options, name) {
   await context.close();
 }
 
+async function openCardChecksState(page, base, { phone = false, state = 'normal', theme = 'dark' }) {
+  const url = new URL(`${base}${prefix}index.html`);
+  url.searchParams.set('section', 'cardChecks');
+  url.searchParams.set('safeArea', 'fixture');
+  url.searchParams.set('state', state);
+  url.searchParams.set('theme', theme);
+  await page.goto(url.toString());
+  if (phone) await page.getByTestId('postit-open-public-card-checks').click();
+  await page.getByTestId('card-detail-header').waitFor();
+}
+
+async function captureCardAfterFix(page, base, { phone, shot, name }) {
+  await openCardChecksState(page, base, { phone, state: 'normal', theme: 'dark' });
+  await page.getByTestId('card-check-item-1-fix').click();
+  await page.getByTestId('card-comment-target').waitFor();
+  const input = page.getByTestId('card-comment-composer').getByTestId('chat-composer-text-input');
+  await input.fill('시안과 같은 표시인지 확인해 주세요.');
+  await page.getByTestId('card-comment-composer').getByTestId('chat-composer-send-button').click();
+  await page.getByTestId('card-comment-send-notice').waitFor();
+  await page.getByText('고칠 점 1', { exact: true }).waitFor();
+  await shot('after-fix');
+  result.interactions.push(`${name}: 1번 항목 대상 커멘트 뒤 붉은 고칠 점 상태`);
+}
+
+async function captureAllChecked(page, base, { phone, shot, name }) {
+  await openCardChecksState(page, base, { phone, state: 'all-confirmed', theme: 'dark' });
+  await page.getByText('모두 확인했습니다. 완료로 옮길까요?').waitFor();
+  await page.getByTestId('card-check-items-confirmed-group').waitFor();
+  await shot('all-checked');
+  await shot('all-confirmed');
+  const mutations = await page.evaluate(() => window.__soulAppEntryShellCardMutations ?? null);
+  assert.ok(Array.isArray(mutations), '상태 변경 기록기가 연결되지 않았습니다.');
+  assert.equal(mutations.filter((entry) => entry.id === 'public-card-checks'
+    && (entry.method === 'setCardStatus' || entry.method === 'executeCard')).length, 0);
+  result.interactions.push(`${name}: 전부 확인된 화면에서 완료 강조와 자동 상태 변경 없음`);
+}
+
+async function runCardChecksViewport(browser, base, { name, width, height, state = 'normal', theme = 'light', phone = false }) {
+  const context = await browser.newContext({ viewport: { width, height }, screen: { width, height }, deviceScaleFactor: 1, isMobile: phone, hasTouch: true });
+  await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  page.on('pageerror', (error) => result.errors.push({ name, message: error.message }));
+  page.on('console', (msg) => {
+    if (msg.type() === 'warning' || msg.type() === 'error') result.warnings.push({ name, message: msg.text() });
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem('soul-app-settings', JSON.stringify({ state: { serverUrl: 'https://must-not-read.invalid', appearance: 'dark' }, version: 0 }));
+    localStorage.setItem('soul-auth', JSON.stringify({ state: { jwt: 'public-sentinel' }, version: 0 }));
+  });
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== base) {
+      result.errors.push({ name, message: 'External request: ' + route.request().url() });
+      await route.abort(); return;
+    }
+    await route.continue();
+  });
+  const url = new URL(base + prefix + 'index.html');
+  url.searchParams.set('section', 'cardChecks');
+  url.searchParams.set('safeArea', 'fixture');
+  url.searchParams.set('state', state);
+  url.searchParams.set('theme', theme);
+  await page.goto(url.toString());
+  await page.getByTestId('card-checks-review-entry').waitFor();
+  const shot = async (part) => page.screenshot({ path: path.join(output, name + '-' + part + '.png') });
+  const metric = async (id) => page.getByTestId(id).evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    return { x: b.x, y: b.y, width: b.width, height: b.height, right: b.right, bottom: b.bottom };
+  });
+  result.viewports.push({ name, viewport: { width, height }, state, theme });
+
+  if (phone) {
+    const row = page.getByTestId('postit-open-public-card-checks');
+    await row.waitFor();
+    await page.getByTestId('postit-public-card-checks-item-summary').waitFor();
+    await shot('list');
+    await row.click();
+    await page.getByTestId('card-detail-header').waitFor();
+    await page.getByTestId('card-check-item-2-shimmer').waitFor();
+    await page.getByTestId('card-detail-dock').waitFor();
+    const header = await metric('card-detail-header');
+    const dock = await metric('card-detail-dock');
+    const dockBottomInset = height - dock.bottom;
+    assert.ok(header.y >= 47, `phone header must begin below the 47pt top safe area: ${JSON.stringify(header)}`);
+    assert.equal(Math.round(dockBottomInset), 42, `phone dock must end 42pt above the screen edge: ${JSON.stringify(dock)}`);
+    result.viewports[result.viewports.length - 1].phoneFrame = { header, dock, dockBottomInset };
+    for (const display of ['아직', '하는 중', '됐다고 보고', '다시 봐 주세요', '고칠 점 2', '확인함', '뺌']) {
+      await page.getByText(display, { exact: false }).first().waitFor();
+    }
+    await shot('detail-initial');
+    await shot('still');
+    const panelBefore = await metric('card-now-panel');
+    const firstItemBefore = await metric('card-check-item-1');
+    await page.getByLabel('이전 상황').click();
+    const panelPast = await metric('card-now-panel');
+    const firstItemPast = await metric('card-check-item-1');
+    assert.equal(Math.round(panelBefore.height), Math.round(panelPast.height), JSON.stringify({ panelBefore, panelPast }));
+    assert.equal(Math.round(firstItemBefore.y), Math.round(firstItemPast.y), JSON.stringify({ firstItemBefore, firstItemPast }));
+    await shot('past');
+    await page.getByTestId('card-now-latest').click();
+    await page.getByTestId('card-check-item-5-fix').click();
+    await page.getByTestId('card-comment-target').waitFor();
+    const input = page.getByTestId('card-comment-composer').getByTestId('chat-composer-text-input');
+    await input.fill('수정 결과를 확인해 주세요.');
+    await page.getByTestId('card-comment-composer').getByTestId('chat-composer-send-button').click();
+    await page.getByTestId('card-comment-send-notice').waitFor();
+    assert.equal(await page.getByTestId('settings-segment-card-detail-items').getAttribute('aria-pressed'), 'true');
+    const requests = await page.evaluate(() => window.__cardChecksRequests ?? []);
+    assert.ok(requests.some((entry) => entry.kind === 'comment' && entry.data.itemId === 5), '항목 커멘트는 itemId를 포함해야 합니다.');
+    await shot('target-and-sent');
+    await page.getByTestId('settings-segment-card-detail-comments').click();
+    await page.getByTestId('card-timeline').waitFor();
+    await shot('comments');
+    await page.getByTestId('settings-segment-card-detail-items').click();
+    await page.getByTestId('card-check-item-3-evidence-0').scrollIntoViewIfNeeded();
+    await page.getByTestId('card-check-item-3-evidence-0').click();
+    await page.getByLabel('이미지 닫기').waitFor();
+    await shot('image-expanded');
+    await page.getByLabel('이미지 닫기').click();
+    await page.getByLabel('뒤로').click();
+    await page.getByTestId('postit-open-public-card-checks').waitFor();
+    assert.equal(await page.getByTestId('card-detail-header').count(), 0);
+    await shot('list-after-back');
+    result.interactions.push(`${name}: 실제 카드 행→상세→대상 커멘트(itemId 5)→이미지 확대·닫기→뒤로가기 목록 복귀`);
+
+    await page.goto(new URL(`${base}${prefix}index.html?section=cardChecks&safeArea=fixture&state=legacy&theme=light`).toString());
+    await page.getByTestId('postit-open-public-card-checks').click();
+    await page.getByTestId('card-timeline').waitFor();
+    assert.equal(await page.getByTestId('settings-segment-card-detail-comments').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.getByTestId('card-now-panel').count(), 0);
+    await shot('legacy-comments');
+    result.interactions.push(`${name}: 신규 fields가 없는 옛 카드의 커멘트 탭과 기존 시간순 타임라인`);
+    await captureCardAfterFix(page, base, { phone: true, shot, name });
+    await captureAllChecked(page, base, { phone: true, shot, name });
+  } else {
+    await page.getByTestId('card-detail-header').waitFor();
+    await page.getByTestId('task-workspace-chat-pane').waitFor();
+    const taskPane = await metric('task-workspace-task-pane');
+    const chatPane = await metric('task-workspace-chat-pane');
+    const safeFrame = await metric('tablet-safe-area-content');
+    const expectedPaneWidth = Math.round(Math.min(Math.floor(width * 0.9), 920) / 2);
+    assert.equal(Math.round(taskPane.width), expectedPaneWidth);
+    assert.equal(Math.round(chatPane.width), expectedPaneWidth);
+    assert.equal(Math.round(safeFrame.y), 36);
+    result.viewports[result.viewports.length - 1].tabletFrame = { taskPane, chatPane, safeFrame };
+    await shot('detail-initial');
+    await shot('still');
+    const panelBefore = await metric('card-now-panel');
+    const panelFrameBefore = await metric('card-now-panel-frame');
+    const firstItemBefore = await metric('card-check-item-1');
+    await page.getByLabel('이전 상황').click();
+    const panelPast = await metric('card-now-panel');
+    const panelFramePast = await metric('card-now-panel-frame');
+    const firstItemPast = await metric('card-check-item-1');
+    result.viewports[result.viewports.length - 1].nowPanelLayout = {
+      panelBefore, panelPast, panelFrameBefore, panelFramePast, firstItemBefore, firstItemPast,
+    };
+    assert.equal(Math.round(panelBefore.height), Math.round(panelPast.height), JSON.stringify({ panelBefore, panelPast, panelFrameBefore, panelFramePast }));
+    assert.equal(Math.round(firstItemBefore.y), Math.round(firstItemPast.y), JSON.stringify({ firstItemBefore, firstItemPast }));
+    await shot('past');
+    await shot('past-now');
+    await page.getByTestId('settings-segment-card-detail-sessions').click();
+    await page.getByTestId('card-sessions').waitFor();
+    await shot('sessions-and-chat');
+    await page.getByTestId('settings-segment-card-detail-notes').click();
+    await page.getByTestId('card-notes').waitFor();
+    await page.getByText('인계 요약', { exact: true }).waitFor();
+    await page.getByText('앞선 노트 10건', { exact: true }).waitFor();
+    await page.getByText('인계 노트 11의 공개 예시입니다.', { exact: true }).waitFor();
+    assert.equal(await page.getByText('인계 노트 10의 공개 예시입니다.', { exact: true }).count(), 0);
+    await shot('notes');
+    await page.getByTestId('settings-segment-card-detail-sessions').click();
+    await page.getByTestId('card-sessions').waitFor();
+    const chatHeader = page.getByTestId('tablet-chat-header');
+    const chatBefore = (await chatHeader.textContent())?.trim() ?? '';
+    const sessionRow = page.getByTestId('task-run-row-public-shell-session-1');
+    await sessionRow.waitFor();
+    await sessionRow.click();
+    await page.waitForFunction((previous) => {
+      const current = document.querySelector('[data-testid="tablet-chat-header"]')?.textContent?.trim() ?? '';
+      return current.length > 0 && current !== previous;
+    }, chatBefore);
+    const chatAfter = (await chatHeader.textContent())?.trim() ?? '';
+    assert.notEqual(chatAfter, chatBefore, '세션 행을 눌러도 오른쪽 대화가 바뀌지 않았습니다.');
+    await page.getByLabel('뒤로').click();
+    await page.waitForFunction(() => (document.querySelector('[data-testid="task-workspace-overlay"]')
+      && getComputedStyle(document.querySelector('[data-testid="task-workspace-overlay"]')).pointerEvents === 'none')
+      || document.querySelector('[data-testid="task-workspace-sheet"]') === null);
+    result.interactions.push(`${name}: TabletSafeAreaFrame 0이 아닌 안전 영역·카드/채팅 반반 폭·상황 넘김·세션 선택·카드 작업면 닫기`);
+
+    if (name === 'ipad-landscape-1210x834') {
+      await page.goto(new URL(`${base}${prefix}index.html?section=cardChecks&safeArea=fixture&state=normal&theme=light`).toString());
+      await page.getByTestId('card-detail-header').waitFor();
+      await page.getByTestId('settings-segment-card-detail-notes').click();
+      await page.getByText('앞선 노트 10건').waitFor();
+      await page.getByText('앞선 노트 10건').click();
+      await page.getByText('인계 노트 1의 공개 예시입니다.').waitFor();
+      await shot('notes-expanded');
+      result.interactions.push(`${name}: 인계 요약·최근 노트 5건·앞선 노트 펼침`);
+    }
+    await captureCardAfterFix(page, base, { phone: false, shot, name });
+    await captureAllChecked(page, base, { phone: false, shot, name });
+  }
+
+  await context.close();
+}
+
+async function runCardChecksCaptures(browser, base) {
+  const phone = await browser.newPage({ viewport: { width: 428, height: 926 } });
+  await phone.goto(base + prefix + 'index.html');
+  await phone.getByText('로그인 후 앱 컴포넌트 검수로 돌아가기', { exact: true }).waitFor();
+  assert.equal(await phone.getByTestId('component-review').count(), 0);
+  await phone.close();
+  result.interactions.push('미인증 카드 검수 URL: gallery mount 차단');
+  await runCardChecksViewport(browser, base, { name: 'iphone-428x926', width: 428, height: 926, phone: true, state: 'normal', theme: 'dark' });
+  await runCardChecksViewport(browser, base, { name: 'ipad-portrait-834x1210', width: 834, height: 1210, state: 'normal', theme: 'dark' });
+  await runCardChecksViewport(browser, base, { name: 'ipad-landscape-1210x834', width: 1210, height: 834, state: 'normal', theme: 'dark' });
+}
+
 (async () => {
   await fs.mkdir(output, { recursive: true });
   server.listen(0, '127.0.0.1');
@@ -161,12 +380,16 @@ async function runViewport(browser, base, options, name) {
     assert.equal(await denied.getByTestId('component-review').count(), 0);
     await denied.close();
     result.interactions.push('미인증 직접 URL: gallery mount 차단');
-    const phone = devices['iPhone 14 Pro Max'];
-    await runViewport(browser, base, { ...phone, defaultBrowserType: undefined }, 'iphone14-pro-max');
-    if (tabletSize) {
-      const [width, height] = tabletSize.split('x').map(Number);
-      assert.ok(width > height && height >= 700, '확인된 iPad 가로 논리 해상도가 필요합니다.');
-      await runViewport(browser, base, { viewport: { width, height }, hasTouch: true }, 'confirmed-ipad-landscape');
+    if (captureMode === 'card-checks') {
+      await runCardChecksCaptures(browser, base);
+    } else {
+      const phone = devices['iPhone 14 Pro Max'];
+      await runViewport(browser, base, { ...phone, defaultBrowserType: undefined }, 'iphone14-pro-max');
+      if (tabletSize) {
+        const [width, height] = tabletSize.split('x').map(Number);
+        assert.ok(width > height && height >= 700, '확인된 iPad 가로 논리 해상도가 필요합니다.');
+        await runViewport(browser, base, { viewport: { width, height }, hasTouch: true }, 'confirmed-ipad-landscape');
+      }
     }
     assert.deepEqual(result.errors, []);
     assert.ok(apiRequests.length > 0);

@@ -34,7 +34,6 @@ import { GlassSurface } from '../components/GlassSurface';
 import { useTokens, type DesignTokens } from '../theme';
 import { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
 import { CardDetailContent } from '../components/planner/CardDetailSheet';
-import { useCardStore } from '../store/cardStore';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { createApiClient } from '../api/client';
 import { useSettingsStore } from '../store/settingsStore';
@@ -42,6 +41,7 @@ import { createSurfaceRoles } from '../theme/surfaceRoles';
 import { openPhoneChat, openPhoneSearchSession } from './phoneSessionNavigation';
 import { useSearchStore } from '../store/searchStore';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROOT_SECTION_CONFIG, type RootSectionKey } from './rootSectionConfig';
 import { RootSectionHeaderTitle } from '../components/navigation/RootSectionHeaderTitle';
 import { DailyHeaderActions } from '../components/planner/DailyHeaderActions';
@@ -196,7 +196,7 @@ function DailyNavigator() {
         component={PhoneDailyFolderWorkspace}
         options={({ route }) => ({ title: route.params.folderTitle })}
       />
-      <DailyStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드' }} />
+      <DailyStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
     </DailyStack.Navigator>
   );
 }
@@ -219,12 +219,18 @@ function PhoneFolderListWorkspace({ route, navigation }: NativeStackScreenProps<
 }
 
 export function PhoneCardDetail({ route, navigation }: { route: { params: { cardId: string } }; navigation: any }) {
+  const t = useTokens();
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  const title = useCardStore((state) => state.rows[route.params.cardId]?.title ?? '카드');
-  useLayoutEffect(() => { navigation.setOptions({ title }); }, [navigation, title]);
-  return <CardDetailContent nativeHeader api={api} cardId={route.params.cardId} onClose={() => navigation.goBack()}
-    onOpenSession={(id) => openPhoneChat(navigation, id)} />;
+  useFocusEffect(useCallback(() => {
+    const tabs = navigation.getParent();
+    tabs?.setOptions({ tabBarStyle: { ...getDefaultTabBarStyle(t.colors), display: 'none' } });
+    return () => { tabs?.setOptions({ tabBarStyle: getDefaultTabBarStyle(t.colors) }); };
+  }, [navigation, t.colors]));
+  return <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
+    <CardDetailContent api={api} cardId={route.params.cardId} onClose={() => navigation.goBack()}
+      onOpenSession={(id) => openPhoneChat(navigation, id)} />
+  </SafeAreaView>;
 }
 
 export function PhoneFolderWorkspace({ folderPageId, folderId, navigation }: { folderPageId: string; folderId?: string; navigation: any }) {
@@ -263,7 +269,7 @@ function FolderNavigator() {
         component={PhoneFolderListWorkspace}
         options={({ route }) => ({ title: route.params.folderTitle })}
       />
-      <FolderStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드' }} />
+      <FolderStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
     </FolderStack.Navigator>
   );
 }

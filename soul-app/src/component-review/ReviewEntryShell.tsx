@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, Text, View, type AlertButton } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { TabNavigator } from '../navigation/TabNavigator';
 import { SplitLayout } from '../components/split/SplitLayout';
 import { useDeviceType } from '../theme';
@@ -50,7 +50,12 @@ function EntryShellAlertHarness() {
 /** Real phone tab/stack/home and tablet split tree. Metro injects fixture transport. */
 export function ReviewEntryShell() {
   const device = useDeviceType();
-  return <View style={{ flex: 1 }}><NavigationContainer>{device === 'phone' ? <TabNavigator /> : <SplitLayout />}</NavigationContainer>
+  const t = useTokens();
+  const navigationTheme = {
+    ...DefaultTheme,
+    colors: { ...DefaultTheme.colors, background: t.colors.background },
+  };
+  return <View style={{ flex: 1 }}><NavigationContainer theme={navigationTheme}>{device === 'phone' ? <TabNavigator /> : <SplitLayout />}</NavigationContainer>
     <EntryShellAlertHarness />
   </View>;
 }

@@ -33,6 +33,7 @@ interface Props {
   voiceControls: React.ReactNode;
   minimumBottomPadding?: number;
   embedded?: boolean;
+  onInputRef?: (input: TextInput | null) => void;
 }
 
 export function ChatComposer({
@@ -52,6 +53,7 @@ export function ChatComposer({
   inputAccessibilityLabel,
   sendAccessibilityLabel = '메시지 보내기',
   sendDisabled = false,
+  onInputRef,
 }: Props) {
   React.useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined' || document.getElementById('chat-composer-placeholder-style')) return;
@@ -116,7 +118,10 @@ export function ChatComposer({
             />
           </View>
           <TextInput
-            ref={measurement.ref}
+            ref={(input) => {
+              measurement.ref.current = input;
+              onInputRef?.(input);
+            }}
             onContentSizeChange={measurement.onContentSizeChange}
             testID="chat-composer-text-input"
             // Empty iOS inputs collapse immediately; text keeps native intrinsic growth.
