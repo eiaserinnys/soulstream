@@ -27,7 +27,7 @@ interface Props {
   children?: React.ReactNode;
   event: SessionEvent;
   /** 좌측 에이전트 아바타에 사용할 세션 메타. 없으면 아바타 미표시. */
-  session?: Session;
+  session?: Pick<Session, 'agentName' | 'agentPortraitUrl' | 'displayName'>;
   selectionModel?: MessageSelectionModel | null;
   onSelectionDone?: () => void;
 }

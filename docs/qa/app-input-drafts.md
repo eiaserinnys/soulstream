@@ -16,7 +16,7 @@
 
 | 운영 입력 / 연결 위치 | 역할 / 대상 | 제거 시점 |
 |---|---|---|
-| 세션 대화 / ChatBody | chat / nodeId, sessionId | 전송 시작(입력창을 비우는 순간). 실패한 글은 실패 말풍선의 되돌리기로 입력창과 초안에 복원 |
+| 세션 대화 / ChatInputComposer (ChatBody에서 세션별 key로 연결) | chat / nodeId, sessionId | 전송 시작(입력창을 비우는 순간). 실패한 글은 실패 말풍선의 되돌리기로 입력창과 초안에 복원 |
 | 메인 신규 세션 / TodayCardComposer | main-composer / 없음 | 전송 시작(실패하면 보낸 글과 초안 복원) |
 | 폴더 맡기기 / CardComposer | folder-compose / folderId 또는 all | 전송 시작(실패하면 보낸 글과 초안 복원; 폴더·담당 선택 분기는 보존) |
 | 카드 커멘트·실제 서술형 질문 답변 / CardDetailContent | card-comment / cardId | 커멘트·답변 저장 성공 |

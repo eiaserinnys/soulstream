@@ -21,7 +21,7 @@ interface Props {
   children?: React.ReactNode;
   event: SessionEvent;
   /** 우측 사용자 아바타에 사용할 세션 메타. 없으면 폴백 또는 미표시. */
-  session?: Session;
+  session?: Pick<Session, 'nodeId' | 'userName' | 'userPortraitUrl'>;
   /**
    * 'normal'(파란색, 원본 user_message) / 'intervention'(주황색, mid-session 개입).
    * EventRenderer가 event.type에 따라 결정. 빌드 15부터 지원.
@@ -57,7 +57,7 @@ export function extractAttachments(event: SessionEvent): string[] {
  * wire를 그대로 보냄). 둘 다 없으면 undefined — 호출자가 첨부 미표시로 분기.
  */
 export function resolveAttachmentNodeId(
-  session: Session | undefined,
+  session: Pick<Session, 'nodeId'> | undefined,
   event: SessionEvent,
 ): string | undefined {
   if (typeof session?.nodeId === 'string' && session.nodeId.length > 0) {

@@ -9,12 +9,15 @@ import { ChatToolApprovalRequest } from '../chat/ChatToolApprovalRequest';
 import type { MessageSelectionModel } from './message-selection-model';
 import type { PendingOptimisticEvent } from '../../store/chatStore';
 
+export type ChatMessageSession = Pick<Session,
+  'agentSessionId' | 'nodeId' | 'agentName' | 'agentPortraitUrl' | 'displayName' | 'userName' | 'userPortraitUrl'>;
+
 interface Props {
   event: SessionEvent;
   /** 채팅 route가 이미 보유한 정본 ID. 세션 메타 로딩 여부와 무관하게 액션에 사용한다. */
   sessionId: string;
   /** 현재 세션 메타 — AssistantMessage가 에이전트 아바타를 좌측에 그릴 때 사용. */
-  session?: Session;
+  session?: ChatMessageSession;
   selectionModel?: MessageSelectionModel | null;
   onSelectionDone?: () => void;
   onRetryPending?: (eventId: string) => void;

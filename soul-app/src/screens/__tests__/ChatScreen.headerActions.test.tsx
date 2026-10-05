@@ -31,7 +31,8 @@ jest.mock('../../components/chat/StatusDot', () => {
 jest.mock('../../components/planner/SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null }));
 
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Keyboard, Platform, StyleSheet } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { fireEvent, render } from '@testing-library/react-native';
 import type { Session } from '../../api/types';
 import type { PhonePanelHistory } from '../../navigation/phonePanelHistory';
@@ -182,4 +183,53 @@ test.each([
   expect(mockChatBody).toHaveBeenLastCalledWith(
     expect.objectContaining({ sessionId: 'session-1', active: expectedActive }),
   );
+});
+
+test('Chat focus hides the parent tab bar for keyboard events and restores it on hide and blur', () => {
+  const listeners = new Map<string, (event: unknown) => void>();
+  const removeListener = jest.fn();
+  const addListener = jest.spyOn(Keyboard, 'addListener').mockImplementation(((
+    eventName: string,
+    listener: (...args: any[]) => void,
+  ) => {
+    listeners.set(eventName, listener as (event: unknown) => void);
+    return { remove: removeListener } as any;
+  }) as any);
+  let focusEffect: (() => void | (() => void)) | undefined;
+  (useFocusEffect as jest.Mock).mockImplementation((effect: () => void | (() => void)) => {
+    focusEffect = effect;
+  });
+  const setTabOptions = jest.fn();
+  const navigation = {
+    getParent: () => ({ setOptions: setTabOptions }),
+    navigate: jest.fn(),
+    setOptions: jest.fn(),
+    setParams: jest.fn(),
+  };
+
+  render(
+    <PhonePanelHistoryProvider>
+      <ChatScreen
+        route={{ key: 'chat-keyboard', name: 'Chat', params: { sessionId: 'session-1' } } as any}
+        navigation={navigation as any}
+      />
+    </PhonePanelHistoryProvider>,
+  );
+  const cleanup = focusEffect!();
+  setTabOptions.mockClear();
+
+  const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+  const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+  expect(listeners.has(showEvent)).toBe(true);
+  expect(listeners.has(hideEvent)).toBe(true);
+  listeners.get(showEvent)!({});
+  expect(setTabOptions).toHaveBeenLastCalledWith({ tabBarStyle: { display: 'none' } });
+  listeners.get(hideEvent)!({});
+  expect(setTabOptions).toHaveBeenLastCalledWith({ tabBarStyle: { display: 'flex' } });
+
+  if (typeof cleanup === 'function') cleanup();
+  expect(setTabOptions).toHaveBeenLastCalledWith({ tabBarStyle: { display: 'flex' } });
+  expect(removeListener).toHaveBeenCalledTimes(2);
+  addListener.mockRestore();
+  (useFocusEffect as jest.Mock).mockReset();
 });
