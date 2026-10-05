@@ -146,7 +146,8 @@ export class ExecutionContextBuilder {
         contextItems.push(runningSessionsItem);
       }
     }
-    contextItems.push(await this.buildAssignedCardContext(task, options.inputId));
+    const assignedCardItem = await this.buildAssignedCardContext(task, options.inputId);
+    if (assignedCardItem) contextItems.push(assignedCardItem);
     return { contextItems };
   }
 

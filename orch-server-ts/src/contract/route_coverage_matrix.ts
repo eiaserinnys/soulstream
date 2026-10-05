@@ -27,6 +27,7 @@ import { sessionActionCommandRouteAuthRequirements } from "../session/session_ac
 import { sessionBackgroundScheduleRouteAuthRequirements } from "../session/session_background_schedule_routes.js";
 import { sessionResumeAfterLimitRouteAuthRequirements } from "../session/session_resume_after_limit_routes.js";
 import { sessionCatalogRouteAuthRequirements } from "../session/session_catalog_routes.js";
+import { persistentSessionSettingsRouteAuthRequirements } from "../session/persistent_session_settings_routes.js";
 import { sessionCommandRouteAuthRequirements } from "../session/session_command_routes.js";
 import { sessionHistoryRouteAuthRequirements } from "../session/session_history_routes.js";
 import { sessionSnapshotRouteAuthRequirements } from "../session/session_snapshot_routes.js";
@@ -84,6 +85,7 @@ export const routeCoverageOwners = [
   },
   { owner: "session.catalog", authRequirements: sessionCatalogRouteAuthRequirements },
   { owner: "session.command", authRequirements: sessionCommandRouteAuthRequirements },
+  { owner: "session.persistent-settings", authRequirements: persistentSessionSettingsRouteAuthRequirements },
   { owner: "session.history", authRequirements: sessionHistoryRouteAuthRequirements },
   { owner: "session.snapshot", authRequirements: sessionSnapshotRouteAuthRequirements },
   { owner: "sse.replay", authRequirements: sseReplayRouteAuthRequirements },
@@ -146,4 +148,8 @@ export const tsOnlyRouteKeys = [
   "POST /api/recurring-jobs/{job_id}/archive",
   "GET /api/recurring-jobs/{job_id}/runs",
   "PATCH /api/planner/starred-folders/order",
+  "GET /api/persistent-sessions",
+  "GET /api/persistent-sessions/{session_id}",
+  "PUT /api/persistent-sessions/{session_id}",
+  "POST /api/persistent-sessions",
 ] as const;

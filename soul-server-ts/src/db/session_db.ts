@@ -16,7 +16,7 @@ import type {
   SessionResumeContext,
   SessionTurnExcerptResult,
 } from "../control_plane/session_data_host_client.js";
-import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
+import type { CardReferenceLookupResult, GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
@@ -325,6 +325,7 @@ export class SessionDB {
   }): Promise<SupervisedCardSnapshot> {
     return this.requireFolderHost().getSupervisedCardContext(params);
   }
+  resolveCardReferences(refs: string[]): Promise<CardReferenceLookupResult[]> { return this.requireFolderHost().resolveCardReferences(refs); }
 
   configureFolderHost(host: FolderHostClient): void {
     this.folderHost = host;

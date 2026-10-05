@@ -1,6 +1,6 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
-import { buildCardChangeNotification, type CardChangeDelivery } from "./card_change_notification.js";
+import { buildCardChangeNotification, cardStatusLabels, type CardChangeDelivery } from "./card_change_notification.js";
 import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
 import { randomUUID } from "node:crypto";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
@@ -168,11 +168,8 @@ export class CardDispatcher {
         if (op.operation_type === "answer_card_question") {
             const q = answeredQuestion;
             const autoResumed=previousStatus === "blocked" && change.committedCard?.status === "running";
-            const resumeCurrent=autoResumed && card.status === "running" && card.version === change.committedCard!.version;
             if (questionSession) {
-                const answer=`질문에 답이 왔습니다: ${String(q!.text)} → ${String(q!.answer)}. ` + (resumeCurrent
-                    ? "질문 대기가 해제됐습니다. 이어서 진행합니다."
-                    : `현재 카드 상태는 ${card.status} 입니다. 답변 수신만으로 카드 상태를 바꾸거나 완료된 작업을 재착수하지 않습니다.`);
+                const answer=`질문에 답이 왔습니다: ${String(q!.text)} → ${String(q!.answer)}. 카드 상태: ${cardStatusLabels[card.status]}.`;
                 try {
                     if (mergeAnswer) await this.deliver(card,String(q!.session_id),`${notification!.text}\n${answer}`,notification!);
                     else await this.deliver(card,String(q!.session_id),answer);
@@ -231,7 +228,7 @@ export class CardDispatcher {
                     continue;
                 }
                 await cards.resumeDispatchedCard({ cardId: card.id, expectedVersion: card.version, sessionId: session.session_id });
-                await this.deliver(card,session.session_id, "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다.");
+                await this.deliver(card,session.session_id, "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다.");
             }
             else
                 await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: card.version });
@@ -266,8 +263,7 @@ export class CardDispatcher {
             const prompt = buildCardPrompt({ cardId: card.id, title: card.title, folderName: card.folder_name, request: card.request,
                 brief: [card.brief, answers].filter(Boolean).join("\n"), reason: await this.options.repository.rejectionReason(card.id),
                 comments: detail.comments.filter(comment => comment.author_kind === "user").map(comment => ({ id:String(comment.id),createdAt: comment.created_at as Date | string, body: String(comment.body) })),
-                running: running.filter(c => c.id !== card.id).map(c => ({ title: c.title, folderName: c.folder_name })),
-                queued: queue.map(c => ({ title: c.title, folderName: c.folder_name })) });
+                running: running.filter(c => c.id !== card.id).map(c => ({ title: c.title, folderName: c.folder_name })) });
             const sessionId = randomUUID();
             await cards.recordDispatch({ cardId: card.id, expectedVersion: detail.card.version, sessionId, nodeId: target.nodeId });
             try {

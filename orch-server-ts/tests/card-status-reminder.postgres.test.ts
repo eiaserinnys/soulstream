@@ -84,7 +84,7 @@ describe("durable card status reminders", () => {
     const id = await seed("review", "running");
     await dispatcher.sessionEnded("root"); await dispatcher.sessionEnded("root");
     expect(messages).toHaveBeenCalledTimes(1);
-    expect(messages.mock.calls[0]![1]).toContain("카드는 '검수'입니다");
+    expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 '검수'인데, 담당 세션이 턴을 마친 뒤에도 맡긴 작업 세션이 돌고 있습니다.`);
     expect(messages.mock.calls[0]![3]!.deliveryId).toBe(`card-reminder:${id}:not_running:${(origin - 3600000) * 1000}:root`);
     await cards.setCardStatus({ ...human, cardId: id, status: "blocked" });
     await dispatcher.sessionEnded("root"); expect(messages).toHaveBeenCalledTimes(2);
@@ -112,9 +112,7 @@ describe("durable card status reminders", () => {
   it.each(["completed", "error"])("stalled sends to a %s root after its status clock", async status => {
     const id = await seed("running", undefined, status); await dispatcher.sessionEnded("root");
     expect(messages).toHaveBeenCalledTimes(1);
-    expect(messages.mock.calls[0]![1]).toContain("확인 항목에 결과를 달고 request_card_review의 ask");
-    expect(messages.mock.calls[0]![1]).toContain("확인 항목이 없는 옛 카드는 기존 보고");
-    expect(messages.mock.calls[0]![1]).toContain("update_card_now");
+    expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 진행 중인데 담당 세션과 맡긴 작업 세션이 모두 멈췄습니다.`);
     expect(messages.mock.calls[0]![3]!.deliveryId).toContain(":stalled:"); await unchanged(id, "running");
   });
   it.each(["interrupted", "limit", "active", "older", "archived"])("stalled excludes %s", async kind => {

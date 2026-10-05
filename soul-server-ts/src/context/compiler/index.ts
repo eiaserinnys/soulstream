@@ -33,7 +33,8 @@ export type ContextFilterField =
   | "folder_id"
   | "agent"
   | "backend"
-  | "os";
+  | "os"
+  | "card_role";
 
 export type ContextFilterParameters = Partial<Record<ContextFilterField, string>>;
 
@@ -136,11 +137,13 @@ const CONTEXT_FILTER_FIELDS = new Set<ContextFilterField>([
   "agent",
   "backend",
   "os",
+  "card_role",
 ]);
 
 const KNOWN_CALLER_SOURCES = new Set<string>(CALLER_INFO_SOURCES);
 
 const KNOWN_OS_VALUES = new Set(["windows", "linux", "darwin"]);
+const KNOWN_CARD_ROLES = new Set(["assignee", "member"]);
 const IDENTIFIER_VALUE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 
 interface FilteredContextSources {
@@ -217,6 +220,7 @@ function isKnownConditionValue(field: ContextFilterField, value: unknown): value
   if (field === "source") return KNOWN_CALLER_SOURCES.has(value);
   if (field === "backend") return AgentBackendSchema.safeParse(value).success;
   if (field === "os") return KNOWN_OS_VALUES.has(value);
+  if (field === "card_role") return KNOWN_CARD_ROLES.has(value);
   return IDENTIFIER_VALUE.test(value);
 }
 

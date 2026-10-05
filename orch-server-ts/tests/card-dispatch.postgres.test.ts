@@ -192,7 +192,7 @@ describe("card dispatch and session lifecycle", () => {
         const q = (await cards.getCard(id))!.questions[0]!;
         await cards.answerQuestion({ ...human, cardId: id, questionId: String(q.id), answer: '진행', idempotencyKey: key() });
         await dispatcher.drain();
-        expect(messages).toHaveBeenCalledWith(sessionId, '질문에 답이 왔습니다: 진행? → 진행. 질문 대기가 해제됐습니다. 이어서 진행합니다.');
+        expect(messages).toHaveBeenCalledWith(sessionId, '질문에 답이 왔습니다: 진행? → 진행. 카드 상태: 실행 중.');
         expect((await cards.getCard(id))!.card.status).toBe('running');
         expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'question', title: '작업', question: '진행?' }));
     });
@@ -236,8 +236,7 @@ describe("card dispatch and session lifecycle", () => {
         const detail=(await cards.getCard(id))!;messages.mockClear();
         await cards.answerQuestion({...human,cardId:id,questionId:String(detail.questions[0]!.id),answer:'저장할 답',idempotencyKey:key()});await dispatcher.drain();
         expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('뒤늦은 질문 → 저장할 답'),undefined,undefined,attachments);
-        expect(messages.mock.calls[0]![1]).toContain('현재 카드 상태는 done 입니다');
-        expect(messages.mock.calls[0]![1]).toContain('답변 수신만으로 카드 상태를 바꾸거나 완료된 작업을 재착수하지 않습니다');
+        expect(messages.mock.calls[0]![1]).toBe('질문에 답이 왔습니다: 뒤늦은 질문 → 저장할 답. 카드 상태: 완료.');
         expect((await cards.getCard(id))!.card).toMatchObject({status:'done',version:detail.card.version});
         expect((await cards.getCard(id))!.questions[0]!.answer).toBe('저장할 답');expect(launch).toHaveBeenCalledOnce();
     });
@@ -250,7 +249,7 @@ describe("card dispatch and session lifecycle", () => {
         const detail=(await cards.getCard(id))!;messages.mockClear();
         await cards.answerQuestion({...human,cardId:id,questionId:String(detail.questions[0]!.id),answer:'늦은 답',idempotencyKey:key()});await dispatcher.drain();
         expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('늦은 질문 → 늦은 답'));
-        expect(messages.mock.calls[0]![1]).toContain(`현재 카드 상태는 ${status} 입니다`);
+        expect(messages.mock.calls[0]![1]).toBe(`질문에 답이 왔습니다: 늦은 질문 → 늦은 답. 카드 상태: ${status==='review'?'검수':'실행 중'}.`);
         expect((await cards.getCard(id))!.card).toMatchObject({status,version:detail.card.version});
         expect(launch).toHaveBeenCalledOnce();
     });
@@ -281,7 +280,7 @@ describe("card dispatch and session lifecycle", () => {
         available = true;
         await dispatcher.checkLimits();
         await dispatcher.drain();
-        expect(messages).toHaveBeenCalledWith(sessionId, '한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다.');
+        expect(messages).toHaveBeenCalledWith(sessionId, '한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다.');
         expect(launch).toHaveBeenCalledTimes(1);
     });
     it("skips human or missing assignees and honors node-specific zero capacity", async () => {
@@ -334,7 +333,7 @@ describe("card dispatch and session lifecycle", () => {
 });
 it("assembles the exact card execution first prompt", () => {
     expect(buildCardPrompt({ cardId: 'c1', title: '작업', folderName: '실험', request: '원문', brief: '경과', reason: '검증 보완',
-        running: [{ title: '다른 작업', folderName: '개발' }], queued: [{ title: '다음 작업', folderName: '실험' }] })).toMatchSnapshot();
+        running: [{ title: '다른 작업', folderName: '개발' }] })).toMatchSnapshot();
 });
 it("runs card availability from the existing recurring scheduler tick", async () => {
     const onTick = vi.fn();

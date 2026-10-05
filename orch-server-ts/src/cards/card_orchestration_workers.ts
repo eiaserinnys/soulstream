@@ -37,7 +37,7 @@ export class CardOrchestrationWorkers {
       };
       try {
         if (d.input.existingSession === true || d.input.resume === true) {
-          const text=String(d.input.prompt ?? "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다. 이어서 카드 규칙대로 진행한다.");
+          const text=String(d.input.prompt ?? "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다.");
           const attachments=d.input.attachments as import("@soulstream/wire-schema/card-attachments").CardAttachment[] | undefined;
           if(attachments?.length) await this.options.sendMessage(d.session_id,text,admission,undefined,attachments);
           else await this.options.sendMessage(d.session_id,text,admission);

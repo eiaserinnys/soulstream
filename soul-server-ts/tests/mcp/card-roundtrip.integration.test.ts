@@ -10,8 +10,14 @@ import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../../../orch-server-ts/tests/page/page_postgres_harness.js";
 import { appendCardEventTx, prepareCardWorkSchema } from "../../../orch-server-ts/tests/card-work-postgres-fixture.js";
+import { registerFolderControlPlaneHostRoute } from "../../../orch-server-ts/src/folders/folder_control_plane_host_route.js";
+import { sessionTools } from "@soulstream/mcp-contract";
+import { SessionDB } from "../../src/db/session_db.js";
+import { FolderHostClient } from "../../src/folder/folder_host_client.js";
+import { registerOrchestratorTools } from "../../src/mcp/orchestrator_tools.js";
 import { withMcpRequestContext, type McpRequestContext } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
+import { createInventoryMcpServer } from "../../src/mcp/tool_access.js";
 import { registerCardTools } from "../../src/mcp/tools/card_tools.js";
 import { createLiveDashboardAccessProvider, serviceTokenAccessWithoutEmail } from "../../../orch-server-ts/src/runtime/live_dashboard_access_provider.js";
 
@@ -74,14 +80,23 @@ describe("card orchestrator MCP roundtrip", () => {
       } as never, jwt: { verifyToken: async () => null } as never, repository: { findUserByEmail: async () => null } }),
       authBearerToken: "service-token" };
     app = Fastify();
+    // The folder host route is where the worker's number lookup lands; sessions back get_session_summary.
+    registerFolderControlPlaneHostRoute(app, { authBearerToken: options.authBearerToken,
+      serviceProvider: async () => ({}) as never, cardServiceProvider: async () => cards });
     registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: options.authBearerToken,
       cards: { ...options, resolveAccess: serviceTokenAccessWithoutEmail }, folders: {
       authBearerToken: options.authBearerToken, serviceProvider: async () => { throw new Error("unused folder host"); },
-    } });
+    }, sessions: { repositoryProvider: async () => ({
+      sessionReads: { getSession: async (id: string) => (await h.sql`SELECT * FROM sessions WHERE session_id=${id}`)[0] ?? null },
+      sessionReadComposites: { getTurnExcerpt: async () => ({ totalEvents: 0, turns: [] }) },
+      deliveries: { recordObservedChildCompletions: async () => ({ status: "recorded" }) },
+    }) } as never });
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
     const logger = { warn: vi.fn() } as never;
-    runtime = { nodeId: "test-node", orch, logger, taskManager: { getTask: (id: string) =>
+    const db = new SessionDB();
+    db.configureFolderHost(new FolderHostClient({ orch, logger }));
+    runtime = { nodeId: "test-node", orch, logger, db, taskManager: { getTask: (id: string) =>
       id === "header-session" ? { executionRegistration: execution }
         : id === "successor-session" ? { executionRegistration: successorExecution } : undefined } } as unknown as McpRuntime;
   }, 60_000);
@@ -105,7 +120,10 @@ describe("card orchestrator MCP roundtrip", () => {
   }
   async function call(name: string, input: object, requestContext: McpRequestContext) {
     const server = new McpServer({ name: "parity", version: "1" });
-    registerCardTools(server, runtime);
+    // Through the worker's real proxy, so every full-ID case below also proves they are unchanged by it.
+    const guarded = createInventoryMcpServer(server, runtime);
+    registerCardTools(guarded, runtime);
+    registerOrchestratorTools(guarded, runtime, [sessionTools.get_session_summary]);
     const client = new Client({ name: "parity-client", version: "1" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
@@ -153,6 +171,40 @@ describe("card orchestrator MCP roundtrip", () => {
       reports:[expect.objectContaining({title:"기존 보고"})],notes:[expect.objectContaining({kind:"note",body:"화면 주소와 구현 기록"})],
       nowHistory:[expect.objectContaining({text:"수정 화면 확인을 기다립니다",turn:"user",ask:"수정 화면을 확인해 주세요"})],
     });
+  });
+  it("translates number references through the real central lookup and leaves full IDs unchanged", async () => {
+    await seed();
+    await h.sql`UPDATE sessions SET display_name='헤더 세션' WHERE session_id='header-session'`;
+    const byId = await call("get_card", { card_id: "card-1" }, context);
+    const byNumber = await call("get_card", { card_id: "#1" }, context);
+    expect(byNumber.isError, JSON.stringify(byNumber.content)).not.toBe(true);
+    expect(byNumber.content[0]).toEqual({ type: "text", text: "번호 참조 #1 → 카드 「기존 카드」" });
+    expect(byNumber.content.slice(1)).toEqual(byId.content);
+    expect(byNumber.structuredContent).toEqual(byId.structuredContent);
+    expect(byId.content[0]).not.toMatchObject({ text: expect.stringContaining("번호 참조") });
+
+    const summary = await call("get_session_summary", { session_id: "#1.s1" }, context);
+    expect(summary.isError).not.toBe(true);
+    expect(summary.content[0]).toEqual({ type: "text", text: "번호 참조 #1.s1 → 세션 「헤더 세션」" });
+    expect(summary.structuredContent).toMatchObject({ session_id: "header-session", display_name: "헤더 세션" });
+    expect((await call("get_session_summary", { session_id: "header-session" }, context)).structuredContent)
+      .toEqual(summary.structuredContent);
+
+    const missing = await call("get_card", { card_id: "#9999" }, context);
+    expect(missing.isError).toBe(true);
+    expect(JSON.stringify(missing.content)).toContain("#9999 번호의 카드가 없습니다.");
+    const noSession = await call("get_session_summary", { session_id: "#1.s5" }, context);
+    expect(noSession.isError).toBe(true);
+    expect(JSON.stringify(noSession.content)).toContain("카드 #1에 붙은 세션은 1개입니다");
+  });
+  it("returns number: null for an archived card that never had a number when called by full ID", async () => {
+    await seed();
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,assignee_kind,status,archived,number)
+      VALUES ('archived-card','cards-a','a9','번호 없는 보관 카드','원문','human','done',TRUE,NULL)`;
+    const result = await call("get_card", { card_id: "archived-card" }, context);
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ card: { id: "archived-card", number: null, archived: true } });
+    expect(JSON.stringify(result.content)).not.toContain("번호 참조");
   });
   it("supports handoff by a new internal session after the prior assignee stops", async () => {
     await seed();

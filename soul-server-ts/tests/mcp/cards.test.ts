@@ -68,8 +68,9 @@ describe("card MCP contract", () => {
     const context = await resolvePrimarySessionFolderContext(db as unknown as SessionDB, logger, "session-1", "folder-1");
     const item = buildSoulstreamContextItem({ agentSessionId: "session-1", workspaceDir: "/workspace", callerInfo: { source }, ...context } as any);
     const content = item.content as Record<string, unknown>;
-    snapshots.push({ card: content.card, card_guidance: content.card_guidance });
-    expect(content.folder_guidance).toContain("카드");
+    snapshots.push({ card: content.card });
+    expect(content).not.toHaveProperty("card_guidance");
+    expect(content).not.toHaveProperty("folder_guidance");
     expect(content).not.toHaveProperty("source_checklist_item_id");
     expect(db.getPrimarySessionBoardItem).not.toHaveBeenCalled();
     expect(db.getCard).toHaveBeenCalledWith("card-1", "session-1");
@@ -79,10 +80,10 @@ describe("card MCP contract", () => {
       {
         "card": {
           "id": "card-1",
+          "role": "member",
           "status": "running",
           "title": "카드",
         },
-        "card_guidance": "이 세션은 카드 card-1를 맡았다. 확인 항목은 set_card_items와 report_card_item, 상황판은 update_card_now, 진행 기록은 add_card_note, 검수는 request_card_review, 질문은 ask_card_question으로 남긴다. AskUserQuestion은 쓰지 않는다.",
       }
     `);
   });

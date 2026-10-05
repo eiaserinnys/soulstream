@@ -81,6 +81,7 @@ function parsePreviewBody(body: PreviewBody | undefined, nodeId: string): Previe
       : {}),
     ...(nonEmptyString(session.agent) ? { agent: session.agent as string } : {}),
     ...(nonEmptyString(session.backend) ? { backend: session.backend as string } : {}),
+    ...(nonEmptyString(session.card_role) ? { card_role: session.card_role as string } : {}),
     os: hostOsConditionValue(getOsType()),
   };
   return { ok: true, value: { specs, parameters } };
