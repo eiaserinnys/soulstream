@@ -9,6 +9,7 @@ import { createPersistentContextCandidateRepositories } from "../src/persistent-
 import { createLiveCogitoSearchProvider } from "../src/runtime/live_cogito_search_provider.js";
 import type { LiveSearchDbConnectionFactory, LiveSearchSql } from "../src/runtime/live_db_sql.js";
 import { createFullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
+import { isPersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
 
 function createRepositories(
   raw: Awaited<ReturnType<PersistentContextCandidateRepositories["readSessionAndBoundedCandidates"]>>,
@@ -26,6 +27,54 @@ function createRepositories(
 }
 
 describe("persistent context evaluation", () => {
+  it("accepts the captured decimal Jev response and rounds only the selected observation score", async () => {
+    const repositories = createRepositories({
+      sessionIsPersistent: true,
+      inputEventId: 10,
+      allowedFolderIds: ["visible"],
+      turnSummaries: [],
+      cards: [],
+      recentCompletedSessions: [
+        { sessionId: "session-0", title: "higher score", firstRequest: "request 2" },
+        { sessionId: "session-1", title: "lower score", firstRequest: "request 3" },
+      ],
+    });
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { state: { candidates: Array<{ key: string }> } };
+      const capturedAnswers = [
+        { type: "score", score: 0.78, confidence: 0.22, legend: { "0": "unrelated", "1": "reference", "2": "relevant", "3": "essential" }, probabilities: { "0": 0.2, "1": 0.4, "2": 0.3, "3": 0.1 } },
+        { type: "score", score: 2.65, confidence: 0.65, legend: { "0": "unrelated", "1": "reference", "2": "relevant", "3": "essential" }, probabilities: { "0": 0.01, "1": 0.02, "2": 0.26, "3": 0.71 } },
+        { type: "score", score: 0.04, confidence: 0.96, legend: { "0": "unrelated", "1": "reference", "2": "relevant", "3": "essential" }, probabilities: { "0": 0.96, "1": 0.03, "2": 0.01, "3": 0 } },
+      ];
+      return new Response(JSON.stringify({ answers: Object.fromEntries(
+        body.state.candidates.map(({ key }, index) => [key, capturedAnswers[index]]),
+      ) }), { status: 200 });
+    });
+    const service = createPersistentContextService({
+      candidates: repositories,
+      searchProvider: {
+        search: async () => ({ search_status: { session_sources: { metadata: { status: "complete" } } }, session_results: [] }),
+      } as unknown as CogitoSearchProvider,
+      typesafeApiKey: "test-key",
+      logMissingInput: vi.fn(),
+      logNullReason: vi.fn(),
+      fetchImpl,
+    });
+
+    const result = await service.evaluatePersistentCandidates({
+      sessionId: "current", inputId: "input-10", request: "current request",
+      deadlineAt: Date.now() + 2_000, signal: new AbortController().signal,
+    });
+
+    expect(result.observation?.selected).toEqual([
+      expect.objectContaining({ kind: "session", session_id: "session-0", score: 3, raw_score: 2.65 }),
+    ]);
+    expect(result.observation?.top_raw_score).toBe(2.65);
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates", observation: result.observation,
+    })).toBe(true);
+  });
+
   it("deduplicates search and recent sessions and stores stable score order", async () => {
     const repositories = createRepositories({
       sessionIsPersistent: true,
@@ -59,6 +108,7 @@ describe("persistent context evaluation", () => {
       searchProvider,
       typesafeApiKey: "test-key",
       logMissingInput: vi.fn(),
+      logNullReason: vi.fn(),
       fetchImpl,
     });
 
@@ -110,6 +160,7 @@ describe("persistent context evaluation", () => {
       } as unknown as CogitoSearchProvider,
       typesafeApiKey: "test-key",
       logMissingInput: vi.fn(),
+      logNullReason: vi.fn(),
       fetchImpl,
     });
     await expect(service.evaluatePersistentCandidates({
@@ -162,6 +213,7 @@ describe("persistent context evaluation", () => {
         searchProvider,
         typesafeApiKey: "test-key",
         logMissingInput: vi.fn(),
+        logNullReason: vi.fn(),
         fetchImpl,
       });
 
@@ -183,4 +235,115 @@ describe("persistent context evaluation", () => {
       await db.cleanup();
     }
   }, 30_000);
+
+  it("filters at 2.0, rounds selected values, and keeps raw score ordering stable on ties", async () => {
+    const repositories = createRepositories({
+      sessionIsPersistent: true,
+      inputEventId: 10,
+      allowedFolderIds: [],
+      turnSummaries: [],
+      cards: [1.99, 2.0, 2.49, 2.5, 2.5].map((score, index) => ({
+        id: `card-${index}`,
+        number: index + 1,
+        title: `card ${index}`,
+        request: "request",
+        brief: "brief",
+      })),
+      recentCompletedSessions: [],
+    }, false);
+    const scores = [1.99, 2.0, 2.49, 2.5, 2.5];
+    const service = createPersistentContextService({
+      candidates: repositories,
+      searchProvider: { search: async () => ({ search_status: { session_sources: { metadata: { status: "complete" } } }, session_results: [] }) } as unknown as CogitoSearchProvider,
+      typesafeApiKey: "test-key",
+      logMissingInput: vi.fn(),
+      logNullReason: vi.fn(),
+      fetchImpl: vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { state: { candidates: Array<{ key: string }> } };
+        return new Response(JSON.stringify({ answers: Object.fromEntries(
+          body.state.candidates.map(({ key }, index) => [key, { score: scores[index] }]),
+        ) }), { status: 200 });
+      }),
+    });
+
+    const result = await service.evaluatePersistentCandidates({
+      sessionId: "current", inputId: "input-10", request: "request",
+      deadlineAt: Date.now() + 2_000, signal: new AbortController().signal,
+    });
+
+    expect(result.observation?.selected).toEqual([
+      expect.objectContaining({ card_id: "card-3", score: 3, raw_score: 2.5 }),
+      expect.objectContaining({ card_id: "card-4", score: 3, raw_score: 2.5 }),
+      expect.objectContaining({ card_id: "card-2", score: 2, raw_score: 2.49 }),
+      expect.objectContaining({ card_id: "card-1", score: 2, raw_score: 2.0 }),
+    ]);
+    expect(result.observation?.top_raw_score).toBe(2.5);
+  });
+
+  it("records the highest raw score when no candidate meets the selection threshold", async () => {
+    const repositories = createRepositories({
+      sessionIsPersistent: true,
+      inputEventId: 10,
+      allowedFolderIds: [],
+      turnSummaries: [],
+      cards: [{ id: "card-1", number: 1, title: "card", request: "request", brief: "brief" }],
+      recentCompletedSessions: [],
+    }, false);
+    const service = createPersistentContextService({
+      candidates: repositories,
+      searchProvider: { search: async () => ({ search_status: { session_sources: { metadata: { status: "complete" } } }, session_results: [] }) } as unknown as CogitoSearchProvider,
+      typesafeApiKey: "test-key",
+      logMissingInput: vi.fn(),
+      logNullReason: vi.fn(),
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({ answers: { "card-0": { score: 1.9 } } }), { status: 200 })),
+    });
+
+    const result = await service.evaluatePersistentCandidates({
+      sessionId: "current", inputId: "input-10", request: "request",
+      deadlineAt: Date.now() + 2_000, signal: new AbortController().signal,
+    });
+
+    expect(result.observation?.selected).toEqual([]);
+    expect(result.observation?.top_raw_score).toBe(1.9);
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates", observation: result.observation,
+    })).toBe(true);
+  });
+
+  it.each([
+    ["missing key", undefined],
+    ["string", "2"],
+    ["NaN", Number.NaN],
+    ["above range", 3.2],
+    ["below range", -0.1],
+  ])("logs jev_failed and returns null for an invalid Jev score (%s)", async (_label, score) => {
+    const repositories = createRepositories({
+      sessionIsPersistent: true,
+      inputEventId: 10,
+      allowedFolderIds: [],
+      turnSummaries: [],
+      cards: [{ id: "card-1", number: 1, title: "card", request: "request", brief: "brief" }],
+      recentCompletedSessions: [],
+    }, false);
+    const logNullReason = vi.fn();
+    const service = createPersistentContextService({
+      candidates: repositories,
+      searchProvider: { search: async () => ({ search_status: { session_sources: { metadata: { status: "complete" } } }, session_results: [] }) } as unknown as CogitoSearchProvider,
+      typesafeApiKey: "test-key",
+      logMissingInput: vi.fn(),
+      logNullReason,
+      fetchImpl: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ answers: score === undefined ? {} : { "card-0": { score } } }),
+      }) as Response),
+    });
+
+    await expect(service.evaluatePersistentCandidates({
+      sessionId: "current", inputId: "input-10", request: "private request",
+      deadlineAt: Date.now() + 2_000, signal: new AbortController().signal,
+    })).resolves.toEqual({ observation: null });
+    expect(logNullReason).toHaveBeenCalledTimes(1);
+    expect(logNullReason).toHaveBeenCalledWith("jev_failed", "current", expect.any(Number));
+  });
 });

@@ -656,8 +656,11 @@ export async function createLiveProductionApplication(
         }),
         searchProvider: dbCatalogRepository.cogitoSearchProvider,
         typesafeApiKey: config.typesafe_api_key,
-        logMissingInput: (sessionId) => context.warn(
-          `Persistent context evaluation skipped: session ${sessionId}, reason input_event_not_found`,
+        logMissingInput: (sessionId, elapsedMs) => context.warn(
+          `Persistent context evaluation skipped: reason input_event_not_found, session ${sessionId}, elapsed_ms ${elapsedMs}`,
+        ),
+        logNullReason: (reason, sessionId, elapsedMs) => context.warn(
+          `Persistent context evaluation skipped: reason ${reason}, session ${sessionId}, elapsed_ms ${elapsedMs}`,
         ),
       }),
     },

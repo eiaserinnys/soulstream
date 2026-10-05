@@ -10,6 +10,7 @@ const observation = {
     label: "이전 작업",
     line: "요청의 배경을 정했습니다.",
     score: 2,
+    raw_score: 2.65,
     sources: ["search", "recent_completed"],
   }],
   candidate_counts: {
@@ -20,6 +21,7 @@ const observation = {
   },
   model: "jev-latest",
   latency_ms: 250,
+  top_raw_score: 2.65,
 };
 
 describe("persistent Jev debug event guard", () => {
@@ -48,6 +50,30 @@ describe("persistent Jev debug event guard", () => {
       type: "debug",
       kind: "assigned_card_context_snapshot",
       observation,
+    })).toBe(false);
+  });
+
+  it("requires bounded raw scores in both the observation and selected candidates", () => {
+    const { top_raw_score: _topRawScore, ...withoutTopRawScore } = observation;
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates", observation: withoutTopRawScore,
+    })).toBe(false);
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates",
+      observation: { ...observation, top_raw_score: 3.1 },
+    })).toBe(false);
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates",
+      observation: { ...observation, selected: [{ ...observation.selected[0], raw_score: 1.9 }] },
+    })).toBe(false);
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates",
+      observation: { ...observation, selected: [{ ...observation.selected[0], raw_score: 3.1 }] },
+    })).toBe(false);
+    const { raw_score: _rawScore, ...selectedWithoutRawScore } = observation.selected[0]!;
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates",
+      observation: { ...observation, selected: [selectedWithoutRawScore] },
     })).toBe(false);
   });
 });

@@ -2494,7 +2494,8 @@
         "card_id",
         "label",
         "line",
-        "score"
+        "score",
+        "raw_score"
       ],
       "additionalProperties": false,
       "properties": {
@@ -2521,7 +2522,12 @@
         },
         "score": {
           "type": "integer",
-          "minimum": 0,
+          "minimum": 2,
+          "maximum": 3
+        },
+        "raw_score": {
+          "type": "number",
+          "minimum": 2,
           "maximum": 3
         }
       }
@@ -2534,7 +2540,8 @@
         "selected",
         "candidate_counts",
         "model",
-        "latency_ms"
+        "latency_ms",
+        "top_raw_score"
       ],
       "additionalProperties": false,
       "properties": {
@@ -2568,6 +2575,11 @@
         "latency_ms": {
           "type": "integer",
           "minimum": 0
+        },
+        "top_raw_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3
         }
       }
     },
@@ -2578,7 +2590,8 @@
         "session_id",
         "label",
         "line",
-        "score"
+        "score",
+        "raw_score"
       ],
       "additionalProperties": false,
       "properties": {
@@ -2601,7 +2614,12 @@
         },
         "score": {
           "type": "integer",
-          "minimum": 0,
+          "minimum": 2,
+          "maximum": 3
+        },
+        "raw_score": {
+          "type": "number",
+          "minimum": 2,
           "maximum": 3
         },
         "sources": {
@@ -2627,7 +2645,8 @@
         "turn_number",
         "label",
         "line",
-        "score"
+        "score",
+        "raw_score"
       ],
       "additionalProperties": false,
       "properties": {
@@ -2658,7 +2677,12 @@
         },
         "score": {
           "type": "integer",
-          "minimum": 0,
+          "minimum": 2,
+          "maximum": 3
+        },
+        "raw_score": {
+          "type": "number",
+          "minimum": 2,
           "maximum": 3
         }
       }

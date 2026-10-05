@@ -1,4 +1,4 @@
-import { scorePersistentCandidates } from "../relevance/typesafe_client.js";
+import { scorePersistentCandidates, type RelevanceScore } from "../relevance/typesafe_client.js";
 import type { CogitoSearchProvider } from "../cogito/cogito_routes.js";
 import type {
   PersistentJevCardCandidate,
@@ -15,10 +15,20 @@ const MAX_SERIALIZED_STATE_BYTES = 50_000;
 const MAX_REQUEST_BODY_BYTES = 100_000;
 
 type Selected = PersistentJevObservation["selected"][number];
+export type PersistentContextNullReason =
+  | "not_persistent"
+  | "cancelled_or_deadline"
+  | "search_incomplete"
+  | "no_candidates"
+  | "jev_limits_exceeded"
+  | "budget_exhausted"
+  | "jev_failed"
+  | "score_count_mismatch"
+  | "unexpected_error";
 type CandidateSelection =
-  | Omit<PersistentJevTurnSummaryCandidate, "score" | "label" | "line">
-  | Omit<PersistentJevCardCandidate, "score" | "label" | "line">
-  | Omit<PersistentJevSessionCandidate, "score" | "label" | "line">;
+  | Omit<PersistentJevTurnSummaryCandidate, "score" | "raw_score" | "label" | "line">
+  | Omit<PersistentJevCardCandidate, "score" | "raw_score" | "label" | "line">
+  | Omit<PersistentJevSessionCandidate, "score" | "raw_score" | "label" | "line">;
 type Candidate = {
   readonly key: string;
   readonly text: string;
@@ -36,26 +46,41 @@ export function createPersistentContextService(options: {
   readonly candidates: PersistentContextCandidateRepositories;
   readonly searchProvider: CogitoSearchProvider;
   readonly typesafeApiKey: string;
-  readonly logMissingInput: (sessionId: string) => void;
+  readonly logMissingInput: (sessionId: string, elapsedMs: number) => void;
+  readonly logNullReason: (reason: PersistentContextNullReason, sessionId: string, elapsedMs: number) => void;
   readonly fetchImpl?: typeof fetch;
 }): PersistentContextService {
   return {
     async evaluatePersistentCandidates(input) {
       const startedAt = Date.now();
+      const logNull = (reason: PersistentContextNullReason) => options.logNullReason(
+        reason,
+        input.sessionId,
+        Math.max(0, Date.now() - startedAt),
+      );
       try {
-        if (!mayContinue(input)) return { observation: null };
+        if (!mayContinue(input)) {
+          logNull("cancelled_or_deadline");
+          return { observation: null };
+        }
         const raw = await options.candidates.readSessionAndBoundedCandidates(
           input.sessionId,
           input.inputId,
           input.signal,
           input.deadlineAt,
         );
-        if (!mayContinue(input)) return { observation: null };
-        if (raw.inputEventId === null) {
-          options.logMissingInput(input.sessionId);
+        if (!mayContinue(input)) {
+          logNull("cancelled_or_deadline");
           return { observation: null };
         }
-        if (!raw.sessionIsPersistent) return { observation: null };
+        if (raw.inputEventId === null) {
+          options.logMissingInput(input.sessionId, Math.max(0, Date.now() - startedAt));
+          return { observation: null };
+        }
+        if (!raw.sessionIsPersistent) {
+          logNull("not_persistent");
+          return { observation: null };
+        }
 
         const summaryCounts = await options.candidates.storyReads.countTurnSummaries(
           input.sessionId,
@@ -69,7 +94,10 @@ export function createPersistentContextService(options: {
           40,
           { beforeEventId: raw.inputEventId, signal: input.signal, deadlineAt: input.deadlineAt },
         );
-        if (!mayContinue(input)) return { observation: null };
+        if (!mayContinue(input)) {
+          logNull("cancelled_or_deadline");
+          return { observation: null };
+        }
 
         const request = clipUtf8(input.request, MAX_REQUEST_BYTES);
         const searched = await options.searchProvider.search({
@@ -85,7 +113,12 @@ export function createPersistentContextService(options: {
           signal: input.signal,
           deadlineAt: input.deadlineAt,
         });
-        if (!mayContinue(input) || searched.search_status?.session_sources?.metadata.status !== "complete") {
+        if (!mayContinue(input)) {
+          logNull("cancelled_or_deadline");
+          return { observation: null };
+        }
+        if (searched.search_status?.session_sources?.metadata.status !== "complete") {
+          logNull("search_incomplete");
           return { observation: null };
         }
         const sessionSearchCandidates = uniqueSessionCandidates(
@@ -100,30 +133,65 @@ export function createPersistentContextService(options: {
           searchedSessions: sessionSearchCandidates,
           recentCompleted,
         });
-        if (candidates.length === 0 || !mayContinue(input)) return { observation: null };
+        if (candidates.length === 0) {
+          logNull("no_candidates");
+          return { observation: null };
+        }
+        if (!mayContinue(input)) {
+          logNull("cancelled_or_deadline");
+          return { observation: null };
+        }
 
         const items = candidates.map(({ key, text }) => ({ key, text }));
-        if (!fitsJevLimits(request, items)) return { observation: null };
+        if (!fitsJevLimits(request, items)) {
+          logNull("jev_limits_exceeded");
+          return { observation: null };
+        }
         const remainingBudgetMs = Math.floor(input.deadlineAt - Date.now());
-        if (remainingBudgetMs <= 0 || !mayContinue(input)) return { observation: null };
-        const scores = await scorePersistentCandidates({
-          query: request,
-          items,
-          apiKey: options.typesafeApiKey,
-          budgetMs: Math.min(3_000, remainingBudgetMs),
-          signal: input.signal,
-          fetchImpl: options.fetchImpl,
-        });
-        if (!mayContinue(input) || scores.length !== candidates.length) return { observation: null };
+        if (remainingBudgetMs <= 0) {
+          logNull("budget_exhausted");
+          return { observation: null };
+        }
+        if (!mayContinue(input)) {
+          logNull("cancelled_or_deadline");
+          return { observation: null };
+        }
+        let scores: RelevanceScore[];
+        try {
+          scores = await scorePersistentCandidates({
+            query: request,
+            items,
+            apiKey: options.typesafeApiKey,
+            budgetMs: Math.min(3_000, remainingBudgetMs),
+            signal: input.signal,
+            fetchImpl: options.fetchImpl,
+          });
+        } catch {
+          logNull(mayContinue(input) ? "jev_failed" : "cancelled_or_deadline");
+          return { observation: null };
+        }
+        if (!mayContinue(input)) {
+          logNull("cancelled_or_deadline");
+          return { observation: null };
+        }
+        if (scores.length !== candidates.length) {
+          logNull("score_count_mismatch");
+          return { observation: null };
+        }
 
         const scoreByKey = new Map(scores.map(({ key, score }) => [key, score]));
+        const topRawScore = Math.max(...scores.map(({ score }) => score));
         const selected = candidates
           .map((candidate) => ({ candidate, score: scoreByKey.get(candidate.key) }))
           .filter((entry): entry is { candidate: Candidate; score: number } =>
             entry.score !== undefined && entry.score >= 2)
           .sort((left, right) => right.score - left.score || left.candidate.order - right.candidate.order)
           .slice(0, 5)
-          .map(({ candidate, score }) => ({ ...candidate.selected, score }) as Selected);
+          .map(({ candidate, score }) => ({
+            ...candidate.selected,
+            score: Math.round(score),
+            raw_score: score,
+          }) as Selected);
         const observation: PersistentJevObservation = {
           input_id: input.inputId,
           selected: selected as unknown as PersistentJevObservation["selected"],
@@ -135,9 +203,15 @@ export function createPersistentContextService(options: {
           },
           model: "jev-latest",
           latency_ms: Math.max(0, Date.now() - startedAt),
+          top_raw_score: topRawScore,
         };
-        return mayContinue(input) ? { observation } : { observation: null };
+        if (!mayContinue(input)) {
+          logNull("cancelled_or_deadline");
+          return { observation: null };
+        }
+        return { observation };
       } catch {
+        logNull(mayContinue(input) ? "unexpected_error" : "cancelled_or_deadline");
         return { observation: null };
       }
     },

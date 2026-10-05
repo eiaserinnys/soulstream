@@ -26,11 +26,12 @@ export function isPersistentJevCandidatesDebugEvent(
 }
 
 function isObservation(value: unknown): value is PersistentJevObservation {
-  if (!hasExactKeys(value, ["input_id", "selected", "candidate_counts", "model", "latency_ms"])) {
+  if (!hasExactKeys(value, ["input_id", "selected", "candidate_counts", "model", "latency_ms", "top_raw_score"])) {
     return false;
   }
   if (typeof value.input_id !== "string" || value.input_id.length === 0
     || value.model !== "jev-latest" || !isNonNegativeInteger(value.latency_ms)
+    || !isRawScore(value.top_raw_score)
     || !isRecord(value.candidate_counts)
     || !hasExactKeys(value.candidate_counts, Object.keys(COUNT_LIMITS))) {
     return false;
@@ -46,25 +47,25 @@ function isObservation(value: unknown): value is PersistentJevObservation {
 }
 
 function isSelectedCandidate(value: unknown): boolean {
-  if (!isRecord(value) || !isScore(value.score)
+  if (!isRecord(value) || !isScore(value.score) || !isRawScore(value.raw_score) || value.raw_score < 2
     || !isBoundedText(value.label, 120) || !isBoundedText(value.line, 240)) {
     return false;
   }
   if (value.kind === "turn_summary") {
-    return hasExactKeys(value, ["kind", "session_id", "summary_event_id", "turn_number", "label", "line", "score"])
+    return hasExactKeys(value, ["kind", "session_id", "summary_event_id", "turn_number", "label", "line", "score", "raw_score"])
       && isNonEmptyText(value.session_id)
       && isPositiveInteger(value.summary_event_id)
       && isPositiveInteger(value.turn_number)
       && isBoundedText(value.label, 32);
   }
   if (value.kind === "card") {
-    return hasExactKeys(value, ["kind", "card_id", "label", "line", "score"], ["card_number"])
+    return hasExactKeys(value, ["kind", "card_id", "label", "line", "score", "raw_score"], ["card_number"])
       && isNonEmptyText(value.card_id)
       && (value.card_number === undefined || isPositiveInteger(value.card_number))
       && isBoundedText(value.label, 80);
   }
   if (value.kind === "session") {
-    return hasExactKeys(value, ["kind", "session_id", "label", "line", "score"], ["sources"])
+    return hasExactKeys(value, ["kind", "session_id", "label", "line", "score", "raw_score"], ["sources"])
       && isNonEmptyText(value.session_id)
       && (value.sources === undefined || isValidSources(value.sources));
   }
@@ -85,6 +86,10 @@ function isScore(value: unknown): value is number {
 
 function isSelectedScore(value: unknown): value is number {
   return Number.isInteger(value) && typeof value === "number" && value >= 2 && value <= 3;
+}
+
+function isRawScore(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 3;
 }
 
 function isPositiveInteger(value: unknown): value is number {
