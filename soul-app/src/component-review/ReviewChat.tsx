@@ -51,9 +51,8 @@ const persistentChatEvents: SessionEvent[] = [
   { id: '908', type: 'user_message', data: { input_id: 'public-input-3', text: '긴 후보 요약이 입력 말풍선 아래에서 어떻게 보이는지 확인해줘.' } },
   persistentJevCandidatesFixture('909', 'public-input-3', { selectedCount: 1, longLine: true }),
   { id: '910', type: 'user_message', data: { input_id: 'public-input-4', text: 'Jev 후보와 담당 카드 기록의 순서를 확인해줘.' } },
-  persistentJevCandidatesFixture('911', 'public-input-4', { selectedCount: 1 }),
   {
-    id: '912',
+    id: '911',
     type: 'debug',
     data: {
       kind: 'assigned_card_context_snapshot',
@@ -71,6 +70,7 @@ const persistentChatEvents: SessionEvent[] = [
       },
     },
   },
+  persistentJevCandidatesFixture('912', 'public-input-4', { selectedCount: 1 }),
 ];
 
 function ReviewPersistentChatProjection() {

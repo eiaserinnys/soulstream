@@ -137,6 +137,7 @@ export function placeTurnSummaries(
   });
 
   const afterItemIndex = new Map<number, TurnSummaryRenderItem[]>();
+  const assignedContextAfterItemIndex = new Map<number, TurnSummaryRenderItem[]>();
   const legacyBeforeItemIndex = new Map<number, ChatRenderItem[]>();
   const legacyAtEnd: ChatRenderItem[] = [];
   const seenSummaryIds = new Set<number>();
@@ -194,12 +195,21 @@ export function placeTurnSummaries(
       if (!anchor || anchor.kind !== 'event') continue;
       const anchorEventId = positiveEventId(anchor.event.id);
       if (anchorEventId === null) continue;
-      const bucket = afterItemIndex.get(anchorIndex) ?? [];
-      bucket.push({
+      const item: TurnSummaryRenderItem = {
         kind: 'turn-summary', event, content, anchorEventId,
         key: `turn-summary-${event.id}`,
-      });
-      afterItemIndex.set(anchorIndex, bucket);
+      };
+      let jevIndex = -1;
+      for (let index = anchorIndex + 1; index < baseItems.length; index += 1) {
+        const candidate = baseItems[index];
+        if (candidate.kind === 'jev-candidates' && candidate.anchorEventId === anchorEventId) {
+          jevIndex = index;
+        }
+      }
+      const placementIndex = jevIndex === -1 ? anchorIndex : jevIndex;
+      const bucket = assignedContextAfterItemIndex.get(placementIndex) ?? [];
+      bucket.push(item);
+      assignedContextAfterItemIndex.set(placementIndex, bucket);
       continue;
     }
 
@@ -266,6 +276,7 @@ export function placeTurnSummaries(
     } else {
       out.push(item);
     }
+    out.push(...(assignedContextAfterItemIndex.get(index) ?? []));
   });
   out.push(...legacyAtEnd);
   return out;
