@@ -33,11 +33,34 @@ describe("user card execution transport",()=>{
   }
   const actor={actorKind:"user" as const,actorSessionId:null,actorUserId:"user"};
   const input=(id:string,key:string)=>({...actor,cardId:id,expectedVersion:1,idempotencyKey:key});
+  const agentActor={actorKind:"agent" as const,actorSessionId:"agent-caller",actorUserId:null};
+  const agentInput=(id:string,key:string,expectedVersion=1,sessionId="agent-caller")=>({...agentActor,actorSessionId:sessionId,cardId:id,expectedVersion,idempotencyKey:key});
   it("creates once, links the actual session and replays without another turn",async()=>{
     const f=await fixture();const result=await f.service.execute(input(f.cardId,"success"));
     expect(result.execution.state).toBe("started");expect(result.card.status).toBe("running");
     expect(result.card.assignee_session_id).toBe(result.execution.sessionId);
+    expect(f.launch.mock.calls[0]![0].callerSource).toBe("browser");
     await f.service.execute(input(f.cardId,"success"));expect(f.launch).toHaveBeenCalledTimes(1);expect(f.ensure).not.toHaveBeenCalled();
+  });
+  it("executes a draft for an agent and records the caller as the actor",async()=>{
+    const f=await fixture();
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,model_preset) VALUES('agent-caller','node','profile','running','model')`;
+    const result=await f.service.execute(agentInput(f.cardId,"agent-run"));
+    expect(f.launch).toHaveBeenCalledTimes(1);
+    expect(f.launch.mock.calls[0]![0].callerSource).toBe("system");
+    expect(result.card.status).toBe("running");
+    const operations=await h.sql`SELECT actor_kind,actor_session_id FROM folder_operations WHERE target_id=${f.cardId} AND operation_type='execute_card'`;
+    expect(operations.length).toBeGreaterThan(0);
+    expect(operations.every(row=>row.actor_kind==='agent'&&row.actor_session_id==='agent-caller')).toBe(true);
+  });
+  it.each(["running","done"] as const)("refuses agent execution while a card is %s",async status=>{
+    const f=await fixture();
+    await cards.setCardStatus({...actor,cardId:f.cardId,status,idempotencyKey:`state-${status}`});
+    const current=(await cards.getCard(f.cardId))!.card;
+    await expect(f.service.execute(agentInput(f.cardId,`agent-${status}`,current.version)))
+      .rejects.toMatchObject({statusCode:422,message:`드래프트(todo)나 대기(queued) 카드만 실행할 수 있습니다. 현재 상태: ${status}`});
+    expect(f.launch).not.toHaveBeenCalled();expect(f.ensure).not.toHaveBeenCalled();
+    expect((await h.sql`SELECT id FROM card_execution_requests WHERE card_id=${f.cardId}`)).toHaveLength(0);
   });
   it("different concurrent keys share one pending reservation and fixed session",async()=>{
     const f=await fixture("pending");const results=await Promise.all([f.service.execute(input(f.cardId,"concurrent-a")),f.service.execute(input(f.cardId,"concurrent-b"))]);
@@ -68,6 +91,15 @@ describe("user card execution transport",()=>{
   it("resumes the owner with its identity and never creates a replacement",async()=>{
     const f=await fixture("ok",true);const result=await f.service.execute(input(f.cardId,"resume"));expect(result.execution.state).toBe("started");expect(f.launch).not.toHaveBeenCalled();expect(f.ensure).toHaveBeenCalledTimes(1);
     expect(f.ensure.mock.calls[0]![0].target.modelPreset).toBe("owner-model");
+    expect(f.ensure.mock.calls[0]![0].callerSource).toBe("browser");
+  });
+  it("resumes an existing owner for an agent with system caller source",async()=>{
+    const f=await fixture("ok",true);
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,model_preset) VALUES('agent-caller-resume','node','profile','running','model')`;
+    const current=(await cards.getCard(f.cardId))!.card;
+    const result=await f.service.execute(agentInput(f.cardId,"agent-resume",current.version,"agent-caller-resume"));
+    expect(result.execution.state).toBe("started");expect(f.launch).not.toHaveBeenCalled();expect(f.ensure).toHaveBeenCalledTimes(1);
+    expect(f.ensure.mock.calls[0]![0].callerSource).toBe("system");
   });
   it("an undelivered create retries the same identity and replay survives unavailable catalog",async()=>{
     const f=await fixture();

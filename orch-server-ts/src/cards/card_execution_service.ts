@@ -13,7 +13,7 @@ export interface CardExecutionRequest extends Record<string,unknown> {
   state:"pending"|"succeeded"|"failed";sent:boolean;baseline_event_id:number;
   execution:CardWorkExecution|null;result_state:"started"|"already_running"|null;error:string|null;
 }
-export type ExecutionInput = {sessionId:string;requestId:string;cardId:string;target:ExecutionTarget};
+export type ExecutionInput = {sessionId:string;requestId:string;cardId:string;target:ExecutionTarget;callerSource:"browser"|"system"};
 export interface CardExecutionOptions {
   sql:SqlClient;cards:CardControlPlaneService;
   validate(card:CardRow):Promise<ExecutionTarget>;
@@ -49,6 +49,9 @@ export class CardExecutionService {
         await sql`UPDATE card_execution_requests SET keys=${sql.json(keys)} WHERE id=${pending.id}`;
         return pending;
       }
+      // A caller may join a pending request in any state so it can confirm the result; this matches the user path.
+      if(params.actorKind!=="user" && card.status!=="todo" && card.status!=="queued")
+        throw failure(`드래프트(todo)나 대기(queued) 카드만 실행할 수 있습니다. 현재 상태: ${card.status}`,422);
       if(card.version!==params.expectedVersion) throw new CardVersionConflict("card",card.id,params.expectedVersion,card.version);
       const automatic=await activeAutomaticReservation(sql,card);
       const prior=(await sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE card_id=${card.id} AND state='failed' ORDER BY created_at DESC LIMIT 1`)[0];
@@ -83,14 +86,14 @@ export class CardExecutionService {
       const automatic=row.mode==='observe'?await this.automaticOutcome(row):null;
       const proof=automatic?.proof??await this.registration(row);
       const owner=(await this.options.sql`SELECT card_id,status,execution_registration_id FROM sessions WHERE session_id=${row.session_id}`)[0];
-      if(owner?.card_id===cardId && row.mode!=='observe') await this.options.cards.recordUserExecution({...actor,cardId,sessionId:row.session_id,requestId:row.id,
+      if(owner?.card_id===cardId && row.mode!=='observe') await this.options.cards.recordExecution({...actor,cardId,sessionId:row.session_id,requestId:row.id,
         idempotencyKey:`card-execution-link:${row.id}`,});
       if(row.mode==='observe' && !automatic?.proof){
         if(automatic?.error){await this.fail(row,automatic.error);throw failure(automatic.error,422);}
         return this.response(row);
       }
       if(proof){
-        if(row.mode!=='observe')await this.options.cards.recordUserExecution({...actor,cardId,sessionId:row.session_id,requestId:row.id,execution:proof,idempotencyKey:`card-execution-success:${row.id}`});
+        if(row.mode!=='observe')await this.options.cards.recordExecution({...actor,cardId,sessionId:row.session_id,requestId:row.id,execution:proof,idempotencyKey:`card-execution-success:${row.id}`});
         [row]=await this.options.sql<CardExecutionRequest[]>`UPDATE card_execution_requests SET state='succeeded',execution=${this.options.sql.json(proof)},result_state=COALESCE(result_state,'started'),updated_at=NOW() WHERE id=${row.id} RETURNING *`;
       }else if(automatic?.error){
         await this.fail(row,automatic.error);throw failure(automatic.error,422);
@@ -115,7 +118,7 @@ export class CardExecutionService {
       if(owner)return;
     }
     await this.options.sql`UPDATE card_execution_requests SET sent=TRUE WHERE id=${row.id}`;
-    const input={requestId:row.id,sessionId:row.session_id,cardId:row.card_id,target:row.target};
+    const input={requestId:row.id,sessionId:row.session_id,cardId:row.card_id,target:row.target,callerSource:actor.actorKind==="user"?"browser" as const:"system" as const};
     try{
       if(row.mode==='create') await this.options.launch(input);
       else {
@@ -131,7 +134,7 @@ export class CardExecutionService {
       if(error instanceof PendingNodeCommandTimeoutError || (error instanceof PendingNodeCommandRejectedError && !error.response)
         || (error instanceof NodeCommandTransportError && error.code==='TRANSPORT_SEND_FAILED'))return;
       const owner=(await this.options.sql`SELECT card_id FROM sessions WHERE session_id=${row.session_id}`)[0];
-      if(owner?.card_id===row.card_id) await this.options.cards.recordUserExecution({...actor,cardId:row.card_id,sessionId:row.session_id,requestId:row.id,idempotencyKey:`card-execution-link:${row.id}`});
+      if(owner?.card_id===row.card_id) await this.options.cards.recordExecution({...actor,cardId:row.card_id,sessionId:row.session_id,requestId:row.id,idempotencyKey:`card-execution-link:${row.id}`});
       await this.fail(row,text);
       throw failure(`${text} 다시 실행하면 같은 담당 세션을 사용합니다.`,422);
     }

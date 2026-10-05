@@ -55,8 +55,9 @@ describe("single card ownership", () => {
   it("rejects second ownership across creation, patch, claim and unarchive, counting completed cards", async () => {
     const first = await make({ kind: "session", sessionId: "owner" });
     await cards.setCardStatus({ ...human, cardId: first, status: "done" });
-    const error = { statusCode: 422, code: "INVALID_CARD_REQUEST", message: expect.stringContaining(first) };
+    const error = { statusCode: 422, code: "INVALID_CARD_REQUEST", message: expect.stringContaining(`이미 카드 ${first}의 담당입니다.`) };
     await expect(make({ kind: "session", sessionId: "owner" })).rejects.toMatchObject(error);
+    await expect(make({ kind: "session", sessionId: "owner" })).rejects.toMatchObject({ message: expect.stringContaining("바로 시작은 run=true, 대기는 queue=true") });
     const second = await make(); await h.sql`UPDATE sessions SET card_id=${second} WHERE session_id='owner'`;
     await expect(cards.setCardStatus({ ...actor(), cardId: second, status: "running" })).rejects.toMatchObject(error);
     await expect(cards.patchCard({ ...human, cardId: second, assignee: { kind: "session", sessionId: "owner" } })).rejects.toMatchObject(error);

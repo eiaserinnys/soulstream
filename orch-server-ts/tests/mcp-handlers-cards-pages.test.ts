@@ -83,18 +83,23 @@ function cardHarness() {
   const detail = { card, reports: [{ title: "보고" }], questions: [], comments: [{ body: "지시 요점", kind: "spoken" }], sessions: [] };
   const mutation = { snapshot: { folder: { id: "folder-1" }, cards: [card] },
     operation: { id: "op-1", target_kind: "card", target_id: "card-1" } };
+  const createdMutation = { ...mutation, snapshot: { ...mutation.snapshot, cards: [{ ...card, status: "todo" }] } };
   const service = {
     getCard: vi.fn().mockResolvedValue(detail), listCards: vi.fn().mockResolvedValue([card]),
-    projectCards: vi.fn(async rows => rows), createCard: vi.fn().mockResolvedValue(mutation),
+    projectCards: vi.fn(async rows => rows), createCard: vi.fn().mockResolvedValue(createdMutation),
     patchCard: vi.fn().mockResolvedValue(mutation), addReport: vi.fn().mockResolvedValue(mutation),
     addComment: vi.fn().mockResolvedValue({ body: "그대로 보존" }), setCardStatus: vi.fn().mockResolvedValue(mutation),
     askQuestion: vi.fn().mockResolvedValue(mutation), moveCard: vi.fn().mockResolvedValue(mutation),
   };
   const provider = vi.fn(async () => service);
+  const executor = { execute: vi.fn(async () => ({ card: { ...card, status: "running" }, execution: { requestId: "execution-1", sessionId: "spawned-session", state: "pending" } })),
+    observe: vi.fn(async () => ({ card: { ...card, status: "running" }, execution: { requestId: "execution-1", sessionId: "spawned-session", state: "started" } })) };
+  const cardExecutionServiceProvider = vi.fn(async () => executor);
   const options = { cards: { cardServiceProvider: provider,
     provider: { listFolders: async () => [{ id: "folder-1" }, { id: "folder-2" }] },
+    cardExecutionServiceProvider, runConfirm: { intervalMs: 1, timeoutMs: 100 },
     resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) } } as unknown as McpHostOptions;
-  return { service, provider, options };
+  return { card, createdMutation, service, provider, executor, cardExecutionServiceProvider, options };
 }
 describe("card MCP execution", () => {
   it("calls every card service with agent actor, CAS and camelCase input", async () => {
@@ -129,6 +134,65 @@ describe("card MCP execution", () => {
       }
       if (name === "ask_card_question") expect(JSON.stringify(result)).toContain("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     }
+  });
+  it("runs a card through the execution service and waits for registration evidence", async () => {
+    const h = cardHarness();
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    const result = await call(h.options, "run_card", { card_id: "card-1", caller_session_id: "session-1" });
+    expect(result.isError).not.toBe(true);
+    expect(h.executor.execute).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "agent", actorSessionId: "session-1", cardId: "card-1", expectedVersion: 3 }));
+    expect(h.executor.observe).toHaveBeenCalledWith("card-1", "execution-1", expect.objectContaining({ actorKind: "agent", actorSessionId: "session-1" }));
+    expect(result.structuredContent).toMatchObject({ execution: { state: "started", sessionId: "spawned-session" }, card: { id: "card-1" } });
+  });
+  it("rejects run_card for an external principal", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "run_card", { card_id: "card-1" }, { ...context, principal: "external", callerSessionId: null });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContainEqual(expect.objectContaining({ text: "card run requires an agent session" }));
+    expect(h.cardExecutionServiceProvider).not.toHaveBeenCalled();
+  });
+  it("runs a new card from create_card in the same call and excludes run from the mutation body", async () => {
+    const h = cardHarness();
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true, caller_session_id: "session-1" });
+    expect(result.isError).not.toBe(true);
+    expect(h.service.createCard).toHaveBeenCalledWith(expect.objectContaining({ folderId: "folder-1", title: "제목", actorKind: "agent" }));
+    expect(h.service.createCard.mock.calls[0]![0]).not.toHaveProperty("run");
+    expect(h.executor.execute).toHaveBeenCalledTimes(1);
+    expect(result.structuredContent).toMatchObject({ card: { id: "card-1" }, execution: { state: "started" } });
+  });
+  it("uses the serialized operation target when create_card replay has no card snapshot", async () => {
+    const h = cardHarness();
+    h.service.createCard.mockResolvedValueOnce({ ...h.createdMutation, snapshot: { ...h.createdMutation.snapshot, cards: [] }, idempotent: true });
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true,
+      idempotency_key: "create-replay", caller_session_id: "session-1" });
+    expect(result.isError).not.toBe(true);
+    expect(h.executor.execute).toHaveBeenCalledWith(expect.objectContaining({ cardId: "card-1" }));
+  });
+  it("rejects run and queue before creating a card", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true, queue: true, caller_session_id: "session-1" });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContainEqual(expect.objectContaining({ text: "run과 queue는 함께 쓸 수 없습니다" }));
+    expect(h.service.createCard).not.toHaveBeenCalled();
+  });
+  it("includes the created card ID when create_card execution fails", async () => {
+    const h = cardHarness();
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    h.executor.execute.mockRejectedValue(new Error("실행 설정이 없습니다."));
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true, caller_session_id: "session-1" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("카드 card-1는 드래프트로 만들어졌지만 실행하지 못했습니다: 실행 설정이 없습니다.");
+    expect(result.content[0]?.text).toContain("run_card로 실행하세요.");
+  });
+  it("does not expose or execute create_card.run for an external principal", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true },
+      { ...context, principal: "external", callerSessionId: null });
+    expect(result.isError).not.toBe(true);
+    expect(h.executor.execute).not.toHaveBeenCalled();
+    expect(h.service.createCard).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "llm", actorSessionId: null }));
   });
   it("exposes spoken/reply and forwards replies without rewriting their text", async () => {
     const h = cardHarness();

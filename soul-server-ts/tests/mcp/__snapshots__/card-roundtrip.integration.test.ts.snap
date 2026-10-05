@@ -194,11 +194,11 @@ exports[`card orchestrator MCP roundtrip > preserves create duplicate assignee 1
   "content": [
     {
       "type": "text",
-      "text": "이미 카드 card-1의 담당입니다. A/S는 그 카드에 커멘트로, 새 업무는 assignee를 생략하고 queue=true로 새 카드를 만듭니다."
+      "text": "이미 카드 card-1의 담당입니다. A/S는 그 카드에 커멘트로, 새 업무는 assignee를 생략한 create_card로 새 카드를 만듭니다(바로 시작은 run=true, 대기는 queue=true)."
     }
   ],
   "structuredContent": {
-    "error": "이미 카드 card-1의 담당입니다. A/S는 그 카드에 커멘트로, 새 업무는 assignee를 생략하고 queue=true로 새 카드를 만듭니다.",
+    "error": "이미 카드 card-1의 담당입니다. A/S는 그 카드에 커멘트로, 새 업무는 assignee를 생략한 create_card로 새 카드를 만듭니다(바로 시작은 run=true, 대기는 queue=true).",
     "code": "INVALID_CARD_REQUEST"
   },
   "isError": true
