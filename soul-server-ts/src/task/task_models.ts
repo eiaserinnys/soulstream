@@ -89,6 +89,10 @@ export interface ActiveGenerationRollover {
   fromBackendSessionId: string;
   previousModelPreset?: string | null;
   previousBackend?: BackendId;
+  firstCall?: {
+    inputTokens: number;
+    cachedInputTokens: number;
+  };
 }
 
 export type SessionCreationWarning = SessionBindingWarning;

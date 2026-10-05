@@ -4,7 +4,12 @@ import type { AgentProfile } from "../../src/agent_registry.js";
 import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import {
   beginGenerationRolloverIfPending,
+  commitStart,
+  complete,
+  publishStarted,
 } from "../../src/task/persistent_generation_rollover.js";
+import type { EventPersistence } from "../../src/db/event_persistence.js";
+import type { PersistentCheckpointStats } from "../../src/context/persistent_checkpoint.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const agent: AgentProfile = {
@@ -125,5 +130,131 @@ describe("beginGenerationRolloverIfPending", () => {
 
     expect(rollover?.fromBackendSessionId).toBe("native-old");
     expect(task.modelPresetBackend).toBe("codex");
+  });
+
+  it("records applying metadata before the idempotent model selection update", async () => {
+    const task = makeTask();
+    beginGenerationRolloverIfPending(task, agent, makeCatalog());
+    const calls: string[] = [];
+    const persistence = {
+      enqueueMetadataEffect: vi.fn(async () => {
+        calls.push("metadata");
+        return 25;
+      }),
+    } as unknown as EventPersistence;
+    const sessionMutations = {
+      setModelSelection: vi.fn(async (_sessionId, _fields, key) => {
+        calls.push(`selection:${key}`);
+      }),
+    };
+
+    await commitStart(task, persistence, sessionMutations);
+
+    expect(calls).toEqual([
+      "metadata",
+      "selection:persistent_generation_model_selection:session-1:2",
+    ]);
+    expect(task.persistentGeneration?.pending?.applyingFrom).toBe("native-old");
+    expect(task.metadata?.at(-1)).toMatchObject({
+      type: "persistent_generation",
+      value: { pending: { applying_from: "native-old" } },
+    });
+    expect(task.lastEventId).toBe(25);
+  });
+
+  it("publishes the generation separator with checkpoint statistics and stable dedupe", async () => {
+    const task = makeTask();
+    beginGenerationRolloverIfPending(task, agent, makeCatalog());
+    const checkpoint: PersistentCheckpointStats = {
+      estimatedTokens: 321,
+      chars: 987,
+      sections: { state: 111, story: 222, summaries: 333, recent: 321 },
+      summarizedThroughTurn: 4,
+      recentFromEventId: 10,
+      recentToEventId: 12,
+    };
+    const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+      record: {} as never,
+      eventId: 26,
+    }));
+    const persistence = { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence;
+
+    await publishStarted(task, checkpoint, persistence);
+
+    const event = enqueueEventAndWaitForSessionAck.mock.calls[0]?.[1] as unknown as
+      Record<string, unknown>;
+    expect(event).toMatchObject({
+      type: "generation_started",
+      generation: 2,
+      previous: { model_preset: "claude-old", backend: "claude" },
+      current: { model_preset: "codex-new", backend: "codex", model: "codex-model-new" },
+      checkpoint: {
+        estimated_tokens: 321,
+        chars: 987,
+        summarized_through_turn: 4,
+        recent_from_event_id: 10,
+        recent_to_event_id: 12,
+      },
+      _dedupe_key: "generation_started:session-1:2",
+    });
+    expect(task.lastEventId).toBe(26);
+  });
+
+  it("records the new generation and measured first_call, preserving the previous measurement when absent", async () => {
+    const task = makeTask();
+    beginGenerationRolloverIfPending(task, agent, makeCatalog());
+    task.codexThreadId = "native-new";
+    task.activeGenerationRollover!.firstCall = {
+      inputTokens: 246708,
+      cachedInputTokens: 245563,
+    };
+    const enqueueMetadataEffect = vi.fn(async () => 27);
+    const persistence = { enqueueMetadataEffect } as unknown as EventPersistence;
+
+    expect(await complete(task, persistence)).toBe(true);
+    expect(task.persistentGeneration).toMatchObject({
+      number: 2,
+      backendSessionId: "native-new",
+      firstCall: {
+        generation: 2,
+        inputTokens: 246708,
+        cachedInputTokens: 245563,
+        modelPreset: "codex-new",
+        model: "codex-model-new",
+      },
+    });
+    expect(task.persistentGeneration?.pending).toBeUndefined();
+    expect(task.activeGenerationRollover).toBeUndefined();
+
+    const preserved = makeTask({
+      persistentGeneration: {
+        number: 1,
+        firstCall: {
+          generation: 1,
+          inputTokens: 5,
+          cachedInputTokens: 3,
+          modelPreset: "claude-old",
+          model: "claude-model-old",
+          measuredAt: "2026-10-04T00:00:00.000Z",
+        },
+        pending: {
+          number: 2,
+          reason: "context limit",
+          requestedAt: "2026-10-05T00:00:00.000Z",
+          targetModelPreset: "codex-new",
+        },
+      },
+    });
+    beginGenerationRolloverIfPending(preserved, agent, makeCatalog());
+    preserved.codexThreadId = "native-new";
+    expect(await complete(preserved, persistence)).toBe(true);
+    expect(preserved.persistentGeneration?.firstCall).toEqual({
+      generation: 1,
+      inputTokens: 5,
+      cachedInputTokens: 3,
+      modelPreset: "claude-old",
+      model: "claude-model-old",
+      measuredAt: "2026-10-04T00:00:00.000Z",
+    });
   });
 });
