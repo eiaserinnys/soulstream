@@ -16,13 +16,14 @@ const event = (input_id: string, eventId: number, selected: unknown[] = []) => (
     candidate_counts: { turn_summaries: 1, cards: 1, search_sessions: 0, recent_completed_sessions: 0 },
     model: "jev-latest",
     latency_ms: 20,
+    top_raw_score: (selected[0] as { raw_score?: number } | undefined)?.raw_score ?? 1.9,
   },
 });
 
 describe("persistent Jev candidate projection", () => {
   it("validates its raw debug payload and formats only labels, short lines, and scores", () => {
     const raw = event("input-a", 12, [
-      { kind: "turn_summary", session_id: "private-id", summary_event_id: 9, turn_number: 38, label: "T38", line: "짧은 요약", score: 3 },
+      { kind: "turn_summary", session_id: "private-id", summary_event_id: 9, turn_number: 38, label: "T38", line: "짧은 요약", score: 3, raw_score: 2.65 },
     ]);
     expect(isPersistentJevCandidatesDebugEvent(raw)).toBe(true);
     if (isPersistentJevCandidatesDebugEvent(raw)) {
@@ -30,7 +31,7 @@ describe("persistent Jev candidate projection", () => {
     }
     expect(formatPersistentJevCandidates({ selected: [] })).toEqual(["2점 이상인 후보가 없습니다."]);
     expect(isPersistentJevCandidatesDebugEvent({ ...raw, observation: { ...raw.observation, selected: [{ kind: "card" }] } })).toBe(false);
-    const card = { kind: "card", card_id: "card-1", label: "#412", line: "카드 한 줄", score: 0 };
+    const card = { kind: "card", card_id: "card-1", label: "#412", line: "카드 한 줄", score: 0, raw_score: 2.3 };
     expect(isPersistentJevCandidatesDebugEvent(event("input-a", 13, [card]))).toBe(false);
     expect(isPersistentJevCandidatesDebugEvent(event("input-a", 14, [{ ...card, score: 1 }]))).toBe(false);
     expect(isPersistentJevCandidatesDebugEvent(event("input-a", 15, Array.from({ length: 6 }, (_, index) => ({ ...card, card_id: `card-${index}` }))))).toBe(false);

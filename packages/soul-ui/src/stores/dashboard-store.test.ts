@@ -2133,10 +2133,11 @@ describe("dashboard-store", () => {
         timestamp: 15,
         observation: {
           input_id: "input-from-history",
-          selected: [{ kind: "card", card_id: "card-412", label: "#412", line: "카드 한 줄", score: 2 }],
+          selected: [{ kind: "card", card_id: "card-412", label: "#412", line: "카드 한 줄", score: 2, raw_score: 2.3 }],
           candidate_counts: { turn_summaries: 0, cards: 1, search_sessions: 0, recent_completed_sessions: 0 },
           model: "jev-latest",
           latency_ms: 1,
+          top_raw_score: 2.3,
         },
       } as unknown as import("../shared/types").SoulSSEEvent;
       useDashboardStore.getState().processEvent(candidateEvent, 15);

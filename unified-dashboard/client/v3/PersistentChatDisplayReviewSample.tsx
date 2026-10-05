@@ -15,6 +15,7 @@ function candidateObservation(input_id: string, selected: Array<{
   label: string;
   line: string;
   score: number;
+  raw_score: number;
   session_id?: string;
   summary_event_id?: number;
   turn_number?: number;
@@ -26,6 +27,7 @@ function candidateObservation(input_id: string, selected: Array<{
     candidate_counts: { turn_summaries: 1, cards: 1, search_sessions: 1, recent_completed_sessions: 0 },
     model: "jev-latest",
     latency_ms: 12,
+    top_raw_score: selected[0]?.raw_score ?? 1.9,
   };
 }
 
@@ -40,13 +42,13 @@ function candidateEvent(input_id: string, selected: Parameters<typeof candidateO
 
 const candidateEvents = [
   candidateEvent(inputId, [
-    { kind: "turn_summary", session_id: "review-session", summary_event_id: 38, turn_number: 38, label: "T38", line: "영구 세션 설정의 표시 토글", score: 3 },
-    { kind: "card", card_id: "review-card", label: "#412", line: "후보 내용을 채팅에 표시", score: 2 },
-    { kind: "session", session_id: "review-session-2", label: "PAS 웹 채팅", line: "같은 입력 아래에 기록 배치", score: 2 },
+    { kind: "turn_summary", session_id: "review-session", summary_event_id: 38, turn_number: 38, label: "T38", line: "영구 세션 설정의 표시 토글", score: 3, raw_score: 2.65 },
+    { kind: "card", card_id: "review-card", label: "#412", line: "후보 내용을 채팅에 표시", score: 2, raw_score: 2.3 },
+    { kind: "session", session_id: "review-session-2", label: "PAS 웹 채팅", line: "같은 입력 아래에 기록 배치", score: 2, raw_score: 2.15 },
   ]),
   candidateEvent(emptyInputId, []),
   candidateEvent(longInputId, [
-    { kind: "card", card_id: "review-long-card", label: "#413", line: "좁은 화면에서 한 줄 말줄임을 확인하기 위한 매우 긴 Jev 후보 설명 문장입니다", score: 3 },
+    { kind: "card", card_id: "review-long-card", label: "#413", line: "좁은 화면에서 한 줄 말줄임을 확인하기 위한 매우 긴 Jev 후보 설명 문장입니다", score: 3, raw_score: 2.8 },
   ]),
 ];
 
