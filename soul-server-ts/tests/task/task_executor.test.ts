@@ -4953,6 +4953,105 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(capturedPrompts[1]).toContain("<soulstream_session>");
     expect(task.needsFullContextReinjection).toBe(false);
   });
+
+  it("턴 시작 전 compact 중 도착한 메시지를 미실행 배치와 함께 첫 입력에 넣는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-preturn-compact";
+    const capturedPrompts: string[] = [];
+    let turnCount = 0;
+    const compact = vi.fn(async () => {
+      task.interventionQueue.push({ text: "arrived during compact", user: "browser" });
+      return undefined;
+    });
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedPrompts.push(params.prompt);
+        turnCount += 1;
+        if (turnCount === 1) {
+          task.interventionQueue.push({ text: "already queued", user: "alice" });
+          yield {
+            type: "context_usage",
+            used_tokens: 850_000,
+            max_tokens: 1_000_000,
+            percent: 85,
+          } as SSEEventPayload;
+        }
+        yield { type: "complete", result: `turn ${turnCount}` } as SSEEventPayload;
+      },
+      compact,
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      build: vi.fn(async () => ({ combinedContextItems: [], assembledPrompt: task.prompt })),
+      buildFollowupContext: vi.fn(async () => ({ contextItems: [] })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(compact).toHaveBeenCalledTimes(1);
+    expect(capturedPrompts).toHaveLength(2);
+    expect(capturedPrompts[1]).toContain("already queued");
+    expect(capturedPrompts[1]).toContain("arrived during compact");
+    expect(task.interventionQueue).toEqual([]);
+  });
+
+  it("턴 시작 전 compact를 건너뛰면 기존 배치와 남은 큐를 그대로 둔다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-no-preturn-compact";
+    const compact = vi.fn();
+    const captured: Array<{ prompt: string; queue: InterventionMessage[] }> = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push({ prompt: params.prompt, queue: [...task.interventionQueue] });
+        yield { type: "complete", result: "done" } as SSEEventPayload;
+      },
+      compact,
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const queuedRuntimeFollowup: InterventionMessage = {
+      text: "runtime follow-up remains queued",
+      user: "system",
+      deliveryIntent: "runtime_followup",
+    };
+    task.interventionQueue.push(
+      { text: "dequeued batch", user: "alice" },
+      queuedRuntimeFollowup,
+    );
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(compact).not.toHaveBeenCalled();
+    expect(captured[0]?.prompt).toContain("dequeued batch");
+    expect(captured[0]?.prompt).not.toContain("runtime follow-up remains queued");
+    expect(captured[0]?.queue).toEqual([queuedRuntimeFollowup]);
+  });
 });
 
 function deferred<T>() {

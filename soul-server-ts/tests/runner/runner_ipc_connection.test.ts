@@ -10,6 +10,7 @@ import {
   engineEventFrame,
   hostFrameAppliedControlFrame,
   interruptCommandFrame,
+  invokeCommandFrame,
   prepareSessionCommandFrame,
   runnerControlResponseFrame,
   runnerCommandResultFrame,
@@ -46,6 +47,71 @@ describe("RunnerIpcConnection", () => {
       { timeoutMs: 1_000 },
     )).resolves.toMatchObject({ commandId: "prepare-1", result: { status: "ok" } });
     expect(hostConnection.pendingRequestCount).toBe(0);
+  });
+
+  it("lets regular invokes pass a blocked compact while compact invokes stay FIFO", async () => {
+    const [host, runner] = await socketPair();
+    const hostConnection = new RunnerIpcConnection(host);
+    const runnerConnection = new RunnerIpcConnection(runner);
+    let releaseFirstCompact!: () => void;
+    let markFirstCompactStarted!: () => void;
+    const firstCompactStarted = new Promise<void>((resolve) => {
+      markFirstCompactStarted = resolve;
+    });
+    const firstCompactBlocked = new Promise<void>((resolve) => {
+      releaseFirstCompact = resolve;
+    });
+    const compactStarted: string[] = [];
+    let markOrdinaryInvokeStarted!: () => void;
+    const ordinaryInvokeStarted = new Promise<void>((resolve) => {
+      markOrdinaryInvokeStarted = resolve;
+    });
+    runnerConnection.onFrame(async (frame) => {
+      if (frame.channel !== "command" || frame.kind !== "invoke") return;
+      if (frame.capability === "compact") {
+        compactStarted.push(frame.commandId);
+        if (frame.commandId === "compact-first") {
+          markFirstCompactStarted();
+          await firstCompactBlocked;
+        }
+      } else if (frame.commandId === "ordinary-invoke") {
+        markOrdinaryInvokeStarted();
+      }
+      await runnerConnection.send(runnerCommandResultFrame(frame.commandId, {
+        status: "ok",
+      }));
+    });
+
+    const firstCompact = hostConnection.request(
+      invokeCommandFrame("compact-first", "compact", ["session-1"]),
+      { timeoutMs: 5_000 },
+    );
+    await firstCompactStarted;
+    const secondCompact = hostConnection.request(
+      invokeCommandFrame("compact-second", "compact", ["session-1"]),
+      { timeoutMs: 5_000 },
+    );
+    const ordinaryInvoke = hostConnection.request(
+      invokeCommandFrame("ordinary-invoke", "inspect", []),
+      { timeoutMs: 5_000 },
+    );
+
+    try {
+      await ordinaryInvokeStarted;
+      await expect(ordinaryInvoke).resolves.toMatchObject({
+        commandId: "ordinary-invoke",
+        result: { status: "ok" },
+      });
+      expect(compactStarted).toEqual(["compact-first"]);
+    } finally {
+      releaseFirstCompact();
+    }
+
+    await expect(Promise.all([firstCompact, secondCompact])).resolves.toMatchObject([
+      { commandId: "compact-first", result: { status: "ok" } },
+      { commandId: "compact-second", result: { status: "ok" } },
+    ]);
+    expect(compactStarted).toEqual(["compact-first", "compact-second"]);
   });
 
   it.each([

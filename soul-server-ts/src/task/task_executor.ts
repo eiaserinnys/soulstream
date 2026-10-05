@@ -63,6 +63,7 @@ import {
 import {
   dequeueInterventionsInLane,
   enqueueInterventionOnce,
+  rejoinUnstartedInterventions,
 } from "./task_intervention_queue.js";
 import {
   isOpenAiAgentsApprovalPending,
@@ -1011,10 +1012,11 @@ export class TaskExecutor {
         turnInput,
       );
       if (compactedBeforeTurn && currentTurnInterventions.length > 0) {
+        await task.interruptRequest;
         turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
-          currentTurnInterventions,
+          rejoinUnstartedInterventions(task, currentTurnInterventions),
         );
         currentTurnInterventions = turnInput.interventions ?? [];
       }
