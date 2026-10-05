@@ -93,16 +93,38 @@ for (const width of [1920, 1440]) {
     await page.keyboard.press("Enter");
     const imageDialog = page.getByRole("dialog");
     await expect(imageDialog.getByRole("img", { name: "완료 화면", exact: true })).toBeVisible();
+    const activeElementAtImageOpen = width === 1920 ? await page.evaluate(() => {
+      const active = document.activeElement as HTMLElement | null;
+      return active ? {
+        tagName: active.tagName,
+        role: active.getAttribute("role"),
+        ariaLabel: active.getAttribute("aria-label"),
+        testId: active.getAttribute("data-testid"),
+        insideDialog: Boolean(active.closest('[data-slot="dialog-popup"]')),
+        insideWorkspaceScrim: Boolean(active.closest(".v3-workspace-scrim")),
+      } : null;
+    }) : null;
+    if (activeElementAtImageOpen) console.info(`activeElement after evidence open: ${JSON.stringify(activeElementAtImageOpen)}`);
     await page.keyboard.press("Escape");
     await expect(evidenceImage).toBeFocused();
+    await expect(imageDialog).toHaveCount(0);
+    await expect(detail).toBeVisible();
+
+    await evidenceImage.click();
+    await expect(imageDialog.getByRole("img", { name: "완료 화면", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(evidenceImage).toBeFocused();
+    await expect(detail).toBeVisible();
 
     await detail.getByRole("tab", { name: "노트", exact: true }).click();
     await expect(detail.getByText("인계 요약", { exact: true })).toBeVisible();
     await expect(detail.getByTestId("card-notes").locator("[data-card-note-id]")).toHaveCount(5);
     await detail.getByRole("button", { name: "앞선 노트 1건" }).click();
     await expect(detail.getByTestId("card-notes").locator("[data-card-note-id]")).toHaveCount(6);
+    await page.screenshot({ path: path.join(output, `${width}-notes.png`), animations: "disabled" });
     await detail.getByRole("tab", { name: "세션", exact: true }).click();
     await expect(detail.locator("[data-card-section=sessions]")).toBeVisible();
+    await page.screenshot({ path: path.join(output, `${width}-sessions.png`), animations: "disabled" });
     await detail.getByRole("tab", { name: "확인 항목" }).click();
 
     const nowPanel = detail.getByTestId("card-now-panel");
@@ -134,15 +156,19 @@ for (const width of [1920, 1440]) {
 
     const divider = page.getByTestId("v3-card-workspace-divider");
     const dragBy = async (delta: number) => {
-      const box = await divider.boundingBox();
+      const dragHandle = divider.locator(".cursor-col-resize");
+      const box = await dragHandle.boundingBox();
       expect(box).not.toBeNull();
       await page.mouse.move(box!.x + 8, box!.y + 80);
       await page.mouse.down();
+      const cursorWhileDragging = await page.evaluate(() => document.body.style.cursor);
       await page.mouse.move(box!.x + 8 + delta, box!.y + 80);
       await page.mouse.up();
+      if (width === 1920 && delta === -66) console.info(`divider drag: ${JSON.stringify({ box, cursorWhileDragging, width: await workspace.getAttribute("data-card-width-px") })}`);
     };
     await dragBy(-66);
     await expect(workspace).toHaveAttribute("data-card-width-px", "400");
+    await page.screenshot({ path: path.join(output, `${width}-split-400.png`), animations: "disabled" });
     const stateAt400 = await detail.locator('[data-item-id="4"] .v3-card-check-item-state').boundingBox();
     const titleAt400 = await detail.locator('[data-item-id="4"] .v3-card-check-item-title').boundingBox();
     expect(stateAt400!.y).toBe(titleAt400!.y);
@@ -174,6 +200,13 @@ for (const width of [1920, 1440]) {
     await expect(detail.locator(".v3-card-comment-target")).toContainText("5번");
     await expect(detail.getByRole("tab", { name: /커멘트/ })).toContainText("커멘트");
     await page.screenshot({ path: path.join(output, `${width}-target-comment.png`), animations: "disabled" });
+    const reportImage = detail.getByRole("button", { name: "검수 이미지", exact: true });
+    await reportImage.click();
+    await expect(page.getByRole("dialog").getByRole("img", { name: "검수 이미지", exact: true })).toBeVisible();
+    await page.screenshot({ path: path.join(output, `${width}-comment-image.png`), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await expect(reportImage).toBeFocused();
+    await expect(detail.getByRole("tab", { name: "커멘트" })).toHaveAttribute("aria-selected", "true");
 
     await detail.getByRole("tab", { name: "확인 항목" }).click();
     for (const id of [2, 3, 4, 5, 8, 9]) {
@@ -220,8 +253,11 @@ for (const width of [1920, 1440]) {
     await expect(doingRow).toBeVisible();
     const reducedAnimation = await doingRow.evaluate(element => getComputedStyle(element, "::before").animationName);
     expect(reducedAnimation).toBe("none");
+    await page.keyboard.press("Escape");
+    await expect(reducedDetail).toHaveCount(0);
+    await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
     writeFileSync(path.join(output, `${width}-metrics.json`), JSON.stringify({
-      viewport: { width, height: width === 1920 ? 1080 : 810 },
+      viewport: { width, height: width === 1920 ? 1080 : 810 }, activeElementAtImageOpen,
       initialGeometry, currentLayout, pastLayout, stateAt400, titleAt400, stateAt399, titleAt399, sessionStyleBefore,
     }, null, 2));
     expect(errors).toEqual([]);
