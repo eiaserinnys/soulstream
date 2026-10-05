@@ -4,8 +4,9 @@ import { useTokens } from '../theme';
 import { ImageViewerModal } from './ImageViewerModal';
 
 /** The thumbnail is the existing chat attachment Image, with a viewer on tap. */
-export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, variant = 'default' }: {
+export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default' }: {
   source: ImageSourcePropType; sources?: ImageSourcePropType[]; index?: number; testID?: string; accessibilityLabel: string;
+  captions?: readonly string[];
   variant?: 'default' | 'cardCheckItem';
 }) {
   const t = useTokens();
@@ -16,6 +17,6 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
       <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.md, backgroundColor: t.colors.border }}
         resizeMode="cover" accessible accessibilityLabel={accessibilityLabel} />
     </TouchableWithoutFeedback>
-    {open ? <ImageViewerModal sources={sources} initialIndex={index} onClose={() => setOpen(false)} /> : null}
+    {open ? <ImageViewerModal sources={sources} captions={captions} initialIndex={index} onClose={() => setOpen(false)} /> : null}
   </>;
 }

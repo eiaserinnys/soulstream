@@ -7,7 +7,7 @@ jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
 import { act, fireEvent, render, renderHook, userEvent, waitFor } from '@testing-library/react-native';
-import { ActionSheetIOS, Alert, StyleSheet } from 'react-native';
+import { ActionSheetIOS, Alert, FlatList, StyleSheet } from 'react-native';
 import type { CardCheckItem, CardDetail, CardDto } from '../../../api/cardTypes';
 import { useCardStore } from '../../../store/cardStore';
 import { useSessionStore } from '../../../store/sessionStore';
@@ -227,25 +227,32 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
   const sessions = Array.from({ length: 34 }, (_, index) => ({ agentSessionId: `run-${index}`, displayName: `세션 ${index}`, status: 'completed',
     createdAt: '2026-09-29T00:00:00Z', updatedAt: '2026-09-30T00:00:00Z', callerSessionId: index ? 'run-0' : null }));
   const api = { getCard: jest.fn().mockResolvedValue({ ...detail, sessions: sessions.map(({ callerSessionId, ...session }) => session) }),
-    getSessionsByIds: jest.fn().mockResolvedValue(sessions) };
+    getSessionsByIds: jest.fn(async (ids: string[]) => sessions.filter(session => ids.includes(session.agentSessionId))) };
   const onClose = jest.fn();
   const onOpenSession = jest.fn();
   const { result } = renderHook(() => useTokens());
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={onClose} onOpenSession={onOpenSession} />);
   fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
-  await waitFor(() => expect(screen.getByText('31개 더')).toBeTruthy());
-  fireEvent.press(screen.getByText('31개 더'));
-  await waitFor(() => expect(screen.getByTestId('task-run-row-run-33')).toBeTruthy());
-  expect(screen.UNSAFE_getByType(FolderSessionHistory).props.sessionIds).toEqual(sessions.map((session) => session.agentSessionId));
-  expect(api.getSessionsByIds.mock.calls.flatMap(([ids]) => ids)).toEqual(sessions.map((session) => session.agentSessionId));
+  await waitFor(() => expect(screen.getByTestId('card-sessions')).toBeTruthy());
+  expect(screen.queryByText('31개 더')).toBeNull();
+  const list = screen.UNSAFE_getByType(FlatList);
+  expect(screen.queryByTestId('card-detail-scroll')).toBeNull();
+  expect(list.props.data).toHaveLength(34);
+  const history = screen.UNSAFE_getByType(FolderSessionHistory);
+  expect(history.props.sessionIds).toEqual(sessions.map((session) => session.agentSessionId));
+  act(() => list.props.onViewableItemsChanged({ viewableItems: [{ item: list.props.data[0] }], changed: [] }));
+  await waitFor(() => expect(screen.getByTestId('task-run-row-run-0')).toBeTruthy());
+  expect(api.getSessionsByIds.mock.calls.flatMap(([ids]) => ids)).toContain('run-0');
+  expect(api.getSessionsByIds.mock.calls.flatMap(([ids]) => ids)).not.toContain('run-33');
+  const lastRow = screen.UNSAFE_getByType(FlatList).props.data.find((row: any) => row.session.agentSessionId === 'run-33');
+  act(() => list.props.onViewableItemsChanged({ viewableItems: [{ item: lastRow }], changed: [] }));
+  await waitFor(() => expect(useSessionStore.getState().sessions['run-33'].updatedAt).toBe('2026-09-30T00:00:00Z'));
+
   expect(StyleSheet.flatten(screen.getByTestId('task-run-depth-run-0').props.style).marginLeft).toBe(0);
-  for (let index = 1; index < 34; index++) {
-    expect(StyleSheet.flatten(screen.getByTestId(`task-run-depth-run-${index}`).props.style).marginLeft).toBe(result.current.spacing.md);
-  }
-  await userEvent.press(screen.getByTestId('task-run-row-run-33'));
+  await userEvent.press(screen.getByTestId('task-run-row-run-0'));
   expect(onClose).toHaveBeenCalled();
-  expect(onOpenSession).toHaveBeenCalledWith('run-33');
-  expect(useSessionStore.getState().sessions['run-33'].updatedAt).toBe('2026-09-30T00:00:00Z');
+  expect(onOpenSession).toHaveBeenCalledWith('run-0');
+
 });
 
 test('커멘트 초안은 실패와 상세 닫기 후 복원되고 성공할 때만 삭제된다', async () => {

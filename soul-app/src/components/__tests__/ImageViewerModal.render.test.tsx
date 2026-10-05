@@ -25,3 +25,13 @@ test('closing an attachment leaves its original thumbnail available', () => {
   expect(screen.queryByTestId('image-viewer-pages')).toBeNull();
   expect(screen.getByLabelText('첨부 사진')).toBeTruthy();
 });
+
+test('캡션은 해당 이미지 페이지 아래에만 나타나고 기본 첨부는 그대로다', () => {
+  const screen = render(<AttachmentImage source={{ uri: 'https://test/one.png' }}
+    sources={[{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }]}
+    captions={['첫 화면', '둘째 화면']} accessibilityLabel="첫 화면 썸네일" />);
+  expect(screen.queryByText('첫 화면')).toBeNull();
+  fireEvent.press(screen.getByLabelText('첫 화면 썸네일'));
+  expect(screen.getByTestId('image-viewer-caption-0').props.children).toBe('첫 화면');
+  expect(screen.getByTestId('image-viewer-caption-1').props.children).toBe('둘째 화면');
+});

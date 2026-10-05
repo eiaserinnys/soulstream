@@ -1,5 +1,8 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { useTokens } from '../../../theme';
+import { PlannerMarkdownText } from '../PlannerMarkdownText';
+import { fireEvent, render, renderHook } from '@testing-library/react-native';
 import type { CardComment } from '../../../api/cardTypes';
 import { CardNotes } from '../CardNotes';
 
@@ -33,4 +36,17 @@ test('기록 줄은 작성자와 담당, HH:MM을 보이고 담당 세션이 비
   expect(screen.getByText('06:58')).toBeTruthy();
   screen.rerender(<CardNotes brief="인계" notes={[{ ...note, sessionId: null }]} sessions={sessions} assigneeSessionId={null} />);
   expect(screen.queryByText('담당')).toBeNull();
+});
+
+test('인계와 노트는 같은 본문 크기와 확인 항목 프레임 토큰을 쓴다', () => {
+  const t = renderHook(() => useTokens()).result.current;
+  const screen = render(<CardNotes brief="인계" notes={[notes[0]]} sessions={[]} />);
+  for (const markdown of screen.UNSAFE_getAllByType(PlannerMarkdownText)) expect(markdown.props.variant).toBe('note');
+  for (const id of ['card-brief-frame', 'card-note-note-1']) {
+    expect(StyleSheet.flatten(screen.getByTestId(id).props.style)).toMatchObject({
+      borderWidth: StyleSheet.hairlineWidth, borderRadius: t.foundation.radius.field,
+      paddingVertical: t.uiSpacing.xs, paddingHorizontal: t.uiSpacing.sm,
+    });
+  }
+  expect(screen.getByText('인계 요약').parent?.props.testID).not.toBe('card-brief-frame');
 });

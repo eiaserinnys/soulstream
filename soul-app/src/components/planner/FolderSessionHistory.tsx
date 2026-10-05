@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle, type ViewToken } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { PlannerSessionSummary } from '../../api/plannerTypes';
 import type { Session } from '../../api/types';
@@ -28,7 +28,11 @@ export function FolderSessionHistory({
   onOpenSession,
   onLongPressSession,
   nearEndRef,
+  virtualized = false,
+  contentContainerStyle,
 }: {
+  virtualized?: boolean;
+  contentContainerStyle?: StyleProp<ViewStyle>;
   api: ApiClient | null;
   folderId?: string | null;
   sessionIds?: readonly string[];
@@ -77,9 +81,13 @@ export function FolderSessionHistory({
     ...(data?.items ?? []).map((run) => run.agentSessionId),
     ...sessionSummaries.map((summary) => summary.agentSessionId),
   ])], [data?.items, explicitSessionIds, sessionSummaries]);
+  const [visibleSessionIds, setVisibleSessionIds] = useState<string[]>([]);
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    setVisibleSessionIds(viewableItems.map(({ item }) => item.session.agentSessionId));
+  }, []);
   const missingSessionIds = useMemo(() => (
-    sessionIds.filter((sessionId) => !catalogSessions[sessionId])
-  ), [catalogSessions, sessionIds]);
+    sessionIds.filter((sessionId) => !catalogSessions[sessionId] && (!virtualized || visibleSessionIds.includes(sessionId)))
+  ), [catalogSessions, sessionIds, virtualized, visibleSessionIds]);
   const missingSessionKey = missingSessionIds.join('\u0000');
   const [detailStatusById, setDetailStatusById] = useState<Record<string, SessionDetailStatus>>({});
   const [detailOwner, setDetailOwner] = useState(scopeGeneration);
@@ -164,72 +172,78 @@ export function FolderSessionHistory({
     }),
   ), [catalogSessions, connectedNodeIds, nodesReady, sessionIds, summariesById]);
   const visibleDetailStatusById = detailOwner === scopeGeneration ? detailStatusById : {};
-  if (!folderId && !explicitSessionIds) return null;
-  return (
-    <View testID="task-run-history-list" style={styles.container}>
-      {rows.map(({ session, depth }) => {
-        const detailStatus = api && !catalogSessions[session.agentSessionId]
-          ? visibleDetailStatusById[session.agentSessionId] ?? 'loading'
-          : null;
-        return (
-          <View
-            key={session.agentSessionId}
-            testID={`task-run-depth-${session.agentSessionId}`}
-            style={{ marginLeft: depth * t.spacing.md }}
+  const renderRow = ({ session, depth }: (typeof rows)[number]) => {
+    const detailStatus = api && !catalogSessions[session.agentSessionId]
+      ? visibleDetailStatusById[session.agentSessionId] ?? 'loading'
+      : null;
+    return (
+      <View
+        key={session.agentSessionId}
+        testID={`task-run-depth-${session.agentSessionId}`}
+        style={{ marginLeft: depth * t.spacing.md }}
+      >
+        {detailStatus ? (
+          <AppGlassCard
+            testID={`task-run-detail-${detailStatus}-${session.agentSessionId}`}
+            style={styles.detailState}
           >
-            {detailStatus ? (
-              <AppGlassCard
-                testID={`task-run-detail-${detailStatus}-${session.agentSessionId}`}
-                style={styles.detailState}
-              >
-                <Text style={styles.detailTitle} numberOfLines={1}>
-                  {session.displayName?.trim() || '세션 정보'}
-                </Text>
-                <View style={styles.detailStateRow}>
-                  {detailStatus === 'loading' ? (
-                    <>
-                      <ActivityIndicator size="small" color={t.colors.accent} />
-                      <Text style={styles.detailMessage}>세션 상세를 불러오는 중입니다.</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Text style={styles.error}>세션 상세를 불러오지 못했습니다.</Text>
-                      <TouchableOpacity
-                        testID={`task-run-detail-retry-${session.agentSessionId}`}
-                        style={styles.retryAction}
-                        onPress={() => loadSessionDetails([session.agentSessionId])}
-                      >
-                        <Text style={styles.more}>다시 시도</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </AppGlassCard>
-            ) : (
-              <SessionCard
-                session={session}
-                onPress={() => onOpenSession?.(session.agentSessionId)}
-                onLongPress={() => onLongPressSession?.(session.agentSessionId)}
-                testID={`task-run-row-${session.agentSessionId}`}
-                surfaceTestID={`task-run-surface-${session.agentSessionId}`}
-                avatarTestID={`task-run-avatar-${session.agentSessionId}`}
-                timeTestID={`task-run-time-${session.agentSessionId}`}
-                embedded
-                small={small || undefined}
-              />
-            )}
-          </View>
-        );
-      })}
-      {!explicitSessionIds && loading ? <ActivityIndicator color={t.colors.accent} /> : null}
-      {!explicitSessionIds && error ? <Text style={styles.error}>{error}</Text> : null}
-      {!explicitSessionIds && data?.nextCursor && !loading && error ? (
-        <TouchableOpacity testID="task-run-history-retry" style={styles.moreAction} onPress={loadMore}>
-          <Text style={styles.more}>다시 시도</Text>
-        </TouchableOpacity>
-      ) : null}
-    </View>
-  );
+            <Text style={styles.detailTitle} numberOfLines={1}>
+              {session.displayName?.trim() || '세션 정보'}
+            </Text>
+            <View style={styles.detailStateRow}>
+              {detailStatus === 'loading' ? (
+                <>
+                  <ActivityIndicator size="small" color={t.colors.accent} />
+                  <Text style={styles.detailMessage}>세션 상세를 불러오는 중입니다.</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.error}>세션 상세를 불러오지 못했습니다.</Text>
+                  <TouchableOpacity
+                    testID={`task-run-detail-retry-${session.agentSessionId}`}
+                    style={styles.retryAction}
+                    onPress={() => loadSessionDetails([session.agentSessionId])}
+                  >
+                    <Text style={styles.more}>다시 시도</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </AppGlassCard>
+        ) : (
+          <SessionCard
+            session={session}
+            onPress={() => onOpenSession?.(session.agentSessionId)}
+            onLongPress={() => onLongPressSession?.(session.agentSessionId)}
+            testID={`task-run-row-${session.agentSessionId}`}
+            surfaceTestID={`task-run-surface-${session.agentSessionId}`}
+            avatarTestID={`task-run-avatar-${session.agentSessionId}`}
+            timeTestID={`task-run-time-${session.agentSessionId}`}
+            embedded
+            small={small || undefined}
+          />
+        )}
+      </View>
+    );
+  };
+  if (!folderId && !explicitSessionIds) return null;
+  const footer = <>
+    {!explicitSessionIds && loading ? <ActivityIndicator color={t.colors.accent} /> : null}
+    {!explicitSessionIds && error ? <Text style={styles.error}>{error}</Text> : null}
+    {!explicitSessionIds && data?.nextCursor && !loading && error ? (
+      <TouchableOpacity testID="task-run-history-retry" style={styles.moreAction} onPress={loadMore}>
+        <Text style={styles.more}>다시 시도</Text>
+      </TouchableOpacity>
+    ) : null}
+  </>;
+  if (virtualized) return <FlatList testID="task-run-history-list" style={{ flex: 1 }}
+    data={rows} keyExtractor={({ session }) => session.agentSessionId}
+    renderItem={({ item }) => renderRow(item)}
+    contentContainerStyle={[contentContainerStyle, styles.container]}
+    keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
+    onViewableItemsChanged={onViewableItemsChanged} onEndReached={handleNearEnd}
+    ListFooterComponent={footer} />;
+  return <View testID="task-run-history-list" style={styles.container}>{rows.map(renderRow)}{footer}</View>;
 }
 
 export function resolveFolderRunSession(

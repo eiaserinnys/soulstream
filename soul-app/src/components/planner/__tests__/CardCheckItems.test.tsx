@@ -24,10 +24,11 @@ test('서버 display 일곱 값을 그대로 표시하고 확인·고칠 점 조
   await act(async () => {});
 
   for (const label of ['아직', '하는 중', '됐다고 보고', '다시 봐 주세요', '고칠 점 2', '확인함', '뺌']) {
-    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByText(label)).toBeNull();
   }
-  const runningDot = screen.getByTestId('card-check-item-2-status').children[0] as any;
-  expect(runningDot.props.style).toMatchObject({ width: 8, height: 8 });
+  expect(screen.queryByTestId('card-check-item-2-status')).toBeNull();
+  expect(screen.getByTestId('card-check-item-3-expand').props.accessibilityLabel).toContain('됐다고 보고');
+  expect(screen.getByTestId('card-check-item-5-expand').props.accessibilityLabel).toContain('고칠 점 2');
   expect(screen.getByText('범위에서 뺀 이유')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('1 항목 1 확인'));
   expect(onConfirm).toHaveBeenCalledWith(1, true);
@@ -126,4 +127,17 @@ test.each([
     expect(screen.getByText('실기기 미확인')).toBeTruthy();
     expect(screen.queryByText('08:00')).toBeNull();
   }
+});
+
+ test('못 본 것은 결과 아래 증거 위에 두고 이미지 설명은 확대 창에만 보인다', () => {
+  const screen = render(<CardCheckItems items={[item(1, 'reported', {
+    caveat: '실기기 미확인', evidence: [{ type: 'image', url: 'https://example.test/photo.png', label: '수정된 화면' }],
+  })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+  expect(screen.queryByText('수정된 화면')).toBeNull();
+  const rendered = JSON.stringify(screen.toJSON());
+  expect(rendered.indexOf('실기기 미확인')).toBeGreaterThan(rendered.indexOf('확인할 결과'));
+  expect(rendered.indexOf('실기기 미확인')).toBeLessThan(rendered.indexOf('card-check-item-1-evidence-images'));
+  fireEvent.press(screen.getByLabelText('수정된 화면'));
+  expect(screen.getByTestId('image-viewer-caption-0').props.children).toBe('수정된 화면');
 });

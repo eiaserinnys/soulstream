@@ -28,7 +28,9 @@ export function CardNotes({ brief, notes, sessions, assigneeSessionId }: {
     <View testID="card-notes" style={styles.container}>
       <View style={styles.brief}>
         <Text style={styles.sectionTitle}>인계 요약</Text>
-        <PlannerMarkdownText markdown={brief || '아직 경과가 없습니다.'} variant="card" />
+        <View testID="card-brief-frame" style={styles.recordFrame}>
+          <PlannerMarkdownText markdown={brief || '아직 경과가 없습니다.'} variant="note" />
+        </View>
       </View>
       {older.length ? (
         <View>
@@ -76,13 +78,14 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     container: { gap: t.uiSpacing.md },
     brief: { gap: t.uiSpacing.sm },
+    recordFrame: cardRecordFrame(t),
     sectionTitle: { ...t.foundation.typography.section, color: t.colors.textPrimary },
   });
 }
 
 function makeNoteStyles(t: DesignTokens) {
   return StyleSheet.create({
-    record: { paddingBottom: t.uiSpacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.colors.border },
+    record: cardRecordFrame(t),
     recordRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.uiSpacing.sm },
     content: { flex: 1, minWidth: 0, gap: t.uiSpacing.xxs },
     header: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm },
@@ -93,4 +96,9 @@ function makeNoteStyles(t: DesignTokens) {
     owner: { ...t.foundation.typography.meta, fontWeight: '500', color: t.colors.textMuted },
     time: { ...t.foundation.typography.meta, fontWeight: '500', color: t.colors.textMuted, marginLeft: 'auto' },
   });
+}
+
+function cardRecordFrame(t: DesignTokens) {
+  return { borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border,
+    borderRadius: t.foundation.radius.field, paddingVertical: t.uiSpacing.xs, paddingHorizontal: t.uiSpacing.sm };
 }
