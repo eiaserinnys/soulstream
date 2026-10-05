@@ -1,12 +1,13 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { SearchScreen } from '../SearchScreen';
 import { useSearchStore } from '../../store/searchStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 
 const mockUseSessionSearch = jest.fn();
+const originalFetch = global.fetch;
 
 jest.mock('@expo/vector-icons/Ionicons', () => {
   const React = require('react');
@@ -102,6 +103,10 @@ beforeEach(() => {
   }]);
 });
 
+afterEach(() => {
+  global.fetch = originalFetch;
+});
+
 test('전체 스코프는 세션·대화 내용 두 섹션을 한 화면에 표시한다', async () => {
   const onOpenSession = jest.fn();
   const onOpenFolder = jest.fn();
@@ -180,6 +185,124 @@ test('전체 스코프는 세션·대화 내용 두 섹션을 한 화면에 표�
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 60));
   });
+});
+
+test('최근 세션은 캐시에 없는 id만 한 번에 받아 오고 피드 후보를 늘리지 않는다', async () => {
+  mockUseSessionSearch.mockReturnValue({
+    sessionResults: [], sessionMatches: [], searchStatus: null, messageResults: [],
+    navigationResults: [], loading: false, expansionPending: false, expansionFailed: false,
+    error: null, hasMore: false, loadMore: jest.fn(),
+  });
+  const missingRows = ['recent-missing-1', 'recent-missing-2'].map((agentSessionId) => ({
+    agentSessionId,
+    displayName: `Hydrated ${agentSessionId}`,
+    status: 'completed',
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-02T00:00:00.000Z',
+  }));
+  const fetchMock = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => ({ sessions: missingRows }),
+    text: async () => JSON.stringify({ sessions: missingRows }),
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+  });
+  global.fetch = fetchMock;
+  useSearchStore.getState().reset();
+  useSearchStore.setState({ query: '', recentSessionIds: ['cached-recent', ...missingRows.map((row) => row.agentSessionId)] });
+  useSessionStore.setState({
+    sessions: {
+      'cached-recent': {
+        agentSessionId: 'cached-recent', displayName: 'Cached recent', status: 'completed',
+        createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-02T00:00:00.000Z',
+      },
+    },
+    catalog: { folders: [], sessions: {} },
+    feedMembership: {},
+    feedSessionIds: [],
+  });
+
+  const screen = render(
+    <SearchScreen onOpenSession={jest.fn()} autoFocus={false} />,
+  );
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  await screen.findByText('Hydrated recent-missing-1');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const url = new URL(fetchMock.mock.calls[0][0]);
+  expect(url.searchParams.getAll('session_id')).toEqual(['recent-missing-1', 'recent-missing-2']);
+  expect(useSessionStore.getState().feedMembership).toEqual({});
+  expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+});
+
+test('인증 범위가 바뀌면 최근 세션의 늦은 응답은 버리고 같은 id를 다시 조회한다', async () => {
+  mockUseSessionSearch.mockReturnValue({
+    sessionResults: [], sessionMatches: [], searchStatus: null, messageResults: [],
+    navigationResults: [], loading: false, expansionPending: false, expansionFailed: false,
+    error: null, hasMore: false, loadMore: jest.fn(),
+  });
+  const sessionId = 'recent-scope-switch';
+  const oldRow = {
+    agentSessionId: sessionId,
+    displayName: 'Old account session',
+    status: 'completed',
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-02T00:00:00.000Z',
+  };
+  const currentRow = { ...oldRow, displayName: 'Current account session' };
+  let resolveOld!: (response: Response) => void;
+  let resolveCurrent!: (response: Response) => void;
+  const oldResponse = new Promise<Response>((resolve) => { resolveOld = resolve; });
+  const currentResponse = new Promise<Response>((resolve) => { resolveCurrent = resolve; });
+  const fetchMock = jest.fn()
+    .mockImplementationOnce(() => oldResponse)
+    .mockImplementationOnce(() => currentResponse);
+  global.fetch = fetchMock;
+  useSearchStore.getState().reset();
+  useSearchStore.setState({ query: '', recentSessionIds: [sessionId] });
+  useSessionStore.setState({
+    sessions: {},
+    catalog: { folders: [], sessions: {} },
+    feedMembership: {},
+    feedSessionIds: [],
+  });
+
+  const screen = render(<SearchScreen onOpenSession={jest.fn()} autoFocus={false} />);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  act(() => {
+    useSettingsStore.setState({ serverUrl: 'https://search-b.test' });
+    useSessionStore.setState({ sessions: {}, feedMembership: {}, feedSessionIds: [] });
+  });
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(new URL(fetchMock.mock.calls[0][0]).origin).toBe('https://search.test');
+  expect(new URL(fetchMock.mock.calls[1][0]).origin).toBe('https://search-b.test');
+
+  const responseFor = (row: typeof oldRow): Response => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => ({ sessions: [row] }),
+    text: async () => JSON.stringify({ sessions: [row] }),
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+  } as Response);
+  await act(async () => {
+    resolveOld(responseFor(oldRow));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(useSessionStore.getState().sessions[sessionId]).toBeUndefined();
+
+  resolveCurrent(responseFor(currentRow));
+  await waitFor(() => expect(useSessionStore.getState().sessions[sessionId]?.displayName)
+    .toBe('Current account session'));
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(useSessionStore.getState().feedMembership).toEqual({});
+  expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+  screen.unmount();
 });
 
 test('의미 확장이 부분 실패하고 결과가 없으면 완료된 0건으로 표시하지 않는다', () => {

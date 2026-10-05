@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createApiClient } from '../api/client';
 import { applySessionUpdated, toSession } from '../api/mappers';
-import type {
-  Catalog,
-  CatalogSessionsDelta,
-  Folder,
-  Session,
-} from '../api/types';
-import { filterFeedSessions } from '../lib/feed-filter';
+import type { Catalog, CatalogSessionsDelta, Folder, Session } from '../api/types';
+import {
+  applyPendingAttentionDelta,
+  createPendingAttentionVersionState,
+} from '../lib/session-attention';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useSSEStream, CATALOG_STREAM_EVENTS } from './useSSEStream';
@@ -19,6 +17,7 @@ import {
   isAuthScopeCurrent,
   useAuthScopeGeneration,
 } from '../lib/auth-scope';
+import { FEED_PAGE_SIZE } from '../api/feedPage';
 
 type CatalogUpdatedPayload = {
   catalog?: Catalog;
@@ -26,18 +25,27 @@ type CatalogUpdatedPayload = {
   sessions_delta?: CatalogSessionsDelta;
 };
 
-type InitialDeltaEvent =
-  | { type: 'session_created'; data: any }
-  | { type: 'session_updated'; data: any }
-  | { type: 'session_deleted'; data: any }
-  | { type: 'catalog_updated'; data: CatalogUpdatedPayload };
-
-type SessionListPayload = {
-  sessions?: unknown[];
+type StreamMeta = {
+  latestId: string;
+  instanceId: string;
 };
 
-const FEED_CATALOG_PARAMS = { feed_only: true, limit: 0 } as const;
-const FEED_CATALOG_STREAM_SCOPE = { feedOnly: true } as const;
+type PendingAttentionDelta = {
+  delta: unknown;
+  revision: unknown;
+};
+
+type InFlightSession = {
+  controller: AbortController;
+  pendingUpdates: Partial<Session>;
+  pendingAttention: PendingAttentionDelta[];
+};
+
+const FEED_CATALOG_STREAM_SCOPE = {
+  feedOnly: true,
+  feedDisplay: true,
+  limit: FEED_PAGE_SIZE,
+} as const;
 
 function isCatalogSessionsDelta(value: unknown): value is CatalogSessionsDelta {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -54,295 +62,263 @@ function isCatalogSessionsDelta(value: unknown): value is CatalogSessionsDelta {
   });
 }
 
-function sessionFromUpdate(
-  agentSessionId: string,
-  updates: Partial<Session>,
-): Session | null {
-  if (!updates.updatedAt) return null;
+function readStreamMeta(value: unknown): StreamMeta {
+  if (!value || typeof value !== 'object') throw new Error('Invalid catalog stream metadata');
+  const record = value as Record<string, unknown>;
+  const latestId = record.latest_id;
+  if (
+    (typeof latestId !== 'string' && typeof latestId !== 'number')
+    || typeof record.instance_id !== 'string'
+  ) {
+    throw new Error('Invalid catalog stream metadata');
+  }
+  return { latestId: String(latestId), instanceId: record.instance_id };
+}
+
+function readSessionList(value: unknown): {
+  folders: Folder[];
+  sessions: Session[];
+  total: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+} {
+  if (!value || typeof value !== 'object') throw new Error('Invalid feed session snapshot');
+  const record = value as Record<string, unknown>;
+  if (
+    !Array.isArray(record.folders)
+    || !Array.isArray(record.sessions)
+    || typeof record.total !== 'number'
+    || typeof record.hasMore !== 'boolean'
+    || !(record.nextCursor === null || typeof record.nextCursor === 'string')
+  ) {
+    throw new Error('Invalid feed session snapshot');
+  }
+  const sessions = record.sessions.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      throw new Error('Invalid feed session row');
+    }
+    const session = toSession(row as Record<string, unknown>);
+    if (!session.agentSessionId) throw new Error('Feed session row has no id');
+    return session;
+  });
   return {
-    agentSessionId,
-    displayName: null,
-    status: updates.status ?? 'unknown',
-    reviewRequired: updates.reviewRequired ?? false,
-    reviewState: updates.reviewState ?? 'not_required',
-    createdAt: updates.updatedAt,
-    updatedAt: updates.updatedAt,
-    ...updates,
+    folders: record.folders as Folder[],
+    sessions,
+    total: record.total,
+    hasMore: record.hasMore,
+    nextCursor: record.nextCursor as string | null,
   };
 }
 
-function catalogWithSessionAssignments(
-  catalog: Catalog,
-  sessions: Session[],
-): Catalog {
-  const assignments: Catalog['sessions'] = {};
-  for (const session of sessions) {
-    if (!session.agentSessionId) continue;
-    assignments[session.agentSessionId] = {
-      folderId: session.folderId ?? null,
-      displayName: session.displayName ?? null,
-    };
-  }
-  return { folders: catalog.folders, sessions: assignments };
+function attentionDeltaFrom(data: Record<string, unknown>): PendingAttentionDelta | null {
+  const delta = data.pendingAttentionsDelta ?? data.pending_attentions_delta;
+  if (delta === undefined) return null;
+  return {
+    delta,
+    revision: data.attentionRevision ?? data.attention_revision,
+  };
 }
 
-function filteredFeedSnapshot(sessions: Session[], catalog: Catalog): Session[] {
-  return filterFeedSessions(sessions, catalog);
+function patchNeedsFeedHydration(
+  sessionId: string,
+  updates: Partial<Session>,
+  attention: PendingAttentionDelta | null,
+): boolean {
+  if (updates.status === 'running' || updates.reviewState === 'needs_review') return true;
+  if (!attention) return false;
+  const result = applyPendingAttentionDelta(
+    [],
+    0,
+    createPendingAttentionVersionState(0),
+    sessionId,
+    attention.delta,
+    attention.revision,
+  );
+  return result.pendingAttentions.length > 0;
 }
 
-/** Feed-scoped catalog replay. REST is used for hydration and explicit replay gaps. */
+/** Feed snapshot and live catalog deltas share one stream; REST is reserved for one row/page. */
 export function useSessionsStream() {
-  const serverUrl = useSettingsStore((s) => s.serverUrl);
+  const serverUrl = useSettingsStore((state) => state.serverUrl);
   const scopeGeneration = useAuthScopeGeneration();
   const catalogRetryRequest = useSessionStore((state) => state.catalogRetryRequest);
   const scope = useMemo(() => captureAuthScope(), [scopeGeneration]);
-
   const api = useMemo(
-    () => (serverUrl ? createApiClient(serverUrl, { authScope: scope }) : null),
-    [scope, serverUrl]
+    () => serverUrl ? createApiClient(serverUrl, { authScope: scope }) : null,
+    [scope, serverUrl],
   );
 
-  // SSE id가 부착된 이벤트 수신 시 갱신. 매 SSE connect/reconnect 시 urlBuilder가
-  // 최신값을 ?lastEventId=N으로 부착하여 서버가 그 이후 이벤트만 replay하도록 한다.
   const lastEventIdRef = useRef<string | undefined>(undefined);
-  // 서버 인스턴스 식별 — 첫 stream_meta에서 저장. 인스턴스 교체 감지의 단일 정본.
   const instanceIdRef = useRef<string | undefined>(undefined);
-  const refetchTokenRef = useRef(0);
-  const consumerFailureRef = useRef<(error: unknown) => void>(() => {});
-  const recoveryRef = useRef<{
-    token: number;
-    boundary?: string;
-    instanceId?: string;
-    events: Array<{ type: string; data: any; eid?: string }>;
-  } | null>(null);
-  const cursorlessSnapshotRef = useRef<{ instanceId?: string } | null>(null);
-  const initialCatalogReadyRef = useRef(false);
-  const initialCatalogFailedRef = useRef(false);
-  // initial REST snapshot과 SSE delta의 병합 규칙:
-  // snapshot 요청이 pending인 동안 들어온 delta는 즉시 적용하되, snapshot 적용 직후
-  // 같은 순서로 한 번 더 replay한다. 따라서 stale snapshot은 "초기 base" 역할만 하고,
-  // 클라이언트가 이미 관측한 SSE incremental update가 최종 승자가 된다.
-  const initialCatalogPendingRef = useRef(false);
-  const pendingInitialDeltaEventsRef = useRef<InitialDeltaEvent[]>([]);
-  const pendingSessionListRef = useRef<SessionListPayload | null>(null);
+  const streamMetaRef = useRef<StreamMeta | null>(null);
+  const inFlightSessionsRef = useRef(new Map<string, InFlightSession>());
   const refsOwnerRef = useRef(scope.generation);
 
+  const abortHydration = useCallback((sessionId: string) => {
+    const pending = inFlightSessionsRef.current.get(sessionId);
+    if (!pending) return;
+    pending.controller.abort();
+    inFlightSessionsRef.current.delete(sessionId);
+  }, []);
+
+  const abortAllHydrations = useCallback(() => {
+    for (const pending of inFlightSessionsRef.current.values()) pending.controller.abort();
+    inFlightSessionsRef.current.clear();
+  }, []);
+
   if (refsOwnerRef.current !== scope.generation) {
+    abortAllHydrations();
     refsOwnerRef.current = scope.generation;
     lastEventIdRef.current = undefined;
     instanceIdRef.current = undefined;
-    refetchTokenRef.current += 1;
-    recoveryRef.current = null;
-    cursorlessSnapshotRef.current = null;
-    initialCatalogReadyRef.current = false;
-    initialCatalogFailedRef.current = false;
-    initialCatalogPendingRef.current = false;
-    pendingInitialDeltaEventsRef.current = [];
-    pendingSessionListRef.current = null;
+    streamMetaRef.current = null;
   }
+
+  useEffect(() => abortAllHydrations, [abortAllHydrations, scopeGeneration]);
 
   const isCurrentScope = useCallback(
     () => isAuthScopeCurrent(scope),
     [scope],
   );
 
-  const applySessionListFallback = useCallback((d: SessionListPayload) => {
-    if (!isCurrentScope()) return;
-    const rawSessions = Array.isArray(d?.sessions) ? d.sessions : [];
-    const sessions = rawSessions
-      .map((raw: unknown) => toSession(raw as Record<string, unknown>))
-      .filter((session: Session) => !!session.agentSessionId);
-    const store = useSessionStore.getState();
-    const catalog = catalogWithSessionAssignments(store.catalog, sessions);
-    store.setFeedCatalogSnapshot(catalog);
-    store.mergeSessions(filteredFeedSnapshot(sessions, catalog));
-    initialCatalogReadyRef.current = true;
-    initialCatalogFailedRef.current = false;
-    pendingSessionListRef.current = null;
-  }, [isCurrentScope]);
+  const hydrateSession = useCallback((
+    sessionId: string,
+    updates: Partial<Session>,
+    attention: PendingAttentionDelta | null,
+  ) => {
+    if (!api || !isCurrentScope()) return;
+    const current = inFlightSessionsRef.current.get(sessionId);
+    if (current) {
+      current.pendingUpdates = { ...current.pendingUpdates, ...updates };
+      if (attention) current.pendingAttention.push(attention);
+      return;
+    }
 
-  const applyCatalogDeltaEvent = useCallback((type: InitialDeltaEvent['type'], d: any) => {
+    const pending: InFlightSession = {
+      controller: new AbortController(),
+      pendingUpdates: updates,
+      pendingAttention: attention ? [attention] : [],
+    };
+    inFlightSessionsRef.current.set(sessionId, pending);
+    void api.getSessionsByIds([sessionId], pending.controller.signal)
+      .then((rows) => {
+        if (
+          pending.controller.signal.aborted
+          || inFlightSessionsRef.current.get(sessionId) !== pending
+          || !isCurrentScope()
+        ) return;
+        const row = rows.find((candidate) => candidate.agentSessionId === sessionId);
+        if (!row) return;
+        const store = useSessionStore.getState();
+        store.upsertSession(row, { feedEvent: true });
+        const latestStore = useSessionStore.getState();
+        if (Object.keys(pending.pendingUpdates).length > 0) {
+          latestStore.updateSession(sessionId, pending.pendingUpdates);
+        }
+        for (const delta of pending.pendingAttention) {
+          useSessionStore.getState().applyPendingAttentionsDelta(
+            sessionId,
+            delta.delta,
+            delta.revision,
+          );
+        }
+      })
+      .catch((error) => {
+        if (!pending.controller.signal.aborted && isCurrentScope()) {
+          console.warn('[useSessionsStream] session hydration failed:', error);
+        }
+      })
+      .finally(() => {
+        if (inFlightSessionsRef.current.get(sessionId) === pending) {
+          inFlightSessionsRef.current.delete(sessionId);
+        }
+      });
+  }, [api, isCurrentScope]);
+
+  const applySessionUpdated = useCallback((data: Record<string, unknown>) => {
+    const sessionId = (data.agentSessionId ?? data.agent_session_id) as string | undefined;
+    if (typeof sessionId !== 'string' || !sessionId) return;
+    const updates = applySessionUpdatedPayload(data);
+    const attention = attentionDeltaFrom(data);
+    const store = useSessionStore.getState();
+    const membership = store.feedMembership[sessionId];
+
+    if (store.sessions[sessionId]) {
+      store.updateSession(sessionId, updates);
+      if (attention) {
+        useSessionStore.getState().applyPendingAttentionsDelta(
+          sessionId,
+          attention.delta,
+          attention.revision,
+        );
+      }
+    }
+
+    if (inFlightSessionsRef.current.has(sessionId)) {
+      hydrateSession(sessionId, updates, attention);
+      return;
+    }
+
+    if (membership !== undefined) return;
+    if (patchNeedsFeedHydration(sessionId, updates, attention)) {
+      hydrateSession(sessionId, updates, attention);
+    }
+  }, [hydrateSession]);
+
+  const applyCatalogEvent = useCallback((type: string, data: any) => {
     if (!isCurrentScope()) return;
     switch (type) {
       case 'session_created': {
-        // orch wire(_on_node_change): { type, session: <to_session_info MIXED>, nodeId, folder_id? }
-        // mapper로 정규화하여 store에 upsert.
-        const raw = d?.session as Record<string, unknown> | undefined;
+        const raw = data?.session as Record<string, unknown> | undefined;
         if (raw) {
-          const session = toSession(raw);
-          if (session.agentSessionId) {
-            useSessionStore.getState().upsertSession(session);
+          const row = toSession(raw);
+          if (row.agentSessionId) {
+            useSessionStore.getState().upsertSession(row, { feedEvent: true });
           }
         }
         break;
       }
-      case 'session_updated': {
-        // orch wire: { type, agent_session_id, agentSessionId?, status, updated_at, ... , nodeId }
-        // 식별자는 snake/camel 양쪽 모두 시도.
-        const sid =
-          (d?.agentSessionId as string | undefined) ??
-          (d?.agent_session_id as string | undefined);
-        if (typeof sid !== 'string' || !sid) break;
-        const updates = applySessionUpdated(d as Record<string, unknown>);
-        const store = useSessionStore.getState();
-        if (store.sessions[sid]) {
-          store.updateSession(sid, updates);
-        } else {
-          const carriesLastMessage =
-            Object.prototype.hasOwnProperty.call(d, 'lastMessage')
-            || Object.prototype.hasOwnProperty.call(d, 'last_message');
-          // 새 entry는 보존할 이전 preview가 없다. invalid/null message delta의 updatedAt만으로
-          // phantom session을 만들면 raw event가 피드에 승격되므로 snapshot을 기다린다.
-          if (carriesLastMessage && !updates.lastMessage) break;
-          const session = sessionFromUpdate(sid, updates);
-          if (session) store.upsertSession(session);
-        }
-        const attentionDelta = d?.pendingAttentionsDelta
-          ?? d?.pending_attentions_delta;
-        const updatedStore = useSessionStore.getState();
-        if (attentionDelta !== undefined && updatedStore.sessions[sid]) {
-          updatedStore.applyPendingAttentionsDelta(
-            sid,
-            attentionDelta,
-            d?.attentionRevision ?? d?.attention_revision,
-          );
-        }
+      case 'session_updated':
+        applySessionUpdated(data ?? {});
         break;
-      }
       case 'session_deleted': {
-        // 서버 emit 실측: { type, agent_session_id }
-        const sid =
-          (d?.agentSessionId as string | undefined) ??
-          (d?.agent_session_id as string | undefined);
-        if (sid) useSessionStore.getState().deleteSession(sid);
+        const sessionId = (data?.agentSessionId ?? data?.agent_session_id) as string | undefined;
+        if (sessionId) {
+          abortHydration(sessionId);
+          useSessionStore.getState().deleteSession(sessionId);
+        }
         break;
       }
       case 'catalog_updated': {
-        const payload = d as CatalogUpdatedPayload;
+        const payload = data as CatalogUpdatedPayload;
         const store = useSessionStore.getState();
-        // expand 단계: 구형 전체 snapshot과 신형 세션 델타를 함께 소비한다.
         if (payload.catalog) {
-          store.setFeedCatalogSnapshot(payload.catalog);
+          store.setCatalog(payload.catalog);
         } else if (
           Array.isArray(payload.folders)
           && isCatalogSessionsDelta(payload.sessions_delta)
         ) {
+          for (const [sessionId, assignment] of Object.entries(payload.sessions_delta)) {
+            if (assignment === null) abortHydration(sessionId);
+          }
           store.applyCatalogDelta(payload.folders, payload.sessions_delta);
         }
         break;
       }
-    }
-  }, [isCurrentScope]);
-
-  const applyAndBufferInitialDelta = useCallback(
-    (event: InitialDeltaEvent) => {
-      if (initialCatalogPendingRef.current) {
-        pendingInitialDeltaEventsRef.current.push(event);
+      case 'session_list': {
+        const meta = streamMetaRef.current;
+        if (!meta) throw new Error('session_list arrived without stream_meta');
+        const snapshot = readSessionList(data);
+        abortAllHydrations();
+        useSessionStore.getState().applyFeedSnapshot(snapshot);
+        usePlannerStore.getState().invalidate('replay');
+        lastEventIdRef.current = meta.latestId;
+        instanceIdRef.current = meta.instanceId;
+        break;
       }
-      applyCatalogDeltaEvent(event.type, event.data);
-    },
-    [applyCatalogDeltaEvent],
-  );
-
-  const applySnapshot = useCallback((cat: Catalog & { sessionList?: unknown[] }) => {
-    const store = useSessionStore.getState();
-    const catalog = { folders: cat.folders, sessions: cat.sessions };
-    // Scoped feed membership is authoritative, while open detail caches survive.
-    store.setFeedCatalogSnapshot(catalog);
-    if (Array.isArray(cat.sessionList)) {
-      const list = cat.sessionList.map(raw => toSession(raw as Record<string, unknown>));
-      store.mergeSessions(filteredFeedSnapshot(list, catalog));
-    }
-  }, []);
-
-  // 마운트(또는 명시 재시도/serverUrl 변경) 시 초기 상태를 folders/sessions로 페치한다.
-  // REST가 실패해도 SSE session_list가 있으면 snapshot fallback을 적용한다. 둘 다 없으면
-  // empty와 구분되는 오류 상태로 전환해 사용자가 다시 시도할 수 있게 한다.
-  useEffect(() => {
-    if (!api) return;
-    let cancelled = false;
-    const myToken = ++refetchTokenRef.current;
-    const controller = new AbortController();
-    initialCatalogPendingRef.current = true;
-    pendingInitialDeltaEventsRef.current = [];
-
-    api
-      .getCatalog(FEED_CATALOG_PARAMS, { signal: controller.signal })
-      .then((cat) => {
-        if (cancelled || myToken !== refetchTokenRef.current || !isCurrentScope()) return;
-        applySnapshot(cat);
-        const pending = pendingInitialDeltaEventsRef.current;
-        pendingInitialDeltaEventsRef.current = [];
-        initialCatalogPendingRef.current = false;
-        for (const event of pending) {
-          applyCatalogDeltaEvent(event.type, event.data);
-        }
-        initialCatalogReadyRef.current = true;
-        initialCatalogFailedRef.current = false;
-        pendingSessionListRef.current = null;
-      })
-      .catch((err) => {
-        if (cancelled || myToken !== refetchTokenRef.current || !isCurrentScope()) return;
-        initialCatalogPendingRef.current = false;
-        initialCatalogReadyRef.current = false;
-        initialCatalogFailedRef.current = true;
-        pendingInitialDeltaEventsRef.current = [];
-        const pendingSessionList = pendingSessionListRef.current;
-        if (pendingSessionList) {
-          applySessionListFallback(pendingSessionList);
-        } else if (!useSessionStore.getState().catalogReady) {
-          useSessionStore.getState().markCatalogLoadFailed();
-        }
-        console.warn('[useSessionsStream] initial catalog fetch failed:', err);
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      refetchTokenRef.current += 1;
-      recoveryRef.current = null;
-      initialCatalogPendingRef.current = false;
-      initialCatalogReadyRef.current = false;
-      initialCatalogFailedRef.current = false;
-      pendingInitialDeltaEventsRef.current = [];
-      pendingSessionListRef.current = null;
-    };
-  }, [
-    api,
-    applyCatalogDeltaEvent,
-    applySessionListFallback,
-    applySnapshot,
-    catalogRetryRequest,
-    isCurrentScope,
-  ]);
-
-  const applyStreamEvent = useCallback((type: string, d: any) => {
-    switch (type) {
-      case 'session_created':
-      case 'session_updated':
-      case 'session_deleted':
-      case 'catalog_updated':
-        applyAndBufferInitialDelta({ type, data: d });
-        break;
-      case 'session_list':
-        // A reconnect before the first durable ID is a fresh server connection.
-        // Consume its snapshot; metadata alone still cannot advance the cursor.
-        if (cursorlessSnapshotRef.current) {
-          applySessionListFallback(d);
-          if (cursorlessSnapshotRef.current.instanceId) {
-            instanceIdRef.current = cursorlessSnapshotRef.current.instanceId;
-          }
-          cursorlessSnapshotRef.current = null;
-          usePlannerStore.getState().invalidate('replay');
-          break;
-        }
-        if (initialCatalogReadyRef.current) break;
-        if (initialCatalogPendingRef.current) pendingSessionListRef.current = d;
-        else if (initialCatalogFailedRef.current) applySessionListFallback(d);
-        break;
       case 'card_updated':
-        if (api && typeof d?.cardId === 'string') {
-          void refreshCard(api, d.cardId).catch(error => {
+        if (api && typeof data?.cardId === 'string') {
+          void refreshCard(api, data.cardId).catch((error) => {
             console.warn('[cards] card refresh failed', error);
           });
         }
@@ -350,111 +326,44 @@ export function useSessionsStream() {
     }
     const plannerSource = plannerSourceForStreamEvent(type);
     if (plannerSource) usePlannerStore.getState().invalidate(plannerSource);
-  }, [api, applyAndBufferInitialDelta, applySessionListFallback]);
+  }, [abortAllHydrations, abortHydration, api, applySessionUpdated, isCurrentScope]);
 
-  const refetchCatalog = useCallback((boundary?: string, instanceId?: string, force = false) => {
-    if (!api) return;
-    const previous = recoveryRef.current;
-    if (!force && previous && previous.boundary === boundary && previous.instanceId === instanceId) return;
-    const recovery = {
-      token: ++refetchTokenRef.current,
-      boundary,
-      instanceId,
-      events: previous?.events ?? [],
-    };
-    recoveryRef.current = recovery;
-    // An explicit recovery supersedes an older hydration response.
-    initialCatalogPendingRef.current = false;
-    pendingInitialDeltaEventsRef.current = [];
-    api.getCatalog(FEED_CATALOG_PARAMS).then(cat => {
-      if (recovery.token !== refetchTokenRef.current || !isCurrentScope()) return;
-      applySnapshot(cat);
-      let committedId = recovery.boundary ?? lastEventIdRef.current;
-      for (const event of recovery.events) {
-        // latest_id is a catalog coordinate, never a per-session event ID.
-        if (event.eid && recovery.boundary !== undefined
-          && Number(event.eid) <= Number(recovery.boundary)) continue;
-        applyStreamEvent(event.type, event.data);
-        if (event.eid) committedId = event.eid;
-      }
-      usePlannerStore.getState().invalidate('replay');
-      initialCatalogReadyRef.current = true;
-      initialCatalogFailedRef.current = false;
-      pendingSessionListRef.current = null;
-      // Commit cursor/instance only once snapshot and ordered tail have succeeded.
-      lastEventIdRef.current = committedId;
-      if (recovery.instanceId) instanceIdRef.current = recovery.instanceId;
-      recoveryRef.current = null;
-    }).catch(error => {
-      if (recovery.token !== refetchTokenRef.current || !isCurrentScope()) return;
-      recoveryRef.current = null;
-      initialCatalogFailedRef.current = !initialCatalogReadyRef.current;
-      consumerFailureRef.current(error);
-    });
-  }, [api, applySnapshot, applyStreamEvent, isCurrentScope]);
-
-  const cancelRecovery = useCallback(() => {
-    if (!recoveryRef.current) return;
-    refetchTokenRef.current += 1;
-    recoveryRef.current = null;
-  }, []);
+  const eventTypes = useMemo(
+    () => CATALOG_STREAM_EVENTS.filter((type) => type !== 'replay_gap'),
+    [],
+  );
 
   useSSEStream({
     diagnosticsSource: 'feed_stream',
-    consumerFailureRef,
-    onConnecting: () => {
-      cancelRecovery();
-      cursorlessSnapshotRef.current = initialCatalogReadyRef.current
-        && lastEventIdRef.current === undefined ? {} : null;
-    },
-    onSuspending: cancelRecovery,
-    urlBuilder: () =>
-      api
-        ? api.catalogStreamUrl(
-            lastEventIdRef.current,
-            instanceIdRef.current,
-            FEED_CATALOG_STREAM_SCOPE,
-          )
-        : '',
-    eventTypes: [...CATALOG_STREAM_EVENTS],
+    onConnecting: () => { streamMetaRef.current = null; },
+    urlBuilder: () => api
+      ? api.catalogStreamUrl(lastEventIdRef.current, instanceIdRef.current, FEED_CATALOG_STREAM_SCOPE)
+      : '',
+    eventTypes,
     enabled: !!api,
     connectionKey: `catalog-retry:${catalogRetryRequest}`,
     scopeGeneration: scope.generation,
-    onEvent: (type, data, eid) => {
+    onEvent: (type, value, eventId) => {
       if (!isCurrentScope()) return;
-      const d = data as any;
       if (type === 'stream_meta') {
-        // With a committed cursor, the route emits replay_gap for mismatches.
-        // Metadata alone must not commit a new coordinate or start a second REST.
-        if (cursorlessSnapshotRef.current) cursorlessSnapshotRef.current.instanceId = d?.instance_id;
-        else if (!instanceIdRef.current && d?.instance_id) instanceIdRef.current = d.instance_id;
+        streamMetaRef.current = readStreamMeta(value);
         return;
       }
-      if (type === 'replay_gap') {
-        refetchCatalog(String(d?.latest_id ?? 0), d?.instance_id ?? instanceIdRef.current);
-        return;
-      }
-      const recovery = recoveryRef.current;
-      if (recovery) {
-        recovery.events.push({ type, data: d, eid });
-        if (type === 'folder_updated') refetchCatalog(recovery.boundary, recovery.instanceId, true);
-        return;
-      }
-      if (type === 'folder_updated') {
-        refetchCatalog();
-        recoveryRef.current?.events.push({ type, data: d, eid });
-        return;
-      }
-      applyStreamEvent(type, d);
-      // Store와 planner side effect가 모두 commit된 뒤에만 resume cursor를 확정한다.
-      // 그 전에 mutation이 throw하면 useSSEStream이 연결을 닫고 이전 cursor로
-      // 재연결하여 이 event를 replay한다. stream_meta/session_list/replay_gap에는
-      // 서버 합의상 SSE id가 없다.
-      if (eid) lastEventIdRef.current = eid;
+      applyCatalogEvent(type, value);
+      const meta = streamMetaRef.current;
+      if (meta) instanceIdRef.current = meta.instanceId;
+      if (type !== 'session_list' && eventId) lastEventIdRef.current = eventId;
     },
-    onError: (err) => {
+    onError: (error) => {
       if (!isCurrentScope()) return;
-      console.warn('[useSessionsStream] SSE error:', err);
+      if (!useSessionStore.getState().catalogReady) {
+        useSessionStore.getState().markCatalogLoadFailed();
+      }
+      console.warn('[useSessionsStream] SSE error:', error);
     },
   });
+}
+
+function applySessionUpdatedPayload(data: Record<string, unknown>): Partial<Session> {
+  return applySessionUpdated(data);
 }

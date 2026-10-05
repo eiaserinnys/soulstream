@@ -4,6 +4,7 @@ import { toSession } from './mappers';
 import type { CatalogFolder, FolderMutationResult, Session } from './types';
 import type { FolderSnapshot } from './cardTypes';
 import type { InitialFolderContext } from './initialFolderContext';
+import { FEED_PAGE_SIZE, type FeedPage } from './feedPage';
 
 type CatalogAssignmentMap = Record<string, { folderId: string | null; displayName: string | null }>;
 type SessionListRow = Record<string, unknown> & {
@@ -21,6 +22,8 @@ interface SessionsPayload {
   sessions?: SessionListRow[];
   sessionList?: SessionListRow[];
   total?: number;
+  hasMore?: boolean;
+  nextCursor?: string | null;
 }
 
 type CatalogRequestOptions = Pick<RequestInit, 'signal'>;
@@ -40,6 +43,44 @@ export function createCatalogEndpoints({
   buildQuery,
 }: ApiRequestContext) {
   return {
+    getFeedPage: async (cursor: string, signal?: AbortSignal): Promise<FeedPage> => {
+      const query = new URLSearchParams({
+        feed_only: 'true',
+        feed_display: 'true',
+        limit: String(FEED_PAGE_SIZE),
+        cursor,
+      });
+      const response = await authFetch(`${base}/api/sessions?${query.toString()}`, { signal });
+      const payload = await readJson<unknown>(response, 'getFeedPage');
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        throw new Error('Invalid feed page response');
+      }
+      const record = payload as Record<string, unknown>;
+      const { sessions: rows, total, hasMore, nextCursor } = record;
+      if (
+        !Array.isArray(rows)
+        || typeof total !== 'number'
+        || typeof hasMore !== 'boolean'
+        || !(nextCursor === null || typeof nextCursor === 'string')
+      ) {
+        throw new Error('Invalid feed page response');
+      }
+      const sessions = rows.map((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+          throw new Error('Invalid feed page session row');
+        }
+        const session = toSession(row as Record<string, unknown>);
+        if (!session.agentSessionId) throw new Error('Feed page session row has no id');
+        return session;
+      });
+      return {
+        sessions,
+        total,
+        hasMore,
+        nextCursor,
+      };
+    },
+
     getSessionsByIds: async (
       sessionIds: readonly string[],
       signal?: AbortSignal,
@@ -74,7 +115,7 @@ export function createCatalogEndpoints({
     }, options?: CatalogRequestOptions): Promise<CatalogResponse> => {
       const qs = buildQuery(params);
       return Promise.all([
-        authFetch(`${base}/api/folders`, options).then((r) => readJson<FoldersPayload>(r, 'getFolders')),
+        authFetch(`${base}/api/folders?sessions=false`, options).then((r) => readJson<FoldersPayload>(r, 'getFolders')),
         authFetch(`${base}/api/sessions${qs ? `?${qs}` : ''}`, options).then((r) =>
           readJson<SessionsPayload>(r, 'getSessions'),
         ),

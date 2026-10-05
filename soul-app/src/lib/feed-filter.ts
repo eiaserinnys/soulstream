@@ -13,7 +13,7 @@ interface FeedFilterOptions {
  * - 미분류 세션(folderId가 null/undefined) 또는 카탈로그에 등록되지 않은 세션은 항상 포함.
  *
  * 정렬: 최신 유효 lastMessage.timestamp DESC. 메시지가 없는 legacy snapshot은
- * createdAt, 마지막으로 updatedAt을 fallback한다. 동률이면 agentSessionId ASC.
+ * createdAt, 마지막으로 updatedAt을 fallback한다. 동률이면 agentSessionId DESC.
  *
  * catalogReady=false는 앱 시작·서버 전환 중 raw 세션이 먼저 들어온 상태다.
  * 이때는 excludeFromFeed 폴더 정보를 아직 신뢰할 수 없으므로 피드 표시 결과를 비운다.
@@ -68,7 +68,7 @@ export function filterFeedSessions(
         const timestampOrder = b.activityMs - a.activityMs;
         if (timestampOrder !== 0) return timestampOrder;
         if (a.session.agentSessionId === b.session.agentSessionId) return 0;
-        return a.session.agentSessionId < b.session.agentSessionId ? -1 : 1;
+        return a.session.agentSessionId > b.session.agentSessionId ? -1 : 1;
       },
     )
     .map(({ session }) => session);

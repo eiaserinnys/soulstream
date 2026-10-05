@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppState, Pressable, TextInput, View } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockRenderChatEventList = jest.fn();
 const mockRenderChatComposer = jest.fn();
@@ -8,6 +8,7 @@ const mockRenderChatRow = jest.fn();
 let mockRealChatEventList = false;
 const mockApiClient = {
   sessionEventsUrl: jest.fn(() => 'https://server.test/api/sessions/sess-1/events'),
+  getSessionsByIds: jest.fn().mockResolvedValue([]),
   intervene: jest.fn(),
 };
 let mockSendPromise: Promise<void> | undefined;
@@ -190,6 +191,8 @@ function resetStores() {
       },
     },
     catalog: { folders: [], sessions: {} },
+    feedMembership: {},
+    feedSessionIds: [],
     catalogReady: false,
   });
   useSettingsStore.setState({
@@ -256,6 +259,7 @@ describe('ChatBody store subscription boundary', () => {
       handleSend: jest.fn(),
     }));
     mockApiClient.intervene.mockReset();
+    mockApiClient.getSessionsByIds.mockReset().mockResolvedValue([]);
     mockHistoryState.current = {
       historyLoading: false,
       reachedTop: true,
@@ -265,6 +269,75 @@ describe('ChatBody store subscription boundary', () => {
     mockHistoryLoadingRef.current = false;
     resetStores();
     mockRenderRealtimeVoiceControls.mockClear();
+  });
+
+  test('채팅은 캐시에 없는 세션 한 건을 한 번 받아 오고 피드 후보는 늘리지 않는다', async () => {
+    await preparePersistentChatDrafts();
+    resetStores();
+    useSessionStore.setState({ sessions: {}, feedMembership: {}, feedSessionIds: [] });
+    mockApiClient.getSessionsByIds.mockResolvedValueOnce([{
+      agentSessionId: SID,
+      nodeId: 'node-1',
+      displayName: 'Hydrated chat session',
+      status: 'idle',
+      createdAt: '2026-05-23T00:00:00Z',
+      updatedAt: '2026-05-23T00:00:00Z',
+    }]);
+
+    const view = render(<View><ChatBody sessionId={SID} /></View>);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockApiClient.getSessionsByIds).toHaveBeenCalledTimes(1);
+    expect(mockApiClient.getSessionsByIds).toHaveBeenCalledWith([SID]);
+    expect(useSessionStore.getState().sessions[SID]?.displayName).toBe('Hydrated chat session');
+    expect(useSessionStore.getState().feedMembership).not.toHaveProperty(SID);
+    expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+    view.unmount();
+  });
+
+  test('인증 범위가 바뀌면 채팅 세션의 늦은 응답은 버리고 같은 id를 다시 조회한다', async () => {
+    await preparePersistentChatDrafts();
+    resetStores();
+    useSessionStore.setState({ sessions: {}, feedMembership: {}, feedSessionIds: [] });
+    let resolveOld!: (rows: any[]) => void;
+    let resolveCurrent!: (rows: any[]) => void;
+    mockApiClient.getSessionsByIds
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveCurrent = resolve; }));
+
+    const view = render(<View><ChatBody sessionId={SID} /></View>);
+    await waitFor(() => expect(mockApiClient.getSessionsByIds).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      useSettingsStore.setState({ serverUrl: 'https://server-b.test' });
+      useSessionStore.setState({ sessions: {}, feedMembership: {}, feedSessionIds: [] });
+    });
+    await waitFor(() => expect(mockApiClient.getSessionsByIds).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveOld([{
+        agentSessionId: SID, displayName: 'Old scope session', status: 'idle',
+        createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
+      }]);
+      await Promise.resolve();
+    });
+    expect(useSessionStore.getState().sessions[SID]).toBeUndefined();
+
+    await act(async () => {
+      resolveCurrent([{
+        agentSessionId: SID, displayName: 'Current scope session', status: 'idle',
+        createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
+      }]);
+      await Promise.resolve();
+    });
+    expect(useSessionStore.getState().sessions[SID]?.displayName).toBe('Current scope session');
+    expect(mockApiClient.getSessionsByIds).toHaveBeenCalledTimes(2);
+    expect(useSessionStore.getState().feedMembership).toEqual({});
+    expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+    view.unmount();
   });
 
   test('session preview and timestamp updates render neither the composer nor existing rows', async () => {

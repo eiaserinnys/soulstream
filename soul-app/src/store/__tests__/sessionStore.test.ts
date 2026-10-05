@@ -21,7 +21,8 @@ function reset() {
   useSessionStore.setState({
     sessions: {},
     catalog: { folders: [], sessions: {} },
-    feedScopeTombstoneIds: {},
+    feedMembership: {},
+    feedPage: { hasMore: false, nextCursor: null, status: 'idle' },
     catalogReady: false,
     feedSessionIds: [],
     sessionChangeSerial: 0,
@@ -42,6 +43,17 @@ function pendingAttention(id: string, sourceEventId: number, sessionId = 'attent
     requestId: id,
     requiresDetail: false,
   };
+}
+
+function setFeedRows(rows: Session[]): void {
+  const state = useSessionStore.getState();
+  state.applyFeedSnapshot({
+    folders: state.catalog.folders,
+    sessions: rows,
+    total: rows.length,
+    hasMore: false,
+    nextCursor: null,
+  });
 }
 
 describe('sessionStore', () => {
@@ -85,6 +97,11 @@ describe('sessionStore', () => {
     });
 
     store.setCatalog({ folders: [], sessions: {} });
+    expect(useSessionStore.getState().catalogLoadState).toBe('loading');
+
+    store.applyFeedSnapshot({
+      folders: [], sessions: [], total: 0, hasMore: false, nextCursor: null,
+    });
     expect(useSessionStore.getState().catalogLoadState).toBe('ready');
   });
 
@@ -195,9 +212,9 @@ describe('sessionStore', () => {
   });
 
   test('pending attention clear tombstone은 늦은 set을 차단하고 feed projection을 갱신한다', () => {
-    const { setCatalog, setSessions } = useSessionStore.getState();
+    const { setCatalog } = useSessionStore.getState();
     setCatalog({ folders: [], sessions: {} });
-    setSessions([{
+    setFeedRows([{
       ...s('attention'),
       pendingAttentions: [pendingAttention('input_request:req-7', 1001)],
       attentionRevision: 1001,
@@ -225,9 +242,9 @@ describe('sessionStore', () => {
   });
 
   test('pending attention 내용만 바뀌고 비어있음 여부가 같으면 feed ids identity를 유지한다', () => {
-    const { setCatalog, setSessions } = useSessionStore.getState();
+    const { setCatalog } = useSessionStore.getState();
     setCatalog({ folders: [], sessions: {} });
-    setSessions([{
+    setFeedRows([{
       ...s('attention'),
       pendingAttentions: [pendingAttention('input_request:a', 100)],
       attentionRevision: 100,
@@ -532,7 +549,7 @@ describe('sessionStore', () => {
     expect(catalog.sessions).toBe(originalSessions);
   });
 
-  test('feedSessionIds: setSessions와 catalog 기준으로 피드 순서를 유지한다', () => {
+  test('feedSessionIds는 스냅샷 후보 안에서 catalog 기준 피드 순서를 유지한다', () => {
     const { setSessions, setCatalog } = useSessionStore.getState();
     const now = Date.now();
     const minutesAgo = (minutes: number) =>
@@ -554,11 +571,27 @@ describe('sessionStore', () => {
       },
     });
 
-    setSessions([
+    const rows = [
       s('old', minutesAgo(30)),
       s('new', minutesAgo(10)),
       s('archived', minutesAgo(5)),
-    ]);
+    ];
+    setSessions(rows);
+    useSessionStore.getState().applyFeedSnapshot({
+      folders: [
+        { id: 'visible', name: '보임', sortOrder: 0 },
+        {
+          id: 'hidden',
+          name: '숨김',
+          sortOrder: 1,
+          settings: { excludeFromFeed: true },
+        },
+      ],
+      sessions: rows,
+      total: rows.length,
+      hasMore: false,
+      nextCursor: null,
+    });
 
     expect(useSessionStore.getState().feedSessionIds).toEqual(['archived', 'new', 'old']);
 
@@ -566,7 +599,7 @@ describe('sessionStore', () => {
     expect(useSessionStore.getState().feedSessionIds).toEqual(['new', 'old']);
   });
 
-  test('applyCatalogDelta: feed scope tombstone은 상세 session을 보존하면서 피드 카드만 제거한다', () => {
+  test('applyCatalogDelta: 제외 membership은 상세 session을 보존하면서 피드 카드만 제거한다', () => {
     const { setCatalog, setSessions, applyCatalogDelta } = useSessionStore.getState();
     setCatalog({
       folders: [
@@ -581,11 +614,26 @@ describe('sessionStore', () => {
       sessions: { moving: { folderId: 'visible', displayName: null } },
     });
     setSessions([{ ...s('moving'), folderId: 'visible' }]);
+    useSessionStore.getState().applyFeedSnapshot({
+      folders: [
+        { id: 'visible', name: '보임', sortOrder: 0 },
+        {
+          id: 'hidden',
+          name: '피드 제외',
+          sortOrder: 1,
+          settings: { excludeFromFeed: true },
+        },
+      ],
+      sessions: [{ ...s('moving'), folderId: 'visible' }],
+      total: 1,
+      hasMore: false,
+      nextCursor: null,
+    });
     const detailSession = useSessionStore.getState().sessions.moving;
 
     expect(useSessionStore.getState().feedSessionIds).toEqual(['moving']);
 
-    // feed_only catalog SSE는 visible → excluded 이동을 assignment tombstone으로 보낸다.
+    // feed_only catalog SSE는 visible → excluded 이동을 null assignment로 보낸다.
     applyCatalogDelta(
       [
         { id: 'visible', name: '보임', sortOrder: 0 },
@@ -621,8 +669,8 @@ describe('sessionStore', () => {
       { moving: null },
     );
 
-    // feed_only reconnect snapshot은 제외된 assignment를 아예 싣지 않아도 카드가 되살아나면 안 된다.
-    setCatalog({
+    // 새 창은 이전 excluded 기록을 버리고 들어온 snapshot의 후보만 다시 정한다.
+    useSessionStore.getState().applyFeedSnapshot({
       folders: [
         {
           id: 'hidden',
@@ -631,24 +679,28 @@ describe('sessionStore', () => {
           settings: { excludeFromFeed: true },
         },
       ],
-      sessions: {},
+      sessions: [{ ...s('moving'), folderId: 'hidden' }],
+      total: 1,
+      hasMore: false,
+      nextCursor: null,
     });
 
     expect(useSessionStore.getState().feedSessionIds).toEqual([]);
 
-    // reconnect/gap의 전체 snapshot도 최신 assignment가 있으면 tombstone을 해제한다.
-    setCatalog({
+    useSessionStore.getState().applyFeedSnapshot({
       folders: [{ id: 'visible', name: '보임', sortOrder: 0 }],
-      sessions: { moving: { folderId: 'visible', displayName: null } },
+      sessions: [{ ...s('moving'), folderId: 'visible' }],
+      total: 1,
+      hasMore: false,
+      nextCursor: null,
     });
 
     expect(useSessionStore.getState().feedSessionIds).toEqual(['moving']);
   });
 
-  test('setFeedCatalogSnapshot: scoped snapshot에 없는 세션은 피드에서만 제거하고 상세 cache는 보존한다', () => {
+  test('applyFeedSnapshot: 첫 쪽 후보만 보이고 화면 밖 상세 cache는 보존한다', () => {
     const {
       setCatalog,
-      setFeedCatalogSnapshot,
       setSessions,
     } = useSessionStore.getState();
     setCatalog({
@@ -664,20 +716,23 @@ describe('sessionStore', () => {
     ]);
     const detail = useSessionStore.getState().sessions.detail;
 
-    setFeedCatalogSnapshot({
+    useSessionStore.getState().applyFeedSnapshot({
       folders: [{ id: 'visible', name: '보임', sortOrder: 0 }],
-      sessions: {
-        visible: { folderId: 'visible', displayName: null },
-      },
+      sessions: [{ ...s('visible'), folderId: 'visible' }],
+      total: 1,
+      hasMore: true,
+      nextCursor: '30',
     });
 
     expect(useSessionStore.getState().sessions.detail).toBe(detail);
-    expect(useSessionStore.getState().feedScopeTombstoneIds).toEqual({ detail: true });
+    expect(useSessionStore.getState().feedMembership).toEqual({ visible: 'candidate' });
+    expect(useSessionStore.getState().feedSessionIds).toEqual(['visible']);
+    useSessionStore.getState().updateSession('detail', { status: 'running' });
     expect(useSessionStore.getState().feedSessionIds).toEqual(['visible']);
   });
 
-  test('setFeedCatalogSnapshot: 재접속 snapshot이 돌아온 assignment의 tombstone을 해제한다', () => {
-    const { setCatalog, setFeedCatalogSnapshot, setSessions } = useSessionStore.getState();
+  test('복귀 스냅샷은 새 후보를 등록하고 이전 페이지 cache는 보존한다', () => {
+    const { setCatalog, setSessions } = useSessionStore.getState();
     const catalog = {
       folders: [{ id: 'visible', name: '보임', sortOrder: 0 }],
       sessions: {
@@ -692,20 +747,20 @@ describe('sessionStore', () => {
     ]);
     const detail = useSessionStore.getState().sessions.detail;
 
-    setFeedCatalogSnapshot({
-      ...catalog,
-      sessions: { visible: { folderId: 'visible', displayName: null } },
+    useSessionStore.getState().applyFeedSnapshot({
+      folders: catalog.folders,
+      sessions: [{ ...s('visible'), folderId: 'visible' }],
+      total: 2,
+      hasMore: true,
+      nextCursor: '30',
     });
-    setFeedCatalogSnapshot(catalog);
 
     expect(useSessionStore.getState().sessions.detail).toBe(detail);
-    expect(useSessionStore.getState().feedScopeTombstoneIds).toEqual({});
-    expect(useSessionStore.getState().feedSessionIds).toEqual(
-      expect.arrayContaining(['visible', 'detail']),
-    );
+    expect(useSessionStore.getState().feedMembership).toEqual({ visible: 'candidate' });
+    expect(useSessionStore.getState().feedSessionIds).toEqual(['visible']);
   });
 
-  test('feedSessionIds: catalog 준비 전 raw 세션은 첫 paint 피드에 노출하지 않는다', () => {
+  test('일반 cache 주입은 후보를 만들지 않고 첫 snapshot이 피드 행을 확정한다', () => {
     const { setSessions, setCatalog } = useSessionStore.getState();
 
     setSessions([
@@ -731,12 +786,28 @@ describe('sessionStore', () => {
       },
     });
 
+    expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+    useSessionStore.getState().applyFeedSnapshot({
+      folders: [
+        {
+          id: 'hidden',
+          name: '숨김',
+          sortOrder: 0,
+          settings: { excludeFromFeed: true },
+        },
+        { id: 'visible', name: '보임', sortOrder: 1 },
+      ],
+      sessions: [useSessionStore.getState().sessions.visible],
+      total: 1,
+      hasMore: false,
+      nextCursor: null,
+    });
     expect(useSessionStore.getState().feedSessionIds).toEqual(['visible']);
   });
 
   test('updateSession: 카드 내부 정보만 바뀌면 feedSessionIds 참조를 유지한다', () => {
-    const { setSessions, updateSession } = useSessionStore.getState();
-    setSessions([s('a', new Date(Date.now() - 60_000).toISOString())]);
+    const { updateSession } = useSessionStore.getState();
+    setFeedRows([s('a', new Date(Date.now() - 60_000).toISOString())]);
     const beforeIds = useSessionStore.getState().feedSessionIds;
 
     updateSession('a', { displayName: '새 이름' });
@@ -746,9 +817,9 @@ describe('sessionStore', () => {
   });
 
   test('updateSession: 유효 메시지가 그대로면 raw updatedAt 변경은 feed 순서·identity를 유지한다', () => {
-    const { setCatalog, setSessions, updateSession } = useSessionStore.getState();
+    const { setCatalog, updateSession } = useSessionStore.getState();
     setCatalog({ folders: [], sessions: {} });
-    setSessions([
+    setFeedRows([
       {
         ...s('a', '2026-05-05T00:00:00Z'),
         lastMessage: {
@@ -776,9 +847,9 @@ describe('sessionStore', () => {
   });
 
   test('updateSession: 유효 lastMessage.timestamp 변경은 feed를 재정렬한다', () => {
-    const { setCatalog, setSessions, updateSession } = useSessionStore.getState();
+    const { setCatalog, updateSession } = useSessionStore.getState();
     setCatalog({ folders: [], sessions: {} });
-    setSessions([s('a', '2026-05-05T00:00:00Z'), s('b', '2026-05-04T00:00:00Z')]);
+    setFeedRows([s('a', '2026-05-05T00:00:00Z'), s('b', '2026-05-04T00:00:00Z')]);
     const beforeIds = useSessionStore.getState().feedSessionIds;
 
     updateSession('b', {
@@ -794,8 +865,8 @@ describe('sessionStore', () => {
   });
 
   test('updateSession: 그룹을 바꾸는 status는 feed projection을 갱신한다', () => {
-    const { setSessions, updateSession } = useSessionStore.getState();
-    setSessions([s('a', new Date(Date.now() - 60_000).toISOString())]);
+    const { updateSession } = useSessionStore.getState();
+    setFeedRows([s('a', new Date(Date.now() - 60_000).toISOString())]);
     const beforeIds = useSessionStore.getState().feedSessionIds;
 
     updateSession('a', { status: 'running' });
@@ -805,8 +876,8 @@ describe('sessionStore', () => {
   });
 
   test('updateSession: 실제 변경 없는 text_delta-like patch는 sessions 참조도 유지한다', () => {
-    const { setSessions, updateSession } = useSessionStore.getState();
-    setSessions([
+    const { updateSession } = useSessionStore.getState();
+    setFeedRows([
       { ...s('a', new Date(Date.now() - 60_000).toISOString()), status: 'running' },
     ]);
     const beforeSessions = useSessionStore.getState().sessions;

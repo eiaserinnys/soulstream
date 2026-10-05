@@ -67,6 +67,29 @@ afterEach(() => {
 });
 
 describe('SessionCard review acknowledge', () => {
+  it('캐시 세션의 folderId로 폴더 이름을 그리고 명시 null 배정은 미분류로 둔다', () => {
+    const row = session({ folderId: 'folder-1' });
+    useSessionStore.getState().setSessions([row]);
+    useSessionStore.setState({
+      catalog: {
+        folders: [{ id: 'folder-1', name: '작업 폴더', sortOrder: 0 }],
+        sessions: {},
+      },
+    });
+    const view = render(<SessionCardById sessionId="sess/review" onPress={jest.fn()} />);
+    expect(view.getByText('작업 폴더')).toBeTruthy();
+
+    act(() => {
+      useSessionStore.setState({
+        catalog: {
+          folders: [{ id: 'folder-1', name: '작업 폴더', sortOrder: 0 }],
+          sessions: { 'sess/review': { folderId: null, displayName: null } },
+        },
+      });
+    });
+    expect(view.queryByText('작업 폴더')).toBeNull();
+  });
+
   it('needs_review는 완료 badge와 중복 없이 식별 가능한 액션 하나만 표시한다', async () => {
     const { findByText, queryByText, queryByTestId } = render(
       <SessionCardById sessionId="sess/review" onPress={jest.fn()} />,

@@ -111,6 +111,54 @@ describe('client.getCatalog', () => {
   });
 });
 
+describe('client.getFeedPage', () => {
+  it('loads one 30-session display page with a single sessions request', async () => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      agentSessionId: `feed-${index}`,
+      status: index < 7 ? 'running' : 'completed',
+      reviewState: index < 7 ? 'not_required' : 'needs_review',
+      createdAt: '2026-10-01T00:00:00Z',
+      updatedAt: '2026-10-02T00:00:00Z',
+    }));
+    const fetchMock = makeFetchMock({
+      sessions: rows,
+      total: 411,
+      hasMore: true,
+      nextCursor: '60',
+    });
+
+    const result = await createApiClient(BASE).getFeedPage('30');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `${BASE}/api/sessions?feed_only=true&feed_display=true&limit=30&cursor=30`,
+    );
+    expect(result.sessions).toHaveLength(30);
+    expect(result.sessions.slice(0, 7).every((session) => session.status === 'running')).toBe(true);
+    expect(result.total).toBe(411);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe('60');
+  });
+
+  it.each(['sessions', 'total', 'hasMore', 'nextCursor'])(
+    'rejects a feed page response missing required field %s',
+    async (missingField) => {
+      const payload: Record<string, unknown> = {
+        ...(missingField === 'sessions' ? { sessionList: [] } : {}),
+        sessions: [],
+        total: 411,
+        hasMore: true,
+        nextCursor: '60',
+      };
+      delete payload[missingField];
+      makeFetchMock(payload);
+
+      await expect(createApiClient(BASE).getFeedPage('30'))
+        .rejects.toThrow('Invalid feed page response');
+    },
+  );
+});
+
 describe('client admin review policy endpoints', () => {
   it('reads native admin status with the bearer JWT', async () => {
     const fetchMock = makeFetchMock({
@@ -551,7 +599,7 @@ describe('readJson 응답 검증', () => {
 });
 
 describe('client.getCatalog', () => {
-  it('serializes feed_only and explicit limit=0 for feed snapshots', async () => {
+  it('catalog folder reads omit the full session assignment map', async () => {
     const fetchMock = makeFetchMock({
       folders: [],
       sessions: {},
@@ -561,14 +609,14 @@ describe('client.getCatalog', () => {
 
     await api.getCatalog({ feed_only: true, limit: 0 });
 
-    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/api/folders`);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/api/folders?sessions=false`);
     const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe(`${BASE}/api/sessions?feed_only=true&limit=0`);
     const headers = (init as RequestInit).headers as Headers;
     expect(headers.get('Authorization')).toBe('Bearer test-jwt');
   });
 
-  it('uses one server-limited page for a feed snapshot when limit=0', async () => {
+  it('keeps getCatalog pagination separate from display-window requests', async () => {
     const rows = Array.from({ length: 200 }, (_, n) => ({ agentSessionId: `s-${n}` }));
     const response = (body: unknown) => ({
       ok: true, status: 200, json: async () => body,
@@ -583,7 +631,7 @@ describe('client.getCatalog', () => {
     const result = await createApiClient(BASE).getCatalog({ feed_only: true, limit: 0 });
 
     expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
-      `${BASE}/api/folders`,
+      `${BASE}/api/folders?sessions=false`,
       `${BASE}/api/sessions?feed_only=true&limit=0`,
     ]);
     expect(result.sessionList).toHaveLength(200);
@@ -1101,7 +1149,14 @@ describe('client atom endpoints and stream urls', () => {
       `${BASE}/api/sessions/stream?snapshotCatchup=1&lastEventId=last+event&instanceId=instance%2F1`,
     );
     expect(api.catalogStreamUrl('last event', 'instance/1', { feedOnly: true })).toBe(
-      `${BASE}/api/sessions/stream?snapshotCatchup=1&feed_only=true&lastEventId=last+event&instanceId=instance%2F1`,
+      `${BASE}/api/sessions/stream?feed_only=true&snapshotCatchup=1&lastEventId=last+event&instanceId=instance%2F1`,
+    );
+    expect(api.catalogStreamUrl('last event', 'instance/1', {
+      feedOnly: true,
+      feedDisplay: true,
+      limit: 30,
+    })).toBe(
+      `${BASE}/api/sessions/stream?feed_only=true&feed_display=true&limit=30&lastEventId=last+event&instanceId=instance%2F1`,
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
