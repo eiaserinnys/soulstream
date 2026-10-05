@@ -100,9 +100,6 @@ export function makeStyles(t: DesignTokens) {
       justifyContent: 'center',
       alignItems: 'center',
     },
-    stopBtnDisabled: {
-      opacity: 0.55,
-    },
     attachmentRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',

@@ -16,6 +16,22 @@ describe("context usage calculations", () => {
     });
   });
 
+  it("marks an estimated context usage payload only when requested", () => {
+    expect(makeContextUsagePayload(14_223, 1_000_000, { estimated: true })).toEqual({
+      type: "context_usage",
+      used_tokens: 14_223,
+      max_tokens: 1_000_000,
+      percent: 1.4,
+      estimated: true,
+    });
+    expect(makeContextUsagePayload(14_223, 1_000_000, { estimated: false })).toEqual({
+      type: "context_usage",
+      used_tokens: 14_223,
+      max_tokens: 1_000_000,
+      percent: 1.4,
+    });
+  });
+
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
     "rejects invalid usage or window value %s",
     (value) => {

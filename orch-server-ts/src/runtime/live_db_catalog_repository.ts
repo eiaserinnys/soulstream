@@ -6,6 +6,7 @@ import {
 import {
   isBoardFolderAllowed,
   normalizeBoardAccess,
+  visibleBoardFolderIds,
   type BoardAccess,
   type BoardAccessFolderRecord,
 } from "../board/board_access.js";
@@ -109,6 +110,9 @@ export type LiveDbCatalogRepository = {
 export type LoadSessionSnapshotInput = {
   readonly access?: BoardAccess;
   readonly feedOnly?: boolean;
+  readonly feedDisplay?: boolean;
+  readonly limit?: number;
+  readonly offset?: number;
 };
 
 export type ListSessionSnapshotsInput = LoadSessionSnapshotInput & {
@@ -144,6 +148,13 @@ export type CreateLiveDbCatalogRepositoryOptions = {
 };
 
 const DEFAULT_SESSION_SNAPSHOT_LIMIT = 200;
+type LoadedSessionPage = {
+  sessions: Record<string, unknown>[];
+  total: number;
+  hasMore?: boolean;
+  nextCursor?: string | null;
+  folders?: unknown[];
+};
 
 export function createLiveDbCatalogRepository(
   options: CreateLiveDbCatalogRepositoryOptions = {},
@@ -245,8 +256,66 @@ export function createLiveDbCatalogRepository(
     },
     limit: number | null,
     offset: number | null,
-  ): Promise<{ sessions: Record<string, unknown>[]; total: number }> {
+  ): Promise<LoadedSessionPage> {
     const sql = await sqlResolver.resolveSql();
+    if (input.feedDisplay === true) {
+      const access = normalizeBoardAccess(input.access ?? { restricted: false });
+      const accessFolders = access.restricted
+        ? await sessionResourceAccessRepository.listFoldersForAccess()
+        : [];
+      const allowedFolderIds = access.restricted
+        ? accessFolders
+            .filter((folder) => isBoardFolderAllowed(access, accessFolders, folder.id))
+            .map((folder) => folder.id)
+        : null;
+      const countRows = await sql`
+        SELECT COUNT(*)::int AS count
+        FROM sessions s
+        LEFT JOIN folders f ON s.folder_id = f.id
+        WHERE (s.folder_id IS NULL OR COALESCE(f.settings->>'excludeFromFeed', 'false') != 'true')
+          AND COALESCE(s.session_type, 'claude') != 'llm'
+          AND (s.status = 'running' OR s.review_state = 'needs_review')
+          AND (
+            ${allowedFolderIds}::text[] IS NULL
+            OR s.folder_id = ANY(${allowedFolderIds}::text[])
+          )
+      `;
+      const pageLimit = limit ?? 30;
+      const pageOffset = offset ?? 0;
+      const sessionRows = await sql`
+        SELECT s.*
+        FROM sessions s
+        LEFT JOIN folders f ON s.folder_id = f.id
+        WHERE (s.folder_id IS NULL OR COALESCE(f.settings->>'excludeFromFeed', 'false') != 'true')
+          AND COALESCE(s.session_type, 'claude') != 'llm'
+          AND (s.status = 'running' OR s.review_state = 'needs_review')
+          AND (
+            ${allowedFolderIds}::text[] IS NULL
+            OR s.folder_id = ANY(${allowedFolderIds}::text[])
+          )
+        ORDER BY (s.status = 'running') DESC,
+          COALESCE(
+            CASE WHEN jsonb_typeof(s.last_message) = 'object'
+              AND s.last_message->>'type' IN ('user_message', 'assistant_message')
+              AND jsonb_typeof(s.last_message->'preview') = 'string'
+              AND btrim(s.last_message->>'preview') <> ''
+              THEN session_feed_try_timestamptz(s.last_message->>'timestamp') END,
+            s.created_at,
+            s.updated_at
+          ) DESC,
+          s.session_id DESC
+        LIMIT ${pageLimit}
+        OFFSET ${pageOffset}
+      `;
+      const total = numberValue(countRows[0]?.count) ?? 0;
+      const pageHasMore = pageOffset + sessionRows.length < total;
+      return {
+        sessions: await serializeSessionRows(sql, sessionRows, true),
+        total,
+        hasMore: pageHasMore,
+        nextCursor: pageHasMore ? String(pageOffset + pageLimit) : null,
+      };
+    }
     if (input.sessionIds !== undefined) {
       const sessionIds = [...new Set(input.sessionIds)];
       if (sessionIds.length === 0) return { sessions: [], total: 0 };
@@ -359,7 +428,26 @@ export function createLiveDbCatalogRepository(
     sessionReviewRepository,
     userPreferencesRepository: createLiveUserPreferencesRepository({ sqlResolver }),
     async loadSessionSnapshot(input = {}) {
-      return loadSessionPage({ ...input, compact: true }, sessionSnapshotLimit, null);
+      const feedDisplay = input.feedDisplay === true;
+      const limit = input.limit ?? (feedDisplay ? 30 : sessionSnapshotLimit);
+      const offset = feedDisplay ? input.offset ?? 0 : input.offset ?? null;
+      const page = await loadSessionPage(
+        { ...input, compact: true },
+        limit,
+        offset,
+      );
+      if (!feedDisplay) return page;
+      const access = normalizeBoardAccess(input.access ?? { restricted: false });
+      const folders = await folderProvider.listFolders();
+      const visibleFolderIds = access.restricted
+        ? visibleBoardFolderIds(access, folders)
+        : null;
+      return {
+        ...page,
+        folders: visibleFolderIds === null
+          ? folders
+          : folders.filter((folder) => visibleFolderIds.has(folder.id)),
+      };
     },
     async listSessionSnapshots(input) {
       const page = await loadSessionPage(
@@ -372,7 +460,10 @@ export function createLiveDbCatalogRepository(
         page.total,
         input.offset,
         input.limit,
-        { includeDetails: input.sessionIds?.length === 1 },
+        {
+          includeDetails: input.sessionIds?.length === 1,
+          includeSessionList: input.feedDisplay !== true,
+        },
       );
     },
     async loadSessionReviewState(sessionId) {

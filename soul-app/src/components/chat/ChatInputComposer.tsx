@@ -33,6 +33,7 @@ interface Props {
 }
 
 const EMPTY_EVENTS: SessionEvent[] = [];
+const INTERRUPT_PENDING_RELEASE_MS = 10_000;
 // Voice approval follows history independently; incoming rows do not render the text input.
 const ChatVoiceControls = memo(function ChatVoiceControls(props: Omit<React.ComponentProps<typeof RealtimeVoiceControls>, 'events'>) {
   const events = useChatStore(state => props.sessionId
@@ -54,6 +55,10 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   }) : false);
   const input = inputDraft.value;
   const [interrupting, setInterrupting] = useState(false);
+  const interruptReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionStatusRef = useRef(sessionStatus);
+  const mountedRef = useRef(false);
+  sessionStatusRef.current = sessionStatus;
   const inputRef = useRef(input);
   const composeFlowRef = useRef<{
     flowId: string;
@@ -61,6 +66,26 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     abandoned: boolean;
   } | null>(null);
   const wasComposerVisibleRef = useRef(detailedNetworkActive);
+
+  const clearInterruptReleaseTimer = useCallback(() => {
+    if (interruptReleaseTimerRef.current === null) return;
+    clearTimeout(interruptReleaseTimerRef.current);
+    interruptReleaseTimerRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearInterruptReleaseTimer();
+    };
+  }, [clearInterruptReleaseTimer]);
+
+  useEffect(() => {
+    if (sessionStatus === 'running') return;
+    clearInterruptReleaseTimer();
+    setInterrupting(false);
+  }, [clearInterruptReleaseTimer, sessionStatus]);
 
   const abandonComposer = useCallback((reason: string) => {
     const flow = composeFlowRef.current;
@@ -215,13 +240,23 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
 
   const handleInterrupt = async () => {
     if (!api || !sessionId || interrupting) return;
+    clearInterruptReleaseTimer();
     setInterrupting(true);
     try {
       await api.interruptSession(sessionId);
+      if (!mountedRef.current) return;
+      if (sessionStatusRef.current !== 'running') {
+        setInterrupting(false);
+        return;
+      }
+      interruptReleaseTimerRef.current = setTimeout(() => {
+        interruptReleaseTimerRef.current = null;
+        setInterrupting(false);
+      }, INTERRUPT_PENDING_RELEASE_MS);
     } catch (e: any) {
-      Alert.alert('중단 실패', e?.message ?? '알 수 없는 오류');
-    } finally {
+      clearInterruptReleaseTimer();
       setInterrupting(false);
+      Alert.alert('중단 실패', e?.message ?? '알 수 없는 오류');
     }
   };
 

@@ -376,6 +376,7 @@ export function createLiveOrchestratorProviderBundle(
               access,
               sessionIds: resolveSessionSnapshotIds(query.session_ids),
               feedOnly: query.feed_only === true,
+              feedDisplay: query.feed_display === true,
               folderId,
               sessionType: query.session_type, search: query.search, nodeId: query.node_id, statuses: query.status,
               backends: query.backend, updatedAfter: query.updated_after,
@@ -387,9 +388,18 @@ export function createLiveOrchestratorProviderBundle(
       },
       async (request) => {
         const access = await sessionResourceAccessProvider.resolveAccess({ request });
+        const feedDisplay = queryBool(request.query, "feed_display");
+        const requestedLimit = queryNumber(request.query, "limit");
         return options.dependencies.dbCatalogRepository.loadSessionSnapshot({
           access,
           feedOnly: queryBool(request.query, "feed_only"),
+          feedDisplay,
+          ...(feedDisplay
+            ? {
+                limit: resolveSessionSnapshotLimit(requestedLimit ?? 30),
+                offset: 0,
+              }
+            : {}),
         });
       },
     ),
@@ -454,4 +464,13 @@ function queryBool(query: unknown, key: string): boolean {
     typeof raw === "string" &&
     ["1", "true", "yes", "on"].includes(raw.toLowerCase())
   );
+}
+
+function queryNumber(query: unknown, key: string): number | undefined {
+  if (typeof query !== "object" || query === null || !(key in query)) return undefined;
+  const value = (query as Record<string, unknown>)[key];
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== "string" || raw.length === 0) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

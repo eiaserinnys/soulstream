@@ -20,6 +20,7 @@ import { registerReflectTools } from "./tools/reflect.js";
 import { registerLiveCardView } from "./tools/live_card_view.js";
 import { registerFolderTools } from "./tools/folder.js";
 import { registerSessionMgmtTools } from "./tools/session_mgmt.js";
+import { registerPersistentSessionTools } from "./tools/persistent_session.js";
 import { registerSessionQueryTools } from "./tools/session_query.js";
 import { registerSkillsTools } from "./tools/skills.js";
 import { registerWorktreeTools } from "./tools/worktree.js";
@@ -36,6 +37,7 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerReflectTools(inventoryServer, runtime);
   registerSessionQueryTools(inventoryServer, runtime);
   registerSessionMgmtTools(inventoryServer, runtime);
+  registerPersistentSessionTools(inventoryServer, runtime);
   registerClaudeRuntimeTools(inventoryServer, runtime);
   registerCatalogTools(inventoryServer, runtime);
   registerSkillsTools(inventoryServer, runtime);
