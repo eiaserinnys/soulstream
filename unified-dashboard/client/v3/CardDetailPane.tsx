@@ -133,7 +133,8 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
  const tabs=[
   ["items",<span className="v3-card-tab-label">확인 항목{itemSummary.toReviewCount>0?<span className="v3-card-tab-count">{itemSummary.toReviewCount}</span>:null}</span>],
   ["comments",<span className="v3-card-tab-label">커멘트{unreadComments?<span className="v3-card-tab-dot" aria-label="새 커멘트"/>:null}</span>],
-  ["sessions","세션"],["notes","노트"],
+  ["sessions",<span className="v3-card-tab-label">세션{detail?.sessions.length?<span className="v3-card-tab-total">{detail.sessions.length}</span>:null}</span>],
+  ["notes",<span className="v3-card-tab-label">노트{detail?.notes?.length?<span className="v3-card-tab-total">{detail.notes.length}</span>:null}</span>],
  ] as const;
  return <article ref={surface} className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim" data-liquid-glass-webgl={webglActive?"true":undefined} data-testid="card-detail">
   <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
@@ -150,7 +151,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
   {!card.assigneeSessionId?<div className="v3-detail-gutter v3-task-detail-content v3-card-context">
    <section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined}/></section>
   </div>:null}
-  {card.now?<div key={cardId} className="v3-detail-gutter v3-card-now-slot"><CardNowPanel now={card.now} nowHistory={detail?.nowHistory} itemsCount={card.items?.length??0} activeCount={itemSummary.activeCount}/></div>:null}
+  {card.now?<div key={cardId} className="v3-detail-gutter v3-card-now-slot"><CardNowPanel now={card.now} nowHistory={detail?.nowHistory} itemsCount={card.items?.length??0} activeCount={itemSummary.activeCount} onComplete={()=>void complete()} pending={pending||execution?.phase==='pending'}/></div>:null}
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} variant="card" tabs={tabs} value={tab} onChange={changeTab}/></div>
   {execution && execution.phase!=="pending"?<p role={execution.phase==="error"?"alert":"status"} className="v3-card-error">{execution.message}</p>:null}
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}

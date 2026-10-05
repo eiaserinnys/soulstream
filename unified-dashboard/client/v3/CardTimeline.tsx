@@ -44,7 +44,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  const toggle=(id:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next;});
  return <><div className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.map(entry=>{
   const msg:ChatMessage={id:entry.id,treeNodeId:entry.id,treeNodeType:"card",role:entry.role,content:""};
-  const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}):""}</time></div>;
+  const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}):""}</time></div>;
   const bubbleProps:HTMLAttributes<HTMLDivElement>|undefined=entry.collapsible?{
    role:"button",tabIndex:0,className:"outline-none focus-visible:ring-2 focus-visible:ring-ring","aria-expanded":expanded.has(entry.id),
    onClick:event=>{if(!(event.target as Element).closest("a,button,input,iframe"))toggle(entry.id);},

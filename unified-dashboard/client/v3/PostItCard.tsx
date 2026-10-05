@@ -60,7 +60,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   const itemSummary=summarizeCardItems(card.items,pendingConfirmations);
   const hasItems=Boolean(card.items?.length);
   const nowText=card.now?.text;
-  const turnText=card.now?.turn==="user"?"볼 것 "+itemSummary.toReviewCount+(card.now.ask?" · "+card.now.ask:""):undefined;
+  const turnText=card.now?.turn==="user"?card.now.ask??undefined:undefined;
   const statusActions=statusControl?cardStatusChoices.map(status=>({
     label:cardStatusLabel({...card,status,blockedKind:null,blockedDetail:null}),
     onSelect:()=>statusHandle.current?.request(status as CardStatus),
@@ -68,7 +68,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   return <>
     <Paper id={card.id} title={card.title} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
       activity={activity?{kind:activity.kind,text:cardActivityPreview(activity)}:null}
-      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary}/></span>:undefined} nowText={nowText} turnText={turnText}
+      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary} showReviewCount/></span>:undefined} nowText={nowText} turnText={turnText} turnLabel={hasItems&&card.now?.turn==="user"?`볼 것 ${itemSummary.toReviewCount}`:undefined}
       assigneeName={name} onOpen={onOpen} error={error}
       avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait}
         fallbackEmoji={assigned ? card.assigneeKind === "human" ? "👤" : "🤖" : "·"}/>}

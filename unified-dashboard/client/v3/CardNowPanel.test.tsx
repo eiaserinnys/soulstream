@@ -24,7 +24,7 @@ describe("card now panel",()=>{
  });
  it("shows a completed prompt without changing the stored turn",()=>{
   const html=renderToStaticMarkup(<CardNowPanel now={now} nowHistory={[]} itemsCount={2} activeCount={0}/>);
-  expect(html).toContain("모두 확인했습니다. 완료로 옮길까요?");expect(html).not.toContain("확인해 주세요");
+  expect(html).toContain("모두 확인했습니다");expect(html).toContain("완료로 옮길까요?");expect(html).not.toContain("확인해 주세요");
  });
  it("provides history navigation when there are at least two entries",()=>{
   const html=renderToStaticMarkup(<CardNowPanel now={now} nowHistory={history} itemsCount={2} activeCount={1}/>);

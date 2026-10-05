@@ -27,6 +27,9 @@ export const useCardStore = create<CardState>((set,get) => ({
   async loadCard(id) {
     try {
       const detail=await cardRequest<CardDetail>(cardPath(id));
+      const currentCard=get().byId[id],currentDetail=get().details[id];
+      if(currentCard&&currentCard.version>detail.card.version)
+        return currentDetail?.card===currentCard?currentDetail:{...(currentDetail??detail),card:currentCard};
       set(s=>({byId:{...s.byId,[id]:detail.card},details:{...s.details,[id]:detail},errors:{...s.errors,[id]:""}}));
       return detail;
     } catch(error) {

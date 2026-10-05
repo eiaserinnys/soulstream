@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
 import { CardImageViewer, type CardImageSelection } from "./CardImageViewer";
 import { CardCheckItemRow } from "./CardCheckItemRow";
@@ -58,8 +59,9 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
    {current.length===0?<p className="v3-detail-empty">확인할 항목이 없습니다.</p>:<>
     {current.filter(item=>!groupedIds.has(item.id)).map(renderItem)}
     {grouped.length?<section className="v3-card-confirmed-group" data-testid="confirmed-items-group">
-     <button type="button" aria-expanded={groupExpanded} onClick={()=>setGroupExpanded(value=>!value)}>
-      <span>확인함 {grouped.length}개</span><span>{groupExpanded?"접기":"펼치기"}</span>
+     <button type="button" aria-label={`확인함 ${grouped.length}개 ${groupExpanded?"접기":"펼치기"}`} aria-expanded={groupExpanded} onClick={()=>setGroupExpanded(value=>!value)}>
+      <span className="v3-card-confirmed-icon"><Check className="h-4 w-4" aria-hidden="true"/></span><span>확인함 {grouped.length}개</span>
+      {groupExpanded?<ChevronUp className="h-4 w-4" aria-hidden="true"/>:<ChevronDown className="h-4 w-4" aria-hidden="true"/>}
      </button>
      {groupExpanded?<div>{grouped.map(renderItem)}</div>:null}
     </section>:null}

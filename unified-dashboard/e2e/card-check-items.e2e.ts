@@ -121,13 +121,13 @@ for (const width of [1920, 1440]) {
     await expect(evidenceImage).toBeFocused();
     await expect(detail).toBeVisible();
 
-    await detail.getByRole("tab", { name: "노트", exact: true }).click();
+    await detail.getByRole("tab", { name: /^노트/ }).click();
     await expect(detail.getByText("인계 요약", { exact: true })).toBeVisible();
     await expect(detail.getByTestId("card-notes").locator("[data-card-note-id]")).toHaveCount(5);
     await detail.getByRole("button", { name: "앞선 노트 1건" }).click();
     await expect(detail.getByTestId("card-notes").locator("[data-card-note-id]")).toHaveCount(6);
     await page.screenshot({ path: path.join(output, `${width}-notes.png`), animations: "disabled" });
-    await detail.getByRole("tab", { name: "세션", exact: true }).click();
+    await detail.getByRole("tab", { name: /^세션/ }).click();
     await expect(detail.locator("[data-card-section=sessions]")).toBeVisible();
     await page.screenshot({ path: path.join(output, `${width}-sessions.png`), animations: "disabled" });
     await detail.getByRole("tab", { name: "확인 항목" }).click();
@@ -202,7 +202,7 @@ for (const width of [1920, 1440]) {
     await expect(input).toBeFocused();
     await expect(detail.locator(".v3-card-target-notice")).toContainText("대상: 5번 남겨진 고칠 점이 표시됩니다");
     await input.fill("좁은 화면에서 상태 글이 제목 아래로 내려옵니다.");
-    await detail.getByRole("tab", { name: "세션", exact: true }).click();
+    await detail.getByRole("tab", { name: /^세션/ }).click();
     await expect(input).toHaveValue("좁은 화면에서 상태 글이 제목 아래로 내려옵니다.");
     await detail.getByRole("tab", { name: "확인 항목" }).click();
     await detail.getByRole("button", { name: "커멘트 전송", exact: true }).click();
@@ -232,12 +232,12 @@ for (const width of [1920, 1440]) {
       await detail.locator(`[data-item-id="${id}"] [role="checkbox"]`).click();
     }
     await expect(detail.locator("[data-testid=card-check-items]")).toHaveAttribute("data-active-count", "0");
-    await expect(nowPanel).toContainText("모두 확인했습니다. 완료로 옮길까요?");
+    await expect(nowPanel).toContainText("모두 확인했습니다");
     await expect(detail.locator(".v3-folder-header-actions")).toHaveAttribute("data-complete-emphasis", "true");
     expect(await detail.textContent()).not.toContain("되돌리기");
     await detail.locator('.v3-card-panel-scroll').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: path.join(output, `${width}-all-checked.png`), animations: "disabled" });
-    await detail.getByRole("button", { name: "완료", exact: true }).click();
+    await nowPanel.getByRole("button", { name: "완료", exact: true }).click();
     await expect(detail).toHaveCount(0);
     await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
     await expect(postit).toContainText("확인 10");
@@ -256,7 +256,7 @@ for (const width of [1920, 1440]) {
     await board.getByRole("button", { name: "실행 중", exact: true }).click();
     await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
     const reducedDetail = page.getByTestId("card-detail");
-    await reducedDetail.getByRole("tab", { name: "세션", exact: true }).click();
+    await reducedDetail.getByRole("tab", { name: /^세션/ }).click();
     const runningSession = reducedDetail.locator(".v3-card-session-history .v3-run-row").first();
     await expect(runningSession).toBeVisible();
     await expect(runningSession).toContainText("실행 중");

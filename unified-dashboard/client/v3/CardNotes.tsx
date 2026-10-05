@@ -1,8 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { MarkdownContent } from "@seosoyoung/soul-ui";
-import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
-import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
-import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
+import { useState } from "react";
+import { MarkdownContent, ProfileAvatar } from "@seosoyoung/soul-ui";
 import type { CardComment, CardLinkedSession } from "@seosoyoung/soul-ui/cards/card-types";
 import "./v3-card-check-items.css";
 
@@ -27,13 +24,11 @@ export function CardNotes({brief,notes,sessions=[],portraitUrl,userPortraitUrl,o
    {visible.map(note=>{
     const linked=note.sessionId?sessions.find(session=>session.sessionId===note.sessionId):undefined;
     const author=note.authorKind==="agent"?(linked?.displayName||note.authorId):note.authorId||"사용자";
-    const role=note.authorKind==="agent"?"assistant":"user";
-    const message:ChatMessage={id:note.id,treeNodeId:note.id,treeNodeType:"card",role,content:""};
-    const header:ReactNode=<div className="v3-card-note-header"><strong>{author}</strong><time dateTime={note.createdAt}>{formatTime(note.createdAt)}</time></div>;
-    const content=<MarkdownContent content={note.body} onImageClick={onImageClick}/>;
-    return <div key={note.id} data-card-note-id={note.id} data-card-note-session={note.sessionId??undefined}>
-     {note.authorKind==="agent"?<AssistantMessage msg={message} header={header} portraitUrl={portraitUrl}>{content}</AssistantMessage>
-      :<UserMessage msg={message} header={header} portraitUrl={userPortraitUrl}>{content}</UserMessage>}
+    const agent=note.authorKind==="agent",portrait=agent?portraitUrl:userPortraitUrl;
+    return <div className="v3-card-note-row" key={note.id} data-card-note-id={note.id} data-card-note-session={note.sessionId??undefined}>
+     <ProfileAvatar role={agent?"assistant":"user"} hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={agent?"🤖":"👤"}/>
+     <div className="v3-card-note-content"><div className="v3-card-note-header"><strong>{author}</strong><time dateTime={note.createdAt}>{formatTime(note.createdAt)}</time></div>
+      <MarkdownContent content={note.body} onImageClick={onImageClick}/></div>
     </div>;
    })}
   </section>
@@ -42,5 +37,5 @@ export function CardNotes({brief,notes,sessions=[],portraitUrl,userPortraitUrl,o
 
 function formatTime(value:string) {
  const date=new Date(value);
- return Number.isNaN(date.getTime())?"":date.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
+ return Number.isNaN(date.getTime())?"":date.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
 }

@@ -115,6 +115,20 @@ describe("card item confirmation",()=>{
   expect(useCardStore.getState().details.c.card).toEqual(newer);
   expect(useCardStore.getState().pendingItemConfirmations.c).toBeUndefined();
  });
+ it("keeps a confirmed card and its folder when a delayed SSE GET arrives last",async()=>{
+  const current=setup();let finishGet!:(response:Response)=>void;
+  const newer={...current,version:4,folderId:"new-folder",items:[makeItem(1,"confirmed"),makeItem(2,"confirmed")]};
+  vi.stubGlobal("fetch",vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{finishGet=resolve;}))
+   .mockResolvedValueOnce(new Response(JSON.stringify({card:newer}))));
+  useCardStore.setState({folderIds:{folder:["c"],"new-folder":[]}});
+  const refresh=useCardStore.getState().handleCardUpdated({cardId:"c",folderId:"folder"});
+  await useCardStore.getState().confirmItem("c",2,true);
+  const saved=useCardStore.getState().details.c;
+  finishGet(new Response(JSON.stringify({card:{...current,version:3},reports:[],questions:[],sessions:[]})));
+  expect(await refresh).toBe(saved);
+  expect(useCardStore.getState().byId.c).toEqual(newer);
+  expect(useCardStore.getState().folderIds).toEqual({folder:[],"new-folder":["c"]});
+ });
 });
 
 describe("card comments",()=>{

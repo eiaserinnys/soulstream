@@ -37,7 +37,7 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
  const preview=singleLinePreview((card.now?.text??source).split(/\r?\n/)[0],TASK_TITLE_PREVIEW_LENGTH);
  const itemSummary=summarizeCardItems(card.items,pendingConfirmations);
  const hasItems=Boolean(card.items?.length);
- const cardTurn=card.now?.turn==="user"?"볼 것 "+itemSummary.toReviewCount+(card.now.ask?" · "+card.now.ask:""):undefined;
+ const cardTurn=card.now?.turn==="user"?"볼 것 "+itemSummary.toReviewCount+(card.now.ask?", "+card.now.ask:""):undefined;
  return <RunRowFrame variant="card" cardId={card.id} blockedKind={card.blockedKind} handle={handle}
   openLabel={`카드 ${card.title} 열기`} onOpen={onOpen}
   avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/>}
