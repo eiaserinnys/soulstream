@@ -43,7 +43,7 @@ export interface PersistentSessionCreateDefaults {
 /** Partial settings the server accepts on PUT. This app sends only the default model; omitted keys keep their stored values. */
 export interface PersistentSessionSettingsPatch {
   default_model?: PersistentSessionModelWrite;
-  fallback_model?: PersistentSessionModel | null;
+  fallback_model?: PersistentSessionModelWrite | null;
   show_generation_separator?: boolean;
   show_character?: boolean;
   show_jev_candidates?: boolean;
