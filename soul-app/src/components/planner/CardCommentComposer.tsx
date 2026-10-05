@@ -19,6 +19,7 @@ interface Props {
   sessionId?: string | null;
   nodeId?: string | null;
   question?: CardQuestion;
+  cardLoaded: boolean;
   locked: boolean;
   sending: boolean;
   onBusyChange(busy: boolean): void;
@@ -27,7 +28,7 @@ interface Props {
 }
 
 export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Props>(function CardCommentComposer({
-  api, cardId, sessionId, nodeId, question, locked, sending, onBusyChange, sendComment, runMutation,
+  api, cardId, sessionId, nodeId, question, cardLoaded, locked, sending, onBusyChange, sendComment, runMutation,
 }, ref) {
   const t = useTokens();
   const chatStyles = useMemo(() => makeChatStyles(t), [t]);
@@ -43,11 +44,12 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
   useImperativeHandle(ref, () => ({ chooseAnswer: setText }), [setText]);
 
   const pickAttachment = () => {
+    if (!cardLoaded) return;
     if (sessionId && nodeId) attachments.pickAttachment();
     else Alert.alert('곧 지원', '담당 세션이 연결되면 첨부를 올릴 수 있습니다.');
   };
   const send = async () => {
-    if (!api || !text.trim() || disabled) return;
+    if (!api || !cardLoaded || !text.trim() || disabled) return;
     const submittedText = text;
     const submittedAttachments = attachments.attachments;
     const body = [text.trim(), ...submittedAttachments.map(item => `${/\.(png|jpe?g|gif|webp|heic)$/i.test(item.name) ? '!' : ''}[${item.name}](${item.path})`)].join('\n\n');
@@ -71,6 +73,6 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
       styles={chatStyles} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
     <ChatComposer input={text} onChangeInput={setText} placeholder="커멘트" inputAccessibilityLabel="커멘트" sendAccessibilityLabel="커멘트 보내기"
       onPickAttachment={pickAttachment} onSend={() => { void send(); }} uploading={attachments.uploading} sending={sending}
-      disabled={disabled || !api} voiceControls={null} />
+      disabled={disabled || !api} sendDisabled={!cardLoaded} voiceControls={null} />
   </View>;
 }));

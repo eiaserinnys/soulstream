@@ -55,7 +55,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const composer = useRef<CardCommentComposerHandle>(null);
-  const [composerBusy, setComposerBusy] = useState(true);
+  const [composerBusy, setComposerBusy] = useState(false);
   const chooseAnswer = React.useCallback((answer: string) => composer.current?.chooseAnswer(answer), []);
   const [otherExpanded, setOtherExpanded] = useState(false);
   const [sessionsExpanded, setSessionsExpanded] = useState(false);
@@ -130,7 +130,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
       </View> : null}
     </ScrollView>
     <CardCommentComposer ref={composer} api={api} cardId={cardId} sessionId={card?.assigneeSessionId} nodeId={nodeId}
-      question={question} locked={locked || !card} sending={comments.pending || pending} onBusyChange={setComposerBusy}
+      question={question} cardLoaded={!!card} locked={locked} sending={comments.pending || pending} onBusyChange={setComposerBusy}
       sendComment={comments.send} runMutation={run} />
     {assignmentOpen && card && !card.assigneeSessionId ? <CardAssignmentSheet api={api} mode="edit" value={{ folderId: card.folderId, nodeId: card.nodeId,
       agentId: card.assigneeAgentId, modelPreset: card.modelPreset }} onClose={() => setAssignmentOpen(false)} onSave={async (next) => {
