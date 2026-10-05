@@ -20,6 +20,7 @@ import {
   extractCallerInfoFromMetadata,
   extractClaudeBackendRolloverState,
   extractClaudePermissionModeFromMetadata,
+  extractSessionCostFromMetadata,
   extractPersistentSession,
 } from "./task_metadata.js";
 import { ORCHESTRATION_PROFILE_ID, orchestrationPurposeFromMetadata } from "./task_orchestration_purpose.js";
@@ -145,6 +146,7 @@ export function hydrateEvictedTaskFromSessionRow(
     callerInfo: extractCallerInfoFromMetadata(row.metadata),
     notifyCompletion: row.notify_completion !== false,
     metadata,
+    sessionCost: extractSessionCostFromMetadata(metadata),
     persistent: extractPersistentSession(metadata),
     orchestrationPurpose,
     agentsRunState: agentsRunState?.serialized,

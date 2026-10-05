@@ -119,6 +119,10 @@ export class TaskEngineTurnRunner {
     const executeParams: EngineExecuteParams = {
       agentSessionId: task.agentSessionId,
       prompt: input.prompt,
+      sessionCost: task.sessionCost ?? {
+        usd: 0,
+        partial: task.codexThreadId !== undefined,
+      },
       ...(input.inputUuid ? { inputUuid: input.inputUuid } : {}),
       ...(input.runnerInterventionId
         ? { runnerInterventionId: input.runnerInterventionId }
