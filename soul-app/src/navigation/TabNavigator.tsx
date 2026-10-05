@@ -1,10 +1,12 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { StyleSheet, type ViewStyle } from 'react-native';
 import {
+  type BottomTabBarButtonProps,
   createBottomTabNavigator,
   type BottomTabNavigationProp,
   type BottomTabScreenProps,
 } from '@react-navigation/bottom-tabs';
+import { PlatformPressable } from '@react-navigation/elements';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   useFocusEffect,
@@ -65,6 +67,17 @@ function TabBarGlassBackground() {
     <GlassSurface
       role="chrome"
       style={StyleSheet.absoluteFill}
+    />
+  );
+}
+
+const PHONE_TAB_BUTTON_CENTER_STYLE: ViewStyle = { justifyContent: 'center' };
+
+function CenteredPhoneTabButton(props: BottomTabBarButtonProps) {
+  return (
+    <PlatformPressable
+      {...props}
+      style={[props.style, PHONE_TAB_BUTTON_CENTER_STYLE]}
     />
   );
 }
@@ -419,6 +432,7 @@ function PhoneTabNavigator() {
         headerShown: false,
         sceneStyle: { backgroundColor: 'transparent' },
         tabBarShowLabel: false,
+        tabBarButton: CenteredPhoneTabButton,
         tabBarStyle: getDefaultTabBarStyle(c),
         tabBarBackground: () => <TabBarGlassBackground />,
         tabBarActiveTintColor: c.accent,
