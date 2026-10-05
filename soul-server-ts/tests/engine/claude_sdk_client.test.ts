@@ -883,7 +883,7 @@ describe("ClaudeSdkClient", () => {
     }
   });
 
-  it("context_usage uses the latest iteration and the selected model context window", async () => {
+  it("context_usage keeps the main session usage when a subagent message follows", async () => {
     const queryFn: ClaudeSdkQueryFn = () => makeQuery(
       sdkMessages([
         {
@@ -891,15 +891,31 @@ describe("ClaudeSdkClient", () => {
           message: {
             model: "claude-opus-4-6",
             usage: {
-              input_tokens: 6,
-              output_tokens: 2,
-              cache_creation_input_tokens: 10,
-              cache_read_input_tokens: 20,
+              input_tokens: 400_000,
+              output_tokens: 42,
+              cache_creation_input_tokens: 10_000,
+              cache_read_input_tokens: 8_000,
             },
             content: [{ type: "text", text: "done" }],
           },
           parent_tool_use_id: null,
           uuid: "assistant-context-usage",
+          session_id: "claude-sess-1",
+        } as unknown as SDKMessage,
+        {
+          type: "assistant",
+          message: {
+            model: "claude-opus-4-6",
+            usage: {
+              input_tokens: 19_000,
+              output_tokens: 15,
+              cache_creation_input_tokens: 100,
+              cache_read_input_tokens: 20,
+            },
+            content: [{ type: "text", text: "subagent" }],
+          },
+          parent_tool_use_id: "toolu-parent-agent",
+          uuid: "assistant-context-usage-subagent",
           session_id: "claude-sess-1",
         } as unknown as SDKMessage,
         sdkSuccessResult("claude-sess-1", "done", {
@@ -939,9 +955,9 @@ describe("ClaudeSdkClient", () => {
 
     expect(events.find((event) => event.type === "context_usage")).toMatchObject({
       type: "context_usage",
-      usedTokens: 38,
+      usedTokens: 418_042,
       maxTokens: 1_000_000,
-      percent: 0,
+      percent: 41.8,
     });
   });
 

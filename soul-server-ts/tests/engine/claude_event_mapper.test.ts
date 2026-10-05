@@ -139,6 +139,22 @@ describe("Claude event mapper semantic history contract", () => {
     });
   });
 
+  it("context_usage emits the shared canonical payload calculation", () => {
+    expect(
+      mapClaudeClientEvent({
+        type: "context_usage",
+        usedTokens: 418_042,
+        maxTokens: 1_000_000,
+        percent: 0,
+      })[0],
+    ).toEqual({
+      type: "context_usage",
+      used_tokens: 418_042,
+      max_tokens: 1_000_000,
+      percent: 41.8,
+    });
+  });
+
   it("complete uses explicit result first and fallback text only when result is absent", () => {
     expect(
       mapClaudeClientEvent(

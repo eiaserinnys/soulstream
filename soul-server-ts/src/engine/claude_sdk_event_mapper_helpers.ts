@@ -1,4 +1,5 @@
 import type { ClaudeClientEvent } from "./claude_client_event.js";
+import { contextUsagePercent } from "./context_usage.js";
 import {
   asNumber,
   asRecord,
@@ -90,15 +91,16 @@ export function makeContextUsageEvent(
     ?? asNumber(record.cacheReadInputTokens)
     ?? 0;
   const usedTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
-  if (usedTokens <= 0) return undefined;
   const maxTokens = resolveContextWindow(modelUsage, model);
   if (maxTokens === undefined) return undefined;
+  const percent = contextUsagePercent(usedTokens, maxTokens);
+  if (percent === undefined) return undefined;
 
   return {
     type: "context_usage",
     usedTokens,
     maxTokens,
-    percent: Math.round((usedTokens / maxTokens) * 1000) / 10,
+    percent,
   };
 }
 

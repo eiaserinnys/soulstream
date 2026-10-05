@@ -176,7 +176,7 @@ export class ClaudeSdkEventMapper {
   mapAssistantMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
     const events: ClaudeClientEvent[] = [];
     const nestedMessage = asRecord(message.message);
-    if (nestedMessage?.usage !== undefined) {
+    if (typeof message.parent_tool_use_id !== "string" && nestedMessage?.usage !== undefined) {
       this.latestIterationUsage = nestedMessage.usage;
       this.latestIterationModel = asString(nestedMessage.model) ?? asString(message.model);
     }
