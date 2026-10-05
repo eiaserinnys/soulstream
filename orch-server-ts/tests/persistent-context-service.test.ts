@@ -238,6 +238,7 @@ describe("persistent context evaluation", () => {
       top_k: 16, search_session_id: true, include_session_results: true,
       session_search_mode: "expanded", include_turn_summaries: false,
       include_highlight: false, include_story: false, allowedFolderIds: ["visible"],
+      exclude_session_request_excerpt: true,
     }));
     expect(result.observation?.candidate_counts.search_sessions).toBe(2);
     expect(result.observation?.selected.flatMap((candidate) => candidate.kind === "session"
@@ -248,6 +249,50 @@ describe("persistent context evaluation", () => {
       { session_id: "recent-only", line: "Stored completion answer", sources: ["recent_completed"] },
     ]);
     expect(sentTexts.join(" ")).not.toContain("DO NOT SCORE THIS REQUEST");
+    expect(isPersistentJevCandidatesDebugEvent({
+      type: "debug", kind: "persistent_jev_candidates", observation: result.observation,
+    })).toBe(true);
+  });
+
+  it("drops candidates whose sanitized line and fallback title are empty before scoring", async () => {
+    const uuid = "11111111-2222-4333-8444-555555555555";
+    const repositories = createRepositories({
+      sessionIsPersistent: true,
+      inputEventId: 10,
+      allowedFolderIds: ["visible"],
+      turnSummaries: [],
+      cards: [{ id: "card-empty", number: null, title: uuid, request: uuid, brief: uuid }],
+      recentCompletedSessions: [{ sessionId: "session-empty", title: uuid, lastAssistantText: uuid }],
+    }, true, uuid);
+    let sent: { state: { candidates: Array<{ key: string; text: string }> } } | undefined;
+    const service = createPersistentContextService({
+      candidates: repositories,
+      searchProvider: { search: async () => ({
+        search_status: { session_sources: { metadata: { status: "complete" } } },
+        session_results: [{ session_id: "search-empty", folder_id: "visible", title: uuid, excerpt: uuid }],
+      }) } as unknown as CogitoSearchProvider,
+      typesafeApiKey: "test-key",
+      logMissingInput: vi.fn(),
+      logNullReason: vi.fn(),
+      fetchImpl: vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        sent = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ answers: Object.fromEntries(
+          sent!.state.candidates.map(({ key }) => [key, { score: 2.65 }]),
+        ) }), { status: 200 });
+      }),
+    });
+
+    const result = await service.evaluatePersistentCandidates({
+      sessionId: "current", inputId: "input-10", request: "request",
+      deadlineAt: Date.now() + 2_000, signal: new AbortController().signal,
+    });
+
+    expect(sent?.state.candidates.map(({ key, text }) => ({ key, text }))).toEqual([
+      { key: "turn-0", text: "T1 — T1" },
+    ]);
+    expect(result.observation?.candidate_counts).toEqual({
+      turn_summaries: 1, cards: 0, search_sessions: 0, recent_completed_sessions: 0,
+    });
     expect(isPersistentJevCandidatesDebugEvent({
       type: "debug", kind: "persistent_jev_candidates", observation: result.observation,
     })).toBe(true);

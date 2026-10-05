@@ -137,6 +137,45 @@ describe("session document search index", () => {
     expect(statementTimeouts.every((timeoutMs) => timeoutMs > 3_000)).toBe(true);
   });
 
+  it("lets an aborted waiter leave a shared refresh while its owner completes", async () => {
+    let releaseOwnerQuery!: (rows: readonly Record<string, unknown>[]) => void;
+    let ownerQueryStarted!: () => void;
+    const queryStarted = new Promise<void>((resolve) => { ownerQueryStarted = resolve; });
+    let queryCount = 0;
+    const sql = Object.assign((..._args: unknown[]) => {
+      queryCount += 1;
+      const operation = queryCount === 1
+        ? new Promise<readonly Record<string, unknown>[]>((resolve) => {
+          releaseOwnerQuery = resolve;
+          ownerQueryStarted();
+        })
+        : Promise.resolve([] as readonly Record<string, unknown>[]);
+      return Object.assign(operation, { cancel: () => undefined });
+    }, {
+      setStatementTimeout: async (_timeoutMs: number) => undefined,
+    }) as unknown as LiveSearchSql;
+    const search = new LiveSessionDocumentSearch();
+    const ownerController = new AbortController();
+    const ownerRefresh = search.refresh({
+      sql, activeQuery: {}, deadlineAt: Date.now() + 5_000, signal: ownerController.signal,
+    });
+    await queryStarted;
+
+    const waiterController = new AbortController();
+    const waiterDeadlineAt = Date.now() + 25;
+    const waiterRefresh = search.refresh({
+      sql, activeQuery: {}, deadlineAt: waiterDeadlineAt, signal: waiterController.signal,
+    });
+    const waiterDeadlineTimer = setTimeout(() => waiterController.abort(), waiterDeadlineAt - Date.now());
+    await expect(waiterRefresh).rejects.toThrow("search request was cancelled");
+    clearTimeout(waiterDeadlineTimer);
+    expect(ownerController.signal.aborted).toBe(false);
+
+    releaseOwnerQuery([]);
+    await expect(ownerRefresh).resolves.toBeGreaterThanOrEqual(0);
+    expect(queryCount).toBe(3);
+  });
+
   it("keeps the last assistant answer as a preview when cold sessions have no summary", async () => {
     const { sql, calls } = createRefreshSql((text) => {
       if (text.includes("FROM sessions") && text.includes("left(prompt")) {

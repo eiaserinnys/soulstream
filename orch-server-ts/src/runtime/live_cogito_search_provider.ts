@@ -286,6 +286,7 @@ export function createLiveCogitoSearchProvider(
                 .map((candidate) => withSessionCardExcerpt(
                   candidate,
                   documentSearch.index.get(candidate.session_id)?.answerPreview ?? null,
+                  params.exclude_session_request_excerpt === true,
                 ));
               const documentHits = documentSearch.index.search(params.q, 300);
               const documentById = new Map(documentHits.map((hit) => [hit.session_id, hit]));
@@ -363,6 +364,7 @@ export function createLiveCogitoSearchProvider(
                 .map((candidate) => withSessionCardExcerpt(
                   candidate,
                   documentSearch.index.get(candidate.session_id)?.answerPreview ?? null,
+                  params.exclude_session_request_excerpt === true,
                 ));
             } catch (error) {
               const reason = sourceFailureReason(error, signal, deadlineAt, deadlineExpired);

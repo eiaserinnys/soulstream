@@ -28,6 +28,8 @@ export type CogitoSearchParams = {
   session_search_mode?: "lexical" | "expanded";
   session_filters?: CogitoSessionSearchFilters;
   readonly allowedFolderIds?: readonly string[];
+  /** Internal PAS hint: use saved summary/answer/title instead of first-request excerpts. */
+  readonly exclude_session_request_excerpt?: boolean;
   event_types?: string;
   event_categories?: string;
   readonly signal?: AbortSignal;

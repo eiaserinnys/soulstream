@@ -110,6 +110,7 @@ export function createPersistentContextService(options: {
           include_session_results: true,
           session_search_mode: "expanded",
           allowedFolderIds: raw.allowedFolderIds,
+          exclude_session_request_excerpt: true,
           signal: input.signal,
           deadlineAt: input.deadlineAt,
         });
@@ -199,10 +200,12 @@ export function createPersistentContextService(options: {
           input_id: input.inputId,
           selected: selected as unknown as PersistentJevObservation["selected"],
           candidate_counts: {
-            turn_summaries: turnSummaries.length,
-            cards: Math.min(20, raw.cards.length),
-            search_sessions: sessionSearchCandidates.length,
-            recent_completed_sessions: recentCompleted.length,
+            turn_summaries: candidates.filter(({ selected: candidate }) => candidate.kind === "turn_summary").length,
+            cards: candidates.filter(({ selected: candidate }) => candidate.kind === "card").length,
+            search_sessions: candidates.filter(({ selected: candidate }) => candidate.kind === "session"
+              && candidate.sources?.includes("search")).length,
+            recent_completed_sessions: candidates.filter(({ selected: candidate }) => candidate.kind === "session"
+              && candidate.sources?.includes("recent_completed")).length,
           },
           model: "jev-latest",
           latency_ms: Math.max(0, Date.now() - startedAt),
@@ -233,7 +236,9 @@ function buildCandidates(input: {
   const add = (key: string, label: string, line: string, selected: CandidateSelection, fallbackLine = "") => {
     const cleanedLine = cleanCandidateLine(line);
     const cleanedFallback = cleanCandidateLine(fallbackLine);
-    const boundedLine = clipUtf8(cleanedLine || cleanedFallback, MAX_CANDIDATE_TEXT_BYTES);
+    const cleanLine = cleanedLine || cleanedFallback;
+    if (!cleanLine) return;
+    const boundedLine = clipUtf8(cleanLine, MAX_CANDIDATE_TEXT_BYTES);
     const text = clipUtf8(`${label} — ${boundedLine}`, MAX_CANDIDATE_TEXT_BYTES);
     candidates.push({ key, text, selected: { ...selected, label, line: boundedLine } as unknown as CandidateSelection, order: candidates.length });
   };
@@ -245,15 +250,19 @@ function buildCandidates(input: {
       session_id: input.sessionId,
       summary_event_id: summary.eventId,
       turn_number: summary.turnNumber,
-    });
+    }, label);
   });
   input.cards.slice(0, 20).forEach((card, index) => {
     const label = card.number === null ? clipUtf8(card.title, 80) : `#${card.number}`;
-    add(`card-${index}`, label, [card.title, card.request, card.brief].filter(Boolean).join(" — "), {
+    const line = [card.title, card.request, card.brief]
+      .map(cleanCandidateLine)
+      .filter(Boolean)
+      .join(" — ");
+    add(`card-${index}`, label, line, {
       kind: "card",
       card_id: card.id,
       ...(card.number === null ? {} : { card_number: card.number }),
-    });
+    }, card.title);
   });
   input.searchedSessions.forEach((session) => {
     const sessionId = stringField(session, "session_id", "sessionId");

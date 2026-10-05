@@ -67,11 +67,13 @@ export function orderSessionSearchResults<T extends { readonly session_id: strin
 export function withSessionCardExcerpt(
   candidate: SessionSearchPoolCandidate & { readonly relevance: number | null },
   answerPreview: string | null,
+  excludeFirstRequest = false,
 ): SessionSearchPoolResult & { readonly relevance: number | null } {
-  const excerptSource = candidate.card.summary || answerPreview || candidate.card.request;
-  if (!excerptSource) return { ...candidate.result, relevance: candidate.relevance };
+  const excerptSource = candidate.card.summary || answerPreview
+    || (excludeFirstRequest ? candidate.card.title : candidate.card.request);
+  if (!excerptSource && !excludeFirstRequest) return { ...candidate.result, relevance: candidate.relevance };
 
-  const excerpt = Array.from(excerptSource).slice(0, 160).join("");
+  const excerpt = Array.from(excerptSource ?? "").slice(0, 160).join("");
   const result = candidate.result as SessionSearchPoolResult & {
     readonly best_match: Record<string, unknown>;
   };

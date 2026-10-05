@@ -9,6 +9,7 @@ import {
 import type { SessionBackendCatalogEntry } from "./live_session_serialization.js";
 import {
   assertSearchMayContinue,
+  SearchDeadlineError,
   runSearchQuery,
 } from "./live_session_search_candidates.js";
 import type {
@@ -33,7 +34,7 @@ export class LiveSessionDocumentSearch {
     readonly deadlineAt: number;
     readonly signal: AbortSignal;
   }): Promise<number> {
-    if (this.refreshPromise) return this.refreshPromise;
+    if (this.refreshPromise) return waitForSharedRefresh(this.refreshPromise, input.signal, input.deadlineAt);
     this.refreshPromise = this.refreshInternal(input).finally(() => { this.refreshPromise = undefined; });
     return this.refreshPromise;
   }
@@ -148,6 +149,34 @@ export class LiveSessionDocumentSearch {
     this.watermarkMs = startedAt;
     return Math.max(0, Date.now() - startedAt);
   }
+}
+
+function waitForSharedRefresh(
+  sharedRefresh: Promise<number>,
+  signal: AbortSignal,
+  deadlineAt: number,
+): Promise<number> {
+  assertSearchMayContinue(signal, deadlineAt);
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      cleanup();
+      reject(new SearchDeadlineError("search request was cancelled"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    sharedRefresh.then((value) => {
+      cleanup();
+      try {
+        assertSearchMayContinue(signal, deadlineAt);
+        resolve(value);
+      } catch (error) {
+        reject(error);
+      }
+    }, (error: unknown) => {
+      cleanup();
+      reject(error);
+    });
+  });
 }
 
 function assembleSessionDocumentRecords(
