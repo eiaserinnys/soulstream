@@ -20,6 +20,7 @@ import {
 import { mapClaudeSystemMessage } from "./claude_sdk_system_event_mapper.js";
 import {
   coerceResetsAt,
+  lastIterationUsage,
   makeContextUsageEvent,
   messageContent,
   permissionDenialsToStrings,
@@ -301,7 +302,7 @@ export class ClaudeSdkEventMapper {
       permissionDenials: permissionDenialsToStrings(message.permission_denials),
     };
     const contextUsageEvent = makeContextUsageEvent(
-      this.latestIterationUsage ?? message.usage,
+      lastIterationUsage(message.usage) ?? this.latestIterationUsage,
       message.modelUsage,
       this.latestIterationModel,
     );

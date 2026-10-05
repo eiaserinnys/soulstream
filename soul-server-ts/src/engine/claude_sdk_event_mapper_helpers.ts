@@ -70,6 +70,19 @@ export function permissionDenialsToStrings(value: unknown): string[] | null {
   });
 }
 
+export function lastIterationUsage(usage: unknown): Record<string, unknown> | undefined {
+  const iterations = asRecord(usage)?.iterations;
+  if (!Array.isArray(iterations)) return undefined;
+
+  for (let index = iterations.length - 1; index >= 0; index -= 1) {
+    const iteration = asRecord(iterations[index]);
+    if (iteration && (iteration.type === undefined || iteration.type === "message")) {
+      return iteration;
+    }
+  }
+  return undefined;
+}
+
 export function makeContextUsageEvent(
   usage: unknown,
   modelUsage: unknown,
