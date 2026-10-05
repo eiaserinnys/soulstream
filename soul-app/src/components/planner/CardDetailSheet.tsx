@@ -129,7 +129,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
         {otherExpanded ? <PlannerMarkdownText markdown={detail.card.brief || '아직 경과가 없습니다.'} variant="card" /> : null}
       </View> : null}
     </ScrollView>
-    <CardCommentComposer ref={composer} api={api} cardId={cardId} sessionId={card?.assigneeSessionId} nodeId={nodeId}
+    <CardCommentComposer key={cardId} ref={composer} api={api} cardId={cardId} sessionId={card?.assigneeSessionId} nodeId={nodeId}
       question={question} cardLoaded={!!card} locked={locked} sending={comments.pending || pending} onBusyChange={setComposerBusy}
       sendComment={comments.send} runMutation={run} />
     {assignmentOpen && card && !card.assigneeSessionId ? <CardAssignmentSheet api={api} mode="edit" value={{ folderId: card.folderId, nodeId: card.nodeId,

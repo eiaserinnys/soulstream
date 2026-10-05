@@ -35,7 +35,7 @@ export function FolderCards({ api, folderId, active = true, onOpenSession, cardD
         completedCount={data?.cards.filter((card) => card.status === 'done').length ?? 0} onChange={cardDisplay.onChange} />
       <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="카드 추가" onPress={()=>setAdding(open=>!open)}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary}/></LiquidGlassButton>
     </View>
-    {adding ? <CardComposer api={api} folderId={folderId} onCreated={() => setAdding(false)} /> : null}
+    {adding ? <CardComposer key={folderId} api={api} folderId={folderId} onCreated={() => setAdding(false)} /> : null}
     {loading && !data ? <ActivityIndicator color={t.colors.accent} /> : null}
     {error ? <Text style={styles.error}>{error}</Text> : null}
     <FolderCardList api={api} cards={data?.cards ?? []} includeCompleted={false} onOpen={setSelected}/>

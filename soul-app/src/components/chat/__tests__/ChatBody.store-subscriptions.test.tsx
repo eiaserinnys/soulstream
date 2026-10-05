@@ -68,12 +68,21 @@ jest.mock('../ChatComposer', () => {
   return {
     ChatComposer: (props: any) => {
       mockRenderChatComposer(props);
+      const [stacked, setStacked] = React.useState(false);
+      React.useEffect(() => {
+        if (!props.input) setStacked(false);
+        else if (props.input.includes('\n')) setStacked(true);
+      }, [props.input]);
       return React.createElement(
         View,
         {
           testID: 'chat-composer',
           accessibilityState: { disabled: props.disabled },
         },
+        React.createElement(View, {
+          testID: 'chat-composer-content-row',
+          style: { flexWrap: stacked ? 'wrap' : 'nowrap' },
+        }),
         React.createElement(TextInput, {
           testID: 'chat-composer-input',
           value: props.input,
@@ -2025,5 +2034,49 @@ describe('ChatBody store subscription boundary', () => {
     );
     expect(reopened.getByTestId('chat-composer-input').props.value).toBe('세션 B 초안');
     reopened.unmount();
+  });
+
+  test('session change resets the composer stack latch for the next short draft', async () => {
+    await preparePersistentChatDrafts();
+    useSessionStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        [OTHER_SID]: {
+          agentSessionId: OTHER_SID,
+          nodeId: 'node-1',
+          displayName: 'Other session',
+          status: 'idle',
+          createdAt: '2026-05-23T00:00:00Z',
+          updatedAt: '2026-05-23T00:00:00Z',
+        },
+      },
+    }));
+    useDraftStore.getState().write(persistentChatDraftKey(OTHER_SID), '세션 B 짧은 초안');
+
+    const view = render(
+      <View>
+        <ChatBody sessionId={SID} />
+      </View>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.changeText(view.getByTestId('chat-composer-input'), '세션 A 첫 줄\n둘째 줄');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(view.getByTestId('chat-composer-content-row').props.style.flexWrap).toBe('wrap');
+
+    view.rerender(
+      <View>
+        <ChatBody sessionId={OTHER_SID} />
+      </View>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(view.getByTestId('chat-composer-input').props.value).toBe('세션 B 짧은 초안');
+    expect(view.getByTestId('chat-composer-content-row').props.style.flexWrap).toBe('nowrap');
+    view.unmount();
   });
 });
