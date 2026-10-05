@@ -1,6 +1,6 @@
 import { useRef, type KeyboardEventHandler } from "react";
 import {
-  ChatView, DragHandle,
+  DragHandle,
   useGlassSurface,
   type SessionProviderConnectionStatus, type SessionReviewAcknowledgeResult,
   type SessionSummary,
@@ -8,6 +8,7 @@ import {
 import { V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 import { SessionPanelHeader } from "./WorkspacePanelHeaders";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
+import { PersistentSessionChatView } from "./PersistentSessionChatView";
 
 /** The folder board's resize handle and session column, shared with card overlays. */
 export function WorkspaceSessionColumn({
@@ -49,7 +50,7 @@ export function WorkspaceSessionColumn({
         connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} onClose={onClose}/>
       {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview}/> : null}
       <div className="v3-chat-content">
-        {activeSession ? <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}/> :
+        {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}/> :
           <div className="v3-chat-empty"><span className="v3-emoji" aria-hidden="true">💬</span><strong>위임 관계에서 세션을 선택하세요.</strong><p>채팅은 보드와 문서 편집 중에도 이 자리에 유지됩니다.</p></div>}
       </div>
     </section>

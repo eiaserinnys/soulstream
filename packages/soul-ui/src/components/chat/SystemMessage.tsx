@@ -1,8 +1,19 @@
 import { memo } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { cn } from "../../lib/cn";
+import { CollapsibleCaption } from "./CollapsibleCaption";
+import { LabeledDivider } from "./LabeledDivider";
+import { formatPersistentJevCandidates } from "../../lib/persistent-jev-candidates";
 
 export const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage }) {
+  if (msg.treeNodeType === "generation_started") return <LabeledDivider label="새 세대" />;
+  if (msg.treeNodeType === "persistent_jev_candidates") {
+    const candidates = msg.jevCandidates ?? [];
+    const lines = formatPersistentJevCandidates({ selected: candidates });
+    return <CollapsibleCaption title={`Jev 후보 ${candidates.length}`} align="end">
+      {lines.map((line, index) => <div className="min-w-0 truncate text-xs text-muted-foreground" key={`${index}-${line}`}>{line}</div>)}
+    </CollapsibleCaption>;
+  }
   const isError = msg.isError;
   const isRetrying = msg.isRetrying;
   const isComplete = msg.treeNodeType === "complete";

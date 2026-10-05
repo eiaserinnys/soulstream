@@ -23,7 +23,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
         onChange: (event: any) => onFolderChange(event.target.value || null),
       }, [React.createElement("option", { key: "empty", value: "" }, "폴더를 선택하세요"), ...folders.map((folder: any) => React.createElement("option", { key: folder.id, value: folder.id }, folder.name))]),
     ),
-    useDashboardStore: (selector: any) => selector({ catalog: { folders: [{ id: "folder-a", name: "음악" }] } }),
+    useDashboardStore: (selector: any) => selector({ catalog: { folders: [{ id: "folder-a", name: "음악" }] }, setPersistentSessionDisplaySettings: () => undefined }),
   };
 });
 
@@ -107,6 +107,40 @@ describe("PersistentSessionsTab", () => {
     await waitFor(() => expect(calls.filter((call) => call.method === "GET").length).toBeGreaterThan(1));
     expect(nameInput().value).toBe("리뷰 관제 수정");
     expect((document.body.querySelector('[aria-label="기본 모델"]') as HTMLSelectElement).value).toBe("preset-b");
+  });
+
+  it("saves both chat display flags with the existing editor and preserves a draft name", async () => {
+    const { request, calls } = server();
+    await renderTab(request);
+    await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
+    flushSync(() => buttonContaining("리뷰 관제")?.click());
+    await waitFor(() => expect(document.body.textContent).toContain("세대 구분선 표시"));
+    const row = Array.from(document.querySelectorAll<HTMLElement>("[data-testid=config-field-row]"))
+      .find((element) => element.textContent?.includes("세대 구분선 표시"));
+    const toggle = row?.querySelector<HTMLButtonElement>("[role=switch]");
+    if (!toggle) throw new Error("세대 구분선 토글을 찾지 못했습니다.");
+    const candidateRow = Array.from(document.querySelectorAll<HTMLElement>("[data-testid=config-field-row]"))
+      .find((element) => element.textContent?.includes("Jev 후보 표시"));
+    const candidateToggle = candidateRow?.querySelector<HTMLButtonElement>("[role=switch]");
+    if (!candidateToggle) throw new Error("Jev 후보 토글을 찾지 못했습니다.");
+    setInput(nameInput(), "토글 중에도 남는 이름");
+    flushSync(() => toggle.click());
+    flushSync(() => candidateToggle.click());
+    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(0);
+    expect(nameInput().value).toBe("토글 중에도 남는 이름");
+    clickButton("변경 저장");
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1));
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      display_name: "토글 중에도 남는 이름",
+      settings: {
+        default_model: { model_preset: "preset-a", reasoning_effort: "high" },
+        show_generation_separator: false,
+        show_jev_candidates: false,
+      },
+    });
+    await waitFor(() => expect(nameInput().value).toBe("토글 중에도 남는 이름"));
+    expect(document.body.textContent).toContain("세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.");
+    expect(document.body.textContent).toContain("내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.");
   });
 
   it("blocks buttons while saving and keeps the input after a failure so it can be saved again", async () => {
@@ -391,6 +425,7 @@ function server(options: ServerOptions = {}) {
       return json({ session: created, creation: "started", warnings: [] }, 201);
     }
     const target = sessions.find((item) => path === `/api/persistent-sessions/${item.session_id}`);
+    if (method === "GET" && target) return json({ session: target });
     if (method === "PUT") {
       const early = await options.onUpdate?.();
       if (early) return early;
@@ -400,6 +435,8 @@ function server(options: ServerOptions = {}) {
       if (body?.enabled === true) saved.persistent = true;
       if (body?.display_name) saved.display_name = body.display_name;
       const requested = body?.settings?.default_model;
+      if (typeof body?.settings?.show_generation_separator === "boolean") saved.settings.show_generation_separator = body.settings.show_generation_separator;
+      if (typeof body?.settings?.show_jev_candidates === "boolean") saved.settings.show_jev_candidates = body.settings.show_jev_candidates;
       let change = "none";
       if (requested) {
         saved.settings.default_model = { model_preset: requested.model_preset, reasoning_effort: requested.reasoning_effort ?? "high" };

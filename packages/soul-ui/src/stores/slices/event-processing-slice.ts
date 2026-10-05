@@ -33,6 +33,7 @@ import {
 } from "../event-processor";
 import { applyClaudeRuntimeStoreEvent } from "../claude-runtime-state";
 import { flattenTree } from "../../lib/flatten-tree";
+import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { groupMessages } from "../../lib/grouping";
 import {
   appendBrowserNotices,
@@ -209,7 +210,16 @@ export const createEventProcessingSlice: StateCreator<
     if (events.length === 0) return { addedCount: 0 };
 
     const state = get();
-    const beforeGrouped = groupMessages(flattenTree(state.tree)).length;
+    const displaySettings = state.persistentSessionDisplaySettings?.sessionId === state.activeSessionKey
+      ? {
+        show_generation_separator: state.persistentSessionDisplaySettings.showGenerationSeparator,
+        show_jev_candidates: state.persistentSessionDisplaySettings.showJevCandidates,
+      }
+      : null;
+    const beforeGrouped = groupMessages(projectPersistentChatDisplayMessages(
+      flattenTree(state.tree),
+      displaySettings,
+    )).length;
 
     // activeTextTarget 격리 — 라이브 text 스트림이 prepend 페이지의 text 노드로 오염되지 않도록.
     const savedActiveTextTarget = state.processingCtx.activeTextTarget;
@@ -250,7 +260,10 @@ export const createEventProcessingSlice: StateCreator<
       }
 
       const afterGrouped = result.updated
-        ? groupMessages(flattenTree(result.root)).length
+        ? groupMessages(projectPersistentChatDisplayMessages(
+          flattenTree(result.root),
+          displaySettings,
+        )).length
         : beforeGrouped;
       addedGrouped = afterGrouped - beforeGrouped;
 

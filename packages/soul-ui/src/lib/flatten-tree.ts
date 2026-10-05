@@ -25,10 +25,13 @@ import type {
   TokenUsage,
   TurnSummaryNode,
   AssignedCardContextNode,
+  GenerationStartedNode,
+  PersistentJevCandidatesNode,
 } from "@shared/types";
 import { extractNodeEventId } from "./event-tree-id";
 import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
 import { placeAssignedCardContextsAtInputAnchors } from "./assigned-card-context-projection";
+import { placePersistentJevCandidatesAtInputAnchors } from "./persistent-jev-candidates";
 import { formatRateLimitNotice } from "@shared/rate-limit-notice";
 import { formatTurnCompleteStats, TURN_COMPLETE_LABEL } from "./turn-usage-format";
 
@@ -119,6 +122,8 @@ export interface ChatMessage {
   inputId?: string;
   /** assigned_card_context 전용 exact anchor. */
   preparedInputId?: string;
+  /** persistent_jev_candidates 전용 후보 표시값. */
+  jevCandidates?: import("./persistent-jev-candidates").PersistentJevCandidate[];
 }
 
 /**
@@ -197,6 +202,7 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.summaryParentEventId === b.summaryParentEventId
     && a.inputId === b.inputId
     && a.preparedInputId === b.preparedInputId
+    && a.jevCandidates === b.jevCandidates
   );
 }
 
@@ -216,8 +222,10 @@ export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
 
   const messages: ChatMessage[] = [];
   collectMessages(root, messages);
-  return placeTurnSummariesAtResponseAnchors(
-    placeAssignedCardContextsAtInputAnchors(messages),
+  return placePersistentJevCandidatesAtInputAnchors(
+    placeTurnSummariesAtResponseAnchors(
+      placeAssignedCardContextsAtInputAnchors(messages),
+    ),
   );
 }
 
@@ -481,6 +489,16 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         treeNodeType: n.type,
         preparedInputId: n.preparedInputId,
       };
+    }
+
+    case "generation_started": {
+      const n = node as GenerationStartedNode;
+      return { id: n.id, role: "system", content: n.content, timestamp: n.timestamp, treeNodeId: n.id, treeNodeType: n.type };
+    }
+
+    case "persistent_jev_candidates": {
+      const n = node as PersistentJevCandidatesNode;
+      return { id: n.id, role: "system", content: "", timestamp: n.timestamp, treeNodeId: n.id, treeNodeType: n.type, preparedInputId: n.preparedInputId, jevCandidates: n.candidates };
     }
 
     case "turn_summary": {

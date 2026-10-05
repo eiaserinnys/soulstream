@@ -7,6 +7,7 @@
 
 import type { CallerInfo, ContextItem, InputRequestQuestion } from "./sse-events";
 import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
+import type { PersistentJevCandidate } from "../lib/persistent-jev-candidates";
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
 export type EventTreeNodeType = EventTreeNode["type"];
@@ -260,6 +261,16 @@ export interface AssignedCardContextNode extends BaseNode {
   capture: AssignedCardContextSnapshotEvent["capture"];
 }
 
+export interface GenerationStartedNode extends BaseNode {
+  type: "generation_started";
+}
+
+export interface PersistentJevCandidatesNode extends BaseNode {
+  type: "persistent_jev_candidates";
+  preparedInputId: string;
+  candidates: PersistentJevCandidate[];
+}
+
 /** Claude API 에러 노드 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorNode extends BaseNode {
   type: "assistant_error";
@@ -288,4 +299,6 @@ export type EventTreeNode =
   | AssistantErrorNode
   | AwaySummaryNode
   | TurnSummaryNode
-  | AssignedCardContextNode;
+  | AssignedCardContextNode
+  | GenerationStartedNode
+  | PersistentJevCandidatesNode;

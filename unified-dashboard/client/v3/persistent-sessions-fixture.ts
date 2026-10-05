@@ -106,6 +106,10 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
       if (body.enabled === true) session.persistent = true;
       else if (!session.persistent) return fail(409, "NOT_PERSISTENT", "이미 영구 세션이 아닙니다. 목록을 다시 읽습니다.");
       if (typeof body.display_name === "string") session.display_name = body.display_name;
+      for (const key of ["show_generation_separator", "show_jev_candidates"] as const) {
+        const value = body.settings?.[key];
+        if (typeof value === "boolean") session.settings[key] = value;
+      }
       let change: "none" | "next_execution_start" = "none";
       const requested = body.settings?.default_model as { model_preset: string; reasoning_effort: string | null } | undefined;
       if (requested) {

@@ -159,7 +159,7 @@ describe("processEventsBatch — dedup", () => {
     expect(result.notifications).toEqual([]);
   });
 
-  it("generation_started는 채팅 행 없이 이벤트 커서만 전진", () => {
+  it("generation_started 행을 보존하고 커서가 전진한다", () => {
     const ctx = createProcessingContext();
     const event = {
       type: "generation_started",
@@ -176,11 +176,35 @@ describe("processEventsBatch — dedup", () => {
       0,
     );
 
-    expect(result.updated).toBe(false);
-    expect(result.root).toBeNull();
+    expect(result.updated).toBe(true);
+    expect(flattenTree(result.root).map((message) => message.treeNodeType)).toEqual(["generation_started"]);
     expect(result.maxEventId).toBe(13);
-    expect(ctx.nodeMap.size).toBe(0);
+    expect(ctx.nodeMap.has("generation-started-13")).toBe(true);
     expect(result.notifications).toEqual([]);
+  });
+
+  it("raw Jev 기록을 입력 아래에 투영하고 늦게 온 입력에 재배치한다", () => {
+    const ctx = createProcessingContext();
+    const jevEvent = {
+      type: "debug", kind: "persistent_jev_candidates", timestamp: 15,
+      observation: {
+        input_id: "input-late",
+        selected: [{ kind: "card", card_id: "card-412", label: "#412", line: "카드 한 줄", score: 2, raw_score: 2.3 }],
+        candidate_counts: { turn_summaries: 0, cards: 1, search_sessions: 0, recent_completed_sessions: 0 },
+        model: "jev-latest",
+        latency_ms: 1,
+        top_raw_score: 2.3,
+      },
+    } as unknown as SoulSSEEvent;
+    const first = processEventsBatch([{ event: jevEvent, eventId: 15 }], ctx, null, "sess-1", null, 0, true);
+    expect(flattenTree(first.root)).toEqual([]);
+    const laterInput = {
+      type: "user_message", text: "내 입력", timestamp: 16, input_id: "input-late",
+    } as unknown as SoulSSEEvent;
+    const second = processEventsBatch([{ event: laterInput, eventId: 16 }], ctx, first.root, "sess-1", null, 0, true);
+    expect(flattenTree(second.root).map((message) => [message.treeNodeType, message.inputId ?? message.preparedInputId])).toEqual([
+      ["user_message", "input-late"], ["persistent_jev_candidates", "input-late"],
+    ]);
   });
 
   it("lastEventId 이하 이벤트를 차단 (모든 배치 일관 적용)", () => {

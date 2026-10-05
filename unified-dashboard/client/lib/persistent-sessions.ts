@@ -44,11 +44,12 @@ export type PersistentSessionList = {
 
 /** 현재 화면이 보내는 설정은 기본 모델 하나뿐이다. 숨은 설정은 서버 값을 보존한다. */
 type DefaultModelWrite = { default_model: { model_preset: string; reasoning_effort: string | null } };
+export type PersistentDisplaySettingsWrite = Pick<PersistentSettings, "show_generation_separator" | "show_jev_candidates">;
 
 export type PersistentSessionWrite = {
   display_name?: string;
   enabled?: boolean;
-  settings?: DefaultModelWrite;
+  settings?: Partial<DefaultModelWrite & PersistentDisplaySettingsWrite>;
 };
 
 export type PersistentSessionCreate = {
@@ -86,6 +87,7 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch) {
   }
   return {
     list: () => call<PersistentSessionList>(""),
+    get: (sessionId: string) => call<{ session: PersistentSession }>(`/${encodeURIComponent(sessionId)}`),
     listAgents: async (nodeId: string): Promise<AgentInfo[]> => {
       const response = await request(`/api/nodes/${encodeURIComponent(nodeId)}/agents`, {
         credentials: "same-origin",

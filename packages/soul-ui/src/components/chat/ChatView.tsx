@@ -21,6 +21,7 @@ import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect } fr
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
+import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
@@ -95,6 +96,7 @@ export function ChatView({
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const persistentSessionDisplaySettings = useDashboardStore((s) => s.persistentSessionDisplaySettings);
   const pendingChatSend = useDashboardStore((s) => (
     s.activeSessionKey ? s.pendingChatSends[s.activeSessionKey] : undefined
   ));
@@ -133,11 +135,23 @@ export function ChatView({
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
-  const grouped = useMemo(() => groupMessages(messages), [messages]);
+  const visibleMessages = useMemo(
+    () => projectPersistentChatDisplayMessages(
+      messages,
+      persistentSessionDisplaySettings?.sessionId === activeSessionKey
+        ? {
+          show_generation_separator: persistentSessionDisplaySettings.showGenerationSeparator,
+          show_jev_candidates: persistentSessionDisplaySettings.showJevCandidates,
+        }
+        : null,
+    ),
+    [messages, persistentSessionDisplaySettings, activeSessionKey],
+  );
+  const grouped = useMemo(() => groupMessages(visibleMessages), [visibleMessages]);
   const chatStatus = activeSessionSummary?.status ?? "unknown";
   const timelineItems = useMemo(
-    () => buildChatTimelineItems(grouped, messages, chatStatus, pendingChatSend),
-    [grouped, messages, chatStatus, pendingChatSend],
+    () => buildChatTimelineItems(grouped, visibleMessages, chatStatus, pendingChatSend),
+    [grouped, visibleMessages, chatStatus, pendingChatSend],
   );
   const focusEventId = resolveFocusEventId(
     timelineItems,
@@ -725,6 +739,7 @@ export function ChatView({
          */
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
         itemContent={(_, item) => {
+          const message = item.type === "single" ? item.msg : null;
           const toolGroupKey = item.type === "tool-group" && activeSessionKey !== null
             ? toolGroupExpansionKey(activeSessionKey, item)
             : undefined;

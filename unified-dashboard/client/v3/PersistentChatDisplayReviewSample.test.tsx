@@ -1,0 +1,48 @@
+/** @vitest-environment jsdom */
+
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it } from "vitest";
+import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+describe("PersistentChatDisplayReviewSample", () => {
+  let root: Root | undefined;
+  let container: HTMLDivElement | undefined;
+  afterEach(() => {
+    if (root) act(() => root?.unmount());
+    container?.remove();
+    root = undefined;
+    container = undefined;
+  });
+
+  it("renders the raw event pipeline output and can hide each projected row", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root?.render(<PersistentChatDisplayReviewSample />));
+    expect(container.textContent).toContain("이전 세대의 답변입니다.");
+    expect(container.querySelector('[role="separator"]')?.getAttribute("aria-label")).toBe("새 세대");
+    expect(container.textContent).toContain("Jev 후보 3");
+    expect(container.textContent).toContain("Jev 후보 0");
+    expect(container.textContent).toContain("관련 후보를 찾아줘");
+    const sharedInput = container.textContent ?? "";
+    expect(sharedInput.indexOf("같은 입력에 두 기록을 표시해줘")).toBeLessThan(sharedInput.indexOf("Jev 후보 2"));
+    expect(sharedInput.indexOf("Jev 후보 2")).toBeLessThan(sharedInput.indexOf("담당 카드 상황 요약"));
+
+    const emptyCaption = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.includes("Jev 후보 0"));
+    act(() => emptyCaption?.click());
+    expect(container.textContent).toContain("2점 이상인 후보가 없습니다.");
+
+    const switches = container.querySelectorAll<HTMLButtonElement>("[role=switch]");
+    act(() => switches[0]?.click());
+    act(() => switches[1]?.click());
+    expect(container.querySelector('[role="separator"]')).toBeNull();
+    expect(container.textContent).not.toContain("Jev 후보 3");
+    expect(container.textContent).not.toContain("Jev 후보 0");
+    expect(container.textContent).toContain("이전 세대의 답변입니다.");
+    expect(container.textContent).toContain("관련 후보를 찾아줘");
+  });
+});
