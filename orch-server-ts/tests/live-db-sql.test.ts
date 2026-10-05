@@ -229,6 +229,28 @@ describe("live Postgres SQL resolver", () => {
     }
   });
 
+  it("honors a caller-owned deadline while preserving the default database budget otherwise", async () => {
+    let now = 1_000;
+    const dateNow = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const pendingQuery = Object.assign(Promise.resolve([{ value: 1 }]), { cancel: vi.fn(), canceller: null });
+    const setStatementTimeout = vi.fn(async () => undefined);
+    const sql = Object.assign(vi.fn(() => pendingQuery), { setStatementTimeout }) as unknown as LiveSearchSql;
+    const close = vi.fn(async () => undefined);
+    const factory: LiveSearchDbConnectionFactory = { open: vi.fn(async () => ({ sql, close })) };
+    try {
+      await withLiveSearchDbConnection(factory, undefined, vi.fn(), async (runQuery) => {
+        await runQuery(() => sql``);
+        now = 1_050;
+        await runQuery(() => sql``);
+      }, 1_100);
+      expect(factory.open).toHaveBeenCalledWith(100);
+      expect(setStatementTimeout.mock.calls).toEqual([[100], [50]]);
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
   it("does not dispatch a source when cancellation interrupts statement-timeout setup", async () => {
     const controller = new AbortController();
     const query = vi.fn(() => Object.assign(Promise.resolve([]), { cancel: vi.fn() }));

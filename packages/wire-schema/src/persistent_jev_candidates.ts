@@ -21,6 +21,7 @@ export function isPersistentJevCandidatesDebugEvent(
   if (!isRecord(value) || value.type !== "debug" || value.kind !== "persistent_jev_candidates") {
     return false;
   }
+  // Consumers must compare observation.input_id with the input they sent.
   return isObservation(value.observation);
 }
 
@@ -40,7 +41,8 @@ function isObservation(value: unknown): value is PersistentJevObservation {
   }
   return Array.isArray(value.selected)
     && value.selected.length <= 5
-    && value.selected.every(isSelectedCandidate);
+    && value.selected.every((candidate) => isSelectedCandidate(candidate)
+      && isSelectedScore((candidate as Record<string, unknown>).score));
 }
 
 function isSelectedCandidate(value: unknown): boolean {
@@ -79,6 +81,10 @@ function isValidSources(value: unknown): boolean {
 
 function isScore(value: unknown): value is number {
   return Number.isInteger(value) && typeof value === "number" && value >= 0 && value <= 3;
+}
+
+function isSelectedScore(value: unknown): value is number {
+  return Number.isInteger(value) && typeof value === "number" && value >= 2 && value <= 3;
 }
 
 function isPositiveInteger(value: unknown): value is number {

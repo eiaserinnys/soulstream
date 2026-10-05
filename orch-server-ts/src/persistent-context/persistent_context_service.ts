@@ -48,6 +48,7 @@ export function createPersistentContextService(options: {
           input.sessionId,
           input.inputId,
           input.signal,
+          input.deadlineAt,
         );
         if (!mayContinue(input)) return { observation: null };
         if (raw.inputEventId === null) {
@@ -58,7 +59,7 @@ export function createPersistentContextService(options: {
 
         const summaryCounts = await options.candidates.storyReads.countTurnSummaries(
           input.sessionId,
-          { beforeEventId: raw.inputEventId, signal: input.signal },
+          { beforeEventId: raw.inputEventId, signal: input.signal, deadlineAt: input.deadlineAt },
         );
         const fromTurnNumber = Math.max(1, summaryCounts.totalCount - 39);
         const turnSummaries = await options.candidates.storyReads.loadTurnSummaryRange(
@@ -66,20 +67,21 @@ export function createPersistentContextService(options: {
           fromTurnNumber,
           null,
           40,
-          { beforeEventId: raw.inputEventId, signal: input.signal },
+          { beforeEventId: raw.inputEventId, signal: input.signal, deadlineAt: input.deadlineAt },
         );
         if (!mayContinue(input)) return { observation: null };
 
         const request = clipUtf8(input.request, MAX_REQUEST_BYTES);
         const searched = await options.searchProvider.search({
           q: request,
-          top_k: 15,
+          top_k: 4,
           search_session_id: false,
           include_turn_summaries: false,
           include_highlight: false,
           include_story: false,
           include_session_results: true,
           session_search_mode: "lexical",
+          allowedFolderIds: raw.allowedFolderIds,
           signal: input.signal,
           deadlineAt: input.deadlineAt,
         });

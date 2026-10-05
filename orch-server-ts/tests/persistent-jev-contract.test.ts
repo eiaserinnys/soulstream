@@ -37,6 +37,13 @@ describe("persistent Jev debug event guard", () => {
       kind: "persistent_jev_candidates",
       observation: { ...observation, selected: [{ ...observation.selected[0], score: 4 }] },
     })).toBe(false);
+    for (const score of [0, 1]) {
+      expect(isPersistentJevCandidatesDebugEvent({
+        type: "debug",
+        kind: "persistent_jev_candidates",
+        observation: { ...observation, selected: [{ ...observation.selected[0], score }] },
+      })).toBe(false);
+    }
     expect(isPersistentJevCandidatesDebugEvent({
       type: "debug",
       kind: "assigned_card_context_snapshot",

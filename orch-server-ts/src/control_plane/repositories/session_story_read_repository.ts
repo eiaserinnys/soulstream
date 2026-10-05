@@ -100,7 +100,7 @@ export class SessionStoryReadRepository {
 
   async countTurnSummaries(
     sessionId: string,
-    options: { readonly beforeEventId?: number; readonly signal?: AbortSignal } = {},
+    options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number } = {},
   ): Promise<HostSessionTurnSummaryCounts> {
     const run = (sql: LiveSearchSql) => sql<Array<{
       total_count: number | string;
@@ -128,9 +128,9 @@ export class SessionStoryReadRepository {
       WHERE e.event_type = 'turn_summary'
         AND (${options.beforeEventId ?? null}::bigint IS NULL OR e.id < ${options.beforeEventId ?? null})
     `;
-    const rows = options.signal === undefined
+    const rows = options.signal === undefined && options.deadlineAt === undefined
       ? await run(this.sql as unknown as LiveSearchSql)
-      : await this.runOwnedSearch(options.signal, (query) => query((sql) => run(sql)));
+      : await this.runOwnedSearch(options.signal, options.deadlineAt, (query) => query((sql) => run(sql)));
     return {
       totalCount: Number(rows[0]?.total_count ?? 0),
       digestedCount: Number(rows[0]?.digested_count ?? 0),
@@ -143,7 +143,7 @@ export class SessionStoryReadRepository {
     fromTurnNumber: number,
     toTurnNumber: number | null,
     limit: number,
-    options: { readonly beforeEventId?: number; readonly signal?: AbortSignal } = {},
+    options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number } = {},
   ): Promise<HostSessionStoryTurnSummary[]> {
     const run = (query: LiveSearchSql) => {
       return toTurnNumber === null
@@ -177,9 +177,9 @@ export class SessionStoryReadRepository {
           LIMIT ${limit}
         `;
     };
-    const rows = options.signal === undefined
+    const rows = options.signal === undefined && options.deadlineAt === undefined
       ? await run(this.sql as unknown as LiveSearchSql)
-      : await this.runOwnedSearch(options.signal, (query) => query((sql) => run(sql)));
+      : await this.runOwnedSearch(options.signal, options.deadlineAt, (query) => query((sql) => run(sql)));
     return summaries(rows);
   }
 
@@ -274,7 +274,7 @@ export class SessionStoryReadRepository {
       if (!this.searchConnectionFactory) {
         throw new Error("digest search cancellation requires a request-owned search connection");
       }
-      rows = await this.runOwnedSearch(signal, (runQuery) => runQuery(createQuery));
+      rows = await this.runOwnedSearch(signal, undefined, (runQuery) => runQuery(createQuery));
     }
     return rows.map(normalizeDigestSearchMatch);
   }
@@ -378,7 +378,8 @@ export class SessionStoryReadRepository {
   }
 
   private async runOwnedSearch<T extends readonly Record<string, unknown>[]>(
-    signal: AbortSignal,
+    signal: AbortSignal | undefined,
+    deadlineAt: number | undefined,
     runQuery: (query: LiveSearchQueryRunner) => Promise<T>,
   ): Promise<T> {
     if (!this.searchConnectionFactory) {
@@ -390,9 +391,10 @@ export class SessionStoryReadRepository {
         signal,
         (error) => this.reportSearchCancelError(error),
         runQuery,
+        deadlineAt,
       );
     } catch (error) {
-      if (signal.aborted) {
+      if (signal?.aborted) {
         throw signal.reason ?? new Error("digest search was cancelled");
       }
       if (isPostgresStatementTimeout(error)) throw new SessionDigestSearchDeadlineError();

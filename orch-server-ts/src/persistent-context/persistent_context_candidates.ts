@@ -8,6 +8,7 @@ export type PersistentContextCandidateRepositories = {
     sessionId: string,
     inputId: string,
     signal: AbortSignal,
+    deadlineAt: number,
   ) => Promise<PersistentContextRawCandidates>;
   readonly storyReads: SessionStoryReadRepository;
 };
@@ -17,18 +18,19 @@ export function createPersistentContextCandidateRepositories(options: {
   readonly storyReads: SessionStoryReadRepository;
   readonly onCancelError?: (error: unknown) => void;
 }): PersistentContextCandidateRepositories {
-  const run = <T>(signal: AbortSignal, operation: (query: LiveSearchQueryRunner) => Promise<T>) =>
+  const run = <T>(signal: AbortSignal, deadlineAt: number, operation: (query: LiveSearchQueryRunner) => Promise<T>) =>
     withLiveSearchDbConnection(
       options.searchDbConnectionFactory,
       signal,
       (error) => options.onCancelError?.(error),
       operation,
+      deadlineAt,
     );
 
   return {
     storyReads: options.storyReads,
-    async readSessionAndBoundedCandidates(sessionId, inputId, signal) {
-      return run(signal, async (query) => {
+    async readSessionAndBoundedCandidates(sessionId, inputId, signal, deadlineAt) {
+      return run(signal, deadlineAt, async (query) => {
         const sessionRows = await query((sql) => sql<Array<{
           persistent: boolean;
           input_event_id: number | string | null;
@@ -65,6 +67,7 @@ export function createPersistentContextCandidateRepositories(options: {
             sessionIsPersistent: session?.persistent === true,
             inputEventId,
             turnSummaries: [],
+            allowedFolderIds: [],
             cards: [],
             recentCompletedSessions: [],
           };
@@ -74,10 +77,19 @@ export function createPersistentContextCandidateRepositories(options: {
             sessionIsPersistent: false,
             inputEventId,
             turnSummaries: [],
+            allowedFolderIds: [],
             cards: [],
             recentCompletedSessions: [],
           };
         }
+
+        const folderRows = await query((sql) => sql<Array<{ id: string }>>`
+          SELECT id
+          FROM folders
+          WHERE NOT archived
+            AND COALESCE(settings->>'excludeFromFeed', 'false') <> 'true'
+        `);
+        const allowedFolderIds = folderRows.map((row) => row.id);
 
         const cardRows = await query((sql) => sql<Array<{
           id: string;
@@ -92,6 +104,7 @@ export function createPersistentContextCandidateRepositories(options: {
           WHERE NOT c.archived
             AND NOT f.archived
             AND COALESCE(f.settings->>'excludeFromFeed', 'false') <> 'true'
+            AND f.id = ANY(${allowedFolderIds}::text[])
             AND c.status = ANY(ARRAY['todo', 'queued', 'blocked', 'running', 'review']::text[])
           ORDER BY
             CASE WHEN c.assignee_kind = 'session' AND c.assignee_session_id = ${sessionId} THEN 0 ELSE 1 END ASC,
@@ -109,10 +122,6 @@ export function createPersistentContextCandidateRepositories(options: {
           SELECT completed.session_id, completed.display_name,
             first_input.searchable_text AS first_request
           FROM sessions completed
-          LEFT JOIN events terminal
-            ON terminal.session_id = completed.session_id
-            AND terminal.id = completed.termination_event_id
-          LEFT JOIN folders f ON f.id = completed.folder_id
           LEFT JOIN LATERAL (
             SELECT event.searchable_text
             FROM events event
@@ -124,14 +133,15 @@ export function createPersistentContextCandidateRepositories(options: {
           WHERE completed.status = 'completed'
             AND completed.session_id <> ${sessionId}
             AND COALESCE(completed.session_type, 'claude') <> 'llm'
-            AND (completed.folder_id IS NULL OR NOT f.archived)
-            AND (completed.folder_id IS NULL OR COALESCE(f.settings->>'excludeFromFeed', 'false') <> 'true')
-          ORDER BY COALESCE(terminal.created_at, completed.updated_at) DESC, completed.session_id COLLATE "C"
+            AND completed.folder_id = ANY(${allowedFolderIds}::text[])
+          ORDER BY completed.termination_event_id DESC NULLS LAST,
+            completed.updated_at DESC, completed.session_id COLLATE "C"
           LIMIT 5
         `);
         return {
           sessionIsPersistent: session.persistent === true,
           inputEventId,
+          allowedFolderIds,
           turnSummaries: [],
           cards: cardRows.map((row) => ({
             id: row.id,

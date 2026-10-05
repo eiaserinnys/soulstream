@@ -29,6 +29,7 @@ export type PersistentContextCandidateCounts = {
 export type PersistentContextRawCandidates = {
   readonly sessionIsPersistent: boolean;
   readonly inputEventId: number | null;
+  readonly allowedFolderIds: readonly string[];
   readonly turnSummaries: readonly {
     readonly eventId: number;
     readonly turnNumber: number;

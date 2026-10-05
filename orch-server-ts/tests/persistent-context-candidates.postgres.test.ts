@@ -23,6 +23,7 @@ describe("persistent context candidates in PostgreSQL", () => {
             '[{"type":"persistent_session","value":{"enabled":true}}]'::jsonb, NOW()),
           ('jev-hidden-session', 'jev-hidden', 'claude', 'completed', 'Hidden', '[]'::jsonb, NOW()),
           ('jev-archived-session', 'jev-archived', 'claude', 'completed', 'Archived', '[]'::jsonb, NOW()),
+          ('jev-folderless-session', NULL, 'claude', 'completed', 'Folderless', '[]'::jsonb, NOW()),
           ('jev-llm-session', 'jev-visible', 'llm', 'completed', 'Internal', '[]'::jsonb, NOW())
       `;
       await db.sql`
@@ -77,13 +78,14 @@ describe("persistent context candidates in PostgreSQL", () => {
         storyReads,
       });
       const signal = new AbortController().signal;
-      const raw = await repositories.readSessionAndBoundedCandidates("jev-current", "input-current", signal);
+      const raw = await repositories.readSessionAndBoundedCandidates("jev-current", "input-current", signal, Date.now() + 3_000);
       const counts = await storyReads.countTurnSummaries("jev-current", { beforeEventId: raw.inputEventId!, signal });
       const summaries = await storyReads.loadTurnSummaryRange(
         "jev-current", 1, null, 40, { beforeEventId: raw.inputEventId!, signal },
       );
 
       expect(raw).toMatchObject({ sessionIsPersistent: true, inputEventId: 3 });
+      expect(raw.allowedFolderIds).toEqual(["jev-visible"]);
       expect(raw.cards).toHaveLength(20);
       expect(raw.cards.some((card) => card.id === "jev-card-21")).toBe(true);
       expect(raw.cards.some((card) => card.id === "jev-card-22")).toBe(false);
@@ -91,7 +93,7 @@ describe("persistent context candidates in PostgreSQL", () => {
       expect(raw.recentCompletedSessions).toHaveLength(5);
       expect(raw.recentCompletedSessions[0]?.sessionId).toBe("jev-completed-7");
       expect(raw.recentCompletedSessions.some((session) =>
-        ["jev-current", "jev-hidden-session", "jev-archived-session", "jev-llm-session"].includes(session.sessionId),
+        ["jev-current", "jev-hidden-session", "jev-archived-session", "jev-folderless-session", "jev-llm-session"].includes(session.sessionId),
       )).toBe(false);
       expect(counts.totalCount).toBe(2);
       expect(summaries.map((summary) => summary.content)).toEqual(["이전 요약 하나", "이전 요약 둘"]);
