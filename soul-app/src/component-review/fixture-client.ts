@@ -57,10 +57,11 @@ const api = {
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
 };
-const entryShellApi = {
-  ...createReviewApi('normal', { home: true, entryShell: true,
+const entryShellReviewApi = createReviewApi('normal', { home: true, entryShell: true,
     directCardTouch: typeof window !== 'undefined' && new URLSearchParams(window.location?.search ?? '').get('cardTouch') === 'direct',
-    onCardMutation: (mutation) => entryShellMutationLog.push(mutation) }),
+    onCardMutation: (mutation) => entryShellMutationLog.push(mutation) });
+const entryShellApi = {
+  ...entryShellReviewApi,
   getCatalog: async (query?: { folder_id?: string; limit?: number; offset?: number }) => {
     entryShellFeedRequests.push({ type: 'getCatalog' });
     if (!query?.folder_id && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'entryShell') {
@@ -75,6 +76,7 @@ const entryShellApi = {
   },
   getFeedPage: getEntryShellFeedPage,
   getSessionsByIds: async (sessionIds: readonly string[]) => {
+    if (!isFeedWindowEnabled()) return entryShellReviewApi.getSessionsByIds(sessionIds);
     entryShellFeedRequests.push({ type: 'getSessionsByIds', sessionIds: [...sessionIds] });
     return feedFixtureSessionLookup(sessionIds);
   },

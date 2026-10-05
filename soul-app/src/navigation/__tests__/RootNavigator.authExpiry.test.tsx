@@ -68,6 +68,8 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useUIStore } from '../../store/uiStore';
 
 const BASE = 'https://soul.test';
+const isFolderRequest = (input: RequestInfo | URL) =>
+  new URL(String(input), BASE).pathname === '/api/folders';
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: { 'content-type': 'application/json' },
@@ -96,7 +98,7 @@ beforeEach(() => {
     }
     if (
       url.includes('/api/planner/today')
-      || url.endsWith('/api/folders')
+      || isFolderRequest(input)
       || url.includes('/api/sessions')
     ) {
       return Promise.resolve(jsonResponse({ detail: 'unauthorized' }, 401));
@@ -395,7 +397,7 @@ test('auth 설정 성공 뒤 세션 조회 401은 로그인 화면으로 복귀�
 
   await waitFor(() => expect(screen.getByTestId('login-screen')).toBeTruthy());
   expect(useAuthStore.getState()).toMatchObject({ jwt: null, authRejected: true });
-  expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/folders'))).toBe(true);
+  expect(fetchMock.mock.calls.some(([input]) => isFolderRequest(input))).toBe(true);
   expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/sessions'))).toBe(true);
 });
 
@@ -415,7 +417,7 @@ test('auth 설정 조회 실패 뒤 데일리 조회 401도 로그인 화면으�
 
   fetchMock.mockImplementation((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }));
+    if (isFolderRequest(input)) return Promise.resolve(jsonResponse({ folders: [] }));
     if (url.includes('/api/sessions')) return Promise.resolve(jsonResponse({ sessions: [], total: 0 }));
     if (url.endsWith('/api/user/preferences')) {
       return Promise.resolve(jsonResponse({
@@ -433,7 +435,7 @@ test('auth 설정 조회 실패 뒤 데일리 조회 401도 로그인 화면으�
     folders: [],
   });
   const catalogCalls = fetchMock.mock.calls.filter(([input]) =>
-    String(input).endsWith('/api/folders'));
+    isFolderRequest(input));
   const catalogRequest = catalogCalls[catalogCalls.length - 1];
   expect(new Headers(catalogRequest?.[1]?.headers).get('Authorization')).toBe('Bearer new-jwt');
   expect(useAuthStore.getState()).toMatchObject({ jwt: 'new-jwt', authRejected: false });
