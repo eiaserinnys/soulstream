@@ -11,37 +11,63 @@ function ev(type: SessionEvent['type'], data: Record<string, unknown>): SessionE
 }
 
 describe('eventActions', () => {
-  test.each([
-    ['complete', '턴 완료'],
-    ['result', '세션 완료'],
-  ] as const)('%s는 수치가 없으면 답변 본문 대신 고정 라벨을 표시한다', (type, label) => {
-    expect(buildSystemEventText(ev(type, {
+  test('complete는 답변 본문 대신 고정 라벨을 표시한다', () => {
+    expect(buildSystemEventText(ev('complete', {
       success: true,
       message: '이미 표시된 안내',
       content: '이미 표시된 본문',
       result: '이미 표시된 최종 답변',
       output: '이미 표시된 출력',
-    }))).toBe(label);
+    }))).toBe('턴 완료');
   });
 
-  test.each([undefined, { input_tokens: 10, output_tokens: 5 }])(
-    '실패 result는 수치 요약보다 오류 본문을 우선한다 (usage: %j)',
-    (usage) => {
-      expect(buildSystemEventText(ev('result', {
-        success: false,
-        error: '응답 생성에 실패했습니다.',
-        output: '다른 출력',
-        usage,
-        total_cost_usd: 0.01,
-      }))).toBe('오류: 응답 생성에 실패했습니다.');
-    },
-  );
+  test('V5 complete는 공유 형식으로 턴 금액과 세션 누계를 나눈다', () => {
+    expect(buildSystemEventText(ev('complete', {
+      usage: {
+        input_tokens: 6,
+        output_tokens: 6_139,
+        cache_read_input_tokens: 637_594,
+        cache_creation_input_tokens: 7_767,
+      },
+      turn_cost_usd: 0.621749,
+      session_cost_usd: 17.91,
+    }))).toBe(
+      '턴 완료 · 입력 645,367 (캐시 645,361) · 출력 6,139 · 정가 $0.62 (세션 $17.91)',
+    );
+  });
 
-  test('실패 result는 실제 output을 보존하고 빈 본문이면 오류 라벨을 표시한다', () => {
-    expect(buildSystemEventText(ev('result', {
-      success: false, output: '사용량 한도에 도달했습니다.',
-    }))).toBe('오류: 사용량 한도에 도달했습니다.');
-    expect(buildSystemEventText(ev('result', { success: false }))).toBe('오류');
+  test('V6 Codex와 V9 옛 payload는 누락된 금액 조각만 뺀다', () => {
+    const usage = { input_tokens: 14_124, cached_input_tokens: 12_288, output_tokens: 5 };
+    expect(buildSystemEventText(ev('complete', {
+      usage, turn_cost_usd: 0.004951, session_cost_usd: 0.004951,
+    }))).toBe(
+      '턴 완료 · 입력 14,124 (캐시 12,288) · 출력 5 · 정가 <$0.01 (세션 <$0.01)',
+    );
+    expect(buildSystemEventText(ev('complete', { usage, total_cost_usd: 0.5 }))).toBe(
+      '턴 완료 · 입력 14,124 (캐시 12,288) · 출력 5',
+    );
+  });
+
+  test('context_usage는 실제와 추정 문맥을 같은 형식으로 표시한다', () => {
+    expect(buildSystemEventText(ev('context_usage', {
+      used_tokens: 326_300,
+      max_tokens: 1_000_000,
+      percent: 32.6,
+    }))).toBe('컨텍스트 326,300 / 1,000,000 (32.6%)');
+    expect(buildSystemEventText(ev('context_usage', {
+      used_tokens: 14_223,
+      max_tokens: 1_000_000,
+      percent: 1.4,
+      estimated: true,
+    }))).toBe('컨텍스트 약 14,223 / 1,000,000 (1.4%)');
+  });
+
+  test('옛 complete payload는 토큰만 표시하고 usage가 없으면 라벨만 남긴다', () => {
+    expect(buildSystemEventText(ev('complete', {
+      usage: { input_tokens: 10, output_tokens: 5 },
+      total_cost_usd: 0.012345,
+    }))).toBe('턴 완료 · 입력 10 · 출력 5');
+    expect(buildSystemEventText(ev('complete', {}))).toBe('턴 완료');
   });
 
   test('토큰 사용량을 dashboard와 같은 형식으로 요약한다', () => {
@@ -53,17 +79,6 @@ describe('eventActions', () => {
         reasoning_output_tokens: 400,
       }),
     ).toBe('3,000 tokens (1,000 in / 2,000 out / 300 cached / 400 reasoning)');
-  });
-
-  test('complete 이벤트의 비용과 토큰 사용량을 표시한다', () => {
-    expect(
-      buildSystemEventText(
-        ev('complete', {
-          usage: { input_tokens: 10, output_tokens: 5 },
-          total_cost_usd: 0.012345,
-        }),
-      ),
-    ).toBe('Turn Complete  $0.0123  15 tokens (10 in / 5 out)');
   });
 
   test('assistant content blocks를 복사 텍스트로 합친다', () => {

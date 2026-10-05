@@ -199,6 +199,12 @@ export interface CompleteEvent {
   };
   /** 총 비용 (USD). 제공되는 백엔드에서만 표시 */
   total_cost_usd?: number;
+  /** 공개 모델 정가 기준 현재 턴 금액 */
+  model?: string;
+  turn_cost_usd?: number;
+  /** 호스트가 기록한 세션 누계 */
+  session_cost_usd?: number;
+  session_cost_partial?: boolean;
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
@@ -239,6 +245,7 @@ export interface ContextUsageEvent {
   used_tokens: number;
   max_tokens: number;
   percent: number;
+  estimated?: boolean;
 }
 
 export interface ContextManifestEvent {

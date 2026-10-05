@@ -441,7 +441,140 @@ export const sessionQueryHandlers = {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }
   },
+  expand_session_turn: async (options, args, context) => {
+    try {
+      if (!options.sessions) throw new Error("session MCP dependencies are required");
+      const repositories = await options.sessions.repositoryProvider();
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
+      const consumptionBoundary = new SessionConsumptionBoundary(repositories.deliveries, context);
+      const handler = async ({
+        session_id,
+        turn,
+        to_turn,
+        include_tools,
+        max_chars,
+      }: SessionArgs<"expand_session_turn">) => {
+        const sessionId = session_id ?? context.callerSessionId;
+        if (!sessionId) {
+          return errorResult("session_id가 필요합니다. 부른 세션을 알 수 없습니다.");
+        }
+        const fromTurnNumber = parseTurnReference(turn);
+        const toTurnNumber = to_turn === undefined
+          ? fromTurnNumber
+          : parseTurnReference(to_turn);
+        if (toTurnNumber < fromTurnNumber) {
+          return errorResult("to_turn은 turn보다 작을 수 없습니다.");
+        }
+        const turnCount = toTurnNumber - fromTurnNumber + 1;
+        if (turnCount > 5) {
+          return errorResult("한 번에 최대 5턴까지 조회할 수 있습니다.");
+        }
+        const session = await runtime.db.getSession(sessionId);
+        if (!session) {
+          return errorResult(`세션을 찾을 수 없습니다: ${sessionId}`);
+        }
+        const summaries = await runtime.db.loadTurnSummaryRange(
+          sessionId,
+          fromTurnNumber,
+          toTurnNumber,
+          turnCount,
+        );
+        if (summaries.length === 0) {
+          return errorResult(`턴 요약을 찾을 수 없습니다: T${fromTurnNumber}`);
+        }
+        const transcripts = await runtime.db.loadTurnTranscript(
+          sessionId,
+          summaries,
+          include_tools ?? false,
+        );
+        const transcriptByTurn = new Map(
+          transcripts.map((transcript) => [transcript.turnNumber, transcript.events]),
+        );
+        const responseMaxChars = max_chars ?? 20000;
+        let remainingChars = responseMaxChars;
+        let truncated = false;
+        let nextEventId: number | null = null;
+        const turns: Array<{
+          turn_number: number;
+          summary: string;
+          turn_start_event_id: number | null;
+          final_response_event_id: number | null;
+          events: Array<{
+            event_id: number;
+            event_type: string;
+            text: string;
+            created_at: string | null;
+            truncated: boolean;
+          }>;
+        }> = [];
+        let stopAtTruncatedEvent = false;
+        for (const summary of summaries) {
+          const events = [];
+          for (const event of transcriptByTurn.get(summary.turnNumber) ?? []) {
+            const eventMaxChars = Math.min(8000, remainingChars);
+            if (event.text.length > eventMaxChars) {
+              if (eventMaxChars === 0) {
+                truncated = true;
+                nextEventId = event.eventId;
+                stopAtTruncatedEvent = true;
+                break;
+              }
+              events.push({
+                event_id: event.eventId,
+                event_type: event.eventType,
+                text: event.text.slice(0, eventMaxChars),
+                created_at: serializeDate(event.createdAt),
+                truncated: true,
+              });
+              truncated = true;
+              nextEventId = event.eventId;
+              remainingChars -= eventMaxChars;
+              stopAtTruncatedEvent = true;
+              break;
+            }
+            events.push({
+              event_id: event.eventId,
+              event_type: event.eventType,
+              text: event.text,
+              created_at: serializeDate(event.createdAt),
+              truncated: false,
+            });
+            remainingChars -= event.text.length;
+          }
+          turns.push({
+            turn_number: summary.turnNumber,
+            summary: summary.content,
+            turn_start_event_id: summary.turnStartEventId,
+            final_response_event_id: summary.finalResponseEventId,
+            events,
+          });
+          if (stopAtTruncatedEvent) break;
+        }
+        const result = jsonResult({
+          session_id: sessionId,
+          turns,
+          truncated,
+          next_event_id: nextEventId,
+        });
+        return consumptionBoundary.commit(
+          "expand_session_turn",
+          result,
+          [{
+            session,
+            reflectedRevision: summaries[summaries.length - 1]?.eventId ?? null,
+          }],
+        );
+      };
+      return await handler(args as SessionArgs<"expand_session_turn">);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  },
 } satisfies Record<string, McpToolHandler>;
+
+function parseTurnReference(value: number | string): number {
+  return typeof value === "number" ? value : Number(value.slice(1));
+}
 
 function assertRequestActive(signal: AbortSignal): void {
   if (signal.aborted) {

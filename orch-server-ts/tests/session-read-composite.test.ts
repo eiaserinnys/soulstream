@@ -86,4 +86,190 @@ describe("SessionReadCompositeRepository", () => {
       excludeSessionId: "current",
     });
   });
+
+  it("reads all unsummarized text and the active child sessions when no summary exists", async () => {
+    const story = {
+      highlight: null,
+      narrative: null,
+      unfoldedTurnSummaries: [],
+      narrativeThroughEventId: null,
+      foldCount: 0,
+      updatedAt: null,
+    };
+    const events = [
+      { id: 1, session_id: "owner", event_type: "user_message", payload: { text: "요청" }, searchable_text: "요청", created_at: new Date("2026-10-01T00:00:00Z") },
+      { id: 2, session_id: "owner", event_type: "assistant_message", payload: { text: "응답" }, searchable_text: "응답", created_at: new Date("2026-10-01T00:00:01Z") },
+    ];
+    const sessions = {
+      listActiveChildSessionsSummary: vi.fn().mockResolvedValue({
+        sessions: [{ session_id: "child-1", display_name: "작업", agent_id: "worker", model_preset: "codex-6-luna", status: "running", card_id: "card-1", created_at: new Date("2026-10-01T00:00:00Z") }],
+        total: 1,
+      }),
+    };
+    const eventReads = {
+      countEvents: vi.fn().mockResolvedValue(2),
+      readEvents: vi.fn().mockResolvedValue(events),
+      readRecentEvents: vi.fn().mockResolvedValue(events),
+      readRecentEventsAfter: vi.fn().mockResolvedValue({ events, total: events.length }),
+      readRecentEventsBefore: vi.fn().mockResolvedValue([]),
+      readOneEvent: vi.fn().mockResolvedValue(null),
+    };
+    const stories = {
+      getSessionStory: vi.fn().mockResolvedValue(story),
+      countTurnSummaries: vi.fn().mockResolvedValue({ totalCount: 0, digestedCount: 0, undigestedCount: 0 }),
+    };
+    const repository = new SessionReadCompositeRepository(
+      sessions as never,
+      eventReads as never,
+      stories as never,
+    );
+
+    const material = await repository.getGenerationCheckpointMaterial("owner", {
+      recentEventLimit: 200,
+      unsummarizedEventLimit: 200,
+    });
+
+    expect(material.lastSummarizedFinalResponseEventId).toBeNull();
+    expect(material.recent.records.map((record) => record.event_id)).toEqual([1, 2]);
+    expect(material.recent.omittedUnsummarized).toBe(0);
+    expect(material.childSessions).toHaveLength(1);
+    expect(material.childSessionTotal).toBe(1);
+    expect(material.totals).toEqual({ events: 2, turnSummaries: 0 });
+    expect(sessions.listActiveChildSessionsSummary).toHaveBeenCalledWith("owner");
+  });
+
+  it("limits unsummarized events to the latest rows and reports the omitted count", async () => {
+    const allEvents = Array.from({ length: 5 }, (_, index) => ({
+      id: index + 1,
+      session_id: "owner",
+      event_type: index % 2 === 0 ? "user_message" : "assistant_message",
+      payload: { text: `이벤트 ${index + 1}` },
+      searchable_text: `이벤트 ${index + 1}`,
+      created_at: new Date(`2026-10-01T00:00:0${index}Z`),
+    }));
+    const eventReads = {
+      countEvents: vi.fn().mockResolvedValue(allEvents.length),
+      readEvents: vi.fn().mockResolvedValue(allEvents),
+      readRecentEventsAfter: vi.fn().mockResolvedValue({
+        events: allEvents.slice(-3),
+        total: allEvents.length,
+      }),
+      readRecentEventsBefore: vi.fn().mockResolvedValue([]),
+      readOneEvent: vi.fn().mockResolvedValue(null),
+    };
+    const sessions = { listActiveChildSessionsSummary: vi.fn().mockResolvedValue({ sessions: [], total: 0 }) };
+    const stories = {
+      getSessionStory: vi.fn().mockResolvedValue({
+        highlight: null,
+        narrative: null,
+        unfoldedTurnSummaries: [],
+        narrativeThroughEventId: null,
+        foldCount: 0,
+        updatedAt: null,
+      }),
+      countTurnSummaries: vi.fn().mockResolvedValue({ totalCount: 0, digestedCount: 0, undigestedCount: 0 }),
+    };
+    const repository = new SessionReadCompositeRepository(sessions as never, eventReads as never, stories as never);
+
+    const material = await repository.getGenerationCheckpointMaterial("owner", {
+      recentEventLimit: 200,
+      unsummarizedEventLimit: 3,
+    });
+
+    expect(material.recent.records.map((record) => record.event_id)).toEqual([3, 4, 5]);
+    expect(material.recent.omittedUnsummarized).toBe(2);
+    expect(eventReads.readRecentEventsAfter).toHaveBeenCalledWith(
+      "owner",
+      0,
+      3,
+      ["user_message", "intervention_sent", "session_notification", "assistant_message"],
+    );
+  });
+
+  it("uses the final response of the latest folded summary when summaries are caught up", async () => {
+    const events = [
+      { id: 2, session_id: "owner", event_type: "assistant_message", payload: { text: "최근 요약 전 대화" }, searchable_text: "", created_at: new Date("2026-10-01T00:00:00Z") },
+      { id: 4, session_id: "owner", event_type: "user_message", payload: { text: "다음 요청" }, searchable_text: "", created_at: new Date("2026-10-01T00:00:01Z") },
+    ];
+    const sessions = { listActiveChildSessionsSummary: vi.fn().mockResolvedValue({ sessions: [], total: 0 }) };
+    const eventReads = {
+      countEvents: vi.fn().mockResolvedValue(4),
+      readEvents: vi.fn().mockResolvedValue([events[1]]),
+      readRecentEvents: vi.fn().mockResolvedValue(events),
+      readRecentEventsAfter: vi.fn().mockResolvedValue({ events: [events[1]], total: 1 }),
+      readRecentEventsBefore: vi.fn().mockResolvedValue([events[0]]),
+      readOneEvent: vi.fn().mockResolvedValue({
+        id: 3, session_id: "owner", event_type: "turn_summary",
+        payload: { final_response_event_id: 3 }, searchable_text: "",
+        created_at: new Date("2026-10-01T00:00:00Z"), parent_event_id: null,
+      }),
+    };
+    const stories = {
+      getSessionStory: vi.fn().mockResolvedValue({
+        highlight: null, narrative: "접힌 줄거리", unfoldedTurnSummaries: [],
+        narrativeThroughEventId: 3, foldCount: 1, updatedAt: null,
+      }),
+      countTurnSummaries: vi.fn().mockResolvedValue({ totalCount: 1, digestedCount: 1, undigestedCount: 0 }),
+    };
+    const repository = new SessionReadCompositeRepository(sessions as never, eventReads as never, stories as never);
+
+    const material = await repository.getGenerationCheckpointMaterial("owner", {
+      recentEventLimit: 200,
+      unsummarizedEventLimit: 200,
+    });
+
+    expect(material.lastSummarizedFinalResponseEventId).toBe(3);
+    expect(material.recent.records.map((record) => record.event_id)).toContain(4);
+    expect(material.recent.records.map((record) => record.event_id)).toContain(2);
+    expect(material.totals.turnSummaries).toBe(1);
+    expect(eventReads.readRecentEventsAfter).toHaveBeenCalledWith("owner", 3, 200, [
+      "user_message", "intervention_sent", "session_notification", "assistant_message",
+    ]);
+    expect(eventReads.readRecentEventsBefore).toHaveBeenCalledWith("owner", 3, 200, [
+      "user_message", "intervention_sent", "session_notification", "assistant_message",
+    ]);
+  });
+
+  it("uses the latest unfolded summary anchor and preserves every later text event", async () => {
+    const recentEvents = [
+      { id: 7, session_id: "owner", event_type: "assistant_message", payload: { text: "뒤따른 응답" }, searchable_text: "", created_at: new Date("2026-10-01T00:00:01Z") },
+      { id: 8, session_id: "owner", event_type: "user_message", payload: { text: "후속 요청" }, searchable_text: "", created_at: new Date("2026-10-01T00:00:02Z") },
+    ];
+    const eventReads = {
+      countEvents: vi.fn().mockResolvedValue(8),
+      readEvents: vi.fn().mockResolvedValue(recentEvents),
+      readRecentEvents: vi.fn().mockResolvedValue(recentEvents),
+      readRecentEventsAfter: vi.fn().mockResolvedValue({ events: recentEvents, total: recentEvents.length }),
+      readRecentEventsBefore: vi.fn().mockResolvedValue([]),
+      readOneEvent: vi.fn(),
+    };
+    const sessions = { listActiveChildSessionsSummary: vi.fn().mockResolvedValue({ sessions: [], total: 0 }) };
+    const stories = {
+      getSessionStory: vi.fn().mockResolvedValue({
+        highlight: null,
+        narrative: "접힌 줄거리",
+        unfoldedTurnSummaries: [{ eventId: 6, turnNumber: 2, content: "최근 미접힘 요약", turnStartEventId: 5, finalResponseEventId: 6, createdAt: new Date("2026-10-01T00:00:00Z") }],
+        narrativeThroughEventId: 3,
+        foldCount: 1,
+        updatedAt: null,
+      }),
+      countTurnSummaries: vi.fn().mockResolvedValue({ totalCount: 2, digestedCount: 1, undigestedCount: 1 }),
+    };
+    const repository = new SessionReadCompositeRepository(sessions as never, eventReads as never, stories as never);
+
+    const material = await repository.getGenerationCheckpointMaterial("owner", {
+      recentEventLimit: 200,
+      unsummarizedEventLimit: 200,
+    });
+
+    expect(material.lastSummarizedFinalResponseEventId).toBe(6);
+    expect(material.story.unfoldedTurnSummaries).toHaveLength(1);
+    expect(material.recent.records).toMatchObject([
+      { event_id: 7, text: "뒤따른 응답" },
+      { event_id: 8, text: "후속 요청" },
+    ]);
+    expect(eventReads.readRecentEventsAfter).toHaveBeenCalledWith("owner", 6, 200, [
+      "user_message", "intervention_sent", "session_notification", "assistant_message",
+    ]);
+  });
 });

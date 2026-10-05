@@ -16,6 +16,7 @@ import {
   timestampFromMs,
 } from "./event_mapper_helpers.js";
 import type { CodexTurnTokenUsage } from "./event_mapper_helpers.js";
+import { codexTurnCostUsd } from "../list_price.js";
 import { mapItemCompleted, mapItemStarted } from "./item_mapper.js";
 import { firstMeaningfulText } from "./text_sanitizer.js";
 import { isUsageLimitTurnError } from "./usage_limit.js";
@@ -23,7 +24,7 @@ import { isUsageLimitTurnError } from "./usage_limit.js";
 export function mapAppServerNotification(
   notification: AppServerNotification,
   onUnknownNotification?: (method: string) => void,
-  turnContext?: { tokenUsage?: CodexTurnTokenUsage | null },
+  turnContext?: { tokenUsage?: CodexTurnTokenUsage | null; model?: string | null },
 ): SSEEventPayload[] {
   switch (notification.method) {
     case "thread/started": {
@@ -58,6 +59,7 @@ export function mapAppServerNotification(
         willRetry?: boolean;
       };
       const tokenUsage = turnContext?.tokenUsage ?? undefined;
+      const model = turnContext?.model ?? undefined;
       const contextUsage = codexContextUsagePayload(tokenUsage);
       const contextPayloads = contextUsage ? [contextUsage as SSEEventPayload] : [];
       if (turn.status === "failed") {
@@ -79,6 +81,9 @@ export function mapAppServerNotification(
       const finalAgentMessage = [...turn.items]
         .reverse()
         .find((item) => item.type === "agentMessage");
+      const usage = tokenUsage ? codexTurnUsage(tokenUsage) : undefined;
+      const firstCall = tokenUsage?.first;
+      const turnCostUsd = usage ? codexTurnCostUsd(usage, model) : undefined;
       return [
         ...contextPayloads,
         {
@@ -87,7 +92,17 @@ export function mapAppServerNotification(
           timestamp: nowEpochSec(),
           status: turn.status,
           duration_ms: turn.durationMs,
-          ...(tokenUsage ? { usage: codexTurnUsage(tokenUsage) } : {}),
+          ...(usage ? { usage } : {}),
+          ...(firstCall
+            ? {
+                first_call: {
+                  input_tokens: firstCall.inputTokens,
+                  cached_input_tokens: firstCall.cachedInputTokens,
+                },
+              }
+            : {}),
+          ...(model !== undefined ? { model } : {}),
+          ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
           ...rawContext(notification.method, { threadId, turnId: turn.id }),
         } as SSEEventPayload,
       ];

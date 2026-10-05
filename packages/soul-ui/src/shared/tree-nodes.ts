@@ -190,6 +190,9 @@ export interface CompleteNode extends BaseNode {
   type: "complete";
   usage?: TokenUsage;
   totalCostUsd?: number;
+  turnCostUsd?: number;
+  sessionCostUsd?: number;
+  sessionCostPartial?: boolean;
 }
 
 /** 에러 노드 */

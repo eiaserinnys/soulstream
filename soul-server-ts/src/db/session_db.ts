@@ -16,6 +16,7 @@ import type {
   SessionResumeContext,
   SessionTurnExcerptResult,
 } from "../control_plane/session_data_host_client.js";
+import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
@@ -316,6 +317,14 @@ export class SessionDB {
   }
 
   getAssignedCardContext(sessionId: string) { return this.requireFolderHost().getAssignedCardContext(sessionId); }
+  getSupervisedCardContext(params: {
+    sessionId: string;
+    folderIds: string[] | null;
+    cardLimit: number;
+    questionLimit: number;
+  }): Promise<SupervisedCardSnapshot> {
+    return this.requireFolderHost().getSupervisedCardContext(params);
+  }
 
   configureFolderHost(host: FolderHostClient): void {
     this.folderHost = host;
@@ -364,6 +373,13 @@ export class SessionDB {
     limit: number,
   ): Promise<SessionResumeContext> {
     return await this.requireSessionDataHost().getResumeContext(sessionId, limit);
+  }
+
+  async getGenerationCheckpointMaterial(
+    sessionId: string,
+    limits: GenerationCheckpointReadLimits,
+  ): Promise<GenerationCheckpointMaterial> {
+    return await this.requireSessionDataHost().getGenerationCheckpointMaterial(sessionId, limits);
   }
 
   async appendClaudeTranscriptEntries(

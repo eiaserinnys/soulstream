@@ -1014,6 +1014,171 @@ describe("ClaudeSdkClient", () => {
       maxTokens: 1_000_000,
       percent: 24.7,
     });
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      type: "complete",
+      model: "claude-opus-5-5",
+      turnCostUsd: 0.063697,
+    });
+  });
+
+  it("uses the main SDK model and V4 result usage for the completed turn price", async () => {
+    const events = await runSdkClientMessages([
+      {
+        type: "assistant",
+        message: {
+          model: "claude-opus-5-5",
+          content: [{ type: "text", text: "done" }],
+        },
+        parent_tool_use_id: null,
+        uuid: "assistant-v4-price",
+        session_id: "claude-sess-v4",
+      } as unknown as SDKMessage,
+      sdkSuccessResult("claude-sess-v4", "done", {
+        usage: {
+          input_tokens: 48,
+          service_tier: "standard",
+          inference_geo: "not_available",
+          output_tokens: 15_972,
+          cache_creation: { ephemeral_1h_input_tokens: 104_313, ephemeral_5m_input_tokens: 0 },
+          fallback_credit: null,
+          server_tool_use: { web_fetch_requests: 0, web_search_requests: 0 },
+          output_tokens_details: { thinking_tokens: 4_975 },
+          cache_read_input_tokens: 1_971_030,
+          cache_creation_input_tokens: 104_313,
+        },
+      }),
+    ]);
+
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      type: "complete",
+      model: "claude-opus-5-5",
+      turnCostUsd: 1.548342,
+    });
+  });
+
+  it("keeps the first foreground assistant input usage on complete", async () => {
+    const events = await runSdkClientMessages([
+      {
+        type: "assistant",
+        message: {
+          model: "claude-opus-5-5",
+          usage: {
+            input_tokens: 4,
+            output_tokens: 5,
+            cache_read_input_tokens: 245_563,
+            cache_creation_input_tokens: 1_141,
+          },
+          content: [{ type: "text", text: "checking" }],
+        },
+        parent_tool_use_id: null,
+        uuid: "assistant-first-call-a",
+        session_id: "claude-sess-first-call",
+      } as unknown as SDKMessage,
+      {
+        type: "assistant",
+        message: {
+          model: "claude-opus-5-5",
+          usage: {
+            input_tokens: 9,
+            output_tokens: 12,
+            cache_read_input_tokens: 24,
+            cache_creation_input_tokens: 3,
+          },
+          content: [{ type: "text", text: "done" }],
+        },
+        parent_tool_use_id: null,
+        uuid: "assistant-first-call-b",
+        session_id: "claude-sess-first-call",
+      } as unknown as SDKMessage,
+      sdkSuccessResult("claude-sess-first-call", "done"),
+    ]);
+
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      type: "complete",
+      firstCall: { inputTokens: 246_708, cachedInputTokens: 245_563 },
+    });
+  });
+
+  it("takes first-call usage from the first foreground message after a subagent", async () => {
+    const events = await runSdkClientMessages([
+      {
+        type: "assistant",
+        message: {
+          model: "claude-opus-5-5",
+          usage: {
+            input_tokens: 90,
+            output_tokens: 5,
+            cache_read_input_tokens: 700,
+            cache_creation_input_tokens: 10,
+          },
+          content: [{ type: "text", text: "subagent" }],
+        },
+        parent_tool_use_id: "toolu-parent-agent",
+        uuid: "assistant-first-call-subagent",
+        session_id: "claude-sess-first-call-subagent",
+      } as unknown as SDKMessage,
+      {
+        type: "assistant",
+        message: {
+          model: "claude-opus-5-5",
+          usage: {
+            input_tokens: 4,
+            output_tokens: 5,
+            cache_read_input_tokens: 245_563,
+            cache_creation_input_tokens: 1_141,
+          },
+          content: [{ type: "text", text: "foreground" }],
+        },
+        parent_tool_use_id: null,
+        uuid: "assistant-first-call-foreground",
+        session_id: "claude-sess-first-call-subagent",
+      } as unknown as SDKMessage,
+      sdkSuccessResult("claude-sess-first-call-subagent", "done"),
+    ]);
+
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      type: "complete",
+      firstCall: { inputTokens: 246_708, cachedInputTokens: 245_563 },
+    });
+  });
+
+  it("resets first-call usage for the next completed turn", async () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    const firstAssistant = {
+      type: "assistant",
+      message: { usage: { input_tokens: 4, cache_read_input_tokens: 100 } },
+      parent_tool_use_id: null,
+      uuid: "assistant-turn-one-first-call",
+      session_id: "claude-sess-first-call-turns",
+    } as unknown as SDKMessage;
+    const secondAssistant = {
+      type: "assistant",
+      message: {
+        usage: {
+          input_tokens: 10,
+          cache_read_input_tokens: 20,
+          cache_creation_input_tokens: 30,
+        },
+      },
+      parent_tool_use_id: null,
+      uuid: "assistant-turn-two-first-call",
+      session_id: "claude-sess-first-call-turns",
+    } as unknown as SDKMessage;
+    mapper.mapSdkMessage(firstAssistant);
+    const firstComplete = mapper.mapSdkMessage(
+      sdkSuccessResult("claude-sess-first-call-turns", "first"),
+    ).find((event) => event.type === "complete");
+    mapper.mapSdkMessage(secondAssistant);
+    const secondComplete = mapper.mapSdkMessage(
+      sdkSuccessResult("claude-sess-first-call-turns", "second"),
+    ).find((event) => event.type === "complete");
+
+    expect(firstComplete).toMatchObject({
+      firstCall: { inputTokens: 104, cachedInputTokens: 100 },
+    });
+    expect(secondComplete).toMatchObject({
+      firstCall: { inputTokens: 60, cachedInputTokens: 20 },
+    });
   });
 
   it("uses result iterations for the V2 final context usage", async () => {
@@ -1101,6 +1266,9 @@ describe("ClaudeSdkClient", () => {
     ]);
 
     expect(events.map((event) => event.type)).toEqual(["result", "complete"]);
+    expect(events[1]).not.toHaveProperty("model");
+    expect(events[1]).not.toHaveProperty("turnCostUsd");
+    expect(events[1]).not.toHaveProperty("firstCall");
   });
 
   it("initial image attachments are embedded as Claude image content blocks", async () => {

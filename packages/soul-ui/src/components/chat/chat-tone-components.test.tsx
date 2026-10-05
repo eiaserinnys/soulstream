@@ -103,7 +103,7 @@ describe("chat tone component classes", () => {
           treeNodeType: "complete",
           content: "턴 완료",
           captionStats:
-            "최근 $1.23 · 누적 $3.31 · 입력 2,985,241 (캐시 2,985,234) · 출력 1,473",
+            "입력 2,985,241 (캐시 2,985,234) · 출력 1,473 · 정가 $1.23 (세션 $3.31)",
           totalCostUsd: 3.31,
         }),
       }),
@@ -115,7 +115,7 @@ describe("chat tone component classes", () => {
     expect(completeHtml).toContain("ml-auto");
     expect(completeHtml).toContain("text-right");
     expect(completeHtml).toContain(
-      ">최근 $1.23 · 누적 $3.31 · 입력 2,985,241 (캐시 2,985,234) · 출력 1,473</span>",
+      ">입력 2,985,241 (캐시 2,985,234) · 출력 1,473 · 정가 $1.23 (세션 $3.31)</span>",
     );
   });
 });

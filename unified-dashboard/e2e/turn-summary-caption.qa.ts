@@ -74,7 +74,7 @@ async function verifyTurnSummaryCaption(browser: Browser) {
     assert(metrics.complete.labelText === "턴 완료", "턴 완료 라벨이 한국어로 표시되지 않았습니다.");
     assert(
       metrics.complete.statsText
-        === "최근 $3.31 · 누적 $3.31 · 입력 2,985,241 (캐시 2,985,234) · 출력 1,473",
+        === "입력 2,985,241 (캐시 2,985,234) · 출력 1,473 · 정가 $1.23 (세션 $3.31)",
       `턴 완료 수치 포맷이 다릅니다: ${metrics.complete.statsText}`,
     );
     assert(
@@ -640,6 +640,8 @@ async function injectLateSummary(page: Page) {
         cache_creation_input_tokens: 234,
       },
       total_cost_usd: 3.31,
+      turn_cost_usd: 1.23,
+      session_cost_usd: 3.31,
       timestamp: 120,
     }, 120);
     processEvent({

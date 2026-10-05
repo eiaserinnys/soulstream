@@ -114,6 +114,7 @@ const sessionDataOperations = {
   story: ["storyReads", null, "getSessionStory"],
   turn_excerpt: ["sessionReadComposites", null, "getTurnExcerpt"],
   resume_context: ["sessionReadComposites", null, "getResumeContext"],
+  generation_checkpoint_material: ["sessionReadComposites", null, "getGenerationCheckpointMaterial"],
 } as const satisfies Record<string, OperationTarget>;
 
 const worktreeOperations = {

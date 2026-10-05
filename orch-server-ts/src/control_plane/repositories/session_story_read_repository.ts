@@ -16,6 +16,18 @@ export interface HostSessionStoryTurnSummary {
   readonly createdAt: Date;
 }
 
+export interface HostSessionTurnTranscriptEvent {
+  readonly eventId: number;
+  readonly eventType: string;
+  readonly text: string;
+  readonly createdAt: Date;
+}
+
+export interface HostSessionTurnTranscript {
+  readonly turnNumber: number;
+  readonly events: HostSessionTurnTranscriptEvent[];
+}
+
 export interface HostSessionStoryView {
   readonly highlight: string | null;
   readonly narrative: string | null;
@@ -154,6 +166,78 @@ export class SessionStoryReadRepository {
           LIMIT ${limit}
         `;
     return summaries(rows);
+  }
+
+  async loadTurnTranscript(
+    sessionId: string,
+    selectedSummaries: readonly HostSessionStoryTurnSummary[],
+    includeTools: boolean,
+  ): Promise<HostSessionTurnTranscript[]> {
+    if (selectedSummaries.length === 0) return [];
+    const eventTypes = includeTools
+      ? ["user_message", "intervention_sent", "session_notification", "assistant_message", "tool_start", "tool_result"]
+      : ["user_message", "intervention_sent", "session_notification", "assistant_message"];
+    const rows = await this.sql<TranscriptEventRow[]>`
+      WITH selected_summaries AS (
+        SELECT selected.turn_number, selected.summary_event_id,
+          selected.final_response_event_id
+        FROM UNNEST(
+          ${selectedSummaries.map((summary) => summary.turnNumber)}::integer[],
+          ${selectedSummaries.map((summary) => summary.eventId)}::bigint[],
+          ${selectedSummaries.map((summary) => summary.finalResponseEventId)}::bigint[]
+        ) AS selected(turn_number, summary_event_id, final_response_event_id)
+      ), current_turn_completes AS (
+        SELECT selected.turn_number,
+          (
+            SELECT MIN(current_complete.id)
+            FROM events current_complete
+            WHERE current_complete.session_id = ${sessionId}
+              AND current_complete.event_type = 'complete'
+              AND current_complete.id > selected.final_response_event_id
+              AND current_complete.id < selected.summary_event_id
+          ) AS complete_event_id
+        FROM selected_summaries selected
+      ), turn_ranges AS (
+        SELECT current_turn.turn_number,
+          current_turn.complete_event_id,
+          (
+            SELECT MAX(previous_complete.id)
+            FROM events previous_complete
+            WHERE previous_complete.session_id = ${sessionId}
+              AND previous_complete.event_type = 'complete'
+              AND previous_complete.id < current_turn.complete_event_id
+          ) AS previous_complete_event_id
+        FROM current_turn_completes current_turn
+      )
+      SELECT turn_ranges.turn_number,
+        source_event.id,
+        source_event.event_type,
+        source_event.payload,
+        COALESCE(source_event.searchable_text, '') AS text,
+        source_event.created_at
+      FROM turn_ranges
+      JOIN events source_event
+        ON source_event.session_id = ${sessionId}
+        AND source_event.id > COALESCE(turn_ranges.previous_complete_event_id, 0)
+        AND source_event.id <= turn_ranges.complete_event_id
+      WHERE source_event.event_type = ANY(${eventTypes}::text[])
+      ORDER BY turn_ranges.turn_number ASC, source_event.id ASC
+    `;
+    const eventsByTurn = new Map<number, HostSessionTurnTranscriptEvent[]>(
+      selectedSummaries.map((summary) => [summary.turnNumber, []]),
+    );
+    for (const row of rows) {
+      eventsByTurn.get(Number(row.turn_number))?.push({
+        eventId: Number(row.id),
+        eventType: row.event_type,
+        text: transcriptEventText(row.event_type, parsePayload(row.payload), row.text),
+        createdAt: row.created_at,
+      });
+    }
+    return selectedSummaries.map((summary) => ({
+      turnNumber: summary.turnNumber,
+      events: eventsByTurn.get(summary.turnNumber) ?? [],
+    }));
   }
 
   async searchSessionDigests(
@@ -327,6 +411,14 @@ function isPostgresStatementTimeout(error: unknown): boolean {
 }
 
 type SummaryRow = { id: number; payload: unknown; created_at: Date; turn_number: number };
+type TranscriptEventRow = {
+  turn_number: number | string;
+  id: number | string;
+  event_type: string;
+  payload: unknown;
+  text: string;
+  created_at: Date;
+};
 type DigestSearchRow = {
   id: number | string;
   session_id: string;
@@ -369,6 +461,48 @@ function normalizeDigestSearchMatch(row: DigestSearchRow): Record<string, unknow
     score: Number(row.score),
     match_source: row.match_source,
   };
+}
+
+function transcriptEventText(
+  eventType: string,
+  payload: Record<string, unknown>,
+  searchableText: string,
+): string {
+  if (
+    eventType === "user_message" ||
+    eventType === "intervention_sent" ||
+    eventType === "session_notification"
+  ) {
+    return typeof payload.text === "string" ? payload.text : searchableText;
+  }
+  if (eventType === "assistant_message") {
+    return typeof payload.content === "string" ? payload.content : searchableText;
+  }
+  if (eventType === "tool_start") {
+    const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "unknown_tool";
+    const input = transcriptValueText(payload.tool_input);
+    return input ? `tool: ${toolName} input: ${input}` : `tool: ${toolName}`;
+  }
+  if (eventType === "tool_result") {
+    const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "unknown_tool";
+    const result = transcriptValueText(payload.result);
+    return result ? `tool: ${toolName} result: ${result}` : `tool: ${toolName} result:`;
+  }
+  return searchableText;
+}
+
+function transcriptValueText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => item && typeof item === "object" && "text" in item && typeof item.text === "string"
+        ? item.text
+        : "")
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (value === null || value === undefined) return "";
+  return JSON.stringify(value) ?? "";
 }
 
 function parsePayload(value: unknown): Record<string, unknown> {

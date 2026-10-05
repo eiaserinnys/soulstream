@@ -113,6 +113,74 @@ describe("SessionStoryReadRepository", () => {
     });
     expect(calls[1]?.values).toContain(52);
   });
+
+  it("loads every eligible source event from after the previous complete through this turn's complete", async () => {
+    const createdAt = new Date("2026-07-31T00:00:00.000Z");
+    const { repository, calls } = repositoryWithResponses([[
+      { turn_number: 2, id: 13, event_type: "user_message", text: "첫 입력", created_at: createdAt },
+      { turn_number: 2, id: 17, event_type: "intervention_sent", text: "이어진 입력", created_at: createdAt },
+      { turn_number: 2, id: 22, event_type: "assistant_message", text: "최종 응답", created_at: createdAt },
+    ]]);
+    const summary = {
+      eventId: 24,
+      turnNumber: 2,
+      content: "두 번째 턴 요약",
+      turnStartEventId: 15,
+      finalResponseEventId: 22,
+      createdAt,
+    };
+
+    await expect(repository.loadTurnTranscript("session-a", [summary], false)).resolves.toEqual([
+      {
+        turnNumber: 2,
+        events: [
+          { eventId: 13, eventType: "user_message", text: "첫 입력", createdAt },
+          { eventId: 17, eventType: "intervention_sent", text: "이어진 입력", createdAt },
+          { eventId: 22, eventType: "assistant_message", text: "최종 응답", createdAt },
+        ],
+      },
+    ]);
+    expect(calls[0]?.text).toContain("complete");
+    expect(calls[0]?.text).toContain("event_type = ANY");
+    expect(calls[0]?.values).toContainEqual([
+      "user_message",
+      "intervention_sent",
+      "session_notification",
+      "assistant_message",
+    ]);
+    expect(calls[0]?.values).toContainEqual([22]);
+
+    const toolInput = "x".repeat(600);
+    const toolReads = repositoryWithResponses([[
+      {
+        turn_number: 2,
+        id: 18,
+        event_type: "tool_start",
+        payload: { tool_name: "shell", tool_input: { command: toolInput } },
+        text: "search projection is shorter",
+        created_at: createdAt,
+      },
+    ]]);
+    await expect(toolReads.repository.loadTurnTranscript("session-a", [summary], true)).resolves.toEqual([
+      {
+        turnNumber: 2,
+        events: [{
+          eventId: 18,
+          eventType: "tool_start",
+          text: `tool: shell input: ${JSON.stringify({ command: toolInput })}`,
+          createdAt,
+        }],
+      },
+    ]);
+    expect(toolReads.calls[0]?.values).toContainEqual([
+      "user_message",
+      "intervention_sent",
+      "session_notification",
+      "assistant_message",
+      "tool_start",
+      "tool_result",
+    ]);
+  });
 });
 
 function repositoryWithResponses(

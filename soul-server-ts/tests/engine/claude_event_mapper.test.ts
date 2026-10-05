@@ -158,12 +158,22 @@ describe("Claude event mapper semantic history contract", () => {
   it("complete uses explicit result first and fallback text only when result is absent", () => {
     expect(
       mapClaudeClientEvent(
-        { type: "complete", result: "explicit", timestamp: 128 },
+        {
+          type: "complete",
+          result: "explicit",
+          model: "claude-opus-5-5",
+          turnCostUsd: 1.548342,
+          firstCall: { inputTokens: 246_708, cachedInputTokens: 245_563 },
+          timestamp: 128,
+        },
         { fallbackResult: "fallback" },
       )[0],
     ).toEqual({
       type: "complete",
       result: "explicit",
+      model: "claude-opus-5-5",
+      turn_cost_usd: 1.548342,
+      first_call: { input_tokens: 246_708, cached_input_tokens: 245_563 },
       timestamp: 128,
     });
 

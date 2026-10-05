@@ -81,6 +81,57 @@ export class EventReadRepository {
     return rows.map(normalizeEvent).reverse();
   }
 
+  async readRecentEventsBefore(
+    sessionId: string,
+    beforeId: number,
+    limit: number,
+    eventTypes?: string[],
+  ): Promise<HostEventRow[]> {
+    const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
+    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      SELECT id, session_id, event_type, payload, searchable_text, created_at
+      FROM events
+      WHERE session_id = ${sessionId}
+        AND id <= ${beforeId}
+        AND (
+          ${types as unknown as string[] | null}::text[] IS NULL
+          OR event_type = ANY(${types as unknown as string[] | null}::text[])
+        )
+      ORDER BY id DESC
+      LIMIT ${limit}
+    `;
+    return rows.map(normalizeEvent).reverse();
+  }
+
+  async readRecentEventsAfter(
+    sessionId: string,
+    afterId: number,
+    limit: number,
+    eventTypes?: string[],
+  ): Promise<{ events: HostEventRow[]; total: number }> {
+    const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
+    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & {
+      payload: unknown;
+      total_count: number | string;
+    }>>`
+      SELECT id, session_id, event_type, payload, searchable_text, created_at,
+        COUNT(*) OVER ()::integer AS total_count
+      FROM events
+      WHERE session_id = ${sessionId}
+        AND id > ${afterId}
+        AND (
+          ${types as unknown as string[] | null}::text[] IS NULL
+          OR event_type = ANY(${types as unknown as string[] | null}::text[])
+        )
+      ORDER BY id DESC
+      LIMIT ${limit}
+    `;
+    return {
+      events: rows.map(({ total_count: _totalCount, ...row }) => normalizeEvent(row)).reverse(),
+      total: Number(rows[0]?.total_count ?? 0),
+    };
+  }
+
   async readEventsBetween(
     sessionId: string,
     afterId: number,

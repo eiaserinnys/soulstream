@@ -54,6 +54,7 @@ export function sessionReadAdapter(repositories: PersistenceHostRepositories) {
     getSessionSearchMetadata: async (ids: string[]) => new Map(await read("story_search_metadata", () => storyReads.getSessionSearchMetadata(ids))),
     countTurnSummaries: (id: string) => read("turn_summary_count", () => storyReads.countTurnSummaries(id)),
     loadTurnSummaryRange: (...args: Parameters<typeof storyReads.loadTurnSummaryRange>) => read("turn_summary_range", () => storyReads.loadTurnSummaryRange(...args)),
+    loadTurnTranscript: (...args: Parameters<typeof storyReads.loadTurnTranscript>) => read("turn_transcript", () => storyReads.loadTurnTranscript(...args)),
     searchSessionHistory: (...args: Parameters<typeof historySearch.search>): Promise<SessionHistorySearchResult> => read("history_search", async () => await historySearch.search(...args) as unknown as SessionHistorySearchResult),
     getTurnExcerpt: (id: string, max: number) => read("turn_excerpt", () => sessionReadComposites.getTurnExcerpt(id, max)),
   };

@@ -20,6 +20,14 @@ exports[`session MCP roundtrip > preserves cogito boundary failure > search_sess
 
 exports[`session MCP roundtrip > preserves cogito boundary failure > search_sessions effects 1`] = `"{"observations":[],"notifications":[],"renameKeys":[]}"`;
 
+exports[`session MCP roundtrip > preserves expand_session_turn error {"session_id":"missing","turn":1} > expand_session_turn 1`] = `"{"content":[{"type":"text","text":"세션을 찾을 수 없습니다: missing"}],"structuredContent":{"error":"세션을 찾을 수 없습니다: missing"},"isError":true}"`;
+
+exports[`session MCP roundtrip > preserves expand_session_turn error {"session_id":"missing","turn":1} > expand_session_turn effects 1`] = `"{"observations":[],"notifications":[],"renameKeys":[]}"`;
+
+exports[`session MCP roundtrip > preserves expand_session_turn success {"session_id":"child","turn":"T1"} > expand_session_turn 1`] = `"{"content":[{"type":"text","text":"{\\n  \\"session_id\\": \\"child\\",\\n  \\"turns\\": [\\n    {\\n      \\"turn_number\\": 1,\\n      \\"summary\\": \\"요약 1\\",\\n      \\"turn_start_event_id\\": 1,\\n      \\"final_response_event_id\\": 4,\\n      \\"events\\": [\\n        {\\n          \\"event_id\\": 1,\\n          \\"event_type\\": \\"user_message\\",\\n          \\"text\\": \\"needle 사용자\\",\\n          \\"created_at\\": \\"2026-10-01T00:00:00.000Z\\",\\n          \\"truncated\\": false\\n        },\\n        {\\n          \\"event_id\\": 4,\\n          \\"event_type\\": \\"assistant_message\\",\\n          \\"text\\": \\"needle 완료\\",\\n          \\"created_at\\": \\"2026-10-01T00:00:00.000Z\\",\\n          \\"truncated\\": false\\n        }\\n      ]\\n    }\\n  ],\\n  \\"truncated\\": false,\\n  \\"next_event_id\\": null\\n}"}],"structuredContent":{"session_id":"child","turns":[{"turn_number":1,"summary":"요약 1","turn_start_event_id":1,"final_response_event_id":4,"events":[{"event_id":1,"event_type":"user_message","text":"needle 사용자","created_at":"2026-10-01T00:00:00.000Z","truncated":false},{"event_id":4,"event_type":"assistant_message","text":"needle 완료","created_at":"2026-10-01T00:00:00.000Z","truncated":false}]}],"truncated":false,"next_event_id":null}}"`;
+
+exports[`session MCP roundtrip > preserves expand_session_turn success {"session_id":"child","turn":"T1"} > expand_session_turn effects 1`] = `"{"observations":[],"notifications":[],"renameKeys":[]}"`;
+
 exports[`session MCP roundtrip > preserves get_all boundary failure > list_sessions 1`] = `"{"content":[{"type":"text","text":"folder host get_all failed: repository unavailable"}],"isError":true}"`;
 
 exports[`session MCP roundtrip > preserves get_all boundary failure > list_sessions effects 1`] = `"{"observations":[],"notifications":[],"renameKeys":[]}"`;

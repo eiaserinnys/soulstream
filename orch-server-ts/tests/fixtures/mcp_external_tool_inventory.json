@@ -644,6 +644,10 @@
         "title": {
           "minLength": 1,
           "type": "string"
+        },
+        "run": {
+          "description": "true면 만든 직후 run_card와 같은 방식으로 바로 실행한다. queue와 함께 쓰지 않는다.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -877,6 +881,61 @@
       "type": "object"
     },
     "name": "create_remote_agent_session"
+  },
+  {
+    "description": "턴 번호로 턴의 요약과 원문 이벤트를 조회한다. 기본 원문에는 사용자 입력과 응답만 포함한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "include_tools": {
+          "default": false,
+          "type": "boolean"
+        },
+        "max_chars": {
+          "default": 20000,
+          "maximum": 60000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "to_turn": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            {
+              "pattern": "^T[1-9][0-9]*$",
+              "type": "string"
+            }
+          ]
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            {
+              "pattern": "^T[1-9][0-9]*$",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "turn"
+      ],
+      "type": "object"
+    },
+    "name": "expand_session_turn"
   },
   {
     "description": "trim + case-insensitive exact title로 페이지를 찾는다.",
@@ -2956,6 +3015,29 @@
       "type": "object"
     },
     "name": "request_card_review"
+  },
+  {
+    "description": "드래프트(todo)나 대기(queued) 카드를 지금 실행한다. 시스템이 카드에 설정된 노드, 에이전트, 모델로 세션을 만들어 담당으로 잇고 진행 중으로 옮긴다. 담당 세션이 이미 있는 카드는 새로 만들지 않고 그 세션을 깨운다. 대기열 순서와 동시 실행 상한을 거치지 않는다. 생긴 세션은 부른 쪽의 자식이 아니며 완료 보고가 돌아오지 않으므로 경과는 카드에서 본다. 담당이 아니어도 실행할 수 있다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id"
+      ],
+      "type": "object"
+    },
+    "name": "run_card"
   },
   {
     "description": "한 폴더 안에서 최근 갱신된 최대 2000개 세션과 마크다운의 표시명·제목·본문을 검색한다. truncated=true면 더 오래된 항목은 검색되지 않았다.",

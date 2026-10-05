@@ -35,6 +35,8 @@ describe("user card execution transport",()=>{
   const input=(id:string,key:string)=>({...actor,cardId:id,expectedVersion:1,idempotencyKey:key});
   const agentActor={actorKind:"agent" as const,actorSessionId:"agent-caller",actorUserId:null};
   const agentInput=(id:string,key:string,expectedVersion=1,sessionId="agent-caller")=>({...agentActor,actorSessionId:sessionId,cardId:id,expectedVersion,idempotencyKey:key});
+  const llmActor={actorKind:"llm" as const,actorSessionId:null,actorUserId:null};
+  const llmInput=(id:string,key:string)=>({...llmActor,cardId:id,expectedVersion:1,idempotencyKey:key});
   it("creates once, links the actual session and replays without another turn",async()=>{
     const f=await fixture();const result=await f.service.execute(input(f.cardId,"success"));
     expect(result.execution.state).toBe("started");expect(result.card.status).toBe("running");
@@ -52,6 +54,16 @@ describe("user card execution transport",()=>{
     const operations=await h.sql`SELECT actor_kind,actor_session_id FROM folder_operations WHERE target_id=${f.cardId} AND operation_type='execute_card'`;
     expect(operations.length).toBeGreaterThan(0);
     expect(operations.every(row=>row.actor_kind==='agent'&&row.actor_session_id==='agent-caller')).toBe(true);
+  });
+  it("executes a draft for an external LLM and records a sessionless actor",async()=>{
+    const f=await fixture();const result=await f.service.execute(llmInput(f.cardId,"llm-run"));
+    expect(f.launch).toHaveBeenCalledTimes(1);
+    expect(f.launch.mock.calls[0]![0].callerSource).toBe("system");
+    expect(result.card.status).toBe("running");
+    expect(result.card.assignee_session_id).toBe(result.execution.sessionId);
+    const operations=await h.sql`SELECT actor_kind,actor_session_id FROM folder_operations WHERE target_id=${f.cardId} AND operation_type='execute_card'`;
+    expect(operations.length).toBeGreaterThan(0);
+    expect(operations.every(row=>row.actor_kind==='llm'&&row.actor_session_id===null)).toBe(true);
   });
   it.each(["running","done"] as const)("refuses agent execution while a card is %s",async status=>{
     const f=await fixture();

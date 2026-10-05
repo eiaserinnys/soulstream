@@ -183,7 +183,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     this.activeQueue = queue;
     const unsubscribe = [
       this.client.onNotification((notification) => {
-        this.handleNotification(notification, queue, Boolean(params.resumeSessionId));
+        this.handleNotification(notification, queue, Boolean(params.resumeSessionId), params.model);
       }),
       this.client.onServerRequest((request) => {
         this.handleServerRequest(request, queue);
@@ -400,9 +400,11 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     notification: AppServerNotification,
     queue: AsyncPayloadQueue<SSEEventPayload>,
     suppressThreadStartedSession: boolean,
+    model: string | null | undefined,
   ): void {
     const result = applyNotificationLifecycle(this.notificationLifecycle, notification, {
       suppressThreadStartedSession,
+      model,
       onUnknownNotification: (method) => this.logger.warn(
         { method },
         "Ignoring unknown Codex app-server notification",
