@@ -12,12 +12,15 @@ export interface SettingsSaveScope {
   discard(): void;
 }
 export type SettingsJobDestination = { kind: 'list' } | { kind: 'editor'; jobId?: string } | { kind: 'history'; jobId: string };
+export type SettingsPersistentDestination = { kind: 'list' } | { kind: 'editor'; sessionId?: string };
 export interface SettingsWorkspaceState {
   category: SettingsCategory | null;
   wide: boolean;
   columns: boolean;
   jobs: SettingsJobDestination;
   setJobs(value: SettingsJobDestination): void;
+  persistent: SettingsPersistentDestination;
+  setPersistent(value: SettingsPersistentDestination): void;
   register(id: SettingsCategory, scope: SettingsSaveScope | null): void;
   changeConnection(action: () => void): void;
   select(id: SettingsCategory): void;

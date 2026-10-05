@@ -1,17 +1,12 @@
-import { useTextInputContentHeight } from '../chat/useTextInputContentHeight';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   ScrollView,
   Switch,
-  StyleSheet,
   Text,
-  TextInput,
-  TouchableOpacity,
   View,
-  useWindowDimensions,
 } from 'react-native';
 
 import {
@@ -22,11 +17,20 @@ import {
 } from '../../api/client';
 import { ApiHttpError } from '../../api/clientCore';
 import { useSessionStore } from '../../store/sessionStore';
-import { useTokens, type DesignTokens } from '../../theme';
+import { useTokens } from '../../theme';
 import { SettingsOptionRow as OptionRow } from './SettingsOptionRow';
 import { useSettingsSaveScope, confirmSettingsDiscard } from './SettingsWorkspaceContext';
 import { safeErrorDetail } from '../../../../packages/soul-ui/src/lib/safe-error-detail';
 import { SettingsSection } from './SettingsSection';
+import {
+  SettingsAction as Action,
+  SettingsFormGroup as Group,
+  SettingsInput as Input,
+  SettingsListHeader,
+  SettingsListRow,
+  SettingsNotice as Notice,
+  useSettingsFormStyles,
+} from './SettingsFormParts';
 import { RecurringSchedulePicker } from './RecurringSchedulePicker';
 import {
   defaultRecurringSchedule,
@@ -61,7 +65,7 @@ export function RecurringJobsList({
   refreshKey?: number;
 }) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useSettingsFormStyles();
   const [jobs, setJobs] = useState<RecurringJobDto[]>([]);
   const [loading, setLoading] = useState(false);
   const requestRevision = useRef(0);
@@ -86,14 +90,11 @@ export function RecurringJobsList({
   if (!serverUrl) return <Notice text="연결 설정을 저장하면 반복 작업을 관리할 수 있습니다." />;
   return (
     <View testID="recurring-jobs-list" style={styles.block}>
-      <View style={styles.headerRow}>
-        <View style={styles.grow}><Text style={styles.heading}>반복 작업</Text><Text style={styles.help}>다음 실행 시각은 서버가 계산합니다.</Text></View>
-        <View style={styles.actions}><Action label="새로고침" onPress={() => void load()} testID="recurring-jobs-refresh" /><Action label="새 작업" onPress={onCreate} /></View>
-      </View>
+      <SettingsListHeader title="반복 작업" help="다음 실행 시각은 서버가 계산합니다."><Action label="새로고침" onPress={() => void load()} testID="recurring-jobs-refresh" /><Action label="새 작업" onPress={onCreate} /></SettingsListHeader>
       {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {!loading && !error && jobs.length === 0 ? <Notice text="등록된 반복 작업이 없습니다." /> : null}
-      {jobs.map((job) => <TouchableOpacity key={job.job_id} testID={`recurring-job-${job.job_id}`} style={styles.jobRow} onPress={() => onEdit(job)} accessibilityRole="button"><View style={styles.grow}><Text style={styles.jobName}>{job.name}</Text><Text style={styles.help}>{job.archived_at ? '보관됨' : job.enabled ? `다음 실행 ${formatTime(job.next_run_at)}` : '일시정지됨'}</Text></View><Text style={styles.disclosure}>›</Text></TouchableOpacity>)}
+      {jobs.map((job) => <SettingsListRow key={job.job_id} testID={`recurring-job-${job.job_id}`} title={job.name} detail={job.archived_at ? '보관됨' : job.enabled ? `다음 실행 ${formatTime(job.next_run_at)}` : '일시정지됨'} onPress={() => onEdit(job)} />)}
     </View>
   );
 }
@@ -110,7 +111,7 @@ export function RecurringJobEditor({
   onOpenHistory(jobId: string): void;
 }) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useSettingsFormStyles();
   const identityRevision = useRef(0);
   const previewRevision = useRef(0);
   useEffect(() => { ++identityRevision.current; return () => { ++identityRevision.current; ++previewRevision.current; }; }, [serverUrl, jobId]);
@@ -267,27 +268,26 @@ export function RecurringJobEditor({
     if (draft.agentId || draft.modelPreset) confirmSettingsDiscard(change, saveScreen); else change();
   };
   const Container = workspace ? View : ScrollView;
-  const groupStyle = { padding: t.cardLayout.padding, gap: t.spacing.md };
+  const previewStyle = { gap: t.spacing.xs, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, backgroundColor: t.colors.surfaceMuted };
   if (!serverUrl) return <Notice text="연결 설정을 저장하면 반복 작업을 편집할 수 있습니다." />;
   return <Container testID="recurring-job-editor" {...(workspace ? { style: styles.editor } : { contentContainerStyle: styles.editor, keyboardShouldPersistTaps: 'handled' as const })}>
     {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
     {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{jobId && !job ? <Action label="다시 불러오기" onPress={() => { if (dirty) confirmSettingsDiscard(() => void loadExisting(), saveScreen); else void loadExisting(); }}/>: null}</View> : null}
     <Text style={styles.heading}>{job ? job.name : '새 반복 작업'}</Text>
     <SettingsSection id="recurring-editor-groups" title="" flattened>
-    <View style={groupStyle}>
-    <Text style={styles.heading}>작업 내용</Text>
+    <Group title="작업 내용">
     <Input label="작업 이름" value={draft.name} onChangeText={(name) => update({ name })} />
     <Input label="작업 내용" value={promptDraft.value} multiline editable={promptDraft.ready} onChangeText={promptDraft.setValue} />
-    </View>
-    <View style={groupStyle}><Text style={styles.heading}>일정</Text>
+    </Group>
+    <Group title="일정">
     <Input label="시간대" value={draft.timezone} onChangeText={(timezone) => update({ timezone })} />
     <RecurringSchedulePicker value={draft.schedule} onChange={(schedule) => update({ schedule })} />
     <View style={styles.actions}><Action label="다음 5회" disabled={previewLoading} onPress={() => void previewSchedule()}/></View>
     {previewLoading ? <ActivityIndicator color={t.colors.accent}/> : null}
     {previewError ? <Text accessibilityRole="alert" style={styles.error}>{previewError}</Text> : null}
-    {preview.length > 0 ? <View style={styles.preview}><Text style={styles.heading}>다음 5회</Text>{preview.map(time => <Text key={time} style={styles.help}>{formatTime(time, previewTimezone)}</Text>)}</View> : null}
-    </View>
-    <View style={groupStyle}><Text style={styles.heading}>실행 대상</Text>
+    {preview.length > 0 ? <View style={previewStyle}><Text style={styles.heading}>다음 5회</Text>{preview.map(time => <Text key={time} style={styles.help}>{formatTime(time, previewTimezone)}</Text>)}</View> : null}
+    </Group>
+    <Group title="실행 대상">
     {loadingTargets || loadingNodes ? <ActivityIndicator color={t.colors.accent}/> : null}
     {targetsError || nodesError ? <View><Text accessibilityRole="alert" style={styles.error}>{targetsError ?? nodesError}</Text><Action label="다시 시도" onPress={() => setTargetsReload(value => value + 1)}/></View> : null}
     <Text style={styles.label}>실행 노드</Text><OptionRow label="실행 노드" selected={draft.nodeId} options={nodes.map((node) => ({ id: node.nodeId, label: node.nodeId }))} onSelect={chooseNode} emptyLabel="연결된 노드 없음" />
@@ -295,12 +295,12 @@ export function RecurringJobEditor({
     <Text style={styles.label}>모델</Text><OptionRow label="모델" selected={draft.modelPreset ?? ''} options={[{ id: '', label: '에이전트 기본값' }, ...presets.map((preset) => ({ id: preset.id, label: preset.label, available: preset.available, reason: preset.reason_label }))]} onSelect={(modelPreset) => update({ modelPreset: modelPreset || null })} emptyLabel="에이전트 기본값" />
     <Text style={styles.label}>결과 폴더</Text><OptionRow label="결과 폴더" selected={draft.folderId} options={folders.map((folder) => ({ id: folder.id, label: folder.name }))} onSelect={(folderId) => update({ folderId })} emptyLabel="선택 가능한 폴더가 없습니다." />
     <Text style={styles.help}>선택한 폴더에 결과 세션을 저장합니다.</Text>
-    </View>
-    <View style={groupStyle}><Text style={styles.heading}>실행 방식</Text>
+    </Group>
+    <Group title="실행 방식">
     <Text style={styles.label}>생성·저장 후 자동 실행</Text><Switch accessibilityLabel="생성·저장 후 자동 실행" value={draft.enabled} onValueChange={enabled => update({ enabled })}/>
     <Input label="오프라인 허용 초" value={draft.lateRunWindowSeconds} keyboardType="number-pad" onChangeText={(lateRunWindowSeconds) => update({ lateRunWindowSeconds })} />
     {!workspace ? <Action label={saving ? '저장 중...' : '저장'} disabled={saving || loading || job?.archived_at != null || (Boolean(jobId) && !job)} primary onPress={() => void save()}/> : null}
-    </View></SettingsSection>
+    </Group></SettingsSection>
     {job ? <View style={styles.actions}><Action label="이력" disabled={saving} onPress={() => onOpenHistory(job.job_id)} testID="recurring-job-history" /><Action label={job.enabled ? '일시정지' : '재개'} disabled={saving || job.archived_at !== null} onPress={() => void updateEnabled()} testID="recurring-job-toggle-enabled" /><Action label="지금 실행" disabled={saving || job.archived_at !== null} primary onPress={() => void runNow()} testID="recurring-job-run-now" /><Action label="보관" disabled={saving || job.archived_at !== null} onPress={confirmArchive} testID="recurring-job-archive" /></View> : null}
   </Container>;
 }
@@ -315,7 +315,7 @@ export function RecurringJobHistory({
   onOpenSession(sessionId: string): void;
 }) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useSettingsFormStyles();
   const [loading, setLoading] = useState(true);
   const [runs, setRuns] = useState<RecurringJobRunDto[]>([]);
   const requestRevision = useRef(0);
@@ -334,7 +334,7 @@ export function RecurringJobHistory({
   useEffect(() => { void load(); }, [load]);
   return <View testID="recurring-job-history" style={styles.block}><View style={styles.headerRow}><Text style={styles.heading}>최근 실행</Text><Action label="새로고침" onPress={() => void load()} testID="recurring-job-history-refresh" /></View>{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{loading ? <ActivityIndicator color={t.colors.accent}/> : null}{!loading && !error && runs.length === 0 ? <Notice text="실행 이력이 없습니다." /> : !loading && !error && runs.map((run) => {
     const action = sessionAction(run);
-    return <View key={run.run_id} style={styles.jobRow}><View style={styles.grow}><Text style={styles.jobName}>{run.state}</Text><Text style={styles.help}>{formatTime(run.scheduled_for ?? run.created_at)}</Text>{run.reason_message || action.message ? <Text style={styles.help}>{run.reason_message ?? action.message}</Text> : null}</View><Action label={action.label} disabled={!action.canOpen} onPress={() => onOpenSession(run.session_id)} testID={`recurring-run-open-${run.run_id}`} /></View>;
+    return <View key={run.run_id} style={styles.listRow}><View style={styles.grow}><Text style={styles.body}>{run.state}</Text><Text style={styles.help}>{formatTime(run.scheduled_for ?? run.created_at)}</Text>{run.reason_message || action.message ? <Text style={styles.help}>{run.reason_message ?? action.message}</Text> : null}</View><Action label={action.label} disabled={!action.canOpen} onPress={() => onOpenSession(run.session_id)} testID={`recurring-run-open-${run.run_id}`} /></View>;
   })}</View>;
 }
 
@@ -358,27 +358,6 @@ function sessionAction(run: RecurringJobRunDto): { label: string; canOpen: boole
   return { label: '세션 열기', canOpen: true, message: null };
 }
 
-function Input({ label, ...props }: { label: string } & React.ComponentProps<typeof TextInput>) {
-  const t = useTokens(); const styles = useMemo(() => makeStyles(t), [t]);
-  const [focused, setFocused] = useState(false);
-  const { fontScale } = useWindowDimensions();
-  const lineHeight = t.foundation.typography.body.lineHeight * fontScale;
-  const measurement = useTextInputContentHeight(props.multiline ? props.value ?? '' : '', lineHeight);
-  const singleLine = Math.max(t.hitTarget.min, lineHeight + t.spacing.sm * 2 + styles.input.borderWidth * 2);
-  const height = Math.max(singleLine, props.value ? measurement.contentHeight + styles.input.borderWidth * 2 : 0);
-  const expanded = height > singleLine;
-  return <View><Text style={styles.label}>{label}</Text><TextInput {...props} accessibilityLabel={label}
-    ref={props.multiline ? measurement.ref : undefined} onContentSizeChange={props.multiline ? measurement.onContentSizeChange : undefined}
-    scrollEnabled={props.multiline ? false : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-    style={[styles.input, props.multiline && { height, paddingVertical: expanded ? t.spacing.sm : (singleLine - lineHeight - styles.input.borderWidth * 2) / 2, textAlignVertical: expanded ? 'top' : 'center' }, focused && { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }]}
-    placeholderTextColor={t.colors.textPlaceholder} /></View>;
-}
-function Action({ label, onPress, disabled, primary = false, testID }: { label: string; onPress(): void; disabled?: boolean; primary?: boolean; testID?: string }) {
-  const t = useTokens(); const styles = useMemo(() => makeStyles(t), [t]);
-  return <TouchableOpacity testID={testID} accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.action, primary && styles.actionPrimary, disabled && styles.disabled]}><Text style={[styles.actionText, primary && styles.actionTextPrimary]}>{label}</Text></TouchableOpacity>;
-}
-function Notice({ text }: { text: string }) { const t = useTokens(); const styles = useMemo(() => makeStyles(t), [t]); return <Text style={styles.help}>{text}</Text>; }
-
 function emptyDraft(): EditorDraft { return { name: '', prompt: '', timezone: 'Asia/Seoul', schedule: defaultRecurringSchedule(), nodeId: '', agentId: '', modelPreset: null, folderId: '', lateRunWindowSeconds: '1800', enabled: true }; }
 function draftFromJob(job: RecurringJobDto): EditorDraft { return { name: job.name, prompt: job.prompt, timezone: job.timezone, schedule: recurringScheduleFromExpressions(job.schedule_expressions), nodeId: job.node_id, agentId: job.agent_id, modelPreset: job.model_preset, folderId: job.folder_id, lateRunWindowSeconds: String(job.late_run_window_seconds), enabled: job.enabled }; }
 function writeFromDraft(draft: EditorDraft): RecurringJobWrite { const late = Number(draft.lateRunWindowSeconds); if (!Number.isSafeInteger(late) || late < 1) throw new Error('오프라인 허용 초는 1 이상의 정수여야 합니다.'); return { name: draft.name.trim(), prompt: draft.prompt.trim(), timezone: draft.timezone.trim(), schedule_expressions: recurringScheduleExpressions(draft.schedule), node_id: draft.nodeId.trim(), agent_id: draft.agentId.trim(), model_preset: draft.modelPreset, folder_id: draft.folderId.trim(), late_run_window_seconds: late, enabled: draft.enabled }; }
@@ -393,5 +372,3 @@ function errorMessage(cause: unknown): string {
   return safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
 }
 function isVersionConflict(cause: unknown): cause is ApiHttpError { return cause instanceof ApiHttpError && cause.status === 409; }
-
-function makeStyles(t: DesignTokens) { return StyleSheet.create({ block: { gap: t.spacing.sm }, editor: { paddingBottom: t.spacing.xl, gap: t.spacing.md }, headerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }, grow: { flex: 1, minWidth: 0 }, heading: { ...t.foundation.typography.body, fontWeight: '700', color: t.colors.textPrimary }, label: { ...t.foundation.typography.body, color: t.colors.textSecondary, marginBottom: t.spacing.xs }, help: { ...t.foundation.typography.body, color: t.colors.textMuted }, error: { ...t.foundation.typography.body, color: t.colors.error }, jobRow: { flexDirection: 'row', gap: t.spacing.sm, alignItems: 'center', minHeight: t.hitTarget.min, paddingVertical: t.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.colors.border }, jobName: { ...t.foundation.typography.body, color: t.colors.textPrimary }, disclosure: { color: t.colors.textMuted, fontSize: t.iconSize.standard }, input: { minHeight: t.hitTarget.min, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, borderRadius: t.foundation.radius.field, color: t.colors.textPrimary, paddingHorizontal: t.spacing.sm, paddingVertical: t.spacing.sm, ...t.foundation.typography.body }, optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs, marginBottom: t.spacing.sm }, option: { minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, justifyContent: 'center', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, borderRadius: t.foundation.radius.field, paddingHorizontal: t.spacing.sm, paddingVertical: t.spacing.xs }, optionSelected: { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }, optionText: { ...t.foundation.typography.body, color: t.colors.textSecondary }, optionTextSelected: { color: t.colors.textPrimary, fontWeight: '700' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm }, action: { minHeight: t.hitTarget.min, justifyContent: 'center', alignItems: 'center', paddingHorizontal: t.spacing.md, borderRadius: t.foundation.radius.field, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, actionPrimary: { backgroundColor: t.colors.accent, borderColor: t.colors.accent }, actionText: { ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }, actionTextPrimary: { color: t.colors.accentText }, disabled: { opacity: 0.45 }, preview: { gap: t.spacing.xs, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, backgroundColor: t.colors.surfaceMuted } }); }
