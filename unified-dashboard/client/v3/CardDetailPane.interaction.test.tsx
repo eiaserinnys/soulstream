@@ -7,6 +7,7 @@ import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { CardDetailPane } from "./CardDetailPane";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 
+vi.mock("@seosoyoung/soul-ui/cards/CardSessionVirtualList",()=>({CardSessionVirtualList:({data,itemContent}:any)=><div>{data.map((row:any,i:number)=><div key={i}>{itemContent(i,row)}</div>)}</div>}));
 vi.mock("@seosoyoung/soul-ui", async original => ({
   ...await original<typeof import("@seosoyoung/soul-ui")>(),
   useAuth: () => ({user:null}), useSessionListProvider: () => ({sessions:[],loading:false}),
@@ -94,7 +95,7 @@ it("unchecking targets and focuses the composer without sending",async()=>{
  useCardStore.setState({byId:{inherit:confirmed},details:{inherit:{...detail,card:confirmed}},confirmItem:vi.fn().mockResolvedValue(undefined),addComment:vi.fn()});
  await render();
  const textarea=container.querySelector('textarea')!;
- await act(()=>container.querySelector<HTMLButtonElement>('[role="checkbox"][aria-label="1번 확인"]')!.click());
+ await act(()=>container.querySelector<HTMLButtonElement>('[data-item-id="1"] [role="checkbox"]')!.click());
  expect(useCardStore.getState().confirmItem).toHaveBeenCalledWith("inherit",1,false);
  expect(container.querySelector('.v3-card-target-notice')).not.toBeNull();
  expect(document.activeElement).toBe(textarea);
@@ -120,7 +121,7 @@ it("publishes sample confirmation changes to the shared fixture owner",async()=>
  const sample={...detail,card:{...card,items:[item(1,"reported")]}};
  const change=vi.fn();
  await act(()=>root.render(<CardDetailPane cardId="inherit" folders={[]} onClose={()=>{}} onOpenSession={()=>{}} sampleDetail={sample} onSampleChange={change}/>));
- await act(()=>container.querySelector<HTMLElement>('[role="checkbox"][aria-label="1번 확인"]')!.click());
+ await act(()=>container.querySelector<HTMLElement>('[data-item-id="1"] [role="checkbox"]')!.click());
  expect(change).toHaveBeenCalledTimes(1);
  const updated=change.mock.calls[0][0](sample);
  expect(updated.card.items[0].display).toBe("confirmed");

@@ -26,7 +26,7 @@
 .v3-card-check-item-heading > [data-slot="checkbox"] { flex: none; }
 .v3-card-check-item-title-button {
   display: grid;
-  grid-template-columns: min-content minmax(0, 1fr) max-content;
+  grid-template-columns: min-content minmax(0, 1fr);
   min-width: 0;
   min-height: var(--v3-action-size);
   flex: 1;
@@ -44,13 +44,6 @@
 .v3-card-check-item-number { flex: none; color: var(--v3-text-tertiary); font: var(--v3-type-card) var(--v3-font-family); }
 .v3-card-check-item-title { min-width: 0; flex: 1; font: var(--v3-type-card) var(--v3-font-family); overflow-wrap: anywhere; }
 .v3-card-check-item-title del { text-decoration-thickness: from-font; }
-.v3-card-check-item-state { width: 6.6em; justify-content: flex-end; display: inline-flex; min-width: 0; flex: none; align-items: center; gap: var(--v3-space-1); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); font-weight: 700; }
-.v3-card-check-item-state--doing { color: var(--v3-live); }
-.v3-card-check-item-state--reported { color: var(--v3-complete); }
-.v3-card-check-item-state--changed { color: var(--v3-favorite); }
-.v3-card-check-item-state--fix { color: var(--v3-error); }
-.v3-card-check-item-state--confirmed { color: var(--v3-complete); }
-.v3-card-check-item-state-dot { width: var(--v3-space-1); height: var(--v3-space-1); fill: currentColor; animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
 .v3-card-check-item-body { position: relative; z-index: 2; display: flex; min-width: 0; flex-direction: column; gap: var(--v3-space-2); padding: 0 var(--v3-space-3) var(--v3-space-1) var(--v3-action-size); color: var(--v3-text-primary); }
 .v3-card-check-item-result,
 .v3-card-check-item-reopened,
@@ -61,14 +54,12 @@
 .v3-card-check-item-evidence { display: flex; min-width: 0; flex-wrap: wrap; gap: var(--v3-space-2); align-items: flex-start; }
 .v3-card-check-item-evidence figure { display: flex; width: 120px; min-width: 0; flex-direction: column; gap: var(--v3-space-1); margin: 0; }
 .v3-card-evidence-image { display: block; width: 120px; height: 68px; max-width: 100%; margin: 0; object-fit: contain; border: thin solid var(--v3-stroke-default); border-radius: var(--v3-space-2); background: var(--control-surface); }
-.v3-card-check-item-evidence figcaption { width: 100%; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); overflow-wrap: anywhere; }
 .v3-card-check-item-no-image { color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-card-check-item-links { display: flex; min-width: 0; flex-wrap: wrap; gap: var(--v3-space-2); }
 .v3-shell .v3-card-check-item-links a { display: inline-flex; min-width: 0; min-height: 28px; max-width: 100%; align-items: center; border: thin solid var(--v3-stroke-default); border-radius: var(--v3-action-size); padding-inline: var(--v3-space-3); gap: var(--v3-space-1); background: var(--input); color: var(--v3-text-primary); font: var(--v3-type-meta) var(--v3-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v3-card-check-item-links a > svg { color: var(--v3-accent); }
 .v3-card-check-item-meta { display: flex; min-width: 0; flex-wrap: wrap; gap: var(--v3-space-2); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-card-check-item-foot { display: flex; min-width: 0; min-height: var(--v3-space-8); align-items: center; justify-content: space-between; gap: var(--v3-space-3); }
-.v3-card-check-item-foot .v3-card-check-item-caveat { min-width: 0; font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-shell .v3-card-check-item-target { flex: none; border: 0; padding: 0; background: transparent; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .v3-card-check-item-target:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); border-radius: var(--v3-space-2); }
 .v3-card-confirmed-group { display: flex; min-height: var(--v3-action-size); flex-direction: column; justify-content: center; }
@@ -111,7 +102,7 @@
 .v3-card-now-turn--outside { border: thin solid var(--v3-stroke-default); background: color-mix(in srgb,var(--v3-text-tertiary) 6%,transparent); }
 .v3-card-now-turn--complete { border: thin solid color-mix(in srgb,var(--v3-complete) 12%,transparent); background: color-mix(in srgb,var(--v3-complete) 12%,transparent); }
 .v3-card-now-turn--complete strong { color: var(--v3-complete); }
-.v3-card-now-past-hint { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--v3-space-2); border: 0; background: transparent; padding: 0; margin-top: auto; }
+.v3-card-now-past-hint { flex-direction: row; align-items: center; justify-content: flex-end; gap: var(--v3-space-2); border: 0; background: transparent; padding: 0; margin-top: auto; }
 .v3-card-now-past-hint > span { min-width: 0; flex: 1 1 auto; }
 .v3-shell .v3-card-now-past-hint button { flex: none; white-space: nowrap; border: 0; padding: 0; background: transparent; color: var(--v3-accent); font: inherit; cursor: pointer; }
 .v3-card-now-frame { position: relative; min-width: 0; }
@@ -186,18 +177,10 @@
   .v3-card-check-items-sample-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* A pane's content-box excludes its two thin borders; the approved threshold
-   is 400px measured across the whole card, as used by the split model. */
-@container card-pane (width < calc(400px - 2px)) {
-  .v3-card-check-item-title-button { grid-template-columns: min-content minmax(0, 1fr); }
-  .v3-card-check-item-state { grid-column: 2; justify-content: flex-start; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .v3-card-check-item-row.card-running,
   .v3-card-check-item-row.card-running::before,
   .v3-card-check-item-shell.card-running-base::before,
-  .v3-card-check-item-state-dot { animation: none; }
   .v3-card-check-item-row[data-item-display="doing"] { background: color-mix(in srgb,var(--v3-live) 6%,transparent); }
 }
 
@@ -219,3 +202,14 @@
 .v3-postit-card[data-card-enhanced] .v3-card-progress-dot--todo { background: var(--postit-ink); }
 .v3-shell .v3-postit-card[data-card-enhanced] .v3-postit-turn { padding: var(--postit-gap-2); border-radius: var(--v3-space-2); background: color-mix(in srgb,var(--v3-favorite) 12%,transparent); color: var(--postit-ink); }
 .v3-postit-card[data-card-enhanced] .v3-postit-turn strong { margin-right: var(--v3-space-1); font-weight: 700; }
+
+.v3-card-note-frame { border: thin solid var(--v3-stroke-default); border-radius: var(--v3-space-3); padding: var(--v3-space-3); }
+.v3-card-note-frame .markdown-body { font: var(--v3-type-body) var(--v3-font-family); }
+.v3-card-image-expanded { margin: 0; display: flex; flex-direction: column; gap: var(--v3-space-3); }
+.v3-card-image-expanded figcaption { color: var(--v3-text-primary); font: var(--v3-type-body) var(--v3-font-family); }
+
+.v3-workspace[data-testid="v3-card-workspace"] { display: block; }
+.v3-card-workspace-pair { position: relative; display: grid; width: 100%; height: 100%; min-width: 0; margin-inline-start: auto; }
+.v3-card-workspace-pair > .v3-card-workspace-left-divider { position: absolute; inset-block: 0; inset-inline-start: calc(-1 * var(--v3-space-4)); }
+
+.v3-card-workspace-left-divider > .cursor-col-resize { height: 100%; }

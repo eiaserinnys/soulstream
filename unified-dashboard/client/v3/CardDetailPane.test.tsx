@@ -4,6 +4,7 @@ import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardTimeline } from "./CardTimeline";
 import { CardSessionHistory } from "./CardSessionHistory";
 import { CardDetailPane, cardRequestMarkdown } from "./CardDetailPane";
+vi.mock("@seosoyoung/soul-ui/cards/CardSessionVirtualList",()=>({CardSessionVirtualList:({data,itemContent}:any)=><div>{data.map((row:any,i:number)=><div key={i}>{itemContent(i,row)}</div>)}</div>}));
 const lookup = vi.hoisted(() => ({ sessions: [] as import("@seosoyoung/soul-ui").SessionSummary[], loading: false }));
 vi.mock("@seosoyoung/soul-ui", async importOriginal => ({...await importOriginal<typeof import("@seosoyoung/soul-ui")>(), useAuth: () => ({user:{picture:"https://example.test/user.png"}}), useSessionListProvider: vi.fn(() => lookup)}));
 vi.mock("@seosoyoung/soul-ui/cards/card-store", async importOriginal => {
@@ -37,10 +38,10 @@ describe("card final UX",()=>{
   const button=html.match(new RegExp('<button[^>]*aria-label="'+label+'"[^>]*>'))![0];
   expect(button.includes('disabled=""')).toBe(false);
  });
- it("shows the first three linked sessions and a remaining count using the folder tree",()=>{
+ it("shows all linked sessions without a collapsed remaining count",()=>{
   seed();lookup.sessions=Array.from({length:5},(_,i)=>({agentSessionId:`s${i}`,callerSessionId:i?"s0":undefined,displayName:`세션 ${i}`,status:"completed",eventCount:2,createdAt:"2026-09-30",updatedAt:"2026-09-30"}));
   useCardStore.setState(s=>({details:{c:{...s.details.c,sessions:lookup.sessions.map(s=>({sessionId:s.agentSessionId})) as never}}}));
-  const html=renderToStaticMarkup(<CardSessionHistory sessionIds={lookup.sessions.map(s=>s.agentSessionId)} collapsedLimit={3} onOpenSession={()=>{}}/>);expect(html.match(/data-session-id=/g)).toHaveLength(3);expect(html).toContain("2개 더");
+  const html=renderToStaticMarkup(<CardSessionHistory sessionIds={lookup.sessions.map(s=>s.agentSessionId)} onOpenSession={()=>{}}/>);expect(html.match(/data-session-id=/g)).toHaveLength(5);expect(html).not.toContain("2개 더");
  });
  it("previews the whole markdown report with only a three-line clamp",()=>{
   seed();useCardStore.setState(s=>({details:{c:{...s.details.c,reports:[{id:"paragraphs",sessionId:null,title:"문단 보고",format:"markdown",body:"첫 문단\n\n두 번째 문단\n\n세 번째 문단",createdAt:"2026-09-30"}]}}}));

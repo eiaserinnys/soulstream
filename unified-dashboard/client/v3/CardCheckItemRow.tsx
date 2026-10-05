@@ -1,7 +1,7 @@
 import { Checkbox } from "@seosoyoung/soul-ui";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
-import { Circle, Link, TriangleAlert } from "lucide-react";
+import { Link, TriangleAlert } from "lucide-react";
 import "./v3-card-check-items.css";
 
 const displayLabels:Record<CardCheckItem["display"],string>={
@@ -14,6 +14,7 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
 }) {
  const dropped=item.display==="dropped";
  const display=checked&&pending?"confirmed":item.display;
+ const label=`${item.id} ${item.title}, ${displayLabels[display]}${display==="fix"?` ${item.fixOpen}`:""}`;
  const showBody=expanded||dropped;
  const images=item.evidence.filter(evidence=>evidence.type==="image");
  const links=item.evidence.filter(evidence=>evidence.type==="link");
@@ -23,31 +24,27 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
  return <div className={`v3-card-check-item-shell${display==="doing"?" card-running-base":""}`}>
   <article className={`v3-card-check-item-row${display==="doing"?" card-running":""}`} data-item-id={item.id} data-item-display={display}>
    <div className="v3-card-check-item-heading">
-    <Checkbox variant="card-item" aria-label={`${item.id}번 확인`} checked={checked} disabled={dropped||pending}
+    <Checkbox variant="card-item" aria-label={label} checked={checked} disabled={dropped||pending}
      onCheckedChange={value=>onConfirmChange(Boolean(value))}/>
     <button type="button" className="v3-card-check-item-title-button" aria-expanded={showBody} aria-label={`${item.id}번 항목 ${showBody?"접기":"펼치기"}`}
      disabled={dropped} onClick={onToggleExpanded}>
      <span className="v3-card-check-item-number">{item.id}</span>
      <span className="v3-card-check-item-title">{dropped?<del>{item.title}</del>:item.title}</span>
-     <span className={`v3-card-check-item-state v3-card-check-item-state--${display}`}>
-      {display==="doing"?<Circle className="v3-card-check-item-state-dot" aria-hidden="true"/>:null}
-      <span>{displayLabels[display]}{display==="fix"?` ${item.fixOpen}`:""}</span>
-     </span>
     </button>
    </div>
    {showBody?<div className="v3-card-check-item-body">
     {display==="changed"&&item.reopened?<p className="v3-card-check-item-reopened"><strong>확인한 뒤 바뀜</strong><span>{item.reopened}</span></p>:null}
     {item.result?<p className="v3-card-check-item-result">{item.result}</p>:null}
+    {item.caveat?<p className="v3-card-check-item-caveat"><TriangleAlert className="h-3 w-3" aria-hidden="true"/><span>{item.caveat}</span></p>:null}
     <div className="v3-card-check-item-evidence" data-evidence-type="image">
-     {images.map((evidence,index)=><figure key={`${evidence.url}:${index}`}>
+     {images.map((evidence,index)=><figure key={`${evidence.url}:${index}`} title={evidence.label}>
       <MarkdownImage variant="card-evidence" src={evidence.url} alt={evidence.label} onOpen={onOpenImage}/>
-      <figcaption>{evidence.label}</figcaption>
      </figure>)}
      {images.length===0?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
     </div>
     {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=><a key={`${evidence.url}:${index}`} href={evidence.url} target="_blank" rel="noreferrer" title={evidence.label}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>)}</div>:null}
     <div className="v3-card-check-item-foot">
-     {item.caveat?<p className="v3-card-check-item-caveat" title={when}><TriangleAlert className="h-3 w-3" aria-hidden="true"/><span>{item.caveat}</span></p>:metadata}
+     {metadata}
      {!dropped?<button type="button" className="v3-card-check-item-target" onClick={onTargetItem}>고칠 점 남기기</button>:null}
     </div>
    </div>:null}

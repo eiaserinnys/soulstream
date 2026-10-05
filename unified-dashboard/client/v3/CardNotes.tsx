@@ -15,7 +15,7 @@ export function CardNotes({brief,notes,sessions=[],portraitUrl,userPortraitUrl,o
  return <div className="v3-card-notes" data-testid="card-notes">
   <section className="v3-card-note-brief">
    <h3>인계 요약</h3>
-   {brief?<MarkdownContent content={brief} codeBlockLayout="document" onImageClick={onImageClick}/>:<p className="v3-detail-empty">인계 요약이 없습니다.</p>}
+   <div className="v3-card-note-frame">{brief?<MarkdownContent content={brief} codeBlockLayout="document" onImageClick={onImageClick}/>:<p className="v3-detail-empty">인계 요약이 없습니다.</p>}</div>
   </section>
   <section className="v3-card-notes-list" aria-label="노트">
    <div className="v3-detail-section-head"><h3>노트</h3><span>{allNotes.length}건</span></div>
@@ -25,7 +25,7 @@ export function CardNotes({brief,notes,sessions=[],portraitUrl,userPortraitUrl,o
     const linked=note.sessionId?sessions.find(session=>session.sessionId===note.sessionId):undefined;
     const author=note.authorKind==="agent"?(linked?.displayName||note.authorId):note.authorId||"사용자";
     const agent=note.authorKind==="agent",portrait=agent?portraitUrl:userPortraitUrl;
-    return <div className="v3-card-note-row" key={note.id} data-card-note-id={note.id} data-card-note-session={note.sessionId??undefined}>
+    return <div className="v3-card-note-row v3-card-note-frame" key={note.id} data-card-note-id={note.id} data-card-note-session={note.sessionId??undefined}>
      <ProfileAvatar role={agent?"assistant":"user"} hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={agent?"🤖":"👤"}/>
      <div className="v3-card-note-content"><div className="v3-card-note-header"><strong>{author}</strong><time dateTime={note.createdAt}>{formatTime(note.createdAt)}</time></div>
       <MarkdownContent content={note.body} onImageClick={onImageClick}/></div>

@@ -60,12 +60,12 @@ test("small D: past hint and all tabs fit the dragged card pane", async ({ page 
     const past = await geometry();
     const layout = await detail.evaluate(el => {
       const hint = el.querySelector(".v3-card-now-past-hint")!;
-      const button = hint.querySelector("button")!, span = hint.querySelector("span")!;
+      const button = hint.querySelector("button")!, span = hint.querySelector("span");
       const tabs = el.querySelector<HTMLElement>('[role="tablist"]')!;
       const range = document.createRange(); range.selectNodeContents(button);
       const r = button.getBoundingClientRect(), t = tabs.getBoundingClientRect();
       return { buttonHeight: r.height, lineHeight: parseFloat(getComputedStyle(button).lineHeight),
-        buttonLines: range.getClientRects().length, overlap: span.getBoundingClientRect().right > r.left,
+        buttonLines: range.getClientRects().length, overlap: span ? span.getBoundingClientRect().right > r.left : false,
         tabWidth: tabs.clientWidth, tabScrollWidth: tabs.scrollWidth, tabsTop: t.top, tabsBottom: t.bottom,
         tabBoxes: [...tabs.querySelectorAll('[role="tab"]')].map(tab => { const b = tab.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }; }),
         tabsLeft: t.left, tabsRight: t.right,
@@ -218,7 +218,7 @@ test("small F: default ask uses two lines and compact keeps one", async ({ page,
 });
 
 
-const selectors = [".v3-card-check-item-meta", ".v3-card-check-item-target", ".v3-card-check-item-no-image", ".v3-card-detail-tab[aria-selected=false]", ".v3-card-now-turn--user strong", ".v3-card-check-item-links a"];
+const selectors = [".v3-card-check-item-meta", ".v3-card-check-item-target", ".v3-card-check-item-no-image", ".v3-card-detail-tab[aria-selected=false]", ".v3-card-now-turn--user span", ".v3-card-check-item-links a"];
 for (const width of [1440, 1920]) for (const webgl of [false, true]) {
   test(`followup ABC ${width} glass ${webgl ? "on" : "off"}`, async ({ page }) => {
     // Software WebGL needs multiple real frames for the six contrast captures.

@@ -8,15 +8,11 @@ import {
   activateRunSession,
   buildDescriptionMutation,
   buildRunTree,
-  cardWorkspaceWidthForKey,
   clampWorkspaceSplit,
-  clampCardWorkspaceWidth,
-  defaultCardWorkspaceWidth,
   descriptionMarkdown,
   isFolderWorkspaceChatVisible,
   reduceWorkspaceEscape,
   reconcileFolderSessions,
-  resizeCardWorkspaceWidth,
   resolveRunSessions,
   workspaceSplitForKey,
 } from "./folder-workspace-run-model";
@@ -56,26 +52,6 @@ describe("task workspace split", () => {
     expect(workspaceSplitForKey(73.5, "ArrowRight")).toBe(75);
     expect(workspaceSplitForKey(31, "Home")).toBe(DEFAULT_WORKSPACE_SPLIT);
     expect(workspaceSplitForKey(60, "Enter")).toBeNull();
-  });
-});
-
-describe("card workspace width", () => {
-  it("uses the sixty-percent default until the 466px cap in both reviewed widths", () => {
-    expect(defaultCardWorkspaceWidth(1552)).toBe(466);
-    expect(defaultCardWorkspaceWidth(1072)).toBe(466);
-    expect(defaultCardWorkspaceWidth(500)).toBe(300);
-  });
-
-  it("clamps drag and two-percent keyboard steps to the card-specific bounds", () => {
-    expect(clampCardWorkspaceWidth(600, 1552)).toBe(466);
-    expect(resizeCardWorkspaceWidth(466, 1552, -120)).toBe(388);
-    expect(cardWorkspaceWidthForKey(466, 1552, "ArrowLeft")).toBeCloseTo(434.96);
-    expect(cardWorkspaceWidthForKey(434.96, 1552, "ArrowRight")).toBe(466);
-    expect(cardWorkspaceWidthForKey(346, 1552, "Home")).toBe(466);
-    expect(cardWorkspaceWidthForKey(200, 500, "ArrowLeft")).toBe(190);
-    expect(cardWorkspaceWidthForKey(200, 500, "Enter")).toBeNull();
-    expect(clampCardWorkspaceWidth(0, 500)).toBe(125);
-    expect(clampCardWorkspaceWidth(430, 400)).toBe(240);
   });
 });
 

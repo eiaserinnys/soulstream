@@ -164,7 +164,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
      <CardTimeline key={cardId} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)}/>
     </section>
     <section className="v3-detail-section v3-card-session-history" data-card-section="sessions" data-card-tab-panel="sessions" hidden={tab!=="sessions"}>
-     <CardSessionHistory key={`${cardId}:${initialSessionId??""}`} sessionIds={sessionIds} collapsedLimit={3} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} initialSessionId={initialSessionId} onOpenSession={onOpenSession}/>
+     <CardSessionHistory key={`${cardId}:${initialSessionId??""}`} sessionIds={sessionIds} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} initialSessionId={initialSessionId} onOpenSession={onOpenSession}/>
     </section>
     <section className="v3-detail-section v3-description-content" data-card-tab-panel="notes" hidden={tab!=="notes"}>
      <CardNotes key={cardId} brief={card.brief??""} notes={detail?.notes??[]} sessions={detail?.sessions??[]} portraitUrl={portrait} userPortraitUrl={user?.picture??""}/>
