@@ -68,6 +68,7 @@ describe("PersistentSessionsTab", () => {
     await renderTab(request);
     await waitFor(() => expect(document.body.textContent).toContain("목록을 읽지 못했습니다."));
     expect(document.body.textContent).not.toContain("등록된 영구 에이전트 세션이 없습니다.");
+    expect(button("세션 추가")).toBeUndefined();
     clickButton("다시 시도");
     await waitFor(() => expect(document.body.textContent).toContain("서소영 관제"));
     expect(document.body.textContent).not.toContain("목록을 읽지 못했습니다.");

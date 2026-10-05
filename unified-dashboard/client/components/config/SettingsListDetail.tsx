@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 /**
  * 설정 탭의 목록-상세 틀. 반복 작업과 영구 에이전트 세션이 같은 구현을 쓴다.
- * 왼쪽에 목록, 오른쪽에 선택한 항목의 상세가 놓인다.
+ * 왼쪽에 목록, 오른쪽에 선택한 항목의 상세가 놓인다. 좁은 화면은 한 칸이며,
+ * 칸의 최소 폭을 0으로 두어 긴 이름이 칸 밖으로 밀어내지 못하게 한다.
  */
 export function SettingsListDetailFrame({ testId, list, children }: {
   testId: string;
@@ -10,7 +11,7 @@ export function SettingsListDetailFrame({ testId, list, children }: {
   children: ReactNode;
 }) {
   return (
-    <section data-testid={testId} className="grid min-h-0 gap-4 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]">
+    <section data-testid={testId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]">
       <aside className="min-h-0 rounded border border-border bg-muted/20 p-3">{list}</aside>
       <div className="min-h-0 space-y-4 overflow-y-auto pr-1">{children}</div>
     </section>

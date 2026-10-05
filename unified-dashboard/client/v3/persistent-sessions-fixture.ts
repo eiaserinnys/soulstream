@@ -39,7 +39,7 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
     initial_instruction: "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.",
     unavailable_reason: null,
   };
-  let listFailed = false;
+  let firstListFailureAt = 0;
   let registrationFailed = false;
   let created = 0;
   const reply = (value: unknown, status = 200) => Response.json(value, { status });
@@ -53,7 +53,11 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
     const id = path.split("/")[3];
 
     if (path === "/api/persistent-sessions" && method === "GET") {
-      if (scenario === "load-error" && !listFailed) { listFailed = true; return fail(503, "NODE_UNAVAILABLE", "예시: 세션 목록을 읽지 못했습니다."); }
+      // 개발 빌드의 StrictMode가 효과를 두 번 실행하므로, 첫 실패 직후의 조회도 함께 실패시킨다.
+      if (scenario === "load-error" && (firstListFailureAt === 0 || Date.now() - firstListFailureAt < 300)) {
+        firstListFailureAt ||= Date.now();
+        return fail(503, "NODE_UNAVAILABLE", "예시: 세션 목록을 읽지 못했습니다.");
+      }
       const active = sessions.filter((session) => session.persistent);
       return reply({ sessions: structuredClone(active), total: active.length, create_defaults: defaults });
     }

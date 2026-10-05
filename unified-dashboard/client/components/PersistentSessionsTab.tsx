@@ -269,8 +269,8 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>{busy ? "저장 중..." : "변경 저장"}</Button>
         </div>
-      </> : <>
-        {defaults?.unavailable_reason ? <SettingsAlert>{defaults.unavailable_reason}</SettingsAlert> : null}
+      </> : defaults ? <>
+        {defaults.unavailable_reason ? <SettingsAlert>{defaults.unavailable_reason}</SettingsAlert> : null}
         {registration ? <SettingsAlert>세션은 만들어졌으나 등록하지 못했습니다. “{registration.name}” 세션이 일반 세션으로 남아 있습니다.</SettingsAlert> : null}
         <div>
           {nameField}
@@ -301,7 +301,7 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
           label="첫 메시지 (선택)"
           rows={4}
           value={editor.firstMessage}
-          placeholder={defaults?.initial_instruction}
+          placeholder={defaults.initial_instruction}
           onChange={(firstMessage) => setEditor((current) => ({ ...current, firstMessage }))}
         />
         <div className="flex flex-wrap gap-2">
@@ -309,7 +309,7 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
             ? <Button type="button" size="sm" disabled={busy} onClick={() => void retryRegistration()}>{busy ? "등록 중..." : "등록 다시 시도"}</Button>
             : <Button type="button" size="sm" disabled={busy || !editor.modelPreset} onClick={() => void create()}>{busy ? "추가 중..." : "세션 추가"}</Button>}
         </div>
-      </>}
+      </> : null}
     </SettingsListDetailFrame>
   );
 }
