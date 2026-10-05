@@ -2867,6 +2867,13 @@
               ],
               "type": "string"
             },
+            "context_scope": {
+              "enum": [
+                "full",
+                "minimal"
+              ],
+              "type": "string"
+            },
             "default_preset": {
               "minLength": 1,
               "type": "string"

@@ -81,6 +81,31 @@ describe("AgentConfigService", () => {
     expect(registry.get("codex-default")?.model).toBe("gpt-5.3-codex-spark");
   });
 
+  it("round-trips context_scope through plan, apply, and read", async () => {
+    const profile = {
+      id: "codex-default",
+      name: "Codex",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+      context_scope: "minimal",
+    } as const;
+
+    const plan = await service.planProfileUpdate(profile);
+    expect(plan.changed).toBe(true);
+    expect(plan.semanticChanges).toEqual([
+      expect.objectContaining({
+        op: "replace_agent",
+        after: expect.objectContaining({ context_scope: "minimal" }),
+      }),
+    ]);
+
+    const result = await service.replaceProfile(profile);
+    expect(result.changed).toBe(true);
+    expect(fs.readFileSync(configPath, "utf-8")).toContain("context_scope: minimal");
+    expect(readAgentsConfig(configPath).agents[0]?.context_scope).toBe("minimal");
+    expect(registry.get("codex-default")?.context_scope).toBe("minimal");
+  });
+
   it("rejects YAML identity edits for profiles owned by a DB overlay", async () => {
     service = new AgentConfigService({
       configPath,

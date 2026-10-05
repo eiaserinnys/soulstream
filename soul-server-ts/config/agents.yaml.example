@@ -7,7 +7,7 @@
 # AgentProfile.env와 키 호환 — 운영자가 같은 양식으로 관리 가능.
 #
 # 필수 필드: id, name, backend (claude|codex|openai-agents), workspace_dir
-# 선택 필드: model, max_turns, allowed_tools, disallowed_tools, portrait_path
+# 선택 필드: model, max_turns, allowed_tools, disallowed_tools, portrait_path, context_scope
 
 agents:
   - id: codex-default
@@ -20,6 +20,7 @@ agents:
     #   - bash
     #   - read
     # portrait_path: /var/lib/soulstream/portraits/codex-default.png
+    # context_scope: minimal  # 폴더에서 물려받는 자료와 목록(page_context, 폴더 몫 atom_context, board_workspace, running_sessions, cogito_context)을 붙이지 않는다. 기본은 full
 
   - id: zombie-labyrinth-bot
     name: Zombie Labyrinth Bot

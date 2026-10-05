@@ -871,6 +871,13 @@
               ],
               "type": "string"
             },
+            "context_scope": {
+              "enum": [
+                "full",
+                "minimal"
+              ],
+              "type": "string"
+            },
             "default_preset": {
               "minLength": 1,
               "type": "string"
@@ -4397,6 +4404,13 @@
               ],
               "type": "string"
             },
+            "context_scope": {
+              "enum": [
+                "full",
+                "minimal"
+              ],
+              "type": "string"
+            },
             "default_preset": {
               "minLength": 1,
               "type": "string"
@@ -5246,6 +5260,13 @@
                 "plan",
                 "dontAsk",
                 "auto"
+              ],
+              "type": "string"
+            },
+            "context_scope": {
+              "enum": [
+                "full",
+                "minimal"
               ],
               "type": "string"
             },
@@ -7323,6 +7344,13 @@
                 "plan",
                 "dontAsk",
                 "auto"
+              ],
+              "type": "string"
+            },
+            "context_scope": {
+              "enum": [
+                "full",
+                "minimal"
               ],
               "type": "string"
             },

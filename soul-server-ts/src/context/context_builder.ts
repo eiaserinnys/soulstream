@@ -26,6 +26,7 @@ import {
   extractAgentAtomContextSpecs,
   extractFolderAtomContextSpecs,
   extractFolderProjectPageIds,
+  isMinimalContextScope,
   normalizeSettings,
   prioritizeAtomContextSpecs,
   resolveContextFilterContext,
@@ -38,6 +39,7 @@ import {
 } from "./session_context_items.js";
 import {
   NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
+  type PageContextResolution,
   type PageContextResolver,
 } from "./page_context_resolver.js";
 import { extractAtomContextSourceSpecs } from "./session_context_sources.js";
@@ -134,13 +136,15 @@ export class ExecutionContextBuilder {
       );
     }
 
-    const runningSessionsItem = await fetchRunningSessionsContextItem(
-      this.db,
-      this.logger,
-      task.agentSessionId,
-    );
-    if (runningSessionsItem) {
-      contextItems.push(runningSessionsItem);
+    if (!isMinimalContextScope(agent)) {
+      const runningSessionsItem = await fetchRunningSessionsContextItem(
+        this.db,
+        this.logger,
+        task.agentSessionId,
+      );
+      if (runningSessionsItem) {
+        contextItems.push(runningSessionsItem);
+      }
     }
     contextItems.push(await this.buildAssignedCardContext(task, options.inputId));
     return { contextItems };
@@ -244,15 +248,18 @@ export class ExecutionContextBuilder {
       : null;
     const folder = await this._resolveFolder(task, resumeContext.session);
     const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);
-    const pageContext = await this.pageContextResolver.resolve(task, agent, this.cfg.atom, {
-      pageIds: folder.projectPageIds,
-      excludedAtomNodeIds: sessionAtomSpecs.map((spec) => spec.nodeId),
-    });
+    const minimal = isMinimalContextScope(agent);
+    const pageContext: PageContextResolution = minimal
+      ? { kind: "no-page-anchor" }
+      : await this.pageContextResolver.resolve(task, agent, this.cfg.atom, {
+          pageIds: folder.projectPageIds,
+          excludedAtomNodeIds: sessionAtomSpecs.map((spec) => spec.nodeId),
+        });
     const pageContextItem = pageContext.kind === "page-context" ? pageContext.contextItem : null;
     const atomSources = prioritizeAtomContextSpecs({
       session: sessionAtomSpecs,
       pageNodeIds: pageContext.kind === "page-context" ? pageContext.atomNodeIds : [],
-      folder: folder.atomContextSpecs ?? [],
+      folder: minimal ? [] : folder.atomContextSpecs ?? [],
       agent: extractAgentAtomContextSpecs(agent),
     });
     const { primaryFolder, filterParameters } = await resolveContextFilterContext({
@@ -264,12 +271,14 @@ export class ExecutionContextBuilder {
         compileAtomContext(this.cfg.atom, atomSources.agent, this.logger, filterParameters),
         compileAtomContext(this.cfg.atom, atomSources.folder, this.logger, filterParameters),
         compileAtomContext(this.cfg.atom, atomSources.session, this.logger, filterParameters),
-        fetchBoardWorkspaceContextItem(
-          this.db,
-          this.logger,
-          folder.folderId,
-          resumeContext.folderSessions,
-        ),
+        minimal
+          ? null
+          : fetchBoardWorkspaceContextItem(
+              this.db,
+              this.logger,
+              folder.folderId,
+              resumeContext.folderSessions,
+            ),
       ]);
     const contextManifest = mergeContextManifests(
       [
@@ -280,12 +289,14 @@ export class ExecutionContextBuilder {
       ],
       extractPageContextTruncation(pageContextItem),
     );
-    const runningSessionsItem = await fetchRunningSessionsContextItem(
-      this.db,
-      this.logger,
-      task.agentSessionId,
-      resumeContext.runningSessions,
-    );
+    const runningSessionsItem = minimal
+      ? null
+      : await fetchRunningSessionsContextItem(
+          this.db,
+          this.logger,
+          task.agentSessionId,
+          resumeContext.runningSessions,
+        );
     const predecessorSummaryItem = generation
       ? null
       : await buildPredecessorSummaryContextItem(
@@ -294,7 +305,7 @@ export class ExecutionContextBuilder {
           task.agentSessionId,
           resumeContext.predecessor,
         );
-    const cogitoContextItem = await this._fetchCogitoContext();
+    const cogitoContextItem = minimal ? null : await this._fetchCogitoContext();
     const { workingDir, maxTurns } = resolveProfileRuntimeSettings(task, this.registry);
     const prepared = assemblePreparedContext({
       nodeId: this.cfg.nodeId,

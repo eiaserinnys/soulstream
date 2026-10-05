@@ -191,7 +191,7 @@ describe("buildPersistentCheckpoint", () => {
     const budget = { ...PERSISTENT_CHECKPOINT_BUDGET, summaryTokens: 70, totalTokens: 2_000 };
     const { text, stats } = itemText({ material, cards: makeCards(), standingInstructions: [], ownSessionId }, budget);
 
-    expect(text).not.toContain("지속 지침");
+    expect(text).not.toContain("지속 지시");
     expect(text).toContain("T1–T");
     expect(text).toContain("미요약 구간 요청");
     expect(text).toContain("미요약 구간 답변");
@@ -224,5 +224,18 @@ describe("buildPersistentCheckpoint", () => {
     expect(text).toContain("요약되지 않은 답변");
     expect(text).toContain("외 7개 미요약 이벤트 생략");
     expect(stats.estimatedTokens).toBeLessThanOrEqual(20_000);
+  });
+
+  it("titles the standing-instruction section 지속 지시", () => {
+    const { text } = itemText({
+      material: makeMaterial(),
+      cards: makeCards(),
+      standingInstructions: ["답은 짧게 한다"],
+      ownSessionId,
+    });
+
+    expect(text).toContain("## 지속 지시");
+    expect(text).toContain("답은 짧게 한다");
+    expect(text).not.toContain("지속 지침");
   });
 });

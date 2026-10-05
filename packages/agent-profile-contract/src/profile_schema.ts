@@ -236,6 +236,16 @@ export const AgentProfileSchema = z.object({
   allowed_tools: z.array(z.string()).optional(),
   disallowed_tools: z.array(z.string()).optional(),
   claude_permission_mode: z.enum(CLAUDE_PERMISSION_MODES).optional(),
+  /**
+   * 문맥 주입 범위. 없거나 "full"이면 지금까지와 같다.
+   *
+   * "minimal"이면 폴더에서 물려받는 자료와 목록 다섯 블록(page_context, 폴더 몫 atom_context,
+   * board_workspace, running_sessions, cogito_context)을 첫 턴, 세대 교체, 후속 턴에 붙이지 않는다.
+   * 프로필 소유 atom_contexts(시스템 프롬프트), soulstream_session, assigned_cards, 세대 체크포인트와
+   * predecessor 요약, 위임자가 직접 준 자료(task.contextItems와 session_atom_context),
+   * 폴더 프롬프트는 그대로 남는다.
+   */
+  context_scope: z.enum(["full", "minimal"]).optional(),
   env: z.record(z.string(), z.string()).optional(),
   mcp_profile: z.string().min(1).optional(),
   portrait_path: z.string().optional(),
