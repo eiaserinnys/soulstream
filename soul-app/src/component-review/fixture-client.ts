@@ -30,7 +30,9 @@ const api = {
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
 };
 const entryShellApi = {
-  ...createReviewApi('normal', { home: true, entryShell: true, onCardMutation: (mutation) => entryShellMutationLog.push(mutation) }),
+  ...createReviewApi('normal', { home: true, entryShell: true,
+    directCardTouch: typeof window !== 'undefined' && new URLSearchParams(window.location?.search ?? '').get('cardTouch') === 'direct',
+    onCardMutation: (mutation) => entryShellMutationLog.push(mutation) }),
   getCatalog: async () => ({
     folders: entryShellFolders,
     sessions: entryShellCatalogSessions,

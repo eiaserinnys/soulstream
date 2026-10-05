@@ -72,15 +72,24 @@ test('상태 칩은 담당 상세와 분리된 선택 버튼이고 우하단 메
   expect(showAppContextMenu).not.toHaveBeenCalled();
 });
 
-test('직접 표시되는 카드는 눌러 홀드한 뒤 놓으면 복사·색상·7개 상태 메뉴를 연다', async () => {
-  const card = cardFixture({ status: 'todo' });
+test.each(['카드 상세', '담당 상세'])('직접 완료 카드의 실제 %s 입력면은 홀드 후 놓기에 메뉴만 연다', async (surface) => {
+  (showAppContextMenu as jest.Mock).mockClear();
+  const card = cardFixture({ status: 'done' });
   const api = { getCard: jest.fn(), updateCard: jest.fn(), setCardStatus: jest.fn(), executeCard: jest.fn() };
-  const screen = render(<PostItCard api={api as any} card={card} variant="compact" onOpen={() => {}} />);
-  const holdSurface = screen.getByTestId(`postit-card-hold-${card.id}`);
+  const onOpen = jest.fn();
+  const screen = render(<PostItCard api={api as any} card={card} variant="compact" onOpen={onOpen} />);
+  const label = `${card.title} ${surface}`;
+  const owner = screen.UNSAFE_getAllByProps({ accessibilityLabel: label }).find(node => node.props.onPress)!;
+  expect(owner.props.delayLongPress).toBe(350);
+  expect(owner.props.onLongPress).toEqual(expect.any(Function));
+  expect(owner.props.onPressOut).toEqual(expect.any(Function));
+  const holdSurface = screen.getByLabelText(label);
 
   fireEvent(holdSurface, 'pressIn');
   fireEvent(holdSurface, 'longPress');
   fireEvent(holdSurface, 'pressOut');
+  fireEvent.press(holdSurface);
+  expect(onOpen).not.toHaveBeenCalled();
   await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 
   const actions = (showAppContextMenu as jest.Mock).mock.calls[0][0];
@@ -91,6 +100,17 @@ test('직접 표시되는 카드는 눌러 홀드한 뒤 놓으면 복사·색�
   expect(api.updateCard).not.toHaveBeenCalled();
   expect(api.setCardStatus).not.toHaveBeenCalled();
   expect(api.executeCard).not.toHaveBeenCalled();
+  expect(showAppContextMenu).toHaveBeenCalledTimes(1);
+});
+
+test('보드 관리 본문·담당은 direct hold 없이 Pan 단일 owner를 유지한다', () => {
+  const card = cardFixture();
+  const screen = render(<PostItCard api={{} as any} card={card} boardManaged onOpen={() => {}} />);
+  for (const surface of ['카드 상세', '담당 상세']) {
+    const owner = screen.UNSAFE_getAllByProps({ accessibilityLabel: `${card.title} ${surface}` }).find(node => node.props.onPress)!;
+    expect(owner.props.onLongPress).toBeUndefined();
+    expect(owner.props.onPressOut).toBeUndefined();
+  }
 });
 
 test('ID 기울기는 기존 웹과 같은5개이며 HTML보고는 실행하지 않고 본문 텍스트만 표시한다', () => {

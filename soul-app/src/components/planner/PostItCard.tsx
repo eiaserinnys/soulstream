@@ -145,18 +145,18 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
   const openContextMenuAfterHold = () => {
     showCardContextMenu();
   };
+  const directHoldProps = boardManaged ? {} : {
+    delayLongPress: BOARD_LONG_PRESS_MS,
+    onLongPress: onDirectLongPress,
+    onPressOut: onDirectRelease,
+  };
   return <>
-    <Pressable
-      testID={!boardManaged ? `postit-card-hold-${card.id}` : undefined}
-      accessible={false}
-      delayLongPress={BOARD_LONG_PRESS_MS}
-      onLongPress={boardManaged ? undefined : onDirectLongPress}
-      onPressOut={boardManaged ? undefined : onDirectRelease}
-    >
+    <View accessible={false}>
       <AppGlassCard role="canvas" cornerRadius={roles.radius}>
         <View testID={`postit-card-${card.id}`} style={{ width: roles.width, height: roles.height, flexShrink: 0,
           backgroundColor: roles.paper, borderRadius: roles.radius, transform: [{ rotate: `${postItRotation(card.id)}deg` }] }}>
           <Pressable ref={openTarget} testID={`postit-open-${card.id}`} onPress={open} accessibilityLabel={`${card.title} 카드 상세`}
+            {...directHoldProps}
             style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding, paddingBottom: roles.padding + roles.footerHeight + roles.gap }}>
             <Text testID={`postit-title-${card.id}`} style={roles.title} numberOfLines={2}>{card.title}</Text>
             <View testID={`postit-body-area-${card.id}`} style={{ marginTop: roles.gap, flex: 1, minHeight: 0, overflow: 'hidden' }}
@@ -171,6 +171,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
           <View testID={`postit-footer-${card.id}`} style={{ position: 'absolute', bottom: roles.padding, left: roles.padding, right: roles.padding,
             height: roles.footerHeight, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
             <Pressable accessibilityRole="button" accessibilityLabel={`${card.title} 담당 상세`} onPress={open}
+              {...directHoldProps}
               style={{ flex: 1, minWidth: 0, minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
               {avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
                 style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round }} />
@@ -191,7 +192,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
           </View>
         </View>
       </AppGlassCard>
-    </Pressable>
+    </View>
     {menu || requestedStatus ? <CardStatusMenu api={api} card={card} entry={menu?.entry ?? 'status'} visible={menu?.visible ?? false}
       requestedStatus={requestedStatus ?? undefined} onClose={closeMenu}
       onBack={menu?.entry === 'color' ? openContextColorBack : undefined} onDismiss={menuDismissed} /> : null}

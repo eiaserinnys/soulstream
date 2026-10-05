@@ -39,7 +39,12 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
     const scope = captureAuthScope().generation;
     setReadError(null);
     try { const next = await api.getCard(card.id); if (active.current && scope === captureAuthScope().generation) setDetail(next); }
-    catch (cause) { if (active.current && scope === captureAuthScope().generation) setReadError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) {
+      if (active.current && scope === captureAuthScope().generation) {
+        setReadError(cause instanceof Error ? cause.message : String(cause));
+        if (requestedStatus) setShowTransitionResult(true);
+      }
+    }
   };
   useEffect(() => {
     if (previousEntry.current !== entry) {

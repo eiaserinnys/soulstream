@@ -83,11 +83,19 @@ export const fixtureOptions = [
 ] as const;
 
 export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; entryShell?: boolean; emptyReview?: boolean; emptyCards?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
+  directCardTouch?: boolean;
   folderSessionPages?: FolderSessionPageScenario;
   onFolderSessionPageRequest?(pageId: string, cursor: string | null, releaseResponse?: () => void): void;
   onCardMutation?(mutation: ReviewCardMutation): void;
   onCreateCard?(body: Parameters<ApiClient['createCard']>[0]): void } = {}) {
   const cards = new Map((options.emptyCards ? [] : initialCards).map((card) => [card.id, { ...card }]));
+  const failedDirectReads = new Set<string>();
+  if (options.directCardTouch) for (const [id, title] of [
+    ['public-direct-done', '완료 카드 실제 본문·담당 홀드'],
+    ['public-direct-error-close', '상태 조회 실패 후 닫기'],
+    ['public-direct-error-retry', '상태 조회 실패 후 다시 조회'],
+  ]) cards.set(id, { ...makeCard('done'), id, title, folderId: entryShellFolders[2].id,
+    version: id === 'public-direct-done' ? 1 : 21 });
   if (options.entryShell) {
     const card = {
       ...makeCard('running'),
@@ -182,6 +190,10 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       return read({cards:filtered.slice(offset,offset+limit),nextCursor:offset+limit<filtered.length?String(offset+limit):null});
     },
     getCard: async (id) => {
+      if (options.directCardTouch && id.startsWith('public-direct-error-') && !failedDirectReads.has(id)) {
+        failedDirectReads.add(id);
+        throw new Error('공개 예시: 상태 선택 후 첫 카드 조회 실패');
+      }
       const card = cards.get(id);
       if (!card) throw new Error('알 수 없는 공개 예시 카드');
       return { card, reports: card.status === 'review' || card.status === 'done' ? [{ id: `report-${id}`, cardId: id, title: '공개 보고', format: 'markdown', body: '변경을 확인해 주세요.', createdAt: time }] : [], comments: [{id:'public-comment',cardId:id,authorKind:'user',authorId:'public-user',sessionId:null,kind:'comment',body:'요청과 결과를 확인합니다.',createdAt:time}], questions: card.blockedKind === 'question' ? [{ id: 'public-question', cardId: id, sessionId: 'public-session', text: '공개 질문입니다.', options: null, answer: null, askedAt: time }] : [], sessions:options.entryShell
