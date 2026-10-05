@@ -23,7 +23,7 @@ const validSelectedCandidate = (index = 1) => ({
   session_id: `session-${index}`,
   label: "Prior session",
   line: "A relevant summary",
-  score: 2,
+  score: 3,
   raw_score: 2.65,
 });
 

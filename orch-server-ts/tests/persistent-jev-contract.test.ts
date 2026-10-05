@@ -9,7 +9,7 @@ const observation = {
     session_id: "session-2",
     label: "이전 작업",
     line: "요청의 배경을 정했습니다.",
-    score: 2,
+    score: 3,
     raw_score: 2.65,
     sources: ["search", "recent_completed"],
   }],

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
-import type { PersistentContextService } from "./persistent_context_service.js";
+import type { PersistentContextNullReason, PersistentContextService } from "./persistent_context_service.js";
 
 export const persistentContextRouteAuthRequirements = {
   "POST /api/persistent-context/host/evaluate": true,
@@ -10,6 +10,7 @@ export const persistentContextRouteAuthRequirements = {
 export type PersistentContextHostRouteOptions = {
   readonly service: PersistentContextService;
   readonly authBearerToken: string;
+  readonly logNullReason: (reason: PersistentContextNullReason, sessionId: string, elapsedMs: number) => void;
   readonly environment?: string;
 };
 
@@ -35,6 +36,11 @@ export function registerPersistentContextHostRoutes(
     }
 
     const deadlineAt = receivedAt + input.budget_ms;
+    const logNull = (reason: PersistentContextNullReason) => options.logNullReason(
+      reason,
+      input.session_id,
+      Math.max(0, Date.now() - receivedAt),
+    );
     const controller = new AbortController();
     const deadlineTimer = setTimeout(() => controller.abort(), Math.max(1, deadlineAt - Date.now()));
     const onAborted = () => controller.abort();
@@ -49,8 +55,16 @@ export function registerPersistentContextHostRoutes(
         deadlineAt,
         signal: controller.signal,
       });
-      return reply.type("application/json").send({ observation: Date.now() < deadlineAt ? result.observation : null });
+      if (result.observation === null) {
+        return reply.type("application/json").send({ observation: null });
+      }
+      if (Date.now() >= deadlineAt) {
+        logNull("cancelled_or_deadline");
+        return reply.type("application/json").send({ observation: null });
+      }
+      return reply.type("application/json").send({ observation: result.observation });
     } catch {
+      logNull("unexpected_error");
       return reply.type("application/json").send({ observation: null });
     } finally {
       clearTimeout(deadlineTimer);

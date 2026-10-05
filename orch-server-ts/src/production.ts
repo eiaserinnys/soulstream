@@ -644,6 +644,9 @@ export async function createLiveProductionApplication(
     ),
     persistentContextRoutes: {
       authBearerToken: config.auth_bearer_token,
+      logNullReason: (reason, sessionId, elapsedMs) => context.warn(
+        `Persistent context evaluation skipped: reason ${reason}, session ${sessionId}, elapsed_ms ${elapsedMs}`,
+      ),
       service: createPersistentContextService({
         candidates: createPersistentContextCandidateRepositories({
           searchDbConnectionFactory,
