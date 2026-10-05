@@ -161,7 +161,7 @@ describe('eventActions', () => {
     expect(text).toContain('해제 시각');
     expect(text).toContain('이미 해제됨');
 
-    const withoutRateLimitFields = { ...data };
+    const withoutRateLimitFields: Record<string, unknown> = { ...data };
     delete withoutRateLimitFields.rate_limit_type;
     delete withoutRateLimitFields.resets_at;
     expect(buildSystemEventText(ev('error', withoutRateLimitFields)))
