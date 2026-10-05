@@ -679,7 +679,7 @@ function serializeDate(d: Date | null | undefined): string | null {
 
 const OFFSET_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/i;
 
-/** 오프셋이 명시된 ISO 8601만 받는다. 형식이 맞지 않거나 존재하지 않는 시각이면 null. */
+/** 오프셋이 명시된 ISO 8601 형식만 받는다. 형식이 맞지 않으면 null. */
 function parseOffsetTimestamp(value: string): Date | null {
   if (!OFFSET_TIMESTAMP.test(value)) return null;
   const parsed = new Date(value);

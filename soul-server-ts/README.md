@@ -7,7 +7,7 @@ Agents backends, and sends session events back to the orchestrator.
 Durable session state and PostgreSQL access are hosted by the orchestrator. The
 worker does not open a PostgreSQL connection during normal runtime.
 
-Dot ingress, subscriptions, and outbound delivery are owned by the orchestrator. Worker internal MCP registers 106 tools, including the two outbound dot tools, which always forward to the orchestrator. The worker public listener mounts no MCP route. Connector caller metadata source `external-llm` is preserved. See [dot subscriptions](../docs/dot-mcp-events.md).
+Dot ingress, subscriptions, and outbound delivery are owned by the orchestrator. Worker internal MCP registers 113 tools, including the two outbound dot tools, which always forward to the orchestrator. The worker public listener mounts no MCP route. Connector caller metadata source `external-llm` is preserved. See [dot subscriptions](../docs/dot-mcp-events.md).
 
 ## Responsibilities
 
