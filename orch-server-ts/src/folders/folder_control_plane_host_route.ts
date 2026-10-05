@@ -23,6 +23,7 @@ const operations = new Set([
   "get_default",
   "get_assigned_card_context",
   "get_supervised_card_context",
+  "resolve_card_references",
   "get_folder",
   "get_all",
   "get_catalog",
@@ -102,6 +103,7 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
     cardLimit: z.number().int().nonnegative().parse(body.card_limit),
     questionLimit: z.number().int().nonnegative().parse(body.question_limit),
   });
+  if (operation === "resolve_card_references") return service.resolveReferences(stringArray(body, "refs"));
   if (operation === "get_folder") return await readFolderSnapshot(
     service,
     requiredString(body, "folder_id"),

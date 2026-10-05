@@ -4,6 +4,8 @@ import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
+import { parseCardReference, type CardReferenceLookupResult } from "@soulstream/mcp-contract";
+import { findCardSessionByOrdinal, findCardsByNumber, readCardChildOrdinals, readSessionReferences } from "./card_reference_repository.js";
 import type { SupervisedCardSnapshot } from "./supervised_card_context.js";
 import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
 import { randomUUID } from "node:crypto";
@@ -34,6 +36,7 @@ import { claimableCardSessions, assertSingleCardAssignee, translateAssigneeConfl
 export type PolicyAdmission = {runId:string;leaseToken:string;workerInput:Record<string,unknown>};
 export type CardMutationParams = FolderActorParams & { cardId: string; expectedVersion?: number; idempotencyKey?: string | null; reason?: string | null };
 export type CardMutationChange = {result:CardMutationResult;previousStatus?:CardStatus;previousAssigneeSessionId?:string | null;committedCard?:CardRow};
+const shortTitle = (title: string) => [...title].slice(0, 60).join("");
 export class CardControlPlaneService {
   private readonly repo: CardRepository;
   private readonly core: CardMutationCore;
@@ -45,6 +48,25 @@ export class CardControlPlaneService {
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
   getSupervisedCardContext(params: { sessionId: string; folderIds: string[] | null; cardLimit: number; questionLimit: number }): Promise<SupervisedCardSnapshot> {
     return readSupervisedCardContext(this.repoSql, params);
+  }
+  getCardChildOrdinals(cardId: string) { return readCardChildOrdinals(this.repoSql, cardId); }
+  getSessionReferences(sessionIds: string[]) { return readSessionReferences(this.repoSql, sessionIds); }
+  /** Resolves `#412` and `#412.s2` to full IDs. A card the caller may not see answers like a number nobody was given. */
+  async resolveReferences(refs: string[], allowFolder: (folderId: string) => boolean = () => true): Promise<CardReferenceLookupResult[]> {
+    const parsed = refs.map(ref => ({ ref, reference: parseCardReference(ref) }));
+    const numbers = new Set(parsed.flatMap(({ reference }) => reference ? [reference.cardNumber] : []));
+    const cards = new Map((await findCardsByNumber(this.repoSql, [...numbers])).map(card => [card.number, card]));
+    return Promise.all(parsed.map(async ({ ref, reference }): Promise<CardReferenceLookupResult> => {
+      if (!reference || (reference.kind !== "card" && reference.kind !== "session"))
+        return { ref, error: `카드 번호(#412)와 카드에 붙은 세션 번호(#412.s2)만 풀 수 있습니다: ${ref}` };
+      const card = cards.get(reference.cardNumber);
+      if (!card || !allowFolder(card.folder_id)) return { ref, error: `#${reference.cardNumber} 번호의 카드가 없습니다.` };
+      if (reference.kind === "card") return { ref, kind: "card", id: card.id, title: shortTitle(card.title) };
+      const { session, total } = await findCardSessionByOrdinal(this.repoSql, card.id, reference.ordinal!);
+      return session
+        ? { ref, kind: "session", id: session.session_id, title: session.display_name ? shortTitle(session.display_name) : "이름 없음" }
+        : { ref, error: `카드 #${card.number}에 붙은 세션은 ${total}개입니다. ${ref}는 없습니다.` };
+    }));
   }
   getFolder(folderId: string, includeCompleted = true) { return this.repo.getSnapshot(folderId, includeCompleted); }
   listFolders(params: Parameters<CardRepository["listFolders"]>[0]) { return this.repo.listFolders(params); }

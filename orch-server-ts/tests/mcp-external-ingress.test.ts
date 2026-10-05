@@ -132,6 +132,52 @@ describe("orchestrator dedicated external MCP ingress", () => {
     expect(await client.callTool({ name: "send_to_external_llm", arguments: { recipient_id: "recipient", text: "hello" } })).toMatchObject({ isError: true });
     expect(execute).not.toHaveBeenCalled();
   });
+  describe("card number references", () => {
+    const folderRow = { id: "folder-a" };
+    const detail = { card: { id: "card-uuid-412", folder_id: "folder-a", number: 412, title: "퍼시스턴트 에이전트 세션" },
+      reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] };
+    function cardOptions(access = { restricted: false, allowedFolderIds: [] as string[] }) {
+      // A card in folder-a. The fake mirrors the real service contract: refs in, one result per ref, access decided by allowFolder.
+      const resolveReferences = vi.fn(async (refs: string[], allowFolder: (folderId: string) => boolean) => refs.map(ref => allowFolder("folder-a")
+        ? { ref, kind: "card" as const, id: "card-uuid-412", title: "퍼시스턴트 에이전트 세션" }
+        : { ref, error: "#412 번호의 카드가 없습니다." }));
+      const getCard = vi.fn(async (id: string) => id === "card-uuid-412" ? detail : null);
+      const options = { cards: { cardServiceProvider: async () => ({ resolveReferences, getCard }),
+        provider: { listFolders: async () => [folderRow, { id: "folder-b" }], listSessionAssignments: () => ({}) },
+        resolveAccess: () => access } } as unknown as McpHostOptions;
+      return { options, resolveReferences, getCard };
+    }
+    it("runs get_card with the full ID behind a title header when called as #412", async () => {
+      const { options, resolveReferences, getCard } = cardOptions();
+      const { url } = await web(options); const client = await connect("modern", url);
+      const result = await client.callTool({ name: "get_card", arguments: { card_id: "#412" } });
+      expect(result.isError).not.toBe(true);
+      expect((result.content as { text: string }[])[0]!.text).toBe("번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」");
+      expect(result.structuredContent).toMatchObject({ card: { id: "card-uuid-412", number: 412 } });
+      expect(getCard).toHaveBeenCalledWith("card-uuid-412");
+      expect(resolveReferences).toHaveBeenCalledTimes(1);
+      expect(resolveReferences.mock.calls[0]![0]).toEqual(["#412"]);
+    });
+    it("leaves a full-ID call exactly as before: no lookup, no header", async () => {
+      const { options, resolveReferences } = cardOptions();
+      const { url } = await web(options); const client = await connect("modern", url);
+      const viaEndpoint = await client.callTool({ name: "get_card", arguments: { card_id: "card-uuid-412" } });
+      const direct = await executor.executeMcpTool(options, "get_card", { card_id: "card-uuid-412" },
+        { principal: "external", callerSessionId: null, nodeId: "test-node" });
+      expect(viaEndpoint.content).toEqual(direct.content);
+      expect(viaEndpoint.structuredContent).toEqual((direct as { structuredContent?: unknown }).structuredContent);
+      expect((viaEndpoint.content as unknown[]).length).toBe(1);
+      expect(resolveReferences).not.toHaveBeenCalled();
+    });
+    it("answers a card in a folder the credential cannot see like a number nobody holds", async () => {
+      const { options, getCard } = cardOptions({ restricted: true, allowedFolderIds: ["folder-b"] });
+      const { url } = await web(options); const client = await connect("modern", url);
+      const result = await client.callTool({ name: "get_card", arguments: { card_id: "#412" } });
+      expect(result.isError).toBe(true);
+      expect((result.content as { text: string }[])[0]!.text).toBe("#412 번호의 카드가 없습니다.");
+      expect(getCard).not.toHaveBeenCalled();
+    });
+  });
   it("rejects every internal-only definition before execution", async () => {
     const execute = vi.spyOn(executor, "executeMcpTool");
     const { url } = await web(); const client = await connect("modern", url);

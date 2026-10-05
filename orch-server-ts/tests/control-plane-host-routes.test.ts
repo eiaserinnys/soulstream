@@ -34,6 +34,23 @@ describe("control-plane host routes", () => {
     expect(response.statusCode).toBe(200);expect(response.json()).toEqual(snapshot);
     expect(getAssignedCardContext).toHaveBeenCalledOnce();expect(getAssignedCardContext).toHaveBeenCalledWith("owner");
   });
+  it("resolves card references only for the service bearer", async () => {
+    const results = [{ ref: "#412", kind: "card", id: "card-uuid", title: "제목" }, { ref: "#9999", error: "#9999 번호의 카드가 없습니다." }];
+    const resolveReferences = vi.fn(async () => results), app = Fastify(); apps.push(app);
+    registerFolderControlPlaneHostRoute(app, {
+      authBearerToken: token, environment: "production", serviceProvider: async () => ({}) as FolderControlPlaneService,
+      cardServiceProvider: async () => ({ resolveReferences }) as unknown as CardControlPlaneService,
+    });
+    const url = "/api/folders/host/resolve_card_references";
+    expect((await app.inject({ method: "POST", url, payload: { refs: ["#412"] } })).statusCode).toBe(401);
+    expect(resolveReferences).not.toHaveBeenCalled();
+    const response = await app.inject({ method: "POST", url, headers: { authorization: `Bearer ${token}` }, payload: { refs: ["#412", "#9999"] } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(results);
+    expect(resolveReferences).toHaveBeenCalledWith(["#412", "#9999"]);
+    const invalid = await app.inject({ method: "POST", url, headers: { authorization: `Bearer ${token}` }, payload: { refs: "#412" } });
+    expect(invalid.statusCode).toBe(422);
+  });
   it("passes an HTTP disconnect through as the event-search cancellation signal", async () => {
     let searchSignal: AbortSignal | undefined;
     let markStarted!: () => void;
