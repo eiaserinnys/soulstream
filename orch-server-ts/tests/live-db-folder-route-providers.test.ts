@@ -95,6 +95,10 @@ describe("live DB folder route providers", () => {
       "SELECT * FROM folder_get_all()",
       expect.stringContaining("GROUP BY folder_id"),
     ]);
+
+    harness.calls.length = 0;
+    await expect(repository.folderRouteProvider.listSessionAssignments(false)).resolves.toEqual({});
+    expect(harness.normalizedCalls()).toEqual([]);
   });
 
 

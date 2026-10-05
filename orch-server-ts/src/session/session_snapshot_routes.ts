@@ -58,6 +58,7 @@ function parseSessionSnapshotQuery(query: unknown): SessionSnapshotQuery {
     backend: stringArrayQuery(query, "backend"),
     updated_after: stringQuery(query, "updated_after"),
     feed_only: booleanQuery(query, "feed_only"),
+    feed_display: booleanQuery(query, "feed_display"),
     offset: numberQuery(query, "offset"),
     limit: numberQuery(query, "limit"),
     cursor: stringQuery(query, "cursor"),

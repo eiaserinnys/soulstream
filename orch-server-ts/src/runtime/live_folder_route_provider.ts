@@ -31,7 +31,8 @@ export function createLiveFolderProvider(
       `;
       return rows.flatMap(serializeFolderRow);
     },
-    async listSessionAssignments() {
+    async listSessionAssignments(includeSessions = true) {
+      if (!includeSessions) return {};
       const sql = await sqlResolver.resolveSql();
       const rows = await sql`
         SELECT session_id, folder_id, display_name FROM sessions

@@ -11,6 +11,7 @@ import { advanceSessionFeedLastEventId } from
   "../src/node/event_feed_semantic_watermark.js";
 import type { EventIngressQuerySql } from
   "../src/node/event_ingress_repository.js";
+import { createLiveDbCatalogRepository } from "../src/runtime/live_db_catalog_repository.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
 import { loadSessionFeedStates } from
   "../src/session/session_feed_state_repository.js";
@@ -76,6 +77,92 @@ describePostgres("session feed PostgreSQL projection", () => {
     expect(winner[0]).toMatchObject({ applied: true, last_message: { eventId: 11 } });
     expect(loser[0]).toMatchObject({ applied: false, last_message: { eventId: 11 } });
     expect(page.map((row) => row.session_id)).toEqual(["feed-b", "feed-a"]);
+  });
+
+  it("filters, orders, counts, and pages 411 feed display rows in PostgreSQL", async () => {
+    await sql`
+      INSERT INTO folders (id, name, parent_folder_id, settings)
+      VALUES
+        ('feed-display-root', 'Feed display root', NULL, '{}'),
+        ('feed-display-visible', 'Feed display visible', 'feed-display-root', '{}'),
+        ('feed-display-excluded', 'Feed display excluded', NULL, ${sql.json({ excludeFromFeed: true })}::jsonb),
+        ('feed-display-denied', 'Feed display denied', NULL, '{}')
+    `;
+    await sql`
+      INSERT INTO sessions (
+        session_id, folder_id, session_type, status, review_state,
+        created_at, updated_at, last_message
+      )
+      SELECT
+        'feed-display-' || lpad(n::text, 4, '0'),
+        'feed-display-visible',
+        'claude',
+        CASE WHEN n <= 7 THEN 'running' ELSE 'completed' END,
+        CASE WHEN n BETWEEN 8 AND 411 THEN 'needs_review' ELSE 'not_required' END,
+        TIMESTAMPTZ '2026-01-01T00:00:00Z' + n * INTERVAL '1 day',
+        TIMESTAMPTZ '2026-01-01T00:00:00Z' + n * INTERVAL '1 day',
+        jsonb_build_object(
+          'type', 'assistant_message',
+          'preview', 'activity',
+          'timestamp', CASE WHEN n = 7
+            THEN TIMESTAMPTZ '2025-12-31T00:00:00Z'
+            ELSE TIMESTAMPTZ '2026-01-01T00:00:00Z' + (412 - n) * INTERVAL '1 minute'
+          END
+        )
+      FROM generate_series(1, 9387) AS n
+    `;
+    await sql`
+      INSERT INTO sessions (
+        session_id, folder_id, session_type, status, review_state,
+        created_at, updated_at, last_message
+      ) VALUES
+        ('feed-display-excluded-running', 'feed-display-excluded', 'claude', 'running', 'not_required', NOW(), NOW(), NULL),
+        ('feed-display-llm-running', 'feed-display-visible', 'llm', 'running', 'not_required', NOW(), NOW(), NULL),
+        ('feed-display-denied-running', 'feed-display-denied', 'claude', 'running', 'not_required', NOW(), NOW(), NULL)
+    `;
+    const repository = createLiveDbCatalogRepository({
+      sql: sql as unknown as LivePostgresSql,
+    });
+    const access = { restricted: true, allowedFolderIds: ["feed-display-root"] };
+
+    const first = await repository.listSessionSnapshots({
+      access,
+      feedDisplay: true,
+      offset: 0,
+      limit: 30,
+    });
+    expect(first.sessions).toHaveLength(30);
+    expect(first.sessions.slice(0, 7).map((session) => session.agentSessionId)).toEqual(
+      Array.from({ length: 7 }, (_, index) => `feed-display-${String(index + 1).padStart(4, "0")}`),
+    );
+    expect(first.sessions.map((session) => session.agentSessionId)).toEqual(
+      Array.from({ length: 30 }, (_, index) => `feed-display-${String(index + 1).padStart(4, "0")}`),
+    );
+    expect(first).toMatchObject({
+      total: 411,
+      cursor: "30",
+      nextCursor: "30",
+      hasMore: true,
+    });
+    expect(first).not.toHaveProperty("sessionList");
+
+    const last = await repository.listSessionSnapshots({
+      access,
+      feedDisplay: true,
+      offset: 390,
+      limit: 30,
+    });
+    expect(last.sessions).toHaveLength(21);
+    expect(last.sessions.map((session) => session.agentSessionId)).toEqual(
+      Array.from({ length: 21 }, (_, index) => `feed-display-${String(index + 391).padStart(4, "0")}`),
+    );
+    expect(last).toMatchObject({
+      total: 411,
+      cursor: null,
+      nextCursor: null,
+      hasMore: false,
+    });
+    expect(last).not.toHaveProperty("sessionList");
   });
 
   it("keeps the legacy signature but rejects non-chat values", async () => {
