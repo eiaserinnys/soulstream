@@ -962,3 +962,48 @@ describe("send_message_to_session", () => {
     }
   });
 });
+
+describe("number references reach local tools as full IDs", () => {
+  const FULL_CARD_ID = "9f3e1c2a-0000-4000-8000-000000000007";
+  const FULL_SESSION_ID = "5d0c1a2b-0000-4000-8000-000000000001";
+  function withCardLookup(runtime: ReturnType<typeof makeRuntime>) {
+    const lookup = vi.fn(async (refs: string[]) => refs.map((ref) => ref === "#7"
+      ? { ref, kind: "card" as const, id: FULL_CARD_ID, title: "카드 제목" }
+      : { ref, kind: "session" as const, id: FULL_SESSION_ID, title: "세션 이름" }));
+    (runtime.db as unknown as { resolveCardReferences: typeof lookup }).resolveCardReferences = lookup;
+    return lookup;
+  }
+
+  it("create_agent_session passes the full card ID to createTask", async () => {
+    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const lookup = withCardLookup(runtime);
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: { agent_id: "codex-default", prompt: "child work", caller_session_id: "caller-sess-1", card_id: "#7" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(lookup).toHaveBeenCalledWith(["#7"]);
+    expect(runtime.createTask).toHaveBeenCalledWith(expect.objectContaining({ cardId: FULL_CARD_ID }));
+    expect(result.content?.[0]).toEqual({ type: "text", text: "번호 참조 #7 → 카드 「카드 제목」" });
+  });
+
+  it("send_message_to_session passes the full session ID to the intervention", async () => {
+    const runtime = makeRuntime({ delivered: true });
+    const lookup = withCardLookup(runtime);
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "send_message_to_session",
+      arguments: { target_session_id: "#7.s1", message: "hello", caller_session_id: "caller-sess-1" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(lookup).toHaveBeenCalledWith(["#7.s1"]);
+    expect(runtime.addIntervention).toHaveBeenCalledTimes(1);
+    expect((runtime.addIntervention.mock.calls[0]![0] as AddInterventionParams).agentSessionId).toBe(FULL_SESSION_ID);
+    expect(result.content?.[0]).toEqual({ type: "text", text: "번호 참조 #7.s1 → 세션 「세션 이름」" });
+  });
+});
