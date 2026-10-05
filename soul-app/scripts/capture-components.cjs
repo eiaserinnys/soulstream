@@ -366,6 +366,43 @@ async function runCardChecksCaptures(browser, base) {
   await runCardChecksViewport(browser, base, { name: 'ipad-landscape-1210x834', width: 1210, height: 834, state: 'normal', theme: 'dark' });
 }
 
+async function runManuscriptChatCaptures(browser, base) {
+  const scenarios = [
+    { name: 'iphone-light', width: 390, height: 844, theme: 'light', mobile: true },
+    { name: 'iphone-dark', width: 390, height: 844, theme: 'dark', mobile: true },
+    { name: 'ipad-light', width: 834, height: 1194, theme: 'light', mobile: false },
+    { name: 'ipad-dark', width: 834, height: 1194, theme: 'dark', mobile: false },
+  ];
+  for (const scenario of scenarios) {
+    const context = await browser.newContext({
+      viewport: { width: scenario.width, height: scenario.height },
+      screen: { width: scenario.width, height: scenario.height },
+      deviceScaleFactor: 1,
+      isMobile: scenario.mobile,
+      hasTouch: true,
+    });
+    await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    page.on('pageerror', (error) => result.errors.push({ name: scenario.name, message: error.message }));
+    await page.addInitScript((theme) => {
+      localStorage.setItem('soul-app-settings', JSON.stringify({ state: { appearance: theme }, version: 0 }));
+    }, scenario.theme);
+    await page.goto(`${base}${prefix}index.html?section=chat&theme=${scenario.theme}`);
+    await page.getByTestId('component-review').waitFor();
+    const sample = page.getByTestId('manuscript-presentation-scroll');
+    await sample.scrollIntoViewIfNeeded();
+    await sample.evaluate((element) => { element.scrollLeft = 0; });
+    await page.screenshot({ path: path.join(output, `${scenario.name}-default.png`), fullPage: true });
+    await sample.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
+    await page.screenshot({ path: path.join(output, `${scenario.name}-manuscript.png`), fullPage: true });
+    await page.getByTestId('chat-composer-text-input').last().scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(output, `${scenario.name}-manuscript-composer.png`) });
+    result.viewports.push({ name: scenario.name, viewport: { width: scenario.width, height: scenario.height }, theme: scenario.theme });
+    await context.close();
+  }
+}
+
 (async () => {
   await fs.mkdir(output, { recursive: true });
   server.listen(0, '127.0.0.1');
@@ -382,6 +419,8 @@ async function runCardChecksCaptures(browser, base) {
     result.interactions.push('미인증 직접 URL: gallery mount 차단');
     if (captureMode === 'card-checks') {
       await runCardChecksCaptures(browser, base);
+    } else if (captureMode === 'manuscript-chat') {
+      await runManuscriptChatCaptures(browser, base);
     } else {
       const phone = devices['iPhone 14 Pro Max'];
       await runViewport(browser, base, { ...phone, defaultBrowserType: undefined }, 'iphone14-pro-max');

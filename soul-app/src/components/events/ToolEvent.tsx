@@ -18,6 +18,7 @@ interface Props {
       timelineId: string,
     ) => Promise<ToolTraceResponse>;
   } | null;
+  presentation?: 'default' | 'manuscript';
 }
 
 /**
@@ -32,9 +33,9 @@ interface Props {
  * - 헤더는 도구명 + input preview + 결과 상태 아이콘.
  * - 펼침 시 input과 result를 위아래로 보여준다.
  */
-export function ToolEvent({ start, result, sessionId, api }: Props) {
+export function ToolEvent({ start, result, sessionId, api, presentation = 'default' }: Props) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, presentation), [t, presentation]);
   const toolRole = createSessionVisualRoles(t).chat.tool;
 
   const [expanded, setExpanded] = useState(false);
@@ -231,7 +232,7 @@ function formatProgress(trace: ToolTraceResponse | null): string {
     .join('\n');
 }
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
   const c = t.colors;
   const sessionRoles = createSessionVisualRoles(t);
   const toolVisualHeight = sessionRoles.chat.tool.visualMinHeight;
@@ -240,7 +241,7 @@ function makeStyles(t: DesignTokens) {
     rowSlot: {
       // 빌드 17: 좌측 들여쓰기를 어시스턴트 말풍선의 본문 시작 지점에 정렬한다
       // (avatar 32pt + gap 8pt + spacing.md). 우측 마진은 일반 메시지와 동일.
-      marginLeft: t.assistantBubbleIndent,
+      marginLeft: presentation === 'manuscript' ? 0 : t.assistantBubbleIndent,
       marginRight: t.spacing.md,
       minHeight: t.hitTarget.min,
       paddingTop: touchInsetTop,

@@ -5,11 +5,12 @@ import { useTokens, type DesignTokens } from '../../theme';
 
 interface Props {
   event: SessionEvent;
+  presentation?: 'default' | 'manuscript';
 }
 
-export function ThinkingEvent({ event }: Props) {
+export function ThinkingEvent({ event, presentation = 'default' }: Props) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, presentation), [t, presentation]);
 
   const [expanded, setExpanded] = useState(false);
   const d = event.data as any;
@@ -40,12 +41,12 @@ export function ThinkingEvent({ event }: Props) {
   );
 }
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
   const c = t.colors;
   return StyleSheet.create({
     wrapper: {
       // ToolEvent와 동일하게 어시스턴트 말풍선 본문 시작 지점에 좌측 정렬한다.
-      marginLeft: t.assistantBubbleIndent,
+      marginLeft: presentation === 'manuscript' ? 0 : t.assistantBubbleIndent,
       marginRight: t.spacing.md,
       marginVertical: 3,
       borderRadius: t.radius.sm,

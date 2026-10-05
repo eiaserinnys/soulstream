@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { FlatList, Switch, Text, View } from 'react-native';
+import { FlatList, ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
 import { ChatComposer } from '../components/chat/ChatComposer';
+import { AttachmentChips } from '../components/chat/AttachmentChips';
 import { ChatInterruptButton } from '../components/chat/ChatInterruptButton';
 import { makeStyles } from '../components/chat/ChatBody.styles';
 import { UserMessage } from '../components/events/UserMessage';
@@ -22,6 +23,8 @@ import { useChatRenderItems } from '../components/chat/useChatRenderItems';
 import type { SessionEvent } from '../api/types';
 import { useChatStore } from '../store/chatStore';
 import { persistentJevCandidatesFixture } from './persistentJevCandidatesFixture';
+import { EventRenderer } from '../components/events/EventRenderer';
+import { ToolEvent } from '../components/events/ToolEvent';
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
@@ -128,6 +131,7 @@ function ReviewPersistentChatProjection() {
 
 export function ReviewChat() {
   const t = useTokens();
+  const { width } = useWindowDimensions();
   const styles = makeStyles(t);
   const [input, setInput] = useState('');
   const [sent, setSent] = useState('');
@@ -261,5 +265,66 @@ export function ReviewChat() {
       <AssistantMessage session={sessions[0]} event={message('assistant_message', '구현을 맡겼습니다. 다른 작업 결과를 기다립니다.')} />
       <TurnSummaryCaption content="기존 요약: 다른 작업 결과를 기다립니다." />
     </ReviewSection>
+    <ReviewSection title="기본 채팅 / 원고형 · 같은 메시지와 첨부·승인·도구">
+      <ScrollView testID="manuscript-presentation-scroll" horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', gap: t.spacing.lg }}>
+          <ReviewMessagePresentation title="기본" presentation="default" width={width >= 768 ? 480 : Math.min(width, 360)} />
+          <ReviewMessagePresentation title="원고형" presentation="manuscript" width={width >= 768 ? 480 : Math.min(width, 360)} />
+        </View>
+      </ScrollView>
+    </ReviewSection>
   </>;
+}
+
+function ReviewMessagePresentation({
+  title,
+  presentation,
+  width,
+}: {
+  title: string;
+  presentation: 'default' | 'manuscript';
+  width: number;
+}) {
+  const t = useTokens();
+  const styles = makeStyles(t);
+  const markdown = '**검수용 답변**\n\n긴 한글 문단으로 본문 폭과 행간, Markdown 링크 [도움말](https://expo.dev), 글자 선택을 확인합니다.\n\n- 도구와 시스템 행 유지\n- 답변 본문은 기존 채팅을 사용';
+  const presentationSession = { ...sessions[0], agentSessionId: 'review-presentation-session' };
+  const approval = { id: 'review-approval', type: 'tool_approval_requested' as const, data: {
+    approval_id: 'review-approval-1', tool_name: '파일 읽기', agent_name: '예시 에이전트',
+  } };
+  const imageMessage = message('user_message', '첨부 이미지를 눌러 확대할 수 있습니다.') as SessionEvent;
+  imageMessage.data = { ...imageMessage.data, attachments: ['/review/one.png'], node_id: 'public-node' };
+
+  return (
+    <View style={{ width, padding: t.spacing.md, gap: t.spacing.md, backgroundColor: presentation === 'manuscript' ? t.persistentSession.paper : t.colors.background }}>
+      <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>{title}</Text>
+      <UserMessage presentation={presentation} event={message('user_message', '긴 요청 문단입니다. 조사한 결과와 다음 행동을 알려주세요.')} />
+      <UserMessage presentation={presentation} variant="intervention" event={message('intervention_sent', '실행 중 추가한 개입 발언입니다.')} />
+      <UserMessage presentation={presentation} event={imageMessage} session={{ ...presentationSession, nodeId: 'public-node' }} />
+      <AttachmentImage source={require('../../assets/icon.png')} accessibilityLabel="공개 이미지 첨부 열기" />
+      <AssistantMessage presentation={presentation} session={presentationSession} event={message('assistant_message', markdown)} />
+      <AssistantMessage presentation={presentation} session={presentationSession} event={message('text_delta', '지금 응답을 작성하고 있습니다…')} />
+      <EventRenderer presentation={presentation} event={approval} session={presentationSession} sessionId={presentationSession.agentSessionId} />
+      <ToolEvent presentation={presentation} start={message('tool_start', '')} result={message('tool_result', '')} sessionId={presentationSession.agentSessionId} />
+      <SystemEvent event={{ id: 'review-shape-error', type: 'error', data: { message: '도구 요청에서 발생한 오류입니다. 재시도할 수 있습니다.' } }} />
+      <CollapsibleCaption title="Jev 후보 2 · 본문 시작선" align="end" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}>
+        <CollapsibleCaptionLine>요약 · 일치도 3/3</CollapsibleCaptionLine>
+        <CollapsibleCaptionLine>카드 · 일치도 2/3</CollapsibleCaptionLine>
+      </CollapsibleCaption>
+      <TurnSummaryCaption content={assignedCardPreview} presentation={presentation} />
+      <LabeledDivider label="새 세대" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'} />
+      <AttachmentChips
+        attachments={[{ path: '/review/waiting.png', name: '대기 첨부.png' }]}
+        styles={styles}
+        textSecondaryColor={t.colors.textSecondary}
+        textMutedColor={t.colors.textMuted}
+        onRemove={() => {}}
+      />
+      <ChatComposer presentation={presentation} input="한 줄 입력" onChangeInput={() => {}} onSend={() => {}}
+        onPickAttachment={() => {}} uploading={false} sending={false} voiceControls={null} />
+      <ChatComposer presentation={presentation} input={'여러 줄로 자라는 입력\n두 번째 줄도 확인합니다'} onChangeInput={() => {}} onSend={() => {}}
+        onPickAttachment={() => {}} uploading={false} sending={false} voiceControls={null} />
+      <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>입력창의 줄 높이와 대기 첨부를 비교합니다.</Text>
+    </View>
+  );
 }

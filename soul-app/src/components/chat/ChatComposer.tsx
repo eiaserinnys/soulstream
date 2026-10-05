@@ -34,6 +34,7 @@ interface Props {
   minimumBottomPadding?: number;
   embedded?: boolean;
   onInputRef?: (input: TextInput | null) => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 export function ChatComposer({
@@ -54,6 +55,7 @@ export function ChatComposer({
   sendAccessibilityLabel = '메시지 보내기',
   sendDisabled = false,
   onInputRef,
+  presentation = 'default',
 }: Props) {
   React.useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined' || document.getElementById('chat-composer-placeholder-style')) return;
@@ -69,7 +71,7 @@ export function ChatComposer({
   const controlsDisabled = uploading || disabled;
   const { fontScale } = useWindowDimensions();
   const composer = createSessionVisualRoles(t).chat.composer;
-  const lineHeight = t.chatFontSize.body * t.lineHeightRatio * fontScale;
+  const lineHeight = t.chatFontSize.body * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio) * fontScale;
   const singleLineHeight = Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2);
   const isEmpty = input.length === 0;
   const measurement = useTextInputContentHeight(input, lineHeight);
@@ -91,15 +93,15 @@ export function ChatComposer({
     <View
       {...(embedded ? { testID: 'chat-composer-row' } : {})}
       style={[
-        styles.inputRow,
+        presentation === 'manuscript' ? styles.manuscriptInputRow : styles.inputRow,
         embedded ? { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }
           : { paddingBottom: Math.max(t.spacing.sm, minimumBottomPadding) },
       ]}
     >
-      <GlassSurface
-        role="glassDense"
+      <ComposerSurface
+        presentation={presentation}
         testID="chat-composer-box"
-        style={styles.composerBox}
+        style={presentation === 'manuscript' ? styles.manuscriptComposerBox : styles.composerBox}
       >
         <View
           testID="chat-composer-content-row"
@@ -203,7 +205,23 @@ export function ChatComposer({
             </CompactTouchTarget>
           </View>
         </View>
-      </GlassSurface>
+      </ComposerSurface>
     </View>
   );
+}
+
+function ComposerSurface({
+  presentation,
+  testID,
+  style,
+  children,
+}: {
+  presentation: 'default' | 'manuscript';
+  testID: string;
+  style: React.ComponentProps<typeof View>['style'];
+  children: React.ReactNode;
+}) {
+  return presentation === 'manuscript'
+    ? <View testID={testID} style={style}>{children}</View>
+    : <GlassSurface role="glassDense" testID={testID} style={style}>{children}</GlassSurface>;
 }

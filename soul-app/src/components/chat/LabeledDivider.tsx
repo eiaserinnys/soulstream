@@ -4,11 +4,12 @@ import { useTokens, type DesignTokens } from '../../theme';
 
 interface LabeledDividerProps {
   label: string;
+  alignmentInset?: 'avatar' | 'content';
 }
 
-export function LabeledDivider({ label }: LabeledDividerProps) {
+export function LabeledDivider({ label, alignmentInset = 'avatar' }: LabeledDividerProps) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, alignmentInset), [t, alignmentInset]);
 
   return (
     <View style={styles.row}>
@@ -19,14 +20,14 @@ export function LabeledDivider({ label }: LabeledDividerProps) {
   );
 }
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, alignmentInset: 'avatar' | 'content') {
   return StyleSheet.create({
     row: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: t.uiSpacing.md,
       marginVertical: t.uiSpacing.xxxl,
-      paddingHorizontal: t.spacing.lg,
+      paddingHorizontal: alignmentInset === 'content' ? 0 : t.spacing.lg,
     },
     line: {
       flex: 1,

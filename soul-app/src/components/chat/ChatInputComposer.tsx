@@ -1,5 +1,5 @@
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Alert, Text } from 'react-native';
+import { Alert, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { Session, SessionEvent } from '../../api/types';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
@@ -30,6 +30,8 @@ interface Props {
   appForeground: boolean;
   minimumBottomPadding: number;
   requestBottomFollow(): void;
+  presentation?: 'default' | 'manuscript';
+  onComposerLayout?: (event: LayoutChangeEvent) => void;
 }
 
 const EMPTY_EVENTS: SessionEvent[] = [];
@@ -43,6 +45,7 @@ const ChatVoiceControls = memo(function ChatVoiceControls(props: Omit<React.Comp
 
 export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>(function ChatInputComposer({
   sessionId, sessionStatus, nodeId, backend, api, detailedNetworkActive, appForeground, minimumBottomPadding, requestBottomFollow,
+  presentation = 'default', onComposerLayout,
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -269,6 +272,49 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     composeFlowRef.current = null;
     clearAttachments();
   }, [sessionId, api, clearAttachments]);
+  const attachmentsAndComposer = <>
+    <AttachmentChips
+      attachments={attachments}
+      styles={styles}
+      textSecondaryColor={t.colors.textSecondary}
+      textMutedColor={t.colors.textMuted}
+      onRemove={removeAttachment}
+      disabled={inputDisabled}
+    />
+
+    <ChatComposer
+      input={input}
+      onChangeInput={handleInputChange}
+      onPickAttachment={pickAttachment}
+      onSend={() => handleSend(input, clearComposerInput, composeFlowRef.current?.flowId ?? null)}
+      uploading={uploading}
+      sending={sending}
+      hasPendingOptimistic={hasPendingOptimistic}
+      disabled={inputDisabled}
+      minimumBottomPadding={minimumBottomPadding}
+      presentation={presentation}
+      interruptControls={
+        sessionStatus === 'running' ? (
+          <ChatInterruptButton
+            interrupting={interrupting}
+            disabled={interrupting || !api}
+            styles={styles}
+            accentTextColor={t.colors.accentText}
+            onPress={handleInterrupt}
+          />
+        ) : null
+      }
+      voiceControls={
+        <ChatVoiceControls
+          api={api}
+          sessionId={sessionId}
+          backend={backend}
+          disabled={sending || inputDisabled}
+          compact
+        />
+      }
+    />
+  </>;
   return <>
       {sendError && sendError !== CHAT_SEND_ERROR_MESSAGES.disabled ? (
         <Text style={styles.errorText}>{sendError}</Text>
@@ -280,45 +326,10 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
         </Text>
       ) : null}
 
-      <AttachmentChips
-        attachments={attachments}
-        styles={styles}
-        textSecondaryColor={t.colors.textSecondary}
-        textMutedColor={t.colors.textMuted}
-        onRemove={removeAttachment}
-        disabled={inputDisabled}
-      />
-
-      <ChatComposer
-        input={input}
-        onChangeInput={handleInputChange}
-        onPickAttachment={pickAttachment}
-        onSend={() => handleSend(input, clearComposerInput, composeFlowRef.current?.flowId ?? null)}
-        uploading={uploading}
-        sending={sending}
-        hasPendingOptimistic={hasPendingOptimistic}
-        disabled={inputDisabled}
-        minimumBottomPadding={minimumBottomPadding}
-        interruptControls={
-          sessionStatus === 'running' ? (
-            <ChatInterruptButton
-              interrupting={interrupting}
-              disabled={interrupting || !api}
-              styles={styles}
-              accentTextColor={t.colors.accentText}
-              onPress={handleInterrupt}
-            />
-          ) : null
-        }
-        voiceControls={
-          <ChatVoiceControls
-            api={api}
-            sessionId={sessionId}
-            backend={backend}
-            disabled={sending || inputDisabled}
-            compact
-          />
-        }
-      />
+      {onComposerLayout ? (
+        <View testID="chat-composer-anchor" collapsable={false} onLayout={onComposerLayout}>
+          {attachmentsAndComposer}
+        </View>
+      ) : attachmentsAndComposer}
   </>;
 }));

@@ -6,14 +6,17 @@ import { createSessionVisualRoles } from '../../theme/sessionVisualRoles';
 
 interface Props {
   content: string;
+  presentation?: 'default' | 'manuscript';
 }
 
-export function TurnSummaryCaption({ content }: Props) {
+export function TurnSummaryCaption({ content, presentation = 'default' }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
-    <View testID="turn-summary-caption" style={styles.wrapper}>
+    <View testID="turn-summary-caption" style={presentation === 'manuscript'
+      ? [styles.wrapper, { marginHorizontal: 0, paddingLeft: 0 }]
+      : styles.wrapper}>
       <View testID="turn-summary-caption-bubble" style={styles.bubble}>
         <Text testID="turn-summary-caption-text" style={styles.text}>
           {content}

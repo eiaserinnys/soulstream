@@ -22,6 +22,7 @@ interface Props {
   onSelectionDone?: () => void;
   onRetryPending?: (eventId: string) => void;
   onRestorePending?: (eventId: string) => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 export function EventRenderer({
@@ -32,6 +33,7 @@ export function EventRenderer({
   onSelectionDone,
   onRetryPending,
   onRestorePending,
+  presentation = 'default',
 }: Props) {
   const pending = event as PendingOptimisticEvent;
   const pendingActions = pending.pendingStatus === 'failed'
@@ -45,6 +47,7 @@ export function EventRenderer({
       return (
         <UserMessage
           event={event}
+          presentation={presentation}
           session={session}
           variant="normal"
           pendingStatus={pending.pendingStatus}
@@ -61,6 +64,7 @@ export function EventRenderer({
       return (
         <UserMessage
           event={event}
+          presentation={presentation}
           session={session}
           variant="intervention"
           pendingStatus={pending.pendingStatus}
@@ -75,6 +79,7 @@ export function EventRenderer({
       return (
         <AssistantMessage
           event={event}
+          presentation={presentation}
           session={session}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}
@@ -86,6 +91,7 @@ export function EventRenderer({
         return (
           <UserMessage
             event={event}
+            presentation={presentation}
             session={session}
             variant="normal"
             selectionModel={selectionModel}
@@ -96,6 +102,7 @@ export function EventRenderer({
       return (
         <AssistantMessage
           event={event}
+          presentation={presentation}
           session={session}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}
@@ -122,7 +129,7 @@ export function EventRenderer({
     case 'thinking_start':
     case 'thinking_delta':
     case 'thinking_end':
-      return <ThinkingEvent event={event} />;
+      return <ThinkingEvent event={event} presentation={presentation} />;
     case 'session_start':
       return null;
     case 'complete':

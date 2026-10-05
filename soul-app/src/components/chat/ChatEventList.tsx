@@ -55,6 +55,7 @@ interface Props {
     highestMeasuredFrameIndex: number;
     averageItemLength: number;
   }) => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 export const ChatEventList = memo(function ChatEventList({
@@ -78,6 +79,7 @@ export const ChatEventList = memo(function ChatEventList({
   highlightedItemKey = null,
   onContentSizeChange,
   onScrollToIndexFailed,
+  presentation = 'default',
 }: Props) {
   const [activeSelection, setActiveSelection] = useState<{
     eventKey: string;
@@ -95,8 +97,9 @@ export const ChatEventList = memo(function ChatEventList({
     <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' ? session : undefined} sessionId={sessionId} api={api}
       onRetryPending={onRetryPending} onRestorePending={onRestorePending}
       selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
-      highlighted={item.key === highlightedItemKey} selectText={selectText} closeSelection={closeSelection} />
-  ), [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection]);
+      highlighted={item.key === highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
+      presentation={presentation} />
+  ), [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
 
   return (
     <FlatList
@@ -160,31 +163,32 @@ interface RowProps {
   highlighted: boolean;
   selectText(eventKey: string, model: MessageSelectionModel): void;
   closeSelection(): void;
+  presentation: 'default' | 'manuscript';
 }
 
 const ChatEventRow = memo(function ChatEventRow({
   item, session, sessionId, api, onRetryPending, onRestorePending,
-  selection, highlighted, selectText, closeSelection,
+  selection, highlighted, selectText, closeSelection, presentation,
 }: RowProps) {
   if (item.kind === 'typing') return <TypingIndicator session={session} />;
   if (item.kind === 'turn-summary') {
     return (
       <SearchFocusHighlight active={highlighted}>
-        <TurnSummaryCaption content={item.content} />
+        <TurnSummaryCaption content={item.content} presentation={presentation} />
       </SearchFocusHighlight>
     );
   }
   if (item.kind === 'jev-candidates') {
     return (
       <SearchFocusHighlight active={highlighted}>
-        <CollapsibleCaption title={item.title} align="end">
+        <CollapsibleCaption title={item.title} align="end" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}>
           {item.lines.map((line, index) => <CollapsibleCaptionLine key={`${item.key}-${index}`}>{line}</CollapsibleCaptionLine>)}
         </CollapsibleCaption>
       </SearchFocusHighlight>
     );
   }
   if (item.kind === 'event' && item.event.type === 'generation_started') {
-    return <SearchFocusHighlight active={highlighted}><LabeledDivider label="새 세대" /></SearchFocusHighlight>;
+    return <SearchFocusHighlight active={highlighted}><LabeledDivider label="새 세대" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'} /></SearchFocusHighlight>;
   }
   if (item.kind === 'tool') {
     return (
@@ -200,12 +204,14 @@ const ChatEventRow = memo(function ChatEventRow({
               result={item.result}
               sessionId={sessionId}
               api={api}
+              presentation={presentation}
             />
           </EventContextMenu>
           {item.summaries?.map((summary) => (
             <TurnSummaryCaption
               key={summary.key}
               content={summary.content}
+              presentation={presentation}
             />
           ))}
         </>
@@ -232,6 +238,7 @@ const ChatEventRow = memo(function ChatEventRow({
             session={session}
             onRetryPending={onRetryPending}
             onRestorePending={onRestorePending}
+            presentation={presentation}
             selectionModel={
               selectionActive && selection
                 ? selection
@@ -244,6 +251,7 @@ const ChatEventRow = memo(function ChatEventRow({
           <TurnSummaryCaption
             key={summary.key}
             content={summary.content}
+            presentation={presentation}
           />
         ))}
       </>

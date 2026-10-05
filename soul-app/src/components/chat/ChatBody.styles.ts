@@ -33,6 +33,11 @@ export function makeStyles(t: DesignTokens) {
       paddingHorizontal: t.spacing.md,
       paddingVertical: t.spacing.sm,
     },
+    manuscriptInputRow: {
+      paddingHorizontal: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+    },
     composerBox: {
       minHeight: sessionRoles.chat.composer.minHeight,
       borderRadius: t.radius.lg + 6,
@@ -40,6 +45,13 @@ export function makeStyles(t: DesignTokens) {
       paddingVertical: sessionRoles.chat.composer.edgePaddingVertical - StyleSheet.hairlineWidth,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.border,
+    },
+    manuscriptComposerBox: {
+      minHeight: sessionRoles.chat.composer.minHeight,
+      paddingHorizontal: sessionRoles.chat.composer.edgePaddingHorizontal,
+      paddingVertical: 0,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: t.persistentSession.line,
     },
     composerContentRow: {
       minHeight: sessionRoles.chat.composer.contentMinHeight,

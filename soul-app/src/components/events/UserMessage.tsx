@@ -33,6 +33,7 @@ interface Props {
   failureReason?: string;
   onRetry?: () => void;
   onRestore?: () => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 /**
@@ -94,6 +95,7 @@ export function UserMessage({
   failureReason,
   onRetry,
   onRestore,
+  presentation = 'default',
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -118,9 +120,12 @@ export function UserMessage({
   const attachmentSources = attachments.map((path) => buildAttachmentUri(serverUrl, nodeId, path))
     .filter((uri): uri is string => uri !== null).map((uri) => ({ uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }));
 
-  const bubbleStyle =
-    variant === 'intervention' ? styles.bubbleIntervention : styles.bubble;
-  const textStyle = variant === 'intervention' ? styles.textIntervention : styles.text;
+  const bubbleStyle = presentation === 'manuscript'
+    ? styles.manuscriptBubble
+    : variant === 'intervention' ? styles.bubbleIntervention : styles.bubble;
+  const textStyle = presentation === 'manuscript'
+    ? styles.manuscriptText
+    : variant === 'intervention' ? styles.textIntervention : styles.text;
 
   // F-11H (2026-05-09, atom F-11): caller_info.source==="system"이면 본인/슬랙/agent
   // 분기와 별도로 *로컬 정적 자산(icon-symbol.png)*을 표시한다. 서버는 caller_info.avatar_url=null로
@@ -137,7 +142,9 @@ export function UserMessage({
   const fallbackChar = pickFallbackChar(caller, profile, session?.userName, '나');
 
   return (
-    <View style={children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
+    <View style={presentation === 'manuscript'
+      ? styles.manuscriptRow
+      : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
       <View
         testID="user-message-bubble"
         style={[children == null ? bubbleStyle : [bubbleStyle, { backgroundColor: t.colors.accentTint }], pendingStatus === 'sending' && styles.pendingSendingBubble]}
@@ -218,13 +225,15 @@ export function UserMessage({
           </View>
         ) : null}
       </View>
-      {isSystem ? (
+      {presentation === 'manuscript' ? null : isSystem ? (
         <Image
+          testID="user-message-avatar"
           source={require('../../../assets/icon-symbol.png')}
           style={styles.avatar}
         />
       ) : avatarUri ? (
         <Image
+          testID="user-message-avatar"
           source={{
             uri: avatarUri,
             ...(useBearer && jwt
@@ -234,7 +243,7 @@ export function UserMessage({
           style={styles.avatar}
         />
       ) : (
-        <View style={[styles.avatar, styles.avatarFallback]}>
+        <View testID="user-message-avatar" style={[styles.avatar, styles.avatarFallback]}>
           <Text style={styles.avatarFallbackText}>{fallbackChar}</Text>
         </View>
       )}
@@ -282,6 +291,25 @@ function makeStyles(t: DesignTokens) {
       color: c.interventionText,
       fontSize: t.chatFontSize.body,
       lineHeight: t.chatFontSize.body * t.lineHeightRatio,
+    },
+    manuscriptRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'flex-end',
+      marginLeft: t.spacing.xxxl,
+      marginRight: 0,
+      marginTop: t.spacing.xxxl,
+      marginBottom: t.spacing.lg,
+    },
+    manuscriptBubble: {
+      flexShrink: 1,
+      alignSelf: 'flex-end',
+    },
+    manuscriptText: {
+      color: c.textSecondary,
+      fontSize: t.chatFontSize.body,
+      lineHeight: t.chatFontSize.body * 1.6,
+      textAlign: 'right',
     },
     pendingSendingBubble: {
       opacity: 0.58,
