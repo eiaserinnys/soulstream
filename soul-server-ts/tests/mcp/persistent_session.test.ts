@@ -212,6 +212,8 @@ describe("request_session_generation_rollover MCP tool", () => {
     };
     const row = makeRow(sessionId, {
       status: "running",
+      termination_reason: null,
+      termination_event_id: null,
       claude_session_id: "native-current",
       model_preset: "claude-opus",
       model: "claude-opus-4-6",

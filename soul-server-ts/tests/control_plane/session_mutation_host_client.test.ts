@@ -191,11 +191,11 @@ describe("SessionMutationHostClient", () => {
     );
     expect(JSON.parse(String(init.body))).toEqual({
       args: [{
-        sessionId: "session-a",
-        modelPreset: "codex-balanced",
+        session_id: "session-a",
+        model_preset: "codex-balanced",
         model: "gpt-5-codex",
-        reasoningEffort: "high",
-        idempotencyKey: "model-selection-session-a-1",
+        reasoning_effort: "high",
+        idempotency_key: "model-selection-session-a-1",
       }],
     });
   });

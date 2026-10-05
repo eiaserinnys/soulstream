@@ -57,6 +57,40 @@ export function isActiveTaskStatus(status: TaskStatus): boolean {
 
 export type ReviewState = "not_required" | "needs_review" | "acknowledged";
 
+export interface PersistentGenerationFirstCall {
+  generation: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  modelPreset: string;
+  model: string;
+  measuredAt: string;
+}
+
+export interface PersistentGenerationPending {
+  number: number;
+  reason: string;
+  requestedAt: string;
+  targetModelPreset: string;
+  targetReasoningEffort?: ReasoningEffort;
+  applyingFrom?: string;
+}
+
+export interface PersistentGenerationState {
+  number: number;
+  backendSessionId?: string;
+  startedAt?: string;
+  firstCall?: PersistentGenerationFirstCall;
+  pending?: PersistentGenerationPending;
+}
+
+export interface ActiveGenerationRollover {
+  number: number;
+  reason: string;
+  fromBackendSessionId: string;
+  previousModelPreset?: string | null;
+  previousBackend?: BackendId;
+}
+
 export type SessionCreationWarning = SessionBindingWarning;
 
 export type TerminationReason =
@@ -396,6 +430,10 @@ export interface Task {
   metadata?: Array<Record<string, unknown>>;
   /** Durable marker for sessions that participate in persistent-agent workflows. */
   persistent?: boolean;
+  /** Metadata-backed generation ledger used by persistent-agent sessions. */
+  persistentGeneration?: PersistentGenerationState;
+  /** Runtime marker for a generation rollover whose native ID may still rotate. */
+  activeGenerationRollover?: ActiveGenerationRollover;
 
   /** OpenAI Agents SDK serialized RunState restored from sessions.metadata. */
   agentsRunState?: string;
