@@ -7,15 +7,16 @@ import { cardStatusLabel } from './assigned_card_context.js';
 export function formatAssignedCardSnapshotContent(
   snapshot: Pick<AssignedCardContextCapture['snapshot'],'capturedAt'> & {
     cards: Array<Pick<AssignedCardContextCapture['snapshot']['cards'][number],
-      'id'|'title'|'status'|'latestCommentAt'|'latestReportAt'>>;
+      'id'|'title'|'status'|'hasItems'|'latestCommentAt'|'latestReportAt'>>;
   },
 ): string {
   if (!snapshot.cards.length) return '담당 카드 없음';
-  return snapshot.cards.map(card => [
-    oneLine(card.title), cardStatusLabel(card.status),
-    card.latestReportAt ? `마지막 보고 ${card.latestReportAt}` : '보고 없음',
-    isLater(card.latestCommentAt,card.latestReportAt) ? '최근 커멘트 이후 보고 없음' : null,
-  ].filter(Boolean).join(' · ')).join('\n');
+  return snapshot.cards.map(card => card.hasItems === true
+    ? [oneLine(card.title),cardStatusLabel(card.status),'확인 항목 결과는 get_card로 조회'].join(' · ')
+    : [oneLine(card.title), cardStatusLabel(card.status),
+      card.latestReportAt ? `마지막 보고 ${card.latestReportAt}` : '보고 없음',
+      isLater(card.latestCommentAt,card.latestReportAt) ? '최근 커멘트 이후 보고 없음' : null,
+    ].filter(Boolean).join(' · ')).join('\n');
 }
 
 /** Copies already-read input data into the existing outbox. Never performs a provider call or waits for an ACK. */
@@ -28,7 +29,7 @@ export function createAssignedCardSnapshotRecorder(persistence: Pick<EventPersis
       identityMissing: !capture.registrationId || !capture.executionCommandId || !capture.inputId,
       snapshot: { total: capture.snapshot.total, omitted: capture.snapshot.omitted, capturedAt: capture.snapshot.capturedAt,
         cards: capture.snapshot.cards.slice(0,12).map(c=>({ id:c.id,title:c.title.slice(0,160),status:c.status,
-          latestCommentAt:c.latestCommentAt,latestReportAt:c.latestReportAt })) },
+          ...(c.hasItems === undefined ? {} : {hasItems:c.hasItems}),latestCommentAt:c.latestCommentAt,latestReportAt:c.latestReportAt })) },
     };
     const dedupe = capture.registrationId && capture.inputId
       ? `assigned_card_context_snapshot:${capture.registrationId}:${capture.inputId}` : null;

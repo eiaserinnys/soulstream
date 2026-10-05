@@ -2,7 +2,7 @@ export type CardPromptEntry = {
     title: string;
     folderName: string;
 };
-export type CardPromptComment = { createdAt: Date | string; body: string };
+export type CardPromptComment = { id?: string; createdAt: Date | string; body: string };
 export type CardPromptInput = {
     cardId: string;
     title: string;
@@ -17,13 +17,13 @@ export type CardPromptInput = {
 export function buildCardPrompt(input: CardPromptInput): string {
     const running = input.running.map(c => `${c.title} (${c.folderName})`).join("\n") || "없음";
     const queued = input.queued.map((c, i) => `${i + 1}. ${c.title} (${c.folderName})`).join("\n") || "없음";
-    const comments = input.comments?.map(comment => `- ${comment.createdAt instanceof Date ? comment.createdAt.toISOString() : comment.createdAt}\n  ${comment.body}`).join("\n") ?? "";
+    const comments = input.comments?.map(comment => `- ${comment.createdAt instanceof Date ? comment.createdAt.toISOString() : comment.createdAt}${comment.id ? `\n  커멘트 ID: ${comment.id}` : ""}\n  ${comment.body}`).join("\n") ?? "";
     return `[카드 실행] 이 세션은 카드 ${input.cardId} 「${input.title}」(폴더 ${input.folderName})을 맡았다.
 
 ## 요청 원문
 ${input.request}
 
-## 해석과 경과 (지금까지)
+## 인계 요약 (지금까지)
 ${input.brief || "(아직 없음)"}
 ${comments ? `
 ## 커멘트
@@ -40,10 +40,12 @@ ${queued}
 
 ## 카드 규칙
 1. 착수 전에 위 목록을 보고 같은 리포나 파일을 만질 작업이 겹치면 ask_card_question으로 멈춘다.
-2. 작업 중 해석과 경과를 update_card_brief로 갱신한다. brief도 한 문장 + 불릿.
-3. 끝나면 add_card_report로 보고를 올린다. 보고는 디렉터용이다. 바쁜 상급자에게 보고하듯 쓴다: 첫 줄은 무엇을 하여 무엇이 됐는지 한 문장, 그 아래 불릿 3~5개는 각각 '~합니다'로 끝나는 짧은 완결 문장(된 것, 확인한 것, 자료 위치). 캡처·표·그림과 증거 링크(PR, SHA, URL)는 그 다음. 긴 설명은 접힘 블록으로. 그다음 request_card_review를 부른다.
-4. 판단이 필요하면 ask_card_question으로 묻고 턴을 끝낸다. AskUserQuestion은 쓰지 않는다.
-5. 상태 변경은 set_card_status로 직접 한다. 보고·미답 질문·사유·이전 상태·보관 여부는 전환을 막지 않는다. 완료·취소 카드도 다시 열 수 있다. running 기록은 프로세스 실행 승인이 아니다.
-6. 위임 보고를 기다리며 턴을 끝내도 카드 작업은 계속 진행 중이다. 실제 작업을 마쳤을 때 보고를 올리고 검수를 요청한다.
-7. 이 세션은 이 카드만 담당한다. 같은 카드의 후속 요청은 이 카드에서 처리하고, 새 업무는 assignee를 생략한 create_card로 새 카드를 만든다(brief에 인계). 바로 시작하려면 run=true, 순서를 기다려도 되면 queue=true를 준다.`;
+2. get_card로 기존 확인 항목을 읽고, 항목이 없으면 set_card_items로 요청을 확인 항목으로 나눈다. 항목 하나는 사용자가 화면이나 결과물을 보고 한 번에 「됐다」를 말할 수 있는 결과 하나다. 일하는 순서, PR, 검증 절차는 항목이 아니다.
+3. 손대기 시작한 항목은 report_card_item(state: doing)으로 알리고, 끝나면 결과 한 줄과 증거(캡처, 링크)를 단다. 항목은 사용자가 새로 말했을 때만 add_card_item으로 더한다.
+4. 진행과 기술 세부는 add_card_note로 노트에 쓴다. 커멘트(add_card_comment)는 사용자가 쓴 글에 답할 때만 쓴다. 대화로 받은 사용자 발언 기록은 spoken으로 남긴다. 이어받을 세션이 읽을 인계 요약은 update_card_brief로 고쳐 쓴다.
+5. 턴을 끝내기 전에 update_card_now로 상황판(지금 한 줄과 누구 차례)을 지금과 맞춘다. 일이 끝나면 request_card_review의 ask에 사용자가 볼 것을 한 줄로 적어 검수를 요청한다.
+6. 판단이 필요하면 ask_card_question으로 묻고 턴을 끝낸다. AskUserQuestion은 쓰지 않는다.
+7. 상태 변경은 set_card_status로 직접 한다. 보고·미답 질문·사유·이전 상태·보관 여부는 전환을 막지 않는다. 완료·취소 카드도 다시 열 수 있다. running 기록은 프로세스 실행 승인이 아니다.
+8. 위임 보고를 기다리며 턴을 끝내도 카드 작업은 계속 진행 중이다. 실제 작업을 마쳤을 때 항목에 결과를 달고 검수를 요청한다.
+9. 이 세션은 이 카드만 담당한다. 같은 카드의 후속 요청은 이 카드에서 처리하고, 새 업무는 assignee를 생략한 create_card로 새 카드를 만든다(brief에 인계). 바로 시작하려면 run=true, 순서를 기다려도 되면 queue=true를 준다.`;
 }

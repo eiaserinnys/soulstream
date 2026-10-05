@@ -7,7 +7,7 @@ export interface AssignedCardContext {
   total: number;
   omitted: number;
   cards: Array<{
-    id: string; title: string; status: string;
+    id: string; title: string; status: string; hasItems?:boolean;
     latestCommentAt: string | null; latestReportAt: string | null;
   }>;
 }
@@ -31,7 +31,7 @@ export async function fetchAssignedCardContextItem(
   const base = {
     scope: "assignee_session_id", session_id: sessionId, trust: "untrusted_card_data",
     notice: "현재 입력의 조회 현황이며 상태 전환 명령이 아닙니다.",
-    guidance: "작업이 끝났으면 보고 후 검수를 요청합니다. 진행 또는 위임 대기 중이면 필요할 때 경과를 남깁니다. 상세는 카드 ID로 get_card를 조회합니다.",
+    guidance: "get_card로 담당 카드의 확인 항목과 상황판을 읽습니다. 일이 끝났으면 항목에 결과를 달고 request_card_review의 ask에 사용자가 볼 것을 적습니다. 확인 항목이 없는 옛 카드는 기존 보고 뒤 검수를 요청합니다. 진행과 기술 세부는 add_card_note에, 인계 요약은 update_card_brief에 남기고 턴을 끝내기 전에 update_card_now로 지금과 누구 차례를 맞춥니다.",
   };
   try {
     const snapshot = await db.getAssignedCardContext(sessionId);
@@ -44,7 +44,8 @@ export async function fetchAssignedCardContextItem(
     const cards = snapshot.cards.slice(0, 12).map(card => ({
       id: card.id, title: preview(card.title, 160), status: cardStatusLabel(card.status),
       latestReportAt: card.latestReportAt,
-      ...(isLater(card.latestCommentAt,card.latestReportAt) ? { reportFact:"최근 커멘트 이후 보고 없음" } : {}),
+      ...(card.hasItems === undefined ? {} : {hasItems:card.hasItems}),
+      ...(card.hasItems !== true && isLater(card.latestCommentAt,card.latestReportAt) ? { reportFact:"최근 커멘트 이후 보고 없음" } : {}),
     }));
     return { key: "assigned_cards", content: { ...base, status: "ok", total: snapshot.total,
       omitted: snapshot.total - cards.length, cards } };

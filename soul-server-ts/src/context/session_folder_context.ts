@@ -53,7 +53,7 @@ export async function resolvePrimarySessionFolderContext(
   return {
     folder,
     card,
-    ...(card ? { cardGuidance: `이 세션은 카드 ${card.id}를 맡았다. 경과는 update_card_brief, 보고는 add_card_report, 검수는 request_card_review, 질문은 ask_card_question으로 남긴다. AskUserQuestion은 쓰지 않는다.` } : {}),
+    ...(card ? { cardGuidance: `이 세션은 카드 ${card.id}를 맡았다. 확인 항목은 set_card_items와 report_card_item, 상황판은 update_card_now, 진행 기록은 add_card_note, 검수는 request_card_review, 질문은 ask_card_question으로 남긴다. AskUserQuestion은 쓰지 않는다.` } : {}),
     folderGuidance: buildFolderGuidance(folder),
   };
 }

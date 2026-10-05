@@ -2,6 +2,7 @@ export interface AssignedCardContextSnapshotCard {
   id: string;
   title: string;
   status: string;
+  hasItems?: boolean;
   latestCommentAt?: string | null;
   latestReportAt?: string | null;
   /** Legacy capture fields retained only for reading already-stored events. */

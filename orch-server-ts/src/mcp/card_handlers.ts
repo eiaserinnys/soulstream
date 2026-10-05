@@ -41,12 +41,16 @@ export const cardHandlers = {
   }),
   list_cards: (o, a) => run(() => request(() => listCardRouteBody(o.cards,
     { folderId: a.folder_id, status: a.status }, o.cards.resolveAccess))),
-  get_card: (o, a) => run(() => read(o.cards, String(a.card_id))),
+  get_card: (o, a) => run(async () => {
+    const detail=await read(o.cards,String(a.card_id)) as Record<string,unknown>;
+    const notes=Array.isArray(detail.notes)?detail.notes.slice(-20):[];
+    return {...detail,notes};
+  }),
   update_card_brief: (o, a, c) => append(o.cards, "update_card", a, c, { brief: a.brief }, true),
   add_card_report: (o, a, c) => append(o.cards, "add_card_report", a, c, { title: a.title, format: a.format, body: a.body }),
   add_card_comment: (o, a, c) => run(async () => {
     if (a.mode === "reply") matchingHeader(a, c);
-    return appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, ...(c.principal === "external" ? (a.mode === undefined ? {} : { mode: a.mode }) : { mode: a.mode ?? "spoken" }) });
+    return appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, mode:a.mode,itemId:a.item_id });
   }),
   set_card_status: (o, a, c) => run(async () => {
     matchingHeader(a, c);
@@ -75,7 +79,7 @@ export const cardHandlers = {
       expectedVersion: a.expected_version, idempotencyKey: a.idempotency_key, reason: a.reason, execution: c.execution,
     }, actor);
   }),
-  request_card_review: (o, a, c) => append(o.cards, "set_card_status", a, c, { status: "review" }, true),
+  request_card_review: (o, a, c) => append(o.cards, "request_card_review", a, c, { ask:a.ask }),
   ask_card_question: (o, a, c) => run(async () => {
     const result = await appendMutation(o.cards, "ask_card_question", a, agent(a, c), {
       text: a.text, ...(a.options !== undefined ? { options: a.options } : {}),
@@ -85,6 +89,21 @@ export const cardHandlers = {
   move_card: (o, a, c) => append(o.cards, "move_card", a, c, {
     folderId: a.folder_id, ...(a.after_card_id !== undefined ? { afterCardId: a.after_card_id } : {}),
   }, true),
+  set_card_items: (o,a,c) => internalAppend(o.cards,"set_card_items",a,c,{items:a.items}),
+  add_card_item: (o,a,c) => internalAppend(o.cards,"add_card_item",a,c,{title:a.title,fromCommentId:a.from_comment_id}),
+  report_card_item: (o,a,c) => internalAppend(o.cards,"report_card_item",a,c,{itemId:a.item_id,state:a.state,result:a.result,evidence:a.evidence,caveat:a.caveat,reopenReason:a.reopen_reason}),
+  update_card_now: (o,a,c) => internalAppend(o.cards,"update_card_now",a,c,{now:a.now,turn:a.turn,ask:a.ask}),
+  add_card_note: (o,a,c) => internalAppend(o.cards,"add_card_note",a,c,{text:a.text}),
+  list_card_notes: (o,a,c) => run(async () => {
+    requireInternal(c);
+    matchingHeader(a,c);
+    const actor=agent(a,c,true);
+    const cardId=String(a.card_id);
+    await read(o.cards,cardId);
+    const service=await o.cards.cardServiceProvider!();
+    const page=await service.listCardNotes({cardId,...actor,limit:a.limit as number|undefined,before:a.before as string|undefined});
+    return {notes:page.notes.map(serializeCardRow),nextCursor:page.nextCursor};
+  }),
 } satisfies Record<keyof typeof cardTools, Handler>;
 
 function matchingHeader(args: Args, context: McpCallContext) {
@@ -100,6 +119,16 @@ function agent(args: Args, context: McpCallContext, headerFirst = false) {
 }
 async function append(options: Options, operation: CardOperation, args: Args, context: McpCallContext, body: Args, cas = false) {
   return run(() => appendMutation(options, operation, args, agent(args, context), body, cas));
+}
+async function internalAppend(options:Options,operation:CardOperation,args:Args,context:McpCallContext,body:Args) {
+  return run(async()=>{
+    requireInternal(context);
+    matchingHeader(args,context);
+    return appendMutation(options,operation,args,agent(args,context,true),body);
+  });
+}
+function requireInternal(context:McpCallContext) {
+  if(context.principal==="external") throw Object.assign(new Error("card mutation requires an agent session"),{statusCode:403});
 }
 async function appendMutation(options: Options, operation: CardOperation, args: Args, actor: ReturnType<typeof agent>, body: Args, cas = false) {
   const expected = cas ? { expectedVersion: ((await read(options, String(args.card_id))) as { card: { version: number } }).card.version } : {};

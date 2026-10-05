@@ -30,7 +30,7 @@ export function buildCardStatusReminder(facts: CardReminderFacts, rootEnded: boo
   } else {
     if (facts.activeTree || facts.pendingDeliveries || facts.unregisteredCompletions || !facts.rootEndedAfterStatus) return null;
     kind = "stalled";
-    text = `[카드 상태 확인] 카드 ${facts.cardId}는 진행 중인데 담당 세션과 맡긴 작업 세션이 모두 멈췄습니다. 일을 마쳤으면 보고를 올리고 검수 대기로, 답이나 자료를 기다리면 막힘으로 옮겨 주세요. 할 일이 남아 멈춘 것이라면 이어서 진행해 주세요. 카드 상태는 시스템이 바꾸지 않습니다.`;
+    text = `[카드 상태 확인] 카드 ${facts.cardId}는 진행 중인데 담당 세션과 맡긴 작업 세션이 모두 멈췄습니다. 일을 마쳤으면 확인 항목에 결과를 달고 request_card_review의 ask에 사용자가 볼 것을 적어 검수를 요청하세요. 확인 항목이 없는 옛 카드는 기존 보고를 올리고 검수를 요청하세요. 답이나 자료를 기다리면 막힘으로 옮기고, 할 일이 남아 멈춘 것이라면 이어서 진행하세요. 턴을 끝내기 전에 update_card_now로 지금과 누구 차례를 맞추세요. 카드 상태는 시스템이 바꾸지 않습니다.`;
   }
   return { sessionId: facts.rootSessionId, text, actorKind: "system", actorSessionId: null,
     deliveryId: `card-reminder:${facts.cardId}:${kind}:${facts.statusEpochUs}:${facts.rootSessionId}` };

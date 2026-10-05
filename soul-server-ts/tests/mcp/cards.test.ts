@@ -12,7 +12,8 @@ import { makeTaskCreationHarness } from "../task/task_creation_harness.js";
 // Reuses folder.test.ts tool registration and task_creation.test.ts creation harness;
 // direct callbacks isolate the new card wire contract without opening an MCP server.
 const names = ["create_card", "list_cards", "get_card", "update_card_brief", "add_card_report", "add_card_comment",
-  "request_card_review", "ask_card_question", "move_card", "start_card_work", "set_card_status"];
+  "request_card_review", "ask_card_question", "move_card", "start_card_work", "set_card_status", "set_card_items",
+  "add_card_item", "report_card_item", "update_card_now", "add_card_note", "list_card_notes"];
 const logger = pino({ level: "silent" });
 const attachments=[{nodeId:"node",path:"/incoming/upload/image.png",name:"image.png",mimeType:"image/png"}];
 const card = { id: "card-1", folderId: "folder-1", title: "카드", status: "running", version: 3, attachments };
@@ -81,9 +82,17 @@ describe("card MCP contract", () => {
           "status": "running",
           "title": "카드",
         },
-        "card_guidance": "이 세션은 카드 card-1를 맡았다. 경과는 update_card_brief, 보고는 add_card_report, 검수는 request_card_review, 질문은 ask_card_question으로 남긴다. AskUserQuestion은 쓰지 않는다.",
+        "card_guidance": "이 세션은 카드 card-1를 맡았다. 확인 항목은 set_card_items와 report_card_item, 상황판은 update_card_now, 진행 기록은 add_card_note, 검수는 request_card_review, 질문은 ask_card_question으로 남긴다. AskUserQuestion은 쓰지 않는다.",
       }
     `);
+  });
+  it("preserves an omitted comment mode for the server to interpret by card type",async()=>{
+    const fetch=vi.fn(async()=>Response.json({content:[],structuredContent:{id:"comment-1"}}));
+    vi.stubGlobal("fetch",fetch);
+    await harness().call("add_card_comment",{card_id:"card-1",text:"사용자 발언"});
+    const [,init]=fetch.mock.calls[0]! as unknown as [string,RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({args:{card_id:"card-1",text:"사용자 발언"}});
+    expect(JSON.parse(String(init.body)).args).not.toHaveProperty("mode");
   });
   it("passes cardId at session registration and keeps it out of board projection", async () => {
     const h = makeTaskCreationHarness();

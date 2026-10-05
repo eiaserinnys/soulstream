@@ -1,6 +1,6 @@
 [
   {
-    "description": "담당 세션이 카드에 커멘트를 남긴다. mode=spoken(기본)은 사용자 발언 요약만 사용자가 말한 것처럼 기록하며 첫 줄에 정확히 \"아래는 사용자의 발언을 요약하여 옮긴 것입니다\"라고 표기한다. mode=reply는 담당 세션 자신의 답변만 에이전트 신원으로 기록한다. 두 내용을 엄밀하게 구분한다. 본문은 자동 변경하지 않으며 카드 상태도 바꾸지 않는다.",
+    "description": "spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 \"아래는 사용자의 발언을 요약하여 옮긴 것입니다\"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -24,6 +24,11 @@
         "text": {
           "minLength": 1,
           "type": "string"
+        },
+        "item_id": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
         }
       },
       "required": [
@@ -35,7 +40,7 @@
     "name": "add_card_comment"
   },
   {
-    "description": "카드에 보고를 추가하며 보고를 고칠 때는 새 보고를 올린다.",
+    "description": "확인 항목이 없는 옛 카드에 보고를 추가합니다. 확인 항목이 있는 카드의 결과는 report_card_item에 답니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -1017,7 +1022,7 @@
     "name": "get_backlinks"
   },
   {
-    "description": "카드 본문과 보고, 질문, 커멘트, 연결된 세션 목록을 조회한다.",
+    "description": "카드의 요청, 확인 항목, 상황판, 커멘트, 보고, 질문과 세션을 읽습니다. 노트는 최근 20건이며 앞선 노트는 list_card_notes로 읽습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3004,7 +3009,7 @@
     "name": "rename_folder"
   },
   {
-    "description": "카드 상태를 검수 대기로 변경한다. 보고와 미답 질문은 상태 변경을 막지 않는다.",
+    "description": "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3016,6 +3021,9 @@
         },
         "card_id": {
           "minLength": 1,
+          "type": "string"
+        },
+        "ask": {
           "type": "string"
         }
       },
@@ -3634,7 +3642,7 @@
     "name": "update_board_item_position"
   },
   {
-    "description": "카드의 해석된 요구사항과 진행 경과를 갱신한다.",
+    "description": "다음 세션이 이어받을 담당 카드의 인계 요약을 고쳐 씁니다. 진행의 자세한 기록은 add_card_note에 씁니다.",
     "execution": {
       "taskSupport": "forbidden"
     },

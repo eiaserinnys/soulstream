@@ -12,6 +12,22 @@ import { CardRepository } from "./control_plane/card_repository.js";
 import { CardMutationCore } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
+import {
+  addCardItem as addItemRule,
+  codePointLength,
+  confirmCardItem as confirmItemRule,
+  makeCardNow,
+  openCardItemFix,
+  questionCardNow,
+  reportCardItem as reportItemRule,
+  reviewCardNow,
+  setCardItems as setItemsRule,
+  type CardItemEvidence,
+  type CardItemState,
+  type CardNowTurn,
+  type ReportCardItemInput,
+} from "./card_item_rules.js";
+import { hasUserInputAfterLastReplyTx, readCardItemSourceTx } from "./control_plane/card_item_store.js";
 import {assertPolicyAdmission} from "./card_orchestration_repository.js";
 import { claimableCardSessions, assertSingleCardAssignee, translateAssigneeConflict, invalidCard } from "./card_assignee.js";
 
@@ -39,10 +55,24 @@ export class CardControlPlaneService {
   async getCard(cardId: string) {
     const card=await this.repo.getCard(cardId);
     if (!card) return null;
-    const [reports,questions,comments,sessions]=await Promise.all([this.repo.listReports(cardId),this.repo.listQuestions(cardId),this.repo.listComments(cardId),this.repo.listSessions(cardId)]);
-    return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions };
+    const [reports,questions,comments,sessions,notes,nowHistory]=await Promise.all([
+      this.repo.listReports(cardId),this.repo.listQuestions(cardId),this.repo.listComments(cardId),this.repo.listSessions(cardId),
+      this.repo.listAllCardNotes(cardId),this.repo.listCardNowHistory(cardId),
+    ]);
+    return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions,notes,nowHistory };
   }
   listReports(cardId: string) { return this.repo.listReports(cardId); }
+  listConfirmedItemsSinceLastCommentDelivery(cardId:string,throughAt:Date) {
+    return this.repo.listConfirmedItemsSinceLastCommentDelivery(cardId,throughAt);
+  }
+  async listCardNotes(params:CardMutationParams & {limit?:number;before?:string}) {
+    const card=await this.repo.getCard(params.cardId);
+    if (!card) throw Object.assign(new Error("Card not found"),{statusCode:404});
+    assertAssignedCardSession(card,params);
+    const limit=params.limit ?? 20;
+    if (!Number.isInteger(limit) || limit<1 || limit>100) throw invalid("limit은 1에서 100 사이여야 합니다");
+    return this.repo.listCardNotes(params.cardId,limit,params.before);
+  }
   setFolderStatus(params: FolderActorParams & { folderId: string; expectedVersion: number; status: FolderStatus; reason?: string | null; idempotencyKey?: string | null }) {
     return this.core.setFolderStatus(params);
   }
@@ -105,16 +135,88 @@ export class CardControlPlaneService {
   }
   async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null }) {
     return this.mutateCard(params,"set_card_status",{ status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null },async (sql,card,eventId,payload) => {
-      const claim=params.actorKind === "agent" ? await this.claim(sql,card,params.actorSessionId,payload) : {};
-      if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId))
-        throw Object.assign(new Error("Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work."), {statusCode:403});
-      await this.patch(sql,card,{ ...claim,status:params.status,
-        blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
-        queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id) : params.status === "blocked" && params.blockedKind === "limit" ? card.queue_position_key : null,
-        completed_kind:params.status === "done" ? params.actorKind === "system" ? null : params.actorKind ?? "agent" : null,completed_session_id:params.status === "done" ? params.actorSessionId : null,
-        completed_event_id:params.status === "done" ? eventId : null,completed_user_id:params.status === "done" ? params.actorUserId ?? null : null,
-        completed_at:params.status === "done" ? new Date() : null },params,eventId);
+      const fields=await this.applyStatusTx(sql,card,eventId,params,payload);
+      await this.patch(sql,card,fields,params,eventId);
     });
+  }
+  async requestCardReview(params: CardMutationParams & { ask?: string }) {
+    return this.mutateCard(params,"set_card_status",{status:"review",blocked_kind:null,blocked_detail:null,ask:params.ask},async(sql,card,eventId,payload)=>{
+      if ((card.items ?? []).length > 0 && params.ask === undefined)
+        throw invalid("사용자가 볼 것을 ask에 한 줄로 적으세요");
+      const at=new Date().toISOString();
+      const now=reviewCardNow(card.now ?? null,params.ask,at,params.actorSessionId);
+      const fields=await this.applyStatusTx(sql,card,eventId,{...params,status:"review"},payload);
+      if (params.ask !== undefined && now !== null) fields.now=sql.json(now);
+      await this.patch(sql,card,fields,params,eventId);
+    });
+  }
+  async setCardItems(params: CardMutationParams & { items: string[] }) {
+    const at=new Date().toISOString();
+    return this.mutateCard(params,"set_card_items",{items:params.items.map(title=>({title}))},async(sql,card,eventId)=>{
+      assertAssignedCardSession(card,params);
+      const items=setItemsRule(card.items ?? [],params.items,at);
+      await this.patch(sql,card,{items:sql.json(items)},params,eventId);
+    });
+  }
+  async addCardItem(params: CardMutationParams & { title: string; fromCommentId?: string }) {
+    const at=new Date().toISOString();
+    return this.mutateCard(params,"add_card_item",{title:params.title,from_comment_id:params.fromCommentId},async(sql,card,eventId)=>{
+      assertAssignedCardSession(card,params);
+      const source=params.fromCommentId ? await readCardItemSourceTx(sql,card.id,params.fromCommentId) : null;
+      const items=addItemRule(card.items ?? [],params.title,source,at);
+      await this.patch(sql,card,{items:sql.json(items)},params,eventId);
+    });
+  }
+  async reportCardItem(params: CardMutationParams & {
+    itemId: number; state: Exclude<CardItemState,"todo">; result?: string;
+    evidence?: CardItemEvidence[]; caveat?: string; reopenReason?: string;
+  }) {
+    const at=new Date().toISOString();
+    const input:ReportCardItemInput={state:params.state,...(params.result===undefined?{}:{result:params.result}),
+      ...(params.evidence===undefined?{}:{evidence:params.evidence}),...(params.caveat===undefined?{}:{caveat:params.caveat}),
+      ...(params.reopenReason===undefined?{}:{reopenReason:params.reopenReason})};
+    return this.mutateCard(params,"report_card_item",{item_id:params.itemId,state:params.state,result:params.result,
+      evidence:params.evidence,caveat:params.caveat,reopen_reason:params.reopenReason},async(sql,card,eventId)=>{
+      assertAssignedCardSession(card,params);
+      const items=reportItemRule(card.items ?? [],params.itemId,input,at);
+      await this.patch(sql,card,{items:sql.json(items)},params,eventId);
+    });
+  }
+  async confirmCardItem(params: CardMutationParams & { itemId: number; confirmed: boolean }) {
+    if (params.actorKind !== "user") throw Object.assign(new Error("Only a human may confirm card items"),{statusCode:403});
+    const at=new Date().toISOString();
+    return this.mutateCard(params,"confirm_card_item",{item_id:params.itemId,confirmed:params.confirmed},async(sql,card,eventId)=>{
+      const items=confirmItemRule(card.items ?? [],params.itemId,params.confirmed,at);
+      await this.patch(sql,card,{items:sql.json(items)},params,eventId);
+    },false);
+  }
+  async updateCardNow(params: CardMutationParams & { now: string; turn: CardNowTurn; ask?: string }) {
+    const existing=params.idempotencyKey ? await this.repo.getOperationByIdempotencyKey(params.idempotencyKey) : null;
+    const previous=existing?.operation_type === "update_card_now" && existing.target_kind === "card" && existing.target_id === params.cardId
+      ? existing.payload_json : null;
+    const at=typeof previous?.updatedAt === "string" ? previous.updatedAt : new Date().toISOString();
+    const now=makeCardNow({text:params.now,turn:params.turn,...(params.ask===undefined?{}:{ask:params.ask})},at,params.actorSessionId);
+    return this.mutateCard(params,"update_card_now",now as unknown as Record<string,unknown>,async(sql,card,eventId)=>{
+      assertAssignedCardSession(card,params);
+      await this.patch(sql,card,{now:sql.json(now)},params,eventId);
+    });
+  }
+  async addCardNote(params: CardMutationParams & { text: string }) {
+    const existing=params.idempotencyKey ? await this.repo.getOperationByIdempotencyKey(params.idempotencyKey) : null;
+    const existingNoteId=existing?.operation_type === "add_card_note" && existing.target_kind === "card" && existing.target_id === params.cardId
+      && typeof existing.payload_json.note_id === "string" ? existing.payload_json.note_id : null;
+    const noteId=existingNoteId ?? randomUUID();
+    await this.mutateCard(params,"add_card_note",{note_id:noteId,text:params.text},async(sql,card)=>{
+      assertAssignedCardSession(card,params);
+      const length=codePointLength(params.text);
+      if (length === 0) throw invalid("note.text은 비워 둘 수 없습니다");
+      if (length > 4000) throw invalid(`note.text은 4000자까지입니다. 지금 ${length}자입니다`);
+      await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body)
+        VALUES(${noteId},${card.id},'agent',NULL,${params.actorSessionId},'note',${params.text})`;
+    });
+    const note=await this.repo.getComment(params.cardId,noteId);
+    if (!note) throw new Error("Card note was not stored");
+    return note;
   }
   async startCardWork(params: CardMutationParams & { execution: CardWorkExecution }) {
     if (params.actorKind !== "agent" || !params.actorSessionId) throw invalidWork("Only the current assignee session may start work. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
@@ -145,11 +247,12 @@ export class CardControlPlaneService {
   }
   async addReport(params: CardMutationParams & { title:string; format:"markdown" | "html"; body:string }) {
     return this.mutateCard(params,"add_card_report",{ title:params.title,format:params.format,body:params.body },async (sql,card) => {
+      if ((card.items ?? []).length > 0) throw invalid("결과는 항목에 다세요(report_card_item)");
       await sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id)
         VALUES(${randomUUID()},${card.id},${params.title},${params.format},${params.body},${params.actorSessionId})`;
     });
   }
-  async addComment(params: CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply" }) {
+  async addComment(params: CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply"; itemId?:number }) {
     const external=params.actorKind === "llm";
     const reply=params.mode === "reply";
     if (params.mode && (params.actorKind !== "agent" || !params.actorSessionId)) throw invalid("Only trusted session actors may select a comment mode");
@@ -160,13 +263,27 @@ export class CardControlPlaneService {
       && typeof existing.payload_json.comment_id === "string" ? existing.payload_json.comment_id : null;
     const commentId=existingCommentId ?? randomUUID();
     const result=await this.mutateCard(params,"add_card_comment",{ comment_id:commentId,body:params.body,kind,
-      ...(reply ? {author_kind:"agent",session_id:params.actorSessionId} : {}) },async (sql,card,eventId,payload) => {
+      ...(params.itemId===undefined?{}:{item_id:params.itemId}),...(reply ? {author_kind:"agent",session_id:params.actorSessionId} : {}) },async (sql,card,eventId,payload) => {
+      if (params.actorKind === "agent" && (card.items ?? []).length > 0 && params.mode === undefined)
+        throw invalid("mode를 spoken 또는 reply로 지정하세요");
       const claim=reply ? await this.claim(sql,card,params.actorSessionId,payload) : {};
       if (reply && (card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId))
         throw invalid("Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
+      if (reply && (card.items ?? []).length > 0) {
+        const length=codePointLength(params.body);
+        if (length > 300) throw invalid(`reply은 300자까지입니다. 지금 ${length}자입니다`);
+        if (!(await hasUserInputAfterLastReplyTx(sql,card.id)))
+          throw invalid("이미 답했습니다. 진행은 노트에 적으세요(add_card_note)");
+      }
+      if (params.itemId !== undefined && !(card.items ?? []).some(item=>item.id===params.itemId))
+        throw invalid("항목을 찾을 수 없습니다");
       if (Object.keys(claim).length) await this.patch(sql,card,claim,params,eventId);
-      await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body)
-        VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body})`;
+      await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id)
+        VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body},${params.itemId ?? null})`;
+      if (params.itemId !== undefined && !reply) {
+        const items=openCardItemFix(card.items ?? [],params.itemId);
+        await this.patch(sql,card,{items:sql.json(items)},params,eventId);
+      }
     });
     const storedId=String(result.operation.payload_json.comment_id ?? commentId);
     const comment=await this.repo.getComment(params.cardId,storedId);
@@ -178,8 +295,10 @@ export class CardControlPlaneService {
     return this.mutateCard(params,"ask_card_question",{ text:params.text,options:params.options ?? null },async (sql,card,eventId) => {
       await sql`INSERT INTO card_questions(id,card_id,session_id,text,options)
         VALUES(${randomUUID()},${card.id},${params.actorSessionId},${params.text},${sql.json(params.options ?? null)})`;
+      const now=questionCardNow(card.now ?? null,params.text,new Date().toISOString(),params.actorSessionId);
       await this.patch(sql,card,{ status:"blocked",blocked_kind:"question",blocked_detail:params.text,queue_position_key:null,
-        completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null },params,eventId);
+        completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null,
+        ...(now === null ? {} : {now:sql.json(now)}) },params,eventId);
     });
   }
   async answerQuestion(params: CardMutationParams & { questionId:string; answer:string }) {
@@ -225,7 +344,28 @@ export class CardControlPlaneService {
       await this.patch(sql,card,payload,actor,eventId);
     });
   }
-  private async mutateCard(params:CardMutationParams,operationType:string,payload:Record<string,unknown>,apply:(sql:RepositorySql,card:CardRow,eventId:number | null,payload:Record<string,unknown>)=>Promise<void>) {
+  private async applyStatusTx(
+    sql:RepositorySql,
+    card:CardRow,
+    eventId:number | null,
+    params:CardMutationParams & {status:CardStatus;blockedKind?:CardRow["blocked_kind"];blockedDetail?:string | null},
+    payload:Record<string,unknown>,
+  ):Promise<Record<string,unknown>> {
+    const claim=params.actorKind === "agent" ? await this.claim(sql,card,params.actorSessionId,payload) : {};
+    if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId))
+      throw Object.assign(new Error("Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work."), {statusCode:403});
+    return { ...claim,status:params.status,
+      blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,
+      blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
+      queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id)
+        : params.status === "blocked" && params.blockedKind === "limit" ? card.queue_position_key : null,
+      completed_kind:params.status === "done" ? params.actorKind === "system" ? null : params.actorKind ?? "agent" : null,
+      completed_session_id:params.status === "done" ? params.actorSessionId : null,
+      completed_event_id:params.status === "done" ? eventId : null,
+      completed_user_id:params.status === "done" ? params.actorUserId ?? null : null,
+      completed_at:params.status === "done" ? new Date() : null };
+  }
+  private async mutateCard(params:CardMutationParams,operationType:string,payload:Record<string,unknown>,apply:(sql:RepositorySql,card:CardRow,eventId:number | null,payload:Record<string,unknown>)=>Promise<void>,notifyMutation=true) {
     const card=await this.repo.getCard(params.cardId);
     if (!card) throw Object.assign(new Error("Card not found"),{ statusCode:404 });
     const clean=Object.fromEntries(Object.entries(payload).filter(([,v])=>v !== undefined));
@@ -242,7 +382,7 @@ export class CardControlPlaneService {
         committedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
         typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));
-    if (!result.idempotent) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});
+    if (!result.idempotent && notifyMutation) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});
     return result;
   }
   private async patch(sql:RepositorySql,card:CardRow,fields:Record<string,unknown>,actor:FolderActorParams,eventId:number | null) {
@@ -278,5 +418,10 @@ export class CardControlPlaneService {
     }
     return append ? generateKeyBetween(rows.at(-1)?.key ?? null,null) : generateKeyBetween(null,rows[0]?.key ?? null);
   }
+}
+function assertAssignedCardSession(card:CardRow,params:CardMutationParams):void {
+  if (params.actorKind !== "agent" || !params.actorSessionId
+    || card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId)
+    throw invalid("Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
 }
 function invalid(message:string) { return Object.assign(new Error(message),{ statusCode:422,code:"INVALID_CARD_REQUEST" }); }

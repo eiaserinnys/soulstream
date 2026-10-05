@@ -3397,6 +3397,8 @@ CREATE TABLE IF NOT EXISTS cards (
     title                TEXT NOT NULL,
     request              TEXT NOT NULL DEFAULT '',
     attachments          JSONB NOT NULL DEFAULT '[]'::jsonb,
+    items                JSONB NOT NULL DEFAULT '[]'::jsonb,
+    now                  JSONB,
     brief                TEXT NOT NULL DEFAULT '',
     blocked_kind         TEXT CHECK (blocked_kind IN ('limit','question','no_report')),
     blocked_detail       TEXT,
@@ -3466,8 +3468,9 @@ CREATE TABLE IF NOT EXISTS card_comments (
     author_kind TEXT NOT NULL CHECK (author_kind IN ('user','agent')),
     author_id TEXT,
     session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    kind TEXT NOT NULL DEFAULT 'comment' CHECK (kind IN ('comment','spoken')),
+    kind TEXT NOT NULL DEFAULT 'comment' CHECK (kind IN ('comment','spoken','note')),
     body TEXT NOT NULL,
+    item_id INTEGER,
     delivered_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -4358,3 +4361,17 @@ BEGIN
             CHECK (archived OR number IS NOT NULL);
     END IF;
 END $$;
+
+ALTER TABLE cards
+    ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS now JSONB;
+
+ALTER TABLE card_comments
+    ADD COLUMN IF NOT EXISTS item_id INTEGER;
+
+ALTER TABLE card_comments
+    DROP CONSTRAINT IF EXISTS card_comments_kind_check;
+
+ALTER TABLE card_comments
+    ADD CONSTRAINT card_comments_kind_check
+    CHECK (kind IN ('comment', 'spoken', 'note'));

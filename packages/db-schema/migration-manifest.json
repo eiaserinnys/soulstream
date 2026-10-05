@@ -488,6 +488,10 @@
     {
       "id": "120_card_number.sql",
       "sha256": "8d60225efa026f162713e04ea45ddee1b064d64a44d4cdb5e81a6e311e61e433"
+    },
+    {
+      "id": "121_card_check_items.sql",
+      "sha256": "c6b2fa76369db6cbce0cde3c773624baf5aea8df1fa3f460faa9f3651d399c38"
     }
   ]
 }

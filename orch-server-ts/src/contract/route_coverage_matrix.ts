@@ -106,6 +106,7 @@ export const tsOnlyRouteKeys = [
   "POST /api/attachments/sessions/multipart/abort",
   "POST /api/cards/{id}/start-work",
   "POST /api/cards/{id}/execute",
+  "POST /api/cards/{id}/items/{itemId}/confirm",
   "GET /api/cards/{id}/execution",
   "POST /api/cards/{id}/execution-settings",
   "GET /api/settings/card-orchestration",

@@ -431,6 +431,8 @@ CREATE TABLE cards (
     title                TEXT NOT NULL,
     request              TEXT NOT NULL DEFAULT '',
     attachments          JSONB NOT NULL DEFAULT '[]'::jsonb,
+    items                JSONB NOT NULL DEFAULT '[]'::jsonb,
+    now                  JSONB,
     brief                TEXT NOT NULL DEFAULT '',
     blocked_kind         TEXT CHECK (blocked_kind IN ('limit','question','no_report')),
     blocked_detail       TEXT,
@@ -498,8 +500,9 @@ CREATE TABLE card_comments (
     author_kind TEXT NOT NULL CHECK (author_kind IN ('user','agent')),
     author_id TEXT,
     session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    kind TEXT NOT NULL DEFAULT 'comment' CHECK (kind IN ('comment','spoken')),
+    kind TEXT NOT NULL DEFAULT 'comment' CHECK (kind IN ('comment','spoken','note')),
     body TEXT NOT NULL,
+    item_id INTEGER,
     delivered_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

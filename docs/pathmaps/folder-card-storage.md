@@ -9,7 +9,7 @@
 | 폴더 생성·이동·이름·보관·상태 | `folder_project_identity_service.ts`, `folder_project_identity_repository.ts` | 폴더, project page, board subfolder, 감사 작업을 한 트랜잭션에 저장한다. 보관은 숨김이며 내용과 부모 관계를 보존한다. |
 | 부모 mount | `folder_parent_mounts.ts` | identity 트랜잭션에서 부모 page에 자식 page mount를 만든다. 이동하면 옛 mount를 제거하고 새 부모에 생성한다. 최상위에는 mount가 없다. 사용자 작성 하위 블록은 보존한다. |
 | 부모 보드 identity 적용 | `src/board-yjs/board_yjs_service.ts`, `board_yjs_folder_identity.ts` | 이전 부모와 새 부모의 보드 문서를 identity 잠금과 문서 mutation gate 아래에서 갱신한다. 두 부모가 모두 null인 최상위 생성과 수정은 identity 잠금 아래에서 `persist([])`로 저장한다. 최상위로 이동할 때는 이전 부모 보드를 gate 아래에서 제거한다. 문서 mutation gate는 빈 이름 목록을 허용하지 않는다. |
-| 카드 HTTP와 저장 | `src/cards/card_routes.ts`, `card_operations.ts`, `card_control_plane_service.ts`, `control_plane/card_mutation_core.ts` | `/api/cards`와 `/:id`의 상태·이동·대기열·보고·질문 답 경로. `cards.folder_id`가 소속이며 `folder_operations`가 감사 정본이다. request는 생성 후 고정, brief는 수정 가능, 보고는 추가만 한다. |
+| 카드 HTTP와 저장 | `src/cards/card_routes.ts`, `card_operations.ts`, `card_control_plane_service.ts`, `control_plane/card_mutation_core.ts` | `/api/cards`와 `/:id`의 상태·이동·대기열·확인 항목·상황판·노트 경로. `cards.folder_id`가 소속이며 `folder_operations`가 감사 정본이다. request는 생성 후 고정, brief는 수정 가능, 보고는 추가만 한다. 사용자 확인은 `POST /api/cards/:id/items/:itemId/confirm`으로 카드 version 없이 저장하고 담당 세션을 깨우지 않는다. |
 | 세션과 카드 연결 | `sessions.card_id` | ON DELETE SET NULL. 카드 상세 세션 목록과 세션 DTO cardId가 같은 열을 읽는다. 보드와 페이지 바인딩에 카드 연결 복제는 없다. |
 | 보드 여섯 종류 | `src/board-yjs/board_yjs_repository.ts` | session, markdown, subfolder, asset, frame, custom_view 모두 `folder_id` 하나로 소속한다. 문서명은 `board-folder:<id>`. |
 | 세션 트리와 담당 카드 이동 | `src/session/session_board_move_service.ts` → `src/board-yjs/board_yjs_move_repository.ts` | 루트와 모든 자식을 함께 이동한다. `sessions.folder_id`와 `cards.assignee_session_id`로 연결된 카드의 `folder_id`는 DB가 정본이다. `sessions.card_id`로 소속된 카드를 담당 카드로 간주하지 않는다. |
@@ -35,6 +35,14 @@
 
 `system_settings.card_dispatch`는 기본 `{"nodeConcurrency":{"default":2}}`를 시드한다. 기존 checklist handoff 경로는 제거한다. 모든 P1 단계를 머지한 뒤 한 번에 배포한다.
 
+## 확인 항목 전환 (121)
+
+`121_card_check_items.sql`은 `cards.items` JSONB와 `cards.now` JSONB, `card_comments.item_id`와 `kind='note'`를 더한다. 기존 카드·보고·커멘트 본문은 바꾸지 않으며 옛 카드의 `items`는 빈 배열이다. 항목이 있는 카드에만 새 agent 입력 규칙을 적용하고, 빈 배열 카드에서는 기존 보고와 커멘트 동작을 유지한다.
+
+항목과 상황판의 저장 정본은 `cards.items`와 `cards.now`다. `orch-server-ts/src/cards/control_plane/card_item_store.ts`가 카드 항목과 사용자 입력 출처를 읽는 SQL을 소유하고, `card_item_rules.ts`가 항목의 표시 상태를 계산하며 `folder_contracts.ts`가 공통 카드 응답에 `display`를 붙인다. 카드 상세와 일반·완료 목록, 폴더와 planner는 이 serializer를 공유한다. folder outline은 기존 선택 필드만 내보내 항목과 상황판을 포함하지 않는다.
+
+노트는 `card_comments`의 `kind='note'` 행이고 이력 별도 테이블은 없다. 일반 `comments` 응답에서 노트를 빼며 REST 상세는 `notes`를, MCP `get_card`는 최근 20건을 제공하고 `list_card_notes`는 최신순 페이지와 `before` cursor를 제공한다. `reports`는 빈 카드에서도 항상 배열이다. 상황판 이력은 `folder_operations`의 `update_card_now` payload에서 최근 20개를 오래된 순으로 읽는다.
+
 ## 카드 실행과 세션 연결
 
 | 경로 | 구현 | 계약 |
@@ -42,13 +50,20 @@
 | 대기열 진입·재정렬 | `orch-server-ts/src/cards/card_control_plane_service.ts` → `card_dispatcher.ts` | 커밋된 mutation만 실행을 깨운다. `pickNextCard`는 C 정렬 대기열에서 자리가 있는 첫 카드를 고른다. human과 담당 없는 카드는 queued로 두고 사유를 적는다. |
 | 실행 상한 | `card_dispatch_settings.ts`, `card_dispatch_settings_routes.ts` | GET/PUT `/api/settings/card-dispatch`, `{nodeConcurrency:{default:n,[nodeId]:n},expectedVersion}`. 정수 n≥0, CAS 충돌 409. 응답은 `{settings:{key,nodeConcurrency,version,updatedAt,updatedBy}}`. |
 | 실행 세션 구분 | `card_dispatch_repository.ts` | `folder_operations`의 system `dispatch_card` 감사 행에 session_id/node_id를 기록한다. 세션의 카드 연결 정본은 `sessions.card_id`이며 감사 행은 디스패처 생성 출처만 나타낸다. 수동 세션은 상한에서 제외한다. |
-| 세션 생성 | `card_dispatch_runtime.ts` → `session/recurring_session_creation.ts` → `SessionCommandRouter.createSession` | 기존 노드 생성/ACK/관측 경로를 재사용한다. 명령의 선택 필드 `cardId`는 camelCase다. 첫 프롬프트는 `card_prompt.ts`가 요청·경과·반려·실행 목록·대기열·카드 규칙을 조립한다. 답변 이력은 경과에 포함한다. |
+| 세션 생성 | `card_dispatch_runtime.ts` → `session/recurring_session_creation.ts` → `SessionCommandRouter.createSession` | 기존 노드 생성/ACK/관측 경로를 재사용한다. 명령의 선택 필드 `cardId`는 camelCase다. 첫 프롬프트는 `card_prompt.ts`가 요청·인계 요약·커멘트 ID·반려·실행 목록·대기열·카드 규칙을 조립한다. 답변 이력은 인계 요약에 포함한다. |
 | 등록 저장 | `control_plane/repositories/session_mutation_repository.ts`의 registerSession/registerSessionWithWorktree | 선택 `cardId`를 기존 등록 트랜잭션에서 `sessions.card_id`에 저장한다. 디스패처에 별도 연결 UPDATE는 없다. wire 정본은 `packages/wire-schema/src/upstream.schema.json`의 CreateSession.cardId다. |
 | 종료·한도 | 커밋된 `node_session_session_updated` → `CardDispatcher.sessionEnded` | 턴 종료만으로 no_report 막힘을 기록하지 않는다. running 담당 세션의 limit_hit 종료만 기존 경로에서 blocked(limit)로 기록한다. review/question/done은 유지한다. 반복 작업 스케줄러의 기존 tick에서 1분마다 한도 카드의 프리셋을 확인한다. |
 | 질문·답 | POST `/api/cards/:id/questions` → askQuestion / POST `/api/cards/:id/questions/:qid/answer` | 질문 본문 `{text,options?,idempotencyKey}`, trusted service bearer와 agent session header, 성공 201. 답변은 기존 intervene 계약으로 유휴 재개/실행 중 개입. 완료 세션이면 queued로 돌린다. |
-| 반려 | 사람의 review→running, reason 필수 | 기존 세션이면 반려 사유 메시지, 완료 세션이면 queued. 새 세션의 첫 프롬프트에도 반려 사유를 넣는다. |
-| 카드 알림 | `push/push_notifier.ts`의 notifyCard → 기존 sendToUser | 질문은 카드 제목·질문, review는 `검수 요청: {제목}`. 기존 토큰 fan-out/invalid token 제거/폴더 알림 제외를 재사용한다. orch에 Slack DM 발송 경로는 없다. |
+| 확인 요청·사용자 커멘트 | `request_card_review(ask)` / POST `/api/cards/:id/comments`의 `itemId` | 검수 요청은 기존 상태 전환과 함께 상황판을 user 차례로 갱신한다. 확인 항목 대상 커멘트는 항목 확인을 풀고 고칠 점을 추가한다. 사용자 커멘트 전달에는 커멘트 ID, 대상 항목, 직전 성공 전달 이후 확인했던 번호를 넣고 기존 성공 뒤 `delivered_at`을 기록한다. |
+| 반려 | 사람의 review→running, 선택 사유 | 사유는 선택 사항이며, 입력한 경우 기존 세션에 반려 사유 메시지로 전달하고 새 세션의 첫 프롬프트에 포함한다. 완료 세션이면 queued로 둔다. |
+| 카드 알림 | `push/push_notifier.ts`의 notifyCard → 기존 sendToUser | 질문은 카드 제목·질문, review는 `검수 요청: {제목}`. 확인만으로 담당 세션을 깨우지 않으며 다음 사용자 커멘트 전달에 확인 사실을 포함한다. 기존 토큰 fan-out/invalid token 제거/폴더 알림 제외를 재사용한다. orch에 Slack DM 발송 경로는 없다. |
 | 표시 | `planner/planner_repository.ts`, `card_updated` | attention은 review와 blocked 전체(question/no_report/limit), running, queued는 전역 대기열 순서를 따른다. 카드 상세 및 세션 DTO는 같은 sessions.card_id를 읽는다. 웹·앱 소비 구현은 d/e다. |
+
+## 서버 안내문과 담당 현황
+
+`card_prompt.ts`는 첫 실행 규칙을 확인 항목·노트·상황판·검수 도구 기준으로 조립한다. 직접 실행, 대기열 배정, orchestration 자동배정의 프롬프트 조립 자리와 재개 문구가 이를 사용하며, `session_folder_context.ts`의 `card_guidance`도 같은 도구를 안내한다. 여섯 새 MCP 도구는 내부 agent 전용이고 외부 닷 인벤토리에는 포함하지 않는다.
+
+담당 현황은 `cards.items`가 비어 있지 않은 카드에 `hasItems`를 함께 내려 최근 보고 부족 문구를 생략한다. `assigned_card_snapshot_recorder.ts`도 같은 플래그로 실제 입력 관찰 글을 `확인 항목 결과는 get_card로 조회`로 바꾼다. 플래그가 없는 기존 중앙 응답과 과거 캡처는 기존 문구를 유지한다.
 
 ## 한 세션 한 카드 (115)
 

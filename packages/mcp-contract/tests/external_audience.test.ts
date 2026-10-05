@@ -17,6 +17,12 @@ test("audience all never exposes delete, configuration or destructive tools", ()
 test("card assignee handoff is internal-only", () => {
   assert.equal(cardTools.transfer_card_assignee.audience, "internal");
 });
+test("card check item tools are internal-only while existing review and comment tools remain public", () => {
+  for (const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"] as const)
+    assert.equal(cardTools[name].audience,"internal",name);
+  assert.equal(cardTools.request_card_review.audience,"all");
+  assert.equal(cardTools.add_card_comment.audience,"all");
+});
 test("external LLMs can run cards with the shared card execution contract", () => {
   assert.equal(cardTools.run_card.audience, "all");
   assert.equal("externalInputSchema" in cardTools.create_card, false);

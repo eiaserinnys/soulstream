@@ -47,6 +47,8 @@ function assertInventory(tools: { name: string }[], era: "modern" | "legacy" = "
   expect(tools.map(t => t.name)).toEqual(definitions.map(d => d.name));
   expect(tools.map(t => t.name).sort()).toEqual(inventory.map(t => t.name));
   expect(tools.some(t => t.name === "run_card")).toBe(true);
+  for(const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"])
+    expect(tools.some(t=>t.name===name)).toBe(false);
   expect(cardTools.run_card.audience).toBe("all");
   expect(inventory.find(t => t.name === "create_card")!.inputSchema.properties).toHaveProperty("run");
   expect(inventory).toHaveLength(65);

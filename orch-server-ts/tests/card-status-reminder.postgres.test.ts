@@ -111,7 +111,11 @@ describe("durable card status reminders", () => {
   });
   it.each(["completed", "error"])("stalled sends to a %s root after its status clock", async status => {
     const id = await seed("running", undefined, status); await dispatcher.sessionEnded("root");
-    expect(messages).toHaveBeenCalledTimes(1); expect(messages.mock.calls[0]![3]!.deliveryId).toContain(":stalled:"); await unchanged(id, "running");
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(messages.mock.calls[0]![1]).toContain("확인 항목에 결과를 달고 request_card_review의 ask");
+    expect(messages.mock.calls[0]![1]).toContain("확인 항목이 없는 옛 카드는 기존 보고");
+    expect(messages.mock.calls[0]![1]).toContain("update_card_now");
+    expect(messages.mock.calls[0]![3]!.deliveryId).toContain(":stalled:"); await unchanged(id, "running");
   });
   it.each(["interrupted", "limit", "active", "older", "archived"])("stalled excludes %s", async kind => {
     const id = await seed("running", kind === "active" ? "initializing" : undefined, kind === "interrupted" ? "interrupted" : kind === "limit" ? "error" : "completed", kind === "limit" ? "limit_hit" : null);

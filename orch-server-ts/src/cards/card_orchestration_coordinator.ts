@@ -420,6 +420,7 @@ export class CardOrchestrationCoordinator {
             .join("\n"),
           reason: snap.rejectionReason as string | null,
           comments: detail.comments.map((c) => ({
+            id: String(c.id),
             createdAt: c.created_at as Date | string,
             body: String(c.body),
           })),
@@ -435,7 +436,7 @@ export class CardOrchestrationCoordinator {
             })),
         }),
       };
-      input.prompt = `${String(input.prompt)}\n배정 승인 카드: ${card.id}. 작업을 실제 시작할 때 get_card로 최신 version을 읽고 start_card_work(card_id, expected_version, idempotency_key)를 호출합니다. 이 자동배정 실행의 착수는 admission과 현재 실행의 전달 소비를 확인합니다. 수동 상태 변경은 set_card_status로 가능하며 자동 실행 승인을 대신하지 않습니다. 전달을 읽기만 한 상태는 착수가 아닙니다.`;
+      input.prompt = `${String(input.prompt)}\n배정 승인 카드: ${card.id}. 작업을 실제 시작할 때 get_card로 최신 version을 읽고 start_card_work(card_id, expected_version, idempotency_key)를 호출합니다. 이 자동배정 실행의 착수는 admission과 현재 실행의 전달 소비를 확인합니다. 수동 상태 변경은 set_card_status로 가능하며 자동 실행 승인을 대신하지 않습니다. 전달을 읽기만 한 상태는 착수가 아닙니다. 착수 성공 뒤 확인 항목이 없으면 set_card_items로 결과를 나누고, 이미 있으면 그 항목을 이어서 씁니다.`;
       const admission = {
         runId: run.id,
         leaseToken: run.lease_token,
