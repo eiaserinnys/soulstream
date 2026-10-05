@@ -33,8 +33,8 @@ describe("list_node_model_presets", () => {
   it("오케스트레이터의 노드별 가용성 응답을 공개 필드 그대로 반환", async () => {
     const f = fixture();
     const presets = [
-      { id: "kimi-3", label: "Kimi - 3", backend: "claude", available: false, reason: "env_unresolved", reason_label: "키 미설정", resets_at: null, usage_warning: false },
-      { id: "claude-opus", label: "Claude - Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: true },
+      { id: "kimi-3", label: "Kimi - 3", backend: "claude", available: false, reason: "env_unresolved", reason_label: "키 미설정", resets_at: null, usage_warning: false, weekly_headroom: null },
+      { id: "claude-opus", label: "Claude - Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: true, weekly_headroom: { status: "ok", headroom: -10.5, remaining_percent: 83, window_remaining_percent: 93.5, resets_at: "2026-08-03T16:00:00.000Z", observed_at: "2026-07-28T03:00:00.000Z", quota_label: "7일" } },
     ];
     f.options.cluster.nodeAgentProfiles.modelPresetProvider = { listForNode: () => presets as never };
     expect(await f.call("list_node_model_presets", { node_id: "node-remote" })).toMatchObject({ structuredContent: { model_presets: presets } });

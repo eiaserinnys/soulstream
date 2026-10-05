@@ -7,6 +7,10 @@ import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
 } from "../usage/usage_summary_service.js";
+import {
+  resolveWeeklyHeadroom,
+  type WeeklyHeadroom,
+} from "../usage/weekly_headroom.js";
 
 export type StaticModelPreset = {
   readonly id: string;
@@ -35,6 +39,7 @@ export type ModelPresetAvailability = {
   readonly reason_label: string | null;
   readonly resets_at: string | null;
   readonly usage_warning: boolean;
+  readonly weekly_headroom: WeeklyHeadroom | null;
   /**
    * Canonical list of selectable efforts for this preset. Clients render choices
    * from this and nothing else — no per-frontend hardcoded table.
@@ -129,7 +134,22 @@ export function resolvePresetAvailability(
   summary: UsageSummarySnapshot,
   now: Date,
 ): ModelPresetAvailability {
-  const base = publicPreset(preset);
+  const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
+  const provider = preset.usage_provider === null
+    ? null
+    : nodeUsage?.providers[preset.usage_provider] ?? null;
+  const weeklyHeadroom = preset.usage_provider === null
+    ? null
+    : resolveWeeklyHeadroom(
+        provider,
+        provider?.quotas.filter((quota) =>
+          normalizedQuotaWindow(quota.window) === "7일"
+          && isQuotaApplicable(preset, quota),
+        ) ?? [],
+        nodeUsage?.stale ?? false,
+        now,
+      );
+  const base = { ...publicPreset(preset), weekly_headroom: weeklyHeadroom };
   if (!preset.available || preset.reason === "env_unresolved") {
     return {
       ...base,
@@ -142,8 +162,6 @@ export function resolvePresetAvailability(
   }
   if (preset.usage_provider === null) return availablePreset(base, false);
 
-  const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
-  const provider = nodeUsage?.providers[preset.usage_provider] ?? null;
   if (!nodeUsage || nodeUsage.stale || provider === null) {
     return availablePreset(base, true);
   }
@@ -209,7 +227,12 @@ function isEffortList(value: unknown): value is string[] {
 function availablePreset(
   preset: Pick<
     ModelPresetAvailability,
-    "id" | "label" | "backend" | "supported_efforts" | "default_effort"
+    | "id"
+    | "label"
+    | "backend"
+    | "supported_efforts"
+    | "default_effort"
+    | "weekly_headroom"
   >,
   usageWarning: boolean,
 ): ModelPresetAvailability {
