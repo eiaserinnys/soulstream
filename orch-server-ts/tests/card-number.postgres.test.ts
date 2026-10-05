@@ -221,8 +221,8 @@ describe("card number storage over PostgreSQL and HTTP", () => {
           archived: false, expectedVersion: 1, idempotencyKey: randomUUID(),
         },
       })));
-      expect(first.statusCode).toBe(200);
-      expect(second.statusCode).toBe(200);
+      expect(first!.statusCode).toBe(200);
+      expect(second!.statusCode).toBe(200);
       const firstNumber = first!.json().card.number as number;
       const secondNumber = second!.json().card.number as number;
       expect(Number.isInteger(firstNumber) && firstNumber > (maximum[0]?.number ?? 0)).toBe(true);
