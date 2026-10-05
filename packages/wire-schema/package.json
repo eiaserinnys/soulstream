@@ -13,7 +13,8 @@
     "./schema": "./src/upstream.schema.json",
     "./card-orchestration": "./src/card_orchestration.ts",
     "./card-attachments": "./src/card_attachments.ts",
-    "./card-colors": "./src/card_colors.ts"
+    "./card-colors": "./src/card_colors.ts",
+    "./persistent-session-settings": "./src/persistent_session_settings.ts"
   },
   "scripts": {
     "generate": "bash scripts/generate.sh",

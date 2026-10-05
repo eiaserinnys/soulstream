@@ -1,5 +1,6 @@
 import type { OrchestrationWorkerAdmission } from "./task_runtime_commands.js";
 import type { Logger } from "pino";
+import { parsePersistentSettingsPatch, type PersistentSettingsPatch } from "@soulstream/wire-schema/persistent-session-settings";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
@@ -21,6 +22,7 @@ import {
   UnknownAgentProfileError,
   buildSessionCreatedAck,
 } from "./task_runtime_commands.js";
+import { PersistentSessionControlError } from "../task/persistent_session_control.js";
 import { UnsupportedReasoningEffortError } from "../task/task_reasoning_effort.js";
 
 interface CreateSessionCmd extends CommandLike {
@@ -98,13 +100,21 @@ interface AcknowledgeSessionReviewCmd extends CommandLike {
   session_id?: string;
 }
 
+interface SetPersistentSessionSettingsCmd extends CommandLike {
+  type: "set_persistent_session_settings";
+  agentSessionId?: string;
+  session_id?: string;
+  enabled?: unknown;
+  settings?: unknown;
+}
+
 type ListSessionsCmd = CommandLike & { type: "list_sessions" };
 type ListRunnerInventoryCmd = CommandLike & { type: "list_runner_inventory" };
 
 interface SessionCommandFamilyDeps {
   send: SendFn;
   logger: Logger;
-  taskManager: Pick<TaskManager, "cancelTask" | "acknowledgeReview">;
+  taskManager: Pick<TaskManager, "cancelTask" | "acknowledgeReview" | "persistentSessions">;
   taskRuntimeCommands: TaskRuntimeCommands;
   sessionListCommands: SessionListCommands;
   listRunningSessionIds?(): Promise<string[]>;
@@ -121,6 +131,8 @@ export function createSessionCommandFamily(
       handleInterruptSession(deps, cmd as InterruptSessionCmd),
     acknowledge_session_review: (cmd) =>
       handleAcknowledgeSessionReview(deps, cmd as AcknowledgeSessionReviewCmd),
+    set_persistent_session_settings: (cmd) =>
+      handleSetPersistentSessionSettings(deps, cmd as SetPersistentSessionSettingsCmd),
     subscribe_events: (cmd) =>
       handleSubscribeEvents(deps, cmd as SubscribeEventsCmd),
     list_sessions: (cmd) => handleListSessions(deps, cmd as ListSessionsCmd),
@@ -177,6 +189,50 @@ async function handleAcknowledgeSessionReview(
     changed: outcome === "acknowledged",
     code: errorCode,
     message: errorCode ? reviewOutcomeMessage(outcome) : undefined,
+  });
+}
+
+/**
+ * `set_persistent_session_settings` — PAS 표시·설정 저장. 성공은 requestId가 있을 때
+ * `persistent_session_settings_updated`로 ACK하고, 입력 오류는 code를 실은 기존 error 메시지로 낸다.
+ */
+async function handleSetPersistentSessionSettings(
+  deps: SessionCommandFamilyDeps,
+  cmd: SetPersistentSessionSettingsCmd,
+): Promise<void> {
+  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  if (!sessionId) {
+    throw new CommandDispatchError("set_persistent_session_settings requires agentSessionId", "INVALID_REQUEST");
+  }
+  if (cmd.enabled !== undefined && typeof cmd.enabled !== "boolean") {
+    throw new CommandDispatchError("enabled must be a boolean", "INVALID_REQUEST");
+  }
+  let settings: PersistentSettingsPatch | undefined;
+  if (cmd.settings !== undefined) {
+    const parsed = parsePersistentSettingsPatch(cmd.settings);
+    if (!parsed.ok) throw new CommandDispatchError(parsed.message, "INVALID_REQUEST");
+    settings = parsed.value;
+  }
+  let result: Awaited<ReturnType<TaskManager["persistentSessions"]["applySettings"]>>;
+  try {
+    result = await deps.taskManager.persistentSessions.applySettings(sessionId, {
+      ...(cmd.enabled === undefined ? {} : { enabled: cmd.enabled }),
+      ...(settings === undefined ? {} : { settings }),
+    });
+  } catch (err) {
+    if (err instanceof PersistentSessionControlError || err instanceof UnsupportedReasoningEffortError) {
+      throw new CommandDispatchError(err.message, err.code);
+    }
+    throw err;
+  }
+  const requestId = commandRequestId(cmd);
+  if (!requestId) return;
+  await deps.send({
+    type: "persistent_session_settings_updated",
+    requestId,
+    agentSessionId: sessionId,
+    persistent: result.persistent,
+    modelChange: result.modelChange,
   });
 }
 

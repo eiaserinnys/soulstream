@@ -271,3 +271,126 @@ describe("PersistentSessionControl", () => {
     expect(enqueueMetadataEffect).not.toHaveBeenCalled();
   });
 });
+
+describe("PersistentSessionControl.applySettings", () => {
+  const sonnet = { model_preset: "codex-preset", reasoning_effort: "high" };
+
+  it("returns the real generation number when the marker is switched", async () => {
+    const task = makeRolloverTask({ persistentGeneration: { number: 4, firstCall } } as Partial<Task>);
+    const { control } = makeRolloverControl(task);
+
+    await expect(control.setSessionPersistent(task.agentSessionId, false)).resolves.toEqual({
+      sessionId: task.agentSessionId,
+      persistent: false,
+      generation: 4,
+    });
+  });
+
+  it("does not report success before the settings ACK, then requests the model change", async () => {
+    const task = makeRolloverTask();
+    let release!: (eventId: number) => void;
+    const settingsAck = new Promise<number>((resolve) => { release = resolve; });
+    const enqueueMetadataEffect = vi.fn()
+      .mockReturnValueOnce(settingsAck)
+      .mockResolvedValue(43);
+    const { control } = makeRolloverControl(task, {
+      persistent: { enqueueMetadataEffect } as unknown as EventPersistence,
+    });
+
+    let settled = false;
+    const saving = control.applySettings(task.agentSessionId, {
+      settings: { default_model: sonnet, show_character: false },
+    }).then((result) => { settled = true; return result; });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+    expect(enqueueMetadataEffect).toHaveBeenCalledTimes(1);
+    expect(enqueueMetadataEffect).toHaveBeenCalledWith(
+      task.agentSessionId,
+      {
+        type: "persistent_settings",
+        value: {
+          default_model: sonnet,
+          fallback_model: null,
+          show_generation_separator: true,
+          show_character: false,
+          show_jev_candidates: true,
+        },
+      },
+      { replaceExistingType: "persistent_settings", waitForAck: true },
+    );
+
+    release(42);
+    await expect(saving).resolves.toEqual({
+      sessionId: task.agentSessionId,
+      persistent: true,
+      modelChange: "next_execution_start",
+    });
+    expect(enqueueMetadataEffect).toHaveBeenLastCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "persistent_generation" }),
+      { replaceExistingType: "persistent_generation", waitForAck: true },
+    );
+    expect(task.persistentGeneration?.pending).toMatchObject({
+      reason: "settings",
+      targetModelPreset: "codex-preset",
+      targetReasoningEffort: "high",
+    });
+  });
+
+  it("does not request a second change for the same pending target or the running model", async () => {
+    const task = makeRolloverTask();
+    const { control, enqueueMetadataEffect } = makeRolloverControl(task);
+    const input = { settings: { default_model: sonnet } };
+
+    await control.applySettings(task.agentSessionId, input);
+    enqueueMetadataEffect.mockClear();
+
+    await expect(control.applySettings(task.agentSessionId, input)).resolves.toMatchObject({ modelChange: "none" });
+    await expect(control.applySettings(task.agentSessionId, {
+      settings: { default_model: { model_preset: "claude-preset", reasoning_effort: "medium" } },
+    })).resolves.toMatchObject({ modelChange: "none" });
+    expect(enqueueMetadataEffect.mock.calls.map(([, entry]) => entry.type))
+      .toEqual(["persistent_settings", "persistent_settings"]);
+
+    await expect(control.applySettings(task.agentSessionId, {
+      settings: { default_model: { model_preset: "codex-preset", reasoning_effort: "low" } },
+    })).resolves.toMatchObject({ modelChange: "next_execution_start" });
+    expect(task.persistentGeneration?.pending).toMatchObject({ targetReasoningEffort: "low" });
+  });
+
+  it("keeps a saved false toggle when a later partial save touches other keys", async () => {
+    const task = makeRolloverTask();
+    const { control, persistedEntries } = makeRolloverControl(task);
+
+    await control.applySettings(task.agentSessionId, { settings: { show_jev_candidates: false } });
+    await control.applySettings(task.agentSessionId, { settings: { show_character: false } });
+
+    const saved = persistedEntries.filter((entry) => entry.type === "persistent_settings").at(-1)?.value;
+    expect(saved).toMatchObject({
+      show_jev_candidates: false,
+      show_character: false,
+      show_generation_separator: true,
+      default_model: { model_preset: "claude-preset", reasoning_effort: "medium" },
+    });
+  });
+
+  it("only clears the marker when disabling and keeps settings", async () => {
+    const task = makeRolloverTask();
+    const { control, enqueueMetadataEffect } = makeRolloverControl(task);
+    await control.applySettings(task.agentSessionId, { settings: { default_model: sonnet } });
+    enqueueMetadataEffect.mockClear();
+
+    await expect(control.applySettings(task.agentSessionId, { enabled: false })).resolves.toEqual({
+      sessionId: task.agentSessionId,
+      persistent: false,
+      modelChange: "none",
+    });
+    expect(enqueueMetadataEffect).toHaveBeenCalledTimes(1);
+    expect(enqueueMetadataEffect).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "persistent_session", value: expect.objectContaining({ enabled: false }) }),
+      { replaceExistingType: "persistent_session", waitForAck: true },
+    );
+    expect(task.metadata?.some((entry) => entry.type === "persistent_settings")).toBe(true);
+  });
+});

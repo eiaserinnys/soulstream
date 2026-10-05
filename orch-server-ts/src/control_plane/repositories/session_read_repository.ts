@@ -17,6 +17,20 @@ export interface HostSessionSummaryRow extends Record<string, unknown> {
   updated_at: Date;
 }
 
+export interface HostPersistentSessionRow extends Record<string, unknown> {
+  session_id: string;
+  display_name: string | null;
+  node_id: string | null;
+  folder_id: string | null;
+  agent_id: string | null;
+  session_type: string | null;
+  model_preset: string | null;
+  model: string | null;
+  reasoning_effort: string | null;
+  metadata: unknown;
+  created_at: Date;
+}
+
 export class SessionReadRepository {
   constructor(private readonly sql: SqlClient) {}
 
@@ -25,6 +39,30 @@ export class SessionReadRepository {
       SELECT * FROM session_get(${sessionId})
     `;
     return rows[0] ?? null;
+  }
+
+  /**
+   * Every session whose `persistent_session` marker is on, oldest first. Filtered in
+   * SQL so a long tail of ordinary sessions can never push a persistent one out.
+   */
+  async listPersistentSessions(): Promise<HostPersistentSessionRow[]> {
+    return await this.sql<HostPersistentSessionRow[]>`
+      SELECT
+        s.session_id,
+        s.display_name,
+        s.node_id,
+        s.folder_id,
+        s.agent_id,
+        s.session_type,
+        s.model_preset,
+        s.model,
+        s.reasoning_effort,
+        s.metadata,
+        s.created_at
+      FROM sessions s
+      WHERE s.metadata @> '[{"type":"persistent_session","value":{"enabled":true}}]'::jsonb
+      ORDER BY s.created_at ASC, s.session_id ASC
+    `;
   }
 
   async listSessionsSummary(params: {

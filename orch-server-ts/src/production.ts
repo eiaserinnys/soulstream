@@ -106,6 +106,8 @@ import { SessionDeletionRepository } from "./session/session_deletion_repository
 import { SessionDeletionService } from "./session/session_deletion_service.js";
 import { SessionBoardMoveService } from "./session/session_board_move_service.js";
 import { intervenePayload } from "./session/session_action_command_payloads.js";
+import { PersistentSessionSettingsService } from "./session/persistent_session_settings_service.js";
+import { executeCreateSessionRoute } from "./session/session_command_routes.js";
 import {
   createLiveTurnSummaryPipeline,
   type LiveTurnSummaryPipeline,
@@ -853,6 +855,9 @@ export function buildProductionRouteOptions(
   if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
     throw new Error("session access provider is required for resume-after-limit routes");
   }
+  if (sessionAccessProvider === undefined) {
+    throw new Error("session access provider is required for persistent session settings routes");
+  }
   return {
     config,
     corsAllowedOrigins,
@@ -980,6 +985,18 @@ export function buildProductionRouteOptions(
           },
         }),
     sessionCatalogRoutes: providers.sessionCatalogRoutes,
+    persistentSessionRoutes: {
+      service: new PersistentSessionSettingsService({
+        reads: async () => (await persistenceRepositoryProvider()).sessionReads,
+        access: sessionAccessProvider,
+        catalog: providers.sessionCatalogRoutes.provider,
+        commands: providers.runtime.sessionActionCommandRoutes,
+        createSession: (request, body, logger) =>
+          executeCreateSessionRoute(providers.runtime.sessionCommandRoutes, request, body, logger),
+        presets: providers.modelPresetAvailability,
+        profiles: providers.nodeAgentProfileRoutes.provider,
+      }),
+    },
     sessionCommandRoutes: providers.runtime.sessionCommandRoutes,
     sessionHistoryRoutes: providers.runtime.sessionHistoryRoutes,
     sessionSnapshotRoutes: providers.runtime.sessionSnapshotRoutes,

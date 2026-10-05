@@ -313,6 +313,8 @@ def test_schema_has_all_message_types() -> None:
         "ReflectBrief",
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
+        "SetPersistentSessionSettings",
+        "PersistentSessionSettingsUpdated",
         "NodeControlRegister",
         "NodeControlRegisterAck",
         "NodeControlReady",
@@ -322,7 +324,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 79
+    assert len(wire_types) == 81
 
     sse_types = {
         "SSEEventInit",
@@ -625,6 +627,8 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ReflectBrief",
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
+        "SetPersistentSessionSettings",
+        "PersistentSessionSettingsUpdated",
         "NodeControlRegister",
         "NodeControlRegisterAck",
         "NodeControlReady",

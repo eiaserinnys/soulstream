@@ -132,6 +132,10 @@ import {
   type SessionHistoryRouteOptions,
 } from "./session/session_history_routes.js";
 import {
+  registerPersistentSessionSettingsRoutes,
+  type PersistentSessionSettingsRouteOptions,
+} from "./session/persistent_session_settings_routes.js";
+import {
   registerSessionSnapshotRoutes,
   type SessionSnapshotRouteOptions,
 } from "./session/session_snapshot_routes.js";
@@ -203,6 +207,7 @@ export type CreateAppOptions = {
   sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
   sessionResumeAfterLimitRoutes?: SessionResumeAfterLimitRouteOptions;
   sessionCatalogRoutes?: SessionCatalogRouteOptions;
+  persistentSessionRoutes?: PersistentSessionSettingsRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
@@ -327,6 +332,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.sessionCatalogRoutes !== undefined) {
     registerSessionCatalogRoutes(app, options.sessionCatalogRoutes);
+  }
+  if (options.persistentSessionRoutes !== undefined) {
+    registerPersistentSessionSettingsRoutes(app, options.persistentSessionRoutes);
   }
   if (options.sessionHistoryRoutes !== undefined) {
     registerSessionHistoryRoutes(app, options.sessionHistoryRoutes);
