@@ -89,6 +89,7 @@ describe("card orchestrator MCP roundtrip", () => {
   async function seed() {
     // Only the disposable harness's isolated schema is cleared; retain schema and policy.
     await h.sql`TRUNCATE folders,sessions,folder_operations RESTART IDENTITY CASCADE`;
+    await h.sql`ALTER SEQUENCE cards_number_seq RESTART WITH 1`;
     await h.sql`INSERT INTO folders(id,name) VALUES ('cards-a','A'),('cards-b','B'),('claude','System')`;
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status,execution_registration_id,execution_command_id)
       VALUES ('header-session','test-node','roselin','sol','running','registration','command'),
