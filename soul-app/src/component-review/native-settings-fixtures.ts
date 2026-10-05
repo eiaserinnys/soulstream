@@ -44,7 +44,7 @@ const persistentSessionFixtures = {
   getPersistentSession: async (id: string) => ({ session: requirePas(id) }),
   updatePersistentSession: async (id: string, input: PersistentSessionWrite) => {
     if (state() === 'persistent-save-error') throw pasFailure(503, 'NODE_COMMAND_TIMEOUT', '노드가 응답하지 않았습니다.');
-    if ('enabled' in input && input.enabled === false) { persistentSessions = persistentSessions.filter(item => item.session_id !== id); return { session: { ...requirePas(id), persistent: false }, model_change: 'none' as const }; }
+    if ('enabled' in input && input.enabled === false) { const released = requirePas(id); persistentSessions = persistentSessions.filter(item => item.session_id !== id); return { session: { ...released, persistent: false }, model_change: 'none' as const }; }
     const registering = plainSessions.get(id);
     const base = registering ?? requirePas(id);
     const model = input.settings.default_model;

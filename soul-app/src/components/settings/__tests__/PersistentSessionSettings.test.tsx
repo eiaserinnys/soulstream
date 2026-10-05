@@ -145,7 +145,7 @@ test('adds a session with the server defaults and no first message constant of i
   const screen = await openList();
   fireEvent.press(screen.getByTestId('persistent-session-create'));
   await screen.findByTestId('persistent-session-editor');
-  await waitFor(() => expect(screen.getByLabelText('첫 메시지 (선택)').props.placeholder).toBe('서버가 정한 첫 인사 문장'));
+  expect(await screen.findByText(/서버가 정한 첫 인사 문장/)).toBeTruthy();
   expect(screen.getByText('node-a')).toBeTruthy();
   expect(api.listNodeAgents).toHaveBeenCalledWith('node-a');
   expect(api.listModelPresets).toHaveBeenCalledWith('node-a');
@@ -170,7 +170,7 @@ test('a registration failure keeps the created id and retries only the registrat
   const screen = await openList();
   fireEvent.press(screen.getByTestId('persistent-session-create'));
   await screen.findByTestId('persistent-session-editor');
-  await waitFor(() => expect(screen.getByLabelText('첫 메시지 (선택)').props.placeholder).toBe('서버가 정한 첫 인사 문장'));
+  expect(await screen.findByText(/서버가 정한 첫 인사 문장/)).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '입력한 이름');
   fireEvent.press(await screen.findByText('폴더 A'));
   fireEvent.press(screen.getByTestId('settings-scope-save'));

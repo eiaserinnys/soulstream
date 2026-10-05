@@ -66,7 +66,7 @@ export function PersistentSessionsList({
   if (!serverUrl) return <Notice text="연결 설정을 저장하면 영구 에이전트 세션을 관리할 수 있습니다." />;
   return (
     <View testID="persistent-sessions-list" style={styles.block}>
-      <SettingsListHeader title="영구 에이전트 세션" help="상시 이어지는 에이전트 세션을 관리합니다.">
+      <SettingsListHeader title="등록된 세션" help="상시 이어지는 세션을 관리합니다.">
         <Action label="새로고침" onPress={() => void load()} testID="persistent-sessions-refresh" />
         <Action label="새 세션" onPress={onCreate} testID="persistent-session-create" />
       </SettingsListHeader>
@@ -96,11 +96,14 @@ export function PersistentSessionEditor({
   serverUrl,
   sessionId,
   onDone,
+  onRevealError,
 }: {
   serverUrl: string;
   /** Without an id the editor adds a new session. */
   sessionId?: string;
   onDone(): void;
+  /** Called when a failure is shown at the top, so the host can scroll it into view. */
+  onRevealError?(): void;
 }) {
   const t = useTokens();
   const styles = useSettingsFormStyles();
@@ -126,6 +129,7 @@ export function PersistentSessionEditor({
   const [registration, setRegistration] = useState<{ sessionId: string; name: string } | null>(null);
   const [responseLost, setResponseLost] = useState(false);
   const nodeId = session?.node_id ?? defaults?.node_id ?? '';
+  useEffect(() => { if (error || registration || responseLost) onRevealError?.(); }, [error, registration, responseLost]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!serverUrl) return;
@@ -291,7 +295,8 @@ export function PersistentSessionEditor({
       {defaults ? <Group title="시작">
         <Text style={styles.label}>결과 폴더</Text>
         <OptionRow label="폴더" selected={draft.folderId} options={folders.map((folder) => ({ id: folder.id, label: folder.name }))} onSelect={(folderId) => update({ folderId })} emptyLabel="선택 가능한 폴더가 없습니다." />
-        <Input label="첫 메시지 (선택)" value={draft.firstMessage} multiline placeholder={defaults.initial_instruction} onChangeText={(firstMessage) => update({ firstMessage })} />
+        <Input label="첫 메시지 (선택)" value={draft.firstMessage} multiline onChangeText={(firstMessage) => update({ firstMessage })} />
+        <Text style={styles.help}>비워 두면 서버가 정한 문장으로 시작합니다: {defaults.initial_instruction}</Text>
       </Group> : null}
     </SettingsSection> : null}
     {session ? <View>
