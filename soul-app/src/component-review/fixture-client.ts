@@ -1,4 +1,5 @@
 import type { ApiClient } from '../api/client';
+import { Alert, Platform, type AlertButton } from 'react-native';
 import type { CardDto, CardMutationResult, CardPatch } from '../api/cardTypes';
 import {
   createReviewApi,
@@ -9,6 +10,7 @@ import {
   folders,
   makeCard,
   starredFolders,
+  type ReviewCardMutation,
 } from './fixtures';
 import { nativeSettingsReviewApi } from './native-settings-fixtures';
 import { dialogueApi } from './dialogue-fixtures';
@@ -16,6 +18,7 @@ import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
+const entryShellMutationLog: ReviewCardMutation[] = [];
 
 // Metro selects this only in component-review. Actual entry shells keep their
 // production components and receive public data at the transport boundary.
@@ -27,7 +30,9 @@ const api = {
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
 };
 const entryShellApi = {
-  ...createReviewApi('normal', { home: true, entryShell: true }),
+  ...createReviewApi('normal', { home: true, entryShell: true,
+    directCardTouch: typeof window !== 'undefined' && new URLSearchParams(window.location?.search ?? '').get('cardTouch') === 'direct',
+    onCardMutation: (mutation) => entryShellMutationLog.push(mutation) }),
   getCatalog: async () => ({
     folders: entryShellFolders,
     sessions: entryShellCatalogSessions,
@@ -38,6 +43,27 @@ const entryShellApi = {
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
 };
+
+export const ENTRY_SHELL_ALERT_EVENT = 'soul-app-review-entry-shell-alert';
+export type EntryShellAlertRequest = { title?: string; message?: string; buttons?: AlertButton[] };
+
+/** RNWeb has no OS Alert UI, so entryShell supplies an explicit public harness substitute. */
+export function installEntryShellPublicHarness() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return () => {};
+  const previousAlert = Alert.alert;
+  const reviewWindow = window as Window & { __soulAppEntryShellCardMutations?: ReviewCardMutation[] };
+  entryShellMutationLog.length = 0;
+  reviewWindow.__soulAppEntryShellCardMutations = entryShellMutationLog;
+  Alert.alert = ((title?: string, message?: string, buttons?: AlertButton[]) => {
+    window.dispatchEvent(new CustomEvent<EntryShellAlertRequest>(ENTRY_SHELL_ALERT_EVENT, {
+      detail: { title, message, buttons },
+    }));
+  }) as typeof Alert.alert;
+  return () => {
+    Alert.alert = previousAlert;
+    delete reviewWindow.__soulAppEntryShellCardMutations;
+  };
+}
 
 export type CardColorReviewMode = 'success' | 'pending' | 'error';
 

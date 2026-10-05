@@ -1,5 +1,5 @@
 import type { ApiClient } from '../api/client';
-import type { CardDto, CardStatus } from '../api/cardTypes';
+import type { CardDto, CardPatch, CardStatus } from '../api/cardTypes';
 import type { CatalogFolder, Session, SessionEvent } from '../api/types';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { reviewSessionEventsUrl } from './chat-fixtures';
@@ -73,16 +73,29 @@ export const starredFolders: PlannerFolder[] = folders.map((folder) => ({
 export type AssignmentScenario = 'unassigned' | 'partial' | 'agent' | 'assigned' | 'live';
 export type FixtureState = 'normal' | 'empty' | 'error' | 'loading';
 export type FolderSessionPageScenario = 'many' | 'short';
+export type ReviewCardMutation =
+  | { method: 'updateCard'; id: string; patch: CardPatch; expectedVersion: number; idempotencyKey: string }
+  | { method: 'setCardStatus'; id: string; status: CardStatus; expectedVersion: number; idempotencyKey: string }
+  | { method: 'executeCard'; id: string; expectedVersion: number; idempotencyKey: string };
 export const fixtureOptions = [
   { value: 'normal', label: '기본' }, { value: 'empty', label: '빈 목록' },
   { value: 'error', label: '조회 실패' }, { value: 'loading', label: '로딩' },
 ] as const;
 
 export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; entryShell?: boolean; emptyReview?: boolean; emptyCards?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
+  directCardTouch?: boolean;
   folderSessionPages?: FolderSessionPageScenario;
   onFolderSessionPageRequest?(pageId: string, cursor: string | null, releaseResponse?: () => void): void;
+  onCardMutation?(mutation: ReviewCardMutation): void;
   onCreateCard?(body: Parameters<ApiClient['createCard']>[0]): void } = {}) {
   const cards = new Map((options.emptyCards ? [] : initialCards).map((card) => [card.id, { ...card }]));
+  const failedDirectReads = new Set<string>();
+  if (options.directCardTouch) for (const [id, title] of [
+    ['public-direct-done', '완료 카드 실제 본문·담당 홀드'],
+    ['public-direct-error-close', '상태 조회 실패 후 닫기'],
+    ['public-direct-error-retry', '상태 조회 실패 후 다시 조회'],
+  ]) cards.set(id, { ...makeCard('done'), id, title, folderId: entryShellFolders[2].id,
+    version: id === 'public-direct-done' ? 1 : 21 });
   if (options.entryShell) {
     const card = {
       ...makeCard('running'),
@@ -139,7 +152,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     if (state === 'loading') return new Promise(() => {});
     return value;
   };
-  const api: Pick<ApiClient, 'sessionEventsUrl' | 'getTimeline' | 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'executeCard' | 'getCardExecution' | 'saveCardExecutionSettings' | 'getSessionsByIds' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+  const api: Pick<ApiClient, 'sessionEventsUrl' | 'getTimeline' | 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'executeCard' | 'updateCard' | 'getCardExecution' | 'saveCardExecutionSettings' | 'getSessionsByIds' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
     sessionEventsUrl: reviewSessionEventsUrl,
     // Entry-shell chat receives its public messages through actual SSE parsing.
     getTimeline: async () => read({ messages: [], next_cursor: null }),
@@ -177,6 +190,10 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       return read({cards:filtered.slice(offset,offset+limit),nextCursor:offset+limit<filtered.length?String(offset+limit):null});
     },
     getCard: async (id) => {
+      if (options.directCardTouch && id.startsWith('public-direct-error-') && !failedDirectReads.has(id)) {
+        failedDirectReads.add(id);
+        throw new Error('공개 예시: 상태 선택 후 첫 카드 조회 실패');
+      }
       const card = cards.get(id);
       if (!card) throw new Error('알 수 없는 공개 예시 카드');
       return { card, reports: card.status === 'review' || card.status === 'done' ? [{ id: `report-${id}`, cardId: id, title: '공개 보고', format: 'markdown', body: '변경을 확인해 주세요.', createdAt: time }] : [], comments: [{id:'public-comment',cardId:id,authorKind:'user',authorId:'public-user',sessionId:null,kind:'comment',body:'요청과 결과를 확인합니다.',createdAt:time}], questions: card.blockedKind === 'question' ? [{ id: 'public-question', cardId: id, sessionId: 'public-session', text: '공개 질문입니다.', options: null, answer: null, askedAt: time }] : [], sessions:options.entryShell
@@ -192,12 +209,23 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
         nodeId: body.nodeId ?? null, modelPreset: body.modelPreset ?? null, attachments: body.attachments ?? [] };
       cards.set(card.id, card); return { card, folderId: card.folderId };
     },
-    setCardStatus: async (id, status, expectedVersion) => {
+    setCardStatus: async (id, status, expectedVersion, idempotencyKey) => {
+      options.onCardMutation?.({ method: 'setCardStatus', id, status, expectedVersion, idempotencyKey });
       if (options.failWrites) throw new Error('공개 예시: 저장 실패');
       const current = cards.get(id);
       if (!current) throw new Error('알 수 없는 공개 예시 카드');
       if (current.version !== expectedVersion) throw new Error('공개 예시: 버전 충돌');
       const card = { ...current, status, version: current.version + 1,completedAt:status==='done'?new Date().toISOString():null };
+      cards.set(id, card);
+      return { folderId: card.folderId, card };
+    },
+    updateCard: async (id, patch, expectedVersion, idempotencyKey) => {
+      options.onCardMutation?.({ method: 'updateCard', id, patch: { ...patch }, expectedVersion, idempotencyKey });
+      if (options.failWrites) throw new Error('공개 예시: 저장 실패');
+      const current = cards.get(id);
+      if (!current) throw new Error('알 수 없는 공개 예시 카드');
+      if (current.version !== expectedVersion) throw new Error('공개 예시: 버전 충돌');
+      const card = { ...current, ...patch, version: current.version + 1 };
       cards.set(id, card);
       return { folderId: card.folderId, card };
     },
@@ -208,7 +236,8 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       if(current.assigneeSessionId||current.version!==expectedVersion)throw new Error('공개 예시: 설정 변경 불가');
       const card={...current,...value,assigneeAgentId:value.agentId,version:current.version+1};cards.set(id,card);return {card,folderId:card.folderId};
     },
-    executeCard:async(id,_version,key)=>{
+    executeCard:async(id,expectedVersion,key)=>{
+      options.onCardMutation?.({ method: 'executeCard', id, expectedVersion, idempotencyKey: key });
       if(options.failWrites)throw new Error('공개 예시: 실행 실패. 기존 상태를 유지합니다.');
       const current=cards.get(id)!;const already=current.status==='running'&&!!current.assigneeSessionId;
       const card={...current,status:'running' as const,assigneeKind:'session' as const,assigneeSessionId:'public-running',version:current.version+1};cards.set(id,card);

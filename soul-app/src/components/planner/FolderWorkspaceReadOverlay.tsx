@@ -206,6 +206,7 @@ function makeStyles(t: DesignTokens) {
     overlayLayer: {
       ...StyleSheet.absoluteFill,
       zIndex: 1,
+      overflow: 'hidden',
     },
     backdrop: {
       ...StyleSheet.absoluteFill,

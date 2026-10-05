@@ -89,6 +89,20 @@ test('board modal uses transparent overlay and the shared tablet inset frame', (
   expect(screen.queryByTestId('app-modal-backdrop')).toBeNull();
 });
 
+test('native dismissal callback is forwarded to the existing Modal host', () => {
+  const onDismiss = jest.fn();
+  const props = {
+    visible: true,
+    variant: 'compact' as const,
+    modalId: 'modal_settings' as const,
+    onRequestClose: jest.fn(),
+    onDismiss,
+  };
+  const screen = render(<AppModalSurface {...props}><View /></AppModalSurface>);
+
+  expect(screen.UNSAFE_getByType(Modal).props.onDismiss).toBe(onDismiss);
+});
+
 test('popover modal anchors a compact glass surface at the tablet top edge', () => {
   const screen = render(
     <AppModalSurface

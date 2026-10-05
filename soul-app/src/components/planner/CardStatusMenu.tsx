@@ -16,15 +16,20 @@ import { cardStyles } from './Card.styles';
 import { GroupedGlassRow, GroupedGlassSheet } from './GroupedGlassSheet';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-export function CardStatusMenu({ api, card, onClose }: {
+export function CardStatusMenu({ api, card, onClose, entry = 'status', visible = true, requestedStatus, onBack, onDismiss }: {
   api: ApiClient | null; card: CardDto; onClose(): void;
+  entry?: 'status' | 'color'; visible?: boolean; requestedStatus?: CardStatus;
+  onBack?(): void; onDismiss?(): void;
 }) {
   const t = useTokens();
   const styles = cardStyles(t);
   const [detail, setDetail] = useState<CardDetail | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
-  const [colorSelection, setColorSelection] = useState(false);
+  const [colorSelection, setColorSelection] = useState(entry === 'color');
+  const [showTransitionResult, setShowTransitionResult] = useState(false);
   const active = useRef(true);
+  const handledStatus = useRef<CardStatus | null>(null);
+  const previousEntry = useRef(entry);
   const action=useCardTransition(api,card.id);
   const { transition, pending, error }=action;
   const colorAction = useCardActions(api, cause => setReadError(cause instanceof Error ? cause.message : String(cause)));
@@ -34,24 +39,51 @@ export function CardStatusMenu({ api, card, onClose }: {
     const scope = captureAuthScope().generation;
     setReadError(null);
     try { const next = await api.getCard(card.id); if (active.current && scope === captureAuthScope().generation) setDetail(next); }
-    catch (cause) { if (active.current && scope === captureAuthScope().generation) setReadError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) {
+      if (active.current && scope === captureAuthScope().generation) {
+        setReadError(cause instanceof Error ? cause.message : String(cause));
+        if (requestedStatus) setShowTransitionResult(true);
+      }
+    }
   };
-  useEffect(() => { active.current = true; void read(); return () => { active.current = false; }; }, [api, card.id]);
+  useEffect(() => {
+    if (previousEntry.current !== entry) {
+      previousEntry.current = entry;
+      setColorSelection(entry === 'color');
+    }
+  }, [entry]);
+  useEffect(() => {
+    active.current = true;
+    if (visible || requestedStatus) void read();
+    return () => { active.current = false; };
+  }, [api, card.id, visible, requestedStatus]);
+  const close = () => { active.current = false; onClose(); };
   const move = async (next: CardStatus) => {
     if (!detail || !active.current) return;
+    if (cardTransitionProblem(detail, next)) {
+      setShowTransitionResult(true);
+      return;
+    }
     const ok = await transition(detail.card, next, undefined, () => active.current);
-    if (ok && active.current) onClose();
+    if (ok && active.current) close();
+    else if (active.current) setShowTransitionResult(true);
   };
+  useEffect(() => {
+    if (!requestedStatus || !detail || handledStatus.current === requestedStatus) return;
+    handledStatus.current = requestedStatus;
+    void move(requestedStatus);
+  }, [requestedStatus, detail]);
   const chooseColor = async (color: CardColor) => {
     if (!detail || !api || !active.current) return;
-    if ((detail.card.color ?? 'yellow') === color) { onClose(); return; }
+    if ((detail.card.color ?? 'yellow') === color) { close(); return; }
     setReadError(null);
     const ok = await colorAction.run(() => api.updateCard(card.id, { color }, detail.card.version, cardOperationId()));
-    if (ok && active.current) onClose();
+    if (ok && active.current) close();
   };
   const currentColor = detail?.card.color ?? 'yellow';
   const visibleError = readError ?? error;
-  return <><CardTransitionSettings api={api} action={action} onExecuted={onClose}/><AppModalSurface visible={!action.settingsCard} modalId="modal_card_assignment" variant="compact" onRequestClose={() => { active.current = false; onClose(); }}>
+  return <><CardTransitionSettings api={api} action={action} onExecuted={close}/><AppModalSurface visible={(visible || showTransitionResult) && !action.settingsCard}
+    modalId="modal_card_assignment" variant="compact" onRequestClose={close} onDismiss={onDismiss}>
     <ScrollView testID="card-status-menu" contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <Text style={styles.heading} numberOfLines={2}>{`${card.title} (${colorSelection ? '카드 색상' : '상태 이동'})`}</Text>
       {!detail && !readError ? <ActivityIndicator color={t.colors.accent} /> : null}
@@ -72,7 +104,11 @@ export function CardStatusMenu({ api, card, onClose }: {
           </GroupedGlassRow>)}
         </GroupedGlassSheet> : null}
         <GlassButton testID="card-color-back" accessibilityLabel="색상 선택 뒤로" disabled={colorAction.pending}
-          onPress={() => { setColorSelection(false); setReadError(null); }}><Text style={styles.body}>돌아가기</Text></GlassButton>
+          onPress={() => {
+            setReadError(null);
+            if (entry === 'color') { onBack ? onBack() : onClose(); }
+            else setColorSelection(false);
+          }}><Text style={styles.body}>돌아가기</Text></GlassButton>
       </> : <>
         {detail ? <GlassButton accessibilityLabel={`카드 색상: ${CARD_COLORS[currentColor].name}`} disabled={mutationPending}
           onPress={() => setColorSelection(true)}><Text style={styles.body}>카드 색상: {CARD_COLORS[currentColor].name}</Text></GlassButton> : null}
@@ -84,7 +120,7 @@ export function CardStatusMenu({ api, card, onClose }: {
             </GlassButton>
           </View>;
         }) : null}
-        <GlassButton accessibilityLabel="상태 메뉴 닫기" onPress={() => { active.current = false; onClose(); }}><Text style={styles.body}>닫기</Text></GlassButton>
+        <GlassButton accessibilityLabel="상태 메뉴 닫기" onPress={close}><Text style={styles.body}>닫기</Text></GlassButton>
       </>}
     </ScrollView>
   </AppModalSurface></>;
