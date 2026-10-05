@@ -96,37 +96,74 @@ test("small D: past hint and all tabs fit the dragged card pane", async ({ page 
   expect(errors).toEqual([]); expect(writes).toEqual([]);
 });
 
-test("small E: keyboard focus follows the inline multiline title", async ({ page }) => {
+test("small E: title block encloses the visible focused title", async ({ page, browserName }) => {
   mkdirSync(smallOutput, { recursive: true });
   const { board } = await prepare(page, 1440, false);
   await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
-  const title = page.getByTestId("card-detail").locator(".v3-card-title-button");
-  // Enter keyboard mode and reach the actual title through the existing tab order.
-  for (let i = 0; i < 8 && !(await title.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press("Tab");
-  await expect(title).toBeFocused();
-  const info = await title.evaluate(el => {
-    const s = getComputedStyle(el), range = document.createRange(); range.selectNodeContents(el);
-    return { lines: range.getClientRects().length, display: s.display, outline: s.outlineStyle, width: s.outlineWidth, shadow: s.boxShadow };
-  });
-  await page.screenshot({ path: path.join(smallOutput, "E-title-three-lines.png"), animations: "disabled" });
-  expect.soft(info.lines).toBe(3); expect.soft(info.display).toBe("inline");
-  expect.soft(info.outline).toBe("solid"); expect.soft(info.width).toBe("2px"); expect.soft(info.shadow).toBe("none");
+  const detail = page.getByTestId("card-detail"), title = detail.locator(".v3-card-title-button");
+  const focusTitle = async () => {
+    await detail.getByRole("button", { name: "카드 닫기", exact: true }).focus();
+    for (let i = 0; i < 12 && !(await title.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press("Tab");
+    await expect(title).toBeFocused();
+  };
+  const records = [];
+  for (const width of [466, 316, 268]) {
+    const workspace = page.getByTestId("v3-card-workspace");
+    const handle = page.getByTestId("v3-card-workspace-divider").locator(".cursor-col-resize");
+    const box = (await handle.boundingBox())!, current = Number(await workspace.getAttribute("data-card-width-px"));
+    await page.mouse.move(box.x + box.width / 2, box.y + 80); await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + width - current, box.y + 80); await page.mouse.up();
+    await expect(workspace).toHaveAttribute("data-card-width-px", String(width));
+    await focusTitle();
+    const info = await title.evaluate(el => {
+      const h1 = el.closest("h1")!, s = getComputedStyle(el), h = getComputedStyle(h1), block = h1.getBoundingClientRect();
+      const range = document.createRange(); range.selectNodeContents(el);
+      // A clipped fourth line can overlap the block by a few pixels. Count
+      // glyph rows whose centers are inside the visible title block.
+      const visibleLines = [...range.getClientRects()].filter(r => (r.top + r.bottom) / 2 >= block.top && (r.top + r.bottom) / 2 <= block.bottom)
+        .map(r => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }));
+      const offset = parseFloat(h.outlineOffset), thickness = parseFloat(h.outlineWidth);
+      const header = h1.closest(".v3-folder-header")!;
+      return { display: s.display, outline: s.outlineStyle, shadow: s.boxShadow,
+        block: { left: block.left, right: block.right, top: block.top, bottom: block.bottom },
+        ring: { left: block.left - offset - thickness, right: block.right + offset + thickness,
+          top: block.top - offset - thickness, bottom: block.bottom + offset + thickness },
+        blockBoxes: h1.getClientRects().length, blockOutline: h.outlineStyle, blockOutlineWidth: h.outlineWidth,
+        blockOverflow: h.overflow, blockClamp: h.webkitLineClamp, offset, visibleLines,
+        previousRight: header.querySelector(".dashboard-icon-cap")!.getBoundingClientRect().right,
+        nextLeft: header.querySelector(".v3-folder-header-actions")!.getBoundingClientRect().left };
+    });
+    await page.screenshot({ path: path.join(smallOutput, `E-${width}-${browserName}.png`), animations: "disabled" });
+    expect.soft(info.display).toBe("inline"); expect.soft(info.outline).toBe("none"); expect.soft(info.shadow).toBe("none");
+    expect.soft(info.blockBoxes).toBe(1); expect.soft(info.blockOutline).toBe("solid"); expect.soft(info.blockOutlineWidth).toBe("2px");
+    expect.soft(info.blockOverflow).toBe("hidden"); expect.soft(info.blockClamp).toBe("3");
+    expect.soft(info.visibleLines).toHaveLength(3);
+    for (const line of info.visibleLines) {
+      expect.soft(line.left).toBeGreaterThanOrEqual(info.block.left - 1);
+      expect.soft(line.right).toBeLessThanOrEqual(info.block.right + 1);
+      expect.soft(line.top).toBeGreaterThanOrEqual(info.block.top - 1);
+      expect.soft(line.bottom).toBeLessThanOrEqual(info.block.bottom + 1);
+    }
+    expect.soft(info.ring.left).toBeGreaterThan(info.previousRight);
+    expect.soft(info.ring.right).toBeLessThan(info.nextLeft);
+    records.push({ width, ...info });
+  }
   // Text-only stress fixture: retain the real inline button and its parent flow.
   await title.evaluate(el => { el.textContent = "짧은 제목"; });
-  await page.screenshot({ path: path.join(smallOutput, "E-title-one-line.png"), animations: "disabled" });
-  writeFileSync(path.join(smallOutput, "E-metrics.json"), JSON.stringify(info, null, 2));
+  await page.screenshot({ path: path.join(smallOutput, `E-title-one-line-${browserName}.png`), animations: "disabled" });
+  writeFileSync(path.join(smallOutput, `E-${browserName}-metrics.json`), JSON.stringify(records, null, 2));
 });
 
-test("small F: default ask uses two lines and compact keeps one", async ({ page }) => {
+test("small F: default ask uses two lines and compact keeps one", async ({ page, browserName }) => {
   mkdirSync(smallOutput, { recursive: true });
   const { board, errors, writes } = await prepare(page, 1440, false);
   const comparison = board.getByTestId("postit-size-comparison");
   await comparison.scrollIntoViewIfNeeded();
   const legacy = board.locator('[data-card-id="board-0-1"]');
-  await legacy.screenshot({ path: path.join(smallOutput, "F-legacy.png") });
-  await comparison.screenshot({ path: path.join(smallOutput, "F-original.png") });
+  await legacy.screenshot({ path: path.join(smallOutput, `F-legacy-${browserName}.png`) });
+  await comparison.screenshot({ path: path.join(smallOutput, `F-original-${browserName}.png`) });
   // Replace only fixture copy to exercise the longest approved track combination.
-  await comparison.locator(".v3-postit-turn").evaluateAll(elements => elements.forEach(el => {
+  await comparison.locator(".v3-postit-turn-text").evaluateAll(elements => elements.forEach(el => {
     el.lastChild!.textContent = "보고된 결과를 확인하고 좁은 화면의 제목과 버튼 정렬도 함께 확인해 주세요. ".repeat(3);
   }));
   await comparison.locator(".v3-postit-body").evaluateAll(elements => elements.forEach(el => {
@@ -134,19 +171,24 @@ test("small F: default ask uses two lines and compact keeps one", async ({ page 
   }));
   const records = await comparison.locator(".v3-postit-card").evaluateAll(cards => cards.map(card => {
     const turn = card.querySelector<HTMLElement>(".v3-postit-turn")!, body = card.querySelector<HTMLElement>(".v3-postit-body")!;
-    const s = getComputedStyle(turn), b = getComputedStyle(body);
+    const inner = turn.querySelector<HTMLElement>(".v3-postit-turn-text")!;
+    const s = getComputedStyle(turn), b = getComputedStyle(body), t = getComputedStyle(inner);
     const turnRect = turn.getBoundingClientRect(), bodyRect = body.getBoundingClientRect();
     // Unrotated layout offsets avoid rotation's axis-aligned bounding boxes.
     return { compact: card.classList.contains("v3-postit-card--compact"), height: turn.offsetHeight,
       lineHeight: parseFloat(s.lineHeight), padding: parseFloat(s.paddingTop) + parseFloat(s.paddingBottom),
-      clamp: s.webkitLineClamp, bodyClamp: Number(b.webkitLineClamp), bodyLines: body.offsetHeight / parseFloat(b.lineHeight),
+      clamp: t.webkitLineClamp, innerOverflow: t.overflow, innerPadding: t.padding, innerHeight: inner.offsetHeight,
+      bodyClamp: Number(b.webkitLineClamp), bodyLines: body.offsetHeight / parseFloat(b.lineHeight),
       bodyBottom: body.offsetTop + body.offsetHeight, turnTop: turn.offsetTop,
       turnBottom: turn.offsetTop + turn.offsetHeight, footerTop: (card.querySelector(".v3-postit-footer") as HTMLElement).offsetTop,
       cardHeight: (card as HTMLElement).offsetHeight, bodyRect, turnRect };
   }));
-  await comparison.screenshot({ path: path.join(smallOutput, "F-long-ask-postits.png") });
+  await comparison.screenshot({ path: path.join(smallOutput, `F-long-ask-postits-${browserName}.png`) });
   for (const record of records) {
     expect.soft(Math.abs(record.height - (record.lineHeight * (record.compact ? 1 : 2) + record.padding))).toBeLessThan(1);
+    expect.soft(record.height).toBe(record.compact ? 30 : 46);
+    expect.soft(record.innerPadding).toBe("0px"); expect.soft(record.innerOverflow).toBe("hidden");
+    expect.soft(Math.abs(record.innerHeight - record.lineHeight * (record.compact ? 1 : 2))).toBeLessThan(1);
     expect.soft(record.bodyBottom).toBeLessThanOrEqual(record.turnTop + 1);
     expect.soft(record.turnBottom).toBeLessThanOrEqual(record.footerTop);
     expect.soft(record.bodyLines).toBeCloseTo(Math.round(record.bodyLines), 0);
@@ -164,14 +206,14 @@ test("small F: default ask uses two lines and compact keeps one", async ({ page 
       bodyLines: body.offsetHeight / parseFloat(style.lineHeight), bodyBottom: body.offsetTop + body.offsetHeight,
       footerTop: (card.querySelector(".v3-postit-footer") as HTMLElement).offsetTop };
   }));
-  await comparison.screenshot({ path: path.join(smallOutput, "F-no-ask-postits.png") });
+  await comparison.screenshot({ path: path.join(smallOutput, `F-no-ask-postits-${browserName}.png`) });
   for (const record of withoutTurn) {
     expect.soft(record.bodyClamp).toBe(record.compact ? 1 : 3);
     expect.soft(Math.round(record.bodyLines)).toBe(record.bodyClamp);
     expect.soft(record.bodyLines).toBeCloseTo(record.bodyClamp, 0);
     expect.soft(record.bodyBottom).toBeLessThanOrEqual(record.footerTop);
   }
-  writeFileSync(path.join(smallOutput, "F-metrics.json"), JSON.stringify({ withTurn: records, withoutTurn }, null, 2));
+  writeFileSync(path.join(smallOutput, `F-${browserName}-metrics.json`), JSON.stringify({ withTurn: records, withoutTurn }, null, 2));
   expect(errors).toEqual([]); expect(writes).toEqual([]);
 });
 
