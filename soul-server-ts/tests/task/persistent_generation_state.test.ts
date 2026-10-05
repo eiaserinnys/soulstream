@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildPersistentGenerationMetadataEntry,
   extractPersistentGeneration,
 } from "../../src/task/task_metadata.js";
 import { resolveGenerationState } from "../../src/task/persistent_generation_state.js";
@@ -26,6 +27,8 @@ const applyingState = {
     targetModelPreset: "codex-balanced",
     targetReasoningEffort: "high",
     applyingFrom: "native-old",
+    previousModelPreset: "codex-source",
+    previousBackend: "codex",
   },
 };
 
@@ -71,6 +74,22 @@ describe("extractPersistentGeneration", () => {
       },
     }])?.firstCall).toBeUndefined();
   });
+
+  it("round-trips the previous model selection stored with an applying request", () => {
+    const entry = buildPersistentGenerationMetadataEntry(applyingState);
+
+    expect(entry).toMatchObject({
+      type: "persistent_generation",
+      value: {
+        pending: {
+          applying_from: "native-old",
+          previous_model_preset: "codex-source",
+          previous_backend: "codex",
+        },
+      },
+    });
+    expect(extractPersistentGeneration([entry])).toEqual(applyingState);
+  });
 });
 
 describe("resolveGenerationState", () => {
@@ -99,6 +118,8 @@ describe("resolveGenerationState", () => {
         number: 2,
         reason: "manual",
         fromBackendSessionId: "native-old",
+        previousModelPreset: "codex-source",
+        previousBackend: "codex",
       },
     });
   });

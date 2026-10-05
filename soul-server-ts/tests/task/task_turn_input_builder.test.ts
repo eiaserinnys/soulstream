@@ -233,6 +233,40 @@ describe("TaskTurnInputBuilder", () => {
     expect(task.needsFullContextReinjection).toBe(false);
   });
 
+  it("fails input assembly for an applying generation with an empty queue and preserves the request", async () => {
+    const pending = {
+      number: 2,
+      reason: "context limit",
+      requestedAt: "2026-10-05T00:00:00.000Z",
+      targetModelPreset: "codex-default",
+      applyingFrom: "native-old",
+      previousModelPreset: "claude-default",
+      previousBackend: "claude" as const,
+    };
+    const task = makeTask({
+      persistent: false,
+      codexThreadId: "native-old",
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context limit",
+        requestedAt: pending.requestedAt,
+        fromBackendSessionId: "native-old",
+        previousModelPreset: "claude-default",
+        previousBackend: "claude",
+      },
+      persistentGeneration: { number: 1, pending },
+      interventionQueue: [],
+    });
+    const { builder, contextBuilder } = makeSubject();
+
+    await expect(builder.prepareInitialTurnInput(task, claudeAgent))
+      .rejects.toThrow("generation rollover requires a queued intervention");
+
+    expect(contextBuilder.buildGenerationContext).toHaveBeenCalledWith(task, claudeAgent);
+    expect(task.persistentGeneration?.pending).toEqual(pending);
+    expect(task.activeGenerationRollover?.fromBackendSessionId).toBe("native-old");
+  });
+
   it("falls back to task.prompt when contextBuilder fails and still publishes initial user message", async () => {
     const task = makeTask({ attachmentPaths: ["/tmp/incoming/sess/a.jpg"] });
     const { builder, initialMessagePublisher, logger } = makeSubject({

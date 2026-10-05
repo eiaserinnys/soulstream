@@ -5791,7 +5791,7 @@ describe("TaskExecutor persistent generation rollover", () => {
         model: "codex-model-target",
         reasoningEffort: "high",
       },
-      `persistent_generation_model_selection:${task.agentSessionId}:2`,
+      `persistent_generation_model_selection:${task.agentSessionId}:2:2026-10-05T00:00:00.000Z`,
     );
     expect(capturedParams).toMatchObject({
       prompt: expect.stringContaining("checkpoint data"),
@@ -5896,6 +5896,62 @@ describe("TaskExecutor persistent generation rollover", () => {
     expect(pending.modelCatalog.resolve).not.toHaveBeenCalled();
   });
 
+  it("fails startup and preserves an applying request when its target preset is unavailable", () => {
+    const mocks = makeMocks();
+    const modelCatalog = {
+      resolve: vi.fn((id: string) => {
+        throw new UnknownModelPresetError(id);
+      }),
+    };
+    const engineFactory = vi.fn();
+    const sessionMutations = { setModelSelection: vi.fn() };
+    const executor = new TaskExecutor(
+      engineFactory as unknown as ConstructorParameters<typeof TaskExecutor>[0],
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      modelCatalog as unknown as ConstructorParameters<typeof TaskExecutor>[10],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      sessionMutations,
+    );
+    const pending = {
+      number: 2,
+      reason: "context limit",
+      requestedAt: "2026-10-05T00:00:00.000Z",
+      targetModelPreset: "removed-preset",
+      applyingFrom: "native-old",
+      previousModelPreset: "claude-source",
+      previousBackend: "claude" as const,
+    };
+    const task = makeTask({
+      persistent: true,
+      profileId: claudeAgent.id,
+      codexThreadId: "native-old",
+      modelPreset: "removed-preset",
+      model: "removed-model",
+      modelPresetBackend: undefined,
+      persistentGeneration: { number: 1, pending },
+    });
+
+    expect(() => executor.startNewExecution(task, claudeAgent))
+      .toThrow(/removed-preset.*request another preset.*restore.*catalog/i);
+
+    expect(task.persistentGeneration?.pending).toEqual(pending);
+    expect(task.pendingPersistentGenerationRolloverFailure).toBeUndefined();
+    expect(task.metadata?.some((entry) => entry.type === "persistent_generation")).toBe(false);
+    expect(engineFactory).not.toHaveBeenCalled();
+    expect(sessionMutations.setModelSelection).not.toHaveBeenCalled();
+  });
+
   it("resumes a hydrated applying generation with the same separator dedupe key", async () => {
     const mocks = makeMocks();
     const checkpointStats = {
@@ -5983,6 +6039,8 @@ describe("TaskExecutor persistent generation rollover", () => {
         targetModelPreset: "codex-target",
         targetReasoningEffort: "high",
         applyingFrom: "native-old",
+        previousModelPreset: "claude-source",
+        previousBackend: "claude",
       },
     };
     task.interventionQueue.push({ text: "continue from checkpoint", user: "u" });
@@ -5995,11 +6053,14 @@ describe("TaskExecutor persistent generation rollover", () => {
       model: "codex-model-target",
     });
     expect(capturedParams).not.toHaveProperty("resumeSessionId");
-    expect(sessionMutations.setModelSelection).not.toHaveBeenCalled();
+    expect(sessionMutations.setModelSelection).toHaveBeenCalledOnce();
+    expect(sessionMutations.setModelSelection.mock.calls[0]?.[2]).toBe(
+      `persistent_generation_model_selection:${task.agentSessionId}:2:2026-10-05T00:00:00.000Z`,
+    );
     const stored = mocks.persistEvent.mock.calls.map((call) => call[1] as Record<string, unknown>);
     const started = stored.find((event) => event.type === "generation_started");
     expect(started?._dedupe_key).toBe(
-      `generation_started:${task.agentSessionId}:2`,
+      `generation_started:${task.agentSessionId}:2:2026-10-05T00:00:00.000Z`,
     );
     expect(task.persistentGeneration).toMatchObject({
       number: 2,

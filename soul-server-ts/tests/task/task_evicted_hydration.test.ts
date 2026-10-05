@@ -214,6 +214,8 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
               target_model_preset: "codex-balanced",
               target_reasoning_effort: "high",
               applying_from: "native-current",
+              previous_model_preset: "codex-source",
+              previous_backend: "codex",
             },
           },
         }],
@@ -235,12 +237,17 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
         targetModelPreset: "codex-balanced",
         targetReasoningEffort: "high",
         applyingFrom: "native-current",
+        previousModelPreset: "codex-source",
+        previousBackend: "codex",
       },
     });
     expect(task?.activeGenerationRollover).toEqual({
       number: 4,
       reason: "manual",
       fromBackendSessionId: "native-current",
+      requestedAt: "2026-10-05T09:30:00.000Z",
+      previousModelPreset: "codex-source",
+      previousBackend: "codex",
     });
   });
 
