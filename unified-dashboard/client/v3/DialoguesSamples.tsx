@@ -1,11 +1,12 @@
 import {ConnectionDialog} from "../connection/ConnectionDialog";
 import { RenameSessionDialog } from "@seosoyoung/soul-ui/components/RenameSessionDialog";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FolderDialog,
   FolderSettingsDialog,
   MarkdownDeleteDialog,
   SessionMenuOwnerProvider,
+  useDashboardStore,
 } from "@seosoyoung/soul-ui";
 import { SessionDeleteDialog, SessionContinueErrorDialog } from "@seosoyoung/soul-ui/components/SessionDialogViews";
 import { BoardRenameDialog, BoardMoveDialog } from "@seosoyoung/soul-ui/board-workspace/BoardWorkspaceDialogViews";
@@ -42,6 +43,10 @@ export function DialoguesSamples({
     [selected, setSelected] = useState("");
   const upload = useLocalDialogueUpload();
   const pageApi = useMemo(() => createPageApiClient({ fetch: api.request }), [api]);
+  // 설정 탭의 폴더 선택기는 대시보드 저장소의 카탈로그를 읽는다. 검수 창에는 카탈로그 스트림이 없어 검수 폴더를 넣어 둔다.
+  useEffect(() => {
+    if (id === "settings") useDashboardStore.getState().setCatalog({ folders: dialoguesFolders, sessions: {} });
+  }, [id]);
   const done = (name: string) => {
     api.record(name);
     onChanged();

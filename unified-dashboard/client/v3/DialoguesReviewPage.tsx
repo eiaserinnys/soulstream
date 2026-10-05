@@ -7,6 +7,7 @@ import { createDialoguesApi } from "./dialogues-api";
 import { DialoguesSamples } from "./DialoguesSamples";
 import { confirmUserRemoval } from "../components/UserManagementTab";
 import { confirmRecurringArchive } from "../components/RecurringJobsTab";
+import { confirmPersistentSessionRelease } from "../components/PersistentSessionsTab";
 import { V3_CARD_GAP_PX, V3_OUTER_INSET_PX } from "./v3-layout-metrics";
 import "./v3-dashboard-styles";
 
@@ -20,7 +21,7 @@ export function DialoguesReviewPage() {
     id: group.id, title: group.title,
     items: group.ids.map(id => {
       const item = dialoguesInventory.find(item => item.id === id)!;
-      const native = id === "confirm-user" || id === "confirm-recurring";
+      const native = isNativeConfirm(id);
       return { id, title: item.name,
         src: native ? undefined : `/dialogues?sample=${encodeURIComponent(id)}`,
         onOpen: native ? () => openNativeConfirm(id) : undefined,
@@ -33,8 +34,13 @@ export function DialoguesReviewPage() {
     description="같은 종류의 실제 창을 옆으로 넘겨 비교합니다. 저장·삭제·생성은 각 미리보기의 샘플에만 적용됩니다."/>;
 }
 
+const nativeConfirmIds: readonly DialogueId[] = ["confirm-user", "confirm-recurring", "confirm-persistent-session-release"];
+const isNativeConfirm = (id: DialogueId) => nativeConfirmIds.includes(id);
+
 function openNativeConfirm(id: DialogueId) {
-  return id === "confirm-user" ? confirmUserRemoval("sample@example.invalid") : confirmRecurringArchive("검수 반복 작업");
+  if (id === "confirm-user") return confirmUserRemoval("sample@example.invalid");
+  if (id === "confirm-persistent-session-release") return confirmPersistentSessionRelease("서소영 관제");
+  return confirmRecurringArchive("검수 반복 작업");
 }
 
 function DialogueSamplePage({ id }: { id: DialogueId }) {
@@ -44,7 +50,7 @@ function DialogueSamplePage({ id }: { id: DialogueId }) {
   const [notice, setNotice] = useState("샘플 창을 닫았습니다.");
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   useEffect(() => { initTheme(); }, []);
-  const native = id === "confirm-user" || id === "confirm-recurring";
+  const native = isNativeConfirm(id);
   const embedded = new URLSearchParams(window.location.search).get("embedded") === "1";
   // Dialog overlays already own their CSS glass surface. No catalog load or WebGL canvas is needed here.
   return <LiquidGlassProvider renderDefaultCanvas={false}>

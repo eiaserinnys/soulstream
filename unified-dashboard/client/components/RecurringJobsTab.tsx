@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   NewSessionFolderSelector,
@@ -26,6 +26,17 @@ import {
   type RecurringScheduleDraft,
 } from "../lib/recurring-schedule";
 import { RecurringScheduleEditor } from "./RecurringScheduleEditor";
+import {
+  SettingsAlert,
+  SettingsDetailHeader,
+  SettingsField,
+  SettingsGroupBox,
+  SettingsListDetailFrame,
+  SettingsListHeader,
+  SettingsListRow,
+  SettingsListSection,
+  SettingsMultilineField,
+} from "./config/SettingsListDetail";
 
 type Editor = {
   name: string;
@@ -192,17 +203,10 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   const archivedJobs = useMemo(() => jobs.filter((job) => job.archived_at !== null), [jobs]);
 
   return (
-    <section data-testid="recurring-jobs-tab" className="grid min-h-0 gap-4 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]">
-      <aside className="min-h-0 rounded border border-border bg-muted/20 p-3">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold">반복 작업</h3>
-            <p className="text-xs text-muted-foreground">서버가 다음 실행을 계산합니다.</p>
-          </div>
-          <div className="flex gap-2"><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught)))}>새로고침</Button><Button type="button" size="sm" variant="outline" onClick={() => {
+    <SettingsListDetailFrame testId="recurring-jobs-tab" list={<>
+        <SettingsListHeader title="반복 작업" description="서버가 다음 실행을 계산합니다." actions={<><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught)))}>새로고침</Button><Button type="button" size="sm" variant="outline" onClick={() => {
             setSelected(null); setEditor(emptyEditor()); setRuns([]); setPreview([]); setError(null);
-          }}>새 작업</Button></div>
-        </div>
+          }}>새 작업</Button></>} />
         <JobList
           title="활성"
           jobs={activeJobs}
@@ -215,34 +219,29 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           selectedId={selected?.job_id ?? null}
           onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
         /> : null}
-      </aside>
-
-      <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
-        <header className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <h3 className="text-base font-semibold">{selected ? selected.name : "새 반복 작업"}</h3>
-            {selected ? <p className="text-xs text-muted-foreground">다음 실행: {displayTime(selected.next_run_at)}</p> : null}
-          </div>
-          {selected ? <div className="flex flex-wrap gap-2">
+    </>}>
+        <SettingsDetailHeader
+          title={selected ? selected.name : "새 반복 작업"}
+          subtitle={selected ? `다음 실행: ${displayTime(selected.next_run_at)}` : null}
+          actions={selected ? <>
             <Button type="button" size="sm" variant="outline" disabled={busy || selected.archived_at !== null} onClick={() => void runNow()}>지금 실행</Button>
             {selected.archived_at === null ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void setEnabled(!selected.enabled)}>{selected.enabled ? "일시정지" : "재개"}</Button> : null}
             <Button type="button" size="sm" variant="outline" disabled={busy || selected.archived_at !== null} onClick={() => void archive()}>보관</Button>
-          </div> : null}
-        </header>
+          </> : null}
+        />
 
-        {error ? <div role="alert" className="rounded border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">{error}</div> : null}
+        {error ? <SettingsAlert>{error}</SettingsAlert> : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="작업 이름"><input aria-label="작업 이름" value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></Field>
-          {editor.schedule.mode !== "once" ? <Field label="시간대"><input aria-label="시간대" value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></Field> : null}
-          <Field label="오프라인 허용 초"><input aria-label="오프라인 허용 초" type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></Field>
+          <SettingsField label="작업 이름"><input aria-label="작업 이름" value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></SettingsField>
+          {editor.schedule.mode !== "once" ? <SettingsField label="시간대"><input aria-label="시간대" value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></SettingsField> : null}
+          <SettingsField label="오프라인 허용 초"><input aria-label="오프라인 허용 초" type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></SettingsField>
         </div>
         <RecurringScheduleEditor value={editor.schedule} scheduleKind={selected?.schedule_kind} onChange={(schedule) => setEditor((current) => ({ ...current, schedule }))} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor({ ...editor, enabled: event.target.checked })} />생성·저장 후 자동 실행</label>
-        <Field label="작업 내용"><textarea aria-label="작업 내용" rows={5} value={editor.prompt} onChange={(event) => setEditor({ ...editor, prompt: event.target.value })} /></Field>
+        <SettingsMultilineField label="작업 내용" value={editor.prompt} onChange={(prompt) => setEditor({ ...editor, prompt })} />
 
-        <div className="rounded border border-border p-3">
-          <p className="mb-2 text-sm font-medium">실행 대상</p>
+        <SettingsGroupBox title="실행 대상">
           <AgentNodeAssignmentFields data={assignment}
             agentId={editor.agentId}
             nodeId={editor.nodeId}
@@ -253,7 +252,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
             onModelPresetChange={(modelPreset) => setEditor((current) => ({ ...current, modelPreset }))}
             onError={(next) => setError(next)}
           />
-        </div>
+        </SettingsGroupBox>
 
         <div className="grid gap-3 rounded border border-border p-3 sm:grid-cols-2">
           <NewSessionFolderSelector
@@ -276,13 +275,12 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
         {editor.schedule.mode !== "once" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
 
         {selected ? <RunHistory runs={runs} onOpenSession={setActiveSession} /> : null}
-      </div>
-    </section>
+    </SettingsListDetailFrame>
   );
 }
 
 function JobList({ title, jobs, selectedId, onSelect }: { title: string; jobs: RecurringJob[]; selectedId: string | null; onSelect(job: RecurringJob): void }) {
-  return <div className="mb-4"><p className="mb-1 text-xs font-medium text-muted-foreground">{title}</p><div className="space-y-1">{jobs.length === 0 ? <p className="px-2 py-1 text-xs text-muted-foreground">없음</p> : jobs.map((job) => <button key={job.job_id} type="button" className={`w-full rounded px-2 py-2 text-left text-sm ${selectedId === job.job_id ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`} onClick={() => onSelect(job)}><span className="block truncate font-medium">{job.name}</span><span className="block truncate text-xs text-muted-foreground">{job.archived_at ? "보관됨" : !job.enabled ? "일시정지" : job.schedule_kind === "once" ? `1회 · ${displayTime(job.next_run_at ?? job.run_at)}` : displayTime(job.next_run_at)}</span></button>)}</div></div>;
+  return <SettingsListSection title={title} isEmpty={jobs.length === 0}>{jobs.map((job) => <SettingsListRow key={job.job_id} title={job.name} meta={job.archived_at ? "보관됨" : !job.enabled ? "일시정지" : job.schedule_kind === "once" ? `1회 · ${displayTime(job.next_run_at ?? job.run_at)}` : displayTime(job.next_run_at)} selected={selectedId === job.job_id} onSelect={() => onSelect(job)} />)}</SettingsListSection>;
 }
 
 function RunHistory({ runs, onOpenSession }: { runs: RecurringJobRun[]; onOpenSession(sessionId: string): void }) {
@@ -310,10 +308,6 @@ function sessionAction(run: RecurringJobRun): { label: string; canOpen: boolean;
     return { label: "고정 세션 열기", canOpen: true, message: null };
   }
   return { label: "세션 열기", canOpen: true, message: null };
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <label className="grid gap-1 text-sm"><span className="text-muted-foreground">{label}</span>{children}</label>;
 }
 
 function editorFromJob(job: RecurringJob): Editor {
