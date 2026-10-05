@@ -38,6 +38,7 @@ import type {
   AppServerRequestId,
   AppServerResponseError,
   AppServerServerRequest,
+  GetAccountRateLimitsResponse,
   InitializeParams,
   InitializeResponse,
   ThreadResumeParams,
@@ -59,6 +60,11 @@ import {
 } from "./params.js";
 import { toCodexUserInput } from "./protocol.js";
 import { AsyncPayloadQueue } from "./async_payload_queue.js";
+import { CODEX_USAGE_LIMIT_ERROR_CODE } from "../usage_limit_stop.js";
+import {
+  buildUsageLimitStopEvents,
+  selectUsageLimitReset,
+} from "./usage_limit.js";
 
 const CLIENT_INFO: InitializeParams["clientInfo"] = {
   name: "soul-server-ts",
@@ -72,6 +78,7 @@ export interface CodexAppServerClientPort {
   startTurn(params: TurnStartParams): Promise<TurnStartResponse>;
   steerTurn(params: TurnSteerParams): Promise<TurnSteerResponse>;
   interruptTurn(params: TurnInterruptParams): Promise<TurnInterruptResponse>;
+  readAccountRateLimits(): Promise<GetAccountRateLimitsResponse>;
   onNotification(handler: (notification: AppServerNotification) => void): () => void;
   onServerRequest(handler: (request: AppServerServerRequest) => void): () => void;
   resolveServerRequest(id: AppServerRequestId, result: unknown): Promise<void>;
@@ -110,6 +117,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
   private notificationLifecycle: NotificationLifecycleState =
     createNotificationLifecycleState();
   private activeQueue: AsyncPayloadQueue<SSEEventPayload> | null = null;
+  private usageLimitStopEmitted = false;
   private readonly detachedCommandActivity: CodexDetachedCommandActivityTracker;
   private readonly unsubscribeDetachedCommandNotifications: () => void;
   private readonly unsubscribeDetachedCommandClose: () => void;
@@ -169,6 +177,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
 
     this.executing = true;
     this.pendingInterrupt = false;
+    this.usageLimitStopEmitted = false;
     this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
     const queue = new AsyncPayloadQueue<SSEEventPayload>();
     this.activeQueue = queue;
@@ -402,11 +411,44 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     this.notificationLifecycle = result.state;
 
     for (const payload of result.payloads) {
+      const event = payload as unknown as { error_code?: unknown };
+      if (event.error_code === CODEX_USAGE_LIMIT_ERROR_CODE) {
+        if (this.usageLimitStopEmitted) return;
+        this.usageLimitStopEmitted = true;
+        void this.emitUsageLimitStop(payload, queue);
+        return;
+      }
       queue.push(payload);
     }
     if (result.closeQueue) {
       queue.close();
     }
+  }
+
+  private async emitUsageLimitStop(
+    errorPayload: SSEEventPayload,
+    queue: AsyncPayloadQueue<SSEEventPayload>,
+  ): Promise<void> {
+    let info = {};
+    try {
+      const response = await this.client.readAccountRateLimits();
+      info = selectUsageLimitReset(response, Date.now() / 1000);
+      this.logger.info(
+        { ...info },
+        "Codex usage-limit reset metadata read",
+      );
+    } catch (error) {
+      info = {};
+      this.logger.warn(
+        { err: error },
+        "Codex usage-limit reset metadata read failed",
+      );
+    }
+
+    for (const payload of buildUsageLimitStopEvents(errorPayload, info)) {
+      queue.push(payload);
+    }
+    queue.close();
   }
 
   private handleServerRequest(

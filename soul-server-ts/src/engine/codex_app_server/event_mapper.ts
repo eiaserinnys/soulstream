@@ -1,4 +1,5 @@
 import type { SSEEventPayload } from "../protocol.js";
+import { CODEX_USAGE_LIMIT_ERROR_CODE } from "../usage_limit_stop.js";
 import type {
   AppServerNotification,
   AppServerThread,
@@ -14,6 +15,7 @@ import {
 } from "./event_mapper_helpers.js";
 import { mapItemCompleted, mapItemStarted } from "./item_mapper.js";
 import { firstMeaningfulText } from "./text_sanitizer.js";
+import { isUsageLimitTurnError } from "./usage_limit.js";
 
 export function mapAppServerNotification(
   notification: AppServerNotification,
@@ -46,16 +48,19 @@ export function mapAppServerNotification(
     }
 
     case "turn/completed": {
-      const { threadId, turn } = notification.params as {
+      const { threadId, turn, willRetry } = notification.params as {
         threadId: string;
         turn: AppServerTurn;
+        willRetry?: boolean;
       };
       if (turn.status === "failed") {
+        const isUsageLimit = willRetry !== true && isUsageLimitTurnError(turn.error);
         return [
           {
             type: "error",
             message: errorMessage(turn.error),
-            fatal: false,
+            fatal: isUsageLimit,
+            ...(isUsageLimit ? { error_code: CODEX_USAGE_LIMIT_ERROR_CODE } : {}),
             timestamp: nowEpochSec(),
             error_info: turn.error?.codexErrorInfo ?? null,
             additional_details: turn.error?.additionalDetails ?? null,
@@ -178,12 +183,15 @@ export function mapAppServerNotification(
         willRetry?: boolean;
         error: AppServerTurnError;
       };
+      const isUsageLimit =
+        params.willRetry !== true && isUsageLimitTurnError(params.error);
       return [
         {
           type: "error",
           message: errorMessage(params.error),
-          fatal: false,
+          fatal: isUsageLimit,
           will_retry: params.willRetry ?? false,
+          ...(isUsageLimit ? { error_code: CODEX_USAGE_LIMIT_ERROR_CODE } : {}),
           timestamp: nowEpochSec(),
           error_info: params.error.codexErrorInfo ?? null,
           additional_details: params.error.additionalDetails ?? null,

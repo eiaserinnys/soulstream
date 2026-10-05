@@ -1,4 +1,5 @@
 import type { ClaudeClientEvent } from "./claude_client_event.js";
+import { CLAUDE_RATE_LIMIT_STOP_ERROR_CODE } from "./usage_limit_stop.js";
 
 export type RateLimitTerminationState =
   | "none"
@@ -59,7 +60,7 @@ export function makeStopFailureError(
   return {
     type: "error",
     fatal: true,
-    errorCode: "claude_rate_limit_stop_failure",
+    errorCode: CLAUDE_RATE_LIMIT_STOP_ERROR_CODE,
     message: "Claude foreground turn stopped after a rate-limit rejection.",
     ...(info?.rateLimitType !== undefined
       ? { rateLimitType: info.rateLimitType }

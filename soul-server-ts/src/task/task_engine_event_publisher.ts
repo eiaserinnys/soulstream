@@ -5,6 +5,7 @@ import {
   shouldPersistEvent,
   type EventPersistence,
 } from "../db/event_persistence.js";
+import { isUsageLimitStopErrorCode } from "../engine/usage_limit_stop.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
@@ -78,7 +79,7 @@ export class TaskEngineEventPublisher {
         detail?: unknown;
       };
       // allowed_warning is observability only. A hard limit is terminalized by
-      // the existing rejected + StopFailure fatal-error contract.
+      // the existing rejected + fatal-error contract.
       if (alert.status !== "rejected") return;
       const detail = alert.message ?? alert.detail;
       recordTerminationHint(
@@ -100,7 +101,7 @@ export class TaskEngineEventPublisher {
       rate_limit_type?: unknown;
       resets_at?: unknown;
     };
-    if (error.error_code !== "claude_rate_limit_stop_failure") return;
+    if (!isUsageLimitStopErrorCode(error.error_code)) return;
 
     const rateLimitType = typeof error.rate_limit_type === "string"
       ? error.rate_limit_type

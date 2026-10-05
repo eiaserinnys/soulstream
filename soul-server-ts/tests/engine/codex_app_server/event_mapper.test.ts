@@ -149,13 +149,40 @@ describe("Codex app-server notification mapper", () => {
     });
   });
 
-  it("failed turn completion maps to non-fatal error", () => {
+  it("maps the production usage-limit error notification as fatal", () => {
+    const out = mapAppServerNotification({
+      method: "error",
+      params: {
+        threadId: "01a0c607-e635-71d1-905a-f0aac395a1ec",
+        turnId: "01a0c6d7-a8bd-7971-9376-a32a110b3bb3",
+        willRetry: false,
+        error: {
+          message:
+            "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 26th, 2026 5:23 PM.",
+          codexErrorInfo: "usageLimitExceeded",
+          additionalDetails: null,
+        },
+      },
+    });
+
+    expect(out[0]).toMatchObject({
+      type: "error",
+      fatal: true,
+      error_code: "codex_usage_limit_exceeded",
+      will_retry: false,
+      raw_event_type: "error",
+      thread_id: "01a0c607-e635-71d1-905a-f0aac395a1ec",
+      turn_id: "01a0c6d7-a8bd-7971-9376-a32a110b3bb3",
+    });
+  });
+
+  it("maps failed usage-limit turn completion as fatal", () => {
     const out = mapAppServerNotification({
       method: "turn/completed",
       params: {
         threadId: "thread-1",
         turn: turn("turn-1", "failed", {
-          message: "rate limit",
+          message: "You've hit your usage limit.",
           codexErrorInfo: "usageLimitExceeded",
           additionalDetails: null,
         }),
@@ -163,10 +190,81 @@ describe("Codex app-server notification mapper", () => {
     });
     expect(out[0]).toMatchObject({
       type: "error",
-      message: "rate limit",
-      fatal: false,
+      message: "You've hit your usage limit.",
+      fatal: true,
+      error_code: "codex_usage_limit_exceeded",
       raw_event_type: "turn/completed",
     });
+  });
+
+  it("keeps production overload and retrying stream errors non-fatal", () => {
+    const overloaded = mapAppServerNotification({
+      method: "error",
+      params: {
+        threadId: "01a1073c-ffca-71b0-b361-64a01bce42c4",
+        turnId: "01a107aa-b3d3-7ce0-ae5c-0359ccd2f5c1",
+        willRetry: false,
+        error: {
+          message: "Selected model is at capacity. Please try a different model.",
+          codexErrorInfo: "serverOverloaded",
+          additionalDetails: null,
+        },
+      },
+    })[0];
+    const retrying = mapAppServerNotification({
+      method: "error",
+      params: {
+        threadId: "019f98a7-77f3-7e41-8db4-d75d281aa327",
+        turnId: "019f98a7-7afe-73d1-997b-cd9c87273d35",
+        willRetry: true,
+        error: {
+          message: "Reconnecting... 1/5",
+          codexErrorInfo: {
+            responseStreamDisconnected: { httpStatusCode: 503 },
+          },
+          additionalDetails: null,
+        },
+      },
+    })[0];
+
+    expect(overloaded).toMatchObject({
+      type: "error",
+      message: "Selected model is at capacity. Please try a different model.",
+      fatal: false,
+      will_retry: false,
+    });
+    expect(overloaded).not.toHaveProperty("error_code");
+    expect(retrying).toMatchObject({
+      type: "error",
+      message: "Reconnecting... 1/5",
+      fatal: false,
+      will_retry: true,
+      error_info: { responseStreamDisconnected: { httpStatusCode: 503 } },
+    });
+    expect(retrying).not.toHaveProperty("error_code");
+  });
+
+  it("does not classify usage-limit errors that Codex says it will retry", () => {
+    const out = mapAppServerNotification({
+      method: "error",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        willRetry: true,
+        error: {
+          message: "Retrying a usage limit response",
+          codexErrorInfo: "usageLimitExceeded",
+          additionalDetails: null,
+        },
+      },
+    });
+
+    expect(out[0]).toMatchObject({
+      type: "error",
+      fatal: false,
+      will_retry: true,
+    });
+    expect(out[0]).not.toHaveProperty("error_code");
   });
 
   it("agent message lifecycle keeps live deltas live-only and emits final assistant_message", () => {

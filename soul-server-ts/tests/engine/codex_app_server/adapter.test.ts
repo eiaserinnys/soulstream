@@ -45,6 +45,18 @@ class FakeClient implements CodexAppServerClientPort {
       turn: turn("turn-1"),
     }),
   );
+  public readonly readAccountRateLimits = vi.fn(async () => ({
+    rateLimits: {
+      limitId: "codex",
+      primary: {
+        usedPercent: 100,
+        windowDurationMins: 10080,
+        resetsAt: Math.floor(Date.now() / 1000) + 3600,
+      },
+      secondary: null,
+    },
+    rateLimitsByLimitId: null,
+  }));
   public readonly steerTurn = vi.fn(
     async (_params: TurnSteerParams): Promise<TurnSteerResponse> => ({
       turnId: "turn-1",
@@ -145,6 +157,39 @@ function initializeResponse(): InitializeResponse {
   };
 }
 
+const PRODUCTION_USAGE_LIMIT_NOTIFICATION: Extract<
+  AppServerNotification,
+  { method: "error" }
+> = {
+  method: "error",
+  params: {
+    threadId: "01a0c607-e635-71d1-905a-f0aac395a1ec",
+    turnId: "01a0c6d7-a8bd-7971-9376-a32a110b3bb3",
+    willRetry: false,
+    error: {
+      message:
+        "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 26th, 2026 5:23 PM.",
+      codexErrorInfo: "usageLimitExceeded",
+      additionalDetails: null,
+    },
+  },
+};
+
+function rateLimitsResponse(resetsAt: number) {
+  return {
+    rateLimits: {
+      limitId: "codex",
+      primary: {
+        usedPercent: 100,
+        windowDurationMins: 10080,
+        resetsAt,
+      },
+      secondary: null,
+    },
+    rateLimitsByLimitId: null,
+  };
+}
+
 function makeAdapter(client = new FakeClient()) {
   const adapter = new CodexAppServerEngineAdapter(
     {
@@ -192,6 +237,91 @@ async function drainFailure(
 }
 
 describe("CodexAppServerEngineAdapter", () => {
+  it("emits one ordered usage-limit stop pair and throws the fatal message", async () => {
+    const client = new FakeClient();
+    const threadId = "01a0c607-e635-71d1-905a-f0aac395a1ec";
+    const turnId = "01a0c6d7-a8bd-7971-9376-a32a110b3bb3";
+    const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+    client.startThread.mockResolvedValueOnce(threadResponse(threadId));
+    client.startTurn.mockResolvedValueOnce({ turn: turn(turnId) });
+    client.readAccountRateLimits.mockResolvedValueOnce(rateLimitsResponse(resetsAt));
+    const { adapter } = makeAdapter(client);
+    const execution = drainFailure(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    client.emit(PRODUCTION_USAGE_LIMIT_NOTIFICATION);
+    const failedTurn = turn(turnId, "failed");
+    failedTurn.error = {
+      message: "You've hit your usage limit.",
+      codexErrorInfo: "usageLimitExceeded",
+      additionalDetails: null,
+    };
+    client.emit({
+      method: "turn/completed",
+      params: { threadId, turn: failedTurn },
+    });
+
+    const { events, error } = await execution;
+    const stopEvents = events.filter((event) => {
+      const value = event as unknown as Record<string, unknown>;
+      return value.type === "credential_alert" ||
+        value.error_code === "codex_usage_limit_exceeded";
+    });
+    expect(stopEvents).toHaveLength(2);
+    expect(stopEvents).toEqual([
+      expect.objectContaining({
+        type: "credential_alert",
+        status: "rejected",
+        rate_limit_type: "seven_day",
+        resets_at: new Date(resetsAt * 1000).toISOString(),
+      }),
+      expect.objectContaining({
+        type: "error",
+        fatal: true,
+        will_retry: false,
+        error_code: "codex_usage_limit_exceeded",
+        rate_limit_type: "seven_day",
+        resets_at: new Date(resetsAt * 1000).toISOString(),
+      }),
+    ]);
+    expect(stopEvents[0]).not.toHaveProperty("message");
+    expect(client.readAccountRateLimits).toHaveBeenCalledOnce();
+    expect(error).toEqual(new Error(PRODUCTION_USAGE_LIMIT_NOTIFICATION.params.error.message));
+  });
+
+  it("keeps the usage-limit stop pair when reading reset metadata fails", async () => {
+    const client = new FakeClient();
+    const threadId = "01a0c607-e635-71d1-905a-f0aac395a1ec";
+    const turnId = "01a0c6d7-a8bd-7971-9376-a32a110b3bb3";
+    client.startThread.mockResolvedValueOnce(threadResponse(threadId));
+    client.startTurn.mockResolvedValueOnce({ turn: turn(turnId) });
+    client.readAccountRateLimits.mockRejectedValueOnce(new Error("rate read failed"));
+    const { adapter } = makeAdapter(client);
+    const execution = drainFailure(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    client.emit(PRODUCTION_USAGE_LIMIT_NOTIFICATION);
+
+    const { events, error } = await execution;
+    const stopEvents = events.filter((event) => {
+      const value = event as unknown as Record<string, unknown>;
+      return value.type === "credential_alert" ||
+        value.error_code === "codex_usage_limit_exceeded";
+    });
+    expect(stopEvents).toHaveLength(2);
+    expect(stopEvents[0]).not.toHaveProperty("rate_limit_type");
+    expect(stopEvents[0]).not.toHaveProperty("resets_at");
+    expect(stopEvents[1]).toMatchObject({
+      type: "error",
+      fatal: true,
+      error_code: "codex_usage_limit_exceeded",
+    });
+    expect(stopEvents[1]).not.toHaveProperty("rate_limit_type");
+    expect(stopEvents[1]).not.toHaveProperty("resets_at");
+    expect(client.readAccountRateLimits).toHaveBeenCalledOnce();
+    expect(error).toEqual(new Error(PRODUCTION_USAGE_LIMIT_NOTIFICATION.params.error.message));
+  });
+
   it("observes a root command completion after the foreground subscription ends", async () => {
     const { adapter, client } = makeAdapter();
     const eventsPromise = drain(adapter.execute({ prompt: "yield command" }));
