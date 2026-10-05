@@ -18,6 +18,7 @@ export interface SessionStoryView {
 
 export interface GenerationCheckpointReadLimits {
   readonly recentEventLimit: number;
+  readonly unsummarizedEventLimit: number;
 }
 
 export interface GenerationCheckpointMaterial {
