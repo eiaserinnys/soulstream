@@ -10,13 +10,17 @@ import { boardColumns } from "./CardBoard";
 import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { CardCompletionFilter } from "./CardCompletionFilter";
 import { PostItCardView, PostItGrid, type PostItVariant } from "./PostItCard";
-import { reviewCard, reviewDetail, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
+import { reviewCard, reviewCardItems, reviewDetail, reviewFolders, reviewNow, reviewNowHistory, reviewNotes, reviewSession, reviewTitle } from "./components-review-fixtures";
 import { CardWorkspace } from "./CardWorkspace";
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import type {MobilePlannerTab} from "./mobile-planner-state";
 import { useCompletedCards,type CompletedPageLoader } from "./use-completed-cards";
 import { CompletedCardCollection } from "./CompletedCardCollection";
 import { activateRunSession } from "./folder-workspace-run-model";
+
+const legacyReviewDetail={...reviewDetail};
+delete legacyReviewDetail.notes;
+delete legacyReviewDetail.nowHistory;
 
 /** The actual board and card, with fixture-only state and no operational writes. */
 export function CardBoardSamples() {
@@ -47,6 +51,7 @@ export function CardBoardSamples() {
       completedAt:new Date(Date.now()-copy*10*60*1000).toISOString(),
       latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
         body:"긴 본문이 있어도 카드와 열의 폭을 줄이지 않습니다. 최신 원문은 네 줄까지 읽고 상세에서 이어 봅니다. ".repeat(5),createdAt:reviewCard.createdAt},
+      ...(index===0&&copy===0?{items:reviewCardItems,now:reviewNow}:{}),
     })));
     return seeds.filter(card=>(scenario!=="none"||card.status!=="done")
       &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="review"||card.status==="done"))
@@ -74,6 +79,13 @@ export function CardBoardSamples() {
       change:async(latest,status)=>{setStatuses(previous=>({...previous,[card.id]:status}));if(status==='running')setSettings(previous=>({...previous,[card.id]:{...latest,assigneeKind:'session',assigneeSessionId:reviewSession.agentSessionId}}));}}}/>;
   const comparison={...(cards[0]??reviewCard),id:"board-size-comparison",status:statuses["board-size-comparison"]??(assignmentScenario==='live'?'running':"review") as CardStatus};
   const selectedCard=selected===comparison.id?comparison:cards.find(card=>card.id===selected);
+  const selectedCardDetail=selectedCard?{
+    ...(selectedCard.items?{...reviewDetail,notes:reviewNotes,nowHistory:reviewNowHistory}:legacyReviewDetail),
+    card:{...selectedCard,...(startExample==='todo'||startExample==='queued'?{status:startExample}:startExample==='pending'?{status:'running' as const}:{}),brief:conversation==="short"?"내부 요약을 접지 않고 표시합니다.":"내부 요약을 접지 않고 표시합니다.\n\n".repeat(30)},
+    sessions:[{sessionId:reviewSession.agentSessionId,cardId:selectedCard.id,displayName:reviewSession.displayName??null,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:assignmentSession.status,createdAt:reviewCard.createdAt,updatedAt:reviewCard.updatedAt,callerSessionId:null}],
+    comments:Array.from({length:conversation==="short"?1:20},(_,index)=>({id:`detail-comment-${index}`,cardId:selectedCard.id,authorKind:"user" as const,authorId:"sample",sessionId:null,kind:"comment" as const,body:`커멘트 ${index+1}: 탭을 바꾸어도 작성 중 문장과 첨부는 유지됩니다.`,createdAt:reviewCard.createdAt,...(selectedCard.items&&index===0?{itemId:5}:{})})),
+    questions:[{id:"detail-question",text:"내용을 확인했나요?",options:["확인했습니다"],answer:"확인했습니다",askedAt:reviewCard.createdAt,answeredAt:reviewCard.createdAt}],
+  }:undefined;
   const mobileTabsHost=selectedCard&&mobileMode?document.querySelector('.v3-shell.v3-components-page'):null;
   return <div className="v3-card-board-sample" data-testid="card-board-sample">
     {adding?<CardCreateDialog assignment={dialoguesAssignment} onSave={async()=>({id:"sample-created"})} folders={reviewFolders} initialFolderId={scope==="folder"?reviewFolders[0].id:undefined} onClose={()=>setAdding(false)}/>:null}
@@ -95,7 +107,7 @@ export function CardBoardSamples() {
     {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={card=>renderCard(card as typeof cards[number],"compact")} completion={{includeCompleted,onChange}}
       draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}/>
       : <><PostItGrid>{cards.filter(card=>card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=>renderCard(card as typeof cards[number],"default")}/>:null}</>}
-    {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleExecution={startExample==='pending'?{phase:'pending',message:'시작 중…'}:undefined} sampleDetail={{...reviewDetail,card:{...selectedCard,...(startExample==='todo'||startExample==='queued'?{status:startExample}:startExample==='pending'?{status:'running' as const}:{}),brief:conversation==="short"?"내부 요약을 접지 않고 표시합니다.":"내부 요약을 접지 않고 표시합니다.\n\n".repeat(30)},sessions:[{sessionId:reviewSession.agentSessionId,cardId:selectedCard.id,displayName:reviewSession.displayName??null,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:assignmentSession.status,createdAt:reviewCard.createdAt,updatedAt:reviewCard.updatedAt,callerSessionId:null}],comments:Array.from({length:conversation==="short"?1:20},(_,index)=>({id:`detail-comment-${index}`,cardId:selectedCard.id,authorKind:"user",authorId:"sample",sessionId:null,kind:"comment",body:`커멘트 ${index+1}: 탭을 바꾸어도 작성 중 문장과 첨부는 유지됩니다.`,createdAt:reviewCard.createdAt})),questions:[{id:"detail-question",text:"내용을 확인했나요?",options:["확인했습니다"],answer:"확인했습니다",askedAt:reviewCard.createdAt,answeredAt:reviewCard.createdAt}]}} folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={(session,selection)=>{
+    {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleExecution={startExample==='pending'?{phase:'pending',message:'시작 중…'}:undefined} sampleDetail={selectedCardDetail} folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={(session,selection)=>{
         activateRunSession(session,useDashboardStore.getState());setSelectedSession(session);if(selection?.source!=='automatic')setMobileTab("chat");
       }}
       mobileMode={mobileMode} mobileTab={mobileTab} activeSession={selectedSession} chatInputDisabled historyEnabled={false} sessionStreamActive={false}

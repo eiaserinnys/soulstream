@@ -15,8 +15,11 @@ import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import { useCardBoardLayer } from "./card-board-layer";
 import "./v3-postit-cards.css";
 import {PostItCardView as Paper, PostItGrid as PaperGrid, type PostItVariant} from "./PostItCardPresentation";
+import { summarizeCardItems } from "./card-item-summary";
+import { CardProgressSummary } from "./CardProgressSummary";
 export {postItRotation} from "./PostItCardPresentation";
 export type {PostItVariant} from "./PostItCardPresentation";
+const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 
 export function PostItGrid(props: HTMLAttributes<HTMLDivElement> & { variant?: PostItVariant; ref?:Ref<HTMLDivElement> }) {
   const fontSize=useDashboardStore(state=>state.chatFontSize);
@@ -25,20 +28,23 @@ export function PostItGrid(props: HTMLAttributes<HTMLDivElement> & { variant?: P
 
 /** List data already carries the latest original activity; mounting never loads detail. */
 export function PostItCard({ card, variant = "default", statusActivator }: { card: CardRow; variant?: PostItVariant; statusActivator?:CardQueueStatusActivator }) {
+  const currentCard=useCardStore(state=>state.byId[card.id]??card);
+  const pendingConfirmations=useCardStore(state=>state.pendingItemConfirmations[card.id]??NO_PENDING_CONFIRMATIONS);
   const open = useCardNavigation(s => s.open);
-  const status = usePostItStatus(card);
-  const assignee = useDashboardStore(s => s.catalog?.sessionList?.find(session => session.agentSessionId === card.assigneeSessionId));
-  const error = useCardStore(s => s.errors[card.id]);
-  return <PostItCardView card={card} variant={variant} activity={card.latestActivity ?? null} assignee={assignee}
-    onOpen={() => open(card.id, "overlay")} statusControl={status} statusActivator={statusActivator} error={error}/>;
+  const status = usePostItStatus(currentCard);
+  const assignee = useDashboardStore(s => s.catalog?.sessionList?.find(session => session.agentSessionId === currentCard.assigneeSessionId));
+  const error = useCardStore(s => s.errors[currentCard.id]);
+  return <PostItCardView card={currentCard} pendingConfirmations={pendingConfirmations} variant={variant} activity={currentCard.latestActivity ?? null} assignee={assignee}
+    onOpen={() => open(currentCard.id, "overlay")} statusControl={status} statusActivator={statusActivator} error={error}/>;
 }
 
-export function PostItCardView({ card, activity, assignee, onOpen, statusControl, statusActivator, error, variant = "default" }: {
+export function PostItCardView({ card, activity, assignee, onOpen, statusControl, statusActivator, error, variant = "default", pendingConfirmations=NO_PENDING_CONFIRMATIONS }: {
   card: CardRow; activity: Pick<CardActivity, "kind" | "body" | "format"> | null;
   assignee?: SessionSummary; onOpen(): void;
   statusControl?: CardStatusControl;
   statusActivator?:CardQueueStatusActivator; error?: string;
   variant?: PostItVariant;
+  pendingConfirmations?:Readonly<Record<number,boolean>>;
 }) {
   const statusHandle = useRef<CardStatusHandle>(null);
   const [contextTarget,setContextTarget]=useState<V3ContextMenuTarget|null>(null);
@@ -51,6 +57,10 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
     ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait` : null) : null;
   const name = assigned ? assignee?.agentName ?? agentId ?? card.assigneeUserId ?? "담당 세션" : "담당 없음";
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
+  const itemSummary=summarizeCardItems(card.items,pendingConfirmations);
+  const hasItems=Boolean(card.items?.length);
+  const nowText=card.now?.text;
+  const turnText=card.now?.turn==="user"?"볼 것 "+itemSummary.toReviewCount+(card.now.ask?" · "+card.now.ask:""):undefined;
   const statusActions=statusControl?cardStatusChoices.map(status=>({
     label:cardStatusLabel({...card,status,blockedKind:null,blockedDetail:null}),
     onSelect:()=>statusHandle.current?.request(status as CardStatus),
@@ -58,6 +68,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   return <>
     <Paper id={card.id} title={card.title} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
       activity={activity?{kind:activity.kind,text:cardActivityPreview(activity)}:null}
+      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary}/></span>:undefined} nowText={nowText} turnText={turnText}
       assigneeName={name} onOpen={onOpen} error={error}
       avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait}
         fallbackEmoji={assigned ? card.assigneeKind === "human" ? "👤" : "🤖" : "·"}/>}

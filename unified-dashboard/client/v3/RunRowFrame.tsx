@@ -14,7 +14,7 @@ export type RunRowAction = ActionState & (
 );
 type RowStatus = { label: string; tone?: string };
 export type RunRowFrameProps = {
-  avatar: ReactNode; title: ReactNode; agentLine: ReactNode; affiliation?: ReactNode; preview?: string;
+  avatar: ReactNode; title: ReactNode; agentLine: ReactNode; affiliation?: ReactNode; preview?: string; cardSummary?:ReactNode;cardTurn?:ReactNode;
   status: RowStatus; timestamp?: { display: string; raw?: string }; secondaryStatus?: RowStatus;
   actions?: readonly RunRowAction[]; handle?: ReactNode;
   openLabel?: string; onOpen(): void; disabled?: boolean; size?: "default" | "small";
@@ -24,14 +24,16 @@ export type RunRowFrameProps = {
 };
 
 /** Sole owner of row inset, tracks, right information and small actions. */
-export function RunRowFrame({avatar,title,agentLine,affiliation,preview,status,timestamp,secondaryStatus,actions,handle,
+export function RunRowFrame({avatar,title,agentLine,affiliation,preview,cardSummary,cardTurn,status,timestamp,secondaryStatus,actions,handle,
   openLabel,onOpen,disabled,size="default",variant="session",active,failed,offline,sessionId,cardId,blockedKind,testId,onContextMenu}: RunRowFrameProps) {
   const hasPreview=size!=="small"&&Boolean(preview);
   const hasActions=Boolean(actions?.length);
-  const lines=1+(agentLine?1:0)+(hasPreview?1:0)+(affiliation?1:0);
+  const lines=1+(agentLine?1:0)+(hasPreview?1:0)+(affiliation?1:0)+(cardSummary?1:0)+(cardTurn?1:0);
   const content=<><span className="v3-run-avatar">{avatar}</span><span className="v3-run-copy">
     <span className="v3-run-identity"><span className="v3-run-title-line">{title}</span>{agentLine?<span className="v3-run-agent-line">{agentLine}</span>:null}</span>
     {affiliation}{hasPreview?<small>{preview}</small>:null}
+    {cardSummary?<span className="v3-run-card-summary">{cardSummary}</span>:null}
+    {cardTurn?<span className="v3-run-card-turn" title={typeof cardTurn==="string"?cardTurn:undefined}>{cardTurn}</span>:null}
   </span><span className="v3-run-trailing">
     <StatusChip label={status.label} tone={status.tone}/>
     {timestamp?<time dateTime={timestamp.raw}>{timestamp.display}</time>:null}

@@ -45,7 +45,7 @@ function CardNowPanelView({now,nowHistory=[],itemsCount,activeCount}: {
   <NowPanelContents entry={entry} index={index} total={slots.length} latest={latest} hasNavigation={hasNavigation} allChecked={allChecked}
    onPrevious={()=>move(index-1)} onNext={()=>move(index+1)}/>
   <div ref={measure} className="v3-card-now-measure" aria-hidden="true">
-   <NowPanelContents entry={current} index={slots.length-1} total={slots.length} latest hasNavigation={false} allChecked={allChecked} onPrevious={()=>{}} onNext={()=>{}}/>
+   <NowPanelContents entry={current} index={slots.length-1} total={slots.length} latest hasNavigation={hasNavigation} allChecked={allChecked} onPrevious={()=>{}} onNext={()=>{}}/>
   </div>
  </section>;
 }

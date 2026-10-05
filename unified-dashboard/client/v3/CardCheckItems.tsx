@@ -17,6 +17,15 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
  const [expandedIds,setExpandedIds]=useState<ReadonlySet<number>>(()=>new Set(current.filter(isInitiallyExpanded).map(item=>item.id)));
  const [groupExpanded,setGroupExpanded]=useState(false);
  const [image,setImage]=useState<CardImageSelection|null>(null);
+ const imageTrigger=useRef<HTMLElement|null>(null);
+ const openImage=(src:string,alt:string)=>{
+  imageTrigger.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
+  setImage({src,alt});
+ };
+ const closeImage=()=>{
+  setImage(null);
+  requestAnimationFrame(()=>imageTrigger.current?.focus({preventScroll:true}));
+ };
  const summary=summarizeCardItems(current,pendingConfirmations);
  useEffect(()=>{
   if(initialized.current||current.length===0)return;
@@ -32,10 +41,12 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
  const renderItem=(item:CardCheckItem)=><CardCheckItemRow key={item.id} item={item}
   checked={pendingConfirmations[item.id]??item.display==="confirmed"} pending={Object.prototype.hasOwnProperty.call(pendingConfirmations,item.id)}
   expanded={expandedIds.has(item.id)} onToggleExpanded={()=>changeExpanded(item.id)}
-  onConfirmChange={confirmed=>{setExcludedFromGroup(existing=>new Set(existing).add(item.id));setExpandedIds(existing=>{
+  onConfirmChange={confirmed=>{const wasExpanded=expandedIds.has(item.id);setExcludedFromGroup(existing=>new Set(existing).add(item.id));setExpandedIds(existing=>{
    const next=new Set(existing);if(confirmed)next.delete(item.id);else next.add(item.id);return next;
-  });void onConfirmChange(item.id,confirmed);}}
-  onTargetItem={()=>onTargetItem(item.id)} onOpenImage={(src,alt)=>onOpenImage?onOpenImage(src,alt):setImage({src,alt})}/>;
+  });if(!confirmed)onTargetItem(item.id);void Promise.resolve(onConfirmChange(item.id,confirmed)).catch(()=>{
+   setExpandedIds(existing=>{const next=new Set(existing);if(wasExpanded)next.add(item.id);else next.delete(item.id);return next;});
+  });}}
+  onTargetItem={()=>onTargetItem(item.id)} onOpenImage={(src,alt)=>onOpenImage?onOpenImage(src,alt):openImage(src,alt)}/>;
  return <>
   <div className="v3-card-check-items" data-testid="card-check-items" data-active-count={summary.activeCount} data-confirmed-count={summary.confirmedCount}>
    {current.length===0?<p className="v3-detail-empty">확인할 항목이 없습니다.</p>:<>
@@ -48,7 +59,7 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
     </section>:null}
    </>}
   </div>
-  <CardImageViewer image={image} onClose={()=>setImage(null)}/>
+  <CardImageViewer image={image} onClose={closeImage}/>
  </>;
 }
 

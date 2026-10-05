@@ -84,7 +84,7 @@ for(const width of [1440,390])test(`composer drafts ${width} ${phase}`,async({pa
   const box=(selector:string)=>{const r=el.querySelector(selector)!.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
   return {sessions:box('[data-card-section="sessions"]'),dock:box(".v3-card-comment-dock")};
  });
- const comments=await fixed();await detail.getByRole("tab",{name:"내용",exact:true}).click();await expect(comment).toHaveValue("카드 A 초안");
+ const comments=await fixed();await detail.getByRole("tab",{name:"노트",exact:true}).click();await expect(comment).toHaveValue("카드 A 초안");
  const content=await fixed();expect(content).toEqual(comments);await expect(detail.locator("textarea")).toHaveCount(1);await capture("card-content");
  await detail.getByRole("button",{name:"카드 닫기",exact:true}).click();
  if(phase==="before")return;

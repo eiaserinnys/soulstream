@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cardRequest, confirmCardItem, createCardInput, groupCards, queueAfterId } from "@seosoyoung/soul-ui/cards/card-api";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 
-const card = (id: string, status: string, extra = {}) => ({ id, folderId: "folder", title: id, status, version: 2, archived: false, ...extra });
+const card = <T extends Record<string, unknown> = Record<string, never>,>(id: string, status: string, extra: T = {} as T) => ({ id, folderId: "folder", title: id, status, version: 2, archived: false, ...extra });
 afterEach(() => { vi.unstubAllGlobals(); useCardStore.getState().reset(); });
 describe("card web contracts", () => {
   it("preserves the full request and uses the first line as title with selected execution fields", () => {

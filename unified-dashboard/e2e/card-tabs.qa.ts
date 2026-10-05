@@ -75,7 +75,7 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  const withAttachment=await fixed();
  await body.evaluate(el=>{el.scrollTop=0;});
  await page.screenshot({path:path.join(output,`after-${width}-comments.png`),animations:'disabled'});
- await detail.getByRole('tab',{name:'내용',exact:true}).click();
+ await detail.getByRole('tab',{name:'노트',exact:true}).click();
  await expect(sessionsRegion).toBeVisible();await expect(input).toBeVisible();
  await expect(input).toHaveValue('입력 중 문장');await expect(detail.locator('[title="evidence.png"]')).toBeVisible();
  await expect(body.locator('[data-card-entry],details,summary')).toHaveCount(0);
@@ -86,7 +86,7 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  await body.evaluate(el=>{el.scrollTop=el.scrollHeight;});
  expect(await body.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
  const contentAfter=await fixed();sameFixed(contentBefore,contentAfter);
- // Send text plus attachment from the content tab.
+ // Send text plus attachment from the notes tab.
  await detail.getByTestId('send-button').click();await expect(input).toHaveValue('');
  expect(writes[0].body).toContain('입력 중 문장');expect(writes[0].body).toContain('![evidence.png]');
  await detail.getByRole('tab',{name:'커멘트',exact:true}).click();
@@ -112,7 +112,7 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  // Session expansion remains mounted across the tabs.
  await sessionsRegion.getByRole('button',{name:'1개 더',exact:true}).click();
  await expect(sessionsRegion.locator('.v3-run-open')).toHaveCount(4);
- await detail.getByRole('tab',{name:'내용',exact:true}).click();await expect(sessionsRegion.locator('.v3-run-open')).toHaveCount(4);
+ await detail.getByRole('tab',{name:'노트',exact:true}).click();await expect(sessionsRegion.locator('.v3-run-open')).toHaveCount(4);
  writeFileSync(path.join(output,`after-${width}-metrics.json`),JSON.stringify({start,withAttachment,contentBefore,contentAfter,longBefore,longAfter},null,2));
  // Registered samples render the same CardWorkspace / CardDetailPane composition.
  await page.goto('/components');
@@ -125,7 +125,7 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  await body.evaluate(el=>{el.scrollTop=0;});const sampleComments=await fixed();
  await page.screenshot({path:path.join(output,`after-${width}-sample-comments.png`),animations:'disabled'});
  await body.evaluate(el=>{el.scrollTop=el.scrollHeight;});sameFixed(sampleComments,await fixed());
- await detail.getByRole('tab',{name:'내용',exact:true}).click();await expect(input).toBeVisible();await expect(sessionsRegion).toBeVisible();
+ await detail.getByRole('tab',{name:'노트',exact:true}).click();await expect(input).toBeVisible();await expect(sessionsRegion).toBeVisible();
  await expect(body).toContainText('내부 요약을 접지 않고 표시합니다.');await expect(body.locator('details,summary')).toHaveCount(0);
  await body.evaluate(el=>{el.scrollTop=0;});sameFixed(sampleComments,await fixed());
  await page.screenshot({path:path.join(output,`after-${width}-sample-content.png`),animations:'disabled'});
