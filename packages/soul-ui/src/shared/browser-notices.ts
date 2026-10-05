@@ -44,15 +44,14 @@ export function detailEventToSessionNotice(
         };
       }
       const message = event.message || "An error occurred";
-      const isRateLimitStop = event.error_code === "claude_rate_limit_stop_failure";
       return {
         ...common,
         kind: "error",
         title: "❌ Session Error",
         body: rateLimitNoticeBody(
           message,
-          isRateLimitStop ? event.rate_limit_type : undefined,
-          isRateLimitStop ? event.resets_at : undefined,
+          event.rate_limit_type,
+          event.resets_at,
         ),
       };
     }
