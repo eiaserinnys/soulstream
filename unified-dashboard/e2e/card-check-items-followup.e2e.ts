@@ -32,9 +32,12 @@ async function prepare(page: Page, width: number, webgl: boolean) {
   return { errors, writes, board: page.getByTestId("card-board-sample") };
 }
 
+
 const selectors = [".v3-card-check-item-meta", ".v3-card-check-item-target", ".v3-card-check-item-no-image", ".v3-card-detail-tab[aria-selected=false]", ".v3-card-now-turn--user strong", ".v3-card-check-item-links a"];
 for (const width of [1440, 1920]) for (const webgl of [false, true]) {
   test(`followup ABC ${width} glass ${webgl ? "on" : "off"}`, async ({ page }) => {
+    // Software WebGL needs multiple real frames for the six contrast captures.
+    if (webgl) test.setTimeout(90_000);
     const { board, errors, writes } = await prepare(page, width, false);
     await board.scrollIntoViewIfNeeded();
     const postits = board.getByTestId("postit-size-comparison");
@@ -65,6 +68,7 @@ for (const width of [1440, 1920]) for (const webgl of [false, true]) {
       return { detail: style(d), chat: style(chat), webgl: d.getAttribute("data-liquid-glass-webgl") };
     });
     expect(surface.detail.tint).toBe(surface.chat.tint);
+    if (webgl) expect(surface.detail.opacity).toBe("1");
     const link = detail.locator(".v3-card-check-item-links a").first();
     const linkColors = await link.evaluate(el => ({ name: getComputedStyle(el).color, icon: getComputedStyle(el.querySelector("svg")!).color }));
     expect(linkColors.name).not.toBe(linkColors.icon);

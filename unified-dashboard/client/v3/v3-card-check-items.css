@@ -141,7 +141,7 @@
 .v3-card-check-items-sample-main { container-name: card-pane; container-type: inline-size; }
 .v3-card-check-items-sample-target { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--v3-space-2); border: thin solid var(--v3-stroke-default); border-radius: var(--v3-space-3); padding: var(--v3-space-2) var(--v3-space-3); font: var(--v3-type-body) var(--v3-font-family); }
 
-.v3-shell .v3-card-detail { --glass-chrome-surface-strong: var(--lg-chat-panel); --v3-detail-inline-inset: var(--v3-space-6); container-name: card-pane; container-type: inline-size; position: relative; }
+.v3-shell .v3-card-detail { --liquid-glass-tint-strength: 1; --glass-chrome-surface-strong: var(--lg-chat-panel); --v3-detail-inline-inset: var(--v3-space-6); container-name: card-pane; container-type: inline-size; position: relative; }
 .v3-card-detail .v3-folder-header { flex-wrap: nowrap; gap: var(--v3-space-3); padding-block: var(--v3-space-4) 0; border-bottom: 0; }
 .v3-card-detail .v3-task-title-editor.v3-card-title-editor { width: auto; min-width: 0; flex: 1 1 0; }
 .v3-card-title-editor h1 { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; word-break: keep-all; overflow-wrap: anywhere; }
