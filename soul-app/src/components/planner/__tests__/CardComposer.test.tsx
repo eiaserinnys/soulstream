@@ -100,6 +100,10 @@ test.each([false, true])('today=%s 입력은 ChatComposer를 쓰고 리턴은 �
   const api = { getCard: jest.fn().mockResolvedValue({ card: cardFixture(), reports: [], questions: [], sessions: [] }), createCard: jest.fn().mockResolvedValue({ card: cardFixture() }), createSession: jest.fn().mockResolvedValue({ agentSessionId: 'new' }) };
   const screen = render(<CardComposer today={today} api={api as any} />);
   expect(screen.UNSAFE_getByType(ChatComposer)).toBeTruthy();
+  const contentRow = screen.getByTestId('chat-composer-content-row');
+  expect(contentRow.props.style.flexDirection).toBe('column');
+  expect(React.Children.toArray(contentRow.props.children).map((child: any) => child.props.testID))
+    .toEqual(['chat-composer-text-input', 'chat-composer-controls-row']);
   const input = screen.getByTestId('chat-composer-text-input');
   expect(input.props.multiline).toBe(true);
   expect(input.props.onSubmitEditing).toBeUndefined();
@@ -118,6 +122,9 @@ test('폴더 카드 입력은 원문과 구조화 첨부를 분리하고 성공 
   jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValue({ canceled: false, assets: [{ uri: 'file://photo.png', name: '사진.png', mimeType: 'image/png' }] } as any);
   const api = { getCard: jest.fn().mockResolvedValue({ card: cardFixture(), reports: [], questions: [], sessions: [] }), uploadAttachment: jest.fn().mockResolvedValue({ path: '/tmp/사진.png' }), createCard: jest.fn().mockResolvedValue({ card: cardFixture() }) };
   const screen = render(<CardComposer api={api as any} />);
+  const contentRow = screen.getByTestId('chat-composer-content-row');
+  expect(contentRow.props.style.flexDirection).toBe('column');
+  expect(screen.getByTestId('chat-composer-controls-row')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('첨부 추가')));
   expect(api.uploadAttachment).toHaveBeenCalledWith('draft-upload-id', 'node-1', expect.objectContaining({ name: '사진.png' }));
   expect(screen.getByText('사진.png')).toBeTruthy();

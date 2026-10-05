@@ -3,10 +3,13 @@ import type { DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { createSessionVisualRoles } from '../../theme/sessionVisualRoles';
 
+export const ADD_GLYPH_INSET_RATIO = 3 / 16; // Ionicons `add` stroke inset within its icon box.
+
 export function makeStyles(t: DesignTokens) {
   const c = t.colors;
   const roles = createSurfaceRoles(t);
   const sessionRoles = createSessionVisualRoles(t);
+  const composer = sessionRoles.chat.composer;
   return StyleSheet.create({
     container: { flex: 1, ...roles.canvas.tokenStyle },
     list: { flex: 1 },
@@ -40,8 +43,27 @@ export function makeStyles(t: DesignTokens) {
     },
     composerContentRow: {
       minHeight: sessionRoles.chat.composer.contentMinHeight,
+      flexDirection: 'column',
+    },
+    composerControlsRow: {
+      minHeight: composer.hitTarget,
       flexDirection: 'row',
-      alignItems: 'flex-end',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    composerAttachmentSlot: {
+      marginLeft: composer.inputPaddingHorizontal
+        - (composer.hitTarget - t.iconSize.action) / 2
+        - t.iconSize.action * ADD_GLYPH_INSET_RATIO,
+    },
+    composerControlsSpacer: {
+      flex: 1,
+      alignSelf: 'stretch',
+      minHeight: t.foundation.hitTarget,
+    },
+    composerRightControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
       gap: sessionRoles.chat.composer.controlGap,
     },
     composerControlFrame: {
@@ -104,7 +126,6 @@ export function makeStyles(t: DesignTokens) {
       flexShrink: 1,
     },
     composerTextInput: {
-      flex: 1,
       color: c.textPrimary,
       minHeight: sessionRoles.chat.composer.contentMinHeight,
       maxHeight: 128,

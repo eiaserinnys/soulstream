@@ -42,7 +42,7 @@ describe('ChatComposer', () => {
   test('공통 한 줄 시작과 입력 표면 계약을 snapshot으로 기록한다', () => {
     expect(renderComposer('hello').toJSON()).toMatchSnapshot();
   });
-  test('rounded input surface keeps one-row control order', () => {
+  test('rounded input surface stacks the full-width input above a fixed control row', () => {
     const { getByTestId } = renderComposer();
 
     const boxStyle = StyleSheet.flatten(getByTestId('chat-composer-box').props.style);
@@ -53,15 +53,32 @@ describe('ChatComposer', () => {
     const input = getByTestId('chat-composer-text-input');
     expect(input.props.multiline).toBe(true);
     expect(StyleSheet.flatten(input.props.style).maxHeight).toBeGreaterThan(80);
+    expect(StyleSheet.flatten(input.props.style).flex).toBeUndefined();
 
     const contentRow = getByTestId('chat-composer-content-row');
-    expect(StyleSheet.flatten(contentRow.props.style).flexDirection).toBe('row');
-    const childTestIds = React.Children.toArray(contentRow.props.children).map(
+    expect(StyleSheet.flatten(contentRow.props.style).flexDirection).toBe('column');
+    const contentChildTestIds = React.Children.toArray(contentRow.props.children).map(
       (child: any) => child.props.testID,
     ).filter(Boolean);
-    expect(childTestIds).toEqual([
-      'chat-composer-attach-button',
+    expect(contentChildTestIds).toEqual([
       'chat-composer-text-input',
+      'chat-composer-controls-row',
+    ]);
+
+    const controlsRow = getByTestId('chat-composer-controls-row');
+    expect(StyleSheet.flatten(controlsRow.props.style)).toMatchObject({
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    });
+    const controlChildren = React.Children.toArray(controlsRow.props.children);
+    expect((controlChildren[0] as React.ReactElement<any>).props.testID).toBe('chat-composer-attach-slot');
+    expect((controlChildren[1] as React.ReactElement<any>).props.testID).toBe('chat-composer-controls-spacer');
+    const rightControls = controlChildren[2] as React.ReactElement<any>;
+    expect(StyleSheet.flatten(rightControls.props.style)).toMatchObject({ flexDirection: 'row', gap: 6 });
+    expect(React.Children.toArray(rightControls.props.children).map(
+      (child: any) => child.props.testID,
+    )).toEqual([
       'chat-composer-voice-slot',
       'chat-composer-send-button',
     ]);
@@ -73,19 +90,20 @@ describe('ChatComposer', () => {
     const screen = render(<ChatComposer {...props} input="" />);
     const field = () => screen.getByTestId('chat-composer-text-input');
     const inputStyle = () => StyleSheet.flatten(field().props.style);
-    const rowStyle = () => StyleSheet.flatten(screen.getByTestId('chat-composer-content-row').props.style);
+    const controlsRowStyle = () => StyleSheet.flatten(screen.getByTestId('chat-composer-controls-row').props.style);
     const measure = (height: number) => fireEvent(field(), 'contentSizeChange', { nativeEvent: { contentSize: { width: 200, height } } });
     const initialHeight = inputStyle().height;
     expect(initialHeight).toBe(48);
     expect(field().props.scrollEnabled).toBe(false);
-    expect(rowStyle().alignItems).toBe('center');
+    expect(controlsRowStyle().alignItems).toBe('center');
+    const initialControlsRowStyle = controlsRowStyle();
     const button = StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style);
     for (const text of ['개행 없는 긴 문장 '.repeat(20), '첫 줄\n둘째 줄\n셋째 줄\n넷째 줄']) {
       screen.rerender(<ChatComposer {...props} input={text} />);
       measure(110);
       expect(inputStyle().height).toBe(110);
       expect(field().props.textAlignVertical).toBe('top');
-      expect(rowStyle().alignItems).toBe('flex-end');
+      expect(controlsRowStyle()).toEqual(initialControlsRowStyle);
       expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(button);
       screen.rerender(<ChatComposer {...props} input="한 줄" />);
       measure(42);
@@ -201,6 +219,35 @@ describe('ChatComposer', () => {
     expect(filledSend.props.accessibilityState.disabled).toBe(false);
     fireEvent.press(filledSend);
     expect(filled.onSend).toHaveBeenCalledTimes(1);
+  });
+
+  test('empty and filled controls space focuses the input but does nothing while disabled', () => {
+    const focus = jest.fn();
+    const measurementRef = { current: null as any };
+    jest.spyOn(inputMeasurement, 'useTextInputContentHeight').mockReturnValue({
+      ref: measurementRef,
+      contentHeight: 0,
+      onContentSizeChange: undefined,
+    });
+    const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
+    const screen = render(<ChatComposer {...props} input="" />);
+    const spacer = () => screen.getByTestId('chat-composer-controls-spacer');
+    measurementRef.current = { focus };
+
+    expect(spacer().props.accessible).toBe(false);
+    expect(spacer().props.focusable).toBe(false);
+    fireEvent.press(spacer());
+    expect(focus).toHaveBeenCalledTimes(1);
+
+    screen.rerender(<ChatComposer {...props} input="입력 중인 문장" />);
+    measurementRef.current = { focus };
+    fireEvent.press(spacer());
+    expect(focus).toHaveBeenCalledTimes(2);
+
+    screen.rerender(<ChatComposer {...props} input="입력 중인 문장" disabled />);
+    measurementRef.current = { focus };
+    fireEvent.press(spacer());
+    expect(focus).toHaveBeenCalledTimes(2);
   });
 
   test('text input delegates changes without owning message state', () => {
