@@ -34,6 +34,7 @@ describe("SessionDataHostClient", () => {
       "story",
       "turn_excerpt",
       "resume_context",
+      "generation_checkpoint_material",
     ]);
   });
 
@@ -71,6 +72,21 @@ describe("SessionDataHostClient", () => {
           runningSessions: { sessions: [], total: 0 },
           predecessor: null,
         },
+        generation_checkpoint_material: {
+          story: {
+            highlight: null,
+            narrative: null,
+            unfoldedTurnSummaries: [],
+            narrativeThroughEventId: null,
+            foldCount: 0,
+            updatedAt: null,
+          },
+          lastSummarizedFinalResponseEventId: null,
+          recent: { records: [], omittedUnsummarized: 0 },
+          childSessions: [],
+          childSessionTotal: 0,
+          totals: { events: 0, turnSummaries: 0 },
+        },
       };
       return new Response(JSON.stringify(result[operation ?? ""]), { status: 200 });
     });
@@ -106,6 +122,7 @@ describe("SessionDataHostClient", () => {
       () => client.getSessionStory("s1"),
       () => client.getTurnExcerpt("s1"),
       () => client.getResumeContext("s1", 15),
+      () => client.getGenerationCheckpointMaterial("s1", { recentEventLimit: 20 }),
     ];
 
     for (const call of calls) await call();
