@@ -274,3 +274,18 @@ it("persists card attachments in the central worker admission before launch",asy
  await finishJudgement(h);
  expect(h.recordDispatch).toHaveBeenCalledWith(expect.objectContaining({admission:expect.objectContaining({workerInput:expect.objectContaining({attachments})})}));
 });
+
+it("keeps the admission declaration and adds check-item guidance to an automatic worker prompt",async()=>{
+ const h=harness(undefined,{decision:run=>({decisions:run.snapshot.map(card=>({cardId:card.cardId,cardVersion:card.cardVersion,action:"run" as const,reason:"실행"}))})});
+ h.getCard.mockImplementation(async()=>({card:structuredClone(h.state.cards[0]!),questions:[],comments:[{
+   id:"user-comment",created_at:new Date("2026-10-01T12:00:00Z"),body:"확인할 결과를 추가해 주세요",
+ }]} as any));
+ h.recordDispatch.mockImplementation(async()=>undefined as never);
+ await finishJudgement(h);
+ const persisted=(h.recordDispatch.mock.calls as unknown as Array<[{
+   admission:{workerInput:{prompt:string}}
+ }]>)[0]![0];
+ expect(persisted.admission.workerInput.prompt).toContain("커멘트 ID: user-comment");
+ expect(persisted.admission.workerInput.prompt).toContain("전달을 읽기만 한 상태는 착수가 아닙니다.");
+ expect(persisted.admission.workerInput.prompt).toContain("착수 성공 뒤 확인 항목이 없으면 set_card_items로 결과를 나누고, 이미 있으면 그 항목을 이어서 씁니다.");
+});

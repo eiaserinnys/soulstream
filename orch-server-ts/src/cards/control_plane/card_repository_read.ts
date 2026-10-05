@@ -91,6 +91,20 @@ export class CardRepositoryRead {
       at:created_at.toISOString(),
     }));
   }
+  async listConfirmedItemsSinceLastCommentDelivery(cardId:string, throughAt:Date) {
+    const rows=await this.sql<{item_id:number}[]>`SELECT DISTINCT (o.payload_json->>'item_id')::integer AS item_id
+      FROM folder_operations o
+      WHERE o.target_kind='card' AND o.target_id=${cardId}
+        AND o.operation_type='confirm_card_item'
+        AND o.payload_json->>'confirmed'='true'
+        AND o.created_at > COALESCE(
+          (SELECT MAX(delivered_at) FROM card_comments
+           WHERE card_id=${cardId} AND author_kind='user' AND kind IN ('comment','spoken')),
+          '-infinity'::timestamptz)
+        AND o.created_at <= ${throughAt}
+      ORDER BY item_id`;
+    return rows.map(row=>row.item_id);
+  }
   async getComment(cardId: string, commentId: string) {
     return (await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND id=${commentId}`)[0] ?? null;
   }

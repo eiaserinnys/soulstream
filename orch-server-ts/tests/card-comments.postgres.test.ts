@@ -253,6 +253,24 @@ describe("card comments HTTP, storage, and delivery", () => {
     } finally { await server.close(); }
   });
 
+  it("delivers the comment ID, targeted item, and confirmations since the prior delivered comment",async()=>{
+    const cardId=await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,folder_id,card_id,status) VALUES ('item-owner','comment-folder',${cardId},'running')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='item-owner' WHERE id=${cardId}`;
+    await cards.setCardItems({actorKind:'agent',actorSessionId:'item-owner',cardId,items:['로그인 완료','검색 결과']});
+    await cards.confirmCardItem({...human,cardId,itemId:1,confirmed:true});
+    await cards.confirmCardItem({...human,cardId,itemId:2,confirmed:true});
+    await cards.confirmCardItem({...human,cardId,itemId:1,confirmed:false});
+    const comment=await cards.addComment({...human,cardId,itemId:1,body:'로그인 화면을 다시 확인해 주세요',idempotencyKey:key()});
+    await dispatcher.drain();
+    expect(messages).toHaveBeenCalledOnce();
+    const text=messages.mock.calls[0]![1];
+    expect(text).toContain(`커멘트 ID: ${comment.id}`);
+    expect(text).toContain('대상 항목: 1번 로그인 완료');
+    expect(text).toContain('그동안 확인한 항목: 1번, 2번');
+    expect((await cards.getCard(cardId))!.comments[0]!.delivered_at).toBeInstanceOf(Date);
+  });
+
   it("falls back to the latest dispatch_card session when no assignee session is set", async () => {
     const cardId = await makeCard("최근 dispatch");
     await h.sql`INSERT INTO sessions(session_id,folder_id,card_id,status) VALUES

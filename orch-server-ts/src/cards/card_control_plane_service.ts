@@ -62,6 +62,9 @@ export class CardControlPlaneService {
     return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions,notes,nowHistory };
   }
   listReports(cardId: string) { return this.repo.listReports(cardId); }
+  listConfirmedItemsSinceLastCommentDelivery(cardId:string,throughAt:Date) {
+    return this.repo.listConfirmedItemsSinceLastCommentDelivery(cardId,throughAt);
+  }
   async listCardNotes(params:CardMutationParams & {limit?:number;before?:string}) {
     const card=await this.repo.getCard(params.cardId);
     if (!card) throw Object.assign(new Error("Card not found"),{statusCode:404});

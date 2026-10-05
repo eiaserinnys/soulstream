@@ -23,12 +23,21 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
     const sql=createBoardYjsSqlAdapter(h.liveSql),tracked=vi.fn(sql);
     const snapshot=await readAssignedCardContext(tracked as unknown as typeof sql,'owner');
     expect(tracked).toHaveBeenCalledTimes(1);expect(snapshot.total).toBe(1);expect(snapshot.omitted).toBe(0);
-    expect(snapshot.cards).toEqual([expect.objectContaining({id:'owned',status:'done',latestCommentAt:expect.any(String),latestReportAt:expect.any(String)})]);
+    expect(snapshot.cards).toEqual([expect.objectContaining({id:'owned',status:'done',hasItems:false,latestCommentAt:expect.any(String),latestReportAt:expect.any(String)})]);
     expect(Date.parse(snapshot.cards[0]!.latestCommentAt!)).toBeGreaterThan(Date.parse(snapshot.cards[0]!.latestReportAt!));
     expect(snapshot.cards[0]).not.toHaveProperty('report');
     await h.sql`UPDATE cards SET status='cancelled' WHERE id='owned'`;
     expect(await readAssignedCardContext(sql,'owner')).toMatchObject({total:1,cards:[{id:'owned',status:'cancelled'}]});
     expect(await readAssignedCardContext(sql,'unassigned')).toMatchObject({total:0,cards:[]});
+  });
+  it("projects only whether the owned card has any check items",async()=>{
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id,items)
+      VALUES ('empty-items','f','a','옛 카드','요청','running','session','owner','[]'::jsonb),
+        ('has-items','f','b','새 카드','요청','running','session','owner','[{"id":1,"title":"결과"}]'::jsonb)`;
+    const snapshot=await readAssignedCardContext(createBoardYjsSqlAdapter(h.liveSql),'owner');
+    expect(Object.fromEntries(snapshot.cards.map(card=>[card.id,card.hasItems]))).toEqual({
+      'empty-items':false,'has-items':true,
+    });
   });
   it("does not treat card membership as session assignment",async()=>{
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)

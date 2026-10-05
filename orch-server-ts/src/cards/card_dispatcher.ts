@@ -139,7 +139,16 @@ export class CardDispatcher {
         const commentId=String(payload.comment_id ?? "");
         const comment=op.operation_type === "add_card_comment" ? detail.comments.find(item=>item.id === commentId) : undefined;
         const fallback=comment && !change.previousAssigneeSessionId ? await this.options.repository.latestDispatchedSessionId(card.id) : null;
-        const notification=buildCardChangeNotification(change,comment,fallback);
+        let notification=buildCardChangeNotification(change,comment,fallback);
+        if (notification && op.operation_type === "add_card_comment" && comment?.author_kind === "user") {
+          const rawItemId=comment.item_id;
+          const itemId=rawItemId == null ? undefined : Number(rawItemId);
+          const itemTarget=itemId === undefined ? undefined : change.committedCard?.items?.find(item=>item.id===itemId);
+          const confirmedItemIds=await cards.listConfirmedItemsSinceLastCommentDelivery(card.id,op.created_at);
+          notification=buildCardChangeNotification(change,comment,fallback,{
+            ...(itemTarget ? {itemTarget:{id:itemTarget.id,title:itemTarget.title}} : {}),confirmedItemIds,
+          });
+        }
         const answeredQuestion=op.operation_type === "answer_card_question" ? detail.questions.find(q=>q.id === payload.question_id) : undefined;
         const questionSession=answeredQuestion && typeof answeredQuestion.session_id === "string"
             ? await this.options.repository.ownerSession(answeredQuestion.session_id) : null;
@@ -256,7 +265,7 @@ export class CardDispatcher {
             const running = await this.options.repository.running();
             const prompt = buildCardPrompt({ cardId: card.id, title: card.title, folderName: card.folder_name, request: card.request,
                 brief: [card.brief, answers].filter(Boolean).join("\n"), reason: await this.options.repository.rejectionReason(card.id),
-                comments: detail.comments.filter(comment => comment.author_kind === "user").map(comment => ({ createdAt: comment.created_at as Date | string, body: String(comment.body) })),
+                comments: detail.comments.filter(comment => comment.author_kind === "user").map(comment => ({ id:String(comment.id),createdAt: comment.created_at as Date | string, body: String(comment.body) })),
                 running: running.filter(c => c.id !== card.id).map(c => ({ title: c.title, folderName: c.folder_name })),
                 queued: queue.map(c => ({ title: c.title, folderName: c.folder_name })) });
             const sessionId = randomUUID();

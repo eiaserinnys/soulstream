@@ -15,11 +15,20 @@ describe("assigned card current input context", () => {
     expect(JSON.stringify(first.content)).not.toContain('"instruction"');
     expect(JSON.stringify(first.content)).not.toContain('"report":"');
     expect(formatContextItems([first])).toContain("상태 전환 명령이 아닙니다");
-    expect(formatContextItems([first]).match(/상세는 카드 ID로 get_card를 조회합니다/g)).toHaveLength(1);
+    expect(formatContextItems([first])).toContain("get_card로 담당 카드의 확인 항목과 상황판을 읽습니다.");
     const second = await fetchAssignedCardContextItem(db, pino({level:"silent"}), "owner");
     expect(second.content).toMatchObject({ total:0, cards:[] });
     expect(read).toHaveBeenCalledTimes(2);
     expect(read).toHaveBeenLastCalledWith("owner");
+  });
+  it("omits the old missing-report fact for cards with check items",async()=>{
+    const read=vi.fn().mockResolvedValue({total:1,capturedAt:"2026-10-05T00:00:00Z",cards:[{
+      id:"item-card",title:"확인 카드",status:"running",hasItems:true,
+      latestCommentAt:"2026-10-04T23:00:00Z",latestReportAt:"2026-10-04T22:00:00Z",
+    }]});
+    const item=await fetchAssignedCardContextItem({getAssignedCardContext:read} as unknown as SessionDB,pino({level:"silent"}),"owner");
+    expect(item.content).toMatchObject({cards:[{id:"item-card",hasItems:true,latestReportAt:"2026-10-04T22:00:00Z"}]});
+    expect(item.content.cards[0]).not.toHaveProperty("reportFact");
   });
   it("shows unavailable instead of retaining a previous snapshot on read failure", async () => {
     const read = vi.fn().mockRejectedValue(new Error("offline"));

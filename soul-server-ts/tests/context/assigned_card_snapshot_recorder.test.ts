@@ -33,6 +33,17 @@ it('renders the already-bounded raw snapshot without another text cut or a consu
   expect(event.content).toBe('제목 · 검수 대기 · 보고 없음');
   expect(event.capture.snapshot.cards[0]).toEqual({id:'c',title:'제목',status:'review',latestCommentAt:null,latestReportAt:null});
 });
+it('uses the check-item result lookup for new cards and preserves the flag in the capture',async()=>{
+  const enqueueEvent=vi.fn().mockResolvedValue(undefined);
+  const raw=capture();
+  raw.snapshot.cards=[{id:'item-card',title:'확인 카드',status:'running',hasItems:true,latestCommentAt:'2026-10-01T23:59:00Z',latestReportAt:null}];
+  raw.snapshot.total=1;raw.snapshot.omitted=0;
+  await createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn:vi.fn()})(raw);
+  const event=enqueueEvent.mock.calls[0]![1] as any;
+  expect(event.content).toBe('확인 카드 · 실행 중 · 확인 항목 결과는 get_card로 조회');
+  expect(event.capture.snapshot.cards[0]).toMatchObject({hasItems:true});
+  expect(event.content).not.toContain('최근 커멘트 이후 보고 없음');
+});
 it('contains storage failure without retries or input wakeups and marks missing identity',async()=>{
   const enqueueEvent=vi.fn(async(..._args:unknown[])=>{throw new Error('storage failure');});
   const warn=vi.fn();
