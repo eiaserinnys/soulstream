@@ -392,13 +392,41 @@ async function runManuscriptChatCaptures(browser, base) {
     await page.getByTestId('component-review').waitFor();
     const sample = page.getByTestId('manuscript-presentation-scroll');
     await sample.scrollIntoViewIfNeeded();
+    const captureGeometry = async (presentation) => {
+      const column = page.getByTestId(`manuscript-presentation-column-${presentation}`);
+      const rect = (locator) => locator.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return Object.fromEntries(['x', 'y', 'width', 'height', 'right', 'bottom']
+          .map((key) => [key, Math.round(box[key] * 10) / 10]));
+      });
+      const columnRect = await rect(column);
+      const relative = async (locator) => {
+        const box = await rect(locator);
+        return { ...box, leftInset: Math.round((box.x - columnRect.x) * 10) / 10,
+          rightInset: Math.round((columnRect.right - box.right) * 10) / 10 };
+      };
+      const composerBoxes = column.getByTestId('chat-composer-box');
+      const composerUnderlines = await Promise.all(Array.from({ length: await composerBoxes.count() }, (_, index) =>
+        relative(composerBoxes.nth(index))));
+      return {
+        column: columnRect,
+        assistantBody: await relative(column.getByTestId('assistant-message-bubble').first()),
+        userMessage: await relative(column.getByTestId('user-message-bubble').first()),
+        jevCaption: await relative(column.getByText('Jev 후보 2 · 본문 시작선', { exact: true })),
+        generationLabel: await relative(column.getByText('새 세대', { exact: true })),
+        composerUnderlines,
+      };
+    };
     await sample.evaluate((element) => { element.scrollLeft = 0; });
     await page.screenshot({ path: path.join(output, `${scenario.name}-default.png`), fullPage: true });
+    const defaultGeometry = await captureGeometry('default');
     await sample.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
     await page.screenshot({ path: path.join(output, `${scenario.name}-manuscript.png`), fullPage: true });
+    const manuscriptGeometry = await captureGeometry('manuscript');
     await page.getByTestId('chat-composer-text-input').last().scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, `${scenario.name}-manuscript-composer.png`) });
-    result.viewports.push({ name: scenario.name, viewport: { width: scenario.width, height: scenario.height }, theme: scenario.theme });
+    result.viewports.push({ name: scenario.name, viewport: { width: scenario.width, height: scenario.height },
+      theme: scenario.theme, geometry: { default: defaultGeometry, manuscript: manuscriptGeometry } });
     await context.close();
   }
 }

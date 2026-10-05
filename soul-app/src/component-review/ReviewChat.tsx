@@ -296,7 +296,7 @@ function ReviewMessagePresentation({
   imageMessage.data = { ...imageMessage.data, attachments: ['/review/one.png'], node_id: 'public-node' };
 
   return (
-    <View style={{ width, padding: t.spacing.md, gap: t.spacing.md, backgroundColor: presentation === 'manuscript' ? t.persistentSession.paper : t.colors.background }}>
+    <View testID={`manuscript-presentation-column-${presentation}`} style={{ width, padding: t.spacing.md, gap: t.spacing.md, backgroundColor: presentation === 'manuscript' ? t.persistentSession.paper : t.colors.background }}>
       <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>{title}</Text>
       <UserMessage presentation={presentation} event={message('user_message', '긴 요청 문단입니다. 조사한 결과와 다음 행동을 알려주세요.')} />
       <UserMessage presentation={presentation} variant="intervention" event={message('intervention_sent', '실행 중 추가한 개입 발언입니다.')} />
