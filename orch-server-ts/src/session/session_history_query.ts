@@ -1,10 +1,10 @@
 import {
-  isSessionTimelineEventType,
-  type SessionTimelineEventType,
+  isRequestedTimelineEventType,
+  type RequestedTimelineEventType,
 } from "./session_history_service.js";
 
 export type TimelineEventTypesQueryResult =
-  | { ok: true; value: SessionTimelineEventType[] | undefined }
+  | { ok: true; value: RequestedTimelineEventType[] | undefined }
   | { ok: false; field: "event_types"; message: string };
 
 export function parseTimelineEventTypesQuery(
@@ -19,12 +19,12 @@ export function parseTimelineEventTypesQuery(
     };
   }
   const values = value.split(",");
-  if (values.some((item) => !isSessionTimelineEventType(item))) {
+  if (values.some((item) => !isRequestedTimelineEventType(item))) {
     return {
       ok: false,
       field: "event_types",
       message: "event_types contains an unsupported timeline event type",
     };
   }
-  return { ok: true, value: [...new Set(values)] as SessionTimelineEventType[] };
+  return { ok: true, value: [...new Set(values)] as RequestedTimelineEventType[] };
 }

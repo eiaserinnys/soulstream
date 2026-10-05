@@ -18,6 +18,8 @@ export type PersistentSettingsView = {
   show_generation_separator: boolean;
   show_character: boolean;
   show_jev_candidates: boolean;
+  show_turn_usage: boolean;
+  animate_character: boolean;
 };
 
 export type PersistentSessionResource = {
@@ -62,6 +64,8 @@ export function buildPersistentSessionResource(
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
         show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
+        show_turn_usage: PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
+        animate_character: PERSISTENT_SETTINGS_DEFAULTS.animate_character,
       }
     : {
         default_model: stored.default_model ?? { model_preset: null, reasoning_effort: null },
@@ -69,6 +73,8 @@ export function buildPersistentSessionResource(
         show_generation_separator: stored.show_generation_separator,
         show_character: stored.show_character,
         show_jev_candidates: stored.show_jev_candidates,
+        show_turn_usage: stored.show_turn_usage,
+        animate_character: stored.animate_character,
       };
   const agentId = stringOrNull(row.agent_id);
   return {

@@ -141,6 +141,8 @@ export class PersistentSessionControl {
       show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
       show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
       show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
+      show_turn_usage: PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
+      animate_character: PERSISTENT_SETTINGS_DEFAULTS.animate_character,
     };
     const defaultModel = patch.default_model !== undefined
       ? this.normalizeDefaultModel(patch.default_model)
@@ -154,6 +156,8 @@ export class PersistentSessionControl {
       show_generation_separator: patch.show_generation_separator ?? base.show_generation_separator,
       show_character: patch.show_character ?? base.show_character,
       show_jev_candidates: patch.show_jev_candidates ?? base.show_jev_candidates,
+      show_turn_usage: patch.show_turn_usage ?? base.show_turn_usage,
+      animate_character: patch.animate_character ?? base.animate_character,
     };
   }
 

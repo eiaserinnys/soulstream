@@ -2,7 +2,7 @@ import type {
   SessionHistoryProvider,
   SessionHistoryRawEvent,
   SessionHistoryReplayRange,
-  SessionTimelineEventType,
+  RequestedTimelineEventType,
 } from "../session/session_history_service.js";
 import { SESSION_TIMELINE_EVENT_TYPES } from "../session/session_history_service.js";
 import { SessionStoryReadService } from "../session/session_story_read_service.js";
@@ -103,7 +103,7 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     sessionId: string,
     before: string | null,
     limit: number,
-    requestedEventTypes?: readonly SessionTimelineEventType[],
+    requestedEventTypes?: readonly RequestedTimelineEventType[],
   ): Promise<[unknown[], string | null]> {
     const sql = await this.sqlResolver.resolveSql();
     const assistantRows = await sql`

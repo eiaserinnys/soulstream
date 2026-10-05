@@ -2021,6 +2021,8 @@ export interface SetPersistentSessionSettings {
     show_generation_separator?: boolean;
     show_character?: boolean;
     show_jev_candidates?: boolean;
+    show_turn_usage?: boolean;
+    animate_character?: boolean;
   };
   requestId?: string;
   request_id?: string;
