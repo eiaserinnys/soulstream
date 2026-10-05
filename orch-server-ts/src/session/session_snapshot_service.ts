@@ -19,6 +19,7 @@ export type SessionSnapshotQuery = {
   backend?: string[];
   updated_after?: string;
   feed_only?: boolean;
+  feed_display?: boolean;
   offset?: number;
   limit?: number;
   cursor?: string;
@@ -26,7 +27,7 @@ export type SessionSnapshotQuery = {
 
 export type SessionSnapshotListResponse = {
   sessions: Record<string, unknown>[];
-  sessionList: Record<string, unknown>[];
+  sessionList?: Record<string, unknown>[];
   total: number;
   cursor: string | null;
   nextCursor: string | null;
@@ -35,6 +36,7 @@ export type SessionSnapshotListResponse = {
 
 export type SessionSnapshotListResponseOptions = {
   includeDetails?: boolean;
+  includeSessionList?: boolean;
 };
 
 export type SessionSnapshotRecord = Record<string, unknown> & {
@@ -81,13 +83,14 @@ export class SessionSnapshotService {
       .sort((left, right) => compareSessions(
         left.session,
         right.session,
-        normalizedQuery.feed_only === true,
+        normalizedQuery.feed_only === true || normalizedQuery.feed_display === true,
+        normalizedQuery.feed_display === true,
         left.snapshot,
         right.snapshot,
       ));
     const page = filtered
       .slice(offset, offset + limit)
-      .map((entry) => normalizedQuery.feed_only === true
+      .map((entry) => normalizedQuery.feed_only === true || normalizedQuery.feed_display === true
         ? projectSessionFeedSummary(entry.snapshot)
         : entry.snapshot);
     return buildSessionSnapshotListResponse(
@@ -95,15 +98,28 @@ export class SessionSnapshotService {
       filtered.length,
       offset,
       limit,
-      { includeDetails: normalizedQuery.session_ids?.length === 1 },
+      {
+        includeDetails: normalizedQuery.session_ids?.length === 1,
+        includeSessionList: normalizedQuery.feed_display !== true,
+      },
     );
   }
 
-  loadSessionStreamSnapshot(): Promise<SessionStreamSnapshot> {
-    const snapshot = this.listSessions();
+  loadSessionStreamSnapshot(query: SessionSnapshotQuery = {}): Promise<SessionStreamSnapshot> {
+    const feedDisplay = query.feed_display === true;
+    const snapshot = this.listSessions(feedDisplay
+      ? { ...query, limit: query.limit ?? 30 }
+      : query);
     return Promise.resolve({
       sessions: snapshot.sessions,
       total: snapshot.total,
+      ...(feedDisplay
+        ? {
+            hasMore: snapshot.hasMore,
+            nextCursor: snapshot.nextCursor,
+            folders: [],
+          }
+        : {}),
     });
   }
 
@@ -175,7 +191,9 @@ export function buildSessionSnapshotListResponse(
     : sessions.map(projectSessionListSummary);
   return {
     sessions: responseSessions,
-    sessionList: responseSessions,
+    ...(options.includeSessionList === false
+      ? {}
+      : { sessionList: responseSessions }),
     total,
     cursor: nextCursor,
     nextCursor,
@@ -261,8 +279,15 @@ function matchesQuery(
     }
   }
   if (
-    query.feed_only === true &&
+    (query.feed_only === true || query.feed_display === true) &&
     fieldValue(session, "session_type", "sessionType") === "llm"
+  ) {
+    return false;
+  }
+  if (
+    query.feed_display === true &&
+    fieldValue(session, "status", "status") !== "running" &&
+    fieldValue(session, "review_state", "reviewState") !== "needs_review"
   ) {
     return false;
   }
@@ -303,10 +328,15 @@ function compareSessions(
   left: CachedNodeSession,
   right: CachedNodeSession,
   feedOnly: boolean,
+  feedDisplay: boolean,
   leftSnapshot: Record<string, unknown>,
   rightSnapshot: Record<string, unknown>,
 ): number {
   if (feedOnly) {
+    if (feedDisplay) {
+      const runningDiff = Number(right.status === "running") - Number(left.status === "running");
+      if (runningDiff !== 0) return runningDiff;
+    }
     const activityDiff = sessionFeedActivityMs(rightSnapshot) -
       sessionFeedActivityMs(leftSnapshot);
     if (activityDiff !== 0) return activityDiff;

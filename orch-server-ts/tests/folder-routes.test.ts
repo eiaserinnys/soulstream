@@ -21,14 +21,15 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
   const identity = { create: vi.fn(async () => ({ folder: { id: "f", name: "새 폴더" }, operation: { id: "op" }, idempotent: false })),
     mutateFromFolder: vi.fn(async () => ({ folder: { id: "f", archived: true }, operation: { id: "op" }, idempotent: false })) };
   const app = Fastify(); apps.push(app);
+  const listSessionAssignments = vi.fn(() => ({ a: { folderId: "f" }, b: { folderId: "other" } }));
   registerFolderRoutes(app, {
-    provider: { listFolders: () => [{ id: "f" }, { id: "other" }], listSessionAssignments: () => ({ a: { folderId: "f" }, b: { folderId: "other" } }) },
+    provider: { listFolders: () => [{ id: "f" }, { id: "other" }], listSessionAssignments },
     accessProvider: { resolveAccess: () => ({ restricted, allowedFolderIds: ["f"] }) },
     resolveDashboardUserId: () => user || null, projectIdentityService: identity as unknown as FolderRouteOptions["projectIdentityService"],
     cardServiceProvider: async () => cards, controlPlaneServiceProvider: async () => ({} as FolderControlPlaneService),
     authBearerToken: "test-token", environment: "production",
   });
-  return { app, identity, getFolder, listFolders, mutate };
+  return { app, identity, getFolder, listFolders, mutate, listSessionAssignments };
 }
 
 describe("unified folder HTTP and host contracts", () => {
@@ -110,15 +111,25 @@ describe("unified folder HTTP and host contracts", () => {
     expect((await app.inject({ method: "DELETE", url: "/api/folders/f" })).statusCode).toBe(404);
   });
   it("checks login, folder access, system protection and removed checklist endpoints", async () => {
-    const { app } = setup({ restricted: true });
+    const { app, listSessionAssignments } = setup({ restricted: true });
     expect((await app.inject("/api/folders/other")).statusCode).toBe(403);
     expect((await app.inject("/api/folders")).json().sessions).toEqual({ a: { folderId: "f" } });
+    const noAssignments = await app.inject("/api/folders?sessions=false");
+    expect(noAssignments.json().sessions).toEqual({});
+    expect(listSessionAssignments).toHaveBeenLastCalledWith(false);
     const payload = { expectedVersion: 3, idempotencyKey: "status", status: "completed" };
     expect((await app.inject({ method: "POST", url: "/api/folders/f/checklist/items/wrong/status", payload })).statusCode).toBe(404);
     const loggedOut = setup({ user: "" });
     expect((await loggedOut.app.inject({ method: "POST", url: "/api/folders/f/status", payload })).statusCode).toBe(401);
     const unrestricted = setup();
     expect((await unrestricted.app.inject({ method: "POST", url: "/api/folders/claude/status", payload })).statusCode).toBe(403);
+  });
+
+  it("keeps the default folder response assignments when sessions is omitted", async () => {
+    const { app, listSessionAssignments } = setup();
+    const response = await app.inject("/api/folders");
+    expect(response.json().sessions).toEqual({ a: { folderId: "f" }, b: { folderId: "other" } });
+    expect(listSessionAssignments).toHaveBeenCalledWith(true);
   });
   it("returns version conflicts and rejects old fields at the boundary", async () => {
     const { app, mutate } = setup();

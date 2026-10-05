@@ -41,12 +41,19 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly loadSessionSnapshot: (
-    input?: { readonly access?: BoardAccess; readonly feedOnly?: boolean },
+    input?: {
+      readonly access?: BoardAccess;
+      readonly feedOnly?: boolean;
+      readonly feedDisplay?: boolean;
+      readonly limit?: number;
+      readonly offset?: number;
+    },
   ) => Promise<SessionStreamSnapshot>;
   readonly listSessionSnapshots: (input: {
     readonly sessionIds?: readonly string[];
     readonly access?: BoardAccess;
     readonly feedOnly?: boolean;
+    readonly feedDisplay?: boolean;
     readonly folderId?: string;
     readonly sessionType?: string;
     readonly search?: string;

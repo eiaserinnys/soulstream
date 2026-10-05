@@ -36,7 +36,8 @@ export function createSessionStreamEventFilter(
   options: CreateSessionStreamEventFilterOptions,
 ): SessionStreamEventFilter {
   return async (request, event, context = {}) => {
-    const feedOnly = context.feedOnly ?? queryBool(request.query, "feed_only");
+    const feedOnly = queryBool(request.query, "feed_display") ||
+      (context.feedOnly ?? queryBool(request.query, "feed_only"));
     const access = normalizeBoardAccess(
       await options.accessProvider.resolveAccess({ request }),
     );

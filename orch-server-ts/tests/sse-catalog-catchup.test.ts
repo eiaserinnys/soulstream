@@ -13,6 +13,95 @@ function frames(body: string) {
 }
 
 describe('catalog catchup opt-in on actual HTTP route', () => {
+  it('sends the feed display page fields in its first snapshot frame', async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({ instanceId: 'catalog' });
+    const loadSnapshot = vi.fn(async () => ({
+      sessions: [{ agentSessionId: 'running-a' }],
+      total: 411,
+      hasMore: true,
+      nextCursor: '30',
+      folders: [{ id: 'folder-a', settings: {} }],
+    }));
+    const app = Fastify();
+    registerSseReplayRoutes(app, {
+      session: { broadcaster, loadSnapshot },
+      replayOnlyForTests: true,
+    });
+    try {
+      const response = await app.inject('/api/sessions/stream?feed_display=true&limit=30');
+      const output = frames(response.body);
+      expect(output.map(frame => frame.type)).toEqual(['stream_meta', 'session_list']);
+      expect(output[1]!.data).toEqual({
+        type: 'session_list',
+        sessions: [{ agentSessionId: 'running-a' }],
+        total: 411,
+        hasMore: true,
+        nextCursor: '30',
+        folders: [{ id: 'folder-a', settings: {} }],
+      });
+      expect(loadSnapshot).toHaveBeenCalledOnce();
+    } finally { await app.close(); }
+  });
+
+  it.each([30, 31])('replays %s feed display events or replaces an overflowing backlog with a snapshot', async (count) => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({ instanceId: 'catalog' });
+    for (let n = 0; n < count; n++) broadcaster.append({ type: 'session_updated', n });
+    const loadSnapshot = vi.fn(async () => ({
+      sessions: [{ agentSessionId: 'snapshot' }],
+      total: 411,
+      hasMore: true,
+      nextCursor: '30',
+      folders: [],
+    }));
+    const app = Fastify();
+    registerSseReplayRoutes(app, {
+      session: { broadcaster, loadSnapshot },
+      replayOnlyForTests: true,
+    });
+    try {
+      const response = await app.inject(
+        `/api/sessions/stream?feed_display=true&lastEventId=0&instanceId=catalog`,
+      );
+      const output = frames(response.body);
+      if (count <= 30) {
+        expect(output.filter(frame => frame.id)).toHaveLength(30);
+        expect(output.map(frame => frame.type)).not.toContain('session_list');
+        expect(loadSnapshot).not.toHaveBeenCalled();
+      } else {
+        expect(output.map(frame => frame.type)).toEqual(['stream_meta', 'session_list']);
+        expect(output.some(frame => frame.type === 'replay_gap')).toBe(false);
+        expect(loadSnapshot).toHaveBeenCalledOnce();
+      }
+    } finally { await app.close(); }
+  });
+
+  it.each(['ring_gap', 'instance_mismatch'])('replaces feed display %s cursors with a snapshot', async (gap) => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
+      instanceId: 'catalog',
+      ringMaxlen: 1,
+    });
+    if (gap === 'ring_gap') {
+      broadcaster.append({ type: 'session_updated', n: 1 });
+      broadcaster.append({ type: 'session_updated', n: 2 });
+    }
+    const loadSnapshot = vi.fn(async () => ({ sessions: [], total: 411, hasMore: true, nextCursor: '30', folders: [] }));
+    const app = Fastify();
+    registerSseReplayRoutes(app, {
+      session: { broadcaster, loadSnapshot },
+      replayOnlyForTests: true,
+    });
+    try {
+      const instanceId = gap === 'ring_gap' ? 'catalog' : 'old-instance';
+      const response = await app.inject(
+        `/api/sessions/stream?feed_display=true&lastEventId=0&instanceId=${instanceId}`,
+      );
+      const output = frames(response.body);
+      expect(output.map(frame => frame.type)).toEqual(['stream_meta', 'session_list']);
+      expect(output.some(frame => frame.type === 'replay_gap')).toBe(false);
+      expect(loadSnapshot).toHaveBeenCalledOnce();
+    } finally { await app.close(); }
+  });
+
   it.each([200, 201, 1000])('raw backlog %s honors threshold before async scope filtering', async (count) => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({ instanceId: 'catalog' });
     for (let n = 0; n < count; n++) broadcaster.append({ type: 'session_updated', n });

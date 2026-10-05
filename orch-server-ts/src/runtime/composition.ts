@@ -253,7 +253,14 @@ export function createOrchestratorRuntimeServices(
         broadcaster: sessionBroadcaster,
         loadSnapshot:
           options.loadSessionSnapshot ??
-          (() => sessionSnapshotService.loadSessionStreamSnapshot()),
+          ((request) => {
+            const feedDisplay = requestQueryBool(request.query, "feed_display");
+            const limit = requestQueryNumber(request.query, "limit");
+            return sessionSnapshotService.loadSessionStreamSnapshot({
+              feed_display: feedDisplay,
+              ...(feedDisplay && limit !== undefined ? { limit } : {}),
+            });
+          }),
       },
       keepaliveMs: options.sseKeepaliveMs,
       replayOnlyForTests: options.sseReplayOnlyForTests,
@@ -288,6 +295,25 @@ export function createOrchestratorRuntimeServices(
     nodeHttpClient,
     routeOptions,
   };
+}
+
+function requestQueryBool(query: unknown, key: string): boolean {
+  const value = requestQueryValue(query, key);
+  return typeof value === "string" &&
+    ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+function requestQueryNumber(query: unknown, key: string): number | undefined {
+  const value = requestQueryValue(query, key);
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function requestQueryValue(query: unknown, key: string): unknown {
+  if (typeof query !== "object" || query === null || !(key in query)) return undefined;
+  const value = (query as Record<string, unknown>)[key];
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function memoizeBoardYjsServiceFactory(

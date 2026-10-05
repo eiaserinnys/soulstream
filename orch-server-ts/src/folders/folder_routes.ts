@@ -40,7 +40,7 @@ export type FolderReorderInput = {
 
 export type FolderRouteProvider = {
   listFolders: () => Promise<readonly FolderRecord[]> | readonly FolderRecord[];
-  listSessionAssignments: () =>
+  listSessionAssignments: (includeSessions?: boolean) =>
     | Promise<Record<string, SessionAssignmentRecord>>
     | Record<string, SessionAssignmentRecord>;
 
@@ -114,11 +114,14 @@ export function registerFolderRoutes(
   app.get("/api/folders", async (request, reply) => {
     const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
     const folders = [...(await options.provider.listFolders())];
-    const assignments = await options.provider.listSessionAssignments();
+    const includeSessions = queryValue(request.query, "sessions") !== "false";
+    const assignments = await options.provider.listSessionAssignments(includeSessions);
 
     return reply.send({
       folders: filterFolders(access, folders),
-      sessions: filterSessionAssignments(access, folders, assignments),
+      sessions: includeSessions
+        ? filterSessionAssignments(access, folders, assignments)
+        : {},
       access: accessPayload(access),
     });
   });
@@ -159,6 +162,12 @@ export function registerFolderRoutes(
     }
   });
 
+}
+
+function queryValue(query: unknown, key: string): unknown {
+  if (typeof query !== "object" || query === null || !(key in query)) return undefined;
+  const value = (query as Record<string, unknown>)[key];
+  return Array.isArray(value) ? value[0] : value;
 }
 
 async function dashboardActor(

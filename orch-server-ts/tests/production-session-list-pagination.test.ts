@@ -119,6 +119,33 @@ describe("production session list pagination parity", () => {
     }
   });
 
+  it("routes feed_display REST requests through their bounded SQL page", async () => {
+    const harness = await createProductionHarness();
+    try {
+      const response = await harness.application.app.inject({
+        method: "GET",
+        url: "/api/sessions?feed_display=true&limit=30",
+        headers: harness.authHeaders,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        sessions: [expect.objectContaining({ agentSessionId: "display-running" })],
+        total: 411,
+        cursor: "30",
+        nextCursor: "30",
+        hasMore: true,
+      });
+      expect(response.json()).not.toHaveProperty("sessionList");
+      expect(sessionListCalls(harness.calls)).toEqual([]);
+      expect(harness.calls.some((call) =>
+        call.text.includes("s.review_state") && call.text.includes("session_feed_try_timestamptz")
+      )).toBe(true);
+    } finally {
+      await closeHarness(harness);
+    }
+  });
+
   it("keeps SSE feed_only on the DB path with Python's 200-row snapshot cap", async () => {
     const harness = await createProductionHarness();
     const controller = new AbortController();
@@ -149,6 +176,35 @@ describe("production session list pagination parity", () => {
       await closeHarness(harness);
     }
   });
+
+  it("loads the feed_display stream snapshot page and folder list from the DB path", async () => {
+    const harness = await createProductionHarness();
+    const controller = new AbortController();
+    try {
+      await harness.application.app.listen({ host: "127.0.0.1", port: 0 });
+      const stream = await connectSse(
+        `${harness.application.app.listeningOrigin}/api/sessions/stream?feed_display=true&limit=30`,
+        harness.authHeaders,
+        controller.signal,
+      );
+
+      expect((await stream.next("session_list")).data).toMatchObject({
+        type: "session_list",
+        sessions: [expect.objectContaining({ agentSessionId: "display-running" })],
+        total: 411,
+        hasMore: true,
+        nextCursor: "30",
+        folders: [],
+      });
+      expect(sessionListCalls(harness.calls)).toEqual([]);
+      expect(harness.calls.some((call) =>
+        call.text.includes("s.review_state") && call.text.includes("session_feed_try_timestamptz")
+      )).toBe(true);
+    } finally {
+      controller.abort();
+      await closeHarness(harness);
+    }
+  });
 });
 
 async function createProductionHarness() {
@@ -162,9 +218,14 @@ async function createProductionHarness() {
     sessionRow("llm-session", "feed-folder", "llm"),
     sessionRow("excluded-folder-session", "excluded-folder", "claude"),
   ];
+  const displayRows = [sessionRow("display-running", "feed-folder", "claude")];
   const query = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?").replace(/\s+/g, " ").trim();
     calls.push({ text, values });
+    if (text.includes("s.review_state")) {
+      return text.includes("COUNT(*)") ? [{ count: 411 }] : displayRows;
+    }
+    if (text.includes("folder_get_all")) return [];
     if (text.includes("FROM sessions s") && text.includes("s.session_id = ANY")) {
       const sessionIds = Array.isArray(values[0]) ? values[0] : [];
       return rows.filter((row) => sessionIds.includes(row.session_id));

@@ -131,6 +131,30 @@ describe("session stream event access filter", () => {
     ).resolves.toMatchObject({ type: "session_created" });
   });
 
+  it("applies feed scope when feed_display is present without feed_only", async () => {
+    const { filter } = createFilterHarness({
+      access: { restricted: false },
+      folders: [
+        { id: "visible", parentFolderId: null },
+        { id: "hidden", parentFolderId: null, settings: { excludeFromFeed: true } },
+      ],
+    });
+    const displayRequest = { query: { feed_display: "true" } } as FastifyRequest;
+
+    await expect(filter(displayRequest, {
+      type: "session_created",
+      session: { agentSessionId: "hidden-session", folderId: "hidden", sessionType: "claude" },
+    })).resolves.toBeNull();
+    await expect(filter(displayRequest, {
+      type: "session_created",
+      session: { agentSessionId: "llm-session", folderId: "visible", sessionType: "llm" },
+    })).resolves.toBeNull();
+    await expect(filter(displayRequest, {
+      type: "session_created",
+      session: { agentSessionId: "visible-session", folderId: "visible", sessionType: "claude" },
+    })).resolves.toMatchObject({ type: "session_created" });
+  });
+
   it("scopes catalog_updated folders and assignments by restricted and feed-only rules", async () => {
     const { filter } = createFilterHarness({
       access: { restricted: true, allowedFolderIds: ["root"] },

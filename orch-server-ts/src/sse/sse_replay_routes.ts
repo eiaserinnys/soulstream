@@ -15,6 +15,9 @@ import {
 export type SessionStreamSnapshot = {
   sessions: unknown[];
   total?: number;
+  hasMore?: boolean;
+  nextCursor?: string | null;
+  folders?: readonly unknown[];
 };
 
 export type SseReplayRouteOptions = {
@@ -51,6 +54,7 @@ type SseReplayEventFilter<TPayload extends object> = (
 ) => Promise<TPayload | null>;
 
 const DEFAULT_KEEPALIVE_MS = 30_000;
+export const FEED_DISPLAY_CATCHUP_MAX_EVENTS = 30;
 
 export function registerSseReplayRoutes(
   app: FastifyInstance,
@@ -67,6 +71,13 @@ export function registerSseReplayRoutes(
             type: "session_list",
             sessions: snapshot.sessions,
             total: snapshot.total ?? snapshot.sessions.length,
+            ...(queryBool(snapshotRequest.query, "feed_display")
+              ? {
+                  hasMore: snapshot.hasMore ?? false,
+                  nextCursor: snapshot.nextCursor ?? null,
+                  folders: snapshot.folders ?? [],
+                }
+              : {}),
           },
         };
       },
@@ -197,8 +208,16 @@ async function buildInitialFrames<TPayload extends object>(
   }
 
   const replay = options.broadcaster.replayFromCursor(cursor);
+  const feedDisplay = queryBool(request.query, "feed_display");
   const snapshotCatchup = (request.query as Record<string, unknown>).snapshotCatchup === "1";
-  const overflow = snapshotCatchup && replay.events.length > 200;
+  if (
+    feedDisplay &&
+    (replay.gap || replay.events.length > FEED_DISPLAY_CATCHUP_MAX_EVENTS)
+  ) {
+    frames.push(await options.loadSnapshot(request));
+    return frames;
+  }
+  const overflow = !feedDisplay && snapshotCatchup && replay.events.length > 200;
   if (replay.gap || overflow) {
     frames.push({
       event: "replay_gap",
@@ -287,6 +306,11 @@ function queryValue(query: unknown, key: string): string | null {
     return typeof first === "string" ? first : null;
   }
   return typeof value === "string" ? value : null;
+}
+
+function queryBool(query: unknown, key: string): boolean {
+  const value = queryValue(query, key);
+  return value !== null && ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
 function setSseHeaders(reply: FastifyReply): void {

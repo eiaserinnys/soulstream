@@ -389,6 +389,82 @@ describe("session snapshot route harness", () => {
     await app.close();
   });
 
+  it("parses feed_display and keeps its REST page summary separate from sessionList", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const app = createApp({
+      config,
+      sessionSnapshotRoutes: {
+        snapshotService: {
+          listSessions(query) {
+            captured = query;
+            return {
+              sessions: [],
+              sessionList: [],
+              total: 411,
+              cursor: "30",
+              nextCursor: "30",
+              hasMore: true,
+            };
+          },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?feed_display=true&limit=30&cursor=30",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(captured).toMatchObject({ feed_display: true, limit: 30, cursor: "30" });
+    await app.close();
+  });
+
+  it("filters and orders feed_display cache rows and omits sessionList", async () => {
+    const { app, registry } = createHarness();
+    const connectionId = registerNode(registry, "node-a");
+    const rows = [
+      ["running-old", "running", "not_required", "2026-09-01T00:00:00.000Z", "claude"],
+      ["running-new", "running", "not_required", "2026-09-02T00:00:00.000Z", "claude"],
+      ["review-newest", "completed", "needs_review", "2026-09-03T00:00:00.000Z", "claude"],
+      ["review-finished", "completed", "acknowledged", "2026-09-04T00:00:00.000Z", "claude"],
+      ["llm-running", "running", "not_required", "2026-09-05T00:00:00.000Z", "llm"],
+    ] as const;
+    for (const [agentSessionId, status, reviewState, timestamp, sessionType] of rows) {
+      registry.receiveNodeMessage(
+        { nodeId: "node-a", connectionId },
+        {
+          type: "session_updated",
+          agentSessionId,
+          status,
+          review_state: reviewState,
+          session_type: sessionType,
+          last_message: { type: "assistant_message", preview: "activity", timestamp },
+        },
+        { committedIngress: true },
+      );
+    }
+
+    const first = (await app.inject({
+      method: "GET",
+      url: "/api/sessions?feed_display=true&limit=2",
+    })).json();
+    expect(first.sessions.map((session: Record<string, unknown>) => session.agentSessionId))
+      .toEqual(["running-new", "running-old"]);
+    expect(first).toMatchObject({ total: 3, nextCursor: "2", hasMore: true });
+    expect(first).not.toHaveProperty("sessionList");
+
+    const last = (await app.inject({
+      method: "GET",
+      url: "/api/sessions?feed_display=true&limit=2&cursor=2",
+    })).json();
+    expect(last.sessions.map((session: Record<string, unknown>) => session.agentSessionId))
+      .toEqual(["review-newest"]);
+    expect(last).toMatchObject({ total: 3, nextCursor: null, hasMore: false });
+    expect(last).not.toHaveProperty("sessionList");
+    await app.close();
+  });
+
   it("forwards metadata search, node, status, backend, and date filters as one snapshot query", async () => {
     let captured: Record<string, unknown> | undefined;
     const app = createApp({
