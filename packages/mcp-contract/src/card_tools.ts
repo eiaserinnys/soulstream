@@ -59,23 +59,23 @@ export const cardTools = {
     inputSchema: { ...scope, folder_id: id, after_card_id: id.nullable().optional() },
   }, audience: "all" },
   set_card_items: { name: "set_card_items", config: {
-    description: "담당 카드의 요청을 사용자가 확인할 결과 1~6개로 처음 나눕니다. 항목 하나는 화면이나 결과물을 보고 한 번에 됐다고 말할 결과입니다. 순서·PR·검증 절차는 항목이 아닙니다.",
+    description: "담당 카드의 요청을 사용자가 확인할 결과 1~6개로 처음 나눕니다. 항목 하나는 화면이나 결과물을 보고 한 번에 됐다고 말할 결과입니다. 순서, PR, 검증 절차는 항목이 아닙니다. 제목은 40자까지입니다.",
     inputSchema: { ...scope,items:z.array(z.object({title:id}).strict()) },
   }, audience: "internal" },
   add_card_item: { name: "add_card_item", config: {
-    description: "사용자가 새로 말한 결과를 담당 카드에 더합니다. from_comment_id에 이 카드의 사용자 커멘트나 발언 기록 ID를 넣으세요. 확인하지 않은 항목이 여섯이면 사용자의 확인을 기다립니다.",
+    description: "사용자가 새로 말한 결과를 담당 카드에 더합니다. from_comment_id에 이 카드의 사용자 커멘트나 발언 기록 ID를 넣으세요. 제목은 40자까지입니다. 확인하지 않은 항목이 여섯이면 사용자의 확인을 기다립니다.",
     inputSchema: { ...scope,title:id,from_comment_id:id },
   }, audience: "internal" },
   report_card_item: { name: "report_card_item", config: {
-    description: "담당 항목을 doing, done, dropped로 알립니다. 끝나거나 빼면 result에 결과나 까닭 한 줄을 쓰고 evidence에 캡처·링크를 답니다. 사용자가 확인한 항목을 고칠 때는 reopen_reason이 필요합니다.",
+    description: "담당 항목을 doing, done, dropped로 알립니다. 끝나거나 빼면 result에 결과나 까닭 한 줄(80자까지)을 쓰고 evidence에 캡처와 링크를 넷까지 답니다(설명 40자까지). 못 본 것은 caveat(60자까지)에 적습니다. 사용자가 확인한 항목을 고칠 때는 reopen_reason(80자까지)이 필요합니다. 커밋, 경로, URL 같은 식별자는 노트에 적습니다.",
     inputSchema: { ...scope,item_id:itemId,state:z.enum(["doing","done","dropped"]),result:z.string().optional(),evidence:z.array(itemEvidence).optional(),caveat:z.string().optional(),reopen_reason:z.string().optional() },
   }, audience: "internal" },
   update_card_now: { name: "update_card_now", config: {
-    description: "담당 카드의 지금 한 줄과 누구 차례인지를 고쳐 씁니다. turn=user면 ask에 사용자가 볼 것을 적으세요. 턴을 끝내기 전에 현재와 맞춥니다.",
+    description: "담당 카드의 지금 한 줄과 누구 차례인지를 고쳐 씁니다. now와 ask는 각각 60자까지이며 식별자를 넣지 않습니다. turn=user면 ask에 사용자가 볼 것을 적으세요. 턴을 끝내기 전에 현재와 맞춥니다.",
     inputSchema: { ...scope,now:z.string(),turn:z.enum(["agent","user","outside"]),ask:z.string().optional() },
   }, audience: "internal" },
   add_card_note: { name: "add_card_note", config: {
-    description: "담당 카드의 진행·기술 세부를 노트에 기록합니다. 식별자와 자세한 로그는 여기에 쓰세요. 사용자에게 답하는 글과 항목의 결과는 각 도구에 씁니다.",
+    description: "담당 카드의 진행과 기술 세부를 노트에 기록합니다(4,000자까지). 식별자와 자세한 로그는 여기에 쓰세요. 사용자에게 답하는 글과 항목의 결과는 각 도구에 씁니다.",
     inputSchema: { ...scope,text:z.string() },
   }, audience: "internal" },
   list_card_notes: { name: "list_card_notes", config: {

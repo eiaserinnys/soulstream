@@ -191,6 +191,30 @@ describe("card check-item locked mutations", () => {
       .rejects.toMatchObject({ statusCode: 422, message: "note.text은 4000자까지입니다. 지금 4001자입니다" });
   });
 
+  it("limits replies only on cards with check items", async () => {
+    const cardId = await makeCard();
+    await cards.setCardItems({ ...assignee, cardId, items: ["확인할 결과"] });
+    await cards.addComment({ ...user, cardId, body: "확인 요청", idempotencyKey: key() });
+
+    const maxLengthReply = "가".repeat(300);
+    await expect(cards.addComment({ ...assignee, cardId, body: maxLengthReply, mode: "reply", idempotencyKey: key() }))
+      .resolves.toMatchObject({ body: maxLengthReply });
+    await expect(cards.addComment({ ...assignee, cardId, body: "가".repeat(301), mode: "reply", idempotencyKey: key() }))
+      .rejects.toMatchObject({ statusCode: 422, message: "reply은 300자까지입니다. 지금 301자입니다" });
+    await expect(cards.addComment({ ...assignee, cardId, body: "두 번째 답", mode: "reply", idempotencyKey: key() }))
+      .rejects.toMatchObject({ statusCode: 422, message: "이미 답했습니다. 진행은 노트에 적으세요(add_card_note)" });
+
+    await cards.addComment({ ...user, cardId, body: "추가 확인 요청", idempotencyKey: key() });
+    await expect(cards.addComment({ ...assignee, cardId, body: "다시 답합니다", mode: "reply", idempotencyKey: key() }))
+      .resolves.toMatchObject({ body: "다시 답합니다" });
+
+    const oldCardId = await makeCard("확인 항목 없는 카드", "other");
+    const longReply = "가".repeat(301);
+    const addOldCardReply = () => cards.addComment({ actorKind: "agent", actorSessionId: "other", cardId: oldCardId, body: longReply, mode: "reply", idempotencyKey: key() });
+    await expect(addOldCardReply()).resolves.toMatchObject({ body: longReply });
+    await expect(addOldCardReply()).resolves.toMatchObject({ body: longReply });
+  });
+
   it("paginates notes newest-first and exposes only explicit situation-board updates in history",async()=>{
     const cardId=await makeCard();
     for(let index=0;index<22;index++)
