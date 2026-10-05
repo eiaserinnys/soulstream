@@ -5,9 +5,10 @@ import {
   dequeueInterventionsInLane,
   dequeueNextTurnInterventions,
   enqueueInterventionOnce,
+  rejoinUnstartedInterventions,
   sortInterventionsByPriority,
 } from "../../src/task/task_intervention_queue.js";
-import type { Task } from "../../src/task/task_models.js";
+import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 
 function task(): Task {
   return {
@@ -106,6 +107,41 @@ describe("enqueueInterventionOnce", () => {
       .toEqual(["runtime"]);
     expect(dequeueNextTurnInterventions(target).map((message) => message.text))
       .toEqual(["runtime"]);
+  });
+
+  it("keeps the unstarted batch unchanged when the queue is empty", () => {
+    const target = task();
+    const unstarted: InterventionMessage[] = [{ text: "first", user: "alice" }];
+
+    expect(rejoinUnstartedInterventions(target, unstarted)).toBe(unstarted);
+    expect(target.interventionQueue).toEqual([]);
+  });
+
+  it("keeps a runtime follow-up batch unchanged when another message is queued", () => {
+    const target = task();
+    const unstarted: InterventionMessage[] = [
+      { text: "runtime", user: "system", deliveryIntent: "runtime_followup" },
+    ];
+    target.interventionQueue.push({ text: "new message", user: "alice" });
+
+    expect(rejoinUnstartedInterventions(target, unstarted)).toBe(unstarted);
+    expect(target.interventionQueue).toEqual([{ text: "new message", user: "alice" }]);
+  });
+
+  it("rejoins ordinary inputs ahead of arrivals and leaves runtime follow-up queued", () => {
+    const target = task();
+    const unstarted: InterventionMessage[] = [
+      { text: "first high", user: "alice" },
+      { text: "completion", user: "agent", deliveryIntent: "completion_notification" },
+    ];
+    target.interventionQueue.push(
+      { text: "new high", user: "bob" },
+      { text: "runtime", user: "system", deliveryIntent: "runtime_followup" },
+    );
+
+    expect(rejoinUnstartedInterventions(target, unstarted).map((message) => message.text))
+      .toEqual(["first high", "new high", "completion"]);
+    expect(target.interventionQueue.map((message) => message.text)).toEqual(["runtime"]);
   });
 
   it("converges a retried durable delivery on one queue position", () => {

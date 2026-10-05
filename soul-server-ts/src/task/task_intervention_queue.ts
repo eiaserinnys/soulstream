@@ -91,6 +91,20 @@ export function dequeueNextTurnInterventions(task: Task): InterventionMessage[] 
   return ordinaryLow;
 }
 
+/**
+ * Put an unstarted ordinary batch back at the front and select the next batch
+ * with the standard rules so arrivals during compaction can join it. Runtime
+ * follow-up batches have exact input UUIDs, so they remain unchanged.
+ */
+export function rejoinUnstartedInterventions(
+  task: Task,
+  unstarted: InterventionMessage[],
+): InterventionMessage[] {
+  if (task.interventionQueue.length === 0 || unstarted.some(isRuntimeFollowup)) return unstarted;
+  task.interventionQueue = [...unstarted, ...task.interventionQueue];
+  return dequeueNextTurnInterventions(task);
+}
+
 export function dequeueInterventionsInLane(
   task: Task,
   lane: InterventionPriorityLane,

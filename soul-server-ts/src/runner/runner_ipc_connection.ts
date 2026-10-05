@@ -54,9 +54,11 @@ export class RunnerIpcConnection {
   private failureHandler: (error: Error) => void = () => {};
   // Lifecycle and durable intervention operations use independent FIFOs. A
   // slow engine apply must not starve a receipt stage or an explicit interrupt.
+  // A long-running compact must not starve other commands with 30s deadlines.
   private stageHandling = Promise.resolve();
   private interventionHandling = Promise.resolve();
   private lifecycleHandling = Promise.resolve();
+  private compactHandling = Promise.resolve();
   private orderedHandling = Promise.resolve();
   private closed = false;
   private droppedFrameCount = 0;
@@ -218,6 +220,9 @@ export class RunnerIpcConnection {
         case "lifecycle":
           this.lifecycleHandling = this.enqueueFrame(this.lifecycleHandling, frame);
           break;
+        case "compact":
+          this.compactHandling = this.enqueueFrame(this.compactHandling, frame);
+          break;
         default:
           this.orderedHandling = this.enqueueFrame(this.orderedHandling, frame);
       }
@@ -260,10 +265,11 @@ export class RunnerIpcConnection {
 
 function priorityLane(
   frame: RunnerFrame,
-): "stage" | "intervention" | "lifecycle" | undefined {
+): "stage" | "intervention" | "lifecycle" | "compact" | undefined {
   if (frame.channel !== "command") return undefined;
   if (frame.kind === "stage_intervention") return "stage";
   if (frame.kind === "interrupt") return "lifecycle";
+  if (frame.kind === "invoke" && frame.capability === "compact") return "compact";
   return frame.kind === "invoke"
     && (
       frame.capability === "runner.apply_intervention"
