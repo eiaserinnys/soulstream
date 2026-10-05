@@ -1,6 +1,5 @@
 import type { ApiRequestContext } from './clientCore';
 import type { CatalogResponse } from './clientTypes';
-import { isCompleteSessionSnapshot } from '../lib/session-snapshot-completeness';
 import { toSession } from './mappers';
 import type { CatalogFolder, FolderMutationResult, Session } from './types';
 import type { FolderSnapshot } from './cardTypes';
@@ -79,33 +78,18 @@ export function createCatalogEndpoints({
         authFetch(`${base}/api/sessions${qs ? `?${qs}` : ''}`, options).then((r) =>
           readJson<SessionsPayload>(r, 'getSessions'),
         ),
-      ]).then(async ([foldersPayload, sessionsPayload]) => {
+      ]).then(([foldersPayload, sessionsPayload]) => {
         const folderSessions =
           foldersPayload &&
           typeof foldersPayload.sessions === 'object' &&
           !Array.isArray(foldersPayload.sessions)
             ? foldersPayload.sessions
             : {};
-        const rows = [...(Array.isArray(sessionsPayload?.sessions)
+        const rows = Array.isArray(sessionsPayload?.sessions)
           ? sessionsPayload.sessions
           : Array.isArray(sessionsPayload?.sessionList)
             ? sessionsPayload.sessionList
-            : [])];
-        let total = sessionsPayload?.total;
-        // limit=0 requests the whole feed, but the current server caps each page at 200.
-        // Reuse its offset contract; folders are fetched only once.
-        if (params?.feed_only && params.limit === 0 && !params.offset) {
-          while (!isCompleteSessionSnapshot(rows, total)) {
-            const pageQuery = buildQuery({ ...params, offset: rows.length });
-            const response = await authFetch(`${base}/api/sessions?${pageQuery}`, options);
-            const page = await readJson<SessionsPayload>(response, 'getSessions');
-            const pageRows = Array.isArray(page.sessions) ? page.sessions
-              : Array.isArray(page.sessionList) ? page.sessionList : [];
-            if (pageRows.length === 0) throw new Error('[getCatalog] incomplete feed snapshot');
-            rows.push(...pageRows);
-            if (typeof page.total === 'number') total = page.total;
-          }
-        }
+            : [];
         const sessions = rows.reduce<CatalogAssignmentMap>(
           (acc, row) => {
             if (!row || typeof row.agentSessionId !== 'string') return acc;
@@ -121,7 +105,7 @@ export function createCatalogEndpoints({
           folders: Array.isArray(foldersPayload?.folders) ? foldersPayload.folders : [],
           sessions,
           sessionList: rows,
-          total: typeof total === 'number' ? total : rows.length,
+          total: typeof sessionsPayload?.total === 'number' ? sessionsPayload.total : rows.length,
         };
       });
     },
