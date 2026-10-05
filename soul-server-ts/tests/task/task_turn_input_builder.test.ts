@@ -59,6 +59,7 @@ function makeSubject(options: {
     buildSystemPrompt: ReturnType<typeof vi.fn>;
     buildFollowupContext: ReturnType<typeof vi.fn>;
     buildBackendRolloverContext: ReturnType<typeof vi.fn>;
+    buildGenerationContext: ReturnType<typeof vi.fn>;
   }>;
   initialMessagePublisher?: { publishInitialMessages: ReturnType<typeof vi.fn> };
 } = {}) {
@@ -78,6 +79,17 @@ function makeSubject(options: {
       effectiveSystemPrompt: "rollover system instructions",
       contextItems: [],
       currentSessionExcerpt: { totalEvents: 0, turns: [] },
+    }),
+    buildGenerationContext: vi.fn().mockResolvedValue({
+      ...makeContext(),
+      checkpointStats: {
+        estimatedTokens: 321,
+        chars: 987,
+        sections: { state: 111, story: 222, summaries: 333, recent: 321 },
+        summarizedThroughTurn: 4,
+        recentFromEventId: 10,
+        recentToEventId: 12,
+      },
     }),
     ...options.contextBuilder,
   };
@@ -162,6 +174,63 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).toContain("system instructions");
     expect(input.prompt).toContain("<session_context>");
     expect(input.prompt.endsWith("사용자 요청")).toBe(true);
+  });
+
+  it("starts an applying generation from checkpoint context plus the queued input", async () => {
+    const task = makeTask({
+      codexThreadId: "native-old",
+      modelPresetBackend: "claude",
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context limit",
+        fromBackendSessionId: "native-old",
+        previousBackend: "claude",
+        previousModelPreset: "claude-default",
+      },
+      needsFullContextReinjection: true,
+      interventionQueue: [{
+        text: "이번 요청",
+        deliveryId: "delivery-generation-1",
+        runnerInterventionId: "runner-intervention-1",
+        callerInfo: { source: "browser", display_name: "서소영" },
+        context: [
+          { key: "assigned_cards", label: "stale", content: "stale assigned cards" },
+          { key: "delivery_context", label: "Delivery", content: "delivery facts" },
+        ],
+      }],
+    });
+    const { builder, contextBuilder, initialMessagePublisher } = makeSubject();
+
+    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+
+    expect(contextBuilder.buildGenerationContext).toHaveBeenCalledWith(
+      task,
+      claudeAgent,
+      buildDeliveryInputUuid("delivery-generation-1"),
+    );
+    expect(contextBuilder.buildFollowupContext).not.toHaveBeenCalled();
+    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
+    expect(input.systemPrompt).toBe("system instructions");
+    expect(input.prompt).toContain("session facts");
+    expect(input.prompt).toContain("이번 요청");
+    expect(input.prompt).toContain("delivery facts");
+    expect(input.prompt).not.toContain("system instructions");
+    expect(input.prompt).not.toContain("stale assigned cards");
+    expect(input.backendSessionRolloverFrom).toBe("native-old");
+    expect(input.generationRollover).toBe(true);
+    expect(input.inputUuid).toBe(buildDeliveryInputUuid("delivery-generation-1"));
+    expect(input.runnerInterventionId).toBe("runner-intervention-1");
+    expect(input.runnerInterventionIds).toEqual(["runner-intervention-1"]);
+    expect(input.turnOrigin).toEqual({
+      kind: "user_message",
+      id: "delivery-generation-1",
+    });
+    expect(input.generationCheckpointStats).toMatchObject({
+      estimatedTokens: 321,
+      chars: 987,
+    });
+    expect(task.interventionQueue).toEqual([]);
+    expect(task.needsFullContextReinjection).toBe(false);
   });
 
   it("falls back to task.prompt when contextBuilder fails and still publishes initial user message", async () => {

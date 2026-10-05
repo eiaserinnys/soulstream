@@ -8,6 +8,7 @@ import {
   type FollowupContext,
   type PreparedContext,
 } from "../context/context_builder.js";
+import type { PersistentCheckpointStats } from "../context/persistent_checkpoint.js";
 import { formatContextItems, type ContextItem } from "../context/prompt_assembler.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
@@ -20,6 +21,7 @@ import { effectiveTaskBackend } from "./task_model_preset.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 import type { TurnOrigin } from "../engine/protocol.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
+import { prepareGenerationTurnInput } from "./generation_turn_input.js";
 
 export const CLAUDE_ROLLOVER_PROMPT_MAX_CHARS = 80_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS = 60_000;
@@ -41,6 +43,8 @@ export interface TaskTurnInput {
   turnOrigin?: TurnOrigin;
   interventions?: InterventionMessage[];
   backendSessionRolloverFrom?: string;
+  generationRollover?: boolean;
+  generationCheckpointStats?: PersistentCheckpointStats;
 }
 
 export interface TaskTurnInputBuilderDeps {
@@ -57,6 +61,19 @@ export class TaskTurnInputBuilder {
   constructor(private readonly deps: TaskTurnInputBuilderDeps) {}
 
   async prepareInitialTurnInput(task: Task, agent: AgentProfile): Promise<TaskTurnInput> {
+    if (task.activeGenerationRollover) {
+      const interventions = dequeueNextTurnInterventions(task);
+      const contextBuilder = this.deps.contextBuilder;
+      if (!contextBuilder) {
+        throw new Error("Execution context builder is required for generation rollover");
+      }
+      const deliveryId = interventions[0]?.deliveryId;
+      const inputUuid = deliveryId ? buildDeliveryInputUuid(deliveryId) : undefined;
+      const context = inputUuid
+        ? await contextBuilder.buildGenerationContext(task, agent, inputUuid)
+        : await contextBuilder.buildGenerationContext(task, agent);
+      return prepareGenerationTurnInput(task, agent, context, interventions);
+    }
     if (task.interventionQueue.length > 0) {
       return this.prepareFollowupTurnInput(
         task,
