@@ -690,6 +690,7 @@ export function ChatBody({
       />
 
       <ChatComposer
+        key={sessionId}
         input={input}
         onChangeInput={handleInputChange}
         onPickAttachment={pickAttachment}

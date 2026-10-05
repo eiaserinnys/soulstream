@@ -97,9 +97,9 @@ test('커멘트 입력은 ChatComposer이고 업로드 URL을 본문으로 전�
   const screen = await content(api);
   expect(screen.UNSAFE_getByType(ChatComposer).props.placeholder).toBe('커멘트');
   const contentRow = screen.getByTestId('chat-composer-content-row');
-  expect(contentRow.props.style.flexDirection).toBe('column');
+  expect(StyleSheet.flatten(contentRow.props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
   expect(React.Children.toArray(contentRow.props.children).map((child: any) => child.props.testID))
-    .toEqual(['chat-composer-text-input', 'chat-composer-controls-row']);
+    .toEqual(['chat-composer-attach-slot', 'chat-composer-text-input', 'chat-composer-controls-spacer', undefined]);
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-attach-button')));
   expect(api.uploadAttachment).toHaveBeenCalledWith('root', 'node-1', expect.objectContaining({ name: '사진.png' }));
   fireEvent.changeText(screen.getByTestId('chat-composer-text-input'), '본문');
@@ -116,8 +116,8 @@ test('오늘 입력은 ChatComposer의 한 줄 시작·폰트·버튼을 상속�
   const screen = render(<TodayCardComposer api={null} />);
   expect(screen.UNSAFE_getByType(ChatComposer)).toBeTruthy();
   const contentRow = screen.getByTestId('chat-composer-content-row');
-  expect(contentRow.props.style.flexDirection).toBe('column');
-  expect(screen.getByTestId('chat-composer-controls-row')).toBeTruthy();
+  expect(StyleSheet.flatten(contentRow.props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
+  expect(screen.queryByTestId('chat-composer-controls-row')).toBeNull();
   const input = screen.getByTestId('chat-composer-text-input');
   const { result: t } = renderHook(useTokens);
   const { result: dimensions } = renderHook(useWindowDimensions);

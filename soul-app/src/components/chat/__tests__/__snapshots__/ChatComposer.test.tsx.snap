@@ -67,13 +67,98 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
     />
     <View
       style={
-        {
-          "flexDirection": "column",
-          "minHeight": 48,
-        }
+        [
+          {
+            "alignItems": "center",
+            "columnGap": 6,
+            "flexDirection": "row",
+            "flexWrap": "nowrap",
+            "minHeight": 48,
+          },
+          false,
+        ]
       }
       testID="chat-composer-content-row"
     >
+      <View
+        style={
+          [
+            {},
+            false,
+          ]
+        }
+        testID="chat-composer-attach-slot"
+      >
+        <View
+          accessibilityLabel="첨부 추가"
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": false,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onClick={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "alignItems": "center",
+              "flexShrink": 0,
+              "justifyContent": "center",
+              "minHeight": 44,
+              "minWidth": 44,
+              "opacity": 1,
+            }
+          }
+          testID="chat-composer-attach-button"
+        >
+          <View
+            style={
+              [
+                {
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                },
+                [
+                  {
+                    "backgroundColor": "transparent",
+                    "borderRadius": 20,
+                    "height": 40,
+                    "width": 40,
+                  },
+                  false,
+                ],
+              ]
+            }
+            testID="chat-composer-attach-visual"
+          >
+            <Ionicons
+              color="#53575d"
+              name="add"
+              size={26}
+            />
+          </View>
+        </View>
+      </View>
       <TextInput
         accessibilityState={
           {
@@ -103,6 +188,9 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
               "paddingVertical": 10,
             },
             {
+              "flex": 1,
+            },
+            {
               "minHeight": 48,
               "paddingVertical": 12.95,
             },
@@ -113,95 +201,74 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
         value="hello"
       />
       <View
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={false}
+        collapsable={false}
+        focusable={false}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "display": "none",
+            },
+            false,
+          ]
+        }
+        tabIndex={-1}
+        testID="chat-composer-controls-spacer"
+      />
+      <View
         style={
           {
             "alignItems": "center",
             "flexDirection": "row",
-            "justifyContent": "space-between",
-            "minHeight": 44,
+            "gap": 6,
           }
         }
-        testID="chat-composer-controls-row"
       >
         <View
           style={
             {
-              "marginLeft": -5.875,
+              "flexShrink": 0,
+              "justifyContent": "center",
+              "minHeight": 44,
             }
           }
-          testID="chat-composer-attach-slot"
+          testID="chat-composer-voice-slot"
         >
-          <View
-            accessibilityLabel="첨부 추가"
-            accessibilityRole="button"
-            accessibilityState={
-              {
-                "busy": undefined,
-                "checked": undefined,
-                "disabled": false,
-                "expanded": undefined,
-                "selected": undefined,
-              }
-            }
-            accessibilityValue={
-              {
-                "max": undefined,
-                "min": undefined,
-                "now": undefined,
-                "text": undefined,
-              }
-            }
-            accessible={true}
-            collapsable={false}
-            focusable={true}
-            onClick={[Function]}
-            onResponderGrant={[Function]}
-            onResponderMove={[Function]}
-            onResponderRelease={[Function]}
-            onResponderTerminate={[Function]}
-            onResponderTerminationRequest={[Function]}
-            onStartShouldSetResponder={[Function]}
-            style={
-              {
-                "alignItems": "center",
-                "flexShrink": 0,
-                "justifyContent": "center",
-                "minHeight": 44,
-                "minWidth": 44,
-                "opacity": 1,
-              }
-            }
-            testID="chat-composer-attach-button"
+          <Text
+            testID="voice-control"
           >
-            <View
-              style={
-                [
-                  {
-                    "alignItems": "center",
-                    "justifyContent": "center",
-                  },
-                  [
-                    {
-                      "backgroundColor": "transparent",
-                      "borderRadius": 20,
-                      "height": 40,
-                      "width": 40,
-                    },
-                    false,
-                  ],
-                ]
-              }
-              testID="chat-composer-attach-visual"
-            >
-              <Ionicons
-                color="#53575d"
-                name="add"
-                size={26}
-              />
-            </View>
-          </View>
+            mic
+          </Text>
         </View>
         <View
+          accessibilityLabel="메시지 보내기"
+          accessibilityRole="button"
           accessibilityState={
             {
               "busy": undefined,
@@ -219,12 +286,10 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
               "text": undefined,
             }
           }
-          accessible={false}
+          accessible={true}
           collapsable={false}
-          focusable={false}
-          onBlur={[Function]}
+          focusable={true}
           onClick={[Function]}
-          onFocus={[Function]}
           onResponderGrant={[Function]}
           onResponderMove={[Function]}
           onResponderRelease={[Function]}
@@ -233,109 +298,43 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
           onStartShouldSetResponder={[Function]}
           style={
             {
-              "alignSelf": "stretch",
-              "flex": 1,
-              "minHeight": 44,
-            }
-          }
-          tabIndex={-1}
-          testID="chat-composer-controls-spacer"
-        />
-        <View
-          style={
-            {
               "alignItems": "center",
-              "flexDirection": "row",
-              "gap": 6,
+              "flexShrink": 0,
+              "justifyContent": "center",
+              "minHeight": 44,
+              "minWidth": 44,
+              "opacity": 1,
             }
           }
+          testID="chat-composer-send-button"
         >
           <View
             style={
-              {
-                "flexShrink": 0,
-                "justifyContent": "center",
-                "minHeight": 44,
-              }
-            }
-            testID="chat-composer-voice-slot"
-          >
-            <Text
-              testID="voice-control"
-            >
-              mic
-            </Text>
-          </View>
-          <View
-            accessibilityLabel="메시지 보내기"
-            accessibilityRole="button"
-            accessibilityState={
-              {
-                "busy": undefined,
-                "checked": undefined,
-                "disabled": false,
-                "expanded": undefined,
-                "selected": undefined,
-              }
-            }
-            accessibilityValue={
-              {
-                "max": undefined,
-                "min": undefined,
-                "now": undefined,
-                "text": undefined,
-              }
-            }
-            accessible={true}
-            collapsable={false}
-            focusable={true}
-            onClick={[Function]}
-            onResponderGrant={[Function]}
-            onResponderMove={[Function]}
-            onResponderRelease={[Function]}
-            onResponderTerminate={[Function]}
-            onResponderTerminationRequest={[Function]}
-            onStartShouldSetResponder={[Function]}
-            style={
-              {
-                "alignItems": "center",
-                "flexShrink": 0,
-                "justifyContent": "center",
-                "minHeight": 44,
-                "minWidth": 44,
-                "opacity": 1,
-              }
-            }
-            testID="chat-composer-send-button"
-          >
-            <View
-              style={
+              [
+                {
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                },
                 [
                   {
                     "alignItems": "center",
+                    "backgroundColor": "#0a84ff",
+                    "borderRadius": 20,
+                    "height": 40,
                     "justifyContent": "center",
+                    "width": 40,
                   },
-                  [
-                    {
-                      "alignItems": "center",
-                      "backgroundColor": "#0a84ff",
-                      "borderRadius": 20,
-                      "height": 40,
-                      "justifyContent": "center",
-                      "width": 40,
-                    },
-                    false,
-                  ],
-                ]
-              }
-              testID="chat-composer-send-visual"
-            >
-              <Ionicons
-                color="#07111f"
-                name="send"
-                size={18}
-              />
-            </View>
+                  false,
+                ],
+              ]
+            }
+            testID="chat-composer-send-visual"
+          >
+            <Ionicons
+              color="#07111f"
+              name="send"
+              size={18}
+            />
           </View>
         </View>
       </View>
