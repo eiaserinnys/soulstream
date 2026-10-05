@@ -35,9 +35,9 @@
 
 `system_settings.card_dispatch`는 기본 `{"nodeConcurrency":{"default":2}}`를 시드한다. 기존 checklist handoff 경로는 제거한다. 모든 P1 단계를 머지한 뒤 한 번에 배포한다.
 
-## 확인 항목 전환 (120)
+## 확인 항목 전환 (121)
 
-`120_card_check_items.sql`은 `cards.items` JSONB와 `cards.now` JSONB, `card_comments.item_id`와 `kind='note'`를 더한다. 기존 카드·보고·커멘트 본문은 바꾸지 않으며 옛 카드의 `items`는 빈 배열이다. 항목이 있는 카드에만 새 agent 입력 규칙을 적용하고, 빈 배열 카드에서는 기존 보고와 커멘트 동작을 유지한다.
+`121_card_check_items.sql`은 `cards.items` JSONB와 `cards.now` JSONB, `card_comments.item_id`와 `kind='note'`를 더한다. 기존 카드·보고·커멘트 본문은 바꾸지 않으며 옛 카드의 `items`는 빈 배열이다. 항목이 있는 카드에만 새 agent 입력 규칙을 적용하고, 빈 배열 카드에서는 기존 보고와 커멘트 동작을 유지한다.
 
 항목과 상황판의 저장 정본은 `cards.items`와 `cards.now`다. `orch-server-ts/src/cards/control_plane/card_item_store.ts`가 카드 항목과 사용자 입력 출처를 읽는 SQL을 소유하고, `card_item_rules.ts`가 항목의 표시 상태를 계산하며 `folder_contracts.ts`가 공통 카드 응답에 `display`를 붙인다. 카드 상세와 일반·완료 목록, 폴더와 planner는 이 serializer를 공유한다. folder outline은 기존 선택 필드만 내보내 항목과 상황판을 포함하지 않는다.
 
@@ -55,7 +55,7 @@
 | 종료·한도 | 커밋된 `node_session_session_updated` → `CardDispatcher.sessionEnded` | 턴 종료만으로 no_report 막힘을 기록하지 않는다. running 담당 세션의 limit_hit 종료만 기존 경로에서 blocked(limit)로 기록한다. review/question/done은 유지한다. 반복 작업 스케줄러의 기존 tick에서 1분마다 한도 카드의 프리셋을 확인한다. |
 | 질문·답 | POST `/api/cards/:id/questions` → askQuestion / POST `/api/cards/:id/questions/:qid/answer` | 질문 본문 `{text,options?,idempotencyKey}`, trusted service bearer와 agent session header, 성공 201. 답변은 기존 intervene 계약으로 유휴 재개/실행 중 개입. 완료 세션이면 queued로 돌린다. |
 | 확인 요청·사용자 커멘트 | `request_card_review(ask)` / POST `/api/cards/:id/comments`의 `itemId` | 검수 요청은 기존 상태 전환과 함께 상황판을 user 차례로 갱신한다. 확인 항목 대상 커멘트는 항목 확인을 풀고 고칠 점을 추가한다. 사용자 커멘트 전달에는 커멘트 ID, 대상 항목, 직전 성공 전달 이후 확인했던 번호를 넣고 기존 성공 뒤 `delivered_at`을 기록한다. |
-| 반려 | 사람의 review→running, reason 선택 | 제공한 사유는 기존 세션에 반려 사유 메시지로 전달하고 새 세션의 첫 프롬프트에 포함한다. 완료 세션이면 queued로 둔다. |
+| 반려 | 사람의 review→running, 선택 사유 | 사유는 선택 사항이며, 입력한 경우 기존 세션에 반려 사유 메시지로 전달하고 새 세션의 첫 프롬프트에 포함한다. 완료 세션이면 queued로 둔다. |
 | 카드 알림 | `push/push_notifier.ts`의 notifyCard → 기존 sendToUser | 질문은 카드 제목·질문, review는 `검수 요청: {제목}`. 확인만으로 담당 세션을 깨우지 않으며 다음 사용자 커멘트 전달에 확인 사실을 포함한다. 기존 토큰 fan-out/invalid token 제거/폴더 알림 제외를 재사용한다. orch에 Slack DM 발송 경로는 없다. |
 | 표시 | `planner/planner_repository.ts`, `card_updated` | attention은 review와 blocked 전체(question/no_report/limit), running, queued는 전역 대기열 순서를 따른다. 카드 상세 및 세션 DTO는 같은 sessions.card_id를 읽는다. 웹·앱 소비 구현은 d/e다. |
 

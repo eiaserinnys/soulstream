@@ -326,9 +326,9 @@ describe("versioned migration contract", () => {
     expect(migration!.sql).toContain("CHECK (kind IN ('comment', 'spoken', 'note'))");
     expect(schema).toMatch(/items\s+JSONB NOT NULL DEFAULT '\[\]'::jsonb/);
     expect(schema).toMatch(/now\s+JSONB/);
-    expect(schema).toContain("ALTER TABLE cards ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb");
-    expect(schema).toContain("ALTER TABLE card_comments ADD COLUMN IF NOT EXISTS item_id INTEGER");
-    expect(schema).toContain("CHECK (kind IN ('comment','spoken','note'))");
+    expect(schema).toMatch(/ALTER TABLE cards\s+ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '\[\]'::jsonb/);
+    expect(schema).toMatch(/ALTER TABLE card_comments\s+ADD COLUMN IF NOT EXISTS item_id INTEGER/);
+    expect(schema).toMatch(/CHECK \(kind IN \('comment',\s*'spoken',\s*'note'\)\)/);
   });
 
   it("keeps terminal status and execution registration on the sessions-row canon", async () => {
