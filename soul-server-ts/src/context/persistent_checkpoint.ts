@@ -1,7 +1,8 @@
-import type {
-  GenerationCheckpointMaterial,
-  GenerationCheckpointReadLimits,
-  SupervisedCardSnapshot,
+import {
+  formatCardReference,
+  type GenerationCheckpointMaterial,
+  type GenerationCheckpointReadLimits,
+  type SupervisedCardSnapshot,
 } from "@soulstream/mcp-contract";
 import { estimateClaudeTextTokens, truncateClaudeTextToEstimatedTokens } from "../task/claude_context_recovery.js";
 import type { ContextItem } from "./prompt_assembler.js";
@@ -61,7 +62,8 @@ export const PERSISTENT_SUPERVISION_SCOPE: { folderIds: string[] | null } = {
   folderIds: null,
 };
 
-const CHECKPOINT_HEAD = "이전 턴의 자세한 원문은 expand_session_turn 도구로 확인할 수 있습니다.";
+const CHECKPOINT_HEAD = "이전 턴의 자세한 원문은 expand_session_turn 도구로 확인할 수 있습니다. "
+  + "`#412`, `#412.s2` 같은 번호는 도구의 `card_id`, `session_id` 인자에 그대로 쓸 수 있습니다.";
 
 export function buildPersistentCheckpoint(
   input: {
@@ -164,11 +166,12 @@ function buildChildSessionSection(
 }
 
 function formatChildSession(child: GenerationCheckpointMaterial["childSessions"][number]): string {
-  const id = formatIdentifier("session", child.sessionId);
+  const id = formatSession(child);
   const title = truncateCharacters(child.displayName ?? "이름 없음", 40);
   const owner = child.agentId ?? "미지정";
   const preset = child.modelPreset ?? "미지정";
-  const card = child.cardId ? ` · 카드 ${formatIdentifier("card", child.cardId)}` : "";
+  // `#412.s2` already names the card. Without it the card is written out in full.
+  const card = child.reference == null && child.cardId ? ` · 카드 ${child.cardId}` : "";
   return `- ${id} 「${title}」 · ${owner} / ${preset}${card}`;
 }
 
@@ -192,8 +195,8 @@ function buildOpenQuestionSection(
 }
 
 function formatOpenQuestion(question: SupervisedCardSnapshot["openQuestions"][number]): string {
-  const cardId = formatIdentifier("card", question.cardId);
-  return `- ${cardId} 「${truncateCharacters(question.cardTitle, 60)}」: ${truncateCharacters(question.text, 200)}`;
+  const card = formatCard({ id: question.cardId, number: question.cardNumber });
+  return `- ${card} 「${truncateCharacters(question.cardTitle, 60)}」: ${truncateCharacters(question.text, 200)}`;
 }
 
 function buildCardSection(
@@ -250,7 +253,7 @@ function formatSupervisedCard(
   card: SupervisedCardSnapshot["cards"][number],
   ownSessionId: string,
 ): string {
-  const id = formatIdentifier("card", card.id);
+  const id = formatCard(card);
   const title = truncateCharacters(card.title, 60);
   const status = card.status === "blocked"
     ? `막힘(${blockedReason(card.blockedKind)})`
@@ -381,8 +384,14 @@ function formatRecentSection(
   ]);
 }
 
-function formatIdentifier(_kind: "card" | "session", id: string): string {
-  return id;
+// The number or reference is optional: a numberless card, or a central server older than card numbers,
+// leaves it out, and the full ID is written instead.
+function formatCard(card: { id: string; number?: number | null }): string {
+  return typeof card.number === "number" ? formatCardReference(card.number) : card.id;
+}
+
+function formatSession(child: { sessionId: string; reference?: string | null }): string {
+  return child.reference ?? child.sessionId;
 }
 
 function truncateCharacters(value: string, max: number): string {

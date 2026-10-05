@@ -2053,6 +2053,63 @@ describe("generation checkpoint context", () => {
     }));
     expect(getAssignedCardContext).toHaveBeenCalledTimes(1);
   });
+
+  it("writes numbered cards and sessions as #N lines in the first input of a new generation", async () => {
+    const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
+      story: {
+        highlight: null,
+        narrative: "줄거리",
+        unfoldedTurnSummaries: [],
+        narrativeThroughEventId: null,
+        foldCount: 0,
+        updatedAt: null,
+      },
+      lastSummarizedFinalResponseEventId: null,
+      recent: { records: [], omittedUnsummarized: 0 },
+      childSessions: [{
+        sessionId: "8a13f280-86be-4bd5-a2e4-9199f82aa63c",
+        displayName: "카드 번호 구현",
+        agentId: "roselin",
+        modelPreset: "claude-sonnet",
+        status: "running",
+        cardId: "61954137-8402-4ca3-947e-4105bf7a8139",
+        reference: "#412.s2",
+        createdAt: "2026-10-05T00:00:00.000Z",
+      }],
+      childSessionTotal: 1,
+      totals: { events: 0, turnSummaries: 0 },
+    });
+    const getSupervisedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-10-05T00:00:00.000Z",
+      counts: { running: 1, blocked: 0, review: 0, queued: 0, todo: 0 },
+      cards: [{
+        id: "7349e4a2-d679-4702-83b4-fe7c3b1f2511",
+        number: 412,
+        title: "영구 관제 세션",
+        status: "running",
+        blockedKind: null,
+        assignee: { kind: "session", agentId: "roselin", sessionId: ownSessionIdForContextTest },
+      }],
+      openQuestions: [],
+      openQuestionTotal: 0,
+    });
+    const getAssignedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-10-05T00:00:00.000Z", total: 0, omitted: 0, cards: [],
+    });
+    const builder = makeBuilder({
+      getGenerationCheckpointMaterial,
+      getSupervisedCardContext,
+      getAssignedCardContext,
+    } as unknown as Partial<SessionDB>);
+    const task = makeTask({ agentSessionId: ownSessionIdForContextTest, codexThreadId: "native-old-session" });
+
+    const context = await builder.buildGenerationContext(task, codexAgent, "generation-input");
+    const checkpoint = String(context.combinedContextItems.find((item) => item.key === "persistent_checkpoint")?.content);
+
+    expect(checkpoint).toContain("- #412 「영구 관제 세션」 실행 중 · 담당 이 세션");
+    expect(checkpoint).toContain("- #412.s2 「카드 번호 구현」 · roselin / claude-sonnet\n");
+    expect(checkpoint).not.toContain("7349e4a2-d679-4702-83b4-fe7c3b1f2511 「");
+  });
 });
 
 const ownSessionIdForContextTest = "4f795856-a9bf-4ae2-8adb-2e8ea15f9951";

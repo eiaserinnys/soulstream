@@ -86,4 +86,36 @@ describe("readSupervisedCardContext", () => {
     expect(limited.openQuestions).toHaveLength(1);
     expect(limited.openQuestionTotal).toBe(2);
   });
+
+  it("carries the card number on cards and on the card of each open question", async () => {
+    await harness.sql.unsafe(`
+      INSERT INTO cards(id, folder_id, position_key, title, status, status_changed_at, archived)
+      VALUES
+        ('numbered-run', 'folder-a', 'a', '번호 있는 실행 카드', 'running', NOW(), FALSE),
+        ('numbered-blocked', 'folder-a', 'b', '번호 있는 질문 카드', 'blocked', NOW(), FALSE)
+    `);
+    await harness.sql.unsafe(`
+      INSERT INTO card_questions(id, card_id, session_id, text, answer, asked_at)
+      VALUES ('q-numbered', 'numbered-blocked', 'owner', '번호 있는 카드의 질문', NULL, NOW())
+    `);
+    const numbers = new Map((await harness.sql.unsafe<Array<{ id: string; number: number }>>(
+      "SELECT id, number FROM cards WHERE id IN ('numbered-run', 'numbered-blocked')",
+    )).map((row) => [row.id, row.number]));
+
+    const snapshot = await readSupervisedCardContext(createBoardYjsSqlAdapter(harness.liveSql), {
+      sessionId: "owner",
+      folderIds: ["folder-a"],
+      cardLimit: 60,
+      questionLimit: 10,
+    });
+
+    expect(typeof numbers.get("numbered-run")).toBe("number");
+    expect(snapshot.cards.map((card) => [card.id, card.number])).toEqual([
+      ["numbered-run", numbers.get("numbered-run")],
+      ["numbered-blocked", numbers.get("numbered-blocked")],
+    ]);
+    expect(snapshot.openQuestions.map((question) => [question.cardId, question.cardNumber])).toEqual([
+      ["numbered-blocked", numbers.get("numbered-blocked")],
+    ]);
+  });
 });

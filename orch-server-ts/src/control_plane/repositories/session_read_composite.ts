@@ -136,6 +136,7 @@ export class SessionReadCompositeRepository {
         modelPreset: child.model_preset,
         status: child.status,
         cardId: child.card_id,
+        reference: child.reference,
         createdAt: child.created_at.toISOString(),
       })),
       childSessionTotal: childSessionResult.total,
