@@ -1546,7 +1546,8 @@
               }
             },
             "show_generation_separator": { "type": "boolean" },
-            "show_character": { "type": "boolean" }
+            "show_character": { "type": "boolean" },
+            "show_jev_candidates": { "type": "boolean" }
           }
         },
         "requestId": { "type": "string" },

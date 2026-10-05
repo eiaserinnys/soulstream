@@ -140,6 +140,7 @@ export class PersistentSessionControl {
       fallback_model: input.enabled === true ? { ...PERSISTENT_SETTINGS_DEFAULTS.fallback_model } : null,
       show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
       show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
+      show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
     };
     const defaultModel = patch.default_model !== undefined
       ? this.normalizeDefaultModel(patch.default_model)
@@ -152,6 +153,7 @@ export class PersistentSessionControl {
       fallback_model: patch.fallback_model !== undefined ? patch.fallback_model : base.fallback_model,
       show_generation_separator: patch.show_generation_separator ?? base.show_generation_separator,
       show_character: patch.show_character ?? base.show_character,
+      show_jev_candidates: patch.show_jev_candidates ?? base.show_jev_candidates,
     };
   }
 

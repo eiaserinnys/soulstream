@@ -313,6 +313,7 @@ describe("PersistentSessionControl.applySettings", () => {
           fallback_model: null,
           show_generation_separator: true,
           show_character: false,
+          show_jev_candidates: true,
         },
       },
       { replaceExistingType: "persistent_settings", waitForAck: true },
@@ -355,6 +356,22 @@ describe("PersistentSessionControl.applySettings", () => {
       settings: { default_model: { model_preset: "codex-preset", reasoning_effort: "low" } },
     })).resolves.toMatchObject({ modelChange: "next_execution_start" });
     expect(task.persistentGeneration?.pending).toMatchObject({ targetReasoningEffort: "low" });
+  });
+
+  it("keeps a saved false toggle when a later partial save touches other keys", async () => {
+    const task = makeRolloverTask();
+    const { control, persistedEntries } = makeRolloverControl(task);
+
+    await control.applySettings(task.agentSessionId, { settings: { show_jev_candidates: false } });
+    await control.applySettings(task.agentSessionId, { settings: { show_character: false } });
+
+    const saved = persistedEntries.filter((entry) => entry.type === "persistent_settings").at(-1)?.value;
+    expect(saved).toMatchObject({
+      show_jev_candidates: false,
+      show_character: false,
+      show_generation_separator: true,
+      default_model: { model_preset: "claude-preset", reasoning_effort: "medium" },
+    });
   });
 
   it("only clears the marker when disabling and keeps settings", async () => {

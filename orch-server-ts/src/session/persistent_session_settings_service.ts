@@ -325,6 +325,7 @@ export class PersistentSessionSettingsService {
         fallback_model: { ...PERSISTENT_SETTINGS_DEFAULTS.fallback_model },
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
+        show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
       },
       initial_instruction: PERSISTENT_INITIAL_INSTRUCTION,
       unavailable_reason: reasons.length === 0 ? null : reasons.join(" "),

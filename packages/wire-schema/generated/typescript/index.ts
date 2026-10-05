@@ -1943,6 +1943,7 @@ export interface SetPersistentSessionSettings {
     } | null;
     show_generation_separator?: boolean;
     show_character?: boolean;
+    show_jev_candidates?: boolean;
   };
   requestId?: string;
   request_id?: string;

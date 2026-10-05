@@ -17,6 +17,7 @@ export type PersistentSettingsView = {
   fallback_model: PersistentModelSelectionView | null;
   show_generation_separator: boolean;
   show_character: boolean;
+  show_jev_candidates: boolean;
 };
 
 export type PersistentSessionResource = {
@@ -60,12 +61,14 @@ export function buildPersistentSessionResource(
         fallback_model: null,
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
+        show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
       }
     : {
         default_model: stored.default_model ?? { model_preset: null, reasoning_effort: null },
         fallback_model: stored.fallback_model,
         show_generation_separator: stored.show_generation_separator,
         show_character: stored.show_character,
+        show_jev_candidates: stored.show_jev_candidates,
       };
   const agentId = stringOrNull(row.agent_id);
   return {
