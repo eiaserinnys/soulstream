@@ -22,13 +22,13 @@ export const cardHandlers = {
     const created = await mutation(o.cards, "create_card", undefined, { folderId: a.folder_id, title: a.title, request: a.request, brief: a.brief,
       attachments: a.attachments, ...assignee, nodeId: a.node_id, modelPreset: a.model_preset, queue: a.queue,
       idempotencyKey: a.idempotency_key ?? randomUUID() }, actor);
-    if (a.run !== true) return created;
+    if (a.run !== true) return compactMutation(created);
     const card = created.card as { id: string; status: string } | null;
-    if (created.idempotent === true && card && card.status !== "todo" && card.status !== "queued") return created;
+    if (created.idempotent === true && card && card.status !== "todo" && card.status !== "queued") return compactMutation(created);
     const cardId = String(card?.id ?? (created.operation as Args).targetId);
     try {
       const execution = await runCard(o.cards, cardId, actor, c.signal);
-      return { ...created, ...execution };
+      return compactExecution(execution, created.idempotent === true);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       throw Object.assign(new Error(`카드 ${cardId}는 드래프트로 만들어졌지만 실행하지 못했습니다: ${reason}. 설정을 확인한 뒤 run_card로 실행하세요.`),
@@ -37,7 +37,7 @@ export const cardHandlers = {
   }),
   run_card: (o, a, c) => run(async () => {
     matchingHeader(a, c);
-    return runCard(o.cards, String(a.card_id), agent(a, c, true), c.signal);
+    return compactExecution(await runCard(o.cards, String(a.card_id), agent(a, c, true), c.signal));
   }),
   list_cards: (o, a) => run(() => request(() => listCardRouteBody(o.cards,
     { folderId: a.folder_id, status: a.status }, o.cards.resolveAccess))),
@@ -50,13 +50,13 @@ export const cardHandlers = {
   add_card_report: (o, a, c) => append(o.cards, "add_card_report", a, c, { title: a.title, format: a.format, body: a.body }),
   add_card_comment: (o, a, c) => run(async () => {
     if (a.mode === "reply") matchingHeader(a, c);
-    return appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, mode:a.mode,itemId:a.item_id });
+    return compactComment(await appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, mode:a.mode,itemId:a.item_id }));
   }),
   set_card_status: (o, a, c) => run(async () => {
     matchingHeader(a, c);
-    return mutation(o.cards, "set_card_status", String(a.card_id), {
+    return compactMutation(await mutation(o.cards, "set_card_status", String(a.card_id), {
       status: a.status, expectedVersion: a.expected_version, idempotencyKey: a.idempotency_key, reason: a.reason,
-    }, agent(a, c, true));
+    }, agent(a, c, true)));
   }),
   transfer_card_assignee: (o, a, c) => run(async () => {
     if (c.principal === "external") throw new Error("card mutation requires an agent session");
@@ -65,35 +65,35 @@ export const cardHandlers = {
     const actor = agent(a, c, true);
     if (actor.actorKind !== "agent" || actor.actorSessionId !== c.callerSessionId)
       throw new Error("card assignee handoff requires the authenticated agent session");
-    return mutation(o.cards, "update_card", String(a.card_id), {
+    return compactMutation(await mutation(o.cards, "update_card", String(a.card_id), {
       assignee: { kind: "session", sessionId: a.target_session_id },
       expectedVersion: a.expected_version, idempotencyKey: a.idempotency_key, reason: a.reason,
-    }, actor);
+    }, actor));
   }),
   start_card_work: (o, a, c) => run(async () => {
     if (c.principal === "external") throw new Error("card mutation requires an agent session");
     matchingHeader(a, c);
     const actor = agent(a, c, true);
     if (!c.execution) throw new Error("Current work execution required; orchestration purpose cannot start work");
-    return mutation(o.cards, "start_card_work", String(a.card_id), {
+    return compactMutation(await mutation(o.cards, "start_card_work", String(a.card_id), {
       expectedVersion: a.expected_version, idempotencyKey: a.idempotency_key, reason: a.reason, execution: c.execution,
-    }, actor);
+    }, actor));
   }),
   request_card_review: (o, a, c) => append(o.cards, "request_card_review", a, c, { ask:a.ask }),
-  ask_card_question: (o, a, c) => run(async () => {
-    const result = await appendMutation(o.cards, "ask_card_question", a, agent(a, c), {
-      text: a.text, ...(a.options !== undefined ? { options: a.options } : {}),
-    });
-    return { ...result, guidance: "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." };
-  }),
+  ask_card_question: (o, a, c) => append(o.cards, "ask_card_question", a, c, {
+    text: a.text, ...(a.options !== undefined ? { options: a.options } : {}),
+  }, false, result => ({ ...compactMutation(result), guidance: "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." })),
   move_card: (o, a, c) => append(o.cards, "move_card", a, c, {
     folderId: a.folder_id, ...(a.after_card_id !== undefined ? { afterCardId: a.after_card_id } : {}),
-  }, true),
-  set_card_items: (o,a,c) => internalAppend(o.cards,"set_card_items",a,c,{items:a.items}),
-  add_card_item: (o,a,c) => internalAppend(o.cards,"add_card_item",a,c,{title:a.title,fromCommentId:a.from_comment_id}),
-  report_card_item: (o,a,c) => internalAppend(o.cards,"report_card_item",a,c,{itemId:a.item_id,state:a.state,result:a.result,evidence:a.evidence,caveat:a.caveat,reopenReason:a.reopen_reason}),
+  }, true, result => ({ ...compactMutation(result), folderId: result.folderId })),
+  set_card_items: (o,a,c) => internalAppend(o.cards,"set_card_items",a,c,{items:a.items},
+    result => ({ ...compactMutation(result), items: compactItems(result) })),
+  add_card_item: (o,a,c) => internalAppend(o.cards,"add_card_item",a,c,{title:a.title,fromCommentId:a.from_comment_id},
+    result => ({ ...compactMutation(result), ...compactItemResult(result) })),
+  report_card_item: (o,a,c) => internalAppend(o.cards,"report_card_item",a,c,{itemId:a.item_id,state:a.state,result:a.result,evidence:a.evidence,caveat:a.caveat,reopenReason:a.reopen_reason},
+    result => ({ ...compactMutation(result), ...compactItemResult(result, a.item_id) })),
   update_card_now: (o,a,c) => internalAppend(o.cards,"update_card_now",a,c,{now:a.now,turn:a.turn,ask:a.ask}),
-  add_card_note: (o,a,c) => internalAppend(o.cards,"add_card_note",a,c,{text:a.text}),
+  add_card_note: (o,a,c) => internalAppend(o.cards,"add_card_note",a,c,{text:a.text},compactNote),
   list_card_notes: (o,a,c) => run(async () => {
     requireInternal(c);
     matchingHeader(a,c);
@@ -117,14 +117,17 @@ function agent(args: Args, context: McpCallContext, headerFirst = false) {
   if (!actorSessionId) throw new Error("caller session id is required for card mutation. Send x-soulstream-agent-session-id.");
   return { actorKind: "agent" as const, actorSessionId };
 }
-async function append(options: Options, operation: CardOperation, args: Args, context: McpCallContext, body: Args, cas = false) {
-  return run(() => appendMutation(options, operation, args, agent(args, context), body, cas));
+type MutationProjector = (result: Args) => Args;
+async function append(options: Options, operation: CardOperation, args: Args, context: McpCallContext, body: Args,
+  cas = false, project: MutationProjector = compactMutation) {
+  return run(async () => project(await appendMutation(options, operation, args, agent(args, context), body, cas)));
 }
-async function internalAppend(options:Options,operation:CardOperation,args:Args,context:McpCallContext,body:Args) {
+async function internalAppend(options:Options,operation:CardOperation,args:Args,context:McpCallContext,body:Args,
+  project: MutationProjector = compactMutation) {
   return run(async()=>{
     requireInternal(context);
     matchingHeader(args,context);
-    return appendMutation(options,operation,args,agent(args,context,true),body);
+    return project(await appendMutation(options,operation,args,agent(args,context,true),body));
   });
 }
 function requireInternal(context:McpCallContext) {
@@ -162,6 +165,47 @@ async function runCard(options: Options, cardId: string, actor: FolderActorParam
   }
   return { card: serializeCardRow(result.card as never), execution: result.execution,
     ...(result.execution.state === "pending" ? { guidance: "실행 시작 확인이 아직이다. 잠시 뒤 같은 카드로 run_card를 다시 부르면 결과를 확인한다." } : {}) };
+}
+function compactCard(card: Args) {
+  return { id: card.id, number: card.number, version: card.version, status: card.status };
+}
+function compactMutation(result: Args) {
+  const card = result.card as Args | null;
+  return {
+    card: card ? compactCard(card) : { id: (result.operation as Args).targetId },
+    ...(result.idempotent === true ? { idempotent: true } : {}),
+  };
+}
+function compactExecution(result: Args, idempotent = false) {
+  return {
+    card: compactCard(result.card as Args),
+    execution: result.execution,
+    ...(idempotent ? { idempotent: true } : {}),
+    ...(result.guidance !== undefined ? { guidance: result.guidance } : {}),
+  };
+}
+function compactItem(item: Args) {
+  return { id: item.id, title: item.title, state: item.state };
+}
+function compactItems(result: Args) {
+  const card = result.card as Args | null;
+  return Array.isArray(card?.items) ? (card.items as Args[]).map(compactItem) : [];
+}
+function compactItemResult(result: Args, itemId?: unknown) {
+  const items = compactItems(result);
+  const item = itemId === undefined
+    ? items.reduce<Args | undefined>((latest, candidate) => !latest || Number(candidate.id) > Number(latest.id) ? candidate : latest, undefined)
+    : items.find(candidate => candidate.id === itemId);
+  return item ? { item } : {};
+}
+function compactNote(note: Args) {
+  return { id: note.id, createdAt: note.createdAt };
+}
+function compactComment(comment: Args) {
+  return {
+    id: comment.id, kind: comment.kind, authorKind: comment.authorKind, createdAt: comment.createdAt,
+    ...(comment.itemId != null ? { itemId: comment.itemId } : {}),
+  };
 }
 function wait(milliseconds: number, signal?: AbortSignal) {
   return new Promise<void>(resolve => {

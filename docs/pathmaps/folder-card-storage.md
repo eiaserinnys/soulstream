@@ -10,6 +10,7 @@
 | 부모 mount | `folder_parent_mounts.ts` | identity 트랜잭션에서 부모 page에 자식 page mount를 만든다. 이동하면 옛 mount를 제거하고 새 부모에 생성한다. 최상위에는 mount가 없다. 사용자 작성 하위 블록은 보존한다. |
 | 부모 보드 identity 적용 | `src/board-yjs/board_yjs_service.ts`, `board_yjs_folder_identity.ts` | 이전 부모와 새 부모의 보드 문서를 identity 잠금과 문서 mutation gate 아래에서 갱신한다. 두 부모가 모두 null인 최상위 생성과 수정은 identity 잠금 아래에서 `persist([])`로 저장한다. 최상위로 이동할 때는 이전 부모 보드를 gate 아래에서 제거한다. 문서 mutation gate는 빈 이름 목록을 허용하지 않는다. |
 | 카드 HTTP와 저장 | `src/cards/card_routes.ts`, `card_operations.ts`, `card_control_plane_service.ts`, `control_plane/card_mutation_core.ts` | `/api/cards`와 `/:id`의 상태·이동·대기열·확인 항목·상황판·노트 경로. `cards.folder_id`가 소속이며 `folder_operations`가 감사 정본이다. request는 생성 후 고정, brief는 수정 가능, 보고는 추가만 한다. 사용자 확인은 `POST /api/cards/:id/items/:itemId/confirm`으로 카드 version 없이 저장하고 담당 세션을 깨우지 않는다. |
+| 카드 변경 응답 | `orch-server-ts/src/mcp/card_handlers.ts`, `orch-server-ts/src/cards/card_routes.ts` | MCP 카드 변경 도구는 `card_handlers.ts`에서 바뀐 조각만 남기고, REST는 `card_routes.ts`의 전체 응답 본문을 그대로 돌려준다. |
 | 세션과 카드 연결 | `sessions.card_id` | ON DELETE SET NULL. 카드 상세 세션 목록과 세션 DTO cardId가 같은 열을 읽는다. 보드와 페이지 바인딩에 카드 연결 복제는 없다. |
 | 보드 여섯 종류 | `src/board-yjs/board_yjs_repository.ts` | session, markdown, subfolder, asset, frame, custom_view 모두 `folder_id` 하나로 소속한다. 문서명은 `board-folder:<id>`. |
 | 세션 트리와 담당 카드 이동 | `src/session/session_board_move_service.ts` → `src/board-yjs/board_yjs_move_repository.ts` | 루트와 모든 자식을 함께 이동한다. `sessions.folder_id`와 `cards.assignee_session_id`로 연결된 카드의 `folder_id`는 DB가 정본이다. `sessions.card_id`로 소속된 카드를 담당 카드로 간주하지 않는다. |
