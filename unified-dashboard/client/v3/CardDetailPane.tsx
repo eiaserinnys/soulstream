@@ -57,7 +57,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
  const allChecked=hasCheckItems&&itemSummary.activeCount===0;
  const targetItem=targetItemId===null?undefined:card?.items?.find(item=>item.id===targetItemId);
  const startable=card?.status==='todo'||card?.status==='queued';
- const actionLabel=execution?.phase==='pending'?'시작 중…':execution?(execution.phase==='delayed'?'다시 확인':'다시 시도'):startable?'시작하기':'완료';
+ const actionLabel=allChecked?'완료':execution?.phase==='pending'?'시작 중…':execution?(execution.phase==='delayed'?'다시 확인':'다시 시도'):startable?'시작하기':'완료';
  const sessionIds=useMemo(()=>[...new Set([...(initialSessionId?[initialSessionId]:[]),...(card?.assigneeSessionId ? [card.assigneeSessionId]:[]),...(detail?.sessions.map(session=>session.sessionId)??[])])],[card?.assigneeSessionId,detail?.sessions,initialSessionId]);
  const assignee=catalog?.sessionList?.find(session=>session.agentSessionId===card?.assigneeSessionId) ?? detail?.sessions.find(session=>session.sessionId===card?.assigneeSessionId);
  const nodeId=assignee?.nodeId ?? card?.nodeId;
@@ -146,7 +146,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
     change:async(latest,status,reason)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}));else if(status==="running")await useCardStore.getState().execute(cardId,latest.version);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
     changeColor:async(latest,color:CardColor)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,color,version:latest.version+1}}));else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH");},
    }}/>} variant="card" title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,title}}));else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
-   <div className="v3-folder-header-actions" data-complete-emphasis={allChecked&&!execution&&!startable||undefined}><DashboardIconCap label={actionLabel} disabled={pending||execution?.phase==='pending'} onClick={()=>{if(execution||startable)statusPicker.current?.request('running');else void complete();}}>{execution?.phase==='pending'?<LoaderCircle className="h-4 w-4 animate-spin"/>:execution?<RotateCw className="h-4 w-4"/>:startable?<Play className="h-4 w-4"/>:<Check className="h-4 w-4"/>}</DashboardIconCap></div>
+   <div className="v3-folder-header-actions" data-complete-emphasis={allChecked||undefined}><DashboardIconCap label={actionLabel} disabled={pending||execution?.phase==='pending'} onClick={()=>{if(!allChecked&&(execution||startable))statusPicker.current?.request('running');else void complete();}}>{execution?.phase==='pending'?<LoaderCircle className="h-4 w-4 animate-spin"/>:allChecked?<Check className="h-4 w-4"/>:execution?<RotateCw className="h-4 w-4"/>:startable?<Play className="h-4 w-4"/>:<Check className="h-4 w-4"/>}</DashboardIconCap></div>
   </header>
   {!card.assigneeSessionId?<div className="v3-detail-gutter v3-task-detail-content v3-card-context">
    <section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined}/></section>
@@ -167,7 +167,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
      <CardSessionHistory key={`${cardId}:${initialSessionId??""}`} sessionIds={sessionIds} collapsedLimit={3} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} initialSessionId={initialSessionId} onOpenSession={onOpenSession}/>
     </section>
     <section className="v3-detail-section v3-description-content" data-card-tab-panel="notes" hidden={tab!=="notes"}>
-     <CardNotes key={cardId} brief={card.brief??""} notes={detail?.notes??[]} sessions={detail?.sessions??[]}/>
+     <CardNotes key={cardId} brief={card.brief??""} notes={detail?.notes??[]} sessions={detail?.sessions??[]} portraitUrl={portrait} userPortraitUrl={user?.picture??""}/>
     </section>
    </div>
   </div>

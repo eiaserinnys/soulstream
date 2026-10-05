@@ -30,7 +30,7 @@
   min-width: 0;
   min-height: var(--v3-action-size);
   flex: 1;
-  align-items: center;
+  align-items: baseline;
   gap: var(--v3-space-2);
   border: 0;
   padding: var(--v3-space-3) var(--v3-space-3) var(--v3-space-3) 0;
@@ -44,7 +44,7 @@
 .v3-card-check-item-number { flex: none; color: var(--v3-text-tertiary); font: var(--v3-type-card) var(--v3-font-family); }
 .v3-card-check-item-title { min-width: 0; flex: 1; font: var(--v3-type-card) var(--v3-font-family); overflow-wrap: anywhere; }
 .v3-card-check-item-title del { text-decoration-thickness: from-font; }
-.v3-card-check-item-state { width: 6.6em; font-weight: 700; display: inline-flex; min-width: 0; flex: none; align-items: center; gap: var(--v3-space-1); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); font-weight: 700; }
+.v3-card-check-item-state { width: 6.6em; justify-content: flex-end; display: inline-flex; min-width: 0; flex: none; align-items: center; gap: var(--v3-space-1); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); font-weight: 700; }
 .v3-card-check-item-state--doing { color: var(--v3-live); }
 .v3-card-check-item-state--reported { color: var(--v3-complete); }
 .v3-card-check-item-state--changed { color: var(--v3-favorite); }
@@ -92,7 +92,7 @@
 .v3-card-now-header { position: relative; display: flex; min-height: 18px; align-items: center; }
 .v3-card-now-header[data-has-navigation="true"] .v3-card-now-meta { padding-right: calc(var(--v3-space-8) * 2 + var(--v3-space-2) + var(--v3-space-2)); }
 .v3-card-now-meta { display: flex; width: 100%; min-width: 0; white-space: nowrap; align-items: baseline; gap: var(--v3-space-2); color: var(--v3-text-tertiary); font: var(--v3-type-meta) var(--v3-font-family); }
-.v3-card-now-meta strong { color: var(--v3-text-secondary); font-weight: 600; }
+.v3-card-now-meta strong { color: var(--v3-text-secondary); font-weight: 700; }
 .v3-card-now-meta time { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v3-card-now-meta .v3-card-now-past-label { color: var(--v3-favorite); }
 .v3-card-now-actions { position: absolute; inset-block-start: 50%; inset-inline-end: 0; display: flex; gap: var(--v3-space-2); transform: translateY(-50%); }
@@ -172,12 +172,10 @@
 .v3-card-target-notice,
 .v3-card-sent-notice { display: flex; min-width: 0; align-items: center; justify-content: flex-start; gap: var(--v3-space-2); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-card-target-notice > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.v3-card-target-notice button,
-.v3-card-sent-notice button { flex: none; border: 0; padding: 0; color: var(--v3-accent); background: transparent; font: inherit; cursor: pointer; }
+.v3-shell .v3-card-target-notice button,
+.v3-shell .v3-card-sent-notice button { flex: none; border: 0; padding: 0; color: var(--v3-accent); background: transparent; font: inherit; cursor: pointer; }
 .v3-card-comment-target { margin: 0 0 var(--v3-space-1); color: inherit; font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-card-now-panel--past .v3-card-now-text { min-height: 0; overflow: hidden; }
-.v3-card-now-panel--past .v3-card-now-frame { position: relative; min-width: 0; }
-.v3-card-now-measure { z-index: -1; }
 
 @media (max-width: 760px) {
   .v3-shell .v3-card-detail { --glass-chrome-surface-strong: var(--v3-glass-dense); --v3-detail-inline-inset: var(--v3-space-6); }
@@ -191,7 +189,7 @@
    is 400px measured across the whole card, as used by the split model. */
 @container card-pane (width < calc(400px - 2px)) {
   .v3-card-check-item-title-button { grid-template-columns: min-content minmax(0, 1fr); }
-  .v3-card-check-item-state { grid-column: 2; }
+  .v3-card-check-item-state { grid-column: 2; justify-content: flex-start; }
 }
 
 @media (prefers-reduced-motion: reduce) {

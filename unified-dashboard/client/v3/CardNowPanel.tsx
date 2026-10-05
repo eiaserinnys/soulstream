@@ -67,7 +67,7 @@ function NowPanelContents({entry,index,total,latest,hasNavigation,allChecked,onP
   <p className="v3-card-now-text">{entry.text}</p>
   {latest?<div className={`v3-card-now-turn v3-card-now-turn--${allChecked?"complete":entry.turn}`}>
    {allChecked?<><strong>모두 확인했습니다</strong><span>완료로 옮길까요?</span>
-    <Button size="sm" className="v3-card-now-complete" disabled={pending||!onComplete} onClick={onComplete}>완료</Button></>
+    <Button size="default" variant="ghost" className="v3-card-now-complete" disabled={pending||!onComplete} onClick={onComplete}>완료</Button></>
     :<><strong>{turnLabel(entry.turn)}</strong>{entry.ask?<span>{entry.ask}</span>:null}</>}
   </div>:<div className="v3-card-now-past-hint"><span>아래 확인 항목은 지금 상태입니다</span><button type="button" onClick={onLatest}>최신으로</button></div>}
  </>;

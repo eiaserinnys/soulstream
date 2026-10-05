@@ -1,13 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { reviewCorrections, textEvidence } from "./card-check-items-review";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const output = path.resolve("../../../.local/artifacts/card-checkitems-261005/web-captures");
 const baseURL = process.env.CARD_CHECK_ITEMS_BASE_URL;
 if (!baseURL) throw new Error("CARD_CHECK_ITEMS_BASE_URL must point to the local Vite server.");
 
-async function prepare(page: Page, width: number) {
+async function prepare(page: Page, width: number, realClock = false) {
   const errors: string[] = [], writes: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("request", request => {
@@ -19,7 +20,7 @@ async function prepare(page: Page, width: number) {
   mkdirSync(output, { recursive: true });
   await page.setViewportSize({ width, height: width === 1920 ? 1080 : 810 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "no-preference" });
-  await page.clock.install({ time: new Date("2026-10-05T09:00:00Z") });
+  if (!realClock) await page.clock.install({ time: new Date("2026-10-05T09:00:00Z") });
   await page.addInitScript(() => {
     localStorage.setItem("soul-dashboard-theme", "dark");
     localStorage.setItem("ls.webglGlass", "0");
@@ -331,13 +332,62 @@ for (const width of [1920, 1440]) {
     const detail = page.getByTestId("card-detail");
     const row = detail.locator('[data-item-id="5"]');
     await row.locator(".v3-card-check-item-target").click();
+    await page.screenshot({ path: path.join(output, `${width}-target-notice.png`), animations: "disabled" });
     await detail.getByPlaceholder("커멘트", { exact: true }).fill("좁은 화면에서 상태 글이 제목 아래로 내려옵니다.");
     await detail.getByRole("button", { name: "커멘트 전송", exact: true }).click();
     await expect(row).toHaveAttribute("data-item-display", "fix");
     await expect(row.locator(".v3-card-check-item-state")).toHaveText("고칠 점 3");
+    await page.screenshot({ path: path.join(output, `${width}-sent-notice.png`), animations: "disabled" });
     await row.evaluate(element => element.scrollIntoView({ block: "start" }));
     await expect(row).toBeVisible();
     await page.screenshot({ path: path.join(output, `${width}-after-fix.png`), animations: "disabled" });
+    expect(errors).toEqual([]);expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1440, 1920]) {
+  test(`review corrections with real clock ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width, true);
+    await reviewCorrections(page, width, output);
+    expect(errors).toEqual([]);expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1440, 1920]) {
+  test(`collapsed confirmed title evidence ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width, true);
+    const board = page.getByTestId("card-board-sample");
+    await board.scrollIntoViewIfNeeded();
+    await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+    const detail = page.getByTestId("card-detail");
+    await detail.locator('[data-item-id="1"] [role="checkbox"]').click();
+    const data = await textEvidence(page, detail, output, `${width}-confirmed-title-top`);
+    expect(data.find(value => value.item === "1" && value.selector === ".v3-card-check-item-title")?.font).toBe("500 16px/23px");
+    await detail.getByTestId("confirmed-items-group").getByRole("button").click();
+    await detail.locator(".v3-card-panel-scroll").evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await textEvidence(page, detail, output, `${width}-confirmed-title-bottom`);
+    await detail.getByRole("tab", { name: /^노트/ }).click();
+    await detail.locator(".v3-card-panel-scroll").evaluate(el => { el.scrollTop = 0; });
+    await textEvidence(page, detail, output, `${width}-notes-review`);
+    expect(errors).toEqual([]);expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1440, 1920]) {
+  test(`complete strip uses the existing button and closes the card ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width);
+    const board = page.getByTestId("card-board-sample");
+    await board.scrollIntoViewIfNeeded();
+    await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+    const detail = page.getByTestId("card-detail");
+    for (const id of [1, 2, 3, 4, 5, 8, 9]) await detail.locator(`[data-item-id="${id}"] [role="checkbox"]`).click();
+    const complete = detail.getByTestId("card-now-panel").getByRole("button", { name: "완료", exact: true });
+    await expect(complete).toBeEnabled();
+    expect((await complete.boundingBox())!.height).toBe(32);
+    await expect(detail.locator(".v3-folder-header-actions")).toHaveAttribute("data-complete-emphasis", "true");
+    await detail.locator(".v3-card-panel-scroll").evaluate(el => { el.scrollTop = 0; });
+    await page.screenshot({ path: path.join(output, `${width}-all-checked.png`), animations: "disabled" });
+    await complete.click();await expect(detail).toHaveCount(0);
     expect(errors).toEqual([]);expect(writes).toEqual([]);
   });
 }
