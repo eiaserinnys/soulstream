@@ -312,6 +312,12 @@ describe("flattenTree", () => {
         type: "tool_approval",
         eventId: 160,
       },
+      { node: makeRawEventNode("generation_started", 170), type: "generation_started", eventId: 170 },
+      {
+        node: makeRawEventNode("persistent_jev_candidates", 190, { preparedInputId: "prepared-input", candidates: [] }),
+        type: "persistent_jev_candidates",
+        eventId: 190,
+      },
     ];
 
     const inventoryRenderTypes = Object.entries(CHAT_MESSAGE_EVENT_ID_INVENTORY)
