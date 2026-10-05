@@ -29,11 +29,13 @@ test('floating coverage adds scroll space without moving the fixed settings foot
   const screen = render(<SidebarPane />);
   const footer = StyleSheet.flatten(screen.getByTestId('sidebar-settings-footer').props.style);
   require('@testing-library/react-native').act(() => { useUIStore.getState().setFloatingComposerBottomInset(112); });
-  expect(StyleSheet.flatten(screen.getByTestId('sidebar-main-list').props.contentContainerStyle).paddingBottom).toBe(112);
+  expect(StyleSheet.flatten(screen.getByTestId('sidebar-main-list').props.contentContainerStyle).paddingBottom).toBe(0);
+  expect(StyleSheet.flatten(screen.getByTestId('sidebar-home-composer-spacer').props.style)).toMatchObject({ height: 112, marginTop: -0 });
   expect(StyleSheet.flatten(screen.getByTestId('sidebar-settings-footer').props.style)).toEqual(footer);
 });
 
 beforeEach(() => {
+  useUIStore.setState({ floatingComposerBottomInset: 0 });
   useSettingsStore.setState({ serverUrl: 'https://planner.test' });
   useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
 });

@@ -16,20 +16,24 @@ jest.mock('../FolderWorkspaceReadOverlay', () => ({ FolderWorkspaceReadOverlay: 
 let mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })];
 let mockDevice = 'tablet';
 let mockLoading = false;
-beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; });
+beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; useUIStore.setState({ floatingComposerBottomInset: 0 }); });
 test('tablet panel uses phone lanes and inset, while expanded board keeps wide geometry and resets inset', () => {
   const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
-  const screen = render(<CardBoardWorkspace ref={ref} api={null} bottomInset={120} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
+  useUIStore.setState({ floatingComposerBottomInset: 120 });
+  const screen = render(<CardBoardWorkspace ref={ref} api={null} reserveHomeComposerSpace cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
   expect(screen.queryByTestId('card-board-stages')).toBeNull();
   expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingHorizontal).toBe(0);
   const scroll = screen.getByTestId('card-board-scroll-todo');
-  expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(136);
-  expect(StyleSheet.flatten(screen.getByTestId('card-board-scroll-done').props.contentContainerStyle).paddingBottom).toBe(136);
+  expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(16);
+  expect(StyleSheet.flatten(screen.getByTestId('home-composer-spacer-todo').props.style)).toMatchObject({ height: 120, marginTop: -8 });
+  expect(StyleSheet.flatten(screen.getByTestId('card-board-scroll-done').props.contentContainerStyle).paddingBottom).toBe(16);
+  expect(StyleSheet.flatten(screen.getByTestId('home-composer-spacer-done').props.style)).toMatchObject({ height: 120, marginTop: -0 });
   fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: 140, y: 0 } } });
   act(() => ref.current!.openExpanded());
   const expanded = within(screen.getByTestId('card-board-expanded'));
   expect(expanded.queryByTestId('card-board-stages')).toBeNull();
   expect(StyleSheet.flatten(expanded.getByTestId('card-board-scroll-review').props.contentContainerStyle).paddingBottom).toBe(16);
+  expect(expanded.queryByTestId(/^home-composer-spacer-/)).toBeNull();
   expect(expanded.getAllByTestId(/^card-board-column-/)).toHaveLength(7);
   expect(screen.UNSAFE_getByType(AppModalSurface).props.variant).toBe('board');
   expect(screen.UNSAFE_getByType(AppModalSurface).props.presentationStyle).toBeUndefined();

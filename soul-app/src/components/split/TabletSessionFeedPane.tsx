@@ -79,6 +79,7 @@ export function TabletSessionFeedPane() {
         ) : (
           <SessionFeedScreen
             active={!folderOverlayVisible}
+            reserveHomeComposerSpace
             onOpenSession={(sessionId) =>
               openFeedSessionCardWorkspace(sessionId)
             }
