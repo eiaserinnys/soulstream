@@ -19,11 +19,22 @@ import { createUiEventsEndpoints } from './uiEventsEndpoints';
 import { createRecurringJobsEndpoints } from './recurringJobsEndpoints';
 import { createCardEndpoints } from './cardEndpoints';
 import { createOwnedAgentsEndpoints } from './ownedAgentsEndpoints';
+import { createPersistentSessionEndpoints } from './persistentSessionEndpoints';
 export type {
   RecurringJobDto,
   RecurringJobRunDto,
   RecurringJobWrite,
 } from './recurringJobsEndpoints';
+export type {
+  PersistentSessionCreate,
+  PersistentSessionCreateDefaults,
+  PersistentSessionModel,
+  PersistentSessionModelWrite,
+  PersistentSessionResource,
+  PersistentSessionSettings,
+  PersistentSessionSettingsPatch,
+  PersistentSessionWrite,
+} from './persistentSessionEndpoints';
 
 export type {
   CatalogResponse,
@@ -82,6 +93,7 @@ export function createApiClient(baseUrl: string, options?: ApiRequestContextOpti
     ...createRecurringJobsEndpoints(context),
     ...createCardEndpoints(context),
     ...createOwnedAgentsEndpoints(context),
+    ...createPersistentSessionEndpoints(context),
   };
   return {
     ...endpoints,

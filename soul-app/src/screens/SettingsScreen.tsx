@@ -6,7 +6,7 @@ import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
 import { GlassButton } from '../components/GlassSurface';
 import { SettingsCategorySidebar } from '../components/settings/SettingsCategorySidebar';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from '../components/settings/settingsCategories';
-import { SettingsWorkspaceContext, confirmSettingsDiscard, type SettingsSaveScope, type SettingsJobDestination } from '../components/settings/SettingsWorkspaceContext';
+import { SettingsWorkspaceContext, confirmSettingsDiscard, type SettingsSaveScope, type SettingsJobDestination, type SettingsPersistentDestination } from '../components/settings/SettingsWorkspaceContext';
 import { useDashboardAdminStatus } from '../components/settings/useDashboardAdminStatus';
 import { TABLET_BREAKPOINT, useTokens, type DesignTokens } from '../theme';
 import { SettingsContent } from './SettingsContent';
@@ -36,6 +36,7 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
   const isAdmin = showAdmin ?? detectedAdmin;
   const [category, setCategory] = useState<SettingsCategory | null>(connectionOnly ? 'connection' : initialCategory ?? null);
   const [jobs, setJobs] = useState<SettingsJobDestination>({ kind: 'list' });
+  const [persistent, setPersistent] = useState<SettingsPersistentDestination>({ kind: 'list' });
   const [scopes, setScopes] = useState<Partial<Record<SettingsCategory, SettingsSaveScope>>>({});
   const register = useCallback((id: SettingsCategory, scope: SettingsSaveScope | null) => setScopes(current => {
     const next = { ...current }; if (scope) next[id] = scope; else delete next[id]; return next;
@@ -57,29 +58,31 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
     if (active === 'recurring-jobs' && jobs.kind !== 'list') {
       if (jobs.kind === 'history') setJobs({ kind: 'editor', jobId: jobs.jobId });
       else guard('recurring-jobs', () => setJobs({ kind: 'list' }));
-    } else setCategory(null);
-  }, [active, jobs, guard]);
+    } else if (active === 'persistent' && persistent.kind !== 'list') guard('persistent', () => setPersistent({ kind: 'list' }));
+    else setCategory(null);
+  }, [active, jobs, persistent, guard]);
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!connectionOnly && (category || jobs.kind !== 'list')) { back(); return true; }
+      if (!connectionOnly && (category || jobs.kind !== 'list' || persistent.kind !== 'list')) { back(); return true; }
       return false;
     });
     return () => subscription.remove();
-  }, [category, jobs.kind, connectionOnly, back]);
+  }, [category, jobs.kind, persistent.kind, connectionOnly, back]);
   const title = connectionOnly ? '서버에 연결' : active ? SETTINGS_CATEGORIES.find(item => item.id === active)?.label : '설정';
-  const scope = active && (active !== 'recurring-jobs' || jobs.kind === 'editor') ? scopes[active] : null;
+  const scope = active && (active !== 'recurring-jobs' || jobs.kind === 'editor') && (active !== 'persistent' || persistent.kind === 'editor') ? scopes[active] : null;
   const changeConnection = useCallback((action: () => void) => {
     const dirty = SETTINGS_CATEGORIES.find(item => item.id !== 'connection' && scopes[item.id]?.dirty);
     if (dirty) confirmSettingsDiscard(() => { Object.entries(scopes).forEach(([id, scope]) => { if (id !== 'connection') scope?.discard(); }); action(); }, () => setCategory(dirty.id));
     else action();
   }, [scopes]);
-  const context = useMemo(() => ({ category: active, wide, columns: width - (wide ? 240 : 0) >= TABLET_BREAKPOINT, jobs, setJobs, register, select: setCategory, guard, changeConnection }), [active, wide, width, jobs, register, guard, changeConnection]);
+  const context = useMemo(() => ({ category: active, wide, columns: width - (wide ? 240 : 0) >= TABLET_BREAKPOINT, jobs, setJobs, persistent, setPersistent, register, select: setCategory, guard, changeConnection }), [active, wide, width, jobs, persistent, register, guard, changeConnection]);
   return <SettingsWorkspaceContext.Provider value={context}>
     <SafeAreaView testID="settings-safe-area" style={styles.root} edges={flattened ? [] : bottomSafeAreaOwner === 'parent' ? ['left', 'right', 'top'] : ['left', 'right', 'bottom', 'top']} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
       <AppKeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View testID="settings-modal-header" style={styles.header}>
           {!connectionOnly && !wide && active ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>설정</Text></TouchableOpacity> : null}
           {active === 'recurring-jobs' && jobs.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>{jobs.kind === 'history' ? '편집' : '목록'}</Text></TouchableOpacity> : null}
+          {active === 'persistent' && persistent.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="영구 에이전트 세션 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>목록</Text></TouchableOpacity> : null}
           <Text style={styles.title}>{title}</Text>
           {onClose ? <TouchableOpacity testID="settings-modal-close" accessibilityRole="button" accessibilityLabel="설정 닫기" style={styles.headerAction} onPress={close}><Text style={styles.actionText}>완료</Text></TouchableOpacity> : null}
         </View>

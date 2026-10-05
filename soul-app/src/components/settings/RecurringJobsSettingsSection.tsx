@@ -5,6 +5,7 @@ import { openPlannerSessionWorkspace } from '../../lib/planner-folder-workspace'
 import { useTokens } from '../../theme';
 import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 import { SettingsSection } from './SettingsSection';
+import { settingsPanelPage } from './SettingsFormParts';
 import {
   RecurringJobEditor,
   RecurringJobHistory,
@@ -41,7 +42,7 @@ export function RecurringJobsSettingsSection({
   };
   if (workspace) {
     const hidden = (kind: WidePanel['kind']) => panel.kind !== kind;
-    const page = (kind: WidePanel['kind']) => ({ style: { flex: 1, minHeight: 0, display: hidden(kind) ? 'none' as const : 'flex' as const }, accessibilityElementsHidden: hidden(kind), importantForAccessibility: hidden(kind) ? 'no-hide-descendants' as const : 'auto' as const, contentContainerStyle: { padding: t.foundation.pageInset, gap: t.spacing.md }, keyboardShouldPersistTaps: 'handled' as const });
+    const page = (kind: WidePanel['kind']) => settingsPanelPage(t, hidden(kind));
     return <View testID="wide-recurring-jobs-panel" style={{ flex: 1, minHeight: 0 }}>
       <ScrollView {...page('list')} testID="settings-jobs-list-scroll"><RecurringJobsList serverUrl={serverUrl} onCreate={() => openEditor()} onEdit={job => openEditor(job.job_id)} refreshKey={listRevision}/></ScrollView>
       {hasEditor ? <ScrollView {...page('editor')} testID="settings-jobs-editor-scroll"><RecurringJobEditor key={editorId ?? 'new'} serverUrl={serverUrl} jobId={editorId} onDone={() => { setHasEditor(false); setListRevision(value => value + 1); setPanel({ kind: 'list' }); }} onOpenHistory={jobId => { setHistoryId(jobId); setPanel({ kind: 'history', jobId }); }}/></ScrollView> : null}

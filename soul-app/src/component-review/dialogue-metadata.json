@@ -157,6 +157,12 @@
       "message": "저장된 인증 토큰을 삭제합니다. 계속하시겠습니까?",
       "confirmText": "삭제",
       "source": "settings/ClaudeProviderSection.tsx"
+    },
+    {
+      "title": "영구 세션 해제",
+      "message": "영구 세션을 해제할까요? 세션과 대화 기록은 남습니다.",
+      "confirmText": "해제",
+      "source": "settings/PersistentSessionViews.tsx"
     }
   ],
   "nativeRenames": [
@@ -187,6 +193,7 @@
     "components/planner/plannerNativeUI.ts",
     "components/planner/projectManagement.ts",
     "components/settings/ClaudeProviderSection.tsx",
+    "components/settings/PersistentSessionViews.tsx",
     "components/settings/RecurringJobViews.tsx",
     "components/settings/SettingsWorkspaceContext.tsx",
     "hooks/useCardActions.ts",

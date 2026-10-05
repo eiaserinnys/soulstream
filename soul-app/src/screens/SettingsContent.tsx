@@ -10,6 +10,7 @@ import { DisplaySettingsSection } from '../components/settings/DisplaySettingsSe
 import { OwnedAgentsSettingsSection } from '../components/settings/OwnedAgentsSettingsSection';
 import { SessionReviewPolicySettingsSection } from '../components/settings/SessionReviewPolicySettingsSection';
 import { RecurringJobsSettingsSection } from '../components/settings/RecurringJobsSettingsSection';
+import { PersistentSessionsSettingsSection } from '../components/settings/PersistentSessionsSettingsSection';
 import type { SettingsCategory } from '../components/settings/settingsCategories';
 import { useDashboardAdminStatus } from '../components/settings/useDashboardAdminStatus';
 import { resolveBackgroundImageSource } from '../lib/wallpaper-source';
@@ -332,6 +333,11 @@ export function SettingsContent({
               serverUrl={serverUrl}
               onOpenRecurringJobs={onOpenRecurringJobs}
             />
+            </View>
+          ) : null}
+          {renderCategory('persistent') ? (
+            <View style={{ flex: 1, minHeight: 0, display: includes('persistent') ? 'flex' : 'none' }} accessibilityElementsHidden={!includes('persistent')} importantForAccessibility={!includes('persistent') ? 'no-hide-descendants' : 'auto'}>
+            <PersistentSessionsSettingsSection serverUrl={serverUrl} />
             </View>
           ) : null}
           {renderCategory('review-policy') && canManageReviewPolicy ? (
