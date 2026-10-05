@@ -4,6 +4,8 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 
 const mockRenderChatEventList = jest.fn();
 const mockRenderChatComposer = jest.fn();
+const mockRenderChatRow = jest.fn();
+let mockRealChatEventList = false;
 const mockApiClient = {
   sessionEventsUrl: jest.fn(() => 'https://server.test/api/sessions/sess-1/events'),
   intervene: jest.fn(),
@@ -50,6 +52,7 @@ jest.mock('../ChatEventList', () => {
   return {
     ChatEventList: (props: any) => {
       mockRenderChatEventList(props);
+      if (mockRealChatEventList) return React.createElement(jest.requireActual('../ChatEventList').ChatEventList, props);
       return React.createElement(
         View,
         { testID: 'chat-event-list' },
@@ -83,6 +86,7 @@ jest.mock('../ChatComposer', () => {
           testID: 'chat-composer-content-row',
           style: { flexWrap: stacked ? 'wrap' : 'nowrap' },
         }),
+        props.interruptControls,
         React.createElement(TextInput, {
           testID: 'chat-composer-input',
           value: props.input,
@@ -105,8 +109,12 @@ jest.mock('../AttachmentChips', () => ({
 }));
 
 jest.mock('../ChatInterruptButton', () => ({
-  ChatInterruptButton: () => null,
+  ChatInterruptButton: () => require('react').createElement(require('react-native').View, { testID: 'test-chat-interrupt' }),
 }));
+jest.mock('../../events/EventRenderer', () => ({ EventRenderer: (props: any) => { mockRenderChatRow(props); return null; } }));
+jest.mock('../../events/ToolEvent', () => ({ ToolEvent: (props: any) => { mockRenderChatRow(props); return null; } }));
+jest.mock('../../events/EventContextMenu', () => ({ EventContextMenu: ({ children }: any) => children }));
+jest.mock('../TypingIndicator', () => ({ TypingIndicator: (props: any) => { mockRenderChatRow(props); return require('react').createElement(require('react-native').Text, { testID: 'test-chat-running' }, '생각 중'); } }));
 
 jest.mock('../RealtimeVoiceControls', () => ({
   RealtimeVoiceControls: (props: unknown) => mockRenderRealtimeVoiceControls(props),
@@ -239,6 +247,7 @@ function latestSseOptions() {
 describe('ChatBody store subscription boundary', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRealChatEventList = false;
     mockSendPromise = undefined;
     mockRestorePendingEventId = undefined;
     mockUseChatSendFlow.mockImplementation(() => ({
@@ -256,6 +265,58 @@ describe('ChatBody store subscription boundary', () => {
     mockHistoryLoadingRef.current = false;
     resetStores();
     mockRenderRealtimeVoiceControls.mockClear();
+  });
+
+  test('session preview and timestamp updates render neither the composer nor existing rows', async () => {
+    await preparePersistentChatDrafts();
+    mockRealChatEventList = true;
+    useSessionStore.getState().upsertSession({
+      agentSessionId: SID, nodeId: 'node-1', displayName: 'Test session', status: 'running',
+      createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
+    });
+    useChatStore.getState().mergeEvents(SID, [
+      { id: '1', type: 'user_message', data: { text: '질문' } },
+      { id: '2', type: 'assistant_message', data: { text: '답변' } },
+      { id: '3', type: 'tool_start', data: { tool_use_id: 'tool', tool_name: 'exec_command' } },
+    ]);
+    const view = await renderSettled();
+    expect(mockRenderChatRow).toHaveBeenCalled();
+    mockRenderChatRow.mockClear();
+    mockRenderChatComposer.mockClear();
+    act(() => useSessionStore.getState().updateSession(SID, {
+      lastMessage: { type: 'assistant_message', eventId: 4, preview: '새 미리보기', timestamp: '2026-10-05T04:00:00Z' },
+      updatedAt: '2026-10-05T04:00:00Z',
+    }));
+    expect([mockRenderChatComposer.mock.calls.length, mockRenderChatRow.mock.calls.length]).toEqual([0, 0]);
+    act(() => useSessionStore.getState().updateSession(SID, {
+      nodeId: 'node-2', agentName: '새 에이전트', backend: 'codex',
+    }));
+    expect(mockRenderChatComposer).toHaveBeenCalled();
+    expect(mockRenderChatComposer.mock.calls.at(-1)?.[0].voiceControls.props.backend).toBe('codex');
+    const rowSession = mockRenderChatRow.mock.calls.find(([props]) => props.session)?.[0].session;
+    expect(rowSession).toMatchObject({ nodeId: 'node-2', agentName: '새 에이전트' });
+    expect(rowSession).not.toHaveProperty('updatedAt');
+    expect(rowSession).not.toHaveProperty('lastMessage');
+    view.unmount();
+  });
+
+  test('running to idle to running keeps interrupt and running indicators in sync', async () => {
+    await preparePersistentChatDrafts();
+    mockRealChatEventList = true;
+    useSessionStore.getState().upsertSession({
+      agentSessionId: SID, nodeId: 'node-1', displayName: 'Test session', status: 'running',
+      createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
+    });
+    const view = await renderSettled();
+    expect(view.getByTestId('test-chat-interrupt')).toBeTruthy();
+    expect(view.getByTestId('test-chat-running')).toBeTruthy();
+    act(() => useSessionStore.getState().updateSession(SID, { status: 'idle' }));
+    expect(view.queryByTestId('test-chat-interrupt')).toBeNull();
+    expect(view.queryByTestId('test-chat-running')).toBeNull();
+    act(() => useSessionStore.getState().updateSession(SID, { status: 'running' }));
+    expect(view.getByTestId('test-chat-interrupt')).toBeTruthy();
+    expect(view.getByTestId('test-chat-running')).toBeTruthy();
+    view.unmount();
   });
 
   test('switching from a long A draft to a nonempty B draft displays only B', async () => {

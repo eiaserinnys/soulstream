@@ -117,6 +117,11 @@ export function ChatBody({
   const session = useSessionStore((s) =>
     sessionId ? s.sessions[sessionId] : undefined,
   );
+  const { agentSessionId, nodeId, agentName, agentPortraitUrl, displayName, userName, userPortraitUrl } = session ?? {};
+  // Preview and timestamp updates do not change message presentation or actions.
+  const messageSession = useMemo(() => agentSessionId === undefined ? undefined : {
+    agentSessionId, nodeId, agentName, agentPortraitUrl, displayName: displayName ?? null, userName, userPortraitUrl,
+  }, [agentSessionId, nodeId, agentName, agentPortraitUrl, displayName, userName, userPortraitUrl]);
   const [snapshotGeneration, setSnapshotGeneration] = useState(0);
   const [highlightedItemKey, setHighlightedItemKey] = useState<string | null>(
     null,
@@ -435,7 +440,7 @@ export function ChatBody({
         items={reversedItems}
         onRetryPending={handleRetryPending}
         onRestorePending={handleRestorePending}
-        session={session}
+        session={messageSession}
         sessionId={sessionId}
         api={api}
         styles={styles}
@@ -461,7 +466,9 @@ export function ChatBody({
         key={sessionId}
         ref={composerRef}
         sessionId={sessionId}
-        session={session}
+        sessionStatus={session?.status}
+        nodeId={nodeId}
+        backend={session?.backend}
         api={api}
         detailedNetworkActive={detailedNetworkActive}
         appForeground={appForeground}

@@ -7,12 +7,11 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import type { Session } from '../../api/types';
 import type { ToolTraceResponse } from '../../api/client';
 import type { ChatBodyStyles } from './ChatBody.styles';
 import type { ChatRenderItem } from './groupChatEvents';
 import { EventContextMenu } from '../events/EventContextMenu';
-import { EventRenderer } from '../events/EventRenderer';
+import { EventRenderer, type ChatMessageSession } from '../events/EventRenderer';
 import {
   createMessageSelectionModel,
   type MessageSelectionModel,
@@ -34,7 +33,7 @@ interface Props {
   items: ChatRenderItem[];
   onRetryPending?: (eventId: string) => void;
   onRestorePending?: (eventId: string) => void;
-  session: Session | undefined;
+  session: ChatMessageSession | undefined;
   sessionId: string;
   api: { getTimelineTrace: (sessionId: string, timelineId: string) => Promise<ToolTraceResponse> } | null;
   styles: ChatBodyStyles;
@@ -91,7 +90,7 @@ export const ChatEventList = memo(function ChatEventList({
   }, []);
   const extraData = useMemo(() => [activeSelection, highlightedItemKey], [activeSelection, highlightedItemKey]);
   const renderItem = useCallback(({ item }: { item: ChatRenderItem }) => (
-    <ChatEventRow item={item} session={session} sessionId={sessionId} api={api}
+    <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' ? session : undefined} sessionId={sessionId} api={api}
       onRetryPending={onRetryPending} onRestorePending={onRestorePending}
       selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
       highlighted={item.key === highlightedItemKey} selectText={selectText} closeSelection={closeSelection} />

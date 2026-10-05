@@ -22,7 +22,9 @@ export interface ChatInputComposerHandle {
 }
 interface Props {
   sessionId: string;
-  session: Session | undefined;
+  sessionStatus: Session['status'] | undefined;
+  nodeId: Session['nodeId'];
+  backend: Session['backend'];
   api: ApiClient | null;
   detailedNetworkActive: boolean;
   appForeground: boolean;
@@ -39,14 +41,15 @@ const ChatVoiceControls = memo(function ChatVoiceControls(props: Omit<React.Comp
 });
 
 export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>(function ChatInputComposer({
-  sessionId, session, api, detailedNetworkActive, appForeground, minimumBottomPadding, requestBottomFollow,
+  sessionId, sessionStatus, nodeId, backend, api, detailedNetworkActive, appForeground, minimumBottomPadding, requestBottomFollow,
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const nodesReady = useNodeConnectivityStore(state => state.ready);
   const connectedNodeIds = useNodeConnectivityStore(state => state.connectedNodeIds);
-  const inputDraft = usePersistentDraft('chat', [session?.nodeId, sessionId], '');
-  const inputDisabled = !inputDraft.ready || (session ? isSessionOnDisconnectedNode(session, {
+  const inputDraft = usePersistentDraft('chat', [nodeId, sessionId], '');
+  const sendSession = useMemo(() => sessionStatus === undefined ? undefined : { status: sessionStatus }, [sessionStatus]);
+  const inputDisabled = !inputDraft.ready || (sendSession ? isSessionOnDisconnectedNode({ ...sendSession, nodeId }, {
     ready: nodesReady, connectedNodeIds,
   }) : false);
   const input = inputDraft.value;
@@ -165,7 +168,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   } = useChatAttachments({
     api,
     sessionId,
-    nodeId: session?.nodeId,
+    nodeId,
     disabled: inputDisabled,
   });
 
@@ -179,7 +182,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   } = useChatSendFlow({
     api,
     sessionId,
-    session,
+    session: sendSession,
     attachments,
     clearAttachments,
     disabled: inputDisabled,
@@ -262,7 +265,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
         disabled={inputDisabled}
         minimumBottomPadding={minimumBottomPadding}
         interruptControls={
-          session?.status === 'running' ? (
+          sessionStatus === 'running' ? (
             <ChatInterruptButton
               interrupting={interrupting}
               disabled={interrupting || !api}
@@ -276,7 +279,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
           <ChatVoiceControls
             api={api}
             sessionId={sessionId}
-            backend={session?.backend}
+            backend={backend}
             disabled={sending || inputDisabled}
             compact
           />
