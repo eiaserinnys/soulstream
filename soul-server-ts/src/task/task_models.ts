@@ -391,6 +391,8 @@ export interface Task {
   notifyCompletion?: boolean;
   /** sessions.metadata JSONB array와 session_created.session.metadata에 싣는 세션 메타데이터. */
   metadata?: Array<Record<string, unknown>>;
+  /** Durable marker for sessions that participate in persistent-agent workflows. */
+  persistent?: boolean;
 
   /** OpenAI Agents SDK serialized RunState restored from sessions.metadata. */
   agentsRunState?: string;

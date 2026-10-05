@@ -6026,6 +6026,30 @@
     "name": "set_session_name"
   },
   {
+    "description": "세션의 퍼시스턴트 표시를 켜거나 끈다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "session_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "name": "set_session_persistent"
+  },
+  {
     "_meta": {
       "openai/outputTemplate": "ui://soulstream/live-cards-v4.html",
       "ui": {

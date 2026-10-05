@@ -1,6 +1,31 @@
 import type { CallerInfo } from "./task_models.js";
 import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from "../engine/protocol.js";
 
+export function buildPersistentSessionMetadataEntry(
+  enabled: boolean,
+): Record<string, unknown> {
+  return {
+    type: "persistent_session",
+    value: { enabled, updated_at: new Date().toISOString() },
+  };
+}
+
+export function extractPersistentSession(metadata: unknown): boolean {
+  if (!Array.isArray(metadata)) return false;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type !== "persistent_session") continue;
+    const value = record.value;
+    return value !== null
+      && typeof value === "object"
+      && !Array.isArray(value)
+      && (value as Record<string, unknown>).enabled === true;
+  }
+  return false;
+}
+
 /**
  * 정체성을 명시하는 source는 신원 필드가 비어도 *신원 박힘*으로 간주.
  */
