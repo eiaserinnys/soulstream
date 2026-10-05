@@ -44,7 +44,6 @@ export function MainListPane({
   const effectiveShowSearch = showSearch && activeSection.kind !== 'daily';
   const views = useUIStore(state => state.mainPaneViews);
   const setMainPaneView = useUIStore(state => state.setMainPaneView);
-  const bottomInset = useUIStore(state => state.floatingComposerBottomInset);
   const scope = useAuthScopeGeneration();
   const displayOwner = `${scope}:${activeSection.kind === 'project' ? activeSection.folderId : 'global'}`;
   const viewKey = activeSection.kind === 'project' ? activeSection.folderId : 'global';
@@ -132,7 +131,7 @@ export function MainListPane({
       <View style={styles.body}>
         {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>
           <CardBoardWorkspace ref={boardRef} externalHeader key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
-            cardDisplay={cardDisplay} bottomInset={bottomInset} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
+            cardDisplay={cardDisplay} reserveHomeComposerSpace onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
         </View> : null}
         {view === 'existing' && activeSection.kind === 'daily' ? (
           <DailyPlannerScreen

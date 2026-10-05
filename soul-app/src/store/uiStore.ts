@@ -34,7 +34,7 @@ interface UIState {
   todayDate: string;
   /** 좌측 사이드바에서 선택된 항목 — 중앙 메인 패널의 내용을 결정. */
   activeSection: ActiveSection;
-  /** Nonpersistent middle-pane view choices and floating home composer coverage. */
+  /** Nonpersistent middle-pane choices and the shared phone/iPad home composer measurement. */
   mainPaneViews: Record<string, 'existing' | 'board'>;
   setMainPaneView: (key: string, view: 'existing' | 'board') => void;
   floatingComposerBottomInset: number;

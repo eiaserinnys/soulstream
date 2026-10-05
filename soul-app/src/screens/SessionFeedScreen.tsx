@@ -17,10 +17,10 @@ import { classifySessionFeed } from '../lib/session-feed-groups';
 import { useSessionStore } from '../store/sessionStore';
 import { useNodeConnectivityStore } from '../store/nodeConnectivityStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useUIStore } from '../store/uiStore';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../theme';
 import { usePlannerContextMenus } from '../hooks/usePlannerContextMenus';
 import { SessionSuccessionHost } from '../components/planner/SessionSuccessionHost';
+import { HomeComposerSpacer } from '../components/planner/HomeComposerSpacer';
 import { createSurfaceRoles } from '../theme/surfaceRoles';
 import { SESSION_FEED_VIRTUALIZATION } from '../lib/session-feed-virtualization';
 import { recordFeedCommit } from '../lib/session-diagnostics-api';
@@ -35,17 +35,18 @@ export function SessionFeedScreen({
   onOpenSession,
   topInsetPadding = false,
   reserveBottomSearchBarSpace = false,
+  reserveHomeComposerSpace = false,
 }: {
   active?: boolean;
   onOpenSession?: (sessionId: string) => void;
   topInsetPadding?: boolean;
   reserveBottomSearchBarSpace?: boolean;
+  reserveHomeComposerSpace?: boolean;
 }) {
   const renderStartedAtMs = monotonicRenderTime();
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
-  const bottomInset = useUIStore(state => state.floatingComposerBottomInset);
   const feedSessionIds = useSessionStore((state) => state.feedSessionIds);
   const catalogLoadState = useSessionStore((state) => state.catalogLoadState);
   const retryCatalog = useSessionStore((state) => state.retryCatalog);
@@ -160,13 +161,14 @@ export function SessionFeedScreen({
         contentContainerStyle={[
           styles.content,
           topInsetPadding && { paddingTop: insets.top + t.spacing.md },
-          { paddingBottom: (reserveBottomSearchBarSpace
-            ? insets.bottom + t.hitTarget.min + t.spacing.md : t.spacing.md) + bottomInset },
+          { paddingBottom: reserveBottomSearchBarSpace
+            ? insets.bottom + t.hitTarget.min + t.spacing.md : t.spacing.md },
         ]}
         renderItem={renderItem}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         ListEmptyComponent={renderEmpty}
+        ListFooterComponent={<HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="feed-home-composer-spacer" />}
       />
       <SessionSuccessionHost
         api={api}

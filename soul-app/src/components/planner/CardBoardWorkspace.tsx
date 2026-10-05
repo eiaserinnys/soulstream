@@ -23,8 +23,8 @@ export interface CardBoardWorkspaceHandle { openCreate(): void; openExpanded(): 
 
 /** Workspace owns scope and restore snapshots, including across native Modal remounts. */
 export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
-  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; bottomInset?: number; onExpandedClose?(): void;
-}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, bottomInset = 0, onExpandedClose }, ref) {
+  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; reserveHomeComposerSpace?: boolean; onExpandedClose?(): void;
+}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, reserveHomeComposerSpace = false, onExpandedClose }, ref) {
   const t = useTokens();
   const phone = useDeviceType() === 'phone';
   const { cards, loading, error, refresh } = useCardList(api, folderId);
@@ -60,7 +60,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   const closeExpanded = () => { setExpanded(null); onExpandedClose?.(); };
   const completedCount = completed.cards.length;
   const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
-    bottomInset={expandedBoard ? 0 : bottomInset}
+    reserveHomeComposerSpace={!expandedBoard && reserveHomeComposerSpace}
     includeCompleted={cardDisplay.includeCompleted} hideEmptyLanes={!expandedBoard} initialPosition={initialPosition}
     onPositionChange={(next) => { position.current = next; }}
     onOpen={(id, target) => {

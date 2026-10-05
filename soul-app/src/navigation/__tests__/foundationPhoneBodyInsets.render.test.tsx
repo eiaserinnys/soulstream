@@ -43,9 +43,11 @@ import { SettingsScreen } from '../../screens/SettingsScreen';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useNodeConnectivityStore } from '../../store/nodeConnectivityStore';
+import { useUIStore } from '../../store/uiStore';
 import type { Session } from '../../api/types';
 
 beforeEach(() => {
+  useUIStore.setState({ floatingComposerBottomInset: 0 });
   useSessionStore.setState({
     sessions: {},
     catalog: { folders: [], sessions: {} },
@@ -93,12 +95,14 @@ test('phone bodies use their approved insets without adding duplicate page title
 });
 
 test('phone feed는 하단 검색 필드가 보여도 마지막 카드를 가리지 않는 여백을 예약한다', () => {
+  useUIStore.setState({ floatingComposerBottomInset: 112 });
   const feed = render(<SessionFeedScreen reserveBottomSearchBarSpace />);
   const style = StyleSheet.flatten(
     feed.getByTestId('phone-feed-body').props.contentContainerStyle,
   );
 
   expect(style.paddingBottom).toBe(56);
+  expect(feed.queryByTestId('feed-home-composer-spacer')).toBeNull();
 
   feed.unmount();
   act(() => jest.runOnlyPendingTimers());

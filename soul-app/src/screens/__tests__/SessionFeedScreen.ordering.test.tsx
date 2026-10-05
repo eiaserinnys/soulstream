@@ -28,14 +28,19 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useUIStore } from '../../store/uiStore';
 import { StyleSheet } from 'react-native';
 
-test('floating coverage adds to the feed bottom padding and returns to baseline on hide', () => {
+test('phone feed reserves composer space only when explicitly enabled', () => {
   useUIStore.setState({ floatingComposerBottomInset: 0 });
   const screen = render(<SessionFeedScreen />);
   const baseline = StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom;
   act(() => { useUIStore.getState().setFloatingComposerBottomInset(112); });
-  expect(StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom).toBe(baseline + 112);
+  expect(StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom).toBe(baseline);
+  expect(screen.queryByTestId('feed-home-composer-spacer')).toBeNull();
+  screen.rerender(<SessionFeedScreen reserveHomeComposerSpace />);
+  expect(StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom).toBe(baseline);
+  expect(StyleSheet.flatten(screen.getByTestId('feed-home-composer-spacer')!.props.style)).toMatchObject({ height: 112, marginTop: -0 });
   act(() => { useUIStore.getState().setFloatingComposerBottomInset(0); });
   expect(StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom).toBe(baseline);
+  expect(screen.queryByTestId('feed-home-composer-spacer')).toBeNull();
 });
 
 const mockSessionCard = SessionCard as jest.Mock;

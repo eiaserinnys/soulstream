@@ -43,6 +43,7 @@ import { resolveTabletBottomSafeAreaPadding } from './tabletShellInsets';
 import { SessionSearchField } from '../search/SessionSearchField';
 import { useSearchStore } from '../../store/searchStore';
 import { recordUiUsageEvent } from '../../lib/ui-usage-events';
+import { HomeComposerSpacer } from '../planner/HomeComposerSpacer';
 
 interface Props {
   onItemSelected?: () => void;
@@ -67,7 +68,6 @@ export function SidebarPane({
   );
   const folders = useSessionStore((state) => state.catalog.folders);
   const activeSection = useUIStore((state) => state.activeSection);
-  const bottomInset = useUIStore(state => state.floatingComposerBottomInset);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
@@ -161,7 +161,7 @@ export function SidebarPane({
       ) : null}
       <FlatList
         testID="sidebar-main-list"
-        contentContainerStyle={{ paddingBottom: bottomInset }}
+        contentContainerStyle={{ paddingBottom: 0 }}
         style={styles.list}
         scrollEnabled={!starredDragging && !starred.reordering}
         data={treeRows.length > 0 ? ['project-tree'] : []}
@@ -266,6 +266,7 @@ export function SidebarPane({
             </View>
           </View>
         }
+        ListFooterComponent={<HomeComposerSpacer enabled precedingGap={0} testID="sidebar-home-composer-spacer" />}
       />
       <View
         testID="sidebar-settings-footer"
