@@ -45,6 +45,7 @@ export class TaskEngineEventPublisher {
     const eventType = (event as { type: string }).type;
 
     const sessionEffect = this.captureSessionId(task, event, eventType);
+    this.captureGenerationFirstCall(task, event, eventType);
     this.captureClaudeRuntimeState(task, event);
     this.captureCompactReinjectionNeed(task, eventType);
     this.captureRateLimitStopInfo(task, event, eventType);
@@ -98,6 +99,32 @@ export class TaskEngineEventPublisher {
         "session cost metadata persistence failed",
       );
     }
+  }
+
+  private captureGenerationFirstCall(
+    task: Task,
+    event: SSEEventPayload,
+    eventType: string,
+  ): void {
+    const active = task.activeGenerationRollover;
+    if (eventType !== "complete" || !active || active.firstCompleteObserved) return;
+    active.firstCompleteObserved = true;
+    const firstCall = (event as { first_call?: unknown }).first_call;
+    if (!firstCall || typeof firstCall !== "object" || Array.isArray(firstCall)) return;
+    const record = firstCall as Record<string, unknown>;
+    const inputTokens = record.input_tokens;
+    const cachedInputTokens = record.cached_input_tokens;
+    if (
+      typeof inputTokens !== "number"
+      || !Number.isFinite(inputTokens)
+      || inputTokens < 0
+      || typeof cachedInputTokens !== "number"
+      || !Number.isFinite(cachedInputTokens)
+      || cachedInputTokens < 0
+    ) {
+      return;
+    }
+    active.firstCall = { inputTokens, cachedInputTokens };
   }
 
   private captureCompactReinjectionNeed(task: Task, eventType: string): void {
@@ -178,6 +205,22 @@ export class TaskEngineEventPublisher {
       return {
         kind: "rotate_backend_session_id",
         expected_backend_session_id: rolloverFrom,
+        backend_session_id: sid,
+      };
+    }
+
+    const generationRolloverFrom = task.activeGenerationRollover?.fromBackendSessionId;
+    if (
+      generationRolloverFrom !== undefined
+      && task.codexThreadId === generationRolloverFrom
+    ) {
+      if (sid === generationRolloverFrom) {
+        throw new Error("Persistent generation rollover returned the previous session ID");
+      }
+      task.codexThreadId = sid;
+      return {
+        kind: "rotate_backend_session_id",
+        expected_backend_session_id: generationRolloverFrom,
         backend_session_id: sid,
       };
     }

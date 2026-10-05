@@ -1,3 +1,4 @@
+import type { Logger } from "pino";
 import type { AgentProfile } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -9,12 +10,17 @@ import { effectiveTaskBackend } from "./task_model_preset.js";
 import { isRuntimeFollowup, sortInterventionsByPriority } from "./task_intervention_queue.js";
 import { buildPersistentGenerationMetadataEntry } from "./task_metadata.js";
 
-import type { ActiveGenerationRollover, Task } from "./task_models.js";
+import type {
+  ActiveGenerationRollover,
+  PersistentGenerationRolloverFailure,
+  Task,
+} from "./task_models.js";
 
 export function beginGenerationRolloverIfPending(
   task: Task,
   agent: AgentProfile,
   modelCatalog?: Pick<ModelCatalog, "resolve">,
+  logger?: Pick<Logger, "warn">,
 ): ActiveGenerationRollover | undefined {
   const pending = task.persistentGeneration?.pending;
   if (!pending) return undefined;
@@ -36,17 +42,26 @@ export function beginGenerationRolloverIfPending(
   if (!active) {
     const fromBackendSessionId = pending.applyingFrom ?? task.codexThreadId;
     if (!fromBackendSessionId) return undefined;
+    const isResumedApplication = pending.applyingFrom !== undefined;
     active = {
       number: pending.number,
       reason: pending.reason,
       fromBackendSessionId,
-      previousModelPreset: task.modelPreset ?? null,
-      previousBackend: effectiveTaskBackend(task, agent),
+      previousModelPreset: isResumedApplication ? undefined : task.modelPreset ?? null,
+      previousBackend: isResumedApplication ? agent.backend : effectiveTaskBackend(task, agent),
+      previousModel: task.model ?? null,
+      previousReasoningEffort: task.reasoningEffort,
     };
     task.activeGenerationRollover = active;
   } else {
-    active.previousModelPreset ??= task.modelPreset ?? null;
-    active.previousBackend ??= effectiveTaskBackend(task, agent);
+    if (pending.applyingFrom === undefined) {
+      active.previousModelPreset ??= task.modelPreset ?? null;
+    }
+    active.previousBackend ??= pending.applyingFrom === undefined
+      ? effectiveTaskBackend(task, agent)
+      : agent.backend;
+    active.previousModel ??= task.model ?? null;
+    active.previousReasoningEffort ??= task.reasoningEffort;
   }
 
   if (!modelCatalog) {
@@ -59,12 +74,39 @@ export function beginGenerationRolloverIfPending(
   } catch (error) {
     if (!(error instanceof UnknownModelPresetError)) throw error;
     // A requested preset can disappear after P7 accepted it. Keep this execution
-    // on its current model; a later explicit request can choose an available one.
-    task.persistentGeneration = { ...task.persistentGeneration!, pending: undefined };
-    task.metadata = replacePersistentGenerationMetadata(
-      task,
-      buildPersistentGenerationMetadataEntry(task.persistentGeneration),
+    // on its current model and preserve the failure alongside the cleared request.
+    const failure: PersistentGenerationRolloverFailure = {
+      number: pending.number,
+      requestedAt: pending.requestedAt,
+      targetModelPreset: pending.targetModelPreset,
+      reason: "target_model_preset_unavailable",
+      failedAt: new Date().toISOString(),
+    };
+    logger?.warn(
+      {
+        sessionId: task.agentSessionId,
+        generation: failure.number,
+        targetModelPreset: failure.targetModelPreset,
+      },
+      "Persistent generation target preset is unavailable; continuing with the current generation",
     );
+    const nextState = { ...task.persistentGeneration!, pending: undefined };
+    const entry = buildPersistentGenerationMetadataEntry(nextState);
+    const value = entry.value as Record<string, unknown>;
+    entry.value = {
+      ...value,
+      last_failure: {
+        generation: failure.number,
+        requested_at: failure.requestedAt,
+        target_model_preset: failure.targetModelPreset,
+        reason: failure.reason,
+        failed_at: failure.failedAt,
+      },
+    };
+    task.persistentGeneration = nextState;
+    task.metadata = replacePersistentGenerationMetadata(task, entry);
+    task.activeGenerationRollover = undefined;
+    task.pendingPersistentGenerationRolloverFailure = failure;
     return undefined;
   }
 
@@ -79,6 +121,34 @@ export function beginGenerationRolloverIfPending(
   task.reasoningEffort = reasoningEffort;
   task.claudeContextUsage = undefined;
   return active;
+}
+
+export async function persistUnavailablePresetFailure(
+  task: Task,
+  persistence: EventPersistence,
+): Promise<void> {
+  const failure = task.pendingPersistentGenerationRolloverFailure;
+  if (!failure) return;
+  let entry: Record<string, unknown> | undefined;
+  for (let index = (task.metadata?.length ?? 0) - 1; index >= 0; index -= 1) {
+    const candidate = task.metadata?.[index];
+    if (candidate?.type === "persistent_generation") {
+      entry = candidate;
+      break;
+    }
+  }
+  if (!entry) throw new Error("Persistent generation failure metadata is missing");
+  const eventId = await persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
+    replaceExistingType: "persistent_generation",
+    waitForAck: true,
+    semanticDedupeKey:
+      `generation_failure:${task.agentSessionId}:${failure.number}:${failure.requestedAt}`,
+    ...(task.executionRegistration
+      ? { registrationId: task.executionRegistration.registrationId }
+      : {}),
+  });
+  if (eventId !== null) task.lastEventId = eventId;
+  task.pendingPersistentGenerationRolloverFailure = undefined;
 }
 
 export async function commitStart(
@@ -113,7 +183,10 @@ export async function commitStart(
   if (metadataEventId !== null) task.lastEventId = metadataEventId;
 
   const selectionChanged =
-    active.previousModelPreset !== task.modelPreset
+    (active.previousModelPreset !== undefined
+      && active.previousModelPreset !== task.modelPreset)
+    || (active.previousModel !== undefined && active.previousModel !== task.model)
+    || active.previousReasoningEffort !== task.reasoningEffort
     || pending.targetModelPreset !== task.modelPreset
     || pending.targetReasoningEffort !== task.reasoningEffort;
   if (selectionChanged) {

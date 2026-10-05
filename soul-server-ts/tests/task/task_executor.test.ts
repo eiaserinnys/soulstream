@@ -5682,6 +5682,333 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
   });
 });
 
+describe("TaskExecutor persistent generation rollover", () => {
+  it("starts the queued input in a new backend session and stores the generation record in order", async () => {
+    const mocks = makeMocks();
+    const checkpointStats = {
+      estimatedTokens: 321,
+      chars: 987,
+      sections: { state: 111, story: 222, summaries: 333, recent: 321 },
+      summarizedThroughTurn: 4,
+      recentFromEventId: 10,
+      recentToEventId: 12,
+    };
+    const contextBuilder = {
+      buildGenerationContext: vi.fn(async () => ({
+        effectiveSystemPrompt: "generation system instructions",
+        combinedContextItems: [
+          { key: "persistent_checkpoint", label: "Checkpoint", content: "checkpoint data" },
+        ],
+        assembledPrompt: "unused task prompt",
+        checkpointStats,
+      })),
+    };
+    const modelCatalog = {
+      resolve: vi.fn((id: string) => {
+        if (id !== "codex-target") throw new UnknownModelPresetError(id);
+        return {
+          id,
+          label: "Codex target",
+          backend: "codex" as const,
+          model: "codex-model-target",
+          env: { CODEX_PROFILE: "target" },
+          supported_efforts: ["high" as const],
+        };
+      }),
+    };
+    const sessionMutations = { setModelSelection: vi.fn().mockResolvedValue(undefined) };
+    let capturedParams: EngineExecuteParams | undefined;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedParams = params;
+        yield { type: "session", session_id: "native-new" } as SSEEventPayload;
+        yield {
+          type: "complete",
+          usage: {},
+          timestamp: 1,
+          first_call: { input_tokens: 246708, cached_input_tokens: 245563 },
+        } as unknown as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const engineFactory = vi.fn((_profile: AgentProfile, backend?: string) => engine);
+    const executor = new TaskExecutor(
+      engineFactory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      contextBuilder as unknown as ConstructorParameters<typeof TaskExecutor>[5],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      modelCatalog as unknown as ConstructorParameters<typeof TaskExecutor>[10],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      sessionMutations,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.persistent = true;
+    task.codexThreadId = "native-old";
+    task.modelPreset = "claude-source";
+    task.model = "claude-model-source";
+    task.modelPresetBackend = "claude";
+    task.modelPresetEnv = { CLAUDE_PROFILE: "source" };
+    task.persistentGeneration = {
+      number: 1,
+      backendSessionId: "native-old",
+      pending: {
+        number: 2,
+        reason: "context limit",
+        requestedAt: "2026-10-05T00:00:00.000Z",
+        targetModelPreset: "codex-target",
+        targetReasoningEffort: "high",
+      },
+    };
+    task.interventionQueue.push({
+      text: "continue from checkpoint",
+      deliveryId: "generation-delivery-1",
+      runnerInterventionId: "runner-generation-1",
+      user: "u",
+    });
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(engineFactory.mock.calls[0]?.[1]).toBe("codex");
+    expect(sessionMutations.setModelSelection).toHaveBeenCalledTimes(1);
+    expect(sessionMutations.setModelSelection).toHaveBeenCalledWith(
+      task.agentSessionId,
+      {
+        modelPreset: "codex-target",
+        model: "codex-model-target",
+        reasoningEffort: "high",
+      },
+      `persistent_generation_model_selection:${task.agentSessionId}:2`,
+    );
+    expect(capturedParams).toMatchObject({
+      prompt: expect.stringContaining("checkpoint data"),
+      backendSessionRolloverFrom: "native-old",
+      model: "codex-model-target",
+      reasoningEffort: "high",
+      inputUuid: expect.any(String),
+      runnerInterventionId: "runner-generation-1",
+    });
+    expect(capturedParams).not.toHaveProperty("resumeSessionId");
+    expect(capturedParams?.prompt).toContain("continue from checkpoint");
+    expect(capturedParams?.prompt).toContain("generation system instructions");
+    expect(capturedParams).not.toHaveProperty("systemPrompt");
+
+    const stored = mocks.persistEvent.mock.calls.map((call) => call[1] as Record<string, unknown>);
+    const generationEvents = stored.filter((event) =>
+      event.type === "generation_started"
+      || event.type === "session"
+      || (event.type === "metadata" && event.metadata_type === "persistent_generation"),
+    );
+    expect(generationEvents.map((event) =>
+      event.type === "metadata" ? `metadata:${event.metadata_type}` : event.type,
+    )).toEqual([
+      "metadata:persistent_generation",
+      "generation_started",
+      "session",
+      "metadata:persistent_generation",
+    ]);
+    expect(mocks.persistEvent.mock.calls[2]?.[2]).toEqual({
+      kind: "rotate_backend_session_id",
+      expected_backend_session_id: "native-old",
+      backend_session_id: "native-new",
+    });
+    expect(task.persistentGeneration).toMatchObject({
+      number: 2,
+      backendSessionId: "native-new",
+      firstCall: {
+        generation: 2,
+        inputTokens: 246708,
+        cachedInputTokens: 245563,
+        modelPreset: "codex-target",
+        model: "codex-model-target",
+      },
+    });
+  });
+
+  it("keeps exact legacy engine arguments when a non-persistent task has a pending generation", async () => {
+    const run = async (withPendingGeneration: boolean) => {
+      const mocks = makeMocks();
+      let capturedParams: EngineExecuteParams | undefined;
+      const engine: EnginePort = {
+        backendId: "codex",
+        workspaceDir: "/tmp/codex-default",
+        async *execute(params): AsyncIterable<SSEEventPayload> {
+          capturedParams = params;
+          yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+        },
+        async interrupt() { return true; },
+        async close() {},
+      };
+      const modelCatalog = { resolve: vi.fn() };
+      const executor = new TaskExecutor(
+        () => engine,
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        modelCatalog as unknown as ConstructorParameters<typeof TaskExecutor>[10],
+      );
+      const task = makeTask();
+      task.codexThreadId = "native-old";
+      task.modelPreset = "codex-current";
+      task.model = "codex-model-current";
+      task.modelPresetBackend = "codex";
+      task.persistent = false;
+      if (withPendingGeneration) {
+        task.persistentGeneration = {
+          number: 1,
+          pending: {
+            number: 2,
+            reason: "context limit",
+            requestedAt: "2026-10-05T00:00:00.000Z",
+            targetModelPreset: "codex-target",
+          },
+        };
+      }
+      task.interventionQueue.push({ text: "same follow-up", user: "u" });
+      executor.startNewExecution(task, agent);
+      await task.executionPromise;
+      return { capturedParams, modelCatalog };
+    };
+
+    const ordinary = await run(false);
+    const pending = await run(true);
+
+    expect(pending.capturedParams).toEqual(ordinary.capturedParams);
+    expect(pending.modelCatalog.resolve).not.toHaveBeenCalled();
+  });
+
+  it("resumes a hydrated applying generation with the same separator dedupe key", async () => {
+    const mocks = makeMocks();
+    const checkpointStats = {
+      estimatedTokens: 321,
+      chars: 987,
+      sections: { state: 111, story: 222, summaries: 333, recent: 321 },
+      summarizedThroughTurn: 4,
+      recentFromEventId: 10,
+      recentToEventId: 12,
+    };
+    const contextBuilder = {
+      buildGenerationContext: vi.fn(async () => ({
+        effectiveSystemPrompt: "generation system instructions",
+        combinedContextItems: [{
+          key: "persistent_checkpoint",
+          label: "Checkpoint",
+          content: "checkpoint data",
+        }],
+        assembledPrompt: "unused task prompt",
+        checkpointStats,
+      })),
+    };
+    const modelCatalog = {
+      resolve: vi.fn(() => ({
+        id: "codex-target",
+        label: "Codex target",
+        backend: "codex" as const,
+        model: "codex-model-target",
+        env: { CODEX_PROFILE: "target" },
+        supported_efforts: ["high" as const],
+      })),
+    };
+    let capturedParams: EngineExecuteParams | undefined;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedParams = params;
+        yield { type: "session", session_id: "native-new" } as SSEEventPayload;
+        yield {
+          type: "complete",
+          usage: {},
+          timestamp: 1,
+          first_call: { input_tokens: 246708, cached_input_tokens: 245563 },
+        } as unknown as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const sessionMutations = { setModelSelection: vi.fn().mockResolvedValue(undefined) };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      contextBuilder as unknown as ConstructorParameters<typeof TaskExecutor>[5],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      modelCatalog as unknown as ConstructorParameters<typeof TaskExecutor>[10],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      sessionMutations,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.persistent = true;
+    task.codexThreadId = "native-old";
+    task.modelPreset = "codex-target";
+    task.model = "codex-model-target";
+    task.modelPresetBackend = "codex";
+    task.modelPresetEnv = { CODEX_PROFILE: "target" };
+    task.reasoningEffort = "high";
+    task.persistentGeneration = {
+      number: 1,
+      backendSessionId: "native-old",
+      pending: {
+        number: 2,
+        reason: "context limit",
+        requestedAt: "2026-10-05T00:00:00.000Z",
+        targetModelPreset: "codex-target",
+        targetReasoningEffort: "high",
+        applyingFrom: "native-old",
+      },
+    };
+    task.interventionQueue.push({ text: "continue from checkpoint", user: "u" });
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(capturedParams).toMatchObject({
+      backendSessionRolloverFrom: "native-old",
+      model: "codex-model-target",
+    });
+    expect(capturedParams).not.toHaveProperty("resumeSessionId");
+    expect(sessionMutations.setModelSelection).not.toHaveBeenCalled();
+    const stored = mocks.persistEvent.mock.calls.map((call) => call[1] as Record<string, unknown>);
+    const started = stored.find((event) => event.type === "generation_started");
+    expect(started?._dedupe_key).toBe(
+      `generation_started:${task.agentSessionId}:2`,
+    );
+    expect(task.persistentGeneration).toMatchObject({
+      number: 2,
+      backendSessionId: "native-new",
+      firstCall: { generation: 2, inputTokens: 246708, cachedInputTokens: 245563 },
+    });
+  });
+});
+
 // Phase B parity — system_prompt SDK 옵션 분기 + agents.yaml 도구 권한 옵션 forward
 describe("TaskExecutor backend-specific first-turn composition (Phase B parity)", () => {
   function makeFakeContextBuilder(

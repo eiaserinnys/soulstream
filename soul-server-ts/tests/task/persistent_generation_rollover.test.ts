@@ -6,6 +6,7 @@ import {
   beginGenerationRolloverIfPending,
   commitStart,
   complete,
+  persistUnavailablePresetFailure,
   publishStarted,
 } from "../../src/task/persistent_generation_rollover.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
@@ -74,7 +75,7 @@ describe("beginGenerationRolloverIfPending", () => {
 
     const rollover = beginGenerationRolloverIfPending(task, agent, catalog);
 
-    expect(rollover).toEqual({
+    expect(rollover).toMatchObject({
       number: 2,
       reason: "context limit",
       fromBackendSessionId: "native-old",
@@ -130,6 +131,107 @@ describe("beginGenerationRolloverIfPending", () => {
 
     expect(rollover?.fromBackendSessionId).toBe("native-old");
     expect(task.modelPresetBackend).toBe("codex");
+  });
+
+  it("reuses the same separator dedupe key after hydrating an applying generation", async () => {
+    const task = makeTask({
+      modelPreset: "codex-new",
+      model: "codex-model-new",
+      modelPresetBackend: "codex",
+      persistentGeneration: {
+        number: 1,
+        pending: {
+          number: 2,
+          reason: "context limit",
+          requestedAt: "2026-10-05T00:00:00.000Z",
+          targetModelPreset: "codex-new",
+          targetReasoningEffort: "high",
+          applyingFrom: "native-old",
+        },
+      },
+    });
+    beginGenerationRolloverIfPending(task, agent, makeCatalog());
+    const checkpoint: PersistentCheckpointStats = {
+      estimatedTokens: 321,
+      chars: 987,
+      sections: { state: 111, story: 222, summaries: 333, recent: 321 },
+      summarizedThroughTurn: 4,
+      recentFromEventId: 10,
+      recentToEventId: 12,
+    };
+    const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+      record: {} as never,
+      eventId: 26,
+    }));
+
+    await publishStarted(
+      task,
+      checkpoint,
+      { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence,
+    );
+    await publishStarted(
+      task,
+      checkpoint,
+      { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence,
+    );
+
+    const keys = enqueueEventAndWaitForSessionAck.mock.calls.map((call) => {
+      const event = call[1] as unknown as Record<string, unknown>;
+      return event._dedupe_key;
+    });
+    expect(task.activeGenerationRollover?.fromBackendSessionId).toBe("native-old");
+    expect(keys).toEqual([
+      "generation_started:session-1:2",
+      "generation_started:session-1:2",
+    ]);
+  });
+
+  it("clears and records a target preset that disappeared after the request", async () => {
+    const task = makeTask({
+      persistentGeneration: {
+        number: 1,
+        pending: {
+          number: 2,
+          reason: "context limit",
+          requestedAt: "2026-10-05T00:00:00.000Z",
+          targetModelPreset: "removed-preset",
+        },
+      },
+    });
+    const warn = vi.fn();
+
+    const rollover = beginGenerationRolloverIfPending(task, agent, makeCatalog(), { warn });
+
+    expect(rollover).toBeUndefined();
+    expect(task.modelPreset).toBe("claude-old");
+    expect(task.persistentGeneration?.pending).toBeUndefined();
+    expect(task.activeGenerationRollover).toBeUndefined();
+    expect(task.metadata?.at(-1)?.value).toMatchObject({
+      last_failure: {
+        generation: 2,
+        requested_at: "2026-10-05T00:00:00.000Z",
+        target_model_preset: "removed-preset",
+        reason: "target_model_preset_unavailable",
+      },
+    });
+    expect(warn).toHaveBeenCalledOnce();
+
+    const enqueueMetadataEffect = vi.fn(async () => 28);
+    await persistUnavailablePresetFailure(
+      task,
+      { enqueueMetadataEffect } as unknown as EventPersistence,
+    );
+    expect(enqueueMetadataEffect).toHaveBeenCalledWith(
+      "session-1",
+      task.metadata?.at(-1),
+      expect.objectContaining({
+        replaceExistingType: "persistent_generation",
+        waitForAck: true,
+        semanticDedupeKey: "generation_failure:session-1:2:2026-10-05T00:00:00.000Z",
+      }),
+    );
+    expect(task.pendingPersistentGenerationRolloverFailure).toBeUndefined();
+    expect(task.lastEventId).toBe(28);
   });
 
   it("records applying metadata before the idempotent model selection update", async () => {

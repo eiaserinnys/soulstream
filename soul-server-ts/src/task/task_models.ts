@@ -89,10 +89,21 @@ export interface ActiveGenerationRollover {
   fromBackendSessionId: string;
   previousModelPreset?: string | null;
   previousBackend?: BackendId;
+  previousModel?: string | null;
+  previousReasoningEffort?: ReasoningEffort;
+  firstCompleteObserved?: boolean;
   firstCall?: {
     inputTokens: number;
     cachedInputTokens: number;
   };
+}
+
+export interface PersistentGenerationRolloverFailure {
+  number: number;
+  requestedAt: string;
+  targetModelPreset: string;
+  reason: "target_model_preset_unavailable";
+  failedAt: string;
 }
 
 export type SessionCreationWarning = SessionBindingWarning;
@@ -438,6 +449,8 @@ export interface Task {
   persistentGeneration?: PersistentGenerationState;
   /** Runtime marker for a generation rollover whose native ID may still rotate. */
   activeGenerationRollover?: ActiveGenerationRollover;
+  /** Failure detail awaiting its durable metadata write before the legacy turn starts. */
+  pendingPersistentGenerationRolloverFailure?: PersistentGenerationRolloverFailure;
 
   /** OpenAI Agents SDK serialized RunState restored from sessions.metadata. */
   agentsRunState?: string;

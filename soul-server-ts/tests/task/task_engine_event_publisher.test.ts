@@ -176,6 +176,94 @@ describe("TaskEngineEventPublisher", () => {
     expect(task.lastEventId).toBe(7);
   });
 
+  it("rotates the active generation native session id", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({
+      codexThreadId: "native-old",
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context limit",
+        fromBackendSessionId: "native-old",
+        previousBackend: "claude",
+      },
+    });
+
+    await publisher.publishEngineEvent(task, {
+      type: "session",
+      session_id: "native-new",
+    } as SSEEventPayload);
+
+    expect(task.codexThreadId).toBe("native-new");
+    expect(deps.enqueueEvent).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session", session_id: "native-new" }),
+      {
+        kind: "rotate_backend_session_id",
+        expected_backend_session_id: "native-old",
+        backend_session_id: "native-new",
+      },
+      "registration:sess-1",
+    );
+  });
+
+  it("captures first_call only from the first complete of an active generation", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context limit",
+        fromBackendSessionId: "native-old",
+        previousBackend: "claude",
+      },
+    });
+
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      first_call: { input_tokens: 246708, cached_input_tokens: 245563 },
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      first_call: { input_tokens: 8, cached_input_tokens: 4 },
+    } as unknown as SSEEventPayload);
+
+    expect(task.activeGenerationRollover?.firstCall).toEqual({
+      inputTokens: 246708,
+      cachedInputTokens: 245563,
+    });
+  });
+
+  it("ignores invalid and non-generation first_call values", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const ordinaryTask = makeTask();
+    const activeTask = makeTask({
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context limit",
+        fromBackendSessionId: "native-old",
+      },
+    });
+
+    await publisher.publishEngineEvent(ordinaryTask, {
+      type: "complete",
+      first_call: { input_tokens: 5, cached_input_tokens: 3 },
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(activeTask, {
+      type: "complete",
+      first_call: { input_tokens: Number.NaN, cached_input_tokens: 3 },
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(activeTask, {
+      type: "complete",
+      first_call: { input_tokens: 5, cached_input_tokens: 3 },
+    } as unknown as SSEEventPayload);
+
+    expect(ordinaryTask.activeGenerationRollover).toBeUndefined();
+    expect(activeTask.activeGenerationRollover?.firstCall).toBeUndefined();
+    expect(activeTask.activeGenerationRollover?.firstCompleteObserved).toBe(true);
+  });
+
   it("persists the backend session id as an atomic ingress effect", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);

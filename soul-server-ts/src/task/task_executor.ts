@@ -30,6 +30,7 @@ import type {
 import { makeContextUsagePayload } from "../engine/context_usage.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import {
@@ -88,6 +89,13 @@ import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
 } from "./task_model_preset.js";
+import {
+  beginGenerationRolloverIfPending,
+  commitStart as commitGenerationStart,
+  complete as completeGenerationRollover,
+  persistUnavailablePresetFailure,
+  publishStarted as publishGenerationStarted,
+} from "./persistent_generation_rollover.js";
 import {
   isCompleteRunnerExecutionIdentity,
   type RunnerTerminalFact,
@@ -200,6 +208,7 @@ export class TaskExecutor {
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly queuedTerminalResume?: (task: Task) => void | Promise<void>,
     private readonly worktreeResolver?: WorktreeExecutionResolver,
+    private readonly sessionMutations?: Pick<SessionMutationHost, "setModelSelection">,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -479,6 +488,7 @@ export class TaskExecutor {
         "Persisted model preset is unavailable; using the profile backend",
       );
     }
+    beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
     const backend = effectiveTaskBackend(task, agent);
     return { backend, retainedRunner };
   }
@@ -958,7 +968,24 @@ export class TaskExecutor {
     runner: TaskRunnerRuntime,
     agent: AgentProfile,
   ): Promise<void> {
+    await persistUnavailablePresetFailure(task, this.persistence);
+    if (task.activeGenerationRollover) {
+      if (!this.sessionMutations) {
+        throw new Error("Session mutation host is required for persistent generation rollover");
+      }
+      await commitGenerationStart(task, this.persistence, this.sessionMutations);
+    }
     const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
+    if (initialTurnInput.generationRollover) {
+      if (!initialTurnInput.generationCheckpointStats) {
+        throw new Error("Generation rollover input is missing checkpoint statistics");
+      }
+      await publishGenerationStarted(
+        task,
+        initialTurnInput.generationCheckpointStats,
+        this.persistence,
+      );
+    }
     const terminalTurnReceipts: TaskDeliveryTurnReceipt[] = [];
     try {
       await this.consumeTurnLoop(
@@ -1001,8 +1028,9 @@ export class TaskExecutor {
           task.pendingClaudeBackendRolloverFrom,
         );
       }
-      const rolloverCycleFromForTurn = task.claudeBackendRolloverCycleFrom
-        ?? turnInput.backendSessionRolloverFrom;
+      const rolloverCycleFromForTurn = turnInput.generationRollover
+        ? undefined
+        : task.claudeBackendRolloverCycleFrom ?? turnInput.backendSessionRolloverFrom;
       const contextRecovery = createClaudeContextRecoveryObservation();
       let currentTurnInterventions = turnInput.interventions ?? [];
       const compactedBeforeTurn = await this.compactClaudeContextIfNeeded(
@@ -1159,6 +1187,9 @@ export class TaskExecutor {
           rolloverCycleFromForTurn,
           task.codexThreadId,
         );
+      }
+      if (turnInput.generationRollover) {
+        await completeGenerationRollover(task, this.persistence);
       }
       if (
         contextRecovery.preemptiveCompactNeeded
