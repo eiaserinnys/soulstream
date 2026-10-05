@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { mcpToolDefinitions, recurringJobTools, LIVE_CARD_RESOURCE, errorResult } from "@soulstream/mcp-contract";
+import { mcpToolDefinitions, recurringJobTools, LIVE_CARD_RESOURCE, errorResult, callWithReferenceTranslation } from "@soulstream/mcp-contract";
+import { isFolderAllowed, normalizeAccess } from "../folders/folder_route_access.js";
 import { widgetHtml } from "../../../plugins/chatgpt-card-renderer/src/widget-html.js";
 import { executeMcpTool } from "./tool_executor.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
@@ -14,6 +15,15 @@ export function guardExternalToolCall(name: string, args: unknown) {
   return undefined;
 }
 
+/** Card numbers resolve only inside the folders this credential may see; any other card answers as "no such number". */
+async function resolveReferencesForExternal(options: McpHostOptions, refs: string[]) {
+  const [service, access, folders] = await Promise.all([
+    options.cards.cardServiceProvider!(), options.cards.resolveAccess(), options.cards.provider.listFolders(),
+  ]);
+  const normalized = normalizeAccess(access);
+  return service.resolveReferences(refs, folderId => isFolderAllowed(normalized, folders, folderId));
+}
+
 export function buildExternalMcpServer(options: McpHostOptions, context: McpCallContext) {
   const server = new McpServer({ name: "soul-server-ts", version: "0.0.1" });
   for (const definition of mcpToolDefinitions) {
@@ -23,7 +33,8 @@ export function buildExternalMcpServer(options: McpHostOptions, context: McpCall
     const config = definition.name in recurringJobTools
       ? { ...definition.config, inputSchema: Object.fromEntries(Object.entries(inputSchema).filter(([key]) => key !== "caller_session_id")) }
       : externalInputSchema ? { ...definition.config, inputSchema: externalInputSchema } : definition.config;
-    server.registerTool(definition.name, config, args => executeMcpTool(options, definition.name, args, context));
+    server.registerTool(definition.name, config, args => callWithReferenceTranslation(args, refs => resolveReferencesForExternal(options, refs),
+      translated => executeMcpTool(options, definition.name, translated, context)));
   }
   server.registerResource("soulstream-live-cards", LIVE_CARD_RESOURCE, {}, async () => ({ contents: [{
     uri: LIVE_CARD_RESOURCE, mimeType: "text/html;profile=mcp-app", text: widgetHtml,
