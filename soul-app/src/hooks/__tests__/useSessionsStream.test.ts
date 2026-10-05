@@ -204,6 +204,88 @@ test('in-flight updates are coalesced into one lookup and the latest display sta
   expect(useSessionStore.getState().feedSessionIds).toContain('pending');
 });
 
+test.each([false, true])(
+  'an in-flight completion patch wins over the hydrated running row (cached=%s)',
+  async (cached) => {
+    const sessionId = 'pending-completion';
+    if (cached) {
+      useSessionStore.getState().mergeSessions([
+        session(sessionId, { status: 'completed', reviewState: 'acknowledged' }) as any,
+      ]);
+    }
+
+    let resolveResponse!: (response: Response) => void;
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+    mountWithEmptySnapshot();
+
+    emit('session_updated', { agent_session_id: sessionId, status: 'running' }, '101');
+    emit('session_updated', {
+      agent_session_id: sessionId,
+      status: 'completed',
+      review_state: 'acknowledged',
+    }, '102');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveResponse(jsonResponse({ sessions: [session(sessionId, { status: 'running' })] }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(useSessionStore.getState().sessions[sessionId]).toMatchObject({
+      status: 'completed',
+      reviewState: 'acknowledged',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  },
+);
+
+test('attention set and clear deltas received during hydration apply in order', async () => {
+  const sessionId = 'pending-attention-clear';
+  const attentionId = 'input_request:req-8';
+  let resolveResponse!: (response: Response) => void;
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+  mountWithEmptySnapshot();
+  const attention = {
+    id: attentionId,
+    sourceEventId: 1002,
+    sessionId,
+    kind: 'input_request',
+    requestedAt: '2026-10-02T00:00:01Z',
+    title: '입력 요청',
+    body: '확인할까요?',
+    requiresDetail: false,
+  };
+
+  emit('session_updated', {
+    agent_session_id: sessionId,
+    attention_revision: 1002,
+    pending_attentions_delta: {
+      [attentionId]: { revision: 1002, value: attention },
+    },
+  }, '101');
+  emit('session_updated', {
+    agent_session_id: sessionId,
+    attention_revision: 1003,
+    pending_attentions_delta: {
+      [attentionId]: { revision: 1003, value: null },
+    },
+  }, '102');
+
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    resolveResponse(jsonResponse({ sessions: [session(sessionId, {
+      attentionRevision: 1001,
+      pendingAttentions: [],
+    })] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(useSessionStore.getState().sessions[sessionId].pendingAttentions).toEqual([]);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 test('a valid response-needed patch hydrates one row and applies its attention delta', async () => {
   const fullRow = session('attention', {
     attentionRevision: 1001,

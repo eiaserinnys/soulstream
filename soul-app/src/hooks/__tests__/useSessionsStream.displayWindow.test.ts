@@ -3,6 +3,7 @@ import { useSessionStore } from '../../store/sessionStore';
 import { useSessionsStream } from '../useSessionsStream';
 
 const mockUseSSEStream = jest.fn();
+const originalFetch = global.fetch;
 
 jest.mock('../useSSEStream', () => ({
   CATALOG_STREAM_EVENTS: ['stream_meta', 'session_list', 'session_updated', 'folder_updated'],
@@ -69,6 +70,10 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  global.fetch = originalFetch;
+});
+
 test('new start consumes one 30-row stream snapshot and makes no listing GET', async () => {
   const fetchMock = jest.fn().mockResolvedValue(response({ folders: [], sessions: [] }));
   global.fetch = fetchMock;
@@ -114,5 +119,39 @@ test('folder_updated does not fetch session or folder listings', async () => {
 
   expect(fetchMock).not.toHaveBeenCalled();
   expect(useSessionStore.getState().feedSessionIds).toHaveLength(30);
+  hook.unmount();
+});
+
+test('a pre-snapshot stream error retries only the stream and an empty snapshot becomes ready', async () => {
+  const fetchMock = jest.fn();
+  global.fetch = fetchMock;
+  const hook = renderHook(() => useSessionsStream());
+  await act(async () => {});
+  const firstOptions = mockUseSSEStream.mock.calls.at(-1)?.[0] as {
+    connectionKey: string;
+    onError: (error: unknown) => void;
+  };
+
+  act(() => firstOptions.onError(new Error('stream unavailable')));
+  expect(useSessionStore.getState().catalogLoadState).toBe('error');
+
+  act(() => useSessionStore.getState().retryCatalog());
+  const retryOptions = mockUseSSEStream.mock.calls.at(-1)?.[0] as {
+    connectionKey: string;
+    onEvent: (type: string, data: unknown, id?: string) => void;
+  };
+  expect(retryOptions.connectionKey).not.toBe(firstOptions.connectionKey);
+  expect(fetchMock).not.toHaveBeenCalled();
+
+  act(() => {
+    retryOptions.onEvent('stream_meta', { latest_id: 0, instance_id: 'node-a' }, '0');
+    retryOptions.onEvent('session_list', {
+      folders: [], sessions: [], total: 0, hasMore: false, nextCursor: null,
+    }, '0');
+  });
+
+  expect(useSessionStore.getState().catalogLoadState).toBe('ready');
+  expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+  expect(fetchMock).not.toHaveBeenCalled();
   hook.unmount();
 });
