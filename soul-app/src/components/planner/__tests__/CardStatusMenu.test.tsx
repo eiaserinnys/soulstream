@@ -1,7 +1,7 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { Alert, Modal } from 'react-native';
 import { CardStatusMenu } from '../CardStatusMenu';
 import { cardFixture } from '../../../test-support/cards';
 import { createCardColorReviewClient } from '../../../component-review/fixture-client';
@@ -51,6 +51,40 @@ test('취소는 한 번 표시하고 실행 없이 취소 상태만 저장한다
   await act(async () => fireEvent.press(screen.getByLabelText('취소로 이동')));
   expect(api.setCardStatus).toHaveBeenCalledTimes(1);
   expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'cancelled', 3, expect.any(String), undefined);
+  expect(api.executeCard).not.toHaveBeenCalled();
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
+test('context 색상 진입은 저장된 색을 표시하고 뒤로는 부모 메뉴 복귀만 요청한다', async () => {
+  const fixture = createCardColorReviewClient('success');
+  const close = jest.fn(); const back = jest.fn(); const dismissed = jest.fn();
+  const screen = render(<CardStatusMenu api={fixture.api} card={fixture.card} entry="color" visible onClose={close}
+    onBack={back} onDismiss={dismissed} />);
+
+  await waitFor(() => expect(screen.getByTestId('card-color-option-blue').props.accessibilityState).toMatchObject({ selected: true }));
+  expect(screen.queryByLabelText('카드 색상: 하늘')).toBeNull();
+  expect(screen.UNSAFE_getByType(Modal).props.onDismiss).toBe(dismissed);
+  await act(async () => fireEvent.press(screen.getByTestId('card-color-back')));
+
+  expect(back).toHaveBeenCalledTimes(1);
+  expect(close).not.toHaveBeenCalled();
+  expect(fixture.calls).toHaveLength(0);
+});
+
+test('컨텍스트에서 선택한 상태는 숨겨진 상태 진입으로 최신 카드에 한 번만 저장한다', async () => {
+  const card = cardFixture({ status: 'todo', version: 12 });
+  const api = {
+    getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }),
+    setCardStatus: jest.fn().mockResolvedValue({ folderId: card.folderId, card: { ...card, status: 'queued', version: 13 } }),
+    executeCard: jest.fn(),
+  };
+  const close = jest.fn();
+  const screen = render(<CardStatusMenu api={api as any} card={card} entry="status" visible={false}
+    requestedStatus="queued" onClose={close} />);
+
+  await waitFor(() => expect(api.setCardStatus).toHaveBeenCalledTimes(1));
+  expect(screen.queryByTestId('card-status-menu')).toBeNull();
+  expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'queued', 12, expect.stringMatching(/^soul-app-card-/), undefined);
   expect(api.executeCard).not.toHaveBeenCalled();
   expect(close).toHaveBeenCalledTimes(1);
 });

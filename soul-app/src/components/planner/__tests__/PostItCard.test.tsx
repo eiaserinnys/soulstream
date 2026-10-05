@@ -1,7 +1,9 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('../../menus/AppContextMenu', () => ({ showAppContextMenu: jest.fn() }));
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
+import { showAppContextMenu } from '../../menus/AppContextMenu';
 import { CARD_COLORS } from '../../../../../packages/wire-schema/src/card_colors';
 import { cardFixture } from '../../../test-support/cards';
 import { PostItCard, postItRotation } from '../PostItCard';
@@ -54,6 +56,41 @@ test('포스트잇 mount는 상세를 읽지 않고 카드 탭은 기존 상세�
   expect(getCard).not.toHaveBeenCalled();
   fireEvent.press(screen.getByLabelText('카드 제목 카드 상세'));
   expect(onOpen).toHaveBeenCalledTimes(1);
+});
+
+test('상태 칩은 담당 상세와 분리된 선택 버튼이고 우하단 메뉴 버튼은 없다', async () => {
+  const card = cardFixture({ status: 'todo' });
+  const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }) };
+  const screen = render(<PostItCard api={api as any} card={card} variant="compact" onOpen={() => {}} />);
+
+  expect(screen.queryByLabelText(`${card.title} 상태 메뉴`)).toBeNull();
+  expect(screen.getByLabelText('상태 변경')).toBeTruthy();
+  expect(screen.getByLabelText(`${card.title} 담당 상세`)).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('상태 변경'));
+  await waitFor(() => expect(screen.getByLabelText('대기로 이동')).toBeTruthy());
+  expect(api.getCard).toHaveBeenCalledTimes(1);
+  expect(showAppContextMenu).not.toHaveBeenCalled();
+});
+
+test('직접 표시되는 카드는 눌러 홀드한 뒤 놓으면 복사·색상·7개 상태 메뉴를 연다', async () => {
+  const card = cardFixture({ status: 'todo' });
+  const api = { getCard: jest.fn(), updateCard: jest.fn(), setCardStatus: jest.fn(), executeCard: jest.fn() };
+  const screen = render(<PostItCard api={api as any} card={card} variant="compact" onOpen={() => {}} />);
+  const holdSurface = screen.getByTestId(`postit-card-hold-${card.id}`);
+
+  fireEvent(holdSurface, 'pressIn');
+  fireEvent(holdSurface, 'longPress');
+  fireEvent(holdSurface, 'pressOut');
+  await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+  const actions = (showAppContextMenu as jest.Mock).mock.calls[0][0];
+  expect(actions.map((action: { label: string }) => action.label)).toEqual([
+    '카드 ID 복사', '카드 색상 변경', '드래프트', '대기', '실행 중', '막힘', '검수 대기', '완료', '취소',
+  ]);
+  expect(api.getCard).not.toHaveBeenCalled();
+  expect(api.updateCard).not.toHaveBeenCalled();
+  expect(api.setCardStatus).not.toHaveBeenCalled();
+  expect(api.executeCard).not.toHaveBeenCalled();
 });
 
 test('ID 기울기는 기존 웹과 같은5개이며 HTML보고는 실행하지 않고 본문 텍스트만 표시한다', () => {

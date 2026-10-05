@@ -33,6 +33,7 @@ type AppModalSurfaceCommonProps = {
   visible: boolean;
   modalId: ModalDiagnosticSource;
   onRequestClose(): void;
+  onDismiss?: ModalProps['onDismiss'];
   children: React.ReactNode;
   animationType?: ModalProps['animationType'];
   surfaceTestID?: string;
@@ -73,6 +74,7 @@ export function AppModalSurface({
   modalId,
   variant,
   onRequestClose,
+  onDismiss,
   children,
   animationType = 'slide',
   presentationStyle,
@@ -99,6 +101,7 @@ export function AppModalSurface({
       presentationStyle={presentation.presentationStyle}
       supportedOrientations={SUPPORTED_MODAL_ORIENTATIONS}
       onRequestClose={onRequestClose}
+      onDismiss={onDismiss}
     >
       <View
         testID="app-modal-viewport"

@@ -8,7 +8,6 @@ import { PostItCard } from './PostItCard';
 import { createPostItRoles } from '../../theme/postItRoles';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { BoardDragCard, type BoardDragEvent } from './BoardDragCard';
-import { CardStatusMenu } from './CardStatusMenu';
 import { useBoardPointerPan } from './useBoardPointerPan';
 import { useCardTransition } from '../../hooks/useCardTransition';
 import type { CompletedBrowser } from '../../hooks/useCompletedCards';
@@ -115,7 +114,6 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const [drag, setDrag] = useState<{ card: CardDto; event: BoardDragEvent; grabX: number; grabY: number } | null>(null);
   const dragRef = useRef(drag); dragRef.current = drag;
   const edgeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [menu, setMenu] = useState<{ card: CardDto; } | null>(null);
   useEffect(()=>{
     if (completedResetKey.current === completed?.resetKey) return;
     completedResetKey.current = completed?.resetKey;
@@ -179,7 +177,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
         const items = active.filter((card) => card.status === status);
         const renderItem=(card:CardDto)=><BoardDragCard api={api} card={card}
           dragging={drag?.card.id === card.id} onOpen={(target)=>{if(pan.canPress()){if(target===undefined)onOpen(card.id);else onOpen(card.id,target);}}}
-          onMenu={()=>{if(pan.canPress())setMenu({card});}} onStart={event=>start(card,event)}
+          canPress={pan.canPress} onStart={event=>start(card,event)}
           onMove={event=>{if(dragRef.current){const value={...dragRef.current,event};dragRef.current=value;setDrag(value);}}}
           onDrop={event=>drop(card,event)} onFinish={finish}/>;
         return <View key={status} testID={`card-board-column-${status}`} style={{ width: geometry.lanes[laneIndex].width, flexShrink: 0, gap: t.uiSpacing.sm }}>
@@ -207,7 +205,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
                 if (!pan.canPress()) return;
                 if (target === undefined) onOpen(card.id);
                 else onOpen(card.id, target);
-              }} onMenu={() => { if (pan.canPress()) setMenu({ card }); }}
+              }} canPress={pan.canPress}
               onStart={(event) => start(card, event)} onMove={(event) => { if (dragRef.current) { const value = { ...dragRef.current, event }; dragRef.current = value; setDrag(value); } }}
               onDrop={(event) => drop(card, event)} onFinish={finish} />)
               : <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>}
@@ -219,6 +217,5 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       left: drag.event.absoluteX - drag.grabX - frame.x, top: drag.event.absoluteY - drag.grabY - frame.y }}>
       <PostItCard api={null} card={drag.card} variant="compact" onOpen={() => {}} />
     </View> : null}
-    {menu ? <CardStatusMenu api={api} card={menu.card} onClose={() => setMenu(null)} /> : null}
   </View>;
 }
