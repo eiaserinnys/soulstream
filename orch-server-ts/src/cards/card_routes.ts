@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { allowed } from "./card_route_body.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
@@ -14,6 +15,7 @@ const mutations:readonly ["POST" | "PATCH",string,CardOperation][]=[
   ["POST","/api/cards/:id/status","set_card_status"],["POST","/api/cards/:id/move","move_card"],
   ["POST","/api/cards/:id/queue-position","reorder_card_queue"],["POST","/api/cards/:id/reports","add_card_report"],
   ["POST","/api/cards/:id/comments","add_card_comment"],
+  ["POST","/api/cards/:id/items/:itemId/confirm","confirm_card_item"],
   ["POST","/api/cards/:id/questions","ask_card_question"],
   ["POST","/api/cards/:id/questions/:qid/answer","answer_card_question"],
 ];
@@ -24,6 +26,8 @@ export const cardRouteAuthRequirements:Record<string,boolean>=Object.fromEntries
 ]);
 export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOptions) {
   const mutation=z.object({expectedVersion:z.number().int().positive(),idempotencyKey:z.string().min(1)}).strict();
+  const confirmBody=z.object({confirmed:z.boolean(),idempotencyKey:z.string().min(1).optional()}).strict();
+  const confirmItemId=z.string().regex(/^[1-9][0-9]*$/).transform(Number).refine(Number.isSafeInteger);
   const settings=mutation.extend({folderId:z.string().min(1),nodeId:z.string().nullable(),agentId:z.string().nullable(),modelPreset:z.string().nullable()});
   for(const operation of ['execute','execution','execution-settings'] as const){
     app.route<{Params:{id:string};Querystring:{requestId?:string}}>({method:operation==='execution'?'GET':'POST',url:`/api/cards/:id/${operation}`,handler:async(request,reply)=>{
@@ -59,10 +63,14 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
     });
   }
   for (const [method, url, operation] of mutations) {
-    app.route<{ Params: { id?: string; qid?: string } }>({ method, url, handler: async (request, reply) => {
+    app.route<{ Params: { id?: string; qid?: string; itemId?: string } }>({ method, url, handler: async (request, reply) => {
       try {
+        const confirm=operation === "confirm_card_item";
+        const parsedConfirm=confirm ? confirmBody.parse(request.body) : undefined;
+        const body=confirm ? { ...parsedConfirm!,idempotencyKey:parsedConfirm!.idempotencyKey ?? randomUUID() } : request.body;
+        const itemId=confirm ? confirmItemId.parse(request.params.itemId) : undefined;
         const result = await mutateCardRouteBody(options, operation, request.params.id,
-          request.body, () => options.accessProvider.resolveAccess(request), () => cardActor(request, options), request.params.qid);
+          body, () => options.accessProvider.resolveAccess(request), () => cardActor(request, options), request.params.qid, itemId);
         return reply.code(result.status).send(result.body);
       } catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
     } });

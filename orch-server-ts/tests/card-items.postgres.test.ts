@@ -1,6 +1,8 @@
+import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
+import { registerCardRoutes } from "../src/cards/card_routes.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { appendCardEventTx } from "./card-work-postgres-fixture.js";
 
@@ -133,6 +135,29 @@ describe("card check-item locked mutations", () => {
     expect(cardUpdated).toHaveBeenCalledTimes(2);
   });
 
+  it("confirms and unconfirms through the user REST path without a version token",async()=>{
+    const cardId=await makeCard();
+    await cards.setCardItems({...assignee,cardId,items:["확인 결과"]});
+    const app=Fastify();
+    registerCardRoutes(app,{provider:{listFolders:()=>[{id:"items"}],listSessionAssignments:()=>({})},
+      accessProvider:{resolveAccess:()=>({restricted:false})},resolveDashboardUserId:()=>"director",
+      cardServiceProvider:async()=>cards,authBearerToken:"service",environment:"test"});
+    try{
+      const agentConfirm=await app.inject({method:"POST",url:`/api/cards/${cardId}/items/1/confirm`,
+        headers:{authorization:"Bearer service","x-soulstream-agent-session-id":"owner"},payload:{confirmed:true}});
+      expect(agentConfirm.statusCode).toBe(403);
+      const extraField=await app.inject({method:"POST",url:`/api/cards/${cardId}/items/1/confirm`,payload:{confirmed:true,expectedVersion:2}});
+      expect(extraField.statusCode).not.toBe(200);
+      for(const confirmed of [true,false,true]){
+        const response=await app.inject({method:"POST",url:`/api/cards/${cardId}/items/1/confirm`,payload:{confirmed}});
+        expect(response.statusCode,response.body).toBe(200);
+        expect(response.json().card.items[0]).toMatchObject({confirmed:confirmed?expect.objectContaining({rev:0}):null,
+          display:confirmed?"confirmed":"todo"});
+      }
+      expect((await cards.getCard(cardId))!.card.status).toBe("todo");
+    }finally{await app.close();}
+  });
+
   it("keeps old report writes and rejects them only for cards with check items", async () => {
     const oldCardId = await makeCard("옛 카드", "other");
     await expect(cards.addReport({ actorKind: "agent", actorSessionId: "other", cardId: oldCardId, title: "보고", format: "markdown", body: "기존 보고" }))
@@ -164,5 +189,34 @@ describe("card check-item locked mutations", () => {
     expect((await cards.getCard(newCardId))!.card.version).toBe(versionBeforeNote);
     await expect(cards.addCardNote({ ...assignee, cardId: newCardId, text: "한".repeat(4001) }))
       .rejects.toMatchObject({ statusCode: 422, message: "note.text은 4000자까지입니다. 지금 4001자입니다" });
+  });
+
+  it("paginates notes newest-first and exposes only explicit situation-board updates in history",async()=>{
+    const cardId=await makeCard();
+    for(let index=0;index<22;index++)
+      await cards.addCardNote({...assignee,cardId,text:`내부 노트 ${index+1}`,idempotencyKey:key()});
+    await cards.updateCardNow({...assignee,cardId,now:"첫 상황",turn:"agent",idempotencyKey:key()});
+    await cards.askQuestion({...assignee,cardId,text:"사용자 판단 질문",idempotencyKey:key()});
+    await cards.updateCardNow({...assignee,cardId,now:"다음 상황",turn:"user",ask:"새 화면을 확인해 주세요",idempotencyKey:key()});
+    const first=await cards.listCardNotes({...assignee,cardId,limit:20});
+    expect(first.notes).toHaveLength(20);
+    expect(first.notes[0]).toMatchObject({body:"내부 노트 22"});
+    expect(first.notes.at(-1)).toMatchObject({body:"내부 노트 3"});
+    expect(first.nextCursor).toBe(first.notes.at(-1)!.id);
+    const second=await cards.listCardNotes({...assignee,cardId,limit:20,before:first.nextCursor!});
+    expect(second.notes).toMatchObject([{body:"내부 노트 2"},{body:"내부 노트 1"}]);
+    expect(second.nextCursor).toBeNull();
+    await expect(cards.listCardNotes({...assignee,cardId,before:"other-card-note"}))
+      .rejects.toMatchObject({statusCode:422,message:"이 카드의 노트 커서를 지정하세요"});
+    const detail=(await cards.getCard(cardId))!;
+    expect(detail.comments).toHaveLength(0);
+    expect(detail.notes).toHaveLength(22);
+    expect(detail.nowHistory).toHaveLength(2);
+    expect(detail.nowHistory.map(entry=>entry.text)).toEqual(["첫 상황","다음 상황"]);
+    const serialized=(await import("../src/cards/card_operations.js")).serializeCardDetail(detail);
+    expect(serialized.reports).toEqual([]);
+    expect(serialized.card).toMatchObject({items:[],now:{text:"다음 상황"}});
+    expect(serialized.notes[0]).toMatchObject({itemId:null,body:"내부 노트 1"});
+    expect(serialized.nowHistory[0]).toMatchObject({text:"첫 상황",turn:"agent",ask:null,at:expect.any(String)});
   });
 });

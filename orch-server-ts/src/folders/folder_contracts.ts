@@ -1,10 +1,18 @@
 import type { CardMutationResult, FolderRow, FolderSnapshot } from "../cards/control_plane/card_types.js";
+import { getCardItemDisplay, type CardItem } from "../cards/card_item_rules.js";
 
 /** Row keys change at the boundary. Opaque JSON content is preserved. */
 export function serializeCardRow(row: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(row).map(([key,value])=>[
+  const serialized=Object.fromEntries(Object.entries(row).map(([key,value])=>[
     key.replace(/_([a-z])/g,(_match,letter:string)=>letter.toUpperCase()),value instanceof Date ? value.toISOString() : value,
   ]));
+  if (Array.isArray(row.items)) {
+    serialized.items=row.items.map(item=>({
+      ...(item as Record<string,unknown>),
+      display:getCardItemDisplay(item as CardItem),
+    }));
+  }
+  return serialized;
 }
 export function serializeFolder(row:FolderRow) { return serializeCardRow(row); }
 export interface FolderOutlinePageOptions {

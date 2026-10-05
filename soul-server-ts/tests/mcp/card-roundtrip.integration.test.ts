@@ -121,6 +121,39 @@ describe("card orchestrator MCP roundtrip", () => {
     if (_label === "create duplicate assignee") expect(JSON.stringify(next)).toContain("card-1");
     if (name === "ask_card_question" && !fails) expect(next.structuredContent).toHaveProperty("guidance", "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
   });
+  it("roundtrips the check-item tools, user comment target, notes, and situation history",async()=>{
+    await seed();
+    const set=await call("set_card_items",{card_id:"card-1",items:[{title:"가입 화면 확인"}]},context);
+    expect(set.isError).not.toBe(true);
+    expect(set.structuredContent).toMatchObject({card:{items:[{id:1,title:"가입 화면 확인",display:"todo"}]}});
+    const report=await call("report_card_item",{card_id:"card-1",item_id:1,state:"done",result:"가입 뒤 다음 화면이 열립니다",
+      evidence:[{type:"link",url:"https://example.test/join",label:"가입 화면"}]},context);
+    expect(report.isError).not.toBe(true);
+    expect(report.structuredContent).toMatchObject({card:{items:[{id:1,state:"done",display:"reported"}]}});
+    const added=await call("add_card_item",{card_id:"card-1",title:"안내 문구 확인",from_comment_id:"seed-comment"},context);
+    expect(added.isError).not.toBe(true);
+    expect(added.structuredContent).toMatchObject({card:{items:[{}, {id:2,title:"안내 문구 확인",from:{commentId:"seed-comment",kind:"spoken"}}]}});
+    const comment=await call("add_card_comment",{card_id:"card-1",text:"안내 문구를 고쳐 주세요",mode:"spoken",item_id:2},context);
+    expect(comment.isError).not.toBe(true);
+    expect(comment.structuredContent).toMatchObject({itemId:2,kind:"spoken",body:"안내 문구를 고쳐 주세요"});
+    const now=await call("update_card_now",{card_id:"card-1",now:"수정 화면 확인을 기다립니다",turn:"user",ask:"수정 화면을 확인해 주세요"},context);
+    expect(now.isError).not.toBe(true);
+    const note=await call("add_card_note",{card_id:"card-1",text:"화면 주소와 구현 기록"},context);
+    expect(note.isError).not.toBe(true);
+    const notes=await call("list_card_notes",{card_id:"card-1",limit:20},context);
+    expect(notes.isError).not.toBe(true);
+    expect(notes.structuredContent).toMatchObject({notes:[{kind:"note",body:"화면 주소와 구현 기록"}],nextCursor:null});
+    const review=await call("request_card_review",{card_id:"card-1",ask:"가입과 수정 화면을 확인해 주세요"},context);
+    expect(review.isError).not.toBe(true);
+    const detail=await call("get_card",{card_id:"card-1"},context);
+    expect(detail.isError).not.toBe(true);
+    expect(detail.structuredContent).toMatchObject({
+      card:{items:[{id:1,display:"reported"},{id:2,display:"fix",fixOpen:1}],now:{text:"수정 화면 확인을 기다립니다",turn:"user"}},
+      comments:[expect.objectContaining({id:"seed-comment"}),expect.objectContaining({itemId:2,body:"안내 문구를 고쳐 주세요"})],
+      reports:[expect.objectContaining({title:"기존 보고"})],notes:[expect.objectContaining({kind:"note",body:"화면 주소와 구현 기록"})],
+      nowHistory:[expect.objectContaining({text:"수정 화면 확인을 기다립니다",turn:"user",ask:"수정 화면을 확인해 주세요"})],
+    });
+  });
   it("supports handoff by a new internal session after the prior assignee stops", async () => {
     await seed();
     await h.sql`UPDATE sessions SET status='interrupted',execution_registration_id=NULL,execution_command_id=NULL
@@ -186,6 +219,12 @@ const randomIdPaths: Record<string, readonly string[]> = {
   update_card_brief: ["operation.id", "operation.idempotencyKey"],
   // Reports/questions UUIDs (card_control_plane_service.ts:109,137) are stored but absent from mutation result.
   add_card_report: ["operation.id", "operation.idempotencyKey"],
+  set_card_items: ["operation.id","operation.idempotencyKey"],
+  add_card_item: ["operation.id","operation.idempotencyKey"],
+  report_card_item: ["operation.id","operation.idempotencyKey"],
+  update_card_now: ["operation.id","operation.idempotencyKey"],
+  add_card_note: ["id"],
+  list_card_notes: ["notes.0.id"],
   // card_control_plane_service.ts:120,131; response is the stored comment, not the audit envelope.
   add_card_comment: ["id"],
   set_card_status: ["operation.id"],

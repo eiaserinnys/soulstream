@@ -55,10 +55,21 @@ export class CardControlPlaneService {
   async getCard(cardId: string) {
     const card=await this.repo.getCard(cardId);
     if (!card) return null;
-    const [reports,questions,comments,sessions]=await Promise.all([this.repo.listReports(cardId),this.repo.listQuestions(cardId),this.repo.listComments(cardId),this.repo.listSessions(cardId)]);
-    return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions };
+    const [reports,questions,comments,sessions,notes,nowHistory]=await Promise.all([
+      this.repo.listReports(cardId),this.repo.listQuestions(cardId),this.repo.listComments(cardId),this.repo.listSessions(cardId),
+      this.repo.listAllCardNotes(cardId),this.repo.listCardNowHistory(cardId),
+    ]);
+    return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions,notes,nowHistory };
   }
   listReports(cardId: string) { return this.repo.listReports(cardId); }
+  async listCardNotes(params:CardMutationParams & {limit?:number;before?:string}) {
+    const card=await this.repo.getCard(params.cardId);
+    if (!card) throw Object.assign(new Error("Card not found"),{statusCode:404});
+    assertAssignedCardSession(card,params);
+    const limit=params.limit ?? 20;
+    if (!Number.isInteger(limit) || limit<1 || limit>100) throw invalid("limit은 1에서 100 사이여야 합니다");
+    return this.repo.listCardNotes(params.cardId,limit,params.before);
+  }
   setFolderStatus(params: FolderActorParams & { folderId: string; expectedVersion: number; status: FolderStatus; reason?: string | null; idempotencyKey?: string | null }) {
     return this.core.setFolderStatus(params);
   }
@@ -176,12 +187,12 @@ export class CardControlPlaneService {
       await this.patch(sql,card,{items:sql.json(items)},params,eventId);
     },false);
   }
-  async updateCardNow(params: CardMutationParams & { text: string; turn: CardNowTurn; ask?: string }) {
+  async updateCardNow(params: CardMutationParams & { now: string; turn: CardNowTurn; ask?: string }) {
     const existing=params.idempotencyKey ? await this.repo.getOperationByIdempotencyKey(params.idempotencyKey) : null;
     const previous=existing?.operation_type === "update_card_now" && existing.target_kind === "card" && existing.target_id === params.cardId
       ? existing.payload_json : null;
     const at=typeof previous?.updatedAt === "string" ? previous.updatedAt : new Date().toISOString();
-    const now=makeCardNow({text:params.text,turn:params.turn,...(params.ask===undefined?{}:{ask:params.ask})},at,params.actorSessionId);
+    const now=makeCardNow({text:params.now,turn:params.turn,...(params.ask===undefined?{}:{ask:params.ask})},at,params.actorSessionId);
     return this.mutateCard(params,"update_card_now",now as unknown as Record<string,unknown>,async(sql,card,eventId)=>{
       assertAssignedCardSession(card,params);
       await this.patch(sql,card,{now:sql.json(now)},params,eventId);

@@ -1,6 +1,6 @@
 [
   {
-    "description": "담당 세션이 카드에 커멘트를 남긴다. mode=spoken(기본)은 사용자 발언 요약만 사용자가 말한 것처럼 기록하며 첫 줄에 정확히 \"아래는 사용자의 발언을 요약하여 옮긴 것입니다\"라고 표기한다. mode=reply는 담당 세션 자신의 답변만 에이전트 신원으로 기록한다. 두 내용을 엄밀하게 구분한다. 본문은 자동 변경하지 않으며 카드 상태도 바꾸지 않는다.",
+    "description": "spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 \"아래는 사용자의 발언을 요약하여 옮긴 것입니다\"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -13,6 +13,11 @@
         "card_id": {
           "minLength": 1,
           "type": "string"
+        },
+        "item_id": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
         },
         "mode": {
           "enum": [
@@ -35,7 +40,67 @@
     "name": "add_card_comment"
   },
   {
-    "description": "카드에 보고를 추가하며 보고를 고칠 때는 새 보고를 올린다.",
+    "description": "사용자가 새로 말한 결과를 담당 카드에 더합니다. from_comment_id에 이 카드의 사용자 커멘트나 발언 기록 ID를 넣으세요. 확인하지 않은 항목이 여섯이면 사용자의 확인을 기다립니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "from_comment_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "title",
+        "from_comment_id"
+      ],
+      "type": "object"
+    },
+    "name": "add_card_item"
+  },
+  {
+    "description": "담당 카드의 진행·기술 세부를 노트에 기록합니다. 식별자와 자세한 로그는 여기에 쓰세요. 사용자에게 답하는 글과 항목의 결과는 각 도구에 씁니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "add_card_note"
+  },
+  {
+    "description": "확인 항목이 없는 옛 카드에 보고를 추가합니다. 확인 항목이 있는 카드의 결과는 report_card_item에 답니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2297,7 +2362,7 @@
     "name": "get_backlinks"
   },
   {
-    "description": "카드 본문과 보고, 질문, 커멘트, 연결된 세션 목록을 조회한다.",
+    "description": "카드의 요청, 확인 항목, 상황판, 커멘트, 보고, 질문과 세션을 읽습니다. 노트는 최근 20건이며 앞선 노트는 list_card_notes로 읽습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2737,6 +2802,38 @@
       "type": "object"
     },
     "name": "list_agents_config_snapshots"
+  },
+  {
+    "description": "담당 카드의 작업 노트를 최신순으로 읽습니다. 다음 목록은 before에 직전 목록의 nextCursor를 넣어 읽으세요.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "before": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "card_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_card_notes"
   },
   {
     "description": "폴더와 상태로 카드를 조회하고 folder_id가 없으면 모든 폴더를 조회한다.",
@@ -5533,13 +5630,91 @@
     "name": "rename_folder"
   },
   {
-    "description": "카드 상태를 검수 대기로 변경한다. 보고와 미답 질문은 상태 변경을 막지 않는다.",
+    "description": "담당 항목을 doing, done, dropped로 알립니다. 끝나거나 빼면 result에 결과나 까닭 한 줄을 쓰고 evidence에 캡처·링크를 답니다. 사용자가 확인한 항목을 고칠 때는 reopen_reason이 필요합니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "caveat": {
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "image",
+                  "link"
+                ],
+                "type": "string"
+              },
+              "url": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "url",
+              "label"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "item_id": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "reopen_reason": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "doing",
+            "done",
+            "dropped"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "item_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "name": "report_card_item"
+  },
+  {
+    "description": "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "ask": {
+          "type": "string"
+        },
         "caller_session_id": {
           "type": "string"
         },
@@ -6016,6 +6191,46 @@
       "type": "object"
     },
     "name": "set_agent_mcp_profile"
+  },
+  {
+    "description": "담당 카드의 요청을 사용자가 확인할 결과 1~6개로 처음 나눕니다. 항목 하나는 화면이나 결과물을 보고 한 번에 됐다고 말할 결과입니다. 순서·PR·검증 절차는 항목이 아닙니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "card_id",
+        "items"
+      ],
+      "type": "object"
+    },
+    "name": "set_card_items"
   },
   {
     "description": "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다.",
@@ -7447,7 +7662,7 @@
     "name": "update_board_item_position"
   },
   {
-    "description": "카드의 해석된 요구사항과 진행 경과를 갱신한다.",
+    "description": "다음 세션이 이어받을 담당 카드의 인계 요약을 고쳐 씁니다. 진행의 자세한 기록은 add_card_note에 씁니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -7472,6 +7687,45 @@
       "type": "object"
     },
     "name": "update_card_brief"
+  },
+  {
+    "description": "담당 카드의 지금 한 줄과 누구 차례인지를 고쳐 씁니다. turn=user면 ask에 사용자가 볼 것을 적으세요. 턴을 끝내기 전에 현재와 맞춥니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "ask": {
+          "type": "string"
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "now": {
+          "type": "string"
+        },
+        "turn": {
+          "enum": [
+            "agent",
+            "user",
+            "outside"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "now",
+        "turn"
+      ],
+      "type": "object"
+    },
+    "name": "update_card_now"
   },
   {
     "description": "관리자 전용 중앙 카드 배정 정책을 CAS version으로 저장한다. 후보 배열 순서가 모델 우선순위이며 사용량은 원천 관측 5분 이내여야 한다. 저장 폴더 null은 첫 판단 직전 서버가 생성한다. 기존 설정 version을 먼저 조회한다.",

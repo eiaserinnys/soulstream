@@ -80,7 +80,7 @@ describe("page MCP execution", () => {
 const attachments = [{ nodeId: "node", path: "/incoming/upload/image.png", name: "image.png", mimeType: "image/png" }];
 function cardHarness() {
   const card = { id: "card-1", folder_id: "folder-1", title: "카드", status: "running", version: 3, attachments };
-  const detail = { card, reports: [{ title: "보고" }], questions: [], comments: [{ body: "지시 요점", kind: "spoken" }], sessions: [] };
+  const detail = { card, reports: [{ title: "보고" }], questions: [], comments: [{ body: "지시 요점", kind: "spoken" }], sessions: [],notes:[],nowHistory:[] };
   const mutation = { snapshot: { folder: { id: "folder-1" }, cards: [card] },
     operation: { id: "op-1", target_kind: "card", target_id: "card-1" } };
   const createdMutation = { ...mutation, snapshot: { ...mutation.snapshot, cards: [{ ...card, status: "todo" }] } };
@@ -89,6 +89,10 @@ function cardHarness() {
     projectCards: vi.fn(async rows => rows), createCard: vi.fn().mockResolvedValue(createdMutation),
     patchCard: vi.fn().mockResolvedValue(mutation), addReport: vi.fn().mockResolvedValue(mutation),
     addComment: vi.fn().mockResolvedValue({ body: "그대로 보존" }), setCardStatus: vi.fn().mockResolvedValue(mutation),
+    requestCardReview:vi.fn().mockResolvedValue(mutation),setCardItems:vi.fn().mockResolvedValue(mutation),
+    addCardItem:vi.fn().mockResolvedValue(mutation),reportCardItem:vi.fn().mockResolvedValue(mutation),
+    updateCardNow:vi.fn().mockResolvedValue(mutation),addCardNote:vi.fn().mockResolvedValue({id:"note-1",kind:"note"}),
+    listCardNotes:vi.fn().mockResolvedValue({notes:[{id:"note-1",kind:"note"}],nextCursor:null}),
     askQuestion: vi.fn().mockResolvedValue(mutation), moveCard: vi.fn().mockResolvedValue(mutation),
   };
   const provider = vi.fn(async () => service);
@@ -114,10 +118,15 @@ describe("card MCP execution", () => {
       ["update_card_brief", { card_id: "card-1", brief: "경과" }, "patchCard", { brief: "경과", expectedVersion: 3 }],
       ["add_card_report", { card_id: "card-1", title: "보고", format: "html", body: "<p>결과</p>" }, "addReport",
         { title: "보고", format: "html", body: "<p>결과</p>" }],
-      ["add_card_comment", { card_id: "card-1", text: "회의에서 받은 요청" }, "addComment", { body: "회의에서 받은 요청", mode: "spoken" }],
+      ["add_card_comment", { card_id: "card-1", text: "회의에서 받은 요청" }, "addComment", { body: "회의에서 받은 요청" }],
       ["set_card_status", { card_id: "card-1", status: "done", expected_version: 3, idempotency_key: "status-write" }, "setCardStatus",
         { status: "done", expectedVersion: 3, idempotencyKey: "status-write" }],
-      ["request_card_review", { card_id: "card-1" }, "setCardStatus", { status: "review", expectedVersion: 3 }],
+      ["request_card_review", { card_id: "card-1" }, "requestCardReview", {}],
+      ["set_card_items",{card_id:"card-1",items:[{title:"화면 결과"}]},"setCardItems",{items:["화면 결과"]}],
+      ["add_card_item",{card_id:"card-1",title:"후속 결과",from_comment_id:"comment-1"},"addCardItem",{title:"후속 결과",fromCommentId:"comment-1"}],
+      ["report_card_item",{card_id:"card-1",item_id:1,state:"done",result:"완료",evidence:[{type:"link",url:"https://example.test",label:"화면"}]},"reportCardItem",{itemId:1,state:"done",result:"완료",evidence:[{type:"link",url:"https://example.test",label:"화면"}]}],
+      ["update_card_now",{card_id:"card-1",now:"결과 반영 중",turn:"agent"},"updateCardNow",{now:"결과 반영 중",turn:"agent"}],
+      ["add_card_note",{card_id:"card-1",text:"상세 기록"},"addCardNote",{text:"상세 기록"}],
       ["ask_card_question", { card_id: "card-1", text: "질문", options: ["하나", "둘"] }, "askQuestion", { text: "질문", options: ["하나", "둘"] }],
       ["move_card", { card_id: "card-1", folder_id: "folder-2", after_card_id: "card-2" }, "moveCard",
         { folderId: "folder-2", afterCardId: "card-2", expectedVersion: 3 }],
@@ -137,7 +146,7 @@ describe("card MCP execution", () => {
   });
   it("runs a card through the execution service and waits for registration evidence", async () => {
     const h = cardHarness();
-    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
     const result = await call(h.options, "run_card", { card_id: "card-1", caller_session_id: "session-1" });
     expect(result.isError).not.toBe(true);
     expect(h.executor.execute).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "agent", actorSessionId: "session-1", cardId: "card-1", expectedVersion: 3 }));
@@ -146,7 +155,7 @@ describe("card MCP execution", () => {
   });
   it("runs a card for an external principal as a sessionless LLM actor", async () => {
     const h = cardHarness();
-    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
     const result = await call(h.options, "run_card", { card_id: "card-1" }, { ...context, principal: "external", callerSessionId: null });
     expect(result.isError).not.toBe(true);
     expect(h.executor.execute).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "llm", actorSessionId: null, cardId: "card-1", expectedVersion: 3 }));
@@ -155,7 +164,7 @@ describe("card MCP execution", () => {
   });
   it("runs a new card from create_card in the same call and excludes run from the mutation body", async () => {
     const h = cardHarness();
-    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
     const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true, caller_session_id: "session-1" });
     expect(result.isError).not.toBe(true);
     expect(h.service.createCard).toHaveBeenCalledWith(expect.objectContaining({ folderId: "folder-1", title: "제목", actorKind: "agent" }));
@@ -166,7 +175,7 @@ describe("card MCP execution", () => {
   it("uses the serialized operation target when create_card replay has no card snapshot", async () => {
     const h = cardHarness();
     h.service.createCard.mockResolvedValueOnce({ ...h.createdMutation, snapshot: { ...h.createdMutation.snapshot, cards: [] }, idempotent: true });
-    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
     const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true,
       idempotency_key: "create-replay", caller_session_id: "session-1" });
     expect(result.isError).not.toBe(true);
@@ -181,7 +190,7 @@ describe("card MCP execution", () => {
   });
   it("includes the created card ID when create_card execution fails", async () => {
     const h = cardHarness();
-    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
     h.executor.execute.mockRejectedValue(new Error("실행 설정이 없습니다."));
     const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true, caller_session_id: "session-1" });
     expect(result.isError).toBe(true);
@@ -190,7 +199,7 @@ describe("card MCP execution", () => {
   });
   it("creates and executes a card for an external principal as a sessionless LLM actor", async () => {
     const h = cardHarness();
-    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
     const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true },
       { ...context, principal: "external", callerSessionId: null });
     expect(result.isError).not.toBe(true);
@@ -209,6 +218,19 @@ describe("card MCP execution", () => {
     expect((await call(h.options, "add_card_comment", { card_id: "card-1", text: "답변", mode: "invalid" })).isError).toBe(true);
     expect(h.service.addComment).toHaveBeenCalledTimes(2);
   });
+  it("reads notes through the assigned-session service and returns the cursor envelope",async()=>{
+    const h=cardHarness();
+    const result=await call(h.options,"list_card_notes",{card_id:"card-1",limit:10,before:"note-cursor",caller_session_id:"session-1"});
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({notes:[{id:"note-1",kind:"note"}],nextCursor:null});
+    expect(h.service.listCardNotes).toHaveBeenCalledWith(expect.objectContaining({cardId:"card-1",limit:10,before:"note-cursor",actorKind:"agent",actorSessionId:"session-1"}));
+  });
+  it("rejects the new internal check-item tools for external principals",async()=>{
+    const h=cardHarness();
+    const result=await call(h.options,"set_card_items",{card_id:"card-1",items:[{title:"결과"}]},{...context,principal:"external",callerSessionId:null});
+    expect(result.isError).toBe(true);
+    expect(h.service.setCardItems).not.toHaveBeenCalled();
+  });
   it.each(["add_card_comment", "set_card_status"] as const)("rejects %s session impersonation before service execution", async name => {
     const h = cardHarness();
     const args = name === "add_card_comment" ? { text: "답변", mode: "reply" }
@@ -220,7 +242,7 @@ describe("card MCP execution", () => {
   });
   it("returns a server conflict without hiding it", async () => {
     const h = cardHarness();
-    h.service.setCardStatus.mockRejectedValue(Object.assign(new Error("낡은 카드 버전"), { statusCode: 409 }));
+    h.service.requestCardReview.mockRejectedValue(Object.assign(new Error("낡은 카드 버전"), { statusCode: 409 }));
     const result = await call(h.options, "request_card_review", { card_id: "card-1" });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).toContain("낡은 카드 버전");

@@ -60,7 +60,36 @@ export class CardRepositoryRead {
     return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_questions WHERE card_id=${cardId} ORDER BY asked_at,id`;
   }
   async listComments(cardId: string) {
-    return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} ORDER BY created_at,id`;
+    return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND kind<>'note' ORDER BY created_at,id`;
+  }
+  async listCardNotes(cardId: string, limit=20, before?:string) {
+    const cursor=before === undefined ? null : (await this.sql<{id:string;created_at:Date}[]>`
+      SELECT id,created_at FROM card_comments WHERE card_id=${cardId} AND id=${before} AND kind='note'
+    `)[0] ?? null;
+    if (before !== undefined && !cursor)
+      throw Object.assign(new Error("이 카드의 노트 커서를 지정하세요"),{statusCode:422,code:"INVALID_CARD_REQUEST"});
+    const rows=await this.sql<Record<string,unknown>[]>`SELECT * FROM card_comments
+      WHERE card_id=${cardId} AND kind='note'
+        AND (${cursor?.id ?? null}::text IS NULL OR (created_at,id)<(${cursor?.created_at ?? null}::timestamptz,${cursor?.id ?? null}::text))
+      ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    const hasMore=rows.length>limit;
+    const notes=rows.slice(0,limit);
+    return {notes,nextCursor:hasMore && notes.length>0 ? String(notes.at(-1)!.id) : null};
+  }
+  async listAllCardNotes(cardId:string) {
+    return await this.sql<Record<string,unknown>[]>`SELECT * FROM card_comments
+      WHERE card_id=${cardId} AND kind='note' ORDER BY created_at,id`;
+  }
+  async listCardNowHistory(cardId:string) {
+    const rows=await this.sql<{payload_json:Record<string,unknown>;created_at:Date}[]>`SELECT payload_json,created_at FROM folder_operations
+      WHERE target_kind='card' AND target_id=${cardId} AND operation_type='update_card_now'
+      ORDER BY created_at DESC,id DESC LIMIT 20`;
+    return rows.reverse().map(({payload_json,created_at})=>({
+      text:payload_json.text,
+      turn:payload_json.turn,
+      ask:payload_json.ask ?? null,
+      at:created_at.toISOString(),
+    }));
   }
   async getComment(cardId: string, commentId: string) {
     return (await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND id=${commentId}`)[0] ?? null;

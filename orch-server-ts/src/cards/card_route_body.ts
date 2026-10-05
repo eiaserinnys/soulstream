@@ -38,7 +38,7 @@ export async function readCardRouteBody(options: CardRouteBodyOptions, cardId: s
 
 export async function mutateCardRouteBody(options: CardRouteBodyOptions, operation: CardOperation,
   cardId: string | undefined, input: unknown, resolveAccess: ResolveAccess,
-  resolveActor: () => FolderActorParams | Promise<FolderActorParams>, questionId?: string) {
+  resolveActor: () => FolderActorParams | Promise<FolderActorParams>, questionId?: string, itemIdPath?: string | number) {
   const service = await options.cardServiceProvider!();
   const body = z.record(z.string(), z.unknown()).parse(input);
   if (operation === "create_card") await allowed(options, resolveAccess, z.string().min(1).parse(body.folderId));
@@ -52,8 +52,9 @@ export async function mutateCardRouteBody(options: CardRouteBodyOptions, operati
   const actor = await resolveActor();
   if (operation === "start_card_work" && actor.actorKind !== "agent")
     throw Object.assign(new Error("Trusted assignee session required"), { statusCode: 403 });
-  const result = await executeCardOperation(service, operation,
-    operation === "answer_card_question" ? { ...body, questionId } : body, cardId, actor);
+  const operationBody = operation === "answer_card_question" ? { ...body, questionId }
+    : operation === "confirm_card_item" ? { ...body, itemId: Number(itemIdPath) } : body;
+  const result = await executeCardOperation(service, operation, operationBody, cardId, actor);
   return { status: operation === "create_card" || operation === "add_card_report" || operation === "add_card_comment" || operation === "ask_card_question" ? 201 : 200, body: result };
 }
 
