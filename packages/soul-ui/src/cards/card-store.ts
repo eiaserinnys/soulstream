@@ -28,8 +28,11 @@ export const useCardStore = create<CardState>((set,get) => ({
     try {
       const detail=await cardRequest<CardDetail>(cardPath(id));
       const currentCard=get().byId[id],currentDetail=get().details[id];
-      if(currentCard&&currentCard.version>detail.card.version)
-        return currentDetail?.card===currentCard?currentDetail:{...(currentDetail??detail),card:currentCard};
+      if(currentCard&&currentCard.version>detail.card.version) {
+        const latestDetail=currentDetail?.card===currentCard?currentDetail:{...(currentDetail??detail),card:currentCard};
+        if(!currentDetail)set(s=>({details:{...s.details,[id]:latestDetail},errors:{...s.errors,[id]:""}}));
+        return latestDetail;
+      }
       set(s=>({byId:{...s.byId,[id]:detail.card},details:{...s.details,[id]:detail},errors:{...s.errors,[id]:""}}));
       return detail;
     } catch(error) {
