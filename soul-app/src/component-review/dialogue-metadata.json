@@ -180,7 +180,7 @@
     "components/events/EventContextMenu.tsx",
     "components/menus/AppContextMenu.tsx",
     "components/planner/CardBoard.tsx",
-    "components/planner/CardDetailSheet.tsx",
+    "components/planner/CardCommentComposer.tsx",
     "components/planner/FolderWorkspace.tsx",
     "components/planner/ProjectContextEditorView.tsx",
     "components/planner/TodayCardComposer.tsx",
