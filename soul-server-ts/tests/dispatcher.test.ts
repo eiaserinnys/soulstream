@@ -8,6 +8,7 @@ import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
 import type { AgentConfigService } from "../src/agent_config_service.js";
 import { FileAttachmentStore, type AttachmentStore } from "../src/attachments/file_manager.js";
 import { CommandDispatcher } from "../src/upstream/dispatcher.js";
+import { PersistentSessionControlError } from "../src/task/persistent_session_control.js";
 import type {
   ClaudeAuthCommandHandler,
   ClaudeAuthSetTokenCmd,
@@ -1174,6 +1175,58 @@ describe("CommandDispatcher.acknowledge_session_review", () => {
       status: "error",
       code: "REVIEW_NOT_REQUIRED",
     });
+  });
+});
+
+describe("CommandDispatcher.set_persistent_session_settings", () => {
+  it("ACKs a saved settings command with the persistent flag and model change", async () => {
+    const applySettings = vi.fn(async () => ({
+      sessionId: "sess-pas",
+      persistent: true,
+      modelChange: "next_execution_start" as const,
+    }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { persistentSessions: { applySettings } } as unknown as Partial<TaskManager>,
+    });
+    const settings = { default_model: { model_preset: "claude-opus", reasoning_effort: null } };
+
+    await dispatcher.dispatch({
+      type: "set_persistent_session_settings",
+      agentSessionId: "sess-pas",
+      requestId: "pas-1",
+      enabled: true,
+      settings,
+    });
+
+    expect(applySettings).toHaveBeenCalledWith("sess-pas", { enabled: true, settings });
+    expect(sent).toEqual([{
+      type: "persistent_session_settings_updated",
+      requestId: "pas-1",
+      agentSessionId: "sess-pas",
+      persistent: true,
+      modelChange: "next_execution_start",
+    }]);
+  });
+
+  it("reports an input failure as a coded error instead of an ACK", async () => {
+    const applySettings = vi.fn(async () => {
+      throw new PersistentSessionControlError("NOT_PERSISTENT", "Session is not persistent: sess-pas");
+    });
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { persistentSessions: { applySettings } } as unknown as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "set_persistent_session_settings",
+      agentSessionId: "sess-pas",
+      requestId: "pas-2",
+    });
+
+    expect(sent).toEqual([expect.objectContaining({
+      type: "error",
+      requestId: "pas-2",
+      code: "NOT_PERSISTENT",
+    })]);
   });
 });
 

@@ -65,7 +65,7 @@ export type PersistentSessionSettingsServiceDeps = {
     logger: Pick<FastifyRequest["log"], "warn">,
   ) => Promise<SessionCreateRouteResponse>;
   presets: Pick<ModelPresetAvailabilityService, "resolveStaticForNode" | "requireAvailable">;
-  profiles: { listAgentProfiles(nodeId: string): Promise<Record<string, { name?: string | null }> | undefined> };
+  profiles: { listAgentProfiles(nodeId: string): Promise<Record<string, { name?: unknown }> | undefined> };
 };
 
 type CallerRequest = FastifyRequest | ServiceCaller;
