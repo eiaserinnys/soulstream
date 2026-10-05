@@ -576,6 +576,25 @@ describe("TaskEngineTurnRunner", () => {
     expect(captured?.maxTurns).toBe(25);
     expect(captured?.model).toBeUndefined();
     expect(captured?.extraEnv).toBeUndefined();
+    expect(captured).not.toHaveProperty("claudeAutoMemoryEnabled");
+  });
+
+  it("forwards the profile's claude_auto_memory_enabled=false to the engine", async () => {
+    const task = makeTask();
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => {
+      captured = params;
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: { ...agent, claude_auto_memory_enabled: false },
+      runner: createInProcessTaskRunnerRuntime(engine),
+      input: { prompt: "turn prompt", imageAttachmentPaths: [] },
+    }));
+
+    expect(captured?.claudeAutoMemoryEnabled).toBe(false);
   });
 
   it("uses agent model when task-level model is absent", async () => {

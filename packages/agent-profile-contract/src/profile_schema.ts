@@ -246,6 +246,8 @@ export const AgentProfileSchema = z.object({
    * 폴더 프롬프트는 그대로 남는다.
    */
   context_scope: z.enum(["full", "minimal"]).optional(),
+  /** Claude 전용. false면 자동 기억(MEMORY.md)을 읽지도 쓰지도 않는다. 없으면 SDK 기본. */
+  claude_auto_memory_enabled: z.boolean().optional(),
   env: z.record(z.string(), z.string()).optional(),
   mcp_profile: z.string().min(1).optional(),
   portrait_path: z.string().optional(),

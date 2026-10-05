@@ -161,6 +161,9 @@ export class TaskEngineTurnRunner {
       ...(effectiveClaudePermissionMode !== undefined
         ? { claudePermissionMode: effectiveClaudePermissionMode }
         : {}),
+      ...(agent.claude_auto_memory_enabled !== undefined
+        ? { claudeAutoMemoryEnabled: agent.claude_auto_memory_enabled }
+        : {}),
       ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
       ...(extraEnv !== undefined ? { extraEnv } : {}),
       ...(this.deps.scheduleToolHandler !== undefined
