@@ -5535,6 +5535,45 @@
     "name": "request_card_review"
   },
   {
+    "description": "퍼시스턴트 세션의 다음 실행에서 새 모델 세션으로 교체하도록 요청한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "model_preset": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "session_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "request_session_generation_rollover"
+  },
+  {
     "annotations": {
       "destructiveHint": true
     },

@@ -96,6 +96,7 @@ const sessionDataOperations = {
   rename_session: ["sessionMutations", null, "renameSession"],
   delete_session: ["sessionMutations", null, "deleteSession"],
   acknowledge_review: ["sessionMutations", null, "acknowledgeReview"],
+  set_model_selection: ["sessionMutations", null, "setModelSelection"],
   get: ["sessionReads", null, "getSession"],
   list_summary: ["sessionReads", null, "listSessionsSummary"],
   list_running: ["sessionReads", null, "listRunningSessionsSummary"],

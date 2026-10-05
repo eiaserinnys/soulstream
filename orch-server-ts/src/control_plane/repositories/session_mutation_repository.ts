@@ -326,6 +326,24 @@ export class SessionMutationRepository {
     });
   }
 
+  setModelSelection(input: {
+    idempotencyKey: string;
+    sessionId: string;
+    modelPreset: string | null;
+    model: string | null;
+    reasoningEffort: string | null;
+  }): Promise<{ ok: true }> {
+    return this.idempotent("set_model_selection", input, async (sql) => {
+      await sql`
+        UPDATE sessions SET model_preset = ${input.modelPreset},
+            model = ${input.model},
+            reasoning_effort = ${input.reasoningEffort}
+        WHERE session_id = ${input.sessionId}
+      `;
+      return { ok: true } as const;
+    });
+  }
+
   async reconcileNodeDisconnected(
     nodeId: string,
     updatedAt: Date,

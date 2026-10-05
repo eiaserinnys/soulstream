@@ -127,6 +127,19 @@ export class TaskManager {
         this.tasks.set(task.agentSessionId, task);
       },
       persistence,
+      modelCatalog: this.modelCatalog,
+      resolveCurrentBackend: (task) => {
+        if (task.modelPresetBackend) return task.modelPresetBackend;
+        if (task.modelPreset) {
+          if (!this.modelCatalog) {
+            throw new Error(`Model catalog is not configured; cannot resolve preset: ${task.modelPreset}`);
+          }
+          return this.modelCatalog.resolve(task.modelPreset).backend;
+        }
+        const profile = task.agentProfileSnapshot
+          ?? (task.profileId ? this.agentRegistry?.get(task.profileId) : undefined);
+        return profile?.backend;
+      },
     });
     const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled
       ? sessionRuntimeControl

@@ -82,6 +82,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
     renameSession,
     deleteSession,
     acknowledgeReview,
+    setModelSelection: async () => undefined,
   } satisfies SessionMutationHost;
   const taskManager = new TaskManager(
     "test-node",

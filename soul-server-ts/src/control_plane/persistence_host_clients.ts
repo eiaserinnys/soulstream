@@ -18,6 +18,7 @@ import type {
   RegisterSessionWithWorktreeParams,
   SessionUpdateFields,
 } from "../db/session_db_types.js";
+import type { ReasoningEffort } from "../engine/protocol.js";
 import {
   PersistenceHostTransport,
   type HostClientConfig,
@@ -69,6 +70,15 @@ export interface SessionMutationHost {
     idempotencyKey: string,
     updatedAt?: Date,
   ): Promise<AcknowledgeReviewOutcome>;
+  setModelSelection(
+    sessionId: string,
+    fields: {
+      modelPreset: string | null;
+      model: string | null;
+      reasoningEffort: ReasoningEffort | null;
+    },
+    idempotencyKey: string,
+  ): Promise<void>;
 }
 
 export function createMissingSessionMutationHost(): SessionMutationHost {
@@ -82,6 +92,7 @@ export function createMissingSessionMutationHost(): SessionMutationHost {
     renameSession: missing,
     deleteSession: missing,
     acknowledgeReview: missing,
+    setModelSelection: missing,
   };
 }
 
@@ -150,6 +161,22 @@ export class SessionMutationHostClient implements SessionMutationHost {
       sessionId,
       idempotencyKey,
       updatedAt,
+    }]);
+  }
+
+  async setModelSelection(
+    sessionId: string,
+    fields: {
+      modelPreset: string | null;
+      model: string | null;
+      reasoningEffort: ReasoningEffort | null;
+    },
+    idempotencyKey: string,
+  ): Promise<void> {
+    await this.transport.request("session-data", "set_model_selection", [{
+      sessionId,
+      ...fields,
+      idempotencyKey,
     }]);
   }
 }
