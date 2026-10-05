@@ -90,7 +90,12 @@ describe("chat caption parts", () => {
     const button = container.querySelector("button");
     expect(row?.className).toContain("justify-end");
     expect(row?.querySelector(".w-8")).not.toBeNull();
+    const content = row?.children[0];
+    expect(content?.classList.contains("w-full")).toBe(true);
+    expect(content?.classList.contains("max-w-[86%]")).toBe(true);
+    expect(content?.classList.contains("items-end")).toBe(true);
     expect(button?.className).toContain("-me-2");
+    expect(button?.className).toContain("!pe-2");
     expect(button?.className).toContain("justify-end");
     expect(button?.className).not.toContain("-ms-2");
     expect(container.querySelector("[hidden]")).toBeNull();

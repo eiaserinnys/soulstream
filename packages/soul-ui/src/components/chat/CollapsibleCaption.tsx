@@ -26,11 +26,11 @@ export function CollapsibleCaption({
       data-slot="collapsible-caption"
     >
       {align === "start" && <span className="w-8 shrink-0" />}
-      <div className={align === "end" ? "min-w-0 max-w-[86%]" : "min-w-0 flex-1"}>
+      <div className={align === "end" ? "min-w-0 flex w-full max-w-[86%] flex-col items-end" : "min-w-0 flex-1"}>
         <Button
           aria-controls={contentId}
           aria-expanded={expanded}
-          className={`${align === "end" ? "-me-2 justify-end" : "-ms-2 justify-start"} max-w-full h-6 sm:h-6 gap-2 !text-xs !font-medium text-muted-foreground`}
+          className={`${align === "end" ? "-me-2 justify-end !pe-2" : "-ms-2 justify-start"} max-w-full h-6 sm:h-6 gap-2 !text-xs !font-medium text-muted-foreground`}
           onClick={() => setExpanded((value) => !value)}
           size="xs"
           variant="ghost"
