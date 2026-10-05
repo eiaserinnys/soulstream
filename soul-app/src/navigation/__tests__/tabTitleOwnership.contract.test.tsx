@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import React from 'react';
 import { StyleSheet } from 'react-native';
+import { PlatformPressable } from '@react-navigation/elements';
+import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { fireEvent, render } from '@testing-library/react-native';
 import {
   getBottomTabCaptures,
@@ -107,6 +109,34 @@ test('5개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
     expect(icon.UNSAFE_getByType('Ionicons' as any).props.name)
       .toBe(ROOT_SECTION_CONFIG[screen.name as keyof typeof ROOT_SECTION_CONFIG].icon);
   }
+});
+
+test('phone tab button은 기본 pressable props를 보존하고 세로 정렬만 가운데로 바꾼다', () => {
+  renderStackNavigators();
+  const screenOptions = getBottomTabCaptures()[0]!.navigatorProps?.screenOptions as Record<string, unknown>;
+  const tabBarButton = screenOptions.tabBarButton as ((props: BottomTabBarButtonProps) => React.ReactNode) | undefined;
+  expect(tabBarButton).toEqual(expect.any(Function));
+
+  const onPress = jest.fn();
+  const onLongPress = jest.fn();
+  const buttonProps = {
+    href: '/chat',
+    onPress,
+    onLongPress,
+    testID: 'tab-chat',
+    'aria-label': '챗',
+    role: 'tab',
+    'aria-selected': true,
+    android_ripple: { borderless: true },
+    style: [{ flex: 1, minHeight: 48, padding: 5, justifyContent: 'flex-start' as const }],
+    children: '아이콘',
+  } satisfies BottomTabBarButtonProps;
+
+  const button = tabBarButton!(buttonProps);
+  expect(button).toEqual(React.createElement(PlatformPressable, {
+    ...buttonProps,
+    style: [buttonProps.style, { justifyContent: 'center' as const }],
+  }));
 });
 
 test('phone card home header keeps create and completion actions, daily route remains stored', () => {
