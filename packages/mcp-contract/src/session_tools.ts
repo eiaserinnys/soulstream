@@ -92,6 +92,23 @@ export const sessionTools = {
         limit: z.number().int().min(1).max(100).default(50),
       },
     } },
+  expand_session_turn: { name: "expand_session_turn", audience: "all", config: {
+      description:
+        "턴 번호로 턴의 요약과 원문 이벤트를 조회한다. 기본 원문에는 사용자 입력과 응답만 포함한다.",
+      inputSchema: {
+        session_id: z.string().optional(),
+        turn: z.union([
+          z.number().int().positive(),
+          z.string().regex(/^T[1-9][0-9]*$/),
+        ]),
+        to_turn: z.union([
+          z.number().int().positive(),
+          z.string().regex(/^T[1-9][0-9]*$/),
+        ]).optional(),
+        include_tools: z.boolean().default(false),
+        max_chars: z.number().int().min(1000).max(60000).default(20000),
+      },
+    } },
   search_sessions: { name: "search_sessions", audience: "all", timeoutMs: 15000, config: {
       description:
         "과거 세션을 뜻으로 찾는다. 검색어가 가리키는 작업이나 대화를 한 세션을 관련도 순으로 돌려준다. "
