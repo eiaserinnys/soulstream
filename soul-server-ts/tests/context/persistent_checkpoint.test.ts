@@ -100,6 +100,82 @@ describe("buildPersistentCheckpoint", () => {
     expect(text).toContain("이 카드의 판단을 기다립니다.");
   });
 
+  describe("card numbers", () => {
+    const numberedChild = {
+      sessionId: "8a13f280-86be-4bd5-a2e4-9199f82aa63c",
+      displayName: "P6 실행 세션",
+      agentId: "roselin",
+      modelPreset: "codex-6-luna",
+      status: "running" as const,
+      cardId: "61954137-8402-4ca3-947e-4105bf7a8139",
+      createdAt: "2026-10-05T00:00:00.000Z",
+    };
+
+    function buildText(
+      childSessions: GenerationCheckpointMaterial["childSessions"],
+      cards: SupervisedCardSnapshot,
+    ): string {
+      return itemText({
+        material: makeMaterial({ childSessions, childSessionTotal: childSessions.length }),
+        cards,
+        standingInstructions: [],
+        ownSessionId,
+      }).text;
+    }
+
+    function numberedCards(): SupervisedCardSnapshot {
+      const base = makeCards();
+      return {
+        ...base,
+        cards: [
+          { ...base.cards[0]!, number: 412 },
+          { ...base.cards[1]!, number: 413 },
+        ],
+        openQuestions: [{ ...base.openQuestions[0]!, cardNumber: 412 }],
+      };
+    }
+
+    it("writes #N for cards and questions, #N.sK for sessions on a numbered card, and tells the model to use them", () => {
+      const text = buildText([{ ...numberedChild, reference: "#412.s2" }], numberedCards());
+
+      expect(text).toContain(`- #412 「영구 관제 세션」 실행 중 · 담당 이 세션`);
+      expect(text).toContain("- #413 「작업이 막혀 있습니다」 막힘(질문) · 담당 사용자");
+      expect(text).toContain("- #412 「영구 관제 세션」: 이 카드의 판단을 기다립니다.");
+      expect(text).toContain("- #412.s2 「P6 실행 세션」 · roselin / codex-6-luna\n");
+      expect(text).not.toContain("· 카드");
+      expect(text).not.toContain(ownCardId);
+      expect(text).not.toContain(numberedChild.sessionId);
+      expect(text).not.toContain(numberedChild.cardId);
+      expect(text).toContain("`#412`, `#412.s2` 같은 번호는 도구의 `card_id`, `session_id` 인자에 그대로 쓸 수 있습니다.");
+    });
+
+    it("keeps full IDs when the numbers are null or the fields are absent", () => {
+      const base = makeCards();
+      const nulls: SupervisedCardSnapshot = {
+        ...base,
+        cards: base.cards.map((card) => ({ ...card, number: null })),
+        openQuestions: base.openQuestions.map((question) => ({ ...question, cardNumber: null })),
+      };
+      const withNulls = buildText([{ ...numberedChild, reference: null }], nulls);
+      const withoutFields = buildText([numberedChild], base);
+
+      for (const text of [withNulls, withoutFields]) {
+        expect(text).toContain(`- ${ownCardId} 「영구 관제 세션」 실행 중 · 담당 이 세션`);
+        expect(text).toContain(`- ${ownCardId} 「영구 관제 세션」: 이 카드의 판단을 기다립니다.`);
+        expect(text).toContain(`- ${numberedChild.sessionId} 「P6 실행 세션」 · roselin / codex-6-luna · 카드 ${numberedChild.cardId}`);
+        expect(text).not.toMatch(/- #\d/);
+      }
+    });
+
+    it("tails a session on a numberless card with the full card ID, and a cardless session with nothing", () => {
+      const cardless = { ...numberedChild, sessionId: "5d0c1a2b-1111-4222-8333-444455556666", cardId: null, reference: null };
+      const text = buildText([{ ...numberedChild, reference: null }, cardless], numberedCards());
+
+      expect(text).toContain(`- ${numberedChild.sessionId} 「P6 실행 세션」 · roselin / codex-6-luna · 카드 ${numberedChild.cardId}`);
+      expect(text).toContain(`- ${cardless.sessionId} 「P6 실행 세션」 · roselin / codex-6-luna\n`);
+    });
+  });
+
   it("keeps the status section within its budget and gives unused room to cards", () => {
     const queriedCards = Array.from({ length: 60 }, (_, index) => ({
       id: `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,

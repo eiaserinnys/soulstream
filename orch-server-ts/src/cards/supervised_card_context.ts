@@ -27,6 +27,7 @@ export async function readSupervisedCardContext(
   `;
   const cardRows = await sql<Array<{
     id: string;
+    number: number | null;
     title: string;
     status: "running" | "blocked" | "review" | "queued";
     blocked_kind: "limit" | "question" | "no_report" | null;
@@ -37,6 +38,7 @@ export async function readSupervisedCardContext(
   }>>`
     SELECT
       c.id,
+      c.number,
       LEFT(c.title, 161) AS title,
       c.status,
       c.blocked_kind,
@@ -62,6 +64,7 @@ export async function readSupervisedCardContext(
   const questionRows = await sql<Array<{
     id: string;
     card_id: string;
+    card_number: number | null;
     card_title: string;
     text: string;
     asked_at: Date | string;
@@ -70,6 +73,7 @@ export async function readSupervisedCardContext(
     SELECT
       q.id,
       q.card_id,
+      c.number AS card_number,
       LEFT(c.title, 161) AS card_title,
       LEFT(q.text, 400) AS text,
       q.asked_at,
@@ -98,6 +102,7 @@ export async function readSupervisedCardContext(
     counts,
     cards: cardRows.map((row) => ({
       id: row.id,
+      number: row.number,
       title: row.title,
       status: row.status,
       blockedKind: row.blocked_kind,
@@ -110,6 +115,7 @@ export async function readSupervisedCardContext(
     openQuestions: questionRows.map((row) => ({
       id: row.id,
       cardId: row.card_id,
+      cardNumber: row.card_number,
       cardTitle: row.card_title,
       text: row.text,
       askedAt: iso(row.asked_at),

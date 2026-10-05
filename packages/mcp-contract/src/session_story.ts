@@ -40,6 +40,11 @@ export interface GenerationCheckpointMaterial {
     readonly modelPreset: string | null;
     readonly status: "initializing" | "running";
     readonly cardId: string | null;
+    /**
+     * `#412.s2`, when the session is attached to a card that has a number. Optional because a central
+     * server that predates card numbers does not send it; either way the full ID is written instead.
+     */
+    readonly reference?: string | null;
     readonly createdAt: string;
   }>;
   readonly childSessionTotal: number;
@@ -60,6 +65,8 @@ export interface SupervisedCardSnapshot {
   };
   readonly cards: Array<{
     readonly id: string;
+    /** Card number (`#412`). Optional and nullable for the same reason as `reference` above. */
+    readonly number?: number | null;
     readonly title: string;
     readonly status: "running" | "blocked" | "review" | "queued";
     readonly blockedKind: "limit" | "question" | "no_report" | null;
@@ -72,6 +79,8 @@ export interface SupervisedCardSnapshot {
   readonly openQuestions: Array<{
     readonly id: string;
     readonly cardId: string;
+    /** Number of the question's card; optional and nullable like `number` above. */
+    readonly cardNumber?: number | null;
     readonly cardTitle: string;
     readonly text: string;
     readonly askedAt: string;

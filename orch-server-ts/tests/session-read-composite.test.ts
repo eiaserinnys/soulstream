@@ -102,8 +102,11 @@ describe("SessionReadCompositeRepository", () => {
     ];
     const sessions = {
       listActiveChildSessionsSummary: vi.fn().mockResolvedValue({
-        sessions: [{ session_id: "child-1", display_name: "작업", agent_id: "worker", model_preset: "codex-6-luna", status: "running", card_id: "card-1", created_at: new Date("2026-10-01T00:00:00Z") }],
-        total: 1,
+        sessions: [
+          { session_id: "child-1", display_name: "작업", agent_id: "worker", model_preset: "codex-6-luna", status: "running", card_id: "card-1", reference: "#412.s2", created_at: new Date("2026-10-01T00:00:00Z") },
+          { session_id: "child-2", display_name: "번호 없는 카드의 작업", agent_id: "worker", model_preset: "codex-6-luna", status: "running", card_id: "card-2", reference: null, created_at: new Date("2026-10-01T00:00:01Z") },
+        ],
+        total: 2,
       }),
     };
     const eventReads = {
@@ -132,8 +135,9 @@ describe("SessionReadCompositeRepository", () => {
     expect(material.lastSummarizedFinalResponseEventId).toBeNull();
     expect(material.recent.records.map((record) => record.event_id)).toEqual([1, 2]);
     expect(material.recent.omittedUnsummarized).toBe(0);
-    expect(material.childSessions).toHaveLength(1);
-    expect(material.childSessionTotal).toBe(1);
+    expect(material.childSessions).toHaveLength(2);
+    expect(material.childSessions.map((child) => child.reference)).toEqual(["#412.s2", null]);
+    expect(material.childSessionTotal).toBe(2);
     expect(material.totals).toEqual({ events: 2, turnSummaries: 0 });
     expect(sessions.listActiveChildSessionsSummary).toHaveBeenCalledWith("owner");
   });

@@ -1,3 +1,7 @@
+import { formatCardReference } from "@soulstream/mcp-contract";
+
+import { readSessionReferences } from "../../cards/card_reference_repository.js";
+import type { RepositorySql } from "../../cards/control_plane/card_types.js";
 import type { SqlClient } from "../control_plane_types.js";
 
 export interface HostSessionRow extends Record<string, unknown> {
@@ -193,6 +197,8 @@ export class SessionReadRepository {
       model_preset: string | null;
       status: "initializing" | "running";
       card_id: string | null;
+      /** `#412.s2` when the session is on a card that has a number, otherwise null. */
+      reference: string | null;
       created_at: Date;
     }>;
     total: number;
@@ -224,8 +230,21 @@ export class SessionReadRepository {
       FROM active_children
       ORDER BY created_at DESC, session_id COLLATE "C"
     `;
+    // persistence_host_runtime.ts passes the board-yjs query adapter typed as the driver's client; this is that adapter.
+    const references = await readSessionReferences(
+      this.sql as unknown as RepositorySql,
+      rows.map((row) => row.session_id),
+    );
     return {
-      sessions: rows.map(({ total_count: _totalCount, ...session }) => session),
+      sessions: rows.map(({ total_count: _totalCount, ...session }) => {
+        const reference = references.get(session.session_id);
+        return {
+          ...session,
+          reference: reference
+            ? formatCardReference(reference.cardNumber, { kind: "session", ordinal: reference.ordinal })
+            : null,
+        };
+      }),
       total: Number(rows[0]?.total_count ?? 0),
     };
   }
