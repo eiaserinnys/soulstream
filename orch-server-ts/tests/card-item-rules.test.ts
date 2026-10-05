@@ -87,7 +87,7 @@ describe("setCardItems", () => {
     [item({ fixOpen: 1 }), "fixOpen"],
     [item({ state: "done" }), "done"],
     [item({ state: "dropped" }), "dropped"],
-  ] as const)("refuses to replace a list with existing %s", (changed) => {
+  ] as const)("refuses to replace a list with existing %s", (changed, _field) => {
     expectInvalid(
       () => setCardItems([changed], ["새 결과"], at),
       "이미 결과나 확인이 달린 항목이 있습니다. 새 항목은 add_card_item으로 더하세요",

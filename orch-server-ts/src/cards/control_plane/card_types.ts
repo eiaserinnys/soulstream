@@ -10,6 +10,7 @@ export type SqlClient = RepositorySql & {
 
 import type { CardStatus } from "@soulstream/wire-schema";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
+import type { CardItem, CardNow } from "../card_item_rules.js";
 
 export type { CardStatus } from "@soulstream/wire-schema";
 
@@ -56,6 +57,8 @@ export interface CardRow extends CardAssigneeFields {
   title: string;
   request: string;
   attachments: CardAttachment[];
+  items: CardItem[];
+  now: CardNow | null;
   queue_position_key: string | null;
   brief: string;
   blocked_kind: "limit" | "question" | "no_report" | null;
