@@ -8,11 +8,14 @@ import type {
   AppServerTurnError,
 } from "./protocol.js";
 import {
+  codexContextUsagePayload,
+  codexTurnUsage,
   errorMessage,
   nowEpochSec,
   rawContext,
   timestampFromMs,
 } from "./event_mapper_helpers.js";
+import type { CodexTurnTokenUsage } from "./event_mapper_helpers.js";
 import { mapItemCompleted, mapItemStarted } from "./item_mapper.js";
 import { firstMeaningfulText } from "./text_sanitizer.js";
 import { isUsageLimitTurnError } from "./usage_limit.js";
@@ -20,6 +23,7 @@ import { isUsageLimitTurnError } from "./usage_limit.js";
 export function mapAppServerNotification(
   notification: AppServerNotification,
   onUnknownNotification?: (method: string) => void,
+  turnContext?: { tokenUsage?: CodexTurnTokenUsage | null },
 ): SSEEventPayload[] {
   switch (notification.method) {
     case "thread/started": {
@@ -53,9 +57,13 @@ export function mapAppServerNotification(
         turn: AppServerTurn;
         willRetry?: boolean;
       };
+      const tokenUsage = turnContext?.tokenUsage ?? undefined;
+      const contextUsage = codexContextUsagePayload(tokenUsage);
+      const contextPayloads = contextUsage ? [contextUsage as SSEEventPayload] : [];
       if (turn.status === "failed") {
         const isUsageLimit = willRetry !== true && isUsageLimitTurnError(turn.error);
         return [
+          ...contextPayloads,
           {
             type: "error",
             message: errorMessage(turn.error),
@@ -72,17 +80,21 @@ export function mapAppServerNotification(
         .reverse()
         .find((item) => item.type === "agentMessage");
       return [
+        ...contextPayloads,
         {
           type: "complete",
           ...(finalAgentMessage ? { result: finalAgentMessage.text } : {}),
           timestamp: nowEpochSec(),
           status: turn.status,
           duration_ms: turn.durationMs,
-          ...(turn.usage !== undefined ? { usage: turn.usage } : {}),
+          ...(tokenUsage ? { usage: codexTurnUsage(tokenUsage) } : {}),
           ...rawContext(notification.method, { threadId, turnId: turn.id }),
         } as SSEEventPayload,
       ];
     }
+
+    case "thread/tokenUsage/updated":
+      return [];
 
     case "item/started": {
       const params = notification.params as {

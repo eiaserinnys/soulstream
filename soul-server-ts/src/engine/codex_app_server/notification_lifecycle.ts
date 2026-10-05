@@ -1,7 +1,10 @@
 import type { SSEEventPayload } from "../protocol.js";
 import { mapAppServerNotification } from "./event_mapper.js";
+import type { CodexTurnTokenUsage } from "./event_mapper_helpers.js";
 import type {
   AppServerNotification,
+  AppServerThreadTokenUsage,
+  AppServerTokenUsageBreakdown,
   AppServerTurn,
 } from "./protocol.js";
 
@@ -15,6 +18,7 @@ export interface NotificationLifecycleState {
   readonly activeTurn: ActiveTurnState | null;
   readonly emittedSessionIds: ReadonlySet<string>;
   readonly reportedSessionIds: ReadonlySet<string>;
+  readonly tokenUsage: CodexTurnTokenUsage | null;
 }
 
 export interface NotificationLifecycleResult {
@@ -40,6 +44,7 @@ export function createNotificationLifecycleState(): NotificationLifecycleState {
     activeTurn: null,
     emittedSessionIds: new Set<string>(),
     reportedSessionIds: new Set<string>(),
+    tokenUsage: null,
   };
 }
 
@@ -51,6 +56,7 @@ export function beginNotificationExecution(
     ...state,
     executionThreadId: threadId,
     activeTurn: null,
+    tokenUsage: null,
   };
 }
 
@@ -103,8 +109,12 @@ export function recordTurnStartResponse(
 export function clearNotificationExecution(
   state: NotificationLifecycleState,
 ): NotificationLifecycleState {
-  if (state.executionThreadId === null && state.activeTurn === null) return state;
-  return { ...state, executionThreadId: null, activeTurn: null };
+  if (
+    state.executionThreadId === null &&
+    state.activeTurn === null &&
+    state.tokenUsage === null
+  ) return state;
+  return { ...state, executionThreadId: null, activeTurn: null, tokenUsage: null };
 }
 
 export function applyNotificationLifecycle(
@@ -144,7 +154,31 @@ export function applyNotificationLifecycle(
     };
   }
 
-  const payloads = mapAppServerNotification(notification, options.onUnknownNotification);
+  if (notification.method === "thread/tokenUsage/updated") {
+    const tokenUsage = (notification.params as {
+      tokenUsage?: unknown;
+    } | undefined)?.tokenUsage;
+    if (!isThreadTokenUsage(tokenUsage)) {
+      return { state: nextState, payloads: [], closeQueue: false };
+    }
+    nextState = {
+      ...nextState,
+      tokenUsage: {
+        baseline: nextState.tokenUsage?.baseline ?? tokenUsageBaseline(tokenUsage),
+        latest: tokenUsage,
+      },
+    };
+    return { state: nextState, payloads: [], closeQueue: false };
+  }
+
+  const turnContext = notification.method === "turn/completed"
+    ? { tokenUsage: nextState.tokenUsage }
+    : undefined;
+  const payloads = mapAppServerNotification(
+    notification,
+    options.onUnknownNotification,
+    turnContext,
+  );
 
   if (notification.method === "turn/completed") {
     return {
@@ -166,6 +200,44 @@ export function applyNotificationLifecycle(
   }
 
   return { state: nextState, payloads, closeQueue: false };
+}
+
+function isThreadTokenUsage(value: unknown): value is AppServerThreadTokenUsage {
+  const record = asRecord(value);
+  return Boolean(
+    record &&
+    isTokenUsageBreakdown(record.total) &&
+    isTokenUsageBreakdown(record.last)
+  );
+}
+
+function isTokenUsageBreakdown(value: unknown): value is AppServerTokenUsageBreakdown {
+  const record = asRecord(value);
+  if (!record) return false;
+  return [
+    "totalTokens",
+    "inputTokens",
+    "cachedInputTokens",
+    "cacheWriteInputTokens",
+    "outputTokens",
+    "reasoningOutputTokens",
+  ].every((field) => Number.isFinite(record[field]));
+}
+
+function tokenUsageBaseline(
+  tokenUsage: AppServerThreadTokenUsage,
+): AppServerTokenUsageBreakdown {
+  return {
+    totalTokens: tokenUsage.total.totalTokens - tokenUsage.last.totalTokens,
+    inputTokens: tokenUsage.total.inputTokens - tokenUsage.last.inputTokens,
+    cachedInputTokens:
+      tokenUsage.total.cachedInputTokens - tokenUsage.last.cachedInputTokens,
+    cacheWriteInputTokens:
+      tokenUsage.total.cacheWriteInputTokens - tokenUsage.last.cacheWriteInputTokens,
+    outputTokens: tokenUsage.total.outputTokens - tokenUsage.last.outputTokens,
+    reasoningOutputTokens:
+      tokenUsage.total.reasoningOutputTokens - tokenUsage.last.reasoningOutputTokens,
+  };
 }
 
 function belongsToNotificationExecution(

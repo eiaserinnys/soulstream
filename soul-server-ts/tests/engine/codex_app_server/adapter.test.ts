@@ -530,6 +530,74 @@ describe("CodexAppServerEngineAdapter", () => {
     });
   });
 
+  it("emits V6 context usage immediately before complete", async () => {
+    const { adapter, client } = makeAdapter();
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    client.emit({
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: turn("turn-1") },
+    });
+    client.emit({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        tokenUsage: {
+          total: {
+            totalTokens: 14_129,
+            inputTokens: 14_124,
+            cachedInputTokens: 12_288,
+            cacheWriteInputTokens: 0,
+            outputTokens: 5,
+            reasoningOutputTokens: 0,
+          },
+          last: {
+            totalTokens: 14_129,
+            inputTokens: 14_124,
+            cachedInputTokens: 12_288,
+            cacheWriteInputTokens: 0,
+            outputTokens: 5,
+            reasoningOutputTokens: 0,
+          },
+          modelContextWindow: 258_400,
+        },
+      },
+    } as never);
+    client.emit({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: {
+          ...turn("turn-1", "completed"),
+          items: [{ type: "agentMessage", id: "msg-final", text: "OK" }],
+        },
+      },
+    });
+
+    const events = await eventsPromise;
+    const usageIndex = events.findIndex((event) => event.type === "context_usage");
+    const completeIndex = events.findIndex((event) => event.type === "complete");
+    expect(usageIndex).toBeGreaterThanOrEqual(0);
+    expect(completeIndex).toBe(usageIndex + 1);
+    expect(events[usageIndex]).toMatchObject({
+      type: "context_usage",
+      used_tokens: 14_129,
+      max_tokens: 258_400,
+      percent: 5.5,
+    });
+    expect(events[completeIndex]).toMatchObject({
+      type: "complete",
+      usage: {
+        input_tokens: 14_124,
+        cached_input_tokens: 12_288,
+        output_tokens: 5,
+        reasoning_output_tokens: 0,
+      },
+    });
+  });
+
   it("keeps two child threads outside the root stream until the root turn completes", async () => {
     const { adapter, client } = makeAdapter();
     const eventsPromise = drain(adapter.execute({ prompt: "root work" }));

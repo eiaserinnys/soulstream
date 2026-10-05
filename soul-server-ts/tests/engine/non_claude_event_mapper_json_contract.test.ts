@@ -22,6 +22,44 @@ describe("non-Claude mapper runner JSON contract", () => {
     },
   );
 
+  it("keeps Codex app-server context and completion usage inside the JSON contract", () => {
+    const usage = {
+      totalTokens: 14_129,
+      inputTokens: 14_124,
+      cachedInputTokens: 12_288,
+      cacheWriteInputTokens: 0,
+      outputTokens: 5,
+      reasoningOutputTokens: 0,
+    };
+    const events = mapAppServerNotification(
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: appTurn },
+      } as never,
+      undefined,
+      {
+        tokenUsage: {
+          baseline: {
+            totalTokens: 0,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            cacheWriteInputTokens: 0,
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+          },
+          latest: {
+            total: usage,
+            last: usage,
+            modelContextWindow: 258_400,
+          },
+        },
+      },
+    );
+
+    expect(events.map((event) => event.type)).toEqual(["context_usage", "complete"]);
+    assertMapperOutput(events, "Codex app-server");
+  });
+
   it("drops unknown Codex app-server notifications and reports their method", () => {
     const onUnknownNotification = vi.fn();
     const events = mapAppServerNotification(

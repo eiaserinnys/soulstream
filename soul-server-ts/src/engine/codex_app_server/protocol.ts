@@ -200,6 +200,21 @@ export interface AppServerTurnError {
   additionalDetails?: unknown;
 }
 
+export interface AppServerTokenUsageBreakdown {
+  totalTokens: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+}
+
+export interface AppServerThreadTokenUsage {
+  total: AppServerTokenUsageBreakdown;
+  last: AppServerTokenUsageBreakdown;
+  modelContextWindow: number | null;
+}
+
 // account/rateLimits/read follows the codex-cli 0.160.0 generate-ts shape.
 export interface AppServerRateLimitWindow {
   usedPercent: number;
@@ -308,7 +323,6 @@ export interface AppServerTurn {
   startedAt: number | null;
   completedAt: number | null;
   durationMs: number | null;
-  usage?: unknown;
 }
 
 export interface ThreadStartResponse {
@@ -387,6 +401,10 @@ export type AppServerNotification =
   | {
       method: "turn/completed";
       params: { threadId: string; turn: AppServerTurn };
+    }
+  | {
+      method: "thread/tokenUsage/updated";
+      params: { threadId: string; turnId: string; tokenUsage: AppServerThreadTokenUsage };
     }
   | {
       method: "item/started";

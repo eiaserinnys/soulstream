@@ -1,4 +1,40 @@
-import type { AppServerTurnError } from "./protocol.js";
+import { makeContextUsagePayload, type ContextUsagePayload } from "../context_usage.js";
+import type {
+  AppServerThreadTokenUsage,
+  AppServerTokenUsageBreakdown,
+  AppServerTurnError,
+} from "./protocol.js";
+
+export interface CodexTurnTokenUsage {
+  baseline: AppServerTokenUsageBreakdown;
+  latest: AppServerThreadTokenUsage;
+}
+
+export function codexTurnUsage(tokenUsage: CodexTurnTokenUsage): {
+  input_tokens: number;
+  cached_input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+} {
+  return {
+    input_tokens: tokenUsage.latest.total.inputTokens - tokenUsage.baseline.inputTokens,
+    cached_input_tokens:
+      tokenUsage.latest.total.cachedInputTokens - tokenUsage.baseline.cachedInputTokens,
+    output_tokens: tokenUsage.latest.total.outputTokens - tokenUsage.baseline.outputTokens,
+    reasoning_output_tokens:
+      tokenUsage.latest.total.reasoningOutputTokens - tokenUsage.baseline.reasoningOutputTokens,
+  };
+}
+
+export function codexContextUsagePayload(
+  tokenUsage: CodexTurnTokenUsage | null | undefined,
+): ContextUsagePayload | undefined {
+  if (!tokenUsage) return undefined;
+  const { last, modelContextWindow } = tokenUsage.latest;
+  return makeContextUsagePayload(last.totalTokens, modelContextWindow, {
+    estimated: last.inputTokens === 0 && last.outputTokens === 0,
+  });
+}
 
 export function nowEpochSec(): number {
   return Date.now() / 1000;
