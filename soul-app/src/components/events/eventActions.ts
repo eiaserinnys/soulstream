@@ -169,7 +169,7 @@ export function buildSystemEventText(event: SessionEvent): string {
       : RETRYING_ERROR_HISTORY;
   }
 
-  if (event.type === 'error' && d.error_code === 'claude_rate_limit_stop_failure') {
+  if (event.type === 'error' && (d.rate_limit_type !== undefined || d.resets_at !== undefined)) {
     return `오류: ${formatRateLimitNotice(
       stringField(d, 'message') || 'An error occurred',
       stringField(d, 'rate_limit_type') || undefined,

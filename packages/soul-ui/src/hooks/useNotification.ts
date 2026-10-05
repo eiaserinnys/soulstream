@@ -141,9 +141,11 @@ export function formatNotification(event: SoulSSEEvent): { title: string; body: 
       }
       return {
         title: "\u274C Session Error",
-        body: event.error_code === "claude_rate_limit_stop_failure"
-          ? formatRateLimitNotice(event.message || "An error occurred", event.rate_limit_type, event.resets_at)
-          : event.message || "An error occurred",
+        body: formatRateLimitNotice(
+          event.message || "An error occurred",
+          event.rate_limit_type,
+          event.resets_at,
+        ),
       };
 
     case "session_notification":

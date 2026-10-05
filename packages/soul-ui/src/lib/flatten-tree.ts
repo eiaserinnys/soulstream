@@ -432,9 +432,7 @@ function nodeToMessage(
     }
 
     case "error": {
-      const content = node.errorCode === "claude_rate_limit_stop_failure"
-        ? formatRateLimitNotice(node.content, node.rateLimitType, node.resetsAt)
-        : node.content;
+      const content = formatRateLimitNotice(node.content, node.rateLimitType, node.resetsAt);
       return {
         id: node.id,
         role: "system",

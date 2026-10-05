@@ -143,6 +143,31 @@ describe('eventActions', () => {
       .toBe('오류: 요청이 사용량 제한으로 중단되었습니다.\n\n주간 한도');
   });
 
+  test('Codex 사용량 한도 오류는 구조화 정보가 있을 때만 해제 안내를 표시한다', () => {
+    const data = {
+      fatal: true,
+      will_retry: false,
+      error_code: 'codex_usage_limit_exceeded',
+      message: "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 26th, 2026 5:23 PM.",
+      error_info: 'usageLimitExceeded',
+      additional_details: null,
+      rate_limit_type: 'seven_day',
+      resets_at: '2026-09-26T08:23:50.000Z',
+      timestamp: 1790042511.846,
+    };
+
+    const text = buildSystemEventText(ev('error', data));
+    expect(text).toContain('주간 한도');
+    expect(text).toContain('해제 시각');
+    expect(text).toContain('이미 해제됨');
+
+    const withoutRateLimitFields: Record<string, unknown> = { ...data };
+    delete withoutRateLimitFields.rate_limit_type;
+    delete withoutRateLimitFields.resets_at;
+    expect(buildSystemEventText(ev('error', withoutRateLimitFields)))
+      .toBe('오류: ' + data.message);
+  });
+
   test('retryable error는 현재 상태가 아닌 자동 재연결 발생 이력으로 표시·복사한다', () => {
     const event = ev('error', {
       message: 'Reconnecting... 2/2',

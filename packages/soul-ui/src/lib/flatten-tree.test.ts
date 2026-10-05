@@ -233,6 +233,31 @@ describe("flattenTree", () => {
     expect(message.content).toBe("Session stopped.\n\n주간 한도");
   });
 
+  it("Codex rate-limit error nodes show metadata while plain error nodes keep their message", () => {
+    const error: ErrorNode = {
+      type: "error",
+      id: "codex-rate-limit-error",
+      content: "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 26th, 2026 5:23 PM.",
+      completed: true,
+      children: [],
+      isError: true,
+      errorCode: "codex_usage_limit_exceeded",
+      rateLimitType: "seven_day",
+      resetsAt: "2026-09-26T08:23:50.000Z",
+    };
+
+    const [message] = flattenTree(makeSession([error]));
+    expect(message.content).toContain("주간 한도");
+    expect(message.content).toContain("해제 시각");
+    expect(message.content).toContain("이미 해제됨");
+
+    const withoutRateLimitFields = { ...error };
+    delete withoutRateLimitFields.rateLimitType;
+    delete withoutRateLimitFields.resetsAt;
+    const [plainMessage] = flattenTree(makeSession([withoutRateLimitFields]));
+    expect(plainMessage.content).toBe(error.content);
+  });
+
   it("모든 raw-event ChatMessage 생성 경로가 eventId를 한 번씩 전달한다", () => {
     const notification = makeSessionNotification("delivery-notification", "완료 결과");
     notification.eventId = 30;

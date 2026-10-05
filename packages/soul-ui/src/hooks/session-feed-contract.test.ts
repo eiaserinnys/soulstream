@@ -157,6 +157,32 @@ describe("server-owned session feed v2 fixture", () => {
     expect(notice?.body).toContain("남음");
   });
 
+  it("includes rate-limit metadata on Codex error notices and preserves plain messages without it", () => {
+    const event: Extract<SoulSSEEvent, { type: "error" }> & { timestamp: number } = {
+      type: "error",
+      fatal: true,
+      will_retry: false,
+      error_code: "codex_usage_limit_exceeded",
+      message: "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 26th, 2026 5:23 PM.",
+      error_info: "usageLimitExceeded",
+      additional_details: null,
+      rate_limit_type: "seven_day",
+      resets_at: "2026-09-26T08:23:50.000Z",
+      timestamp: 1790042511.846,
+    };
+
+    const notice = detailEventToSessionNotice(event, 45, "session-a");
+    expect(notice?.body).toContain("주간 한도");
+    expect(notice?.body).toContain("해제 시각");
+    expect(notice?.body).toContain("이미 해제됨");
+
+    const withoutRateLimitFields = { ...event };
+    delete withoutRateLimitFields.rate_limit_type;
+    delete withoutRateLimitFields.resets_at;
+    const plainNotice = detailEventToSessionNotice(withoutRateLimitFields, 46, "session-a");
+    expect(plainNotice?.body).toBe(event.message.slice(0, 97) + "...");
+  });
+
   it("keeps rate-limit details visible when completion text is long", () => {
     const notice = detailEventToSessionNotice({
       type: "session_notification",
