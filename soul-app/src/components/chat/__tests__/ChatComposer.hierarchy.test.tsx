@@ -95,6 +95,7 @@ test.each([
   expect(StyleSheet.flatten(stackedInput.props.style).flex).toBeUndefined();
   expect(StyleSheet.flatten(stackedInput.props.style).height).toBeUndefined();
   expect(StyleSheet.flatten(screen.getByTestId('chat-composer-content-row').props.style).flexWrap).toBe('wrap');
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-content-row').props.style).columnGap).toBe(0);
   expect(stackedInput.instance).toBe(textInputInstance);
 
   const attachmentIcon = screen.getByTestId('chat-composer-attach-visual').props.children as React.ReactElement<any>;

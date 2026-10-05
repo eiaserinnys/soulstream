@@ -50,6 +50,7 @@ export function makeStyles(t: DesignTokens) {
     },
     composerContentRowStacked: {
       flexWrap: 'wrap',
+      columnGap: 0,
     },
     composerAttachmentSlot: {},
     composerAttachmentSlotStacked: {
@@ -157,6 +158,9 @@ export function makeStyles(t: DesignTokens) {
       minHeight: sessionRoles.chat.composer.hitTarget,
       flexShrink: 0,
       justifyContent: 'center',
+    },
+    voiceSlotStackedEmpty: {
+      display: 'none',
     },
     sendBtn: {
       width: sessionRoles.chat.composer.controlVisualSize,

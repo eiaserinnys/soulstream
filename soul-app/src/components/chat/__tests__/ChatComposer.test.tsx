@@ -103,6 +103,36 @@ describe('ChatComposer', () => {
     ]);
   });
 
+  test('web placeholder stays on one line while empty and typed text keeps pre-wrap', () => {
+    jest.replaceProperty(Platform, 'OS', 'web');
+    jest.spyOn(inputMeasurement, 'useTextInputContentHeight').mockImplementation(() => ({
+      ref: { current: null as any },
+      contentHeight: 48,
+      onContentSizeChange: undefined,
+    }));
+    const props = {
+      onChangeInput: jest.fn(),
+      onPickAttachment: jest.fn(),
+      onSend: jest.fn(),
+      uploading: false,
+      sending: false,
+      voiceControls: null,
+    };
+    const screen = render(<ChatComposer {...props} input="" />);
+    const field = () => screen.getByTestId('chat-composer-text-input');
+
+    expect(StyleSheet.flatten(field().props.style)).toMatchObject({
+      whiteSpace: 'nowrap',
+      textOverflow: 'ellipsis',
+      overflow: 'hidden',
+    });
+
+    screen.rerender(<ChatComposer {...props} input="첫 줄\n둘째 줄" />);
+    expect(StyleSheet.flatten(field().props.style)).toMatchObject({ whiteSpace: 'pre-wrap' });
+    expect(StyleSheet.flatten(field().props.style).textOverflow).toBeUndefined();
+    expect(StyleSheet.flatten(field().props.style).overflow).toBeUndefined();
+  });
+
   test('wrap stacks the row, stays stacked until empty, and preserves mounted controls and input', () => {
     const measurementRef = { current: null as any };
     let contentHeight = 48;
@@ -154,7 +184,7 @@ describe('ChatComposer', () => {
 
     contentHeight = 72;
     screen.rerender(<ChatComposer {...props} input="첫 줄\n둘째 줄" />);
-    expect(rowStyle().flexWrap).toBe('wrap');
+    expect(rowStyle()).toMatchObject({ flexWrap: 'wrap', columnGap: 0 });
     expect(StyleSheet.flatten(textInput().props.style)).toMatchObject({ width: '100%' });
     expect(StyleSheet.flatten(textInput().props.style).flex).toBeUndefined();
     const attachIcon = screen.getByTestId('chat-composer-attach-visual').props.children as React.ReactElement<any>;
@@ -357,6 +387,27 @@ describe('ChatComposer', () => {
     measurementRef.current = { focus };
     fireEvent.press(spacer());
     expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  test('stacked layout removes the empty voice slot gap but preserves the gap when voice controls exist', () => {
+    jest.spyOn(inputMeasurement, 'useTextInputContentHeight').mockReturnValue({
+      ref: { current: null },
+      contentHeight: 72,
+      onContentSizeChange: undefined,
+    });
+    const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false };
+    const screen = render(<ChatComposer {...props} input="첫 줄\n둘째 줄" voiceControls={null} />);
+    const voiceSlot = () => screen.UNSAFE_root.findByProps({ testID: 'chat-composer-voice-slot' });
+    const rightControls = () => React.Children.toArray(
+      screen.getByTestId('chat-composer-content-row').props.children,
+    )[3] as React.ReactElement<any>;
+
+    expect(StyleSheet.flatten(screen.getByTestId('chat-composer-content-row').props.style).flexWrap).toBe('wrap');
+    expect(StyleSheet.flatten(voiceSlot().props.style).display).toBe('none');
+    expect(StyleSheet.flatten(rightControls().props.style).gap).toBe(6);
+
+    screen.rerender(<ChatComposer {...props} input="첫 줄\n둘째 줄" voiceControls={<Text testID="voice-control">mic</Text>} />);
+    expect(StyleSheet.flatten(voiceSlot().props.style).display).toBeUndefined();
   });
 
   test('text input delegates changes without owning message state', () => {

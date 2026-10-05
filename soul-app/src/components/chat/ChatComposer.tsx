@@ -53,6 +53,14 @@ export function ChatComposer({
   sendAccessibilityLabel = '메시지 보내기',
   sendDisabled = false,
 }: Props) {
+  React.useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined' || document.getElementById('chat-composer-placeholder-style')) return;
+    const style = document.createElement('style');
+    style.id = 'chat-composer-placeholder-style';
+    style.textContent = 'textarea[data-testid="chat-composer-text-input"]::placeholder{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}';
+    document.head.appendChild(style);
+  }, []);
+
   const t = useTokens();
   const styles = React.useMemo(() => makeStyles(t), [t]);
   const canSend = input.trim().length > 0 && !hasPendingOptimistic && !disabled && !sendDisabled;
@@ -117,7 +125,11 @@ export function ChatComposer({
                 ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
                 : { height: inputHeight }),
               paddingVertical: inputPadding,
-              ...(Platform.OS === 'web' ? { whiteSpace: 'pre-wrap' } : {}),
+              ...(Platform.OS === 'web'
+                ? isEmpty
+                  ? { whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }
+                  : { whiteSpace: 'pre-wrap' }
+                : {}),
             }]}
             onLayout={Platform.OS === 'ios' ? (event) => {
               // Once capped, content may change without another contentSize event.
@@ -151,7 +163,10 @@ export function ChatComposer({
           />
           <View style={styles.composerRightControls}>
             {interruptControls}
-            <View testID="chat-composer-voice-slot" style={styles.voiceSlot}>
+            <View
+              testID="chat-composer-voice-slot"
+              style={stacked && voiceControls == null ? styles.voiceSlotStackedEmpty : styles.voiceSlot}
+            >
               {voiceControls}
             </View>
             <CompactTouchTarget
