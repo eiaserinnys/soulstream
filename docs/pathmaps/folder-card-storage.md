@@ -70,7 +70,7 @@
 
 | PR | 경로 | 계약 |
 | --- | --- | --- |
-| C1 | `packages/db-schema/sql/migrations/120_card_number.sql`, `packages/db-schema/migration-manifest.json`, `packages/db-schema/sql/schema.sql`, `orch-server-ts/src/cards/control_plane/card_types.ts`, `orch-server-ts/src/folders/folder_contracts.ts` | `cards.number`는 유일 인덱스를 둔 `INTEGER GENERATED ALWAYS AS IDENTITY`다. 기존 카드는 보관 여부와 관계없이 `created_at`, `id COLLATE "C"` 순으로 채운다. 유일한 운영 `INSERT INTO cards`는 번호를 전달하지 않고 코드는 계산하지 않는다. 전체 카드 행은 REST와 MCP 공통 `serializeCardRow`가 `number`를 camelCase로 내보내며, 폴더 개요는 필드 목록에 `number`를 명시한다. identity와 유일 인덱스가 번호 재사용을 막는다. |
+| C1 | `packages/db-schema/sql/migrations/120_card_number.sql`, `packages/db-schema/migration-manifest.json`, `packages/db-schema/sql/schema.sql`, `orch-server-ts/src/cards/control_plane/card_types.ts`, `orch-server-ts/src/folders/folder_contracts.ts` | `cards.number`는 유일 인덱스를 둔 `INTEGER GENERATED ALWAYS AS IDENTITY`다. 기존 카드는 보관 여부와 관계없이 `created_at`, `id COLLATE "C"` 순으로 채운다. 유일한 운영 `INSERT INTO cards`는 번호를 전달하지 않고 코드는 계산하지 않는다. 전체 카드 행은 REST와 MCP 공통 `serializeCardRow`가 `number`를 camelCase로 내보내며, 폴더 개요는 필드 목록에 `number`를 명시한다. identity와 유일 인덱스가 번호 재사용을 막는다. 본문은 다시 적용해도 안전하며 채움은 identity가 되기 전에만 돈다. |
 
 ## 담당 세션 상태 리마인더
 

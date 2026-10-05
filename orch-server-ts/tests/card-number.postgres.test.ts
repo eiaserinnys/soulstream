@@ -120,6 +120,11 @@ describe("card numbers over PostgreSQL and HTTP", () => {
         { id: "late", number: 3 },
       ]);
 
+      await h.sql.unsafe(migration);
+      const reapplied = await h.sql<{ id: string; number: number }[]>`
+        SELECT id,number FROM cards ORDER BY created_at,id COLLATE "C"`;
+      expect(reapplied).toEqual(numbered);
+
       const next = await h.sql<{ number: number }[]>`
         INSERT INTO cards(id,created_at) VALUES ('next','2026-01-04T00:00:00Z') RETURNING number`;
       expect(next[0]?.number).toBe(4);
