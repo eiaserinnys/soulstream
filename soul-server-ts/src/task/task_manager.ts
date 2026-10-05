@@ -6,6 +6,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
+import type { PersistentResumeObserver } from "../context/persistent_jev_observer.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ClaudeSessionRuntimeControl } from "../engine/claude_session_client_registry.js";
@@ -117,6 +118,7 @@ export class TaskManager {
     sessionRuntimeControl?: ClaudeSessionRuntimeControl,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     sessionMutations?: SessionMutationHost,
+    observePersistentResume?: PersistentResumeObserver,
   ) {
     this.sessionMutations = sessionMutations ?? createMissingSessionMutationHost();
     this.loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
@@ -193,6 +195,7 @@ export class TaskManager {
     this.autoResumeTransition = new AutoResumeTransition({
       logger,
       persistence,
+      observePersistentResume,
       contextBuilder,
       agentRegistry,
     });

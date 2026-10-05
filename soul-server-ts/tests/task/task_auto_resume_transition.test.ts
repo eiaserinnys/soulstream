@@ -47,6 +47,170 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe("AutoResumeTransition", () => {
+  it.each(["slack", "browser", "soul-app"])(
+    "starts persistent resume observation for %s after the saved input without waiting for it",
+    async (source) => {
+    const task = makeTerminalTask({
+      persistent: true,
+      persistentGeneration: {
+        number: 1,
+        pending: {
+          number: 2,
+          reason: "requested",
+          requestedAt: "2026-10-05T18:00:00.000Z",
+          targetModelPreset: "claude-opus",
+        },
+      },
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_registration",
+    });
+    const observation = deferred<void>();
+    const order: string[] = [];
+    const observePersistentResume = vi.fn(() => {
+      order.push("observe");
+      return observation.promise;
+    });
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      order.push("resume");
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+      observePersistentResume,
+    });
+
+    await expect(transition.resume(
+      task,
+      {
+        text: "use the saved project notes",
+        user: "u",
+        deliveryId: "delivery-1",
+        callerInfo: { source } as NonNullable<Parameters<typeof transition.resume>[1]["callerInfo"]>,
+      },
+      onResume,
+    )).resolves.toEqual({ autoResumed: true });
+
+    expect(order).toEqual(["observe", "resume"]);
+    expect(observePersistentResume).toHaveBeenCalledWith({
+      sessionId: "s1",
+      inputId: buildDeliveryInputUuid("delivery-1"),
+      request: "use the saved project notes",
+    });
+    expect(persistenceDouble.enqueueEvent).toHaveBeenNthCalledWith(
+      2,
+      "s1",
+      expect.objectContaining({ type: "user_message", input_id: buildDeliveryInputUuid("delivery-1") }),
+    );
+    expect(onResume).toHaveBeenCalled();
+    observation.resolve();
+    },
+  );
+
+  it.each([
+    ["agent source", { source: "agent" }, true, true],
+    ["missing source", undefined, true, true],
+    ["non-persistent session", { source: "browser" }, false, true],
+    ["queued message", { source: "browser" }, true, false],
+  ])("skips persistent observation for %s", async (_label, callerInfo, persistent, publishUserMessage) => {
+    const task = makeTerminalTask({ persistent });
+    const observePersistentResume = vi.fn(async () => undefined);
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble(undefined, [], {
+        capabilityProfile: "execution_registration",
+      }).persistence,
+      observePersistentResume,
+    });
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+
+    await transition.resume(
+      task,
+      {
+        text: "resume",
+        user: "u",
+        deliveryId: "delivery-1",
+        ...(callerInfo === undefined ? {} : {
+          callerInfo: callerInfo as NonNullable<Parameters<typeof transition.resume>[1]["callerInfo"]>,
+        }),
+      },
+      onResume,
+      { publishUserMessage },
+    );
+
+    expect(observePersistentResume).not.toHaveBeenCalled();
+  });
+
+  it("skips observation when the created user_message has no input_id", async () => {
+    const task = makeTerminalTask({ persistent: true });
+    const observePersistentResume = vi.fn(async () => undefined);
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble(undefined, [], {
+        capabilityProfile: "execution_registration",
+      }).persistence,
+      observePersistentResume,
+    });
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+
+    await transition.resume(task, {
+      text: "resume without delivery identity",
+      user: "u",
+      callerInfo: { source: "browser" },
+    }, onResume);
+
+    expect(observePersistentResume).not.toHaveBeenCalled();
+  });
+
+  it("skips observation when the original status was initializing", async () => {
+    const task = makeTerminalTask({ status: "initializing", persistent: true });
+    const observePersistentResume = vi.fn(async () => undefined);
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble(undefined, [], {
+        capabilityProfile: "execution_registration",
+      }).persistence,
+      observePersistentResume,
+    });
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+
+    await transition.resume(task, {
+      text: "resume initializing session",
+      user: "u",
+      deliveryId: "delivery-1",
+      callerInfo: { source: "browser" },
+    }, onResume);
+
+    expect(observePersistentResume).not.toHaveBeenCalled();
+  });
+
   it("accepts an already-running ownerless session through the non-terminal transition", async () => {
     const task = makeTerminalTask({
       status: "running",
@@ -54,6 +218,7 @@ describe("AutoResumeTransition", () => {
       terminalEventId: undefined,
       result: undefined,
       error: undefined,
+      persistent: true,
     });
     const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
       capabilityProfile: "execution_registration",
@@ -81,14 +246,21 @@ describe("AutoResumeTransition", () => {
       resumedTask.executionActivation = undefined;
       activation.resolve();
     });
+    const observePersistentResume = vi.fn(async () => undefined);
     const transition = new AutoResumeTransition({
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
+      observePersistentResume,
     });
 
     await expect(transition.resume(
       task,
-      { text: "resume ownerless running", user: "u" },
+      {
+        text: "resume ownerless running",
+        user: "u",
+        deliveryId: "delivery-1",
+        callerInfo: { source: "browser" },
+      },
       onResume,
     )).resolves.toEqual({ autoResumed: true });
 
@@ -96,6 +268,7 @@ describe("AutoResumeTransition", () => {
       .toHaveBeenCalledWith("s1", expect.not.objectContaining({
         expectedTerminalEventId: expect.anything(),
       }));
+    expect(observePersistentResume).not.toHaveBeenCalled();
     expect(onResume).toHaveBeenCalledWith(task, expect.any(Object));
   });
 
@@ -334,6 +507,7 @@ describe("AutoResumeTransition", () => {
       terminationDetail: "operator stop",
       reviewState: "needs_review",
       lastAssistantText: "canonical answer",
+      persistent: true,
     });
     const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
       capabilityProfile: "legacy_transition_only",
@@ -352,15 +526,22 @@ describe("AutoResumeTransition", () => {
           updated_at: "2026-08-11T00:00:00.000Z",
           last_event_id: 9,
         },
-      });
+    });
     const onResume = vi.fn();
+    const observePersistentResume = vi.fn(async () => undefined);
     const transition = new AutoResumeTransition({
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
+      observePersistentResume,
     });
 
     await expect(
-      transition.resume(task, { text: "resume", user: "u" }, onResume),
+      transition.resume(task, {
+        text: "resume",
+        user: "u",
+        deliveryId: "delivery-1",
+        callerInfo: { source: "browser" },
+      }, onResume),
     ).rejects.toThrow("auto-resume running transition rejected");
 
     expect(task).toMatchObject({
@@ -374,6 +555,7 @@ describe("AutoResumeTransition", () => {
     });
     expect(task.completedAt?.toISOString()).toBe("2026-08-11T00:00:00.000Z");
     expect(onResume).not.toHaveBeenCalled();
+    expect(observePersistentResume).not.toHaveBeenCalled();
   });
 
   it("rejects auto-resume before changing task state when user_message persistence fails", async () => {

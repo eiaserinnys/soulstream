@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
+import type { PersistentResumeObserver } from "../context/persistent_jev_observer.js";
 
 import {
   createExecutionActivation,
@@ -36,6 +37,7 @@ export type AutoResumeCallback = (
 export interface AutoResumeTransitionDeps {
   logger: Logger;
   persistence?: EventPersistence;
+  observePersistentResume?: PersistentResumeObserver;
   contextBuilder?: ExecutionContextBuilder;
   agentRegistry?: AgentRegistry;
 }
@@ -164,6 +166,33 @@ export class AutoResumeTransition {
       applyCanonicalSessionProjection(task, application.canonicalSession);
       if (userMessageEvent) {
         await finishUserMessageEvent(task, userMessageEvent, this.deps);
+      }
+      const inputId = userMessageEvent?.input_id;
+      const source = message.callerInfo?.source;
+      if (
+        originalStatus !== "running" && originalStatus !== "initializing" &&
+        task.persistent === true &&
+        (source === "slack" || source === "browser" || source === "soul-app") &&
+        typeof inputId === "string" &&
+        this.deps.observePersistentResume
+      ) {
+        try {
+          void this.deps.observePersistentResume({
+            sessionId: task.agentSessionId,
+            inputId,
+            request: message.text,
+          }).catch(() => {
+            this.deps.logger.warn(
+              { sessionId: task.agentSessionId, failureKind: "observer" },
+              "persistent Jev candidate observation skipped",
+            );
+          });
+        } catch {
+          this.deps.logger.warn(
+            { sessionId: task.agentSessionId, failureKind: "observer" },
+            "persistent Jev candidate observation skipped",
+          );
+        }
       }
       prepareTaskForAutoResume(task, message, "initializing");
       onResume(task, activation);

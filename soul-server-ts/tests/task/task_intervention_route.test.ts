@@ -143,7 +143,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     "delivers stored Slack messages with an empty user to %s sessions",
     async (status) => {
       const deliveryId = "79797979-7979-4797-8797-797979797979";
-      const task = makeTask({ status });
+      const task = makeTask({ status, persistent: true });
       const callerInfo = { source: "slack", display_name: "Director" };
       const canonical = buildCanonicalDeliveryPayload({
         text: "앞에 이거 뭐야?",
@@ -178,6 +178,9 @@ describe("TaskInterventionRoute.addIntervention", () => {
         ? runningInterventionTransition.deliver
         : autoResumeTransition.resume;
       expect(transition).toHaveBeenCalledOnce();
+      if (status === "running") {
+        expect(autoResumeTransition.resume).not.toHaveBeenCalled();
+      }
       expect(vi.mocked(transition).mock.calls[0]?.[1]).toMatchObject({
         text: "앞에 이거 뭐야?",
         user: "",
