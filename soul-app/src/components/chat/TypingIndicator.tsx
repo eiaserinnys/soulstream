@@ -7,7 +7,7 @@ import { useTokens, type DesignTokens } from '../../theme';
 import { ThinkingOrb } from './ThinkingOrb';
 
 interface Props {
-  session?: Session;
+  session?: Pick<Session, 'agentName' | 'agentPortraitUrl' | 'displayName'>;
 }
 
 /**

@@ -1,12 +1,14 @@
 import { fireEvent, render } from '@testing-library/react-native';
 import { Image, StyleSheet } from 'react-native';
-import type { SessionEvent } from '../../../api/types';
+import type { Session, SessionEvent } from '../../../api/types';
 import { UserMessage } from '../UserMessage';
 import { useSettingsStore } from '../../../store/settingsStore';
 
+const attachmentSession: Session = { agentSessionId: 's', nodeId: 'node-1', displayName: null, status: 'idle', createdAt: '', updatedAt: '' };
+
 test('채팅 말풍선과 첨부의 시각 속성 snapshot은 불변이다', () => {
   useSettingsStore.setState({ serverUrl: 'https://chat.test' });
-  const screen = render(<UserMessage event={{ id: 'snapshot', type: 'user_message', data: { text: '사진 두 장', attachments: ['/tmp/one.png', '/tmp/two.png'] } }} session={{ agentSessionId: 's', nodeId: 'node-1', displayName: null, status: 'idle', createdAt: '', updatedAt: '' }} />);
+  const screen = render(<UserMessage event={{ id: 'snapshot', type: 'user_message', data: { text: '사진 두 장', attachments: ['/tmp/one.png', '/tmp/two.png'] } }} session={attachmentSession} />);
   expect({ bubble: StyleSheet.flatten(screen.getByTestId('user-message-bubble').props.style),
     text: screen.getByTestId('user-message-text').props.children,
     images: screen.UNSAFE_getAllByType(Image).map(({ props }) => ({ source: props.source, style: StyleSheet.flatten(props.style), resizeMode: props.resizeMode, accessibilityLabel: props.accessibilityLabel })) }).toMatchSnapshot();
@@ -25,7 +27,7 @@ test('user message는 평상시에 selectable=false다', () => {
 
 test('채팅 첨부 탭도 같은 뷰어에서 다른 첨부로 스와이프한다', () => {
   useSettingsStore.setState({ serverUrl: 'https://chat.test' });
-  const screen = render(<UserMessage event={{ id: 'images', type: 'user_message', data: { attachments: ['/tmp/one.png', '/tmp/two.png'] } }} session={{ agentSessionId: 's', nodeId: 'node-1', displayName: null, status: 'idle', createdAt: '', updatedAt: '' }} />);
+  const screen = render(<UserMessage event={{ id: 'images', type: 'user_message', data: { attachments: ['/tmp/one.png', '/tmp/two.png'] } }} session={attachmentSession} />);
   fireEvent.press(screen.getByLabelText('첨부 이미지 2'));
   expect(screen.getByTestId('image-viewer-pages').props.pagingEnabled).toBe(true);
   expect(screen.getByTestId('image-viewer-pages').props.contentOffset.x).toBeGreaterThan(0);

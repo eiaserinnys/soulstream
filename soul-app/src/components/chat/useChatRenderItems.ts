@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import type { SessionEvent } from '../../api/types';
 import type { StreamingSlots } from '../../store/chatStore';
 import {
@@ -8,6 +8,7 @@ import {
   streamingSlotRenderItems,
   type ChatRenderItem,
 } from './groupChatEvents';
+import { replaceEqualDeep } from '../../lib/structural-sharing';
 import { bottomFollowTargetKey } from './bottomFollow';
 
 const TYPING_RENDER_ITEM: ChatRenderItem = {
@@ -75,13 +76,28 @@ export function useChatRenderItems({
     () => [...bottomRenderItems].reverse(),
     [bottomRenderItems],
   );
-  const reversedItems = useMemo(
+  const incomingReversedItems = useMemo(
     () =>
       bottomReversedItems.length > 0
         ? bottomReversedItems.concat(baseReversedItems)
         : baseReversedItems,
     [baseReversedItems, bottomReversedItems],
   );
+  // Match by the existing render key, so prepend/append and streaming insertion
+  // preserve row identities too. This is only the previous projection, not a store/index.
+  const previousItems = useRef<ChatRenderItem[]>([]);
+  const reversedItems = useMemo(() => {
+    const previousByKey = new Map(previousItems.current.map(item => [item.key, item]));
+    const shared = incomingReversedItems.map(item => {
+      const previous = previousByKey.get(item.key);
+      return previous === undefined ? item : replaceEqualDeep(previous, item);
+    });
+    const result = shared.length === previousItems.current.length
+      && shared.every((item, index) => item === previousItems.current[index])
+      ? previousItems.current : shared;
+    previousItems.current = result;
+    return result;
+  }, [incomingReversedItems]);
   const bottomFollowItemKey =
     bottomFollowTargetKey(bottomRenderItems) ??
     bottomFollowTargetKey(baseRenderItems);

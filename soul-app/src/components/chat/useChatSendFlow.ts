@@ -19,7 +19,7 @@ export interface UseChatSendFlowDeps {
   /** 현재 세션 ID. undefined면 세션 식별 오류를 노출한다. */
   sessionId: string | undefined;
   /** 현재 세션 객체. status에 따라 optimistic variant 결정 (서버 분기 거울, chatStore.pickOptimisticVariant 참조). */
-  session: Session | undefined;
+  session: Pick<Session, 'status'> | undefined;
   /** 전송·복원에 필요한 첨부 path와 선택 이름. 첨부 lifecycle에는 의존하지 않는다. */
   attachments: ReadonlyArray<{ path: string; name?: string }>;
   /** 실제 전송을 시작한 직후 첨부 목록을 비운다. */
