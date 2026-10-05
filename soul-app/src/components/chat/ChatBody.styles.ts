@@ -3,10 +3,13 @@ import type { DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { createSessionVisualRoles } from '../../theme/sessionVisualRoles';
 
+export const ADD_GLYPH_INSET_RATIO = 3 / 16; // Ionicons `add` stroke inset within its icon box.
+
 export function makeStyles(t: DesignTokens) {
   const c = t.colors;
   const roles = createSurfaceRoles(t);
   const sessionRoles = createSessionVisualRoles(t);
+  const composer = sessionRoles.chat.composer;
   return StyleSheet.create({
     container: { flex: 1, ...roles.canvas.tokenStyle },
     list: { flex: 1 },
@@ -43,10 +46,19 @@ export function makeStyles(t: DesignTokens) {
       flexDirection: 'column',
     },
     composerControlsRow: {
-      minHeight: sessionRoles.chat.composer.hitTarget,
+      minHeight: composer.hitTarget,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+    },
+    composerAttachmentSlot: {
+      marginLeft: composer.inputPaddingHorizontal
+        - (composer.hitTarget - t.iconSize.action) / 2
+        - t.iconSize.action * ADD_GLYPH_INSET_RATIO,
+    },
+    composerControlsSpacer: {
+      flex: 1,
+      alignSelf: 'stretch',
     },
     composerRightControls: {
       flexDirection: 'row',

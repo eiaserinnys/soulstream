@@ -72,8 +72,9 @@ describe('ChatComposer', () => {
       justifyContent: 'space-between',
     });
     const controlChildren = React.Children.toArray(controlsRow.props.children);
-    expect((controlChildren[0] as React.ReactElement<any>).props.testID).toBe('chat-composer-attach-button');
-    const rightControls = controlChildren[1] as React.ReactElement<any>;
+    expect((controlChildren[0] as React.ReactElement<any>).props.testID).toBe('chat-composer-attach-slot');
+    expect((controlChildren[1] as React.ReactElement<any>).props.testID).toBe('chat-composer-controls-spacer');
+    const rightControls = controlChildren[2] as React.ReactElement<any>;
     expect(StyleSheet.flatten(rightControls.props.style)).toMatchObject({ flexDirection: 'row', gap: 6 });
     expect(React.Children.toArray(rightControls.props.children).map(
       (child: any) => child.props.testID,
@@ -218,6 +219,35 @@ describe('ChatComposer', () => {
     expect(filledSend.props.accessibilityState.disabled).toBe(false);
     fireEvent.press(filledSend);
     expect(filled.onSend).toHaveBeenCalledTimes(1);
+  });
+
+  test('empty and filled controls space focuses the input but does nothing while disabled', () => {
+    const focus = jest.fn();
+    const measurementRef = { current: null as any };
+    jest.spyOn(inputMeasurement, 'useTextInputContentHeight').mockReturnValue({
+      ref: measurementRef,
+      contentHeight: 0,
+      onContentSizeChange: undefined,
+    });
+    const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
+    const screen = render(<ChatComposer {...props} input="" />);
+    const spacer = () => screen.getByTestId('chat-composer-controls-spacer');
+    measurementRef.current = { focus };
+
+    expect(spacer().props.accessible).toBe(false);
+    expect(spacer().props.focusable).toBe(false);
+    fireEvent.press(spacer());
+    expect(focus).toHaveBeenCalledTimes(1);
+
+    screen.rerender(<ChatComposer {...props} input="입력 중인 문장" />);
+    measurementRef.current = { focus };
+    fireEvent.press(spacer());
+    expect(focus).toHaveBeenCalledTimes(2);
+
+    screen.rerender(<ChatComposer {...props} input="입력 중인 문장" disabled />);
+    measurementRef.current = { focus };
+    fireEvent.press(spacer());
+    expect(focus).toHaveBeenCalledTimes(2);
   });
 
   test('text input delegates changes without owning message state', () => {

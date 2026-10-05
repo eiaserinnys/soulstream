@@ -10,6 +10,7 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 }));
 
 import { ChatComposer } from '../ChatComposer';
+import { ADD_GLYPH_INSET_RATIO } from '../ChatBody.styles';
 
 function composer(input = '메시지') {
   return (
@@ -60,7 +61,24 @@ test.each([
     alignItems: 'center',
     justifyContent: 'space-between',
   });
-  const rightControls = React.Children.toArray(controlsRow.props.children)[1] as React.ReactElement<any>;
+  const controlsChildren = React.Children.toArray(controlsRow.props.children) as React.ReactElement<any>[];
+  expect(controlsChildren.map((child) => child.props.testID)).toEqual([
+    'chat-composer-attach-slot',
+    'chat-composer-controls-spacer',
+    undefined,
+  ]);
+  const attachmentSlot = screen.getByTestId('chat-composer-attach-slot');
+  const spacer = screen.getByTestId('chat-composer-controls-spacer');
+  const attachmentIcon = screen.getByTestId('chat-composer-attach-visual').props.children as React.ReactElement<any>;
+  const inputPaddingHorizontal = StyleSheet.flatten(input.props.style).paddingHorizontal;
+  expect(StyleSheet.flatten(attachmentSlot.props.style).marginLeft).toBeCloseTo(
+    inputPaddingHorizontal - (hitTarget - attachmentIcon.props.size) / 2 - attachmentIcon.props.size * ADD_GLYPH_INSET_RATIO,
+  );
+  expect(spacer.props.accessible).toBe(false);
+  expect(spacer.props.focusable).toBe(false);
+  expect(spacer.props.tabIndex).toBe(-1);
+  expect(StyleSheet.flatten(spacer.props.style)).toMatchObject({ flex: 1, alignSelf: 'stretch' });
+  const rightControls = controlsChildren[2];
   expect(StyleSheet.flatten(rightControls.props.style)).toMatchObject({ flexDirection: 'row', gap: 6 });
   const deviceLineHeight = (dimensions.width >= 768 ? 18 : 17) * 1.3;
   const measuredLineHeight = deviceLineHeight * dimensions.fontScale;
@@ -89,12 +107,7 @@ test.each([
     'chat-composer-text-input',
     'chat-composer-controls-row',
   ]);
-  const controlsOrder = React.Children.toArray(controlsRow.props.children)
-    .map((child: any) => child?.props?.testID);
-  expect(controlsOrder).toEqual([
-    'chat-composer-attach-button',
-    undefined,
-  ]);
+  expect(screen.getByTestId('chat-composer-attach-button')).toBeTruthy();
   expect(React.Children.toArray(rightControls.props.children).map((child: any) => child.props.testID)).toEqual([
     'interrupt-control',
     'chat-composer-voice-slot',

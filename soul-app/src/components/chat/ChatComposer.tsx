@@ -3,6 +3,7 @@ import React from 'react';
 import {
   ActivityIndicator,
   Platform,
+  Pressable,
   TextInput,
   View,
   useWindowDimensions,
@@ -118,12 +119,25 @@ export function ChatComposer({
             accessibilityState={{ disabled }}
           />
           <View testID="chat-composer-controls-row" style={styles.composerControlsRow}>
-            <AttachmentPickerButton
-              testID="chat-composer-attach-button"
-              surfaceTestID="chat-composer-attach-visual"
-              uploading={uploading}
-              disabled={controlsDisabled}
-              onPress={onPickAttachment}
+            <View testID="chat-composer-attach-slot" style={styles.composerAttachmentSlot}>
+              <AttachmentPickerButton
+                testID="chat-composer-attach-button"
+                surfaceTestID="chat-composer-attach-visual"
+                uploading={uploading}
+                disabled={controlsDisabled}
+                onPress={onPickAttachment}
+              />
+            </View>
+            <Pressable
+              testID="chat-composer-controls-spacer"
+              accessible={false}
+              focusable={false}
+              tabIndex={-1}
+              disabled={disabled}
+              style={styles.composerControlsSpacer}
+              onPress={() => {
+                if (!disabled) measurement.ref.current?.focus();
+              }}
             />
             <View style={styles.composerRightControls}>
               {interruptControls}

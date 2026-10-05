@@ -124,8 +124,84 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
         testID="chat-composer-controls-row"
       >
         <View
-          accessibilityLabel="첨부 추가"
-          accessibilityRole="button"
+          style={
+            {
+              "marginLeft": -5.875,
+            }
+          }
+          testID="chat-composer-attach-slot"
+        >
+          <View
+            accessibilityLabel="첨부 추가"
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": false,
+                "expanded": undefined,
+                "selected": undefined,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            onClick={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              {
+                "alignItems": "center",
+                "flexShrink": 0,
+                "justifyContent": "center",
+                "minHeight": 44,
+                "minWidth": 44,
+                "opacity": 1,
+              }
+            }
+            testID="chat-composer-attach-button"
+          >
+            <View
+              style={
+                [
+                  {
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                  },
+                  [
+                    {
+                      "backgroundColor": "transparent",
+                      "borderRadius": 20,
+                      "height": 40,
+                      "width": 40,
+                    },
+                    false,
+                  ],
+                ]
+              }
+              testID="chat-composer-attach-visual"
+            >
+              <Ionicons
+                color="#53575d"
+                name="add"
+                size={26}
+              />
+            </View>
+          </View>
+        </View>
+        <View
           accessibilityState={
             {
               "busy": undefined,
@@ -143,10 +219,12 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
               "text": undefined,
             }
           }
-          accessible={true}
+          accessible={false}
           collapsable={false}
-          focusable={true}
+          focusable={false}
+          onBlur={[Function]}
           onClick={[Function]}
+          onFocus={[Function]}
           onResponderGrant={[Function]}
           onResponderMove={[Function]}
           onResponderRelease={[Function]}
@@ -155,43 +233,13 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
           onStartShouldSetResponder={[Function]}
           style={
             {
-              "alignItems": "center",
-              "flexShrink": 0,
-              "justifyContent": "center",
-              "minHeight": 44,
-              "minWidth": 44,
-              "opacity": 1,
+              "alignSelf": "stretch",
+              "flex": 1,
             }
           }
-          testID="chat-composer-attach-button"
-        >
-          <View
-            style={
-              [
-                {
-                  "alignItems": "center",
-                  "justifyContent": "center",
-                },
-                [
-                  {
-                    "backgroundColor": "transparent",
-                    "borderRadius": 20,
-                    "height": 40,
-                    "width": 40,
-                  },
-                  false,
-                ],
-              ]
-            }
-            testID="chat-composer-attach-visual"
-          >
-            <Ionicons
-              color="#53575d"
-              name="add"
-              size={26}
-            />
-          </View>
-        </View>
+          tabIndex={-1}
+          testID="chat-composer-controls-spacer"
+        />
         <View
           style={
             {
