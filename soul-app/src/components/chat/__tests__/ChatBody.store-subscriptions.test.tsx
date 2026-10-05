@@ -249,6 +249,29 @@ describe('ChatBody store subscription boundary', () => {
     mockRenderRealtimeVoiceControls.mockClear();
   });
 
+  test('typing updates only the composer, without rendering the conversation list', async () => {
+    await preparePersistentChatDrafts();
+    const view = await renderSettled();
+    fireEvent.changeText(view.getByTestId('chat-composer-input'), '입');
+    expect(view.getByTestId('chat-composer-input').props.value).toBe('입');
+    expect(mockRenderChatEventList).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  test('live text and history events do not render the input composer', async () => {
+    await preparePersistentChatDrafts();
+    const view = await renderSettled();
+    mockRenderChatComposer.mockClear();
+    act(() => useChatStore.getState().setStreamingEvent(SID, {
+      id: 'live', type: 'assistant_message', data: { text: '답변', streamIdentity: 'live' },
+    }));
+    act(() => useChatStore.getState().mergeEvents(SID, [{
+      id: '42', type: 'tool_start', data: { tool_use_id: 'tool', tool_name: 'exec_command' },
+    }]));
+    expect(mockRenderChatComposer).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
   test('lastEventIdBySession 변경은 ChatBody 렌더를 유발하지 않는다', async () => {
     await renderSettled();
 

@@ -1,4 +1,3 @@
-import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -6,7 +5,6 @@ import {
   Platform,
   LayoutAnimation,
   UIManager,
-  Alert,
   type FlatList,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -17,40 +15,25 @@ import {
 } from '../../store/chatStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { useNodeConnectivityStore } from '../../store/nodeConnectivityStore';
 import { createApiClient } from '../../api/client';
-import { useChatAttachments } from '../../hooks/useChatAttachments';
 import type { SessionEvent } from '../../api/types';
 import type { ChatRenderItem } from './groupChatEvents';
 import { makeStyles } from './ChatBody.styles';
-import {
-  CHAT_SEND_ERROR_MESSAGES,
-  useChatSendFlow,
-  type ChatSendUsageEvent,
-} from './useChatSendFlow';
 import { useChatHistoryPagination } from './useChatHistoryPagination';
-import { RealtimeVoiceControls } from './RealtimeVoiceControls';
-import { ChatComposer } from './ChatComposer';
 import { useChatBottomFollow } from './useChatBottomFollow';
 import { useTokens } from '../../theme';
 import { ChatEventList } from './ChatEventList';
-import { AttachmentChips } from './AttachmentChips';
-import { ChatInterruptButton } from './ChatInterruptButton';
 import { ClaudeRuntimeTasksStrip } from './ClaudeRuntimeTasksStrip';
 import { ClaudeRuntimeSchedulesStrip } from './ClaudeRuntimeSchedulesStrip';
 import { ClaudeRuntimeSignalsStrip } from './ClaudeRuntimeSignalsStrip';
 import { useChatRenderItems } from './useChatRenderItems';
 import { useChatSseStream } from './useChatSseStream';
 import { captureAuthScope, useAuthScopeGeneration } from '../../lib/auth-scope';
-import { isSessionOnDisconnectedNode } from '../../lib/session-node-projection';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { renderItemContainsEventId } from './chatSearchAnchor';
 import { SessionStoryPanel } from './SessionStoryPanel';
 import { useAppForegroundLifecycle } from '../../hooks/useAppForegroundLifecycle';
-import {
-  createUiUsageFlowId,
-  recordUiUsageEvent,
-} from '../../lib/ui-usage-events';
+import { ChatInputComposer, type ChatInputComposerHandle } from './ChatInputComposer';
 
 interface Props {
   /** 표시할 세션 ID. undefined면 빈 상태 패널을 그린다. */
@@ -134,16 +117,6 @@ export function ChatBody({
   const session = useSessionStore((s) =>
     sessionId ? s.sessions[sessionId] : undefined,
   );
-  const nodesReady = useNodeConnectivityStore((state) => state.ready);
-  const connectedNodeIds = useNodeConnectivityStore((state) => state.connectedNodeIds);
-  const inputDraft = usePersistentDraft('chat', [session?.nodeId, sessionId], '');
-  const inputDisabled = !inputDraft.ready || (session ? isSessionOnDisconnectedNode(session, {
-    ready: nodesReady,
-    connectedNodeIds,
-  }) : false);
-
-  const input = inputDraft.value;
-  const [interrupting, setInterrupting] = useState(false);
   const [snapshotGeneration, setSnapshotGeneration] = useState(0);
   const [highlightedItemKey, setHighlightedItemKey] = useState<string | null>(
     null,
@@ -165,116 +138,9 @@ export function ChatBody({
   }
   const appForeground = useAppForegroundLifecycle();
   const detailedNetworkActive = active && appForeground;
-  const inputRef = useRef(input);
-  const composeFlowRef = useRef<{
-    flowId: string;
-    sessionId: string;
-    abandoned: boolean;
-  } | null>(null);
-  const previousSessionIdRef = useRef(sessionId);
-  const wasComposerVisibleRef = useRef(detailedNetworkActive);
-
-  const abandonComposer = useCallback((reason: string) => {
-    const flow = composeFlowRef.current;
-    const draft = inputRef.current;
-    if (!flow || flow.abandoned || draft.length === 0) return;
-    recordUiUsageEvent({
-      type: 'compose_abandon',
-      target: { kind: 'session', id: flow.sessionId },
-      flowId: flow.flowId,
-      attrs: { draftPresent: true, draftLength: draft.length, reason },
-    });
-    flow.abandoned = true;
-  }, []);
-
-  const resumeComposer = useCallback(() => {
-    const flow = composeFlowRef.current;
-    const draft = inputRef.current;
-    if (!flow || !flow.abandoned || draft.length === 0) return;
-    recordUiUsageEvent({
-      type: 'compose_resume',
-      target: { kind: 'session', id: flow.sessionId },
-      flowId: flow.flowId,
-      attrs: { draftPresent: true, draftLength: draft.length },
-    });
-    flow.abandoned = false;
-  }, []);
-
-  const clearComposerInput = useCallback(() => {
-    inputRef.current = '';
-    composeFlowRef.current = null;
-    inputDraft.clear();
-  }, [inputDraft.clear]);
-
-  const handleInputChange = useCallback((value: string) => {
-    const previous = inputRef.current;
-    if (!previous && value && sessionId) {
-      const flowId = createUiUsageFlowId();
-      if (flowId) {
-        composeFlowRef.current = { flowId, sessionId, abandoned: false };
-        recordUiUsageEvent({
-          type: 'compose_start',
-          target: { kind: 'session', id: sessionId },
-          flowId,
-          attrs: { mode: 'chat' },
-        });
-      }
-    }
-    if (previous && !value) composeFlowRef.current = null;
-    inputRef.current = value;
-    inputDraft.setValue(value);
-  }, [sessionId, inputDraft.setValue]);
-
-  const handleSendUsage = useCallback((event: ChatSendUsageEvent) => {
-    const flowId = event.flowId === undefined
-      ? composeFlowRef.current?.flowId
-      : event.flowId;
-    if (!flowId || !sessionId) return;
-    if (event.kind === 'submit') {
-      recordUiUsageEvent({
-        type: 'compose_submit',
-        target: { kind: 'session', id: sessionId },
-        flowId,
-        attrs: { draftLength: event.draftLength, mode: 'chat' },
-      });
-      return;
-    }
-    recordUiUsageEvent({
-      type: 'compose_result',
-      target: { kind: 'session', id: sessionId },
-      flowId,
-      attrs: {
-        status: event.status,
-        durationMs: event.durationMs,
-        ...(event.errorCode === undefined ? {} : { errorCode: event.errorCode }),
-        ...(event.sessionEventId === undefined
-          ? {}
-          : { sessionEventId: event.sessionEventId }),
-      },
-    });
-  }, [sessionId]);
-
-  useEffect(() => {
-    const previous = previousSessionIdRef.current;
-    if (previous && previous !== sessionId) abandonComposer('session_change');
-    previousSessionIdRef.current = sessionId;
-  }, [abandonComposer, sessionId]);
-
-  useEffect(() => {
-    inputRef.current = input;
-  }, [input]);
-
-  useEffect(() => {
-    const visible = detailedNetworkActive;
-    if (wasComposerVisibleRef.current && !visible) {
-      abandonComposer(appForeground ? 'view_blur' : 'app_inactive');
-    } else if (!wasComposerVisibleRef.current && visible) {
-      resumeComposer();
-    }
-    wasComposerVisibleRef.current = visible;
-  }, [abandonComposer, appForeground, detailedNetworkActive, resumeComposer]);
-
-  useEffect(() => () => abandonComposer('component_unmount'), [abandonComposer]);
+  const composerRef = useRef<ChatInputComposerHandle>(null);
+  const handleRetryPending = useCallback((eventId: string) => composerRef.current?.retryPending(eventId), []);
+  const handleRestorePending = useCallback((eventId: string) => composerRef.current?.restorePending(eventId), []);
 
   // FlatList ref — history pagination과 bottom follow가 같은 viewport를 제어한다.
   const flatListRef = useRef<FlatList<ChatRenderItem>>(null);
@@ -323,23 +189,6 @@ export function ChatBody({
   const failDetailStream = useCallback((error: unknown) => {
     detailStreamFailureRef.current(error);
   }, []);
-
-  // 첨부 파일 picker + 업로드 + 목록 상태는 useChatAttachments 훅에 위임한다.
-  // 훅이 노출하는 clearAttachments는 useCallback(..., []) 안정 참조이므로
-  // 마운트 effect deps([sessionId, api]) 변경 없이 그대로 사용 가능.
-  const {
-    attachments,
-    uploading,
-    pickAttachment,
-    removeAttachment,
-    clearAttachments,
-    restoreAttachments,
-  } = useChatAttachments({
-    api,
-    sessionId,
-    nodeId: session?.nodeId,
-    disabled: inputDisabled,
-  });
 
   // history pagination 책임을 훅에 위임 (F-A·F-B·F-D·F-H 가드 포함).
   // 본 훅의 useEffect[sessionId, api, authScope]는 본 컴포넌트의 useEffect보다 *먼저* 발화한다
@@ -418,8 +267,6 @@ export function ChatBody({
     pendingCatchupQueueRef.current = [];
     pendingSnapshotBaselineRef.current = null;
     clearStreamingEvents(sessionId);
-    composeFlowRef.current = null;
-    clearAttachments();
     // sendError 리셋은 useChatSendFlow가 sessionId 변경 시 자동 처리한다 (정본 이동에 따른 책임 이동).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, api]);
@@ -540,67 +387,6 @@ export function ChatBody({
     return () => clearTimeout(clearHighlight);
   }, [highlightedItemKey]);
 
-  // handleSend 흐름은 useChatSendFlow에 정본화 (design-principles §10).
-  // scrollToBottom은 사용자 송신 시점의 정본 snap 트리거 — typing indicator(=session.status='running'이
-  // 켜질 때 reversedItems[0]로 들어가는 항목)가 InputBar에 가려지는 회귀를 구조적으로 차단한다.
-  // RAF 1프레임은 setPendingOptimistic의 zustand subscribe → 리렌더 → FlatList re-measure
-  // 사이클 후 scrollToOffset이 적용되도록 보장 (loadHistoryPage if(!before) 분기와 동일 패턴 — 정본 일관).
-  const {
-    sending,
-    hasPendingOptimistic,
-    sendError,
-    handleSend,
-    retryPendingOptimistic,
-    restorePendingOptimistic,
-  } = useChatSendFlow({
-    api,
-    sessionId,
-    session,
-    attachments,
-    clearAttachments,
-    disabled: inputDisabled,
-    scrollToBottom: requestBottomFollow,
-    onUsageEvent: handleSendUsage,
-  });
-
-  const handleRetryPending = useCallback((eventId: string) => {
-    void retryPendingOptimistic(eventId);
-  }, [retryPendingOptimistic]);
-
-  const handleRestorePending = useCallback((eventId: string) => {
-    const restored = restorePendingOptimistic(eventId, inputRef.current);
-    if (!restored) return;
-    inputDraft.setValue(restored.inputText);
-    if (!composeFlowRef.current && sessionId) {
-      const flowId = createUiUsageFlowId();
-      if (flowId) {
-        composeFlowRef.current = { flowId, sessionId, abandoned: false };
-        recordUiUsageEvent({
-          type: 'compose_start',
-          target: { kind: 'session', id: sessionId },
-          flowId,
-          attrs: { mode: 'chat' },
-        });
-      }
-    }
-    restoreAttachments(restored.attachments.map((attachment) => ({
-      path: attachment.path,
-      name: attachment.name ?? attachment.path,
-    })));
-  }, [restoreAttachments, restorePendingOptimistic, sessionId, inputDraft.setValue]);
-
-  const handleInterrupt = async () => {
-    if (!api || !sessionId || interrupting) return;
-    setInterrupting(true);
-    try {
-      await api.interruptSession(sessionId);
-    } catch (e: any) {
-      Alert.alert('중단 실패', e?.message ?? '알 수 없는 오류');
-    } finally {
-      setInterrupting(false);
-    }
-  };
-
   const handleListScroll = (
     event: NativeSyntheticEvent<NativeScrollEvent>,
   ) => {
@@ -670,56 +456,16 @@ export function ChatBody({
       <ClaudeRuntimeSchedulesStrip sessionId={sessionId} api={api} />
       <ClaudeRuntimeSignalsStrip sessionId={sessionId} api={api} />
 
-      {sendError && sendError !== CHAT_SEND_ERROR_MESSAGES.disabled ? (
-        <Text style={styles.errorText}>{sendError}</Text>
-      ) : null}
-
-      {inputDisabled ? (
-        <Text testID="chat-offline-input-notice" style={styles.offlineNotice}>
-          노드 연결을 기다리는 동안 메시지와 첨부를 보낼 수 없습니다.
-        </Text>
-      ) : null}
-
-      <AttachmentChips
-        attachments={attachments}
-        styles={styles}
-        textSecondaryColor={t.colors.textSecondary}
-        textMutedColor={t.colors.textMuted}
-        onRemove={removeAttachment}
-        disabled={inputDisabled}
-      />
-
-      <ChatComposer
-        input={input}
-        onChangeInput={handleInputChange}
-        onPickAttachment={pickAttachment}
-        onSend={() => handleSend(input, clearComposerInput, composeFlowRef.current?.flowId ?? null)}
-        uploading={uploading}
-        sending={sending}
-        hasPendingOptimistic={hasPendingOptimistic}
-        disabled={inputDisabled}
+      <ChatInputComposer
+        key={sessionId}
+        ref={composerRef}
+        sessionId={sessionId}
+        session={session}
+        api={api}
+        detailedNetworkActive={detailedNetworkActive}
+        appForeground={appForeground}
         minimumBottomPadding={minimumBottomPadding}
-        interruptControls={
-          session?.status === 'running' ? (
-            <ChatInterruptButton
-              interrupting={interrupting}
-              disabled={interrupting || !api}
-              styles={styles}
-              accentTextColor={t.colors.accentText}
-              onPress={handleInterrupt}
-            />
-          ) : null
-        }
-        voiceControls={
-          <RealtimeVoiceControls
-            api={api}
-            sessionId={sessionId}
-            backend={session?.backend}
-            events={events}
-            disabled={sending || inputDisabled}
-            compact
-          />
-        }
+        requestBottomFollow={requestBottomFollow}
       />
     </AppKeyboardAvoidingView>
   );
