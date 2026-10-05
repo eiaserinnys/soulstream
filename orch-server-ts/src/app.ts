@@ -7,6 +7,7 @@ import { registerCardOrchestrationDecisionRoutes, type CardOrchestrationDecision
 import { registerR2SettingsRoutes, type R2SettingsProvider } from "./admin/r2_settings_routes.js";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerCardDispatchSettingsRoutes, type CardDispatchSettingsRouteOptions } from "./cards/card_dispatch_settings_routes.js";
+import { registerPersistentContextHostRoutes, type PersistentContextHostRouteOptions } from "./persistent-context/persistent_context_host_routes.js";
 
 import {
   registerAdminUsersRoutes,
@@ -236,6 +237,7 @@ export type CreateAppOptions = {
   externalEvents?: import("./external_events/service.js").ExternalEventsService;
   mcpHostRoutes?: Omit<McpHostOptions, "recurringJobs" | "cardOrchestration" | "cluster"> & { cluster: Omit<McpHostOptions["cluster"], "logger"> } & Partial<Pick<McpHostOptions, "recurringJobs" | "cardOrchestration">>;
   persistenceHostRoutes?: PersistenceHostRouteOptions;
+  persistentContextRoutes?: PersistentContextHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
   uiEventRoutes?: UiEventRouteOptions;
 };
@@ -432,6 +434,12 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.persistenceHostRoutes !== undefined) {
     registerPersistenceHostRoutes(app, {
       ...options.persistenceHostRoutes,
+      environment: options.config.environment,
+    });
+  }
+  if (options.persistentContextRoutes !== undefined) {
+    registerPersistentContextHostRoutes(app, {
+      ...options.persistentContextRoutes,
       environment: options.config.environment,
     });
   }

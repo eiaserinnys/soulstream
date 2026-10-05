@@ -43,6 +43,7 @@ import { plannerRouteAuthRequirements } from "../planner/planner_routes.js";
 import { agentProfileRouteAuthRequirements } from "../node/agent_profile_routes.js";
 import { contextBundleRouteAuthRequirements } from "../node/context_bundle_routes.js";
 import { recurringJobRouteAuthRequirements } from "../recurring-jobs/recurring_job_routes.js";
+import { persistentContextRouteAuthRequirements } from "../persistent-context/persistent_context_host_routes.js";
 import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
@@ -95,6 +96,7 @@ export const routeCoverageOwners = [
   { owner: "usage.summary", authRequirements: usageSummaryRouteAuthRequirements },
   { owner: "ui.events", authRequirements: uiEventRouteAuthRequirements },
   { owner: "recurring.jobs", authRequirements: recurringJobRouteAuthRequirements },
+  { owner: "persistent.context", authRequirements: persistentContextRouteAuthRequirements },
 ] as const satisfies readonly RouteCoverageOwner[];
 
 // The route inventory fixture describes the retired Python server. New TS-only
@@ -103,6 +105,7 @@ export const tsOnlyRouteKeys = [
   "GET /api/owned-agents", "POST /api/owned-agents", "PATCH /api/owned-agents/{id}",
   "POST /api/owned-agents/{id}/keys", "DELETE /api/owned-agents/{id}/keys/{keyId}", "POST /api/owned-agents/register-existing",
   "POST /api/mcp/host/{tool}",
+  "POST /api/persistent-context/host/evaluate",
   "POST /api/attachments/sessions/multipart/init",
   "POST /api/attachments/sessions/multipart/complete",
   "POST /api/attachments/sessions/multipart/abort",

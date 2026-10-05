@@ -155,6 +155,7 @@ function createAllOptInRouteApp() {
     agentProfileRoutes: inert,
     ownedAgentRoutes: inert,
     persistentSessionRoutes: inert,
+    persistentContextRoutes: { service: inert, authBearerToken: "test-token" },
     adminUsersRoutes: inert,
     r2SettingsRoutes: inert,
     atomRoutes: inert,

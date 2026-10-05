@@ -135,9 +135,13 @@ export async function withLiveSearchDbConnection<T>(
   signal: AbortSignal | undefined,
   onCancelError: (error: unknown) => void,
   run: (query: LiveSearchQueryRunner) => Promise<T>,
+  callerDeadlineAt?: number,
 ): Promise<T> {
   if (signal?.aborted) throw searchAbortReason(signal);
-  const deadlineAt = Date.now() + LIVE_SEARCH_REQUEST_BUDGET_MS;
+  const deadlineAt = callerDeadlineAt ?? Date.now() + LIVE_SEARCH_REQUEST_BUDGET_MS;
+  const timeoutMs = callerDeadlineAt === undefined
+    ? LIVE_SEARCH_REQUEST_BUDGET_MS
+    : Math.max(1, deadlineAt - Date.now());
   const requestController = new AbortController();
   const onCallerAbort = () => {
     if (signal !== undefined) requestController.abort(searchAbortReason(signal));
@@ -145,7 +149,7 @@ export async function withLiveSearchDbConnection<T>(
   signal?.addEventListener("abort", onCallerAbort, { once: true });
   const deadlineTimer = setTimeout(() => {
     requestController.abort(new LiveSearchDeadlineError());
-  }, LIVE_SEARCH_REQUEST_BUDGET_MS);
+  }, timeoutMs);
   const requestSignal = requestController.signal;
   let connection: LiveSearchDbConnection | undefined;
   let activeQuery: LiveSearchPendingQuery<readonly Record<string, unknown>[]> | undefined;

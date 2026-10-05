@@ -70,8 +70,8 @@ describe("production orchestrator entrypoint", () => {
       version: "0.1.0",
       database_schema: databaseSchema,
     });
-    // Health schema plus the execution and card-service SQL adapters share this resolver.
-    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(3);
+    // Health schema, execution, card-service, and persistent-context adapters share this resolver.
+    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(4);
     expect(schemaQuery).toHaveBeenCalledOnce();
 
     const systemPortrait = await application.app.inject({

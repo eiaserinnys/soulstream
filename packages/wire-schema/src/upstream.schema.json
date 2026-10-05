@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 158개 $defs (top-level wire 81 + supporting/SSE 77). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 163개 $defs (top-level wire 81 + supporting/SSE 82). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -83,7 +83,8 @@
     "away_summary",
     "credential_alert",
     "realtime_status",
-    "realtime_transcript"
+    "realtime_transcript",
+    "generation_started"
   ],
   "x-soulstream-session-statuses": [
     "running",
@@ -2449,7 +2450,218 @@
       "description": "SSE: debug 로그.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "debug" } }
+      "properties": {
+        "type": { "const": "debug" },
+        "observation": { "$ref": "#/$defs/PersistentJevObservation" }
+      }
+    },
+    "PersistentJevCandidateCounts": {
+      "type": "object",
+      "required": [
+        "turn_summaries",
+        "cards",
+        "search_sessions",
+        "recent_completed_sessions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "turn_summaries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 40
+        },
+        "cards": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "search_sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "recent_completed_sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      }
+    },
+    "PersistentJevCardCandidate": {
+      "type": "object",
+      "required": [
+        "kind",
+        "card_id",
+        "label",
+        "line",
+        "score"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "card"
+        },
+        "card_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "card_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "line": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    },
+    "PersistentJevObservation": {
+      "type": "object",
+      "description": "입력 시점에 Jev가 고른 과거 자료 기록.",
+      "required": [
+        "input_id",
+        "selected",
+        "candidate_counts",
+        "model",
+        "latency_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "input_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selected": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/PersistentJevTurnSummaryCandidate"
+              },
+              {
+                "$ref": "#/$defs/PersistentJevCardCandidate"
+              },
+              {
+                "$ref": "#/$defs/PersistentJevSessionCandidate"
+              }
+            ]
+          }
+        },
+        "candidate_counts": {
+          "$ref": "#/$defs/PersistentJevCandidateCounts"
+        },
+        "model": {
+          "const": "jev-latest"
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "PersistentJevSessionCandidate": {
+      "type": "object",
+      "required": [
+        "kind",
+        "session_id",
+        "label",
+        "line",
+        "score"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "session"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "line": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "search",
+              "recent_completed"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2
+        }
+      }
+    },
+    "PersistentJevTurnSummaryCandidate": {
+      "type": "object",
+      "required": [
+        "kind",
+        "session_id",
+        "summary_event_id",
+        "turn_number",
+        "label",
+        "line",
+        "score"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "turn_summary"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary_event_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "turn_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "line": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
     },
     "SSEEventComplete": {
       "type": "object",

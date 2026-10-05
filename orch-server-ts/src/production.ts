@@ -92,6 +92,9 @@ import type { CardDispatcher } from "./cards/card_dispatcher.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
 import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
 import { createPersistenceHostRepositoryProvider } from "./control_plane/persistence_host_runtime.js";
+import { SessionStoryReadRepository } from "./control_plane/repositories/session_story_read_repository.js";
+import { createPersistentContextCandidateRepositories } from "./persistent-context/persistent_context_candidates.js";
+import { createPersistentContextService } from "./persistent-context/persistent_context_service.js";
 import { SqlRecurringJobRepository } from "./recurring-jobs/repository.js";
 import { RecurringJobService } from "./recurring-jobs/service.js";
 import { RecurringJobScheduler } from "./recurring-jobs/scheduler.js";
@@ -639,6 +642,25 @@ export async function createLiveProductionApplication(
       cardDispatchRuntime.executionServiceProvider,
       lifecycle,
     ),
+    persistentContextRoutes: {
+      authBearerToken: config.auth_bearer_token,
+      service: createPersistentContextService({
+        candidates: createPersistentContextCandidateRepositories({
+          searchDbConnectionFactory,
+          storyReads: new SessionStoryReadRepository(
+            await sqlResolver.resolveSql() as unknown as SqlClient,
+            searchDbConnectionFactory,
+            reportSearchCancelError,
+          ),
+          onCancelError: reportSearchCancelError,
+        }),
+        searchProvider: dbCatalogRepository.cogitoSearchProvider,
+        typesafeApiKey: config.typesafe_api_key,
+        logMissingInput: (sessionId) => context.warn(
+          `Persistent context evaluation skipped: session ${sessionId}, reason input_event_not_found`,
+        ),
+      }),
+    },
     r2SettingsRoutes: {
       currentEmail: providers.adminUsersRoutes.provider.currentEmail,
       isAdminEmail: providers.adminUsersRoutes.provider.isAdminEmail,
