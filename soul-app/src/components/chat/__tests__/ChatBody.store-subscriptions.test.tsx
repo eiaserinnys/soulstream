@@ -9,6 +9,7 @@ let mockRealChatEventList = false;
 const mockApiClient = {
   sessionEventsUrl: jest.fn(() => 'https://server.test/api/sessions/sess-1/events'),
   getSessionsByIds: jest.fn().mockResolvedValue([]),
+  getPersistentSession: jest.fn().mockResolvedValue({ session: { persistent: false, settings: {} } }),
   intervene: jest.fn(),
 };
 let mockSendPromise: Promise<void> | undefined;
