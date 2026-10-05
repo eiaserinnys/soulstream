@@ -219,12 +219,16 @@ describe("live Cogito search provider", () => {
       }
       return [];
     });
+    let jevSignal: AbortSignal | undefined;
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: connectionFactoryFor(harness.sql),
       typesafeApiKey: "test-key",
-      jevFetcher: async () => new Response(JSON.stringify({ answers: { c0: { noul: 0.9 } } }), {
+      jevFetcher: async (_input, init) => {
+        jevSignal = init?.signal as AbortSignal | undefined;
+        return new Response(JSON.stringify({ answers: { c0: { noul: 0.9 } } }), {
         status: 200,
-      }),
+        });
+      },
     });
 
     const response = await provider.search({
@@ -243,6 +247,8 @@ describe("live Cogito search provider", () => {
       excerpt: "완료 보고 😀",
       best_match: { excerpt: "완료 보고 😀" },
     }]);
+    expect(jevSignal).toBeInstanceOf(AbortSignal);
+    expect(jevSignal?.aborted).toBe(false);
   });
 
   it("queries shared PostgreSQL once, deduplicates event/session matches, and returns navigation", async () => {

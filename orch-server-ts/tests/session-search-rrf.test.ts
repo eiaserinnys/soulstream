@@ -61,6 +61,21 @@ describe("expanded session search RRF", () => {
     });
   });
 
+  it("uses the title instead of a first-request excerpt for persistent context", () => {
+    const pool = buildSessionSearchRrfPool(
+      [result("a", "2026-09-01")],
+      [],
+      () => ({ title: "Saved session title", request: "First request text" }),
+    );
+    const candidate = orderSessionSearchResults(pool, null)[0]!;
+
+    expect(withSessionCardExcerpt(candidate, null, true)).toMatchObject({
+      excerpt: "Saved session title",
+      best_match: { excerpt: "Saved session title" },
+    });
+    expect(withSessionCardExcerpt(candidate, null)).toMatchObject({ excerpt: "First request text" });
+  });
+
   it("keeps the card summary ahead of the last-answer preview", () => {
     const pool = buildSessionSearchRrfPool(
       [result("a", "2026-09-01")],

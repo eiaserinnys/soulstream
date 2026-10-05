@@ -102,14 +102,15 @@ export function createPersistentContextService(options: {
         const request = clipUtf8(input.request, MAX_REQUEST_BYTES);
         const searched = await options.searchProvider.search({
           q: request,
-          top_k: 4,
-          search_session_id: false,
+          top_k: 16,
+          search_session_id: true,
           include_turn_summaries: false,
           include_highlight: false,
           include_story: false,
           include_session_results: true,
-          session_search_mode: "lexical",
+          session_search_mode: "expanded",
           allowedFolderIds: raw.allowedFolderIds,
+          exclude_session_request_excerpt: true,
           signal: input.signal,
           deadlineAt: input.deadlineAt,
         });
@@ -122,7 +123,10 @@ export function createPersistentContextService(options: {
           return { observation: null };
         }
         const sessionSearchCandidates = uniqueSessionCandidates(
-          searched.session_results ?? [],
+          (searched.session_results ?? []).filter((session) => {
+            const folderId = stringField(session, "folder_id", "folderId");
+            return folderId !== null && raw.allowedFolderIds.includes(folderId);
+          }),
           input.sessionId,
         ).slice(0, 15);
         const recentCompleted = raw.recentCompletedSessions.slice(0, 5);
@@ -196,10 +200,12 @@ export function createPersistentContextService(options: {
           input_id: input.inputId,
           selected: selected as unknown as PersistentJevObservation["selected"],
           candidate_counts: {
-            turn_summaries: turnSummaries.length,
-            cards: Math.min(20, raw.cards.length),
-            search_sessions: sessionSearchCandidates.length,
-            recent_completed_sessions: recentCompleted.length,
+            turn_summaries: candidates.filter(({ selected: candidate }) => candidate.kind === "turn_summary").length,
+            cards: candidates.filter(({ selected: candidate }) => candidate.kind === "card").length,
+            search_sessions: candidates.filter(({ selected: candidate }) => candidate.kind === "session"
+              && candidate.sources?.includes("search")).length,
+            recent_completed_sessions: candidates.filter(({ selected: candidate }) => candidate.kind === "session"
+              && candidate.sources?.includes("recent_completed")).length,
           },
           model: "jev-latest",
           latency_ms: Math.max(0, Date.now() - startedAt),
@@ -223,12 +229,16 @@ function buildCandidates(input: {
   turnSummaries: readonly { eventId: number; turnNumber: number; content: string }[];
   cards: readonly { id: string; number: number | null; title: string; request: string; brief: string }[];
   searchedSessions: readonly Record<string, unknown>[];
-  recentCompleted: readonly { sessionId: string; title: string; firstRequest: string }[];
+  recentCompleted: readonly { sessionId: string; title: string; lastAssistantText: string }[];
 }): Candidate[] {
   const candidates: Candidate[] = [];
-  const sessions = new Map<string, { label: string; line: string; sources: Array<"search" | "recent_completed"> }>();
-  const add = (key: string, label: string, line: string, selected: CandidateSelection) => {
-    const boundedLine = clipUtf8(line, MAX_CANDIDATE_TEXT_BYTES);
+  const sessions = new Map<string, { label: string; line: string; fallbackLine: string; sources: Array<"search" | "recent_completed"> }>();
+  const add = (key: string, label: string, line: string, selected: CandidateSelection, fallbackLine = "") => {
+    const cleanedLine = cleanCandidateLine(line);
+    const cleanedFallback = cleanCandidateLine(fallbackLine);
+    const cleanLine = cleanedLine || cleanedFallback;
+    if (!cleanLine) return;
+    const boundedLine = clipUtf8(cleanLine, MAX_CANDIDATE_TEXT_BYTES);
     const text = clipUtf8(`${label} — ${boundedLine}`, MAX_CANDIDATE_TEXT_BYTES);
     candidates.push({ key, text, selected: { ...selected, label, line: boundedLine } as unknown as CandidateSelection, order: candidates.length });
   };
@@ -244,11 +254,15 @@ function buildCandidates(input: {
   });
   input.cards.slice(0, 20).forEach((card, index) => {
     const label = card.number === null ? clipUtf8(card.title, 80) : `#${card.number}`;
-    add(`card-${index}`, label, [card.title, card.request, card.brief].filter(Boolean).join(" — "), {
+    const line = [card.title, card.request, card.brief]
+      .map(cleanCandidateLine)
+      .filter(Boolean)
+      .join(" — ");
+    add(`card-${index}`, label, line, {
       kind: "card",
       card_id: card.id,
       ...(card.number === null ? {} : { card_number: card.number }),
-    });
+    }, card.title);
   });
   input.searchedSessions.forEach((session) => {
     const sessionId = stringField(session, "session_id", "sessionId");
@@ -256,7 +270,8 @@ function buildCandidates(input: {
     const title = stringField(session, "title", "display_name") ?? "이전 세션";
     sessions.set(sessionId, {
       label: clipUtf8(title, 120),
-      line: stringField(session, "excerpt", "first_request", "firstRequest") ?? title,
+      line: stringField(session, "excerpt") ?? title,
+      fallbackLine: title,
       sources: ["search"],
     });
   });
@@ -269,7 +284,8 @@ function buildCandidates(input: {
     }
     sessions.set(completed.sessionId, {
       label: clipUtf8(completed.title || "이전 세션", 120),
-      line: completed.firstRequest || completed.title,
+      line: completed.lastAssistantText || completed.title,
+      fallbackLine: completed.title,
       sources: ["recent_completed"],
     });
   }
@@ -280,7 +296,7 @@ function buildCandidates(input: {
       session_id: sessionId,
       sources: value.sources as ["search" | "recent_completed"]
         | ["search" | "recent_completed", "search" | "recent_completed"],
-    });
+    }, value.fallbackLine);
   }
   return candidates;
 }
@@ -333,6 +349,13 @@ function clipUtf8(value: string, maxBytes: number): string {
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
+}
+
+function cleanCandidateLine(value: string): string {
+  return value
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 function stringField(value: Record<string, unknown>, ...keys: string[]): string | null {

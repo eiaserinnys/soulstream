@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createPersistentContextCandidateRepositories } from "../src/persistent-context/persistent_context_candidates.js";
+import { createPersistentContextService } from "../src/persistent-context/persistent_context_service.js";
+import type { CogitoSearchProvider } from "../src/cogito/cogito_routes.js";
 import type { LiveSearchDbConnectionFactory, LiveSearchSql } from "../src/runtime/live_db_sql.js";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { SessionStoryReadRepository } from "../src/control_plane/repositories/session_story_read_repository.js";
@@ -83,8 +85,9 @@ describe("persistent context candidates in PostgreSQL", () => {
           ('jev-llm-session', 'jev-visible', 'llm', 'completed', 'Internal', '[]'::jsonb, NOW())
       `;
       await db.sql`
-        INSERT INTO sessions (session_id, folder_id, session_type, status, display_name, updated_at)
+        INSERT INTO sessions (session_id, folder_id, session_type, status, display_name, last_assistant_text, updated_at)
         SELECT 'jev-completed-' || n, 'jev-visible', 'claude', 'completed', 'Completed ' || n,
+          CASE WHEN n = 7 THEN 'A saved answer from the completed session' ELSE NULL END,
           TIMESTAMPTZ '2026-01-01T00:00:00Z' + n * INTERVAL '1 day'
         FROM generate_series(1, 7) AS n
       `;
@@ -148,11 +151,42 @@ describe("persistent context candidates in PostgreSQL", () => {
       expect(raw.cards.some((card) => card.id === "jev-card-hidden" || card.id === "jev-card-archived")).toBe(false);
       expect(raw.recentCompletedSessions).toHaveLength(5);
       expect(raw.recentCompletedSessions[0]?.sessionId).toBe("jev-completed-7");
+      expect(raw.recentCompletedSessions[0]?.lastAssistantText).toBe("A saved answer from the completed session");
+      expect(raw.recentCompletedSessions[1]?.lastAssistantText).toBe("");
       expect(raw.recentCompletedSessions.some((session) =>
         ["jev-current", "jev-hidden-session", "jev-archived-session", "jev-folderless-session", "jev-llm-session"].includes(session.sessionId),
       )).toBe(false);
       expect(counts.totalCount).toBe(2);
       expect(summaries.map((summary) => summary.content)).toEqual(["이전 요약 하나", "이전 요약 둘"]);
+
+      const service = createPersistentContextService({
+        candidates: repositories,
+        searchProvider: {
+          search: async () => ({
+            search_status: { session_sources: { metadata: { status: "complete" } } },
+            session_results: [],
+          }),
+        } as unknown as CogitoSearchProvider,
+        typesafeApiKey: "test-key",
+        logMissingInput: () => {},
+        logNullReason: () => {},
+        fetchImpl: async (_url, init) => {
+          const body = JSON.parse(String(init?.body)) as { state: { candidates: Array<{ key: string }> } };
+          return new Response(JSON.stringify({ answers: Object.fromEntries(
+            body.state.candidates.map(({ key }) => [key, { score: key.startsWith("session-") ? 3 : 2 }]),
+          ) }), { status: 200 });
+        },
+      });
+      const observed = await service.evaluatePersistentCandidates({
+        sessionId: "jev-current", inputId: "input-current", request: "current request",
+        deadlineAt: Date.now() + 3_000, signal,
+      });
+      expect(observed.observation?.selected).toContainEqual(expect.objectContaining({
+        kind: "session", session_id: "jev-completed-7", line: "A saved answer from the completed session",
+      }));
+      expect(observed.observation?.selected).toContainEqual(expect.objectContaining({
+        kind: "session", session_id: "jev-completed-6", line: "Completed 6",
+      }));
     } finally {
       await db.cleanup();
     }
