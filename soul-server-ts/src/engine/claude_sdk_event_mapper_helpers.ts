@@ -83,6 +83,23 @@ export function lastIterationUsage(usage: unknown): Record<string, unknown> | un
   return undefined;
 }
 
+export function firstCallInput(usage: unknown): {
+  inputTokens: number;
+  cachedInputTokens: number;
+} | undefined {
+  const record = asRecord(usage);
+  if (!record) return undefined;
+
+  const cachedInputTokens = asNumber(record.cache_read_input_tokens) ?? 0;
+  const inputTokens =
+    (asNumber(record.input_tokens) ?? 0) +
+    cachedInputTokens +
+    (asNumber(record.cache_creation_input_tokens) ?? 0);
+  if (!Number.isFinite(inputTokens) || inputTokens <= 0) return undefined;
+
+  return { inputTokens, cachedInputTokens };
+}
+
 export function makeContextUsageEvent(
   usage: unknown,
   modelUsage: unknown,

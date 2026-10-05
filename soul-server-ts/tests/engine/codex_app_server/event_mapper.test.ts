@@ -208,6 +208,7 @@ describe("Codex app-server notification mapper", () => {
       {
         model: "gpt-5.6-sol",
         tokenUsage: {
+          first: null,
           baseline: {
             totalTokens: 0,
             inputTokens: 0,
@@ -261,6 +262,7 @@ describe("Codex app-server notification mapper", () => {
       undefined,
       {
         tokenUsage: {
+          first: null,
           baseline: {
             totalTokens: 0,
             inputTokens: 0,
@@ -316,6 +318,7 @@ describe("Codex app-server notification mapper", () => {
       undefined,
       {
         tokenUsage: {
+          first: null,
           baseline: {
             totalTokens: 0,
             inputTokens: 0,
