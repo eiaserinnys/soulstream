@@ -16,6 +16,68 @@ export interface SessionStoryView {
   readonly updatedAt: Date | null;
 }
 
+export interface GenerationCheckpointReadLimits {
+  readonly recentEventLimit: number;
+}
+
+export interface GenerationCheckpointMaterial {
+  readonly story: SessionStoryView;
+  readonly lastSummarizedFinalResponseEventId: number | null;
+  readonly recent: {
+    readonly records: Array<{
+      readonly event_id: number;
+      readonly event_type: string;
+      readonly text: string;
+      readonly created_at: string;
+    }>;
+    readonly omittedUnsummarized: number;
+  };
+  readonly childSessions: Array<{
+    readonly sessionId: string;
+    readonly displayName: string | null;
+    readonly agentId: string | null;
+    readonly modelPreset: string | null;
+    readonly status: "initializing" | "running";
+    readonly cardId: string | null;
+    readonly createdAt: string;
+  }>;
+  readonly childSessionTotal: number;
+  readonly totals: {
+    readonly events: number;
+    readonly turnSummaries: number;
+  };
+}
+
+export interface SupervisedCardSnapshot {
+  readonly capturedAt: string;
+  readonly counts: {
+    readonly running: number;
+    readonly blocked: number;
+    readonly review: number;
+    readonly queued: number;
+    readonly todo: number;
+  };
+  readonly cards: Array<{
+    readonly id: string;
+    readonly title: string;
+    readonly status: "running" | "blocked" | "review" | "queued";
+    readonly blockedKind: "limit" | "question" | "no_report" | null;
+    readonly assignee: {
+      readonly kind: "agent" | "session" | "human" | null;
+      readonly agentId: string | null;
+      readonly sessionId: string | null;
+    };
+  }>;
+  readonly openQuestions: Array<{
+    readonly id: string;
+    readonly cardId: string;
+    readonly cardTitle: string;
+    readonly text: string;
+    readonly askedAt: string;
+  }>;
+  readonly openQuestionTotal: number;
+}
+
 export interface SessionTurnSummaryCounts {
   readonly totalCount: number;
   readonly digestedCount: number;

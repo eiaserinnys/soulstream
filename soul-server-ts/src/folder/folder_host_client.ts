@@ -9,6 +9,7 @@ import type {
   FolderSnapshot,
 } from "../db/session_db_types.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
+import type { SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 
 export class FolderHostClient {
   private readonly transport: PersistenceHostTransport;
@@ -19,6 +20,19 @@ export class FolderHostClient {
 
   getAssignedCardContext(sessionId: string): Promise<import("../context/assigned_card_context.js").AssignedCardContext> {
     return this.request("get_assigned_card_context", { session_id: sessionId });
+  }
+  getSupervisedCardContext(params: {
+    sessionId: string;
+    folderIds: string[] | null;
+    cardLimit: number;
+    questionLimit: number;
+  }): Promise<SupervisedCardSnapshot> {
+    return this.request("get_supervised_card_context", {
+      session_id: params.sessionId,
+      folder_ids: params.folderIds,
+      card_limit: params.cardLimit,
+      question_limit: params.questionLimit,
+    });
   }
   async assignSessionToFolder(sessionId: string, folderId: string | null): Promise<void> {
     await this.request("assign_session", { session_id: sessionId, folder_id: folderId });

@@ -2001,3 +2001,58 @@ describe("assigned-card prepared input capture identity",()=>{
     expect(capture).toHaveBeenLastCalledWith(expect.objectContaining({registrationId:null,executionCommandId:null,inputId:null}));
   });
 });
+
+describe("generation checkpoint context", () => {
+  it("replaces predecessor context, blanks the native ID, and reads both state sources", async () => {
+    const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
+      story: {
+        highlight: null,
+        narrative: "줄거리",
+        unfoldedTurnSummaries: [],
+        narrativeThroughEventId: null,
+        foldCount: 0,
+        updatedAt: null,
+      },
+      lastSummarizedFinalResponseEventId: null,
+      recent: { records: [], omittedUnsummarized: 0 },
+      childSessions: [],
+      childSessionTotal: 0,
+      totals: { events: 0, turnSummaries: 0 },
+    });
+    const getSupervisedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-10-05T00:00:00.000Z",
+      counts: { running: 0, blocked: 0, review: 0, queued: 0, todo: 0 },
+      cards: [],
+      openQuestions: [],
+      openQuestionTotal: 0,
+    });
+    const getAssignedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-10-05T00:00:00.000Z", total: 0, omitted: 0, cards: [],
+    });
+    const builder = makeBuilder({
+      getGenerationCheckpointMaterial,
+      getSupervisedCardContext,
+      getAssignedCardContext,
+    } as unknown as Partial<SessionDB>);
+    const task = makeTask({ agentSessionId: ownSessionIdForContextTest, codexThreadId: "native-old-session" });
+
+    const context = await builder.buildGenerationContext(task, codexAgent, "generation-input");
+    const keys = context.combinedContextItems.map((item) => item.key);
+    const soulstream = context.combinedContextItems.find((item) => item.key === "soulstream_session");
+
+    expect(keys).toContain("persistent_checkpoint");
+    expect(keys).not.toContain("predecessor_session_summary");
+    expect(keys.indexOf("persistent_checkpoint")).toBeLessThan(keys.indexOf("assigned_cards"));
+    expect(soulstream?.content).toMatchObject({ claude_session_id: "(new session)" });
+    expect(getGenerationCheckpointMaterial).toHaveBeenCalledWith(ownSessionIdForContextTest, expect.any(Object));
+    expect(getSupervisedCardContext).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: ownSessionIdForContextTest,
+      folderIds: null,
+      cardLimit: 60,
+      questionLimit: 10,
+    }));
+    expect(getAssignedCardContext).toHaveBeenCalledTimes(1);
+  });
+});
+
+const ownSessionIdForContextTest = "4f795856-a9bf-4ae2-8adb-2e8ea15f9951";

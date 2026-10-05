@@ -16,6 +16,7 @@ import {
   PersistenceHostRequestError,
   PersistenceHostTransport,
 } from "./persistence_host_clients.js";
+import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits } from "@soulstream/mcp-contract";
 
 export const SESSION_DATA_READ_OPERATIONS = [
   "get",
@@ -36,6 +37,7 @@ export const SESSION_DATA_READ_OPERATIONS = [
   "story",
   "turn_excerpt",
   "resume_context",
+  "generation_checkpoint_material",
 ] as const;
 
 export interface SessionEventRow {
@@ -126,6 +128,10 @@ export interface SessionDataHost {
   getSessionStory(sessionId: string): Promise<SessionStoryView>;
   getTurnExcerpt(sessionId: string, maxResponseChars?: number): Promise<SessionTurnExcerptResult>;
   getResumeContext(sessionId: string, limit: number): Promise<SessionResumeContext>;
+  getGenerationCheckpointMaterial(
+    sessionId: string,
+    limits: GenerationCheckpointReadLimits,
+  ): Promise<GenerationCheckpointMaterial>;
 }
 
 export class SessionDataHostError extends Error {
@@ -233,6 +239,13 @@ export class SessionDataHostClient implements SessionDataHost {
 
   getResumeContext(sessionId: string, limit: number): Promise<SessionResumeContext> {
     return this.turnCritical("resume_context", [sessionId, limit]);
+  }
+
+  getGenerationCheckpointMaterial(
+    sessionId: string,
+    limits: GenerationCheckpointReadLimits,
+  ): Promise<GenerationCheckpointMaterial> {
+    return this.turnCritical("generation_checkpoint_material", [sessionId, limits]);
   }
 
   private interactive<T>(operation: string, args: unknown[], signal?: AbortSignal): Promise<T> {

@@ -185,4 +185,49 @@ export class SessionReadRepository {
     };
   }
 
+  async listActiveChildSessionsSummary(callerSessionId: string): Promise<{
+    sessions: Array<{
+      session_id: string;
+      display_name: string | null;
+      agent_id: string | null;
+      model_preset: string | null;
+      status: "initializing" | "running";
+      card_id: string | null;
+      created_at: Date;
+    }>;
+    total: number;
+  }> {
+    const rows = await this.sql<Array<{
+      session_id: string;
+      display_name: string | null;
+      agent_id: string | null;
+      model_preset: string | null;
+      status: "initializing" | "running";
+      card_id: string | null;
+      created_at: Date;
+      total_count: string | number;
+    }>>`
+      WITH active_children AS (
+        SELECT
+          s.session_id,
+          s.display_name,
+          s.agent_id,
+          s.model_preset,
+          s.status,
+          s.card_id,
+          s.created_at
+        FROM sessions s
+        WHERE s.caller_session_id = ${callerSessionId}
+          AND s.status IN ('initializing', 'running')
+      )
+      SELECT active_children.*, COUNT(*) OVER ()::integer AS total_count
+      FROM active_children
+      ORDER BY created_at DESC, session_id COLLATE "C"
+    `;
+    return {
+      sessions: rows.map(({ total_count: _totalCount, ...session }) => session),
+      total: Number(rows[0]?.total_count ?? 0),
+    };
+  }
+
 }

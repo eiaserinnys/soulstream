@@ -22,6 +22,7 @@ const operations = new Set([
   "assign_session",
   "get_default",
   "get_assigned_card_context",
+  "get_supervised_card_context",
   "get_folder",
   "get_all",
   "get_catalog",
@@ -95,6 +96,12 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
   if (!options.cardServiceProvider) throw new Error("Card service is not configured");
   const service = await options.cardServiceProvider();
   if (operation === "get_assigned_card_context") return service.getAssignedCardContext(requiredString(body,"session_id"));
+  if (operation === "get_supervised_card_context") return service.getSupervisedCardContext({
+    sessionId: requiredString(body, "session_id"),
+    folderIds: body.folder_ids === null ? null : stringArray(body, "folder_ids"),
+    cardLimit: z.number().int().nonnegative().parse(body.card_limit),
+    questionLimit: z.number().int().nonnegative().parse(body.question_limit),
+  });
   if (operation === "get_folder") return await readFolderSnapshot(
     service,
     requiredString(body, "folder_id"),

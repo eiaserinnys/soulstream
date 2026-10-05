@@ -52,6 +52,13 @@ import {
 import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
 import { loadInitialResumeContext } from "./initial_resume_context.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
+import {
+  buildPersistentCheckpoint,
+  PERSISTENT_CHECKPOINT_BUDGET,
+  PERSISTENT_CHECKPOINT_READ_LIMITS,
+  PERSISTENT_SUPERVISION_SCOPE,
+  type PersistentCheckpointStats,
+} from "./persistent_checkpoint.js";
 import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 import {
@@ -75,6 +82,10 @@ export interface PreparedContext {
   assembledPrompt: string;
   /** Phase A compiler observation. Initial-message publisher records this once per new session. */
   contextManifest?: ContextManifest;
+}
+
+export interface GenerationPreparedContext extends PreparedContext {
+  checkpointStats: PersistentCheckpointStats;
 }
 
 export interface FollowupContextOptions {
@@ -216,12 +227,44 @@ export class ExecutionContextBuilder {
    * 호출 시점은 task_executor의 *신규 첫 turn 진입 전* (interventionQueue 비어있을 때).
    */
   async build(task: Task, agent: AgentProfile, inputId?: string | null): Promise<PreparedContext> {
+    return await this._buildContext(task, agent, inputId, false);
+  }
+
+  async buildGenerationContext(
+    task: Task,
+    agent: AgentProfile,
+    inputId?: string | null,
+  ): Promise<GenerationPreparedContext> {
+    return await this._buildContext(task, agent, inputId, true);
+  }
+
+  private async _buildContext(
+    task: Task,
+    agent: AgentProfile,
+    inputId: string | null | undefined,
+    generation: false,
+  ): Promise<PreparedContext>;
+  private async _buildContext(
+    task: Task,
+    agent: AgentProfile,
+    inputId: string | null | undefined,
+    generation: true,
+  ): Promise<GenerationPreparedContext>;
+  private async _buildContext(
+    task: Task,
+    agent: AgentProfile,
+    inputId: string | null | undefined,
+    generation: boolean,
+  ): Promise<PreparedContext | GenerationPreparedContext> {
     const resumeContext = await loadInitialResumeContext(
       this.db,
       this.logger,
       task.agentSessionId,
       BOARD_WORKSPACE_SESSION_LIMIT,
     );
+    const checkpoint = generation
+      ? await this.readPersistentCheckpoint(task.agentSessionId)
+      : null;
     const folder = await this._resolveFolder(task, resumeContext.session);
     const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);
     const pageContext = await this.pageContextResolver.resolve(task, agent, this.cfg.atom, {
@@ -266,15 +309,17 @@ export class ExecutionContextBuilder {
       task.agentSessionId,
       resumeContext.runningSessions,
     );
-    const predecessorSummaryItem = await buildPredecessorSummaryContextItem(
-      this.db,
-      this.logger,
-      task.agentSessionId,
-      resumeContext.predecessor,
-    );
+    const predecessorSummaryItem = generation
+      ? null
+      : await buildPredecessorSummaryContextItem(
+          this.db,
+          this.logger,
+          task.agentSessionId,
+          resumeContext.predecessor,
+        );
     const cogitoContextItem = await this._fetchCogitoContext();
     const { workingDir, maxTurns } = resolveProfileRuntimeSettings(task, this.registry);
-    return this._assembleContext({
+    const prepared = this._assembleContext({
       task,
       agent,
       folderName: folder.folderName,
@@ -289,10 +334,31 @@ export class ExecutionContextBuilder {
       runningSessionsItem,
       assignedCardItem: await this.buildAssignedCardContext(task, inputId),
       predecessorSummaryItem,
+      generationCheckpointItem: checkpoint?.item ?? null,
+      nativeSessionId: generation ? null : task.codexThreadId ?? null,
       cogitoContextItem,
       workingDir,
       maxTurns,
     });
+    return checkpoint ? { ...prepared, checkpointStats: checkpoint.stats } : prepared;
+  }
+
+  private async readPersistentCheckpoint(sessionId: string) {
+    const [material, cards] = await Promise.all([
+      this.db.getGenerationCheckpointMaterial(sessionId, PERSISTENT_CHECKPOINT_READ_LIMITS),
+      this.db.getSupervisedCardContext({
+        sessionId,
+        ...PERSISTENT_SUPERVISION_SCOPE,
+        cardLimit: PERSISTENT_CHECKPOINT_BUDGET.cardLimit,
+        questionLimit: PERSISTENT_CHECKPOINT_BUDGET.questionLimit,
+      }),
+    ]);
+    return buildPersistentCheckpoint({
+      material,
+      cards,
+      standingInstructions: [],
+      ownSessionId: sessionId,
+    }, PERSISTENT_CHECKPOINT_BUDGET);
   }
 
   /**
@@ -419,6 +485,8 @@ export class ExecutionContextBuilder {
     runningSessionsItem: ContextItem | null;
     assignedCardItem: ContextItem;
     predecessorSummaryItem: ContextItem | null;
+    generationCheckpointItem: ContextItem | null;
+    nativeSessionId: string | null;
     cogitoContextItem: ContextItem | null;
     workingDir?: string;
     maxTurns?: number;
@@ -432,7 +500,7 @@ export class ExecutionContextBuilder {
     const effectiveWorkspaceDir = args.workingDir ?? args.agent.workspace_dir;
     const soulstreamItem = buildSoulstreamContextItem({
       agentSessionId: args.task.agentSessionId,
-      claudeSessionId: args.task.codexThreadId ?? null,
+      claudeSessionId: args.nativeSessionId,
       workspaceDir: effectiveWorkspaceDir,
       folderName: args.folderName,
       nodeId: this.cfg.nodeId,
@@ -451,8 +519,9 @@ export class ExecutionContextBuilder {
     if (args.boardWorkspaceItem) {
       combinedContextItems.push(args.boardWorkspaceItem);
     }
-    if (args.predecessorSummaryItem) {
-      combinedContextItems.push(args.predecessorSummaryItem);
+    const checkpointContextItem = args.generationCheckpointItem ?? args.predecessorSummaryItem;
+    if (checkpointContextItem) {
+      combinedContextItems.push(checkpointContextItem);
     }
     if (args.runningSessionsItem) {
       combinedContextItems.push(args.runningSessionsItem);
