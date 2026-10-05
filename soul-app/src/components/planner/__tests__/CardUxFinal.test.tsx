@@ -221,7 +221,7 @@ test.each(['phone', 'tabletLandscape'] as const)('%s 카드 행은 실제 자식
   const cap = StyleSheet.flatten(screen.getByTestId(`card-${card.id}-완료-visual`).props.style);
   const capTouch = StyleSheet.flatten(screen.getByLabelText('완료').props.style);
   const title = StyleSheet.flatten(screen.getByText(card.title).props.style);
-  const status = StyleSheet.flatten(screen.getByText('검수').props.style);
+  const status = StyleSheet.flatten(screen.getByText('검수 대기').props.style);
   const metadata = StyleSheet.flatten(screen.getByText(/ · /).props.style);
   const preview = StyleSheet.flatten(screen.getByTestId(`card-${card.id}-preview`).props.style);
   const copyHeight = Math.max(title.lineHeight, status.lineHeight) + metadata.lineHeight + preview.lineHeight;
