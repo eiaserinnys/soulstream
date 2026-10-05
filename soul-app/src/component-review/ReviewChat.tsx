@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useTokens } from '../theme';
 import { ChatComposer } from '../components/chat/ChatComposer';
+import { ChatInterruptButton } from '../components/chat/ChatInterruptButton';
+import { makeStyles } from '../components/chat/ChatBody.styles';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
 import { SystemEvent } from '../components/events/SystemEvent';
@@ -15,7 +17,8 @@ import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummar
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
-  { value: 'uploading', label: '첨부 중' }, { value: 'disabled', label: '비활성' },
+  { value: 'uploading', label: '첨부 중' }, { value: 'interrupting', label: '정지 중' },
+  { value: 'disabled', label: '비활성' },
 ] as const;
 const assignedCardPreview = formatAssignedCardContextSnapshot({
   capturedAt: '2026-10-02T01:00:00.000Z',
@@ -29,6 +32,7 @@ const assignedCardPreview = formatAssignedCardContextSnapshot({
 });
 export function ReviewChat() {
   const t = useTokens();
+  const styles = makeStyles(t);
   const [input, setInput] = useState('');
   const [sent, setSent] = useState('');
   const [state, setState] = useState<typeof options[number]['value']>('normal');
@@ -38,18 +42,22 @@ export function ReviewChat() {
   const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n[공개 문서](https://expo.dev)';
   const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
   return <>
-    <ReviewSection title="입력창 · 빈 입력·여러 줄·전송·첨부·비활성">
+    <ReviewSection title="입력창 · 빈 입력·여러 줄·전송·첨부·정지·비활성">
       <SettingsSegmentedControl<typeof options[number]['value']> id="review-composer-state" value={state} onChange={setState} options={options} />
-      <ChatComposer input={input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
+      <ChatComposer input={state === 'sending' ? '' : input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
         onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
         sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
+        interruptControls={state === 'interrupting' ? <ChatInterruptButton
+          interrupting={state === 'interrupting'} styles={styles} accentTextColor={t.colors.accentText} disabled
+          onPress={() => {}}
+        /> : null}
         inputAccessibilityLabel="공개 예시 메시지" />
       {attachment ? <AttachmentImage source={require('../../assets/icon.png')} accessibilityLabel="공개 예시 첨부 열기" /> : null}
       {sent ? <UserMessage event={message('user_message', sent)} /> : null}
     </ReviewSection>
     <ReviewSection title="입력창 · embedded · 프레임이 바깥 여백 소유">
       <View style={{ padding: t.uiSpacing.md }}>
-        <ChatComposer embedded input={input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
+        <ChatComposer embedded input={state === 'sending' ? '' : input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
           onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
           sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
           inputAccessibilityLabel="embedded 예시 메시지" />
