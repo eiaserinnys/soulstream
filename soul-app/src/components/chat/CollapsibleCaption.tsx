@@ -77,7 +77,7 @@ function makeStyles(t: DesignTokens, align: 'start' | 'end') {
   const bubbleMaxWidth = createSessionVisualRoles(t).chat.bubbleMaxWidth;
   return StyleSheet.create({
     wrapper: {
-      paddingHorizontal: endAligned ? 0 : t.spacing.lg,
+      paddingHorizontal: endAligned ? t.spacing.md : t.spacing.lg,
     },
     touchFrame: {
       alignSelf: 'stretch',
@@ -85,7 +85,7 @@ function makeStyles(t: DesignTokens, align: 'start' | 'end') {
     touchSurface: {
       alignSelf: endAligned ? 'flex-end' : 'stretch',
       width: endAligned ? bubbleMaxWidth : '100%',
-      marginRight: endAligned ? t.spacing.md + t.avatarSize.message + t.spacing.sm : 0,
+      marginRight: endAligned ? t.avatarSize.message + t.spacing.sm : 0,
       alignItems: 'stretch',
       justifyContent: 'flex-start',
     },

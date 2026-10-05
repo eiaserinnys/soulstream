@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { fireEvent, render, within } from '@testing-library/react-native';
-import { FOUNDATION_RADIUS, TABLET_CHAT_TYPOGRAPHY, TABLET_SPACING, DESIGN_SPACING } from '../../../theme';
+import { DESIGN_AVATAR_SIZE, DESIGN_SPACING, FOUNDATION_RADIUS, TABLET_CHAT_TYPOGRAPHY, TABLET_SPACING } from '../../../theme';
 import { LIGHT_COLORS } from '../../../theme/colors';
 import { CollapsibleCaption, CollapsibleCaptionLine } from '../CollapsibleCaption';
 import { LabeledDivider } from '../LabeledDivider';
@@ -16,6 +16,9 @@ describe('CollapsibleCaption', () => {
     const button = screen.getByRole('button', { name: 'Jev 후보 3' });
     expect(button.props.accessibilityState).toEqual({ expanded: false });
     expect(screen.queryByText('요약 내용')).toBeNull();
+    const wrapper = screen.UNSAFE_getAllByType(View).find((view) =>
+      StyleSheet.flatten(view.props.style).paddingHorizontal !== undefined);
+    expect(StyleSheet.flatten(wrapper?.props.style).paddingHorizontal).toBe(TABLET_SPACING.lg);
 
     fireEvent.press(button);
     const expandedButton = screen.getByRole('button', { name: 'Jev 후보 3' });
@@ -104,6 +107,16 @@ describe('CollapsibleCaption', () => {
     });
     expect(StyleSheet.flatten(contentLine.props.style).textAlign).toBe('right');
     expect(contentLine.props.numberOfLines).toBe(1);
+    const wrapper = screen.UNSAFE_getAllByType(View).find((view) =>
+      StyleSheet.flatten(view.props.style).paddingHorizontal !== undefined);
+    expect(StyleSheet.flatten(wrapper?.props.style).paddingHorizontal).toBe(TABLET_SPACING.md);
+    const surface = screen.UNSAFE_getAllByType(View).find((view) =>
+      StyleSheet.flatten(view.props.style).width !== undefined
+      && StyleSheet.flatten(view.props.style).alignSelf === 'flex-end');
+    expect(StyleSheet.flatten(surface?.props.style)).toMatchObject({
+      width: '86%',
+      marginRight: DESIGN_AVATAR_SIZE.message + TABLET_SPACING.sm,
+    });
   });
 });
 
