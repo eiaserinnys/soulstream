@@ -45,6 +45,6 @@ export type PersistentContextRawCandidates = {
   readonly recentCompletedSessions: readonly {
     readonly sessionId: string;
     readonly title: string;
-    readonly firstRequest: string;
+    readonly lastAssistantText: string;
   }[];
 };

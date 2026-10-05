@@ -102,13 +102,13 @@ export function createPersistentContextService(options: {
         const request = clipUtf8(input.request, MAX_REQUEST_BYTES);
         const searched = await options.searchProvider.search({
           q: request,
-          top_k: 4,
-          search_session_id: false,
+          top_k: 16,
+          search_session_id: true,
           include_turn_summaries: false,
           include_highlight: false,
           include_story: false,
           include_session_results: true,
-          session_search_mode: "lexical",
+          session_search_mode: "expanded",
           allowedFolderIds: raw.allowedFolderIds,
           signal: input.signal,
           deadlineAt: input.deadlineAt,
@@ -122,7 +122,10 @@ export function createPersistentContextService(options: {
           return { observation: null };
         }
         const sessionSearchCandidates = uniqueSessionCandidates(
-          searched.session_results ?? [],
+          (searched.session_results ?? []).filter((session) => {
+            const folderId = stringField(session, "folder_id", "folderId");
+            return folderId !== null && raw.allowedFolderIds.includes(folderId);
+          }),
           input.sessionId,
         ).slice(0, 15);
         const recentCompleted = raw.recentCompletedSessions.slice(0, 5);
@@ -223,12 +226,14 @@ function buildCandidates(input: {
   turnSummaries: readonly { eventId: number; turnNumber: number; content: string }[];
   cards: readonly { id: string; number: number | null; title: string; request: string; brief: string }[];
   searchedSessions: readonly Record<string, unknown>[];
-  recentCompleted: readonly { sessionId: string; title: string; firstRequest: string }[];
+  recentCompleted: readonly { sessionId: string; title: string; lastAssistantText: string }[];
 }): Candidate[] {
   const candidates: Candidate[] = [];
-  const sessions = new Map<string, { label: string; line: string; sources: Array<"search" | "recent_completed"> }>();
-  const add = (key: string, label: string, line: string, selected: CandidateSelection) => {
-    const boundedLine = clipUtf8(line, MAX_CANDIDATE_TEXT_BYTES);
+  const sessions = new Map<string, { label: string; line: string; fallbackLine: string; sources: Array<"search" | "recent_completed"> }>();
+  const add = (key: string, label: string, line: string, selected: CandidateSelection, fallbackLine = "") => {
+    const cleanedLine = cleanCandidateLine(line);
+    const cleanedFallback = cleanCandidateLine(fallbackLine);
+    const boundedLine = clipUtf8(cleanedLine || cleanedFallback, MAX_CANDIDATE_TEXT_BYTES);
     const text = clipUtf8(`${label} — ${boundedLine}`, MAX_CANDIDATE_TEXT_BYTES);
     candidates.push({ key, text, selected: { ...selected, label, line: boundedLine } as unknown as CandidateSelection, order: candidates.length });
   };
@@ -256,7 +261,8 @@ function buildCandidates(input: {
     const title = stringField(session, "title", "display_name") ?? "이전 세션";
     sessions.set(sessionId, {
       label: clipUtf8(title, 120),
-      line: stringField(session, "excerpt", "first_request", "firstRequest") ?? title,
+      line: stringField(session, "excerpt") ?? title,
+      fallbackLine: title,
       sources: ["search"],
     });
   });
@@ -269,7 +275,8 @@ function buildCandidates(input: {
     }
     sessions.set(completed.sessionId, {
       label: clipUtf8(completed.title || "이전 세션", 120),
-      line: completed.firstRequest || completed.title,
+      line: completed.lastAssistantText || completed.title,
+      fallbackLine: completed.title,
       sources: ["recent_completed"],
     });
   }
@@ -280,7 +287,7 @@ function buildCandidates(input: {
       session_id: sessionId,
       sources: value.sources as ["search" | "recent_completed"]
         | ["search" | "recent_completed", "search" | "recent_completed"],
-    });
+    }, value.fallbackLine);
   }
   return candidates;
 }
@@ -333,6 +340,13 @@ function clipUtf8(value: string, maxBytes: number): string {
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
+}
+
+function cleanCandidateLine(value: string): string {
+  return value
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 function stringField(value: Record<string, unknown>, ...keys: string[]): string | null {
