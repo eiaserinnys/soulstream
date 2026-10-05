@@ -1602,6 +1602,67 @@ describe("TaskExecutor.startNewExecution", () => {
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledOnce();
   });
 
+  it("Codex usage-limit stop events finalize as error with limit_hit", async () => {
+    const mocks = makeMocks();
+    const message = "You've hit your usage limit. Try again after the reset.";
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: agent.workspace_dir,
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "credential_alert",
+          status: "rejected",
+          timestamp: 1,
+          raw_event_type: "error",
+        } as SSEEventPayload;
+        yield {
+          type: "error",
+          message,
+          fatal: true,
+          will_retry: false,
+          error_code: "codex_usage_limit_exceeded",
+          rate_limit_type: "seven_day",
+          resets_at: "2026-09-26T08:23:50.000Z",
+          timestamp: 2,
+          raw_event_type: "error",
+        } as SSEEventPayload;
+        throw new Error(message);
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = agent.id;
+
+    executor.startNewExecution(task, agent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe(message);
+    expect(task.rateLimitStopInfo).toEqual({
+      rateLimitType: "seven_day",
+      resetsAt: "2026-09-26T08:23:50.000Z",
+    });
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "error" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "error",
+        termination_reason: "limit_hit",
+        termination_detail: "credential_alert",
+      }),
+      expect.stringMatching(/^in-process:/),
+    );
+  });
+
   it("Claude runtime timeout fatal event clears pending runtime and finalizes as error", async () => {
     const mocks = makeMocks();
     const engine: EnginePort = {

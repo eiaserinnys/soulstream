@@ -5,6 +5,7 @@ import type {
   AppServerServerRequest,
   InitializeParams,
   InitializeResponse,
+  GetAccountRateLimitsResponse,
   ThreadResumeParams,
   ThreadResumeResponse,
   ThreadStartParams,
@@ -61,6 +62,10 @@ export class CodexAppServerClient {
 
   interruptTurn(params: TurnInterruptParams): Promise<TurnInterruptResponse> {
     return this.rpc.request("turn/interrupt", params);
+  }
+
+  readAccountRateLimits(): Promise<GetAccountRateLimitsResponse> {
+    return this.rpc.request("account/rateLimits/read", {});
   }
 
   onNotification(handler: (notification: AppServerNotification) => void): () => void {

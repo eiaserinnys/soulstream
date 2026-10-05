@@ -82,6 +82,24 @@ describe("TaskEngineEventPublisher", () => {
     });
   });
 
+  it("captures terminal rate-limit metadata from Codex usage-limit errors", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "error",
+      error_code: "codex_usage_limit_exceeded",
+      rate_limit_type: "seven_day",
+      resets_at: "2026-09-26T08:23:50.000Z",
+    } as SSEEventPayload);
+
+    expect(task.rateLimitStopInfo).toEqual({
+      rateLimitType: "seven_day",
+      resetsAt: "2026-09-26T08:23:50.000Z",
+    });
+  });
+
   it("enqueues a persistent event without worker broadcast, then runs side effects", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);

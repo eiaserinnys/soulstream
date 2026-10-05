@@ -25,6 +25,7 @@ export const CODEX_APP_SERVER_METHODS = {
   turnStart: "turn/start",
   turnSteer: "turn/steer",
   turnInterrupt: "turn/interrupt",
+  accountRateLimitsRead: "account/rateLimits/read",
 } as const;
 
 export type CodexAppServerMethod =
@@ -195,8 +196,27 @@ export type AppServerTurnStatus =
 
 export interface AppServerTurnError {
   message: string;
-  codexErrorInfo?: string | null;
+  codexErrorInfo?: unknown;
   additionalDetails?: unknown;
+}
+
+// account/rateLimits/read follows the codex-cli 0.160.0 generate-ts shape.
+export interface AppServerRateLimitWindow {
+  usedPercent: number;
+  windowDurationMins: number | null;
+  resetsAt: number | null;
+}
+
+export interface AppServerRateLimitSnapshot {
+  limitId: string;
+  primary: AppServerRateLimitWindow | null;
+  secondary: AppServerRateLimitWindow | null;
+}
+
+export interface GetAccountRateLimitsResponse {
+  rateLimits: AppServerRateLimitSnapshot;
+  rateLimitsByLimitId?: Record<string, AppServerRateLimitSnapshot> | null;
+  [key: string]: unknown;
 }
 
 export type AppServerThreadItem =
@@ -342,6 +362,10 @@ export interface CodexAppServerMethodMap {
   "turn/interrupt": {
     params: TurnInterruptParams;
     result: TurnInterruptResponse;
+  };
+  "account/rateLimits/read": {
+    params: Record<string, never>;
+    result: GetAccountRateLimitsResponse;
   };
 }
 

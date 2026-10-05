@@ -15,6 +15,7 @@ describe("codex app-server protocol boundary", () => {
       turnStart: "turn/start",
       turnSteer: "turn/steer",
       turnInterrupt: "turn/interrupt",
+      accountRateLimitsRead: "account/rateLimits/read",
     });
   });
 

@@ -454,6 +454,10 @@ describe("AutoResumeTransition", () => {
       pendingTerminationHint: "limit_hit",
       pendingTerminationDetail: "stale limit",
       terminationEventRecorded: true,
+      rateLimitStopInfo: {
+        rateLimitType: "seven_day",
+        resetsAt: "2026-09-26T08:23:50.000Z",
+      },
     });
     const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
       capabilityProfile: "legacy_transition_only",
@@ -468,6 +472,7 @@ describe("AutoResumeTransition", () => {
     });
 
     await autoResume.resume(task, { text: "retry", user: "u" }, vi.fn());
+    expect(task.rateLimitStopInfo).toBeUndefined();
     task.pendingTerminationHint = "limit_hit";
     task.pendingTerminationDetail = "fresh limit";
     await lifecycle.finalizeExternalTask(task, { error: "rate limited" });

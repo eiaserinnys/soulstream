@@ -382,6 +382,7 @@ function prepareTaskForAutoResume(
   task.terminationDetail = undefined;
   task.pendingTerminationHint = undefined;
   task.pendingTerminationDetail = undefined;
+  task.rateLimitStopInfo = undefined;
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
   enqueueInterventionOnce(task, message);
