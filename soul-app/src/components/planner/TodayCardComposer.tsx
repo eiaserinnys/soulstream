@@ -50,23 +50,27 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
   const submit = async () => {
     if (!api || !canSend) return;
     if (submitting.current) return;
+    const submitted = text;
     submitting.current = true; setPending(true);
+    draft.clear();
     const scope = captureAuthScope().generation;
     try {
-      const { payload, submitNodeId } = buildNewSessionCreatePayload({ text, selectedFolderId: value.folderId,
+      const { payload, submitNodeId } = buildNewSessionCreatePayload({ text: submitted, selectedFolderId: value.folderId,
         agentId: value.agentId, selectedNodeId: value.nodeId, settingsNodeId: settings.nodeId, attachments: attachments.attachments });
       const response = await api.createSession({ ...payload, modelPreset: value.modelPreset ?? labels.effectiveModelPresetId ?? undefined });
       if (captureAuthScope().generation !== scope) return;
-      commitNewSessionCreation({ response, text, selectedFolderId: value.folderId, submitNodeId, agentId: value.agentId,
+      commitNewSessionCreation({ response, text: submitted, selectedFolderId: value.folderId, submitNodeId, agentId: value.agentId,
         agents: labels.agents, upsertSession: useSessionStore.getState().upsertSession,
         assignSessionToCatalog: useSessionStore.getState().assignSessionToCatalog,
         setPendingFirstMessage: useChatStore.getState().setPendingFirstMessage,
         onCreated: (id) => { if (onCreated) onCreated(id); else useUIStore.getState().openSessionAtEvent(id); },
         clearAttachments: attachments.clearAttachments, onClose: () => undefined });
       settings.setCardAssignment(settings.serverUrl, value);
-      draft.clearIfMatches(text);
       setUploadId(Crypto.randomUUID());
-    } catch (cause) { Alert.alert('세션 시작 실패', cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) {
+      setText(current => current && current !== submitted ? `${submitted}\n\n${current}` : submitted);
+      Alert.alert('세션 시작 실패', cause instanceof Error ? cause.message : String(cause));
+    }
     finally { submitting.current = false; setPending(false); }
 
   };
