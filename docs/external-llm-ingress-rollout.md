@@ -15,7 +15,7 @@ The dedicated bearer must differ from `AUTH_BEARER_TOKEN`. Keep credentials, cal
 
 ## Tools and attribution
 
-The dot inventory consists of the 63 shared definitions with `audience: "all"`. The frozen inventory lives in `orch-server-ts/tests/fixtures/mcp_external_tool_inventory.json`. Internal-only definitions are absent from listing and calls are refused before execution.
+The dot inventory consists of the 65 shared definitions with `audience: "all"`. The frozen inventory lives in `orch-server-ts/tests/fixtures/mcp_external_tool_inventory.json`. Internal-only definitions are absent from listing and calls are refused before execution.
 
 Eight card writes are available: `create_card`, `update_card_brief`, `add_card_report`, `add_card_comment`, `set_card_status`, `request_card_review`, `ask_card_question`, and `move_card`. Their actor is `llm`, without an agent session. Dot comments are recorded as the user's spoken input. Answers to dot-created card questions are stored on the card and are not pushed to dot. `start_card_work` remains internal-only.
 
@@ -29,6 +29,6 @@ A retired `MCP_EXTERNAL_INGRESS_ENABLED` line in a worker environment file is ig
 
 ## Verification
 
-Confirm the internal inventory remains 106 tools and the connector remains 63 tools. Check connector authentication, rejection of internal-only calls without executor invocation, subscription discovery, an explicit send to a verified recipient, and unsubscribe. Worker forwards from any node use the orchestrator for recipient listing and outbound sends.
+Confirm the internal inventory remains 119 tools and the connector remains 65 tools. Check connector authentication, rejection of internal-only calls without executor invocation, subscription discovery, an explicit send to a verified recipient, and unsubscribe. Worker forwards from any node use the orchestrator for recipient listing and outbound sends.
 
 The subscription compatibility fixture was written by the retired worker implementation with synthetic data. The orchestrator test reads it with the same credential owner and verifies recipient identity, expiration, send, and unsubscribe without a new challenge. Local tests do not establish a live dot subscription; operational acceptance requires the actual connector and recipient.

@@ -15,6 +15,7 @@ export function registerSessionQueryTools(server: McpServer, runtime: McpRuntime
   registerOrchestratorTools(server, runtime, [sessionTools.list_sessions]);
   registerOrchestratorTools(server, runtime, [sessionTools.list_session_events]);
   registerOrchestratorTools(server, runtime, [sessionTools.get_session_event]);
+  registerOrchestratorTools(server, runtime, [sessionTools.list_user_messages]);
   registerOrchestratorTools(server, runtime, [sessionTools.get_session_story]);
   registerOrchestratorTools(server, runtime, [sessionTools.get_session_highlight]);
   server.registerTool(

@@ -20,6 +20,43 @@ export interface HostEventSearchRow extends HostEventRow {
   score: number;
 }
 
+/** sources를 생략한 list_user_messages가 제외하는 발신 경로. SQL과 응답의 excluded_sources가 이 상수 하나를 쓴다. */
+export const DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES = [
+  "agent",
+  "api",
+  "channel_observer",
+  "execute-proxy",
+  "llm",
+  "system",
+] as const;
+
+export interface UserMessageQuery {
+  since: Date;
+  until: Date;
+  /** 주면 caller_info.source가 이 목록에 있는 메시지만. null이면 excludedSources와 source 없는 메시지를 뺀다. */
+  sources: string[] | null;
+  excludedSources: readonly string[];
+  offset: number;
+  limit: number;
+  maxTextChars: number;
+}
+
+export interface UserMessageRow {
+  session_id: string;
+  event_id: number;
+  created_at: Date;
+  source: string | null;
+  email: string | null;
+  user_id: string | null;
+  display_name: string | null;
+  session_title: string | null;
+  node_id: string | null;
+  agent_id: string | null;
+  text: string;
+  /** 자르기 전 글자(코드포인트) 수 */
+  text_chars: number;
+}
+
 export class EventSearchDeadlineError extends Error {
   readonly statusCode = 504;
 
@@ -59,6 +96,63 @@ export class EventReadRepository {
       )
     `;
     return rows.map(normalizeEvent);
+  }
+
+  /** 기간 안의 user_message를 세션을 가로질러 created_at 순으로 읽는다. payload 전체가 아니라 본문과 발신 필드만 뽑는다. */
+  async listUserMessages(query: UserMessageQuery): Promise<{ rows: UserMessageRow[]; total: number }> {
+    const excluded = [...query.excludedSources];
+    // 기간 후보는 idx_events_event_type_cover만으로 좁히고(created_at은 INCLUDE 컬럼이라 힙을 읽지 않는다),
+    // payload 조건은 그 후보만 PK로 조인해 검사한다. 한 쿼리에 합치면 user_message 전부를 힙에서 읽는다(운영 24시간 조회가 15초).
+    const matched = this.sql`
+      WITH picked AS MATERIALIZED (
+        SELECT session_id, id, created_at FROM events
+        WHERE event_type = 'user_message'
+          AND created_at >= ${query.since}
+          AND created_at < ${query.until}
+      ), matched AS (
+        SELECT p.session_id, p.id, p.created_at, e.payload
+        FROM picked p
+        JOIN events e ON e.session_id = p.session_id AND e.id = p.id
+        WHERE coalesce(e.payload->>'text', '') <> ''
+          AND CASE
+            WHEN ${query.sources as unknown as string[] | null}::text[] IS NOT NULL
+              THEN e.payload->'caller_info'->>'source' = ANY(${query.sources as unknown as string[] | null}::text[])
+            ELSE e.payload->'caller_info'->>'source' IS NOT NULL
+              AND NOT (e.payload->'caller_info'->>'source' = ANY(${excluded}::text[]))
+          END
+      )
+    `;
+    const totals = await this.sql<Array<{ total: string | number }>>`
+      ${matched} SELECT count(*) AS total FROM matched
+    `;
+    const rows = await this.sql<UserMessageRow[]>`
+      ${matched}
+      SELECT
+        m.session_id,
+        m.id AS event_id,
+        m.created_at,
+        m.payload->'caller_info'->>'source' AS source,
+        m.payload->'caller_info'->>'email' AS email,
+        m.payload->'caller_info'->>'user_id' AS user_id,
+        m.payload->'caller_info'->>'display_name' AS display_name,
+        s.display_name AS session_title,
+        s.node_id,
+        s.agent_id,
+        left(m.payload->>'text', ${query.maxTextChars}) AS text,
+        char_length(m.payload->>'text') AS text_chars
+      FROM matched m
+      LEFT JOIN sessions s ON s.session_id = m.session_id
+      ORDER BY m.created_at, m.session_id, m.id
+      LIMIT ${query.limit} OFFSET ${query.offset}
+    `;
+    return {
+      rows: rows.map((row) => ({
+        ...row,
+        event_id: Number(row.event_id),
+        text_chars: Number(row.text_chars),
+      })),
+      total: Number(totals[0]?.total ?? 0),
+    };
   }
 
   async readRecentEvents(
