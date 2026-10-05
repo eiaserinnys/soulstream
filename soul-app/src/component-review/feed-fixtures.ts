@@ -105,4 +105,3 @@ export function currentFeedFixtureState(): FeedFixtureState {
   const state = params.get('feedState');
   return state === 'pageLoading' || state === 'pageError' ? state : 'normal';
 }
-
