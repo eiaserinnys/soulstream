@@ -96,14 +96,11 @@ export function ReviewChat() {
         text: '하위 세션에서 조사 결과를 전달했습니다. 확인한 내용과 남은 작업을 함께 보고합니다.\n긴 보고 문구도 같은 안내문 안에서 읽을 수 있습니다.',
       } }} />
     </ReviewSection>
-    <ReviewSection title="기존 caption · 기존 요약과 요청한 Jev 판정 한 줄">
+    <ReviewSection title="기존 caption · 기존 요약">
       <UserMessage event={message('user_message', '외부 카드 알림을 확인해줘')} />
       <TurnSummaryCaption content={assignedCardPreview} />
       <AssistantMessage session={sessions[0]} event={message('assistant_message', '구현을 맡겼습니다. 다른 작업 결과를 기다립니다.')} />
       <TurnSummaryCaption content="기존 요약: 다른 작업 결과를 기다립니다." />
-      <TurnSummaryCaption content="Jev · 위임 대기 — 다른 작업 결과를 기다리는 상태로 분류" />
-      <TurnSummaryCaption content="Jev · 완료 가능 · 관측 범위 제한" />
-      <TurnSummaryCaption content="Jev · 미평가 — 평가 요청 실패" />
     </ReviewSection>
   </>;
 }

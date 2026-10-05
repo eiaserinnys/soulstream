@@ -185,18 +185,6 @@ describe('turn summary FlatList state transitions', () => {
     return row.summaries?.map((summary) => summary.key) ?? [];
   }
 
-  it('late Jev result renders once under its original response alongside the unchanged summary',()=>{
-    const base=[ev('9','assistant_message',{content:'이전 답변'}),ev('10','complete'),ev('19','assistant_message',{content:'다음 답변'})];
-    const summary=ev('30','turn_summary',{content:'기존 요약',final_response_event_id:9});
-    const result=ev('40','debug',{kind:'jev_card_observation',complete_event_id:10,final_response_event_id:9,phase:'result',content:'Jev · 완료 가능 · 관측 범위 제한',details:[]});
-    const view=render(<Harness events={[...base,summary]}/>);
-    flushFrames(); mockRenderOrder.length=0;
-    view.rerender(<Harness events={[...base,summary,result]}/>);
-    expect(summaryKeysFor('evt-9')).toEqual(['turn-summary-30','turn-summary-40']);
-    expect(summaryKeysFor('evt-19')).toEqual([]);
-    expect(mockRenderOrder.filter(s=>s==='summary:Jev · 완료 가능 · 관측 범위 제한')).toHaveLength(1);
-  });
-
   it('과거 읽기에서 live summary와 reload가 stable key·MVCP를 전달하고 강제 스크롤하지 않는다', () => {
     const base = [
       ev('2', 'assistant_message', { text: '과거 응답' }),

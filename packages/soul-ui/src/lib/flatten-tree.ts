@@ -115,7 +115,6 @@ export interface ChatMessage {
   /** turn_summary 전용: 실제 렌더 행에 결합할 우선·대체 anchor. */
   summaryFinalResponseEventId?: number;
   summaryParentEventId?: number;
-  observation?: import("../../../wire-schema/src/card_observation").JevCardObservation;
   /** user/intervention 입력과 준비 스냅샷을 결합하는 동일 input UUID. */
   inputId?: string;
   /** assigned_card_context 전용 exact anchor. */
@@ -501,15 +500,6 @@ function nodeToMessage(
         timestamp: node.timestamp,
         treeNodeId: node.id,
         treeNodeType: node.type,
-      };
-    }
-
-    case "card_observation": {
-      return {
-        id: node.id, role: "system", content: node.content, timestamp: node.timestamp,
-        treeNodeId: node.id, treeNodeType: node.type,
-        summaryFinalResponseEventId: node.finalResponseEventId,
-        observation: node.observation,
       };
     }
 
