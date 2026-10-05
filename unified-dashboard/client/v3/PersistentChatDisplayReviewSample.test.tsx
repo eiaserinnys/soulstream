@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
 
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 describe("PersistentChatDisplayReviewSample", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;

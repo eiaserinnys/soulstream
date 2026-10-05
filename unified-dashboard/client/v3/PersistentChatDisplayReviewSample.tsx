@@ -9,10 +9,10 @@ const inputId = "components-review-input";
 const candidateEvent = {
   type: "debug", kind: "persistent_jev_candidates", timestamp: 5,
   observation: { input_id: inputId, selected: [
-    { kind: "turn_summary", label: "T38", line: "영구 세션 설정의 표시 토글", score: 3 },
-    { kind: "card", label: "#412", line: "후보 내용을 채팅에 표시", score: 2 },
-    { kind: "session", label: "PAS 웹 채팅", line: "같은 입력 아래에 기록 배치", score: 2 },
-  ] },
+    { kind: "turn_summary", session_id: "review-session", summary_event_id: 38, turn_number: 38, label: "T38", line: "영구 세션 설정의 표시 토글", score: 3 },
+    { kind: "card", card_id: "review-card", label: "#412", line: "후보 내용을 채팅에 표시", score: 2 },
+    { kind: "session", session_id: "review-session-2", label: "PAS 웹 채팅", line: "같은 입력 아래에 기록 배치", score: 2 },
+  ], candidate_counts: { turn_summaries: 1, cards: 1, search_sessions: 1, recent_completed_sessions: 0 }, model: "jev-latest", latency_ms: 12 },
 };
 const generationField: SettingField = { key: "review-generation", field_name: "show_generation_separator", label: "세대 구분선 표시", description: "", value: true, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
 const candidatesField: SettingField = { key: "review-candidates", field_name: "show_jev_candidates", label: "Jev 후보 표시", description: "", value: true, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
