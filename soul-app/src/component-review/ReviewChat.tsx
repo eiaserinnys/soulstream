@@ -46,6 +46,10 @@ const persistentChatEvents: SessionEvent[] = [
   { id: '903', type: 'complete', data: { result: '응답을 마쳤습니다.', model: 'public-model', usage: { input_tokens: 100, output_tokens: 20 } } },
   { id: '904', type: 'user_message', data: { input_id: 'public-input-1', text: '관련 자료를 찾아줘.' } },
   persistentJevCandidatesFixture('905', 'public-input-1'),
+  { id: '906', type: 'user_message', data: { input_id: 'public-input-2', text: '비슷한 기록이 있는지 확인해줘.' } },
+  persistentJevCandidatesFixture('907', 'public-input-2', { selectedCount: 0 }),
+  { id: '908', type: 'user_message', data: { input_id: 'public-input-3', text: '긴 후보 요약이 입력 말풍선 아래에서 어떻게 보이는지 확인해줘.' } },
+  persistentJevCandidatesFixture('909', 'public-input-3', { selectedCount: 1, longLine: true }),
 ];
 
 function ReviewPersistentChatProjection() {
@@ -194,6 +198,16 @@ export function ReviewChat() {
         <CollapsibleCaptionLine>T38 · 요약 한 줄 · 3/3</CollapsibleCaptionLine>
         <CollapsibleCaptionLine>#412 · 카드 한 줄 · 2/3</CollapsibleCaptionLine>
         <CollapsibleCaptionLine>세션 제목 · 한 줄 · 2/3</CollapsibleCaptionLine>
+      </CollapsibleCaption>
+      <CollapsibleCaption title="Jev 후보 3 · 오른쪽 정렬" align="end">
+        <CollapsibleCaptionLine>T38 · 요약 한 줄 · 3/3</CollapsibleCaptionLine>
+        <CollapsibleCaptionLine>#412 · 카드 한 줄 · 2/3</CollapsibleCaptionLine>
+      </CollapsibleCaption>
+      <CollapsibleCaption title="Jev 후보 1 · 오른쪽 정렬 펼침" align="end" initiallyCollapsed={false}>
+        <CollapsibleCaptionLine>T38 · 요약 한 줄 · 3/3</CollapsibleCaptionLine>
+      </CollapsibleCaption>
+      <CollapsibleCaption title="Jev 후보 1 · 오른쪽 정렬 긴 줄" align="end" initiallyCollapsed={false}>
+        <CollapsibleCaptionLine>이 후보의 긴 요약은 좁은 화면에서 한 줄 말줄임 처리가 실제 캡션에 적용되는지 확인하기 위한 문장입니다</CollapsibleCaptionLine>
       </CollapsibleCaption>
       <CollapsibleCaption title="처음부터 펼친 예시" initiallyCollapsed={false}>
         <CollapsibleCaptionLine>T38 · 요약 한 줄 · 3/3</CollapsibleCaptionLine>

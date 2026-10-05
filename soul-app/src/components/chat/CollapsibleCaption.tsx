@@ -1,63 +1,70 @@
-import React, { useMemo, useState, type ReactNode } from 'react';
+import React, { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { DisclosureIcon } from '../DisclosureIcon';
-import { useTokens, type DesignTokens } from '../../theme';
+import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 
 interface CollapsibleCaptionProps {
   title: string;
   children: ReactNode;
   initiallyCollapsed?: boolean;
+  align?: 'start' | 'end';
 }
+
+const CaptionAlignContext = createContext<'start' | 'end'>('start');
 
 export function CollapsibleCaption({
   title,
   children,
   initiallyCollapsed = true,
+  align = 'start',
 }: CollapsibleCaptionProps) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, align), [t, align]);
   const [expanded, setExpanded] = useState(() => !initiallyCollapsed);
   const [pressed, setPressed] = useState(false);
 
   return (
-    <View style={styles.wrapper}>
-      <CompactTouchTarget
-        accessibilityRole="button"
-        accessibilityLabel={title}
-        accessibilityState={{ expanded }}
-        onPress={() => setExpanded((current) => !current)}
-        onPressIn={() => setPressed(true)}
-        onPressOut={() => setPressed(false)}
-        activeOpacity={1}
-        frameStyle={styles.touchFrame}
-        surfaceStyle={styles.touchSurface}
-      >
-        <View style={styles.contentStack}>
-          <View style={[styles.titleRow, pressed && styles.titlePressed]}>
-            <Text
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              style={[styles.title, pressed && styles.titlePressedText]}
-            >
-              {title}
-            </Text>
-            <DisclosureIcon
-              expanded={expanded}
-              color={pressed ? t.colors.textSecondary : t.colors.textPlaceholder}
-            />
+    <CaptionAlignContext.Provider value={align}>
+      <View style={styles.wrapper}>
+        <CompactTouchTarget
+          accessibilityRole="button"
+          accessibilityLabel={title}
+          accessibilityState={{ expanded }}
+          onPress={() => setExpanded((current) => !current)}
+          onPressIn={() => setPressed(true)}
+          onPressOut={() => setPressed(false)}
+          activeOpacity={1}
+          frameStyle={styles.touchFrame}
+          surfaceStyle={styles.touchSurface}
+        >
+          <View style={styles.contentStack}>
+            <View style={[styles.titleRow, pressed && styles.titlePressed]}>
+              <Text
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                style={[styles.title, pressed && styles.titlePressedText]}
+              >
+                {title}
+              </Text>
+              <DisclosureIcon
+                expanded={expanded}
+                color={pressed ? t.colors.textSecondary : t.colors.textPlaceholder}
+              />
+            </View>
+            {expanded ? <View style={styles.content}>{children}</View> : null}
           </View>
-          {expanded ? <View style={styles.content}>{children}</View> : null}
-        </View>
-      </CompactTouchTarget>
-    </View>
+        </CompactTouchTarget>
+      </View>
+    </CaptionAlignContext.Provider>
   );
 }
 
 /** Passive text only: the caption's single touch target owns all press behavior. */
 export function CollapsibleCaptionLine({ children }: { children: ReactNode }) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const align = useContext(CaptionAlignContext);
+  const styles = useMemo(() => makeStyles(t, align), [t, align]);
   return (
     <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contentLine}>
       {children}
@@ -65,17 +72,20 @@ export function CollapsibleCaptionLine({ children }: { children: ReactNode }) {
   );
 }
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, align: 'start' | 'end') {
+  const endAligned = align === 'end';
+  const bubbleMaxWidth = createSessionVisualRoles(t).chat.bubbleMaxWidth;
   return StyleSheet.create({
     wrapper: {
-      paddingHorizontal: t.spacing.lg,
+      paddingHorizontal: endAligned ? 0 : t.spacing.lg,
     },
     touchFrame: {
       alignSelf: 'stretch',
     },
     touchSurface: {
-      alignSelf: 'stretch',
-      width: '100%',
+      alignSelf: endAligned ? 'flex-end' : 'stretch',
+      width: endAligned ? bubbleMaxWidth : '100%',
+      marginRight: endAligned ? t.spacing.md + t.avatarSize.message + t.spacing.sm : 0,
       alignItems: 'stretch',
       justifyContent: 'flex-start',
     },
@@ -90,11 +100,12 @@ function makeStyles(t: DesignTokens) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: t.uiSpacing.sm,
-      alignSelf: 'flex-start',
+      alignSelf: endAligned ? 'flex-end' : 'flex-start',
       maxWidth: '100%',
       minHeight: t.uiSpacing.xl,
       paddingHorizontal: t.uiSpacing.sm,
-      marginLeft: -t.uiSpacing.sm,
+      marginLeft: endAligned ? 0 : -t.uiSpacing.sm,
+      marginRight: endAligned ? -t.uiSpacing.sm : 0,
       borderRadius: t.foundation.radius.chip,
     },
     titlePressed: {
@@ -110,12 +121,15 @@ function makeStyles(t: DesignTokens) {
       color: t.colors.textSecondary,
     },
     content: {
+      alignSelf: endAligned ? 'flex-end' : 'flex-start',
+      width: '100%',
       gap: t.uiSpacing.xxs,
     },
     contentLine: {
       color: t.colors.textPlaceholder,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
+      textAlign: endAligned ? 'right' : 'left',
     },
   });
 }

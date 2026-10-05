@@ -85,6 +85,26 @@ describe('CollapsibleCaption', () => {
       color: LIGHT_COLORS.textSecondary,
     });
   });
+
+  test('end 정렬은 말풍선 최대 폭과 오른쪽 눌림 보정을 쓴다', () => {
+    const screen = render(
+      <CollapsibleCaption title="Jev 후보 1" align="end" initiallyCollapsed={false}>
+        <CollapsibleCaptionLine>아주 긴 한 줄 후보 요약</CollapsibleCaptionLine>
+      </CollapsibleCaption>,
+    );
+    const button = screen.getByRole('button', { name: 'Jev 후보 1' });
+    const titleRow = screen.UNSAFE_getAllByType(View).find((view) =>
+      StyleSheet.flatten(view.props.style).borderRadius === FOUNDATION_RADIUS.chip);
+    const contentLine = screen.getByText('아주 긴 한 줄 후보 요약');
+    expect(button.props.accessibilityState).toEqual({ expanded: true });
+    expect(StyleSheet.flatten(titleRow?.props.style)).toMatchObject({
+      alignSelf: 'flex-end',
+      marginLeft: 0,
+      marginRight: -DESIGN_SPACING.sm,
+    });
+    expect(StyleSheet.flatten(contentLine.props.style).textAlign).toBe('right');
+    expect(contentLine.props.numberOfLines).toBe(1);
+  });
 });
 
 describe('LabeledDivider', () => {

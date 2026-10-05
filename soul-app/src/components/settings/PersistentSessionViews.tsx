@@ -9,6 +9,7 @@ import {
   type PersistentSessionResource,
 } from '../../api/client';
 import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
+import type { PersistentSessionSettingsPatch } from '../../api/persistentSessionEndpoints';
 import { useSessionStore } from '../../store/sessionStore';
 import { useChatStore } from '../../store/chatStore';
 import { useTokens } from '../../theme';
@@ -219,11 +220,16 @@ export function PersistentSessionEditor({
     try {
       const api = createApiClient(serverUrl);
       let saved: PersistentSessionResource | null = null;
-      if (session) saved = (await api.updatePersistentSession(session.session_id, { display_name: name, settings: {
-        default_model: defaultModel,
-        show_generation_separator: draft.showGenerationSeparator,
-        show_jev_candidates: draft.showJevCandidates,
-      } })).session;
+      if (session) {
+        const settings: PersistentSessionSettingsPatch = { default_model: defaultModel };
+        if (draft.showGenerationSeparator !== baseline.showGenerationSeparator) {
+          settings.show_generation_separator = draft.showGenerationSeparator;
+        }
+        if (draft.showJevCandidates !== baseline.showJevCandidates) {
+          settings.show_jev_candidates = draft.showJevCandidates;
+        }
+        saved = (await api.updatePersistentSession(session.session_id, { display_name: name, settings })).session;
+      }
       else if (registration) await api.updatePersistentSession(registration.sessionId, { display_name: name, enabled: true, settings: { default_model: defaultModel } });
       else await api.createPersistentSession({ display_name: name, agent_id: draft.agentId, folder_id: draft.folderId, initial_instruction: draft.firstMessage.trim(), settings: { default_model: defaultModel } });
       if (saved && saved.persistent) useChatStore.getState().applyPersistentDisplaySettings(session!.session_id, {
@@ -305,8 +311,20 @@ export function PersistentSessionEditor({
         {!draft.modelPreset && !loadingTargets ? <Notice text="기본 모델을 선택해야 저장할 수 있습니다." /> : null}
       </Group>
       {session?.persistent ? <Group title="채팅 표시">
-        <Text style={styles.label}>세대 구분선 표시</Text><Switch accessibilityLabel="세대 구분선 표시" testID="persistent-show-generation-separator" value={draft.showGenerationSeparator} disabled={saving} onValueChange={showGenerationSeparator => update({ showGenerationSeparator })} />
-        <Text style={styles.label}>Jev 후보 표시</Text><Switch accessibilityLabel="Jev 후보 표시" testID="persistent-show-jev-candidates" value={draft.showJevCandidates} disabled={saving} onValueChange={showJevCandidates => update({ showJevCandidates })} />
+        <View style={styles.listRow}>
+          <View style={styles.grow}>
+            <Text style={styles.body}>세대 구분선 표시</Text>
+            <Text style={styles.help}>세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.</Text>
+          </View>
+          <Switch accessibilityLabel="세대 구분선 표시" testID="persistent-show-generation-separator" value={draft.showGenerationSeparator} disabled={saving} onValueChange={showGenerationSeparator => update({ showGenerationSeparator })} />
+        </View>
+        <View style={styles.listRow}>
+          <View style={styles.grow}>
+            <Text style={styles.body}>Jev 후보 표시</Text>
+            <Text style={styles.help}>내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.</Text>
+          </View>
+          <Switch accessibilityLabel="Jev 후보 표시" testID="persistent-show-jev-candidates" value={draft.showJevCandidates} disabled={saving} onValueChange={showJevCandidates => update({ showJevCandidates })} />
+        </View>
       </Group> : null}
       {session ? <Group title="현재 정보">
         <ReadOnlyField label="현재 실행 모델" value={[current?.model_preset ? presetLabel(current.model_preset) : null, current?.model].filter(Boolean).join(' · ') || NO_MODEL} />

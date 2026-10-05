@@ -177,7 +177,7 @@ const ChatEventRow = memo(function ChatEventRow({
   if (item.kind === 'jev-candidates') {
     return (
       <SearchFocusHighlight active={highlighted}>
-        <CollapsibleCaption title={item.title}>
+        <CollapsibleCaption title={item.title} align="end">
           {item.lines.map((line, index) => <CollapsibleCaptionLine key={`${item.key}-${index}`}>{line}</CollapsibleCaptionLine>)}
         </CollapsibleCaption>
       </SearchFocusHighlight>

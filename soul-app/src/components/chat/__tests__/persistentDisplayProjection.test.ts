@@ -16,7 +16,7 @@ function userEvent(id: string): SessionEvent {
 }
 
 function candidatesEvent(id: string, inputId: string): SessionEvent {
-  return persistentJevCandidatesFixture(id, inputId, 2);
+  return persistentJevCandidatesFixture(id, inputId, { selectedCount: 2 });
 }
 
 function jevItems(events: SessionEvent[], settings = enabled) {
@@ -38,6 +38,22 @@ test('raw Jev debug is projected directly below its input with only display text
   expect(JSON.stringify(items[1])).not.toContain('fixture-card-id');
   expect(JSON.stringify(items[1])).not.toContain('jev-latest');
   expect(JSON.stringify(items[1])).not.toContain('candidate_counts');
+});
+
+test('ReviewChat candidate fixtures project empty and long candidate observations', () => {
+  const emptyInput = userEvent('20');
+  const longInput = userEvent('21');
+  const items = groupChatEvents([
+    emptyInput,
+    persistentJevCandidatesFixture('22', 'input-20', { selectedCount: 0 }),
+    longInput,
+    persistentJevCandidatesFixture('23', 'input-21', { selectedCount: 1, longLine: true }),
+  ], undefined, enabled).filter(item => item.kind === 'jev-candidates');
+
+  expect(items).toMatchObject([
+    { title: 'Jev 후보 0', lines: ['2점 이상인 후보가 없습니다.'] },
+    { title: 'Jev 후보 1', lines: ['T38 · 이 후보의 긴 요약은 좁은 화면과 넓은 화면에서 한 줄 말줄임 처리가 적용되는지 실제 캡션에서 확인하기 위해 일부러 길게 작성한 문장입니다. 후보 내용이 길어져도 줄바꿈 대신 오른쪽 끝에서 말줄임 표시가 유지되는지 볼 수 있도록 충분히 긴 문장을 넣었습니다. · 3/3'] },
+  ]);
 });
 
 test('keeps an early Jev record until its input arrives and does not move it to the last turn', () => {

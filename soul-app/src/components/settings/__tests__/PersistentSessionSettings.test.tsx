@@ -84,7 +84,7 @@ test('lists every registered session, edits name and model, saves from the foote
   fireEvent.press(await screen.findByText('모델 B'));
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
-    display_name: '새 이름', settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'high' }, show_generation_separator: false, show_jev_candidates: false },
+    display_name: '새 이름', settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'high' } },
   }));
   await waitFor(() => expect(screen.queryByTestId('persistent-session-editor')).toBeNull());
   expect(screen.queryByTestId('settings-active-footer')).toBeNull();
@@ -99,7 +99,7 @@ test('keeps the recorded reasoning effort when the model choice is unchanged', a
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름만 변경');
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
-    display_name: '이름만 변경', settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'low' }, show_generation_separator: false, show_jev_candidates: false },
+    display_name: '이름만 변경', settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'low' } },
   }));
 });
 
@@ -127,8 +127,21 @@ test('an unavailable model is not selected and the reason is shown; the name can
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름');
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', expect.objectContaining({
-    settings: { default_model: { model_preset: 'model-a', reasoning_effort: null }, show_generation_separator: false, show_jev_candidates: false },
+    settings: { default_model: { model_preset: 'model-a', reasoning_effort: null } },
   })));
+});
+
+test('saves only the changed chat display setting alongside other edits', async () => {
+  const screen = await openList();
+  await openEditor(screen);
+  await waitFor(() => expect(screen.getByTestId('persistent-show-generation-separator')).toBeTruthy());
+  fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름과 구분선 수정');
+  fireEvent(screen.getByTestId('persistent-show-generation-separator'), 'valueChange', true);
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
+    display_name: '이름과 구분선 수정',
+    settings: { default_model: { model_preset: 'model-a', reasoning_effort: null }, show_generation_separator: true },
+  }));
 });
 
 test('saves both chat display toggles and applies the response to the matching open chat', async () => {
@@ -138,6 +151,8 @@ test('saves both chat display toggles and applies the response to the matching o
   const screen = await openList();
   await openEditor(screen);
   await waitFor(() => expect(screen.getByTestId('persistent-show-generation-separator')).toBeTruthy());
+  expect(screen.getByText('세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.')).toBeTruthy();
+  expect(screen.getByText('내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.')).toBeTruthy();
   useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
   fireEvent(screen.getByTestId('persistent-show-generation-separator'), 'valueChange', true);
   fireEvent(screen.getByTestId('persistent-show-jev-candidates'), 'valueChange', true);
