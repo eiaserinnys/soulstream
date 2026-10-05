@@ -1,6 +1,6 @@
 import type { SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 
-import type { RepositorySql } from "../control_plane/card_types.js";
+import type { RepositorySql } from "./control_plane/card_types.js";
 
 export type { SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 

@@ -101,7 +101,7 @@ describe("buildPersistentCheckpoint", () => {
   });
 
   it("keeps the status section within its budget and gives unused room to cards", () => {
-    const cards = Array.from({ length: 30 }, (_, index) => ({
+    const queriedCards = Array.from({ length: 60 }, (_, index) => ({
       id: `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
       title: `상태 카드 ${"긴 제목".repeat(12)} ${index}`,
       status: "queued" as const,
@@ -110,7 +110,7 @@ describe("buildPersistentCheckpoint", () => {
     }));
     const empty = makeCards({
       counts: { running: 0, blocked: 0, review: 0, queued: 30, todo: 0 },
-      cards,
+      cards: queriedCards.slice(0, 30),
       openQuestions: [],
       openQuestionTotal: 0,
     });
@@ -140,12 +140,22 @@ describe("buildPersistentCheckpoint", () => {
     const budget = PERSISTENT_CHECKPOINT_BUDGET;
     const emptyResult = itemText({ material: makeMaterial(), cards: empty, standingInstructions: [], ownSessionId }, budget);
     const fullResult = itemText({ material: fullState, cards: questions, standingInstructions: [], ownSessionId }, budget);
+    const truncatedQuery = makeCards({
+      ...questions,
+      counts: { ...questions.counts, queued: 70 },
+      cards: queriedCards,
+    });
+    const truncatedQueryResult = itemText({ material: fullState, cards: truncatedQuery, standingInstructions: [], ownSessionId }, budget);
 
     expect(emptyResult.stats.sections.state).toBeLessThanOrEqual(PERSISTENT_CHECKPOINT_BUDGET.stateTokens);
     expect(fullResult.stats.sections.state).toBeLessThanOrEqual(PERSISTENT_CHECKPOINT_BUDGET.stateTokens);
+    expect(truncatedQueryResult.stats.sections.state).toBeLessThanOrEqual(PERSISTENT_CHECKPOINT_BUDGET.stateTokens);
     expect((emptyResult.text.match(/상태 카드/g) ?? []).length)
       .toBeGreaterThan((fullResult.text.match(/상태 카드/g) ?? []).length);
-    expect(fullResult.text).toMatch(/외 \d+장 생략/);
+    expect((fullResult.text.match(/상태 카드/g) ?? []).length).toBe(10);
+    expect(fullResult.text).toContain("외 20장 생략(대기 20)");
+    expect((truncatedQueryResult.text.match(/상태 카드/g) ?? []).length).toBe(10);
+    expect(truncatedQueryResult.text).toContain("외 60장 생략(대기 60)");
     expect(fullResult.text).toMatch(/외 \d+개/);
   });
 

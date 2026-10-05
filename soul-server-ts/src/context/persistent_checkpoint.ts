@@ -199,30 +199,36 @@ function buildCardSection(
   tokenLimit: number,
 ): string {
   const heading = "감독 카드";
-  const cardsByStatus = new Map<string, number>();
-  for (const card of snapshot.cards) cardsByStatus.set(card.status, (cardsByStatus.get(card.status) ?? 0) + 1);
-  const omittedByStatus = {
-    running: Math.max(0, snapshot.counts.running - (cardsByStatus.get("running") ?? 0)),
-    blocked: Math.max(0, snapshot.counts.blocked - (cardsByStatus.get("blocked") ?? 0)),
-    review: Math.max(0, snapshot.counts.review - (cardsByStatus.get("review") ?? 0)),
-    queued: Math.max(0, snapshot.counts.queued - (cardsByStatus.get("queued") ?? 0)),
-  };
+  const renderedByStatus = { running: 0, blocked: 0, review: 0, queued: 0 };
   const lines: string[] = [];
   for (const card of snapshot.cards) {
     const candidateLines = [...lines, formatSupervisedCard(card, ownSessionId)];
-    const omitted = {
-      ...omittedByStatus,
-      [card.status]: Math.max(0, omittedByStatus[card.status] - 1),
+    const candidateRenderedByStatus = {
+      ...renderedByStatus,
+      [card.status]: renderedByStatus[card.status] + 1,
     };
+    const omitted = getOmittedCardCounts(snapshot.counts, candidateRenderedByStatus);
     const marker = formatOmittedCards(omitted);
     const candidate = joinLines([heading, ...candidateLines, ...(marker ? [marker] : [])]);
     if (estimateClaudeTextTokens(candidate) > tokenLimit) break;
     lines.push(formatSupervisedCard(card, ownSessionId));
-    omittedByStatus[card.status] = Math.max(0, omittedByStatus[card.status] - 1);
+    renderedByStatus[card.status] += 1;
   }
-  const marker = formatOmittedCards(omittedByStatus);
+  const marker = formatOmittedCards(getOmittedCardCounts(snapshot.counts, renderedByStatus));
   if (snapshot.cards.length === 0 && !marker) return "";
   return joinLines([heading, ...lines, ...(marker ? [marker] : [])]);
+}
+
+function getOmittedCardCounts(
+  totals: SupervisedCardSnapshot["counts"],
+  rendered: { running: number; blocked: number; review: number; queued: number },
+) {
+  return {
+    running: Math.max(0, totals.running - rendered.running),
+    blocked: Math.max(0, totals.blocked - rendered.blocked),
+    review: Math.max(0, totals.review - rendered.review),
+    queued: Math.max(0, totals.queued - rendered.queued),
+  };
 }
 
 function formatOmittedCards(omitted: { running: number; blocked: number; review: number; queued: number }): string {
