@@ -223,8 +223,8 @@ describe("card number storage over PostgreSQL and HTTP", () => {
       })));
       expect(first.statusCode).toBe(200);
       expect(second.statusCode).toBe(200);
-      const firstNumber = first.json().card.number as number;
-      const secondNumber = second.json().card.number as number;
+      const firstNumber = first!.json().card.number as number;
+      const secondNumber = second!.json().card.number as number;
       expect(Number.isInteger(firstNumber) && firstNumber > (maximum[0]?.number ?? 0)).toBe(true);
       expect(Number.isInteger(secondNumber) && secondNumber > (maximum[0]?.number ?? 0)).toBe(true);
       expect(firstNumber).not.toBe(secondNumber);
