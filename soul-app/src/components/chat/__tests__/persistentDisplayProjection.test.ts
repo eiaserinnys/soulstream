@@ -1,5 +1,6 @@
 import { groupChatEvents } from '../groupChatEvents';
 import type { SessionEvent } from '../../../api/types';
+import { persistentJevCandidatesFixture } from '../../../component-review/persistentJevCandidatesFixture';
 
 const enabled = {
   showGenerationSeparator: true,
@@ -15,23 +16,7 @@ function userEvent(id: string): SessionEvent {
 }
 
 function candidatesEvent(id: string, inputId: string): SessionEvent {
-  return {
-    id,
-    type: 'debug',
-    data: {
-      kind: 'persistent_jev_candidates',
-      observation: {
-        input_id: inputId,
-        selected: [
-          { kind: 'turn_summary', session_id: 'private-id', summary_event_id: 38, turn_number: 38, label: 'T38', line: '요약 한 줄', score: 3 },
-          { kind: 'card', card_id: 'private-card-id', card_number: 412, label: '#412', line: '카드 한 줄', score: 2 },
-        ],
-        candidate_counts: { turn_summaries: 40, cards: 17, search_sessions: 15, recent_completed_sessions: 5 },
-        model: 'jev-latest',
-        latency_ms: 426,
-      },
-    },
-  };
+  return persistentJevCandidatesFixture(id, inputId, 2);
 }
 
 function jevItems(events: SessionEvent[], settings = enabled) {
@@ -49,8 +34,8 @@ test('raw Jev debug is projected directly below its input with only display text
     title: 'Jev 후보 2',
     lines: ['T38 · 요약 한 줄 · 3/3', '#412 · 카드 한 줄 · 2/3'],
   });
-  expect(JSON.stringify(items[1])).not.toContain('private-id');
-  expect(JSON.stringify(items[1])).not.toContain('private-card-id');
+  expect(JSON.stringify(items[1])).not.toContain('fixture-session');
+  expect(JSON.stringify(items[1])).not.toContain('fixture-card-id');
   expect(JSON.stringify(items[1])).not.toContain('jev-latest');
   expect(JSON.stringify(items[1])).not.toContain('candidate_counts');
 });

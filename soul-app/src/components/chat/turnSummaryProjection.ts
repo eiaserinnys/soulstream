@@ -299,8 +299,8 @@ export function placeJevCandidateCaptions(
     const observation = debugEvent.observation;
     const lines = observation.selected.length === 0
       ? ['2점 이상인 후보가 없습니다.']
-      : observation.selected.map((candidate) =>
-        `${candidate.label} · ${candidate.line} · ${candidate.score}/3`.replace(/\s+/g, ' ').trim(),
+      : observation.selected.slice(0, 5).map((candidate) =>
+        `${candidate.label} · ${candidate.line} · ${candidate.score}/3`,
       );
     const item: ChatRenderItem = {
       kind: 'jev-candidates',

@@ -150,6 +150,34 @@ test('saves both chat display toggles and applies the response to the matching o
   }));
 });
 
+test('locks both display toggles while the first save is pending', async () => {
+  let finishSave!: (value: { session: ReturnType<typeof resource>; model_change: string }) => void;
+  api.updatePersistentSession.mockReturnValue(new Promise(resolve => { finishSave = resolve; }));
+  const screen = await openList();
+  await openEditor(screen);
+  await waitFor(() => expect(screen.getByTestId('persistent-show-generation-separator')).toBeTruthy());
+  useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
+  fireEvent(screen.getByTestId('persistent-show-generation-separator'), 'valueChange', true);
+  fireEvent(screen.getByTestId('persistent-show-jev-candidates'), 'valueChange', true);
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledTimes(1));
+  expect(screen.getByTestId('persistent-show-generation-separator').props.disabled).toBe(true);
+  expect(screen.getByTestId('persistent-show-jev-candidates').props.disabled).toBe(true);
+  expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', expect.objectContaining({
+    settings: expect.objectContaining({ show_generation_separator: true, show_jev_candidates: true }),
+  }));
+
+  await act(async () => {
+    finishSave({ session: resource({ settings: { ...resource().settings, show_generation_separator: true, show_jev_candidates: true } }), model_change: 'none' });
+  });
+  await waitFor(() => expect(screen.queryByTestId('persistent-session-editor')).toBeNull());
+  expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
+    show_generation_separator: true,
+    show_jev_candidates: true,
+  });
+});
+
 test('keeps the input and shows a partial-save notice when a save fails after the server started', async () => {
   api.updatePersistentSession.mockRejectedValue(failure(503, 'NODE_COMMAND_TIMEOUT', '노드가 응답하지 않았습니다.'));
   const screen = await openList();

@@ -20,6 +20,8 @@ import { ChatEventList } from '../components/chat/ChatEventList';
 import type { ChatRenderItem } from '../components/chat/groupChatEvents';
 import { useChatRenderItems } from '../components/chat/useChatRenderItems';
 import type { SessionEvent } from '../api/types';
+import { useChatStore } from '../store/chatStore';
+import { persistentJevCandidatesFixture } from './persistentJevCandidatesFixture';
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
@@ -43,37 +45,40 @@ const persistentChatEvents: SessionEvent[] = [
   { id: '902', type: 'assistant_message', data: { text: '다음 세대의 첫 답변입니다.' } },
   { id: '903', type: 'complete', data: { result: '응답을 마쳤습니다.', model: 'public-model', usage: { input_tokens: 100, output_tokens: 20 } } },
   { id: '904', type: 'user_message', data: { input_id: 'public-input-1', text: '관련 자료를 찾아줘.' } },
-  { id: '905', type: 'debug', data: { kind: 'persistent_jev_candidates', observation: {
-    input_id: 'public-input-1',
-    selected: [
-      { kind: 'turn_summary', session_id: 'public-session', summary_event_id: 38, turn_number: 38, label: 'T38', line: '요약 한 줄', score: 3 },
-      { kind: 'card', card_id: 'public-card', card_number: 412, label: '#412', line: '카드 한 줄', score: 2 },
-      { kind: 'session', session_id: 'public-session-2', label: '세션 제목', line: '한 줄', score: 2 },
-    ],
-    candidate_counts: { turn_summaries: 40, cards: 20, search_sessions: 15, recent_completed_sessions: 5 },
-    model: 'jev-latest', latency_ms: 426,
-  } } },
+  persistentJevCandidatesFixture('905', 'public-input-1'),
 ];
 
 function ReviewPersistentChatProjection() {
   const t = useTokens();
   const styles = makeStyles(t);
   const flatListRef = useRef<FlatList<ChatRenderItem>>(null);
-  const [showGenerationSeparator, setShowGenerationSeparator] = useState(true);
-  const [showJevCandidates, setShowJevCandidates] = useState(true);
+  const settings = useChatStore(state => {
+    const current = state.persistentDisplaySettings;
+    return current?.sessionId === 'review-pas-1' ? current.settings : null;
+  });
+  const showGenerationSeparator = settings?.show_generation_separator === true;
+  const showJevCandidates = settings?.show_jev_candidates === true;
+  const updateDisplaySetting = (key: 'show_generation_separator' | 'show_jev_candidates', value: boolean) => {
+    const current = useChatStore.getState().persistentDisplaySettings;
+    if (current?.sessionId !== 'review-pas-1' || !current.settings) return;
+    useChatStore.getState().applyPersistentDisplaySettings('review-pas-1', { ...current.settings, [key]: value });
+  };
   const { reversedItems } = useChatRenderItems({
     events: persistentChatEvents,
     pendingOptimistic: undefined,
     streamingSlots: undefined,
     sessionStatus: 'completed',
-    persistentDisplaySettings: { showGenerationSeparator, showJevCandidates },
+    persistentDisplaySettings: settings ? {
+      showGenerationSeparator: settings.show_generation_separator,
+      showJevCandidates: settings.show_jev_candidates,
+    } : undefined,
   });
   return <View testID="review-persistent-chat-projection" style={styles.container}>
     <View>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>세대 구분선 표시</Text>
-      <Switch accessibilityLabel="검수 창 세대 구분선 표시" testID="review-persistent-generation-toggle" value={showGenerationSeparator} onValueChange={setShowGenerationSeparator} />
+      <Switch accessibilityLabel="검수 창 세대 구분선 표시" testID="review-persistent-generation-toggle" value={showGenerationSeparator} onValueChange={value => updateDisplaySetting('show_generation_separator', value)} />
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>Jev 후보 표시</Text>
-      <Switch accessibilityLabel="검수 창 Jev 후보 표시" testID="review-persistent-jev-toggle" value={showJevCandidates} onValueChange={setShowJevCandidates} />
+      <Switch accessibilityLabel="검수 창 Jev 후보 표시" testID="review-persistent-jev-toggle" value={showJevCandidates} onValueChange={value => updateDisplaySetting('show_jev_candidates', value)} />
     </View>
     <ChatEventList
       flatListRef={flatListRef}
