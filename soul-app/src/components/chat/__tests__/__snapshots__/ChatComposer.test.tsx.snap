@@ -235,6 +235,7 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
             {
               "alignSelf": "stretch",
               "flex": 1,
+              "minHeight": 44,
             }
           }
           tabIndex={-1}

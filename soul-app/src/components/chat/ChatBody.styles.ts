@@ -59,6 +59,7 @@ export function makeStyles(t: DesignTokens) {
     composerControlsSpacer: {
       flex: 1,
       alignSelf: 'stretch',
+      minHeight: t.foundation.hitTarget,
     },
     composerRightControls: {
       flexDirection: 'row',
