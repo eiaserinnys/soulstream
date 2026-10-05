@@ -15,6 +15,7 @@ describe("persistent context host route", () => {
     registerPersistentContextHostRoutes(app, {
       authBearerToken: "service-secret",
       service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
+      logNullReason: vi.fn(),
     });
 
     const unauthorized = await app.inject({
@@ -38,6 +39,7 @@ describe("persistent context host route", () => {
     registerPersistentContextHostRoutes(app, {
       authBearerToken: "service-secret",
       service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
+      logNullReason: vi.fn(),
     });
     const before = Date.now();
     const response = await app.inject({
@@ -55,5 +57,55 @@ describe("persistent context host route", () => {
     const input = evaluatePersistentCandidates.mock.calls[0]?.[0];
     expect(input?.deadlineAt).toBeGreaterThanOrEqual(before + 900);
     expect(input?.deadlineAt).toBeLessThanOrEqual(before + 1100);
+  });
+
+  it("logs the route deadline and unexpected error null paths once", async () => {
+    const app = Fastify(); apps.push(app);
+    const logNullReason = vi.fn();
+    const evaluatePersistentCandidates = vi.fn(async (_input: PersistentContextEvaluationInput) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { observation: { input_id: "input", selected: [] } };
+    });
+    registerPersistentContextHostRoutes(app, {
+      authBearerToken: "service-secret",
+      service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
+      logNullReason,
+    });
+    const deadlineResponse = await app.inject({
+      method: "POST", url: "/api/persistent-context/host/evaluate",
+      headers: { authorization: "Bearer service-secret" },
+      payload: { args: { session_id: "deadline-session", input_id: "input", request: "request", budget_ms: 1 } },
+    });
+    expect(deadlineResponse.json()).toEqual({ observation: null });
+    expect(logNullReason).toHaveBeenCalledTimes(1);
+    expect(logNullReason).toHaveBeenLastCalledWith("cancelled_or_deadline", "deadline-session", expect.any(Number));
+
+    evaluatePersistentCandidates.mockRejectedValueOnce(new Error("private request details"));
+    const errorResponse = await app.inject({
+      method: "POST", url: "/api/persistent-context/host/evaluate",
+      headers: { authorization: "Bearer service-secret" },
+      payload: { args: { session_id: "error-session", input_id: "input", request: "request", budget_ms: 1_000 } },
+    });
+    expect(errorResponse.json()).toEqual({ observation: null });
+    expect(logNullReason).toHaveBeenCalledTimes(2);
+    expect(logNullReason).toHaveBeenLastCalledWith("unexpected_error", "error-session", expect.any(Number));
+  });
+
+  it("does not log again when the service already returned null", async () => {
+    const app = Fastify(); apps.push(app);
+    const logNullReason = vi.fn();
+    const evaluatePersistentCandidates = vi.fn(async () => ({ observation: null }));
+    registerPersistentContextHostRoutes(app, {
+      authBearerToken: "service-secret",
+      service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
+      logNullReason,
+    });
+    const response = await app.inject({
+      method: "POST", url: "/api/persistent-context/host/evaluate",
+      headers: { authorization: "Bearer service-secret" },
+      payload: { args: { session_id: "service-null", input_id: "input", request: "request", budget_ms: 1_000 } },
+    });
+    expect(response.json()).toEqual({ observation: null });
+    expect(logNullReason).not.toHaveBeenCalled();
   });
 });

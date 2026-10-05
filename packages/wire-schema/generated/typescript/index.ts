@@ -612,6 +612,7 @@ export interface PersistentJevObservation {
   candidate_counts: PersistentJevCandidateCounts;
   model: "jev-latest";
   latency_ms: number;
+  top_raw_score: number;
 }
 export interface PersistentJevTurnSummaryCandidate {
   kind: "turn_summary";
@@ -621,6 +622,7 @@ export interface PersistentJevTurnSummaryCandidate {
   label: string;
   line: string;
   score: number;
+  raw_score: number;
 }
 export interface PersistentJevCardCandidate {
   kind: "card";
@@ -629,6 +631,7 @@ export interface PersistentJevCardCandidate {
   label: string;
   line: string;
   score: number;
+  raw_score: number;
 }
 export interface PersistentJevSessionCandidate {
   kind: "session";
@@ -636,6 +639,7 @@ export interface PersistentJevSessionCandidate {
   label: string;
   line: string;
   score: number;
+  raw_score: number;
   /**
    * @minItems 1
    * @maxItems 2
