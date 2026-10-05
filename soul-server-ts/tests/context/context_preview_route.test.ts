@@ -67,6 +67,29 @@ describe("context preview route", () => {
     await app.close();
   });
 
+  it("applies the card_role session field to applies_when", async () => {
+    const app = Fastify();
+    registerContextPreviewRoute(app, {
+      nodeId: "eiaserinnys",
+      atom: { enabled: true, serverUrl: "https://atom.test", apiKey: "key" },
+      auth,
+      logger,
+    });
+    const preview = async (session: Record<string, unknown>) => (await app.inject({
+      method: "POST",
+      url: "/api/context/preview",
+      payload: {
+        atom_contexts: [{ node_id: "11111111-2222-3333-4444-555555555555", depth: 1, applies_when: { card_role: ["assignee"] } }],
+        session,
+      },
+    })).json().manifest.sources[0].status;
+
+    expect(await preview({ card_role: "assignee" })).toBe("ok");
+    expect(await preview({ card_role: "member" })).toBe("filtered");
+    expect(await preview({})).toBe("filtered");
+    await app.close();
+  });
+
   it("rejects malformed atom_contexts before issuing atom requests", async () => {
     const app = Fastify();
     registerContextPreviewRoute(app, {

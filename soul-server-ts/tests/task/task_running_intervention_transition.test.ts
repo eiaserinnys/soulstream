@@ -935,4 +935,16 @@ describe("active intervention assigned cards",()=>{
     expect(task.interventionQueue).toHaveLength(0);
     expect(JSON.stringify((broadcaster.emitEventEnvelope as ReturnType<typeof vi.fn>).mock.calls)).not.toContain('"status":"review"');
   });
+  it("sends no assigned_cards block to an active turn when the session has no assigned card", async () => {
+    const injectAtToolBoundary=vi.fn().mockResolvedValue({status:"delivered",mechanism:"active_turn"});
+    const assignedCardContext=vi.fn(async()=>null);
+    const subject=new RunningInterventionTransition({logger:silentLogger,broadcaster:makeBroadcaster(),assignedCardContext,persistence:makeEventPersistenceTestDouble().persistence});
+    const task=makeRunningTask({runner:createInProcessTaskRunnerRuntime({backendId:"claude",workspaceDir:"/tmp/active",async *execute(){},intervene:vi.fn(),injectAtToolBoundary} as never)});
+    await subject.deliver(task,{text:"하위 보고",user:"agent",deliveryId:"no-card-input",callerInfo:{source:"agent"},context:[{key:"assigned_cards",content:"stale"}]});
+    expect(injectAtToolBoundary).toHaveBeenCalledOnce();
+    const prompt=injectAtToolBoundary.mock.calls[0]![0].prompt as string;
+    expect(prompt).toContain("하위 보고");
+    expect(prompt).not.toContain("assigned_cards");
+    expect(prompt).not.toContain("stale");
+  });
 });

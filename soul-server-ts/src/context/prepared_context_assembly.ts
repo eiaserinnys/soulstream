@@ -37,7 +37,7 @@ export interface PreparedContextAssemblyInput {
   pageContextItem: ContextItem | null;
   boardWorkspaceItem: ContextItem | null;
   runningSessionsItem: ContextItem | null;
-  assignedCardItem: ContextItem;
+  assignedCardItem: ContextItem | null;
   predecessorSummaryItem: ContextItem | null;
   generationCheckpointItem: ContextItem | null;
   nativeSessionId: string | null;
@@ -64,8 +64,6 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
     callerInfo: args.task.callerInfo,
     folder: args.primaryFolder?.folder ?? null,
     card: args.primaryFolder?.card ?? null,
-    cardGuidance: args.primaryFolder?.cardGuidance ?? null,
-    folderGuidance: args.primaryFolder?.folderGuidance ?? null,
   });
 
   const combinedContextItems: ContextItem[] = [soulstreamItem];
@@ -92,7 +90,7 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
   combinedContextItems.push(
     ...withoutSessionContextSourceMarkers(args.task.contextItems).filter((item) => item.key !== "assigned_cards"),
   );
-  combinedContextItems.push(args.assignedCardItem);
+  if (args.assignedCardItem) combinedContextItems.push(args.assignedCardItem);
 
   return {
     effectiveSystemPrompt,

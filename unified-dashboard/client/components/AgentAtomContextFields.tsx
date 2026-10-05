@@ -1,7 +1,7 @@
 import type { InputHTMLAttributes } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 
-export type AppliesWhenField = "source" | "node_id" | "container_kind" | "agent" | "backend" | "os";
+export type AppliesWhenField = "source" | "node_id" | "container_kind" | "agent" | "backend" | "os" | "card_role";
 export type AtomContextMode = "full" | "index" | "titles";
 
 export interface AgentAtomContext {
@@ -20,6 +20,7 @@ const CONDITION_FIELDS: ReadonlyArray<{ field: AppliesWhenField; label: string }
   { field: "agent", label: "에이전트" },
   { field: "backend", label: "백엔드" },
   { field: "os", label: "OS" },
+  { field: "card_role", label: "카드 역할" },
 ];
 
 export const inputClassName = "mt-1 h-8 w-full rounded border border-border bg-background px-2 text-sm";

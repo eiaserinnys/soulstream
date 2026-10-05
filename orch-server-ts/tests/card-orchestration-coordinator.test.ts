@@ -286,6 +286,7 @@ it("keeps the admission declaration and adds check-item guidance to an automatic
    admission:{workerInput:{prompt:string}}
  }]>)[0]![0];
  expect(persisted.admission.workerInput.prompt).toContain("커멘트 ID: user-comment");
- expect(persisted.admission.workerInput.prompt).toContain("전달을 읽기만 한 상태는 착수가 아닙니다.");
- expect(persisted.admission.workerInput.prompt).toContain("착수 성공 뒤 확인 항목이 없으면 set_card_items로 결과를 나누고, 이미 있으면 그 항목을 이어서 씁니다.");
+ expect(persisted.admission.workerInput.prompt).toMatch(/\n\n## 지금 실행 중인 다른 카드 세션\n[^]*\n\n자동 배정 실행이다\. 일을 시작할 때 get_card로 version을 읽어 start_card_work를 부른다\.$/);
+ expect(persisted.admission.workerInput.prompt).not.toContain("## 카드 규칙");
+ expect(persisted.admission.workerInput.prompt).not.toContain("## 대기열");
 });

@@ -24,15 +24,10 @@ export interface AssignedCardContextCapture {
   snapshot: Readonly<AssignedCardContext>;
 }
 
-/** An input snapshot only: no writes, deliveries, scheduling, or wakeups. */
+/** An input snapshot only: no writes, deliveries, scheduling, or wakeups. Null when the session has no assigned card. */
 export async function fetchAssignedCardContextItem(
   db: SessionDB, logger: Logger, sessionId: string, capture?: AssignedCardCapture,
-): Promise<ContextItem> {
-  const base = {
-    scope: "assignee_session_id", session_id: sessionId, trust: "untrusted_card_data",
-    notice: "현재 입력의 조회 현황이며 상태 전환 명령이 아닙니다.",
-    guidance: "get_card로 담당 카드의 확인 항목과 상황판을 읽습니다. 일이 끝났으면 항목에 결과를 달고 request_card_review의 ask에 사용자가 볼 것을 적습니다. 확인 항목이 없는 옛 카드는 기존 보고 뒤 검수를 요청합니다. 진행과 기술 세부는 add_card_note에, 인계 요약은 update_card_brief에 남기고 턴을 끝내기 전에 update_card_now로 지금과 누구 차례를 맞춥니다.",
-  };
+): Promise<ContextItem | null> {
   try {
     const snapshot = await db.getAssignedCardContext(sessionId);
     if (capture) {
@@ -41,17 +36,16 @@ export async function fetchAssignedCardContextItem(
       try { void capture(structuredClone(snapshot)).catch(err=>logger.warn({err,sessionId}, "assigned card snapshot observer failed")); }
       catch (err) { logger.warn({err,sessionId}, "assigned card snapshot observer failed"); }
     }
+    if (snapshot.cards.length === 0) return null;
     const cards = snapshot.cards.slice(0, 12).map(card => ({
       id: card.id, title: preview(card.title, 160), status: cardStatusLabel(card.status),
-      latestReportAt: card.latestReportAt,
-      ...(card.hasItems === undefined ? {} : {hasItems:card.hasItems}),
-      ...(card.hasItems !== true && isLater(card.latestCommentAt,card.latestReportAt) ? { reportFact:"최근 커멘트 이후 보고 없음" } : {}),
     }));
-    return { key: "assigned_cards", content: { ...base, status: "ok", total: snapshot.total,
-      omitted: snapshot.total - cards.length, cards } };
+    const omitted = snapshot.total - cards.length;
+    return { key: "assigned_cards", content: { trust: "untrusted_card_data", cards,
+      ...(omitted > 0 ? { omitted } : {}) } };
   } catch (err) {
     logger.warn({ err, sessionId }, "assigned card context read failed");
-    return { key: "assigned_cards", content: { ...base, status: "unavailable", cards: [],
+    return { key: "assigned_cards", content: { status: "unavailable",
       warning: "이번 입력에서 최신 담당 카드 현황을 확인하지 못했습니다. 담당 카드가 0개라는 뜻이 아닙니다." } };
   }
 }
@@ -59,10 +53,6 @@ export async function fetchAssignedCardContextItem(
 function preview(text: string, max: number): string {
   const bounded = text.slice(0, max).replace(/<\//g, "<\\/");
   return text.length > max ? `${bounded}…` : bounded;
-}
-
-function isLater(left: string | null, right: string | null): boolean {
-  return left !== null && right !== null && Date.parse(left) > Date.parse(right);
 }
 
 export function cardStatusLabel(status: string): string {

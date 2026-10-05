@@ -27,9 +27,7 @@ export interface SoulstreamContextParams {
   agentId?: string;
   callerInfo?: CallerInfo;
   folder?: SoulstreamFolderContext | null;
-  card?: { id: string; title: string; status: string } | null;
-  cardGuidance?: string | null;
-  folderGuidance?: string | null;
+  card?: { id: string; title: string; status: string; role: "assignee" | "member" } | null;
 }
 
 /**
@@ -55,8 +53,7 @@ function detectLocalIp(): string {
  * dict content (key/value):
  *   - agent_session_id, claude_session_id(또는 "(new session)"), workspace_dir
  *   - folder_name과 folder(id/title)
- *   - card와 card_guidance (카드에 연결된 세션이면)
- *   - folder_guidance (폴더 카드 행동 안내)
+ *   - card(id/title/status/role) (카드에 연결된 세션이면)
  *   - hostname, ip_address, current_node_id
  *   - host_os, os_version, current_time (ISO)
  *   - agent_id (있을 때만)
@@ -85,12 +82,6 @@ export function buildSoulstreamContextItem(
   }
   if (params.card) {
     content.card = params.card;
-  }
-  if (params.cardGuidance) {
-    content.card_guidance = params.cardGuidance;
-  }
-  if (params.folderGuidance) {
-    content.folder_guidance = params.folderGuidance;
   }
   if (params.callerInfo) {
     // R-2 회로 차단 정본 (PR #56 hydration callerInfo 복원과 짝).

@@ -1,13 +1,14 @@
 import type { Logger } from "pino";
 
 import type { FolderRow, SessionDB } from "../db/session_db.js";
+import type { SessionRow } from "../db/session_db_types.js";
 import type { SoulstreamFolderContext } from "./soulstream_item.js";
+
+export type SessionCardRole = "assignee" | "member";
 
 export interface PrimarySessionFolderContext {
   folder: SoulstreamFolderContext;
-  card?: { id: string; title: string; status: string } | null;
-  cardGuidance?: string | null;
-  folderGuidance?: string | null;
+  card?: { id: string; title: string; status: string; role: SessionCardRole } | null;
 }
 
 export async function resolvePrimarySessionFolderContext(
@@ -18,8 +19,9 @@ export async function resolvePrimarySessionFolderContext(
 ): Promise<PrimarySessionFolderContext | null> {
   let id = folderId;
   let cardId: string | null = null;
+  let session: SessionRow | null = null;
   try {
-    const session = await db.getSession(sessionId);
+    session = await db.getSession(sessionId);
     id ??= session?.folder_id ?? undefined;
     cardId = session?.card_id ?? null;
   } catch (err) {
@@ -40,24 +42,30 @@ export async function resolvePrimarySessionFolderContext(
   if (cardId) {
     try {
       const { card: row } = await db.getCard(cardId, sessionId);
-      card = { id: row.id, title: row.title, status: row.status };
+      card = { id: row.id, title: row.title, status: row.status, role: resolveCardRole(row, session!, sessionId) };
     } catch (err) {
       logger.warn({ err, sessionId, cardId }, "session card lookup failed");
     }
   }
 
-  const folder = {
-    id: row.id,
-    title: row.name,
-  };
   return {
-    folder,
+    folder: { id: row.id, title: row.name },
     card,
-    ...(card ? { cardGuidance: `이 세션은 카드 ${card.id}를 맡았다. 확인 항목은 set_card_items와 report_card_item, 상황판은 update_card_now, 진행 기록은 add_card_note, 검수는 request_card_review, 질문은 ask_card_question으로 남긴다. AskUserQuestion은 쓰지 않는다.` } : {}),
-    folderGuidance: buildFolderGuidance(folder),
   };
 }
 
-function buildFolderGuidance(folder: SoulstreamFolderContext): string {
-  return `이 세션은 폴더 ${folder.id}(${folder.title}) 소속. get_folder로 카드를 확인하고, 산출물·후속 세션은 이 폴더에 연결한다.`;
+/**
+ * 표시와 지침 주입(`applies_when.card_role`)에만 쓴다. 권한 판정의 정본은 orch의
+ * `claimableCardSessions`(orch-server-ts/src/cards/card_assignee.ts)다.
+ */
+function resolveCardRole(
+  card: Record<string, unknown>,
+  session: SessionRow,
+  sessionId: string,
+): SessionCardRole {
+  if (card.assigneeSessionId === sessionId) return "assignee";
+  // 자동 배정으로 만들어져 착수하면 담당으로 확정될 세션.
+  if (!card.assigneeSessionId && card.assigneeKind === "agent"
+    && card.assigneeAgentId === session.agent_id && !session.caller_session_id) return "assignee";
+  return "member";
 }
