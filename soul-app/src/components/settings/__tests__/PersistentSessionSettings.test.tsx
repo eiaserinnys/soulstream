@@ -256,6 +256,7 @@ test('after a lost create answer the session is not created again; only re-readi
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   expect(await screen.findByText(/세션이 일반 세션으로 만들어졌을 수 있으니/)).toBeTruthy();
   expect(api.createPersistentSession).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/오류 원문은 표시하지 않습니다/)).toBeNull();
 
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름을 바꿔도');
@@ -285,4 +286,13 @@ test('a session without profile and node reads as missing information, skips the
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
     display_name: '이름만 바꿈', settings: { default_model: { model_preset: 'model-a', reasoning_effort: null } },
   }));
+});
+
+test('a failed read of one session keeps the edit footer label, not the add label', async () => {
+  api.getPersistentSession.mockRejectedValue(failure(503, 'NODE_UNAVAILABLE', '불러오지 못했습니다.'));
+  const screen = await openList();
+  fireEvent.press(screen.getByTestId('persistent-session-pas-1'));
+  expect(await screen.findByTestId('persistent-session-reload')).toBeTruthy();
+  expect(screen.getByText('저장')).toBeTruthy();
+  expect(screen.queryByText('세션 추가')).toBeNull();
 });

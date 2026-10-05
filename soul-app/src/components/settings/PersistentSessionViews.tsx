@@ -224,7 +224,7 @@ export function PersistentSessionEditor({
       const failure = describePersistentFailure(cause, session || registration ? 'save' : 'create');
       setResponseLost(failure.responseLost);
       if (failure.createdSession) setRegistration({ sessionId: failure.createdSession.session_id, name: failure.createdSession.display_name ?? name });
-      else setError(failure.text);
+      else if (!failure.responseLost) setError(failure.text); // a lost answer is explained by its own notice below
     } finally { if (mounted.current) setSaving(false); }
   };
   const release = async () => {
@@ -247,7 +247,7 @@ export function PersistentSessionEditor({
   );
   useSettingsSaveScope('persistent', {
     dirty, busy: saving || loading, canSave,
-    saveLabel: session ? '저장' : registration ? '등록 다시 시도' : '세션 추가',
+    saveLabel: sessionId ? '저장' : registration ? '등록 다시 시도' : '세션 추가',
     save,
     discard: () => { setDraft(baseline); setError(null); setModelError(null); },
   });
