@@ -27,6 +27,13 @@ test('full/compact는 비율·글자·조작최소를 유지하고 라벨 줄 �
   expect(chip.props.style.fontSize).toBeGreaterThanOrEqual(13);
   expect(screen.getByTestId('postit-body-card-1').findAllByProps({ testID: 'postit-activity-chip-card-1' }).length).toBeGreaterThan(0);
 });
+test('포스트잇의 미확인 항목 점은 상태 도트 크기를 쓴다', () => {
+  const card = cardFixture({ items: [{ id: 1, title: '확인', display: 'todo' }] as any });
+  const screen = render(<PostItCard api={null} card={card} onOpen={() => {}} />);
+  const summary = screen.getByTestId('postit-card-1-item-summary');
+  const dot = summary.children[0] as any;
+  expect(dot.props.style).toMatchObject({ width: 8, height: 8 });
+});
 
 test.each(['report', 'instruction'] as const)('인라인 %s 칩은 본문 Text 안에 두고 footer 위 여유를 지킨다', (kind) => {
   const card = cardFixture({ latestActivity: { kind, format: 'markdown', body: '같은 본문 첫 줄\n둘째 줄도 전체 폭을 씁니다.', createdAt: '' } });

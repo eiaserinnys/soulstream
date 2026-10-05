@@ -128,6 +128,28 @@ test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 
   expect(screen.getByText('실행 세션')).toBeTruthy();
 });
 
+test('탭 밖에서 보낸 뒤 안내는 불투명한 알약 표면으로 목록과 구분한다', async () => {
+  const source = { ...detail, card: { ...card, status: 'running' as const, blockedKind: null }, questions: [] };
+  const saved = { id: 'notice-comment', cardId: card.id, authorKind: 'user' as const,
+    authorId: 'user', sessionId: null, kind: 'comment' as const, body: '보낸 커멘트', createdAt: '' };
+  const api = { getCard: jest.fn().mockResolvedValue(source), addCardComment: jest.fn().mockResolvedValue(saved) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '보낸 커멘트');
+  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
+  expect(api.addCardComment).toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByTestId('card-comment-send-notice-surface')).toBeTruthy());
+
+  const tokens = renderHook(() => useTokens()).result.current;
+  const surface = StyleSheet.flatten(screen.getByTestId('card-comment-send-notice-surface').props.style);
+  expect(surface.backgroundColor).toBe(tokens.colors.warningBg);
+  expect(surface.borderColor).toBe(tokens.colors.warning);
+  expect(surface.borderWidth).toBe(StyleSheet.hairlineWidth);
+  expect(surface.borderRadius).toBe(tokens.foundation.radius.round);
+  expect(surface.height).toBe(tokens.controlHeight.chip + tokens.uiSpacing.xs + tokens.uiSpacing.xxs);
+});
+
 test('탭을 오가도 이 상세에서 새로 확인한 항목은 확인함 묶음으로 옮기지 않는다', async () => {
   const items = [checkItem(1, 'confirmed'), checkItem(2, 'confirmed'), checkItem(3, 'todo')];
   const sourceCard = { ...card, items };

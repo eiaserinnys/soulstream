@@ -10,6 +10,8 @@ interface Props {
   status?: string;
 }
 
+export const STATUS_DOT_SIZE = 8;
+
 /**
  * 8pt 상태 도트. status === 'running'이면 색상이 800ms 단위 opacity 펄스한다.
  * 그 외 상태는 정적 색상으로 표시. ChatScreen 헤더 제목 좌측 prefix.
@@ -83,5 +85,5 @@ export function StatusDot({ status }: Props) {
 }
 
 const styles = StyleSheet.create({
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  dot: { width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: STATUS_DOT_SIZE / 2 },
 });

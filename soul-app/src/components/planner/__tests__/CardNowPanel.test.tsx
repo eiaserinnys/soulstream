@@ -1,6 +1,8 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, renderHook } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import type { CardNow, CardNowHistoryEntry } from '../../../api/cardTypes';
+import { useTokens } from '../../../theme';
 import { CardNowPanel } from '../CardNowPanel';
 
 const now: CardNow = { text: '지금 확인 중입니다.', turn: 'agent', ask: null, updatedAt: '2026-10-05T01:00:00Z', sessionId: 's1' };
@@ -20,6 +22,15 @@ test('이전·다음은 상황만 넘기고 최신 now 및 확인 항목 상태�
   fireEvent.press(screen.getByLabelText('다음 상황'));
   expect(screen.getByText(now.text)).toBeTruthy();
   expect(screen.getByTestId('card-now-panel-frame').props.style).toBeUndefined();
+});
+
+test('상황판 이전·다음 단추의 터치 프레임은 서로 겹치지 않는다', () => {
+  const screen = render(<CardNowPanel now={now} history={history} />);
+  const tokens = renderHook(() => useTokens()).result.current;
+  const previous = StyleSheet.flatten(screen.getByTestId('card-now-previous-arrow').props.style);
+  const next = StyleSheet.flatten(screen.getByTestId('card-now-next-arrow').props.style);
+
+  expect(previous.right - next.right).toBe(tokens.hitTarget.min);
 });
 
 test('nowHistory 한 건은 현재 슬롯으로 바꾸어 그려 중복 이전 항목을 만들지 않는다', () => {

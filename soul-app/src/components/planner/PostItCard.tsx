@@ -16,6 +16,7 @@ import { AppGlassCard } from '../AppGlassCard';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { GlassButton } from '../GlassSurface';
 import { showAppContextMenu } from '../menus/AppContextMenu';
+import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 import type { PlannerContextMenuAction } from '../../lib/planner-context-menu-model';
 import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCardDisplay';
 import { CardStatusChip } from './CardRow';
@@ -167,7 +168,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
               onLayout={(event) => setBodyLines(Math.max(1, Math.floor(event.nativeEvent.layout.height / roles.body.lineHeight)))}>
               {itemSummary.total ? <View testID={`postit-${card.id}-item-summary`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs }}>
                 {itemSummary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-                  style={{ width: t.uiSpacing.xxs, height: t.uiSpacing.xxs, borderRadius: t.foundation.radius.round,
+                  style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
                     backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
                 <Text style={roles.label}>{itemSummary.confirmed}/{itemSummary.total} 확인</Text>
               </View> : null}

@@ -263,12 +263,13 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
           const next = event.nativeEvent.layout.height;
           setDockHeight((current) => current === next ? current : next);
         }}>
-          {sendNotice ? <View testID="card-comment-send-notice" style={styles.sendNotice}>
+          {sendNotice ? <CompactTouchTarget testID="card-comment-send-notice" surfaceTestID="card-comment-send-notice-surface"
+            accessibilityRole="button" accessibilityLabel="커멘트에서 보기" frameStyle={styles.sendNotice}
+            surfaceStyle={[styles.sendNoticeSurface, { backgroundColor: t.colors.warningBg, borderColor: t.colors.warning }]}
+            onPress={() => setTab('comments')}>
             <Text style={styles.sendNoticeText}>보냈습니다.</Text>
-            <CompactTouchTarget accessibilityRole="button" accessibilityLabel="커멘트에서 보기" onPress={() => setTab('comments')}>
-              <Text style={styles.link}>커멘트에서 보기</Text>
-            </CompactTouchTarget>
-          </View> : null}
+            <Text style={styles.link}>커멘트에서 보기</Text>
+          </CompactTouchTarget> : null}
           <CardCommentComposer key={cardId} ref={composer} api={api} cardId={cardId} sessionId={card?.assigneeSessionId} nodeId={nodeId}
             question={question} cardLoaded={!!card} locked={locked} sending={comments.pending || pending} onBusyChange={setComposerBusy}
             sendComment={comments.send} runMutation={run} embedded targetItem={selectedItem}
