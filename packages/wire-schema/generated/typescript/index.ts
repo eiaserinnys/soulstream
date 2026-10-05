@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 156개 $defs (top-level wire 79 + supporting/SSE 77). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -442,6 +442,7 @@ export interface SessionEventEnvelope {
     | SSEEventCustomViewUpdated
     | SSEEventContextUsage
     | SSEEventContextManifest
+    | SSEEventGenerationStarted
     | SSEEventCompact
     | SSEEventReconnect
     | SSEEventHistorySync
@@ -1120,6 +1121,38 @@ export interface SSEEventContextManifest {
       };
     };
   };
+  [k: string]: unknown;
+}
+/**
+ * SSE: 퍼시스턴트 세션의 새 모델 세대 시작과 체크포인트 크기.
+ */
+export interface SSEEventGenerationStarted {
+  type: "generation_started";
+  generation: number;
+  reason: string;
+  previous: {
+    model_preset: string;
+    backend: string;
+  };
+  current: {
+    model_preset: string;
+    backend: string;
+    model: string;
+  };
+  checkpoint: {
+    estimated_tokens: number;
+    chars: number;
+    sections: {
+      state: number;
+      story: number;
+      summaries: number;
+      recent: number;
+    };
+    summarized_through_turn: number | null;
+    recent_from_event_id: number | null;
+    recent_to_event_id: number | null;
+  };
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -2644,6 +2677,7 @@ export const EVENT_DURABILITY = {
   "claude_runtime_schedule_deleted": "durable",
   "context_usage": "durable",
   "context_manifest": "durable",
+  "generation_started": "durable",
   "compact": "durable",
   "reconnect": "durable",
   "history_sync": "durable",
@@ -2715,6 +2749,7 @@ export const SSE_EVENT_TYPES = [
   "claude_runtime_schedule_deleted",
   "context_usage",
   "context_manifest",
+  "generation_started",
   "compact",
   "reconnect",
   "history_sync",

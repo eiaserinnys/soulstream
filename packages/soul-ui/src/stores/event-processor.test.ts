@@ -159,6 +159,30 @@ describe("processEventsBatch — dedup", () => {
     expect(result.notifications).toEqual([]);
   });
 
+  it("generation_started는 채팅 행 없이 이벤트 커서만 전진", () => {
+    const ctx = createProcessingContext();
+    const event = {
+      type: "generation_started",
+      generation: 2,
+      timestamp: 1731700000,
+    } as unknown as SoulSSEEvent;
+
+    const result = processEventsBatch(
+      [{ event, eventId: 13 }],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(result.updated).toBe(false);
+    expect(result.root).toBeNull();
+    expect(result.maxEventId).toBe(13);
+    expect(ctx.nodeMap.size).toBe(0);
+    expect(result.notifications).toEqual([]);
+  });
+
   it("lastEventId 이하 이벤트를 차단 (모든 배치 일관 적용)", () => {
     const ctx = createProcessingContext();
 
