@@ -27,7 +27,7 @@ export function PostItCardView({id,title,status,color,fontSize,activity,assignee
   {summary!==undefined?summary:null}
   <span className="v3-postit-title" title={title}>{title}</span>
   <span className={`v3-postit-body${activity||nowText?'':' v3-postit-empty'}`} data-card-now={nowText!==undefined||undefined}>{nowText??activity?.text??'아직 지시나 보고가 없습니다'}</span>
-  {turnText||turnLabel?<span className="v3-postit-turn" title={[turnLabel,turnText].filter(Boolean).join(", ")}><strong>{turnLabel}</strong>{turnText}</span>:null}
+  {turnText||turnLabel?<span className="v3-postit-turn" title={[turnLabel,turnText].filter(Boolean).join(", ")}><span className="v3-postit-turn-text"><strong>{turnLabel}</strong>{turnText}</span></span>:null}
  </>;
  return <article {...props} className={`v3-postit-card${variant==='compact'?' v3-postit-card--compact':''}`}
   data-card-id={id} data-card-size={variant} data-card-status={status} data-card-color={resolvedColor} data-card-readonly={readOnly||undefined} data-card-enhanced={enhanced||undefined}
