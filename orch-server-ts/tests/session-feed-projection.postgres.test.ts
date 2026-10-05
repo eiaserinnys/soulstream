@@ -104,7 +104,10 @@ describePostgres("session feed PostgreSQL projection", () => {
         jsonb_build_object(
           'type', 'assistant_message',
           'preview', 'activity',
-          'timestamp', TIMESTAMPTZ '2026-01-01T00:00:00Z' + (412 - n) * INTERVAL '1 minute'
+          'timestamp', CASE WHEN n = 7
+            THEN TIMESTAMPTZ '2025-12-31T00:00:00Z'
+            ELSE TIMESTAMPTZ '2026-01-01T00:00:00Z' + (412 - n) * INTERVAL '1 minute'
+          END
         )
       FROM generate_series(1, 9387) AS n
     `;
@@ -129,6 +132,9 @@ describePostgres("session feed PostgreSQL projection", () => {
       limit: 30,
     });
     expect(first.sessions).toHaveLength(30);
+    expect(first.sessions.slice(0, 7).map((session) => session.agentSessionId)).toEqual(
+      Array.from({ length: 7 }, (_, index) => `feed-display-${String(index + 1).padStart(4, "0")}`),
+    );
     expect(first.sessions.map((session) => session.agentSessionId)).toEqual(
       Array.from({ length: 30 }, (_, index) => `feed-display-${String(index + 1).padStart(4, "0")}`),
     );

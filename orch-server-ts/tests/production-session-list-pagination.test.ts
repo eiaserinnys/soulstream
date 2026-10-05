@@ -129,14 +129,31 @@ describe("production session list pagination parity", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({
-        sessions: [expect.objectContaining({ agentSessionId: "display-running" })],
+      const body = response.json();
+      expect(body.sessions).toHaveLength(30);
+      expect(body.sessions[0]).toMatchObject({ agentSessionId: "display-running" });
+      expect(body).toMatchObject({
         total: 411,
         cursor: "30",
         nextCursor: "30",
         hasMore: true,
       });
-      expect(response.json()).not.toHaveProperty("sessionList");
+      expect(body).not.toHaveProperty("sessionList");
+
+      const oversizedResponse = await harness.application.app.inject({
+        method: "GET",
+        url: "/api/sessions?feed_display=true&limit=10000",
+        headers: harness.authHeaders,
+      });
+      const oversizedBody = oversizedResponse.json();
+      expect(oversizedResponse.statusCode).toBe(200);
+      expect(oversizedBody.sessions).toHaveLength(200);
+      expect(oversizedBody).toMatchObject({
+        total: 411,
+        nextCursor: "200",
+        hasMore: true,
+      });
+      expect(oversizedBody).not.toHaveProperty("sessionList");
       expect(sessionListCalls(harness.calls)).toEqual([]);
       expect(harness.calls.some((call) =>
         call.text.includes("s.review_state") && call.text.includes("session_feed_try_timestamptz")
@@ -188,9 +205,12 @@ describe("production session list pagination parity", () => {
         controller.signal,
       );
 
-      expect((await stream.next("session_list")).data).toMatchObject({
+      const data = (await stream.next("session_list")).data;
+      const sessions = data.sessions as Record<string, unknown>[];
+      expect(sessions).toHaveLength(30);
+      expect(sessions[0]).toMatchObject({ agentSessionId: "display-running" });
+      expect(data).toMatchObject({
         type: "session_list",
-        sessions: [expect.objectContaining({ agentSessionId: "display-running" })],
         total: 411,
         hasMore: true,
         nextCursor: "30",
@@ -202,6 +222,37 @@ describe("production session list pagination parity", () => {
       )).toBe(true);
     } finally {
       controller.abort();
+      await closeHarness(harness);
+    }
+  });
+
+  it("normalizes feed_display SSE limits with the REST snapshot rule", async () => {
+    const harness = await createProductionHarness();
+    try {
+      await harness.application.app.listen({ host: "127.0.0.1", port: 0 });
+      for (const [limit, expectedCount] of [
+        ["10000", 200],
+        ["0", 200],
+        ["-1", 50],
+        ["1.5", 50],
+      ] as const) {
+        const controller = new AbortController();
+        try {
+          const stream = await connectSse(
+            `${harness.application.app.listeningOrigin}/api/sessions/stream?feed_display=true&limit=${limit}`,
+            harness.authHeaders,
+            controller.signal,
+          );
+          const data = (await stream.next("session_list")).data;
+          expect(data.sessions as unknown[]).toHaveLength(expectedCount);
+          expect(data.total).toBe(411);
+          expect(data.nextCursor).toBe(String(expectedCount));
+        } finally {
+          controller.abort();
+        }
+      }
+      expect(sessionListCalls(harness.calls)).toEqual([]);
+    } finally {
       await closeHarness(harness);
     }
   });
@@ -218,12 +269,23 @@ async function createProductionHarness() {
     sessionRow("llm-session", "feed-folder", "llm"),
     sessionRow("excluded-folder-session", "excluded-folder", "claude"),
   ];
-  const displayRows = [sessionRow("display-running", "feed-folder", "claude")];
+  const displayRows = Array.from({ length: 411 }, (_, index) => ({
+    ...sessionRow(
+      index === 0 ? "display-running" : `display-${String(index + 1).padStart(3, "0")}`,
+      "feed-folder",
+      "claude",
+    ),
+    status: index < 7 ? "running" : "completed",
+    ...(index >= 7 ? { review_state: "needs_review" } : {}),
+  }));
   const query = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?").replace(/\s+/g, " ").trim();
     calls.push({ text, values });
     if (text.includes("s.review_state")) {
-      return text.includes("COUNT(*)") ? [{ count: 411 }] : displayRows;
+      if (text.includes("COUNT(*)")) return [{ count: displayRows.length }];
+      const limit = Number(values[values.length - 2]);
+      const offset = Number(values[values.length - 1]);
+      return displayRows.slice(offset, offset + limit);
     }
     if (text.includes("folder_get_all")) return [];
     if (text.includes("FROM sessions s") && text.includes("s.session_id = ANY")) {

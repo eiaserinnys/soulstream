@@ -395,7 +395,10 @@ export function createLiveOrchestratorProviderBundle(
           feedOnly: queryBool(request.query, "feed_only"),
           feedDisplay,
           ...(feedDisplay
-            ? { limit: requestedLimit ?? 30, offset: 0 }
+            ? {
+                limit: resolveSessionSnapshotLimit(requestedLimit ?? 30),
+                offset: 0,
+              }
             : {}),
         });
       },
@@ -468,6 +471,6 @@ function queryNumber(query: unknown, key: string): number | undefined {
   const value = (query as Record<string, unknown>)[key];
   const raw = Array.isArray(value) ? value[0] : value;
   if (typeof raw !== "string" || raw.length === 0) return undefined;
-  const parsed = Number.parseInt(raw, 10);
+  const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
