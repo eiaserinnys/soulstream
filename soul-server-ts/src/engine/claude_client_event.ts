@@ -59,6 +59,8 @@ export type ClaudeClientEvent =
       claudeSessionId?: string;
       usage?: unknown;
       totalCostUsd?: number;
+      model?: string;
+      turnCostUsd?: number;
       timestamp?: number;
       parentEventId?: ParentEventId;
     }

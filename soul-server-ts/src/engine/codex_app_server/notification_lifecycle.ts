@@ -122,6 +122,7 @@ export function applyNotificationLifecycle(
   notification: AppServerNotification,
   options: {
     suppressThreadStartedSession: boolean;
+    model?: string | null;
     onUnknownNotification?: (method: string) => void;
   },
 ): NotificationLifecycleResult {
@@ -172,7 +173,7 @@ export function applyNotificationLifecycle(
   }
 
   const turnContext = notification.method === "turn/completed"
-    ? { tokenUsage: nextState.tokenUsage }
+    ? { tokenUsage: nextState.tokenUsage, model: options.model }
     : undefined;
   const payloads = mapAppServerNotification(
     notification,

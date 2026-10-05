@@ -532,7 +532,13 @@ describe("CodexAppServerEngineAdapter", () => {
 
   it("emits V6 context usage immediately before complete", async () => {
     const { adapter, client } = makeAdapter();
-    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    const framesPromise = (async () => {
+      const frames = [];
+      for await (const frame of adapter.executeFrames({ prompt: "hello", model: "gpt-6.1-sol" })) {
+        frames.push(frame);
+      }
+      return frames;
+    })();
     await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
 
     client.emit({
@@ -576,7 +582,10 @@ describe("CodexAppServerEngineAdapter", () => {
       },
     });
 
-    const events = await eventsPromise;
+    const frames = await framesPromise;
+    const events = frames
+      .filter((frame) => frame.kind === "engine_event")
+      .map((frame) => frame.payload as SSEEventPayload);
     const usageIndex = events.findIndex((event) => event.type === "context_usage");
     const completeIndex = events.findIndex((event) => event.type === "complete");
     expect(usageIndex).toBeGreaterThanOrEqual(0);
@@ -595,6 +604,8 @@ describe("CodexAppServerEngineAdapter", () => {
         output_tokens: 5,
         reasoning_output_tokens: 0,
       },
+      model: "gpt-6.1-sol",
+      turn_cost_usd: 0.004951,
     });
   });
 

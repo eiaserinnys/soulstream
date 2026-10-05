@@ -135,6 +135,7 @@ describe("Codex app-server notification mapper", () => {
       },
       undefined,
       {
+        model: "gpt-6.1-sol",
         tokenUsage: {
           baseline: {
             totalTokens: 0,
@@ -183,7 +184,63 @@ describe("Codex app-server notification mapper", () => {
         output_tokens: 5,
         reasoning_output_tokens: 0,
       },
+      model: "gpt-6.1-sol",
+      turn_cost_usd: 0.004951,
     });
+  });
+
+  it("keeps the model when the Codex price table has no matching row", () => {
+    const out = mapAppServerNotification(
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      },
+      undefined,
+      {
+        model: "gpt-5.6-sol",
+        tokenUsage: {
+          baseline: {
+            totalTokens: 0,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            cacheWriteInputTokens: 0,
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+          },
+          latest: {
+            total: {
+              totalTokens: 14_129,
+              inputTokens: 14_124,
+              cachedInputTokens: 12_288,
+              cacheWriteInputTokens: 0,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+            },
+            last: {
+              totalTokens: 14_129,
+              inputTokens: 14_124,
+              cachedInputTokens: 12_288,
+              cacheWriteInputTokens: 0,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+            },
+            modelContextWindow: 258_400,
+          },
+        },
+      },
+    );
+
+    expect(out[1]).toMatchObject({
+      type: "complete",
+      usage: {
+        input_tokens: 14_124,
+        cached_input_tokens: 12_288,
+        output_tokens: 5,
+        reasoning_output_tokens: 0,
+      },
+      model: "gpt-5.6-sol",
+    });
+    expect(out[1]).not.toHaveProperty("turn_cost_usd");
   });
 
   it("keeps usage when the context window is null", () => {

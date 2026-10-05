@@ -149,6 +149,8 @@ export function mapClaudeClientEvent(
             : {}),
           ...(event.usage !== undefined ? { usage: event.usage } : {}),
           ...(event.totalCostUsd !== undefined ? { total_cost_usd: event.totalCostUsd } : {}),
+          ...(event.model !== undefined ? { model: event.model } : {}),
+          ...(event.turnCostUsd !== undefined ? { turn_cost_usd: event.turnCostUsd } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),
         }),
