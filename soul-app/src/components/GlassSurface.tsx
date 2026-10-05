@@ -269,6 +269,7 @@ export interface GlassButtonProps {
   borderRadius?: number;
   padding?: { horizontal?: number; vertical?: number };
   style?: StyleProp<ViewStyle>;
+  frameStyle?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
   testID?: string;
   surfaceTestID?: string;
@@ -290,6 +291,7 @@ export function GlassButton({
   borderRadius,
   padding,
   style,
+  frameStyle,
   contentStyle,
   testID,
   surfaceTestID,
@@ -311,7 +313,7 @@ export function GlassButton({
     const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
     const visualStyle: ViewStyle = { width: visualSize, height: visualSize, borderRadius: resolvedRadius,
       alignItems: 'center', justifyContent: 'center' };
-    return <CompactTouchTarget testID={testID} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+    return <CompactTouchTarget testID={testID} frameStyle={frameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
       {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: primitive.backgroundColor }]}>{children}</View>
         : <GlassSurfaceImpl role={primitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle]}>{children}</GlassSurfaceImpl>}
