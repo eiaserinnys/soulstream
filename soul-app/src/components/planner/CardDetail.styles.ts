@@ -13,7 +13,6 @@ export function cardDetailStyles(t: DesignTokens) {
     titleHitFrame: { flex: 1, minWidth: 0, alignSelf: 'stretch', alignItems: 'stretch', justifyContent: 'center' },
     titleHitSurface: { flex: 1, minWidth: 0, alignItems: 'flex-start', justifyContent: 'center' },
     heading: { flex: 1, minWidth: 0, ...type.section, color: t.colors.textPrimary },
-    glyph: { ...type.body, color: t.colors.textPrimary },
     chips: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: s.xs },
     chip: { minHeight: t.controlHeight.chip, paddingHorizontal: s.sm, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.surfaceCode, flexDirection: 'row', alignItems: 'center', gap: s.xs, maxWidth: '100%' },
     chipAvatar: { width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round },

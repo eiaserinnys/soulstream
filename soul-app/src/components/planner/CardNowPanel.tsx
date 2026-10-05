@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardNow, CardNowHistoryEntry } from '../../api/cardTypes';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { AppGlassCard } from '../AppGlassCard';
@@ -22,6 +23,7 @@ export function CardNowPanel({
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const arrowIconSize = createPlannerVisualRoles(t).typography.cardTitle.fontSize;
   const entries = useMemo<Entry[]>(() => [
     ...history.slice(0, -1).map((entry) => ({ ...entry })),
     { text: now.text, turn: now.turn, ask: now.ask, at: now.updatedAt },
@@ -110,7 +112,7 @@ export function CardNowPanel({
               disabled={index === 0} frameStyle={styles.arrowFrameLeft}
               onPress={() => moveTo(Math.max(0, index - 1))}
             >
-              <Text style={styles.arrowGlyph}>‹</Text>
+              <Ionicons testID="card-now-previous-icon" name="chevron-back" size={arrowIconSize} color={t.colors.textSecondary} />
             </GlassButton>
             <GlassButton
               testID="card-now-next-arrow"
@@ -120,7 +122,7 @@ export function CardNowPanel({
               frameStyle={styles.arrowFrameRight}
               onPress={() => moveTo(Math.min(entries.length - 1, index + 1))}
             >
-              <Text style={styles.arrowGlyph}>›</Text>
+              <Ionicons testID="card-now-next-icon" name="chevron-forward" size={arrowIconSize} color={t.colors.textSecondary} />
             </GlassButton>
           </View>
         ) : null}
@@ -158,7 +160,6 @@ function makeStyles(t: DesignTokens) {
       top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
     arrowFrameRight: { position: 'absolute', right: -t.uiSpacing.sm,
       top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
-    arrowGlyph: { ...planner.typography.cardTitle, color: t.colors.textSecondary },
     nowText: { ...planner.typography.body, color: t.colors.textPrimary },
     turnBand: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs, borderRadius: t.foundation.radius.field },
     agentTurn: { backgroundColor: withAlphaColor(t.colors.statusRunning, 0.12) },

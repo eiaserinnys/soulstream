@@ -196,7 +196,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
       <View testID="card-detail-header" style={styles.header}>
         <View style={styles.headerRow}>
           <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose}>
-            <Text style={styles.glyph}>‹</Text>
+            <Ionicons testID="card-detail-back-icon" name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
           </GlassButton>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api || !card}
             onPress={() => setStatusMenuOpen(true)} frameStyle={styles.titleHitFrame} surfaceStyle={styles.titleHitSurface}>

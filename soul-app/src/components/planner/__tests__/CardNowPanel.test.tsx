@@ -1,4 +1,5 @@
 import React from 'react';
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import { fireEvent, render, renderHook } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import type { CardNow, CardNowHistoryEntry } from '../../../api/cardTypes';
@@ -31,6 +32,8 @@ test('상황판 이전·다음 단추의 터치 프레임은 서로 겹치지 �
   const next = StyleSheet.flatten(screen.getByTestId('card-now-next-arrow').props.style);
 
   expect(previous.right - next.right).toBe(tokens.hitTarget.min);
+  expect(screen.getByTestId('card-now-previous-icon').props.name).toBe('chevron-back');
+  expect(screen.getByTestId('card-now-next-icon').props.name).toBe('chevron-forward');
 });
 
 test('nowHistory 한 건은 현재 슬롯으로 바꾸어 그려 중복 이전 항목을 만들지 않는다', () => {

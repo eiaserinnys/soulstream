@@ -83,7 +83,8 @@ describe('v3 design policy contract', () => {
     expect(fs.existsSync(sharedPath)).toBe(true);
 
     const shared = fs.existsSync(sharedPath) ? fs.readFileSync(sharedPath, 'utf8') : '';
-    expect(shared).toMatch(/expanded\s*\?\s*['"]∧['"]\s*:\s*['"]∨['"]/);
+    expect(shared).toMatch(/expanded\s*\?\s*['"]chevron-up['"]\s*:\s*['"]chevron-down['"]/);
+    expect(shared).toContain('@expo/vector-icons/Ionicons');
     for (const file of DISCLOSURE_CONSUMERS) {
       expect(read(file)).toContain('<DisclosureIcon');
     }
@@ -92,6 +93,7 @@ describe('v3 design policy contract', () => {
       /\?\s*['"]chevron-(?:up|down|forward|right)(?:-outline)?['"]|[▲▼]/,
       new Set([
         'components/DisclosureIcon.tsx',
+        "components/DisclosureIcon.tsx: name={expanded ? 'chevron-up' : 'chevron-down'}",
         "components/events/ThinkingEvent.tsx: <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>",
         "components/events/ToolEvent.tsx: name={expanded ? 'chevron-up' : 'chevron-down'}",
       ]),

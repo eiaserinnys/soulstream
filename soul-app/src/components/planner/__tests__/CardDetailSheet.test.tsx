@@ -109,6 +109,7 @@ test('상세 패널의 기존 상태 진입점에서 같은 색상 선택 메뉴
 
   await act(async () => fireEvent.press(screen.getByLabelText('상태 변경')));
   await waitFor(() => expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy());
+  expect(screen.getByTestId('card-detail-back-icon').props.name).toBe('chevron-back');
   expect(api.getCard).toHaveBeenCalledWith(card.id);
 });
 

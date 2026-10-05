@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { CompactTouchTarget } from './CompactTouchTarget';
 import { useTokens } from '../theme';
 
@@ -41,7 +41,7 @@ export function CardItemCheckbox({
       frameStyle={{ flexShrink: 0 }}
       surfaceStyle={square}
     >
-      {checked ? <Text style={{ color: t.colors.accentText, ...t.foundation.typography.label }}>✓</Text> : <View />}
+      {checked ? <Ionicons testID={`card-item-checkbox-${itemId}-checkmark`} name="checkmark" size={t.foundation.typography.label.fontSize} color={t.colors.accentText} /> : null}
     </CompactTouchTarget>
   );
 }

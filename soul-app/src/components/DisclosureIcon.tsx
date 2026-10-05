@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTokens } from '../theme';
 
 export type DisclosureIconTone = 'secondary' | 'tertiary' | 'disabled' | 'accent';
@@ -58,16 +58,13 @@ function DisclosureGlyph({
   size: number;
 }) {
   return (
-    <Text
-      style={{
-        color,
-        fontSize: size,
-        lineHeight: size,
-      }}
+    <Ionicons
+      name={expanded ? 'chevron-up' : 'chevron-down'}
+      size={size}
+      color={color}
       accessibilityElementsHidden
       importantForAccessibility="no"
     >
-      {expanded ? '∧' : '∨'}
-    </Text>
+    </Ionicons>
   );
 }

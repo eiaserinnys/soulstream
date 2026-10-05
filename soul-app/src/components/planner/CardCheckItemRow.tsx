@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardCheckItem, CardItemDisplay } from '../../api/cardTypes';
 import { cardImageSource } from '../../lib/card-image-source';
 import { useAuthStore } from '../../store/authStore';
@@ -164,14 +165,20 @@ export function CardCheckItemRow({
                     surfaceStyle={styles.linkSurface}
                     onPress={() => { void WebBrowser.openBrowserAsync(evidence.url); }}
                   >
-                    <Text numberOfLines={1} style={styles.linkText}>↗ {evidence.label || evidence.url}</Text>
+                    <View style={styles.linkContent}>
+                      <Ionicons testID={`card-check-item-${item.id}-link-icon`} name="open-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.link} />
+                      <Text numberOfLines={1} style={styles.linkText}>{evidence.label || evidence.url}</Text>
+                    </View>
                   </CompactTouchTarget>
                 ))}
               </View> : null}
             </View>
           ) : null}
           {item.caveat ? (
-            <Text style={styles.caveat} testID={`card-check-item-${item.id}-caveat`}>⚠ {item.caveat}</Text>
+            <View style={styles.caveatRow}>
+              <Ionicons testID={`card-check-item-${item.id}-caveat-icon`} name="warning-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.warningText} />
+              <Text style={styles.caveat} testID={`card-check-item-${item.id}-caveat`}>{item.caveat}</Text>
+            </View>
           ) : null}
           {item.from ? <Text style={styles.source}>커멘트에서 추가</Text> : null}
           {item.display !== 'dropped' ? (
@@ -228,12 +235,14 @@ function makeStyles(t: DesignTokens) {
     evidence: { flexDirection: 'column', alignItems: 'flex-start', gap: t.uiSpacing.xs },
     evidenceImages: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: t.uiSpacing.xs },
     evidenceLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: t.uiSpacing.xs },
+    linkContent: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, maxWidth: '100%' },
     imageEvidence: { width: 104, gap: t.uiSpacing.xxs },
     evidenceLabel: { ...planner.typography.meta, color: t.colors.textSecondary, flexWrap: 'wrap' },
     linkFrame: { alignSelf: 'flex-start' },
     linkSurface: { minHeight: 28, maxWidth: '100%', borderRadius: t.foundation.radius.round, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, paddingHorizontal: t.uiSpacing.sm },
     linkText: { ...planner.typography.meta, color: t.colors.link },
-    caveat: { ...planner.typography.meta, color: t.colors.warningText },
+    caveatRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.uiSpacing.xxs },
+    caveat: { ...planner.typography.meta, color: t.colors.warningText, flex: 1 },
     source: { ...planner.typography.meta, color: t.colors.textMuted },
     actions: { flexDirection: 'row', justifyContent: 'flex-end' },
     fixFrame: { alignSelf: 'flex-end' },

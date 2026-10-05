@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import type { CardCheckItem } from '../../../api/cardTypes';
 import { summarizeCardItems } from '../../../lib/card-check-item-summary';
 import { CardCheckItems } from '../CardCheckItems';
@@ -32,6 +33,18 @@ test('서버 display 일곱 값을 그대로 표시하고 확인·고칠 점 조
   expect(onConfirm).toHaveBeenCalledWith(1, true);
   fireEvent.press(screen.getByLabelText('4 항목 4 고칠 점 남기기'));
   expect(onSetTarget).toHaveBeenCalledWith(expect.objectContaining({ id: 4 }));
+});
+
+test('확인 항목의 상태 기호와 근거 기호는 Ionicons로 렌더링한다', () => {
+  const screen = render(<CardCheckItems items={[
+    item(1, 'reported', { caveat: '기기에서 다시 봐 주세요.', evidence: [{ type: 'link', url: 'https://example.test', label: '근거 링크' }] }),
+    item(2, 'confirmed'),
+  ]} pendingConfirmations={{}} initiallyConfirmedIds={[2]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={375} />);
+
+  expect(screen.getByTestId('card-check-item-1-caveat-icon').props.name).toBe('warning-outline');
+  expect(screen.getByTestId('card-check-item-1-link-icon').props.name).toBe('open-outline');
+  expect(screen.getByTestId('card-item-checkbox-2-checkmark').props.name).toBe('checkmark');
 });
 
 test('진입 시 확인된 셋은 묶고 확인 해제하면 미확인 목록으로 돌린다', () => {
