@@ -220,4 +220,79 @@ describe("SessionDataHostClient", () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+  describe("persisted session metadata", () => {
+    // `sessions.metadata` is persisted JSON. Task hydration and the metadata
+    // extractors read its timestamps as the strings they were written as, so the
+    // transport must revive row columns (`created_at`) but not what is inside it.
+    const metadata = [
+      {
+        type: "persistent_generation",
+        value: {
+          number: 1,
+          started_at: "2026-10-05T12:00:00.000Z",
+          first_call: { generation: 1, measured_at: "2026-10-05T12:01:00.000Z" },
+          pending: {
+            number: 2,
+            requested_at: "2026-10-05T13:51:56.916Z",
+            applying_from: null,
+          },
+        },
+      },
+      { type: "persistent_session", value: { enabled: true, updated_at: "2026-10-05T12:19:50.569Z" } },
+    ];
+    const sessionRow = (sessionId: string) => ({
+      session_id: sessionId,
+      created_at: "2026-10-05T12:18:01.309+00:00",
+      updated_at: "2026-10-05T14:22:24.2+00:00",
+      metadata,
+    });
+
+    it("keeps metadata timestamps as strings while reviving the row's own dates", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(sessionRow("session-a")), { status: 200 })));
+      const client = new SessionDataHostClient({
+        orch: { baseUrl: "http://orchestrator.test", headers: {} },
+        logger,
+      });
+
+      const row = await client.getSession("session-a");
+
+      expect(row?.created_at).toBeInstanceOf(Date);
+      expect(row?.updated_at).toBeInstanceOf(Date);
+      expect(row?.metadata).toEqual(metadata);
+    });
+
+    it("keeps metadata timestamps as strings on every session row a resume context carries", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+        session: sessionRow("session-a"),
+        folderSessions: { sessions: [], total: 0 },
+        runningSessions: { sessions: [], total: 0 },
+        predecessor: { session: sessionRow("session-b"), story: null, excerpt: null },
+      }), { status: 200 })));
+      const client = new SessionDataHostClient({
+        orch: { baseUrl: "http://orchestrator.test", headers: {} },
+        logger,
+      });
+
+      const context = await client.getResumeContext("session-a", 20);
+
+      expect(context.session?.metadata).toEqual(metadata);
+      expect(context.predecessor?.session.metadata).toEqual(metadata);
+      expect(context.session?.created_at).toBeInstanceOf(Date);
+    });
+
+    it("keeps metadata timestamps as strings on upstream dump rows", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+        sessions: [sessionRow("session-a")],
+        total: 1,
+      }), { status: 200 })));
+      const client = new SessionDataHostClient({
+        orch: { baseUrl: "http://orchestrator.test", headers: {} },
+        logger,
+      });
+
+      const dump = await client.listSessionsForUpstreamDump({ limit: 10, offset: 0, nodeId: "node-a" });
+
+      expect(dump.sessions[0]?.metadata).toEqual(metadata);
+    });
+  });
 });
