@@ -117,7 +117,14 @@ test("the header lists each translated reference once and precedes the unchanged
     { type: "text", text: "번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」\n번호 참조 #412.s2 → 세션 「🔨 P6 체크포인트 조립」" },
     { type: "text", text: "본문" },
   ]);
-  assert.deepEqual(result.structuredContent, { done: true });
+  assert.deepEqual(result.structuredContent, {
+    resolved_references: [
+      "번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」",
+      "번호 참조 #412.s2 → 세션 「🔨 P6 체크포인트 조립」",
+    ],
+    done: true,
+  });
+  assert.equal(Object.keys(result.structuredContent!).at(0), "resolved_references");
   assert.equal(result.isError, undefined);
 });
 
@@ -129,7 +136,19 @@ test("the header is also attached when the tool ends with an error", async () =>
   assert.equal(result.content.length, 2);
   assert.equal(result.content[0]!.text, "번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」");
   assert.equal(result.content[1]!.text, "실패");
-  assert.deepEqual(result.structuredContent, { error: "실패" });
+  assert.deepEqual(result.structuredContent, {
+    resolved_references: ["번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」"],
+    error: "실패",
+  });
+  assert.equal(Object.keys(result.structuredContent!).at(0), "resolved_references");
+});
+
+test("the header does not add structuredContent when the result has none", async () => {
+  const { lookup } = resolved({ "#412": CARD });
+  const result = await callWithReferenceTranslation({ card_id: "#412" }, lookup,
+    recorder({ content: [{ type: "text", text: "본문" }] }).call);
+  assert.equal("structuredContent" in result, false);
+  assert.equal(result.content[0]!.text, "번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」");
 });
 
 test("syntax errors stop before lookup and call", async () => {

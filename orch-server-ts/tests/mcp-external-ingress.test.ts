@@ -153,6 +153,9 @@ describe("orchestrator dedicated external MCP ingress", () => {
       const result = await client.callTool({ name: "get_card", arguments: { card_id: "#412" } });
       expect(result.isError).not.toBe(true);
       expect((result.content as { text: string }[])[0]!.text).toBe("번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」");
+      expect(result.structuredContent).toMatchObject({
+        resolved_references: ["번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」"],
+      });
       expect(result.structuredContent).toMatchObject({ card: { id: "card-uuid-412", number: 412 } });
       expect(getCard).toHaveBeenCalledWith("card-uuid-412");
       expect(resolveReferences).toHaveBeenCalledTimes(1);
