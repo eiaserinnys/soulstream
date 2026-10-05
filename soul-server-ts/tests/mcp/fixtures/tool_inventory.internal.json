@@ -3480,6 +3480,59 @@
     "name": "list_sessions"
   },
   {
+    "description": "기간 안의 user_message 이벤트를 여러 세션에 걸쳐 시간순으로 조회한다. 본문과 발신 정보만 돌려주고 주입 컨텍스트는 뺀다. sources를 생략하면 에이전트와 시스템 발신, 발신 정보가 없는 메시지를 뺀다. 잘린 본문의 전문은 get_session_event로 본다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_text_chars": {
+          "default": 2000,
+          "maximum": 20000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "since": {
+          "description": "오프셋이 명시된 ISO 8601 시각. 예: 2026-10-05T00:00:00+09:00",
+          "minLength": 1,
+          "type": "string"
+        },
+        "sources": {
+          "description": "caller_info.source 값 목록. 주면 이 값의 메시지만 돌려준다",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "until": {
+          "description": "오프셋이 명시된 ISO 8601 시각. 생략하면 호출 시각",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "since"
+      ],
+      "type": "object"
+    },
+    "name": "list_user_messages"
+  },
+  {
     "description": "노드의 Git worktree 발견 목록과 Soulstream 소유 상태를 조회한다. 네트워크 fetch는 하지 않는다.",
     "execution": {
       "taskSupport": "forbidden"

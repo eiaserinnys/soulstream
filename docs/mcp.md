@@ -8,7 +8,7 @@ The current reflection source of truth is the TypeScript `soul-server-ts` MCP se
 
 Release readiness checks ping, list tools, and perform a forwarded read through the node-local internal MCP listener.
 
-The worker exposes Streamable HTTP only on its authenticated internal listener. The public listener has no generic or dedicated MCP route. Dot connects to the orchestrator's credential-bound external ingress, which owns its 63-tool listing, subscription state, and outbound messages. See [connector ownership](external-llm-ingress-rollout.md) and [dot subscriptions](dot-mcp-events.md).
+The worker exposes Streamable HTTP only on its authenticated internal listener. The public listener has no generic or dedicated MCP route. Dot connects to the orchestrator's credential-bound external ingress, which owns its 65-tool listing, subscription state, and outbound messages. See [connector ownership](external-llm-ingress-rollout.md) and [dot subscriptions](dot-mcp-events.md).
 
 Soulstream's own Claude SDK clients use the separate `${MCP_PATH}/internal` route (default `/mcp/internal`). It is mounted only on a second listener hard-bound to `127.0.0.1:MCP_INTERNAL_PORT`; the public listener has no internal route. `MCP_INTERNAL_PORT` defaults deterministically to `PORT+1` and must differ from `PORT`. The internal route is always stateless: every POST gets a fresh transport, agent-session ownership is applied from the node-local request, and stale `Mcp-Session-Id` values cannot strand a runner after host restart.
 
@@ -100,6 +100,7 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | `get_session_turn_summaries(session_id, mode, ...)` | Stored turn-summary count, single index, or chronological range |
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
+| `list_user_messages(since, until, sources, cursor, limit, max_text_chars)` | Internal only. `user_message` events in a time range across sessions, oldest first, with text and `caller_info` fields only (no injected context). Without `sources`, `agent`, `api`, `channel_observer`, `execute-proxy`, `llm`, `system` and messages with no source are left out; text over `max_text_chars` is cut and flagged `truncated` (full text via `get_session_event`) |
 | `search_sessions(query, top_k=10, folder_id)` | Search past sessions by meaning, ranked by relevance; includes `created_at` and `updated_at` ISO timestamps; use `search_session_history` for exact event text |
 | `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 event search with actual turn count and saved summary/story/highlight presence metadata; use `search_sessions` first for session-level search |
 

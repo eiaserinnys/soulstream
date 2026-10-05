@@ -232,6 +232,127 @@ describe("list_session_events", () => {
   });
 });
 
+describe("list_user_messages", () => {
+  const EXCLUDED_SOURCES = ["agent", "api", "channel_observer", "execute-proxy", "llm", "system"];
+  const row = (eventId: number, text: string, textChars: number) => ({
+    session_id: "sess-1",
+    event_id: eventId,
+    created_at: new Date("2026-10-05T01:30:00.000Z"),
+    source: "browser",
+    email: "u@example.com",
+    user_id: "u1",
+    display_name: "사용자",
+    session_title: "세션 1",
+    node_id: "eiaserinnys",
+    agent_id: "roselin",
+    text,
+    text_chars: textChars,
+  });
+
+  it("passes parsed arguments to the repository and shapes the page with next_cursor and truncated", async () => {
+    const listUserMessages = vi.fn(async () => ({
+      rows: [row(3, "가".repeat(100), 150), row(4, "짧은 글", 4)],
+      total: 5,
+    }));
+    const client = await createClient(makeRuntime({ db: { listUserMessages } }));
+
+    const result = await client.callTool({
+      name: "list_user_messages",
+      arguments: {
+        since: "2026-10-05T10:00:00+09:00",
+        until: "2026-10-05T02:00:00Z",
+        cursor: 2,
+        limit: 2,
+        max_text_chars: 100,
+      },
+    });
+
+    expect(listUserMessages).toHaveBeenCalledWith({
+      since: new Date("2026-10-05T01:00:00.000Z"),
+      until: new Date("2026-10-05T02:00:00.000Z"),
+      sources: null,
+      excludedSources: EXCLUDED_SOURCES,
+      offset: 2,
+      limit: 2,
+      maxTextChars: 100,
+    });
+    expect(result.structuredContent).toEqual({
+      since: "2026-10-05T01:00:00.000Z",
+      until: "2026-10-05T02:00:00.000Z",
+      total: 5,
+      cursor: 2,
+      limit: 2,
+      excluded_sources: EXCLUDED_SOURCES,
+      messages: [
+        {
+          session_id: "sess-1",
+          event_id: 3,
+          created_at: "2026-10-05T01:30:00.000Z",
+          source: "browser",
+          email: "u@example.com",
+          user_id: "u1",
+          display_name: "사용자",
+          session_title: "세션 1",
+          node_id: "eiaserinnys",
+          agent_id: "roselin",
+          text: "가".repeat(100),
+          text_chars: 150,
+          truncated: true,
+        },
+        expect.objectContaining({ event_id: 4, text: "짧은 글", text_chars: 4, truncated: false }),
+      ],
+      next_cursor: 4,
+    });
+  });
+
+  it("uses the defaults, lifts the default exclusion when sources is given, and ends paging on the last page", async () => {
+    const listUserMessages = vi.fn(async () => ({ rows: [row(1, "agent 발화", 6)], total: 1 }));
+    const client = await createClient(makeRuntime({ db: { listUserMessages } }));
+
+    const result = await client.callTool({
+      name: "list_user_messages",
+      arguments: { since: "2026-10-05T00:00:00Z", sources: ["agent"] },
+    });
+
+    expect(listUserMessages).toHaveBeenCalledWith({
+      since: new Date("2026-10-05T00:00:00.000Z"),
+      until: expect.any(Date),
+      sources: ["agent"],
+      excludedSources: [],
+      offset: 0,
+      limit: 100,
+      maxTextChars: 2000,
+    });
+    expect(result.structuredContent).toMatchObject({
+      total: 1,
+      cursor: 0,
+      limit: 100,
+      excluded_sources: null,
+      next_cursor: null,
+    });
+  });
+
+  it("rejects a range that does not run forward and a timestamp without an offset before reading", async () => {
+    const listUserMessages = vi.fn(async () => ({ rows: [], total: 0 }));
+    const client = await createClient(makeRuntime({ db: { listUserMessages } }));
+
+    const reversed = await client.callTool({
+      name: "list_user_messages",
+      arguments: { since: "2026-10-05T02:00:00Z", until: "2026-10-05T02:00:00Z" },
+    });
+    expect(reversed.isError).toBe(true);
+    expect(JSON.stringify(reversed.content)).toContain("since는 until보다 앞서야 합니다");
+
+    const noOffset = await client.callTool({
+      name: "list_user_messages",
+      arguments: { since: "2026-10-05T02:00:00" },
+    });
+    expect(noOffset.isError).toBe(true);
+    expect(JSON.stringify(noOffset.content)).toContain("오프셋이 명시된 ISO 8601");
+    expect(listUserMessages).not.toHaveBeenCalled();
+  });
+});
+
 describe("get_session_summary child completion", () => {
   it("fails closed when the durable relation cannot be recorded", async () => {
     const recordObservedBatch =

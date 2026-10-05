@@ -20,7 +20,7 @@ Events carry an ID, name, timestamp, and data containing message ID, text, optio
 
 ## Tool access and card behavior
 
-Dot sees the 63 shared definitions with `audience: "all"`. Eight card writes are available with actor `llm`: `create_card`, `update_card_brief`, `add_card_report`, `add_card_comment`, `set_card_status`, `request_card_review`, `ask_card_question`, and `move_card`. Comments are recorded as the user's spoken input. Answers to dot-created questions stay on the card and are not pushed to dot.
+Dot sees the 65 shared definitions with `audience: "all"`. Eight card writes are available with actor `llm`: `create_card`, `update_card_brief`, `add_card_report`, `add_card_comment`, `set_card_status`, `request_card_review`, `ask_card_question`, and `move_card`. Comments are recorded as the user's spoken input. Answers to dot-created questions stay on the card and are not pushed to dot.
 
 The recipient and send tools are internal-only. Recipient listing returns IDs, labels, expiration, and last delivery status, without secrets or callback addresses. Sending requires an authenticated existing sender session; arguments cannot forge that identity. `send_to_external_llm` takes a recipient ID, text, and optional title. It returns `accepted_by_receiver`, `not_sent`, or `delivery_failed` as appropriate.
 

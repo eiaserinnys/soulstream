@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { sessionTools, errorResult, jsonResult, serializeSessionStoryView, serializeSessionStoryTurnSummary, type SessionStoryView } from "@soulstream/mcp-contract";
 import { searchSessionEvents } from "@soulstream/search-contract";
+import { DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES } from "../control_plane/repositories/event_read_repository.js";
 import { applyToolContentPolicy } from "./session_content_policy.js";
 import { SessionConsumptionBoundary } from "./session_consumption_boundary.js";
 import { readSessionFolders, sessionReadAdapter, type McpSessionReadAdapter, type McpSessionRow } from "./session_read_adapter.js";
@@ -147,6 +148,61 @@ export const sessionQueryHandlers = {
       return await handler(args as SessionArgs<"get_session_event">);
     } catch (error) {
       // Uncaught legacy callbacks are converted by the SDK without structuredContent.
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  },
+  list_user_messages: async (options, args) => {
+    try {
+      if (!options.sessions) throw new Error("session MCP dependencies are required");
+      const repositories = await options.sessions.repositoryProvider();
+      const runtime = { db: { ...sessionReadAdapter(repositories) } };
+      const handler = async ({ since, until, sources, cursor, limit, max_text_chars }: SessionArgs<"list_user_messages">) => {
+      const sinceDate = parseOffsetTimestamp(since);
+      const untilDate = until === undefined ? new Date() : parseOffsetTimestamp(until);
+      if (!sinceDate) return errorResult(`since는 오프셋이 명시된 ISO 8601 시각이어야 합니다: ${since}`);
+      if (!untilDate) return errorResult(`until은 오프셋이 명시된 ISO 8601 시각이어야 합니다: ${until}`);
+      if (sinceDate.getTime() >= untilDate.getTime()) {
+        return errorResult("since는 until보다 앞서야 합니다.");
+      }
+      const c = cursor ?? 0;
+      const l = limit ?? 100;
+      const maxChars = max_text_chars ?? 2000;
+      const { rows, total } = await runtime.db.listUserMessages({
+        since: sinceDate,
+        until: untilDate,
+        sources: sources ?? null,
+        excludedSources: sources ? [] : DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES,
+        offset: c,
+        limit: l,
+        maxTextChars: maxChars,
+      });
+      return jsonResult({
+        since: sinceDate.toISOString(),
+        until: untilDate.toISOString(),
+        total,
+        cursor: c,
+        limit: l,
+        excluded_sources: sources ? null : [...DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES],
+        messages: rows.map((r) => ({
+          session_id: r.session_id,
+          event_id: r.event_id,
+          created_at: serializeDate(r.created_at),
+          source: r.source,
+          email: r.email,
+          user_id: r.user_id,
+          display_name: r.display_name,
+          session_title: r.session_title,
+          node_id: r.node_id,
+          agent_id: r.agent_id,
+          text: r.text,
+          text_chars: r.text_chars,
+          truncated: r.text_chars > maxChars,
+        })),
+        next_cursor: c + l < total ? c + l : null,
+      });
+    };
+      return await handler(args as SessionArgs<"list_user_messages">);
+    } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }
   },
@@ -619,4 +675,13 @@ async function buildSearchObservations(
 function serializeDate(d: Date | null | undefined): string | null {
   if (!d) return null;
   return d.toISOString();
+}
+
+const OFFSET_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/i;
+
+/** 오프셋이 명시된 ISO 8601 형식만 받는다. 형식이 맞지 않으면 null. */
+function parseOffsetTimestamp(value: string): Date | null {
+  if (!OFFSET_TIMESTAMP.test(value)) return null;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
 }

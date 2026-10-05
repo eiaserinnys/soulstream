@@ -50,6 +50,7 @@ export function sessionReadAdapter(repositories: PersistenceHostRepositories) {
     readEvents: (...args: Parameters<typeof eventReads.readEvents>) => read("event_read_page", () => eventReads.readEvents(...args)),
     countEvents: (id: string) => read("event_count", () => eventReads.countEvents(id)),
     readOneEvent: (id: string, eventId: number) => read("event_read_one", () => eventReads.readOneEvent(id, eventId)),
+    listUserMessages: (...args: Parameters<typeof eventReads.listUserMessages>) => read("user_message_list", () => eventReads.listUserMessages(...args)),
     getSessionStory: (id: string) => read("story", async () => await storyReads.getSessionStory(id) as SessionStoryView),
     getSessionSearchMetadata: async (ids: string[]) => new Map(await read("story_search_metadata", () => storyReads.getSessionSearchMetadata(ids))),
     countTurnSummaries: (id: string) => read("turn_summary_count", () => storyReads.countTurnSummaries(id)),

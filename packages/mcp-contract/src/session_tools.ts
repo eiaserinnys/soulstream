@@ -41,6 +41,21 @@ export const sessionTools = {
         event_id: z.number().int().positive(),
       },
     } },
+  list_user_messages: { name: "list_user_messages", audience: "internal", config: {
+      description:
+        "기간 안의 user_message 이벤트를 여러 세션에 걸쳐 시간순으로 조회한다. "
+        + "본문과 발신 정보만 돌려주고 주입 컨텍스트는 뺀다. "
+        + "sources를 생략하면 에이전트와 시스템 발신, 발신 정보가 없는 메시지를 뺀다. "
+        + "잘린 본문의 전문은 get_session_event로 본다.",
+      inputSchema: {
+        since: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시각. 예: 2026-10-05T00:00:00+09:00"),
+        until: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시각. 생략하면 호출 시각").optional(),
+        sources: z.array(z.string().min(1)).min(1).describe("caller_info.source 값 목록. 주면 이 값의 메시지만 돌려준다").optional(),
+        cursor: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(200).default(100),
+        max_text_chars: z.number().int().min(100).max(20000).default(2000),
+      },
+    } },
   get_session_story: { name: "get_session_story", audience: "all", config: {
       description:
         "접힌 세션 줄거리와 아직 접히지 않은 턴 요약을 조회한다. 스토리가 없으면 저장된 턴 요약으로 폴백한다.",
