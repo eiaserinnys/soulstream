@@ -48,6 +48,8 @@ const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
 const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
 const OPAQUE_ARGUMENT_KEYS = new Set(["payload", "caller_info"]);
+/** Response keys whose subtree is persisted JSON and is returned exactly as stored. */
+const OPAQUE_RESPONSE_KEYS = new Set(["metadata"]);
 
 export class PersistenceHostRequestError extends Error {
   readonly retryable: boolean;
@@ -228,6 +230,11 @@ function snakeCase(value: unknown, opaqueKeys: ReadonlySet<string> = OPAQUE_ARGU
 }
 
 function reviveDates(value: unknown, key?: string): unknown {
+  // `sessions.metadata` is persisted JSON, not row columns. Its readers
+  // (task hydration, the metadata extractors) take timestamps as the strings
+  // they were written as, so reviving them drops entries such as a pending
+  // generation request whose `requested_at` is required to be a string.
+  if (key !== undefined && OPAQUE_RESPONSE_KEYS.has(key)) return value;
   if (Array.isArray(value)) return value.map(child => reviveDates(child));
   if (typeof value === "string" && key !== "daily_date" && /(?:_at|At|_before|Before|_expires_at)$/.test(key ?? "")) {
     const date = new Date(value);
