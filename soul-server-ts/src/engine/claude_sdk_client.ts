@@ -9,7 +9,11 @@ import type { Logger } from "pino";
 
 import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
-import { buildClaudeCompactRunOptions, consumeClaudeCompact } from "./claude_sdk_compact.js";
+import {
+  buildClaudeCompactRunOptions,
+  consumeClaudeCompact,
+  readCompactedContextUsage,
+} from "./claude_sdk_compact.js";
 import { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
 import { isMissingSpawnExecutableError } from "./claude_spawn_errors.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
@@ -32,6 +36,7 @@ import { makeUserMessage } from "./claude_sdk_user_message.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
 import type {
   ClaudeBackgroundTaskControlResult,
+  CompactedContextUsage,
   EngineUserInput,
 } from "./protocol.js";
 
@@ -276,7 +281,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     }
   }
 
-  async compact(sessionId: string): Promise<void> {
+  async compact(sessionId: string): Promise<CompactedContextUsage | undefined> {
     if (!this.lastWorkspaceDir || !this.lastRunOptions) {
       throw new Error("ClaudeSdkClient.compact requires a previous run context");
     }
@@ -300,7 +305,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       if (!observedCompactBoundary) {
         throw new Error("Claude compact finished without compact_boundary");
       }
-      return;
+      return await readCompactedContextUsage(persistentSession.query(), this.logger);
     }
 
     const controller = new AbortController();
@@ -335,6 +340,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     } finally {
       if (this.activeQuery === query) this.activeQuery = null;
     }
+    return undefined;
   }
 
   sendControlFrame(frame: RunnerControlFrame): boolean {

@@ -18,6 +18,7 @@ export function makeHarness(
   options: {
     receipt?: SDKControlInterruptResponse;
     deferQueryClose?: boolean;
+    getContextUsage?: () => Promise<unknown>;
   } = {},
 ) {
   const captured: ClaudeSdkQueryParams[] = [];
@@ -43,6 +44,9 @@ export function makeHarness(
       },
       backgroundTasks: vi.fn(async () => false),
       stopTask: vi.fn(async () => undefined),
+      ...(options.getContextUsage !== undefined
+        ? { getContextUsage: options.getContextUsage }
+        : {}),
       [Symbol.asyncIterator]: () => output,
     } as unknown as ClaudeSdkQuery;
   };

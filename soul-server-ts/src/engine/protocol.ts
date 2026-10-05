@@ -262,7 +262,13 @@ export interface EnginePort {
  * 호출자가 `"compact" in engine` 검사로 분기.
  */
 export interface SupportsCompact {
-  compact(sessionId: string): Promise<void>;
+  compact(sessionId: string): Promise<CompactedContextUsage | undefined>;
+}
+
+export interface CompactedContextUsage {
+  usedTokens: number;
+  maxTokens: number;
+  estimated: boolean;
 }
 
 /**

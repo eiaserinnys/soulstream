@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   BackendId,
+  CompactedContextUsage,
   EngineExecuteParams,
   EnginePort,
   SSEEventPayload,
@@ -101,12 +102,17 @@ describe("Supports* 선택적 capability — interface 시그니처만 검증", 
   it("SupportsCompact가 compact(sessionId) 메서드를 요구한다", async () => {
     class CompactSupporter implements SupportsCompact {
       called: string[] = [];
-      async compact(sessionId: string): Promise<void> {
+      async compact(sessionId: string): Promise<CompactedContextUsage | undefined> {
         this.called.push(sessionId);
+        return { usedTokens: 14223, maxTokens: 1000000, estimated: true };
       }
     }
     const s = new CompactSupporter();
-    await s.compact("sess-1");
+    await expect(s.compact("sess-1")).resolves.toEqual({
+      usedTokens: 14223,
+      maxTokens: 1000000,
+      estimated: true,
+    });
     expect(s.called).toEqual(["sess-1"]);
   });
 

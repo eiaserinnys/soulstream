@@ -836,7 +836,8 @@ describe("ClaudeEngineAdapter fake client flow", () => {
   });
 
   it("ClaudeEngineAdapter.compact는 fake client compact boundary를 호출한다", async () => {
-    const compact = vi.fn().mockResolvedValue(undefined);
+    const compactResult = { usedTokens: 14223, maxTokens: 1000000, estimated: true };
+    const compact = vi.fn().mockResolvedValue(compactResult);
     const client: ClaudeClient = {
       async *run(): AsyncIterable<ClaudeClientEvent> {
         yield { type: "complete" };
@@ -848,7 +849,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       silentLogger,
     );
 
-    await engine.compact("claude-sess-1");
+    await expect(engine.compact("claude-sess-1")).resolves.toEqual(compactResult);
 
     expect(compact).toHaveBeenCalledWith("claude-sess-1");
   });

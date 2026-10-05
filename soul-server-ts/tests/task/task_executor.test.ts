@@ -4345,12 +4345,23 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.status).toBe("completed");
   });
 
-  it("직전 84% usage에 다음 대형 turn input 추정치를 더해 실행 전에 compact한다", async () => {
+  it.each([
+    {
+      label: "V3 값을 compact 뒤 context_usage로 낸다",
+      compactResult: { usedTokens: 14223, maxTokens: 1000000, estimated: true },
+      expectedCompactEvents: ["compact", "context_usage"],
+    },
+    {
+      label: "값이 없으면 compact만 낸다",
+      compactResult: undefined,
+      expectedCompactEvents: ["compact"],
+    },
+  ])("$label", async ({ compactResult, expectedCompactEvents }) => {
     const mocks = makeMocks();
     const task = makeTask();
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-large-jump";
-    const compact = vi.fn().mockResolvedValue(undefined);
+    const compact = vi.fn().mockResolvedValue(compactResult);
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
@@ -4395,6 +4406,27 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(captured).toHaveLength(2);
     expect(compact).toHaveBeenCalledTimes(1);
     expect(compact).toHaveBeenCalledWith("claude-large-jump");
+
+    const emittedEvents = mocks.persistEvent.mock.calls.map(([, event]) => event);
+    const compactIndex = emittedEvents.findIndex((event) => event.type === "compact");
+    const compactEventTypes = emittedEvents
+      .slice(compactIndex)
+      .filter((event) => event.type === "compact" || event.type === "context_usage")
+      .map((event) => event.type);
+    expect(compactEventTypes).toEqual(expectedCompactEvents);
+
+    const contextUsageIndex = emittedEvents.findIndex(
+      (event, index) => index > compactIndex && event.type === "context_usage",
+    );
+    if (contextUsageIndex !== -1) {
+      const compactOrder = mocks.persistEvent.mock.invocationCallOrder[compactIndex];
+      const contextUsageOrder = mocks.persistEvent.mock.invocationCallOrder[contextUsageIndex];
+      expect(
+        mocks.waitForSessionAck.mock.invocationCallOrder.some(
+          (order) => order > compactOrder && order < contextUsageOrder,
+        ),
+      ).toBe(false);
+    }
     expect(task.status).toBe("completed");
   });
 
