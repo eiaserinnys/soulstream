@@ -53,6 +53,9 @@ export function buildClaudeSdkOptions({
     permissionMode,
     ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     settingSources: ["project"],
+    ...(options.autoMemoryEnabled !== undefined
+      ? { settings: { autoMemoryEnabled: options.autoMemoryEnabled } }
+      : {}),
     promptSuggestions: true,
     includePartialMessages: false,
     toolConfig: { askUserQuestion: { previewFormat: "markdown" } },

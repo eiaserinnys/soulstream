@@ -165,6 +165,8 @@ export interface EngineExecuteParams {
   useMcp?: boolean;
   /** Claude Agent SDK permissionMode. 없으면 현행 bypassPermissions 동작을 유지한다. */
   claudePermissionMode?: ClaudePermissionMode;
+  /** agents.yaml의 `claude_auto_memory_enabled` — false면 Claude SDK `settings.autoMemoryEnabled=false`로 forward. Codex 무시. */
+  claudeAutoMemoryEnabled?: boolean;
   extraEnv?: Record<string, string>;
   /** OpenAI Agents SDK serialized RunState. Backend-specific; other adapters ignore. */
   resumeRunState?: string;

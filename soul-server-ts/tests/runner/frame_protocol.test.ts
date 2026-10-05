@@ -30,6 +30,7 @@ const frames: RunnerFrame[] = [
       backendSessionRolloverFrom: "backend-session-old",
       sessionCost: { usd: 17.288251, partial: false },
       sessionItems: [{ role: "user", content: "hello" }],
+      claudeAutoMemoryEnabled: false,
     },
   },
   {
@@ -261,6 +262,20 @@ describe("runner frame protocol", () => {
     };
 
     expect(RunnerFrameSchema.parse(frame)).toMatchObject(frame);
+  });
+
+  it("declares claudeAutoMemoryEnabled as a boolean execute param", () => {
+    const execute = frames.find(
+      (frame): frame is Extract<RunnerFrame, { kind: "execute" }> => frame.kind === "execute",
+    );
+    expect(execute).toBeDefined();
+    const parsed = RunnerFrameSchema.parse(execute);
+    expect(parsed).toMatchObject({ params: { claudeAutoMemoryEnabled: false } });
+
+    expect(RunnerFrameSchema.safeParse({
+      ...execute,
+      params: { ...execute?.params, claudeAutoMemoryEnabled: "false" },
+    }).success).toBe(false);
   });
 
   it("rejects a negative session cost base", () => {

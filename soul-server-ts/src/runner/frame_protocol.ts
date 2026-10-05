@@ -66,6 +66,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
     "plan",
     "auto",
   ]).optional(),
+  claudeAutoMemoryEnabled: z.boolean().optional(),
   extraEnv: z.record(z.string(), z.string()).optional(),
   resumeRunState: z.string().optional(),
   previousResponseId: z.string().nullable().optional(),

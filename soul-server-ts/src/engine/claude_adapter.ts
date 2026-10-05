@@ -84,6 +84,8 @@ export interface ClaudeRunOptions {
   internalMcpUrl?: string;
   /** Claude Agent SDK permissionMode. undefined면 legacy bypassPermissions. */
   claudePermissionMode?: ClaudePermissionMode;
+  /** agents.yaml `claude_auto_memory_enabled` → Claude SDK `settings.autoMemoryEnabled`. undefined면 settings를 싣지 않는다. */
+  autoMemoryEnabled?: boolean;
   env?: Record<string, string>;
   runnerRequest?: (
     frame: Extract<RunnerEventFrame, { kind: "request" }>,
@@ -496,6 +498,9 @@ export class ClaudeEngineAdapter
       ...(this.internalMcpUrl ? { internalMcpUrl: this.internalMcpUrl } : {}),
       ...(params.claudePermissionMode !== undefined
         ? { claudePermissionMode: params.claudePermissionMode }
+        : {}),
+      ...(params.claudeAutoMemoryEnabled !== undefined
+        ? { autoMemoryEnabled: params.claudeAutoMemoryEnabled }
         : {}),
       env,
       ...(params.scheduleToolUseEnabled && params.agentSessionId

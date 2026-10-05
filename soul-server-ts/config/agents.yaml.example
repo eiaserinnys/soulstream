@@ -7,7 +7,9 @@
 # AgentProfile.env와 키 호환 — 운영자가 같은 양식으로 관리 가능.
 #
 # 필수 필드: id, name, backend (claude|codex|openai-agents), workspace_dir
-# 선택 필드: model, max_turns, allowed_tools, disallowed_tools, portrait_path, context_scope
+# 선택 필드: model, max_turns, allowed_tools, disallowed_tools, portrait_path, context_scope,
+#            claude_auto_memory_enabled
+#   claude_auto_memory_enabled: Claude 전용. false면 자동 기억(MEMORY.md)을 읽지도 쓰지도 않음. 없으면 SDK 기본.
 
 agents:
   - id: codex-default

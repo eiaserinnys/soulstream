@@ -145,6 +145,28 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
   });
 
+  it("claudeAutoMemoryEnabled를 client options의 autoMemoryEnabled로 전달하고 없으면 생략한다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: makeClient([], captured),
+        processEnv: {},
+      },
+      silentLogger,
+    );
+
+    for await (const _ of engine.execute({ prompt: "hi", claudeAutoMemoryEnabled: false })) {
+      // drain
+    }
+    for await (const _ of engine.execute({ prompt: "hi" })) {
+      // drain
+    }
+
+    expect(captured[0]?.autoMemoryEnabled).toBe(false);
+    expect(captured[1]).not.toHaveProperty("autoMemoryEnabled");
+  });
+
   it("resolved MCP profile servers를 Claude client options로 전달한다", async () => {
     const captured: ClaudeRunOptions[] = [];
     const resolvedMcpServers = [

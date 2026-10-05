@@ -244,6 +244,34 @@ describe("AgentConfigService", () => {
     });
   });
 
+  it("keeps claude_auto_memory_enabled through plan, apply, and read", async () => {
+    const profile = {
+      id: "claude-no-memory",
+      name: "Claude No Memory",
+      backend: "claude",
+      workspace_dir: "/tmp/claude-no-memory",
+      claude_auto_memory_enabled: false,
+    } as const;
+
+    const plan = await service.planProfileUpdate(profile, true);
+    expect(plan.semanticChanges).toEqual([
+      expect.objectContaining({
+        op: "add_agent",
+        agentId: "claude-no-memory",
+        after: expect.objectContaining({ claude_auto_memory_enabled: false }),
+      }),
+    ]);
+
+    await service.replaceProfile(profile, true);
+
+    expect(registry.get("claude-no-memory")?.claude_auto_memory_enabled).toBe(false);
+    const { raw, parsed } = service.readRaw();
+    expect(raw).toContain("claude_auto_memory_enabled: false");
+    expect(
+      parsed.agents.find((agent) => agent.id === "claude-no-memory")?.claude_auto_memory_enabled,
+    ).toBe(false);
+  });
+
   it("applies profile changes with semantic result and opt-in text diff", async () => {
     const updated = await service.replaceProfile(
       {
