@@ -1131,13 +1131,13 @@ export interface SSEEventGenerationStarted {
   generation: number;
   reason: string;
   previous: {
-    model_preset: string;
+    model_preset: string | null;
     backend: string;
   };
   current: {
-    model_preset: string;
+    model_preset: string | null;
     backend: string;
-    model: string;
+    model: string | null;
   };
   checkpoint: {
     estimated_tokens: number;

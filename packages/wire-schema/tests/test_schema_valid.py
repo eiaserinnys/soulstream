@@ -772,6 +772,20 @@ def test_generation_started_event_contract() -> None:
         "agentSessionId": "session-generation-started",
         "event": payload,
     })
+    null_model_payload = {
+        **payload,
+        "previous": {**payload["previous"], "model_preset": None},
+        "current": {
+            **payload["current"],
+            "model_preset": None,
+            "model": None,
+        },
+    }
+    assert jsonschema.Draft202012Validator(schema).is_valid({
+        "type": "event",
+        "agentSessionId": "session-generation-started",
+        "event": null_model_payload,
+    })
 
     event_definition = schema["$defs"]["SSEEventGenerationStarted"]
     assert event_definition["additionalProperties"] is True

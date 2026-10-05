@@ -3069,7 +3069,7 @@
           "type": "object",
           "required": ["model_preset", "backend"],
           "properties": {
-            "model_preset": { "type": "string" },
+            "model_preset": { "type": ["string", "null"] },
             "backend": { "type": "string" }
           }
         },
@@ -3077,9 +3077,9 @@
           "type": "object",
           "required": ["model_preset", "backend", "model"],
           "properties": {
-            "model_preset": { "type": "string" },
+            "model_preset": { "type": ["string", "null"] },
             "backend": { "type": "string" },
-            "model": { "type": "string" }
+            "model": { "type": ["string", "null"] }
           }
         },
         "checkpoint": {
