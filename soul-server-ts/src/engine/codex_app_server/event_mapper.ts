@@ -82,6 +82,7 @@ export function mapAppServerNotification(
         .reverse()
         .find((item) => item.type === "agentMessage");
       const usage = tokenUsage ? codexTurnUsage(tokenUsage) : undefined;
+      const firstCall = tokenUsage?.first;
       const turnCostUsd = usage ? codexTurnCostUsd(usage, model) : undefined;
       return [
         ...contextPayloads,
@@ -92,6 +93,14 @@ export function mapAppServerNotification(
           status: turn.status,
           duration_ms: turn.durationMs,
           ...(usage ? { usage } : {}),
+          ...(firstCall
+            ? {
+                first_call: {
+                  input_tokens: firstCall.inputTokens,
+                  cached_input_tokens: firstCall.cachedInputTokens,
+                },
+              }
+            : {}),
           ...(model !== undefined ? { model } : {}),
           ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
           ...rawContext(notification.method, { threadId, turnId: turn.id }),

@@ -61,6 +61,7 @@ export type ClaudeClientEvent =
       totalCostUsd?: number;
       model?: string;
       turnCostUsd?: number;
+      firstCall?: { inputTokens: number; cachedInputTokens: number };
       timestamp?: number;
       parentEventId?: ParentEventId;
     }

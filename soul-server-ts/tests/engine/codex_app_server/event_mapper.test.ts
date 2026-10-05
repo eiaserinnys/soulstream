@@ -137,6 +137,14 @@ describe("Codex app-server notification mapper", () => {
       {
         model: "gpt-6.1-sol",
         tokenUsage: {
+          first: {
+            totalTokens: 14_129,
+            inputTokens: 14_124,
+            cachedInputTokens: 12_288,
+            cacheWriteInputTokens: 0,
+            outputTokens: 5,
+            reasoningOutputTokens: 0,
+          },
           baseline: {
             totalTokens: 0,
             inputTokens: 0,
@@ -186,6 +194,7 @@ describe("Codex app-server notification mapper", () => {
       },
       model: "gpt-6.1-sol",
       turn_cost_usd: 0.004951,
+      first_call: { input_tokens: 14_124, cached_input_tokens: 12_288 },
     });
   });
 
@@ -199,6 +208,7 @@ describe("Codex app-server notification mapper", () => {
       {
         model: "gpt-5.6-sol",
         tokenUsage: {
+          first: null,
           baseline: {
             totalTokens: 0,
             inputTokens: 0,
@@ -252,6 +262,7 @@ describe("Codex app-server notification mapper", () => {
       undefined,
       {
         tokenUsage: {
+          first: null,
           baseline: {
             totalTokens: 0,
             inputTokens: 0,
@@ -307,6 +318,7 @@ describe("Codex app-server notification mapper", () => {
       undefined,
       {
         tokenUsage: {
+          first: null,
           baseline: {
             totalTokens: 0,
             inputTokens: 0,

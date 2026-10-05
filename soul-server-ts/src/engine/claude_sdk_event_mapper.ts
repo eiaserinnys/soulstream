@@ -21,6 +21,7 @@ import {
 import { mapClaudeSystemMessage } from "./claude_sdk_system_event_mapper.js";
 import {
   coerceResetsAt,
+  firstCallInput,
   lastIterationUsage,
   makeContextUsageEvent,
   messageContent,
@@ -56,6 +57,7 @@ export class ClaudeSdkEventMapper {
   private readonly pendingCompactHookTriggers: string[] = [];
   private compactHookEventCount = 0;
   private latestIterationUsage: unknown;
+  private firstIterationUsage: unknown;
   private latestIterationModel: string | undefined;
   private currentSdkSessionId: string | undefined;
 
@@ -75,6 +77,7 @@ export class ClaudeSdkEventMapper {
     this.pendingCompactHookTriggers.length = 0;
     this.compactHookEventCount = 0;
     this.latestIterationUsage = undefined;
+    this.firstIterationUsage = undefined;
     this.latestIterationModel = undefined;
     this.currentSdkSessionId = undefined;
   }
@@ -180,6 +183,7 @@ export class ClaudeSdkEventMapper {
     const nestedMessage = asRecord(message.message);
     if (typeof message.parent_tool_use_id !== "string") {
       if (nestedMessage?.usage !== undefined) {
+        this.firstIterationUsage ??= nestedMessage.usage;
         this.latestIterationUsage = nestedMessage.usage;
       }
       const model = asString(nestedMessage?.model) ?? asString(message.model);
@@ -312,7 +316,9 @@ export class ClaudeSdkEventMapper {
     );
     const model = this.latestIterationModel;
     const turnCostUsd = claudeTurnCostUsd(usage, model);
+    const firstCall = firstCallInput(this.firstIterationUsage);
     this.latestIterationUsage = undefined;
+    this.firstIterationUsage = undefined;
     this.latestIterationModel = undefined;
 
     if (!success) {
@@ -340,6 +346,7 @@ export class ClaudeSdkEventMapper {
       ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
       ...(model !== undefined ? { model } : {}),
       ...(turnCostUsd !== undefined ? { turnCostUsd } : {}),
+      ...(firstCall !== undefined ? { firstCall } : {}),
     };
     const events = this.withSdkMessageDedupe([
       resultEvent,

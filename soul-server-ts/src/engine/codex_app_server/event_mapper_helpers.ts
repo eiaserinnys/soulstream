@@ -6,6 +6,7 @@ import type {
 } from "./protocol.js";
 
 export interface CodexTurnTokenUsage {
+  first: AppServerTokenUsageBreakdown | null;
   baseline: AppServerTokenUsageBreakdown;
   latest: AppServerThreadTokenUsage;
 }

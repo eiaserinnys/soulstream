@@ -165,6 +165,8 @@ export function applyNotificationLifecycle(
     nextState = {
       ...nextState,
       tokenUsage: {
+        first: nextState.tokenUsage?.first ??
+          (tokenUsage.last.inputTokens > 0 ? tokenUsage.last : null),
         baseline: nextState.tokenUsage?.baseline ?? tokenUsageBaseline(tokenUsage),
         latest: tokenUsage,
       },

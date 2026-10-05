@@ -210,6 +210,7 @@ describe("Codex app-server notification lifecycle", () => {
         output_tokens: 5,
         reasoning_output_tokens: 0,
       },
+      first_call: { input_tokens: 14_124, cached_input_tokens: 12_288 },
     });
     expect(completed.state.tokenUsage).toBeNull();
   });
@@ -307,6 +308,7 @@ describe("Codex app-server notification lifecycle", () => {
         output_tokens: 493,
         reasoning_output_tokens: 70,
       },
+      first_call: { input_tokens: 56_827, cached_input_tokens: 12_288 },
     });
   });
 
@@ -392,14 +394,19 @@ describe("Codex app-server notification lifecycle", () => {
       }),
       { suppressThreadStartedSession: false },
     ).state;
-    state = applyNotificationLifecycle(
+    const firstCompleted = applyNotificationLifecycle(
       state,
       {
         method: "turn/completed",
         params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
       },
       { suppressThreadStartedSession: false },
-    ).state;
+    );
+    expect(firstCompleted.payloads.find((payload) => payload.type === "complete")).toMatchObject({
+      type: "complete",
+      first_call: { input_tokens: 100, cached_input_tokens: 0 },
+    });
+    state = firstCompleted.state;
 
     state = recordTurnStartResponse(
       beginNotificationExecution(state, "thread-1"),
@@ -415,11 +422,23 @@ describe("Codex app-server notification lifecycle", () => {
       }),
       { suppressThreadStartedSession: false },
     );
+    const secondCompleted = applyNotificationLifecycle(
+      secondExecution.state,
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-2", "completed") },
+      },
+      { suppressThreadStartedSession: false },
+    );
 
     expect(secondExecution.state.tokenUsage?.baseline).toMatchObject({
       totalTokens: 0,
       inputTokens: 0,
       outputTokens: 0,
+    });
+    expect(secondCompleted.payloads.find((payload) => payload.type === "complete")).toMatchObject({
+      type: "complete",
+      first_call: { input_tokens: 40, cached_input_tokens: 0 },
     });
   });
 
