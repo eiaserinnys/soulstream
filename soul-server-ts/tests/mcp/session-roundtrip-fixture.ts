@@ -68,6 +68,16 @@ export async function createSessionRoundtripFixture() {
         return { totalCount: 3, digestedCount: 2, undigestedCount: 1 }; },
       loadTurnSummaryRange: async (_id: string, from: number, to: number | null, limit: number) => {
         fail("turn_summary_range"); return summaries.filter(s => s.turnNumber >= from && (to === null || s.turnNumber <= to)).slice(0, limit); },
+      loadTurnTranscript: async (_id: string, selected: Array<{ turnNumber: number }>) => {
+        fail("turn_transcript");
+        return selected.map((turn) => ({
+          turnNumber: turn.turnNumber,
+          events: [
+            { eventId: 1, eventType: "user_message", text: "needle 사용자", createdAt: at },
+            { eventId: 4, eventType: "assistant_message", text: "needle 완료", createdAt: at },
+          ],
+        }));
+      },
     },
     historySearch: { search: async (p: any) => { fail("history_search");
       return { events: Object.keys(sessions).filter(id => !p.sessionIds || p.sessionIds.includes(id)).flatMap(id => events

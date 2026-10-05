@@ -11,6 +11,7 @@ const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 export function registerSessionQueryTools(server: McpServer, runtime: McpRuntime): void {
   const consumptionBoundary = new SessionQueryConsumptionBoundary(runtime.childCompletionConsumption);
   registerOrchestratorTools(server, runtime, [sessionTools.get_session_turn_summaries]);
+  registerOrchestratorTools(server, runtime, [sessionTools.expand_session_turn]);
   registerOrchestratorTools(server, runtime, [sessionTools.list_sessions]);
   registerOrchestratorTools(server, runtime, [sessionTools.list_session_events]);
   registerOrchestratorTools(server, runtime, [sessionTools.get_session_event]);

@@ -20,6 +20,7 @@ const successes: [string, Record<string, unknown>][] = [
   ["get_session_highlight", { session_id: "child" }],
   ["get_session_summary", { session_id: "child", max_response_chars: 3 }],
   ["get_session_turn_summaries", { session_id: "child", mode: "count" }],
+  ["expand_session_turn", { session_id: "child", turn: "T1" }],
   ["get_session_turn_summaries", { session_id: "child", mode: "index", turn_number: 3 }],
   ["get_session_turn_summaries", { session_id: "child", mode: "index", turn_number: 99 }],
   ["get_session_turn_summaries", { session_id: "child", mode: "range", from_turn_number: 1, limit: 1 }],
@@ -30,8 +31,8 @@ const successes: [string, Record<string, unknown>][] = [
   ["get_session_name", { session_id: "child" }],
   ["set_session_name", { session_id: "child", name: "  새 이름  " }], ["set_session_name", { session_id: "child", name: "  " }],
 ];
-const sessionTools = ["list_session_events", "get_session_event", "get_session_story", "get_session_highlight", "get_session_summary", "get_session_turn_summaries", "get_session_name", "set_session_name"];
-const defaults: Record<string, Record<string, unknown>> = { get_session_event: { event_id: 4 }, get_session_turn_summaries: { mode: "count" } };
+const sessionTools = ["list_session_events", "get_session_event", "get_session_story", "get_session_highlight", "get_session_summary", "get_session_turn_summaries", "expand_session_turn", "get_session_name", "set_session_name"];
+const defaults: Record<string, Record<string, unknown>> = { get_session_event: { event_id: 4 }, get_session_turn_summaries: { mode: "count" }, expand_session_turn: { turn: 1 } };
 const errors: [string, Record<string, unknown>][] = [
   ...sessionTools.map(name => [name, { session_id: "missing", ...defaults[name] }] as [string, Record<string, unknown>]),
   ["get_session_event", { session_id: "child", event_id: 999 }],

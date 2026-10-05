@@ -23,6 +23,7 @@ export async function startSessionTestHost(runtime: McpRuntime, searchProvider?:
       getSessionSearchMetadata: async (ids: string[]) => [...await db.getSessionSearchMetadata(ids)],
       countTurnSummaries: (id: string) => db.countTurnSummaries(id),
       loadTurnSummaryRange: (...args: any[]) => (db.loadTurnSummaryRange as Function)(...args),
+      loadTurnTranscript: (...args: any[]) => (db.loadTurnTranscript as Function)(...args),
     },
     historySearch: { search: (params: any, signal: AbortSignal) => db.searchSessionHistory(params, signal) },
     sessionReadComposites: { getTurnExcerpt: (id: string, max: number) => db.getTurnExcerpt(id, max) },

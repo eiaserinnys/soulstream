@@ -685,6 +685,120 @@ describe("get_session_turn_summaries", () => {
   });
 });
 
+describe("expand_session_turn", () => {
+  it("uses the caller session by default and accepts a T-prefixed turn", async () => {
+    const summary = {
+      eventId: 24,
+      turnNumber: 3,
+      content: "세 번째 턴 요약",
+      turnStartEventId: 15,
+      finalResponseEventId: 22,
+      createdAt: new Date("2026-07-31T00:02:00.000Z"),
+    };
+    const loadTurnSummaryRange = vi.fn(async () => [summary]);
+    const loadTurnTranscript = vi.fn(async (
+      _sessionId: string,
+      selected: Array<{ turnNumber: number }>,
+      includeTools: boolean,
+    ) => selected.map((turn) => ({
+      turnNumber: turn.turnNumber,
+      events: [
+        { eventId: 21, eventType: "user_message", text: "질문 원문", createdAt: new Date("2026-07-31T00:02:00.000Z") },
+        { eventId: 22, eventType: "assistant_message", text: "응답 원문", createdAt: new Date("2026-07-31T00:02:10.000Z") },
+        ...(includeTools ? [{ eventId: 20, eventType: "tool_result", text: "도구 결과", createdAt: new Date("2026-07-31T00:01:59.000Z") }] : []),
+      ],
+    })));
+    const client = await createClient(makeRuntime({
+      db: {
+        getSession: vi.fn(async (sessionId: string) => ({ session_id: sessionId })),
+        loadTurnSummaryRange,
+        loadTurnTranscript,
+      },
+    }), { "x-soulstream-agent-session-id": "self-session" });
+
+    const result = await client.callTool({
+      name: "expand_session_turn",
+      arguments: { turn: "T3" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(loadTurnSummaryRange).toHaveBeenCalledWith("self-session", 3, 3, 1);
+    expect(loadTurnTranscript).toHaveBeenCalledWith("self-session", [summary], false);
+    expect(result.structuredContent).toEqual({
+      session_id: "self-session",
+      turns: [{
+        turn_number: 3,
+        summary: "세 번째 턴 요약",
+        turn_start_event_id: 15,
+        final_response_event_id: 22,
+        events: [
+          { event_id: 21, event_type: "user_message", text: "질문 원문", created_at: "2026-07-31T00:02:00.000Z", truncated: false },
+          { event_id: 22, event_type: "assistant_message", text: "응답 원문", created_at: "2026-07-31T00:02:10.000Z", truncated: false },
+        ],
+      }],
+      truncated: false,
+      next_event_id: null,
+    });
+  });
+
+  it("rejects ranges longer than five turns before reading summaries", async () => {
+    const loadTurnSummaryRange = vi.fn(async () => []);
+    const client = await createClient(makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({ session_id: "sess-1" })),
+        loadTurnSummaryRange,
+      },
+    }));
+
+    const result = await client.callTool({
+      name: "expand_session_turn",
+      arguments: { session_id: "sess-1", turn: "T1", to_turn: 6 },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(loadTurnSummaryRange).not.toHaveBeenCalled();
+  });
+
+  it("caps the response text budget and gives the event cursor to continue", async () => {
+    const summary = {
+      eventId: 12,
+      turnNumber: 2,
+      content: "두 번째 턴",
+      turnStartEventId: 5,
+      finalResponseEventId: 10,
+      createdAt: new Date("2026-07-31T00:01:00.000Z"),
+    };
+    const client = await createClient(makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({ session_id: "sess-1" })),
+        loadTurnSummaryRange: vi.fn(async () => [summary]),
+        loadTurnTranscript: vi.fn(async () => [{
+          turnNumber: 2,
+          events: [{
+            eventId: 7,
+            eventType: "user_message",
+            text: "원문".repeat(900),
+            createdAt: new Date("2026-07-31T00:01:00.000Z"),
+          }],
+        }]),
+      },
+    }));
+
+    const result = await client.callTool({
+      name: "expand_session_turn",
+      arguments: { session_id: "sess-1", turn: 2, max_chars: 1000 },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      session_id: "sess-1",
+      truncated: true,
+      next_event_id: 7,
+      turns: [{ events: [{ event_id: 7, text: "원문".repeat(500), truncated: true }] }],
+    });
+  });
+});
+
 describe("search_session_history", () => {
   it("describes the explicit event_types needed to search tool events", async () => {
     const client = await createClient(makeRuntime({}));
