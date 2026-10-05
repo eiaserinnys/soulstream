@@ -4,6 +4,8 @@ import { SessionMenuReviewSample } from "./SessionMenuReviewSample";
 import { useState, type ReactNode } from "react";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
 import { SystemMessage } from "@seosoyoung/soul-ui/components/chat/SystemMessage";
+import { CollapsibleCaption } from "@seosoyoung/soul-ui/components/chat/CollapsibleCaption";
+import { LabeledDivider } from "@seosoyoung/soul-ui/components/chat/LabeledDivider";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { FolderPanelHeader, SessionPanelHeader } from "./WorkspacePanelHeaders";
 import { Button, DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, formatAssignedCardContextSnapshot } from "@seosoyoung/soul-ui";
@@ -217,12 +219,43 @@ export function ComponentsReviewPage() {
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
                 onAnswer={() => open("질문 응답")} pending={false}/>
             </Sample>
-            <Sample name="SystemMessage / 기존 caption" state="같은 배치 · 기존 요약">
+            <Sample name="SystemMessage / CollapsibleCaption / LabeledDivider" state="기존 요약 · 접힘/펼침 · 말줄임 · 가운데 라벨">
               <div data-testid="caption-comparison">
                 <UserMessage msg={{id:"assigned-card-input",role:"user",treeNodeId:"assigned-card-input",treeNodeType:"user_message",content:"외부 카드 알림을 확인해줘"}}/>
                 <SystemMessage msg={{id:"assigned-card-preview",role:"system",treeNodeId:"assigned-card-preview",treeNodeType:"assigned_card_context",content:assignedCardPreview}}/>
                 <AssistantMessage msg={{id:"caption-sample-answer",role:"assistant",treeNodeId:"caption-sample-answer",treeNodeType:"assistant_message",content:"구현을 맡겼습니다. 다른 작업 결과를 기다립니다."}}/>
                 <SystemMessage msg={{id:"caption-sample-summary",role:"system",treeNodeId:"caption-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
+                <CollapsibleCaption title="Jev 후보 3">
+                  <>
+                    <div className="min-w-0 truncate text-xs text-muted-foreground">T38 · 요약 한 줄 · 3/3</div>
+                    <div className="min-w-0 truncate text-xs text-muted-foreground">#412 · 카드 한 줄 · 2/3</div>
+                    <div className="min-w-0 truncate text-xs text-muted-foreground">세션 제목 · 한 줄 · 2/3</div>
+                  </>
+                </CollapsibleCaption>
+                <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 3">
+                  <div className="min-w-0 truncate text-xs text-muted-foreground">T38 · 요약 한 줄 · 3/3</div>
+                </CollapsibleCaption>
+                <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 0">
+                  <div className="min-w-0 truncate text-xs text-muted-foreground">2점 이상인 후보가 없습니다.</div>
+                </CollapsibleCaption>
+                <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 제목이 좁은 화면에서 실제로 말줄임되는지 확인하는 긴 제목 샘플">
+                  <div className="min-w-0 truncate text-xs text-muted-foreground">T38 · 제목과 본문이 좁은 화면에서도 한 줄로 말줄임되는 후보 내용 샘플 · 3/3</div>
+                </CollapsibleCaption>
+                <AssistantMessage
+                  msg={{
+                    id: "caption-divider-before", role: "assistant", treeNodeId: "caption-divider-before",
+                    treeNodeType: "assistant_message", content: "이전 세대의 답변입니다.",
+                  }}
+                />
+                <LabeledDivider label="새 세대" />
+                <AssistantMessage
+                  msg={{
+                    id: "caption-divider-after", role: "assistant", treeNodeId: "caption-divider-after",
+                    treeNodeType: "assistant_message", content: "새 세대의 답변입니다.",
+                  }}
+                />
+                <LabeledDivider label="다음 대화" />
+                <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
               </div>
             </Sample>
           </section>
