@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
@@ -17,7 +18,9 @@ export function PlannerSectionHeader({
   expanded,
   onToggle,
   disclosureFrameTestID,
+  confirmedIndicator = false,
 }: {
+  confirmedIndicator?: boolean;
   title: string;
   count?: number;
   testID?: string;
@@ -37,6 +40,7 @@ export function PlannerSectionHeader({
   if (variant === 'compact' && onToggle) return <CompactTouchTarget testID={testID} accessibilityRole="button"
     accessibilityLabel={`${title} ${expanded ? '접기' : '펼치기'}`} accessibilityState={{ expanded }} onPress={onToggle}
     frameStyle={styles.compactFrame} surfaceStyle={styles.compactRow}>
+    {confirmedIndicator ? <View style={styles.compactCheckColumn}><Ionicons name="checkmark" size={t.iconSize.compact} color={t.colors.statusCompleted} /></View> : null}
     <Text style={styles.compactTitle} numberOfLines={1}>{title}</Text>
     <View style={styles.compactDisclosure}>
       <DisclosureIcon expanded={expanded === true} color={t.colors.textMuted} size={t.iconSize.compact} />
@@ -79,8 +83,9 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     row: { minHeight: planner.minHeight.context, flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
     compactFrame: { alignSelf: 'stretch' },
-    compactRow: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm },
-    compactTitle: { flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary },
+    compactRow: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 0 },
+    compactCheckColumn: { width: t.hitTarget.min, height: t.hitTarget.min, alignItems: 'center', justifyContent: 'center' },
+    compactTitle: { flex: 1, ...t.foundation.typography.body, fontWeight: '600', color: t.colors.textSecondary },
     compactDisclosure: { width: planner.actionColumn, height: planner.actionColumn, alignItems: 'center', justifyContent: 'center' },
     title: { color: t.colors.textPrimary, ...planner.typography.section },
     flexibleTitle: { flex: 1 },

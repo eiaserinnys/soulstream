@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardNow, CardNowHistoryEntry } from '../../api/cardTypes';
+import { formatCardTime } from '../../lib/card-check-item-summary';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { AppGlassCard } from '../AppGlassCard';
 import { GlassButton } from '../GlassSurface';
@@ -15,7 +16,11 @@ export function CardNowPanel({
   history,
   allConfirmed = false,
   surfaceRole = 'panel',
+  onComplete,
+  completeDisabled = false,
 }: {
+  onComplete?(): void;
+  completeDisabled?: boolean;
   now: CardNow;
   history: CardNowHistoryEntry[];
   allConfirmed?: boolean;
@@ -60,7 +65,7 @@ export function CardNowPanel({
   };
   const completePrompt = allConfirmed && isLatest;
   const bandText = completePrompt
-    ? '모두 확인했습니다. 완료로 옮길까요?'
+    ? '완료로 옮길까요?'
     : isLatest
       ? entry.ask || ''
       : '아래 확인 항목은 지금 상태입니다.';
@@ -71,26 +76,30 @@ export function CardNowPanel({
         testID="card-now-panel"
         onLayout={onLayout}
         role={surfaceRole}
+        cornerRadius={t.foundation.radius.row}
         style={[styles.panel, !isLatest && styles.pastPanel, pinnedHeight === null ? undefined : { height: pinnedHeight }]}
       >
         <View style={styles.headerRow}>
           <View style={styles.headerLabels}>
-            <Text style={styles.eyebrow} numberOfLines={1}>
-              {isLatest ? '지금' : '지난 상황'}{showHistory ? ` ${index + 1}/${entries.length}` : ''}
+            <Text style={[styles.eyebrow, !isLatest && { color: t.colors.warningText }]} numberOfLines={1}>
+              {isLatest ? '지금' : '지난 상황'}{showHistory ? <Text style={styles.counter}>{` ${index + 1}/${entries.length}`}</Text> : null}
             </Text>
             <Text style={styles.updatedAt} numberOfLines={1}>{formatUpdatedAt(entry.at)}</Text>
           </View>
         </View>
-        <Text testID="card-now-text" numberOfLines={isLatest ? undefined : 3} style={styles.nowText}>{entry.text}</Text>
+        <Text testID="card-now-text" numberOfLines={isLatest ? undefined : 3} style={[styles.nowText, !isLatest && styles.dimText]}>{entry.text}</Text>
         <View style={[styles.turnBand, turnStyle, !isLatest && styles.pastBand, completePrompt && styles.completeBand]}>
           {isLatest ? (
             <>
-              {!completePrompt ? <Text style={[styles.turnLabel, { color: turnLabelColor }]}>{turnLabel(entry.turn)}</Text> : null}
-              <Text numberOfLines={3} style={[styles.turnText, completePrompt && styles.completeText]}>{bandText}</Text>
+              <Text style={[styles.turnLabel, { color: completePrompt ? t.colors.statusCompleted : turnLabelColor }]}>{completePrompt ? '모두 확인했습니다' : turnLabel(entry.turn)}</Text>
+              <Text numberOfLines={3} style={styles.turnText}>{bandText}</Text>
+              {completePrompt ? <GlassButton testID="card-now-complete" size="compact" disabled={completeDisabled || !onComplete} accessibilityLabel="완료" onPress={() => onComplete?.()}>
+                <Text style={styles.completeText}>완료</Text>
+              </GlassButton> : null}
             </>
           ) : (
             <>
-              <Text style={styles.turnText} numberOfLines={2}>{bandText}</Text>
+              <Text style={[styles.turnText, styles.dimText]} numberOfLines={2}>{bandText}</Text>
               <CompactTouchTarget
                 testID="card-now-latest"
                 accessibilityLabel="최신 상황"
@@ -140,19 +149,18 @@ function turnLabel(turn: CardNow['turn']): string {
 }
 
 function formatUpdatedAt(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return `${date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}에 고침`;
+  return `${formatCardTime(value)}에 고침`;
 }
 
 function makeStyles(t: DesignTokens) {
   const planner = createPlannerVisualRoles(t);
   return StyleSheet.create({
     panel: { paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.lg, borderRadius: t.foundation.radius.field, gap: t.uiSpacing.sm },
-    pastPanel: { borderStyle: 'dashed' },
-    headerRow: { height: planner.typography.meta.lineHeight, justifyContent: 'center', paddingRight: t.foundation.iconFrame.compact + t.hitTarget.min },
+    pastPanel: { borderStyle: 'dashed', borderColor: t.colors.warning },
+    headerRow: { height: planner.typography.meta.lineHeight, justifyContent: 'center', paddingRight: t.hitTarget.min * 2 - t.uiSpacing.sm - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2 + t.uiSpacing.lg },
     headerLabels: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.uiSpacing.sm },
-    eyebrow: { ...planner.typography.meta, color: t.colors.textSecondary, flexShrink: 0 },
+    eyebrow: { ...planner.typography.meta, color: t.colors.textSecondary, fontWeight: '700', flexShrink: 0 },
+    counter: { color: t.colors.textMuted, fontWeight: '400' },
     updatedAt: { ...planner.typography.meta, color: t.colors.textMuted, flexShrink: 1, textAlign: 'right' },
     arrows: { position: 'absolute', top: t.uiSpacing.md, left: t.uiSpacing.lg, right: t.uiSpacing.lg,
       height: planner.typography.meta.lineHeight, pointerEvents: 'box-none' },
@@ -160,7 +168,8 @@ function makeStyles(t: DesignTokens) {
       top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
     arrowFrameRight: { position: 'absolute', right: -t.uiSpacing.sm,
       top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
-    nowText: { ...planner.typography.body, color: t.colors.textPrimary },
+    dimText: { color: t.colors.textMuted },
+    nowText: { ...planner.typography.cardTitle, color: t.colors.textPrimary },
     turnBand: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs, borderRadius: t.foundation.radius.field },
     agentTurn: { backgroundColor: withAlphaColor(t.colors.statusRunning, 0.12) },
     userTurn: { backgroundColor: withAlphaColor(t.colors.warning, 0.12) },
@@ -169,7 +178,7 @@ function makeStyles(t: DesignTokens) {
     completeBand: { backgroundColor: withAlphaColor(t.colors.statusCompleted, 0.12) },
     turnLabel: { ...planner.typography.meta, fontWeight: '700' },
     turnText: { ...planner.typography.body, color: t.colors.textPrimary, flex: 1, flexShrink: 1 },
-    completeText: { color: t.colors.statusCompleted, fontWeight: '700' },
+    completeText: { ...planner.typography.body, color: t.colors.accent, fontWeight: '600' },
     latestFrame: { flexShrink: 0 },
     latestSurface: { minHeight: t.hitTarget.min, paddingHorizontal: t.uiSpacing.xs, justifyContent: 'center' },
     latestText: { ...planner.typography.meta, color: t.colors.accent },

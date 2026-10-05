@@ -90,11 +90,23 @@ test('서버가 확인을 풀면 방금 확인한 기록이 있어도 체크가 
 
 test('접힌 확인 항목이 서버에서 뺌으로 바뀌면 뺀 까닭을 펼쳐 보인다', () => {
   const onRecentConfirmation = jest.fn();
-  const props = { pendingConfirmations: {}, initiallyConfirmedIds: [1], newlyConfirmedIds: [],
+  const props = { pendingConfirmations: {}, initiallyConfirmedIds: [], newlyConfirmedIds: [],
     onConfirm: jest.fn().mockResolvedValue(true), onSetTarget: jest.fn(), onRecentConfirmation, paneWidth: 375 };
-  const screen = render(<CardCheckItems {...props} items={[item(1, 'confirmed')]} />);
-  expect(screen.queryByText('범위에서 뺀 이유')).toBeNull();
+  const screen = render(<CardCheckItems {...props} items={[item(1, 'reported')]} />);
+  fireEvent.press(screen.getByTestId('card-check-item-1-expand'));
+  expect(screen.queryByText('확인할 결과')).toBeNull();
 
-  screen.rerender(<CardCheckItems {...props} items={[item(1, 'dropped', { result: '서버가 기록한 제외 이유' })]} />);
+  screen.rerender(<CardCheckItems {...props} items={[item(1, 'dropped', { result: '서버가 기록한 제외 이유', evidence: [{ type: 'link', url: 'https://example.test', label: '뺀 근거' }] })]} />);
   expect(screen.getByText('서버가 기록한 제외 이유')).toBeTruthy();
+  expect(screen.getByText('뺀 근거')).toBeTruthy();
+});
+
+ test('바뀐 까닭은 꼬리표 아래 본문으로, 보고와 대화 출처는 시각과 함께 보인다', () => {
+  const screen = render(<CardCheckItems items={[item(1, 'changed', {
+    reportedAt: '2026-10-05T08:00:00', from: { kind: 'spoken', at: '2026-10-05T06:47:00', commentId: 'c1' },
+  })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+  expect(screen.getByText('확인한 뒤 바뀜')).toBeTruthy();
+  expect(screen.getByText('다시 확인한 이유')).toBeTruthy();
+  expect(screen.getByText('08:00, 06:47 대화에서 추가')).toBeTruthy();
 });

@@ -1,7 +1,7 @@
 import type { CardDto, CardStatus } from '../api/cardTypes';
 
 export const CARD_STATUS_LABEL: Record<CardStatus, string> = {
-  todo: '할 일', queued: '대기', blocked: '막힘', running: '실행 중', review: '검수', done: '완료', cancelled: '취소',
+  todo: '할 일', queued: '대기', blocked: '막힘', running: '실행 중', review: '검수 대기', done: '완료', cancelled: '취소',
 };
 export function cardPrimaryAction(card: Pick<CardDto, 'status' | 'blockedKind'>) {
   if (card.status === 'review') return 'review';

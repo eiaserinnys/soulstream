@@ -18,6 +18,16 @@ import { cardFixture } from '../../../test-support/cards';
 
 afterEach(() => useSettingsStore.setState({ appearance: 'system' }));
 
+test('노트 기록 본문은 보조 색 15/22이고 기본 마크다운의 글자색은 그대로다', () => {
+  const screen = render(<PlannerMarkdownText markdown="기록 본문" variant="note" />);
+  const { result } = renderHook(() => useTokens());
+  expect(screen.getByTestId('markdown').props.markdownStyle.paragraph).toMatchObject({
+    color: result.current.colors.textSecondary, fontSize: 15, lineHeight: 22,
+  });
+  screen.rerender(<PlannerMarkdownText markdown="기록 본문" />);
+  expect(screen.getByTestId('markdown').props.markdownStyle.paragraph.color).toBe(result.current.colors.textPrimary);
+});
+
 test('보고 폭 계약은 접기와 펼치기에서 같고 질문과 에이전트 커멘트는 내용 폭을 유지한다', () => {
   const card = cardFixture({ id: 'width-card', request: '지시', assigneeAgentId: 'roselin', createdAt: '2026-10-01T00:00:00Z' });
   const screen = render(<CardTimeline detail={{ card, sessions: [],

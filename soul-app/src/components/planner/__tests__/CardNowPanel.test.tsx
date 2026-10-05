@@ -49,8 +49,15 @@ test.each([
   expect(screen.getByText(label)).toBeTruthy();
 });
 
-test('모두 확인된 최신 상황은 완료 물음만 보여 주고 저장 동작을 실행하지 않는다', () => {
-  const screen = render(<CardNowPanel now={now} history={[]} allConfirmed />);
-  expect(screen.getByText('모두 확인했습니다. 완료로 옮길까요?')).toBeTruthy();
-  expect(screen.queryByLabelText('완료 저장')).toBeNull();
+test('모두 확인 띠의 완료는 사용자 조작으로만 실행되고 요청 중에는 눌리지 않는다', () => {
+  const onComplete = jest.fn();
+  const screen = render(<CardNowPanel now={now} history={[]} allConfirmed onComplete={onComplete} />);
+  expect(screen.getByText('모두 확인했습니다')).toBeTruthy();
+  expect(screen.getByText('완료로 옮길까요?')).toBeTruthy();
+  expect(onComplete).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByTestId('card-now-complete'));
+  expect(onComplete).toHaveBeenCalledTimes(1);
+  screen.rerender(<CardNowPanel now={now} history={[]} allConfirmed onComplete={onComplete} completeDisabled />);
+  fireEvent.press(screen.getByTestId('card-now-complete'));
+  expect(onComplete).toHaveBeenCalledTimes(1);
 });

@@ -25,3 +25,16 @@ export function cardItemDisplayColor(display: CardItemDisplay, colors: ColorSche
     default: return colors.statusIdle;
   }
 }
+
+export function formatCardTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+}
+
+export function cardItemTargetText(id: number, title?: string): string {
+  return `대상: ${id}${title ? ` ${title}` : ''}`;
+}
+
+export function cardProgressText(summary: ReturnType<typeof summarizeCardItems>): string {
+  return `볼 것 ${summary.needsReview}, 확인 ${summary.confirmed}`;
+}

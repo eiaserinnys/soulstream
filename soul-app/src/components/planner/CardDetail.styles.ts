@@ -36,6 +36,7 @@ export function cardDetailStyles(t: DesignTokens) {
     meta: { ...type.meta, color: t.colors.textSecondary },
     body: { fontSize: t.chatFontSize.body, lineHeight: t.chatFontSize.body * t.lineHeightRatio, color: t.colors.textPrimary },
     bodyStack: {},
+    commentTarget: { ...type.meta, color: t.colors.textSecondary, fontWeight: '500', marginBottom: s.xs },
     reportBodyStack: { gap: s.sm, width: '100%', alignSelf: 'stretch', alignItems: 'flex-start' },
     link: { ...type.body, color: t.colors.accent },
     option: { minHeight: t.controlHeight.chip, justifyContent: 'center' },

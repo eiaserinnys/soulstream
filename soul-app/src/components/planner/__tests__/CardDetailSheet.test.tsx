@@ -198,7 +198,7 @@ test.each([{}, { inline: true }])('상세 완료 성공은 store를 갱신한 �
   const screen = render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={onClose} />);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
   expect(screen.getByLabelText('상태 변경')).toBeTruthy();
-  expect(screen.getByText('검수')).toBeTruthy();
+  expect(screen.getByText('검수 대기')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('완료')));
   expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'done', card.version, expect.any(String), undefined);
   expect(onClose).toHaveBeenCalledTimes(1);
@@ -506,4 +506,38 @@ test('초안 저장소 준비 전에는 입력창 자체 busy가 입력과 전�
   fireEvent.press(screen.getByLabelText('커멘트 보내기'));
   expect(useDraftStore.getState().drafts).toEqual({});
   expect(api.addCardComment).not.toHaveBeenCalled();
+});
+
+test('커멘트의 대상 줄은 사용자와 답 모두에 나오고 사라진 항목은 번호만 남는다', async () => {
+  const source = { ...detail, reports: [], questions: [], card: { ...card, items: [checkItem(1, 'reported')] },
+    comments: [
+      { id: 'target-user', cardId: card.id, authorKind: 'user', authorId: 'u', sessionId: null, kind: 'comment', itemId: 1, body: '고쳐 주세요', createdAt: '' },
+      { id: 'target-agent', cardId: card.id, authorKind: 'agent', authorId: 'a', sessionId: 's1', kind: 'comment', itemId: 99, body: '고치겠습니다', createdAt: '' },
+      { id: 'plain', cardId: card.id, authorKind: 'user', authorId: 'u', sessionId: null, kind: 'comment', body: '일반 글', createdAt: '' },
+    ] };
+  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(source) } as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-check-items')).toBeTruthy());
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-comments'));
+  expect(screen.getByText('대상: 1 항목 1')).toBeTruthy();
+  expect(screen.getByText('대상: 99')).toBeTruthy();
+  expect(screen.getAllByTestId(/card-comment-item-target/)).toHaveLength(2);
+});
+
+
+test('모두 확인 띠와 머리 완료는 저장 중 함께 잠기고 띠의 저장 성공도 닫기로 복귀한다', async () => {
+  const reviewing = { ...detail, questions: [], card: { ...card, status: 'review' as const,
+    now: { text: '확인 끝', turn: 'user' as const, ask: '봐 주세요', updatedAt: card.updatedAt, sessionId: 's1' },
+    items: [checkItem(1, 'confirmed')] } };
+  const saved = deferred<any>();
+  const api = { getCard: jest.fn().mockResolvedValue(reviewing), setCardStatus: jest.fn(() => saved.promise) };
+  const onClose = jest.fn();
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={onClose} />);
+  await waitFor(() => expect(screen.getByTestId('card-now-complete')).toBeTruthy());
+  await act(async () => fireEvent.press(screen.getByTestId('card-now-complete')));
+  expect(screen.getByTestId('card-now-complete').props.accessibilityState.disabled).toBe(true);
+  expect(screen.getAllByLabelText('완료').every(button => button.props.accessibilityState.disabled)).toBe(true);
+  fireEvent.press(screen.getByTestId('card-now-complete'));
+  expect(api.setCardStatus).toHaveBeenCalledTimes(1);
+  await act(async () => saved.resolve({ card: { ...reviewing.card, status: 'done', version: card.version + 1 }, folderId: card.folderId }));
+  expect(onClose).toHaveBeenCalledTimes(1);
 });

@@ -1,7 +1,9 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { useTokens } from '../theme';
+import { CardRow } from '../components/planner/CardRow';
 import { PostItCard } from '../components/planner/PostItCard';
+import type { CardCheckItem } from '../api/cardTypes';
 import { makeCard } from './fixtures';
 import { CARD_COLOR_KEYS, CARD_COLORS } from '../../../packages/wire-schema/src/card_colors';
 
@@ -19,6 +21,17 @@ export function ReviewPostIt() {
         <PostItCard api={null} card={card} variant={variant} onOpen={() => {}} />
       </View>;
     })))}
+    </View>
+    <View testID="postit-checks-comparison" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.uiSpacing.xl }}>
+      {(['full', 'compact'] as const).map(variant => {
+        const card = { ...makeCard('review'), id: `review-checks-${variant}`, title: '확인할 결과가 있는 긴 제목의 카드',
+          now: { text: '같은 상황판과 상태를 목록에서 봅니다.', turn: 'user' as const, ask: '확인 항목과 결과 캡처를 살펴봐 주세요.', updatedAt: '', sessionId: 'public-agent' },
+          items: [{ id: 1, display: 'reported' }, { id: 2, display: 'changed' }, { id: 3, display: 'confirmed' }, { id: 4, display: 'confirmed' }, { id: 5, display: 'confirmed' }] as CardCheckItem[] };
+        return <View key={variant} testID={`card-checks-${variant}-surfaces`} style={{ gap: t.uiSpacing.lg, width: '100%' }}>
+          <PostItCard api={null} card={card} variant={variant} onOpen={() => {}} />
+          {variant === 'full' ? <><CardRow api={null} card={card} onOpen={() => {}} /><CardRow api={null} card={card} board onOpen={() => {}} /></> : null}
+        </View>;
+      })}
     </View>
     <View testID="postit-color-review" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.uiSpacing.xl }}>
       {CARD_COLOR_KEYS.map(color => {
