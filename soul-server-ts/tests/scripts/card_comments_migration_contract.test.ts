@@ -20,7 +20,7 @@ describe("card comments migration contract", () => {
     expect(migration).toContain("card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE");
     expect(migration).toMatch(/CHECK \(kind IN \('comment','spoken'\)\)/);
     expect(migration).not.toContain("'note'");
-    expect(schema).toContain("ALTER TABLE card_comments ADD COLUMN IF NOT EXISTS item_id INTEGER");
+    expect(schema).toMatch(/ALTER TABLE card_comments\s+ADD COLUMN IF NOT EXISTS item_id INTEGER/);
     expect(schema).toContain("CHECK (kind IN ('comment','spoken','note'))");
     expect(schema).toContain("CREATE INDEX IF NOT EXISTS idx_card_comments_card ON card_comments(card_id, created_at)");
   });
