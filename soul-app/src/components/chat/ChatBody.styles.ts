@@ -43,23 +43,36 @@ export function makeStyles(t: DesignTokens) {
     },
     composerContentRow: {
       minHeight: sessionRoles.chat.composer.contentMinHeight,
-      flexDirection: 'column',
-    },
-    composerControlsRow: {
-      minHeight: composer.hitTarget,
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      flexWrap: 'nowrap',
+      columnGap: composer.controlGap,
     },
-    composerAttachmentSlot: {
-      marginLeft: composer.inputPaddingHorizontal
+    composerContentRowStacked: {
+      flexWrap: 'wrap',
+    },
+    composerAttachmentSlot: {},
+    composerAttachmentSlotStacked: {
+      position: 'absolute',
+      bottom: 0,
+      left: composer.inputPaddingHorizontal
         - (composer.hitTarget - t.iconSize.action) / 2
         - t.iconSize.action * ADD_GLYPH_INSET_RATIO,
+      height: composer.hitTarget,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     composerControlsSpacer: {
+      display: 'none',
+    },
+    composerControlsSpacerStacked: {
+      display: 'flex',
       flex: 1,
       alignSelf: 'stretch',
       minHeight: t.foundation.hitTarget,
+      marginLeft: composer.hitTarget + composer.inputPaddingHorizontal
+        - (composer.hitTarget - t.iconSize.action) / 2
+        - t.iconSize.action * ADD_GLYPH_INSET_RATIO,
     },
     composerRightControls: {
       flexDirection: 'row',
@@ -133,6 +146,12 @@ export function makeStyles(t: DesignTokens) {
       paddingVertical: sessionRoles.chat.composer.inputPaddingVertical,
       fontSize: t.chatFontSize.body,
       lineHeight: t.chatFontSize.body * t.lineHeightRatio,
+    },
+    composerTextInputRow: {
+      flex: 1,
+    },
+    composerTextInputStacked: {
+      width: '100%',
     },
     voiceSlot: {
       minHeight: sessionRoles.chat.composer.hitTarget,
