@@ -19,6 +19,27 @@ export interface PersistentJevCandidatesProjectionItem {
   preparedInputId?: string;
 }
 
+export interface PersistentChatDisplaySettings {
+  show_generation_separator: boolean;
+  show_jev_candidates: boolean;
+}
+
+/** Applies PAS visibility after flattening, retaining each visible message object. */
+export function projectPersistentChatDisplayMessages<T extends { treeNodeType: string }>(
+  messages: T[],
+  settings: PersistentChatDisplaySettings | null,
+): T[] {
+  return messages.filter((message) => {
+    if (message.treeNodeType === "generation_started") {
+      return settings?.show_generation_separator === true;
+    }
+    if (message.treeNodeType === "persistent_jev_candidates") {
+      return settings?.show_jev_candidates === true;
+    }
+    return true;
+  });
+}
+
 export function isPersistentJevCandidatesDebugEvent(
   value: unknown,
 ): value is { type: "debug"; kind: "persistent_jev_candidates"; observation: PersistentJevObservation; timestamp?: number } {

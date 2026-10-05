@@ -35,6 +35,8 @@ type Editor = {
   modelPreset: string;
   folderId: string;
   firstMessage: string;
+  showGenerationSeparator: boolean;
+  showJevCandidates: boolean;
 };
 
 const editorFromSession = (session: PersistentSession): Editor => ({
@@ -43,6 +45,8 @@ const editorFromSession = (session: PersistentSession): Editor => ({
   modelPreset: session.settings.default_model.model_preset ?? "",
   folderId: session.folder_id ?? "",
   firstMessage: "",
+  showGenerationSeparator: session.settings.show_generation_separator,
+  showJevCandidates: session.settings.show_jev_candidates,
 });
 
 const editorFromDefaults = (defaults: PersistentCreateDefaults | null): Editor => ({
@@ -51,6 +55,8 @@ const editorFromDefaults = (defaults: PersistentCreateDefaults | null): Editor =
   modelPreset: defaults?.settings.default_model.model_preset ?? "",
   folderId: "",
   firstMessage: "",
+  showGenerationSeparator: defaults?.settings.show_generation_separator ?? true,
+  showJevCandidates: defaults?.settings.show_jev_candidates ?? true,
 });
 
 /** 입력 검증에서 막힌 경우. 서버에 도달하지 않았으므로 일부 저장 안내를 붙이지 않는다. */
@@ -169,19 +175,17 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
 
   const save = () => mutate(async () => {
     if (!selected) return;
-    const { session } = await api.update(selected.session_id, { display_name: validName(), settings: defaultModelWrite() });
-    applySaved(session);
-  });
-
-  const saveDisplaySetting = (key: "show_generation_separator" | "show_jev_candidates", value: boolean) => mutate(async () => {
-    if (!selected) return;
-    const settings = { ...selected.settings, [key]: value };
-    const { session } = await api.update(selected.session_id, {
-      settings: {
-        show_generation_separator: settings.show_generation_separator,
-        show_jev_candidates: settings.show_jev_candidates,
-      },
-    });
+    const settings: Partial<ReturnType<typeof defaultModelWrite> & {
+      show_generation_separator: boolean;
+      show_jev_candidates: boolean;
+    }> = defaultModelWrite();
+    if (editor.showGenerationSeparator !== selected.settings.show_generation_separator) {
+      settings.show_generation_separator = editor.showGenerationSeparator;
+    }
+    if (editor.showJevCandidates !== selected.settings.show_jev_candidates) {
+      settings.show_jev_candidates = editor.showJevCandidates;
+    }
+    const { session } = await api.update(selected.session_id, { display_name: validName(), settings });
     applySaved(session);
   });
 
@@ -295,8 +299,8 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
             value={pendingText(selected)}
             onChange={() => undefined}
           />
-          <SettingFieldWidget field={boolField("show_generation_separator", "세대 구분선 표시", selected.settings.show_generation_separator)} value={String(selected.settings.show_generation_separator)} onChange={(value) => void saveDisplaySetting("show_generation_separator", value === "true")} />
-          <SettingFieldWidget field={boolField("show_jev_candidates", "Jev 후보 표시", selected.settings.show_jev_candidates)} value={String(selected.settings.show_jev_candidates)} onChange={(value) => void saveDisplaySetting("show_jev_candidates", value === "true")} />
+          <SettingFieldWidget field={boolField("show_generation_separator", "세대 구분선 표시", editor.showGenerationSeparator, "세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.")} value={String(editor.showGenerationSeparator)} onChange={(value) => setEditor((current) => ({ ...current, showGenerationSeparator: value === "true" }))} />
+          <SettingFieldWidget field={boolField("show_jev_candidates", "Jev 후보 표시", editor.showJevCandidates, "내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.")} value={String(editor.showJevCandidates)} onChange={(value) => setEditor((current) => ({ ...current, showJevCandidates: value === "true" }))} />
         </div>
         <SettingsGroupBox title="실행 대상"><div className="v3-succession-assignment">{modelSelect}</div></SettingsGroupBox>
         <div className="flex flex-wrap gap-2">
@@ -353,8 +357,8 @@ function textField(key: string, label: string, value: string, readOnly: boolean,
   return { key, field_name: key, label, description, value, value_type: "str", sensitive: false, hot_reloadable: true, read_only: readOnly };
 }
 
-function boolField(key: string, label: string, value: boolean): SettingField {
-  return { key, field_name: key, label, description: "", value, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
+function boolField(key: string, label: string, value: boolean, description = ""): SettingField {
+  return { key, field_name: key, label, description, value, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
 }
 
 function agentLabel(session: PersistentSession): string {

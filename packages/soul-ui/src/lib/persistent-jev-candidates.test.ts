@@ -3,6 +3,7 @@ import {
   formatPersistentJevCandidates,
   isPersistentJevCandidatesDebugEvent,
   placePersistentJevCandidatesAtInputAnchors,
+  projectPersistentChatDisplayMessages,
 } from "./persistent-jev-candidates";
 
 const event = (input_id: string, eventId: number, selected: unknown[] = []) => ({
@@ -52,5 +53,24 @@ describe("persistent Jev candidate projection", () => {
       record("jev-unloaded", 22, "later"), input, answer,
       { treeNodeId: "later-input", treeNodeType: "intervention", inputId: "later" },
     ]).map((item) => item.treeNodeId)).toEqual(["input-1", "answer", "later-input", "jev-unloaded"]);
+  });
+
+  it("filters display rows without changing the identity of retained messages", () => {
+    const input = { treeNodeId: "input", treeNodeType: "user_message" };
+    const generation = { treeNodeId: "generation", treeNodeType: "generation_started" };
+    const candidate = { treeNodeId: "candidate", treeNodeType: "persistent_jev_candidates" };
+    const messages = [input, generation, candidate];
+    const hidden = projectPersistentChatDisplayMessages(messages, {
+      show_generation_separator: false,
+      show_jev_candidates: false,
+    });
+    expect(hidden).toEqual([input]);
+    const restored = projectPersistentChatDisplayMessages(messages, {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+    });
+    expect(restored[0]).toBe(input);
+    expect(restored[1]).toBe(generation);
+    expect(restored[2]).toBe(candidate);
   });
 });

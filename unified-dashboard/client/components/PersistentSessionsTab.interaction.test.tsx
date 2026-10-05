@@ -109,7 +109,7 @@ describe("PersistentSessionsTab", () => {
     expect((document.body.querySelector('[aria-label="기본 모델"]') as HTMLSelectElement).value).toBe("preset-b");
   });
 
-  it("saves the two chat display flags as a partial settings update", async () => {
+  it("saves both chat display flags with the existing editor and preserves a draft name", async () => {
     const { request, calls } = server();
     await renderTab(request);
     await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
@@ -119,10 +119,28 @@ describe("PersistentSessionsTab", () => {
       .find((element) => element.textContent?.includes("세대 구분선 표시"));
     const toggle = row?.querySelector<HTMLButtonElement>("[role=switch]");
     if (!toggle) throw new Error("세대 구분선 토글을 찾지 못했습니다.");
+    const candidateRow = Array.from(document.querySelectorAll<HTMLElement>("[data-testid=config-field-row]"))
+      .find((element) => element.textContent?.includes("Jev 후보 표시"));
+    const candidateToggle = candidateRow?.querySelector<HTMLButtonElement>("[role=switch]");
+    if (!candidateToggle) throw new Error("Jev 후보 토글을 찾지 못했습니다.");
+    setInput(nameInput(), "토글 중에도 남는 이름");
     flushSync(() => toggle.click());
-    await waitFor(() => expect(calls.some((call) => call.method === "PUT" && call.body?.settings?.show_generation_separator === false)).toBe(true));
-    const saved = calls.find((call) => call.method === "PUT");
-    expect(saved?.body).toEqual({ settings: { show_generation_separator: false, show_jev_candidates: true } });
+    flushSync(() => candidateToggle.click());
+    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(0);
+    expect(nameInput().value).toBe("토글 중에도 남는 이름");
+    clickButton("변경 저장");
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1));
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      display_name: "토글 중에도 남는 이름",
+      settings: {
+        default_model: { model_preset: "preset-a", reasoning_effort: "high" },
+        show_generation_separator: false,
+        show_jev_candidates: false,
+      },
+    });
+    await waitFor(() => expect(nameInput().value).toBe("토글 중에도 남는 이름"));
+    expect(document.body.textContent).toContain("세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.");
+    expect(document.body.textContent).toContain("내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.");
   });
 
   it("blocks buttons while saving and keeps the input after a failure so it can be saved again", async () => {

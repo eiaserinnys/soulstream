@@ -75,6 +75,27 @@ describe("chat caption parts", () => {
     expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("keeps the end variant beside the trailing avatar slot and right-aligns its content", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <CollapsibleCaption title="Jev 후보 1" align="end" initiallyCollapsed={false}>
+        <span className="truncate">긴 후보 설명</span>
+      </CollapsibleCaption>,
+    ));
+
+    const row = container.querySelector('[data-slot="collapsible-caption"]');
+    const button = container.querySelector("button");
+    expect(row?.className).toContain("justify-end");
+    expect(row?.querySelector(".w-8")).not.toBeNull();
+    expect(button?.className).toContain("-me-2");
+    expect(button?.className).toContain("justify-end");
+    expect(button?.className).not.toContain("-ms-2");
+    expect(container.querySelector("[hidden]")).toBeNull();
+  });
+
   it("renders a labeled, non-interactive separator with decorative lines", () => {
     container = document.createElement("div");
     document.body.appendChild(container);

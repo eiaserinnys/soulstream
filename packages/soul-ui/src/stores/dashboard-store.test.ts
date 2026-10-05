@@ -15,6 +15,8 @@ import {
   useDashboardStore,
 } from "./dashboard-store";
 import type { PendingChatSend } from "./dashboard-store-types";
+import { flattenTree } from "../lib/flatten-tree";
+import { projectPersistentChatDisplayMessages } from "../lib/persistent-jev-candidates";
 
 /**
  * 평탄화 후(Phase 2-A §11.1 옵션 C) tree-utils.ts가 폐기되어 본 테스트는
@@ -2120,6 +2122,52 @@ describe("dashboard-store", () => {
       // 같은 eventId 두 번째 호출 — processEventsBatch 내부 `eventId <= lastEventId` dedup
       const second = useDashboardStore.getState().processHistoryEvents(events);
       expect(second.addedCount).toBe(0);
+    });
+
+    it("라이브 후보를 과거 이력 입력에 붙이고 재요청·표시 토글에서도 객체와 자리를 보존한다", () => {
+      const sessionId = "session-pas-candidate-history";
+      useDashboardStore.getState().setActiveSession(sessionId);
+      const candidateEvent = {
+        type: "debug",
+        kind: "persistent_jev_candidates",
+        timestamp: 15,
+        observation: {
+          input_id: "input-from-history",
+          selected: [{ kind: "card", card_id: "card-412", label: "#412", line: "카드 한 줄", score: 2 }],
+          candidate_counts: { turn_summaries: 0, cards: 1, search_sessions: 0, recent_completed_sessions: 0 },
+          model: "jev-latest",
+          latency_ms: 1,
+        },
+      } as unknown as import("../shared/types").SoulSSEEvent;
+      useDashboardStore.getState().processEvent(candidateEvent, 15);
+      expect(flattenTree(useDashboardStore.getState().tree)).toEqual([]);
+
+      const page = [{
+        event: {
+          type: "user_message", timestamp: 10, text: "내 입력", input_id: "input-from-history",
+        } as unknown as import("../shared/types").SoulSSEEvent,
+        eventId: 10,
+      }];
+      expect(useDashboardStore.getState().processHistoryEvents(page).addedCount).toBeGreaterThan(0);
+      const afterPage = flattenTree(useDashboardStore.getState().tree);
+      expect(afterPage.map((message) => [message.treeNodeType, message.inputId ?? message.preparedInputId])).toEqual([
+        ["user_message", "input-from-history"],
+        ["persistent_jev_candidates", "input-from-history"],
+      ]);
+      const candidate = afterPage[1];
+
+      expect(useDashboardStore.getState().processHistoryEvents(page).addedCount).toBe(0);
+      const afterRepeat = flattenTree(useDashboardStore.getState().tree);
+      expect(afterRepeat.map((message) => message.treeNodeId)).toEqual(afterPage.map((message) => message.treeNodeId));
+      expect(afterRepeat[1]).toBe(candidate);
+
+      const store = useDashboardStore.getState();
+      store.setPersistentSessionDisplaySettings(sessionId, { show_generation_separator: true, show_jev_candidates: true });
+      const hidden = projectPersistentChatDisplayMessages(afterRepeat, { show_generation_separator: false, show_jev_candidates: false });
+      expect(hidden).toHaveLength(1);
+      store.setPersistentSessionDisplaySettings(sessionId, { show_generation_separator: true, show_jev_candidates: true });
+      const restored = projectPersistentChatDisplayMessages(afterRepeat, { show_generation_separator: true, show_jev_candidates: true });
+      expect(restored[1]).toBe(candidate);
     });
   });
 

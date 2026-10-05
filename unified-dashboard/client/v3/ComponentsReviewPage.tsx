@@ -231,6 +231,16 @@ export function ComponentsReviewPage() {
                 <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
               </div>
             </Sample>
+            <Sample name="CollapsibleCaption / align=end" state="사용자 말풍선 방향 · 접힘 · 펼침 · 긴 줄 말줄임">
+              <div className="space-y-2">
+                <CollapsibleCaption title="Jev 후보 1" align="end">
+                  <div className="min-w-0 truncate text-xs text-muted-foreground">#413 · 좁은 화면에서 한 줄 말줄임을 확인하기 위한 매우 긴 Jev 후보 설명 문장입니다 · 3/3</div>
+                </CollapsibleCaption>
+                <CollapsibleCaption title="Jev 후보 1 · 펼침" align="end" initiallyCollapsed={false}>
+                  <div className="min-w-0 truncate text-xs text-muted-foreground">#413 · 좁은 화면에서 한 줄 말줄임을 확인하기 위한 매우 긴 Jev 후보 설명 문장입니다 · 3/3</div>
+                </CollapsibleCaption>
+              </div>
+            </Sample>
           </section>
           <section id="components-input" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>입력창</h3></div>

@@ -25,13 +25,20 @@ describe("PersistentChatDisplayReviewSample", () => {
     expect(container.textContent).toContain("이전 세대의 답변입니다.");
     expect(container.querySelector('[role="separator"]')?.getAttribute("aria-label")).toBe("새 세대");
     expect(container.textContent).toContain("Jev 후보 3");
+    expect(container.textContent).toContain("Jev 후보 0");
     expect(container.textContent).toContain("관련 후보를 찾아줘");
+
+    const emptyCaption = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.includes("Jev 후보 0"));
+    act(() => emptyCaption?.click());
+    expect(container.textContent).toContain("2점 이상인 후보가 없습니다.");
 
     const switches = container.querySelectorAll<HTMLButtonElement>("[role=switch]");
     act(() => switches[0]?.click());
     act(() => switches[1]?.click());
     expect(container.querySelector('[role="separator"]')).toBeNull();
     expect(container.textContent).not.toContain("Jev 후보 3");
+    expect(container.textContent).not.toContain("Jev 후보 0");
     expect(container.textContent).toContain("이전 세대의 답변입니다.");
     expect(container.textContent).toContain("관련 후보를 찾아줘");
   });
