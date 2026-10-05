@@ -12,6 +12,10 @@ import type {
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import {
+  CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO,
+  estimateClaudeTurnInputTokens,
+} from "../../src/task/claude_context_recovery.js";
+import {
   engineEventFrame,
   RUNNER_FRAME_PROTOCOL_VERSION,
 } from "../../src/runner/frame_protocol.js";
@@ -30,7 +34,10 @@ import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
 import { TaskDeliveryLedgerGate } from
   "../../src/task/task_delivery_ledger_gate.js";
-import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
+import {
+  TaskTurnInputBuilder,
+  type TaskTurnInput,
+} from "../../src/task/task_turn_input_builder.js";
 import {
   createExecutionActivation,
   type InterventionMessage,
@@ -4960,8 +4967,32 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-preturn-compact";
     const capturedPrompts: string[] = [];
+    const executionOrder: string[] = [];
+    const preparedInputs: TaskTurnInput[] = [];
+    const originalPrepareFollowup = TaskTurnInputBuilder.prototype.prepareFollowupTurnInput;
+    const prepareFollowupSpy = vi
+      .spyOn(TaskTurnInputBuilder.prototype, "prepareFollowupTurnInput")
+      .mockImplementation(async function (
+        this: TaskTurnInputBuilder,
+        ...args: Parameters<TaskTurnInputBuilder["prepareFollowupTurnInput"]>
+      ) {
+        const input = await originalPrepareFollowup.apply(this, args);
+        preparedInputs.push(input);
+        return input;
+      });
+    const maxContextTokens = 1_000_000;
+    const compactThresholdTokens =
+      maxContextTokens * CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO;
+    const firstTurnUsedTokens = compactThresholdTokens - 1;
+    let preparedInputAtCompact: TaskTurnInput | undefined;
+    let preparedInputTokensAtCompact = 0;
     let turnCount = 0;
     const compact = vi.fn(async () => {
+      executionOrder.push("compact");
+      preparedInputAtCompact = preparedInputs.at(-1);
+      if (preparedInputAtCompact) {
+        preparedInputTokensAtCompact = estimateClaudeTurnInputTokens(preparedInputAtCompact);
+      }
       task.interventionQueue.push({ text: "arrived during compact", user: "browser" });
       return undefined;
     });
@@ -4971,13 +5002,14 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompts.push(params.prompt);
         turnCount += 1;
+        executionOrder.push(`execute-${turnCount}`);
         if (turnCount === 1) {
           task.interventionQueue.push({ text: "already queued", user: "alice" });
           yield {
             type: "context_usage",
-            used_tokens: 850_000,
-            max_tokens: 1_000_000,
-            percent: 85,
+            used_tokens: firstTurnUsedTokens,
+            max_tokens: maxContextTokens,
+            percent: (firstTurnUsedTokens / maxContextTokens) * 100,
           } as SSEEventPayload;
         }
         yield { type: "complete", result: `turn ${turnCount}` } as SSEEventPayload;
@@ -4999,13 +5031,24 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startNewExecution(task, claudeAgent);
-    await task.executionPromise;
+    try {
+      executor.startNewExecution(task, claudeAgent);
+      await task.executionPromise;
+    } finally {
+      prepareFollowupSpy.mockRestore();
+    }
 
     expect(compact).toHaveBeenCalledTimes(1);
-    expect(capturedPrompts).toHaveLength(2);
+    expect(preparedInputAtCompact?.interventions?.map(({ text }) => text)).toEqual([
+      "already queued",
+    ]);
+    expect(firstTurnUsedTokens).toBeLessThan(compactThresholdTokens);
+    expect(firstTurnUsedTokens + preparedInputTokensAtCompact)
+      .toBeGreaterThanOrEqual(compactThresholdTokens);
     expect(capturedPrompts[1]).toContain("already queued");
     expect(capturedPrompts[1]).toContain("arrived during compact");
+    expect(capturedPrompts).toHaveLength(2);
+    expect(executionOrder).toEqual(["execute-1", "compact", "execute-2"]);
     expect(task.interventionQueue).toEqual([]);
   });
 
