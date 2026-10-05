@@ -481,3 +481,12 @@ describe("versioned migration contract", () => {
    expect(keysIn(checkValues)).toEqual(CARD_COLOR_KEYS);
    expect(keysIn(defaultValues)).toEqual(CARD_COLOR_KEYS);
  });
+
+ it("pins card number migration and fresh schema together", async () => {
+   const migrations = await loadMigrationManifest();
+   const number = migrations.find(item => item.id === "120_card_number.sql");
+   const schema = readFileSync(fileURLToPath(new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url)), "utf8");
+   expect(number).toBeDefined();
+   expect(migrationSha256(number!.sql)).toBe(number!.sha256);
+   expect(schema).toContain(number!.sql.trim());
+ });

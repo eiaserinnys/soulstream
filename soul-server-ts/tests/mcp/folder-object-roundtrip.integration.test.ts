@@ -83,6 +83,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
     // Only the isolated schema owned by the disposable harness is cleared.
     const tables = await h.sql<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname = current_schema()`;
     await h.sql.unsafe(`TRUNCATE ${tables.map(t => '"' + t.tablename.replaceAll('"', '""') + '"').join(",")} RESTART IDENTITY CASCADE`);
+    await h.sql`ALTER SEQUENCE cards_number_seq RESTART WITH 1`;
     await h.sql`INSERT INTO sessions(session_id) VALUES ('header-session'), ('argument-session')`;
     sequence = 0; operationSequence = 0;
     await identity.create({ name: "기존 폴더", actor: { actorKind: "agent", actorSessionId: "header-session" }, idempotencyKey: "seed" });
@@ -156,7 +157,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
     expect(first.value.cards.map(card => card.id)).toEqual(firstIds);
     expect(first.value.cards[4]).toMatchObject({ status: "done", archived: false });
     expect(Object.keys(first.value.cards[0]!).sort()).toEqual([
-      "id", "title", "status", "archived", "version", "assigneeKind", "assigneeAgentId",
+      "id", "number", "title", "status", "archived", "version", "assigneeKind", "assigneeAgentId",
       "assigneeSessionId", "assigneeUserId", "nodeId", "modelPreset", "blockedKind", "updatedAt", "latestActivity",
     ].sort());
     expect(first.value.cards[0]!.latestActivity).toEqual({ kind: "instruction", createdAt: "2026-09-03T00:00:00.000Z" });

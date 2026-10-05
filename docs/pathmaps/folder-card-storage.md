@@ -66,6 +66,12 @@
 해제 카드마다 `release_card_assignee` 감사 행에 이전 담당과 남긴 카드, 적용 규칙을 남긴다. 해제는 assignee_kind·assignee_session_id·version만 바꾸고 상태·내용·updated_at·완료 출처·보고·질문·커멘트는 보존한다. 보관 카드는 정리와 인덱스 모두에서 제외한다. migration 재실행과 schema.sql 재적용은 상태 시점을 다시 채우지 않는다.
 
 
+## 카드 번호와 번호 참조 (120)
+
+| PR | 경로 | 계약 |
+| --- | --- | --- |
+| C1 | `packages/db-schema/sql/migrations/120_card_number.sql`, `packages/db-schema/migration-manifest.json`, `packages/db-schema/sql/schema.sql`, `orch-server-ts/src/cards/control_plane/card_types.ts`, `orch-server-ts/src/cards/card_control_plane_service.ts`, `orch-server-ts/src/folders/folder_contracts.ts` | `cards_number_seq`가 카드 번호를 발급한다. 새 카드는 컬럼 기본값으로 번호를 받고, 번호 없이 보관된 카드는 `card_control_plane_service.ts`의 `patch()`가 보관을 푸는 UPDATE에서 번호를 받는다. `cards_live_number_check`가 보관되지 않은 카드의 번호를 요구한다. migration 때 보관되지 않은 카드만 만든 순서대로 번호를 채우고 보관된 카드는 NULL로 둔다. 번호는 보관 뒤에도 남고 재사용하지 않는다. REST와 MCP 카드 행, 폴더 개요는 번호를 정수 또는 `null`로 내보낸다. 본문은 다시 적용해도 안전하며 기존 번호를 바꾸지 않는다. |
+
 ## 담당 세션 상태 리마인더
 
 | 경로 | 구현 | 계약 |

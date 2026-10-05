@@ -421,8 +421,10 @@ CREATE TABLE folders (
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (folder_id)
     );
+CREATE SEQUENCE cards_number_seq AS INTEGER;
 CREATE TABLE cards (
     id                   TEXT PRIMARY KEY,
+    number               INTEGER DEFAULT nextval('cards_number_seq'),
     folder_id            TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
     position_key         TEXT NOT NULL,
     queue_position_key   TEXT,
@@ -462,6 +464,7 @@ CREATE TABLE cards (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
+CREATE UNIQUE INDEX uq_cards_number ON cards(number);
 CREATE INDEX idx_cards_folder ON cards(folder_id, position_key COLLATE "C");
 CREATE INDEX idx_cards_queue ON cards(queue_position_key COLLATE "C") WHERE status='queued' AND archived=FALSE;
 ALTER TABLE sessions ADD COLUMN card_id TEXT REFERENCES cards(id) ON DELETE SET NULL;
