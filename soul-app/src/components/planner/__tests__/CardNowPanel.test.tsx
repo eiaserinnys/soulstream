@@ -19,6 +19,12 @@ test('이전·다음은 상황만 넘기고 최신 now 및 확인 항목 상태�
   expect(screen.getByText(now.text)).toBeTruthy();
 });
 
+test('nowHistory 한 건은 현재 슬롯으로 바꾸어 그려 중복 이전 항목을 만들지 않는다', () => {
+  const screen = render(<CardNowPanel now={now} history={[history[1]]} />);
+  expect(screen.getAllByText(now.text)).toHaveLength(1);
+  expect(screen.queryByLabelText('이전 상황')).toBeNull();
+});
+
 test.each([
   ['agent', '에이전트 차례'], ['user', '내 차례'], ['outside', '바깥 대기'],
 ] as const)('%s 차례의 표기를 보여 준다', (turn, label) => {

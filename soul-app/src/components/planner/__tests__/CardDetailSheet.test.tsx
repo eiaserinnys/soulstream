@@ -112,13 +112,15 @@ test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 
   expect(screen.queryByTestId('card-report-html-latest')).toBeNull();
   fireEvent.press(screen.getByLabelText('report-latest 자세히'));
   expect(screen.getByTestId('card-report-html-latest')).toBeTruthy();
-  expect(screen.getByText('실행 세션')).toBeTruthy();
   fireEvent.press(screen.getByText('파랑'));
   await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
   expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1', '파랑', expect.any(String));
+  expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
+  expect(screen.getByText('실행 세션')).toBeTruthy();
 });
 
-test.each([{ nativeHeader: true }, { inline: true }])('상세 완료 성공은 store를 갱신한 뒤 기존 닫기로 복귀한다 %s', async (presentation) => {
+test.each([{ inline: true }])('상세 완료 성공은 store를 갱신한 뒤 기존 닫기로 복귀한다 %s', async (presentation) => {
   const reviewing = { ...detail, questions: [], card: { ...card, status: 'review' as const } };
   const done = { ...card, status: 'done' as const, version: card.version + 1 };
   const api = { getCard: jest.fn().mockResolvedValueOnce(reviewing).mockResolvedValueOnce(reviewing).mockResolvedValue({ ...reviewing, card: done }),
@@ -127,7 +129,7 @@ test.each([{ nativeHeader: true }, { inline: true }])('상세 완료 성공은 s
   const screen = render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={onClose} />);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
   expect(screen.getByLabelText('상태 변경')).toBeTruthy();
-  if (!('nativeHeader' in presentation)) expect(screen.getByText('검수')).toBeTruthy();
+  expect(screen.getByText('검수')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('완료')));
   expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'done', card.version, expect.any(String), undefined);
   expect(onClose).toHaveBeenCalledTimes(1);
@@ -161,6 +163,7 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
   const onOpenSession = jest.fn();
   const { result } = renderHook(() => useTokens());
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={onClose} onOpenSession={onOpenSession} />);
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
   await waitFor(() => expect(screen.getByText('31개 더')).toBeTruthy());
   fireEvent.press(screen.getByText('31개 더'));
   await waitFor(() => expect(screen.getByTestId('task-run-row-run-33')).toBeTruthy());
@@ -223,7 +226,7 @@ test('카드 생성은 요청 본문만 복원하고 제목은 기존 빈 값으
 });
 
 
-test.each([{nativeHeader:true},{inline:true}])('완료 상세에서도 기존 메뉴로 사유 없이 재착수한다 %s',async presentation=>{
+test.each([{inline:true}])('완료 상세에서도 기존 메뉴로 사유 없이 재착수한다 %s',async presentation=>{
   const completed={...detail,card:{...card,status:'done' as const},reports:[],questions:[]};
   const api={getCard:jest.fn().mockResolvedValue(completed),executeCard:jest.fn().mockResolvedValue({card:{...completed.card,status:'running'},folderId:card.folderId,execution:{requestId:'resume-card',sessionId:'owner',state:'started'}})};
   const screen=render(<CardDetailContent {...presentation} api={api as any} cardId={card.id} onClose={jest.fn()}/>);
@@ -238,10 +241,12 @@ test.each([{nativeHeader:true},{inline:true}])('완료 상세에서도 기존 �
 test('assigned settings disappear while native status/complete and sessions remain',async()=>{
  const assigned={...card,assigneeKind:'session' as const,assigneeSessionId:'s1'};
  const api={getCard:jest.fn().mockResolvedValue({...detail,card:assigned})};
- const screen=render(<CardDetailContent api={api as any} cardId={card.id} nativeHeader onClose={jest.fn()}/>);
+ const screen=render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()}/>);
  await waitFor(()=>expect(screen.getByText('원문')).toBeTruthy());
  for(const label of ['폴더 변경','담당 변경','노드 변경','모델 변경'])expect(screen.queryByLabelText(label)).toBeNull();
- expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-sessions')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
+ expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
+ fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
+ expect(screen.getByTestId('card-sessions')).toBeTruthy();
 });
 
 test.each(['todo','queued'] as const)('상세 %s 시작은 접수 후 화면을 유지하고 실패 알림 없이 시작 중을 보인다',async status=>{

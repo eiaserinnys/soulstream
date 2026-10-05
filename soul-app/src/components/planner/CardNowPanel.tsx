@@ -13,21 +13,23 @@ export function CardNowPanel({
   now,
   history,
   allConfirmed = false,
+  surfaceRole = 'panel',
 }: {
   now: CardNow;
   history: CardNowHistoryEntry[];
   allConfirmed?: boolean;
+  surfaceRole?: 'panel' | 'glassCard';
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const entries = useMemo<Entry[]>(() => {
-    const previous = history.slice(0, -1).map((entry) => ({ ...entry }));
-    return [...previous, { text: now.text, turn: now.turn, ask: now.ask, at: now.updatedAt }];
-  }, [history, now.ask, now.text, now.turn, now.updatedAt]);
+  const entries = useMemo<Entry[]>(() => [
+    ...history.slice(0, -1).map((entry) => ({ ...entry })),
+    { text: now.text, turn: now.turn, ask: now.ask, at: now.updatedAt },
+  ], [history, now.ask, now.text, now.turn, now.updatedAt]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [naturalHeight, setNaturalHeight] = useState<number | null>(null);
   const [pinnedHeight, setPinnedHeight] = useState<number | null>(null);
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+  const currentHeight = React.useRef<number | null>(null);
   const index = selectedIndex === null ? entries.length - 1 : Math.min(selectedIndex, entries.length - 1);
   const entry = entries[index];
   const isLatest = index === entries.length - 1;
@@ -36,17 +38,17 @@ export function CardNowPanel({
 
   const onLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
+    currentHeight.current = height;
     if (measuredWidth !== null && width !== measuredWidth) {
       setSelectedIndex(null);
       setPinnedHeight(null);
     }
     setMeasuredWidth(width);
-    if (isLatest && pinnedHeight === null) setNaturalHeight(height);
-  }, [isLatest, measuredWidth, pinnedHeight]);
+  }, [measuredWidth]);
 
-  const showHistory = entries.length > 1;
+  const showHistory = history.length > 1;
   const moveTo = (nextIndex: number) => {
-    if (selectedIndex === null) setPinnedHeight(naturalHeight);
+    if (selectedIndex === null) setPinnedHeight(currentHeight.current);
     setSelectedIndex(nextIndex === entries.length - 1 ? null : nextIndex);
   };
   const completePrompt = allConfirmed && isLatest;
@@ -57,11 +59,12 @@ export function CardNowPanel({
       : '아래 확인 항목은 지금 상태입니다.';
 
   return (
-    <View style={pinnedHeight === null ? undefined : { height: pinnedHeight }} onLayout={onLayout}>
+    <View testID="card-now-panel-frame" style={pinnedHeight === null ? undefined : { height: pinnedHeight }}>
       <AppGlassCard
         testID="card-now-panel"
-        role="panel"
-        style={[styles.panel, !isLatest && styles.pastPanel]}
+        onLayout={onLayout}
+        role={surfaceRole}
+        style={[styles.panel, !isLatest && styles.pastPanel, pinnedHeight === null ? undefined : { height: pinnedHeight }]}
       >
         <View style={styles.headerRow}>
           <View style={styles.headerLabels}>
@@ -70,27 +73,6 @@ export function CardNowPanel({
             </Text>
             <Text style={styles.updatedAt} numberOfLines={1}>{formatUpdatedAt(entry.at)}</Text>
           </View>
-          {showHistory ? (
-            <View pointerEvents="box-none" style={styles.arrows}>
-              <GlassButton
-                iconOnly size="compact" borderRadius={t.foundation.radius.round}
-                accessibilityLabel="이전 상황" accessibilityState={{ disabled: index === 0 }}
-                disabled={index === 0} frameStyle={styles.arrowFrameLeft}
-                onPress={() => moveTo(Math.max(0, index - 1))}
-              >
-                <Text style={styles.arrowGlyph}>‹</Text>
-              </GlassButton>
-              <GlassButton
-                iconOnly size="compact" borderRadius={t.foundation.radius.round}
-                accessibilityLabel={isLatest ? '최신 상황' : '다음 상황'}
-                accessibilityState={{ disabled: isLatest }} disabled={isLatest}
-                frameStyle={styles.arrowFrameRight}
-                onPress={() => moveTo(Math.min(entries.length - 1, index + 1))}
-              >
-                <Text style={styles.arrowGlyph}>›</Text>
-              </GlassButton>
-            </View>
-          ) : null}
         </View>
         <Text testID="card-now-text" numberOfLines={isLatest ? undefined : 3} style={styles.nowText}>{entry.text}</Text>
         <View style={[styles.turnBand, turnStyle, !isLatest && styles.pastBand, completePrompt && styles.completeBand]}>
@@ -114,6 +96,27 @@ export function CardNowPanel({
             </>
           )}
         </View>
+        {showHistory ? (
+          <View pointerEvents="box-none" style={styles.arrows}>
+            <GlassButton
+              iconOnly size="compact" borderRadius={t.foundation.radius.round}
+              accessibilityLabel="이전 상황" accessibilityState={{ disabled: index === 0 }}
+              disabled={index === 0} frameStyle={styles.arrowFrameLeft}
+              onPress={() => moveTo(Math.max(0, index - 1))}
+            >
+              <Text style={styles.arrowGlyph}>‹</Text>
+            </GlassButton>
+            <GlassButton
+              iconOnly size="compact" borderRadius={t.foundation.radius.round}
+              accessibilityLabel={isLatest ? '최신 상황' : '다음 상황'}
+              accessibilityState={{ disabled: isLatest }} disabled={isLatest}
+              frameStyle={styles.arrowFrameRight}
+              onPress={() => moveTo(Math.min(entries.length - 1, index + 1))}
+            >
+              <Text style={styles.arrowGlyph}>›</Text>
+            </GlassButton>
+          </View>
+        ) : null}
       </AppGlassCard>
     </View>
   );
@@ -138,13 +141,16 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     panel: { paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.lg, borderRadius: t.foundation.radius.field, gap: t.uiSpacing.sm },
     pastPanel: { borderStyle: 'dashed' },
-    headerRow: { minHeight: planner.typography.meta.lineHeight, position: 'relative', justifyContent: 'center', paddingRight: t.foundation.iconFrame.compact * 2 },
+    headerRow: { height: planner.typography.meta.lineHeight, justifyContent: 'center', paddingRight: t.foundation.iconFrame.compact * 2 },
     headerLabels: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.uiSpacing.sm },
     eyebrow: { ...planner.typography.meta, color: t.colors.textSecondary, flexShrink: 0 },
     updatedAt: { ...planner.typography.meta, color: t.colors.textMuted, flexShrink: 1, textAlign: 'right' },
-    arrows: { ...StyleSheet.absoluteFill, pointerEvents: 'box-none' },
-    arrowFrameLeft: { position: 'absolute', right: t.hitTarget.min, top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
-    arrowFrameRight: { position: 'absolute', right: 0, top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
+    arrows: { position: 'absolute', top: t.uiSpacing.md, left: t.uiSpacing.lg, right: t.uiSpacing.lg,
+      height: planner.typography.meta.lineHeight, pointerEvents: 'box-none' },
+    arrowFrameLeft: { position: 'absolute', right: t.foundation.iconFrame.compact - t.uiSpacing.sm,
+      top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
+    arrowFrameRight: { position: 'absolute', right: -t.uiSpacing.sm,
+      top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
     arrowGlyph: { ...planner.typography.cardTitle, color: t.colors.textSecondary },
     nowText: { ...planner.typography.body, color: t.colors.textPrimary },
     turnBand: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs, borderRadius: t.foundation.radius.field },

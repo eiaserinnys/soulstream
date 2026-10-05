@@ -7,6 +7,7 @@ import {
   View,
   type AccessibilityRole,
   type AccessibilityState,
+  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -100,6 +101,7 @@ export interface GlassSurfaceProps {
   /** Used by foreground card primitives for a token-defined corner radius. */
   cornerRadius?: number;
   testID?: string;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
 export function GlassSurface(props: GlassSurfaceProps) {
@@ -118,6 +120,7 @@ function GlassSurfaceImpl({
   isInteractive = false,
   testID,
   cornerRadius,
+  onLayout,
   renderContent,
 }: GlassSurfaceImplProps) {
   const t = useTokens();
@@ -177,6 +180,7 @@ function GlassSurfaceImpl({
         tintColor={surface.nativeTintColor}
         isInteractive={isInteractive}
         style={surfaceStyle}
+        onLayout={onLayout}
       >
         {content}
       </GlassView>
@@ -190,6 +194,7 @@ function GlassSurfaceImpl({
         tint={resolvedBlurTint}
         intensity={surface.blurIntensity}
         style={[surfaceStyle, { backgroundColor: surface.blurColor }]}
+        onLayout={onLayout}
       >
         {content}
       </BlurView>
@@ -200,6 +205,7 @@ function GlassSurfaceImpl({
     <View
       testID={testID}
       style={[surfaceStyle, { backgroundColor: surface.fallbackColor }]}
+      onLayout={onLayout}
     >
       {content}
     </View>

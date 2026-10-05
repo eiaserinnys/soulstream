@@ -23,6 +23,7 @@ interface WindowFrame {
 
 interface Props extends ViewProps {
   behavior?: KeyboardAvoidanceBehavior;
+  onOverlapChange?(overlap: number): void;
 }
 
 /**
@@ -36,6 +37,7 @@ interface Props extends ViewProps {
  */
 export function AppKeyboardAvoidingView({
   behavior,
+  onOverlapChange,
   children,
   onLayout,
   style,
@@ -52,8 +54,9 @@ export function AppKeyboardAvoidingView({
 
   const commitInset = useCallback((next: number) => {
     insetRef.current = next;
+    onOverlapChange?.(next);
     setInset((current) => (current === next ? current : next));
-  }, []);
+  }, [onOverlapChange]);
 
   const measureAndApplyInset = useCallback(
     (keyboardFrame: KeyboardFrame) => {

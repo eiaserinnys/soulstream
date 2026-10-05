@@ -1,23 +1,36 @@
 import { StyleSheet } from 'react-native';
 import type { DesignTokens } from '../../theme';
+import { withAlphaColor } from '../StatusPulseDecoration';
 
 export function cardDetailStyles(t: DesignTokens) {
   const type = t.foundation.typography;
   const s = t.uiSpacing;
   return StyleSheet.create({
     container: { flex: 1 },
+    frame: { flex: 1, minHeight: 0 },
     header: { paddingHorizontal: t.foundation.pageInset, paddingVertical: s.md, gap: s.sm },
     headerRow: { flexDirection: 'row', alignItems: 'center', gap: s.sm },
-    heading: { flex: 1, minWidth: 0, ...type.navigation, color: t.colors.textPrimary },
+    titleHitFrame: { flex: 1, minWidth: 0, alignSelf: 'stretch', alignItems: 'stretch', justifyContent: 'center' },
+    titleHitSurface: { flex: 1, minWidth: 0, alignItems: 'flex-start', justifyContent: 'center' },
+    heading: { flex: 1, minWidth: 0, ...type.section, color: t.colors.textPrimary },
     glyph: { ...type.body, color: t.colors.textPrimary },
     chips: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: s.xs },
     chip: { minHeight: t.controlHeight.chip, paddingHorizontal: s.sm, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.surfaceCode, flexDirection: 'row', alignItems: 'center', gap: s.xs, maxWidth: '100%' },
     chipAvatar: { width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round },
     chipText: { ...type.meta, color: t.colors.textSecondary, flexShrink: 1, fontWeight: '600' },
-    done: { minHeight: t.foundation.iconFrame.compact, justifyContent: 'center' },
+    done: { minHeight: t.hitTarget.min, paddingHorizontal: s.sm, borderRadius: t.foundation.radius.chip, justifyContent: 'center' },
+    doneHighlighted: { backgroundColor: withAlphaColor(t.colors.statusCompleted, 0.12), borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.statusCompleted },
     doneText: { ...type.body, color: t.colors.accent, fontWeight: '600' },
+    doneHighlightedText: { color: t.colors.statusCompleted },
     disabled: { opacity: 0.45 },
-    content: { paddingHorizontal: t.foundation.pageInset, paddingBottom: s.lg, gap: s.lg },
+    nowWrap: { paddingHorizontal: t.foundation.pageInset, marginBottom: s.sm },
+    tabsWrap: { paddingHorizontal: t.foundation.pageInset, marginBottom: s.sm },
+    bodyFrame: { flex: 1, minHeight: 0 },
+    content: { flexGrow: 1, paddingHorizontal: t.foundation.pageInset, paddingBottom: 0, gap: s.lg },
+    dock: { position: 'absolute', left: t.foundation.pageInset, right: t.foundation.pageInset, gap: s.xs },
+    sendNotice: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: s.sm },
+    sendNoticeText: { ...type.meta, color: t.colors.textSecondary },
+    empty: { ...type.body, color: t.colors.textSecondary },
     sessions: { gap: t.cardLayout.gap },
     timeline: { gap: s.sm },
     kindRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: s.sm, marginBottom: s.xs },

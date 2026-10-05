@@ -20,6 +20,7 @@ import type { PlannerContextMenuAction } from '../../lib/planner-context-menu-mo
 import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCardDisplay';
 import { CardStatusChip } from './CardRow';
 import { CardStatusMenu } from './CardStatusMenu';
+import { cardItemDisplayColor, summarizeCardItems } from '../../lib/card-check-item-summary';
 
 export function postItRotation(id: string) {
   return ((Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 5) - 2) * 0.4;
@@ -91,6 +92,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
   const { transition, pending } = useCardTransition(api, card.id);
   const activity = card.latestActivity;
   const body = activity ? postItActivityText(activity) : card.request || '아직 지시나 보고가 없습니다.';
+  const itemSummary = summarizeCardItems(card.items);
   const canInteract = () => canPress() && !suppressDirectPress.current;
   const open = () => {
     if (!canInteract()) return;
@@ -161,11 +163,22 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
             <Text testID={`postit-title-${card.id}`} style={roles.title} numberOfLines={2}>{card.title}</Text>
             <View testID={`postit-body-area-${card.id}`} style={{ marginTop: roles.gap, flex: 1, minHeight: 0, overflow: 'hidden' }}
               onLayout={(event) => setBodyLines(Math.max(1, Math.floor(event.nativeEvent.layout.height / roles.body.lineHeight)))}>
-              <Text testID={`postit-body-${card.id}`} style={roles.body} numberOfLines={bodyLines} ellipsizeMode="tail">
-                <Text testID={`postit-activity-chip-${card.id}`} style={{ ...roles.label, fontWeight: '600', backgroundColor: roles.colors.surfaceCode }}>
-                  {activity?.kind === 'report' ? '[보고]' : '[지시]'}
-                </Text>{' '}{body}
+              {itemSummary.total ? <View testID={`postit-${card.id}-item-summary`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs }}>
+                {itemSummary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+                  style={{ width: t.uiSpacing.xxs, height: t.uiSpacing.xxs, borderRadius: t.foundation.radius.round,
+                    backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
+                <Text style={roles.label}>{itemSummary.confirmed}/{itemSummary.total} 확인</Text>
+              </View> : null}
+              <Text testID={`postit-body-${card.id}`} style={roles.body} numberOfLines={card.now ? 1 : Math.max(1, bodyLines - (itemSummary.total ? 1 : 0))} ellipsizeMode="tail">
+                {card.now?.text ? card.now.text : <>
+                  <Text testID={`postit-activity-chip-${card.id}`} style={{ ...roles.label, fontWeight: '600', backgroundColor: roles.colors.surfaceCode }}>
+                    {activity?.kind === 'report' ? '[보고]' : '[지시]'}
+                  </Text>{' '}{body}
+                </>}
               </Text>
+              {card.now?.turn === 'user' ? <Text testID={`postit-${card.id}-ask-preview`} style={roles.body} numberOfLines={1} ellipsizeMode="tail">
+                {`볼 것 ${itemSummary.needsReview}${card.now.ask ? ` · ${card.now.ask}` : ''}`}
+              </Text> : null}
             </View>
           </Pressable>
           <View testID={`postit-footer-${card.id}`} style={{ position: 'absolute', bottom: roles.padding, left: roles.padding, right: roles.padding,

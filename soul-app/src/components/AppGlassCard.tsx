@@ -3,6 +3,7 @@ import {
   TouchableOpacity,
   type AccessibilityRole,
   type AccessibilityState,
+  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -20,6 +21,7 @@ export interface AppGlassCardProps {
   isInteractive?: boolean;
   cornerRadius?: number;
   testID?: string;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
 /**
@@ -33,6 +35,7 @@ export function AppGlassCard({
   isInteractive = false,
   cornerRadius,
   testID,
+  onLayout,
 }: AppGlassCardProps) {
   return (
     <GlassSurface
@@ -41,6 +44,7 @@ export function AppGlassCard({
       isInteractive={isInteractive}
       cornerRadius={cornerRadius}
       style={style}
+      onLayout={onLayout}
     >
       {children}
     </GlassSurface>
