@@ -32,6 +32,17 @@ import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 const silentLogger = pino({ level: "silent" });
 
+async function runSdkClientMessages(messages: SDKMessage[]): Promise<ClaudeClientEvent[]> {
+  const client = new ClaudeSdkClient(
+    { query: () => makeQuery(sdkMessages(messages)) },
+    silentLogger,
+  );
+  return collect(client.run(
+    { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+    new AbortController().signal,
+  ));
+}
+
 function sdkTopLevelBash(toolUseId: string, sessionId: string): SDKMessage {
   return {
     type: "assistant",
@@ -959,6 +970,137 @@ describe("ClaudeSdkClient", () => {
       maxTokens: 1_000_000,
       percent: 41.8,
     });
+  });
+
+  it("uses result iterations for the V1 final context usage", async () => {
+    const events = await runSdkClientMessages([
+      {
+        type: "assistant",
+        message: {
+          model: "claude-opus-5-5",
+          usage: {
+            input_tokens: 4,
+            output_tokens: 5,
+            cache_read_input_tokens: 245_563,
+            cache_creation_input_tokens: 1_141,
+          },
+          content: [{ type: "text", text: "done" }],
+        },
+        parent_tool_use_id: null,
+        uuid: "assistant-context-usage-v1",
+        session_id: "claude-sess-v1",
+      } as unknown as SDKMessage,
+      sdkSuccessResult("claude-sess-v1", "done", {
+        usage: {
+          input_tokens: 4,
+          output_tokens: 272,
+          cache_read_input_tokens: 245_563,
+          cache_creation_input_tokens: 1_141,
+          iterations: [{
+            type: "message",
+            input_tokens: 4,
+            output_tokens: 272,
+            cache_read_input_tokens: 245_563,
+            cache_creation_input_tokens: 1_141,
+          }],
+        },
+        modelUsage: { "claude-opus-5-5": { contextWindow: 1_000_000 } },
+      }),
+    ]);
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 246_980,
+      maxTokens: 1_000_000,
+      percent: 24.7,
+    });
+  });
+
+  it("uses result iterations for the V2 final context usage", async () => {
+    const events = await runSdkClientMessages([
+      {
+        type: "assistant",
+        message: {
+          model: "claude-sonnet-5-5",
+          usage: {
+            input_tokens: 2,
+            output_tokens: 8,
+            cache_read_input_tokens: 366_455,
+            cache_creation_input_tokens: 57,
+          },
+          content: [{ type: "text", text: "done" }],
+        },
+        parent_tool_use_id: null,
+        uuid: "assistant-context-usage-v2",
+        session_id: "claude-sess-v2",
+      } as unknown as SDKMessage,
+      sdkSuccessResult("claude-sess-v2", "done", {
+        usage: {
+          input_tokens: 2,
+          output_tokens: 12,
+          cache_read_input_tokens: 366_455,
+          cache_creation_input_tokens: 57,
+          iterations: [{
+            type: "message",
+            input_tokens: 2,
+            output_tokens: 12,
+            cache_read_input_tokens: 366_455,
+            cache_creation_input_tokens: 57,
+          }],
+        },
+        modelUsage: { "claude-sonnet-5-5": { contextWindow: 1_000_000 } },
+      }),
+    ]);
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 366_526,
+      maxTokens: 1_000_000,
+      percent: 36.7,
+    });
+  });
+
+  it("falls back to the foreground stream usage when result iterations are empty", async () => {
+    const events = await runSdkClientMessages([
+      {
+        type: "assistant",
+        message: {
+          model: "claude-sonnet-5-5",
+          usage: {
+            input_tokens: 2,
+            output_tokens: 8,
+            cache_read_input_tokens: 366_455,
+            cache_creation_input_tokens: 57,
+          },
+          content: [{ type: "text", text: "done" }],
+        },
+        parent_tool_use_id: null,
+        uuid: "assistant-context-usage-empty-iterations",
+        session_id: "claude-sess-empty-iterations",
+      } as unknown as SDKMessage,
+      sdkSuccessResult("claude-sess-empty-iterations", "done", {
+        usage: { iterations: [] },
+        modelUsage: { "claude-sonnet-5-5": { contextWindow: 1_000_000 } },
+      }),
+    ]);
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 366_522,
+      maxTokens: 1_000_000,
+      percent: 36.7,
+    });
+  });
+
+  it("omits context usage when result totals are the only usage source", async () => {
+    const events = await runSdkClientMessages([
+      sdkSuccessResult("claude-sess-no-iteration", "done", {
+        usage: { input_tokens: 100, output_tokens: 20 },
+        modelUsage: { "claude-test-model": { contextWindow: 200_000 } },
+      }),
+    ]);
+
+    expect(events.map((event) => event.type)).toEqual(["result", "complete"]);
   });
 
   it("initial image attachments are embedded as Claude image content blocks", async () => {
@@ -4467,7 +4609,11 @@ function sdkSuccessResult(
     is_error: false,
     result,
     session_id: sessionId,
-    usage: { input_tokens: 1, output_tokens: 1 },
+    usage: {
+      input_tokens: 1,
+      output_tokens: 1,
+      iterations: [{ type: "message", input_tokens: 1, output_tokens: 1 }],
+    },
     total_cost_usd: 0.01,
     stop_reason: "end_turn",
     modelUsage: {
