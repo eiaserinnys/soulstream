@@ -18,6 +18,7 @@ import { SessionCard } from '../../components/SessionCard';
 import { ToolEvent } from '../../components/events/ToolEvent';
 import { ClaudeRuntimeTasksStrip } from '../../components/chat/ClaudeRuntimeTasksStrip';
 import { ClaudeRuntimeSignalsStrip } from '../../components/chat/ClaudeRuntimeSignalsStrip';
+import { CollapsibleCaption } from '../../components/chat/CollapsibleCaption';
 import { useChatStore } from '../../store/chatStore';
 
 const SRC_ROOT = path.resolve(__dirname, '../..');
@@ -142,6 +143,11 @@ describe('direct touch target contract', () => {
       signals.getByTestId('runtime-signals-header-touch'),
       signals.getByTestId('runtime-signals-refresh-touch'),
     ];
+    const caption = render(React.createElement(CollapsibleCaption, {
+      title: 'Jev 후보 3',
+      children: '접힌 내용',
+    }));
+    touchFrames.push(caption.getByRole('button', { name: 'Jev 후보 3' }));
 
     for (const frame of touchFrames) {
       const style = StyleSheet.flatten(frame.props.style);

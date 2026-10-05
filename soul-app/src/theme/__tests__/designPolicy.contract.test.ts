@@ -13,6 +13,7 @@ const DISCLOSURE_CONSUMERS = [
   'components/chat/ClaudeRuntimeTasksStrip.tsx',
   'components/chat/ClaudeRuntimeSchedulesStrip.tsx',
   'components/chat/ClaudeRuntimeSignalsStrip.tsx',
+  'components/chat/CollapsibleCaption.tsx',
 ] as const;
 
 describe('v3 design policy contract', () => {
