@@ -62,20 +62,20 @@ describe("persistent context host route", () => {
   it("logs the route deadline and unexpected error null paths once", async () => {
     const app = Fastify(); apps.push(app);
     const logNullReason = vi.fn();
-    const evaluatePersistentCandidates = vi.fn(async () => ({ observation: { input_id: "input", selected: [] } }));
+    const evaluatePersistentCandidates = vi.fn(async (_input: PersistentContextEvaluationInput) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { observation: { input_id: "input", selected: [] } };
+    });
     registerPersistentContextHostRoutes(app, {
       authBearerToken: "service-secret",
       service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
       logNullReason,
     });
-    const now = vi.spyOn(Date, "now");
-    now.mockReturnValueOnce(1_000).mockReturnValueOnce(1_000).mockReturnValueOnce(1_001);
     const deadlineResponse = await app.inject({
       method: "POST", url: "/api/persistent-context/host/evaluate",
       headers: { authorization: "Bearer service-secret" },
       payload: { args: { session_id: "deadline-session", input_id: "input", request: "request", budget_ms: 1 } },
     });
-    now.mockRestore();
     expect(deadlineResponse.json()).toEqual({ observation: null });
     expect(logNullReason).toHaveBeenCalledTimes(1);
     expect(logNullReason).toHaveBeenLastCalledWith("cancelled_or_deadline", "deadline-session", expect.any(Number));
