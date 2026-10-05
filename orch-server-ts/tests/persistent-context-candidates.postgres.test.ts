@@ -7,6 +7,62 @@ import { SessionStoryReadRepository } from "../src/control_plane/repositories/se
 import { createFullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 
 describe("persistent context candidates in PostgreSQL", () => {
+  it("orders recent completions by terminal time when event ids and session updates disagree", async () => {
+    const db = await createFullSchemaPostgresHarness();
+    try {
+      await db.sql`INSERT INTO folders (id, name, archived, settings) VALUES ('jev-time-visible', 'Visible', false, '{}')`;
+      await db.sql`
+        INSERT INTO sessions (session_id, folder_id, session_type, status, display_name, metadata, updated_at, termination_event_id)
+        VALUES
+          ('jev-time-current', 'jev-time-visible', 'claude', 'running', 'Current',
+            '[{"type":"persistent_session","value":{"enabled":true}}]'::jsonb, '2026-03-02T00:00:00Z', NULL),
+          ('jev-many-events-ended-earlier', 'jev-time-visible', 'claude', 'completed', 'Many events', '[]'::jsonb,
+            '2026-03-01T00:00:00Z', 9000),
+          ('jev-fewer-events-ended-later', 'jev-time-visible', 'claude', 'completed', 'Fewer events', '[]'::jsonb,
+            '2026-01-01T00:00:00Z', 9)
+      `;
+      await db.sql`
+        INSERT INTO events (session_id, id, event_type, payload, created_at)
+        SELECT 'jev-many-events-ended-earlier', event_id,
+          CASE WHEN event_id = 9000 THEN 'complete' ELSE 'assistant_message' END,
+          '{}', CASE WHEN event_id = 9000 THEN '2026-01-10T00:00:00Z'::timestamptz
+            ELSE '2025-01-01T00:00:00Z'::timestamptz END
+        FROM generate_series(1, 9000) AS event_id
+      `;
+      await db.sql`
+        INSERT INTO events (session_id, id, event_type, payload, created_at)
+        SELECT 'jev-fewer-events-ended-later', event_id,
+          CASE WHEN event_id = 9 THEN 'complete' ELSE 'assistant_message' END,
+          '{}', CASE WHEN event_id = 9 THEN '2026-02-10T00:00:00Z'::timestamptz
+            ELSE '2025-01-01T00:00:00Z'::timestamptz END
+        FROM generate_series(1, 9) AS event_id
+      `;
+      await db.sql`
+        INSERT INTO events (session_id, id, event_type, payload, searchable_text)
+        VALUES ('jev-time-current', 1, 'user_message', '{"input_id":"input-current"}', 'request')
+      `;
+      const liveSql = db.sql as unknown as LiveSearchSql;
+      const searchConnectionFactory: LiveSearchDbConnectionFactory = {
+        open: async () => ({ sql: liveSql, close: async () => {} }),
+      };
+      const repositories = createPersistentContextCandidateRepositories({
+        searchDbConnectionFactory: searchConnectionFactory,
+        storyReads: new SessionStoryReadRepository(db.sql as unknown as SqlClient, searchConnectionFactory),
+      });
+
+      const raw = await repositories.readSessionAndBoundedCandidates(
+        "jev-time-current", "input-current", new AbortController().signal, Date.now() + 3_000,
+      );
+
+      expect(raw.recentCompletedSessions.map(({ sessionId }) => sessionId)).toEqual([
+        "jev-fewer-events-ended-later",
+        "jev-many-events-ended-earlier",
+      ]);
+    } finally {
+      await db.cleanup();
+    }
+  }, 30_000);
+
   it("bounds visible cards and completed sessions and reads only pre-input summaries", async () => {
     const db = await createFullSchemaPostgresHarness();
     try {

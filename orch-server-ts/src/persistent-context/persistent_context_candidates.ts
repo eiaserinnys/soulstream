@@ -119,24 +119,41 @@ export function createPersistentContextCandidateRepositories(options: {
           display_name: string | null;
           first_request: string | null;
         }>>`
-          SELECT completed.session_id, completed.display_name,
+          -- Updated_at bounds the window; terminal event time determines the exact final order inside it.
+          WITH recent AS (
+            SELECT completed.session_id, completed.display_name,
+              completed.termination_event_id, completed.updated_at
+            FROM sessions completed
+            WHERE completed.status = 'completed'
+              AND completed.session_id <> ${sessionId}
+              AND COALESCE(completed.session_type, 'claude') <> 'llm'
+              AND completed.folder_id = ANY(${allowedFolderIds}::text[])
+            ORDER BY completed.updated_at DESC, completed.session_id COLLATE "C"
+            LIMIT 50
+          ), ordered_recent AS (
+            SELECT recent.session_id, recent.display_name, recent.updated_at,
+              terminal.created_at AS terminal_created_at
+            FROM recent
+            LEFT JOIN events terminal
+              ON terminal.session_id = recent.session_id
+              AND terminal.id = recent.termination_event_id
+            ORDER BY COALESCE(terminal.created_at, recent.updated_at) DESC,
+              recent.session_id COLLATE "C"
+            LIMIT 5
+          )
+          SELECT ordered_recent.session_id, ordered_recent.display_name,
             first_input.searchable_text AS first_request
-          FROM sessions completed
+          FROM ordered_recent
           LEFT JOIN LATERAL (
             SELECT event.searchable_text
             FROM events event
-            WHERE event.session_id = completed.session_id
+            WHERE event.session_id = ordered_recent.session_id
               AND event.event_type = 'user_message'
             ORDER BY event.id ASC
             LIMIT 1
           ) first_input ON TRUE
-          WHERE completed.status = 'completed'
-            AND completed.session_id <> ${sessionId}
-            AND COALESCE(completed.session_type, 'claude') <> 'llm'
-            AND completed.folder_id = ANY(${allowedFolderIds}::text[])
-          ORDER BY completed.termination_event_id DESC NULLS LAST,
-            completed.updated_at DESC, completed.session_id COLLATE "C"
-          LIMIT 5
+          ORDER BY COALESCE(ordered_recent.terminal_created_at, ordered_recent.updated_at) DESC,
+            ordered_recent.session_id COLLATE "C"
         `);
         return {
           sessionIsPersistent: session.persistent === true,
