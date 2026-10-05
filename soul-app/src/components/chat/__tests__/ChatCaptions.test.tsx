@@ -61,12 +61,28 @@ describe('CollapsibleCaption', () => {
     const titleRow = screen.UNSAFE_getAllByType(View).find((view) =>
       StyleSheet.flatten(view.props.style).borderRadius === FOUNDATION_RADIUS.chip);
     expect(titleRow).toBeTruthy();
+    expect(StyleSheet.flatten(titleRow?.props.style)).toMatchObject({
+      alignSelf: 'flex-start',
+      maxWidth: '100%',
+      paddingHorizontal: DESIGN_SPACING.sm,
+      marginLeft: -DESIGN_SPACING.sm,
+    });
+    expect(StyleSheet.flatten(titleText.props.style)).toMatchObject({
+      color: LIGHT_COLORS.textPlaceholder,
+    });
     fireEvent(button, 'pressIn');
     const pressedTitleRow = screen.UNSAFE_getAllByType(View).find((view) =>
       StyleSheet.flatten(view.props.style).borderRadius === FOUNDATION_RADIUS.chip);
     expect(StyleSheet.flatten(pressedTitleRow?.props.style)).toMatchObject({
       borderRadius: FOUNDATION_RADIUS.chip,
       backgroundColor: LIGHT_COLORS.surfaceMuted,
+    });
+    expect(StyleSheet.flatten(titleText.props.style)).toMatchObject({
+      color: LIGHT_COLORS.textSecondary,
+    });
+    const arrow = screen.UNSAFE_getAllByType(Text).find((text) => text.props.children === '∧');
+    expect(StyleSheet.flatten(arrow?.props.style)).toMatchObject({
+      color: LIGHT_COLORS.textSecondary,
     });
   });
 });
@@ -92,7 +108,7 @@ describe('LabeledDivider', () => {
         height: StyleSheet.hairlineWidth,
         backgroundColor: LIGHT_COLORS.border,
         flex: 1,
-        minWidth: 0,
+        minWidth: DESIGN_SPACING.xl,
       });
       expect(line.props.importantForAccessibility).toBe('no');
     }

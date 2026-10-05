@@ -35,10 +35,17 @@ export function CollapsibleCaption({
       >
         <View style={styles.contentStack}>
           <View style={[styles.titleRow, pressed && styles.titlePressed]}>
-            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.title}>
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={[styles.title, pressed && styles.titlePressedText]}
+            >
               {title}
             </Text>
-            <DisclosureIcon expanded={expanded} color={t.colors.textSecondary} />
+            <DisclosureIcon
+              expanded={expanded}
+              color={pressed ? t.colors.textSecondary : t.colors.textPlaceholder}
+            />
           </View>
           {expanded ? <View style={styles.content}>{children}</View> : null}
         </View>
@@ -62,7 +69,6 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     wrapper: {
       paddingHorizontal: t.spacing.lg,
-      paddingVertical: t.spacing.sm,
     },
     touchFrame: {
       alignSelf: 'stretch',
@@ -77,14 +83,18 @@ function makeStyles(t: DesignTokens) {
       width: '100%',
       minHeight: t.hitTarget.min,
       paddingTop: (t.hitTarget.min - t.uiSpacing.xl) / 2,
+      paddingBottom: (t.hitTarget.min - t.uiSpacing.xl) / 2,
       gap: t.uiSpacing.xxs,
     },
     titleRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: t.uiSpacing.sm,
-      width: '100%',
+      alignSelf: 'flex-start',
+      maxWidth: '100%',
       minHeight: t.uiSpacing.xl,
+      paddingHorizontal: t.uiSpacing.sm,
+      marginLeft: -t.uiSpacing.sm,
       borderRadius: t.foundation.radius.chip,
     },
     titlePressed: {
@@ -92,9 +102,12 @@ function makeStyles(t: DesignTokens) {
     },
     title: {
       flexShrink: 1,
-      color: t.colors.textSecondary,
+      color: t.colors.textPlaceholder,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
+    },
+    titlePressedText: {
+      color: t.colors.textSecondary,
     },
     content: {
       gap: t.uiSpacing.xxs,

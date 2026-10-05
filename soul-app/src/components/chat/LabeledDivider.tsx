@@ -30,7 +30,7 @@ function makeStyles(t: DesignTokens) {
     },
     line: {
       flex: 1,
-      minWidth: 0,
+      minWidth: t.uiSpacing.xl,
       height: StyleSheet.hairlineWidth,
       backgroundColor: t.colors.border,
     },
