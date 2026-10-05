@@ -38,7 +38,7 @@ export function CollapsibleCaption({
           <span className={`min-w-0 truncate ${align === "end" ? "text-right" : "text-left"}`}>{title}</span>
           <DisclosureActionIcon expanded={expanded} />
         </Button>
-        <div className={`mt-0.5 min-w-0 space-y-0.5 ${align === "end" ? "text-right" : ""}`} hidden={!expanded} id={contentId}>
+        <div className={`mt-0.5 min-w-0 space-y-0.5 ${align === "end" ? "max-w-full text-right" : ""}`} hidden={!expanded} id={contentId}>
           {children}
         </div>
       </div>

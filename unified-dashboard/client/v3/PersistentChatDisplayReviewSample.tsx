@@ -9,6 +9,7 @@ import { SettingFieldWidget, type SettingField } from "../components/config/Sett
 const inputId = "components-review-input";
 const emptyInputId = "components-review-empty-input";
 const longInputId = "components-review-long-input";
+const combinedInputId = "components-review-combined-input";
 
 function candidateObservation(input_id: string, selected: Array<{
   kind: "turn_summary" | "card" | "session";
@@ -40,6 +41,29 @@ function candidateEvent(input_id: string, selected: Parameters<typeof candidateO
   };
 }
 
+function assignedCardContextEvent(input_id: string) {
+  return {
+    type: "debug",
+    kind: "assigned_card_context_snapshot",
+    content: "담당 카드 상황 요약",
+    timestamp: 11,
+    capture: {
+      source: "prepared_model_input",
+      sessionId: "components-review-pas",
+      registrationId: "review-registration",
+      executionCommandId: "review-command",
+      inputId: input_id,
+      identityMissing: false,
+      snapshot: {
+        total: 1,
+        omitted: 0,
+        capturedAt: "2026-10-05T00:00:00.000Z",
+        cards: [{ id: "review-assigned-card", title: "담당 카드 상황 요약", status: "running" }],
+      },
+    },
+  };
+}
+
 const candidateEvents = [
   candidateEvent(inputId, [
     { kind: "turn_summary", session_id: "review-session", summary_event_id: 38, turn_number: 38, label: "T38", line: "영구 세션 설정의 표시 토글", score: 3, raw_score: 2.65 },
@@ -49,6 +73,10 @@ const candidateEvents = [
   candidateEvent(emptyInputId, []),
   candidateEvent(longInputId, [
     { kind: "card", card_id: "review-long-card", label: "#413", line: "좁은 화면에서 한 줄 말줄임을 확인하기 위한 매우 긴 Jev 후보 설명 문장입니다", score: 3, raw_score: 2.8 },
+  ]),
+  candidateEvent(combinedInputId, [
+    { kind: "card", card_id: "review-combined-card", label: "#414", line: "같은 입력에 연결된 후보", score: 2, raw_score: 2.3 },
+    { kind: "session", session_id: "review-combined-session", label: "PAS 관제", line: "담당 카드 기록과 같은 입력", score: 2, raw_score: 2.15 },
   ]),
 ];
 
@@ -71,6 +99,9 @@ export function PersistentChatDisplayReviewSample() {
       { event: candidateEvents[1] as never, eventId: 8 },
       { event: { type: "user_message", timestamp: 8, text: "긴 후보 설명을 확인해줘", input_id: longInputId } as never, eventId: 9 },
       { event: candidateEvents[2] as never, eventId: 10 },
+      { event: { type: "user_message", timestamp: 10, text: "같은 입력에 두 기록을 표시해줘", input_id: combinedInputId } as never, eventId: 11 },
+      { event: candidateEvents[3] as never, eventId: 12 },
+      { event: assignedCardContextEvent(combinedInputId) as never, eventId: 13 },
     ], context, null, "components-review-pas", null, 0, true);
     return flattenTree(result.root);
   }, []);

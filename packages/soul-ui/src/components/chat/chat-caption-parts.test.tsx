@@ -94,6 +94,7 @@ describe("chat caption parts", () => {
     expect(content?.classList.contains("w-full")).toBe(true);
     expect(content?.classList.contains("max-w-[86%]")).toBe(true);
     expect(content?.classList.contains("items-end")).toBe(true);
+    expect(container.querySelector("[id]")?.classList.contains("max-w-full")).toBe(true);
     expect(button?.className).toContain("-me-2");
     expect(button?.className).toContain("!pe-2");
     expect(button?.className).toContain("justify-end");

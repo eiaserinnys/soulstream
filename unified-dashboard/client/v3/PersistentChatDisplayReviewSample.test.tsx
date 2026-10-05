@@ -27,6 +27,9 @@ describe("PersistentChatDisplayReviewSample", () => {
     expect(container.textContent).toContain("Jev 후보 3");
     expect(container.textContent).toContain("Jev 후보 0");
     expect(container.textContent).toContain("관련 후보를 찾아줘");
+    const sharedInput = container.textContent ?? "";
+    expect(sharedInput.indexOf("같은 입력에 두 기록을 표시해줘")).toBeLessThan(sharedInput.indexOf("Jev 후보 2"));
+    expect(sharedInput.indexOf("Jev 후보 2")).toBeLessThan(sharedInput.indexOf("담당 카드 상황 요약"));
 
     const emptyCaption = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("Jev 후보 0"));
