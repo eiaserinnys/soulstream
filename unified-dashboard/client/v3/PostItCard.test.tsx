@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { PostItCardView, PostItGrid, postItRotation } from "./PostItCard";
-import { reviewCard } from "./components-review-fixtures";
+import { reviewCard, reviewCardItems, reviewNow } from "./components-review-fixtures";
+import { CardRowView } from "./CardRow";
 
 it("uses the complete original body and reserves the same footer for empty cards", () => {
   const body = "보고 제목 대신 실제 원문입니다.\n두 번째 줄도 유지합니다.";
@@ -44,4 +45,17 @@ it("offers an explicit compact presentation while the default card keeps its exi
   expect(compact).toContain("v3-postit-card--compact");expect(standard).not.toContain("v3-postit-card--compact");
   expect(compact).toContain(props.activity.body);expect(standard).toContain(props.activity.body);
   expect(renderToStaticMarkup(createElement(PostItGrid,{variant:"compact"}))).toContain("v3-postit-grid--compact");
+});
+
+it("shows every active item dot, confirmed count, current text and user turn in both list card forms",()=>{
+  const card={...reviewCard,items:reviewCardItems,now:reviewNow};
+  const postIt=renderToStaticMarkup(createElement(PostItCardView,{card,activity:null,onOpen(){}}));
+  const row=renderToStaticMarkup(createElement(CardRowView,{card,onOpen(){}}));
+  for(const html of [postIt,row]){
+    expect(html.match(/v3-card-progress-dot /g)).toHaveLength(7);
+    expect(html).toContain("확인 3");
+    expect(html).toContain("요청된 카드 화면을 확인하고 있습니다.");
+    expect(html).toContain("볼 것 2");
+    expect(html).toContain("보고된 결과 두 개를 확인해 주세요.");
+  }
 });

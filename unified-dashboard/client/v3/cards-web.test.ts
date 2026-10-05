@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cardRequest, createCardInput, groupCards, queueAfterId } from "@seosoyoung/soul-ui/cards/card-api";
+import { cardRequest, confirmCardItem, createCardInput, groupCards, queueAfterId } from "@seosoyoung/soul-ui/cards/card-api";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 
-const card = (id: string, status: string, extra = {}) => ({ id, folderId: "folder", title: id, status, version: 2, archived: false, ...extra });
+const card = <T extends Record<string, unknown> = Record<string, never>,>(id: string, status: string, extra: T = {} as T) => ({ id, folderId: "folder", title: id, status, version: 2, archived: false, ...extra });
 afterEach(() => { vi.unstubAllGlobals(); useCardStore.getState().reset(); });
 describe("card web contracts", () => {
   it("preserves the full request and uses the first line as title with selected execution fields", () => {
@@ -58,6 +58,77 @@ describe("card web contracts", () => {
     expect(useCardStore.getState().byId.changed.latestActivity?.body).toBe("<p>신선한 보고</p>");
     expect(useCardStore.getState().details.changed.reports).toHaveLength(1);
   });
+  it("confirms one item with the authoritative card response and no separate GET", async () => {
+    const confirmedCard=card("c","running",{items:[{id:3,title:"확인",state:"done",result:"완료",evidence:[],caveat:null,rev:2,confirmed:{at:"2026-10-05T00:00:00Z",rev:2},fixOpen:0,reopened:null,from:null,createdAt:"2026-10-04T00:00:00Z",reportedAt:"2026-10-05T00:00:00Z",display:"confirmed"}]});
+    const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({card:confirmedCard})));
+    vi.stubGlobal("fetch",fetch);
+    await expect(confirmCardItem("c",3,true)).resolves.toEqual({card:confirmedCard});
+    expect(fetch.mock.calls.map(call=>call[0])).toEqual(["/api/cards/c/items/3/confirm"]);
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({confirmed:true});
+  });
+});
+
+describe("card item confirmation",()=>{
+ const makeItem=(id:number,display:"todo"|"doing"|"confirmed")=>({id,title:`항목 ${id}`,state:display==="confirmed"?"done" as const:display,result:display==="confirmed"?"완료":null,evidence:[],caveat:null,rev:1,confirmed:display==="confirmed"?{at:"2026-10-05T00:00:00Z",rev:1}:null,fixOpen:0,reopened:null,from:null,createdAt:"2026-10-04T00:00:00Z",reportedAt:null,display});
+ const setup=(items:ReturnType<typeof makeItem>[]=[makeItem(1,"todo"),makeItem(2,"doing")])=>{
+  const current=card("c","running",{items});
+  useCardStore.setState({byId:{c:current as never},details:{c:{card:current,reports:[],questions:[],sessions:[]} as never}});
+  return current;
+ };
+ it("keeps confirmation intents per item when requests overlap and one fails",async()=>{
+  const current=setup();let resolveFirst!:(response:Response)=>void,resolveSecond!:(response:Response)=>void;
+  const fetch=vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{resolveFirst=resolve;})).mockImplementationOnce(()=>new Promise<Response>(resolve=>{resolveSecond=resolve;}));vi.stubGlobal("fetch",fetch);
+  const store=useCardStore.getState();
+  const first=store.confirmItem("c",1,true),second=store.confirmItem("c",2,true);
+  expect(useCardStore.getState().pendingItemConfirmations.c).toEqual({1:true,2:true});
+  const confirmed={...current,items:[{...current.items![0],confirmed:{at:"2026-10-05T01:00:00Z",rev:1},display:"confirmed" as const},current.items![1]]};
+  resolveFirst(new Response(JSON.stringify({card:confirmed})));await first;
+  expect(useCardStore.getState().pendingItemConfirmations.c).toEqual({2:true});
+  expect(useCardStore.getState().byId.c.items?.[0].display).toBe("confirmed");
+  resolveSecond(new Response(JSON.stringify({message:"저장 실패"}),{status:500}));
+  await expect(second).rejects.toThrow("저장 실패");
+  expect(useCardStore.getState().pendingItemConfirmations.c).toBeUndefined();
+  expect(useCardStore.getState().byId.c.items?.[0].display).toBe("confirmed");
+  expect(useCardStore.getState().byId.c.items?.[1].display).toBe("doing");
+ });
+ it("sends a target comment with itemId then refreshes only that card",async()=>{
+  const current=setup([makeItem(4,"doing")]);
+  const saved={id:"saved-target",cardId:"c",authorKind:"user",authorId:"director",sessionId:null,kind:"comment",itemId:4,body:"고쳐주세요",createdAt:"2026-10-05T01:00:00Z"};
+  const fixed={...current,items:[{...current.items![0],confirmed:null,fixOpen:1,display:"fix" as const}]};
+  const fetch=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(saved))).mockResolvedValueOnce(new Response(JSON.stringify({card:fixed,reports:[],questions:[],sessions:[],comments:[saved]})));
+  vi.stubGlobal("fetch",fetch);
+  await useCardStore.getState().addComment("c","고쳐주세요","target-key",4);
+  expect(fetch.mock.calls.map(call=>call[0])).toEqual(["/api/cards/c/comments","/api/cards/c"]);
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({body:"고쳐주세요",idempotencyKey:"target-key",itemId:4});
+  expect(useCardStore.getState().byId.c.items?.[0].display).toBe("fix");
+  expect(useCardStore.getState().details.c.comments?.[0].itemId).toBe(4);
+ });
+ it("keeps both confirmations when the older response arrives last",async()=>{
+  const current=setup();let resolveFirst!:(response:Response)=>void,resolveSecond!:(response:Response)=>void;
+  vi.stubGlobal("fetch",vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{resolveFirst=resolve;})).mockImplementationOnce(()=>new Promise<Response>(resolve=>{resolveSecond=resolve;})));
+  const first=useCardStore.getState().confirmItem("c",1,true),second=useCardStore.getState().confirmItem("c",2,true);
+  const newer={...current,version:4,items:[makeItem(1,"confirmed"),makeItem(2,"confirmed")]};
+  resolveSecond(new Response(JSON.stringify({card:newer})));await second;
+  expect(useCardStore.getState().pendingItemConfirmations.c).toEqual({1:true});
+  resolveFirst(new Response(JSON.stringify({card:{...current,version:3,items:[makeItem(1,"confirmed"),makeItem(2,"doing")]}})));await first;
+  expect(useCardStore.getState().byId.c).toEqual(newer);
+  expect(useCardStore.getState().details.c.card).toEqual(newer);
+  expect(useCardStore.getState().pendingItemConfirmations.c).toBeUndefined();
+ });
+ it("keeps a confirmed card and its folder when a delayed SSE GET arrives last",async()=>{
+  const current=setup();let finishGet!:(response:Response)=>void;
+  const newer={...current,version:4,folderId:"new-folder",items:[makeItem(1,"confirmed"),makeItem(2,"confirmed")]};
+  vi.stubGlobal("fetch",vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{finishGet=resolve;}))
+   .mockResolvedValueOnce(new Response(JSON.stringify({card:newer}))));
+  useCardStore.setState({folderIds:{folder:["c"],"new-folder":[]}});
+  const refresh=useCardStore.getState().handleCardUpdated({cardId:"c",folderId:"folder"});
+  await useCardStore.getState().confirmItem("c",2,true);
+  const saved=useCardStore.getState().details.c;
+  finishGet(new Response(JSON.stringify({card:{...current,version:3},reports:[],questions:[],sessions:[]})));
+  expect(await refresh).toBe(saved);
+  expect(useCardStore.getState().byId.c).toEqual(newer);
+  expect(useCardStore.getState().folderIds).toEqual({folder:[],"new-folder":["c"]});
+ });
 });
 
 describe("card comments",()=>{

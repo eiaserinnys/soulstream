@@ -1,6 +1,6 @@
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
-import { useState, type HTMLAttributes, type ReactNode } from "react";
-import { Button, MarkdownContent, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
+import { useRef, useState, type HTMLAttributes, type ReactNode } from "react";
+import { Button, MarkdownContent } from "@seosoyoung/soul-ui";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
@@ -8,6 +8,7 @@ import { CustomViewIframe } from "@seosoyoung/soul-ui/custom-view/CustomViewRend
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { CardDetail, CardReport, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { cardRequestMarkdown } from "./card-request-markdown";
+import { CardImageViewer } from "./CardImageViewer";
 
 export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,initialImage}: {
  initialImage?:{src:string;alt:string};
@@ -17,7 +18,15 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  const {chatTypographyStyle}=useChatTypography();
  const [expanded,setExpanded]=useState<ReadonlySet<string>>(()=>new Set());
  const [image,setImage]=useState<{src:string;alt:string}|null>(initialImage??null);
- const openImage=(src:string,alt:string)=>setImage({src,alt});
+ const imageTrigger=useRef<HTMLElement|null>(null);
+ const openImage=(src:string,alt:string)=>{
+  imageTrigger.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
+  setImage({src,alt});
+ };
+ const closeImage=()=>{
+  setImage(null);
+  requestAnimationFrame(()=>imageTrigger.current?.focus({preventScroll:true}));
+ };
  const entries:{id:string;at:string;kind:string;role:"user"|"assistant";spoken?:boolean;collapsible?:boolean;body:ReactNode}[]=[
   {id:"request",at:card.createdAt,kind:"지시",role:"user",collapsible:true,body:<RequestPreview request={card.request} attachments={card.attachments??[]} expanded={expanded.has("request")} onImageClick={openImage}/>},
   ...(detail?.questions??[]).flatMap(q=>[
@@ -25,13 +34,17 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
    ...(q.answer?[{id:`a-${q.id}`,at:q.answeredAt??q.askedAt,kind:"답",role:"user" as const,body:<MarkdownContent content={q.answer} onImageClick={openImage}/>}]:[]),
   ]),
   ...(detail?.reports??[]).map(report=>({id:report.id,at:report.createdAt,kind:"보고",role:"assistant" as const,collapsible:true,body:<ReportPreview report={report} expanded={expanded.has(report.id)} onImageClick={openImage}/>})),
-  ...(detail?.comments??[]).map(comment=>({id:comment.id,at:comment.createdAt,kind:"커멘트",spoken:comment.kind==="spoken",role:comment.authorKind==="agent"?"assistant" as const:"user" as const,body:<MarkdownContent content={comment.body} onImageClick={openImage}/>})),
+  ...(detail?.comments??[]).filter(comment=>comment.kind!=="note").map(comment=>{
+   const target=comment.itemId===undefined||comment.itemId===null?undefined:(detail?.card.items??card.items)?.find(item=>item.id===comment.itemId);
+   return {id:comment.id,at:comment.createdAt,kind:"커멘트",spoken:comment.kind==="spoken",role:comment.authorKind==="agent"?"assistant" as const:"user" as const,
+    body:<>{comment.itemId!==undefined&&comment.itemId!==null?<p className="v3-card-comment-target">대상: {comment.itemId}번 {target?.title??"항목"}</p>:null}<MarkdownContent content={comment.body} onImageClick={openImage}/></>};
+  }),
  ];
  entries.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
  const toggle=(id:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next;});
  return <><div className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.map(entry=>{
   const msg:ChatMessage={id:entry.id,treeNodeId:entry.id,treeNodeType:"card",role:entry.role,content:""};
-  const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}):""}</time></div>;
+  const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}):""}</time></div>;
   const bubbleProps:HTMLAttributes<HTMLDivElement>|undefined=entry.collapsible?{
    role:"button",tabIndex:0,className:"outline-none focus-visible:ring-2 focus-visible:ring-ring","aria-expanded":expanded.has(entry.id),
    onClick:event=>{if(!(event.target as Element).closest("a,button,input,iframe"))toggle(entry.id);},
@@ -40,9 +53,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
   return <div key={entry.id} data-card-entry={entry.kind} data-card-role={entry.role}>
    {entry.role==="user"?<UserMessage msg={msg} header={header} portraitUrl={userPortraitUrl} bubbleProps={bubbleProps}>{entry.body}</UserMessage>:<AssistantMessage msg={msg} header={header} portraitUrl={portraitUrl} bubbleProps={bubbleProps}>{entry.body}</AssistantMessage>}
   </div>;
- })}</div><Dialog open={Boolean(image)} onOpenChange={open=>{if(!open)setImage(null);}}><DialogPopup>
-  <DialogTitle className="sr-only">{image?.alt||"이미지"}</DialogTitle>{image?<img src={image.src} alt={image.alt} className="max-w-full object-contain"/>:null}
- </DialogPopup></Dialog></>;
+ })}</div><CardImageViewer image={image} onClose={closeImage}/></>;
 }
 function RequestPreview({request,attachments,expanded,onImageClick}:{request:string;attachments:CardRow["attachments"];expanded:boolean;onImageClick(src:string,alt:string):void}) {
  return <><div className={expanded?undefined:"v3-card-three-lines"}><MarkdownContent content={cardRequestMarkdown(request)} onImageClick={onImageClick}/></div>{attachments.length?<div className="v3-card-report-thumbnails">{attachments.map(attachment=>{

@@ -110,7 +110,7 @@ test("operational session header, search event/session rows and card session his
   await page.goto("/components");
   await page.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
   const card = page.getByTestId("card-detail");
-  await card.getByRole("tab",{name:"내용",exact:true}).click();
+  await card.getByRole("tab",{name:"세션",exact:true}).click();
   popup=await menu(page,card.locator(".v3-card-session-history .v3-run-row"));
   await capture(page,"wide-card-session-menu");
   await page.keyboard.press("Escape");

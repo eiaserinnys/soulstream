@@ -57,14 +57,18 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
   await detail.evaluate(pane=>Promise.all(pane.parentElement!.getAnimations().map(animation=>animation.finished)));
   return detail.evaluate(pane=>{
   const box=(selector:string)=>{const r=pane.querySelector(selector)!.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
-  return {sessions:box('[data-card-section=sessions]'),tabs:box('[role=tablist]'),dock:box('.v3-card-comment-dock'),composer:box('[data-slot=chat-input-composer]'),body:box('[role=tabpanel]')};
+  return {tabs:box('[role=tablist]'),dock:box('.v3-card-comment-dock'),composer:box('[data-slot=chat-input-composer]'),body:box('[role=tabpanel]')};
  });
  };
  const sameFixed=(a:Awaited<ReturnType<typeof fixed>>,b:Awaited<ReturnType<typeof fixed>>)=>{
-  for(const region of ['sessions','dock'] as const)for(const axis of ['left','right','top','bottom'] as const)expect(Math.abs(a[region][axis]-b[region][axis])).toBeLessThanOrEqual(1);
+  for(const region of ['tabs','dock'] as const)for(const axis of ['left','right','top','bottom'] as const)expect(Math.abs(a[region][axis]-b[region][axis])).toBeLessThanOrEqual(1);
  };
  for(const label of ['지시','보고','질문','답','커멘트'])await expect(detail.locator(`[data-card-entry="${label}"]`)).toHaveCount(1);
- await expect(sessionsRegion).toBeVisible();await expect(input).toBeVisible();
+ await expect(sessionsRegion).toBeHidden();await expect(input).toBeVisible();
+ await detail.getByRole('tab',{name:/^세션/}).click();
+ await expect(sessionsRegion).toBeVisible();
+ expect((await sessionsRegion.boundingBox())!.height).toBeGreaterThan(0);
+ await detail.getByRole('tab',{name:/^커멘트/}).click();
  const start=await fixed();
  expect(Math.abs(start.tabs.left-start.composer.left)).toBeLessThanOrEqual(1);
  expect(Math.abs(start.tabs.right-start.composer.right)).toBeLessThanOrEqual(1);
@@ -75,21 +79,21 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  const withAttachment=await fixed();
  await body.evaluate(el=>{el.scrollTop=0;});
  await page.screenshot({path:path.join(output,`after-${width}-comments.png`),animations:'disabled'});
- await detail.getByRole('tab',{name:'내용',exact:true}).click();
- await expect(sessionsRegion).toBeVisible();await expect(input).toBeVisible();
+ await detail.getByRole('tab',{name:/^노트/}).click();
+ await expect(sessionsRegion).toBeHidden();await expect(input).toBeVisible();
  await expect(input).toHaveValue('입력 중 문장');await expect(detail.locator('[title="evidence.png"]')).toBeVisible();
- await expect(body.locator('[data-card-entry],details,summary')).toHaveCount(0);
- await expect(body).toContainText('펼친 내부 정보');
+ await expect(detail.locator('[data-card-tab-panel=notes]').locator('[data-card-entry],details,summary')).toHaveCount(0);
+ await expect(detail.locator('[data-card-tab-panel=notes]')).toContainText('펼친 내부 정보');
  const contentBefore=await fixed();sameFixed(withAttachment,contentBefore);
  await body.evaluate(el=>{el.scrollTop=0;});
  await page.screenshot({path:path.join(output,`after-${width}-content.png`),animations:'disabled'});
  await body.evaluate(el=>{el.scrollTop=el.scrollHeight;});
  expect(await body.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
  const contentAfter=await fixed();sameFixed(contentBefore,contentAfter);
- // Send text plus attachment from the content tab.
+ // Send text plus attachment from the notes tab.
  await detail.getByTestId('send-button').click();await expect(input).toHaveValue('');
  expect(writes[0].body).toContain('입력 중 문장');expect(writes[0].body).toContain('![evidence.png]');
- await detail.getByRole('tab',{name:'커멘트',exact:true}).click();
+ await detail.getByRole('tab',{name:/^커멘트/}).click();
  await expect(detail.locator('[data-card-entry=커멘트]')).toHaveCount(2);
  await input.fill('커멘트 탭 전송');await detail.getByTestId('send-button').click();await expect(input).toHaveValue('');
  expect(writes[1].body).toBe('커멘트 탭 전송');
@@ -97,10 +101,13 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  await page.screenshot({path:path.join(output,`after-${width}-expanded-input.png`),animations:'disabled'});
  await input.fill('');
  if(width>=760){
+  await detail.getByRole('tab',{name:/^세션/}).click();
+  await expect(sessionsRegion).toBeVisible();
   await detail.locator('.v3-run-open').first().click();
   await expect(page.getByTestId('v3-card-session-chat').locator('[data-slot=chat-input-composer]')).toBeVisible();
   await page.screenshot({path:path.join(output,`after-${width}-session.png`),animations:'disabled'});
   sameFixed(start,await fixed());
+  await detail.getByRole('tab',{name:/^커멘트/}).click();
  }
  comments.push(...Array.from({length:20},(_,index)=>({id:`long-${index}`,cardId:card.id,authorKind:'user',kind:'comment',body:`커멘트 ${index+1}: 긴 대화에서도 입력창이 아래에 남습니다.`,createdAt:now})));
  await page.reload();await cardRow.getByRole('button',{name:`카드 ${card.title} 열기`,exact:true}).click();
@@ -109,24 +116,26 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  await body.evaluate(el=>{el.scrollTop=el.scrollHeight;});expect(await body.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
  const longAfter=await fixed();sameFixed(longBefore,longAfter);sameFixed(start,longAfter);
  await page.screenshot({path:path.join(output,`after-${width}-long.png`),animations:'disabled'});
- // Session expansion remains mounted across the tabs.
+ // Measure and operate only the visible session tab; its state remains mounted.
+ await detail.getByRole('tab',{name:/^세션/}).click();
+ await expect(sessionsRegion).toBeVisible();
  await sessionsRegion.getByRole('button',{name:'1개 더',exact:true}).click();
  await expect(sessionsRegion.locator('.v3-run-open')).toHaveCount(4);
- await detail.getByRole('tab',{name:'내용',exact:true}).click();await expect(sessionsRegion.locator('.v3-run-open')).toHaveCount(4);
+ await detail.getByRole('tab',{name:/^노트/}).click();await expect(sessionsRegion.locator('.v3-run-open')).toHaveCount(4);
  writeFileSync(path.join(output,`after-${width}-metrics.json`),JSON.stringify({start,withAttachment,contentBefore,contentAfter,longBefore,longAfter},null,2));
  // Registered samples render the same CardWorkspace / CardDetailPane composition.
  await page.goto('/components');
  const board=page.getByTestId('card-board-sample');
  await board.getByRole('button',{name:'긴 커멘트',exact:true}).click();
- await board.locator('[data-card-id] button').first().click();await expect(detail).toBeVisible();
+ await board.locator('[data-card-id="board-0-1"] .v3-postit-open').click();await expect(detail).toBeVisible();
  await expect(detail.locator('[data-card-entry=커멘트]')).toHaveCount(20);
  for(const label of ['지시','보고','질문','답'])await expect(detail.locator(`[data-card-entry="${label}"]`)).toHaveCount(1);
- await expect(sessionsRegion).toBeVisible();await expect(input).toBeVisible();
+ await expect(sessionsRegion).toBeHidden();await expect(input).toBeVisible();
  await body.evaluate(el=>{el.scrollTop=0;});const sampleComments=await fixed();
  await page.screenshot({path:path.join(output,`after-${width}-sample-comments.png`),animations:'disabled'});
  await body.evaluate(el=>{el.scrollTop=el.scrollHeight;});sameFixed(sampleComments,await fixed());
- await detail.getByRole('tab',{name:'내용',exact:true}).click();await expect(input).toBeVisible();await expect(sessionsRegion).toBeVisible();
- await expect(body).toContainText('내부 요약을 접지 않고 표시합니다.');await expect(body.locator('details,summary')).toHaveCount(0);
+ await detail.getByRole('tab',{name:/^노트/}).click();await expect(input).toBeVisible();await expect(sessionsRegion).toBeHidden();
+ await expect(detail.locator('[data-card-tab-panel=notes]')).toContainText('내부 요약을 접지 않고 표시합니다.');await expect(detail.locator('[data-card-tab-panel=notes]').locator('details,summary')).toHaveCount(0);
  await body.evaluate(el=>{el.scrollTop=0;});sameFixed(sampleComments,await fixed());
  await page.screenshot({path:path.join(output,`after-${width}-sample-content.png`),animations:'disabled'});
  await body.evaluate(el=>{el.scrollTop=el.scrollHeight;});expect(await body.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);sameFixed(sampleComments,await fixed());

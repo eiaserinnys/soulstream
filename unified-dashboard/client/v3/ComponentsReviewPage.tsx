@@ -19,12 +19,13 @@ import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 import { FolderTodayToggle } from "./FolderTodayToggle";
 import { ComponentsReviewControls } from "./ComponentsReviewControls";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
-import { reviewCard, reviewDetail, reviewFolder, reviewFolders, reviewSession, reviewTitle } from "./components-review-fixtures";
+import { reviewCard, reviewCardItems, reviewDetail, reviewFolder, reviewFolders, reviewNow, reviewSession, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
 import { ReadOnlyCardListSample } from "./ReadOnlyCardListSample";
 import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSample";
 import { CardBoardSamples } from "./CardBoardSamples";
+import { CardCheckItemsSamples } from "./CardCheckItemsSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 
 const sections = [
@@ -106,8 +107,11 @@ export function ComponentsReviewPage() {
           <Button variant="link" render={<a href="/dialogues"/>}>다이얼로그 비교</Button>
           <p role="status" className="v3-components-label">{notice}</p>
           <section id="components-board" className="v3-detail-section">
-            <p className="v3-components-label">CardWorkspace / CardDetailPane · 커멘트·내용 탭 · 짧은·긴 대화 · 하단 입력창</p>
+            <p className="v3-components-label">CardWorkspace / CardDetailPane · 확인 항목·커멘트·세션·노트 탭 · 짧은·긴 대화 · 하단 입력창</p>
             <CardBoardSamples/>
+            <Sample name="CardNowPanel / CardCheckItems / CardNotes" state="실제 항목 상태 · 확인함 묶음 · 상황판 이력 · 노트 접기">
+              <CardCheckItemsSamples/>
+            </Sample>
           </section>
           <section id="components-rows" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>목록 행</h3></div>
@@ -130,7 +134,7 @@ export function ComponentsReviewPage() {
               </Sample>
               <Sample name="CardRowView / RunRowFrame" state="기본 · 여러 항목 · 긴 한국어 제목">
                 <div className="v3-run-list">{[reviewCard.title, reviewTitle].map((label, index) => <CardRowView key={label}
-                  card={{ ...reviewCard, id: `components-card-${index}`, title: label }} assignee={reviewSession} detail={reviewDetail} onOpen={() => open("카드")}/>)}</div>
+                  card={{ ...reviewCard, ...(index===0?{items:reviewCardItems,now:reviewNow}:{}), id: `components-card-${index}`, title: label }} assignee={reviewSession} detail={reviewDetail} onOpen={() => open("카드")}/>)}</div>
               </Sample>
               <Sample name="CardRowView / RunRowFrame actions" state="같은 내용 · 막힘 / 검수 · 미리보기 유무 · small 캡">
                 {(["blocked", "review"] as const).map(status => <CardRowView key={status}

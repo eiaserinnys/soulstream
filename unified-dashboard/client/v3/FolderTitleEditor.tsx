@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { errorText } from "./v3-dashboard-utils";
 
@@ -6,10 +6,14 @@ export function FolderTitleEditor({
   title,
   onRename,
   headingLevel = 2,
+  variant = "default",
+  leading,
 }: {
   title: string;
   onRename(title: string): Promise<void>;
   headingLevel?: 1 | 2;
+  variant?: "default" | "card";
+  leading?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
@@ -52,24 +56,29 @@ export function FolderTitleEditor({
     }
   };
 
-  const titleButton = <button
-    type="button"
-    className="v3-task-title-button"
-    aria-label="폴더 제목 편집"
-    title="클릭해서 폴더 제목 편집"
-    onClick={() => {
+  const titleProps = {
+    className: `v3-task-title-button${variant === "card" ? " v3-card-title-button" : ""}`,
+    "aria-label": "폴더 제목 편집",
+    title: "클릭해서 폴더 제목 편집",
+    onClick: () => {
       setDraft(title);
       setError(null);
       setEditing(true);
-    }}
-  >{title}</button>;
+    },
+  };
+  // Inline text can wrap below the preceding status control; an inline button
+  // remains an atomic box and pushes the entire title onto the next line.
+  const titleButton = variant === "card" ? <span {...titleProps} role="button" tabIndex={0}
+    onKeyDown={event=>{
+      if(event.key==="Enter"||event.key===" "){event.preventDefault();event.stopPropagation();titleProps.onClick();}
+    }}>{title}</span> : <button type="button" {...titleProps}>{title}</button>;
 
   return (
-    <div className="v3-task-title-editor">
+      <div className={`v3-task-title-editor${variant === "card" ? " v3-card-title-editor" : ""}`}>
       {editing ? (
         <input
           autoFocus
-          className="v3-task-title-input"
+          className={`v3-task-title-input${variant === "card" ? " v3-card-title-input" : ""}`}
           aria-label="폴더 제목 편집"
           value={draft}
           disabled={saving}
@@ -89,7 +98,7 @@ export function FolderTitleEditor({
           }}
         />
       ) : (
-        headingLevel === 1 ? <h1>{titleButton}</h1> : <h2>{titleButton}</h2>
+        headingLevel === 1 ? <h1>{leading}{titleButton}</h1> : <h2>{leading}{titleButton}</h2>
       )}
       {error ? <p className="v3-task-title-error" role="alert">{error}</p> : null}
     </div>

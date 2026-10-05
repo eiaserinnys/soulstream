@@ -1,6 +1,6 @@
 import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
 import { PaperclipButton } from "@seosoyoung/soul-ui/components/chat/PaperclipButton";
@@ -8,13 +8,14 @@ import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTe
 import { FileAttachmentPreview } from "@seosoyoung/soul-ui/components/FileAttachmentPreview";
 import type { UploadedFile } from "@seosoyoung/soul-ui/hooks/useFileUpload";
 
-export function CardComposer({text,onChangeText,onSend,placeholder,inputLabel,label,disabled,pending,files,onAddFiles,onRemoveFile,onAttachUnavailable,embedded=false}: {
+export function CardComposer({text,onChangeText,onSend,placeholder,inputLabel,label,disabled,pending,files,onAddFiles,onRemoveFile,onAttachUnavailable,embedded=false,focusRequest=0}: {
  text:string;onChangeText(text:string):void;onSend():void;placeholder:string;inputLabel?:string;label:string;disabled:boolean;pending:boolean;
- files:UploadedFile[];onAddFiles?(files:FileList|File[]):void;onRemoveFile(id:string):void;onAttachUnavailable?():void;embedded?:boolean;
+ files:UploadedFile[];onAddFiles?(files:FileList|File[]):void;onRemoveFile(id:string):void;onAttachUnavailable?():void;embedded?:boolean;focusRequest?:number;
 }) {
  const {chatFontSize,chatTypographyStyle}=useChatTypography();
  const textarea=useRef<HTMLTextAreaElement>(null),fileInput=useRef<HTMLInputElement>(null);
  useTextareaAutoHeight(textarea,text,chatFontSize);
+ useEffect(()=>{if(focusRequest>0)textarea.current?.focus();},[focusRequest]);
  return <div className={`v3-chat-surface shrink-0${embedded?"":" pt-2"}`} style={chatTypographyStyle} data-testid="card-composer"
   onDragOver={event=>{if(onAddFiles&&!pending&&event.dataTransfer.types.includes("Files"))event.preventDefault();}}
   onDrop={event=>{if(onAddFiles&&!pending&&event.dataTransfer.files.length){event.preventDefault();onAddFiles(event.dataTransfer.files);}}}>

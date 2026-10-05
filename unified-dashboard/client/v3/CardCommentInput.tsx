@@ -3,7 +3,7 @@ import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { useFileUpload } from "@seosoyoung/soul-ui/hooks/useFileUpload";
 import { CardComposer } from "./CardComposer";
 
-export function CardCommentInput({cardId,nodeId,sessionId,pending,onSend,uploadController}:{uploadController?:import("@seosoyoung/soul-ui/hooks/useFileUpload").UseFileUploadReturn;cardId:string;nodeId?:string|null;sessionId?:string|null;pending:boolean;onSend(body:string):Promise<boolean>}) {
+export function CardCommentInput({cardId,nodeId,sessionId,pending,onSend,uploadController,focusRequest=0}:{uploadController?:import("@seosoyoung/soul-ui/hooks/useFileUpload").UseFileUploadReturn;cardId:string;nodeId?:string|null;sessionId?:string|null;pending:boolean;onSend(body:string):Promise<boolean>;focusRequest?:number}) {
  const draftKey=`composer:card-comment:${cardId}`;
  const text=useDashboardStore(s=>s.drafts[draftKey]??"");
  const setDraft=useDashboardStore(s=>s.setDraft);
@@ -28,7 +28,7 @@ export function CardCommentInput({cardId,nodeId,sessionId,pending,onSend,uploadC
   }
  };
  return <div className="v3-card-comment-dock">
-  <CardComposer text={text} onChangeText={text=>setDraft(draftKey,text)} onSend={()=>void submit()} placeholder="커멘트" label="커멘트 전송" pending={pending} disabled={!ready}
+  <CardComposer text={text} onChangeText={text=>setDraft(draftKey,text)} onSend={()=>void submit()} placeholder="커멘트" label="커멘트 전송" pending={pending} disabled={!ready} focusRequest={focusRequest}
    files={upload.files} onAddFiles={uploadUrl||uploadController?upload.addFiles:undefined} onRemoveFile={upload.removeFile} onAttachUnavailable={()=>setNotice("첨부는 곧 지원합니다. 담당 세션이 연결되면 사용할 수 있습니다.")}/>
   {(notice||upload.files.find(file=>file.status==="error")?.errorMessage)?<p role="status" className="v3-card-error">{notice||upload.files.find(file=>file.status==="error")?.errorMessage}</p>:null}
  </div>;

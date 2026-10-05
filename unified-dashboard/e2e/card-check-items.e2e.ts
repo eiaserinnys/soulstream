@@ -1,0 +1,393 @@
+import { expect, test, type Page } from "@playwright/test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { reviewCorrections, textEvidence } from "./card-check-items-review";
+import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
+
+const output = path.resolve("../../../.local/artifacts/card-checkitems-261005/web-captures");
+const baseURL = process.env.CARD_CHECK_ITEMS_BASE_URL;
+if (!baseURL) throw new Error("CARD_CHECK_ITEMS_BASE_URL must point to the local Vite server.");
+
+async function prepare(page: Page, width: number, realClock = false) {
+  const errors: string[] = [], writes: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/") && !["GET", "HEAD"].includes(request.method()) && !url.pathname.includes("ui-events")) {
+      writes.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+  mkdirSync(output, { recursive: true });
+  await page.setViewportSize({ width, height: width === 1920 ? 1080 : 810 });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "no-preference" });
+  if (!realClock) await page.clock.install({ time: new Date("2026-10-05T09:00:00Z") });
+  await page.addInitScript(() => {
+    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("ls.webglGlass", "0");
+    Object.defineProperty(navigator.serviceWorker, "register", {
+      configurable: true,
+      value: async () => ({ update: async () => undefined, active: null, addEventListener: () => undefined }),
+    });
+    Object.defineProperty(navigator.serviceWorker, "controller", { configurable: true, get: () => null });
+  });
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: 1, liveEventText: "세션 대화 영역은 남는 폭을 사용합니다." });
+  await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ authEnabled: true, devModeEnabled: false }) }));
+  await page.route("**/api/auth/status", route => route.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } }) }));
+  await page.goto(new URL("/components", baseURL).href);
+  await expect(page.getByTestId("components-review")).toBeVisible();
+  await page.locator(".v3-shell.v3-components-page").evaluate(element => (element as HTMLElement).style.setProperty("--v3-navigation-width", "336px"));
+  return { errors, writes };
+}
+
+for (const width of [1920, 1440]) {
+  test(`card check items, workspace width and return behavior ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width);
+    const board = page.getByTestId("card-board-sample");
+    await board.scrollIntoViewIfNeeded();
+
+    const rowSection = page.locator("#components-rows");
+    await rowSection.scrollIntoViewIfNeeded();
+    const row = rowSection.locator('[data-card-id="components-card-0"]');
+    await expect(row.locator(".v3-card-progress-dot")).toHaveCount(7);
+    await expect(row).toContainText("확인 3");
+    await expect(row).toContainText("요청된 카드 화면을 확인하고 있습니다.");
+    await expect(row).toContainText("볼 것 2");
+    await expect(row).toContainText("보고된 결과 두 개를 확인해 주세요.");
+
+    await board.scrollIntoViewIfNeeded();
+    const postit = board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first();
+    await expect(postit.locator(".v3-card-progress-dot")).toHaveCount(7);
+    await expect(postit).toContainText("볼 것 2");
+    await postit.click();
+
+    const workspace = page.getByTestId("v3-card-workspace");
+    const detail = page.getByTestId("card-detail");
+    await expect(workspace).toBeVisible();
+    await expect(detail).toBeVisible();
+    const expectedWorkspaceWidth = width === 1920 ? 1552 : 1072;
+    const expectedChatWidth = expectedWorkspaceWidth - 466 - 16;
+    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+    await page.clock.runFor(250);
+    const alignment = await detail.evaluate(element => {
+      const rect = (selector: string) => {
+        const box = element.querySelector(selector)!.getBoundingClientRect();
+        return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width };
+      };
+      return { pane: { x: element.getBoundingClientRect().x, y: element.getBoundingClientRect().y },
+        header: rect('.v3-folder-header > button'), now: rect('[data-testid="card-now-panel"]'),
+        tabs: rect('[role="tablist"]'), items: rect('[data-testid="card-check-items"]'),
+        composer: rect('[data-testid="card-composer"]'), chatY: document.querySelector('[data-testid="v3-card-session-chat"]')!.getBoundingClientRect().y };
+    });
+    for (const box of [alignment.now, alignment.tabs, alignment.items, alignment.composer]) {
+      expect(Math.abs(box.x - alignment.header.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.right - alignment.now.right)).toBeLessThanOrEqual(1);
+    }
+    expect(Math.abs(alignment.pane.y - alignment.chatY)).toBeLessThanOrEqual(1);
+    expect(alignment.items.y).toBeGreaterThanOrEqual(alignment.tabs.bottom);
+    const initialGeometry = await workspace.evaluate(element => {
+      const detail = element.querySelector("[data-testid=card-detail]" )!.getBoundingClientRect();
+      const chat = element.querySelector("[data-testid=v3-card-session-chat]")!.getBoundingClientRect();
+      return { width: element.getBoundingClientRect().width, detail: detail.width, chat: chat.width };
+    });
+    expect(initialGeometry.width).toBe(expectedWorkspaceWidth);
+    expect(Math.abs(initialGeometry.detail - 466)).toBeLessThanOrEqual(1);
+    expect(initialGeometry.chat).toBeCloseTo(expectedChatWidth, 2);
+
+    const tabs = [...await detail.getByRole("tab").allTextContents()].map(value => value.replace(/\d+/g, "").trim());
+    expect(tabs).toEqual(["확인 항목", "커멘트", "세션", "노트"]);
+    await expect(detail.getByRole("tab", { name: /확인 항목/ })).toHaveAttribute("aria-selected", "true");
+    await expect(detail.locator("[data-testid=card-check-items]")).toHaveAttribute("data-active-count", "7");
+    const dropped = detail.locator('[data-item-id="7"]');
+    await expect(dropped.locator("del")).toHaveText("요청에서 뺀 항목");
+    await expect(dropped).toContainText("현재 범위에 포함되지 않습니다.");
+    await expect(dropped.getByRole("checkbox")).toBeDisabled();
+    await expect(dropped.getByRole("button", { name: "7번 항목 접기" })).toBeDisabled();
+    await expect(detail.getByText("되돌리기", { exact: true })).toHaveCount(0);
+
+    const evidenceImage = detail.getByRole("button", { name: "완료 화면", exact: true });
+    await evidenceImage.focus();
+    await page.keyboard.press("Enter");
+    const imageDialog = page.getByRole("dialog");
+    await expect(imageDialog.getByRole("img", { name: "완료 화면", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(evidenceImage).toBeFocused();
+    await expect(imageDialog).toHaveCount(0);
+    await expect(detail).toBeVisible();
+
+    await evidenceImage.click();
+    await expect(imageDialog.getByRole("img", { name: "완료 화면", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(evidenceImage).toBeFocused();
+    await expect(detail).toBeVisible();
+
+    await detail.getByRole("tab", { name: /^노트/ }).click();
+    await expect(detail.getByText("인계 요약", { exact: true })).toBeVisible();
+    await expect(detail.getByTestId("card-notes").locator("[data-card-note-id]")).toHaveCount(5);
+    await detail.getByRole("button", { name: "앞선 노트 1건" }).click();
+    await expect(detail.getByTestId("card-notes").locator("[data-card-note-id]")).toHaveCount(6);
+    await page.screenshot({ path: path.join(output, `${width}-notes.png`), animations: "disabled" });
+    await detail.getByRole("tab", { name: /^세션/ }).click();
+    await expect(detail.locator("[data-card-section=sessions]")).toBeVisible();
+    await page.screenshot({ path: path.join(output, `${width}-sessions.png`), animations: "disabled" });
+    await detail.getByRole("tab", { name: "확인 항목" }).click();
+
+    const nowPanel = detail.getByTestId("card-now-panel");
+    await page.clock.runFor(100);
+    const currentLayout = await detail.evaluate(element => {
+      const panel = element.querySelector("[data-testid=card-now-panel]")!.getBoundingClientRect();
+      const items = element.querySelector("[data-testid=card-check-items]")!.getBoundingClientRect();
+      return { panelHeight: panel.height, firstItemY: items.y };
+    });
+    await page.screenshot({ path: path.join(output, `${width}-initial.png`), animations: "disabled" });
+
+    await detail.locator('[data-item-id="1"] [role="checkbox"]').click();
+    await expect(detail.locator('[data-item-id="1"] [role="checkbox"]')).toHaveAttribute("aria-checked", "true");
+    await expect(detail.locator("[data-testid=card-check-items]")).toHaveAttribute("data-active-count", "6");
+    await page.screenshot({ path: path.join(output, `${width}-still.png`), animations: "disabled" });
+
+    await nowPanel.getByRole("button", { name: "이전 상황" }).click();
+    await expect(nowPanel).toHaveAttribute("data-now-view", "past");
+    await expect(nowPanel).toContainText("지난 상황");
+    await page.clock.runFor(100);
+    const pastLayout = await detail.evaluate(element => {
+      const panel = element.querySelector("[data-testid=card-now-panel]")!.getBoundingClientRect();
+      const items = element.querySelector("[data-testid=card-check-items]")!.getBoundingClientRect();
+      return { panelHeight: panel.height, firstItemY: items.y };
+    });
+    expect(pastLayout.panelHeight).toBe(currentLayout.panelHeight);
+    expect(pastLayout.firstItemY).toBe(currentLayout.firstItemY);
+    await page.screenshot({ path: path.join(output, `${width}-past.png`), animations: "disabled" });
+    await nowPanel.getByRole("button", { name: "다음 상황" }).click();
+    await expect(nowPanel).toHaveAttribute("data-now-view", "current");
+    await nowPanel.getByRole("button", { name: "이전 상황" }).click();
+    await nowPanel.getByRole("button", { name: "이전 상황" }).click();
+    await nowPanel.getByRole("button", { name: "최신으로", exact: true }).click();
+    await expect(nowPanel).toHaveAttribute("data-now-view", "current");
+
+    const divider = page.getByTestId("v3-card-workspace-divider");
+    const dragBy = async (delta: number) => {
+      const dragHandle = divider.locator(".cursor-col-resize");
+      const box = await dragHandle.boundingBox();
+      expect(box).not.toBeNull();
+      await page.mouse.move(box!.x + box!.width / 2, box!.y + 80);
+      await page.mouse.down();
+      await page.mouse.move(box!.x + box!.width / 2 + delta, box!.y + 80);
+      await page.mouse.up();
+    };
+    await dragBy(-66);
+    await expect(workspace).toHaveAttribute("data-card-width-px", "400");
+    await page.screenshot({ path: path.join(output, `${width}-split-400.png`), animations: "disabled" });
+    const stateAt400 = await detail.locator('[data-item-id="4"] .v3-card-check-item-state').boundingBox();
+    const titleAt400 = await detail.locator('[data-item-id="4"] .v3-card-check-item-title').boundingBox();
+    expect(stateAt400!.y).toBeLessThan(titleAt400!.y + titleAt400!.height);
+    await dragBy(-1);
+    await expect(workspace).toHaveAttribute("data-card-width-px", "399");
+    const stateAt399 = await detail.locator('[data-item-id="4"] .v3-card-check-item-state').boundingBox();
+    const titleAt399 = await detail.locator('[data-item-id="4"] .v3-card-check-item-title').boundingBox();
+    expect(stateAt399!.y).toBeGreaterThan(titleAt399!.y);
+    await divider.focus();
+    await page.keyboard.press("Home");
+    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+    await dragBy(500);
+    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+    await dragBy(-1000);
+    await expect(workspace).toHaveAttribute("data-card-width-px", String(expectedWorkspaceWidth * 0.25));
+    await divider.focus();
+    await page.keyboard.press("Home");
+    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+
+    await detail.locator('[data-item-id="5"] .v3-card-check-item-target').click();
+    const input = detail.getByPlaceholder("커멘트", { exact: true });
+    await expect(input).toBeFocused();
+    await expect(detail.locator(".v3-card-target-notice")).toContainText("대상: 5번 남겨진 고칠 점이 표시됩니다");
+    await input.fill("좁은 화면에서 상태 글이 제목 아래로 내려옵니다.");
+    await detail.getByRole("tab", { name: /^세션/ }).click();
+    await expect(input).toHaveValue("좁은 화면에서 상태 글이 제목 아래로 내려옵니다.");
+    await detail.getByRole("tab", { name: "확인 항목" }).click();
+    await detail.getByRole("button", { name: "커멘트 전송", exact: true }).click();
+    await expect(detail.locator('[data-item-id="5"]')).toHaveAttribute("data-item-display", "fix");
+    await expect(detail.locator('[data-item-id="5"] .v3-card-check-item-state')).toContainText("고칠 점 3");
+    await expect(detail.locator(".v3-card-sent-notice")).toContainText("보냈습니다.");
+    await expect(detail.getByRole("tab", { name: "확인 항목" })).toHaveAttribute("aria-selected", "true");
+    await detail.locator('[data-item-id="5"]').evaluate(element => element.scrollIntoView({ block: "start" }));
+    await page.screenshot({ path: path.join(output, `${width}-after-fix.png`), animations: "disabled" });
+    await detail.getByRole("button", { name: "커멘트에서 보기", exact: false }).click();
+    await expect(detail.getByRole("tab", { name: "커멘트" })).toHaveAttribute("aria-selected", "true");
+    const savedComment = detail.locator('[data-card-entry="커멘트"]').filter({ hasText: "좁은 화면에서 상태 글이 제목 아래로 내려옵니다." });
+    await expect(savedComment).toHaveCount(1);
+    await expect(savedComment.locator(".v3-card-comment-target")).toContainText("5번");
+    await expect(detail.getByRole("tab", { name: /커멘트/ })).toContainText("커멘트");
+    await page.screenshot({ path: path.join(output, `${width}-target-comment.png`), animations: "disabled" });
+    const reportImage = detail.getByRole("button", { name: "검수 이미지", exact: true });
+    await reportImage.click();
+    await expect(page.getByRole("dialog").getByRole("img", { name: "검수 이미지", exact: true })).toBeVisible();
+    await page.screenshot({ path: path.join(output, `${width}-comment-image.png`), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await expect(reportImage).toBeFocused();
+    await expect(detail.getByRole("tab", { name: "커멘트" })).toHaveAttribute("aria-selected", "true");
+
+    await detail.getByRole("tab", { name: "확인 항목" }).click();
+    for (const id of [2, 3, 4, 5, 8, 9]) {
+      await detail.locator(`[data-item-id="${id}"] [role="checkbox"]`).click();
+    }
+    await expect(detail.locator("[data-testid=card-check-items]")).toHaveAttribute("data-active-count", "0");
+    await expect(nowPanel).toContainText("모두 확인했습니다");
+    await expect(detail.locator(".v3-folder-header-actions")).toHaveAttribute("data-complete-emphasis", "true");
+    expect(await detail.textContent()).not.toContain("되돌리기");
+    await detail.locator('.v3-card-panel-scroll').evaluate(element => { element.scrollTop = 0; });
+    await page.screenshot({ path: path.join(output, `${width}-all-checked.png`), animations: "disabled" });
+    await nowPanel.getByRole("button", { name: "완료", exact: true }).click();
+    await expect(detail).toHaveCount(0);
+    await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
+    await expect(postit).toContainText("확인 10");
+    await expect(postit.locator(".v3-card-progress-dot")).toHaveCount(0);
+
+    const legacyCard = board.locator('[data-card-id="board-0-1"] .v3-postit-open');
+    await legacyCard.scrollIntoViewIfNeeded();
+    await legacyCard.click();
+    const legacyDetail = page.getByTestId("card-detail");
+    await expect(legacyDetail.getByRole("tab", { name: "커멘트", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(legacyDetail.getByTestId("card-now-panel")).toHaveCount(0);
+    await expect(legacyDetail.locator('[data-card-entry="지시"]')).toBeVisible();
+    await expect(legacyDetail.locator('[data-card-entry="보고"]')).toBeVisible();
+
+    await legacyDetail.getByRole("button", { name: "카드 닫기", exact: true }).click();
+    await board.getByRole("button", { name: "실행 중", exact: true }).click();
+    await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+    const reducedDetail = page.getByTestId("card-detail");
+    await reducedDetail.getByRole("tab", { name: /^세션/ }).click();
+    const runningSession = reducedDetail.locator(".v3-card-session-history .v3-run-row").first();
+    await expect(runningSession).toBeVisible();
+    await expect(runningSession).toContainText("실행 중");
+    const sessionStyleBefore = await runningSession.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { animation: style.animationName, background: style.backgroundColor, color: style.color };
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const sessionStyleAfter = await runningSession.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { animation: style.animationName, background: style.backgroundColor, color: style.color };
+    });
+    expect(sessionStyleAfter).toEqual(sessionStyleBefore);
+    await reducedDetail.getByRole("tab", { name: "확인 항목" }).click();
+    const doingRow = reducedDetail.locator('[data-item-display="doing"]').first();
+    await expect(doingRow).toBeVisible();
+    const reducedAnimation = await doingRow.evaluate(element => getComputedStyle(element, "::before").animationName);
+    expect(reducedAnimation).toBe("none");
+    await page.keyboard.press("Escape");
+    await expect(reducedDetail).toHaveCount(0);
+    await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
+    writeFileSync(path.join(output, `${width}-metrics.json`), JSON.stringify({
+      viewport: { width, height: width === 1920 ? 1080 : 810 },
+      initialGeometry, alignment, currentLayout, pastLayout, stateAt400, titleAt400, stateAt399, titleAt399, sessionStyleBefore,
+    }, null, 2));
+    expect(errors).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+}
+
+test("approved card layout contracts", async ({ page }) => {
+  await prepare(page, 1440);
+  const board = page.getByTestId("card-board-sample");
+  await board.scrollIntoViewIfNeeded();
+  await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+  const detail = page.getByTestId("card-detail");
+  await expect(detail).toBeVisible();
+  expect.soft(await detail.getByRole("tab", { name: /확인 항목/ }).textContent()).toBe("확인 항목2");
+  const layout = await detail.evaluate(element => {
+    const turn = element.querySelector(".v3-card-now-turn")!;
+    const tabs = element.querySelector('[role="tablist"]')!;
+    const title = element.querySelector(".v3-card-title-editor h1")!;
+    const evidence = element.querySelector<HTMLImageElement>(".v3-card-evidence-image")!;
+    const handle = document.querySelector('[data-testid="v3-card-workspace-divider"] > div')!;
+    const checkbox = element.querySelector('[role="checkbox"][aria-checked="false"]')!;
+    return {
+      turnDisplay: getComputedStyle(turn).display,
+      tabsDisplay: getComputedStyle(tabs).display,
+      statusInsideTitle: Boolean(title.querySelector('[aria-label="카드 상태 변경"]')),
+      itemArrows: element.querySelectorAll(".v3-card-check-item-chevron").length,
+      evidence: { width: evidence.getBoundingClientRect().width, height: evidence.getBoundingClientRect().height },
+      handleHeight: handle.getBoundingClientRect().height,
+      checkboxFill: getComputedStyle(checkbox, "::before").backgroundColor,
+    };
+  });
+  expect.soft(layout.turnDisplay).toBe("block");
+  expect.soft(layout.tabsDisplay).toBe("flex");
+  expect.soft(layout.statusInsideTitle).toBe(true);
+  expect.soft(layout.itemArrows).toBe(0);
+  expect.soft(layout.evidence.width).toBeCloseTo(120, 0);
+  expect.soft(layout.evidence.height).toBeCloseTo(68, 0);
+  expect.soft(layout.handleHeight).toBeGreaterThan(100);
+  expect.soft(layout.checkboxFill).toBe("rgba(0, 0, 0, 0)");
+});
+
+for (const width of [1920, 1440]) {
+  test(`target result evidence capture ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width);
+    const board = page.getByTestId("card-board-sample");
+    await board.scrollIntoViewIfNeeded();
+    await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+    const detail = page.getByTestId("card-detail");
+    const row = detail.locator('[data-item-id="5"]');
+    await row.locator(".v3-card-check-item-target").click();
+    await page.screenshot({ path: path.join(output, `${width}-target-notice.png`), animations: "disabled" });
+    await detail.getByPlaceholder("커멘트", { exact: true }).fill("좁은 화면에서 상태 글이 제목 아래로 내려옵니다.");
+    await detail.getByRole("button", { name: "커멘트 전송", exact: true }).click();
+    await expect(row).toHaveAttribute("data-item-display", "fix");
+    await expect(row.locator(".v3-card-check-item-state")).toHaveText("고칠 점 3");
+    await page.screenshot({ path: path.join(output, `${width}-sent-notice.png`), animations: "disabled" });
+    await row.evaluate(element => element.scrollIntoView({ block: "start" }));
+    await expect(row).toBeVisible();
+    await page.screenshot({ path: path.join(output, `${width}-after-fix.png`), animations: "disabled" });
+    expect(errors).toEqual([]);expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1440, 1920]) {
+  test(`review corrections with real clock ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width, true);
+    await reviewCorrections(page, width, output);
+    expect(errors).toEqual([]);expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1440, 1920]) {
+  test(`collapsed confirmed title evidence ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width, true);
+    const board = page.getByTestId("card-board-sample");
+    await board.scrollIntoViewIfNeeded();
+    await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+    const detail = page.getByTestId("card-detail");
+    await detail.locator('[data-item-id="1"] [role="checkbox"]').click();
+    const data = await textEvidence(page, detail, output, `${width}-confirmed-title-top`);
+    expect(data.find(value => value.item === "1" && value.selector === ".v3-card-check-item-title")?.font).toBe("500 16px/23px");
+    await detail.getByTestId("confirmed-items-group").getByRole("button").click();
+    await detail.locator(".v3-card-panel-scroll").evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await textEvidence(page, detail, output, `${width}-confirmed-title-bottom`);
+    await detail.getByRole("tab", { name: /^노트/ }).click();
+    await detail.locator(".v3-card-panel-scroll").evaluate(el => { el.scrollTop = 0; });
+    await textEvidence(page, detail, output, `${width}-notes-review`);
+    expect(errors).toEqual([]);expect(writes).toEqual([]);
+  });
+}
+
+for (const width of [1440, 1920]) {
+  test(`complete strip uses the existing button and closes the card ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width);
+    const board = page.getByTestId("card-board-sample");
+    await board.scrollIntoViewIfNeeded();
+    await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+    const detail = page.getByTestId("card-detail");
+    for (const id of [1, 2, 3, 4, 5, 8, 9]) await detail.locator(`[data-item-id="${id}"] [role="checkbox"]`).click();
+    const complete = detail.getByTestId("card-now-panel").getByRole("button", { name: "완료", exact: true });
+    await expect(complete).toBeEnabled();
+    expect((await complete.boundingBox())!.height).toBe(32);
+    await expect(detail.locator(".v3-folder-header-actions")).toHaveAttribute("data-complete-emphasis", "true");
+    await detail.locator(".v3-card-panel-scroll").evaluate(el => { el.scrollTop = 0; });
+    await page.screenshot({ path: path.join(output, `${width}-all-checked.png`), animations: "disabled" });
+    await complete.click();await expect(detail).toHaveCount(0);
+    expect(errors).toEqual([]);expect(writes).toEqual([]);
+  });
+}

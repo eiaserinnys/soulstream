@@ -15,18 +15,22 @@ export function PostItGrid({children,className='',variant='default',fontSize,...
 
 /** Shared paper presentation. The owner supplies preferences, navigation and status. */
 export function PostItCardView({id,title,status,color,fontSize,activity,assigneeName,avatar,statusContent,
- onOpen,error,variant='default',readOnly=false,showStatus=true,supplement,...props}:Omit<HTMLAttributes<HTMLElement>,'id'|'title'>&{
+ onOpen,error,variant='default',readOnly=false,showStatus=true,supplement,summary,nowText,turnText,turnLabel,...props}:Omit<HTMLAttributes<HTMLElement>,'id'|'title'>&{
  id:string;title:string;status:string;color?:CardColor;fontSize:number;activity:PostItActivity|null;assigneeName:string;
  avatar?:ReactNode;statusContent?:ReactNode;
  onOpen?:()=>void;error?:string;variant?:PostItVariant;readOnly?:boolean;showStatus?:boolean;supplement?:string;
+ summary?:ReactNode;nowText?:string;turnText?:string;turnLabel?:string;
 }) {
  const resolvedColor=color??'yellow';
+ const enhanced=summary!==undefined||nowText!==undefined||turnText!==undefined;
  const text=<>
+  {summary!==undefined?summary:null}
   <span className="v3-postit-title" title={title}>{title}</span>
-  <span className={`v3-postit-body${activity?'':' v3-postit-empty'}`}>{activity?.text??'아직 지시나 보고가 없습니다'}</span>
+  <span className={`v3-postit-body${activity||nowText?'':' v3-postit-empty'}`} data-card-now={nowText!==undefined||undefined}>{nowText??activity?.text??'아직 지시나 보고가 없습니다'}</span>
+  {turnText||turnLabel?<span className="v3-postit-turn" title={[turnLabel,turnText].filter(Boolean).join(", ")}><strong>{turnLabel}</strong>{turnText}</span>:null}
  </>;
  return <article {...props} className={`v3-postit-card${variant==='compact'?' v3-postit-card--compact':''}`}
-  data-card-id={id} data-card-size={variant} data-card-status={status} data-card-color={resolvedColor} data-card-readonly={readOnly||undefined}
+  data-card-id={id} data-card-size={variant} data-card-status={status} data-card-color={resolvedColor} data-card-readonly={readOnly||undefined} data-card-enhanced={enhanced||undefined}
   style={{...postItScale(fontSize),'--postit-paper':CARD_COLORS[resolvedColor].hex,'--postit-rotation':`${postItRotation(id)}deg`} as CSSProperties}>
   {readOnly?<div className="v3-postit-open">{text}</div>:<button type="button" className="v3-postit-open" aria-label={`카드 ${title} 열기`} onClick={onOpen}>{text}</button>}
   <div className="v3-postit-footer" onClick={readOnly?undefined:onOpen}>

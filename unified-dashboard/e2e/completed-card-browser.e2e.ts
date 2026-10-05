@@ -102,5 +102,5 @@ if(process.env.COMPLETED_REBASE==='1')test('rebased gallery preserves completed 
  await sample.locator('.v3-card-board-workspace').getByRole('switch',{name:'완료 숨김'}).click();await sample.locator('.v3-card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});
  await expect(sample.locator('[data-board-column=done] [data-card-status=done]').first()).toBeVisible();
  await sample.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();const detail=page.getByTestId('card-detail');await expect(detail).toBeVisible();
- await detail.getByRole('tab',{name:'내용',exact:true}).click();await expect(detail.getByText('내부 요약을 접지 않고 표시합니다.',{exact:true})).toBeVisible();await expect(detail.getByText('커멘트',{exact:true}).first()).toBeVisible();await capture(page,'web-detail-rebased-1440');
+ await detail.getByRole('tab',{name:'노트',exact:true}).click();await expect(detail.getByText('내부 요약을 접지 않고 표시합니다.',{exact:true})).toBeVisible();await expect(detail.getByText('커멘트',{exact:true}).first()).toBeVisible();await capture(page,'web-detail-rebased-1440');
 });

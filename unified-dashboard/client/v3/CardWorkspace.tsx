@@ -2,19 +2,22 @@ import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { CardDetailPane } from "./CardDetailPane";
 import { WorkspaceSessionColumn } from "./WorkspaceSessionColumn";
-import { DEFAULT_WORKSPACE_SPLIT, clampWorkspaceSplit, workspaceSplitForKey } from "./folder-workspace-run-model";
+import { cardWorkspaceWidthForKey, clampCardWorkspaceWidth, defaultCardWorkspaceWidth, resizeCardWorkspaceWidth } from "./folder-workspace-run-model";
 import { V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 
 /** Card overlay uses the folder workspace's panel, split and mobile classes. */
-export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,mobileTab,initialSessionId,sampleDetail,sampleExecution,...chat}: {
+export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,mobileTab,initialSessionId,sampleDetail,sampleExecution,onSampleChange,...chat}: {
  cardId:string;folders:ComponentProps<typeof CardDetailPane>["folders"];onClose():void;
  onOpenSession:ComponentProps<typeof CardDetailPane>["onOpenSession"];mobileMode:boolean;mobileTab:string;
  initialSessionId?:ComponentProps<typeof CardDetailPane>["initialSessionId"];
  sampleExecution?:ComponentProps<typeof CardDetailPane>["sampleExecution"];
  sampleDetail?:ComponentProps<typeof CardDetailPane>["sampleDetail"];
+ onSampleChange?:ComponentProps<typeof CardDetailPane>["onSampleChange"];
 } & Omit<ComponentProps<typeof WorkspaceSessionColumn>,"chatClassName"|"chatTestId"|"resizeClassName"|"resizeTestId"|"onResize"|"onResizeKeyDown">) {
  const workspace=useRef<HTMLDivElement>(null);
- const [split,setSplit]=useState(DEFAULT_WORKSPACE_SPLIT);
+ const workspaceWidthRef=useRef(0);
+ const [workspaceWidth,setWorkspaceWidth]=useState(0);
+ const [splitWidth,setSplitWidth]=useState<number|null>(null);
  const [host,setHost]=useState<Element|null>(null);
  useLayoutEffect(()=>{
   const focus=document.activeElement as HTMLElement|null;
@@ -23,6 +26,20 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
   return ()=>{if(focus?.isConnected)focus.focus({preventScroll:true});};
  },[]);
  useLayoutEffect(()=>{workspace.current?.querySelector<HTMLButtonElement>('button[aria-label="카드 닫기"]')?.focus({preventScroll:true});},[host]);
+ useLayoutEffect(()=>{
+  const element=workspace.current;
+  if(!element||typeof ResizeObserver==="undefined")return;
+  const measure=()=>{
+   const next=element.getBoundingClientRect().width;
+   workspaceWidthRef.current=next;
+   setWorkspaceWidth(next);
+  };
+  measure();
+  const observer=new ResizeObserver(measure);
+  observer.observe(element);
+  return ()=>observer.disconnect();
+ },[host]);
+ const cardWidth=splitWidth===null?defaultCardWorkspaceWidth(workspaceWidth):clampCardWorkspaceWidth(splitWidth,workspaceWidth);
  const content=<div className="v3-workspace-scrim is-chat-open" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}
   onKeyDown={event=>{
    if(event.defaultPrevented)return;
@@ -35,11 +52,23 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
    }
   }}>
   <div ref={workspace} className="v3-workspace is-chat-open" data-testid="v3-card-workspace" data-placement="overlay" data-mobile-view={mobileMode?mobileTab:undefined}
-   style={!mobileMode?{gridTemplateColumns:`minmax(0, calc(${split}% - ${V3_PANEL_GAP_PX/2}px)) ${V3_PANEL_GAP_PX}px minmax(0, 1fr)`}:undefined}>
-   <CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution}/>
+   data-card-width-px={Math.round(cardWidth)}
+   style={!mobileMode&&workspaceWidth>0?{gridTemplateColumns:`${cardWidth}px ${V3_PANEL_GAP_PX}px minmax(0, 1fr)`}:undefined}>
+   <CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution} onSampleChange={onSampleChange}/>
    <WorkspaceSessionColumn {...chat} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider"
-    onResize={delta=>setSplit(value=>clampWorkspaceSplit(value+delta*document.documentElement.clientWidth/(workspace.current?.getBoundingClientRect().width??document.documentElement.clientWidth)))}
-    onResizeKeyDown={event=>{const next=workspaceSplitForKey(split,event.key);if(next!==null){event.preventDefault();setSplit(next);}}}/>
+    onResize={delta=>{
+     const width=workspaceWidthRef.current||workspace.current?.getBoundingClientRect().width||0;
+     if(width<=0)return;
+     const deltaPx=delta*document.documentElement.clientWidth/100;
+     setSplitWidth(current=>resizeCardWorkspaceWidth(current??defaultCardWorkspaceWidth(width),width,deltaPx));
+    }}
+    onResizeKeyDown={event=>{
+     const width=workspaceWidthRef.current||workspace.current?.getBoundingClientRect().width||0;
+     if(width<=0)return;
+     if(event.key==="Home"){event.preventDefault();setSplitWidth(null);return;}
+     const next=cardWorkspaceWidthForKey(splitWidth??defaultCardWorkspaceWidth(width),width,event.key);
+     if(next!==null){event.preventDefault();setSplitWidth(next);}
+    }}/>
   </div>
  </div>;
  return host?createPortal(content,host):content;
