@@ -149,6 +149,33 @@ export function sdkInterruptedResult(
   } as unknown as SDKMessage;
 }
 
+/**
+ * CLI 2.1.288 emits one of these per client-supplied input uuid. The SDK type
+ * definitions omit the frame, so tests build the raw record directly.
+ */
+export function sdkCommandLifecycle(commandUuid: string, state: string): SDKMessage {
+  return {
+    type: "command_lifecycle",
+    command_uuid: commandUuid,
+    state,
+    session_id: "sdk-session",
+  } as unknown as SDKMessage;
+}
+
+export function sdkAssistantText(uuid: string, text: string): SDKMessage {
+  return {
+    type: "assistant",
+    uuid,
+    session_id: "sdk-session",
+    message: {
+      id: uuid,
+      model: "claude",
+      role: "assistant",
+      content: [{ type: "text", text }],
+    },
+  } as unknown as SDKMessage;
+}
+
 export function sdkToolStart(uuid: string, toolUseId: string): SDKMessage {
   return {
     type: "assistant",
