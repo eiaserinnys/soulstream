@@ -32,6 +32,19 @@ function snapshot(eventId = 1002) {
     }],
   };
 }
+function feedWindowSnapshot(eventId = 1000) {
+  const sessionList = Array.from({ length: 200 }, (_, n) => ({
+    ...snapshot(eventId).sessionList[0], agentSessionId: `s-${n}`,
+  }));
+  return {
+    folders: [],
+    sessions: Object.fromEntries(
+      sessionList.map(row => [row.agentSessionId, { folderId: null, displayName: row.displayName }]),
+    ),
+    sessionList,
+    total: 9375,
+  };
+}
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
@@ -78,6 +91,37 @@ test('foreground small replay uses one reconnect, no extra REST', async () => {
   emit('session_updated', { agent_session_id: 's', status: 'idle' }, '101');
   expect(mockGetCatalog).toHaveBeenCalledTimes(1);
   expect(useSessionStore.getState().sessions.s.status).toBe('idle');
+  hook.unmount();
+});
+
+test('initial REST applies the 200-session feed window even when total is larger', async () => {
+  mockGetCatalog.mockResolvedValueOnce(feedWindowSnapshot());
+  const hook = renderHook(() => useSessionsStream());
+  await act(async () => {});
+  expect(useSessionStore.getState().feedSessionIds).toHaveLength(200);
+  expect(mockGetCatalog).toHaveBeenCalledTimes(1);
+  hook.unmount();
+});
+
+test('cursorless foreground reconnect applies the server window without another REST snapshot', async () => {
+  mockGetCatalog.mockResolvedValueOnce(feedWindowSnapshot());
+  const hook = renderHook(() => useSessionsStream());
+  await act(async () => {});
+
+  emit('stream_meta', { instance_id: 'old', latest_id: 0 });
+  const first = source();
+  lifecycle();
+  expect(source()).not.toBe(first);
+  emit('stream_meta', { instance_id: 'new', latest_id: 201 });
+  const reconnectRows = feedWindowSnapshot(1001).sessionList;
+  reconnectRows[199] = { ...reconnectRows[199], agentSessionId: 'new-member' };
+  emit('session_list', { sessions: reconnectRows, total: 9375 });
+  await act(async () => {});
+
+  expect(mockGetCatalog).toHaveBeenCalledTimes(1);
+  expect(useSessionStore.getState().feedSessionIds).toHaveLength(200);
+  expect(useSessionStore.getState().feedSessionIds).toContain('new-member');
+  expect(useSessionStore.getState().feedSessionIds).not.toContain('s-199');
   hook.unmount();
 });
 
@@ -221,104 +265,4 @@ test('foreground before any durable event consumes the cursorless SSE snapshot w
     status: 'idle', lastMessage: { preview: 'preview-1002' },
   });
   hook.unmount();
-});
-
-function manySnapshot(eventId = 1000) {
-  const sessionList = Array.from({ length: 201 }, (_, n) => ({
-    ...snapshot(eventId).sessionList[0], agentSessionId: `s-${n}`,
-  }));
-  return { folders: [], sessionList, total: 201, sessions: Object.fromEntries(
-    sessionList.map(row => [row.agentSessionId, { folderId: null, displayName: row.displayName }]),
-  ) };
-}
-async function mountManyWithoutCursor() {
-  mockGetCatalog.mockResolvedValueOnce(manySnapshot());
-  const hook = renderHook(() => useSessionsStream());
-  await act(async () => {});
-  emit('stream_meta', { instance_id: 'old', latest_id: 0 });
-  lifecycle();
-  emit('stream_meta', { instance_id: 'new', latest_id: 201 });
-  return hook;
-}
-
-test('incomplete cursorless list keeps 201 cards until full REST and drains live in order', async () => {
-  const hook = await mountManyWithoutCursor();
-  const rest = deferred<ReturnType<typeof manySnapshot>>();
-  mockGetCatalog.mockReturnValueOnce(rest.promise);
-  const statuses: string[] = [];
-  const stop = useSessionStore.subscribe((state, previous) => {
-    if (state.sessions !== previous.sessions) statuses.push(state.sessions['s-0'].status);
-  });
-  cleanups.push(stop);
-  emit('session_list', { sessions: manySnapshot(1001).sessionList.slice(0, 200), total: 201 });
-  expect(useSessionStore.getState().feedSessionIds).toHaveLength(201);
-  expect(useSessionStore.getState().feedSessionIds).toContain('s-200');
-  expect(statuses).toEqual([]);
-  expect(mockGetCatalog).toHaveBeenNthCalledWith(2, { feed_only: true, limit: 0 });
-  emit('session_updated', { agent_session_id: 's-0', status: 'idle', last_message: snapshot(1001).sessionList[0].lastMessage }, '202');
-  emit('session_updated', { agent_session_id: 's-0', status: 'completed' }, '203');
-  expect(statuses).toEqual([]);
-  const latest = manySnapshot(1002);
-  latest.sessionList[200].agentSessionId = 'new-member';
-  delete latest.sessions['s-200'];
-  latest.sessions['new-member'] = { folderId: null, displayName: 'Session' };
-  await act(async () => rest.resolve(latest));
-  expect(statuses).toEqual(['running', 'idle', 'completed']);
-  expect(useSessionStore.getState().sessions['s-0'].lastMessage?.preview).toBe('preview-1002');
-  expect(useSessionStore.getState().feedSessionIds).toHaveLength(201);
-  expect(useSessionStore.getState().feedSessionIds).not.toContain('s-200');
-  expect(useSessionStore.getState().feedSessionIds).toContain('new-member');
-  lifecycle();
-  expect(source().url).toContain('lastEventId=203');
-  expect(source().url).toContain('instanceId=new');
-  hook.unmount();
-});
-
-test.each(['network failure', 'incomplete REST'] as const)(
-  '%s during incomplete-list recovery preserves old feed and uncommitted cursor', async (failure) => {
-    const hook = await mountManyWithoutCursor();
-    jest.useFakeTimers();
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const rest = deferred<ReturnType<typeof manySnapshot>>();
-    mockGetCatalog.mockReturnValueOnce(rest.promise);
-    const currentSource = source();
-    emit('session_list', { sessions: manySnapshot(1001).sessionList.slice(0, 200), total: 201 });
-    emit('session_updated', { agent_session_id: 's-0', status: 'completed' }, '202');
-    await act(async () => {
-      if (failure === 'network failure') rest.reject(new Error('offline'));
-      else rest.resolve({ ...manySnapshot(1002), sessionList: manySnapshot(1002).sessionList.slice(0, 200) });
-    });
-    expect(useSessionStore.getState().feedSessionIds).toHaveLength(201);
-    expect(useSessionStore.getState().feedSessionIds).toContain('s-200');
-    expect(useSessionStore.getState().sessions['s-0']).toMatchObject({ status: 'running', lastMessage: { preview: 'preview-1000' } });
-    expect(currentSource.closed).toBe(true);
-    act(() => jest.advanceTimersByTime(30_000));
-    expect(source().url).not.toContain('lastEventId=');
-    expect(source().url).toContain('instanceId=old');
-    warn.mockRestore(); hook.unmount();
-  },
-);
-
-test('initial REST failure never uses incomplete SSE fallback as full membership', async () => {
-  const initial = deferred<ReturnType<typeof manySnapshot>>();
-  const rest = deferred<ReturnType<typeof manySnapshot>>();
-  mockGetCatalog.mockReset();
-  mockGetCatalog.mockReturnValueOnce(initial.promise).mockReturnValueOnce(rest.promise);
-  const cached = manySnapshot();
-  useSessionStore.getState().setFeedCatalogSnapshot({ folders: cached.folders, sessions: cached.sessions });
-  useSessionStore.getState().mergeSessions(cached.sessionList);
-  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-  const hook = renderHook(() => useSessionsStream());
-  emit('stream_meta', { instance_id: 'new', latest_id: 201 });
-  emit('session_list', { sessions: manySnapshot(1001).sessionList.slice(0, 200), total: 201 });
-  await act(async () => initial.reject(new Error('offline')));
-  expect(mockGetCatalog).toHaveBeenCalledTimes(2);
-  expect(useSessionStore.getState().feedSessionIds).toHaveLength(201);
-  expect(useSessionStore.getState().sessions['s-0'].lastMessage?.preview).toBe('preview-1000');
-  emit('session_updated', { agent_session_id: 's-0', status: 'completed' }, '202');
-  await act(async () => rest.resolve(manySnapshot(1002)));
-  expect(useSessionStore.getState().sessions['s-0'].status).toBe('completed');
-  lifecycle();
-  expect(source().url).toContain('lastEventId=202');
-  warn.mockRestore(); hook.unmount();
 });
