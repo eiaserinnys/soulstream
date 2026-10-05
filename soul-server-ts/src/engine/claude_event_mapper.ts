@@ -9,6 +9,7 @@
 
 import type { SSEEventPayload } from "./protocol.js";
 import type { ClaudeClientEvent, ParentEventId } from "./claude_client_event.js";
+import { makeContextUsagePayload } from "./context_usage.js";
 import { copyClaudeBackgroundDeliveryMetadata } from
   "./claude_background_delivery_metadata.js";
 import { copyClaudeBackgroundProvenance } from
@@ -131,15 +132,10 @@ export function mapClaudeClientEvent(
         }),
       ];
 
-    case "context_usage":
-      return [
-        asSSE({
-          type: "context_usage",
-          used_tokens: event.usedTokens,
-          max_tokens: event.maxTokens,
-          percent: event.percent,
-        }),
-      ];
+    case "context_usage": {
+      const payload = makeContextUsagePayload(event.usedTokens, event.maxTokens);
+      return payload ? [asSSE(payload)] : [];
+    }
 
     case "complete": {
       const result = event.result ?? options.fallbackResult;
