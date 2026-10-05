@@ -299,7 +299,6 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
         </SettingsGroupBox>
         <SettingsMultilineField
           label="첫 메시지 (선택)"
-          rows={4}
           value={editor.firstMessage}
           placeholder={defaults.initial_instruction}
           onChange={(firstMessage) => setEditor((current) => ({ ...current, firstMessage }))}
