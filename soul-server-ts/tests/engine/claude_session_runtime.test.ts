@@ -89,6 +89,49 @@ describe("ClaudeSessionRuntime", () => {
     await expect(runtime.inputQueue.next()).resolves.toEqual({ done: false, value: "report" });
   });
 
+  it("records CLI lifecycle states for known inputs only", () => {
+    const { runtime } = makeSubject();
+    runtime.enqueueInput(runtimeInput("foreground", "hash-1", "first"));
+
+    runtime.observeCommandLifecycle("foreground", "started");
+    runtime.observeCommandLifecycle("never-enqueued", "started");
+
+    const inputs = runtime.snapshot().pendingInputs;
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({ uuid: "foreground", commandLifecycle: "started" });
+  });
+
+  it("reports a merged input as awaiting start only once the CLI is known to emit lifecycle frames", () => {
+    const { runtime } = makeSubject();
+    runtime.enqueueInput(runtimeInput("foreground", "hash-1", "first"));
+    runtime.beginForegroundTurn("foreground");
+    runtime.enqueueForegroundContinuation(runtimeInput("injected", "hash-2", "report"));
+
+    // No lifecycle frame for the foreground input: this CLI emits none.
+    expect(runtime.hasMergedInputAwaitingStart("foreground")).toBe(false);
+
+    runtime.observeCommandLifecycle("foreground", "started");
+    expect(runtime.hasMergedInputAwaitingStart("foreground")).toBe(true);
+    expect(runtime.mergedInputUuidsAwaitingStart()).toEqual(["injected"]);
+
+    runtime.observeCommandLifecycle("injected", "queued");
+    expect(runtime.hasMergedInputAwaitingStart("foreground")).toBe(true);
+
+    runtime.observeCommandLifecycle("injected", "started");
+    expect(runtime.hasMergedInputAwaitingStart("foreground")).toBe(false);
+    expect(runtime.mergedInputUuidsAwaitingStart()).toEqual([]);
+  });
+
+  it("ignores inputs that are not merged when looking for one awaiting start", () => {
+    const { runtime } = makeSubject();
+    runtime.enqueueInput(runtimeInput("foreground", "hash-1", "first"));
+    runtime.beginForegroundTurn("foreground");
+    runtime.observeCommandLifecycle("foreground", "started");
+    runtime.enqueueInput(runtimeInput("queued-only", "hash-2", "later"));
+
+    expect(runtime.hasMergedInputAwaitingStart("foreground")).toBe(false);
+  });
+
   it("Result는 foreground만 끝내고 Query와 input queue를 닫지 않는다", async () => {
     const { runtime, query } = makeSubject();
     runtime.setSessionId("claude-session-1");

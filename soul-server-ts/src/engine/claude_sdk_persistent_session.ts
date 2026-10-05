@@ -35,8 +35,10 @@ import {
   turnInactivityError,
 } from "./claude_sdk_persistent_session_support.js";
 import {
+  deferForegroundResultForInjectedInput,
   injectPersistentToolBoundary,
   interruptPersistentForeground,
+  observeCommandLifecycleFrame,
 } from "./claude_sdk_persistent_intervention.js";
 import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
 import {
@@ -212,6 +214,7 @@ export class ClaudeSdkPersistentSession {
   private async handleSdkMessage(message: SDKMessage): Promise<void> {
     const raw = asRecord(message);
     this.nativeNotificationTracker.observeSdkMessage(raw);
+    if (raw?.type === "command_lifecycle") observeCommandLifecycleFrame(this.runtime, raw);
     const inputUuid = raw?.type === "user" ? asString(raw.uuid) : undefined;
     const inputOriginKind = asString(asRecord(raw?.origin)?.kind);
     if (raw && inputUuid && inputOriginKind && isTurnStartingUserInput(raw)) {
@@ -336,6 +339,9 @@ export class ClaudeSdkPersistentSession {
       }
       return;
     }
+    if (deferForegroundResultForInjectedInput({
+      phase, active, runtime: this.runtime, message, logger: this.logger,
+    })) return;
 
     this.runtime.observeResult({
       userMessageUuid: active.uuid,

@@ -52,6 +52,12 @@ export interface ClaudeInputRecord {
   payloadHash: string;
   turnOwner: ClaudeTurnOwner;
   state: ClaudeInputState;
+  /**
+   * Latest state the CLI reported for this input in a `command_lifecycle`
+   * frame (queued, started, completed, cancelled, discarded, refused). Absent
+   * until a frame arrives, which is also the case for CLIs that emit none.
+   */
+  commandLifecycle?: string;
 }
 
 export interface ClaudeInterruptReceipt {
@@ -302,6 +308,33 @@ export class ClaudeSessionRuntime<TMessage> {
     if (input.state === "settled") return "duplicate";
     input.state = "settled";
     return "settled";
+  }
+
+  /** Records the CLI's lifecycle state for a known input; unknown uuids are ignored. */
+  observeCommandLifecycle(uuid: string, state: string): void {
+    const input = this.inputs.get(uuid);
+    if (input) input.commandLifecycle = state;
+  }
+
+  /**
+   * Merged inputs the CLI has not yet taken into a turn: no lifecycle frame yet,
+   * or still queued. Meaningful only for a CLI that emits lifecycle frames.
+   */
+  mergedInputUuidsAwaitingStart(): string[] {
+    return Array.from(this.inputs.values())
+      .filter((input) =>
+        input.state === "merged"
+        && (input.commandLifecycle === undefined || input.commandLifecycle === "queued"))
+      .map((input) => input.uuid);
+  }
+
+  /**
+   * True when the foreground input proves this CLI reports lifecycle frames and
+   * an injected input is still waiting for the CLI to start a turn for it.
+   */
+  hasMergedInputAwaitingStart(foregroundUuid: string): boolean {
+    if (this.inputs.get(foregroundUuid)?.commandLifecycle === undefined) return false;
+    return this.mergedInputUuidsAwaitingStart().length > 0;
   }
 
   settleMergedInputs(): void {
