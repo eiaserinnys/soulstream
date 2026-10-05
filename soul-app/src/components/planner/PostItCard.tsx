@@ -16,12 +16,13 @@ import { AppGlassCard } from '../AppGlassCard';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { GlassButton } from '../GlassSurface';
 import { showAppContextMenu } from '../menus/AppContextMenu';
+import { withAlphaColor } from '../StatusPulseDecoration';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 import type { PlannerContextMenuAction } from '../../lib/planner-context-menu-model';
 import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCardDisplay';
 import { CardStatusChip } from './CardRow';
 import { CardStatusMenu } from './CardStatusMenu';
-import { cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
+import { cardProgressText, cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
 import { useCardStore } from '../../store/cardStore';
 
 export function postItRotation(id: string) {
@@ -170,7 +171,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                 {itemSummary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
                   style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
                     backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
-                <Text style={roles.label}>{itemSummary.confirmed}/{itemSummary.total} 확인</Text>
+                <Text style={roles.label}>{cardProgressText(itemSummary)}</Text>
               </View> : null}
               <Text testID={`postit-body-${card.id}`} style={roles.body} numberOfLines={card.now ? 1 : Math.max(1, bodyLines - (itemSummary.total ? 1 : 0))} ellipsizeMode="tail">
                 {card.now?.text ? card.now.text : <>
@@ -179,8 +180,9 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                   </Text>{' '}{body}
                 </>}
               </Text>
-              {card.now?.turn === 'user' ? <Text testID={`postit-${card.id}-ask-preview`} style={roles.body} numberOfLines={1} ellipsizeMode="tail">
-                {`볼 것 ${itemSummary.needsReview}${card.now.ask ? ` · ${card.now.ask}` : ''}`}
+              {card.now?.turn === 'user' ? <Text testID={`postit-${card.id}-ask-preview`} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
+                style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.foundation.radius.chip, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
+                <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text>{card.now.ask ? ` ${card.now.ask}` : ''}
               </Text> : null}
             </View>
           </Pressable>

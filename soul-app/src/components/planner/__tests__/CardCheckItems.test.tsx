@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import type { CardCheckItem } from '../../../api/cardTypes';
 import { summarizeCardItems } from '../../../lib/card-check-item-summary';
 import { CardCheckItems } from '../CardCheckItems';
@@ -32,6 +33,18 @@ test('서버 display 일곱 값을 그대로 표시하고 확인·고칠 점 조
   expect(onConfirm).toHaveBeenCalledWith(1, true);
   fireEvent.press(screen.getByLabelText('4 항목 4 고칠 점 남기기'));
   expect(onSetTarget).toHaveBeenCalledWith(expect.objectContaining({ id: 4 }));
+});
+
+test('확인 항목의 상태 기호와 근거 기호는 Ionicons로 렌더링한다', () => {
+  const screen = render(<CardCheckItems items={[
+    item(1, 'reported', { caveat: '기기에서 다시 봐 주세요.', evidence: [{ type: 'link', url: 'https://example.test', label: '근거 링크' }] }),
+    item(2, 'confirmed'),
+  ]} pendingConfirmations={{}} initiallyConfirmedIds={[2]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={375} />);
+
+  expect(screen.getByTestId('card-check-item-1-caveat-icon').props.name).toBe('warning-outline');
+  expect(screen.getByTestId('card-check-item-1-link-icon').props.name).toBe('open-outline');
+  expect(screen.getByTestId('card-item-checkbox-2-checkmark').props.name).toBe('checkmark');
 });
 
 test('진입 시 확인된 셋은 묶고 확인 해제하면 미확인 목록으로 돌린다', () => {
@@ -77,11 +90,40 @@ test('서버가 확인을 풀면 방금 확인한 기록이 있어도 체크가 
 
 test('접힌 확인 항목이 서버에서 뺌으로 바뀌면 뺀 까닭을 펼쳐 보인다', () => {
   const onRecentConfirmation = jest.fn();
-  const props = { pendingConfirmations: {}, initiallyConfirmedIds: [1], newlyConfirmedIds: [],
+  const props = { pendingConfirmations: {}, initiallyConfirmedIds: [], newlyConfirmedIds: [],
     onConfirm: jest.fn().mockResolvedValue(true), onSetTarget: jest.fn(), onRecentConfirmation, paneWidth: 375 };
-  const screen = render(<CardCheckItems {...props} items={[item(1, 'confirmed')]} />);
-  expect(screen.queryByText('범위에서 뺀 이유')).toBeNull();
+  const screen = render(<CardCheckItems {...props} items={[item(1, 'reported')]} />);
+  fireEvent.press(screen.getByTestId('card-check-item-1-expand'));
+  expect(screen.queryByText('확인할 결과')).toBeNull();
 
-  screen.rerender(<CardCheckItems {...props} items={[item(1, 'dropped', { result: '서버가 기록한 제외 이유' })]} />);
+  screen.rerender(<CardCheckItems {...props} items={[item(1, 'dropped', { result: '서버가 기록한 제외 이유', evidence: [{ type: 'link', url: 'https://example.test', label: '뺀 근거' }] })]} />);
   expect(screen.getByText('서버가 기록한 제외 이유')).toBeTruthy();
+  expect(screen.getByText('뺀 근거')).toBeTruthy();
+});
+
+test('바뀐 까닭은 꼬리표 아래 본문으로, 출처는 항목 생성 시각을 쓴다', () => {
+  const screen = render(<CardCheckItems items={[item(1, 'changed', {
+    createdAt: '2026-10-05T06:47:00', reportedAt: '2026-10-05T08:00:00', from: { kind: 'spoken', at: '2026-10-05T09:30:00', commentId: 'c1' },
+  })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+  expect(screen.getByText('확인한 뒤 바뀜')).toBeTruthy();
+  expect(screen.getByText('다시 확인한 이유')).toBeTruthy();
+  expect(screen.getByText('08:00, 06:47 대화에서 추가')).toBeTruthy();
+});
+
+test.each([
+  [null, null, null, '06:47'],
+  ['2026-10-05T08:00:00', null, null, '08:00'],
+  [null, { kind: 'comment', at: '2026-10-05T09:30:00', commentId: 'c1' }, null, '06:47 커멘트에서 추가'],
+  ['2026-10-05T08:00:00', null, '실기기 미확인', null],
+] as const)('아래 줄은 못 본 것을 우선하고 없으면 웹과 같은 시각을 보인다 (%s, %s, %s)', (reportedAt, from, caveat, expected) => {
+  const screen = render(<CardCheckItems items={[item(1, 'reported', {
+    createdAt: '2026-10-05T06:47:00', reportedAt, from, caveat,
+  })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+  if (expected) expect(screen.getByText(expected)).toBeTruthy();
+  else {
+    expect(screen.getByText('실기기 미확인')).toBeTruthy();
+    expect(screen.queryByText('08:00')).toBeNull();
+  }
 });

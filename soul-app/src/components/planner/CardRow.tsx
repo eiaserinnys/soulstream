@@ -30,19 +30,20 @@ export function CardStatusChip({ card, title = false, board = false, detail = fa
   const t = useTokens();
   const execution = useSyncExternalStore(subscribeCardWrites, () => cardExecutionState(card.id), () => undefined);
   const palette = colors ?? t.colors;
-  const color = colors ? card.status === 'review' ? palette.link : card.status === 'running' ? palette.successText
+  const color = colors ? card.status === 'review' ? palette.warningText : card.status === 'running' ? palette.successText
     : card.status === 'blocked' ? palette.warningText : palette.textMuted
-    : card.status === 'review' ? t.colors.accent : card.status === 'running' ? t.colors.success
+    : card.status === 'review' ? t.colors.warningText : card.status === 'running' ? t.colors.success
     : card.status === 'blocked' ? t.colors.warning : t.colors.textMuted;
-  const capsuleColor = card.status === 'running' ? t.colors.statusRunning : card.status === 'review' || card.status === 'done'
+  const capsuleColor = card.status === 'running' ? t.colors.statusRunning : card.status === 'review' ? t.colors.warning : card.status === 'done'
     ? t.colors.statusCompleted : card.status === 'blocked' ? t.colors.warning : t.colors.statusIdle;
   return <Text style={{ ...t.foundation.typography.meta, color,
     ...(title ? { ...t.foundation.typography.cardTitle, marginRight: t.uiSpacing.sm } : {}),
-    ...(detail ? { backgroundColor: withAlphaColor(capsuleColor, 0.12), borderRadius: t.foundation.radius.chip,
+    ...(detail ? { backgroundColor: withAlphaColor(capsuleColor, 0.12), borderRadius: t.foundation.radius.round,
       paddingHorizontal: t.uiSpacing.xs, paddingVertical: t.uiSpacing.xxs, marginRight: t.uiSpacing.xs } : {}),
     fontWeight: '700' }} numberOfLines={1}>
+    {detail ? <Ionicons name="ellipse" size={STATUS_DOT_SIZE} color={color} /> : null}{detail ? ' ' : null}
     {execution?.phase === 'pending' ? '시작 중…' : board && card.status === 'todo' ? '드래프트' : board && card.status === 'review' ? '검수 대기'
-      : card.status === 'blocked' && card.blockedKind === 'question' ? (board ? '막힘 · 질문' : '질문') : CARD_STATUS_LABEL[card.status]}
+      : card.status === 'blocked' && card.blockedKind === 'question' ? (board ? '막힘, 질문' : '질문') : CARD_STATUS_LABEL[card.status]}
   </Text>;
 }
 
@@ -94,7 +95,7 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
           </View>
           <View style={styles.contextRow}>{board ? <CardStatusChip card={card} board /> : <Text testID={`card-${card.id}-preview`} style={styles.context} numberOfLines={1}>{preview}</Text>}</View>
           {!board && card.now?.turn === 'user' ? <Text testID={`card-${card.id}-ask-preview`} style={styles.context} numberOfLines={1}>
-            {`볼 것 ${itemSummary.needsReview}${card.now.ask ? ` · ${card.now.ask}` : ''}`}
+            {`볼 것 ${itemSummary.needsReview}${card.now.ask ? `, ${card.now.ask}` : ''}`}
           </Text> : null}
         </View>
         {board ? null : <View style={styles.rightRail}>{complete}{time}</View>}
@@ -113,7 +114,7 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
               : <CardRequestView request={card.latestActivity.body} />}
           </View> : null}
           {card.now?.turn === 'user' ? <Text testID={`card-${card.id}-board-ask-preview`} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }} numberOfLines={1}>
-            {`볼 것 ${itemSummary.needsReview}${card.now.ask ? ` · ${card.now.ask}` : ''}`}
+            {`볼 것 ${itemSummary.needsReview}${card.now.ask ? `, ${card.now.ask}` : ''}`}
           </Text> : null}
         </View>
       </> : identityContent}
@@ -127,7 +128,6 @@ function CardItemSummary({ card, summary }: { card: CardDto; summary: ReturnType
     {summary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
         backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
-    <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{summary.confirmed}/{summary.total} 확인</Text>
-    {summary.needsReview > 0 ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.statusCompleted }}>볼 것 {summary.needsReview}</Text> : null}
+    <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>확인 {summary.confirmed}</Text>
   </View>;
 }

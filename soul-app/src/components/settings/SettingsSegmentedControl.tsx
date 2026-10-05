@@ -7,6 +7,7 @@ export interface SettingsSegmentOption<T extends string> {
   value: T;
   label: string;
   count?: number;
+  countBadge?: boolean;
   dot?: boolean;
 }
 
@@ -54,10 +55,10 @@ export function SettingsSegmentedControl<T extends string>({
             >
               {variant === 'detail' ? (
                 <View style={styles.labelContent}>
-                  <Text numberOfLines={1} style={[styles.detailLabel, selected && styles.selectedLabel]}>
+                  <Text numberOfLines={1} style={[styles.detailLabel, selected && styles.detailSelectedLabel]}>
                     {option.label}
                   </Text>
-                  {option.count !== undefined ? <Text style={styles.detailCount}>{option.count}</Text> : null}
+                  {option.count !== undefined ? <Text testID={`settings-segment-${id}-${option.value}-count`} style={[styles.detailCount, option.countBadge && styles.detailCountBadge]}>{option.count}</Text> : null}
                   {option.dot ? <View testID={`settings-segment-${id}-${option.value}-dot`} style={styles.detailDot} /> : null}
                 </View>
               ) : (
@@ -123,9 +124,11 @@ function makeStyles(t: DesignTokens) {
       borderRadius: t.foundation.radius.round,
       flexDirection: 'row',
     },
-    detailSelected: { backgroundColor: t.colors.accentTint, borderColor: t.colors.accent, borderWidth: StyleSheet.hairlineWidth },
-    labelContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: t.uiSpacing.xxs },
-    detailLabel: { ...t.foundation.typography.meta, color: t.colors.textSecondary, textAlign: 'center' },
+    detailSelected: { backgroundColor: t.colors.surface },
+    labelContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: t.uiSpacing.xs },
+    detailLabel: { ...t.foundation.typography.body, fontWeight: '600', color: t.colors.textSecondary, textAlign: 'center' },
+    detailSelectedLabel: { color: t.colors.textPrimary },
+    detailCountBadge: { backgroundColor: t.colors.accentTint, color: t.colors.accent, borderRadius: t.foundation.radius.round, paddingHorizontal: t.uiSpacing.xs, fontWeight: '700' },
     detailCount: { ...t.foundation.typography.meta, color: t.colors.textPrimary },
     detailDot: { width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.accent },
     detailFocusRing: { borderRadius: t.foundation.radius.round },

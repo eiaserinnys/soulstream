@@ -1,4 +1,5 @@
 import React from 'react';
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import { fireEvent, render, renderHook } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import type { CardNow, CardNowHistoryEntry } from '../../../api/cardTypes';
@@ -31,6 +32,8 @@ test('상황판 이전·다음 단추의 터치 프레임은 서로 겹치지 �
   const next = StyleSheet.flatten(screen.getByTestId('card-now-next-arrow').props.style);
 
   expect(previous.right - next.right).toBe(tokens.hitTarget.min);
+  expect(screen.getByTestId('card-now-previous-icon').props.name).toBe('chevron-back');
+  expect(screen.getByTestId('card-now-next-icon').props.name).toBe('chevron-forward');
 });
 
 test('nowHistory 한 건은 현재 슬롯으로 바꾸어 그려 중복 이전 항목을 만들지 않는다', () => {
@@ -46,8 +49,15 @@ test.each([
   expect(screen.getByText(label)).toBeTruthy();
 });
 
-test('모두 확인된 최신 상황은 완료 물음만 보여 주고 저장 동작을 실행하지 않는다', () => {
-  const screen = render(<CardNowPanel now={now} history={[]} allConfirmed />);
-  expect(screen.getByText('모두 확인했습니다. 완료로 옮길까요?')).toBeTruthy();
-  expect(screen.queryByLabelText('완료 저장')).toBeNull();
+test('모두 확인 띠의 완료는 사용자 조작으로만 실행되고 요청 중에는 눌리지 않는다', () => {
+  const onComplete = jest.fn();
+  const screen = render(<CardNowPanel now={now} history={[]} allConfirmed onComplete={onComplete} />);
+  expect(screen.getByText('모두 확인했습니다')).toBeTruthy();
+  expect(screen.getByText('완료로 옮길까요?')).toBeTruthy();
+  expect(onComplete).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByTestId('card-now-complete'));
+  expect(onComplete).toHaveBeenCalledTimes(1);
+  screen.rerender(<CardNowPanel now={now} history={[]} allConfirmed onComplete={onComplete} completeDisabled />);
+  fireEvent.press(screen.getByTestId('card-now-complete'));
+  expect(onComplete).toHaveBeenCalledTimes(1);
 });

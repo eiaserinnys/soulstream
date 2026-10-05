@@ -180,7 +180,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   };
   const sessionIds = [...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId] : []), ...(detail?.sessions ?? []).map((session) => session.agentSessionId)])];
   const tabOptions = [
-    { value: 'items' as const, label: '확인 항목', count: needsReview || undefined },
+    { value: 'items' as const, label: '확인 항목', count: needsReview || undefined, countBadge: true },
     { value: 'comments' as const, label: '커멘트', dot: commentUnread },
     { value: 'sessions' as const, label: '세션', count: tabletLandscape ? sessionIds.length : undefined },
     { value: 'notes' as const, label: '노트', count: tabletLandscape ? (detail?.notes?.length ?? 0) : undefined },
@@ -196,7 +196,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
       <View testID="card-detail-header" style={styles.header}>
         <View style={styles.headerRow}>
           <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose}>
-            <Text style={styles.glyph}>‹</Text>
+            <Ionicons testID="card-detail-back-icon" name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
           </GlassButton>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api || !card}
             onPress={() => setStatusMenuOpen(true)} frameStyle={styles.titleHitFrame} surfaceStyle={styles.titleHitSurface}>
@@ -226,14 +226,15 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
       </View>
       {card?.now ? <View style={styles.nowWrap}>
         <CardNowPanel now={card.now} history={detail?.nowHistory ?? []} allConfirmed={allConfirmed}
-          surfaceRole={inline ? 'glassCard' : 'panel'} />
+          surfaceRole={inline ? 'glassCard' : 'panel'} completeDisabled={locked || !api || startPhase === 'pending'}
+          onComplete={() => { void status('done'); }} />
       </View> : null}
       <View style={styles.tabsWrap}>
         <SettingsSegmentedControl<CardDetailTab> id="card-detail" variant="detail" value={tab} options={tabOptions} onChange={setTab} />
       </View>
       <View style={styles.bodyFrame}>
-        <ScrollView testID="card-detail-scroll" ref={scroll}
-          contentContainerStyle={[styles.content, { paddingBottom: dockHeight + dockBottom + t.uiSpacing.xxl }]}
+        <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
+          contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
           onContentSizeChange={() => {
             if (tab === 'comments' && timelineStamp && scrollStamp.current !== timelineStamp) {
@@ -256,7 +257,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
               <Text style={styles.link}>{sessionsExpanded ? '접기' : `${sessionIds.length - 3}개 더`}</Text>
             </CompactTouchTarget> : null}
           </View> : null}
-          {detail && tab === 'notes' ? <CardNotes brief={detail.card.brief} notes={detail.notes ?? []} sessions={detail.sessions} /> : null}
+          {detail && tab === 'notes' ? <CardNotes brief={detail.card.brief} notes={detail.notes ?? []} sessions={detail.sessions} assigneeSessionId={detail.card.assigneeSessionId} /> : null}
           {detail && tab === 'items' && cardItems.length === 0 ? <Text style={styles.empty}>확인 항목이 없습니다.</Text> : null}
         </ScrollView>
         <View testID="card-detail-dock" style={[styles.dock, { bottom: dockBottom }]} onLayout={(event) => {

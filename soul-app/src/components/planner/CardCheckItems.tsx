@@ -82,6 +82,7 @@ export function CardCheckItems({
           <PlannerSectionHeader
             title={`확인함 ${groupedIds.size}개`}
             variant="compact"
+            confirmedIndicator
             expanded={confirmedExpanded}
             onToggle={() => setConfirmedExpanded((value) => !value)}
           />

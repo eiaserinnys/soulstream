@@ -13,11 +13,11 @@ export function PlannerMarkdownText({
 }: {
   markdown: string;
   testID?: string;
-  variant?: 'planner' | 'card';
+  variant?: 'planner' | 'card' | 'note';
   textAlign?: 'left';
 }) {
   const t = useTokens();
-  const markdownStyle = variant === 'card' ? cardMarkdownStyle(t) : plannerMarkdownStyle(t);
+  const markdownStyle = variant === 'card' ? cardMarkdownStyle(t) : plannerMarkdownStyle(t, variant === 'note');
   const alignedStyle = textAlign ? {
     ...markdownStyle,
     paragraph: { ...markdownStyle.paragraph, textAlign },
@@ -39,24 +39,25 @@ export function PlannerMarkdownText({
   );
 }
 
-export function plannerMarkdownStyle(t: DesignTokens) {
+export function plannerMarkdownStyle(t: DesignTokens, note = false) {
   const c = t.colors;
+  const textColor = note ? c.textSecondary : c.textPrimary;
   const planner = createPlannerVisualRoles(t);
   return {
     paragraph: {
-      color: c.textPrimary,
+      color: textColor,
       ...planner.typography.body,
     },
-    h1: { color: c.textPrimary, ...planner.typography.display },
-    h2: { color: c.textPrimary, ...planner.typography.section },
-    h3: { color: c.textPrimary, ...planner.typography.cardTitle },
-    strong: { color: c.textPrimary, fontWeight: '700' },
-    em: { color: c.textPrimary, fontStyle: 'italic' },
+    h1: { color: textColor, ...planner.typography.display },
+    h2: { color: textColor, ...planner.typography.section },
+    h3: { color: textColor, ...planner.typography.cardTitle },
+    strong: { color: textColor, fontWeight: '700' },
+    em: { color: textColor, fontStyle: 'italic' },
     link: { color: c.link },
     code: { backgroundColor: c.surfaceCode, color: c.codeText, fontFamily: 'Courier' },
     codeBlock: {
       backgroundColor: c.surfaceCode,
-      color: c.textPrimary,
+      color: textColor,
       fontFamily: 'Courier',
       padding: t.uiSpacing.sm,
       borderRadius: t.radius.sm,
@@ -69,7 +70,7 @@ export function plannerMarkdownStyle(t: DesignTokens) {
       gapWidth: 8,
     },
     list: {
-      color: c.textPrimary,
+      color: textColor,
       ...planner.typography.body,
       bulletColor: c.textMuted,
       markerColor: c.textMuted,

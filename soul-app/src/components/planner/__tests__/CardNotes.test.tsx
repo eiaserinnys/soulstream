@@ -22,3 +22,15 @@ test('인계 요약을 먼저 보이고 최근 다섯 노트와 앞선 노트를
   expect(screen.getByText('노트 1')).toBeTruthy();
   expect(screen.getByText('노트 2')).toBeTruthy();
 });
+
+
+test('기록 줄은 작성자와 담당, HH:MM을 보이고 담당 세션이 비어 있으면 담당 꼬리표를 만들지 않는다', () => {
+  const note = { ...notes[0], sessionId: 's1', createdAt: '2026-10-04T06:58:00' };
+  const sessions = [{ agentSessionId: 's1', agentName: '로젤린', displayName: null, status: 'idle', createdAt: '', updatedAt: '' }];
+  const screen = render(<CardNotes brief="인계" notes={[note]} sessions={sessions} assigneeSessionId="s1" />);
+  expect(screen.getByText('로젤린')).toBeTruthy();
+  expect(screen.getByText('담당')).toBeTruthy();
+  expect(screen.getByText('06:58')).toBeTruthy();
+  screen.rerender(<CardNotes brief="인계" notes={[{ ...note, sessionId: null }]} sessions={sessions} assigneeSessionId={null} />);
+  expect(screen.queryByText('담당')).toBeNull();
+});

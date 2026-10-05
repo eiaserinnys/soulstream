@@ -1,7 +1,7 @@
 import type { ApiClient } from '../api/client';
 import type { FeedPage } from '../api/feedPage';
 import { Alert, Platform, type AlertButton } from 'react-native';
-import type { CardCheckItem, CardComment, CardDetail, CardDto, CardMutationResult, CardPatch } from '../api/cardTypes';
+import type { CardCheckItem, CardComment, CardDetail, CardDto, CardMutationResult, CardPatch, CardStatus } from '../api/cardTypes';
 import { Asset } from 'expo-asset';
 import {
   createReviewApi,
@@ -112,7 +112,7 @@ function createCardChecksReviewApi(): ApiClient {
       1: { state: 'todo', result: null, display: 'todo' },
       2: { state: 'doing', result: '현재 처리 중인 항목입니다.', display: 'doing' },
       3: { state: 'done', result: '요청한 동작을 구현했습니다.', display: 'reported', reportedAt: currentAt },
-      4: { state: 'done', result: '수정 뒤 다시 확인할 결과입니다.', display: 'changed', reopened: '화면에서 한 번 더 확인해 주세요.' },
+      4: { state: 'done', result: '수정 뒤 다시 확인할 결과입니다.', display: 'changed', reopened: '화면에서 한 번 더 확인해 주세요.', reportedAt: currentAt, from: { commentId: 'public-spoken', kind: 'spoken', at: '2026-10-04T21:47:00Z' } },
       5: { state: 'done', result: '커멘트에서 요청한 부분을 고칩니다.', display: 'fix', fixOpen: 2, from: { commentId: 'public-source-comment', kind: 'comment', at: currentAt } },
       6: { state: 'done', result: '시안과 같은 화면을 확인했습니다.', display: 'confirmed', confirmed: { at: currentAt, rev: 1 } },
       7: { state: 'dropped', result: '이번 공개 예시에서는 제외한 항목입니다.', display: 'dropped' },
@@ -151,8 +151,8 @@ function createCardChecksReviewApi(): ApiClient {
   const report = { id: 'public-check-report', cardId: card.id, title: '완료한 결과', format: 'markdown' as const,
     body: '결과와 화면을 확인했습니다.\n\n요청한 동작이 반영됐습니다.', sessionId: cardChecksSessionId, createdAt: '2026-10-04T23:00:00Z' };
   const comments: CardComment[] = [
-    { id: 'public-source-comment', cardId: card.id, authorKind: 'user', authorId: 'public-user', sessionId: null, kind: 'comment', body: '이 항목의 결과를 확인해 주세요.', createdAt: '2026-10-04T21:00:00Z' },
-    { id: 'public-agent-comment', cardId: card.id, authorKind: 'agent', authorId: 'public-agent', sessionId: cardChecksSessionId, kind: 'comment', body: '현재 구현 결과를 공유합니다.', createdAt: '2026-10-04T22:00:00Z' },
+    { id: 'public-source-comment', cardId: card.id, authorKind: 'user', authorId: 'public-user', sessionId: null, kind: 'comment', itemId: 5, body: '이 항목의 결과를 확인해 주세요.', createdAt: '2026-10-04T21:00:00Z' },
+    { id: 'public-agent-comment', cardId: card.id, authorKind: 'agent', authorId: 'public-agent', sessionId: cardChecksSessionId, kind: 'comment', itemId: 3, body: '현재 구현 결과를 공유합니다.', createdAt: '2026-10-04T22:00:00Z' },
   ];
   const questions = [
     { id: 'public-answered-question', cardId: card.id, sessionId: cardChecksSessionId, text: '기존 질문입니다.', options: ['예', '아니요'], answer: '예', askedAt: '2026-10-04T20:30:00Z', answeredAt: '2026-10-04T20:45:00Z' },
@@ -188,6 +188,12 @@ function createCardChecksReviewApi(): ApiClient {
       if (id !== card.id) return base.getCard(id);
       record('getCard', { id });
       return detail();
+    },
+    setCardStatus: async (id: string, status: CardStatus): Promise<CardMutationResult> => {
+      if (id !== card.id) return base.setCardStatus(id, status, card.version, `review-status-${id}`);
+      record('status', { id, status });
+      card = { ...card, status, version: card.version + 1 };
+      return { folderId: card.folderId, card: { ...card } };
     },
     confirmCardItem: async (id: string, itemId: number, confirmed: boolean): Promise<CardMutationResult> => {
       record('confirm', { id, itemId, confirmed });

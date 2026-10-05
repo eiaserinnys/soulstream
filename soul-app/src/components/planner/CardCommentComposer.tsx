@@ -2,6 +2,7 @@ import React, { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRe
 import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardCheckItem, CardMutationResult, CardQuestion } from '../../api/cardTypes';
+import { cardItemTargetText } from '../../lib/card-check-item-summary';
 import { cardOperationId } from '../../hooks/useCardActions';
 import { useChatAttachments } from '../../hooks/useChatAttachments';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
@@ -85,7 +86,7 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
 
   return <View testID="card-comment-composer" style={embedded ? composerStyles.embedded : undefined}>
     {targetItem ? <View testID="card-comment-target" style={[composerStyles.target, { backgroundColor: t.colors.warningBg, borderColor: t.colors.warning }]}>
-      <Text style={composerStyles.targetText} numberOfLines={1}>대상 {targetItem.id} {targetItem.title}</Text>
+      <Text style={composerStyles.targetText} numberOfLines={1}>{cardItemTargetText(targetItem.id, targetItem.title)}</Text>
       <CompactTouchTarget accessibilityRole="button" accessibilityLabel="대상 해제" onPress={onReleaseTarget}>
         <Text style={composerStyles.releaseText}>해제</Text>
       </CompactTouchTarget>

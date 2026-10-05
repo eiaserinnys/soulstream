@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { TouchableWithoutFeedback, Text, View } from 'react-native';
 import type { CardAttachment, CardComment, CardDetail, CardQuestion, CardReport } from '../../api/cardTypes';
 import type { Session, SessionEvent } from '../../api/types';
-import { formatRelativeTime } from '../../lib/relative-time';
+import { cardItemTargetText, formatCardTime } from '../../lib/card-check-item-summary';
 import { useSessionStore } from '../../store/sessionStore';
 import { useTokens } from '../../theme';
 import { UserMessage } from '../events/UserMessage';
@@ -18,7 +18,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 
 type Entry = { id: string; kind: string; user: boolean; body: string; at: string; sessionId?: string | null;
-  spoken?: boolean; report?: CardReport; question?: CardQuestion; attachments?: CardAttachment[] };
+  itemId?: number | null; spoken?: boolean; report?: CardReport; question?: CardQuestion; attachments?: CardAttachment[] };
 
 type RequestSource = { request: string; createdAt: string; attachments?: CardAttachment[] };
 type Source = RequestSource | CardQuestion | CardReport | CardComment;
@@ -45,7 +45,7 @@ export const CardTimeline = React.memo(function CardTimeline({ detail, onChooseA
   return <View testID="card-timeline" style={styles.timeline}>{items.map((item) => {
     const author = catalog[item.sessionId ?? ''] ?? detail.sessions.find((session) => session.agentSessionId === item.sessionId) ?? assigned;
     return <TimelineMessage key={item.id} id={item.id} type={item.type} source={item.source} author={author}
-      cardId={detail.card.id} agentId={detail.card.assigneeAgentId} nodeId={detail.card.nodeId} onChooseAnswer={onChooseAnswer} />;
+      cardId={detail.card.id} agentId={detail.card.assigneeAgentId} nodeId={detail.card.nodeId} target={item.type === 'comment' && (item.source as CardComment).itemId != null ? cardItemTargetText((item.source as CardComment).itemId!, detail.card.items?.find(row => row.id === (item.source as CardComment).itemId)?.title) : undefined} onChooseAnswer={onChooseAnswer} />;
   })}</View>;
 });
 
@@ -69,13 +69,13 @@ function makeEntry(id: string, type: EntryType, source: Source): Entry {
     }
     case 'comment': {
       const comment = source as CardComment;
-      return { id, kind: '커멘트', user: comment.authorKind === 'user', body: comment.body, at: comment.createdAt, sessionId: comment.sessionId, spoken: comment.kind === 'spoken' };
+      return { id, kind: '커멘트', user: comment.authorKind === 'user', body: comment.body, at: comment.createdAt, sessionId: comment.sessionId, itemId: comment.itemId, spoken: comment.kind === 'spoken' };
     }
   }
 }
 
-const TimelineMessage = React.memo(function TimelineMessage({ id, type, source, author, cardId, agentId: fallbackAgentId, nodeId: fallbackNodeId, onChooseAnswer }: {
-  id: string; type: EntryType; source: Source; author?: Session; cardId: string; agentId: string | null; nodeId: string | null; onChooseAnswer(answer: string): void;
+const TimelineMessage = React.memo(function TimelineMessage({ id, type, source, author, cardId, agentId: fallbackAgentId, nodeId: fallbackNodeId, target, onChooseAnswer }: {
+  id: string; type: EntryType; source: Source; author?: Session; cardId: string; agentId: string | null; nodeId: string | null; target?: string; onChooseAnswer(answer: string): void;
 }) {
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
@@ -85,18 +85,18 @@ const TimelineMessage = React.memo(function TimelineMessage({ id, type, source, 
   const session: Session = { ...author, agentSessionId: author?.agentSessionId ?? entry.sessionId ?? cardId, displayName: author?.displayName ?? null, status: author?.status ?? 'idle', createdAt: author?.createdAt ?? entry.at, updatedAt: author?.updatedAt ?? entry.at, agentId, agentName: author?.agentName ?? agentId, agentPortraitUrl: author?.agentPortraitUrl ?? (agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agentId}/portrait` : null) };
   const event: SessionEvent = { id: entry.id, type: entry.user ? 'user_message' : 'assistant_message', data: { text: entry.body } };
   const kind = <View style={styles.kindRow}><Text style={[styles.kind, { color: entry.kind === '질문' ? t.colors.warning : entry.user ? t.colors.accent : t.colors.success }]}>{entry.kind}</Text>
-    {entry.spoken ? <Text style={styles.meta}>대화에서</Text> : null}<Text style={styles.meta}>{formatRelativeTime(entry.at)}</Text></View>;
+    {entry.spoken ? <Text style={styles.meta}>대화에서</Text> : null}<Text style={styles.meta}>{formatCardTime(entry.at)}</Text></View>;
   const [expanded, setExpanded] = useState(false);
   const fold = !!entry.report || entry.kind === '지시';
   const label = expanded ? '접기' : entry.report ? '자세히' : '더 보기';
-  const body = <TimelineBody entry={entry} expanded={expanded} onChooseAnswer={onChooseAnswer} />;
+  const body = <TimelineBody target={target} entry={entry} expanded={expanded} onChooseAnswer={onChooseAnswer} />;
   const message = entry.user ? <UserMessage event={event} session={session} messageKind={kind}>{body}</UserMessage>
     : <AssistantMessage event={event} session={session} messageKind={kind} bubbleWidth={entry.report ? 'fill' : 'content'}>{body}</AssistantMessage>;
   return fold ? <TouchableWithoutFeedback testID={`card-fold-${entry.id}`} accessibilityRole="button" accessibilityLabel={`${entry.id} ${label}`}
     onPress={() => setExpanded((old) => !old)}><View>{message}</View></TouchableWithoutFeedback> : message;
 });
 
-function TimelineBody({ entry, expanded, onChooseAnswer }: { entry: Entry; expanded: boolean; onChooseAnswer(answer: string): void }) {
+function TimelineBody({ entry, target, expanded, onChooseAnswer }: { entry: Entry; target?: string; expanded: boolean; onChooseAnswer(answer: string): void }) {
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const report = entry.report;
@@ -108,6 +108,7 @@ function TimelineBody({ entry, expanded, onChooseAnswer }: { entry: Entry; expan
   const images = gallery.slice(0, 2);
   const expandedMarkdown = expanded && report?.format === 'markdown';
   return <View style={styles.bodyStack}>
+    {target ? <Text testID={`card-comment-item-target-${entry.id}`} numberOfLines={1} style={styles.commentTarget}>{target}</Text> : null}
     {!fold || (expanded && entry.kind === '지시') ? <CardRequestView request={entry.body} attachments={entry.attachments} /> : !expandedMarkdown ? <Text style={styles.body} numberOfLines={fold && !expanded ? 3 : undefined}>{preview}</Text> : null}
     {images.length && !expandedMarkdown ? <View style={styles.thumbnails}>{images.map((source, index) => <AttachmentImage key={source.uri}
       testID={`card-report-thumbnail-${report!.id}-${index}`} source={source} sources={gallery} index={index} accessibilityLabel={`보고 캡처 ${index + 1}`} />)}</View> : null}
