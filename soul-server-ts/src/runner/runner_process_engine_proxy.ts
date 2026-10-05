@@ -1,5 +1,6 @@
 import type {
   BackendId,
+  CompactedContextUsage,
   ClaudeBackgroundTaskControlResult,
   CodexDetachedCommandRuntimeActivity,
   DetachedClaudeRuntimeActivity,
@@ -45,8 +46,27 @@ export class RunnerProcessEngineProxy implements EnginePort, SupportsToolBoundar
 
   async interrupt(): Promise<boolean> { return await this.dispatcher.interrupt(); }
   async close(): Promise<void> { await this.dispatcher.close(); }
-  async compact(sessionId: string): Promise<void> {
-    await this.dispatcher.invoke("compact", [sessionId], "turn");
+  async compact(sessionId: string): Promise<CompactedContextUsage | undefined> {
+    const result = await this.dispatcher.invoke("compact", [sessionId], "turn");
+    if (result === null || typeof result !== "object" || Array.isArray(result)) {
+      return undefined;
+    }
+    const data = result as Record<string, unknown>;
+    if (
+      typeof data.usedTokens !== "number"
+      || !Number.isFinite(data.usedTokens)
+      || data.usedTokens <= 0
+      || typeof data.maxTokens !== "number"
+      || !Number.isFinite(data.maxTokens)
+      || data.maxTokens <= 0
+    ) {
+      return undefined;
+    }
+    return {
+      usedTokens: data.usedTokens,
+      maxTokens: data.maxTokens,
+      estimated: data.estimated === true,
+    };
   }
   async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
     const result = await this.dispatcher.invoke("intervene", [input]);

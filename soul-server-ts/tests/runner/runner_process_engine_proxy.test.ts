@@ -9,6 +9,40 @@ import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
 
 describe("RunnerProcessEngineProxy", () => {
+  it("returns a validated compact context usage value from the child", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      usedTokens: 14223,
+      maxTokens: 1000000,
+      estimated: true,
+    });
+    const proxy = new RunnerProcessEngineProxy(
+      "claude",
+      "/workspace/a",
+      { invoke } as never,
+    );
+
+    await expect(proxy.compact("backend-session-a")).resolves.toEqual({
+      usedTokens: 14223,
+      maxTokens: 1000000,
+      estimated: true,
+    });
+    expect(invoke).toHaveBeenCalledWith("compact", ["backend-session-a"], "turn");
+  });
+
+  it.each([
+    { name: "not supported", result: { status: "not_supported" } },
+    { name: "missing", result: undefined },
+    { name: "invalid counts", result: { usedTokens: 0, maxTokens: 1000000, estimated: true } },
+  ])("returns undefined for a compact result that is $name", async ({ result }) => {
+    const proxy = new RunnerProcessEngineProxy(
+      "claude",
+      "/workspace/a",
+      { invoke: vi.fn().mockResolvedValue(result) } as never,
+    );
+
+    await expect(proxy.compact("backend-session-a")).resolves.toBeUndefined();
+  });
+
   it("gives compact the configured turn boundary without widening control commands", async () => {
     const turnTimeoutMs = 1_800_000;
     const controlTimeoutMs = 30_000;

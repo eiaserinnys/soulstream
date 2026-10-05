@@ -1,0 +1,3783 @@
+{
+  "withApiUsage": {
+    "categories": [
+      {
+        "name": "System tools",
+        "tokens": 7590,
+        "color": "inactive",
+        "kind": "used"
+      },
+      {
+        "name": "MCP server instructions",
+        "tokens": 717,
+        "color": "green_FOR_SUBAGENTS_ONLY",
+        "kind": "used"
+      },
+      {
+        "name": "MCP tools (deferred)",
+        "tokens": 2100,
+        "color": "inactive",
+        "isDeferred": true,
+        "kind": "deferred"
+      },
+      {
+        "name": "System tools (deferred)",
+        "tokens": 13093,
+        "color": "inactive",
+        "isDeferred": true,
+        "kind": "deferred"
+      },
+      {
+        "name": "Memory files",
+        "tokens": 887,
+        "color": "claude",
+        "kind": "used"
+      },
+      {
+        "name": "Skills",
+        "tokens": 2207,
+        "color": "warning",
+        "kind": "used"
+      },
+      {
+        "name": "Messages",
+        "tokens": 355113,
+        "color": "purple_FOR_SUBAGENTS_ONLY",
+        "kind": "used"
+      },
+      {
+        "name": "Autocompact buffer",
+        "tokens": 33000,
+        "color": "inactive",
+        "kind": "buffer"
+      },
+      {
+        "name": "Free space",
+        "tokens": 600486,
+        "color": "promptBorder",
+        "kind": "free"
+      }
+    ],
+    "totalTokens": 366514,
+    "maxTokens": 1000000,
+    "rawMaxTokens": 1000000,
+    "autocompactSource": "model-default",
+    "percentage": 37,
+    "gridRows": [
+      [
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "System tools",
+          "tokens": 7590,
+          "percentage": 1,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "System tools",
+          "tokens": 7590,
+          "percentage": 1,
+          "squareFullness": 0.518
+        },
+        {
+          "color": "green_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "MCP server instructions",
+          "tokens": 717,
+          "percentage": 0,
+          "squareFullness": 0.1434
+        },
+        {
+          "color": "claude",
+          "isFilled": true,
+          "categoryName": "Memory files",
+          "tokens": 887,
+          "percentage": 0,
+          "squareFullness": 0.1774
+        },
+        {
+          "color": "warning",
+          "isFilled": true,
+          "categoryName": "Skills",
+          "tokens": 2207,
+          "percentage": 0,
+          "squareFullness": 0.4414
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 355113,
+          "percentage": 36,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 600486,
+          "percentage": 60,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 0.6000000000000005
+        }
+      ]
+    ],
+    "model": "claude-sonnet-5-5",
+    "memoryFiles": [
+      {
+        "path": "/home/eias/workspace/CLAUDE.md",
+        "type": "Project",
+        "tokens": 887
+      }
+    ],
+    "mcpTools": [
+      {
+        "name": "mcp__claude_ai_Claude_Docs__batch",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 165,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__create",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 256,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__delete",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 343,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__export",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 324,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__guide",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 208,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__query",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 182,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__read",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 324,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__update",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 298,
+        "isLoaded": false
+      }
+    ],
+    "agents": [],
+    "slashCommands": {
+      "totalCommands": 14,
+      "includedCommands": 14,
+      "tokens": 919
+    },
+    "skills": {
+      "totalSkills": 14,
+      "includedSkills": 14,
+      "tokens": 2207,
+      "skillFrontmatter": [
+        {
+          "name": "dataviz",
+          "source": "built-in",
+          "tokens": 482
+        },
+        {
+          "name": "update-config",
+          "source": "built-in",
+          "tokens": 236
+        },
+        {
+          "name": "keybindings-help",
+          "source": "built-in",
+          "tokens": 83
+        },
+        {
+          "name": "code-review",
+          "source": "built-in",
+          "tokens": 334
+        },
+        {
+          "name": "simplify",
+          "source": "built-in",
+          "tokens": 63
+        },
+        {
+          "name": "fewer-permission-prompts",
+          "source": "built-in",
+          "tokens": 64
+        },
+        {
+          "name": "loop",
+          "source": "built-in",
+          "tokens": 115
+        },
+        {
+          "name": "schedule",
+          "source": "built-in",
+          "tokens": 127
+        },
+        {
+          "name": "claude-api",
+          "source": "built-in",
+          "tokens": 361
+        },
+        {
+          "name": "workflow-authoring",
+          "source": "built-in",
+          "tokens": 84
+        },
+        {
+          "name": "run",
+          "source": "built-in",
+          "tokens": 123
+        },
+        {
+          "name": "plugin-authoring",
+          "source": "built-in",
+          "tokens": 83
+        },
+        {
+          "name": "init",
+          "source": "built-in",
+          "tokens": 22
+        },
+        {
+          "name": "security-review",
+          "source": "built-in",
+          "tokens": 30
+        }
+      ]
+    },
+    "autoCompactThreshold": 967000,
+    "isAutoCompactEnabled": true,
+    "messageBreakdown": {
+      "toolCallTokens": 312,
+      "toolResultTokens": 78583,
+      "attachmentTokens": 15124,
+      "assistantMessageTokens": 623,
+      "userMessageTokens": 165097,
+      "redirectedContextTokens": 0,
+      "unattributedTokens": 95374,
+      "toolCallsByType": [
+        {
+          "name": "Read",
+          "callTokens": 312,
+          "resultTokens": 78583
+        }
+      ],
+      "attachmentsByType": [
+        {
+          "name": "prompt_snapshot",
+          "tokens": 10645
+        },
+        {
+          "name": "skill_listing",
+          "tokens": 1751
+        },
+        {
+          "name": "mcp_instructions_delta",
+          "tokens": 516
+        },
+        {
+          "name": "deferred_tools_record",
+          "tokens": 448
+        },
+        {
+          "name": "agent_listing_delta",
+          "tokens": 435
+        },
+        {
+          "name": "deferred_tools_delta",
+          "tokens": 417
+        },
+        {
+          "name": "instructions",
+          "tokens": 290
+        },
+        {
+          "name": "read_truncation_notice",
+          "tokens": 208
+        },
+        {
+          "name": "total_tokens_reminder",
+          "tokens": 115
+        },
+        {
+          "name": "session_context",
+          "tokens": 80
+        },
+        {
+          "name": "model",
+          "tokens": 64
+        },
+        {
+          "name": "environment",
+          "tokens": 63
+        },
+        {
+          "name": "remote_session_change",
+          "tokens": 62
+        },
+        {
+          "name": "credential_org",
+          "tokens": 21
+        },
+        {
+          "name": "date",
+          "tokens": 9
+        }
+      ]
+    },
+    "apiUsage": {
+      "input_tokens": 2,
+      "output_tokens": 12,
+      "cache_creation_input_tokens": 57,
+      "cache_read_input_tokens": 366455
+    }
+  },
+  "afterCompact": {
+    "categories": [
+      {
+        "name": "System tools",
+        "tokens": 7542,
+        "color": "inactive",
+        "kind": "used"
+      },
+      {
+        "name": "MCP server instructions",
+        "tokens": 717,
+        "color": "green_FOR_SUBAGENTS_ONLY",
+        "kind": "used"
+      },
+      {
+        "name": "MCP tools (deferred)",
+        "tokens": 2100,
+        "color": "inactive",
+        "isDeferred": true,
+        "kind": "deferred"
+      },
+      {
+        "name": "System tools (deferred)",
+        "tokens": 13093,
+        "color": "inactive",
+        "isDeferred": true,
+        "kind": "deferred"
+      },
+      {
+        "name": "Memory files",
+        "tokens": 887,
+        "color": "claude",
+        "kind": "used"
+      },
+      {
+        "name": "Skills",
+        "tokens": 2207,
+        "color": "warning",
+        "kind": "used"
+      },
+      {
+        "name": "Messages",
+        "tokens": 2870,
+        "color": "purple_FOR_SUBAGENTS_ONLY",
+        "kind": "used"
+      },
+      {
+        "name": "Autocompact buffer",
+        "tokens": 33000,
+        "color": "inactive",
+        "kind": "buffer"
+      },
+      {
+        "name": "Free space",
+        "tokens": 952777,
+        "color": "promptBorder",
+        "kind": "free"
+      }
+    ],
+    "totalTokens": 14223,
+    "maxTokens": 1000000,
+    "rawMaxTokens": 1000000,
+    "autocompactSource": "model-default",
+    "percentage": 1,
+    "gridRows": [
+      [
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "System tools",
+          "tokens": 7542,
+          "percentage": 1,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "System tools",
+          "tokens": 7542,
+          "percentage": 1,
+          "squareFullness": 0.5084
+        },
+        {
+          "color": "green_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "MCP server instructions",
+          "tokens": 717,
+          "percentage": 0,
+          "squareFullness": 0.1434
+        },
+        {
+          "color": "claude",
+          "isFilled": true,
+          "categoryName": "Memory files",
+          "tokens": 887,
+          "percentage": 0,
+          "squareFullness": 0.1774
+        },
+        {
+          "color": "warning",
+          "isFilled": true,
+          "categoryName": "Skills",
+          "tokens": 2207,
+          "percentage": 0,
+          "squareFullness": 0.4414
+        },
+        {
+          "color": "purple_FOR_SUBAGENTS_ONLY",
+          "isFilled": true,
+          "categoryName": "Messages",
+          "tokens": 2870,
+          "percentage": 0,
+          "squareFullness": 0.5740000000000001
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        }
+      ],
+      [
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "promptBorder",
+          "isFilled": true,
+          "categoryName": "Free space",
+          "tokens": 952777,
+          "percentage": 95,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 1
+        },
+        {
+          "color": "inactive",
+          "isFilled": true,
+          "categoryName": "Autocompact buffer",
+          "tokens": 33000,
+          "percentage": 3,
+          "squareFullness": 0.6000000000000005
+        }
+      ]
+    ],
+    "model": "claude-sonnet-5-5",
+    "memoryFiles": [
+      {
+        "path": "/home/eias/workspace/CLAUDE.md",
+        "type": "Project",
+        "tokens": 887
+      }
+    ],
+    "mcpTools": [
+      {
+        "name": "mcp__claude_ai_Claude_Docs__batch",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 165,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__create",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 256,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__delete",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 343,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__export",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 324,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__guide",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 208,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__query",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 182,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__read",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 324,
+        "isLoaded": false
+      },
+      {
+        "name": "mcp__claude_ai_Claude_Docs__update",
+        "serverName": "claude_ai_Claude_Docs",
+        "tokens": 298,
+        "isLoaded": false
+      }
+    ],
+    "agents": [],
+    "slashCommands": {
+      "totalCommands": 14,
+      "includedCommands": 14,
+      "tokens": 919
+    },
+    "skills": {
+      "totalSkills": 14,
+      "includedSkills": 14,
+      "tokens": 2207,
+      "skillFrontmatter": [
+        {
+          "name": "dataviz",
+          "source": "built-in",
+          "tokens": 482
+        },
+        {
+          "name": "update-config",
+          "source": "built-in",
+          "tokens": 236
+        },
+        {
+          "name": "keybindings-help",
+          "source": "built-in",
+          "tokens": 83
+        },
+        {
+          "name": "code-review",
+          "source": "built-in",
+          "tokens": 334
+        },
+        {
+          "name": "simplify",
+          "source": "built-in",
+          "tokens": 63
+        },
+        {
+          "name": "fewer-permission-prompts",
+          "source": "built-in",
+          "tokens": 64
+        },
+        {
+          "name": "loop",
+          "source": "built-in",
+          "tokens": 115
+        },
+        {
+          "name": "schedule",
+          "source": "built-in",
+          "tokens": 127
+        },
+        {
+          "name": "claude-api",
+          "source": "built-in",
+          "tokens": 361
+        },
+        {
+          "name": "workflow-authoring",
+          "source": "built-in",
+          "tokens": 84
+        },
+        {
+          "name": "run",
+          "source": "built-in",
+          "tokens": 123
+        },
+        {
+          "name": "plugin-authoring",
+          "source": "built-in",
+          "tokens": 83
+        },
+        {
+          "name": "init",
+          "source": "built-in",
+          "tokens": 22
+        },
+        {
+          "name": "security-review",
+          "source": "built-in",
+          "tokens": 30
+        }
+      ]
+    },
+    "autoCompactThreshold": 967000,
+    "isAutoCompactEnabled": true,
+    "messageBreakdown": {
+      "toolCallTokens": 0,
+      "toolResultTokens": 0,
+      "attachmentTokens": 1455,
+      "assistantMessageTokens": 9,
+      "userMessageTokens": 1032,
+      "redirectedContextTokens": 0,
+      "unattributedTokens": 374,
+      "toolCallsByType": [],
+      "attachmentsByType": [
+        {
+          "name": "mcp_instructions_delta",
+          "tokens": 516
+        },
+        {
+          "name": "agent_listing_delta",
+          "tokens": 435
+        },
+        {
+          "name": "deferred_tools_delta",
+          "tokens": 301
+        },
+        {
+          "name": "compact_file_reference",
+          "tokens": 76
+        },
+        {
+          "name": "model",
+          "tokens": 64
+        },
+        {
+          "name": "environment",
+          "tokens": 63
+        }
+      ]
+    },
+    "apiUsage": null
+  }
+}

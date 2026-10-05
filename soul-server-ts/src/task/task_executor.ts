@@ -27,6 +27,7 @@ import type {
   SSEEventPayload,
   SupportsCompact,
 } from "../engine/protocol.js";
+import { makeContextUsagePayload } from "../engine/context_usage.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -1328,12 +1329,23 @@ export class TaskExecutor {
       return false;
     }
     try {
-      await (runner.engine as EnginePort & SupportsCompact).compact(task.codexThreadId);
+      const compactedContextUsage = await (runner.engine as EnginePort & SupportsCompact)
+        .compact(task.codexThreadId);
       await this.engineEventPublisher.publishEngineEvent(task, {
         type: "compact",
         trigger: "auto_preemptive",
         message: "Claude session compacted (auto_preemptive)",
       } as SSEEventPayload);
+      if (compactedContextUsage) {
+        const contextUsage = makeContextUsagePayload(
+          compactedContextUsage.usedTokens,
+          compactedContextUsage.maxTokens,
+          { estimated: compactedContextUsage.estimated },
+        );
+        if (contextUsage) {
+          await this.engineEventPublisher.publishEngineEvent(task, contextUsage);
+        }
+      }
       const compactEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
       if (compactEventId !== null) task.lastEventId = compactEventId;
       return true;

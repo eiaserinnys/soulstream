@@ -29,8 +29,56 @@ import {
   sdkTaskNotificationInput,
   sdkTaskNotificationResult,
 } from "./claude_sdk_persistent_test_harness.js";
+import contextUsageFixture from "./claude_context_usage_after_compact.fixture.json";
 
 const silentLogger = pino({ level: "silent" });
+
+async function runPersistentCompact(
+  getContextUsage?: () => Promise<unknown>,
+  logger = silentLogger,
+) {
+  const harness = makeHarness(
+    getContextUsage === undefined ? {} : { getContextUsage },
+  );
+  let queryCalls = 0;
+  const client = new ClaudeSdkClient(
+    {
+      query: (params) => {
+        queryCalls += 1;
+        return harness.queryFn(params);
+      },
+      detachedEventSink: harness.detached,
+    },
+    logger,
+  );
+  const first = collect(client.runPersistent(runOptions("first turn"), abortSignal()));
+  const firstInput = await harness.nextInput();
+  harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+  await first;
+
+  const compact = client.compact("sdk-session");
+  const compactInput = await Promise.race([
+    harness.nextInput(),
+    compact.then(() => null),
+  ]);
+  if (compactInput === null) {
+    throw new Error("Persistent compact finished before consuming /compact input");
+  }
+  harness.push({
+    type: "system",
+    subtype: "compact_boundary",
+    compact_metadata: { trigger: "manual" },
+    uuid: "persistent-compact-boundary",
+    session_id: "sdk-session",
+  } as unknown as SDKMessage);
+  harness.push(sdkResult("sdk-session", compactInput.uuid, "compacted"));
+
+  return {
+    client,
+    compactedUsage: await compact,
+    queryCalls,
+  };
+}
 
 describe("ClaudeSdkClient persistent runtime", () => {
   it("warns when maxTurns is ignored by the persistent runtime", async () => {
@@ -77,61 +125,75 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await client.close();
   });
 
-  it("sends preemptive compact through the persistent query without replacing its control query", async () => {
-    const harness = makeHarness();
-    let queryCalls = 0;
-    const client = new ClaudeSdkClient(
-      {
-        query: (params) => {
-          queryCalls += 1;
-          if (queryCalls === 1) return harness.queryFn(params);
-          const output = (async function* () {
-            yield {
-              type: "system",
-              subtype: "compact_boundary",
-              compact_metadata: { trigger: "manual" },
-              uuid: "separate-compact-boundary",
-              session_id: "sdk-session",
-            } as unknown as SDKMessage;
-          })();
-          return Object.assign(output, {
-            interrupt: vi.fn().mockResolvedValue(undefined),
-            close: vi.fn(),
-          }) as unknown as ClaudeSdkQuery;
-        },
-        detachedEventSink: harness.detached,
-      },
-      silentLogger,
-    );
-    const first = collect(client.runPersistent({
-      ...runOptions("first turn"),
-      env: { CLAUDE_CODE_OAUTH_TOKEN: "task-token" },
-    }, abortSignal()));
-    const firstInput = await harness.nextInput();
-    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
-    await first;
+  it("returns the post-compact CLI count as estimated through the same persistent Query", async () => {
+    const getContextUsage = vi.fn().mockResolvedValue(contextUsageFixture.afterCompact);
+    const result = await runPersistentCompact(getContextUsage);
 
-    const compact = client.compact("sdk-session");
-    const compactInput = await Promise.race([
-      harness.nextInput(),
-      compact.then(() => null),
-    ]);
-    expect(compactInput?.message.content).toBe("/compact");
-    expect(queryCalls).toBe(1);
-    harness.push({
-      type: "system",
-      subtype: "compact_boundary",
-      compact_metadata: { trigger: "manual" },
-      uuid: "persistent-compact-boundary",
-      session_id: "sdk-session",
-    } as unknown as SDKMessage);
-    harness.push(sdkResult("sdk-session", compactInput!.uuid, "compacted"));
-    await compact;
+    expect(result.compactedUsage).toEqual({
+      usedTokens: 14223,
+      maxTokens: 1000000,
+      estimated: true,
+    });
+    expect(getContextUsage).toHaveBeenCalledOnce();
+    expect(result.queryCalls).toBe(1);
 
-    await expect(client.backgroundClaudeRuntimeTasks()).resolves.toMatchObject({
+    await expect(result.client.backgroundClaudeRuntimeTasks()).resolves.toMatchObject({
       status: "no_match",
     });
-    await client.close();
+    await result.client.close();
+  });
+
+  it("marks post-compact usage as measured when apiUsage is present", async () => {
+    const getContextUsage = vi.fn().mockResolvedValue(contextUsageFixture.withApiUsage);
+    const result = await runPersistentCompact(getContextUsage);
+
+    expect(result.compactedUsage).toEqual({
+      usedTokens: 366514,
+      maxTokens: 1000000,
+      estimated: false,
+    });
+    expect(getContextUsage).toHaveBeenCalledOnce();
+    await result.client.close();
+  });
+
+  it("returns undefined and warns when the post-compact usage query rejects", async () => {
+    const logger = pino({ level: "silent" });
+    const warn = vi.spyOn(logger, "warn");
+    const getContextUsage = vi.fn().mockRejectedValue(new Error("usage unavailable"));
+    const result = await runPersistentCompact(getContextUsage, logger);
+
+    expect(result.compactedUsage).toBeUndefined();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "Claude context usage query after compact failed",
+    );
+    await result.client.close();
+  });
+
+  it("returns undefined and warns when the persistent Query has no usage getter", async () => {
+    const logger = pino({ level: "silent" });
+    const warn = vi.spyOn(logger, "warn");
+    const result = await runPersistentCompact(undefined, logger);
+
+    expect(result.compactedUsage).toBeUndefined();
+    expect(warn).toHaveBeenCalledOnce();
+    await result.client.close();
+  });
+
+  it("returns undefined when the CLI count is not positive and finite", async () => {
+    const logger = pino({ level: "silent" });
+    const warn = vi.spyOn(logger, "warn");
+    const getContextUsage = vi.fn().mockResolvedValue({
+      totalTokens: 0,
+      rawMaxTokens: 1000000,
+      apiUsage: null,
+    });
+    const result = await runPersistentCompact(getContextUsage, logger);
+
+    expect(result.compactedUsage).toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+    await result.client.close();
   });
 
   it("no-ops an unproven settled retry and accepts the next distinct input", async () => {
