@@ -249,6 +249,17 @@ describe('ChatBody store subscription boundary', () => {
     mockRenderRealtimeVoiceControls.mockClear();
   });
 
+  test('switching from a long A draft to a nonempty B draft displays only B', async () => {
+    await preparePersistentChatDrafts();
+    useDraftStore.getState().write(persistentChatDraftKey(SID), '세션 A의 긴 초안\n둘째 줄');
+    useDraftStore.getState().write(persistentChatDraftKey(OTHER_SID), 'B 초안');
+    const view = await renderSettled();
+    expect(view.getByTestId('chat-composer-input').props.value).toBe('세션 A의 긴 초안\n둘째 줄');
+    view.rerender(<View><ChatBody sessionId={OTHER_SID} /></View>);
+    expect(view.getByTestId('chat-composer-input').props.value).toBe('B 초안');
+    view.unmount();
+  });
+
   test('typing updates only the composer, without rendering the conversation list', async () => {
     await preparePersistentChatDrafts();
     const view = await renderSettled();
@@ -262,7 +273,7 @@ describe('ChatBody store subscription boundary', () => {
     await preparePersistentChatDrafts();
     const view = await renderSettled();
     mockRenderChatComposer.mockClear();
-    act(() => useChatStore.getState().setStreamingEvent(SID, {
+    act(() => useChatStore.getState().setStreamingEvent(SID, 'assistant', {
       id: 'live', type: 'assistant_message', data: { text: '답변', streamIdentity: 'live' },
     }));
     act(() => useChatStore.getState().mergeEvents(SID, [{

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -56,7 +56,7 @@ interface Props {
   }) => void;
 }
 
-export function ChatEventList({
+export const ChatEventList = memo(function ChatEventList({
   flatListRef,
   items,
   onRetryPending,
@@ -86,86 +86,25 @@ export function ChatEventList({
   // 전체 선택이 다시 적용되어 사용자가 조절한 핸들 범위가 초기화된다.
   const closeSelection = useCallback(() => setActiveSelection(null), []);
 
+  const selectText = useCallback((eventKey: string, model: MessageSelectionModel) => {
+    setActiveSelection({ eventKey, model });
+  }, []);
+  const extraData = useMemo(() => [activeSelection, highlightedItemKey], [activeSelection, highlightedItemKey]);
+  const renderItem = useCallback(({ item }: { item: ChatRenderItem }) => (
+    <ChatEventRow item={item} session={session} sessionId={sessionId} api={api}
+      onRetryPending={onRetryPending} onRestorePending={onRestorePending}
+      selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
+      highlighted={item.key === highlightedItemKey} selectText={selectText} closeSelection={closeSelection} />
+  ), [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection]);
+
   return (
     <FlatList
       ref={flatListRef}
       data={items}
       inverted
-      extraData={[activeSelection, highlightedItemKey]}
-      keyExtractor={(item) => item.key}
-      renderItem={({ item }) => {
-        if (item.kind === 'typing') return <TypingIndicator session={session} />;
-        if (item.kind === 'turn-summary') {
-          return (
-            <SearchFocusHighlight active={item.key === highlightedItemKey}>
-              <TurnSummaryCaption content={item.content} />
-            </SearchFocusHighlight>
-          );
-        }
-        if (item.kind === 'tool') {
-          return (
-            <SearchFocusHighlight active={item.key === highlightedItemKey}>
-              <>
-                <EventContextMenu
-                  sessionId={sessionId}
-                  event={item.start}
-                  resultEvent={item.result}
-                >
-                  <ToolEvent
-                    start={item.start}
-                    result={item.result}
-                    sessionId={sessionId}
-                    api={api}
-                  />
-                </EventContextMenu>
-                {item.summaries?.map((summary) => (
-                  <TurnSummaryCaption
-                    key={summary.key}
-                    content={summary.content}
-                  />
-                ))}
-              </>
-            </SearchFocusHighlight>
-          );
-        }
-        const selectionModel = createMessageSelectionModel(item.event);
-        const selectionActive =
-          activeSelection?.eventKey === item.key;
-        return (
-          <SearchFocusHighlight active={item.key === highlightedItemKey}>
-            <>
-              <EventContextMenu
-                sessionId={sessionId}
-                event={item.event}
-                onSelectText={selectionModel
-                  ? (model) => setActiveSelection({ eventKey: item.key, model })
-                  : undefined}
-                selectionActive={selectionActive}
-              >
-                <EventRenderer
-                  event={item.event}
-                  sessionId={sessionId}
-                  session={session}
-                  onRetryPending={onRetryPending}
-                  onRestorePending={onRestorePending}
-                  selectionModel={
-                    selectionActive && activeSelection
-                      ? activeSelection.model
-                      : null
-                  }
-                  onSelectionDone={closeSelection}
-                />
-              </EventContextMenu>
-              {item.summaries?.map((summary) => (
-                <TurnSummaryCaption
-                  key={summary.key}
-                  content={summary.content}
-                />
-              ))}
-            </>
-          </SearchFocusHighlight>
-        );
-      }}
+      extraData={extraData}
+      keyExtractor={itemKey}
+      renderItem={renderItem}
       onTouchStart={() => {
         if (activeSelection !== null) closeSelection();
       }}
@@ -207,7 +146,100 @@ export function ChatEventList({
       }
     />
   );
+});
+
+interface RowProps {
+  item: ChatRenderItem;
+  session: Props['session'];
+  sessionId: string;
+  api: Props['api'];
+  onRetryPending: Props['onRetryPending'];
+  onRestorePending: Props['onRestorePending'];
+  selection: MessageSelectionModel | null;
+  highlighted: boolean;
+  selectText(eventKey: string, model: MessageSelectionModel): void;
+  closeSelection(): void;
 }
+
+const ChatEventRow = memo(function ChatEventRow({
+  item, session, sessionId, api, onRetryPending, onRestorePending,
+  selection, highlighted, selectText, closeSelection,
+}: RowProps) {
+  if (item.kind === 'typing') return <TypingIndicator session={session} />;
+  if (item.kind === 'turn-summary') {
+    return (
+      <SearchFocusHighlight active={highlighted}>
+        <TurnSummaryCaption content={item.content} />
+      </SearchFocusHighlight>
+    );
+  }
+  if (item.kind === 'tool') {
+    return (
+      <SearchFocusHighlight active={highlighted}>
+        <>
+          <EventContextMenu
+            sessionId={sessionId}
+            event={item.start}
+            resultEvent={item.result}
+          >
+            <ToolEvent
+              start={item.start}
+              result={item.result}
+              sessionId={sessionId}
+              api={api}
+            />
+          </EventContextMenu>
+          {item.summaries?.map((summary) => (
+            <TurnSummaryCaption
+              key={summary.key}
+              content={summary.content}
+            />
+          ))}
+        </>
+      </SearchFocusHighlight>
+    );
+  }
+  const selectionModel = createMessageSelectionModel(item.event);
+  const selectionActive =
+    selection !== null;
+  return (
+    <SearchFocusHighlight active={highlighted}>
+      <>
+        <EventContextMenu
+          sessionId={sessionId}
+          event={item.event}
+          onSelectText={selectionModel
+            ? (model) => selectText(item.key, model)
+            : undefined}
+          selectionActive={selectionActive}
+        >
+          <EventRenderer
+            event={item.event}
+            sessionId={sessionId}
+            session={session}
+            onRetryPending={onRetryPending}
+            onRestorePending={onRestorePending}
+            selectionModel={
+              selectionActive && selection
+                ? selection
+                : null
+            }
+            onSelectionDone={closeSelection}
+          />
+        </EventContextMenu>
+        {item.summaries?.map((summary) => (
+          <TurnSummaryCaption
+            key={summary.key}
+            content={summary.content}
+          />
+        ))}
+      </>
+    </SearchFocusHighlight>
+  );
+
+});
+
+const itemKey = (item: ChatRenderItem) => item.key;
 
 function SearchFocusHighlight({
   active,

@@ -387,12 +387,18 @@ export function ChatBody({
     return () => clearTimeout(clearHighlight);
   }, [highlightedItemKey]);
 
-  const handleListScroll = (
+  const handleListScroll = useCallback((
     event: NativeSyntheticEvent<NativeScrollEvent>,
   ) => {
     onScrollOffsetChange(event.nativeEvent.contentOffset.y);
     onScroll(event);
-  };
+  }, [onScroll, onScrollOffsetChange]);
+
+  const handleScrollToIndexFailed = useCallback((info: { index: number; averageItemLength: number }) => {
+    flatListRef.current?.scrollToOffset({
+      offset: Math.max(0, info.averageItemLength * info.index), animated: true,
+    });
+  }, []);
 
   if (!sessionId) {
     return (
@@ -444,12 +450,7 @@ export function ChatBody({
         mvcpEnabled={mvcpEnabled}
         highlightedItemKey={highlightedItemKey}
         onContentSizeChange={onContentSizeChange}
-        onScrollToIndexFailed={(info) => {
-          flatListRef.current?.scrollToOffset({
-            offset: Math.max(0, info.averageItemLength * info.index),
-            animated: true,
-          });
-        }}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
       />
 
       <ClaudeRuntimeTasksStrip sessionId={sessionId} api={api} />
