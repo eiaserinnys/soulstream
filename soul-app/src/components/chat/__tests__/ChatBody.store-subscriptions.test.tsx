@@ -8,6 +8,7 @@ const mockRenderChatRow = jest.fn();
 let mockRealChatEventList = false;
 const mockApiClient = {
   sessionEventsUrl: jest.fn(() => 'https://server.test/api/sessions/sess-1/events'),
+  getSessionsByIds: jest.fn().mockResolvedValue([]),
   intervene: jest.fn(),
 };
 let mockSendPromise: Promise<void> | undefined;
@@ -190,6 +191,8 @@ function resetStores() {
       },
     },
     catalog: { folders: [], sessions: {} },
+    feedMembership: {},
+    feedSessionIds: [],
     catalogReady: false,
   });
   useSettingsStore.setState({
@@ -256,6 +259,7 @@ describe('ChatBody store subscription boundary', () => {
       handleSend: jest.fn(),
     }));
     mockApiClient.intervene.mockReset();
+    mockApiClient.getSessionsByIds.mockReset().mockResolvedValue([]);
     mockHistoryState.current = {
       historyLoading: false,
       reachedTop: true,
@@ -265,6 +269,33 @@ describe('ChatBody store subscription boundary', () => {
     mockHistoryLoadingRef.current = false;
     resetStores();
     mockRenderRealtimeVoiceControls.mockClear();
+  });
+
+  test('채팅은 캐시에 없는 세션 한 건을 한 번 받아 오고 피드 후보는 늘리지 않는다', async () => {
+    await preparePersistentChatDrafts();
+    resetStores();
+    useSessionStore.setState({ sessions: {}, feedMembership: {}, feedSessionIds: [] });
+    mockApiClient.getSessionsByIds.mockResolvedValueOnce([{
+      agentSessionId: SID,
+      nodeId: 'node-1',
+      displayName: 'Hydrated chat session',
+      status: 'idle',
+      createdAt: '2026-05-23T00:00:00Z',
+      updatedAt: '2026-05-23T00:00:00Z',
+    }]);
+
+    const view = render(<View><ChatBody sessionId={SID} /></View>);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockApiClient.getSessionsByIds).toHaveBeenCalledTimes(1);
+    expect(mockApiClient.getSessionsByIds).toHaveBeenCalledWith([SID]);
+    expect(useSessionStore.getState().sessions[SID]?.displayName).toBe('Hydrated chat session');
+    expect(useSessionStore.getState().feedMembership).not.toHaveProperty(SID);
+    expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+    view.unmount();
   });
 
   test('session preview and timestamp updates render neither the composer nor existing rows', async () => {

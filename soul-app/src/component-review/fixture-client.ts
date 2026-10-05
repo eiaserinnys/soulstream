@@ -1,9 +1,9 @@
 import type { ApiClient } from '../api/client';
+import type { FeedPage } from '../api/feedPage';
 import { Alert, Platform, type AlertButton } from 'react-native';
 import type { CardDto, CardMutationResult, CardPatch } from '../api/cardTypes';
 import {
   createReviewApi,
-  entryShellCatalogSessions,
   entryShellFolders,
   entryShellSessions,
   folderTabReviewFolders,
@@ -12,6 +12,13 @@ import {
   starredFolders,
   type ReviewCardMutation,
 } from './fixtures';
+import {
+  currentFeedFixtureState,
+  feedFixturePage,
+  feedFixtureSessionLookup,
+  reviewFeedStreamUrl,
+  type FeedFixtureRequest,
+} from './feed-fixtures';
 import { nativeSettingsReviewApi } from './native-settings-fixtures';
 import { dialogueApi } from './dialogue-fixtures';
 import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
@@ -19,6 +26,27 @@ import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
 const entryShellMutationLog: ReviewCardMutation[] = [];
+const entryShellFeedRequests: FeedFixtureRequest[] = [];
+const pendingFeedPageReleases: Array<() => void> = [];
+const pageErrorAttemptByCursor = new Map<string, number>();
+
+function isFeedWindowEnabled(): boolean {
+  return typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('feedWindow') === '1';
+}
+
+async function getEntryShellFeedPage(cursor: string): Promise<FeedPage> {
+  entryShellFeedRequests.push({ type: 'getFeedPage', cursor });
+  if (currentFeedFixtureState() === 'pageLoading') {
+    await new Promise<void>((resolve) => pendingFeedPageReleases.push(resolve));
+  }
+  if (currentFeedFixtureState() === 'pageError') {
+    const attempts = (pageErrorAttemptByCursor.get(cursor) ?? 0) + 1;
+    pageErrorAttemptByCursor.set(cursor, attempts);
+    if (attempts === 1) throw new Error('공개 예시: 다음 쪽을 불러오지 못했습니다.');
+  }
+  return feedFixturePage(cursor);
+}
 
 // Metro selects this only in component-review. Actual entry shells keep their
 // production components and receive public data at the transport boundary.
@@ -33,15 +61,26 @@ const entryShellApi = {
   ...createReviewApi('normal', { home: true, entryShell: true,
     directCardTouch: typeof window !== 'undefined' && new URLSearchParams(window.location?.search ?? '').get('cardTouch') === 'direct',
     onCardMutation: (mutation) => entryShellMutationLog.push(mutation) }),
-  getCatalog: async () => ({
-    folders: entryShellFolders,
-    sessions: entryShellCatalogSessions,
-    sessionList: entryShellSessions,
-    total: entryShellSessions.length,
-  }),
+  getCatalog: async (query?: { folder_id?: string; limit?: number; offset?: number }) => {
+    entryShellFeedRequests.push({ type: 'getCatalog' });
+    if (!query?.folder_id && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'entryShell') {
+      throw new Error('피드의 최초 자료는 catalog REST가 아니라 stream session_list로 제공됩니다.');
+    }
+    return {
+      folders: entryShellFolders,
+      sessions: {},
+      sessionList: entryShellSessions,
+      total: entryShellSessions.length,
+    };
+  },
+  getFeedPage: getEntryShellFeedPage,
+  getSessionsByIds: async (sessionIds: readonly string[]) => {
+    entryShellFeedRequests.push({ type: 'getSessionsByIds', sessionIds: [...sessionIds] });
+    return feedFixtureSessionLookup(sessionIds);
+  },
   getDailyHistory: async () => ({ dates: [] }),
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
-  catalogStreamUrl: () => '', nodeStreamUrl: () => '',
+  catalogStreamUrl: reviewFeedStreamUrl, nodeStreamUrl: () => '',
 };
 
 export const ENTRY_SHELL_ALERT_EVENT = 'soul-app-review-entry-shell-alert';
@@ -51,9 +90,19 @@ export type EntryShellAlertRequest = { title?: string; message?: string; buttons
 export function installEntryShellPublicHarness() {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return () => {};
   const previousAlert = Alert.alert;
-  const reviewWindow = window as Window & { __soulAppEntryShellCardMutations?: ReviewCardMutation[] };
+  const reviewWindow = window as Window & {
+    __soulAppEntryShellCardMutations?: ReviewCardMutation[];
+    __soulAppFeedFixture?: { requests: FeedFixtureRequest[]; releaseNextPage: () => void };
+  };
   entryShellMutationLog.length = 0;
+  entryShellFeedRequests.length = 0;
+  pendingFeedPageReleases.length = 0;
+  pageErrorAttemptByCursor.clear();
   reviewWindow.__soulAppEntryShellCardMutations = entryShellMutationLog;
+  reviewWindow.__soulAppFeedFixture = {
+    requests: entryShellFeedRequests,
+    releaseNextPage: () => pendingFeedPageReleases.shift()?.(),
+  };
   Alert.alert = ((title?: string, message?: string, buttons?: AlertButton[]) => {
     window.dispatchEvent(new CustomEvent<EntryShellAlertRequest>(ENTRY_SHELL_ALERT_EVENT, {
       detail: { title, message, buttons },
@@ -62,6 +111,7 @@ export function installEntryShellPublicHarness() {
   return () => {
     Alert.alert = previousAlert;
     delete reviewWindow.__soulAppEntryShellCardMutations;
+    delete reviewWindow.__soulAppFeedFixture;
   };
 }
 

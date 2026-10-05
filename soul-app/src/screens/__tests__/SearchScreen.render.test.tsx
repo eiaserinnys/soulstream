@@ -182,6 +182,58 @@ test('전체 스코프는 세션·대화 내용 두 섹션을 한 화면에 표�
   });
 });
 
+test('최근 세션은 캐시에 없는 id만 한 번에 받아 오고 피드 후보를 늘리지 않는다', async () => {
+  mockUseSessionSearch.mockReturnValue({
+    sessionResults: [], sessionMatches: [], searchStatus: null, messageResults: [],
+    navigationResults: [], loading: false, expansionPending: false, expansionFailed: false,
+    error: null, hasMore: false, loadMore: jest.fn(),
+  });
+  const missingRows = ['recent-missing-1', 'recent-missing-2'].map((agentSessionId) => ({
+    agentSessionId,
+    displayName: `Hydrated ${agentSessionId}`,
+    status: 'completed',
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-02T00:00:00.000Z',
+  }));
+  const fetchMock = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => ({ sessions: missingRows }),
+    text: async () => JSON.stringify({ sessions: missingRows }),
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+  });
+  global.fetch = fetchMock;
+  useSearchStore.getState().reset();
+  useSearchStore.setState({ query: '', recentSessionIds: ['cached-recent', ...missingRows.map((row) => row.agentSessionId)] });
+  useSessionStore.setState({
+    sessions: {
+      'cached-recent': {
+        agentSessionId: 'cached-recent', displayName: 'Cached recent', status: 'completed',
+        createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-02T00:00:00.000Z',
+      },
+    },
+    catalog: { folders: [], sessions: {} },
+    feedMembership: {},
+    feedSessionIds: [],
+  });
+
+  const screen = render(
+    <SearchScreen onOpenSession={jest.fn()} autoFocus={false} />,
+  );
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  await screen.findByText('Hydrated recent-missing-1');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const url = new URL(fetchMock.mock.calls[0][0]);
+  expect(url.searchParams.getAll('session_id')).toEqual(['recent-missing-1', 'recent-missing-2']);
+  expect(useSessionStore.getState().feedMembership).toEqual({});
+  expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+});
+
 test('의미 확장이 부분 실패하고 결과가 없으면 완료된 0건으로 표시하지 않는다', () => {
   mockUseSessionSearch.mockReturnValue({
     sessionResults: [],

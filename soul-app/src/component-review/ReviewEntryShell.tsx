@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, Text, View, type AlertButton } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { TabNavigator } from '../navigation/TabNavigator';
@@ -6,8 +6,6 @@ import { ThreePaneLayout } from '../components/split/ThreePaneLayout';
 import { TwoPaneWithDrawer } from '../components/split/TwoPaneWithDrawer';
 import { useDeviceType } from '../theme';
 import { useTokens } from '../theme';
-import { useSessionStore } from '../store/sessionStore';
-import { entryShellCatalogSessions, entryShellFolders, entryShellSessions } from './fixtures';
 import { AppModalSurface } from '../components/AppModalSurface';
 import { GroupedGlassRow, GroupedGlassSheet } from '../components/planner/GroupedGlassSheet';
 import { ENTRY_SHELL_ALERT_EVENT, installEntryShellPublicHarness, type EntryShellAlertRequest } from './fixture-client';
@@ -53,12 +51,6 @@ function EntryShellAlertHarness() {
 /** Real phone tab/stack/home and tablet split tree. Metro injects fixture transport. */
 export function ReviewEntryShell() {
   const device = useDeviceType();
-  useLayoutEffect(() => {
-    if (device === 'phone') return;
-    const reviewFolders = useSessionStore.getState().catalog.folders.filter(folder => !folder.id.startsWith('public-shell-folder-'));
-    useSessionStore.getState().setCatalog({ folders: [...reviewFolders, ...entryShellFolders], sessions: entryShellCatalogSessions });
-    useSessionStore.getState().setSessions(entryShellSessions);
-  }, [device]);
   return <View style={{ flex: 1 }}><NavigationContainer>{device === 'phone' ? <TabNavigator />
     : device === 'tabletLandscape' ? <ThreePaneLayout /> : <TwoPaneWithDrawer />}</NavigationContainer>
     <EntryShellAlertHarness />

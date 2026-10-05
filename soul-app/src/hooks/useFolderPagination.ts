@@ -9,18 +9,13 @@ import { captureAuthScope, useAuthScopeGeneration } from '../lib/auth-scope';
 /**
  * 폴더 화면 페이지네이션 — 표시 정본을 화면 지역 상태로 보유한다.
  *
- * 회귀 배경 (분석 캐시 20260505-1405-soul-app-feed-folder-session-mix.md):
- * - 이전 구현은 글로벌 useSessionStore.sessions에 mergeSessions로 누적해두고
- *   화면이 catalog.sessions ∩ sessions로 folderSessions를 계산했다.
- * - 당시 useSessionsStream의 setSessions(전체 덮어쓰기, 상위 50)는 SSE replay_gap·instance
- *   교체 시 누적분을 통째로 갈아엎어, 폴더 화면이 "최근 활성"만 노출하는 회귀가 발생했다.
- *   현재 feed snapshot은 mergeSessions와 scoped membership tombstone으로 처리한다.
+ * 피드 스냅샷은 받은 쪽의 행만 feedMembership 후보로 등록한다. 이 훅은 화면 표시용
+ * 페이지를 자체 보유하고, 행 cache merge는 피드 후보를 늘리지 않는다.
  *
  * 본 훅의 정본 분리 (design-principles §3·§9):
  * - 폴더 표시의 정본은 훅 내부 items: Session[]. 글로벌 store 변동에 영향받지 않는다.
- * - mergeSessions(list)도 호출하지만 cross-screen 룩업용 (ChatScreen 헤더가 sessions[sid]
- *   에 의존). 이는 표시 정본이 아닌 "다른 화면이 본 세션 디테일을 알 수 있게 하는"
- *   부수 효과로, 정본 분리 원칙에 어긋나지 않는다.
+ * - mergeSessions(list)는 다른 화면이 같은 세션을 열었을 때 쓸 수 있는 세션 cache를
+ *   보강한다. 이 cache 보강은 feedMembership 후보를 만들지 않는다.
  *
  * folderId === null 이면 비활성 — items 빈 배열, getCatalog 호출 안 함, loadMore noop.
  *
@@ -99,11 +94,8 @@ export function useFolderPagination(folderId: string | null): UseFolderPaginatio
       setItems((prev) => mergeFolderSessionItems(prev, list));
       setOffset((prev) => prev + list.length);
       if (list.length < PAGE_SIZE) setHasMore(false);
-      // 부가 효과 — ChatScreen 헤더·ChatBody·ChatPane이 sessions[sid]를 룩업하므로
-      // 글로벌 store에도 entry를 push해 둔다. 본 훅의 표시 정본은 위의 items이며
-      // mergeSessions 호출은 표시 정본이 아닌 cross-screen 룩업 보조 — 정본 둘 안티패턴
-      // 아님. ChatScreen 룩업의 정본은 어디까지나 useSessionStore.sessions이며 본 훅은
-      // 그 정본을 보강할 뿐이다 (gap 직후 글로벌 store 회귀는 useSessionsStream의 책임).
+      // 폴더 목록 페이지를 세션 cache에 보강한다. mergeSessions는 feedMembership을
+      // 바꾸지 않으므로 폴더 행이 피드 후보로 불어나지 않는다.
       mergeSessions(list);
     } catch (err) {
       if (captureAuthScope().generation !== requestGeneration) return;

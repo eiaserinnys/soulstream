@@ -9,8 +9,11 @@ export function SessionCard(props: SessionCardProps) {
   const { session } = props;
   const folderName = useSessionStore((s) => {
     const assignment = s.catalog.sessions[session.agentSessionId];
-    if (!assignment?.folderId) return null;
-    return s.catalog.folders.find((folder) => folder.id === assignment.folderId)?.name ?? null;
+    const folderId = assignment !== undefined
+      ? assignment.folderId
+      : session.folderId ?? null;
+    if (!folderId) return null;
+    return s.catalog.folders.find((folder) => folder.id === folderId)?.name ?? null;
   });
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);

@@ -34,6 +34,7 @@ import { renderItemContainsEventId } from './chatSearchAnchor';
 import { SessionStoryPanel } from './SessionStoryPanel';
 import { useAppForegroundLifecycle } from '../../hooks/useAppForegroundLifecycle';
 import { ChatInputComposer, type ChatInputComposerHandle } from './ChatInputComposer';
+import { useEnsureSessionCached } from '../../hooks/useEnsureSessionCached';
 
 interface Props {
   /** 표시할 세션 ID. undefined면 빈 상태 패널을 그린다. */
@@ -170,6 +171,7 @@ export function ChatBody({
     () => (serverUrl ? createApiClient(serverUrl, { authScope }) : null),
     [authScope, serverUrl]
   );
+  useEnsureSessionCached(api, sessionId);
 
   const commitPendingSnapshotBaseline = useCallback(
     (committedSessionId: string) => {

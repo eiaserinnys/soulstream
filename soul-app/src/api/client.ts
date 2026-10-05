@@ -43,6 +43,7 @@ export type {
   SessionMetadataSearchPage,
   SessionMetadataSearchParams,
 } from './searchEndpoints';
+export type { FeedPage } from './feedPage';
 export type {
   UiEventEntry,
   UiEventTarget,

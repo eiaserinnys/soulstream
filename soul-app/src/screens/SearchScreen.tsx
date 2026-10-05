@@ -92,6 +92,8 @@ export function SearchScreen({
   );
   const folders = useSessionStore((state) => state.catalog.folders);
   const sessions = useSessionStore((state) => state.sessions);
+  const mergeSessions = useSessionStore((state) => state.mergeSessions);
+  const attemptedRecentHydrationsRef = useRef(new Set<string>());
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList<SearchRow>>(null);
   const [filterVisible, setFilterVisible] = useState(false);
@@ -111,6 +113,22 @@ export function SearchScreen({
     loadMore,
     searchFlowId,
   } = useSessionSearch(api);
+
+  useEffect(() => {
+    if (!api || query.trim()) return;
+    const missingIds = [...new Set(recentSessionIds)].filter((sessionId) =>
+      !sessions[sessionId] && !attemptedRecentHydrationsRef.current.has(sessionId),
+    );
+    if (missingIds.length === 0) return;
+    for (const sessionId of missingIds) {
+      attemptedRecentHydrationsRef.current.add(sessionId);
+    }
+    void api.getSessionsByIds(missingIds)
+      .then(mergeSessions)
+      .catch((error) => {
+        console.warn('[SearchScreen] recent session hydration failed:', error);
+      });
+  }, [api, mergeSessions, query, recentSessionIds, sessions]);
 
   const nodeIds = useMemo(
     () => unique(Object.values(sessions).flatMap((session) =>

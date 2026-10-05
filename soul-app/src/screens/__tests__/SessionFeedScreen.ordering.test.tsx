@@ -94,9 +94,13 @@ function session(
 }
 
 function seed(sessions: Session[]) {
-  const store = useSessionStore.getState();
-  store.setCatalog({ folders: [], sessions: {} });
-  store.setSessions(sessions);
+  useSessionStore.getState().applyFeedSnapshot({
+    folders: [],
+    sessions,
+    total: sessions.length,
+    hasMore: false,
+    nextCursor: null,
+  });
 }
 
 function renderedSessionIds(view: RenderAPI): string[] {
@@ -114,7 +118,8 @@ beforeEach(() => {
   useSessionStore.setState({
     sessions: {},
     catalog: { folders: [], sessions: {} },
-    feedScopeTombstoneIds: {},
+    feedMembership: {},
+    feedPage: { hasMore: false, nextCursor: null, status: 'idle' },
     catalogReady: false,
     catalogLoadState: 'loading',
     catalogRetryRequest: 0,
@@ -145,8 +150,9 @@ test('catalog loading·failure·empty를 구분하고 실패 화면의 재시도
   expect(useSessionStore.getState().catalogRetryRequest).toBe(1);
 
   act(() => {
-    useSessionStore.getState().setCatalog({ folders: [], sessions: {} });
-    useSessionStore.getState().setSessions([]);
+    useSessionStore.getState().applyFeedSnapshot({
+      folders: [], sessions: [], total: 0, hasMore: false, nextCursor: null,
+    });
   });
   expect(view.queryByText('세션을 불러오는 중입니다.')).toBeNull();
   expect(view.queryByText('세션 목록을 불러오지 못했습니다.')).toBeNull();
@@ -178,13 +184,14 @@ test('session_created 신규 세션은 Record 삽입 위치와 무관하게 피�
   act(() => {
     useSessionStore.getState().upsertSession(
       session('created', '2026-07-25T12:00:00Z'),
+      { feedEvent: true },
     );
   });
 
   expect(renderedSessionIds(view)).toEqual(['created', 'existing']);
 });
 
-test('gap refetch mergeSessions가 최신 유효 메시지를 가져오면 활동순을 회복한다', () => {
+test('복귀 snapshot의 최신 유효 메시지로 활동순을 회복한다', () => {
   seed([
     session('new', '2026-07-25T11:00:00Z'),
     session('old', '2026-07-25T10:00:00Z'),
@@ -366,3 +373,33 @@ test.each([1, 5, 10])(
     expect(renderedIds).not.toContain('unaffected');
   },
 );
+
+test('받은 개수와 다음 쪽 여부를 제목에 표시한다', () => {
+  const received = Array.from({ length: 30 }, (_, index) => session(
+    `received-${index}`,
+    '2026-10-02T00:00:00Z',
+    index < 7
+      ? { status: 'running', reviewState: 'not_required' }
+      : { status: 'completed', reviewState: 'needs_review', reviewRequired: true },
+  ));
+  useSessionStore.getState().applyFeedSnapshot({
+    folders: [], sessions: received, total: 411, hasMore: true, nextCursor: '30',
+  });
+  const view = render(<SessionFeedScreen />);
+
+  expect(view.getByText('실행 중 · 7')).toBeTruthy();
+  expect(view.getByText('검수 대기 · 23+')).toBeTruthy();
+  expect(view.getByTestId('phone-feed-body').props.onEndReachedThreshold).toBe(0.5);
+  expect(view.getByTestId('phone-feed-body').props.onEndReached).toEqual(expect.any(Function));
+});
+
+test('다음 쪽 로딩과 오류는 기존 footer 표시를 사용한다', () => {
+  seed([session('visible', '2026-10-02T00:00:00Z')]);
+  useSessionStore.setState({ feedPage: { hasMore: true, nextCursor: '30', status: 'loading' } });
+  const view = render(<SessionFeedScreen />);
+  expect(view.getByTestId('phone-feed-body').props.ListFooterComponent).toBeTruthy();
+
+  act(() => useSessionStore.setState({ feedPage: { hasMore: true, nextCursor: '30', status: 'error' } }));
+  expect(view.getByText('세션을 불러오지 못했어요')).toBeTruthy();
+  expect(view.getByText('다시 시도')).toBeTruthy();
+});

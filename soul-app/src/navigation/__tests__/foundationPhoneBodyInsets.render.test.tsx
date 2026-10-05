@@ -51,6 +51,9 @@ beforeEach(() => {
   useSessionStore.setState({
     sessions: {},
     catalog: { folders: [], sessions: {} },
+    feedMembership: {},
+    feedPage: { hasMore: false, nextCursor: null, status: 'idle' },
+    catalogLoadState: 'loading',
     catalogReady: false,
     feedSessionIds: [],
     sessionChangeSerial: 0,
@@ -108,7 +111,7 @@ test('phone feed는 하단 검색 필드가 보여도 마지막 카드를 가리
   act(() => jest.runOnlyPendingTimers());
 });
 
-test('feed projection은 source merge 뒤에도 offline running을 숨기고 reconnect에 즉시 복구한다', () => {
+test('feed projection은 live feed rows 중 offline running을 숨기고 reconnect에 즉시 복구한다', () => {
   const session = (agentSessionId: string, nodeId?: string): Session => ({
     agentSessionId,
     displayName: agentSessionId,
@@ -118,12 +121,17 @@ test('feed projection은 source merge 뒤에도 offline running을 숨기고 rec
     updatedAt: '2026-07-20T00:00:00Z',
   });
   act(() => {
-    useSessionStore.getState().setCatalog({ folders: [], sessions: {} });
-    useSessionStore.getState().setSessions([
+    useSessionStore.getState().applyFeedSnapshot({
+      folders: [],
+      sessions: [
       session('online', 'node-a'),
       session('offline', 'node-b'),
       session('unknown'),
-    ]);
+      ],
+      total: 411,
+      hasMore: true,
+      nextCursor: '30',
+    });
     useNodeConnectivityStore.getState().applySnapshot([{ nodeId: 'node-a' }]);
   });
 
@@ -133,10 +141,8 @@ test('feed projection은 source merge 뒤에도 offline running을 숨기고 rec
   expect(feed.queryByText('offline')).toBeNull();
 
   act(() => {
-    useSessionStore.getState().mergeSessions([
-      session('pagination-online', 'node-a'),
-      session('pagination-offline', 'node-b'),
-    ]);
+    useSessionStore.getState().upsertSession(session('pagination-online', 'node-a'), { feedEvent: true });
+    useSessionStore.getState().upsertSession(session('pagination-offline', 'node-b'), { feedEvent: true });
   });
   expect(feed.getByText('pagination-online')).toBeTruthy();
   expect(feed.queryByText('pagination-offline')).toBeNull();

@@ -6,6 +6,7 @@ import type {
   Folder,
   SessionEndedReconciliation,
 } from '../api/types';
+import type { FeedPage } from '../api/feedPage';
 import { preserveNewestLastMessage } from '../lib/session-last-message';
 import { filterFeedSessions } from '../lib/feed-filter';
 import { getSessionFeedActivityMs } from '../lib/session-feed-activity';
@@ -18,15 +19,18 @@ import {
 } from '../lib/session-attention';
 import { captureAuthScope, subscribeAuthScope } from '../lib/auth-scope';
 
+type FeedPageState = {
+  hasMore: boolean;
+  nextCursor: string | null;
+  status: 'idle' | 'loading' | 'error';
+};
+
 interface SessionStore {
   scopeGeneration: string;
   sessions: Record<string, Session>;
   catalog: Catalog;
-  /**
-   * feed_only catalog SSE가 null assignment로 내보낸 세션. 상세 화면의 Session은
-   * 유지하되, stale session.folderId fallback으로 피드 카드가 되살아나지 않게 한다.
-   */
-  feedScopeTombstoneIds: Record<string, true>;
+  feedMembership: Record<string, 'candidate' | 'excluded'>;
+  feedPage: FeedPageState;
   /** catalog folder settings가 한 번 이상 도착했는지. 피드 첫 paint 가드에 사용한다. */
   catalogReady: boolean;
   /** 초기 catalog snapshot의 사용자 표시 상태. 정상적인 0건은 ready와 구분한다. */
@@ -49,7 +53,7 @@ interface SessionStore {
   /** Snapshot baseline + identity별 live revision/tombstone. UI는 sessions만 구독한다. */
   pendingAttentionVersionsBySession: Record<string, PendingAttentionVersionState>;
   setSessions: (sessions: Session[]) => void;
-  upsertSession: (session: Session) => void;
+  upsertSession: (session: Session, options?: { feedEvent?: true }) => void;
   /**
    * 여러 Session을 한 번에 upsert한다 (FolderContentsScreen 진입 시 폴더별 페치 결과 등).
    * 기존 entry는 갱신, 없으면 추가. setSessions와 달리 다른 entry를 지우지 않는다.
@@ -78,15 +82,13 @@ interface SessionStore {
   /**
    * unscoped authoritative session list로 stale entry를 청소한다.
    *
-   * feed_only snapshot에는 사용하면 안 된다. scoped assignment가 없는 열린 상세 cache까지
-   * 삭제하게 되므로, 그 경로는 setFeedCatalogSnapshot을 쓴다.
+   * feed snapshot에는 사용하지 않는다. 상세 cache까지 삭제될 수 있다.
    */
   reconcileSessions: (validIds: Set<string>) => void;
-  /**
-   * feed_only snapshot을 피드 membership 정본으로 적용한다.
-   * snapshot에 없는 상세 cache는 보존하고, 피드에서만 tombstone 처리한다.
-   */
-  setFeedCatalogSnapshot: (catalog: Catalog) => void;
+  applyFeedSnapshot: (snapshot: FeedPage & { folders: Folder[] }) => void;
+  beginFeedPage: (fromStatus: 'idle' | 'error') => FeedPageState | null;
+  appendFeedPage: (page: FeedPage, expectedPage: FeedPageState) => void;
+  failFeedPage: (expectedPage: FeedPageState) => void;
   setCatalog: (catalog: Catalog) => void;
   markCatalogLoadFailed: () => void;
   retryCatalog: () => void;
@@ -132,10 +134,12 @@ function computeFeedSessionIds(
   sessions: Record<string, Session>,
   catalog: Catalog,
   catalogReady: boolean,
-  feedScopeTombstoneIds: Record<string, true>,
+  feedMembership: Record<string, 'candidate' | 'excluded'>,
 ): string[] {
-  return filterFeedSessions(sessions, catalog, { catalogReady })
-    .filter((session) => !feedScopeTombstoneIds[session.agentSessionId])
+  const candidates = Object.keys(feedMembership)
+    .filter((sessionId) => feedMembership[sessionId] === 'candidate')
+    .flatMap((sessionId) => sessions[sessionId] ? [sessions[sessionId]] : []);
+  return filterFeedSessions(candidates, catalog, { catalogReady })
     .map((session) => session.agentSessionId);
 }
 
@@ -189,75 +193,13 @@ function mergeCatalogSessionsDelta(
   return next;
 }
 
-function mergeFeedScopeTombstoneIds(
-  current: Record<string, true>,
-  delta: CatalogSessionsDelta,
-): Record<string, true> {
-  let next = current;
-  for (const [sessionId, assignment] of Object.entries(delta)) {
-    const shouldTombstone = assignment === null;
-    const isTombstoned = current[sessionId] === true;
-    if (shouldTombstone === isTombstoned) continue;
-    if (next === current) next = { ...current };
-    if (shouldTombstone) next[sessionId] = true;
-    else delete next[sessionId];
-  }
-  return next;
-}
-
-function clearResolvedFeedScopeTombstones(
-  current: Record<string, true>,
-  assignments: Catalog['sessions'],
-): Record<string, true> {
-  let next = current;
-  for (const sessionId of Object.keys(current)) {
-    if (assignments[sessionId] === undefined) continue;
-    if (next === current) next = { ...current };
-    delete next[sessionId];
-  }
-  return next;
-}
-
-function retainFeedScopeTombstonesForSessions(
-  current: Record<string, true>,
-  sessions: Record<string, Session>,
-): Record<string, true> {
-  let next = current;
-  for (const sessionId of Object.keys(current)) {
-    if (sessions[sessionId]) continue;
-    if (next === current) next = { ...current };
-    delete next[sessionId];
-  }
-  return next;
-}
-
-function reconcileFeedScopeTombstonesForSnapshot(
-  current: Record<string, true>,
-  sessions: Record<string, Session>,
-  assignments: Catalog['sessions'],
-): Record<string, true> {
-  let next = current;
-  const knownIds = new Set([...Object.keys(current), ...Object.keys(sessions)]);
-  for (const sessionId of knownIds) {
-    // 없는 cache에는 tombstone을 남길 이유가 없고, cache만 남은 세션은 feed snapshot의
-    // assignment 부재로 피드에서만 숨긴다. 실제 cache 삭제는 session_deleted가 맡는다.
-    const shouldTombstone = sessions[sessionId] !== undefined
-      && assignments[sessionId] === undefined;
-    const isTombstoned = current[sessionId] === true;
-    if (shouldTombstone === isTombstoned) continue;
-    if (next === current) next = { ...current };
-    if (shouldTombstone) next[sessionId] = true;
-    else delete next[sessionId];
-  }
-  return next;
-}
-
 function initialSessionState(scopeGeneration = captureAuthScope().generation) {
   return {
     scopeGeneration,
     sessions: {},
     catalog: { folders: [], sessions: {} } as Catalog,
-    feedScopeTombstoneIds: {},
+    feedMembership: {},
+    feedPage: { hasMore: false, nextCursor: null, status: 'idle' as const },
     catalogReady: false,
     catalogLoadState: 'loading' as const,
     catalogRetryRequest: 0,
@@ -268,30 +210,29 @@ function initialSessionState(scopeGeneration = captureAuthScope().generation) {
   };
 }
 
-export const useSessionStore = create<SessionStore>((set) => ({
+export const useSessionStore = create<SessionStore>((set, get) => ({
   ...initialSessionState(),
   setSessions: (list) =>
     set((state) => {
       const sessions = buildSessionMap(list);
-      const feedScopeTombstoneIds = retainFeedScopeTombstonesForSessions(
-        state.feedScopeTombstoneIds,
-        sessions,
+      const feedMembership = Object.fromEntries(
+        Object.entries(state.feedMembership).filter(([sessionId]) => sessions[sessionId]),
       );
       return {
         sessions,
-        feedScopeTombstoneIds,
+        feedMembership,
         pendingAttentionVersionsBySession: buildPendingAttentionVersions(sessions),
         feedSessionIds: computeFeedSessionIds(
           sessions,
           state.catalog,
           state.catalogReady,
-          feedScopeTombstoneIds,
+          feedMembership,
         ),
         sessionChangeSerial: state.sessionChangeSerial + 1,
         lastChangedSessionId: null,
       };
     }),
-  upsertSession: (session) =>
+  upsertSession: (session, options) =>
     set((state) => {
       if (!session?.agentSessionId) return state;
       const sessionId = session.agentSessionId;
@@ -302,11 +243,19 @@ export const useSessionStore = create<SessionStore>((set) => ({
         state.pendingAttentionVersionsBySession[sessionId],
       );
       const nextSession = preserveNewestLastMessage(existing, attention.session);
-      if (shallowEqualSession(existing, nextSession)) return state;
+      const shouldPromote = options?.feedEvent === true
+        && state.feedMembership[sessionId] !== 'excluded';
+      const membershipChanged = shouldPromote
+        && state.feedMembership[sessionId] !== 'candidate';
+      if (shallowEqualSession(existing, nextSession) && !membershipChanged) return state;
       const sessions = { ...state.sessions, [sessionId]: nextSession };
       const shouldRecomputeFeed = hasListAffectingChange(existing, nextSession);
+      const feedMembership = membershipChanged
+        ? { ...state.feedMembership, [sessionId]: 'candidate' as const }
+        : state.feedMembership;
       return {
         sessions,
+        feedMembership,
         ...(attention.versionState
           ? {
               pendingAttentionVersionsBySession: {
@@ -315,12 +264,12 @@ export const useSessionStore = create<SessionStore>((set) => ({
               },
             }
           : {}),
-        feedSessionIds: shouldRecomputeFeed
+        feedSessionIds: shouldRecomputeFeed || membershipChanged
           ? computeFeedSessionIds(
               sessions,
               state.catalog,
               state.catalogReady,
-              state.feedScopeTombstoneIds,
+              feedMembership,
             )
           : state.feedSessionIds,
         sessionChangeSerial: state.sessionChangeSerial + 1,
@@ -363,7 +312,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
               next,
               state.catalog,
               state.catalogReady,
-              state.feedScopeTombstoneIds,
+              state.feedMembership,
             )
           : state.feedSessionIds,
         sessionChangeSerial: state.sessionChangeSerial + 1,
@@ -388,7 +337,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
               sessions,
               state.catalog,
               state.catalogReady,
-              state.feedScopeTombstoneIds,
+              state.feedMembership,
             )
           : state.feedSessionIds,
         sessionChangeSerial: state.sessionChangeSerial + 1,
@@ -435,7 +384,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
               sessions,
               state.catalog,
               state.catalogReady,
-              state.feedScopeTombstoneIds,
+              state.feedMembership,
             )
           : state.feedSessionIds,
         sessionChangeSerial: state.sessionChangeSerial + 1,
@@ -464,7 +413,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
               sessions,
               state.catalog,
               state.catalogReady,
-              state.feedScopeTombstoneIds,
+              state.feedMembership,
             )
           : state.feedSessionIds,
         sessionChangeSerial: state.sessionChangeSerial + 1,
@@ -473,23 +422,22 @@ export const useSessionStore = create<SessionStore>((set) => ({
     }),
   deleteSession: (agentSessionId) =>
     set((state) => {
-      if (!state.sessions[agentSessionId] && !state.feedScopeTombstoneIds[agentSessionId]) {
+      if (!state.sessions[agentSessionId] && !state.feedMembership[agentSessionId]) {
         return state;
       }
       const { [agentSessionId]: _, ...rest } = state.sessions;
       const { [agentSessionId]: _version, ...restVersions } =
         state.pendingAttentionVersionsBySession;
-      const { [agentSessionId]: _tombstone, ...feedScopeTombstoneIds } =
-        state.feedScopeTombstoneIds;
+      const { [agentSessionId]: _membership, ...feedMembership } = state.feedMembership;
       return {
         sessions: rest,
         pendingAttentionVersionsBySession: restVersions,
-        feedScopeTombstoneIds,
+        feedMembership,
         feedSessionIds: computeFeedSessionIds(
           rest,
           state.catalog,
           state.catalogReady,
-          feedScopeTombstoneIds,
+          feedMembership,
         ),
         sessionChangeSerial: state.sessionChangeSerial + 1,
         lastChangedSessionId: agentSessionId,
@@ -503,16 +451,15 @@ export const useSessionStore = create<SessionStore>((set) => ({
         if (validIds.has(sid)) next[sid] = s;
         else changed = true;
       }
-      const feedScopeTombstoneIds = retainFeedScopeTombstonesForSessions(
-        state.feedScopeTombstoneIds,
-        next,
+      const feedMembership = Object.fromEntries(
+        Object.entries(state.feedMembership).filter(([sessionId]) => validIds.has(sessionId)),
       );
-      if (!changed && feedScopeTombstoneIds === state.feedScopeTombstoneIds) {
+      if (!changed && Object.keys(feedMembership).length === Object.keys(state.feedMembership).length) {
         return state;
       }
       return {
         sessions: next,
-        feedScopeTombstoneIds,
+        feedMembership,
         pendingAttentionVersionsBySession: Object.fromEntries(
           Object.entries(state.pendingAttentionVersionsBySession)
             .filter(([sessionId]) => validIds.has(sessionId)),
@@ -521,48 +468,125 @@ export const useSessionStore = create<SessionStore>((set) => ({
           next,
           state.catalog,
           state.catalogReady,
-          feedScopeTombstoneIds,
+          feedMembership,
         ),
         sessionChangeSerial: state.sessionChangeSerial + 1,
         lastChangedSessionId: null,
       };
     }),
-  setFeedCatalogSnapshot: (catalog) =>
+  applyFeedSnapshot: (snapshot) =>
     set((state) => {
-      const feedScopeTombstoneIds = reconcileFeedScopeTombstonesForSnapshot(
-        state.feedScopeTombstoneIds,
-        state.sessions,
-        catalog.sessions,
-      );
+      const sessions = { ...state.sessions };
+      let pendingAttentionVersionsBySession = state.pendingAttentionVersionsBySession;
+      const feedMembership: SessionStore['feedMembership'] = {};
+      const catalogSessions = { ...state.catalog.sessions };
+      for (const row of snapshot.sessions) {
+        const sessionId = row.agentSessionId;
+        if (!sessionId) continue;
+        const attention = mergeSessionAttentionSnapshot(
+          sessions[sessionId],
+          row,
+          pendingAttentionVersionsBySession[sessionId],
+        );
+        sessions[sessionId] = preserveNewestLastMessage(sessions[sessionId], attention.session);
+        if (attention.versionState) {
+          if (pendingAttentionVersionsBySession === state.pendingAttentionVersionsBySession) {
+            pendingAttentionVersionsBySession = { ...pendingAttentionVersionsBySession };
+          }
+          pendingAttentionVersionsBySession[sessionId] = attention.versionState;
+        }
+        feedMembership[sessionId] = 'candidate';
+        catalogSessions[sessionId] = {
+          folderId: row.folderId ?? null,
+          displayName: row.displayName ?? null,
+        };
+      }
+      const catalog = { folders: snapshot.folders, sessions: catalogSessions };
       return {
+        sessions,
+        pendingAttentionVersionsBySession,
         catalog,
-        feedScopeTombstoneIds,
+        feedMembership,
+        feedPage: {
+          hasMore: snapshot.hasMore,
+          nextCursor: snapshot.nextCursor,
+          status: 'idle' as const,
+        },
         catalogReady: true,
-        catalogLoadState: 'ready',
-        feedSessionIds: computeFeedSessionIds(
-          state.sessions,
-          catalog,
-          true,
-          feedScopeTombstoneIds,
-        ),
+        catalogLoadState: 'ready' as const,
+        feedSessionIds: computeFeedSessionIds(sessions, catalog, true, feedMembership),
+        sessionChangeSerial: state.sessionChangeSerial + 1,
+        lastChangedSessionId: null,
       };
     }),
+  beginFeedPage: (fromStatus) => {
+    const current = get().feedPage;
+    if (current.status !== fromStatus) return null;
+    const expectedPage: FeedPageState = { ...current, status: 'loading' };
+    set({ feedPage: expectedPage });
+    return expectedPage;
+  },
+  appendFeedPage: (page, expectedPage) =>
+    set((state) => {
+      if (state.feedPage !== expectedPage || state.feedPage.status !== 'loading') return state;
+      const sessions = { ...state.sessions };
+      let pendingAttentionVersionsBySession = state.pendingAttentionVersionsBySession;
+      const feedMembership = { ...state.feedMembership };
+      const catalogSessions = { ...state.catalog.sessions };
+      let changed = false;
+      for (const row of page.sessions) {
+        const sessionId = row.agentSessionId;
+        if (!sessionId) continue;
+        const existing = sessions[sessionId];
+        const attention = mergeSessionAttentionSnapshot(
+          existing,
+          row,
+          pendingAttentionVersionsBySession[sessionId],
+        );
+        const nextSession = preserveNewestLastMessage(existing, attention.session);
+        if (!shallowEqualSession(existing, nextSession)) {
+          changed = true;
+          sessions[sessionId] = nextSession;
+        }
+        if (attention.versionState) {
+          if (pendingAttentionVersionsBySession === state.pendingAttentionVersionsBySession) {
+            pendingAttentionVersionsBySession = { ...pendingAttentionVersionsBySession };
+          }
+          pendingAttentionVersionsBySession[sessionId] = attention.versionState;
+        }
+        if (feedMembership[sessionId] !== 'excluded') feedMembership[sessionId] = 'candidate';
+        catalogSessions[sessionId] = {
+          folderId: row.folderId ?? null,
+          displayName: row.displayName ?? null,
+        };
+      }
+      const catalog = { ...state.catalog, sessions: catalogSessions };
+      return {
+        sessions,
+        pendingAttentionVersionsBySession,
+        catalog,
+        feedMembership,
+        feedPage: { hasMore: page.hasMore, nextCursor: page.nextCursor, status: 'idle' as const },
+        feedSessionIds: computeFeedSessionIds(sessions, catalog, state.catalogReady, feedMembership),
+        ...(changed ? {
+          sessionChangeSerial: state.sessionChangeSerial + 1,
+          lastChangedSessionId: null,
+        } : {}),
+      };
+    }),
+  failFeedPage: (expectedPage) =>
+    set((state) => state.feedPage === expectedPage && state.feedPage.status === 'loading'
+      ? { feedPage: { ...expectedPage, status: 'error' } }
+      : state),
   setCatalog: (catalog) =>
     set((state) => {
-      const feedScopeTombstoneIds = clearResolvedFeedScopeTombstones(
-        state.feedScopeTombstoneIds,
-        catalog.sessions,
-      );
       return {
         catalog,
-        feedScopeTombstoneIds,
-        catalogReady: true,
-        catalogLoadState: 'ready',
         feedSessionIds: computeFeedSessionIds(
           state.sessions,
           catalog,
-          true,
-          feedScopeTombstoneIds,
+          state.catalogReady,
+          state.feedMembership,
         ),
       };
     }),
@@ -581,20 +605,18 @@ export const useSessionStore = create<SessionStore>((set) => ({
           sessionsDelta,
         ),
       };
-      const feedScopeTombstoneIds = mergeFeedScopeTombstoneIds(
-        state.feedScopeTombstoneIds,
-        sessionsDelta,
-      );
+      const feedMembership = { ...state.feedMembership };
+      for (const [sessionId, assignment] of Object.entries(sessionsDelta)) {
+        feedMembership[sessionId] = assignment === null ? 'excluded' : 'candidate';
+      }
       return {
         catalog,
-        feedScopeTombstoneIds,
-        catalogReady: true,
-        catalogLoadState: 'ready',
+        feedMembership,
         feedSessionIds: computeFeedSessionIds(
           state.sessions,
           catalog,
-          true,
-          feedScopeTombstoneIds,
+          state.catalogReady,
+          feedMembership,
         ),
       };
     }),
@@ -608,18 +630,15 @@ export const useSessionStore = create<SessionStore>((set) => ({
           [agentSessionId]: { folderId, displayName },
         },
       };
-      const feedScopeTombstoneIds = clearResolvedFeedScopeTombstones(
-        state.feedScopeTombstoneIds,
-        { [agentSessionId]: { folderId, displayName } },
-      );
+      const feedMembership = { ...state.feedMembership, [agentSessionId]: 'candidate' as const };
       return {
         catalog,
-        feedScopeTombstoneIds,
+        feedMembership,
         feedSessionIds: computeFeedSessionIds(
           state.sessions,
           catalog,
           state.catalogReady,
-          feedScopeTombstoneIds,
+          feedMembership,
         ),
       };
     }),

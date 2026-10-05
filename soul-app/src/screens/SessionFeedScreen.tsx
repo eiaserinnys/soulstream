@@ -24,9 +24,12 @@ import { HomeComposerSpacer } from '../components/planner/HomeComposerSpacer';
 import { createSurfaceRoles } from '../theme/surfaceRoles';
 import { SESSION_FEED_VIRTUALIZATION } from '../lib/session-feed-virtualization';
 import { recordFeedCommit } from '../lib/session-diagnostics-api';
+import { useFeedPagination } from '../hooks/useFeedPagination';
+import { HistoryFetchError } from '../components/chat/HistoryFetchError';
+import { makeStyles as makeChatStyles } from '../components/chat/ChatBody.styles';
 
 type FeedRow =
-  | { kind: 'heading'; key: string; title: string; count: number }
+  | { kind: 'heading'; key: string; title: string; count: number; hasMore?: boolean }
   | { kind: 'session'; key: string; sessionId: string }
   | { kind: 'empty'; key: string };
 
@@ -52,6 +55,8 @@ export function SessionFeedScreen({
   const retryCatalog = useSessionStore((state) => state.retryCatalog);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  const { feedPage, loadMore, retryFeedPage } = useFeedPagination(api);
+  const chatStyles = useMemo(() => makeChatStyles(t), [t]);
   const menus = usePlannerContextMenus(api);
   const nodesReady = useNodeConnectivityStore((state) => state.ready);
   const connectedNodeIds = useNodeConnectivityStore((state) => state.connectedNodeIds);
@@ -86,9 +91,9 @@ export function SessionFeedScreen({
     return [
       ...groupRows('attention', '응답 필요', groups.attention),
       ...groupRows('running', '실행 중', groups.running),
-      ...groupRows('review', '검수 대기', groups.review),
+      ...groupRows('review', '검수 대기', groups.review, feedPage.hasMore),
     ];
-  }, [catalogLoadState, groups]);
+  }, [catalogLoadState, feedPage.hasMore, groups]);
   const handleOpenSession = useCallback((sessionId: string) => {
     onOpenSessionRef.current?.(sessionId);
   }, []);
@@ -105,7 +110,7 @@ export function SessionFeedScreen({
   }, []);
   const renderItem = useCallback(({ item }: ListRenderItemInfo<FeedRow>) => {
     if (item.kind === 'heading') {
-      return <Text style={styles.heading}>{item.title} · {item.count}</Text>;
+      return <Text style={styles.heading}>{item.title} · {item.count}{item.hasMore ? '+' : ''}</Text>;
     }
     if (item.kind === 'empty') {
       return <Text style={styles.empty}>해당 세션이 없습니다.</Text>;
@@ -148,6 +153,21 @@ export function SessionFeedScreen({
     }
     return null;
   }, [catalogLoadState, retryCatalog, styles, t.colors.accent]);
+  const renderFooter = useCallback(() => (
+    <>
+      {feedPage.status === 'loading' ? (
+        <View style={chatStyles.footerLoader}>
+          <ActivityIndicator color={t.colors.accent} />
+        </View>
+      ) : feedPage.status === 'error' ? (
+        <HistoryFetchError
+          message="세션을 불러오지 못했어요"
+          onRetry={() => { void retryFeedPage(); }}
+        />
+      ) : null}
+      <HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="feed-home-composer-spacer" />
+    </>
+  ), [chatStyles.footerLoader, feedPage.status, reserveHomeComposerSpace, retryFeedPage, t.colors.accent]);
 
   return (
     <View style={styles.container}>
@@ -168,7 +188,9 @@ export function SessionFeedScreen({
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         ListEmptyComponent={renderEmpty}
-        ListFooterComponent={<HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="feed-home-composer-spacer" />}
+        ListFooterComponent={renderFooter}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
       />
       <SessionSuccessionHost
         api={api}
@@ -186,9 +208,9 @@ function monotonicRenderTime(): number {
     : Date.now();
 }
 
-function groupRows(key: string, title: string, sessions: readonly Session[]): FeedRow[] {
+function groupRows(key: string, title: string, sessions: readonly Session[], hasMore = false): FeedRow[] {
   return [
-    { kind: 'heading', key: `${key}:heading`, title, count: sessions.length },
+    { kind: 'heading', key: `${key}:heading`, title, count: sessions.length, ...(hasMore ? { hasMore: true } : {}) },
     ...(sessions.length > 0
       ? sessions.map((session) => ({
           kind: 'session' as const,

@@ -41,11 +41,13 @@ jest.mock('../../store/sessionStore', () => {
       },
     },
     catalog: { folders: [], sessions: {} },
+    feedMembership: { 'session-1': 'candidate' },
+    feedPage: { hasMore: false, nextCursor: null, status: 'idle' },
     updateSession: mockUpdateSession,
     upsertSession: jest.fn(),
     deleteSession: jest.fn(),
     setCatalog: jest.fn(),
-    setFeedCatalogSnapshot: jest.fn(),
+    applyFeedSnapshot: jest.fn(),
     setSessions: jest.fn(),
     mergeSessions: jest.fn(),
     reconcileSessions: jest.fn(),
@@ -67,7 +69,7 @@ jest.mock('../../store/plannerStore', () => ({
 
 jest.mock('../../api/client', () => ({
   createApiClient: () => ({
-    getCatalog: () => new Promise(() => {}),
+    getSessionsByIds: jest.fn(),
     catalogStreamUrl: () => 'https://soul.test/api/sessions/stream',
   }),
 }));

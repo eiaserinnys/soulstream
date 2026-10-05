@@ -1,4 +1,5 @@
 import type { ApiRequestContext } from './clientCore';
+import { FEED_PAGE_SIZE } from './feedPage';
 
 export function createStreamEndpoints({ base }: ApiRequestContext) {
   return {
@@ -14,10 +15,16 @@ export function createStreamEndpoints({ base }: ApiRequestContext) {
     catalogStreamUrl: (
       lastEventId?: string,
       instanceId?: string,
-      scope?: { feedOnly?: boolean },
+      scope?: { feedOnly?: boolean; feedDisplay?: boolean; limit?: number },
     ): string => {
-      const params = new URLSearchParams({ snapshotCatchup: '1' });
+      const params = new URLSearchParams();
       if (scope?.feedOnly) params.set('feed_only', 'true');
+      if (scope?.feedDisplay) {
+        params.set('feed_display', 'true');
+        params.set('limit', String(scope.limit ?? FEED_PAGE_SIZE));
+      } else {
+        params.set('snapshotCatchup', '1');
+      }
       if (lastEventId) params.set('lastEventId', lastEventId);
       if (instanceId) params.set('instanceId', instanceId);
       const qs = params.toString();

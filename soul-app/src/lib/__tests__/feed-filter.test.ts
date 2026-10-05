@@ -118,7 +118,7 @@ describe('filterFeedSessions', () => {
     expect(out.map((s) => s.agentSessionId)).toEqual(['new', 'mid', 'old']);
   });
 
-  test('활동시각 동률은 agentSessionId 오름차순으로 결정한다', () => {
+  test('활동시각 동률은 agentSessionId 내림차순으로 결정한다', () => {
     const sessions = [
       mkSession('session-b', 1),
       mkSession('session-a', 1),
@@ -127,8 +127,8 @@ describe('filterFeedSessions', () => {
     const out = filterFeedSessions(sessions, mkCatalog());
 
     expect(out.map((s) => s.agentSessionId)).toEqual([
-      'session-a',
       'session-b',
+      'session-a',
     ]);
   });
 
