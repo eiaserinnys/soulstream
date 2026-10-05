@@ -17,6 +17,14 @@ const validObservation = (inputId: string) => ({
   latency_ms: 12,
 });
 
+const validSelectedCandidate = (index = 1) => ({
+  kind: "session",
+  session_id: `session-${index}`,
+  label: "Prior session",
+  line: "A relevant summary",
+  score: 2,
+});
+
 function makeDeps(fetchImpl: typeof fetch) {
   const enqueueEvent = vi.fn(async () => undefined);
   const warn = vi.fn();
@@ -73,6 +81,25 @@ describe("createPersistentJevObserver", () => {
       kind: "persistent_jev_candidates",
       observation: { selected: [] },
     });
+  });
+
+  it("uses the shared wire guard to reject oversized or extended observations", async () => {
+    const observation = validObservation("input-1");
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ observation: { ...observation, extra: true } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        observation: { ...observation, selected: Array.from({ length: 6 }, (_, index) => validSelectedCandidate(index)) },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        observation: { ...observation, selected: [{ ...validSelectedCandidate(), extra: true }] },
+      }), { status: 200 }));
+    const { enqueueEvent, observer } = makeDeps(fetchImpl as typeof fetch);
+
+    await observer({ sessionId: "session-1", inputId: "input-1", request: "extra observation field" });
+    await observer({ sessionId: "session-1", inputId: "input-1", request: "too many candidates" });
+    await observer({ sessionId: "session-1", inputId: "input-1", request: "extra candidate field" });
+
+    expect(enqueueEvent).not.toHaveBeenCalled();
   });
 
   it("does not record mismatched, late, failed, or malformed responses", async () => {

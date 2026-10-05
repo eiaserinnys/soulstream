@@ -1,4 +1,6 @@
 import type { Logger } from "pino";
+import { isPersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
+import type { PersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
@@ -73,21 +75,32 @@ export function createPersistentJevObserver(
         return;
       }
       const observation = envelope.observation;
-      if (observation !== null && !isPersistentJevObservation(observation, inputId)) {
-        logFailure(deps.logger, sessionId, "response");
-        return;
+      let validatedEvent: PersistentJevCandidatesDebugEvent | null = null;
+      if (observation !== null) {
+        const candidateEvent = {
+          type: "debug" as const,
+          kind: "persistent_jev_candidates" as const,
+          observation,
+        };
+        if (!isPersistentJevCandidatesDebugEvent(candidateEvent)) {
+          logFailure(deps.logger, sessionId, "response");
+          return;
+        }
+        if (candidateEvent.observation.input_id !== inputId) {
+          logFailure(deps.logger, sessionId, "response");
+          return;
+        }
+        validatedEvent = candidateEvent;
       }
       if (Date.now() >= deadlineAt) {
         logFailure(deps.logger, sessionId, "timeout");
         return;
       }
-      if (observation === null) return;
+      if (validatedEvent === null) return;
 
       const event = {
-        type: "debug",
-        kind: "persistent_jev_candidates",
+        ...validatedEvent,
         timestamp: Date.now() / 1_000,
-        observation,
       } as unknown as SSEEventPayload;
       try {
         await deps.persistence.enqueueEvent(sessionId, event);
@@ -100,55 +113,8 @@ export function createPersistentJevObserver(
   };
 }
 
-/** Temporary S2 boundary guard. S1 replaces this single function with the shared wire guard. */
-function isPersistentJevObservation(
-  value: unknown,
-  inputId: string,
-): value is Record<string, unknown> {
-  if (!isRecord(value) || value.input_id !== inputId || !Array.isArray(value.selected)) {
-    return false;
-  }
-  if (!isRecord(value.candidate_counts) || !isNonNegativeInteger(value.candidate_counts.turn_summaries) ||
-    !isNonNegativeInteger(value.candidate_counts.cards) ||
-    !isNonNegativeInteger(value.candidate_counts.search_sessions) ||
-    !isNonNegativeInteger(value.candidate_counts.recent_completed_sessions) ||
-    typeof value.model !== "string" || !isNonNegativeNumber(value.latency_ms)) {
-    return false;
-  }
-  return value.selected.every(isSelectedCandidate);
-}
-
-function isSelectedCandidate(value: unknown): boolean {
-  if (!isRecord(value) || typeof value.label !== "string" || typeof value.line !== "string" ||
-    (value.score !== 2 && value.score !== 3)) {
-    return false;
-  }
-  if (value.kind === "turn_summary") {
-    return typeof value.session_id === "string" && isNonNegativeInteger(value.summary_event_id) &&
-      isNonNegativeInteger(value.turn_number);
-  }
-  if (value.kind === "card") {
-    return typeof value.card_id === "string" &&
-      (value.card_number === undefined || isNonNegativeInteger(value.card_number));
-  }
-  if (value.kind === "session") {
-    return typeof value.session_id === "string" &&
-      (value.sources === undefined || (Array.isArray(value.sources) &&
-        value.sources.every((source) => source === "search" || source === "recent_completed")));
-  }
-  return false;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
-function isNonNegativeNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function isTimeout(error: unknown, signal?: AbortSignal): boolean {
