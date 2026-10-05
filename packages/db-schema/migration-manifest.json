@@ -484,6 +484,10 @@
     {
       "id": "119_clear_stale_pending_attentions.sql",
       "sha256": "4f89cf7c56f8a56f776df6517c81b15f2e26699961358b4c09ce8d136ba1e4e4"
+    },
+    {
+      "id": "120_card_number.sql",
+      "sha256": "a075ce43716530af2130862e53b33dac9bbfab05ca744ab81f93b200433a9c76"
     }
   ]
 }

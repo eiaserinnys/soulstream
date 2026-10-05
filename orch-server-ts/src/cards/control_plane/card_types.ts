@@ -49,6 +49,7 @@ export interface FolderRow extends Record<string, unknown> {
 
 export interface CardRow extends CardAssigneeFields {
   id: string;
+  number: number;
   color: CardColor;
   folder_id: string;
   position_key: string;
