@@ -31,6 +31,10 @@ const jsonRecord = z.record(z.string(), z.json());
 export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   agentSessionId: z.string().min(1),
   prompt: z.string(),
+  sessionCost: z.object({
+    usd: z.number().nonnegative(),
+    partial: z.boolean(),
+  }).optional(),
   inputUuid: z.string().min(1).optional(),
   runnerInterventionId: z.string().min(1).optional(),
   runnerInterventionIds: z.array(z.string().min(1)).min(1).optional(),

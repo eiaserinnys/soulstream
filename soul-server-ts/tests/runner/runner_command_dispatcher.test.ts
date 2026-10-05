@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { EnginePort } from "../../src/engine/protocol.js";
+import type { EngineExecuteParams, EnginePort, SSEEventPayload } from
+  "../../src/engine/protocol.js";
 import { attachClaudeResultReceiptMetadata } from
   "../../src/engine/claude_result_receipt_metadata.js";
 import {
@@ -81,6 +82,72 @@ describe("RunnerCommandDispatcher", () => {
       expect.objectContaining(sourceParams),
       expect.anything(),
     );
+  });
+
+  it.each([
+    {
+      name: "V5",
+      base: { usd: 17.288251, partial: false },
+      expected: { session_cost_usd: 17.91 },
+    },
+    {
+      name: "V10",
+      base: { usd: 2.578251, partial: true },
+      expected: { session_cost_usd: 3.2, session_cost_partial: true },
+    },
+  ])("stamps the $name session total on complete", async ({ base, expected }) => {
+    const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine({
+      async *execute() {
+        yield {
+          type: "complete",
+          turn_cost_usd: 0.621749,
+          timestamp: 1,
+        } as SSEEventPayload;
+      },
+    }));
+
+    const frames = await drain(dispatcher.executeFrames({
+      agentSessionId: "session-1",
+      prompt: "hello",
+      sessionCost: base,
+    } as EngineExecuteParams));
+
+    expect(frames[0]).toMatchObject({
+      kind: "engine_event",
+      payload: {
+        type: "complete",
+        turn_cost_usd: 0.621749,
+        ...expected,
+      },
+    });
+  });
+
+  it.each([
+    {
+      name: "session cost base is missing",
+      params: { agentSessionId: "session-1", prompt: "hello" },
+      event: { type: "complete", turn_cost_usd: 0.621749, timestamp: 1 },
+    },
+    {
+      name: "turn cost is missing",
+      params: {
+        agentSessionId: "session-1",
+        prompt: "hello",
+        sessionCost: { usd: 17.288251, partial: false },
+      },
+      event: { type: "complete", timestamp: 1 },
+    },
+  ])("leaves complete unchanged when $name", async ({ params, event }) => {
+    const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine({
+      async *execute() {
+        yield event as SSEEventPayload;
+      },
+    }));
+
+    const [frame] = await drain(dispatcher.executeFrames(params as EngineExecuteParams));
+
+    expect(frame).toMatchObject({ kind: "engine_event", payload: event });
+    expect(frame).not.toHaveProperty("payload.session_cost_usd");
   });
 
   it("returns a correlated error for an execute DTO that is not JSON", async () => {

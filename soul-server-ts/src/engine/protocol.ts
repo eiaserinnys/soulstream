@@ -23,6 +23,7 @@ import type {
   RunnerEventFrame,
 } from "../runner/frame_protocol.js";
 import type { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
+import type { SessionCostBase } from "./session_cost.js";
 
 /**
  * SSE wire에 발행되는 단위. wire-schema `SessionEventEnvelope.event` 필드의 union
@@ -115,6 +116,8 @@ export type ScheduleToolUseHandler = (
 export interface EngineExecuteParams {
   agentSessionId?: string;
   prompt: string;
+  /** Host-owned session list-price total at the start of this turn. */
+  sessionCost?: SessionCostBase;
   /**
    * Stable logical input identity. Persistent Claude runtimes bind durable
    * delivery_id to this UUID so restart replay cannot enqueue a second SDK

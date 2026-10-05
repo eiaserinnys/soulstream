@@ -23,6 +23,7 @@ import type {
   QueuedToolApprovalDecision,
   ReasoningEffort,
 } from "../engine/protocol.js";
+import type { SessionCostBase } from "../engine/session_cost.js";
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AgentProfile } from "../agent_registry.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
@@ -377,6 +378,8 @@ export interface Task {
   llmProvider?: string | null;
   llmModel?: string | null;
   llmUsage?: Record<string, number> | null;
+  /** Host-owned list-price total restored from the session metadata entry. */
+  sessionCost?: SessionCostBase;
 
   /**
    * Codex SDK가 발급한 thread id. 첫 ThreadStartedEvent에서 어댑터가 채움.

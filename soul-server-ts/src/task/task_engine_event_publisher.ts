@@ -12,6 +12,7 @@ import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
+import { buildSessionCostMetadataEntry } from "./task_metadata.js";
 import { recordTerminationHint } from "./task_termination.js";
 import { TransientEventLogAggregator } from "./transient_event_log_aggregator.js";
 
@@ -52,6 +53,7 @@ export class TaskEngineEventPublisher {
       ? true
       : await this.enqueuePersistentEventIfNeeded(task, event, sessionEffect);
     if (options.alreadyPersisted) clearEventPersistenceInternals(event);
+    await this.captureSessionCost(task, event, eventType);
     if (!persistent) {
       await this.broadcastTransientEvent(task, event, eventType);
     }
@@ -60,6 +62,42 @@ export class TaskEngineEventPublisher {
 
   private captureClaudeRuntimeState(task: Task, event: SSEEventPayload): void {
     applyClaudeRuntimeEvent(task, event);
+  }
+
+  private async captureSessionCost(
+    task: Task,
+    event: SSEEventPayload,
+    eventType: string,
+  ): Promise<void> {
+    if (eventType !== "complete") return;
+    const usd = (event as { session_cost_usd?: unknown }).session_cost_usd;
+    if (typeof usd !== "number" || !Number.isFinite(usd) || usd < 0) return;
+
+    const next = {
+      usd,
+      partial: (event as { session_cost_partial?: unknown }).session_cost_partial === true,
+    };
+    if (task.sessionCost?.usd === next.usd && task.sessionCost.partial === next.partial) return;
+
+    task.sessionCost = next;
+    const entry = buildSessionCostMetadataEntry(next);
+    task.metadata = [
+      ...(task.metadata ?? []).filter((item) => item.type !== "session_cost"),
+      entry,
+    ];
+    try {
+      await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
+        replaceExistingType: "session_cost",
+        ...(task.executionRegistration
+          ? { registrationId: task.executionRegistration.registrationId }
+          : {}),
+      });
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId, eventType },
+        "session cost metadata persistence failed",
+      );
+    }
   }
 
   private captureCompactReinjectionNeed(task: Task, eventType: string): void {
