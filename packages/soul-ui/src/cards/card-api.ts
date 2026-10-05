@@ -23,6 +23,9 @@ export function groupCards<T extends { status: string; archived?: boolean; queue
 export function queueAfterId(ids: readonly string[], movedId: string) { return ids[ids.indexOf(movedId) - 1] ?? null; }
 export const cardPath = (id: string) => `/api/cards/${encodeURIComponent(id)}`;
 export const cardMutationKey = () => `card-web:${crypto.randomUUID()}`;
+export function confirmCardItem(cardId: string, itemId: number, confirmed: boolean): Promise<{card:CardRow}> {
+  return cardRequest<{card:CardRow}>(`${cardPath(cardId)}/items/${encodeURIComponent(String(itemId))}/confirm`, "POST", {confirmed});
+}
 export async function fetchCards(folderId: string): Promise<CardRow[]> {
   return (await cardRequest<{cards: CardRow[]}>(`/api/cards?${new URLSearchParams({folderId})}`)).cards;
 }

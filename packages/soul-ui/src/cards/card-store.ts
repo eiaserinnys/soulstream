@@ -1,22 +1,24 @@
 import {executeCard,resetCardExecutions,type CardExecutionResult} from "./card-execution";
 import { create } from "zustand";
-import { cardRequest, cardPath, cardMutationKey, fetchCards } from "./card-api";
+import { cardRequest, cardPath, cardMutationKey, confirmCardItem, fetchCards } from "./card-api";
 import type { CardComment, CardDetail, CardRow } from "./card-types";
 interface CardState {
   byId: Record<string, CardRow>; details: Record<string, CardDetail>; errors: Record<string, string>;
+  pendingItemConfirmations: Record<string, Record<number, boolean>>;
   folderIds: Record<string, string[]>;
   putCards(cards: readonly CardRow[]): void;
   loadFolder(folderId: string): Promise<void>;
   loadCard(id: string): Promise<CardDetail>;
   mutate(id: string, suffix: string, body: object, method?: string): Promise<CardDetail>;
   execute(id:string,version:number):Promise<CardExecutionResult>;
-  addComment(id: string, body: string, idempotencyKey: string): Promise<CardComment>;
+  confirmItem(id:string,itemId:number,confirmed:boolean):Promise<CardRow>;
+  addComment(id: string, body: string, idempotencyKey: string, itemId?:number): Promise<CardComment>;
   create(body: object): Promise<CardRow>;
   handleCardUpdated(event: {cardId: string; folderId: string}): Promise<CardDetail>;
   reset(): void;
 }
 export const useCardStore = create<CardState>((set,get) => ({
-  byId: {}, details: {}, errors: {}, folderIds: {},
+  byId: {}, details: {}, errors: {}, pendingItemConfirmations:{}, folderIds: {},
   putCards(cards) { set(s=>({byId:{...s.byId,...Object.fromEntries(cards.map(c=>[c.id,c]))}})); },
   async loadFolder(folderId) {
     const cards=await fetchCards(folderId); get().putCards(cards);
@@ -46,8 +48,29 @@ export const useCardStore = create<CardState>((set,get) => ({
       return {byId:{...state.byId,[id]:result.card},details:state.details[id]?{...state.details,[id]:{...state.details[id],card:result.card}}:state.details};
     }));
   },
-  async addComment(id, body, idempotencyKey) {
-    const optimistic: CardComment = {id:idempotencyKey,cardId:id,authorKind:"user",authorId:"",sessionId:null,kind:"comment",body,createdAt:new Date().toISOString()};
+  async confirmItem(id,itemId,confirmed) {
+    set(state=>({pendingItemConfirmations:{...state.pendingItemConfirmations,[id]:{...state.pendingItemConfirmations[id],[itemId]:confirmed}},errors:{...state.errors,[id]:""}}));
+    try {
+      const {card}=await confirmCardItem(id,itemId,confirmed);
+      set(state=>{
+        const pendingForCard={...state.pendingItemConfirmations[id]};delete pendingForCard[itemId];
+        const pendingItemConfirmations={...state.pendingItemConfirmations};
+        if(Object.keys(pendingForCard).length)pendingItemConfirmations[id]=pendingForCard;else delete pendingItemConfirmations[id];
+        return {byId:{...state.byId,[id]:card},details:state.details[id]?{...state.details,[id]:{...state.details[id],card}}:state.details,pendingItemConfirmations,errors:{...state.errors,[id]:""}};
+      });
+      return card;
+    } catch(error) {
+      set(state=>{
+        const pendingForCard={...state.pendingItemConfirmations[id]};delete pendingForCard[itemId];
+        const pendingItemConfirmations={...state.pendingItemConfirmations};
+        if(Object.keys(pendingForCard).length)pendingItemConfirmations[id]=pendingForCard;else delete pendingItemConfirmations[id];
+        return {pendingItemConfirmations,errors:{...state.errors,[id]:error instanceof Error?error.message:String(error)}};
+      });
+      throw error;
+    }
+  },
+  async addComment(id, body, idempotencyKey, itemId) {
+    const optimistic: CardComment = {id:idempotencyKey,cardId:id,authorKind:"user",authorId:"",sessionId:null,kind:"comment",...(itemId===undefined?{}:{itemId}),body,createdAt:new Date().toISOString()};
     const patch = (comment: CardComment | null) => set(state => {
       const detail = state.details[id];
       if (!detail) return {};
@@ -56,8 +79,9 @@ export const useCardStore = create<CardState>((set,get) => ({
     });
     patch(optimistic);
     try {
-      const comment = await cardRequest<CardComment>(cardPath(id)+"/comments","POST",{body,idempotencyKey});
+      const comment = await cardRequest<CardComment>(cardPath(id)+"/comments","POST",{body,idempotencyKey,...(itemId===undefined?{}:{itemId})});
       patch(comment);
+      if(itemId!==undefined)try{await get().loadCard(id);}catch{/* loadCard keeps the saved comment and exposes its refresh error */}
       return comment;
     } catch (error) {
       patch(null);
@@ -76,5 +100,5 @@ export const useCardStore = create<CardState>((set,get) => ({
     set(s=>({folderIds:Object.fromEntries(Object.entries(s.folderIds).map(([id,ids])=>[id,id===detail.card.folderId ? [...new Set([...ids,event.cardId])] : ids.filter(c=>c!==event.cardId)]))}));
     return detail;
   },
-  reset(){resetCardExecutions();set({byId:{},details:{},errors:{},folderIds:{}});},
+  reset(){resetCardExecutions();set({byId:{},details:{},errors:{},pendingItemConfirmations:{},folderIds:{}});},
 }));
