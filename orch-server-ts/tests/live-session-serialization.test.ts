@@ -38,6 +38,16 @@ describe("serializeSessionRow predecessor contract", () => {
     });
   });
 
+  it("exposes persistent as a boolean derived from session metadata", () => {
+    expect(serializeSessionRow({ session_id: "persistent", metadata: [
+      { type: "persistent_session", value: { enabled: true } },
+    ] })).toMatchObject({ persistent: true });
+    expect(serializeSessionRow({ session_id: "not-persistent" })).toMatchObject({ persistent: false });
+    expect(serializeSessionRow({ session_id: "disabled", metadata: [
+      { type: "persistent_session", value: { enabled: false } },
+    ] })).toMatchObject({ persistent: false });
+  });
+
   it("exposes the persisted preset/model and lets the preset backend override the profile backend", () => {
     const registry = new InMemoryNodeRegistry();
     registry.registerNode({

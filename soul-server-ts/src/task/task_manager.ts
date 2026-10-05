@@ -45,6 +45,7 @@ import { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { SessionNotificationPublisher } from "./task_session_notification.js";
 import { SessionDeliveryNotificationRecovery } from "./session_delivery_notification_recovery.js";
+import { PersistentSessionControl } from "./persistent_session_control.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   type ClaudeRuntimeBackgroundTasksResult,
@@ -90,6 +91,7 @@ export class TaskManager {
   private readonly sessionNotificationPublisher: SessionNotificationPublisher;
   private readonly claudeRuntimeControlRoute: TaskClaudeRuntimeControlRoute;
   private readonly loadEvictedTask: (sessionId: string) => Promise<Task | null>;
+  readonly persistentSessions: PersistentSessionControl;
   private readonly sessionMutations: SessionMutationHost;
   private readonly runnerRecovery: TaskRunnerRecovery;
   private readonly autoResumeTransition: AutoResumeTransition;
@@ -118,6 +120,14 @@ export class TaskManager {
   ) {
     this.sessionMutations = sessionMutations ?? createMissingSessionMutationHost();
     this.loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
+    this.persistentSessions = new PersistentSessionControl({
+      getTask: (sessionId) => this.tasks.get(sessionId),
+      loadEvictedTask: (sessionId) => this.loadEvictedTask(sessionId),
+      rememberTask: (task) => {
+        this.tasks.set(task.agentSessionId, task);
+      },
+      persistence,
+    });
     const gatedSessionRuntimeControl = deliveryRuntimeV2Enabled
       ? sessionRuntimeControl
       : undefined;

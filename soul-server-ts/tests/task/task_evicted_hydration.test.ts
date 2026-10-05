@@ -175,6 +175,20 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.callerSessionId).toBeUndefined();
   });
 
+  it("restores the persistent session flag from metadata", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        metadata: [{
+          type: "persistent_session",
+          value: { enabled: true, updated_at: "2026-10-05T09:00:00.000Z" },
+        }],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.persistent).toBe(true);
+  });
+
   it("restores the two-field execution registration used by evicted task routes", () => {
     const task = hydrateEvictedTaskFromSessionRow(
       makeRow({

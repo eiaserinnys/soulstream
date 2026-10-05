@@ -147,6 +147,7 @@ export function serializeSessionRow(
       firstDefined(row, "user_portrait_url", "userPortraitUrl") ?? null,
     reviewRequired:
       firstDefined(row, "review_required", "reviewRequired") === true,
+    persistent: persistentFromMetadata(row.metadata),
     reviewState: normalizeReviewState(
       firstDefined(row, "review_state", "reviewState"),
     ),
@@ -174,6 +175,16 @@ export function serializeSessionRow(
   }
   applyUserProfileFallback(payload, callerInfo, options.registry);
   return payload;
+}
+
+function persistentFromMetadata(metadata: unknown): boolean {
+  if (!Array.isArray(metadata)) return false;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = asRecord(metadata[i]);
+    if (entry?.type !== "persistent_session") continue;
+    return asRecord(entry.value)?.enabled === true;
+  }
+  return false;
 }
 
 function enrichModelPreset(
