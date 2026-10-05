@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   applyNotificationLifecycle,
@@ -45,6 +45,51 @@ function errorNotification(
   };
 }
 
+function tokenUsageNotification(
+  threadId: string,
+  turnId: string,
+  input: {
+    total: Partial<{
+      totalTokens: number;
+      inputTokens: number;
+      cachedInputTokens: number;
+      cacheWriteInputTokens: number;
+      outputTokens: number;
+      reasoningOutputTokens: number;
+    }>;
+    last: Partial<{
+      totalTokens: number;
+      inputTokens: number;
+      cachedInputTokens: number;
+      cacheWriteInputTokens: number;
+      outputTokens: number;
+      reasoningOutputTokens: number;
+    }>;
+    modelContextWindow: number | null;
+  },
+): AppServerNotification {
+  const empty = {
+    totalTokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+  };
+  return {
+    method: "thread/tokenUsage/updated",
+    params: {
+      threadId,
+      turnId,
+      tokenUsage: {
+        total: { ...empty, ...input.total },
+        last: { ...empty, ...input.last },
+        modelContextWindow: input.modelContextWindow,
+      },
+    },
+  } as AppServerNotification;
+}
+
 describe("Codex app-server notification lifecycle", () => {
   it("uses the last completed assistant message as complete.result", () => {
     let state = recordTurnStartResponse(
@@ -85,6 +130,297 @@ describe("Codex app-server notification lifecycle", () => {
     expect(completed.payloads).toContainEqual(
       expect.objectContaining({ type: "complete", result: "final answer" }),
     );
+  });
+
+  it("holds the V6 token notification silently and emits usage before complete", () => {
+    let state = recordTurnStartResponse(
+      beginNotificationExecution(createNotificationLifecycleState(), "thread-1"),
+      "thread-1",
+      turn("turn-1"),
+    ).state;
+    const onUnknownNotification = vi.fn();
+    const fixture: AppServerNotification[] = [
+      {
+        method: "turn/started",
+        params: { threadId: "thread-1", turn: turn("turn-1") },
+      },
+      tokenUsageNotification("thread-1", "turn-1", {
+        total: {
+          totalTokens: 14_129,
+          inputTokens: 14_124,
+          cachedInputTokens: 12_288,
+          outputTokens: 5,
+        },
+        last: {
+          totalTokens: 14_129,
+          inputTokens: 14_124,
+          cachedInputTokens: 12_288,
+          outputTokens: 5,
+        },
+        modelContextWindow: 258_400,
+      }),
+      {
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
+          turn: {
+            ...turn("turn-1", "completed"),
+            items: [{ type: "agentMessage", id: "msg-final", text: "OK" }],
+          },
+        },
+      },
+    ];
+
+    const turnStarted = applyNotificationLifecycle(state, fixture[0]!, {
+      suppressThreadStartedSession: false,
+      onUnknownNotification,
+    });
+    expect(turnStarted.payloads.map((payload) => payload.type)).toEqual(["progress"]);
+    state = turnStarted.state;
+
+    const usageResult = applyNotificationLifecycle(state, fixture[1]!, {
+      suppressThreadStartedSession: false,
+      onUnknownNotification,
+    });
+    expect(usageResult.payloads).toEqual([]);
+    expect(usageResult.closeQueue).toBe(false);
+    expect(onUnknownNotification).not.toHaveBeenCalled();
+    state = usageResult.state;
+
+    const completed = applyNotificationLifecycle(state, fixture[2]!, {
+      suppressThreadStartedSession: false,
+      onUnknownNotification,
+    });
+
+    expect(completed.payloads.map((payload) => payload.type)).toEqual([
+      "context_usage",
+      "complete",
+    ]);
+    expect(completed.payloads[0]).toMatchObject({
+      type: "context_usage",
+      used_tokens: 14_129,
+      max_tokens: 258_400,
+      percent: 5.5,
+    });
+    expect(completed.payloads[1]).toMatchObject({
+      type: "complete",
+      usage: {
+        input_tokens: 14_124,
+        cached_input_tokens: 12_288,
+        output_tokens: 5,
+        reasoning_output_tokens: 0,
+      },
+    });
+    expect(completed.state.tokenUsage).toBeNull();
+  });
+
+  it("uses an estimated notification as the baseline and keeps the latest context", () => {
+    let state = recordTurnStartResponse(
+      beginNotificationExecution(createNotificationLifecycleState(), "thread-1"),
+      "thread-1",
+      turn("turn-1"),
+    ).state;
+    state = applyNotificationLifecycle(
+      state,
+      tokenUsageNotification("thread-1", "turn-1", {
+        total: {
+          totalTokens: 12_121_675,
+          inputTokens: 12_093_334,
+          cachedInputTokens: 11_724_032,
+          outputTokens: 28_341,
+          reasoningOutputTokens: 9_861,
+        },
+        last: {
+          totalTokens: 46_357,
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+        },
+        modelContextWindow: 258_400,
+      }),
+      { suppressThreadStartedSession: false },
+    ).state;
+    state = applyNotificationLifecycle(
+      state,
+      tokenUsageNotification("thread-1", "turn-1", {
+        total: {
+          totalTokens: 12_178_716,
+          inputTokens: 12_150_161,
+          cachedInputTokens: 11_736_320,
+          outputTokens: 28_555,
+          reasoningOutputTokens: 9_898,
+        },
+        last: {
+          totalTokens: 57_041,
+          inputTokens: 56_827,
+          cachedInputTokens: 12_288,
+          outputTokens: 214,
+          reasoningOutputTokens: 37,
+        },
+        modelContextWindow: 258_400,
+      }),
+      { suppressThreadStartedSession: false },
+    ).state;
+    state = applyNotificationLifecycle(
+      state,
+      tokenUsageNotification("thread-1", "turn-1", {
+        total: {
+          totalTokens: 12_242_260,
+          inputTokens: 12_213_426,
+          cachedInputTokens: 11_793_024,
+          outputTokens: 28_834,
+          reasoningOutputTokens: 9_931,
+        },
+        last: {
+          totalTokens: 63_544,
+          inputTokens: 63_265,
+          cachedInputTokens: 56_704,
+          outputTokens: 279,
+          reasoningOutputTokens: 33,
+        },
+        modelContextWindow: 258_400,
+      }),
+      { suppressThreadStartedSession: false },
+    ).state;
+
+    const completed = applyNotificationLifecycle(
+      state,
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      },
+      { suppressThreadStartedSession: false },
+    );
+
+    expect(completed.payloads[0]).toMatchObject({
+      type: "context_usage",
+      used_tokens: 63_544,
+      max_tokens: 258_400,
+      percent: 24.6,
+    });
+    expect(completed.payloads[1]).toMatchObject({
+      type: "complete",
+      usage: {
+        input_tokens: 120_092,
+        cached_input_tokens: 68_992,
+        output_tokens: 493,
+        reasoning_output_tokens: 70,
+      },
+    });
+  });
+
+  it("marks context estimated when the final notification has no input or output", () => {
+    let state = recordTurnStartResponse(
+      beginNotificationExecution(createNotificationLifecycleState(), "thread-1"),
+      "thread-1",
+      turn("turn-1"),
+    ).state;
+    state = applyNotificationLifecycle(
+      state,
+      tokenUsageNotification("thread-1", "turn-1", {
+        total: {
+          totalTokens: 224_420,
+          inputTokens: 224_349,
+          cachedInputTokens: 223_360,
+          outputTokens: 71,
+        },
+        last: {
+          totalTokens: 224_420,
+          inputTokens: 224_349,
+          cachedInputTokens: 223_360,
+          outputTokens: 71,
+        },
+        modelContextWindow: 258_400,
+      }),
+      { suppressThreadStartedSession: false },
+    ).state;
+    state = applyNotificationLifecycle(
+      state,
+      tokenUsageNotification("thread-1", "turn-1", {
+        total: {
+          totalTokens: 224_420,
+          inputTokens: 224_349,
+          cachedInputTokens: 223_360,
+          outputTokens: 71,
+        },
+        last: { totalTokens: 46_357 },
+        modelContextWindow: 258_400,
+      }),
+      { suppressThreadStartedSession: false },
+    ).state;
+
+    const completed = applyNotificationLifecycle(
+      state,
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      },
+      { suppressThreadStartedSession: false },
+    );
+
+    expect(completed.payloads[0]).toMatchObject({
+      type: "context_usage",
+      used_tokens: 46_357,
+      max_tokens: 258_400,
+      percent: 17.9,
+      estimated: true,
+    });
+    expect(completed.payloads[1]).toMatchObject({
+      type: "complete",
+      usage: {
+        input_tokens: 224_349,
+        cached_input_tokens: 223_360,
+        output_tokens: 71,
+        reasoning_output_tokens: 0,
+      },
+    });
+  });
+
+  it("resets the usage baseline between executions", () => {
+    let state = recordTurnStartResponse(
+      beginNotificationExecution(createNotificationLifecycleState(), "thread-1"),
+      "thread-1",
+      turn("turn-1"),
+    ).state;
+    state = applyNotificationLifecycle(
+      state,
+      tokenUsageNotification("thread-1", "turn-1", {
+        total: { totalTokens: 100, inputTokens: 100 },
+        last: { totalTokens: 100, inputTokens: 100 },
+        modelContextWindow: 1_000,
+      }),
+      { suppressThreadStartedSession: false },
+    ).state;
+    state = applyNotificationLifecycle(
+      state,
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      },
+      { suppressThreadStartedSession: false },
+    ).state;
+
+    state = recordTurnStartResponse(
+      beginNotificationExecution(state, "thread-1"),
+      "thread-1",
+      turn("turn-2"),
+    ).state;
+    const secondExecution = applyNotificationLifecycle(
+      state,
+      tokenUsageNotification("thread-1", "turn-2", {
+        total: { totalTokens: 45, inputTokens: 40, outputTokens: 5 },
+        last: { totalTokens: 45, inputTokens: 40, outputTokens: 5 },
+        modelContextWindow: 1_000,
+      }),
+      { suppressThreadStartedSession: false },
+    );
+
+    expect(secondExecution.state.tokenUsage?.baseline).toMatchObject({
+      totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
   });
 
   it("suppresses duplicate thread session payloads without reporting side effects", () => {
@@ -248,6 +584,16 @@ describe("Codex app-server notification lifecycle", () => {
           item: { type: "agentMessage", id: "child-answer", text: "child final" },
         },
       },
+      tokenUsageNotification("child-a", "child-a-turn", {
+        total: { totalTokens: 10, inputTokens: 10 },
+        last: { totalTokens: 10, inputTokens: 10 },
+        modelContextWindow: 1_000,
+      }),
+      tokenUsageNotification("root-thread", "previous-turn", {
+        total: { totalTokens: 20, inputTokens: 20 },
+        last: { totalTokens: 20, inputTokens: 20 },
+        modelContextWindow: 1_000,
+      }),
       {
         method: "turn/started",
         params: { threadId: "root-thread", turn: turn("another-root-turn") },
