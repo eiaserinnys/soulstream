@@ -251,6 +251,50 @@ describe("EventPersistence durable ingress", () => {
     expect(findEventIdByDedupeKey).not.toHaveBeenCalled();
   });
 
+  it("generation_started is stored through the durable event outbox", async () => {
+    const { db, appendEvent } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await ep.enqueueEvent("sess-1", {
+      type: "generation_started",
+      generation: 2,
+      reason: "weekly_headroom",
+      previous: { model_preset: "claude-opus", backend: "claude" },
+      current: {
+        model_preset: "codex-sol",
+        backend: "codex",
+        model: "gpt-6.1-sol",
+      },
+      checkpoint: {
+        estimated_tokens: 120,
+        chars: 480,
+        sections: { state: 80, story: 100, summaries: 120, recent: 180 },
+        summarized_through_turn: 4,
+        recent_from_event_id: 21,
+        recent_to_event_id: 28,
+      },
+      timestamp: 1731700000,
+    } as unknown as SSEEventPayload);
+
+    expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "sess-1",
+      event_type: "generation_started",
+      payload: expect.objectContaining({
+        type: "generation_started",
+        generation: 2,
+      }),
+    }));
+    expect(appendEvent).not.toHaveBeenCalled();
+  });
+
   it("sanitizes payload, searchable text, and typed effects before outbox append", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
@@ -596,7 +640,7 @@ describe("extractSearchableText", () => {
 
 describe("EventPersistence transient boundary", () => {
   it("§7의 wire-schema SSE 이벤트 전체를 persistence 분류와 대조한다", () => {
-    expect(SECTION_7_ALL_EVENT_TYPES).toHaveLength(64);
+    expect(SECTION_7_ALL_EVENT_TYPES).toHaveLength(65);
 
     const transientTypes = new Set<string>(SECTION_7_TRANSIENT_STREAMING_TYPES);
     for (const eventType of SECTION_7_ALL_EVENT_TYPES) {

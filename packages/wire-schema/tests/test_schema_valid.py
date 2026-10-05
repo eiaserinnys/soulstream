@@ -379,6 +379,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventCustomViewUpdated",
         "SSEEventContextUsage",
         "SSEEventContextManifest",
+        "SSEEventGenerationStarted",
         "SSEEventCompact",
         "SSEEventReconnect",
         "SSEEventHistorySync",
@@ -387,8 +388,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTurnSummary",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 61, (
-        "SSE event $defs 61종."
+    assert len(sse_types) == 62, (
+        "SSE event $defs 62종."
     )
 
     expected = wire_types | sse_types
@@ -416,7 +417,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 64
+    assert len(sse_event_types) == 65
     assert persistence_only_event_types == {"metadata"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
@@ -722,6 +723,7 @@ def test_known_sse_event_types_completeness() -> None:
         "custom_view_updated",
         "context_usage",
         "context_manifest",
+        "generation_started",
         "compact",
         "reconnect",
         "history_sync",
@@ -740,6 +742,41 @@ def test_known_sse_event_types_completeness() -> None:
         f"generated Missing: {expected_known - generated_known}, "
         f"generated Extra: {generated_known - expected_known}"
     )
+
+
+def test_generation_started_event_contract() -> None:
+    schema = _load_schema()
+    payload = {
+        "type": "generation_started",
+        "generation": 2,
+        "reason": "weekly_headroom",
+        "previous": {"model_preset": "claude-opus", "backend": "claude"},
+        "current": {
+            "model_preset": "codex-sol",
+            "backend": "codex",
+            "model": "gpt-6.1-sol",
+        },
+        "checkpoint": {
+            "estimated_tokens": 120,
+            "chars": 480,
+            "sections": {"state": 80, "story": 100, "summaries": 120, "recent": 180},
+            "summarized_through_turn": 4,
+            "recent_from_event_id": 21,
+            "recent_to_event_id": 28,
+        },
+        "timestamp": 1731700000,
+    }
+
+    jsonschema.Draft202012Validator(schema).validate({
+        "type": "event",
+        "agentSessionId": "session-generation-started",
+        "event": payload,
+    })
+
+    event_definition = schema["$defs"]["SSEEventGenerationStarted"]
+    assert event_definition["additionalProperties"] is True
+    assert schema["x-soulstream-event-durability"]["generation_started"] == "durable"
+    assert "generation_started" not in schema["x-soulstream-session-timeline-event-types"]
 
 
 def test_control_command_inventory_names_are_schema_generated() -> None:
