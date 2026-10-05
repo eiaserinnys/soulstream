@@ -310,6 +310,27 @@ describe("versioned migration contract", () => {
     expect(schema).toContain("job_id                      TEXT NOT NULL REFERENCES recurring_jobs(job_id)");
   });
 
+  it("keeps the card check-item migration and canonical schema aligned", async () => {
+    const migrations = await loadMigrationManifest();
+    const migration = migrations.find((item) => item.id === "121_card_check_items.sql");
+    const schema = readFileSync(fileURLToPath(
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
+    ), "utf8");
+
+    expect(migrations.at(-1)?.id).toBe("121_card_check_items.sql");
+    expect(migration).toBeDefined();
+    expect(migrationSha256(migration!.sql)).toBe(migration!.sha256);
+    expect(migration!.sql).toContain("ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb");
+    expect(migration!.sql).toContain("ADD COLUMN IF NOT EXISTS now JSONB");
+    expect(migration!.sql).toContain("ADD COLUMN IF NOT EXISTS item_id INTEGER");
+    expect(migration!.sql).toContain("CHECK (kind IN ('comment', 'spoken', 'note'))");
+    expect(schema).toMatch(/items\s+JSONB NOT NULL DEFAULT '\[\]'::jsonb/);
+    expect(schema).toMatch(/now\s+JSONB/);
+    expect(schema).toContain("ALTER TABLE cards ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb");
+    expect(schema).toContain("ALTER TABLE card_comments ADD COLUMN IF NOT EXISTS item_id INTEGER");
+    expect(schema).toContain("CHECK (kind IN ('comment','spoken','note'))");
+  });
+
   it("keeps terminal status and execution registration on the sessions-row canon", async () => {
     const migrations = await loadMigrationManifest();
     const addMigration = migrations.find((item) =>
