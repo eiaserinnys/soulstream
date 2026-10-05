@@ -13,11 +13,14 @@ export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestCon
     listCompletedCards: (params:CompletedCardParams) => authFetch(`${base}/api/cards?${new URLSearchParams({status:'done',...Object.fromEntries(Object.entries(params).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)]))})}`)
       .then(response=>readJson<{cards:CardDto[];nextCursor:string|null}>(response,'listCompletedCards')),
     getCard: (id: string) => authFetch(path(id)).then((response) => readJson<CardDetailWire>(response, 'getCard'))
-      .then((raw): CardDetail => ({ ...raw, card: { ...raw.card, attachments: raw.card.attachments ?? [] }, sessions: raw.sessions.map((session) => ({
+      .then((raw): CardDetail => ({ ...raw, card: { ...raw.card, attachments: raw.card.attachments ?? [], items: raw.card.items ?? [], now: raw.card.now ?? null },
+        notes: raw.notes ?? [], nowHistory: raw.nowHistory ?? [], sessions: raw.sessions.map((session) => ({
         ...session, agentSessionId: session.sessionId, nodeId: session.nodeId ?? undefined,
         updatedAt: session.updatedAt ?? session.createdAt,
       })) })),
-    addCardComment: (id: string, body: { body: string; idempotencyKey: string }) =>
+    confirmCardItem: (id: string, itemId: number, confirmed: boolean) =>
+      write(`${path(id)}/items/${itemId}/confirm`, { confirmed }),
+    addCardComment: (id: string, body: { body: string; itemId?: number; idempotencyKey: string }) =>
       authFetch(`${path(id)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then((response) => readJson<CardComment>(response, 'addCardComment')),
     createCard: (body: { folderId: string; title: string; request: string; queue?: boolean;

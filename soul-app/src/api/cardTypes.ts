@@ -8,6 +8,36 @@ export interface CardAttachment {
   name: string;
   mimeType: string;
 }
+export type CardItemDisplay = 'todo' | 'doing' | 'reported' | 'changed' | 'fix' | 'confirmed' | 'dropped';
+export interface CardCheckItem {
+  id: number;
+  title: string;
+  state: 'todo' | 'doing' | 'done' | 'dropped';
+  result: string | null;
+  evidence: Array<{ type: 'image' | 'link'; url: string; label: string }>;
+  caveat: string | null;
+  rev: number;
+  confirmed: { at: string; rev: number } | null;
+  fixOpen: number;
+  reopened: string | null;
+  from: { commentId: string; kind: 'comment' | 'spoken'; at: string } | null;
+  createdAt: string;
+  reportedAt: string | null;
+  display: CardItemDisplay;
+}
+export interface CardNow {
+  text: string;
+  turn: 'agent' | 'user' | 'outside';
+  ask: string | null;
+  updatedAt: string;
+  sessionId: string;
+}
+export interface CardNowHistoryEntry {
+  text: string;
+  turn: CardNow['turn'];
+  ask: string | null;
+  at: string;
+}
 export interface CardDto {
   id: string;
   color?: CardColor;
@@ -34,6 +64,10 @@ export interface CardDto {
   updatedAt: string;
   completedAt?: string | null;
   latestActivity?: { kind: 'instruction' | 'report'; body: string; format: 'markdown' | 'html'; createdAt: string } | null;
+  /** Omitted by older server responses. */
+  items?: CardCheckItem[];
+  /** Omitted by older server responses. */
+  now?: CardNow | null;
 }
 export interface CardReport {
   id: string;
@@ -60,7 +94,8 @@ export interface CardComment {
   authorKind: 'user' | 'agent';
   authorId: string | null;
   sessionId: string | null;
-  kind: 'comment' | 'spoken';
+  kind: 'comment' | 'spoken' | 'note';
+  itemId?: number | null;
   body: string;
   createdAt: string;
 }
@@ -70,6 +105,8 @@ export interface CardDetail {
   comments?: CardComment[];
   questions: CardQuestion[];
   sessions: Session[];
+  notes?: CardComment[];
+  nowHistory?: CardNowHistoryEntry[];
 }
 export interface CardDetailWire extends Omit<CardDetail, 'sessions'> {
   sessions: Array<{ sessionId: string; cardId: string | null; displayName: string | null;
