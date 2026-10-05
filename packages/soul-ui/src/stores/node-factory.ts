@@ -241,6 +241,9 @@ export function createNodeFromEvent(
           completed: true,
           usage: e.usage,
           totalCostUsd: e.total_cost_usd,
+          turnCostUsd: e.turn_cost_usd,
+          sessionCostUsd: e.session_cost_usd,
+          sessionCostPartial: e.session_cost_partial,
         },
       );
     }
