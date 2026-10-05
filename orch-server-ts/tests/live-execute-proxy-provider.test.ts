@@ -163,6 +163,15 @@ describe("live execute proxy provider", () => {
       reason_label: null,
       resets_at: null,
       usage_warning: false,
+      weekly_headroom: {
+        status: "unavailable" as const,
+        headroom: null,
+        remaining_percent: null,
+        window_remaining_percent: null,
+        resets_at: null,
+        observed_at: null,
+        quota_label: null,
+      },
     }));
     const harness = createHarness({
       modelPresetAvailability: { requireAvailable },

@@ -96,6 +96,15 @@ describe("resolvePresetAvailability", () => {
       reason_label: "키 미설정",
       resets_at: null,
       usage_warning: false,
+      weekly_headroom: {
+        status: "unavailable",
+        headroom: null,
+        remaining_percent: null,
+        window_remaining_percent: null,
+        resets_at: null,
+        observed_at: null,
+        quota_label: null,
+      },
     });
   });
 
@@ -349,6 +358,98 @@ describe("resolvePresetAvailability", () => {
       reason: null,
       usage_warning: false,
     });
+  });
+
+  it("uses the lowest applicable 7-day candidate and excludes short or other-model quotas", () => {
+    const weeklyResetAt = now.getTime() / 1_000 + 565_488;
+    const quotaResetAt = now.getTime() / 1_000 + 7 * 24 * 60 * 60;
+    const availability = resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(provider({
+        weeklyRemainingPercent: 83,
+        weeklyResetAt,
+        observedAt: now.toISOString(),
+        quotas: [
+          {
+            id: "claude:five_hour",
+            label: "5시간",
+            window: "5h",
+            model: null,
+            remainingPercent: 0,
+            resetAt: now.getTime() / 1_000 + 60,
+          },
+          {
+            id: "claude:weekly:other",
+            label: "Other model",
+            window: "7d",
+            model: "Other",
+            remainingPercent: 1,
+            resetAt: quotaResetAt,
+          },
+          {
+            id: "claude:weekly:fable",
+            label: "Fable",
+            window: "168h",
+            model: "Fable",
+            remainingPercent: 30,
+            resetAt: quotaResetAt,
+          },
+        ],
+      })),
+      now,
+    );
+
+    expect(availability.weekly_headroom).toEqual({
+      status: "ok",
+      headroom: -70,
+      remaining_percent: 30,
+      window_remaining_percent: 100,
+      resets_at: new Date(quotaResetAt * 1_000).toISOString(),
+      observed_at: now.toISOString(),
+      quota_label: "Fable",
+    });
+  });
+
+  it("returns null headroom when the preset has no usage provider", () => {
+    expect(resolvePresetAvailability(
+      "node-a",
+      { ...preset, usage_provider: null },
+      summary(provider({ weeklyRemainingPercent: 80 })),
+      now,
+    ).weekly_headroom).toBeNull();
+  });
+
+  it("keeps the last successful value and marks it stale with a stale node snapshot", () => {
+    const resetAt = now.getTime() / 1_000 + 7 * 24 * 60 * 60;
+    expect(resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(provider({
+        weeklyRemainingPercent: 61,
+        weeklyResetAt: resetAt,
+        observedAt: now.toISOString(),
+      }), true),
+      now,
+    ).weekly_headroom).toMatchObject({
+      status: "stale",
+      headroom: -39,
+      remaining_percent: 61,
+    });
+  });
+
+  it.each([
+    ["missing provider", summary(null)],
+    ["provider error", summary(provider({ status: "error" }))],
+    ["missing weekly numbers", summary(provider())],
+  ])("marks %s weekly data unavailable", (_label, usage) => {
+    expect(resolvePresetAvailability("node-a", preset, usage, now).weekly_headroom)
+      .toMatchObject({
+        status: "unavailable",
+        headroom: null,
+        remaining_percent: null,
+        window_remaining_percent: null,
+      });
   });
 
   it.each([
