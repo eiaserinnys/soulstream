@@ -487,6 +487,10 @@ describe("createNodeFromEvent", () => {
           reasoning_output_tokens: 10,
         },
         total_cost_usd: 0.0042,
+        model: "claude-fable-5-1",
+        turn_cost_usd: 0.004951,
+        session_cost_usd: 0.12,
+        session_cost_partial: true,
       };
 
       const node = createNodeFromEvent(event, 40);
@@ -503,6 +507,9 @@ describe("createNodeFromEvent", () => {
         reasoning_output_tokens: 10,
       });
       expect((node as CompleteNode).totalCostUsd).toBe(0.0042);
+      expect((node as CompleteNode).turnCostUsd).toBe(0.004951);
+      expect((node as CompleteNode).sessionCostUsd).toBe(0.12);
+      expect((node as CompleteNode).sessionCostPartial).toBe(true);
     });
 
     it("should keep empty string content for complete when result is empty", () => {

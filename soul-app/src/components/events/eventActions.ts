@@ -1,4 +1,10 @@
 import type { SessionEvent } from '../../api/types';
+import {
+  formatContextUsageText,
+  formatTurnCompleteStats,
+  TURN_COMPLETE_LABEL,
+  TURN_USAGE_SEPARATOR,
+} from '../../../../packages/soul-ui/src/lib/turn-usage-format';
 import { formatRateLimitNotice } from './rateLimitNotice';
 
 type UnknownRecord = Record<string, unknown>;
@@ -8,9 +14,7 @@ const RETRYING_ERROR_HISTORY =
 
 const EVENT_LABELS: Partial<Record<string, string>> = {
   session_start: '세션 시작',
-  complete: '턴 완료',
-  result: '세션 완료',
-  context_usage: '컨텍스트 사용량',
+  context_usage: '컨텍스트',
   compact: '컴팩션',
   error: '오류',
   history_sync: '히스토리 동기화',
@@ -119,47 +123,28 @@ export function formatTokenUsage(usage: unknown): string | null {
     : `${total.toLocaleString()} tokens`;
 }
 
-export function formatCost(value: unknown): string | null {
-  const n = asNumber(value);
-  return n !== null ? `$${n.toFixed(4)}` : null;
-}
-
-export function buildUsageSummary(event: SessionEvent): string | null {
-  const d = event.data as UnknownRecord;
-  const parts: string[] = [
-    event.type === 'result' ? 'Session Complete' : 'Turn Complete',
-  ];
-  const cost = formatCost(d.total_cost_usd ?? d.totalCostUsd);
-  if (cost) parts.push(cost);
-  const usage = formatTokenUsage(d.usage);
-  if (usage) parts.push(usage);
-  return parts.length > 1 ? parts.join('  ') : null;
-}
-
 export function buildSystemEventText(event: SessionEvent): string {
   const d = event.data as UnknownRecord;
 
-  if (event.type === 'result' && d.success === false) {
-    const message = stringField(d, 'error', 'message', 'content', 'result', 'output');
-    return message ? `오류: ${message}` : '오류';
-  }
-
-  if (event.type === 'complete' || event.type === 'result') {
-    return buildUsageSummary(event) ?? EVENT_LABELS[event.type] ?? event.type;
+  if (event.type === 'complete') {
+    const stats = formatTurnCompleteStats({
+      usage: d.usage,
+      turnCostUsd: d.turn_cost_usd,
+      sessionCostUsd: d.session_cost_usd,
+      sessionCostPartial: d.session_cost_partial,
+    });
+    return stats
+      ? `${TURN_COMPLETE_LABEL}${TURN_USAGE_SEPARATOR}${stats}`
+      : TURN_COMPLETE_LABEL;
   }
 
   if (event.type === 'context_usage') {
-    const used = numberField(d, 'used_tokens', 'usedTokens');
-    const max = numberField(d, 'max_tokens', 'maxTokens');
-    const percent = numberField(d, 'percent');
-    const details: string[] = [];
-    if (used !== null && max !== null) {
-      details.push(`${used.toLocaleString()} / ${max.toLocaleString()} tokens`);
-    }
-    if (percent !== null) details.push(`${percent.toFixed(1)}%`);
-    return details.length
-      ? `${EVENT_LABELS.context_usage}: ${details.join('  ')}`
-      : EVENT_LABELS.context_usage ?? event.type;
+    return formatContextUsageText({
+      usedTokens: d.used_tokens,
+      maxTokens: d.max_tokens,
+      percent: d.percent,
+      estimated: d.estimated,
+    }) ?? '컨텍스트';
   }
 
   if (event.type === 'error' && d.will_retry === true) {

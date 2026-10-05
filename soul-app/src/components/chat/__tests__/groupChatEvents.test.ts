@@ -30,6 +30,18 @@ describe('groupChatEvents', () => {
     expect(result[1]).toEqual({ kind: 'event', event: events[1], key: 'evt-2' });
   });
 
+  it('result는 숨기고 context_usage와 complete는 남긴다', () => {
+    const events = [
+      ev('1', 'result', { success: true, output: '이미 표시된 최종 답변' }),
+      ev('2', 'context_usage', { used_tokens: 326_300, max_tokens: 1_000_000, percent: 32.6 }),
+      ev('3', 'complete', { result: 'All done!' }),
+    ];
+
+    expect(groupChatEvents(events).map((item) =>
+      item.kind === 'event' ? item.event.type : item.kind,
+    )).toEqual(['context_usage', 'complete']);
+  });
+
   it('tool_start와 같은 tool_use_id의 tool_result는 단일 그룹으로 묶는다 (핵심 매칭)', () => {
     const start = ev('10', 'tool_start', { tool_use_id: 'tu_a' });
     const result = ev('11', 'tool_result', { tool_use_id: 'tu_a', output: 'ok' });

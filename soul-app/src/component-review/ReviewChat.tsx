@@ -80,14 +80,41 @@ export function ReviewChat() {
     </ReviewSection>
     <ReviewSection title="안내문 · 완료·실패·하위 보고">
       <AssistantMessage session={sessions[0]} event={message('assistant_message', finalReply)} />
+      <SystemEvent event={{ id: 'public-context-usage', type: 'context_usage', data: {
+        used_tokens: 326300, max_tokens: 1000000, percent: 32.6,
+      } }} />
+      <SystemEvent event={{ id: 'public-context-usage-estimated', type: 'context_usage', data: {
+        used_tokens: 14223, max_tokens: 1000000, percent: 1.4, estimated: true,
+      } }} />
       <SystemEvent event={{ id: 'public-complete', type: 'complete', data: { result: finalReply } }} />
       <SystemEvent event={{ id: 'public-complete-usage', type: 'complete', data: {
-        result: finalReply, usage: { input_tokens: 10, output_tokens: 5 }, total_cost_usd: 0.012345,
+        result: finalReply,
+        model: 'claude-fable-5-1',
+        usage: {
+          input_tokens: 6, output_tokens: 6139,
+          cache_read_input_tokens: 637594, cache_creation_input_tokens: 7767,
+        },
+        total_cost_usd: 17.91, turn_cost_usd: 0.621749, session_cost_usd: 17.91,
       } }} />
-      <SystemEvent event={{ id: 'public-result', type: 'result', data: { success: true, output: finalReply } }} />
-      <SystemEvent event={{ id: 'public-result-failure', type: 'result', data: {
-        success: false, error: '요청을 완료하지 못했습니다. 실패 내용을 확인해주세요.',
-        usage: { input_tokens: 10, output_tokens: 5 },
+      <SystemEvent event={{ id: 'public-complete-codex', type: 'complete', data: {
+        result: finalReply,
+        model: 'gpt-6.1-sol',
+        usage: { input_tokens: 14124, cached_input_tokens: 12288, output_tokens: 5, reasoning_output_tokens: 0 },
+        turn_cost_usd: 0.004951, session_cost_usd: 0.004951,
+      } }} />
+      <SystemEvent event={{ id: 'public-complete-partial', type: 'complete', data: {
+        result: finalReply,
+        model: 'claude-fable-5-1',
+        usage: {
+          input_tokens: 6, output_tokens: 6139,
+          cache_read_input_tokens: 637594, cache_creation_input_tokens: 7767,
+        },
+        turn_cost_usd: 0.621749, session_cost_usd: 3.2, session_cost_partial: true,
+      } }} />
+      <SystemEvent event={{ id: 'public-complete-no-price', type: 'complete', data: {
+        result: finalReply,
+        model: 'gpt-6-luna',
+        usage: { input_tokens: 14124, cached_input_tokens: 12288, output_tokens: 5 },
       } }} />
       <SystemEvent event={{ id: 'public-error', type: 'error', data: {
         message: '응답 연결이 끊겼습니다. 현재 작업의 오류 내용을 확인해주세요.\n조사한 내용과 남은 작업을 확인할 수 있도록 긴 오류 문구를 표시합니다.',

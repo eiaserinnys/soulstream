@@ -302,7 +302,7 @@ export function groupChatEvents(
 
   events.forEach((e, i) => {
     if (consumed.has(i)) return;
-    if (e.type === 'turn_summary' || e.type === 'debug') return;
+    if (e.type === 'turn_summary' || e.type === 'debug' || e.type === 'result') return;
     // Durable replay is stored before the hub decorates liveSeq/streamIdentity.
     // While a snapshot owns an active stream, its raw text lifecycle is already
     // represented by the recovered slot and must not become a second row.

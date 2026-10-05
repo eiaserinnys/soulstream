@@ -117,6 +117,7 @@ export function EventRenderer({
     // 제외하므로 (F-F), kind='event' 경로에서 본 case는 도달 불가 — fallback null.
     case 'tool_start':
     case 'tool_result':
+    case 'result':
       return null;
     case 'thinking_start':
     case 'thinking_delta':
@@ -125,7 +126,6 @@ export function EventRenderer({
     case 'session_start':
       return null;
     case 'complete':
-    case 'result':
     case 'context_usage':
     case 'compact':
     case 'session_notification':
