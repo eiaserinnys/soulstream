@@ -62,6 +62,15 @@ it("opens the items tab when items arrive and keeps the four tab order",async()=
  await act(()=>container.querySelector<HTMLButtonElement>('.v3-card-note-more')!.click());
  expect(container.querySelectorAll('[data-card-note-id]')).toHaveLength(6);
 });
+it("counts only reported and changed items in the tab and hides a zero count",async()=>{
+ const withItems={...card,items:[item(1,"doing"),item(2,"reported"),item(3,"changed"),item(4,"fix")]};
+ useCardStore.setState({byId:{inherit:withItems},details:{inherit:{...detail,card:withItems}}});
+ await render();
+ expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("확인 항목2");
+ const confirmed={...withItems,items:withItems.items.map(value=>item(value.id,"confirmed"))};
+ await act(()=>useCardStore.setState({byId:{inherit:confirmed},details:{inherit:{...detail,card:confirmed}}}));
+ expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("확인 항목");
+});
 it("sends from the current tab, targets an item comment, then clears its unread marker on Comments",async()=>{
  const withItems={...card,items:[item(4,"doing")],now:{text:"현재 상황",turn:"user" as const,ask:"결과를 확인해 주세요",updatedAt:card.updatedAt,sessionId:"owner"}};
  useCardStore.setState({byId:{inherit:withItems},details:{inherit:{...detail,card:withItems}},addComment:vi.fn().mockResolvedValue(undefined)});
@@ -106,6 +115,16 @@ it("closes the review sample after completion and has no undo action",async()=>{
  expect(container.textContent).not.toContain("되돌리기");
  await act(()=>container.querySelector<HTMLButtonElement>('button[aria-label="완료"]')!.click());
  expect(close).toHaveBeenCalledTimes(1);
+});
+it("publishes sample confirmation changes to the shared fixture owner",async()=>{
+ const sample={...detail,card:{...card,items:[item(1,"reported")]}};
+ const change=vi.fn();
+ await act(()=>root.render(<CardDetailPane cardId="inherit" folders={[]} onClose={()=>{}} onOpenSession={()=>{}} sampleDetail={sample} onSampleChange={change}/>));
+ await act(()=>container.querySelector<HTMLElement>('[role="checkbox"][aria-label="1번 확인"]')!.click());
+ expect(change).toHaveBeenCalledTimes(1);
+ const updated=change.mock.calls[0][0](sample);
+ expect(updated.card.items[0].display).toBe("confirmed");
+ expect(updated.comments).toEqual(sample.comments);
 });
 it("keeps the panel open and shows the store error when completion fails",async()=>{
  useCardStore.setState({byId:{inherit:{...card,status:"review"}},mutate:vi.fn().mockImplementation(async()=>{useCardStore.setState({errors:{inherit:"완료 실패"}});throw new Error("완료 실패");})});

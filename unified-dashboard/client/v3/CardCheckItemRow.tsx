@@ -1,7 +1,7 @@
-import { Button, Checkbox } from "@seosoyoung/soul-ui";
+import { Checkbox } from "@seosoyoung/soul-ui";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
-import { ChevronDown, ChevronRight, Circle } from "lucide-react";
+import { Circle } from "lucide-react";
 import "./v3-card-check-items.css";
 
 const displayLabels:Record<CardCheckItem["display"],string>={
@@ -17,6 +17,10 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
  const showBody=expanded||dropped;
  const images=item.evidence.filter(evidence=>evidence.type==="image");
  const links=item.evidence.filter(evidence=>evidence.type==="link");
+ const metadata=<div className="v3-card-check-item-meta">
+  <span>{item.reportedAt?"보고":"추가"} · {formatTime(item.reportedAt??item.createdAt)}</span>
+  {item.from?<span>{item.from.kind==="spoken"?"대화에서 추가":"커멘트에서 추가"}</span>:null}
+ </div>;
  return <div className={`v3-card-check-item-shell${display==="doing"?" card-running-base":""}`}>
   <article className={`v3-card-check-item-row${display==="doing"?" card-running":""}`} data-item-id={item.id} data-item-display={display}>
    <div className="v3-card-check-item-heading">
@@ -30,7 +34,6 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
       {display==="doing"?<Circle className="v3-card-check-item-state-dot" aria-hidden="true"/>:null}
       <span>{displayLabels[display]}{display==="fix"?` ${item.fixOpen}`:""}</span>
      </span>
-     {showBody?<ChevronDown className="v3-card-check-item-chevron" aria-hidden="true"/>:<ChevronRight className="v3-card-check-item-chevron" aria-hidden="true"/>}
     </button>
    </div>
    {showBody?<div className="v3-card-check-item-body">
@@ -44,12 +47,10 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
      {images.length===0?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
     </div>
     {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=><a key={`${evidence.url}:${index}`} href={evidence.url} target="_blank" rel="noreferrer" title={evidence.label}>{evidence.label}</a>)}</div>:null}
-    {item.caveat?<p className="v3-card-check-item-caveat">{item.caveat}</p>:null}
-    <div className="v3-card-check-item-meta">
-     <span>{item.reportedAt?"보고":"추가"} · {formatTime(item.reportedAt??item.createdAt)}</span>
-     {item.from?<span>{item.from.kind==="spoken"?"대화에서 추가":"커멘트에서 추가"}</span>:null}
+    <div className="v3-card-check-item-foot">
+     {item.caveat?<p className="v3-card-check-item-caveat" title={`${item.reportedAt?"보고":"추가"} · ${formatTime(item.reportedAt??item.createdAt)}`}>{item.caveat}</p>:metadata}
+     {!dropped?<button type="button" className="v3-card-check-item-target" onClick={onTargetItem}>고칠 점 남기기</button>:null}
     </div>
-    {!dropped?<Button size="sm" variant="ghost" className="v3-card-check-item-target" onClick={onTargetItem}>고칠 점 남기기</Button>:null}
    </div>:null}
   </article>
  </div>;

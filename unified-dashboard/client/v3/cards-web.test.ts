@@ -103,6 +103,18 @@ describe("card item confirmation",()=>{
   expect(useCardStore.getState().byId.c.items?.[0].display).toBe("fix");
   expect(useCardStore.getState().details.c.comments?.[0].itemId).toBe(4);
  });
+ it("keeps both confirmations when the older response arrives last",async()=>{
+  const current=setup();let resolveFirst!:(response:Response)=>void,resolveSecond!:(response:Response)=>void;
+  vi.stubGlobal("fetch",vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{resolveFirst=resolve;})).mockImplementationOnce(()=>new Promise<Response>(resolve=>{resolveSecond=resolve;})));
+  const first=useCardStore.getState().confirmItem("c",1,true),second=useCardStore.getState().confirmItem("c",2,true);
+  const newer={...current,version:4,items:[makeItem(1,"confirmed"),makeItem(2,"confirmed")]};
+  resolveSecond(new Response(JSON.stringify({card:newer})));await second;
+  expect(useCardStore.getState().pendingItemConfirmations.c).toEqual({1:true});
+  resolveFirst(new Response(JSON.stringify({card:{...current,version:3,items:[makeItem(1,"confirmed"),makeItem(2,"doing")]}})));await first;
+  expect(useCardStore.getState().byId.c).toEqual(newer);
+  expect(useCardStore.getState().details.c.card).toEqual(newer);
+  expect(useCardStore.getState().pendingItemConfirmations.c).toBeUndefined();
+ });
 });
 
 describe("card comments",()=>{

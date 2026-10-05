@@ -6,12 +6,13 @@ import { cardWorkspaceWidthForKey, clampCardWorkspaceWidth, defaultCardWorkspace
 import { V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 
 /** Card overlay uses the folder workspace's panel, split and mobile classes. */
-export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,mobileTab,initialSessionId,sampleDetail,sampleExecution,...chat}: {
+export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,mobileTab,initialSessionId,sampleDetail,sampleExecution,onSampleChange,...chat}: {
  cardId:string;folders:ComponentProps<typeof CardDetailPane>["folders"];onClose():void;
  onOpenSession:ComponentProps<typeof CardDetailPane>["onOpenSession"];mobileMode:boolean;mobileTab:string;
  initialSessionId?:ComponentProps<typeof CardDetailPane>["initialSessionId"];
  sampleExecution?:ComponentProps<typeof CardDetailPane>["sampleExecution"];
  sampleDetail?:ComponentProps<typeof CardDetailPane>["sampleDetail"];
+ onSampleChange?:ComponentProps<typeof CardDetailPane>["onSampleChange"];
 } & Omit<ComponentProps<typeof WorkspaceSessionColumn>,"chatClassName"|"chatTestId"|"resizeClassName"|"resizeTestId"|"onResize"|"onResizeKeyDown">) {
  const workspace=useRef<HTMLDivElement>(null);
  const workspaceWidthRef=useRef(0);
@@ -53,7 +54,7 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
   <div ref={workspace} className="v3-workspace is-chat-open" data-testid="v3-card-workspace" data-placement="overlay" data-mobile-view={mobileMode?mobileTab:undefined}
    data-card-width-px={Math.round(cardWidth)}
    style={!mobileMode&&workspaceWidth>0?{gridTemplateColumns:`${cardWidth}px ${V3_PANEL_GAP_PX}px minmax(0, 1fr)`}:undefined}>
-   <CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution}/>
+   <CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution} onSampleChange={onSampleChange}/>
    <WorkspaceSessionColumn {...chat} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider"
     onResize={delta=>{
      const width=workspaceWidthRef.current||workspace.current?.getBoundingClientRect().width||0;

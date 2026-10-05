@@ -5,7 +5,7 @@ import { Button, DashboardIconCap, useDashboardStore, type SessionSummary } from
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { CardCreateDialog } from "./CardCreateDialog";
-import type { CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardDetail, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import { boardColumns } from "./CardBoard";
 import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { CardCompletionFilter } from "./CardCompletionFilter";
@@ -31,6 +31,7 @@ export function CardBoardSamples() {
   const [assignmentScenario,setAssignmentScenario]=useState<'unassigned'|'partial'|'agent'|'assigned'|'live'>('assigned');
   const assignmentSession={...reviewSession,status:assignmentScenario==='live'?'running' as const:'completed' as const};
   const [settings,setSettings]=useState<Record<string,Partial<typeof reviewCard>>>({});
+  const [sampleDetails,setSampleDetails]=useState<Record<string,CardDetail>>({});
   const assignmentCard=assignmentScenario==='assigned'||assignmentScenario==='live'
     ?{assigneeKind:'session' as const,assigneeSessionId:reviewSession.agentSessionId,nodeId:'sample-node',assigneeAgentId:null,modelPreset:'sample-sol'}
     :{assigneeKind:assignmentScenario==='agent'?'agent' as const:null,assigneeSessionId:null,nodeId:assignmentScenario==='partial'?'sample-node':null,assigneeAgentId:assignmentScenario==='agent'?'roselin':null,modelPreset:null};
@@ -52,11 +53,11 @@ export function CardBoardSamples() {
       latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
         body:"긴 본문이 있어도 카드와 열의 폭을 줄이지 않습니다. 최신 원문은 네 줄까지 읽고 상세에서 이어 봅니다. ".repeat(5),createdAt:reviewCard.createdAt},
       ...(index===0&&copy===0?{items:reviewCardItems,now:reviewNow}:{}),
-    })));
+    }))).map(seed=>({...seed,...sampleDetails[seed.id]?.card,completedAt:seed.completedAt}));
     return seeds.filter(card=>(scenario!=="none"||card.status!=="done")
       &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="review"||card.status==="done"))
       .map(card=>({...card,status:statuses[card.id]??card.status}));
-  },[scenario,statuses,assignmentScenario,settings]);
+  },[scenario,statuses,assignmentScenario,settings,sampleDetails]);
   const loader=useCallback<CompletedPageLoader>(async params=>{
     const result=cards.filter(card=>card.status==='done'&&(!params.completedFrom||card.completedAt>=params.completedFrom)&&(!params.completedBefore||card.completedAt<params.completedBefore)&&(`${card.title} ${card.request}`.toLocaleLowerCase().includes((params.q??'').toLocaleLowerCase()))).sort((a,b)=>b.completedAt.localeCompare(a.completedAt)||b.id.localeCompare(a.id));
     const offset=Number(params.cursor??0),limit=params.limit??60;
@@ -65,7 +66,7 @@ export function CardBoardSamples() {
   const completed=useCompletedCards(undefined,includeCompleted,loader);
   const visibleCards=[...cards.filter(card=>card.status!=='done'),...completed.cards];
   const doneCount=cards.filter(card=>card.status==="done").length;
-  const renderCard=(card:typeof cards[number],variant:PostItVariant="compact")=><PostItCardView card={card} variant={variant} activity={card.latestActivity} assignee={reviewSession}
+  const renderCard=(card:CardRow,variant:PostItVariant="compact")=><PostItCardView card={card} variant={variant} activity={card.latestActivity??null} assignee={reviewSession}
     onOpen={()=>{
       // Seed the existing ID query with review fixtures; keep the operational resolver.
       queryClient.setQueryData(["sessions","ids",null,[reviewSession.agentSessionId]],{
@@ -77,9 +78,9 @@ export function CardBoardSamples() {
       saveSettings:async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setSettings(previous=>({...previous,[card.id]:saved}));return saved;},load:async()=>({card,reports:card.status==="todo"?[]:[{id:"sample-report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
       questions:card.status==="blocked"?[{id:"sample-question",text:"질문",answer:null,options:null,askedAt:card.createdAt,answeredAt:null}]:[],sessions:[]}),
       change:async(latest,status)=>{setStatuses(previous=>({...previous,[card.id]:status}));if(status==='running')setSettings(previous=>({...previous,[card.id]:{...latest,assigneeKind:'session',assigneeSessionId:reviewSession.agentSessionId}}));}}}/>;
-  const comparison={...(cards[0]??reviewCard),id:"board-size-comparison",status:statuses["board-size-comparison"]??(assignmentScenario==='live'?'running':"review") as CardStatus};
+  const comparison={...(cards[0]??reviewCard),...sampleDetails["board-size-comparison"]?.card,id:"board-size-comparison",status:statuses["board-size-comparison"]??sampleDetails["board-size-comparison"]?.card.status??(assignmentScenario==='live'?'running':"review") as CardStatus};
   const selectedCard=selected===comparison.id?comparison:cards.find(card=>card.id===selected);
-  const selectedCardDetail=selectedCard?{
+  const selectedCardDetail=selectedCard?sampleDetails[selectedCard.id]??{
     ...(selectedCard.items?{...reviewDetail,notes:reviewNotes,nowHistory:reviewNowHistory}:legacyReviewDetail),
     card:{...selectedCard,...(startExample==='todo'||startExample==='queued'?{status:startExample}:startExample==='pending'?{status:'running' as const}:{}),brief:conversation==="short"?"내부 요약을 접지 않고 표시합니다.":"내부 요약을 접지 않고 표시합니다.\n\n".repeat(30)},
     sessions:[{sessionId:reviewSession.agentSessionId,cardId:selectedCard.id,displayName:reviewSession.displayName??null,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:assignmentSession.status,createdAt:reviewCard.createdAt,updatedAt:reviewCard.updatedAt,callerSessionId:null}],
@@ -99,15 +100,17 @@ export function CardBoardSamples() {
     <div className="v3-detail-section-head">
       {(["folder","all"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={scope===value} onClick={()=>setScope(value)}>{value==="folder"?"현재 폴더":"전체"}</Button>)}
       {(["grid","board"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={mode===value} onClick={()=>setMode(value)}>{value==="grid"?"일반 보기":"보드"}</Button>)}
-      {(["mixed","none","done","empty"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={scenario===value} onClick={()=>{setScenario(value);setStatuses({});}}>{{mixed:"혼합",none:"완료 0개",done:"전부 완료",empty:"빈 보드"}[value]}</Button>)}
+      {(["mixed","none","done","empty"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={scenario===value} onClick={()=>{setScenario(value);setStatuses({});setSampleDetails({});}}>{{mixed:"혼합",none:"완료 0개",done:"전부 완료",empty:"빈 보드"}[value]}</Button>)}
     </div>
-    <div className="v3-detail-section-head">{(['unassigned','partial','agent','assigned','live'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={assignmentScenario===value} onClick={()=>{setSelected(null);setSettings({});setAssignmentScenario(value);}}>{{unassigned:'담당 없음',partial:'부분 설정',agent:'에이전트 지정',assigned:'담당 연결',live:'실행 중'}[value]}</Button>)}</div>
+    <div className="v3-detail-section-head">{(['unassigned','partial','agent','assigned','live'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={assignmentScenario===value} onClick={()=>{setSelected(null);setSettings({});setSampleDetails({});setAssignmentScenario(value);}}>{{unassigned:'담당 없음',partial:'부분 설정',agent:'에이전트 지정',assigned:'담당 연결',live:'실행 중'}[value]}</Button>)}</div>
     <div className="v3-detail-section-head">{(['normal','todo','queued','pending'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={startExample===value} onClick={()=>{setStartExample(value);setSelected(comparison.id);}}>{{normal:'기본 상세',todo:'드래프트 상세',queued:'대기 상세',pending:'시작 확인 중'}[value]}</Button>)}</div>
     <div className="v3-detail-section-head">{(["short","long"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={conversation===value} onClick={()=>setConversation(value)}>{value==="short"?"짧은 커멘트":"긴 커멘트"}</Button>)}</div>
-    {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={card=>renderCard(card as typeof cards[number],"compact")} completion={{includeCompleted,onChange}}
+    {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={card=>renderCard(card,"compact")} completion={{includeCompleted,onChange}}
       draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}/>
-      : <><PostItGrid>{cards.filter(card=>card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=>renderCard(card as typeof cards[number],"default")}/>:null}</>}
-    {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleExecution={startExample==='pending'?{phase:'pending',message:'시작 중…'}:undefined} sampleDetail={selectedCardDetail} folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={(session,selection)=>{
+      : <><PostItGrid>{cards.filter(card=>card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=>renderCard(card,"default")}/>:null}</>}
+    {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleExecution={startExample==='pending'?{phase:'pending',message:'시작 중…'}:undefined} sampleDetail={selectedCardDetail}
+      onSampleChange={update=>setSampleDetails(previous=>({...previous,[selectedCard.id]:update(previous[selectedCard.id]??selectedCardDetail!)}))}
+      folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={(session,selection)=>{
         activateRunSession(session,useDashboardStore.getState());setSelectedSession(session);if(selection?.source!=='automatic')setMobileTab("chat");
       }}
       mobileMode={mobileMode} mobileTab={mobileTab} activeSession={selectedSession} chatInputDisabled historyEnabled={false} sessionStreamActive={false}

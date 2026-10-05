@@ -33,6 +33,12 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
   setInitialConfirmedIds(new Set(current.filter(item=>item.display==="confirmed").map(item=>item.id)));
   setExpandedIds(new Set(current.filter(isInitiallyExpanded).map(item=>item.id)));
  },[current]);
+ useEffect(()=>{
+  const reopened=current.filter(item=>initialConfirmedIds.has(item.id)&&item.display!=="confirmed"&&!excludedFromGroup.has(item.id));
+  if(!reopened.length)return;
+  setExcludedFromGroup(existing=>new Set([...existing,...reopened.map(item=>item.id)]));
+  setExpandedIds(existing=>new Set([...existing,...reopened.filter(isInitiallyExpanded).map(item=>item.id)]));
+ },[current,initialConfirmedIds,excludedFromGroup]);
  const groupOnOpen=initialConfirmedIds.size>=3;
  const grouped=current.filter(item=>groupOnOpen&&initialConfirmedIds.has(item.id)&&item.display==="confirmed"
   &&pendingConfirmations[item.id]!==false&&!excludedFromGroup.has(item.id));

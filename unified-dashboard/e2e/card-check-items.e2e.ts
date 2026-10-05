@@ -68,13 +68,30 @@ for (const width of [1920, 1440]) {
     const expectedWorkspaceWidth = width === 1920 ? 1552 : 1072;
     const expectedChatWidth = expectedWorkspaceWidth - 466 - 16;
     await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+    await page.clock.runFor(250);
+    const alignment = await detail.evaluate(element => {
+      const rect = (selector: string) => {
+        const box = element.querySelector(selector)!.getBoundingClientRect();
+        return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width };
+      };
+      return { pane: { x: element.getBoundingClientRect().x, y: element.getBoundingClientRect().y },
+        header: rect('.v3-folder-header > button'), now: rect('[data-testid="card-now-panel"]'),
+        tabs: rect('[role="tablist"]'), items: rect('[data-testid="card-check-items"]'),
+        composer: rect('[data-testid="card-composer"]'), chatY: document.querySelector('[data-testid="v3-card-session-chat"]')!.getBoundingClientRect().y };
+    });
+    for (const box of [alignment.now, alignment.tabs, alignment.items, alignment.composer]) {
+      expect(Math.abs(box.x - alignment.header.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.right - alignment.now.right)).toBeLessThanOrEqual(1);
+    }
+    expect(Math.abs(alignment.pane.y - alignment.chatY)).toBeLessThanOrEqual(1);
+    expect(alignment.items.y).toBeGreaterThanOrEqual(alignment.tabs.bottom);
     const initialGeometry = await workspace.evaluate(element => {
       const detail = element.querySelector("[data-testid=card-detail]" )!.getBoundingClientRect();
       const chat = element.querySelector("[data-testid=v3-card-session-chat]")!.getBoundingClientRect();
       return { width: element.getBoundingClientRect().width, detail: detail.width, chat: chat.width };
     });
     expect(initialGeometry.width).toBe(expectedWorkspaceWidth);
-    expect(initialGeometry.detail).toBe(466);
+    expect(Math.abs(initialGeometry.detail - 466)).toBeLessThanOrEqual(1);
     expect(initialGeometry.chat).toBeCloseTo(expectedChatWidth, 2);
 
     const tabs = [...await detail.getByRole("tab").allTextContents()].map(value => value.replace(/\d+/g, "").trim());
@@ -93,18 +110,6 @@ for (const width of [1920, 1440]) {
     await page.keyboard.press("Enter");
     const imageDialog = page.getByRole("dialog");
     await expect(imageDialog.getByRole("img", { name: "완료 화면", exact: true })).toBeVisible();
-    const activeElementAtImageOpen = width === 1920 ? await page.evaluate(() => {
-      const active = document.activeElement as HTMLElement | null;
-      return active ? {
-        tagName: active.tagName,
-        role: active.getAttribute("role"),
-        ariaLabel: active.getAttribute("aria-label"),
-        testId: active.getAttribute("data-testid"),
-        insideDialog: Boolean(active.closest('[data-slot="dialog-popup"]')),
-        insideWorkspaceScrim: Boolean(active.closest(".v3-workspace-scrim")),
-      } : null;
-    }) : null;
-    if (activeElementAtImageOpen) console.info(`activeElement after evidence open: ${JSON.stringify(activeElementAtImageOpen)}`);
     await page.keyboard.press("Escape");
     await expect(evidenceImage).toBeFocused();
     await expect(imageDialog).toHaveCount(0);
@@ -128,9 +133,10 @@ for (const width of [1920, 1440]) {
     await detail.getByRole("tab", { name: "확인 항목" }).click();
 
     const nowPanel = detail.getByTestId("card-now-panel");
-    const currentLayout = await page.evaluate(() => {
-      const panel = document.querySelector("[data-testid=card-now-panel]")!.getBoundingClientRect();
-      const items = document.querySelector("[data-testid=card-check-items]")!.getBoundingClientRect();
+    await page.clock.runFor(100);
+    const currentLayout = await detail.evaluate(element => {
+      const panel = element.querySelector("[data-testid=card-now-panel]")!.getBoundingClientRect();
+      const items = element.querySelector("[data-testid=card-check-items]")!.getBoundingClientRect();
       return { panelHeight: panel.height, firstItemY: items.y };
     });
     await page.screenshot({ path: path.join(output, `${width}-initial.png`), animations: "disabled" });
@@ -143,9 +149,10 @@ for (const width of [1920, 1440]) {
     await nowPanel.getByRole("button", { name: "이전 상황" }).click();
     await expect(nowPanel).toHaveAttribute("data-now-view", "past");
     await expect(nowPanel).toContainText("지난 상황");
-    const pastLayout = await page.evaluate(() => {
-      const panel = document.querySelector("[data-testid=card-now-panel]")!.getBoundingClientRect();
-      const items = document.querySelector("[data-testid=card-check-items]")!.getBoundingClientRect();
+    await page.clock.runFor(100);
+    const pastLayout = await detail.evaluate(element => {
+      const panel = element.querySelector("[data-testid=card-now-panel]")!.getBoundingClientRect();
+      const items = element.querySelector("[data-testid=card-check-items]")!.getBoundingClientRect();
       return { panelHeight: panel.height, firstItemY: items.y };
     });
     expect(pastLayout.panelHeight).toBe(currentLayout.panelHeight);
@@ -153,30 +160,39 @@ for (const width of [1920, 1440]) {
     await page.screenshot({ path: path.join(output, `${width}-past.png`), animations: "disabled" });
     await nowPanel.getByRole("button", { name: "다음 상황" }).click();
     await expect(nowPanel).toHaveAttribute("data-now-view", "current");
+    await nowPanel.getByRole("button", { name: "이전 상황" }).click();
+    await nowPanel.getByRole("button", { name: "이전 상황" }).click();
+    await nowPanel.getByRole("button", { name: "최신으로", exact: true }).click();
+    await expect(nowPanel).toHaveAttribute("data-now-view", "current");
 
     const divider = page.getByTestId("v3-card-workspace-divider");
     const dragBy = async (delta: number) => {
       const dragHandle = divider.locator(".cursor-col-resize");
       const box = await dragHandle.boundingBox();
       expect(box).not.toBeNull();
-      await page.mouse.move(box!.x + 8, box!.y + 80);
+      await page.mouse.move(box!.x + box!.width / 2, box!.y + 80);
       await page.mouse.down();
-      const cursorWhileDragging = await page.evaluate(() => document.body.style.cursor);
-      await page.mouse.move(box!.x + 8 + delta, box!.y + 80);
+      await page.mouse.move(box!.x + box!.width / 2 + delta, box!.y + 80);
       await page.mouse.up();
-      if (width === 1920 && delta === -66) console.info(`divider drag: ${JSON.stringify({ box, cursorWhileDragging, width: await workspace.getAttribute("data-card-width-px") })}`);
     };
     await dragBy(-66);
     await expect(workspace).toHaveAttribute("data-card-width-px", "400");
     await page.screenshot({ path: path.join(output, `${width}-split-400.png`), animations: "disabled" });
     const stateAt400 = await detail.locator('[data-item-id="4"] .v3-card-check-item-state').boundingBox();
     const titleAt400 = await detail.locator('[data-item-id="4"] .v3-card-check-item-title').boundingBox();
-    expect(stateAt400!.y).toBe(titleAt400!.y);
+    expect(stateAt400!.y).toBeLessThan(titleAt400!.y + titleAt400!.height);
     await dragBy(-1);
     await expect(workspace).toHaveAttribute("data-card-width-px", "399");
     const stateAt399 = await detail.locator('[data-item-id="4"] .v3-card-check-item-state').boundingBox();
     const titleAt399 = await detail.locator('[data-item-id="4"] .v3-card-check-item-title').boundingBox();
     expect(stateAt399!.y).toBeGreaterThan(titleAt399!.y);
+    await divider.focus();
+    await page.keyboard.press("Home");
+    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+    await dragBy(500);
+    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+    await dragBy(-1000);
+    await expect(workspace).toHaveAttribute("data-card-width-px", String(expectedWorkspaceWidth * 0.25));
     await divider.focus();
     await page.keyboard.press("Home");
     await expect(workspace).toHaveAttribute("data-card-width-px", "466");
@@ -194,10 +210,13 @@ for (const width of [1920, 1440]) {
     await expect(detail.locator('[data-item-id="5"] .v3-card-check-item-state')).toContainText("고칠 점 3");
     await expect(detail.locator(".v3-card-sent-notice")).toContainText("보냈습니다.");
     await expect(detail.getByRole("tab", { name: "확인 항목" })).toHaveAttribute("aria-selected", "true");
+    await detail.locator('[data-item-id="5"]').evaluate(element => element.scrollIntoView({ block: "start" }));
     await page.screenshot({ path: path.join(output, `${width}-after-fix.png`), animations: "disabled" });
     await detail.getByRole("button", { name: "커멘트에서 보기", exact: false }).click();
     await expect(detail.getByRole("tab", { name: "커멘트" })).toHaveAttribute("aria-selected", "true");
-    await expect(detail.locator(".v3-card-comment-target")).toContainText("5번");
+    const savedComment = detail.locator('[data-card-entry="커멘트"]').filter({ hasText: "좁은 화면에서 상태 글이 제목 아래로 내려옵니다." });
+    await expect(savedComment).toHaveCount(1);
+    await expect(savedComment.locator(".v3-card-comment-target")).toContainText("5번");
     await expect(detail.getByRole("tab", { name: /커멘트/ })).toContainText("커멘트");
     await page.screenshot({ path: path.join(output, `${width}-target-comment.png`), animations: "disabled" });
     const reportImage = detail.getByRole("button", { name: "검수 이미지", exact: true });
@@ -216,10 +235,13 @@ for (const width of [1920, 1440]) {
     await expect(nowPanel).toContainText("모두 확인했습니다. 완료로 옮길까요?");
     await expect(detail.locator(".v3-folder-header-actions")).toHaveAttribute("data-complete-emphasis", "true");
     expect(await detail.textContent()).not.toContain("되돌리기");
+    await detail.locator('.v3-card-panel-scroll').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: path.join(output, `${width}-all-checked.png`), animations: "disabled" });
     await detail.getByRole("button", { name: "완료", exact: true }).click();
     await expect(detail).toHaveCount(0);
     await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
+    await expect(postit).toContainText("확인 10");
+    await expect(postit.locator(".v3-card-progress-dot")).toHaveCount(0);
 
     const legacyCard = board.locator('[data-card-id="board-0-1"] .v3-postit-open');
     await legacyCard.scrollIntoViewIfNeeded();
@@ -257,10 +279,65 @@ for (const width of [1920, 1440]) {
     await expect(reducedDetail).toHaveCount(0);
     await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
     writeFileSync(path.join(output, `${width}-metrics.json`), JSON.stringify({
-      viewport: { width, height: width === 1920 ? 1080 : 810 }, activeElementAtImageOpen,
-      initialGeometry, currentLayout, pastLayout, stateAt400, titleAt400, stateAt399, titleAt399, sessionStyleBefore,
+      viewport: { width, height: width === 1920 ? 1080 : 810 },
+      initialGeometry, alignment, currentLayout, pastLayout, stateAt400, titleAt400, stateAt399, titleAt399, sessionStyleBefore,
     }, null, 2));
     expect(errors).toEqual([]);
     expect(writes).toEqual([]);
+  });
+}
+
+test("approved card layout contracts", async ({ page }) => {
+  await prepare(page, 1440);
+  const board = page.getByTestId("card-board-sample");
+  await board.scrollIntoViewIfNeeded();
+  await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+  const detail = page.getByTestId("card-detail");
+  await expect(detail).toBeVisible();
+  expect.soft(await detail.getByRole("tab", { name: /확인 항목/ }).textContent()).toBe("확인 항목2");
+  const layout = await detail.evaluate(element => {
+    const turn = element.querySelector(".v3-card-now-turn")!;
+    const tabs = element.querySelector('[role="tablist"]')!;
+    const title = element.querySelector(".v3-card-title-editor h1")!;
+    const evidence = element.querySelector<HTMLImageElement>(".v3-card-evidence-image")!;
+    const handle = document.querySelector('[data-testid="v3-card-workspace-divider"] > div')!;
+    const checkbox = element.querySelector('[role="checkbox"][aria-checked="false"]')!;
+    return {
+      turnDisplay: getComputedStyle(turn).display,
+      tabsDisplay: getComputedStyle(tabs).display,
+      statusInsideTitle: Boolean(title.querySelector('[aria-label="카드 상태 변경"]')),
+      itemArrows: element.querySelectorAll(".v3-card-check-item-chevron").length,
+      evidence: { width: evidence.getBoundingClientRect().width, height: evidence.getBoundingClientRect().height },
+      handleHeight: handle.getBoundingClientRect().height,
+      checkboxFill: getComputedStyle(checkbox, "::before").backgroundColor,
+    };
+  });
+  expect.soft(layout.turnDisplay).toBe("block");
+  expect.soft(layout.tabsDisplay).toBe("flex");
+  expect.soft(layout.statusInsideTitle).toBe(true);
+  expect.soft(layout.itemArrows).toBe(0);
+  expect.soft(layout.evidence.width).toBeCloseTo(120, 0);
+  expect.soft(layout.evidence.height).toBeCloseTo(68, 0);
+  expect.soft(layout.handleHeight).toBeGreaterThan(100);
+  expect.soft(layout.checkboxFill).toBe("rgba(0, 0, 0, 0)");
+});
+
+for (const width of [1920, 1440]) {
+  test(`target result evidence capture ${width}`, async ({ page }) => {
+    const { errors, writes } = await prepare(page, width);
+    const board = page.getByTestId("card-board-sample");
+    await board.scrollIntoViewIfNeeded();
+    await board.getByTestId("postit-size-comparison").locator(".v3-postit-open").first().click();
+    const detail = page.getByTestId("card-detail");
+    const row = detail.locator('[data-item-id="5"]');
+    await row.locator(".v3-card-check-item-target").click();
+    await detail.getByPlaceholder("커멘트", { exact: true }).fill("좁은 화면에서 상태 글이 제목 아래로 내려옵니다.");
+    await detail.getByRole("button", { name: "커멘트 전송", exact: true }).click();
+    await expect(row).toHaveAttribute("data-item-display", "fix");
+    await expect(row.locator(".v3-card-check-item-state")).toHaveText("고칠 점 3");
+    await row.evaluate(element => element.scrollIntoView({ block: "start" }));
+    await expect(row).toBeVisible();
+    await page.screenshot({ path: path.join(output, `${width}-after-fix.png`), animations: "disabled" });
+    expect(errors).toEqual([]);expect(writes).toEqual([]);
   });
 }

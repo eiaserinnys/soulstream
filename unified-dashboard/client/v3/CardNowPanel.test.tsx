@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+/** @vitest-environment jsdom */
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { CardNow, CardNowHistoryEntry } from "@seosoyoung/soul-ui/cards/card-types";
 import { CardNowPanel } from "./CardNowPanel";
@@ -27,5 +30,19 @@ describe("card now panel",()=>{
   const html=renderToStaticMarkup(<CardNowPanel now={now} nowHistory={history} itemsCount={2} activeCount={1}/>);
   expect(html).toContain('aria-label="이전 상황"');expect(html).toContain('aria-label="다음 상황"');
   expect(html).toContain("2/2");expect(html).toContain("현재 상황");
+ });
+ it("returns directly to now from an older history slot",async()=>{
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
+  vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){}});
+  const container=document.createElement("div");document.body.append(container);
+  const root=createRoot(container);
+  try {
+   await act(()=>root.render(<CardNowPanel now={now} nowHistory={[history[0],history[1],{...history[1],at:now.updatedAt}]} itemsCount={2} activeCount={1}/>));
+   const previous=()=>container.querySelector<HTMLButtonElement>('[aria-label="이전 상황"]')!.click();
+   await act(previous);await act(previous);
+   expect(container.querySelector('[data-now-view="past"]')).not.toBeNull();
+   await act(()=>[...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==="최신으로")!.click());
+   expect(container.querySelector('[data-now-view="current"]')).not.toBeNull();
+  } finally {await act(()=>root.unmount());container.remove();vi.unstubAllGlobals();}
  });
 });

@@ -21,13 +21,17 @@ import { CardNotes } from "./CardNotes";
 import { summarizeCardItems } from "./card-item-summary";
 const EMPTY_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 export { cardRequestMarkdown } from "./card-request-markdown";
-export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSessionId,sampleDetail,sampleExecution}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState}) {
+export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSessionId,sampleDetail,sampleExecution,onSampleChange}: {cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState;onSampleChange?(update:(current:CardDetail)=>CardDetail):void}) {
  const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
  const pendingConfirmations=useCardStore(s=>s.pendingItemConfirmations[cardId]??EMPTY_PENDING_CONFIRMATIONS);
  const [localSample,setLocalSample]=useState(sampleDetail);
  const sampleUpload=useLocalDialogueUpload();
  useEffect(()=>setLocalSample(sampleDetail),[sampleDetail]);
- const activeSample=localSample?.card.id===cardId?localSample:sampleDetail;
+ const activeSample=onSampleChange?sampleDetail:localSample?.card.id===cardId?localSample:sampleDetail;
+ const updateSample=(update:(current:CardDetail)=>CardDetail)=>{
+  if(onSampleChange)onSampleChange(update);
+  else setLocalSample(current=>current?update(current):current);
+ };
  const card=activeSample?.card??storedCard,detail=activeSample??storedDetail;
  const catalog=useDashboardStore(s=>s.catalog);
  const {user}=useAuth();
@@ -36,7 +40,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
  const surface=useRef<HTMLElement>(null);
  const webglActive=useGlassSurface(surface,{enabled:true});
  const tabId=useId();
- const [tab,setTab]=useState<"items"|"comments"|"sessions"|"notes">("comments");
+ const [tab,setTab]=useState<"items"|"comments"|"sessions"|"notes">(()=>card?.items?.length?"items":"comments");
  const initializedTabForCard=useRef<string|null>(null);
  const [targetItemId,setTargetItemId]=useState<number|null>(null);
  const [sentNotice,setSentNotice]=useState(false);
@@ -60,7 +64,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
  const agentId=assignee?.agentId ?? card?.assigneeAgentId;
  const portrait=nodeId&&agentId ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait`:"";
  useEffect(()=>{if(!sampleDetail)void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId,sampleDetail]);
- useEffect(()=>{initializedTabForCard.current=null;setTab("comments");setTargetItemId(null);setSentNotice(false);setUnreadComments(false);},[cardId]);
+ useEffect(()=>{initializedTabForCard.current=null;setTargetItemId(null);setSentNotice(false);setUnreadComments(false);},[cardId]);
  useEffect(()=>{
   if(!card||initializedTabForCard.current===cardId)return;
   initializedTabForCard.current=cardId;
@@ -80,7 +84,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
   return ()=>observer.disconnect();
  },[cardId,targetItemId,sentNotice]);
  const answer=async(questionId:string,text:string)=>{
-  if(sampleDetail){setLocalSample(current=>current?{...current,questions:current.questions.map(q=>q.id===questionId?{...q,answer:text,answeredAt:new Date().toISOString()}:q)}:current);return;}
+  if(sampleDetail){updateSample(current=>({...current,questions:current.questions.map(q=>q.id===questionId?{...q,answer:text,answeredAt:new Date().toISOString()}:q)}));return;}
   setPending(true);
   try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,{answer:text});}
   catch {} finally {setPending(false);}
@@ -90,8 +94,8 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
   const itemId=targetItemId;
   if(sampleDetail){
    const saved:CardComment={id:crypto.randomUUID(),cardId,authorKind:"user",authorId:"sample",sessionId:null,kind:"comment",...(itemId===null?{}:{itemId}),body:comment.trim(),createdAt:new Date().toISOString()};
-   setLocalSample(current=>current?{...current,card:{...current.card,items:itemId===null?current.card.items:current.card.items?.map(item=>item.id===itemId?{...item,state:"doing",confirmed:null,fixOpen:item.fixOpen+1,display:"fix"}:item)},
-    comments:[...(current.comments??[]),saved]}:current);
+   updateSample(current=>({...current,card:{...current.card,items:itemId===null?current.card.items:current.card.items?.map(item=>item.id===itemId?{...item,state:"doing",confirmed:null,fixOpen:item.fixOpen+1,display:"fix"}:item)},
+    comments:[...(current.comments??[]),saved]}));
    setTargetItemId(null);setSentNotice(true);setNoticeVersion(value=>value+1);if(tab!=="comments")setUnreadComments(true);return true;
   }
   setPending(true);
@@ -110,16 +114,16 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
  };
  const confirmItem=async(itemId:number,confirmed:boolean)=>{
   if(sampleDetail){
-   setLocalSample(current=>current?{...current,card:{...current.card,items:current.card.items?.map(item=>item.id===itemId
+   updateSample(current=>({...current,card:{...current.card,items:current.card.items?.map(item=>item.id===itemId
     ?confirmed?{...item,state:"done",confirmed:{at:new Date().toISOString(),rev:item.rev},display:"confirmed"}
-     :{...item,state:"doing",confirmed:null,display:"changed",reopened:"샘플에서 확인을 풀었습니다."}:item)}}:current);
+     :{...item,state:"doing",confirmed:null,display:"changed",reopened:"샘플에서 확인을 풀었습니다."}:item)}}));
    return;
   }
   await useCardStore.getState().confirmItem(cardId,itemId,confirmed);
  };
  const complete=async()=>{
   if(!card || pending)return;
-  if(sampleDetail){setLocalSample(current=>current?{...current,card:{...current.card,status:"done"}}:current);onClose();return;}
+  if(sampleDetail){updateSample(current=>({...current,card:{...current.card,status:"done"}}));onClose();return;}
   setPending(true);
   try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});onClose();}
   catch {} finally {setPending(false);}
@@ -127,26 +131,25 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
  if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;
  const dockStyle={"--v3-card-dock-height":`${dockHeight}px`} as CSSProperties;
  const tabs=[
-  ["items",<span className="v3-card-tab-label">확인 항목{hasCheckItems?<span>{itemSummary.activeCount}</span>:null}</span>],
+  ["items",<span className="v3-card-tab-label">확인 항목{itemSummary.toReviewCount>0?<span className="v3-card-tab-count">{itemSummary.toReviewCount}</span>:null}</span>],
   ["comments",<span className="v3-card-tab-label">커멘트{unreadComments?<span className="v3-card-tab-dot" aria-label="새 커멘트"/>:null}</span>],
   ["sessions","세션"],["notes","노트"],
  ] as const;
  return <article ref={surface} className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim" data-liquid-glass-webgl={webglActive?"true":undefined} data-testid="card-detail">
   <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
    <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
-   <CardStatusPicker sampleExecution={sampleExecution} ref={statusPicker} card={card} onOpen={()=>{}} control={{pending,
+   <FolderTitleEditor leading={<CardStatusPicker sampleExecution={sampleExecution} ref={statusPicker} card={card} onOpen={()=>{}} control={{pending,
     assignment:sampleDetail?dialoguesAssignment:undefined,folders,
-    saveSettings:sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setLocalSample(current=>current?{...current,card:saved}:current);return saved;}:undefined,
-    load:()=>sampleDetail ? Promise.resolve(localSample!) : useCardStore.getState().loadCard(cardId),
-    change:async(latest,status,reason)=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}:current);else if(status==="running")await useCardStore.getState().execute(cardId,latest.version);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
-    changeColor:async(latest,color:CardColor)=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,color,version:latest.version+1}}:current);else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH");},
-   }}/>
-   <FolderTitleEditor variant="card" title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)setLocalSample(current=>current?{...current,card:{...current.card,title}}:current);else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
+    saveSettings:sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined,
+    load:()=>sampleDetail ? Promise.resolve(activeSample!) : useCardStore.getState().loadCard(cardId),
+    change:async(latest,status,reason)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}));else if(status==="running")await useCardStore.getState().execute(cardId,latest.version);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
+    changeColor:async(latest,color:CardColor)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,color,version:latest.version+1}}));else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH");},
+   }}/>} variant="card" title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,title}}));else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
    <div className="v3-folder-header-actions" data-complete-emphasis={allChecked&&!execution&&!startable||undefined}><DashboardIconCap label={actionLabel} disabled={pending||execution?.phase==='pending'} onClick={()=>{if(execution||startable)statusPicker.current?.request('running');else void complete();}}>{execution?.phase==='pending'?<LoaderCircle className="h-4 w-4 animate-spin"/>:execution?<RotateCw className="h-4 w-4"/>:startable?<Play className="h-4 w-4"/>:<Check className="h-4 w-4"/>}</DashboardIconCap></div>
   </header>
-  <div className="v3-detail-gutter v3-task-detail-content v3-card-context">
-   {!card.assigneeSessionId?<section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};setLocalSample(current=>current?{...current,card:saved}:current);return saved;}:undefined}/></section>:null}
-  </div>
+  {!card.assigneeSessionId?<div className="v3-detail-gutter v3-task-detail-content v3-card-context">
+   <section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined}/></section>
+  </div>:null}
   {card.now?<div key={cardId} className="v3-detail-gutter v3-card-now-slot"><CardNowPanel now={card.now} nowHistory={detail?.nowHistory} itemsCount={card.items?.length??0} activeCount={itemSummary.activeCount}/></div>:null}
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} variant="card" tabs={tabs} value={tab} onChange={changeTab}/></div>
   {execution && execution.phase!=="pending"?<p role={execution.phase==="error"?"alert":"status"} className="v3-card-error">{execution.message}</p>:null}

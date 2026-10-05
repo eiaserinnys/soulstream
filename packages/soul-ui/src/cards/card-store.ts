@@ -56,7 +56,8 @@ export const useCardStore = create<CardState>((set,get) => ({
         const pendingForCard={...state.pendingItemConfirmations[id]};delete pendingForCard[itemId];
         const pendingItemConfirmations={...state.pendingItemConfirmations};
         if(Object.keys(pendingForCard).length)pendingItemConfirmations[id]=pendingForCard;else delete pendingItemConfirmations[id];
-        return {byId:{...state.byId,[id]:card},details:state.details[id]?{...state.details,[id]:{...state.details[id],card}}:state.details,pendingItemConfirmations,errors:{...state.errors,[id]:""}};
+        const currentCard=(state.byId[id]?.version??0)>card.version?state.byId[id]:card;
+        return {byId:{...state.byId,[id]:currentCard},details:state.details[id]?{...state.details,[id]:{...state.details[id],card:currentCard}}:state.details,pendingItemConfirmations,errors:{...state.errors,[id]:""}};
       });
       return card;
     } catch(error) {

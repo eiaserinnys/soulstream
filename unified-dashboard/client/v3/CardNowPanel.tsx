@@ -43,16 +43,16 @@ function CardNowPanelView({now,nowHistory=[],itemsCount,activeCount}: {
  const current:NowSlot={key:`measure:${now.updatedAt}`,text:now.text,turn:now.turn,ask:now.ask,at:now.updatedAt};
  return <section ref={panel} className={`v3-card-now-panel${latest?"":" v3-card-now-panel--past"}`} style={style} data-testid="card-now-panel" data-now-view={latest?"current":"past"}>
   <NowPanelContents entry={entry} index={index} total={slots.length} latest={latest} hasNavigation={hasNavigation} allChecked={allChecked}
-   onPrevious={()=>move(index-1)} onNext={()=>move(index+1)}/>
+   onPrevious={()=>move(index-1)} onNext={()=>move(index+1)} onLatest={()=>move(slots.length-1)}/>
   <div ref={measure} className="v3-card-now-measure" aria-hidden="true">
-   <NowPanelContents entry={current} index={slots.length-1} total={slots.length} latest hasNavigation={hasNavigation} allChecked={allChecked} onPrevious={()=>{}} onNext={()=>{}}/>
+   <NowPanelContents entry={current} index={slots.length-1} total={slots.length} latest hasNavigation={hasNavigation} allChecked={allChecked} onPrevious={()=>{}} onNext={()=>{}} onLatest={()=>{}}/>
   </div>
  </section>;
 }
 
-function NowPanelContents({entry,index,total,latest,hasNavigation,allChecked,onPrevious,onNext}: {
+function NowPanelContents({entry,index,total,latest,hasNavigation,allChecked,onPrevious,onNext,onLatest}: {
  entry:NowSlot;index:number;total:number;latest:boolean;hasNavigation:boolean;allChecked:boolean;
- onPrevious():void;onNext():void;
+ onPrevious():void;onNext():void;onLatest():void;
 }) {
  const dateLabel=formatUpdated(entry.at);
  return <>
@@ -65,10 +65,10 @@ function NowPanelContents({entry,index,total,latest,hasNavigation,allChecked,onP
    </div>:null}
   </div>
   <p className="v3-card-now-text">{entry.text}</p>
-  {latest?<div className={`v3-card-now-turn v3-card-now-turn--${entry.turn}`}>
+  {latest?<div className={`v3-card-now-turn v3-card-now-turn--${allChecked?"complete":entry.turn}`}>
    <strong>{allChecked?"모두 확인했습니다. 완료로 옮길까요?":turnLabel(entry.turn)}</strong>
    {allChecked||!entry.ask?null:<span>{entry.ask}</span>}
-  </div>:<div className="v3-card-now-past-hint"><span>아래 확인 항목은 지금 상태입니다</span><button type="button" onClick={onNext}>최신으로</button></div>}
+  </div>:<div className="v3-card-now-past-hint"><span>아래 확인 항목은 지금 상태입니다</span><button type="button" onClick={onLatest}>최신으로</button></div>}
  </>;
 }
 

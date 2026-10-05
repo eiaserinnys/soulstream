@@ -51,6 +51,19 @@ it("sends one confirmation and separates image evidence from link evidence",asyn
  expect(onConfirmChange).toHaveBeenCalledWith(8,true);
 });
 
+it("opens a server-reopened item outside the original confirmed group for this visit",async()=>{
+ const renderItems=(items:CardCheckItem[])=>root.render(<CardCheckItems items={items} onConfirmChange={vi.fn()} onTargetItem={vi.fn()}/>);
+ const initial=[item(1,"confirmed"),item(2,"confirmed"),item(3,"confirmed")];
+ await act(()=>renderItems(initial));
+ await act(()=>renderItems([{...item(1,"changed"),result:"수정된 결과입니다"},...initial.slice(1)]));
+ const reopened=container.querySelector('[data-item-id="1"]')!;
+ expect(reopened.querySelector('.v3-card-check-item-body')).not.toBeNull();
+ expect(reopened.closest('[data-testid="confirmed-items-group"]')).toBeNull();
+ await act(()=>renderItems(initial));
+ expect(container.querySelector('[data-item-id="1"]')?.closest('[data-testid="confirmed-items-group"]')).toBeNull();
+ expect(container.querySelector('[data-testid="confirmed-items-group"]')?.textContent).toContain("확인함 2개");
+});
+
 it("summarizes the server display values with per-item pending intent",()=>{
  const summary=summarizeCardItems([item(1,"todo"),item(2,"reported"),item(3,"confirmed"),item(4,"dropped")],{1:true,3:false});
  expect(summary.activeItems.map(value=>value.id)).toEqual([2,3]);
