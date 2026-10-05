@@ -25,7 +25,7 @@ export function ChatInterruptButton({
       testID="chat-composer-interrupt-button"
       surfaceTestID="chat-composer-interrupt-visual"
       frameStyle={styles.composerControlFrame}
-      surfaceStyle={[styles.stopBtn, interrupting && styles.stopBtnDisabled]}
+      surfaceStyle={[styles.stopBtn, interrupting && styles.composerFilledControlBusy]}
       onPress={onPress}
       disabled={disabled}
       accessibilityLabel="세션 중단"

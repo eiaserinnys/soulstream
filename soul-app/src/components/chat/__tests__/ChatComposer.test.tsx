@@ -441,6 +441,25 @@ describe('ChatComposer', () => {
     expect(failed.queryByTestId('chat-composer-send-spinner')).toBeNull();
   });
 
+  test('sending 중에는 입력이 비어도 강조 표면의 spinner를 표시하고 전송을 막는다', () => {
+    const empty = renderComposer('', false, true);
+    const active = renderComposer('보낼 내용');
+    const emptySend = empty.getByTestId('chat-composer-send-button');
+    const busySurface = StyleSheet.flatten(empty.getByTestId('chat-composer-send-visual').props.style);
+    const activeSurface = StyleSheet.flatten(active.getByTestId('chat-composer-send-visual').props.style);
+
+    expect(empty.getByTestId('chat-composer-send-spinner')).toBeTruthy();
+    expect(emptySend.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
+    expect(busySurface.backgroundColor).toBe(activeSurface.backgroundColor);
+    fireEvent.press(emptySend);
+    expect(empty.onSend).not.toHaveBeenCalled();
+
+    const withDraft = renderComposer('다음 초안', false, true);
+    expect(withDraft.getByTestId('chat-composer-send-button').props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(withDraft.getByTestId('chat-composer-send-button'));
+    expect(withDraft.onSend).not.toHaveBeenCalled();
+  });
+
   test('sending pending cell에서도 첨부 버튼은 활성 상태다', () => {
     const sending = renderComposer('초안', false, true, true);
     const attachmentButton = sending.getByTestId('chat-composer-attach-button');

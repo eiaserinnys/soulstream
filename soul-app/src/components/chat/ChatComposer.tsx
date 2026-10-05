@@ -174,12 +174,12 @@ export function ChatComposer({
               surfaceTestID="chat-composer-send-visual"
               accessibilityRole="button"
               accessibilityLabel={sendAccessibilityLabel}
-              accessibilityState={{ disabled: !canSend }}
-              disabled={!canSend}
+              accessibilityState={{ disabled: !canSend || sending, busy: sending }}
+              disabled={!canSend || sending}
               frameStyle={styles.composerControlFrame}
-              surfaceStyle={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+              surfaceStyle={[styles.sendBtn, sending ? styles.composerFilledControlBusy : !canSend && styles.sendBtnDisabled]}
               onPress={() => {
-                if (canSend) onSend();
+                if (canSend && !sending) onSend();
               }}
             >
               {sending ? (
