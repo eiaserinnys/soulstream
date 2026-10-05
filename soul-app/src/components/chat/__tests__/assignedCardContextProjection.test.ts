@@ -10,9 +10,14 @@ it('anchors the latest prepared card snapshot to its exact input after late arri
  const before=placeTurnSummaries(inputBase,events);
  const reload=placeTurnSummaries(JSON.parse(JSON.stringify(inputBase)),JSON.parse(JSON.stringify(events)));
  expect(before).toEqual(reload);
- expect((before[0] as any).summaries.map((s:any)=>s.event.id)).toEqual(['42']);
- expect((before[0] as any).summaries[0].content).toBe('과거 카드 · 대기 · 마지막 보고 시각 확인 불가');
- expect((before[1] as any).summaries).toBeUndefined();
+ expect(before.map(item=>item.kind)).toEqual(['event','turn-summary','event','event']);
+ expect(before[1]).toMatchObject({
+  kind:'turn-summary',
+  key:'turn-summary-42',
+  content:'과거 카드 · 대기 · 마지막 보고 시각 확인 불가',
+ });
+ expect((before[0] as any).summaries).toBeUndefined();
+ expect((before[2] as any).summaries).toBeUndefined();
 });
 it('projects compact and legacy card snapshots with captured-time-relative report labels',()=>{
  expect(formatAssignedCardContextSnapshot({capturedAt:'2026-10-02T01:00:00Z',cards:[

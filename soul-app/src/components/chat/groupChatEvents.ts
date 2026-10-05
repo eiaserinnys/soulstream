@@ -419,10 +419,10 @@ export function groupChatEvents(
   });
 
   flushText();
-  const withTurnSummaries = placeTurnSummaries(out, events);
-  return displaySettings?.showJevCandidates === true
-    ? placeJevCandidateCaptions(withTurnSummaries, events)
-    : withTurnSummaries;
+  const withJevCandidateCaptions = displaySettings?.showJevCandidates === true
+    ? placeJevCandidateCaptions(out, events)
+    : out;
+  return placeTurnSummaries(withJevCandidateCaptions, events);
 }
 
 export function placePendingOptimistic(
