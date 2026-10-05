@@ -254,22 +254,22 @@ describe("persistent context evaluation", () => {
     })).toBe(true);
   });
 
-  it("drops candidates whose sanitized line and fallback title are empty before scoring", async () => {
+  it("drops UUID-only turn summaries instead of scoring their turn number", async () => {
     const uuid = "11111111-2222-4333-8444-555555555555";
     const repositories = createRepositories({
       sessionIsPersistent: true,
       inputEventId: 10,
       allowedFolderIds: ["visible"],
       turnSummaries: [],
-      cards: [{ id: "card-empty", number: null, title: uuid, request: uuid, brief: uuid }],
-      recentCompletedSessions: [{ sessionId: "session-empty", title: uuid, lastAssistantText: uuid }],
+      cards: [{ id: "card-valid", number: null, title: "Useful card", request: "Saved details", brief: "" }],
+      recentCompletedSessions: [],
     }, true, uuid);
     let sent: { state: { candidates: Array<{ key: string; text: string }> } } | undefined;
     const service = createPersistentContextService({
       candidates: repositories,
       searchProvider: { search: async () => ({
         search_status: { session_sources: { metadata: { status: "complete" } } },
-        session_results: [{ session_id: "search-empty", folder_id: "visible", title: uuid, excerpt: uuid }],
+        session_results: [],
       }) } as unknown as CogitoSearchProvider,
       typesafeApiKey: "test-key",
       logMissingInput: vi.fn(),
@@ -287,11 +287,10 @@ describe("persistent context evaluation", () => {
       deadlineAt: Date.now() + 2_000, signal: new AbortController().signal,
     });
 
-    expect(sent?.state.candidates.map(({ key, text }) => ({ key, text }))).toEqual([
-      { key: "turn-0", text: "T1 — T1" },
-    ]);
+    expect(sent?.state.candidates.map(({ key }) => key)).toEqual(["card-0"]);
+    expect(sent?.state.candidates.some(({ text }) => text.includes("T1"))).toBe(false);
     expect(result.observation?.candidate_counts).toEqual({
-      turn_summaries: 1, cards: 0, search_sessions: 0, recent_completed_sessions: 0,
+      turn_summaries: 0, cards: 1, search_sessions: 0, recent_completed_sessions: 0,
     });
     expect(isPersistentJevCandidatesDebugEvent({
       type: "debug", kind: "persistent_jev_candidates", observation: result.observation,
@@ -336,6 +335,7 @@ describe("persistent context evaluation", () => {
   });
 
   it("returns null without calling Jev when no source has a candidate", async () => {
+    const logNullReason = vi.fn();
     const repositories = createRepositories({
       sessionIsPersistent: true,
       inputEventId: 10,
@@ -343,7 +343,7 @@ describe("persistent context evaluation", () => {
       turnSummaries: [],
       cards: [],
       recentCompletedSessions: [],
-    }, false);
+    }, true, "11111111-2222-4333-8444-555555555555");
     const fetchImpl = vi.fn();
     const service = createPersistentContextService({
       candidates: repositories,
@@ -352,7 +352,7 @@ describe("persistent context evaluation", () => {
       } as unknown as CogitoSearchProvider,
       typesafeApiKey: "test-key",
       logMissingInput: vi.fn(),
-      logNullReason: vi.fn(),
+      logNullReason,
       fetchImpl,
     });
     await expect(service.evaluatePersistentCandidates({
@@ -360,6 +360,7 @@ describe("persistent context evaluation", () => {
       deadlineAt: Date.now() + 2_000, signal: new AbortController().signal,
     })).resolves.toEqual({ observation: null });
     expect(fetchImpl).not.toHaveBeenCalled();
+    expect(logNullReason).toHaveBeenCalledWith("no_candidates", "current", expect.any(Number));
   });
 
 

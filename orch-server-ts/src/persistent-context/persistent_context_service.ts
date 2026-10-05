@@ -250,7 +250,7 @@ function buildCandidates(input: {
       session_id: input.sessionId,
       summary_event_id: summary.eventId,
       turn_number: summary.turnNumber,
-    }, label);
+    });
   });
   input.cards.slice(0, 20).forEach((card, index) => {
     const label = card.number === null ? clipUtf8(card.title, 80) : `#${card.number}`;
