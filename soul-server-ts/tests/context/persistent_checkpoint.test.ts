@@ -214,7 +214,7 @@ describe("buildPersistentCheckpoint", () => {
           { event_id: 90, event_type: "user_message", text: "직전 교환", created_at: "2026-10-04T00:00:00.000Z" },
           ...records,
         ],
-        omittedUnsummarized: 0,
+        omittedUnsummarized: 7,
       },
     });
     const budget = { ...PERSISTENT_CHECKPOINT_BUDGET, totalTokens: 20_000 };
@@ -222,6 +222,7 @@ describe("buildPersistentCheckpoint", () => {
 
     expect(text).toContain("요약되지 않은 요청");
     expect(text).toContain("요약되지 않은 답변");
+    expect(text).toContain("외 7개 미요약 이벤트 생략");
     expect(stats.estimatedTokens).toBeLessThanOrEqual(20_000);
   });
 });

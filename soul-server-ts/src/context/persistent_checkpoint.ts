@@ -20,6 +20,7 @@ export interface PersistentCheckpointBudget {
   cardLimit: number;
   questionLimit: number;
   recentEventLimit: number;
+  unsummarizedEventLimit: number;
 }
 
 export interface PersistentCheckpointStats {
@@ -48,10 +49,12 @@ export const PERSISTENT_CHECKPOINT_BUDGET: PersistentCheckpointBudget = {
   cardLimit: 60,
   questionLimit: 10,
   recentEventLimit: 200,
+  unsummarizedEventLimit: 200,
 };
 
 export const PERSISTENT_CHECKPOINT_READ_LIMITS: GenerationCheckpointReadLimits = {
   recentEventLimit: PERSISTENT_CHECKPOINT_BUDGET.recentEventLimit,
+  unsummarizedEventLimit: PERSISTENT_CHECKPOINT_BUDGET.unsummarizedEventLimit,
 };
 
 export const PERSISTENT_SUPERVISION_SCOPE: { folderIds: string[] | null } = {

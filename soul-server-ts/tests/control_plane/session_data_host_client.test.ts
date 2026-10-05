@@ -122,7 +122,7 @@ describe("SessionDataHostClient", () => {
       () => client.getSessionStory("s1"),
       () => client.getTurnExcerpt("s1"),
       () => client.getResumeContext("s1", 15),
-      () => client.getGenerationCheckpointMaterial("s1", { recentEventLimit: 20 }),
+      () => client.getGenerationCheckpointMaterial("s1", { recentEventLimit: 20, unsummarizedEventLimit: 200 }),
     ];
 
     for (const call of calls) await call();

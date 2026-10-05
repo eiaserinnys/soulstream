@@ -96,11 +96,11 @@ export class SessionReadCompositeRepository {
       lastSummarizedFinalResponseEventId = readFinalResponseEventId(foldedSummary?.payload);
     }
 
-    const [unsummarizedEvents, recentEvents] = await Promise.all([
-      this.events.readEvents(
+    const [unsummarizedResult, recentEvents] = await Promise.all([
+      this.events.readRecentEventsAfter(
         sessionId,
         lastSummarizedFinalResponseEventId ?? 0,
-        eventTotal,
+        limits.unsummarizedEventLimit,
         GENERATION_CHECKPOINT_EVENT_TYPES,
       ),
       lastSummarizedFinalResponseEventId === null
@@ -117,7 +117,7 @@ export class SessionReadCompositeRepository {
       if (lastSummarizedFinalResponseEventId === null || event.id > lastSummarizedFinalResponseEventId) continue;
       recordsById.set(event.id, checkpointEventRecord(event));
     }
-    for (const event of unsummarizedEvents) {
+    for (const event of unsummarizedResult.events) {
       if (lastSummarizedFinalResponseEventId !== null && event.id <= lastSummarizedFinalResponseEventId) continue;
       recordsById.set(event.id, checkpointEventRecord(event));
     }
@@ -127,7 +127,7 @@ export class SessionReadCompositeRepository {
       lastSummarizedFinalResponseEventId,
       recent: {
         records: [...recordsById.values()].sort((left, right) => left.event_id - right.event_id),
-        omittedUnsummarized: 0,
+        omittedUnsummarized: unsummarizedResult.total - unsummarizedResult.events.length,
       },
       childSessions: childSessionResult.sessions.map((child) => ({
         sessionId: child.session_id,
