@@ -17,6 +17,11 @@ test("audience all never exposes delete, configuration or destructive tools", ()
 test("card assignee handoff is internal-only", () => {
   assert.equal(cardTools.transfer_card_assignee.audience, "internal");
 });
+test("agent card execution stays internal and create_card.run stays out of the external schema", () => {
+  assert.equal(cardTools.run_card.audience, "internal");
+  assert.equal("run" in cardTools.create_card.externalInputSchema!, false);
+  assert.equal("run" in cardTools.create_card.config.inputSchema, true);
+});
 test("invariant detects each forbidden class even with an explicit false hint", () => {
   for (const definition of [
     { name: "delete_example", config: { inputSchema: {}, annotations: { destructiveHint: false } } },

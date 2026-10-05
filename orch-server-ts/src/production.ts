@@ -885,7 +885,8 @@ export function buildProductionRouteOptions(
         sessionMessages: providers.runtime.sessionActionCommandRoutes,
         authBearerToken: config.authBearerToken,
         ...(mcpSkills ? { skills: mcpSkills } : {}),
-        cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail },
+        cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail,
+          ...(cardExecutionServiceProvider ? { cardExecutionServiceProvider } : {}) },
         cluster: {
           nodes: providers.runtime.nodeSnapshotRoutes,
           nodeAgentProfiles: providers.nodeAgentProfileRoutes,

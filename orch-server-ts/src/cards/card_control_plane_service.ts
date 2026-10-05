@@ -84,8 +84,8 @@ export class CardControlPlaneService {
     if(result.snapshot.folder.id!==params.folderId) await this.broadcaster?.emitCardUpdated?.(params.cardId,params.folderId);
     return {...result,snapshot:(await this.repo.getSnapshot(params.folderId))!};
   }
-  /** User intent records real registration evidence; it is not an agent declaration. */
-  async recordUserExecution(params:CardMutationParams & {requestId:string;sessionId:string;execution?:CardWorkExecution}) {
+  /** Records the requesting side's execution evidence; it is not an assignee session's declaration. */
+  async recordExecution(params:CardMutationParams & {requestId:string;sessionId:string;execution?:CardWorkExecution}) {
     return this.mutateCard(params,"execute_card",{request_id:params.requestId,session_id:params.sessionId,execution:params.execution},async(sql,card,eventId)=>{
       const session=(await sql`SELECT card_id FROM sessions WHERE session_id=${params.sessionId} FOR SHARE`)[0];
       if(session?.card_id!==card.id || card.assignee_session_id && card.assignee_session_id!==params.sessionId)
