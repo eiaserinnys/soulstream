@@ -24,6 +24,7 @@ import { CardReportView } from './CardReportView';
 import { cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
 import { useCardStore } from '../../store/cardStore';
 import { withAlphaColor } from '../StatusPulseDecoration';
+import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 export function CardStatusChip({ card, title = false, board = false, detail = false, colors }: { card: CardDto; title?: boolean; board?: boolean; detail?: boolean; colors?: ColorScheme }) {
   const t = useTokens();
@@ -124,7 +125,7 @@ function CardItemSummary({ card, summary }: { card: CardDto; summary: ReturnType
   const t = useTokens();
   return <View testID={`card-${card.id}-item-summary`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs }}>
     {summary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-      style={{ width: t.uiSpacing.xxs, height: t.uiSpacing.xxs, borderRadius: t.foundation.radius.round,
+      style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
         backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
     <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{summary.confirmed}/{summary.total} 확인</Text>
     {summary.needsReview > 0 ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.statusCompleted }}>볼 것 {summary.needsReview}</Text> : null}

@@ -78,6 +78,13 @@ test('오늘·폴더는 같은 행이고 초상과 완료 캡은 같은 44 토�
   const cap = StyleSheet.flatten(screen.getByTestId(`card-${card.id}-완료-visual`).props.style);
   expect(avatar.width).toBe(44); expect(avatar.height).toBe(cap.height); expect(avatar.width).toBe(cap.width);
 });
+test('카드 행의 미확인 항목 점은 상태 도트 크기를 쓴다', () => {
+  const checklist = { ...card, items: [{ id: 1, title: '확인', display: 'todo' }] as any };
+  const screen = render(<CardRow api={null} card={checklist} onOpen={jest.fn()} />);
+  const summary = screen.getByTestId(`card-${card.id}-item-summary`);
+  const dot = summary.children[0] as any;
+  expect(StyleSheet.flatten(dot.props.style)).toMatchObject({ width: 8, height: 8 });
+});
 test.each([null, 'quota_exhausted'])('오늘 전송은 선택한 폴더·노드·모델로 세션을 만들고 카드를 만들지 않는다: %s', async reason => {
   const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }), listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }] }), listModelPresets: jest.fn().mockResolvedValue({ model_presets: [{ id: 'sol', label: 'Sol', available: true, reason }] }), createSession: jest.fn().mockResolvedValue({ agentSessionId: 'new-session' }), createCard: jest.fn() };
   const screen = render(<TodayCardComposer api={api as any} />);

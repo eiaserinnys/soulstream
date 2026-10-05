@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createPrimitiveRoles, useTokens, type DesignTokens } from '../../theme';
+import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 export interface SettingsSegmentOption<T extends string> {
   value: T;
@@ -126,7 +127,7 @@ function makeStyles(t: DesignTokens) {
     labelContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: t.uiSpacing.xxs },
     detailLabel: { ...t.foundation.typography.meta, color: t.colors.textSecondary, textAlign: 'center' },
     detailCount: { ...t.foundation.typography.meta, color: t.colors.textPrimary },
-    detailDot: { width: t.uiSpacing.xxs, height: t.uiSpacing.xxs, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.accent },
+    detailDot: { width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.accent },
     detailFocusRing: { borderRadius: t.foundation.radius.round },
     selected: {
       backgroundColor: t.colors.accentTint,

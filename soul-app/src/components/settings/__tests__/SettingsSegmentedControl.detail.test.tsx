@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { SettingsSegmentedControl } from '../SettingsSegmentedControl';
 
 test('상세 pill 탭은 기본 설정 트랙과 분리된 44pt 이상 선택 컨트롤이다', () => {
@@ -9,7 +10,7 @@ test('상세 pill 탭은 기본 설정 트랙과 분리된 44pt 이상 선택 �
   const selected = screen.getByTestId('settings-segment-detail-items');
   expect(selected.props.accessibilityState).toMatchObject({ selected: true });
   expect(screen.getByText('2')).toBeTruthy();
-  expect(screen.getByTestId('settings-segment-detail-comments-dot')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('settings-segment-detail-comments-dot').props.style)).toMatchObject({ width: 8, height: 8 });
   fireEvent.press(screen.getByTestId('settings-segment-detail-comments'));
   expect(onChange).toHaveBeenCalledWith('comments');
 });

@@ -4,6 +4,7 @@ import type { DesignTokens } from '../../theme';
 export function cardDetailStyles(t: DesignTokens) {
   const type = t.foundation.typography;
   const s = t.uiSpacing;
+  const sendNoticeSurfaceHeight = t.controlHeight.chip + s.xs + s.xxs;
   return StyleSheet.create({
     container: { flex: 1 },
     frame: { flex: 1, minHeight: 0 },
@@ -23,6 +24,10 @@ export function cardDetailStyles(t: DesignTokens) {
     content: { flexGrow: 1, paddingHorizontal: t.foundation.pageInset, paddingBottom: 0, gap: s.lg },
     dock: { position: 'absolute', left: t.foundation.pageInset, right: t.foundation.pageInset, gap: s.xs },
     sendNotice: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: s.sm },
+    sendNoticeSurface: { flex: 1, height: sendNoticeSurfaceHeight,
+      borderWidth: StyleSheet.hairlineWidth, borderRadius: t.foundation.radius.round,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      gap: s.sm, paddingLeft: s.sm, paddingRight: s.xxs },
     sendNoticeText: { ...type.meta, color: t.colors.textSecondary },
     empty: { ...type.body, color: t.colors.textSecondary },
     sessions: { gap: t.cardLayout.gap },

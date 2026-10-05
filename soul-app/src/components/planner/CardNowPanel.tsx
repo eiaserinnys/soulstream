@@ -104,6 +104,7 @@ export function CardNowPanel({
         {showHistory ? (
           <View pointerEvents="box-none" style={styles.arrows}>
             <GlassButton
+              testID="card-now-previous-arrow"
               iconOnly size="compact" borderRadius={t.foundation.radius.round}
               accessibilityLabel="이전 상황" accessibilityState={{ disabled: index === 0 }}
               disabled={index === 0} frameStyle={styles.arrowFrameLeft}
@@ -112,6 +113,7 @@ export function CardNowPanel({
               <Text style={styles.arrowGlyph}>‹</Text>
             </GlassButton>
             <GlassButton
+              testID="card-now-next-arrow"
               iconOnly size="compact" borderRadius={t.foundation.radius.round}
               accessibilityLabel={isLatest ? '최신 상황' : '다음 상황'}
               accessibilityState={{ disabled: isLatest }} disabled={isLatest}
@@ -146,13 +148,13 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     panel: { paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.lg, borderRadius: t.foundation.radius.field, gap: t.uiSpacing.sm },
     pastPanel: { borderStyle: 'dashed' },
-    headerRow: { height: planner.typography.meta.lineHeight, justifyContent: 'center', paddingRight: t.foundation.iconFrame.compact * 2 },
+    headerRow: { height: planner.typography.meta.lineHeight, justifyContent: 'center', paddingRight: t.foundation.iconFrame.compact + t.hitTarget.min },
     headerLabels: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.uiSpacing.sm },
     eyebrow: { ...planner.typography.meta, color: t.colors.textSecondary, flexShrink: 0 },
     updatedAt: { ...planner.typography.meta, color: t.colors.textMuted, flexShrink: 1, textAlign: 'right' },
     arrows: { position: 'absolute', top: t.uiSpacing.md, left: t.uiSpacing.lg, right: t.uiSpacing.lg,
       height: planner.typography.meta.lineHeight, pointerEvents: 'box-none' },
-    arrowFrameLeft: { position: 'absolute', right: t.foundation.iconFrame.compact - t.uiSpacing.sm,
+    arrowFrameLeft: { position: 'absolute', right: t.hitTarget.min - t.uiSpacing.sm,
       top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
     arrowFrameRight: { position: 'absolute', right: -t.uiSpacing.sm,
       top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },

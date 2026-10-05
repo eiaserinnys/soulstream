@@ -25,6 +25,8 @@ test('서버 display 일곱 값을 그대로 표시하고 확인·고칠 점 조
   for (const label of ['아직', '하는 중', '됐다고 보고', '다시 봐 주세요', '고칠 점 2', '확인함', '뺌']) {
     expect(screen.getByText(label)).toBeTruthy();
   }
+  const runningDot = screen.getByTestId('card-check-item-2-status').children[0] as any;
+  expect(runningDot.props.style).toMatchObject({ width: 8, height: 8 });
   expect(screen.getByText('범위에서 뺀 이유')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('1 항목 1 확인'));
   expect(onConfirm).toHaveBeenCalledWith(1, true);

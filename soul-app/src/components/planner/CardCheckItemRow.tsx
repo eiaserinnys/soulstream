@@ -10,6 +10,7 @@ import { AttachmentImage } from '../AttachmentImage';
 import { CardItemCheckbox } from '../CardItemCheckbox';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { StatusPulseDecorationLayer, withAlphaColor } from '../StatusPulseDecoration';
+import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 const DISPLAY_LABELS: Record<CardItemDisplay, string> = {
   todo: '아직',
@@ -220,7 +221,7 @@ function makeStyles(t: DesignTokens) {
     status: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, flexShrink: 0 },
     statusBelow: { flexBasis: '100%', marginLeft: t.uiSpacing.lg },
     statusText: { ...planner.typography.meta, color: t.colors.textSecondary, fontWeight: '600' },
-    runningDot: { width: t.uiSpacing.xxs, height: t.uiSpacing.xxs, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.statusRunning },
+    runningDot: { width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.statusRunning },
     details: { paddingLeft: t.uiSpacing.sm + t.hitTarget.min + t.uiSpacing.xxs + t.uiSpacing.sm + t.uiSpacing.xs, paddingRight: 0, paddingTop: t.uiSpacing.xs, gap: t.uiSpacing.xs },
     reopened: { ...planner.typography.label, color: t.colors.warningText, fontWeight: '600' },
     result: { ...planner.typography.body, color: t.colors.textPrimary },
