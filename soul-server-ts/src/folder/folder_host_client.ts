@@ -9,7 +9,7 @@ import type {
   FolderSnapshot,
 } from "../db/session_db_types.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
-import type { SupervisedCardSnapshot } from "@soulstream/mcp-contract";
+import type { CardReferenceLookupResult, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 
 export class FolderHostClient {
   private readonly transport: PersistenceHostTransport;
@@ -33,6 +33,9 @@ export class FolderHostClient {
       card_limit: params.cardLimit,
       question_limit: params.questionLimit,
     });
+  }
+  resolveCardReferences(refs: string[]): Promise<CardReferenceLookupResult[]> {
+    return this.request("resolve_card_references", { refs });
   }
   async assignSessionToFolder(sessionId: string, folderId: string | null): Promise<void> {
     await this.request("assign_session", { session_id: sessionId, folder_id: folderId });

@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { callWithReferenceTranslation, type CallToolResult } from "@soulstream/mcp-contract";
 import type { McpRuntime } from "./runtime.js";
 
 const CONFIG_MUTATION_TOOL_NAMES = new Set([
@@ -16,12 +17,33 @@ export function createInventoryMcpServer(server: McpServer, runtime: McpRuntime)
   return new Proxy(server, { get(target, prop, receiver) {
     if (prop !== "registerTool") return Reflect.get(target, prop, receiver);
     return (name: string, config: unknown, handler: (...args: unknown[]) => unknown) => {
-      const registeredConfig = isDestructiveMcpTool(name, config) ? withDestructiveHint(config) : config;
-      const registered = target.registerTool(name, registeredConfig as never, handler as never);
+      const destructive = isDestructiveMcpTool(name, config);
+      const registeredConfig = destructive ? withDestructiveHint(config) : config;
+      const registered = target.registerTool(name, registeredConfig as never, translateCardReferences(runtime, config, handler, destructive) as never);
       recordRegisteredTool(runtime, name);
       return registered;
     };
   } }) as McpServer;
+}
+
+/**
+ * Every worker tool call passes here, so this is the one place `#412` / `#412.s2` become full IDs:
+ * handlers below never see a number reference. The SDK calls a handler as `(args, extra)` only when
+ * the tool has an inputSchema and as `(extra)` otherwise, so a tool without one is left alone.
+ */
+function translateCardReferences(
+  runtime: McpRuntime,
+  config: unknown,
+  handler: (...args: unknown[]) => unknown,
+  destructive: boolean,
+): (...args: unknown[]) => unknown {
+  if (!isRecord(config) || !config.inputSchema) return handler;
+  return (args: unknown, extra: unknown) => callWithReferenceTranslation(
+    args as Record<string, unknown>,
+    refs => runtime.db.resolveCardReferences(refs),
+    translated => handler(translated, extra) as Promise<CallToolResult>,
+    { rejectReferences: destructive },
+  );
 }
 
 export function getRegisteredMcpToolNames(runtime: McpRuntime): string[] {
