@@ -31,7 +31,7 @@ describe("control command inventory", () => {
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(42);
+    expect(inventoryTypes).toHaveLength(43);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -66,6 +66,7 @@ describe("control command inventory", () => {
       { type: "prepare_card_orchestration_decision", family: "session", policy: "bounded_result" },
       { type: "interrupt_session", family: "session", policy: "durable_mutation" },
       { type: "acknowledge_session_review", family: "session", policy: "durable_mutation" },
+      { type: "set_persistent_session_settings", family: "session", policy: "durable_mutation" },
       { type: "subscribe_events", family: "realtime", policy: "fire_and_forget" },
       { type: "list_sessions", family: "session", policy: "bounded_result" },
       { type: "list_runner_inventory", family: "session", policy: "bounded_result" },

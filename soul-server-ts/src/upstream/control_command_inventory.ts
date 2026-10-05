@@ -33,6 +33,7 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("prepare_card_orchestration_decision", "session", "bounded_result"),
   entry("interrupt_session", "session", "durable_mutation"),
   entry("acknowledge_session_review", "session", "durable_mutation"),
+  entry("set_persistent_session_settings", "session", "durable_mutation"),
   entry("subscribe_events", "realtime", "fire_and_forget"),
   entry("list_sessions", "session", "bounded_result"),
   entry("list_runner_inventory", "session", "bounded_result"),

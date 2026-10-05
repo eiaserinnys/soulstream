@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 156개 $defs (top-level wire 79 + supporting/SSE 77). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 158개 $defs (top-level wire 81 + supporting/SSE 77). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -29,6 +29,7 @@ export type SoulstreamUpstreamProtocol =
   | InterveneAck
   | InterruptSessionAck
   | AcknowledgeSessionReviewAck
+  | PersistentSessionSettingsUpdated
   | RespondAck
   | ToolApprovalAck
   | RealtimeCallCreated
@@ -48,6 +49,7 @@ export type SoulstreamUpstreamProtocol =
   | EnsureSessionRunningAck
   | InterruptSession
   | AcknowledgeSessionReview
+  | SetPersistentSessionSettings
   | Respond
   | ApproveTool
   | RejectTool
@@ -1580,6 +1582,17 @@ export interface AcknowledgeSessionReviewAck {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: set_persistent_session_settings 성공 ACK. 실패는 기존 error 메시지(code 포함)로 반환한다.
+ */
+export interface PersistentSessionSettingsUpdated {
+  type: "persistent_session_settings_updated";
+  requestId: string;
+  agentSessionId: string;
+  persistent: boolean;
+  modelChange: "none" | "next_execution_start";
+  [k: string]: unknown;
+}
+/**
  * 노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.
  */
 export interface RespondAck {
@@ -1905,6 +1918,32 @@ export interface AcknowledgeSessionReview {
    * 구버전 호환.
    */
   session_id?: string;
+  requestId?: string;
+  request_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 영구 에이전트 세션의 표시(enabled)와 설정(persistent_settings metadata)을 저장하고, 기본 모델이 현재 실행 모델과 다르면 세대 교체를 요청한다. enabled=false는 표시만 끈다. 이름은 orch가 이미 저장하므로 싣지 않는다.
+ */
+export interface SetPersistentSessionSettings {
+  type: "set_persistent_session_settings";
+  agentSessionId: string;
+  enabled?: boolean;
+  /**
+   * 부분 입력. 생략한 키는 저장된 값을 보존한다.
+   */
+  settings?: {
+    default_model?: {
+      model_preset: string;
+      reasoning_effort: string | null;
+    };
+    fallback_model?: {
+      model_preset: string;
+      reasoning_effort: string | null;
+    } | null;
+    show_generation_separator?: boolean;
+    show_character?: boolean;
+  };
   requestId?: string;
   request_id?: string;
   [k: string]: unknown;
@@ -2845,6 +2884,7 @@ export const CONTROL_COMMAND_TYPES = [
   "prepare_card_orchestration_decision",
   "interrupt_session",
   "acknowledge_session_review",
+  "set_persistent_session_settings",
   "subscribe_events",
   "list_sessions",
   "list_runner_inventory",
