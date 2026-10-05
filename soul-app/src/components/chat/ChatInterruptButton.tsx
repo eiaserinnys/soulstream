@@ -25,11 +25,11 @@ export function ChatInterruptButton({
       testID="chat-composer-interrupt-button"
       surfaceTestID="chat-composer-interrupt-visual"
       frameStyle={styles.composerControlFrame}
-      surfaceStyle={[styles.stopBtn, interrupting && styles.composerFilledControlBusy]}
+      surfaceStyle={styles.stopBtn}
       onPress={onPress}
       disabled={disabled}
       accessibilityLabel="세션 중단"
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled, busy: interrupting }}
     >
       {interrupting ? (
         <ActivityIndicator size="small" color={accentTextColor} />

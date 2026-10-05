@@ -31,12 +31,12 @@ export function AttachmentPickerButton({
       surfaceTestID={surfaceTestID}
       accessibilityRole="button"
       accessibilityLabel="첨부 추가"
-      accessibilityState={{ disabled: controlsDisabled }}
+      accessibilityState={{ disabled: controlsDisabled, busy: uploading }}
       disabled={controlsDisabled}
       frameStyle={styles.composerControlFrame}
       surfaceStyle={[
         styles.composerSecondaryControl,
-        controlsDisabled && styles.composerControlDisabled,
+        !uploading && controlsDisabled && styles.composerControlDisabled,
       ]}
       onPress={() => {
         if (!controlsDisabled) onPress();

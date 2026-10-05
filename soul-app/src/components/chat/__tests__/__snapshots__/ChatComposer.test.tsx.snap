@@ -94,7 +94,7 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
           accessibilityRole="button"
           accessibilityState={
             {
-              "busy": undefined,
+              "busy": false,
               "checked": undefined,
               "disabled": false,
               "expanded": undefined,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -19,6 +19,7 @@ function renderComposer(
   disabled = false,
   sending = false,
   hasPendingOptimistic = false,
+  uploading = false,
 ) {
   const onChangeInput = jest.fn();
   const onPickAttachment = jest.fn();
@@ -29,7 +30,7 @@ function renderComposer(
       onChangeInput={onChangeInput}
       onPickAttachment={onPickAttachment}
       onSend={onSend}
-      uploading={false}
+      uploading={uploading}
       sending={sending}
       hasPendingOptimistic={hasPendingOptimistic}
       disabled={disabled}
@@ -451,6 +452,7 @@ describe('ChatComposer', () => {
     expect(empty.getByTestId('chat-composer-send-spinner')).toBeTruthy();
     expect(emptySend.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
     expect(busySurface.backgroundColor).toBe(activeSurface.backgroundColor);
+    expect(busySurface.opacity).toBeUndefined();
     fireEvent.press(emptySend);
     expect(empty.onSend).not.toHaveBeenCalled();
 
@@ -458,6 +460,16 @@ describe('ChatComposer', () => {
     expect(withDraft.getByTestId('chat-composer-send-button').props.accessibilityState.disabled).toBe(true);
     fireEvent.press(withDraft.getByTestId('chat-composer-send-button'));
     expect(withDraft.onSend).not.toHaveBeenCalled();
+  });
+
+  test('uploading 중 첨부 버튼은 흐리지 않고 busy 접근성을 전달한다', () => {
+    const screen = renderComposer('초안', false, false, false, true);
+    const attachmentButton = screen.getByTestId('chat-composer-attach-button');
+    const busySurface = StyleSheet.flatten(screen.getByTestId('chat-composer-attach-visual').props.style);
+
+    expect(screen.UNSAFE_queryByType(ActivityIndicator)).toBeTruthy();
+    expect(attachmentButton.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
+    expect(busySurface.opacity).toBeUndefined();
   });
 
   test('sending pending cell에서도 첨부 버튼은 활성 상태다', () => {

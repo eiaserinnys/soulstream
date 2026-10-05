@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Alert } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import { ChatInputComposer } from '../ChatInputComposer';
@@ -91,7 +91,10 @@ describe('ChatInputComposer interrupt progress', () => {
     await pressInterrupt(screen);
 
     expect(screen.UNSAFE_queryByType(ActivityIndicator)).toBeTruthy();
-    expect(screen.getByTestId('chat-composer-interrupt-button').props.accessibilityState.disabled).toBe(true);
+    const interruptButton = screen.getByTestId('chat-composer-interrupt-button');
+    const busySurface = StyleSheet.flatten(screen.getByTestId('chat-composer-interrupt-visual').props.style);
+    expect(interruptButton.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
+    expect(busySurface.opacity).toBeUndefined();
 
     screen.rerender(<ChatInputComposer {...screen.props} sessionStatus="completed" />);
     expect(screen.UNSAFE_queryByType(ActivityIndicator)).toBeNull();
