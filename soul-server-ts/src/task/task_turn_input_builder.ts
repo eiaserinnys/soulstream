@@ -9,7 +9,7 @@ import {
   type PreparedContext,
 } from "../context/context_builder.js";
 import type { PersistentCheckpointStats } from "../context/persistent_checkpoint.js";
-import { formatContextItems, type ContextItem } from "../context/prompt_assembler.js";
+import { formatContextItems } from "../context/prompt_assembler.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
@@ -79,7 +79,6 @@ export class TaskTurnInputBuilder {
         task,
         agent,
         dequeueNextTurnInterventions(task),
-        { includeResumeCardStartGuidance: true },
       );
     }
 
@@ -103,7 +102,6 @@ export class TaskTurnInputBuilder {
     task: Task,
     agent: AgentProfile,
     interventions: InterventionMessage[],
-    options: { includeResumeCardStartGuidance?: boolean } = {},
   ): Promise<TaskTurnInput> {
     const firstIntervention = interventions[0];
     if (!firstIntervention) throw new Error("follow-up turn requires an intervention");
@@ -132,13 +130,7 @@ export class TaskTurnInputBuilder {
 
     const composed = composeInterventionTurnPrompt(interventions.map(message=>({...message,context:message.context?.filter(item=>item.key !== "assigned_cards")})));
     const contextItems = ctx?.contextItems ?? [];
-    const resumeGuidance = options.includeResumeCardStartGuidance
-      ? buildResumeCardStartGuidance(contextItems)
-      : undefined;
-    const prompt = appendContextBlock(
-      composed.prompt,
-      resumeGuidance ? [...contextItems, resumeGuidance] : contextItems,
-    );
+    const prompt = appendContextBlock(composed.prompt, contextItems);
     const systemPrompt =
       effectiveTaskBackend(task, agent) === "claude" && includeFullContext
         ? ctx?.effectiveSystemPrompt
@@ -360,40 +352,6 @@ function appendContextBlock(prompt: string, contextItems: FollowupContext["conte
   const contextBlock = formatContextItems(contextItems);
   if (!contextBlock) return prompt;
   return `${prompt}\n\n${contextBlock}`;
-}
-
-function buildResumeCardStartGuidance(contextItems: ContextItem[]): ContextItem | undefined {
-  const assignedCards = contextItems.find((item) => item.key === "assigned_cards")?.content;
-  if (!assignedCards || typeof assignedCards !== "object" || Array.isArray(assignedCards)) {
-    return undefined;
-  }
-
-  const snapshot = assignedCards as { status?: unknown; cards?: unknown };
-  if (snapshot.status !== "ok" || !Array.isArray(snapshot.cards)) return undefined;
-
-  const targets = snapshot.cards.flatMap((card) => {
-    if (!card || typeof card !== "object" || Array.isArray(card)) return [];
-    const candidate = card as { id?: unknown; status?: unknown };
-    if (
-      typeof candidate.id !== "string"
-      || typeof candidate.status !== "string"
-      || candidate.status === "실행 중"
-    ) {
-      return [];
-    }
-    return [{ id: candidate.id, status: candidate.status }];
-  });
-  if (targets.length === 0) return undefined;
-
-  return {
-    key: "resume_card_start_guidance",
-    label: "재개 시 담당 카드 착수 안내",
-    content: {
-      authored_by: "soulstream_system",
-      instruction: "담당 카드가 현재 진행 중이 아닙니다. 아래 카드가 이번 입력에서 실제 추가 작업 또는 작업 재개 대상인지 판단하십시오. 해당 카드의 작업에 착수할 경우, 먼저 정식 카드 도구로 상태를 진행 중(running)으로 기록하고 성공 응답을 확인하십시오. 단순 질문, 확인, 설명이면 현재 상태를 유지하십시오.",
-      targets,
-    },
-  };
 }
 
 function buildBoundedBackendRolloverPrompt(

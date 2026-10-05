@@ -391,7 +391,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       expect(keys).toContain("board_workspace");
       expect(keys).toContain("atom_context");
       expect(sessionContent.folder).toEqual({ id: "folder-1", title: "Legacy Folder" });
-      expect(sessionContent.folder_guidance).toContain("get_folder");
+      expect(sessionContent).not.toHaveProperty("folder_guidance");
       expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
         String(url).includes("/api/tree/"))).toHaveLength(2);
     } finally {
@@ -643,7 +643,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     expect(content.caller_info).toEqual({ source: "slack", display_name: "Alice" });
   });
 
-  it("카드 연결 세션에 카드와 안내를 주입", async () => {
+  it("카드 연결 세션에 카드와 역할을 주입하고 안내문은 싣지 않는다", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a", card_id: "rb-item-13" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
@@ -672,13 +672,13 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
     expect(content.folder).toEqual({ id: "folder-a", title: "업무 폴더" });
-    expect(content.card).toEqual({ id: "rb-item-13", title: "연결 카드", status: "running" });
-    expect(content.card_guidance).toContain("ask_card_question");
-    expect(content.folder_guidance).toContain("get_folder");
+    expect(content.card).toEqual({ id: "rb-item-13", title: "연결 카드", status: "running", role: "member" });
+    expect(content).not.toHaveProperty("card_guidance");
+    expect(content).not.toHaveProperty("folder_guidance");
     expect(getPrimarySessionBoardItem).not.toHaveBeenCalled();
   });
 
-  it("일반 폴더에도 카드 안내를 주입한다", async () => {
+  it("카드 없는 일반 폴더 세션은 폴더 정보만 싣는다", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
@@ -708,7 +708,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
     expect(content).not.toHaveProperty("source_checklist_item_id");
-    expect(content.folder_guidance).toContain("카드");
+    expect(content).not.toHaveProperty("card");
+    expect(content).not.toHaveProperty("folder_guidance");
   });
 
   it("primary board item 없음 → 기존 soulstream_session 형태로 폴백", async () => {
@@ -731,7 +732,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
     expect(content).not.toHaveProperty("source_checklist_item_id");
-    expect(content.folder_guidance).toContain("카드");
+    expect(content).not.toHaveProperty("card");
+    expect(content).not.toHaveProperty("folder_guidance");
   });
 
   it("primary board item 조회 실패 → 세션 기동을 막지 않고 기존 형태로 폴백", async () => {
@@ -753,7 +755,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
-    expect(content.folder_guidance).toContain("카드");
+    expect(content).not.toHaveProperty("folder_guidance");
   });
 
   it("getSession throw → graceful, folder 없는 흐름과 동일", async () => {
@@ -2027,7 +2029,8 @@ describe("generation checkpoint context", () => {
       openQuestionTotal: 0,
     });
     const getAssignedCardContext = vi.fn().mockResolvedValue({
-      capturedAt: "2026-10-05T00:00:00.000Z", total: 0, omitted: 0, cards: [],
+      capturedAt: "2026-10-05T00:00:00.000Z", total: 1, omitted: 0,
+      cards: [{ id: "card", title: "현재", status: "running", latestCommentAt: null, latestReportAt: null }],
     });
     const builder = makeBuilder({
       getGenerationCheckpointMaterial,

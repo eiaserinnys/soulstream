@@ -402,6 +402,7 @@ describe("AgentProfileEditorTab", () => {
     setInput("Atom node UUID", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
     setInput("조건 · OS", "linux, windows");
     setInput("조건 · 백엔드", "codex");
+    setInput("조건 · 카드 역할", "assignee");
     clickButton("번들 저장");
     await settle();
 
@@ -413,7 +414,7 @@ describe("AgentProfileEditorTab", () => {
         expected_version: null,
         atom_contexts: [{
           node_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-          applies_when: { os: ["linux", "windows"], backend: ["codex"] },
+          applies_when: { os: ["linux", "windows"], backend: ["codex"], card_role: ["assignee"] },
         }],
       },
     });

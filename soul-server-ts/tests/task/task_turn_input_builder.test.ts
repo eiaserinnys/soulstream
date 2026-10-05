@@ -440,66 +440,13 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).toContain("<running_sessions>");
   });
 
-  it.each([
-    ["todo", "할 일"],
-    ["queued", "대기"],
-    ["blocked", "막힘"],
-    ["review", "검수 대기"],
-    ["done", "완료"],
-    ["cancelled", "취소"],
-  ])("auto-resume input includes separate start guidance for %s assigned cards", async (_status, displayStatus) => {
-    const contextBuilder = {
-      buildFollowupContext: vi.fn().mockResolvedValue({
-        contextItems: [{
-          key: "assigned_cards",
-          content: {
-            status: "ok",
-            cards: [{ id: "current-card", status: displayStatus }],
-          },
-        }],
-      }),
-    };
-    const task = makeTask({ interventionQueue: [{ text: "실제 요청", user: "u" }] });
-    const { builder } = makeSubject({ contextBuilder });
-
-    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
-
-    expect(input.prompt).toContain("<assigned_cards>");
-    expect(input.prompt).toContain("<resume_card_start_guidance>");
-    expect(input.prompt).toContain('"id": "current-card"');
-    expect(input.prompt).toContain(`"status": "${displayStatus}"`);
-    expect(input.prompt).toContain("실제 추가 작업 또는 작업 재개 대상인지 판단");
-    expect(input.prompt).toContain("단순 질문, 확인, 설명이면 현재 상태를 유지");
-  });
-
-  it.each([
-    ["진행 중 카드", { status: "ok", cards: [{ id: "current-card", status: "실행 중" }] }],
-    ["담당 카드 없음", { status: "ok", total: 0, cards: [] }],
-    ["현황 조회 불가", { status: "unavailable", cards: [] }],
-  ])("auto-resume input omits start guidance when there is %s", async (_case, assignedCards) => {
-    const { builder } = makeSubject({
-      contextBuilder: {
-        buildFollowupContext: vi.fn().mockResolvedValue({
-          contextItems: [{ key: "assigned_cards", content: assignedCards }],
-        }),
-      },
-    });
-
-    const input = await builder.prepareInitialTurnInput(
-      makeTask({ interventionQueue: [{ text: "확인", user: "u" }] }),
-      claudeAgent,
-    );
-
-    expect(input.prompt).not.toContain("<resume_card_start_guidance>");
-  });
-
-  it.each([claudeAgent, codexAgent])("passes fresh assigned-card guidance through the shared auto-resume input for %s", async (agent) => {
+  it.each([claudeAgent, codexAgent])("passes the fresh assigned-card block through the shared auto-resume input without start guidance for %s", async (agent) => {
     const { builder } = makeSubject({
       contextBuilder: {
         buildFollowupContext: vi.fn().mockResolvedValue({
           contextItems: [{
             key: "assigned_cards",
-            content: { status: "ok", cards: [{ id: "current-card", status: "완료" }] },
+            content: { trust: "untrusted_card_data", cards: [{ id: "current-card", title: "현재", status: "완료" }] },
           }],
         }),
       },
@@ -516,26 +463,28 @@ describe("TaskTurnInputBuilder", () => {
 
     expect(input.prompt).toContain("이번 카드 작업을 재개해줘");
     expect(input.prompt).toContain("<assigned_cards>");
-    expect(input.prompt).toContain("<resume_card_start_guidance>");
     expect(input.prompt).toContain('"id": "current-card"');
+    expect(input.prompt).toContain('"status": "완료"');
     expect(input.prompt).not.toContain("stale-card");
+    expect(input.prompt).not.toContain("resume_card_start_guidance");
   });
 
-  it("does not add resume-only guidance to a new session's first input", async () => {
+  it("adds no assigned_cards block to an auto-resume input when the session has no assigned card", async () => {
     const { builder } = makeSubject({
-      contextBuilder: {
-        build: vi.fn().mockResolvedValue(makeContext({
-          combinedContextItems: [{
-            key: "assigned_cards",
-            content: { status: "ok", cards: [{ id: "current-card", status: "완료" }] },
-          }],
-        })),
-      },
+      contextBuilder: { buildFollowupContext: vi.fn().mockResolvedValue({ contextItems: [] }) },
+    });
+    const task = makeTask({
+      interventionQueue: [{
+        text: "확인", user: "u",
+        context: [{ key: "assigned_cards", content: { cards: [{ id: "stale-card", status: "todo" }] } }],
+      }],
     });
 
-    const input = await builder.prepareInitialTurnInput(makeTask(), claudeAgent);
+    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
 
-    expect(input.prompt).not.toContain("<resume_card_start_guidance>");
+    expect(input.prompt).toContain("확인");
+    expect(input.prompt).not.toContain("assigned_cards");
+    expect(input.prompt).not.toContain("stale-card");
   });
 
   it("injects claude_session_id delta only once after it becomes available", async () => {

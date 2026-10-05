@@ -286,9 +286,8 @@ function assertActiveIntervention(
     executeProbes[0].prompt,
     `${scenario} ${backend} initial prompt`,
   );
-  const initialSnapshots = [...executeProbes[0].prompt.matchAll(/<assigned_cards>\n([\s\S]*?)\n<\/assigned_cards>/g)];
-  expect(initialSnapshots).toHaveLength(1);
-  expect(JSON.parse(initialSnapshots[0][1])).toMatchObject({total:0,omitted:0,cards:[]});
+  // No assigned card at the first input: the session gets no assigned_cards block at all.
+  expect(executeProbes[0].prompt).not.toContain("<assigned_cards>");
   if (backend === "claude") {
     expect(executeProbes[1]).toEqual({
       call: "executeFrames",
@@ -330,11 +329,8 @@ function assertActiveIntervention(
     `${scenario} ${backend} active intervention\n\n<context>\n${snapshots[0][0]}\n</context>`,
   );
   expect(JSON.parse(snapshots[0][1])).toEqual({
-    scope: "assignee_session_id", session_id: observed.sessionId,
-    trust: "untrusted_card_data", notice: "현재 입력의 조회 현황이며 상태 전환 명령이 아닙니다.",
-    guidance: "get_card로 담당 카드의 확인 항목과 상황판을 읽습니다. 일이 끝났으면 항목에 결과를 달고 request_card_review의 ask에 사용자가 볼 것을 적습니다. 확인 항목이 없는 옛 카드는 기존 보고 뒤 검수를 요청합니다. 진행과 기술 세부는 add_card_note에, 인계 요약은 update_card_brief에 남기고 턴을 끝내기 전에 update_card_now로 지금과 누구 차례를 맞춥니다.",
-    status: "ok", total: 1, omitted: 0,
-    cards: [{id:'current-card',title:'최신 카드',status:scenario === 'S3' ? '실행 중' : '완료',hasItems:false,latestReportAt:null}],
+    trust: "untrusted_card_data",
+    cards: [{id:'current-card',title:'최신 카드',status:scenario === 'S3' ? '실행 중' : '완료'}],
   });
   const interruptProbes = observed.engineBoundaryProbes.filter(
     (probe) => probe.call === "interrupt",

@@ -50,7 +50,7 @@
 | 대기열 진입·재정렬 | `orch-server-ts/src/cards/card_control_plane_service.ts` → `card_dispatcher.ts` | 커밋된 mutation만 실행을 깨운다. `pickNextCard`는 C 정렬 대기열에서 자리가 있는 첫 카드를 고른다. human과 담당 없는 카드는 queued로 두고 사유를 적는다. |
 | 실행 상한 | `card_dispatch_settings.ts`, `card_dispatch_settings_routes.ts` | GET/PUT `/api/settings/card-dispatch`, `{nodeConcurrency:{default:n,[nodeId]:n},expectedVersion}`. 정수 n≥0, CAS 충돌 409. 응답은 `{settings:{key,nodeConcurrency,version,updatedAt,updatedBy}}`. |
 | 실행 세션 구분 | `card_dispatch_repository.ts` | `folder_operations`의 system `dispatch_card` 감사 행에 session_id/node_id를 기록한다. 세션의 카드 연결 정본은 `sessions.card_id`이며 감사 행은 디스패처 생성 출처만 나타낸다. 수동 세션은 상한에서 제외한다. |
-| 세션 생성 | `card_dispatch_runtime.ts` → `session/recurring_session_creation.ts` → `SessionCommandRouter.createSession` | 기존 노드 생성/ACK/관측 경로를 재사용한다. 명령의 선택 필드 `cardId`는 camelCase다. 첫 프롬프트는 `card_prompt.ts`가 요청·인계 요약·커멘트 ID·반려·실행 목록·대기열·카드 규칙을 조립한다. 답변 이력은 인계 요약에 포함한다. |
+| 세션 생성 | `card_dispatch_runtime.ts` → `session/recurring_session_creation.ts` → `SessionCommandRouter.createSession` | 기존 노드 생성/ACK/관측 경로를 재사용한다. 명령의 선택 필드 `cardId`는 camelCase다. 첫 프롬프트는 `card_prompt.ts`가 요청·인계 요약·커멘트 ID·반려·실행 중인 다른 카드 세션을 조립한다. 답변 이력은 인계 요약에 포함한다. |
 | 등록 저장 | `control_plane/repositories/session_mutation_repository.ts`의 registerSession/registerSessionWithWorktree | 선택 `cardId`를 기존 등록 트랜잭션에서 `sessions.card_id`에 저장한다. 디스패처에 별도 연결 UPDATE는 없다. wire 정본은 `packages/wire-schema/src/upstream.schema.json`의 CreateSession.cardId다. |
 | 종료·한도 | 커밋된 `node_session_session_updated` → `CardDispatcher.sessionEnded` | 턴 종료만으로 no_report 막힘을 기록하지 않는다. running 담당 세션의 limit_hit 종료만 기존 경로에서 blocked(limit)로 기록한다. review/question/done은 유지한다. 반복 작업 스케줄러의 기존 tick에서 1분마다 한도 카드의 프리셋을 확인한다. |
 | 질문·답 | POST `/api/cards/:id/questions` → askQuestion / POST `/api/cards/:id/questions/:qid/answer` | 질문 본문 `{text,options?,idempotencyKey}`, trusted service bearer와 agent session header, 성공 201. 답변은 기존 intervene 계약으로 유휴 재개/실행 중 개입. 완료 세션이면 queued로 돌린다. |
@@ -61,7 +61,7 @@
 
 ## 서버 안내문과 담당 현황
 
-`card_prompt.ts`는 첫 실행 규칙을 확인 항목·노트·상황판·검수 도구 기준으로 조립한다. 직접 실행, 대기열 배정, orchestration 자동배정의 프롬프트 조립 자리와 재개 문구가 이를 사용하며, `session_folder_context.ts`의 `card_guidance`도 같은 도구를 안내한다. 여섯 새 MCP 도구는 내부 agent 전용이고 외부 닷 인벤토리에는 포함하지 않는다.
+서버가 에이전트에게 보내는 카드 글(`card_prompt.ts`의 첫 프롬프트, 자동배정 한 문장, 깨우는 문구, 질문 답 전달, 한도 재개 문구, 상태 리마인더)은 지금 일어난 사실만 담고 일하는 방법은 atom 지침이 맡는다. `session_folder_context.ts`는 세션 정보의 `card`에 `role`(assignee, member)을 싣고, 지침 주입 조건 `applies_when.card_role`이 이를 쓴다. 이 판정은 표시와 지침 주입용이며 권한은 orch의 `claimableCardSessions`가 정한다. 매 입력의 `assigned_cards` 블록은 담당 카드가 있을 때만 `trust`와 `cards[{id,title,status}]`로 실린다. 여섯 새 MCP 도구는 내부 agent 전용이고 외부 닷 인벤토리에는 포함하지 않는다.
 
 담당 현황은 `cards.items`가 비어 있지 않은 카드에 `hasItems`를 함께 내려 최근 보고 부족 문구를 생략한다. `assigned_card_snapshot_recorder.ts`도 같은 플래그로 실제 입력 관찰 글을 `확인 항목 결과는 get_card로 조회`로 바꾼다. 플래그가 없는 기존 중앙 응답과 과거 캡처는 기존 문구를 유지한다.
 

@@ -303,8 +303,7 @@ export async function createCardDispatchRuntime(options: {
       const answers=detail.questions.filter(q=>q.answer!==null).map(q=>`${String(q.text)} → ${String(q.answer)}`).join("\n");
       const prompt=buildCardPrompt({cardId:input.cardId,title:detail.card.title,folderName:folder,request:detail.card.request,
         brief:[detail.card.brief,answers].filter(Boolean).join("\n"),comments:detail.comments.filter(c=>c.author_kind==='user').map(c=>({id:String(c.id),createdAt:c.created_at as Date,body:String(c.body)})),
-        running:(await legacyOptions.repository.running()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name})),
-        queued:(await legacyOptions.repository.queued()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name}))});
+        running:(await legacyOptions.repository.running()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name}))});
       return createRecurringSession({router:options.router,bridge:options.bridge,modelPresetAvailability:options.availability},
         {sessionId:input.sessionId,prompt,cardId:input.cardId,folderId:input.target.folderId!,...input.target,
           attachmentPaths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),callerInfo:{source:input.callerSource}});
@@ -312,7 +311,7 @@ export async function createCardDispatchRuntime(options: {
     ensure:async input=>{
       const detail=(await (await serviceProvider()).getCard(input.cardId))!;
       const routed=await options.router.routeExistingSessionPendingCommand({type:"ensure_session_running",agentSessionId:input.sessionId,
-        text:`get_card로 카드 「${detail.card.title}」의 요청, 확인 항목, 상황판과 인계 요약을 읽고 이어서 수행하세요. 기존 항목은 이어서 쓰고 자세한 진행은 add_card_note에 남기세요.`,delivery_id:`card-execution:${input.requestId}`,
+        text:`카드 「${detail.card.title}」를 이어서 수행하세요.`,delivery_id:`card-execution:${input.requestId}`,
         attachment_paths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),caller_info:{source:input.callerSource}});
       const result=await options.bridge.sendPendingCommand(routed);
       if(result.status==='error' || result.type==='error')throw Object.assign(new Error(String(result.message??result.code)),{code:"NODE_REJECTED"});

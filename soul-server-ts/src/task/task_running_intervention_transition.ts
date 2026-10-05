@@ -50,7 +50,7 @@ export interface RunningInterventionTransitionDeps {
   broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence?: EventPersistence;
-  assignedCardContext?: (task: Task, inputId?: string | null) => Promise<ContextItem>;
+  assignedCardContext?: (task: Task, inputId?: string | null) => Promise<ContextItem | null>;
 }
 
 /**
@@ -189,7 +189,7 @@ export class RunningInterventionTransition {
       : undefined;
     if (this.deps.assignedCardContext) {
       const current = await this.deps.assignedCardContext(task, inputUuid ?? null);
-      composed.prompt += `\n\n${formatContextItems([current])}`;
+      if (current) composed.prompt += `\n\n${formatContextItems([current])}`;
     }
     const input = {
       ...composed,

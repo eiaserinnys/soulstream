@@ -175,6 +175,7 @@ export function buildContextFilterParameters(
     agent: args.agent.id,
     backend: effectiveTaskBackend(args.task, args.agent),
     os: hostOsConditionValue(osType),
+    ...(args.primaryFolder?.card ? { card_role: args.primaryFolder.card.role } : {}),
   };
 }
 
