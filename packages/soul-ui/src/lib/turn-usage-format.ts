@@ -1,3 +1,5 @@
+// soul-app directly imports this source file, so keep it free of imports.
+// Avoid destructuring, spread, and other syntax that can inject Babel runtime helpers.
 export const TURN_COMPLETE_LABEL = "턴 완료";
 export const TURN_USAGE_SEPARATOR = " · ";
 
@@ -61,7 +63,9 @@ function formatPrice(value: number): string {
   const rounded = value.toFixed(2);
   if (value > 0 && rounded === "0.00") return "<$0.01";
 
-  const [whole, fraction] = rounded.split(".");
+  const decimalIndex = rounded.indexOf(".");
+  const whole = rounded.slice(0, decimalIndex);
+  const fraction = rounded.slice(decimalIndex + 1);
   return `$${Number(whole).toLocaleString("en-US")}.${fraction}`;
 }
 
