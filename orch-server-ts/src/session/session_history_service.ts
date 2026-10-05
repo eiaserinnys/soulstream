@@ -15,6 +15,8 @@ import {
 export { SESSION_TIMELINE_EVENT_TYPES } from "@soulstream/wire-schema";
 export type { SessionTimelineEventType } from "@soulstream/wire-schema";
 
+export type RequestedTimelineEventType = SessionTimelineEventType | "complete";
+
 export type SessionHistoryRawEvent = {
   eventId: number;
   eventType: string;
@@ -27,10 +29,13 @@ export type SessionHistoryReplayRange = {
   readonly throughId?: number;
 };
 
-const SESSION_TIMELINE_EVENT_TYPE_SET = new Set<string>(SESSION_TIMELINE_EVENT_TYPES);
+const REQUESTED_TIMELINE_EVENT_TYPE_SET = new Set<string>([
+  ...SESSION_TIMELINE_EVENT_TYPES,
+  "complete",
+]);
 
-export function isSessionTimelineEventType(value: string): value is SessionTimelineEventType {
-  return SESSION_TIMELINE_EVENT_TYPE_SET.has(value);
+export function isRequestedTimelineEventType(value: string): value is RequestedTimelineEventType {
+  return REQUESTED_TIMELINE_EVENT_TYPE_SET.has(value);
 }
 
 export type SessionHistoryProvider = {
@@ -48,7 +53,7 @@ export type SessionHistoryProvider = {
     sessionId: string,
     before: string | null,
     limit: number,
-    eventTypes?: readonly SessionTimelineEventType[],
+    eventTypes?: readonly RequestedTimelineEventType[],
   ) => Promise<[unknown[], string | null]>;
   readTimelineTrace: (sessionId: string, timelineId: string) => Promise<unknown | null | undefined>;
   readStory: (sessionId: string) => Promise<SessionStoryResponse>;
@@ -106,7 +111,7 @@ export class SessionHistoryReadService {
     sessionId: string,
     before: string | null,
     limit: number,
-    eventTypes?: readonly SessionTimelineEventType[],
+    eventTypes?: readonly RequestedTimelineEventType[],
   ): Promise<SessionHistoryPageResponse> {
     const [messages, nextCursor] = eventTypes === undefined
       ? await this.provider.readTimeline(sessionId, before, limit)

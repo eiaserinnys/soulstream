@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  SESSION_TIMELINE_EVENT_TYPES,
   createApp,
   parseOrchServerConfig,
   type SessionHistoryProvider,
 } from "../src/index.js";
-import { isSessionTimelineEventType } from "../src/session/session_history_service.js";
+import { isRequestedTimelineEventType } from "../src/session/session_history_service.js";
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -25,9 +26,11 @@ function createHarness() {
 
 describe("session timeline event_types filter", () => {
   it("uses the shared timeline event inventory and excludes the schema-outside system event", () => {
-    expect(isSessionTimelineEventType("system_message")).toBe(true);
-    expect(isSessionTimelineEventType("generation_started")).toBe(true);
-    expect(isSessionTimelineEventType("system")).toBe(false);
+    expect(SESSION_TIMELINE_EVENT_TYPES).toContain("system_message");
+    expect(SESSION_TIMELINE_EVENT_TYPES).toContain("generation_started");
+    expect(SESSION_TIMELINE_EVENT_TYPES).not.toContain("system");
+    expect(isRequestedTimelineEventType("complete")).toBe(true);
+    expect(isRequestedTimelineEventType("future_event")).toBe(false);
   });
 
   it("passes an additive event_types subset to timeline reads", async () => {
@@ -45,6 +48,37 @@ describe("session timeline event_types filter", () => {
       50,
       ["user_message", "assistant_message"],
     );
+    await app.close();
+  });
+
+  it("keeps the default timeline filter and allows complete only when explicitly requested", async () => {
+    const defaultEvents = [{ type: "assistant_message", id: 1 }];
+    const readTimeline = vi.fn(async (_sessionId: string, _before: string | null, _limit: number, eventTypes?: readonly string[]) => {
+      return [eventTypes === undefined ? defaultEvents : [
+        { type: "complete", id: 2 },
+        ...(eventTypes.includes("context_usage") ? [{ type: "context_usage", id: 3 }] : []),
+      ], null] as [unknown[], string | null];
+    });
+    const app = createApp({
+      config,
+      sessionHistoryRoutes: { provider: { readTimeline } as unknown as SessionHistoryProvider, closeAfterHistorySync: true },
+    });
+
+    const defaultResponse = await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline" });
+    expect(defaultResponse.statusCode).toBe(200);
+    expect(defaultResponse.json().messages).toEqual(defaultEvents);
+    expect(readTimeline).toHaveBeenCalledWith("sess-1", null, 50);
+
+    const explicitResponse = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/timeline?event_types=complete,context_usage",
+    });
+    expect(explicitResponse.statusCode).toBe(200);
+    expect(explicitResponse.json().messages).toEqual([
+      { type: "complete", id: 2 },
+      { type: "context_usage", id: 3 },
+    ]);
+    expect(readTimeline).toHaveBeenLastCalledWith("sess-1", null, 50, ["complete", "context_usage"]);
     await app.close();
   });
 

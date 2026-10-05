@@ -299,7 +299,12 @@ describe("PersistentSessionControl.applySettings", () => {
 
     let settled = false;
     const saving = control.applySettings(task.agentSessionId, {
-      settings: { default_model: sonnet, show_character: false },
+      settings: {
+        default_model: sonnet,
+        show_character: false,
+        show_turn_usage: false,
+        animate_character: false,
+      },
     }).then((result) => { settled = true; return result; });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(settled).toBe(false);
@@ -314,6 +319,8 @@ describe("PersistentSessionControl.applySettings", () => {
           show_generation_separator: true,
           show_character: false,
           show_jev_candidates: true,
+          show_turn_usage: false,
+          animate_character: false,
         },
       },
       { replaceExistingType: "persistent_settings", waitForAck: true },
@@ -358,17 +365,20 @@ describe("PersistentSessionControl.applySettings", () => {
     expect(task.persistentGeneration?.pending).toMatchObject({ targetReasoningEffort: "low" });
   });
 
-  it("keeps a saved false toggle when a later partial save touches other keys", async () => {
+  it("keeps saved false toggles when a later partial save touches other keys", async () => {
     const task = makeRolloverTask();
     const { control, persistedEntries } = makeRolloverControl(task);
 
     await control.applySettings(task.agentSessionId, { settings: { show_jev_candidates: false } });
+    await control.applySettings(task.agentSessionId, { settings: { show_turn_usage: false, animate_character: false } });
     await control.applySettings(task.agentSessionId, { settings: { show_character: false } });
 
     const saved = persistedEntries.filter((entry) => entry.type === "persistent_settings").at(-1)?.value;
     expect(saved).toMatchObject({
       show_jev_candidates: false,
       show_character: false,
+      show_turn_usage: false,
+      animate_character: false,
       show_generation_separator: true,
       default_model: { model_preset: "claude-preset", reasoning_effort: "medium" },
     });

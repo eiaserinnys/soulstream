@@ -164,6 +164,24 @@ describePostgres("PAS settings API on PostgreSQL", () => {
         show_generation_separator: true,
       },
     });
+    const usageAndMotionOff = await call("PUT", "/api/persistent-sessions/pas-edit", {
+      settings: { show_turn_usage: false, animate_character: false },
+    });
+    expect(usageAndMotionOff.body.session).toMatchObject({
+      settings: {
+        default_model: { model_preset: "claude-sonnet", reasoning_effort: "medium" },
+        show_jev_candidates: false,
+        show_character: false,
+        show_generation_separator: true,
+        show_turn_usage: false,
+        animate_character: false,
+      },
+    });
+    const rereadUsage = await call("GET", "/api/persistent-sessions/pas-edit");
+    expect(rereadUsage.body.session!.settings)
+      .toMatchObject({ show_turn_usage: false, animate_character: false });
+    const unknownSetting = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { future_setting: true } });
+    expect(unknownSetting.status).toBe(422);
   });
 
   it("fills a missing model change on re-save after the change request step failed", async () => {
@@ -219,18 +237,23 @@ describePostgres("PAS settings API on PostgreSQL", () => {
       settings: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
         fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true,
+        show_turn_usage: true, animate_character: true,
       },
     });
-    // The saved entry predates show_jev_candidates: it reads as true without being rewritten.
+    // The saved entry predates show_jev_candidates and the new fields: all read as true without being rewritten.
     expect(list.body.sessions![2]).toMatchObject({
       settings: {
         default_model: { model_preset: "claude-sonnet", reasoning_effort: "low" },
         fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
         show_generation_separator: false,
         show_jev_candidates: true,
+        show_turn_usage: true,
+        animate_character: true,
       },
     });
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("show_jev_candidates");
+    expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("show_turn_usage");
+    expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("animate_character");
     expect(list.body.create_defaults).toEqual({
       node_id: NODE_ID,
       preferred_agent_id: PAS_AGENT,
@@ -240,6 +263,8 @@ describePostgres("PAS settings API on PostgreSQL", () => {
         show_generation_separator: true,
         show_character: true,
         show_jev_candidates: true,
+        show_turn_usage: true,
+        animate_character: true,
       },
       initial_instruction: "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.",
       unavailable_reason: null,
