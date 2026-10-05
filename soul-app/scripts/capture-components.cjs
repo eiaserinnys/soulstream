@@ -147,6 +147,41 @@ async function runViewport(browser, base, options, name) {
   await context.close();
 }
 
+async function openCardChecksState(page, base, { phone = false, state = 'normal', theme = 'dark' }) {
+  const url = new URL(`${base}${prefix}index.html`);
+  url.searchParams.set('section', 'cardChecks');
+  url.searchParams.set('safeArea', 'fixture');
+  url.searchParams.set('state', state);
+  url.searchParams.set('theme', theme);
+  await page.goto(url.toString());
+  if (phone) await page.getByTestId('postit-open-public-card-checks').click();
+  await page.getByTestId('card-detail-header').waitFor();
+}
+
+async function captureCardAfterFix(page, base, { phone, shot, name }) {
+  await openCardChecksState(page, base, { phone, state: 'normal', theme: 'dark' });
+  await page.getByTestId('card-check-item-1-fix').click();
+  await page.getByTestId('card-comment-target').waitFor();
+  const input = page.getByTestId('card-comment-composer').getByTestId('chat-composer-text-input');
+  await input.fill('시안과 같은 표시인지 확인해 주세요.');
+  await page.getByTestId('card-comment-composer').getByTestId('chat-composer-send-button').click();
+  await page.getByTestId('card-comment-send-notice').waitFor();
+  await page.getByText('고칠 점 1', { exact: true }).waitFor();
+  await shot('after-fix');
+  result.interactions.push(`${name}: 1번 항목 대상 커멘트 뒤 붉은 고칠 점 상태`);
+}
+
+async function captureAllChecked(page, base, { phone, shot, name }) {
+  await openCardChecksState(page, base, { phone, state: 'all-confirmed', theme: 'dark' });
+  await page.getByText('모두 확인했습니다. 완료로 옮길까요?').waitFor();
+  await page.getByTestId('card-check-items-confirmed-group').waitFor();
+  await shot('all-checked');
+  await shot('all-confirmed');
+  const requests = await page.evaluate(() => window.__cardChecksRequests ?? []);
+  assert.equal(requests.some((entry) => entry.kind === 'status' || entry.kind === 'complete'), false);
+  result.interactions.push(`${name}: 전부 확인된 화면에서 완료 강조와 자동 상태 변경 없음`);
+}
+
 async function runCardChecksViewport(browser, base, { name, width, height, state = 'normal', theme = 'light', phone = false }) {
   const context = await browser.newContext({ viewport: { width, height }, screen: { width, height }, deviceScaleFactor: 1, isMobile: phone, hasTouch: true });
   await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
@@ -200,6 +235,16 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
       await page.getByText(display, { exact: false }).first().waitFor();
     }
     await shot('detail-initial');
+    await shot('still');
+    const panelBefore = await metric('card-now-panel');
+    const firstItemBefore = await metric('card-check-item-1');
+    await page.getByLabel('이전 상황').click();
+    const panelPast = await metric('card-now-panel');
+    const firstItemPast = await metric('card-check-item-1');
+    assert.equal(Math.round(panelBefore.height), Math.round(panelPast.height), JSON.stringify({ panelBefore, panelPast }));
+    assert.equal(Math.round(firstItemBefore.y), Math.round(firstItemPast.y), JSON.stringify({ firstItemBefore, firstItemPast }));
+    await shot('past');
+    await page.getByTestId('card-now-latest').click();
     await page.getByTestId('card-check-item-5-fix').click();
     await page.getByTestId('card-comment-target').waitFor();
     const input = page.getByTestId('card-comment-composer').getByTestId('chat-composer-text-input');
@@ -232,6 +277,8 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
     assert.equal(await page.getByTestId('card-now-panel').count(), 0);
     await shot('legacy-comments');
     result.interactions.push(`${name}: 신규 fields가 없는 옛 카드의 커멘트 탭과 기존 시간순 타임라인`);
+    await captureCardAfterFix(page, base, { phone: true, shot, name });
+    await captureAllChecked(page, base, { phone: true, shot, name });
   } else {
     await page.getByTestId('card-detail-header').waitFor();
     await page.getByTestId('task-workspace-chat-pane').waitFor();
@@ -244,6 +291,7 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
     assert.equal(Math.round(safeFrame.y), 36);
     result.viewports[result.viewports.length - 1].tabletFrame = { taskPane, chatPane, safeFrame };
     await shot('detail-initial');
+    await shot('still');
     const panelBefore = await metric('card-now-panel');
     const panelFrameBefore = await metric('card-now-panel-frame');
     const firstItemBefore = await metric('card-check-item-1');
@@ -256,6 +304,7 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
     };
     assert.equal(Math.round(panelBefore.height), Math.round(panelPast.height), JSON.stringify({ panelBefore, panelPast, panelFrameBefore, panelFramePast }));
     assert.equal(Math.round(firstItemBefore.y), Math.round(firstItemPast.y), JSON.stringify({ firstItemBefore, firstItemPast }));
+    await shot('past');
     await shot('past-now');
     await page.getByTestId('settings-segment-card-detail-sessions').click();
     await page.getByTestId('card-sessions').waitFor();
@@ -276,16 +325,7 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
       || document.querySelector('[data-testid="task-workspace-sheet"]') === null);
     result.interactions.push(`${name}: TabletSafeAreaFrame 0이 아닌 안전 영역·카드/채팅 반반 폭·상황 넘김·세션 선택·카드 작업면 닫기`);
 
-    if (name === 'ipad-portrait-834x1210') {
-      await page.goto(new URL(`${base}${prefix}index.html?section=cardChecks&safeArea=fixture&state=all-confirmed&theme=dark`).toString());
-      await page.getByTestId('card-detail-header').waitFor();
-      await page.getByText('모두 확인했습니다. 완료로 옮길까요?').waitFor();
-      await page.getByTestId('card-check-items-confirmed-group').waitFor();
-      await shot('all-confirmed');
-      const requests = await page.evaluate(() => window.__cardChecksRequests ?? []);
-      assert.equal(requests.some((entry) => entry.kind === 'status' || entry.kind === 'complete'), false);
-      result.interactions.push(`${name}: 모두 확인된 상태에서 완료를 강조하고 자동 상태 변경을 보내지 않음`);
-    } else {
+    if (name === 'ipad-landscape-1210x834') {
       await page.goto(new URL(`${base}${prefix}index.html?section=cardChecks&safeArea=fixture&state=normal&theme=light`).toString());
       await page.getByTestId('card-detail-header').waitFor();
       await page.getByTestId('settings-segment-card-detail-notes').click();
@@ -295,6 +335,8 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
       await shot('notes-expanded');
       result.interactions.push(`${name}: 인계 요약·최근 노트 5건·앞선 노트 펼침`);
     }
+    await captureCardAfterFix(page, base, { phone: false, shot, name });
+    await captureAllChecked(page, base, { phone: false, shot, name });
   }
 
   await context.close();

@@ -1,6 +1,7 @@
 import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Platform, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ApiClient } from '../../api/client';
 import type { CardCheckItem, CardStatus } from '../../api/cardTypes';
@@ -172,13 +173,12 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
               {card ? <><CardStatusChip card={card} detail />{' '}{card.title}</> : '카드'}
             </Text>
           </CompactTouchTarget>
-          {card ? <CompactTouchTarget accessibilityRole="button" accessibilityLabel={actionLabel}
-            accessibilityState={{ disabled: locked || !api || startPhase === 'pending' }}
-            disabled={locked || !api || startPhase === 'pending'}
-            surfaceStyle={[styles.done, allConfirmed && styles.doneHighlighted, (locked || !api || startPhase === 'pending') && styles.disabled]}
+          {card ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+            variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
+            disabled={locked || !api || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
             onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>
-            <Text style={[styles.doneText, allConfirmed && styles.doneHighlightedText]}>{actionLabel}</Text>
-          </CompactTouchTarget> : null}
+            <Ionicons name="checkmark" size={t.iconSize.standard} color={allConfirmed ? t.colors.accentText : t.colors.textSecondary} />
+          </GlassButton> : null}
         </View>
         {card ? <View style={styles.headerRow}>
           <View style={styles.chips}>

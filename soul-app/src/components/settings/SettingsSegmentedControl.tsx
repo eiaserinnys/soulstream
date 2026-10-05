@@ -96,8 +96,7 @@ function makeStyles(t: DesignTokens) {
       ...(Platform.OS === 'web' ? { outlineStyle: 'solid' as const, outlineWidth: 0 } : {}),
     },
     detailHitTarget: {
-      flex: 1,
-      minWidth: 0,
+      flexShrink: 0,
       minHeight: t.hitTarget.min,
       justifyContent: 'center',
       ...(Platform.OS === 'web' ? { outlineStyle: 'solid' as const, outlineWidth: 0 } : {}),

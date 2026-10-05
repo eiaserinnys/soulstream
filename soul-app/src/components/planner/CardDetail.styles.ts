@@ -1,6 +1,5 @@
 import { StyleSheet } from 'react-native';
 import type { DesignTokens } from '../../theme';
-import { withAlphaColor } from '../StatusPulseDecoration';
 
 export function cardDetailStyles(t: DesignTokens) {
   const type = t.foundation.typography;
@@ -18,11 +17,6 @@ export function cardDetailStyles(t: DesignTokens) {
     chip: { minHeight: t.controlHeight.chip, paddingHorizontal: s.sm, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.surfaceCode, flexDirection: 'row', alignItems: 'center', gap: s.xs, maxWidth: '100%' },
     chipAvatar: { width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round },
     chipText: { ...type.meta, color: t.colors.textSecondary, flexShrink: 1, fontWeight: '600' },
-    done: { minHeight: t.hitTarget.min, paddingHorizontal: s.sm, borderRadius: t.foundation.radius.chip, justifyContent: 'center' },
-    doneHighlighted: { backgroundColor: withAlphaColor(t.colors.statusCompleted, 0.12), borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.statusCompleted },
-    doneText: { ...type.body, color: t.colors.accent, fontWeight: '600' },
-    doneHighlightedText: { color: t.colors.statusCompleted },
-    disabled: { opacity: 0.45 },
     nowWrap: { paddingHorizontal: t.foundation.pageInset, marginBottom: s.sm },
     tabsWrap: { paddingHorizontal: t.foundation.pageInset, marginBottom: s.sm },
     bodyFrame: { flex: 1, minHeight: 0 },
