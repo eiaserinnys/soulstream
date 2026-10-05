@@ -25,7 +25,7 @@ export const cardHandlers = {
     if (a.run !== true) return created;
     const card = created.card as { id: string; status: string } | null;
     if (created.idempotent === true && card && card.status !== "todo" && card.status !== "queued") return created;
-    const cardId = String(card?.id ?? (created.operation as Args).target_id);
+    const cardId = String(card?.id ?? (created.operation as Args).targetId);
     try {
       const execution = await runCard(o.cards, cardId, actor, c.signal);
       return { ...created, ...execution };
@@ -121,7 +121,7 @@ async function runCard(options: Options, cardId: string, actor: FolderActorParam
     return executor.execute({ ...actor, cardId, expectedVersion: before.card.version, idempotencyKey: randomUUID() });
   }) as { card: Record<string, unknown>; execution: { requestId: string; sessionId: string; state: string } };
   const intervalMs = options.runConfirm?.intervalMs ?? 1000;
-  const deadline = Date.now() + (options.runConfirm?.timeoutMs ?? 20000);
+  const deadline = Date.now() + (options.runConfirm?.timeoutMs ?? 30000);
   while (result.execution.state === "pending" && !signal?.aborted) {
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) break;
@@ -133,7 +133,7 @@ async function runCard(options: Options, cardId: string, actor: FolderActorParam
     }) as typeof result;
   }
   return { card: serializeCardRow(result.card as never), execution: result.execution,
-    ...(result.execution.state === "pending" ? { guidance: "세션은 만들어졌지만 실행 시작 확인이 아직이다. 잠시 뒤 같은 카드로 run_card를 다시 부르면 결과를 확인한다." } : {}) };
+    ...(result.execution.state === "pending" ? { guidance: "실행 시작 확인이 아직이다. 잠시 뒤 같은 카드로 run_card를 다시 부르면 결과를 확인한다." } : {}) };
 }
 function wait(milliseconds: number, signal?: AbortSignal) {
   return new Promise<void>(resolve => {

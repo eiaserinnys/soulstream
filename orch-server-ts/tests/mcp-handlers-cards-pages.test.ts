@@ -99,7 +99,7 @@ function cardHarness() {
     provider: { listFolders: async () => [{ id: "folder-1" }, { id: "folder-2" }] },
     cardExecutionServiceProvider, runConfirm: { intervalMs: 1, timeoutMs: 100 },
     resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) } } as unknown as McpHostOptions;
-  return { card, service, provider, executor, cardExecutionServiceProvider, options };
+  return { card, createdMutation, service, provider, executor, cardExecutionServiceProvider, options };
 }
 describe("card MCP execution", () => {
   it("calls every card service with agent actor, CAS and camelCase input", async () => {
@@ -160,6 +160,15 @@ describe("card MCP execution", () => {
     expect(h.service.createCard.mock.calls[0]![0]).not.toHaveProperty("run");
     expect(h.executor.execute).toHaveBeenCalledTimes(1);
     expect(result.structuredContent).toMatchObject({ card: { id: "card-1" }, execution: { state: "started" } });
+  });
+  it("uses the serialized operation target when create_card replay has no card snapshot", async () => {
+    const h = cardHarness();
+    h.service.createCard.mockResolvedValueOnce({ ...h.createdMutation, snapshot: { ...h.createdMutation.snapshot, cards: [] }, idempotent: true });
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true,
+      idempotency_key: "create-replay", caller_session_id: "session-1" });
+    expect(result.isError).not.toBe(true);
+    expect(h.executor.execute).toHaveBeenCalledWith(expect.objectContaining({ cardId: "card-1" }));
   });
   it("rejects run and queue before creating a card", async () => {
     const h = cardHarness();
