@@ -6,6 +6,7 @@ import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
 import { ExecutionContextBuilder } from "../context/context_builder.js";
 import { createAssignedCardSnapshotRecorder } from "../context/assigned_card_snapshot_recorder.js";
+import { createPersistentJevObserver } from "../context/persistent_jev_observer.js";
 import { DefaultPageContextAssembler } from "../context/page_context_assembler.js";
 import { HostPageContextRepository } from "../context/page_context_repository.js";
 import { AncestorPageContextResolver } from "../context/page_context_resolver.js";
@@ -132,6 +133,11 @@ export async function composeWorkerRuntime(
   });
   const orchProxyConfig = buildOrchProxyConfig(env);
   const orchHostClientDeps = { orch: orchProxyConfig, logger };
+  const observePersistentResume = createPersistentJevObserver({
+    orch: orchProxyConfig,
+    persistence,
+    logger,
+  });
   const sessionMutations = new SessionMutationHostClient(orchHostClientDeps);
   const claudeRuntimeHost = new ClaudeRuntimeHostClient(orchHostClientDeps);
   db.configurePersistenceHosts({
@@ -242,6 +248,7 @@ export async function composeWorkerRuntime(
     claudeSessionClientRegistry,
     modelCatalog,
     sessionMutations,
+    observePersistentResume,
   );
   worktreeService = composeWorktreeService(env, orchHostClientDeps, () =>
     listActiveTaskWorkspaceDirs(taskManager.listTasks(),
