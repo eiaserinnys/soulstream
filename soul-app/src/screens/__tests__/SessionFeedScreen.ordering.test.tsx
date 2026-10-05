@@ -17,6 +17,8 @@ jest.mock('../../components/SessionCard', () => {
   };
 });
 
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+
 import React from 'react';
 import { act, fireEvent, render, type RenderAPI } from '@testing-library/react-native';
 import type { Session } from '../../api/types';
@@ -387,10 +389,16 @@ test('받은 개수와 다음 쪽 여부를 제목에 표시한다', () => {
   });
   const view = render(<SessionFeedScreen />);
 
+  const list = view.getByTestId('phone-feed-body').props;
   expect(view.getByText('실행 중 · 7')).toBeTruthy();
-  expect(view.getByText('검수 대기 · 23+')).toBeTruthy();
-  expect(view.getByTestId('phone-feed-body').props.onEndReachedThreshold).toBe(0.5);
-  expect(view.getByTestId('phone-feed-body').props.onEndReached).toEqual(expect.any(Function));
+  const reviewHeading = list.data.find((item: { kind: string; title?: string }) =>
+    item.kind === 'heading' && item.title === '검수 대기',
+  );
+  expect(reviewHeading).toMatchObject({ count: 23, hasMore: true });
+  expect(list.renderItem({ item: reviewHeading, index: 0, separators: {} }).props.children)
+    .toEqual(['검수 대기', ' · ', 23, '+']);
+  expect(list.onEndReachedThreshold).toBe(0.5);
+  expect(list.onEndReached).toEqual(expect.any(Function));
 });
 
 test('다음 쪽 로딩과 오류는 기존 footer 표시를 사용한다', () => {
