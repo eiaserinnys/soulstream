@@ -6,6 +6,8 @@ import {
   type StreamingSlots,
 } from '../../store/chatStore';
 import { placeTurnSummaries } from './turnSummaryProjection';
+import { placeJevCandidateCaptions } from './turnSummaryProjection';
+import type { PersistentJevObservation } from './persistentJevCandidates';
 
 /**
  * 채팅 본문 FlatList의 RenderItem 타입.
@@ -26,6 +28,16 @@ export type TurnSummaryRenderItem = {
   key: string;
 };
 
+export type JevCandidatesRenderItem = {
+  kind: 'jev-candidates';
+  event: SessionEvent;
+  observation: PersistentJevObservation;
+  title: string;
+  lines: string[];
+  anchorEventId: number;
+  key: string;
+};
+
 export type ChatRenderItem =
   | {
       kind: 'event';
@@ -41,7 +53,13 @@ export type ChatRenderItem =
       summaries?: TurnSummaryRenderItem[];
     }
   | TurnSummaryRenderItem
+  | JevCandidatesRenderItem
   | { kind: 'typing'; key: string };
+
+export interface PersistentDisplayProjectionSettings {
+  showGenerationSeparator: boolean;
+  showJevCandidates: boolean;
+}
 
 function streamingIdentity(event: SessionEvent): string | null {
   const data = event.data as Record<string, unknown> | undefined;
@@ -271,6 +289,7 @@ export function hasActiveStreamingAssistantText(
 export function groupChatEvents(
   events: SessionEvent[],
   snapshotStreams?: Readonly<Record<string, true>>,
+  displaySettings?: PersistentDisplayProjectionSettings,
 ): ChatRenderItem[] {
   const out: ChatRenderItem[] = [];
   const consumed = new Set<number>();
@@ -302,6 +321,7 @@ export function groupChatEvents(
   events.forEach((e, i) => {
     if (consumed.has(i)) return;
     if (e.type === 'turn_summary' || e.type === 'debug' || e.type === 'result') return;
+    if (e.type === 'generation_started' && displaySettings?.showGenerationSeparator !== true) return;
     // Durable replay is stored before the hub decorates liveSeq/streamIdentity.
     // While a snapshot owns an active stream, its raw text lifecycle is already
     // represented by the recovered slot and must not become a second row.
@@ -403,7 +423,10 @@ export function groupChatEvents(
   });
 
   flushText();
-  return placeTurnSummaries(out, events);
+  const withTurnSummaries = placeTurnSummaries(out, events);
+  return displaySettings?.showJevCandidates === true
+    ? placeJevCandidateCaptions(withTurnSummaries, events)
+    : withTurnSummaries;
 }
 
 export function placePendingOptimistic(
@@ -438,6 +461,7 @@ export function placePendingOptimistic(
 function renderItemSortKey(item: ChatRenderItem): number {
   if (item.kind === 'typing') return Number.MAX_SAFE_INTEGER;
   if (item.kind === 'turn-summary') return item.anchorEventId;
+  if (item.kind === 'jev-candidates') return item.anchorEventId;
   if (item.kind === 'tool') {
     return Math.max(Number(item.start.id), Number(item.result?.id ?? item.start.id));
   }

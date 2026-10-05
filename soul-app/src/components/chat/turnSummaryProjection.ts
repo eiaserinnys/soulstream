@@ -4,6 +4,7 @@ import type {
   TurnSummaryRenderItem,
 } from './groupChatEvents';
 import { formatRelativeTime } from '../../lib/relative-time';
+import { isPersistentJevCandidatesDebugEvent, persistentJevCaptionLines } from './persistentJevCandidates';
 
 function assignedCardPreparedInputId(event: SessionEvent): string | null {
   if (event.type !== 'debug' || event.data?.kind !== 'assigned_card_context_snapshot') return null;
@@ -265,5 +266,52 @@ export function placeTurnSummaries(
     }
   });
   out.push(...legacyAtEnd);
+  return out;
+}
+
+export function placeJevCandidateCaptions(
+  baseItems: ChatRenderItem[],
+  events: SessionEvent[],
+): ChatRenderItem[] {
+  const itemIndexByInputId = new Map<string, number>();
+  baseItems.forEach((item, index) => {
+    if (
+      item.kind === 'event'
+      && (item.event.type === 'user_message' || item.event.type === 'intervention_sent')
+      && typeof item.event.data?.input_id === 'string'
+      && item.event.data.input_id.length > 0
+    ) itemIndexByInputId.set(item.event.data.input_id, index);
+  });
+
+  const afterItemIndex = new Map<number, ChatRenderItem[]>();
+  for (const event of events) {
+    if (!isPersistentJevCandidatesDebugEvent(event)) continue;
+    const anchorIndex = itemIndexByInputId.get(event.data.observation.input_id);
+    if (anchorIndex === undefined) continue;
+    const anchor = baseItems[anchorIndex];
+    if (!anchor || anchor.kind !== 'event') continue;
+    const anchorEventId = positiveEventId(anchor.event.id);
+    if (anchorEventId === null) continue;
+
+    const observation = event.data.observation;
+    const item: ChatRenderItem = {
+      kind: 'jev-candidates',
+      event,
+      observation,
+      title: `Jev 후보 ${observation.selected.length}`,
+      lines: persistentJevCaptionLines(observation),
+      anchorEventId,
+      key: `jev-candidates-${event.id}`,
+    };
+    const bucket = afterItemIndex.get(anchorIndex) ?? [];
+    bucket.push(item);
+    afterItemIndex.set(anchorIndex, bucket);
+  }
+
+  if (afterItemIndex.size === 0) return baseItems;
+  const out: ChatRenderItem[] = [];
+  baseItems.forEach((item, index) => {
+    out.push(item, ...(afterItemIndex.get(index) ?? []));
+  });
   return out;
 }
