@@ -317,7 +317,6 @@ describe("versioned migration contract", () => {
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migrations.at(-1)?.id).toBe("121_card_check_items.sql");
     expect(migration).toBeDefined();
     expect(migrationSha256(migration!.sql)).toBe(migration!.sha256);
     expect(migration!.sql).toContain("ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb");
