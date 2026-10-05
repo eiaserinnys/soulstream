@@ -180,15 +180,19 @@ describe("card orchestrator MCP roundtrip", () => {
     expect(byNumber.isError, JSON.stringify(byNumber.content)).not.toBe(true);
     expect(byNumber.content[0]).toEqual({ type: "text", text: "번호 참조 #1 → 카드 「기존 카드」" });
     expect(byNumber.content.slice(1)).toEqual(byId.content);
-    expect(byNumber.structuredContent).toEqual(byId.structuredContent);
+    expect(byNumber.structuredContent).toMatchObject({ resolved_references: ["번호 참조 #1 → 카드 「기존 카드」"] });
+    expect(Object.fromEntries(Object.entries(byNumber.structuredContent!).filter(([key]) => key !== "resolved_references")))
+      .toEqual(byId.structuredContent);
     expect(byId.content[0]).not.toMatchObject({ text: expect.stringContaining("번호 참조") });
 
     const summary = await call("get_session_summary", { session_id: "#1.s1" }, context);
     expect(summary.isError).not.toBe(true);
     expect(summary.content[0]).toEqual({ type: "text", text: "번호 참조 #1.s1 → 세션 「헤더 세션」" });
+    expect(summary.structuredContent).toMatchObject({ resolved_references: ["번호 참조 #1.s1 → 세션 「헤더 세션」"] });
     expect(summary.structuredContent).toMatchObject({ session_id: "header-session", display_name: "헤더 세션" });
-    expect((await call("get_session_summary", { session_id: "header-session" }, context)).structuredContent)
-      .toEqual(summary.structuredContent);
+    const fullSessionId = await call("get_session_summary", { session_id: "header-session" }, context);
+    expect(Object.fromEntries(Object.entries(summary.structuredContent!).filter(([key]) => key !== "resolved_references")))
+      .toEqual(fullSessionId.structuredContent);
 
     const missing = await call("get_card", { card_id: "#9999" }, context);
     expect(missing.isError).toBe(true);

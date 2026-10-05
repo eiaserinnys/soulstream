@@ -116,7 +116,15 @@ export async function callWithReferenceTranslation(
     return errorResult(`번호 참조를 해석하지 못했습니다: ${error instanceof Error ? error.message : String(error)}. 전체 ID로 다시 호출할 수 있습니다.`);
   }
   const result = await call(replaceReferences(args, slots, new Map([...resolved].map(([ref, entry]) => [ref, entry.id]))));
-  const header = [...resolved.values()]
-    .map(entry => `번호 참조 ${entry.ref} → ${entry.kind === "card" ? "카드" : "세션"} 「${entry.title}」`).join("\n");
-  return { ...result, content: [{ type: "text", text: header }, ...result.content] };
+  const referenceLines = [...resolved.values()]
+    .map(entry => `번호 참조 ${entry.ref} → ${entry.kind === "card" ? "카드" : "세션"} 「${entry.title}」`);
+  // Some clients show only structuredContent to the model, so keep the header in both result fields.
+  const structuredContent = result.structuredContent && typeof result.structuredContent === "object"
+    ? { resolved_references: referenceLines, ...result.structuredContent }
+    : result.structuredContent;
+  return {
+    ...result,
+    content: [{ type: "text", text: referenceLines.join("\n") }, ...result.content],
+    ...(structuredContent === undefined ? {} : { structuredContent }),
+  };
 }

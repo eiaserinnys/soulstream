@@ -31,7 +31,10 @@ async function connect(central: (refs: string[]) => Response) {
   const db = new SessionDB();
   db.configureFolderHost(new FolderHostClient({ orch, logger }));
   const handlers = {
-    card: vi.fn(async (_args: unknown, _extra: unknown) => answer("카드 처리기")),
+    card: vi.fn(async (_args: unknown, _extra: unknown) => ({
+      ...answer("카드 처리기"),
+      structuredContent: { card: { id: FULL_CARD_ID, number: 7 } },
+    })),
     session: vi.fn(async (_args: unknown, _extra: unknown) => answer("세션 처리기")),
     remove: vi.fn(async (_args: unknown, _extra: unknown) => answer("삭제 처리기")),
     ping: vi.fn(async (_extra: unknown) => answer("인자 없는 처리기")),
@@ -77,6 +80,9 @@ describe("worker MCP card reference translation", () => {
         { type: "text", text: "번호 참조 #7 → 카드 「퍼시스턴트 에이전트 세션」" },
         { type: "text", text: "카드 처리기" },
       ]);
+      expect(result.structuredContent).toMatchObject({
+        resolved_references: ["번호 참조 #7 → 카드 「퍼시스턴트 에이전트 세션」"],
+      });
     } finally { await t.close(); }
   });
 
