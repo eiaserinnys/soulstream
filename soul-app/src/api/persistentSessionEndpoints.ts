@@ -12,6 +12,7 @@ export interface PersistentSessionSettings {
   fallback_model?: PersistentSessionModel | null;
   show_generation_separator?: boolean;
   show_character?: boolean;
+  show_jev_candidates?: boolean;
 }
 
 export interface PersistentSessionResource {
@@ -39,19 +40,25 @@ export interface PersistentSessionCreateDefaults {
   unavailable_reason: string | null;
 }
 
+/** Partial settings the server accepts on PUT. This app sends only the default model; omitted keys keep their stored values. */
+export interface PersistentSessionSettingsPatch {
+  default_model?: PersistentSessionModelWrite;
+  fallback_model?: PersistentSessionModel | null;
+  show_generation_separator?: boolean;
+  show_character?: boolean;
+  show_jev_candidates?: boolean;
+}
+
 /** Only the default model is sent from this app; omitted settings keep their stored values. */
 export interface PersistentSessionModelWrite {
   model_preset: string;
   reasoning_effort: string | null;
 }
 
+/** The server takes any of the three; `enabled: false` cannot be combined with a name or settings. */
 export type PersistentSessionWrite =
   | { enabled: false }
-  | {
-      display_name: string;
-      enabled?: true;
-      settings: { default_model: PersistentSessionModelWrite };
-    };
+  | { display_name?: string; enabled?: true; settings?: PersistentSessionSettingsPatch };
 
 export interface PersistentSessionCreate {
   display_name: string;

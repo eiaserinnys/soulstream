@@ -43,3 +43,25 @@ test('a create answer carries the folder and the reasoning effort that were sent
   expect(session.settings.default_model).toEqual(model('public-model', 'high'));
   expect(session.runtime.current_model.reasoning_effort).toBe('high');
 });
+
+test('a name-only PUT is accepted and keeps the stored settings, like the server', async () => {
+  const renamed = await api.updatePersistentSession('review-pas-3', { display_name: '이름만 바꾼 세션' });
+  expect(renamed.session.display_name).toBe('이름만 바꾼 세션');
+  expect(renamed.session.settings.default_model).toEqual(model('public-exhausted-model', null));
+  // Stored default differs from the running model and nothing is pending yet, so this save also fills the missing request.
+  expect(renamed.model_change).toBe('next_execution_start');
+  expect(renamed.session.runtime.pending).toEqual({ target_model_preset: 'public-exhausted-model', target_reasoning_effort: null });
+  expect((await api.updatePersistentSession('review-pas-3', { display_name: '다시 이름만' })).model_change).toBe('none');
+});
+
+test('a session without a node is listed in its review state and the server refuses to act on it', async () => {
+  setState('persistent-owner-missing');
+  const listed = (await api.listPersistentSessions()).sessions.find(item => item.session_id === 'review-pas-ownerless');
+  expect(listed).toMatchObject({ node_id: null, agent_id: null, agent_name: null, persistent: true });
+  expect((await api.getPersistentSession('review-pas-ownerless')).session.node_id).toBeNull();
+  await expect(api.updatePersistentSession('review-pas-ownerless', { display_name: '이름' })).rejects.toMatchObject({ status: 404 });
+  await expect(api.updatePersistentSession('review-pas-ownerless', { display_name: '이름', settings: { default_model: model('public-model', null) } })).rejects.toMatchObject({ status: 422 });
+  await expect(api.updatePersistentSession('review-pas-ownerless', { enabled: false })).rejects.toMatchObject({ status: 404 });
+  setState(null);
+  expect((await api.listPersistentSessions()).sessions.map(item => item.session_id)).not.toContain('review-pas-ownerless');
+});

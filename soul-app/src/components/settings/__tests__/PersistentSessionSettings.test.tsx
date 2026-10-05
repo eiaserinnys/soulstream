@@ -269,7 +269,8 @@ test('after a lost create answer the session is not created again; only re-readi
   expect(api.listPersistentSessions.mock.calls.length).toBeGreaterThanOrEqual(3);
 });
 
-test('a session without profile and node reads as missing information, skips the model list and still saves the name', async () => {
+test('a session without profile and node shows what is missing and cannot be saved or released', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   const bare = resource({ agent_id: null, agent_name: null, node_id: null });
   api.listPersistentSessions.mockResolvedValue({ sessions: [bare], total: 1, create_defaults: createDefaults });
   api.getPersistentSession.mockResolvedValue({ session: bare });
@@ -278,14 +279,16 @@ test('a session without profile and node reads as missing information, skips the
   await openEditor(screen);
   await waitFor(() => expect(screen.getByLabelText('세션 이름').props.value).toBe('관제 세션'));
   expect(screen.getByText('프로필 정보 없음')).toBeTruthy();
-  expect(await screen.findByText(/이 세션의 노드를 알 수 없어 모델 목록을 불러올 수 없습니다/)).toBeTruthy();
+  expect(await screen.findByText('이 세션의 노드를 알 수 없어 편집할 수 없습니다.')).toBeTruthy();
+  expect(screen.queryByText(/지금 값 그대로 저장됩니다/)).toBeNull();
   expect(api.listModelPresets).not.toHaveBeenCalled();
 
-  fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름만 바꿈');
+  fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름만 바꿔도');
   fireEvent.press(screen.getByTestId('settings-scope-save'));
-  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
-    display_name: '이름만 바꿈', settings: { default_model: { model_preset: 'model-a', reasoning_effort: null } },
-  }));
+  fireEvent.press(screen.getByTestId('persistent-session-release'));
+  await act(async () => {});
+  expect(api.updatePersistentSession).not.toHaveBeenCalled();
+  expect(alert).not.toHaveBeenCalled();
 });
 
 test('a failed read of one session keeps the edit footer label, not the add label', async () => {

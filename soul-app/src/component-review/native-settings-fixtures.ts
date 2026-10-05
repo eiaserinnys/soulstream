@@ -33,17 +33,19 @@ const pasStore = new Map<string, PersistentSessionResource>([
   pasSession({ id: 'review-pas-2', name: '공개 예시 두 번째 영구 세션', agentId: 'public-other-agent', preset: 'public-model', current: 'public-exhausted-model', pending: { preset: 'public-model', effort: null } }),
   pasSession({ id: 'review-pas-3', name: '공개 예시 세 번째 영구 세션 이름이 길어지면 줄바꿈되거나 말줄임으로 끊깁니다', agentId: 'public-agent', preset: 'public-exhausted-model', current: 'public-model' }),
 ].map(item => [item.session_id, item]));
+// A session whose stored row has neither a node nor a profile (`persistent-owner-missing`): the server reads it but cannot act on it.
+const pasOwnerless: PersistentSessionResource = { ...pasSession({ id: 'review-pas-ownerless', name: '공개 예시 노드 없는 세션', agentId: 'unused', preset: 'public-model' }), node_id: null, agent_id: null, agent_name: null, folder_id: null };
 const pasCreateDefaults: PersistentSessionCreateDefaults = {
   node_id: 'public-node', preferred_agent_id: 'public-agent', settings: pasSettings('public-model', null),
   initial_instruction: '새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.', unavailable_reason: null,
 };
 const pasFailure = (status: number, code: string, message: string, extra: object = {}) => new ApiHttpError(`공개 예시 ${status}`, status, JSON.stringify({ error: { code, message }, ...extra }));
-const requirePas = (id: string) => { const found = pasStore.get(id); if (!found) throw pasFailure(404, 'SESSION_NOT_FOUND', '영구 에이전트 세션을 찾을 수 없습니다.'); return found; };
+const requirePas = (id: string) => { const found = id === pasOwnerless.session_id ? pasOwnerless : pasStore.get(id); if (!found) throw pasFailure(404, 'SESSION_NOT_FOUND', '영구 에이전트 세션을 찾을 수 없습니다.'); return found; };
 const sameEffort = (a: string | null | undefined, b: string | null | undefined) => (a ?? null) === (b ?? null);
 const persistentSessionFixtures = {
   listPersistentSessions: async () => {
     if (state() === 'persistent-error') throw pasFailure(503, 'NODE_UNAVAILABLE', '영구 에이전트 세션을 불러오지 못했습니다.');
-    const sessions = state() === 'empty' ? [] : [...pasStore.values()].filter(item => item.persistent);
+    const sessions = state() === 'empty' ? [] : [...pasStore.values(), ...(state() === 'persistent-owner-missing' ? [pasOwnerless] : [])].filter(item => item.persistent);
     return { sessions, total: sessions.length, create_defaults: pasCreateDefaults };
   },
   getPersistentSession: async (id: string) => {
@@ -55,16 +57,20 @@ const persistentSessionFixtures = {
     const base = requirePas(id);
     const enabled = 'enabled' in input ? input.enabled : undefined;
     if (enabled === undefined && !base.persistent) throw pasFailure(409, 'NOT_PERSISTENT', '영구 에이전트 세션이 아닙니다.');
-    if (enabled === false) { pasStore.set(id, { ...base, persistent: false }); return { session: pasStore.get(id)!, model_change: 'none' as const }; }
-    if (!('settings' in input)) throw pasFailure(422, 'INVALID_REQUEST', 'settings.default_model이 필요합니다.');
+    if (enabled === false) { if (!base.node_id) throw pasFailure(404, 'SESSION_OWNER_MISSING', '세션의 소유 노드가 없습니다.'); pasStore.set(id, { ...base, persistent: false }); return { session: pasStore.get(id)!, model_change: 'none' as const }; }
+    // The server accepts a name alone or settings alone; a missing default model is only an error when no model is stored either.
+    const patch = 'settings' in input ? input.settings : undefined;
+    const display_name = 'display_name' in input && input.display_name !== undefined ? input.display_name : base.display_name;
+    if (!base.node_id) throw patch?.default_model ? pasFailure(422, 'INVALID_MODEL_PRESET', '노드 없이는 모델을 확인할 수 없습니다.') : pasFailure(404, 'SESSION_OWNER_MISSING', '세션의 소유 노드가 없습니다.');
+    const target = patch?.default_model ?? base.settings.default_model;
+    if (!target.model_preset) throw pasFailure(422, 'INVALID_REQUEST', '저장된 기본 모델이 없습니다.');
     // Same comparison as the worker: preset and applied effort, against the running model and against a pending target.
-    const target = input.settings.default_model;
     const running = base.runtime.current_model;
     const pending = base.runtime.pending;
     const alreadyRunning = running.model_preset === target.model_preset && sameEffort(running.reasoning_effort, target.reasoning_effort);
     const alreadyPending = Boolean(pending) && pending!.target_model_preset === target.model_preset && sameEffort(pending!.target_reasoning_effort, target.reasoning_effort);
     const changed = !alreadyRunning && !alreadyPending;
-    const saved: PersistentSessionResource = { ...base, display_name: input.display_name, persistent: true, settings: { ...base.settings, default_model: target },
+    const saved: PersistentSessionResource = { ...base, display_name, persistent: true, settings: { ...base.settings, ...patch, default_model: target },
       runtime: { ...base.runtime, pending: changed ? { target_model_preset: target.model_preset, target_reasoning_effort: target.reasoning_effort } : pending } };
     pasStore.set(id, saved);
     return { session: saved, model_change: changed ? 'next_execution_start' as const : 'none' as const };

@@ -32,6 +32,7 @@ export type {
   PersistentSessionModelWrite,
   PersistentSessionResource,
   PersistentSessionSettings,
+  PersistentSessionSettingsPatch,
   PersistentSessionWrite,
 } from './persistentSessionEndpoints';
 
