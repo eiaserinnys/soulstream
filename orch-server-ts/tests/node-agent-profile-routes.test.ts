@@ -283,6 +283,15 @@ describe("node agent/profile route harness", () => {
           reason_label: "5h 사용량 제한",
           resets_at: "2026-07-28T04:00:00.000Z",
           usage_warning: false,
+          weekly_headroom: {
+            status: "unavailable",
+            headroom: null,
+            remaining_percent: null,
+            window_remaining_percent: null,
+            resets_at: null,
+            observed_at: null,
+            quota_label: null,
+          },
         },
       ],
     });
