@@ -20,7 +20,7 @@ jest.mock('../../components/SessionCard', () => {
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
 import React from 'react';
-import { act, fireEvent, render, type RenderAPI } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, type RenderAPI } from '@testing-library/react-native';
 import type { Session } from '../../api/types';
 import { SessionCard } from '../../components/SessionCard';
 import { SessionFeedScreen } from '../SessionFeedScreen';
@@ -29,6 +29,8 @@ import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useUIStore } from '../../store/uiStore';
 import { StyleSheet } from 'react-native';
+
+const originalFetch = global.fetch;
 
 test('phone feed reserves composer space only when explicitly enabled', () => {
   useUIStore.setState({ floatingComposerBottomInset: 0 });
@@ -132,6 +134,10 @@ beforeEach(() => {
   useSettingsStore.setState({ serverUrl: '' });
   useNodeConnectivityStore.getState().reset();
   mockSessionCard.mockClear();
+});
+
+afterEach(() => {
+  global.fetch = originalFetch;
 });
 
 test('catalog loading·failure·empty를 구분하고 실패 화면의 재시도는 새 요청을 시작한다', () => {
@@ -401,13 +407,38 @@ test('받은 개수와 다음 쪽 여부를 제목에 표시한다', () => {
   expect(list.onEndReached).toEqual(expect.any(Function));
 });
 
-test('다음 쪽 로딩과 오류는 기존 footer 표시를 사용한다', () => {
+test('다음 쪽 실패는 피드 오류와 다시 시도 동작을 보여 주고 기존 행을 유지한다', async () => {
+  const pageRow = session('next-page-row', '2026-10-03T00:00:00Z');
+  const payload = {
+    sessions: [pageRow],
+    total: 2,
+    hasMore: false,
+    nextCursor: null,
+  };
+  const fetchMock = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => payload,
+    text: async () => JSON.stringify(payload),
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+  });
+  global.fetch = fetchMock;
+  useSettingsStore.setState({ serverUrl: 'https://feed.test' });
   seed([session('visible', '2026-10-02T00:00:00Z')]);
   useSessionStore.setState({ feedPage: { hasMore: true, nextCursor: '30', status: 'loading' } });
   const view = render(<SessionFeedScreen />);
   expect(view.getByTestId('phone-feed-body').props.ListFooterComponent).toBeTruthy();
 
   act(() => useSessionStore.setState({ feedPage: { hasMore: true, nextCursor: '30', status: 'error' } }));
-  expect(view.getByText('세션을 불러오지 못했어요')).toBeTruthy();
-  expect(view.getByText('다시 시도')).toBeTruthy();
+  expect(view.getByRole('alert').props.children).toBe('세션을 더 불러오지 못했습니다.');
+  const retryButton = view.getByRole('button', { name: '세션 더 불러오기 다시 시도' });
+  expect(retryButton.props.testID).toBe('session-feed-page-retry');
+  fireEvent.press(retryButton);
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(useSessionStore.getState().feedPage.status).toBe('idle'));
+  expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('cursor')).toBe('30');
+  expect(useSessionStore.getState().feedSessionIds).toEqual(expect.arrayContaining(['visible', 'next-page-row']));
+  expect(renderedSessionIds(view)).toEqual(expect.arrayContaining(['visible', 'next-page-row']));
 });

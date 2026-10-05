@@ -25,7 +25,6 @@ import { createSurfaceRoles } from '../theme/surfaceRoles';
 import { SESSION_FEED_VIRTUALIZATION } from '../lib/session-feed-virtualization';
 import { recordFeedCommit } from '../lib/session-diagnostics-api';
 import { useFeedPagination } from '../hooks/useFeedPagination';
-import { HistoryFetchError } from '../components/chat/HistoryFetchError';
 import { makeStyles as makeChatStyles } from '../components/chat/ChatBody.styles';
 
 type FeedRow =
@@ -160,14 +159,24 @@ export function SessionFeedScreen({
           <ActivityIndicator color={t.colors.accent} />
         </View>
       ) : feedPage.status === 'error' ? (
-        <HistoryFetchError
-          message="세션을 불러오지 못했어요"
-          onRetry={() => { void retryFeedPage(); }}
-        />
+        <View style={styles.loadState}>
+          <Text accessibilityRole="alert" style={styles.errorText}>
+            세션을 더 불러오지 못했습니다.
+          </Text>
+          <TouchableOpacity
+            testID="session-feed-page-retry"
+            accessibilityRole="button"
+            accessibilityLabel="세션 더 불러오기 다시 시도"
+            style={styles.retryButton}
+            onPress={() => { void retryFeedPage(); }}
+          >
+            <Text style={styles.retryButtonText}>다시 시도</Text>
+          </TouchableOpacity>
+        </View>
       ) : null}
       <HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="feed-home-composer-spacer" />
     </>
-  ), [chatStyles.footerLoader, feedPage.status, reserveHomeComposerSpace, retryFeedPage, t.colors.accent]);
+  ), [chatStyles.footerLoader, feedPage.status, reserveHomeComposerSpace, retryFeedPage, styles, t.colors.accent]);
 
   return (
     <View style={styles.container}>

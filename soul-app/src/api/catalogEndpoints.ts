@@ -51,17 +51,33 @@ export function createCatalogEndpoints({
         cursor,
       });
       const response = await authFetch(`${base}/api/sessions?${query.toString()}`, { signal });
-      const payload = await readJson<SessionsPayload>(response, 'getFeedPage');
-      const rows = Array.isArray(payload.sessions)
-        ? payload.sessions
-        : Array.isArray(payload.sessionList)
-          ? payload.sessionList
-          : [];
+      const payload = await readJson<unknown>(response, 'getFeedPage');
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        throw new Error('Invalid feed page response');
+      }
+      const record = payload as Record<string, unknown>;
+      const { sessions: rows, total, hasMore, nextCursor } = record;
+      if (
+        !Array.isArray(rows)
+        || typeof total !== 'number'
+        || typeof hasMore !== 'boolean'
+        || !(nextCursor === null || typeof nextCursor === 'string')
+      ) {
+        throw new Error('Invalid feed page response');
+      }
+      const sessions = rows.map((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+          throw new Error('Invalid feed page session row');
+        }
+        const session = toSession(row as Record<string, unknown>);
+        if (!session.agentSessionId) throw new Error('Feed page session row has no id');
+        return session;
+      });
       return {
-        sessions: rows.map(toSession).filter((session) => Boolean(session.agentSessionId)),
-        total: typeof payload.total === 'number' ? payload.total : rows.length,
-        hasMore: payload.hasMore === true,
-        nextCursor: typeof payload.nextCursor === 'string' ? payload.nextCursor : null,
+        sessions,
+        total,
+        hasMore,
+        nextCursor,
       };
     },
 

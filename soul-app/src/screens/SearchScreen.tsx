@@ -34,6 +34,7 @@ import { SessionSearchField } from '../components/search/SessionSearchField';
 import { useSessionSearch } from '../hooks/useSessionSearch';
 import { getSessionDisplayName } from '../lib/session-display-name';
 import { SESSION_FEED_VIRTUALIZATION } from '../lib/session-feed-virtualization';
+import { captureAuthScope, isAuthScopeCurrent, useAuthScopeGeneration } from '../lib/auth-scope';
 import { useSearchStore } from '../store/searchStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -74,9 +75,11 @@ export function SearchScreen({
   const t = useTokens();
   const styles = useMemo(() => makeSearchScreenStyles(t), [t]);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
+  const scopeGeneration = useAuthScopeGeneration();
+  const authScope = useMemo(() => captureAuthScope(), [scopeGeneration]);
   const api = useMemo(
-    () => serverUrl ? createApiClient(serverUrl) : null,
-    [serverUrl],
+    () => serverUrl ? createApiClient(serverUrl, { authScope }) : null,
+    [authScope, serverUrl],
   );
   const query = useSearchStore((state) => state.query);
   const scope = useSearchStore((state) => state.scope);
@@ -93,7 +96,13 @@ export function SearchScreen({
   const folders = useSessionStore((state) => state.catalog.folders);
   const sessions = useSessionStore((state) => state.sessions);
   const mergeSessions = useSessionStore((state) => state.mergeSessions);
-  const attemptedRecentHydrationsRef = useRef(new Set<string>());
+  const attemptedRecentHydrationsRef = useRef({
+    generation: scopeGeneration,
+    ids: new Set<string>(),
+  });
+  if (attemptedRecentHydrationsRef.current.generation !== scopeGeneration) {
+    attemptedRecentHydrationsRef.current = { generation: scopeGeneration, ids: new Set() };
+  }
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList<SearchRow>>(null);
   const [filterVisible, setFilterVisible] = useState(false);
@@ -117,18 +126,22 @@ export function SearchScreen({
   useEffect(() => {
     if (!api || query.trim()) return;
     const missingIds = [...new Set(recentSessionIds)].filter((sessionId) =>
-      !sessions[sessionId] && !attemptedRecentHydrationsRef.current.has(sessionId),
+      !sessions[sessionId] && !attemptedRecentHydrationsRef.current.ids.has(sessionId),
     );
     if (missingIds.length === 0) return;
     for (const sessionId of missingIds) {
-      attemptedRecentHydrationsRef.current.add(sessionId);
+      attemptedRecentHydrationsRef.current.ids.add(sessionId);
     }
     void api.getSessionsByIds(missingIds)
-      .then(mergeSessions)
+      .then((rows) => {
+        if (isAuthScopeCurrent(authScope)) mergeSessions(rows);
+      })
       .catch((error) => {
-        console.warn('[SearchScreen] recent session hydration failed:', error);
+        if (isAuthScopeCurrent(authScope)) {
+          console.warn('[SearchScreen] recent session hydration failed:', error);
+        }
       });
-  }, [api, mergeSessions, query, recentSessionIds, sessions]);
+  }, [api, authScope, mergeSessions, query, recentSessionIds, scopeGeneration, sessions]);
 
   const nodeIds = useMemo(
     () => unique(Object.values(sessions).flatMap((session) =>

@@ -20,10 +20,9 @@ import { makeHistoryFetchErrorStyles } from './HistoryFetchError.styles';
 interface Props {
   /** 사용자 수동 재시도 트리거 — 훅의 retryFromError를 그대로 연결. */
   onRetry: () => void;
-  message?: string;
 }
 
-export function HistoryFetchError({ onRetry, message = '메시지를 불러오지 못했어요' }: Props) {
+export function HistoryFetchError({ onRetry }: Props) {
   const t = useTokens();
   const styles = makeHistoryFetchErrorStyles(t);
   return (
@@ -36,7 +35,7 @@ export function HistoryFetchError({ onRetry, message = '메시지를 불러오�
         color={t.colors.textSecondary}
         size={t.iconSize.prominent}
       />
-      <Text style={styles.message}>{message}</Text>
+      <Text style={styles.message}>메시지를 불러오지 못했어요</Text>
       <TouchableOpacity onPress={onRetry} style={styles.retryBtn}>
         <Text style={styles.retryText}>다시 시도</Text>
       </TouchableOpacity>

@@ -139,6 +139,24 @@ describe('client.getFeedPage', () => {
     expect(result.hasMore).toBe(true);
     expect(result.nextCursor).toBe('60');
   });
+
+  it.each(['sessions', 'total', 'hasMore', 'nextCursor'])(
+    'rejects a feed page response missing required field %s',
+    async (missingField) => {
+      const payload: Record<string, unknown> = {
+        ...(missingField === 'sessions' ? { sessionList: [] } : {}),
+        sessions: [],
+        total: 411,
+        hasMore: true,
+        nextCursor: '60',
+      };
+      delete payload[missingField];
+      makeFetchMock(payload);
+
+      await expect(createApiClient(BASE).getFeedPage('30'))
+        .rejects.toThrow('Invalid feed page response');
+    },
+  );
 });
 
 describe('client admin review policy endpoints', () => {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppState, Pressable, TextInput, View } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockRenderChatEventList = jest.fn();
 const mockRenderChatComposer = jest.fn();
@@ -294,6 +294,48 @@ describe('ChatBody store subscription boundary', () => {
     expect(mockApiClient.getSessionsByIds).toHaveBeenCalledWith([SID]);
     expect(useSessionStore.getState().sessions[SID]?.displayName).toBe('Hydrated chat session');
     expect(useSessionStore.getState().feedMembership).not.toHaveProperty(SID);
+    expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+    view.unmount();
+  });
+
+  test('인증 범위가 바뀌면 채팅 세션의 늦은 응답은 버리고 같은 id를 다시 조회한다', async () => {
+    await preparePersistentChatDrafts();
+    resetStores();
+    useSessionStore.setState({ sessions: {}, feedMembership: {}, feedSessionIds: [] });
+    let resolveOld!: (rows: any[]) => void;
+    let resolveCurrent!: (rows: any[]) => void;
+    mockApiClient.getSessionsByIds
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveCurrent = resolve; }));
+
+    const view = render(<View><ChatBody sessionId={SID} /></View>);
+    await waitFor(() => expect(mockApiClient.getSessionsByIds).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      useSettingsStore.setState({ serverUrl: 'https://server-b.test' });
+      useSessionStore.setState({ sessions: {}, feedMembership: {}, feedSessionIds: [] });
+    });
+    await waitFor(() => expect(mockApiClient.getSessionsByIds).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveOld([{
+        agentSessionId: SID, displayName: 'Old scope session', status: 'idle',
+        createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
+      }]);
+      await Promise.resolve();
+    });
+    expect(useSessionStore.getState().sessions[SID]).toBeUndefined();
+
+    await act(async () => {
+      resolveCurrent([{
+        agentSessionId: SID, displayName: 'Current scope session', status: 'idle',
+        createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
+      }]);
+      await Promise.resolve();
+    });
+    expect(useSessionStore.getState().sessions[SID]?.displayName).toBe('Current scope session');
+    expect(mockApiClient.getSessionsByIds).toHaveBeenCalledTimes(2);
+    expect(useSessionStore.getState().feedMembership).toEqual({});
     expect(useSessionStore.getState().feedSessionIds).toEqual([]);
     view.unmount();
   });

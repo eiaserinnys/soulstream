@@ -254,6 +254,11 @@ export function useSessionsStream() {
       }
     }
 
+    if (inFlightSessionsRef.current.has(sessionId)) {
+      hydrateSession(sessionId, updates, attention);
+      return;
+    }
+
     if (membership !== undefined) return;
     if (patchNeedsFeedHydration(sessionId, updates, attention)) {
       hydrateSession(sessionId, updates, attention);
