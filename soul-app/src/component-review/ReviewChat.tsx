@@ -8,7 +8,7 @@ import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
 import { SystemEvent } from '../components/events/SystemEvent';
 import { TurnSummaryCaption } from '../components/events/TurnSummaryCaption';
-import { CollapsibleCaption } from '../components/chat/CollapsibleCaption';
+import { CollapsibleCaption, CollapsibleCaptionLine } from '../components/chat/CollapsibleCaption';
 import { LabeledDivider } from '../components/chat/LabeledDivider';
 import { AttachmentImage } from '../components/AttachmentImage';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
@@ -35,11 +35,6 @@ const assignedCardPreview = formatAssignedCardContextSnapshot({
 export function ReviewChat() {
   const t = useTokens();
   const styles = makeStyles(t);
-  const captionLineStyle = {
-    color: t.colors.textPrimary,
-    fontSize: t.chatFontSize.meta,
-    lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
-  };
   const [input, setInput] = useState('');
   const [sent, setSent] = useState('');
   const [state, setState] = useState<typeof options[number]['value']>('normal');
@@ -124,22 +119,28 @@ export function ReviewChat() {
         usage: { input_tokens: 14124, cached_input_tokens: 12288, output_tokens: 5 },
       } }} />
       <CollapsibleCaption title="Jev 후보 3">
-        <Text style={captionLineStyle} numberOfLines={1} ellipsizeMode="tail">T38 · 요약 한 줄 · 3/3</Text>
-        <Text style={captionLineStyle} numberOfLines={1} ellipsizeMode="tail">#412 · 카드 한 줄 · 2/3</Text>
-        <Text style={captionLineStyle} numberOfLines={1} ellipsizeMode="tail">세션 제목 · 한 줄 · 2/3</Text>
+        <CollapsibleCaptionLine>T38 · 요약 한 줄 · 3/3</CollapsibleCaptionLine>
+        <CollapsibleCaptionLine>#412 · 카드 한 줄 · 2/3</CollapsibleCaptionLine>
+        <CollapsibleCaptionLine>세션 제목 · 한 줄 · 2/3</CollapsibleCaptionLine>
       </CollapsibleCaption>
       <CollapsibleCaption title="처음부터 펼친 예시" initiallyCollapsed={false}>
-        <Text style={captionLineStyle} numberOfLines={1} ellipsizeMode="tail">T38 · 요약 한 줄 · 3/3</Text>
+        <CollapsibleCaptionLine>T38 · 요약 한 줄 · 3/3</CollapsibleCaptionLine>
       </CollapsibleCaption>
       <CollapsibleCaption title="Jev 후보 0">
-        <Text style={captionLineStyle} numberOfLines={1} ellipsizeMode="tail">2점 이상인 후보가 없습니다.</Text>
+        <CollapsibleCaptionLine>2점 이상인 후보가 없습니다.</CollapsibleCaptionLine>
       </CollapsibleCaption>
       <CollapsibleCaption title="아주 긴 제목은 한 줄을 유지하며 끝에서 말줄임합니다">
-        <Text style={captionLineStyle} numberOfLines={1} ellipsizeMode="tail">
+        <CollapsibleCaptionLine>
           아주 긴 내용 줄도 글자 수로 자르지 않고 화면 폭에 맞춰 끝에서 말줄임합니다.
-        </Text>
+        </CollapsibleCaptionLine>
       </CollapsibleCaption>
+      <AssistantMessage session={sessions[0]} event={message('assistant_message', '앞 답변입니다. 다음 세대를 준비합니다.')} />
       <LabeledDivider label="새 세대" />
+      <AssistantMessage session={sessions[0]} event={message('assistant_message', '다음 세대의 첫 답변입니다.')} />
+      <LabeledDivider label="응답 교체" />
+      <AssistantMessage session={sessions[0]} event={message('assistant_message', '교체된 답변 뒤에도 간격이 이어집니다.')} />
+      <LabeledDivider label="이 라벨은 길이가 달라져도 두 선의 가운데를 확인합니다" />
+      <AssistantMessage session={sessions[0]} event={message('assistant_message', '긴 라벨 다음의 답변입니다.')} />
       <SystemEvent event={{ id: 'public-error', type: 'error', data: {
         message: '응답 연결이 끊겼습니다. 현재 작업의 오류 내용을 확인해주세요.\n조사한 내용과 남은 작업을 확인할 수 있도록 긴 오류 문구를 표시합니다.',
       } }} />

@@ -13,7 +13,7 @@ export function LabeledDivider({ label }: LabeledDividerProps) {
   return (
     <View style={styles.row}>
       <View accessibilityElementsHidden importantForAccessibility="no" style={styles.line} />
-      <Text style={styles.label}>{label}</Text>
+      <Text numberOfLines={1} ellipsizeMode="tail" style={styles.label}>{label}</Text>
       <View accessibilityElementsHidden importantForAccessibility="no" style={styles.line} />
     </View>
   );
@@ -25,7 +25,8 @@ function makeStyles(t: DesignTokens) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: t.uiSpacing.md,
-      marginBottom: t.uiSpacing.xxxl,
+      marginVertical: t.uiSpacing.xxxl,
+      paddingHorizontal: t.spacing.lg,
     },
     line: {
       flex: 1,
@@ -34,6 +35,7 @@ function makeStyles(t: DesignTokens) {
       backgroundColor: t.colors.border,
     },
     label: {
+      flexShrink: 1,
       color: t.colors.textPlaceholder,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,

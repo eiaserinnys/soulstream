@@ -37,6 +37,7 @@ const HIGH_DENSITY_TOKEN_SURFACES = [
   'components/events/ToolEvent.tsx',
   'components/events/ThinkingEvent.tsx',
   'components/events/SystemEvent.tsx',
+  'components/chat/CollapsibleCaption.tsx',
 ] as const;
 
 const GLASS_CARD_SURFACES = [

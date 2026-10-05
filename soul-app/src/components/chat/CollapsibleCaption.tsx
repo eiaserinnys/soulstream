@@ -18,6 +18,7 @@ export function CollapsibleCaption({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [expanded, setExpanded] = useState(() => !initiallyCollapsed);
+  const [pressed, setPressed] = useState(false);
 
   return (
     <View style={styles.wrapper}>
@@ -26,18 +27,34 @@ export function CollapsibleCaption({
         accessibilityLabel={title}
         accessibilityState={{ expanded }}
         onPress={() => setExpanded((current) => !current)}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        activeOpacity={1}
         frameStyle={styles.touchFrame}
-        surfaceStyle={styles.surface}
+        surfaceStyle={styles.touchSurface}
       >
-        <View style={styles.titleRow}>
-          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.title}>
-            {title}
-          </Text>
-          <DisclosureIcon expanded={expanded} color={t.colors.textPlaceholder} />
+        <View style={styles.contentStack}>
+          <View style={[styles.titleRow, pressed && styles.titlePressed]}>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.title}>
+              {title}
+            </Text>
+            <DisclosureIcon expanded={expanded} color={t.colors.textSecondary} />
+          </View>
+          {expanded ? <View style={styles.content}>{children}</View> : null}
         </View>
       </CompactTouchTarget>
-      {expanded ? <View style={styles.content}>{children}</View> : null}
     </View>
+  );
+}
+
+/** Passive text only: the caption's single touch target owns all press behavior. */
+export function CollapsibleCaptionLine({ children }: { children: ReactNode }) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  return (
+    <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contentLine}>
+      {children}
+    </Text>
   );
 }
 
@@ -45,32 +62,47 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     wrapper: {
       paddingHorizontal: t.spacing.lg,
+      paddingVertical: t.spacing.sm,
     },
     touchFrame: {
       alignSelf: 'stretch',
     },
-    surface: {
+    touchSurface: {
       alignSelf: 'stretch',
       width: '100%',
-      minHeight: t.uiSpacing.xl,
-      paddingHorizontal: t.uiSpacing.sm,
+      alignItems: 'stretch',
+      justifyContent: 'flex-start',
+    },
+    contentStack: {
+      width: '100%',
+      minHeight: t.hitTarget.min,
+      paddingTop: (t.hitTarget.min - t.uiSpacing.xl) / 2,
+      gap: t.uiSpacing.xxs,
     },
     titleRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: t.uiSpacing.sm,
       width: '100%',
+      minHeight: t.uiSpacing.xl,
+      borderRadius: t.foundation.radius.chip,
+    },
+    titlePressed: {
+      backgroundColor: t.colors.surfaceMuted,
     },
     title: {
-      flex: 1,
       flexShrink: 1,
-      marginStart: -t.uiSpacing.sm,
-      color: t.colors.textPlaceholder,
+      color: t.colors.textSecondary,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
     },
     content: {
-      marginTop: t.uiSpacing.xxs,
+      gap: t.uiSpacing.xxs,
+    },
+    contentLine: {
+      color: t.colors.textPlaceholder,
+      fontSize: t.chatFontSize.meta,
+      lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
     },
   });
 }
