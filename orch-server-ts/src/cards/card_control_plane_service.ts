@@ -251,6 +251,7 @@ export class CardControlPlaneService {
       && !(fields.archived ?? card.archived))
       await assertSingleCardAssignee(sql,sessionId,card.id);
     await sql`UPDATE cards SET ${sql(fields)},
+      number=CASE WHEN ${fields.archived === false} THEN COALESCE(number,nextval('cards_number_seq')) ELSE number END,
       status_changed_at=CASE WHEN ${fields.status !== undefined && fields.status !== card.status} THEN NOW() ELSE status_changed_at END,
       version=version+1,updated_at=NOW(),updated_session_id=${actor.actorSessionId},updated_event_id=${eventId} WHERE id=${card.id}`;
   }

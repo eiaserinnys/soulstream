@@ -70,7 +70,7 @@
 
 | PR | 경로 | 계약 |
 | --- | --- | --- |
-| C1 | `packages/db-schema/sql/migrations/120_card_number.sql`, `packages/db-schema/migration-manifest.json`, `packages/db-schema/sql/schema.sql`, `orch-server-ts/src/cards/control_plane/card_types.ts`, `orch-server-ts/src/folders/folder_contracts.ts` | `cards.number`는 유일 인덱스를 둔 `INTEGER GENERATED ALWAYS AS IDENTITY`다. 기존 카드는 보관 여부와 관계없이 `created_at`, `id COLLATE "C"` 순으로 채운다. 유일한 운영 `INSERT INTO cards`는 번호를 전달하지 않고 코드는 계산하지 않는다. 전체 카드 행은 REST와 MCP 공통 `serializeCardRow`가 `number`를 camelCase로 내보내며, 폴더 개요는 필드 목록에 `number`를 명시한다. identity와 유일 인덱스가 번호 재사용을 막는다. 본문은 다시 적용해도 안전하며 채움은 identity가 되기 전에만 돈다. |
+| C1 | `packages/db-schema/sql/migrations/120_card_number.sql`, `packages/db-schema/migration-manifest.json`, `packages/db-schema/sql/schema.sql`, `orch-server-ts/src/cards/control_plane/card_types.ts`, `orch-server-ts/src/cards/card_control_plane_service.ts`, `orch-server-ts/src/folders/folder_contracts.ts` | `cards_number_seq`가 카드 번호를 발급한다. 새 카드는 컬럼 기본값으로 번호를 받고, 번호 없이 보관된 카드는 `card_control_plane_service.ts`의 `patch()`가 보관을 푸는 UPDATE에서 번호를 받는다. `cards_live_number_check`가 보관되지 않은 카드의 번호를 요구한다. migration 때 보관되지 않은 카드만 만든 순서대로 번호를 채우고 보관된 카드는 NULL로 둔다. 번호는 보관 뒤에도 남고 재사용하지 않는다. REST와 MCP 카드 행, 폴더 개요는 번호를 정수 또는 `null`로 내보낸다. 본문은 다시 적용해도 안전하며 기존 번호를 바꾸지 않는다. |
 
 ## 담당 세션 상태 리마인더
 
