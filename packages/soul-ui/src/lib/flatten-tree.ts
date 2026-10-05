@@ -395,8 +395,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
 
     case "result": {
       // 표시 계약: result는 Session Complete 중복 캡션과 intervention 중간
-      // 진단을 함께 운반한다. 이벤트 트리에는 남기되 채팅에는 투영하지 않고,
-      // collectMessages에서 다음 complete의 누적비용 차분 앵커로만 사용한다.
+      // 진단을 함께 운반한다. 이벤트 트리에는 남기되 채팅에는 투영하지 않는다.
       return null;
     }
 

@@ -59,6 +59,23 @@ describe("formatTurnCompleteStats", () => {
     })).toBe("입력 645,367 (캐시 645,361) · 출력 6,139 · 정가 $0.62 (세션 $3.20+)");
   });
 
+  it("adds thousands separators to rounded price values", () => {
+    expect(formatTurnCompleteStats({
+      turnCostUsd: 0.62,
+      sessionCostUsd: 1234.56,
+    })).toBe("정가 $0.62 (세션 $1,234.56)");
+    expect(formatTurnCompleteStats({ turnCostUsd: 1000 })).toBe("정가 $1,000.00");
+    expect(formatTurnCompleteStats({
+      turnCostUsd: 0.62,
+      sessionCostUsd: 999.995,
+    })).toBe("정가 $0.62 (세션 $1,000.00)");
+    expect(formatTurnCompleteStats({
+      turnCostUsd: 0.62,
+      sessionCostUsd: 1234567.891,
+      sessionCostPartial: true,
+    })).toBe("정가 $0.62 (세션 $1,234,567.89+)");
+  });
+
   it("omits a zero cache and only emits finite usage chunks", () => {
     expect(formatTurnCompleteStats({
       usage: { input_tokens: 10, output_tokens: 0 },

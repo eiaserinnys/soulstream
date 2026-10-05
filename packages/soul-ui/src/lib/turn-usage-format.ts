@@ -59,7 +59,10 @@ export function formatContextUsageText(input: {
 
 function formatPrice(value: number): string {
   const rounded = value.toFixed(2);
-  return value > 0 && rounded === "0.00" ? "<$0.01" : `$${rounded}`;
+  if (value > 0 && rounded === "0.00") return "<$0.01";
+
+  const [whole, fraction] = rounded.split(".");
+  return `$${Number(whole).toLocaleString("en-US")}.${fraction}`;
 }
 
 function asRecord(value: unknown): UnknownRecord | undefined {
