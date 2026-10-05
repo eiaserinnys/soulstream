@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { inputControlClassName, inputFieldClassName } from "@seosoyoung/soul-ui/components/ui/input";
 
 /**
  * 설정 탭의 목록-상세 틀. 반복 작업과 영구 에이전트 세션이 같은 구현을 쓴다.
@@ -93,9 +94,14 @@ export function SettingsGroupBox({ title, children }: { title?: string; children
   );
 }
 
-export function SettingsAlert({ children }: { children: ReactNode }) {
+/** scrollIntoView를 켜면 나타날 때 화면 안으로 스크롤한다. 눌러서 생긴 오류가 보이지 않는 곳에 뜨는 긴 상세용이다. */
+export function SettingsAlert({ children, scrollIntoView = false }: { children: ReactNode; scrollIntoView?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollIntoView) ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [scrollIntoView]);
   return (
-    <div role="alert" className="rounded border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">
+    <div ref={ref} role="alert" className="rounded border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">
       {children}
     </div>
   );
@@ -110,6 +116,7 @@ export function SettingsField({ label, children }: { label: string; children: Re
   );
 }
 
+/** 여러 줄 입력. 한 줄 입력(soul-ui Input)과 같은 표면과 포커스 모양을 쓰고 크기 조절은 끈다. */
 export function SettingsMultilineField({ label, value, rows = 5, placeholder, onChange }: {
   label: string;
   value: string;
@@ -119,13 +126,16 @@ export function SettingsMultilineField({ label, value, rows = 5, placeholder, on
 }) {
   return (
     <SettingsField label={label}>
-      <textarea
-        aria-label={label}
-        rows={rows}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      <span className={inputControlClassName} data-slot="input-control">
+        <textarea
+          aria-label={label}
+          rows={rows}
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+          className={`${inputFieldClassName} resize-none py-2`}
+        />
+      </span>
     </SettingsField>
   );
 }

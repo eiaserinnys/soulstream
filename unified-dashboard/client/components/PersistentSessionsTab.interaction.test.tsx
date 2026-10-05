@@ -59,6 +59,7 @@ describe("PersistentSessionsTab", () => {
     document.body.innerHTML = "";
     root = undefined;
     container = undefined;
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     vi.restoreAllMocks();
   });
 
@@ -69,6 +70,7 @@ describe("PersistentSessionsTab", () => {
     await waitFor(() => expect(document.body.textContent).toContain("목록을 읽지 못했습니다."));
     expect(document.body.textContent).not.toContain("등록된 영구 에이전트 세션이 없습니다.");
     expect(button("세션 추가")).toBeUndefined();
+    expect(document.body.textContent).not.toContain("새 영구 에이전트 세션");
     clickButton("다시 시도");
     await waitFor(() => expect(document.body.textContent).toContain("서소영 관제"));
     expect(document.body.textContent).not.toContain("목록을 읽지 못했습니다.");
@@ -205,6 +207,102 @@ describe("PersistentSessionsTab", () => {
     expect(document.body.textContent).not.toContain("세션은 만들어졌으나 등록하지 못했습니다.");
   });
 
+  it("blocks creating again when the create response was lost, even after pressing New session", async () => {
+    let posts = 0;
+    const { request } = server({
+      sessions: [],
+      defaults: { preferred_agent_id: "agent-a" },
+      onCreate: () => { posts += 1; throw new TypeError("Failed to fetch"); },
+    });
+    await renderTab(request);
+    await waitFor(() => expect(button("세션 추가")).toBeDefined());
+    setInput(nameInput(), "새 세션 이름");
+    setSelect("생성 폴더", "folder-a");
+    clickButton("세션 추가");
+    await waitFor(() => expect(document.body.textContent).toContain("세션이 만들어졌는지 알 수 없습니다."));
+    expect(button("세션 추가")).toBeUndefined();
+    expect(button("목록 다시 읽기")).toBeDefined();
+    // 「새 세션」으로 입력을 되돌려도 제한은 풀리지 않는다.
+    clickButton("새 세션");
+    expect(button("세션 추가")).toBeUndefined();
+    expect(button("목록 다시 읽기")).toBeDefined();
+    clickButton("목록 다시 읽기");
+    await settle();
+    expect(button("세션 추가")).toBeUndefined();
+    expect(posts).toBe(1);
+  });
+
+  it("keeps add available after a clear rejection of the create request", async () => {
+    const { request } = server({
+      sessions: [],
+      defaults: { preferred_agent_id: "agent-a" },
+      onCreate: () => failure(422, "INVALID_REQUEST", "이름이 올바르지 않습니다."),
+    });
+    await renderTab(request);
+    await waitFor(() => expect(button("세션 추가")).toBeDefined());
+    setInput(nameInput(), "새 세션 이름");
+    setSelect("생성 폴더", "folder-a");
+    clickButton("세션 추가");
+    await waitFor(() => expect(document.body.textContent).toContain("이름이 올바르지 않습니다."));
+    expect(button("세션 추가")?.disabled).toBe(false);
+    expect(button("목록 다시 읽기")).toBeUndefined();
+  });
+
+  it("does not edit a session whose node is unknown and labels a missing agent", async () => {
+    const { request, calls } = server({
+      sessions: [session({ session_id: "legacy", display_name: "옛 세션", node_id: null, agent_id: null, agent_name: null })],
+    });
+    await renderTab(request);
+    await waitFor(() => expect(buttonContaining("옛 세션")).toBeDefined());
+    expect(buttonContaining("옛 세션")?.textContent).toContain("에이전트 정보 없음");
+    expect(buttonContaining("옛 세션")?.textContent).not.toContain("null");
+    flushSync(() => buttonContaining("옛 세션")?.click());
+    await waitFor(() => expect(document.body.textContent).toContain("이 세션의 노드를 알 수 없어 편집할 수 없습니다."));
+    expect(inputValues()).toContain("에이전트 정보 없음");
+    expect(button("변경 저장")?.disabled).toBe(true);
+    expect(button("영구 세션 해제")?.disabled).toBe(true);
+    expect((document.body.querySelector('[aria-label="기본 모델"]') as HTMLSelectElement).disabled).toBe(true);
+    expect(nameInput().disabled).toBe(true);
+    clickButton("변경 저장");
+    expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  });
+
+  it("compares preset and reasoning effort for the re-save hint", async () => {
+    const hint = "기본 모델 변경 요청이 없습니다. 다시 저장해 주세요.";
+    const open = async (patch: Parameters<typeof session>[0]) => {
+      const { request } = server({ sessions: [session(patch)] });
+      await renderTab(request);
+      await waitFor(() => expect(buttonContaining(patch.display_name)).toBeDefined());
+      flushSync(() => buttonContaining(patch.display_name)?.click());
+      await waitFor(() => expect(button("영구 세션 해제")).toBeDefined());
+    };
+    // 같은 프리셋이어도 저장값 high와 현재 medium은 다르고, 대기도 없다.
+    await open({ session_id: "s-1", display_name: "수준만 다름", defaultModel: "preset-a", currentModel: "preset-a", defaultEffort: "high", currentEffort: "medium" });
+    expect(document.body.textContent).toContain(hint);
+    flushSync(() => root?.unmount()); document.body.innerHTML = "";
+    // 현재와 다르고, 대기 중인 대상도 저장값과 수준이 달라서 요청이 없는 것과 같다.
+    await open({ session_id: "s-2", display_name: "대기 수준 다름", defaultModel: "preset-a", currentModel: "preset-b", defaultEffort: "high", currentEffort: "high", pending: { target_model_preset: "preset-a", target_reasoning_effort: "medium" } });
+    expect(document.body.textContent).toContain(hint);
+    flushSync(() => root?.unmount()); document.body.innerHTML = "";
+    // 대기 대상이 (프리셋, 수준)까지 같으면 안내하지 않는다.
+    await open({ session_id: "s-3", display_name: "대기 일치", defaultModel: "preset-a", currentModel: "preset-b", defaultEffort: "high", currentEffort: "high", pending: { target_model_preset: "preset-a", target_reasoning_effort: "high" } });
+    expect(document.body.textContent).not.toContain(hint);
+  });
+
+  it("scrolls the error box into view when a press fails validation", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { request } = server({ sessions: [], defaults: { preferred_agent_id: "agent-a" } });
+    await renderTab(request);
+    await waitFor(() => expect(button("세션 추가")).toBeDefined());
+    clickButton("세션 추가");
+    await waitFor(() => expect(document.body.textContent).toContain("생성 폴더를 선택하세요."));
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    expect(scroll.mock.contexts[0]).toBe(document.body.querySelector('[role="alert"]'));
+    clickButton("세션 추가");
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(2));
+  });
+
   it("releases a session only after the confirm dialog and removes it from the list", async () => {
     const { request, calls } = server();
     const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
@@ -241,14 +339,16 @@ type ServerOptions = {
   onCreate?: () => Response | undefined;
 };
 
-function session({ session_id, display_name, defaultModel = "preset-a", currentModel = "preset-a", pending = null }: {
+function session({ session_id, display_name, defaultModel = "preset-a", currentModel = "preset-a", defaultEffort = "high", currentEffort = "high", pending = null, node_id = "node-a", agent_id = "agent-a", agent_name = "에이전트 A" }: {
   session_id: string; display_name: string; defaultModel?: string; currentModel?: string;
+  defaultEffort?: string | null; currentEffort?: string | null;
   pending?: { target_model_preset: string; target_reasoning_effort: string | null } | null;
+  node_id?: string | null; agent_id?: string | null; agent_name?: string | null;
 }) {
   return {
-    session_id, display_name, node_id: "node-a", folder_id: "folder-a", agent_id: "agent-a", agent_name: "에이전트 A", persistent: true,
-    settings: { default_model: { model_preset: defaultModel, reasoning_effort: "high" }, fallback_model: null, show_generation_separator: true, show_character: true },
-    runtime: { current_model: { model_preset: currentModel, reasoning_effort: "high", model: `${currentModel}-model` }, pending },
+    session_id, display_name, node_id, folder_id: "folder-a", agent_id, agent_name, persistent: true,
+    settings: { default_model: { model_preset: defaultModel, reasoning_effort: defaultEffort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true },
+    runtime: { current_model: { model_preset: currentModel, reasoning_effort: currentEffort, model: `${currentModel}-model` }, pending },
   };
 }
 
@@ -276,7 +376,7 @@ function server(options: ServerOptions = {}) {
           preferred_agent_id: options.defaults?.preferred_agent_id ?? null,
           settings: {
             default_model: { model_preset: options.defaults && "model_preset" in options.defaults ? options.defaults.model_preset : "preset-a", reasoning_effort: null },
-            fallback_model: null, show_generation_separator: true, show_character: true,
+            fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true,
           },
           initial_instruction: BLANK_MESSAGE,
           unavailable_reason: null,

@@ -9,14 +9,16 @@ export type PersistentSettings = {
   fallback_model: ModelSelection | null;
   show_generation_separator: boolean;
   show_character: boolean;
+  show_jev_candidates: boolean;
 };
 
 export type PersistentSession = {
   session_id: string;
   display_name: string | null;
-  node_id: string;
+  /** 소유 노드를 알 수 없는 기존 세션은 null이며 서버가 아무것도 저장하지 못한다. */
+  node_id: string | null;
   folder_id: string | null;
-  agent_id: string;
+  agent_id: string | null;
   agent_name: string | null;
   persistent: boolean;
   settings: PersistentSettings;
