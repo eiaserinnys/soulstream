@@ -15,7 +15,7 @@ import { CardAssignmentSheet } from '../CardAssignmentSheet';
 import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
 import { CardRow } from '../CardRow';
 import { ExecutionSelectionSheet } from '../ExecutionSelectionSheet';
-import { reportSummary } from '../CardTimeline';
+import { CardTimeline, reportSummary } from '../CardTimeline';
 import { GlassButton } from '../../GlassSurface';
 import { CardCreateSheet } from '../CardCreateSheet';
 import { TodayCardComposer } from '../TodayCardComposer';
@@ -49,7 +49,7 @@ test('세션 → 좌우 말풍선 → 그 밖에 → 고정 입력 순서이며 
   expect(screen.getByTestId('card-timeline').props.children.map((child: any) => child.key)).toEqual(['request', 'question-q1', 'answer-q1', 'report-r1', 'comment-c1']);
   expect(screen.getAllByTestId(/card-report-thumbnail/)).toHaveLength(2);
   const children = screen.UNSAFE_getByType(require('react-native').ScrollView).props.children.filter(Boolean);
-  expect(children.map((child: any) => child.props.testID ?? child.type.name)).toEqual(['card-sessions', 'CardTimeline', 'card-other']);
+  expect(children.map((child: any) => child.type === CardTimeline ? 'card-timeline' : child.props.testID)).toEqual(['card-sessions', 'card-timeline', 'card-other']);
 });
 test('커멘트는 즉시 표시하고 API 한 건으로 교체한다', async () => {
   let resolve: any;

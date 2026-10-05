@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import type { ApiClient } from '../api/client';
@@ -14,9 +14,10 @@ export function useCardActions(api: ApiClient | null, onError?: (cause: unknown)
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [pending, setPending] = useState(false);
-  const run = async (mutation: () => Promise<CardMutationResult>): Promise<boolean> => {
+  const run = useCallback(async (mutation: () => Promise<CardMutationResult>, onAccepted?: () => void): Promise<boolean> => {
     if (!api || lock.current) return false;
     lock.current = true;
+    onAccepted?.();
     setPending(true);
     const scope = captureAuthScope().generation;
     try {
@@ -40,6 +41,6 @@ export function useCardActions(api: ApiClient | null, onError?: (cause: unknown)
       lock.current = false;
       if (mounted.current) setPending(false);
     }
-  };
+  }, [api, onError]);
   return { run, pending };
 }

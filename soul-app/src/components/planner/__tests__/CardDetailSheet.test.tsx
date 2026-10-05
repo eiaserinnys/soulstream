@@ -27,6 +27,49 @@ jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }))
 import { CardCreateSheet } from '../CardCreateSheet';
 import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
 
+// Count the real component boundaries without memoizing the test wrappers.
+const mockRenders = { detail: 0, timeline: 0, sessions: 0, images: 0, rows: [] as string[] };
+jest.mock('../../../hooks/useCardDetail', () => {
+  const actual = jest.requireActual('../../../hooks/useCardDetail');
+  return { useCardDetail: (...args: unknown[]) => { mockRenders.detail++; return actual.useCardDetail(...args); } };
+});
+jest.mock('../CardTimeline', () => {
+  const actual = jest.requireActual('../CardTimeline');
+  return { ...actual, CardTimeline: (props: unknown) => { mockRenders.timeline++; return require('react').createElement(actual.CardTimeline, props); } };
+});
+jest.mock('../FolderSessionHistory', () => {
+  const actual = jest.requireActual('../FolderSessionHistory');
+  return { FolderSessionHistory: (props: unknown) => { mockRenders.sessions++; return require('react').createElement(actual.FolderSessionHistory, props); } };
+});
+jest.mock('../../AttachmentImage', () => {
+  const actual = jest.requireActual('../../AttachmentImage');
+  return { AttachmentImage: (props: unknown) => { mockRenders.images++; return require('react').createElement(actual.AttachmentImage, props); } };
+});
+jest.mock('../../events/UserMessage', () => {
+  const actual = jest.requireActual('../../events/UserMessage');
+  return { ...actual, UserMessage: (props: any) => { mockRenders.rows.push(props.event.id); return require('react').createElement(actual.UserMessage, props); } };
+});
+jest.mock('../../events/AssistantMessage', () => {
+  const actual = jest.requireActual('../../events/AssistantMessage');
+  return { ...actual, AssistantMessage: (props: any) => { mockRenders.rows.push(props.event.id); return require('react').createElement(actual.AssistantMessage, props); } };
+});
+const mockControlLocks = { input: [] as boolean[], header: [] as boolean[] };
+jest.mock('../../chat/ChatComposer', () => {
+  const actual = jest.requireActual('../../chat/ChatComposer');
+  return { ChatComposer: (props: any) => {
+    mockControlLocks.input.push(!!props.disabled);
+    return require('react').createElement(actual.ChatComposer, props);
+  } };
+});
+jest.mock('../../CompactTouchTarget', () => {
+  const actual = jest.requireActual('../../CompactTouchTarget');
+  return { CompactTouchTarget: (props: any) => {
+    if (props.accessibilityLabel === '상태 변경') mockControlLocks.header.push(!!props.disabled);
+    return require('react').createElement(actual.CompactTouchTarget, props);
+  } };
+});
+function resetRenders() { mockRenders.detail = mockRenders.timeline = mockRenders.sessions = mockRenders.images = 0; mockRenders.rows = []; }
+
 const card: CardDto = { id: 'card-1', folderId: 'folder-1', title: '요청 제목', request: '원문', brief: '# 경과',
   status: 'blocked', blockedKind: 'question', blockedDetail: '선택 필요', assigneeKind: 'agent', assigneeAgentId: 'roselin',
   assigneeSessionId: null, assigneeUserId: null, nodeId: 'node-1', modelPreset: 'sol',
@@ -47,6 +90,7 @@ beforeEach(async () => {
   useCardStore.setState({ rows: {}, details: {} });
   useSessionStore.setState({ sessions: { s1: detail.sessions[0] } });
   useNodeConnectivityStore.getState().reset();
+  mockControlLocks.input = []; mockControlLocks.header = [];
 });
 afterEach(() => jest.restoreAllMocks());
 test('상세 패널의 기존 상태 진입점에서 같은 색상 선택 메뉴를 연다', async () => {
@@ -212,4 +256,180 @@ test.each(['todo','queued'] as const)('상세 %s 시작은 접수 후 화면을 
  expect(api.executeCard).toHaveBeenCalledTimes(1);expect(screen.getByLabelText('시작 중…')).toBeTruthy();expect(onClose).not.toHaveBeenCalled();expect(alert).not.toHaveBeenCalled();
  await act(async()=>{await jest.advanceTimersByTimeAsync(1000);});
  expect(screen.queryByLabelText('시작 중…')).toBeNull();expect(onClose).not.toHaveBeenCalled();jest.useRealTimers();
+});
+
+function commentDetail(count: number): CardDetail {
+  return { ...detail, reports: [], questions: [], comments: Array.from({ length: count }, (_, index) => ({
+    id: `comment-${index}`, cardId: card.id, authorKind: 'user', authorId: 'user', sessionId: null, kind: 'comment',
+    body: `내용 ${index}` + (index % 3 === 0 ? '\n\n![그림](https://card.example/image.png)' : ''), createdAt: `2026-10-01T00:00:${String(index).padStart(2, '0')}Z`,
+  })) };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void, reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+test.each([10, 50, 100])('커멘트 %i개에서 입력·줄바꿈·삭제는 상세와 기존 타임라인을 재실행하지 않는다', async count => {
+  const current = commentDetail(count);
+  const api = { getCard: jest.fn().mockResolvedValue(current) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('내용 1')).toBeTruthy());
+  resetRenders();
+  const input = screen.getByPlaceholderText('커멘트');
+  for (const text of ['글', '글을 입력합니다\n두 번째 줄입니다', '']) fireEvent.changeText(input, text);
+  expect(mockRenders).toEqual({ detail: 0, timeline: 0, sessions: 0, images: 0, rows: [] });
+});
+
+test('커멘트 접수 때 비우고 추가·저장 교체는 해당 항목만 렌더한다', async () => {
+  const current = commentDetail(10), saved = deferred<any>();
+  const api = { getCard: jest.fn().mockResolvedValue(current), addCardComment: jest.fn(() => saved.promise) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('내용 1')).toBeTruthy());
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '새 커멘트');
+  resetRenders();
+  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+  expect(useDraftStore.getState().drafts).toEqual({});
+  expect(screen.getByPlaceholderText('커멘트').props.editable).toBe(false);
+  expect([...new Set(mockRenders.rows)]).toHaveLength(1);
+  expect(mockRenders.rows[0]).not.toMatch(/^comment-comment-/);
+  resetRenders();
+  await act(async () => saved.resolve({ ...current.comments![0], id: 'saved', body: '새 커멘트' }));
+  expect([...new Set(mockRenders.rows)]).toEqual(['comment-saved']);
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+});
+
+test('선택지 답변은 저장·상세 재조회 대기 동안 비고 재조회에서 바뀐 항목만 렌더한다', async () => {
+  const save = deferred<any>(), refresh = deferred<CardDetail>();
+  const api = { getCard: jest.fn().mockResolvedValueOnce(detail).mockImplementation(() => refresh.promise), answerCardQuestion: jest.fn(() => save.promise) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('파랑')).toBeTruthy());
+  fireEvent.press(screen.getByText('파랑'));
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('파랑');
+  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+  expect(useDraftStore.getState().drafts).toEqual({});
+  await act(async () => save.resolve({ card: { ...card, version: 5 }, folderId: card.folderId }));
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+  resetRenders();
+  const updated = JSON.parse(JSON.stringify(detail));
+  updated.card.version = 5;
+  updated.questions[0].answer = '파랑'; updated.questions[0].answeredAt = '2026-10-05';
+  await act(async () => refresh.resolve(updated));
+  expect([...new Set(mockRenders.rows)].sort()).toEqual(['answer-question-1', 'question-question-1']);
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+});
+
+test.each([false, true])('전송 실패는 원문을 복원하고 새 글이 있으면 합친다: %s', async hasNewText => {
+  const saved = deferred<any>(), alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const api = { getCard: jest.fn().mockResolvedValue(commentDetail(10)), addCardComment: jest.fn(() => saved.promise) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('내용 1')).toBeTruthy());
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '보낸 원문');
+  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+  // Model a new draft arriving while the native control is locked; editing stays disabled.
+  if (hasNewText) act(() => screen.getByPlaceholderText('커멘트').props.onChangeText('새 글'));
+  await act(async () => saved.reject(new Error('연결 실패')));
+  expect(alert).toHaveBeenCalledWith('커멘트 저장 실패', '연결 실패');
+  const text = hasNewText ? '보낸 원문\n\n새 글' : '보낸 원문';
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe(text);
+  expect(Object.values(useDraftStore.getState().drafts)).toEqual([text]);
+});
+
+test('내용이 같은 상세 재조회는 항목을 유지하고 변경된 커멘트만 표시한다', async () => {
+  const current = commentDetail(10), api = { getCard: jest.fn().mockResolvedValue(current) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('내용 1')).toBeTruthy());
+  resetRenders();
+  await act(async () => useCardStore.getState().putDetail(JSON.parse(JSON.stringify(current))));
+  expect(mockRenders.rows).toEqual([]);
+  const changed = JSON.parse(JSON.stringify(current)); changed.comments[1].body = '수정된 내용';
+  await act(async () => useCardStore.getState().putDetail(changed));
+  expect(mockRenders.rows).toEqual(['comment-comment-1']);
+  expect(screen.getByText('수정된 내용')).toBeTruthy();
+});
+
+
+test.each([false, true])('첨부 업로드·삭제·실패 복원은 입력창 경계에서 유지된다: 질문 %s', async question => {
+  const current = { ...(question ? detail : commentDetail(10)), card: { ...card, assigneeSessionId: 's1' } };
+  const saved = deferred<any>();
+  const api = { getCard: jest.fn().mockResolvedValue(current), uploadAttachment: jest.fn().mockResolvedValue({ path: '/capture.png' }),
+    addCardComment: jest.fn(() => saved.promise), answerCardQuestion: jest.fn(() => saved.promise) };
+  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(1));
+  const picker = require('expo-document-picker');
+  const picked = { canceled: false, assets: [{ uri: 'file:///capture.png', name: 'capture.png', mimeType: 'image/png' }] };
+  const selection = deferred<any>();
+  picker.getDocumentAsync.mockReturnValueOnce(selection.promise).mockResolvedValue(picked);
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
+  await act(async () => fireEvent.press(screen.getByTestId('chat-composer-attach-button')));
+  expect(screen.getByPlaceholderText('커멘트').props.editable).toBe(false);
+  await act(async () => selection.resolve(picked));
+  await waitFor(() => expect(screen.getByLabelText('capture.png 첨부 제거')).toBeTruthy());
+  expect(api.uploadAttachment).toHaveBeenCalledWith('s1', 'node-1', expect.objectContaining({ name: 'capture.png' }));
+  fireEvent.press(screen.getByLabelText('capture.png 첨부 제거'));
+  expect(screen.queryByLabelText('capture.png 첨부 제거')).toBeNull();
+  await act(async () => fireEvent.press(screen.getByTestId('chat-composer-attach-button')));
+  await waitFor(() => expect(screen.getByLabelText('capture.png 첨부 제거')).toBeTruthy());
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '첨부 원문');
+  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+  expect(screen.queryByLabelText('capture.png 첨부 제거')).toBeNull();
+  await act(async () => saved.reject(new Error('첨부 저장 실패')));
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('첨부 원문');
+  expect(screen.getByLabelText('capture.png 첨부 제거')).toBeTruthy();
+  expect(Alert.alert).toHaveBeenCalledWith(question ? '카드 변경 실패' : '커멘트 저장 실패', '첨부 저장 실패');
+});
+
+
+test('카드 로딩 중 입력은 유지하고 보내기만 막으며 첨부 안내를 띄우지 않는다', async () => {
+  const load = deferred<CardDetail>();
+  const api = { getCard: jest.fn(() => load.promise), addCardComment: jest.fn() };
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  expect(screen.getByPlaceholderText('커멘트').props.editable).toBe(true);
+  resetRenders();
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '받아오는 동안 친 글');
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('받아오는 동안 친 글');
+  expect(mockRenders).toEqual({ detail: 0, timeline: 0, sessions: 0, images: 0, rows: [] });
+  expect(screen.getByLabelText('커멘트 보내기').props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(screen.getByLabelText('커멘트 보내기'));
+  fireEvent.press(screen.getByTestId('chat-composer-attach-button'));
+  expect(api.addCardComment).not.toHaveBeenCalled();
+  expect(alert).not.toHaveBeenCalled();
+  await act(async () => load.resolve(commentDetail(10)));
+  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('받아오는 동안 친 글');
+  expect(screen.getByLabelText('커멘트 보내기').props.accessibilityState.disabled).toBe(false);
+  resetRenders();
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '받아오는 동안 친 글 이어서');
+  expect(mockRenders).toEqual({ detail: 0, timeline: 0, sessions: 0, images: 0, rows: [] });
+  fireEvent.press(screen.getByTestId('chat-composer-attach-button'));
+  expect(alert).toHaveBeenCalledWith('곧 지원', '담당 세션이 연결되면 첨부를 올릴 수 있습니다.');
+});
+
+test('준비된 초안으로 상세를 열면 첫 렌더부터 머리 버튼과 입력창을 잠그지 않는다', () => {
+  useCardStore.getState().putDetail(commentDetail(10));
+  const load = deferred<CardDetail>();
+  const screen = render(<CardDetailContent api={{ getCard: () => load.promise } as any} cardId={card.id} onClose={jest.fn()} />);
+  expect(mockControlLocks.input.length).toBeGreaterThan(0);
+  expect(mockControlLocks.header.length).toBeGreaterThan(0);
+  expect(mockControlLocks.input.every(locked => !locked)).toBe(true);
+  expect(mockControlLocks.header.every(locked => !locked)).toBe(true);
+  expect(screen.getByPlaceholderText('커멘트').props.editable).toBe(true);
+});
+
+test('초안 저장소 준비 전에는 입력창 자체 busy가 입력과 전송을 막는다', () => {
+  jest.spyOn(useDraftStore.persist, 'hasHydrated').mockReturnValue(false);
+  useCardStore.getState().putDetail(commentDetail(10));
+  const load = deferred<CardDetail>();
+  const api = { getCard: () => load.promise, addCardComment: jest.fn() };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  expect(screen.getByPlaceholderText('커멘트').props.editable).toBe(false);
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '저장소 준비 전 글');
+  fireEvent.press(screen.getByLabelText('커멘트 보내기'));
+  expect(useDraftStore.getState().drafts).toEqual({});
+  expect(api.addCardComment).not.toHaveBeenCalled();
 });
