@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ClaudeClientEvent } from "./claude_client_event.js";
+import { claudeTurnCostUsd } from "./list_price.js";
 import { attachClaudeBackgroundProvenance } from "./claude_background_provenance.js";
 import {
   attachClaudeResultInputReceipt,
@@ -177,9 +178,12 @@ export class ClaudeSdkEventMapper {
   mapAssistantMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
     const events: ClaudeClientEvent[] = [];
     const nestedMessage = asRecord(message.message);
-    if (typeof message.parent_tool_use_id !== "string" && nestedMessage?.usage !== undefined) {
-      this.latestIterationUsage = nestedMessage.usage;
-      this.latestIterationModel = asString(nestedMessage.model) ?? asString(message.model);
+    if (typeof message.parent_tool_use_id !== "string") {
+      if (nestedMessage?.usage !== undefined) {
+        this.latestIterationUsage = nestedMessage.usage;
+      }
+      const model = asString(nestedMessage?.model) ?? asString(message.model);
+      if (model !== undefined) this.latestIterationModel = model;
     }
     const error = asString(message.error);
     if (error) {
@@ -306,6 +310,8 @@ export class ClaudeSdkEventMapper {
       message.modelUsage,
       this.latestIterationModel,
     );
+    const model = this.latestIterationModel;
+    const turnCostUsd = claudeTurnCostUsd(usage, model);
     this.latestIterationUsage = undefined;
     this.latestIterationModel = undefined;
 
@@ -332,6 +338,8 @@ export class ClaudeSdkEventMapper {
       ...(claudeSessionId !== undefined ? { claudeSessionId } : {}),
       ...(usage !== undefined ? { usage } : {}),
       ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
+      ...(model !== undefined ? { model } : {}),
+      ...(turnCostUsd !== undefined ? { turnCostUsd } : {}),
     };
     const events = this.withSdkMessageDedupe([
       resultEvent,
