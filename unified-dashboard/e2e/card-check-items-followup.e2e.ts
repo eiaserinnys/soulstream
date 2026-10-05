@@ -139,7 +139,7 @@ test("small F: default ask uses two lines and compact keeps one", async ({ page 
     // Unrotated layout offsets avoid rotation's axis-aligned bounding boxes.
     return { compact: card.classList.contains("v3-postit-card--compact"), height: turn.offsetHeight,
       lineHeight: parseFloat(s.lineHeight), padding: parseFloat(s.paddingTop) + parseFloat(s.paddingBottom),
-      clamp: s.webkitLineClamp, bodyLines: body.offsetHeight / parseFloat(b.lineHeight),
+      clamp: s.webkitLineClamp, bodyClamp: Number(b.webkitLineClamp), bodyLines: body.offsetHeight / parseFloat(b.lineHeight),
       bodyBottom: body.offsetTop + body.offsetHeight, turnTop: turn.offsetTop,
       turnBottom: turn.offsetTop + turn.offsetHeight, footerTop: (card.querySelector(".v3-postit-footer") as HTMLElement).offsetTop,
       cardHeight: (card as HTMLElement).offsetHeight, bodyRect, turnRect };
@@ -150,8 +150,28 @@ test("small F: default ask uses two lines and compact keeps one", async ({ page 
     expect.soft(record.bodyBottom).toBeLessThanOrEqual(record.turnTop + 1);
     expect.soft(record.turnBottom).toBeLessThanOrEqual(record.footerTop);
     expect.soft(record.bodyLines).toBeCloseTo(Math.round(record.bodyLines), 0);
+    expect.soft(record.bodyClamp).toBe(record.compact ? 1 : 2);
+    expect.soft(Math.round(record.bodyLines)).toBe(record.bodyClamp);
   }
-  writeFileSync(path.join(smallOutput, "F-metrics.json"), JSON.stringify(records, null, 2));
+  await board.getByTestId("card-check-scenarios").getByRole("button", { name: "에이전트 차례 띠", exact: true }).click();
+  await expect(comparison.locator(".v3-postit-turn")).toHaveCount(0);
+  await comparison.locator(".v3-postit-body").evaluateAll(elements => elements.forEach(el => {
+    el.textContent = "요청된 카드 화면을 확인하고 있습니다. 긴 상황 글도 마지막 줄에서 말줄임되어야 합니다. ".repeat(2).slice(0, 60);
+  }));
+  const withoutTurn = await comparison.locator(".v3-postit-card").evaluateAll(cards => cards.map(card => {
+    const body = card.querySelector<HTMLElement>(".v3-postit-body")!, style = getComputedStyle(body);
+    return { compact: card.classList.contains("v3-postit-card--compact"), bodyClamp: Number(style.webkitLineClamp),
+      bodyLines: body.offsetHeight / parseFloat(style.lineHeight), bodyBottom: body.offsetTop + body.offsetHeight,
+      footerTop: (card.querySelector(".v3-postit-footer") as HTMLElement).offsetTop };
+  }));
+  await comparison.screenshot({ path: path.join(smallOutput, "F-no-ask-postits.png") });
+  for (const record of withoutTurn) {
+    expect.soft(record.bodyClamp).toBe(record.compact ? 1 : 3);
+    expect.soft(Math.round(record.bodyLines)).toBe(record.bodyClamp);
+    expect.soft(record.bodyLines).toBeCloseTo(record.bodyClamp, 0);
+    expect.soft(record.bodyBottom).toBeLessThanOrEqual(record.footerTop);
+  }
+  writeFileSync(path.join(smallOutput, "F-metrics.json"), JSON.stringify({ withTurn: records, withoutTurn }, null, 2));
   expect(errors).toEqual([]); expect(writes).toEqual([]);
 });
 

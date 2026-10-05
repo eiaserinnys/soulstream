@@ -92,8 +92,8 @@
 .v3-postit-open:has(.v3-postit-turn):not(:has(.v3-postit-summary)) .v3-postit-turn { grid-row: 4; }
 .v3-postit-turn { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; overflow: clip; overflow-clip-margin: content-box; color: var(--postit-muted); font: var(--postit-meta-font) var(--v3-font-family); white-space: normal; }
 .v3-postit-card--compact .v3-postit-turn { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The flexible body track yields whole existing text lines to the ask strip. */
-.v3-postit-open:has(.v3-postit-turn) .v3-postit-body { max-height: round(down, 100%, 1lh); }
+/* Keep the ellipsis on the last visible body line above the ask strip. */
+.v3-postit-card:not(.v3-postit-card--compact) .v3-postit-open:has(.v3-postit-turn) .v3-postit-body { -webkit-line-clamp: 2; }
 .v3-postit-card .v3-card-progress { gap: var(--postit-gap-2); font: var(--postit-meta-font) var(--v3-font-family); }
 .v3-postit-card .v3-card-progress-dots { gap: calc(var(--v3-space-1) * var(--postit-scale)); }
 .v3-postit-card .v3-card-progress-dot { width: calc(var(--v3-space-2) * var(--postit-scale)); height: calc(var(--v3-space-2) * var(--postit-scale)); }
