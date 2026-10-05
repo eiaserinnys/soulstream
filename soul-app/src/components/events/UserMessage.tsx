@@ -3,7 +3,7 @@ import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
-import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { createSessionVisualRoles, TABLET_SPACING, useTokens, type DesignTokens } from '../../theme';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
 import {
   extractMessageCaller,
@@ -298,7 +298,7 @@ function makeStyles(t: DesignTokens) {
       justifyContent: 'flex-end',
       marginLeft: t.spacing.xxxl,
       marginRight: 0,
-      marginTop: t.spacing.xxxl,
+      marginTop: Math.min(t.spacing.xxxl, TABLET_SPACING.xxl),
       marginBottom: t.spacing.lg,
     },
     manuscriptBubble: {
