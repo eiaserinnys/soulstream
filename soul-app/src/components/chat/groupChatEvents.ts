@@ -5,9 +5,7 @@ import {
   type StreamingSlotKind,
   type StreamingSlots,
 } from '../../store/chatStore';
-import { placeTurnSummaries } from './turnSummaryProjection';
-import { placeJevCandidateCaptions } from './turnSummaryProjection';
-import type { PersistentJevObservation } from './persistentJevCandidates';
+import { placeJevCandidateCaptions, placeTurnSummaries } from './turnSummaryProjection';
 
 /**
  * 채팅 본문 FlatList의 RenderItem 타입.
@@ -30,8 +28,6 @@ export type TurnSummaryRenderItem = {
 
 export type JevCandidatesRenderItem = {
   kind: 'jev-candidates';
-  event: SessionEvent;
-  observation: PersistentJevObservation;
   title: string;
   lines: string[];
   anchorEventId: number;

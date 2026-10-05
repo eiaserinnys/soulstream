@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { FlatList, Switch, Text, View } from 'react-native';
 import { useTokens } from '../theme';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { ChatInterruptButton } from '../components/chat/ChatInterruptButton';
@@ -16,6 +16,10 @@ import { GlassButton } from '../components/GlassSurface';
 import { message, sessions } from './fixtures';
 import { ReviewSection } from './ReviewSection';
 import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummaryProjection';
+import { ChatEventList } from '../components/chat/ChatEventList';
+import type { ChatRenderItem } from '../components/chat/groupChatEvents';
+import { useChatRenderItems } from '../components/chat/useChatRenderItems';
+import type { SessionEvent } from '../api/types';
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
@@ -32,6 +36,66 @@ const assignedCardPreview = formatAssignedCardContextSnapshot({
     latestReportAt: '2026-10-02T00:40:00.000Z',
   }],
 });
+
+const persistentChatEvents: SessionEvent[] = [
+  { id: '900', type: 'assistant_message', data: { text: '앞 답변입니다. 다음 세대를 준비합니다.' } },
+  { id: '901', type: 'generation_started', data: { generation: 2 } },
+  { id: '902', type: 'assistant_message', data: { text: '다음 세대의 첫 답변입니다.' } },
+  { id: '903', type: 'complete', data: { result: '응답을 마쳤습니다.', model: 'public-model', usage: { input_tokens: 100, output_tokens: 20 } } },
+  { id: '904', type: 'user_message', data: { input_id: 'public-input-1', text: '관련 자료를 찾아줘.' } },
+  { id: '905', type: 'debug', data: { kind: 'persistent_jev_candidates', observation: {
+    input_id: 'public-input-1',
+    selected: [
+      { kind: 'turn_summary', session_id: 'public-session', summary_event_id: 38, turn_number: 38, label: 'T38', line: '요약 한 줄', score: 3 },
+      { kind: 'card', card_id: 'public-card', card_number: 412, label: '#412', line: '카드 한 줄', score: 2 },
+      { kind: 'session', session_id: 'public-session-2', label: '세션 제목', line: '한 줄', score: 2 },
+    ],
+    candidate_counts: { turn_summaries: 40, cards: 20, search_sessions: 15, recent_completed_sessions: 5 },
+    model: 'jev-latest', latency_ms: 426,
+  } } },
+];
+
+function ReviewPersistentChatProjection() {
+  const t = useTokens();
+  const styles = makeStyles(t);
+  const flatListRef = useRef<FlatList<ChatRenderItem>>(null);
+  const [showGenerationSeparator, setShowGenerationSeparator] = useState(true);
+  const [showJevCandidates, setShowJevCandidates] = useState(true);
+  const { reversedItems } = useChatRenderItems({
+    events: persistentChatEvents,
+    pendingOptimistic: undefined,
+    streamingSlots: undefined,
+    sessionStatus: 'completed',
+    persistentDisplaySettings: { showGenerationSeparator, showJevCandidates },
+  });
+  return <View testID="review-persistent-chat-projection" style={styles.container}>
+    <View>
+      <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>세대 구분선 표시</Text>
+      <Switch accessibilityLabel="검수 창 세대 구분선 표시" testID="review-persistent-generation-toggle" value={showGenerationSeparator} onValueChange={setShowGenerationSeparator} />
+      <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>Jev 후보 표시</Text>
+      <Switch accessibilityLabel="검수 창 Jev 후보 표시" testID="review-persistent-jev-toggle" value={showJevCandidates} onValueChange={setShowJevCandidates} />
+    </View>
+    <ChatEventList
+      flatListRef={flatListRef}
+      items={reversedItems}
+      session={undefined}
+      sessionId="review-pas-1"
+      api={null}
+      styles={styles}
+      accentColor={t.colors.accent}
+      requestOlder={() => {}}
+      onScroll={() => {}}
+      onScrollBeginDrag={() => {}}
+      historyLoading={false}
+      reachedTop
+      hasFetchError={false}
+      retryFromError={() => {}}
+      mvcpEnabled={false}
+      onContentSizeChange={() => {}}
+    />
+  </View>;
+}
+
 export function ReviewChat() {
   const t = useTokens();
   const styles = makeStyles(t);
@@ -44,6 +108,9 @@ export function ReviewChat() {
   const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n[공개 문서](https://expo.dev)';
   const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
   return <>
+    <ReviewSection title="영구 세션 표시 · raw timeline/SSE → 묶기 → 채팅 목록">
+      <ReviewPersistentChatProjection />
+    </ReviewSection>
     <ReviewSection title="입력창 · 빈 입력·여러 줄·전송·첨부·정지·비활성">
       <SettingsSegmentedControl<typeof options[number]['value']> id="review-composer-state" value={state} onChange={setState} options={options} />
       <ChatComposer input={state === 'sending' ? '' : input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}

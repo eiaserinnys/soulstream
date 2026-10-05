@@ -21,6 +21,8 @@ import { TurnSummaryCaption } from '../events/TurnSummaryCaption';
 import { TypingIndicator } from './TypingIndicator';
 import { HistoryFetchError } from './HistoryFetchError';
 import { useTokens } from '../../theme';
+import { CollapsibleCaption, CollapsibleCaptionLine } from './CollapsibleCaption';
+import { LabeledDivider } from './LabeledDivider';
 
 // FlatList onEndReachedThreshold 시맨틱: remainingLength / viewportLength.
 // 1.0 = 끝까지 한 화면 분량이 남았을 때 미리 페치 트리거. inverted 모드에서는 위쪽(과거)
@@ -171,6 +173,18 @@ const ChatEventRow = memo(function ChatEventRow({
         <TurnSummaryCaption content={item.content} />
       </SearchFocusHighlight>
     );
+  }
+  if (item.kind === 'jev-candidates') {
+    return (
+      <SearchFocusHighlight active={highlighted}>
+        <CollapsibleCaption title={item.title}>
+          {item.lines.map((line, index) => <CollapsibleCaptionLine key={`${item.key}-${index}`}>{line}</CollapsibleCaptionLine>)}
+        </CollapsibleCaption>
+      </SearchFocusHighlight>
+    );
+  }
+  if (item.kind === 'event' && item.event.type === 'generation_started') {
+    return <SearchFocusHighlight active={highlighted}><LabeledDivider label="새 세대" /></SearchFocusHighlight>;
   }
   if (item.kind === 'tool') {
     return (

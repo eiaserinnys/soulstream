@@ -4,7 +4,9 @@ import type {
   TurnSummaryRenderItem,
 } from './groupChatEvents';
 import { formatRelativeTime } from '../../lib/relative-time';
-import { isPersistentJevCandidatesDebugEvent, persistentJevCaptionLines } from './persistentJevCandidates';
+import {
+  isPersistentJevCandidatesDebugEvent,
+} from '../../../../packages/wire-schema/src/persistent_jev_candidates';
 
 function assignedCardPreparedInputId(event: SessionEvent): string | null {
   if (event.type !== 'debug' || event.data?.kind !== 'assigned_card_context_snapshot') return null;
@@ -285,21 +287,25 @@ export function placeJevCandidateCaptions(
 
   const afterItemIndex = new Map<number, ChatRenderItem[]>();
   for (const event of events) {
-    if (!isPersistentJevCandidatesDebugEvent(event)) continue;
-    const anchorIndex = itemIndexByInputId.get(event.data.observation.input_id);
+    const debugEvent = { ...event.data, type: event.type };
+    if (!isPersistentJevCandidatesDebugEvent(debugEvent)) continue;
+    const anchorIndex = itemIndexByInputId.get(debugEvent.observation.input_id);
     if (anchorIndex === undefined) continue;
     const anchor = baseItems[anchorIndex];
     if (!anchor || anchor.kind !== 'event') continue;
     const anchorEventId = positiveEventId(anchor.event.id);
     if (anchorEventId === null) continue;
 
-    const observation = event.data.observation;
+    const observation = debugEvent.observation;
+    const lines = observation.selected.length === 0
+      ? ['2점 이상인 후보가 없습니다.']
+      : observation.selected.map((candidate) =>
+        `${candidate.label} · ${candidate.line} · ${candidate.score}/3`.replace(/\s+/g, ' ').trim(),
+      );
     const item: ChatRenderItem = {
       kind: 'jev-candidates',
-      event,
-      observation,
       title: `Jev 후보 ${observation.selected.length}`,
-      lines: persistentJevCaptionLines(observation),
+      lines,
       anchorEventId,
       key: `jev-candidates-${event.id}`,
     };

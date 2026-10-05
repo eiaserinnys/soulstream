@@ -20,6 +20,7 @@
 !/packages/wire-schema/src
 /packages/wire-schema/src/*
 !/packages/wire-schema/src/card_colors.ts
+!/packages/wire-schema/src/persistent_jev_candidates.ts
 
 # .easignore replaces all .gitignore files, including soul-app/.gitignore.
 node_modules/

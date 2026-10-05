@@ -40,7 +40,7 @@ export interface PersistentSessionCreateDefaults {
   unavailable_reason: string | null;
 }
 
-/** Partial settings the server accepts on PUT. This app sends only the default model; omitted keys keep their stored values. */
+/** Partial settings the server accepts on PUT; omitted keys keep their stored values. */
 export interface PersistentSessionSettingsPatch {
   default_model?: PersistentSessionModelWrite;
   fallback_model?: PersistentSessionModelWrite | null;
@@ -49,7 +49,7 @@ export interface PersistentSessionSettingsPatch {
   show_jev_candidates?: boolean;
 }
 
-/** Only the default model is sent from this app; omitted settings keep their stored values. */
+/** Model fields used when changing the default model. */
 export interface PersistentSessionModelWrite {
   model_preset: string;
   reasoning_effort: string | null;

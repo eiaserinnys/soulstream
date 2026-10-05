@@ -863,16 +863,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const { [sessionId]: _o, ...restOpt } = state.pendingOptimisticBySession;
       const { [sessionId]: _s, ...restStreamingSlots } = state.streamingSlotsBySession;
       const { [sessionId]: _r, ...restRuntime } = state.claudeRuntimeBySession;
-      const persistentDisplaySettings = state.persistentDisplaySettings?.sessionId === sessionId
-        ? null
-        : state.persistentDisplaySettings;
       return {
         eventsBySession: restEvents,
         lastEventIdBySession: restIds,
         pendingOptimisticBySession: restOpt,
         streamingSlotsBySession: restStreamingSlots,
         claudeRuntimeBySession: restRuntime,
-        persistentDisplaySettings,
       };
     });
   },

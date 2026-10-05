@@ -65,3 +65,5 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 | 27. 앱 완료 푸시 | `orch-server-ts/src/node/event_ingress_controller.ts:NodeEventIngressController.process` (L117–143), `production.ts` additional sink (L356–360), `push/push_notifier.ts:PushNotifier.handleEvent` (L117–137), `handleSessionEnded`, `runtime/live_db_catalog_repository.ts:loadSessionReviewState` | 적용된 `session_ended`가 PushNotifier에 전달된다. `loadSessionReviewState`가 DB `sessions.review_required`와 `session_type`을 한 번 조회해 완료 자격과 LLM 제외를 판정한다. 세션 캐시는 본문·호출자·폴더 등 부가 정보에만 쓰며 seed 도착 순서가 완료 자격에 영향을 주지 않는다. | DB에 세션 행이 없거나 `review_required=false`면 사유를 `pushNotification action=suppressed`로 기록한다. DB 조회 실패는 기존 notifier 경고를 남긴다. llm, 미지원 status, 오래된/중복 이벤트, 제외 폴더는 기존대로 건너뛴다. 입력 대기 알림은 별도 caller-source 정책을 유지한다. |
 
 이 장을 갱신해야 하는 변경 부류: intervene 진입·delivery admission/route·auto-resume·runner spawn·context 주입·turn loop·runtime follow-up receipt·terminal persistence/projection·completion notification 변경.
+
+앱의 `timeline` REST와 SSE는 원본 이벤트를 `groupChatEvents`로 투영한 뒤, 현재 PAS 채팅의 단건 설정 응답에 따라 세대 구분선과 Jev 후보 캡션을 표시한다.

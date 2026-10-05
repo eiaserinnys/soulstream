@@ -13,6 +13,7 @@ import { SettingsScreen } from '../../../screens/SettingsScreen';
 import { useAuthStore } from '../../../store/authStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useSettingsStore } from '../../../store/settingsStore';
+import { useChatStore } from '../../../store/chatStore';
 
 const resource = (over: Record<string, unknown> = {}) => ({
   session_id: 'pas-1', display_name: '관제 세션', node_id: 'node-a', folder_id: 'folder-a', agent_id: 'agent-a', agent_name: '에이전트 A', persistent: true,
@@ -49,6 +50,7 @@ beforeEach(() => {
     { id: 'model-down', label: '모델 C', backend: 'codex', available: false, reason: 'limit', reason_label: '사용량 한도', resets_at: null, usage_warning: false },
   ] });
   useAuthStore.setState({ jwt: null });
+  useChatStore.getState().clearPersistentDisplaySettings();
   useSettingsStore.setState({ serverUrl: 'https://soul.test' });
   useSessionStore.setState({ catalog: { folders: [{ id: 'folder-a', name: '폴더 A' }], sessions: {} } as never });
 });
@@ -82,7 +84,7 @@ test('lists every registered session, edits name and model, saves from the foote
   fireEvent.press(await screen.findByText('모델 B'));
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
-    display_name: '새 이름', settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'high' } },
+    display_name: '새 이름', settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'high' }, show_generation_separator: false, show_jev_candidates: false },
   }));
   await waitFor(() => expect(screen.queryByTestId('persistent-session-editor')).toBeNull());
   expect(screen.queryByTestId('settings-active-footer')).toBeNull();
@@ -97,7 +99,7 @@ test('keeps the recorded reasoning effort when the model choice is unchanged', a
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름만 변경');
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
-    display_name: '이름만 변경', settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'low' } },
+    display_name: '이름만 변경', settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'low' }, show_generation_separator: false, show_jev_candidates: false },
   }));
 });
 
@@ -125,8 +127,27 @@ test('an unavailable model is not selected and the reason is shown; the name can
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름');
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', expect.objectContaining({
-    settings: { default_model: { model_preset: 'model-a', reasoning_effort: null } },
+    settings: { default_model: { model_preset: 'model-a', reasoning_effort: null }, show_generation_separator: false, show_jev_candidates: false },
   })));
+});
+
+test('saves both chat display toggles and applies the response to the matching open chat', async () => {
+  api.updatePersistentSession.mockImplementation(async (_id: string, input: any) => ({
+    session: resource({ settings: { ...resource().settings, ...input.settings } }), model_change: 'none',
+  }));
+  const screen = await openList();
+  await openEditor(screen);
+  await waitFor(() => expect(screen.getByTestId('persistent-show-generation-separator')).toBeTruthy());
+  useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
+  fireEvent(screen.getByTestId('persistent-show-generation-separator'), 'valueChange', true);
+  fireEvent(screen.getByTestId('persistent-show-jev-candidates'), 'valueChange', true);
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', expect.objectContaining({
+    settings: expect.objectContaining({ show_generation_separator: true, show_jev_candidates: true }),
+  })));
+  await waitFor(() => expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
+    show_generation_separator: true, show_jev_candidates: true,
+  }));
 });
 
 test('keeps the input and shows a partial-save notice when a save fails after the server started', async () => {
