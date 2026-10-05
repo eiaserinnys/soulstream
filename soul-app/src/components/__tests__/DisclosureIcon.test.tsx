@@ -1,5 +1,6 @@
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
-import { AppState, StyleSheet, Text } from 'react-native';
+import { AppState } from 'react-native';
 import { render } from '@testing-library/react-native';
 import { DARK_COLORS } from '../../theme/tokens';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -19,24 +20,22 @@ describe('DisclosureIcon', () => {
     const screen = render(
       <DisclosureIcon expanded color="#8a8f98" tone="disabled" size={18} />,
     );
-    expect(StyleSheet.flatten(screen.UNSAFE_getByType(Text).props.style)).toMatchObject({
-      color: '#8a8f98',
-      fontSize: 18,
-      lineHeight: 18,
+    expect(screen.UNSAFE_getByType('Ionicons' as any).props).toMatchObject({
+      name: 'chevron-up', color: '#8a8f98', size: 18,
     });
     expect(addEventListener).not.toHaveBeenCalled();
   });
 
   test('color 미지정이면 tone, tone도 없으면 tertiary를 쓴다', () => {
     const toned = render(<DisclosureIcon expanded={false} tone="disabled" />);
-    expect(StyleSheet.flatten(toned.UNSAFE_getByType(Text).props.style).color).toBe(
-      DARK_COLORS.textDisabled,
-    );
+    expect(toned.UNSAFE_getByType('Ionicons' as any).props).toMatchObject({
+      name: 'chevron-down', color: DARK_COLORS.textDisabled,
+    });
     toned.unmount();
 
     const defaulted = render(<DisclosureIcon expanded />);
-    expect(StyleSheet.flatten(defaulted.UNSAFE_getByType(Text).props.style).color).toBe(
-      DARK_COLORS.textTertiary,
-    );
+    expect(defaulted.UNSAFE_getByType('Ionicons' as any).props).toMatchObject({
+      name: 'chevron-up', color: DARK_COLORS.textTertiary,
+    });
   });
 });
