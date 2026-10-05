@@ -164,6 +164,42 @@ describe("SessionMutationHostClient", () => {
     )).resolves.toBe("acknowledged");
   });
 
+  it("sends all model-selection fields and the idempotency key to the host boundary", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("null", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionMutationHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+
+    await client.setModelSelection(
+      "session-a",
+      {
+        modelPreset: "codex-balanced",
+        model: "gpt-5-codex",
+        reasoningEffort: "high",
+      },
+      "model-selection-session-a-1",
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "http://orchestrator.test/api/session-data/host/set_model_selection",
+    );
+    expect(JSON.parse(String(init.body))).toEqual({
+      args: [{
+        sessionId: "session-a",
+        modelPreset: "codex-balanced",
+        model: "gpt-5-codex",
+        reasoningEffort: "high",
+        idempotencyKey: "model-selection-session-a-1",
+      }],
+    });
+  });
+
   it("surfaces host rejection without a detached promise", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
       JSON.stringify({ detail: { error: {

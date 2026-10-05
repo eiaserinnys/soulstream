@@ -1,8 +1,86 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { EventPersistence } from "../../src/db/event_persistence.js";
+import type { ModelCatalog } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
 import { PersistentSessionControl } from "../../src/task/persistent_session_control.js";
+
+const firstCall = {
+  generation: 1,
+  inputTokens: 246708,
+  cachedInputTokens: 245563,
+  modelPreset: "claude-preset",
+  model: "claude-opus-4-6",
+  measuredAt: "2026-10-05T09:00:00.000Z",
+};
+
+function makeRolloverControl(
+  task: Task,
+  options: { persistent?: EventPersistence; presets?: Record<string, Record<string, unknown>> } = {},
+) {
+  const persistedEntries: Array<Record<string, unknown>> = [];
+  const enqueueMetadataEffect = vi.fn(async (_sessionId: string, entry: Record<string, unknown>) => {
+    persistedEntries.push(entry);
+    return 42;
+  });
+  const presets = options.presets ?? {
+    "claude-preset": {
+      id: "claude-preset",
+      model: "claude-opus-4-6",
+      backend: "claude",
+      env: {},
+      supported_efforts: ["low", "medium", "high"],
+      default_effort: "medium",
+    },
+    "codex-preset": {
+      id: "codex-preset",
+      model: "gpt-5-codex",
+      backend: "codex",
+      env: {},
+      supported_efforts: ["low", "medium", "high"],
+      default_effort: "medium",
+    },
+    "agents-preset": {
+      id: "agents-preset",
+      model: "gpt-5",
+      backend: "openai-agents",
+      env: {},
+      supported_efforts: ["low", "medium", "high"],
+      default_effort: "medium",
+    },
+  };
+  const modelCatalog = {
+    resolve: vi.fn((presetId: string) => presets[presetId]),
+  } as unknown as Pick<ModelCatalog, "resolve">;
+  const persistence = options.persistent ?? { enqueueMetadataEffect } as unknown as EventPersistence;
+  const control = new PersistentSessionControl({
+    getTask: vi.fn((sessionId) => sessionId === task.agentSessionId ? task : undefined),
+    loadEvictedTask: vi.fn(),
+    rememberTask: vi.fn(),
+    persistence,
+    modelCatalog,
+    resolveCurrentBackend: (candidate) => candidate.modelPresetBackend
+      ?? (candidate.modelPreset ? modelCatalog.resolve(candidate.modelPreset).backend : undefined),
+  });
+  return { control, enqueueMetadataEffect, persistedEntries, modelCatalog };
+}
+
+function makeRolloverTask(overrides: Partial<Task> = {}): Task {
+  return {
+    agentSessionId: "session-generation",
+    sessionType: "claude",
+    status: "running",
+    persistent: true,
+    metadata: [{ type: "persistent_session", value: { enabled: true } }],
+    modelPreset: "claude-preset",
+    modelPresetBackend: "claude",
+    model: "claude-opus-4-6",
+    reasoningEffort: "medium",
+    codexThreadId: "native-current",
+    persistentGeneration: { number: 1, firstCall },
+    ...overrides,
+  } as Task;
+}
 
 describe("PersistentSessionControl", () => {
   it("durably replaces the marker before updating the in-memory Task", async () => {
@@ -46,5 +124,137 @@ describe("PersistentSessionControl", () => {
     await control.setSessionPersistent(task.agentSessionId, false);
     expect(task.persistent).toBe(false);
     expect(task.metadata?.filter((entry) => entry.type === "persistent_session")).toHaveLength(1);
+  });
+
+  it("records a pending generation and keeps the last first-call measurement", async () => {
+    const task = makeRolloverTask();
+    const { control, enqueueMetadataEffect, persistedEntries } = makeRolloverControl(task);
+
+    await expect(control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-preset",
+      reasoningEffort: "high",
+      reason: "manual",
+    })).resolves.toMatchObject({
+      sessionId: task.agentSessionId,
+      generation: 1,
+      pendingGeneration: 2,
+      sessionStatus: "running",
+      applies: "next_execution_start",
+    });
+
+    expect(enqueueMetadataEffect).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({
+        type: "persistent_generation",
+        value: expect.objectContaining({
+          number: 1,
+          first_call: {
+            generation: 1,
+            input_tokens: 246708,
+            cached_input_tokens: 245563,
+            model_preset: "claude-preset",
+            model: "claude-opus-4-6",
+            measured_at: "2026-10-05T09:00:00.000Z",
+          },
+          pending: expect.objectContaining({
+            number: 2,
+            reason: "manual",
+            target_model_preset: "codex-preset",
+            target_reasoning_effort: "high",
+          }),
+        }),
+      }),
+      { replaceExistingType: "persistent_generation", waitForAck: true },
+    );
+    expect(persistedEntries).toHaveLength(1);
+    expect(task.persistentGeneration).toMatchObject({
+      number: 1,
+      firstCall,
+      pending: {
+        number: 2,
+        targetModelPreset: "codex-preset",
+        targetReasoningEffort: "high",
+      },
+    });
+    expect(task.metadata?.some((entry) => entry.type === "persistent_session")).toBe(true);
+  });
+
+  it("overwrites a queued target with the newest request", async () => {
+    const task = makeRolloverTask({
+      persistentGeneration: {
+        number: 3,
+        firstCall,
+        pending: {
+          number: 4,
+          reason: "old request",
+          requestedAt: "2026-10-04T09:00:00.000Z",
+          targetModelPreset: "claude-preset",
+          targetReasoningEffort: "low",
+        },
+      },
+    } as Partial<Task>);
+    const { control } = makeRolloverControl(task);
+
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-preset",
+      reasoningEffort: "high",
+      reason: "replacement request",
+    });
+
+    expect(task.persistentGeneration).toMatchObject({
+      number: 3,
+      firstCall,
+      pending: {
+        number: 4,
+        reason: "replacement request",
+        targetModelPreset: "codex-preset",
+        targetReasoningEffort: "high",
+      },
+    });
+  });
+
+  it("preserves applying_from while replacing an in-flight target", async () => {
+    const task = makeRolloverTask({
+      persistentGeneration: {
+        number: 3,
+        firstCall,
+        pending: {
+          number: 4,
+          reason: "old request",
+          requestedAt: "2026-10-04T09:00:00.000Z",
+          targetModelPreset: "claude-preset",
+          targetReasoningEffort: "low",
+          applyingFrom: "native-current",
+        },
+      },
+    } as Partial<Task>);
+    const { control } = makeRolloverControl(task);
+
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-preset",
+      reasoningEffort: "high",
+      reason: "replacement request",
+    });
+
+    expect(task.persistentGeneration?.pending).toMatchObject({
+      number: 4,
+      targetModelPreset: "codex-preset",
+      targetReasoningEffort: "high",
+      applyingFrom: "native-current",
+    });
+  });
+
+  it.each([
+    ["current", "claude-preset", "openai-agents"],
+    ["target", "agents-preset", "claude"],
+  ] as const)("rejects an unsupported %s backend before writing metadata", async (_where, targetPreset, currentBackend) => {
+    const task = makeRolloverTask({ modelPresetBackend: currentBackend as never });
+    const { control, enqueueMetadataEffect } = makeRolloverControl(task);
+
+    await expect(control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: targetPreset,
+      reason: "manual",
+    })).rejects.toThrow();
+    expect(enqueueMetadataEffect).not.toHaveBeenCalled();
   });
 });

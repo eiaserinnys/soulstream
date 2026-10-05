@@ -17,6 +17,43 @@ describe("SessionMutationRepository", () => {
       callerSessionId:null,predecessorSessionId:null,cardId:'card-a'});
     expect(calls.find(c=>c.text.includes('UPDATE sessions SET card_id'))?.values).toEqual(['card-a','session-card']);
   });
+
+  it("updates the three model-selection columns once for an idempotent retry", async () => {
+    let receipt: Record<string, unknown> | undefined;
+    const { sql, calls } = fakeSql((text, values) => {
+      if (text.includes("FROM session_mutation_receipts")) return receipt ? [receipt] : [];
+      if (text.includes("INSERT INTO session_mutation_receipts")) {
+        receipt = {
+          operation: values[1],
+          session_id: values[2],
+          request_hash: values[3],
+          result_json: values[4],
+        };
+      }
+      return [];
+    });
+    const repository = new SessionMutationRepository(sql);
+    const input = {
+      idempotencyKey: "model-selection-1",
+      sessionId: "session-model-selection",
+      modelPreset: "codex-balanced",
+      model: "gpt-5-codex",
+      reasoningEffort: "high",
+    };
+
+    await repository.setModelSelection(input);
+    await repository.setModelSelection(input);
+
+    const update = calls.filter((call) => call.text.includes("UPDATE sessions SET model_preset"));
+    expect(update).toHaveLength(1);
+    expect(update[0]?.values).toEqual([
+      "codex-balanced",
+      "gpt-5-codex",
+      "high",
+      "session-model-selection",
+    ]);
+  });
+
   it("routes idempotent delete_session through canonical Y.Doc deletion", async () => {
     const { sql, calls } = fakeSql(() => []);
     const deleteSession = vi.fn().mockResolvedValue(undefined);
