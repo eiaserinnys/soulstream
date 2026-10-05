@@ -49,6 +49,11 @@ export function composeFirstTurnPrompt(ctx: PreparedContext): string {
   return parts.join("\n\n");
 }
 
+/** 프로필 `context_scope`가 "minimal"인지. 최소 주입 판정은 이 함수 한 곳에서만 한다. */
+export function isMinimalContextScope(agent: AgentProfile): boolean {
+  return agent.context_scope === "minimal";
+}
+
 export function composeEffectiveSystemPrompt(args: {
   agentAtomMarkdown: string | null;
   folderPrompt?: string;

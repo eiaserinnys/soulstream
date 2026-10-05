@@ -2056,3 +2056,211 @@ describe("generation checkpoint context", () => {
 });
 
 const ownSessionIdForContextTest = "4f795856-a9bf-4ae2-8adb-2e8ea15f9951";
+
+describe("ExecutionContextBuilder — context_scope minimal", () => {
+  const FOLDER_ATOM = "11111111-2222-3333-4444-555555555555";
+  const AGENT_ATOM = "22222222-3333-4444-5555-666666666666";
+  const SESSION_ATOM = "33333333-4444-5555-6666-777777777777";
+  const FIVE_BLOCKS = [
+    "page_context",
+    "board_workspace",
+    "running_sessions",
+    "cogito_context",
+    "atom_context",
+  ];
+  const originalFetch = globalThis.fetch;
+  let fetchedUrls: string[];
+
+  beforeEach(() => {
+    fetchedUrls = [];
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input);
+      fetchedUrls.push(url);
+      const treeMatch = /\/api\/tree\/([^/]+)\/compile/.exec(url);
+      if (treeMatch) {
+        return new Response(JSON.stringify({ markdown: `# atom ${treeMatch[1]}` }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        status: "ok",
+        checked_at: "2026-07-13T00:00:00Z",
+        nodes: [],
+        warnings: [],
+      }), { status: 200 });
+    }) as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  function makeScopeFixture(contextScope?: "full" | "minimal") {
+    const folderSettings = {
+      folderPrompt: "legacy folder prompt",
+      atomContextNode: { nodeId: FOLDER_ATOM, depth: 2 },
+    };
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [{
+        session_id: "other",
+        display_name: "Other",
+        node_id: "node-B",
+        folder_id: null,
+        folder_name: null,
+        updated_at: new Date("2026-07-13T00:00:00Z"),
+      }],
+      total: 1,
+    });
+    const resolve = vi.fn().mockResolvedValue({
+      kind: "page-context",
+      contextItem: {
+        key: "page_context",
+        content: { items: [{ category: "guidance", text: "page guidance" }] },
+      },
+      contextManifest: emptyPageContextManifest(),
+      atomNodeIds: [],
+    });
+    const agent: AgentProfile = {
+      ...codexAgent,
+      ...(contextScope ? { context_scope: contextScope } : {}),
+      atom_contexts: [{ node_id: AGENT_ATOM, depth: 2, titles_only: false }],
+    };
+    const db = {
+      getSession: vi.fn().mockResolvedValue({ folder_id: "folder-1" }),
+      getFolderById: vi.fn().mockResolvedValue({
+        id: "folder-1",
+        name: "Legacy Folder",
+        sort_order: 0,
+        settings: folderSettings,
+      }),
+      getCatalog: vi.fn().mockResolvedValue({
+        folders: [{
+          id: "folder-1",
+          name: "Legacy Folder",
+          sortOrder: 0,
+          parentFolderId: null,
+          settings: folderSettings,
+        }],
+        sessions: {},
+      }),
+      listRunningSessionsSummary,
+      getPrimarySessionBoardItem: vi.fn().mockResolvedValue({
+        id: "session:sess-1",
+        folderId: "folder-1",
+        membershipKind: "primary",
+        cardId: "item-1",
+        itemType: "session",
+        itemId: "sess-1",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }),
+      getGenerationCheckpointMaterial: vi.fn().mockResolvedValue({
+        story: {
+          highlight: null,
+          narrative: "줄거리",
+          unfoldedTurnSummaries: [],
+          narrativeThroughEventId: null,
+          foldCount: 0,
+          updatedAt: null,
+        },
+        lastSummarizedFinalResponseEventId: null,
+        recent: { records: [], omittedUnsummarized: 0 },
+        childSessions: [],
+        childSessionTotal: 0,
+        totals: { events: 0, turnSummaries: 0 },
+      }),
+      getSupervisedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-05T00:00:00.000Z",
+        counts: { running: 0, blocked: 0, review: 0, queued: 0, todo: 0 },
+        cards: [],
+        openQuestions: [],
+        openQuestionTotal: 0,
+      }),
+    } as unknown as Partial<SessionDB>;
+    const builder = makeBuilder(
+      db,
+      new AgentRegistry([agent]),
+      true,
+      makeCogitoConfig(),
+      { resolve },
+    );
+    const task = makeTask({
+      systemPrompt: "task system",
+      contextItems: [
+        {
+          key: "atom_context_sources",
+          content: { nodes: [{ node_id: SESSION_ATOM, depth: 3, titles_only: false }] },
+        },
+        { key: "delegator_note", label: "위임자 자료", content: "위임자가 직접 준 자료" },
+      ],
+    });
+    return { agent, builder, task, resolve, listRunningSessionsSummary };
+  }
+
+  it("minimal drops the five folder-inherited blocks on the first turn and keeps the rest", async () => {
+    const full = makeScopeFixture();
+    const fullKeys = (await full.builder.build(full.task, full.agent))
+      .combinedContextItems.map((item) => item.key);
+    for (const key of FIVE_BLOCKS) expect(fullKeys).toContain(key);
+    fetchedUrls = [];
+
+    const minimal = makeScopeFixture("minimal");
+    const ctx = await minimal.builder.build(minimal.task, minimal.agent);
+    const soulstream = ctx.combinedContextItems[0]?.content as Record<string, unknown>;
+
+    expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
+      "soulstream_session",
+      "session_atom_context",
+      "delegator_note",
+      "assigned_cards",
+    ]);
+    expect(ctx.combinedContextItems[1]?.content).toContain(`# atom ${SESSION_ATOM}`);
+    expect(soulstream.folder).toEqual({ id: "folder-1", title: "Legacy Folder" });
+    expect(ctx.folderName).toBe("Legacy Folder");
+    expect(ctx.effectiveSystemPrompt).toContain(`# atom ${AGENT_ATOM}`);
+    expect(ctx.effectiveSystemPrompt).toContain("legacy folder prompt");
+    expect(ctx.effectiveSystemPrompt).toContain("task system");
+    expect(minimal.resolve).not.toHaveBeenCalled();
+    expect(fetchedUrls.filter((url) => !url.includes("/api/tree/"))).toEqual([]);
+    expect(fetchedUrls.some((url) => url.includes(FOLDER_ATOM))).toBe(false);
+  });
+
+  it("minimal generation context drops the five blocks and keeps the checkpoint", async () => {
+    const { agent, builder, task } = makeScopeFixture("minimal");
+
+    const ctx = await builder.buildGenerationContext(task, agent, "generation-input");
+    const keys = ctx.combinedContextItems.map((item) => item.key);
+
+    expect(keys).toEqual([
+      "soulstream_session",
+      "persistent_checkpoint",
+      "session_atom_context",
+      "delegator_note",
+      "assigned_cards",
+    ]);
+    expect(ctx.effectiveSystemPrompt).toContain("legacy folder prompt");
+  });
+
+  it("minimal follow-up turns skip running_sessions but keep deltas and assigned_cards", async () => {
+    const { agent, builder, task, listRunningSessionsSummary } = makeScopeFixture("minimal");
+
+    const followup = await builder.buildFollowupContext(
+      { ...task, codexThreadId: "claude-session-1" },
+      agent,
+      {
+        includeClaudeSessionIdUpdate: true,
+        previousCallerInfo: { source: "browser", display_name: "Alice" },
+        currentCallerInfo: { source: "agent", display_name: "서소영", agent_id: "seosoyoung" },
+      },
+    );
+    expect(followup.contextItems.map((item) => item.key)).toEqual([
+      "claude_session_id_update",
+      "caller_info_update",
+      "assigned_cards",
+    ]);
+    expect(listRunningSessionsSummary).not.toHaveBeenCalled();
+
+    const fullContext = await builder.buildFollowupContext(task, agent, { includeFullContext: true });
+    const keys = fullContext.contextItems.map((item) => item.key);
+    for (const key of FIVE_BLOCKS) expect(keys).not.toContain(key);
+    expect(keys).toContain("assigned_cards");
+  });
+});

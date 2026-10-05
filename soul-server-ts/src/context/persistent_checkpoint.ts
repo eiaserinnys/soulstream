@@ -282,7 +282,7 @@ function buildInstructionsSection(instructions: string[], tokenLimit: number): s
   const text = instructions.map((instruction) => instruction.trim()).filter(Boolean).join("\n");
   if (!text) return "";
   return joinLines([
-    "## 지속 지침",
+    "## 지속 지시",
     truncateClaudeTextToEstimatedTokens(text, tokenLimit, "persistent_checkpoint_instructions"),
   ]);
 }
