@@ -113,6 +113,10 @@ export function ChatBody({
   const clearStreamingEvent = useChatStore((s) => s.clearStreamingEvent);
   const clearStreamingEvents = useChatStore((s) => s.clearStreamingEvents);
   const clearSession = useChatStore((s) => s.clearSession);
+  const persistentDisplaySettings = useChatStore((s) => s.persistentDisplaySettings);
+  const beginPersistentDisplaySettingsLoad = useChatStore((s) => s.beginPersistentDisplaySettingsLoad);
+  const finishPersistentDisplaySettingsLoad = useChatStore((s) => s.finishPersistentDisplaySettingsLoad);
+  const clearPersistentDisplaySettings = useChatStore((s) => s.clearPersistentDisplaySettings);
   const applyClaudeRuntimeEvent = useChatStore((s) => s.applyClaudeRuntimeEvent);
 
   const session = useSessionStore((s) =>
@@ -171,6 +175,26 @@ export function ChatBody({
     () => (serverUrl ? createApiClient(serverUrl, { authScope }) : null),
     [authScope, serverUrl]
   );
+
+  useEffect(() => {
+    if (!sessionId || !detailedNetworkActive || !api) {
+      clearPersistentDisplaySettings(sessionId);
+      return;
+    }
+    let active = true;
+    const requestId = beginPersistentDisplaySettingsLoad(sessionId);
+    void api.getPersistentSession(sessionId).then(({ session: persistentSession }) => {
+      if (!active) return;
+      const settings = persistentSession.persistent ? {
+        show_generation_separator: persistentSession.settings.show_generation_separator === true,
+        show_jev_candidates: persistentSession.settings.show_jev_candidates === true,
+      } : null;
+      finishPersistentDisplaySettingsLoad(sessionId, requestId, settings);
+    }).catch(() => {
+      if (active) finishPersistentDisplaySettingsLoad(sessionId, requestId, null);
+    });
+    return () => { active = false; };
+  }, [api, beginPersistentDisplaySettingsLoad, clearPersistentDisplaySettings, detailedNetworkActive, finishPersistentDisplaySettingsLoad, sessionId]);
   useEnsureSessionCached(api, sessionId);
 
   const commitPendingSnapshotBaseline = useCallback(
@@ -304,11 +328,18 @@ export function ChatBody({
     streamFailureRef: detailStreamFailureRef,
   });
 
+  const displaySettings = persistentDisplaySettings && persistentDisplaySettings.sessionId === sessionId
+    ? persistentDisplaySettings.settings
+    : undefined;
   const { reversedItems, bottomFollowItemKey } = useChatRenderItems({
     events,
     pendingOptimistic,
     streamingSlots,
     sessionStatus: session?.status,
+    persistentDisplaySettings: displaySettings ? {
+      showGenerationSeparator: displaySettings.show_generation_separator,
+      showJevCandidates: displaySettings.show_jev_candidates,
+    } : undefined,
   });
   const focusEventIndex = focusEventId == null
     ? -1

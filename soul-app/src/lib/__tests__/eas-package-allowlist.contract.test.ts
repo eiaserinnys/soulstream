@@ -29,13 +29,38 @@ test('every shared package source imported by soul-app is allowed by .easignore'
       .split(/\r?\n/)
       .map((line) => line.trim()),
   );
-  const missing = [...packageFiles]
-    .filter((file) => !allowedLines.has(`!/${file}`))
-    .sort();
+  assertPackageFilesAllowed(packageFiles, allowedLines);
+});
 
-  if (missing.length > 0) {
-    throw new Error(missing.map((file) => `Missing ${file}; add !/${file}`).join('\n'));
-  }
+test('skips type-only imports and re-exports', () => {
+  const importer = path.join(appSourceRoot, 'lib', '__tests__', 'fixture.ts');
+  const packageSpecifier = path.relative(
+    path.dirname(importer),
+    path.join(packagesRoot, 'wire-schema', 'src', 'persistent_jev_candidates.ts'),
+  ).split(path.sep).join('/');
+  const sourceText = [
+    `import type { PersistentJevCandidatesDebugEvent } from '${packageSpecifier}';`,
+    `export type { PersistentJevCandidatesDebugEvent } from '${packageSpecifier}';`,
+  ].join('\n');
+
+  expect(moduleSpecifiers(importer, sourceText)).toEqual([]);
+});
+
+test('value imports still fail when their package source has no allowlist entry', () => {
+  const importer = path.join(appSourceRoot, 'lib', '__tests__', 'fixture.ts');
+  const packageSource = path.join(packagesRoot, 'wire-schema', 'src', 'persistent_jev_candidates.ts');
+  const packageSpecifier = path.relative(path.dirname(importer), packageSource)
+    .split(path.sep).join('/');
+  const sourceText = `import { isPersistentJevCandidatesDebugEvent } from '${packageSpecifier}';`;
+  const importedFiles = moduleSpecifiers(importer, sourceText)
+    .map((specifier) => resolveRelativePackageImport(importer, specifier))
+    .filter((file): file is string => file !== null)
+    .map((file) => relativePosix(repoRoot, file));
+
+  expect(importedFiles).toEqual(['packages/wire-schema/src/persistent_jev_candidates.ts']);
+  expect(() => assertPackageFilesAllowed(new Set(importedFiles), new Set())).toThrow(
+    'Missing packages/wire-schema/src/persistent_jev_candidates.ts; add !/packages/wire-schema/src/persistent_jev_candidates.ts',
+  );
 });
 
 function sourceFilesUnder(directory: string): string[] {
@@ -46,8 +71,7 @@ function sourceFilesUnder(directory: string): string[] {
   });
 }
 
-function moduleSpecifiers(filePath: string): string[] {
-  const sourceText = fs.readFileSync(filePath, 'utf8');
+function moduleSpecifiers(filePath: string, sourceText = fs.readFileSync(filePath, 'utf8')): string[] {
   const sourceFile = ts.createSourceFile(
     filePath,
     sourceText,
@@ -61,15 +85,16 @@ function moduleSpecifiers(filePath: string): string[] {
     if (node && ts.isStringLiteralLike(node)) result.push(node.text);
   };
   const visit = (node: ts.Node) => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+    if (ts.isImportDeclaration(node) && !isTypeOnlyImport(node)) {
+      addStringLiteral(node.moduleSpecifier);
+    } else if (ts.isExportDeclaration(node) && !isTypeOnlyExport(node)) {
       addStringLiteral(node.moduleSpecifier);
     } else if (
       ts.isImportEqualsDeclaration(node)
+      && !node.isTypeOnly
       && ts.isExternalModuleReference(node.moduleReference)
     ) {
       addStringLiteral(node.moduleReference.expression);
-    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
-      addStringLiteral(node.argument.literal);
     } else if (ts.isCallExpression(node)) {
       const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
       const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
@@ -80,6 +105,35 @@ function moduleSpecifiers(filePath: string): string[] {
 
   visit(sourceFile);
   return result;
+}
+
+function isTypeOnlyImport(node: ts.ImportDeclaration): boolean {
+  const clause = node.importClause;
+  return clause?.isTypeOnly === true || (
+    clause?.name === undefined
+    && clause?.namedBindings !== undefined
+    && ts.isNamedImports(clause.namedBindings)
+    && clause.namedBindings.elements.length > 0
+    && clause.namedBindings.elements.every((element) => element.isTypeOnly)
+  );
+}
+
+function isTypeOnlyExport(node: ts.ExportDeclaration): boolean {
+  return node.isTypeOnly || (
+    node.exportClause !== undefined
+    && ts.isNamedExports(node.exportClause)
+    && node.exportClause.elements.length > 0
+    && node.exportClause.elements.every((element) => element.isTypeOnly)
+  );
+}
+
+function assertPackageFilesAllowed(packageFiles: Iterable<string>, allowedLines: ReadonlySet<string>): void {
+  const missing = [...packageFiles]
+    .filter((file) => !allowedLines.has(`!/${file}`))
+    .sort();
+  if (missing.length > 0) {
+    throw new Error(missing.map((file) => `Missing ${file}; add !/${file}`).join('\n'));
+  }
 }
 
 function resolveRelativePackageImport(importer: string, specifier: string): string | null {

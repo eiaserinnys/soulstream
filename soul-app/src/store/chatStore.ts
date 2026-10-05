@@ -41,6 +41,17 @@ export interface PendingOptimisticEvent extends SessionEvent {
 }
 
 export type StreamingSlotKind = 'assistant' | 'thinking';
+export type PersistentChatDisplaySettings = {
+  show_generation_separator: boolean;
+  show_jev_candidates: boolean;
+};
+
+type PersistentDisplaySettingsState = {
+  sessionId: string;
+  settings: PersistentChatDisplaySettings | null;
+  requestId: number;
+};
+
 export interface StreamingSlots {
   /** Legacy/unidentified stream. New v2 events use assistantByStream. */
   assistant?: SessionEvent;
@@ -109,6 +120,19 @@ export function pickOptimisticVariant(
 }
 
 interface ChatStore {
+  persistentDisplaySettings: PersistentDisplaySettingsState | null;
+  persistentDisplaySettingsRequestId: number;
+  beginPersistentDisplaySettingsLoad: (sessionId: string) => number;
+  finishPersistentDisplaySettingsLoad: (
+    sessionId: string,
+    requestId: number,
+    settings: PersistentChatDisplaySettings | null,
+  ) => void;
+  applyPersistentDisplaySettings: (
+    sessionId: string,
+    settings: PersistentChatDisplaySettings,
+  ) => void;
+  clearPersistentDisplaySettings: (sessionId?: string) => void;
   eventsBySession: Record<string, SessionEvent[]>;
   lastEventIdBySession: Record<string, string>;
   /**
@@ -337,6 +361,44 @@ function mergeSorted(
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
+  persistentDisplaySettings: null,
+  persistentDisplaySettingsRequestId: 0,
+  beginPersistentDisplaySettingsLoad: (sessionId) => {
+    let requestId = 0;
+    set((state) => {
+      requestId = state.persistentDisplaySettingsRequestId + 1;
+      return {
+        persistentDisplaySettingsRequestId: requestId,
+        persistentDisplaySettings: { sessionId, settings: null, requestId },
+      };
+    });
+    return requestId;
+  },
+  finishPersistentDisplaySettingsLoad: (sessionId, requestId, settings) =>
+    set((state) => {
+      if (state.persistentDisplaySettings?.sessionId !== sessionId
+        || state.persistentDisplaySettings.requestId !== requestId) return state;
+      return {
+        persistentDisplaySettings: { sessionId, settings, requestId },
+      };
+    }),
+  applyPersistentDisplaySettings: (sessionId, settings) =>
+    set((state) => {
+      if (state.persistentDisplaySettings?.sessionId !== sessionId) return state;
+      const requestId = state.persistentDisplaySettingsRequestId + 1;
+      return {
+        persistentDisplaySettingsRequestId: requestId,
+        persistentDisplaySettings: { sessionId, settings, requestId },
+      };
+    }),
+  clearPersistentDisplaySettings: (sessionId) =>
+    set((state) => {
+      if (sessionId && state.persistentDisplaySettings?.sessionId !== sessionId) return state;
+      return {
+        persistentDisplaySettings: null,
+        persistentDisplaySettingsRequestId: state.persistentDisplaySettingsRequestId + 1,
+      };
+    }),
   eventsBySession: {},
   lastEventIdBySession: {},
   pendingFirstMessageBySession: {},
@@ -814,6 +876,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
 subscribeAuthScope(() => {
   useChatStore.setState({
+    persistentDisplaySettings: null,
+    persistentDisplaySettingsRequestId: useChatStore.getState().persistentDisplaySettingsRequestId + 1,
     eventsBySession: {},
     lastEventIdBySession: {},
     pendingFirstMessageBySession: {},

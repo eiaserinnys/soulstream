@@ -12,6 +12,7 @@ import { useDeviceType, useTokens } from '../theme';
 import { useSessionStore } from '../store/sessionStore';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useChatStore } from '../store/chatStore';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { ReviewRows } from './ReviewRows';
 import { ReviewChat } from './ReviewChat';
@@ -70,7 +71,16 @@ export function initializeReview() {
   const nativeSettings = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'nativeSettings';
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
+  const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
   useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  if (chat) {
+    const state = useChatStore.getState();
+    const requestId = state.beginPersistentDisplaySettingsLoad('review-pas-1');
+    state.finishPersistentDisplaySettingsLoad('review-pas-1', requestId, {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+    });
+  }
   if (nativeSettings) {
     useAuthStore.setState({ jwt: firstNativeConnection ? null : 'public-review-fixture', authRejected: false });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-error') useSettingsStore.setState({ wallpaper: { mode: 'photo', customImage: window.location.origin + '/assets/ios-components/unavailable-photo.jpg' } });

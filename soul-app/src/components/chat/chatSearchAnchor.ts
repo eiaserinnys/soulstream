@@ -12,6 +12,7 @@ export function renderItemContainsEventId(
   eventId: number,
 ): boolean {
   if (item.kind === 'typing') return false;
+  if (item.kind === 'jev-candidates') return false;
   if (item.kind === 'turn-summary') {
     return Number(item.event.id) === eventId;
   }

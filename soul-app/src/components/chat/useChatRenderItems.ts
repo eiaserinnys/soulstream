@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import type { SessionEvent } from '../../api/types';
 import type { StreamingSlots } from '../../store/chatStore';
+import type { PersistentDisplayProjectionSettings } from './groupChatEvents';
 import {
   groupChatEvents,
   hasActiveStreamingAssistantText,
@@ -21,6 +22,7 @@ interface Args {
   pendingOptimistic: SessionEvent | undefined;
   streamingSlots: StreamingSlots | undefined;
   sessionStatus: string | undefined;
+  persistentDisplaySettings?: PersistentDisplayProjectionSettings;
 }
 
 export function useChatRenderItems({
@@ -28,6 +30,7 @@ export function useChatRenderItems({
   pendingOptimistic,
   streamingSlots,
   sessionStatus,
+  persistentDisplaySettings,
 }: Args): {
   reversedItems: ChatRenderItem[];
   bottomFollowItemKey: string | null;
@@ -35,10 +38,10 @@ export function useChatRenderItems({
   const snapshotStreams = streamingSlots?.assistantSnapshotStreams;
   const baseRenderItems = useMemo<ChatRenderItem[]>(
     () => placePendingOptimistic(
-      groupChatEvents(events, snapshotStreams),
+      groupChatEvents(events, snapshotStreams, persistentDisplaySettings),
       pendingOptimistic,
     ),
-    [events, pendingOptimistic, snapshotStreams],
+    [events, pendingOptimistic, persistentDisplaySettings, snapshotStreams],
   );
   const baseReversedItems = useMemo(
     () => [...baseRenderItems].reverse(),
