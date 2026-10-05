@@ -12,7 +12,7 @@ export interface AssignedCardContext {
   }>;
 }
 
-/** Optional Jev observer; prepared input evidence, never engine acceptance or consumption. */
+/** Optional prepared-input snapshot recorder. */
 export type AssignedCardCapture = (snapshot: Readonly<AssignedCardContext>) => Promise<void>;
 
 export interface AssignedCardContextCapture {

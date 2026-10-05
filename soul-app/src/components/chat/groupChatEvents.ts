@@ -22,7 +22,6 @@ export type TurnSummaryRenderItem = {
   kind: 'turn-summary';
   event: SessionEvent;
   content: string;
-  details?: string[];
   anchorEventId: number;
   key: string;
 };

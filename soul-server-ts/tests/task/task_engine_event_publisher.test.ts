@@ -37,9 +37,11 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 function makePublisherDeps() {
   const enqueueEvent = vi.fn(async () => ({ source_seq: 42 }));
+  const enqueueMetadataEffect = vi.fn(async () => null);
   const handleSideEffects = vi.fn(async () => undefined);
   const persistence = {
     enqueueEvent,
+    enqueueMetadataEffect,
     handleSideEffects,
   } as unknown as EventPersistence;
 
@@ -57,6 +59,7 @@ function makePublisherDeps() {
     broadcaster,
     emitEventEnvelope,
     handleSideEffects,
+    enqueueMetadataEffect,
     logger,
     enqueueEvent,
     persistence,
@@ -192,6 +195,85 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
     expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
     expect(deps.logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("persists the session total after complete and skips duplicate metadata writes", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const previousEntry = { type: "session_cost", value: { usd: 17, partial: false } };
+    const otherEntry = { type: "caller_info", value: { source: "browser" } };
+    const task = makeTask({
+      sessionCost: { usd: 17.288251, partial: false },
+      metadata: [otherEntry, previousEntry],
+    });
+    const event = {
+      type: "complete",
+      turn_cost_usd: 0.621749,
+      session_cost_usd: 17.91,
+      timestamp: 2,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    const entry = { type: "session_cost", value: { usd: 17.91, partial: false } };
+    expect(deps.enqueueMetadataEffect).toHaveBeenCalledWith("sess-1", entry, {
+      replaceExistingType: "session_cost",
+      registrationId: "registration:sess-1",
+    });
+    expect(deps.enqueueMetadataEffect.mock.invocationCallOrder[0]).toBeGreaterThan(
+      deps.enqueueEvent.mock.invocationCallOrder[0]!,
+    );
+    expect(task.sessionCost).toEqual({ usd: 17.91, partial: false });
+    expect(task.metadata).toEqual([otherEntry, entry]);
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.enqueueMetadataEffect).toHaveBeenCalledOnce();
+  });
+
+  it("records session cost for an event already persisted by the runner", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      session_cost_usd: 3.2,
+      session_cost_partial: true,
+      timestamp: 2,
+    } as SSEEventPayload, { alreadyPersisted: true });
+
+    expect(deps.enqueueEvent).not.toHaveBeenCalled();
+    expect(deps.enqueueMetadataEffect).toHaveBeenCalledWith("sess-1", {
+      type: "session_cost",
+      value: { usd: 3.2, partial: true },
+    }, {
+      replaceExistingType: "session_cost",
+      registrationId: "registration:sess-1",
+    });
+    expect(task.sessionCost).toEqual({ usd: 3.2, partial: true });
+  });
+
+  it("logs session cost metadata failure and continues publishing", async () => {
+    const deps = makePublisherDeps();
+    const error = new Error("metadata storage down");
+    deps.enqueueMetadataEffect.mockRejectedValueOnce(error);
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await expect(publisher.publishEngineEvent(task, {
+      type: "complete",
+      session_cost_usd: 17.91,
+      timestamp: 2,
+    } as SSEEventPayload)).resolves.toBeUndefined();
+
+    expect(task.sessionCost).toEqual({ usd: 17.91, partial: false });
+    expect(deps.handleSideEffects).toHaveBeenCalledOnce();
+    expect(deps.logger.warn).toHaveBeenCalledWith({
+      err: error,
+      sessionId: "sess-1",
+      eventType: "complete",
+    }, "session cost metadata persistence failed");
   });
 
   it("broadcasts live-only events without persistence or lastEventId changes", async () => {

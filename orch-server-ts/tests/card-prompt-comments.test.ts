@@ -14,5 +14,6 @@ describe("card comment prompt and reporting guidance", () => {
     const prompt = buildCardPrompt({ cardId: "c1", title: "작업", folderName: "실험", request: "원문", brief: "경과", running: [], queued: [] });
     expect(prompt).toContain("brief도 한 문장 + 불릿.");
     expect(prompt).toContain("보고는 디렉터용이다. 바쁜 상급자에게 보고하듯 쓴다: 첫 줄은 무엇을 하여 무엇이 됐는지 한 문장, 그 아래 불릿 3~5개는 각각 '~합니다'로 끝나는 짧은 완결 문장(된 것, 확인한 것, 자료 위치). 캡처·표·그림과 증거 링크(PR, SHA, URL)는 그 다음. 긴 설명은 접힘 블록으로.");
+    expect(prompt).toContain("바로 시작하려면 run=true, 순서를 기다려도 되면 queue=true를 준다.");
   });
 });

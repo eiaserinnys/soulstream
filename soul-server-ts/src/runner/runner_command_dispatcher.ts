@@ -6,6 +6,7 @@ import type {
   EnginePort,
   EngineUserInput,
 } from "../engine/protocol.js";
+import { stampSessionCost, type SessionCostBase } from "../engine/session_cost.js";
 import { engineEventMetadata } from "../engine/engine_event_metadata.js";
 import {
   newExecutionCommandId,
@@ -104,6 +105,7 @@ export interface RunnerPendingIntervention {
 export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher {
   private readonly eventStreams = new Map<string, InProcessRunnerFrameChannel>();
   private activeExecuteCommandId: string | undefined;
+  private sessionCost: SessionCostBase | undefined;
   private readonly attachedRegistrationId = `in-process:${randomUUID()}`;
 
   constructor(
@@ -261,6 +263,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
         `Runner execute command already active: ${this.activeExecuteCommandId}`,
       );
     }
+    this.sessionCost = command.params.sessionCost;
     let channel: InProcessRunnerFrameChannel;
     if (this.target.executeToFrameChannel) {
       channel = new InProcessRunnerFrameChannel(this.channelOptions);
@@ -297,6 +300,9 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   ): AsyncIterable<RunnerEventFrame> {
     try {
       for await (const frame of channel) {
+        if (frame.kind === "engine_event" && this.sessionCost) {
+          this.sessionCost = stampSessionCost(frame.payload, this.sessionCost);
+        }
         if (
           isLogicalTurnCompleteFrame(frame)
           && this.activeExecuteCommandId === commandId
@@ -310,6 +316,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       if (this.activeExecuteCommandId === commandId) {
         this.activeExecuteCommandId = undefined;
       }
+      this.sessionCost = undefined;
     }
   }
 }

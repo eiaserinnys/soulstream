@@ -1,5 +1,32 @@
 import type { CallerInfo } from "./task_models.js";
 import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from "../engine/protocol.js";
+import type { SessionCostBase } from "../engine/session_cost.js";
+
+export function buildSessionCostMetadataEntry(
+  cost: SessionCostBase,
+): Record<string, unknown> {
+  return { type: "session_cost", value: { usd: cost.usd, partial: cost.partial } };
+}
+
+export function extractSessionCostFromMetadata(metadata: unknown): SessionCostBase | undefined {
+  if (!Array.isArray(metadata)) return undefined;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type !== "session_cost") continue;
+    const value = record.value;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const cost = value as Record<string, unknown>;
+    return typeof cost.usd === "number"
+      && Number.isFinite(cost.usd)
+      && cost.usd >= 0
+      && typeof cost.partial === "boolean"
+      ? { usd: cost.usd, partial: cost.partial }
+      : undefined;
+  }
+  return undefined;
+}
 
 export function buildPersistentSessionMetadataEntry(
   enabled: boolean,

@@ -307,13 +307,13 @@ export async function createCardDispatchRuntime(options: {
         queued:(await legacyOptions.repository.queued()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name}))});
       return createRecurringSession({router:options.router,bridge:options.bridge,modelPresetAvailability:options.availability},
         {sessionId:input.sessionId,prompt,cardId:input.cardId,folderId:input.target.folderId!,...input.target,
-          attachmentPaths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),callerInfo:{source:"browser"}});
+          attachmentPaths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),callerInfo:{source:input.callerSource}});
     },
     ensure:async input=>{
       const detail=(await (await serviceProvider()).getCard(input.cardId))!;
       const routed=await options.router.routeExistingSessionPendingCommand({type:"ensure_session_running",agentSessionId:input.sessionId,
         text:`카드 「${detail.card.title}」의 요청과 경과를 확인하고 이어서 수행하세요.`,delivery_id:`card-execution:${input.requestId}`,
-        attachment_paths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),caller_info:{source:"browser"}});
+        attachment_paths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),caller_info:{source:input.callerSource}});
       const result=await options.bridge.sendPendingCommand(routed);
       if(result.status==='error' || result.type==='error')throw Object.assign(new Error(String(result.message??result.code)),{code:"NODE_REJECTED"});
       if(!result.execution || !['started','already_running'].includes(String(result.state)))throw new Error("실행 등록 결과를 확인하지 못했습니다.");

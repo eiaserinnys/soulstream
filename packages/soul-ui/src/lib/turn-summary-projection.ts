@@ -4,7 +4,6 @@ export interface TurnSummaryProjectionItem {
   eventId?: number;
   summaryFinalResponseEventId?: number;
   summaryParentEventId?: number;
-  observation?: { complete_event_id: number };
 }
 
 function isPositiveSafeInteger(value: number | undefined): value is number {
@@ -19,16 +18,10 @@ function isPositiveSafeInteger(value: number | undefined): value is number {
 export function placeTurnSummariesAtResponseAnchors<
   T extends TurnSummaryProjectionItem,
 >(items: T[]): T[] {
-  const isCaption = (item: T) => item.treeNodeType === "turn_summary" || item.treeNodeType === "card_observation";
+  const isCaption = (item: T) => item.treeNodeType === "turn_summary";
   const timeline = items.filter((item) => !isCaption(item));
-  const latestObservation = new Map<number, number>();
-  for (const item of items) {
-    if (item.observation) latestObservation.set(item.observation.complete_event_id,
-      Math.max(latestObservation.get(item.observation.complete_event_id) ?? 0, item.eventId ?? 0));
-  }
   const summaries = items
     .filter(isCaption)
-    .filter(item => !item.observation || item.eventId === latestObservation.get(item.observation.complete_event_id))
     .sort((a, b) => (a.eventId ?? 0) - (b.eventId ?? 0));
   if (summaries.length === 0) return items;
 

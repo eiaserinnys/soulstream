@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildCallerInfoMetadataEntry,
+  buildSessionCostMetadataEntry,
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
   extractCallerInfoFromMetadata,
+  extractSessionCostFromMetadata,
 } from "../../src/task/task_metadata.js";
 
 const callerIdentityFixture = JSON.parse(
@@ -26,6 +28,28 @@ const callerIdentityFixture = JSON.parse(
 };
 
 describe("task metadata helpers", () => {
+  it("round-trips the latest session cost metadata", () => {
+    const entry = buildSessionCostMetadataEntry({ usd: 17.91, partial: true });
+
+    expect(entry).toEqual({
+      type: "session_cost",
+      value: { usd: 17.91, partial: true },
+    });
+    expect(extractSessionCostFromMetadata([
+      { type: "session_cost", value: { usd: 4, partial: false } },
+      entry,
+    ])).toEqual({ usd: 17.91, partial: true });
+  });
+
+  it.each([
+    null,
+    { type: "session_cost", value: { usd: -1, partial: false } },
+    { type: "session_cost", value: { usd: Number.POSITIVE_INFINITY, partial: false } },
+    { type: "session_cost", value: { usd: 1, partial: "false" } },
+  ])("ignores invalid session cost metadata %j", (entry) => {
+    expect(extractSessionCostFromMetadata([entry])).toBeUndefined();
+  });
+
   it("builds caller_info metadata only for non-empty caller info", () => {
     expect(buildCallerInfoMetadataEntry(undefined)).toBeUndefined();
     expect(buildCallerInfoMetadataEntry({})).toBeUndefined();

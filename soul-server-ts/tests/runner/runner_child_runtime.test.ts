@@ -6,8 +6,15 @@ import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
+import {
+  engineEventFrame,
+  executeCommandFrame,
+  type RunnerCommandFrame,
+  type RunnerEventFrame,
+} from "../../src/runner/frame_protocol.js";
 import { RunnerChildRuntime } from "../../src/runner/runner_child_runtime.js";
 import {
+  backendSessionRotationEffect,
   buildDurableRunnerEvent,
   isSqliteFullError,
   requiresBackendSessionId,
@@ -150,6 +157,242 @@ describe("RunnerChildRuntime startup", () => {
     }
   });
 });
+
+describe("RunnerChildRuntime backend session rotation", () => {
+  it("rotates a Codex backend session ID when bootstrap already exists", async () => {
+    const { runtime, sessionId } = await createRotationRuntime("backend-session-old");
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    const command = rotationCommand(sessionId);
+    child.activeCommandId = command.commandId;
+
+    try {
+      await child.prepareExecution(command);
+      await child.forwardRunnerFrame(
+        engineEventFrame({ type: "session", session_id: "backend-session-fresh" }),
+        { frames: [], bytes: 0 },
+      );
+
+      await expect(child.outbox.readBootstrap()).resolves.toMatchObject({
+        payload: { backend_session_id: "backend-session-fresh" },
+      });
+      const events = (await child.outbox.readBatch())?.events ?? [];
+      expect(events).toHaveLength(1);
+      expect(events[0]?.session_effect).toEqual(
+        backendSessionRotationEffect("backend-session-old", "backend-session-fresh"),
+      );
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("creates bootstrap before flushing buffered events when rotation starts without one", async () => {
+    const { runtime, sessionId } = await createRotationRuntime(null);
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    const command = rotationCommand(sessionId);
+    child.activeCommandId = command.commandId;
+    const buffer = { frames: [] as RunnerEventFrame[], bytes: 0 };
+
+    try {
+      await child.prepareExecution(command);
+      await child.forwardRunnerFrame(
+        engineEventFrame({
+          type: "assistant_message",
+          content: "before the new session ID",
+          timestamp: 1,
+        }),
+        buffer,
+      );
+      expect(buffer.frames).toHaveLength(1);
+
+      await child.forwardRunnerFrame(
+        engineEventFrame({ type: "session", session_id: "backend-session-fresh" }),
+        buffer,
+      );
+
+      await expect(child.outbox.readBootstrap()).resolves.toMatchObject({
+        payload: { backend_session_id: "backend-session-fresh" },
+      });
+      expect(buffer.frames).toHaveLength(0);
+      const events = (await child.outbox.readBatch())?.events ?? [];
+      expect(events.map((event) => event.payload.type)).toEqual([
+        "assistant_message",
+        "session",
+      ]);
+      expect(events[1]?.session_effect).toEqual(
+        backendSessionRotationEffect("backend-session-old", "backend-session-fresh"),
+      );
+      expect(events.filter((event) =>
+        event.session_effect?.kind === "rotate_backend_session_id"
+      )).toHaveLength(1);
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("accepts a repeated rotation when bootstrap already stores the new ID", async () => {
+    const sessionId = "runner-rotation-replay";
+    const outbox = await createRotationOutbox(sessionId, "backend-session-fresh");
+    const rotation = {
+      expectedBackendSessionId: "backend-session-old",
+      backendSessionId: "backend-session-fresh",
+    };
+
+    try {
+      await appendRotation(outbox, sessionId, rotation);
+
+      await expect(outbox.readBootstrap()).resolves.toMatchObject({
+        payload: { backend_session_id: "backend-session-fresh" },
+      });
+      expect((await outbox.readBatch())?.events).toHaveLength(1);
+    } finally {
+      outbox.close();
+    }
+  });
+
+  it("rejects a repeated rotation when bootstrap has neither ID", async () => {
+    const sessionId = "runner-rotation-mismatch";
+    const outbox = await createRotationOutbox(sessionId, "backend-session-other");
+
+    try {
+      await expect(appendRotation(outbox, sessionId, {
+        expectedBackendSessionId: "backend-session-old",
+        backendSessionId: "backend-session-fresh",
+      })).rejects.toThrow("expected backend session ID mismatch");
+    } finally {
+      outbox.close();
+    }
+  });
+});
+
+type RunnerChildRuntimeRotationHarness = {
+  activeCommandId?: string;
+  outbox: RunnerSqliteEventOutbox;
+  prepareExecution(
+    command: Extract<RunnerCommandFrame, { kind: "execute" }>,
+  ): Promise<void>;
+  forwardRunnerFrame(
+    frame: RunnerEventFrame,
+    preBootstrap: { frames: RunnerEventFrame[]; bytes: number },
+  ): Promise<void>;
+};
+
+async function createRotationRuntime(backendSessionId: string | null): Promise<{
+  runtime: RunnerChildRuntime;
+  sessionId: string;
+}> {
+  const stateDirectory = await mkdtemp(join(tmpdir(), "soulstream-runner-rotation-"));
+  directories.push(stateDirectory);
+  const sessionId = "runner-rotation-session";
+  const paths = runnerProcessPaths(stateDirectory, sessionId);
+  await mkdir(paths.sessionDirectory, { recursive: true });
+  const seededOutbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+  if (backendSessionId !== null) {
+    await seededOutbox.initializeBootstrap(rotationBootstrapInput(
+      sessionId,
+      stateDirectory,
+      backendSessionId,
+    ));
+  }
+  seededOutbox.close();
+
+  const config: RunnerChildConfig = {
+    schemaVersion: 1,
+    sessionId,
+    backend: "codex",
+    agent: {
+      id: "rotation-agent",
+      name: "Rotation Agent",
+      backend: "codex",
+      workspace_dir: stateDirectory,
+    },
+    paths,
+    codeSha: "sha-rotation",
+    snapshotPath: stateDirectory,
+    codexAdapterMode: "sdk",
+    codexCliPath: process.execPath,
+    claudeRuntimeV2Enabled: true,
+    claudeRuntimeIdleTtlMs: 300_000,
+    claudeRuntimeMaxEntries: 16,
+    claudeRuntimeTurnTimeoutMs: 1_800_000,
+    internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+    codexHome: null,
+    rolloutRoot: null,
+  };
+  const runtime = new RunnerChildRuntime(config, pino({ level: "silent" }), {
+    createEngine: () => rotationEngine(config.backend, stateDirectory),
+  });
+  await runtime.start();
+  return { runtime, sessionId };
+}
+
+function rotationEngine(backendId: RunnerChildConfig["backend"], workspaceDir: string): EnginePort {
+  return {
+    backendId,
+    workspaceDir,
+    async *execute() {},
+    async interrupt() { return true; },
+    async close() {},
+  };
+}
+
+function rotationCommand(sessionId: string): Extract<RunnerCommandFrame, { kind: "execute" }> {
+  return executeCommandFrame("rotate-backend-session", {
+    agentSessionId: sessionId,
+    prompt: "continue with a new native session",
+    backendSessionRolloverFrom: "backend-session-old",
+  });
+}
+
+async function createRotationOutbox(
+  sessionId: string,
+  backendSessionId: string,
+): Promise<RunnerSqliteEventOutbox> {
+  const directory = await mkdtemp(join(tmpdir(), "soulstream-runner-rotation-outbox-"));
+  directories.push(directory);
+  const outbox = await RunnerSqliteEventOutbox.create(join(directory, "outbox.sqlite"));
+  await outbox.initializeBootstrap(rotationBootstrapInput(
+    sessionId,
+    directory,
+    backendSessionId,
+  ));
+  return outbox;
+}
+
+function rotationBootstrapInput(
+  sessionId: string,
+  directory: string,
+  backendSessionId: string,
+) {
+  return {
+    session_id: sessionId,
+    created_at: "2026-10-05T00:00:00.000Z",
+    resume: {
+      schema_version: 1,
+      backend_session_id: backendSessionId,
+      cwd: directory,
+      codex_home: null,
+      rollout_root: null,
+      code_sha: "sha-rotation",
+      snapshot_path: directory,
+    },
+  };
+}
+
+async function appendRotation(
+  outbox: RunnerSqliteEventOutbox,
+  sessionId: string,
+  rotation: { expectedBackendSessionId: string; backendSessionId: string },
+): Promise<void> {
+  const effect = backendSessionRotationEffect(
+    rotation.expectedBackendSessionId,
+    rotation.backendSessionId,
+  );
+  const durable = buildDurableRunnerEvent(sessionId, {
+    type: "session",
+    session_id: rotation.backendSessionId,
+  } as SSEEventPayload, effect);
+  await outbox.appendEngineFrame(durable.appendInput, durable.frame, rotation);
+}
 
 function standaloneEngine(workspaceDir: string): EnginePort {
   return {

@@ -51,7 +51,9 @@ export interface McpHostOptions {
   folders: FolderControlPlaneHostRouteOptions;
   pages?: { service: PageYjsService; logger: Pick<FastifyBaseLogger, "error"> };
   skills?: { enabled: boolean; serverUrl: string; apiKey: string; nodeId: string; typesafeApiKey: string; httpClient: AtomHttpClient; logger?: Pick<FastifyBaseLogger, "warn"> };
-  cards: CardRouteBodyOptions & { resolveAccess: () => FolderAccess | Promise<FolderAccess> };
+  cards: CardRouteBodyOptions & { resolveAccess: () => FolderAccess | Promise<FolderAccess>;
+    cardExecutionServiceProvider?: NonNullable<import("../folders/folder_routes.js").FolderRouteOptions["cardExecutionServiceProvider"]>;
+    runConfirm?: { intervalMs: number; timeoutMs: number } };
   board: {
     host: BoardYjsHostProxyRouteOptions;
     getSession: (id: string) => Promise<{ folder_id: string | null } | null>;

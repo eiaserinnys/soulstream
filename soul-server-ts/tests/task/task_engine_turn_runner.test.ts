@@ -100,6 +100,27 @@ describe("TaskEngineTurnRunner", () => {
     }
   });
 
+  it.each([
+    ["new session", makeTask(), { usd: 0, partial: false }],
+    ["existing backend session without metadata", makeTask({ codexThreadId: "thread-1" }), { usd: 0, partial: true }],
+    ["existing session total", makeTask({ sessionCost: { usd: 17.91, partial: true } }), { usd: 17.91, partial: true }],
+  ])("passes the session cost base for a %s", async (_name, task, expected) => {
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => {
+      captured = params;
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent,
+      runner: createInProcessTaskRunnerRuntime(engine),
+      input: { prompt: "turn" },
+    }));
+
+    expect(captured?.sessionCost).toEqual(expected);
+  });
+
   describe("reasoning effort at the turn boundary", () => {
     async function capturedEffort(task: Task) {
       let captured: EngineExecuteParams | undefined;

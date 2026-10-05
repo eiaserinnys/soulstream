@@ -189,6 +189,20 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.persistent).toBe(true);
   });
 
+  it("restores the session cost base from metadata", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        metadata: [{
+          type: "session_cost",
+          value: { usd: 17.91, partial: true },
+        }],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.sessionCost).toEqual({ usd: 17.91, partial: true });
+  });
+
   it("restores the two-field execution registration used by evicted task routes", () => {
     const task = hydrateEvictedTaskFromSessionRow(
       makeRow({

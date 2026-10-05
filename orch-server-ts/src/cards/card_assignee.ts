@@ -20,7 +20,7 @@ export async function assertSingleCardAssignee(sql: RepositorySql, sessionId: st
 }
 
 function ownershipConflict(cardId: string) {
-  return invalidCard(`이미 카드 ${cardId}의 담당입니다. A/S는 그 카드에 커멘트로, 새 업무는 assignee를 생략하고 queue=true로 새 카드를 만듭니다.`);
+  return invalidCard(`이미 카드 ${cardId}의 담당입니다. A/S는 그 카드에 커멘트로, 새 업무는 assignee를 생략한 create_card로 새 카드를 만듭니다(바로 시작은 run=true, 대기는 queue=true).`);
 }
 
 /** The unique index closes concurrent writes after the friendly preflight query. */

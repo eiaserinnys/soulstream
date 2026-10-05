@@ -6,7 +6,6 @@
  */
 
 import type { CallerInfo, ContextItem, InputRequestQuestion } from "./sse-events";
-import type { JevCardObservation } from "../../../wire-schema/src/card_observation";
 import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
@@ -252,12 +251,6 @@ export interface TurnSummaryNode extends BaseNode {
   summaryParentEventId?: number;
 }
 
-export interface CardObservationNode extends BaseNode {
-  type: "card_observation";
-  observation: JevCardObservation;
-  finalResponseEventId: number;
-}
-
 export interface AssignedCardContextNode extends BaseNode {
   type: "assigned_card_context";
   preparedInputId: string;
@@ -292,5 +285,4 @@ export type EventTreeNode =
   | AssistantErrorNode
   | AwaySummaryNode
   | TurnSummaryNode
-  | CardObservationNode
   | AssignedCardContextNode;

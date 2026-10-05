@@ -26,7 +26,7 @@ for (const width of [1440, 390]) {
     await page.route('**/api/auth/status', route => route.fulfill({ json: { authenticated: true, user: { email: 'qa@example.test', name: 'QA' } } }));
 
     await page.goto('/components#components-bubbles');
-    const comparison = page.getByTestId('jev-caption-comparison');
+    const comparison = page.getByTestId('caption-comparison');
     await expect(comparison).toBeVisible();
     await comparison.scrollIntoViewIfNeeded();
     const previewRow = comparison.locator('[data-tree-node-id="assigned-card-preview"]');
@@ -41,7 +41,7 @@ for (const width of [1440, 390]) {
     const metrics = await comparison.evaluate(element => {
       const children = [...element.querySelectorAll<HTMLElement>(':scope > [data-tree-node-id]')];
       const preview = element.querySelector<HTMLElement>('[data-tree-node-id="assigned-card-preview"] > div');
-      const summary = element.querySelector<HTMLElement>('[data-tree-node-id="jev-sample-summary"] > div');
+      const summary = element.querySelector<HTMLElement>('[data-tree-node-id="caption-sample-summary"] > div');
       if (!preview || !summary) throw new Error('caption comparison nodes are missing');
       const box = (node: HTMLElement) => {
         const rect = node.getBoundingClientRect();
@@ -58,7 +58,7 @@ for (const width of [1440, 390]) {
         viewportWidth: innerWidth,
       };
     });
-    expect(metrics.order.slice(0, 3)).toEqual(['assigned-card-input', 'assigned-card-preview', 'jev-sample-answer']);
+    expect(metrics.order.slice(0, 3)).toEqual(['assigned-card-input', 'assigned-card-preview', 'caption-sample-answer']);
     expect(metrics.rows[0]!.bottom).toBeLessThanOrEqual(metrics.rows[1]!.top);
     expect(metrics.rows[1]!.bottom).toBeLessThanOrEqual(metrics.rows[2]!.top);
     expect(metrics.preview.fontSize).toBe(metrics.summary.fontSize);
@@ -73,7 +73,7 @@ for (const width of [1440, 390]) {
     });
 
     await page.goto('http://127.0.0.1:4202/assets/ios-components/?section=chat');
-    const nativeSection = page.getByText('기존 caption · 기존 요약과 요청한 Jev 판정 한 줄', { exact: true });
+    const nativeSection = page.getByText('기존 caption · 기존 요약', { exact: true });
     await nativeSection.scrollIntoViewIfNeeded();
     const nativePreview = page.getByText(new RegExp(previewText)).first();
     await expect(nativePreview).toBeVisible();

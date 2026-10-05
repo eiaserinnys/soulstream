@@ -127,26 +127,172 @@ describe("Codex app-server notification mapper", () => {
     });
   });
 
-  it("turn/completed preserves codex usage on the complete event", () => {
-    const completed = turn("turn-1", "completed");
-    completed.usage = {
-      input_tokens: 11,
-      output_tokens: 13,
-    };
+  it("maps the latest token usage before a completed turn", () => {
+    const out = mapAppServerNotification(
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      },
+      undefined,
+      {
+        tokenUsage: {
+          baseline: {
+            totalTokens: 0,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            cacheWriteInputTokens: 0,
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+          },
+          latest: {
+            total: {
+              totalTokens: 14_129,
+              inputTokens: 14_124,
+              cachedInputTokens: 12_288,
+              cacheWriteInputTokens: 0,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+            },
+            last: {
+              totalTokens: 14_129,
+              inputTokens: 14_124,
+              cachedInputTokens: 12_288,
+              cacheWriteInputTokens: 0,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+            },
+            modelContextWindow: 258_400,
+          },
+        },
+      },
+    );
 
-    const out = mapAppServerNotification({
-      method: "turn/completed",
-      params: { threadId: "thread-1", turn: completed },
-    });
-
+    expect(out).toHaveLength(2);
     expect(out[0]).toMatchObject({
+      type: "context_usage",
+      used_tokens: 14_129,
+      max_tokens: 258_400,
+      percent: 5.5,
+    });
+    expect(out[1]).toMatchObject({
       type: "complete",
       raw_event_type: "turn/completed",
       usage: {
-        input_tokens: 11,
-        output_tokens: 13,
+        input_tokens: 14_124,
+        cached_input_tokens: 12_288,
+        output_tokens: 5,
+        reasoning_output_tokens: 0,
       },
     });
+  });
+
+  it("keeps usage when the context window is null", () => {
+    const out = mapAppServerNotification(
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      },
+      undefined,
+      {
+        tokenUsage: {
+          baseline: {
+            totalTokens: 0,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            cacheWriteInputTokens: 0,
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+          },
+          latest: {
+            total: {
+              totalTokens: 14_129,
+              inputTokens: 14_124,
+              cachedInputTokens: 12_288,
+              cacheWriteInputTokens: 0,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+            },
+            last: {
+              totalTokens: 14_129,
+              inputTokens: 14_124,
+              cachedInputTokens: 12_288,
+              cacheWriteInputTokens: 0,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+            },
+            modelContextWindow: null,
+          },
+        },
+      },
+    );
+
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      type: "complete",
+      usage: {
+        input_tokens: 14_124,
+        cached_input_tokens: 12_288,
+        output_tokens: 5,
+        reasoning_output_tokens: 0,
+      },
+    });
+  });
+
+  it("puts context usage before an error for a failed turn", () => {
+    const out = mapAppServerNotification(
+      {
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
+          turn: turn("turn-1", "failed", { message: "turn failed" }),
+        },
+      },
+      undefined,
+      {
+        tokenUsage: {
+          baseline: {
+            totalTokens: 0,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            cacheWriteInputTokens: 0,
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+          },
+          latest: {
+            total: {
+              totalTokens: 14_129,
+              inputTokens: 14_124,
+              cachedInputTokens: 12_288,
+              cacheWriteInputTokens: 0,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+            },
+            last: {
+              totalTokens: 14_129,
+              inputTokens: 14_124,
+              cachedInputTokens: 12_288,
+              cacheWriteInputTokens: 0,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+            },
+            modelContextWindow: 258_400,
+          },
+        },
+      },
+    );
+
+    expect(out.map((event) => event.type)).toEqual(["context_usage", "error"]);
+  });
+
+  it("ignores token usage updates without warning", () => {
+    const onUnknownNotification = vi.fn();
+    const out = mapAppServerNotification(
+      { method: "thread/tokenUsage/updated", params: {} } as never,
+      onUnknownNotification,
+    );
+
+    expect(out).toEqual([]);
+    expect(onUnknownNotification).not.toHaveBeenCalled();
   });
 
   it("maps the production usage-limit error notification as fatal", () => {

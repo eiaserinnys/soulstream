@@ -4,10 +4,10 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 155개 $defs (top-level wire 79 + supporting/SSE 76).
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 156개 $defs (top-level wire 79 + supporting/SSE 77).
   - wire 메시지 79종
-  - SSE event payload 64종 (`event` 메시지의 `event` 키 안에 packed)
-  - `x-soulstream-event-durability` — SSE event 64종과 outbox 내부 이벤트 1종의 `durable`/`transient` 명시 분류. 누락·미등록 타입은 생성 실패
+  - SSE event payload 65종 (`event` 메시지의 `event` 키 안에 packed)
+  - `x-soulstream-event-durability` — SSE event 65종과 outbox 내부 이벤트 1종의 `durable`/`transient` 명시 분류. 누락·미등록 타입은 생성 실패
   - `x-soulstream-control-command-types` — 노드 제어 요청 42종의 생성 상수·타입 정본
   - `x-soulstream-event-ingress-rejection-codes` — 이벤트 ingress 거절 코드의 생성 타입 정본
   - `x-soulstream-persistence-only-event-types` — SSE wire에는 없지만 같은 outbox를 쓰는 `metadata`의 명시 인벤토리

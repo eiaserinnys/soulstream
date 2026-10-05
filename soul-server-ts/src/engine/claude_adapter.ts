@@ -28,6 +28,7 @@ import type {
   InputResponseDeliveryResult,
   ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
+  CompactedContextUsage,
   ReasoningEffort,
   TurnOrigin,
   SSEEventPayload,
@@ -98,7 +99,7 @@ export interface ClaudeClient {
     options: ClaudeRunOptions,
     signal: AbortSignal,
   ): AsyncIterable<ClaudeClientEvent>;
-  compact?(sessionId: string): Promise<void>;
+  compact?(sessionId: string): Promise<CompactedContextUsage | undefined>;
   sendControlFrame?(
     frame: RunnerControlFrame,
   ): Promise<boolean> | boolean;
@@ -366,7 +367,7 @@ export class ClaudeEngineAdapter
         };
   }
 
-  async compact(sessionId: string): Promise<void> {
+  async compact(sessionId: string): Promise<CompactedContextUsage | undefined> {
     if (!sessionId) {
       throw new Error("ClaudeEngineAdapter.compact requires sessionId");
     }
@@ -374,7 +375,7 @@ export class ClaudeEngineAdapter
     if (!client.compact) {
       throw new Error("Claude client does not support compact");
     }
-    await client.compact(sessionId);
+    return await client.compact(sessionId);
   }
 
   async backgroundClaudeRuntimeTasks(

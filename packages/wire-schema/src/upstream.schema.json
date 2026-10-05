@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 156개 $defs (top-level wire 79 + supporting/SSE 77). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -166,6 +166,7 @@
     "claude_runtime_schedule_deleted": "durable",
     "context_usage": "durable",
     "context_manifest": "durable",
+    "generation_started": "durable",
     "compact": "durable",
     "reconnect": "durable",
     "history_sync": "durable",
@@ -673,6 +674,7 @@
             { "$ref": "#/$defs/SSEEventCustomViewUpdated" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
             { "$ref": "#/$defs/SSEEventContextManifest" },
+            { "$ref": "#/$defs/SSEEventGenerationStarted" },
             { "$ref": "#/$defs/SSEEventCompact" },
             { "$ref": "#/$defs/SSEEventReconnect" },
             { "$ref": "#/$defs/SSEEventHistorySync" },
@@ -3052,6 +3054,63 @@
             }
           }
         }
+      }
+    },
+    "SSEEventGenerationStarted": {
+      "type": "object",
+      "description": "SSE: 퍼시스턴트 세션의 새 모델 세대 시작과 체크포인트 크기.",
+      "required": ["type", "generation", "reason", "previous", "current", "checkpoint", "timestamp"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "generation_started" },
+        "generation": { "type": "integer", "minimum": 1 },
+        "reason": { "type": "string" },
+        "previous": {
+          "type": "object",
+          "required": ["model_preset", "backend"],
+          "properties": {
+            "model_preset": { "type": ["string", "null"] },
+            "backend": { "type": "string" }
+          }
+        },
+        "current": {
+          "type": "object",
+          "required": ["model_preset", "backend", "model"],
+          "properties": {
+            "model_preset": { "type": ["string", "null"] },
+            "backend": { "type": "string" },
+            "model": { "type": ["string", "null"] }
+          }
+        },
+        "checkpoint": {
+          "type": "object",
+          "required": [
+            "estimated_tokens",
+            "chars",
+            "sections",
+            "summarized_through_turn",
+            "recent_from_event_id",
+            "recent_to_event_id"
+          ],
+          "properties": {
+            "estimated_tokens": { "type": "integer", "minimum": 0 },
+            "chars": { "type": "integer", "minimum": 0 },
+            "sections": {
+              "type": "object",
+              "required": ["state", "story", "summaries", "recent"],
+              "properties": {
+                "state": { "type": "integer", "minimum": 0 },
+                "story": { "type": "integer", "minimum": 0 },
+                "summaries": { "type": "integer", "minimum": 0 },
+                "recent": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "summarized_through_turn": { "type": ["integer", "null"], "minimum": 0 },
+            "recent_from_event_id": { "type": ["integer", "null"], "minimum": 1 },
+            "recent_to_event_id": { "type": ["integer", "null"], "minimum": 1 }
+          }
+        },
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventCompact": {

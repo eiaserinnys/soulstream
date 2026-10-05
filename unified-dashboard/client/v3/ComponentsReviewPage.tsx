@@ -213,15 +213,12 @@ export function ComponentsReviewPage() {
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
                 onAnswer={() => open("질문 응답")} pending={false}/>
             </Sample>
-            <Sample name="SystemMessage / 기존 caption" state="같은 배치 · 기존 요약과 요청한 Jev 판정 한 줄">
-              <div data-testid="jev-caption-comparison">
+            <Sample name="SystemMessage / 기존 caption" state="같은 배치 · 기존 요약">
+              <div data-testid="caption-comparison">
                 <UserMessage msg={{id:"assigned-card-input",role:"user",treeNodeId:"assigned-card-input",treeNodeType:"user_message",content:"외부 카드 알림을 확인해줘"}}/>
                 <SystemMessage msg={{id:"assigned-card-preview",role:"system",treeNodeId:"assigned-card-preview",treeNodeType:"assigned_card_context",content:assignedCardPreview}}/>
-                <AssistantMessage msg={{id:"jev-sample-answer",role:"assistant",treeNodeId:"jev-sample-answer",treeNodeType:"assistant_message",content:"구현을 맡겼습니다. 다른 작업 결과를 기다립니다."}}/>
-                <SystemMessage msg={{id:"jev-sample-summary",role:"system",treeNodeId:"jev-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
-                <SystemMessage msg={{id:"jev-sample-observation",role:"system",treeNodeId:"jev-sample-observation",treeNodeType:"card_observation",content:"Jev · 위임 대기 — 다른 작업 결과를 기다리는 상태로 분류"}}/>
-                <SystemMessage msg={{id:"jev-sample-limited",role:"system",treeNodeId:"jev-sample-limited",treeNodeType:"card_observation",content:"Jev · 완료 가능 · 관측 범위 제한"}}/>
-                <SystemMessage msg={{id:"jev-sample-error",role:"system",treeNodeId:"jev-sample-error",treeNodeType:"card_observation",content:"Jev · 미평가 — 평가 요청 실패"}}/>
+                <AssistantMessage msg={{id:"caption-sample-answer",role:"assistant",treeNodeId:"caption-sample-answer",treeNodeType:"assistant_message",content:"구현을 맡겼습니다. 다른 작업 결과를 기다립니다."}}/>
+                <SystemMessage msg={{id:"caption-sample-summary",role:"system",treeNodeId:"caption-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
               </div>
             </Sample>
           </section>

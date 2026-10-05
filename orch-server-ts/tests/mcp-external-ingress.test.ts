@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Client as ModernClient, StreamableHTTPClientTransport as ModernTransport } from "@modelcontextprotocol/client";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { mcpToolDefinitions, LIVE_CARD_RESOURCE } from "@soulstream/mcp-contract";
+import { cardTools, mcpToolDefinitions, LIVE_CARD_RESOURCE } from "@soulstream/mcp-contract";
 import inventory from "./fixtures/mcp_external_tool_inventory.json" with { type: "json" };
 import { widgetHtml } from "../../plugins/chatgpt-card-renderer/src/widget-html.js";
 import { registerExternalEventsRoutes } from "../src/mcp/external_events_transport.js";
@@ -46,6 +46,9 @@ function assertInventory(tools: { name: string }[], era: "modern" | "legacy" = "
   expect(tools).toHaveLength(63);
   expect(tools.map(t => t.name)).toEqual(definitions.map(d => d.name));
   expect(tools.map(t => t.name).sort()).toEqual(inventory.map(t => t.name));
+  expect(tools.some(t => t.name === "run_card")).toBe(false);
+  expect(cardTools.run_card.audience).toBe("internal");
+  expect(inventory.find(t => t.name === "create_card")!.inputSchema.properties).not.toHaveProperty("run");
   expect(inventory).toHaveLength(63);
   for (const tool of tools) {
     const expected = inventory.find(t => t.name === tool.name)!;

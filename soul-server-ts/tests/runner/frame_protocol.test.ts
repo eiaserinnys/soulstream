@@ -28,6 +28,7 @@ const frames: RunnerFrame[] = [
       runnerInterventionIds: ["intervention-1", "intervention-2", "intervention-3"],
       turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-1" },
       backendSessionRolloverFrom: "backend-session-old",
+      sessionCost: { usd: 17.288251, partial: false },
       sessionItems: [{ role: "user", content: "hello" }],
     },
   },
@@ -260,6 +261,18 @@ describe("runner frame protocol", () => {
     };
 
     expect(RunnerFrameSchema.parse(frame)).toMatchObject(frame);
+  });
+
+  it("rejects a negative session cost base", () => {
+    const execute = frames.find(
+      (frame): frame is Extract<RunnerFrame, { kind: "execute" }> => frame.kind === "execute",
+    );
+    expect(execute).toBeDefined();
+
+    expect(RunnerFrameSchema.safeParse({
+      ...execute,
+      params: { ...execute?.params, sessionCost: { usd: -1, partial: false } },
+    }).success).toBe(false);
   });
 
   it.each(forbiddenJsonValues)("rejects %s in a known JSON field", (_name, value) => {

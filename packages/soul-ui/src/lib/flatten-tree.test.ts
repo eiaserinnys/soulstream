@@ -44,7 +44,6 @@ const CHAT_MESSAGE_EVENT_ID_INVENTORY = {
   assistant_error: "hidden",
   away_summary: "render",
   turn_summary: "render",
-  card_observation: "render",
   assigned_card_context: "render",
 } as const satisfies Record<
   EventTreeNode["type"],
@@ -286,8 +285,6 @@ describe("flattenTree", () => {
       { node: makeAssistantMessage(120), type: "assistant_message", eventId: 120 },
       { node: makeRawEventNode("away_summary", 130), type: "away_summary", eventId: 130 },
       { node: makeLegacyTurnSummary(140), type: "turn_summary", eventId: 140 },
-      { node: makeRawEventNode("card_observation",170,{finalResponseEventId:120,
-        observation:{complete_event_id:121}}),type:"card_observation",eventId:170 },
       { node: makeRawEventNode("assigned_card_context",180,{preparedInputId:"prepared-input"}),
         type:"assigned_card_context",eventId:180 },
       {
