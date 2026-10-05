@@ -1,5 +1,14 @@
-import type { CallerInfo } from "./task_models.js";
-import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from "../engine/protocol.js";
+import type {
+  CallerInfo,
+  PersistentGenerationFirstCall,
+  PersistentGenerationPending,
+  PersistentGenerationState,
+} from "./task_models.js";
+import {
+  CLAUDE_PERMISSION_MODES,
+  isReasoningEffort,
+  type ClaudePermissionMode,
+} from "../engine/protocol.js";
 import type { SessionCostBase } from "../engine/session_cost.js";
 
 export function buildSessionCostMetadataEntry(
@@ -51,6 +60,128 @@ export function extractPersistentSession(metadata: unknown): boolean {
       && (value as Record<string, unknown>).enabled === true;
   }
   return false;
+}
+
+export function buildPersistentGenerationMetadataEntry(
+  state: PersistentGenerationState,
+): Record<string, unknown> {
+  const firstCall = state.firstCall;
+  const pending = state.pending;
+  return {
+    type: "persistent_generation",
+    value: {
+      number: state.number,
+      backend_session_id: state.backendSessionId ?? null,
+      started_at: state.startedAt ?? null,
+      first_call: firstCall
+        ? {
+            generation: firstCall.generation,
+            input_tokens: firstCall.inputTokens,
+            cached_input_tokens: firstCall.cachedInputTokens,
+            model_preset: firstCall.modelPreset,
+            model: firstCall.model,
+            measured_at: firstCall.measuredAt,
+          }
+        : null,
+      pending: pending
+        ? {
+            number: pending.number,
+            reason: pending.reason,
+            requested_at: pending.requestedAt,
+            target_model_preset: pending.targetModelPreset,
+            target_reasoning_effort: pending.targetReasoningEffort ?? null,
+            applying_from: pending.applyingFrom ?? null,
+          }
+        : null,
+    },
+  };
+}
+
+export function extractPersistentGeneration(
+  metadata: unknown,
+): PersistentGenerationState | undefined {
+  if (!Array.isArray(metadata)) return undefined;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type !== "persistent_generation") continue;
+    const value = record.value;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const recordValue = value as Record<string, unknown>;
+    const firstCall = parsePersistentGenerationFirstCall(recordValue.first_call);
+    const pending = parsePersistentGenerationPending(recordValue.pending);
+    return {
+      number: positiveSafeInteger(recordValue.number) ? recordValue.number : 1,
+      ...(typeof recordValue.backend_session_id === "string"
+        ? { backendSessionId: recordValue.backend_session_id }
+        : {}),
+      ...(typeof recordValue.started_at === "string"
+        ? { startedAt: recordValue.started_at }
+        : {}),
+      ...(firstCall === undefined ? {} : { firstCall }),
+      ...(pending === undefined ? {} : { pending }),
+    };
+  }
+  return undefined;
+}
+
+function parsePersistentGenerationFirstCall(value: unknown):
+  PersistentGenerationFirstCall | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    !positiveSafeInteger(record.generation)
+    || !nonNegativeFiniteNumber(record.input_tokens)
+    || !nonNegativeFiniteNumber(record.cached_input_tokens)
+    || typeof record.model_preset !== "string"
+    || typeof record.model !== "string"
+    || typeof record.measured_at !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    generation: record.generation,
+    inputTokens: record.input_tokens,
+    cachedInputTokens: record.cached_input_tokens,
+    modelPreset: record.model_preset,
+    model: record.model,
+    measuredAt: record.measured_at,
+  };
+}
+
+function parsePersistentGenerationPending(value: unknown):
+  PersistentGenerationPending | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    !positiveSafeInteger(record.number)
+    || typeof record.reason !== "string"
+    || typeof record.requested_at !== "string"
+    || typeof record.target_model_preset !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    number: record.number,
+    reason: record.reason,
+    requestedAt: record.requested_at,
+    targetModelPreset: record.target_model_preset,
+    ...(isReasoningEffort(record.target_reasoning_effort)
+      ? { targetReasoningEffort: record.target_reasoning_effort }
+      : {}),
+    ...(typeof record.applying_from === "string"
+      ? { applyingFrom: record.applying_from }
+      : {}),
+  };
+}
+
+function positiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function nonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 /**

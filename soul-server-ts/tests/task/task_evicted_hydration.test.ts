@@ -189,6 +189,85 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.persistent).toBe(true);
   });
 
+  it("restores the persistent generation and an applying rollover marker", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        claude_session_id: "native-current",
+        metadata: [{
+          type: "persistent_generation",
+          value: {
+            number: 3,
+            backend_session_id: "native-current",
+            started_at: "2026-10-01T09:00:00.000Z",
+            first_call: {
+              generation: 2,
+              input_tokens: 246708,
+              cached_input_tokens: 245563,
+              model_preset: "claude-opus",
+              model: "claude-opus-4-6",
+              measured_at: "2026-10-05T09:00:00.000Z",
+            },
+            pending: {
+              number: 4,
+              reason: "manual",
+              requested_at: "2026-10-05T09:30:00.000Z",
+              target_model_preset: "codex-balanced",
+              target_reasoning_effort: "high",
+              applying_from: "native-current",
+            },
+          },
+        }],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.persistentGeneration).toMatchObject({
+      number: 3,
+      backendSessionId: "native-current",
+      firstCall: {
+        generation: 2,
+        inputTokens: 246708,
+        cachedInputTokens: 245563,
+        modelPreset: "claude-opus",
+      },
+      pending: {
+        number: 4,
+        targetModelPreset: "codex-balanced",
+        targetReasoningEffort: "high",
+        applyingFrom: "native-current",
+      },
+    });
+    expect(task?.activeGenerationRollover).toEqual({
+      number: 4,
+      reason: "manual",
+      fromBackendSessionId: "native-current",
+    });
+  });
+
+  it("drops malformed first-call token usage during generation hydration", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        metadata: [{
+          type: "persistent_generation",
+          value: {
+            number: 2,
+            first_call: {
+              generation: 1,
+              input_tokens: 10,
+              cached_input_tokens: -1,
+              model_preset: "claude-opus",
+              model: "claude-opus-4-6",
+              measured_at: "2026-10-05T09:00:00.000Z",
+            },
+          },
+        }],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.persistentGeneration?.firstCall).toBeUndefined();
+  });
+
   it("restores the session cost base from metadata", () => {
     const task = hydrateEvictedTaskFromSessionRow(
       makeRow({

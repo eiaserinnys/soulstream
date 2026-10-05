@@ -21,8 +21,10 @@ import {
   extractClaudeBackendRolloverState,
   extractClaudePermissionModeFromMetadata,
   extractSessionCostFromMetadata,
+  extractPersistentGeneration,
   extractPersistentSession,
 } from "./task_metadata.js";
+import { resolveGenerationState } from "./persistent_generation_state.js";
 import { ORCHESTRATION_PROFILE_ID, orchestrationPurposeFromMetadata } from "./task_orchestration_purpose.js";
 import { readStoredReasoningEffort } from "./session_effort_storage.js";
 
@@ -127,6 +129,10 @@ export function hydrateEvictedTaskFromSessionRow(
   if (executionRegistration === null) return null;
 
   const claudeBackendRollover = extractClaudeBackendRolloverState(metadata);
+  const generationState = resolveGenerationState(
+    extractPersistentGeneration(metadata),
+    row.claude_session_id,
+  );
   const rolloverCycleFrom = claudeBackendRollover.phase === "pending"
     ? claudeBackendRollover.previousSessionId
     : undefined;
@@ -148,6 +154,10 @@ export function hydrateEvictedTaskFromSessionRow(
     metadata,
     sessionCost: extractSessionCostFromMetadata(metadata),
     persistent: extractPersistentSession(metadata),
+    persistentGeneration: generationState.persistentGeneration,
+    ...(generationState.activeGenerationRollover === undefined
+      ? {}
+      : { activeGenerationRollover: generationState.activeGenerationRollover }),
     orchestrationPurpose,
     agentsRunState: agentsRunState?.serialized,
     agentsRunStateSchemaVersion: agentsRunState?.schemaVersion,

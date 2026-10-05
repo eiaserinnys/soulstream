@@ -214,6 +214,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       renameSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
       acknowledgeReview: vi.fn(async () => "acknowledged" as const),
+      setModelSelection: vi.fn(async () => undefined),
     } satisfies SessionMutationHost;
     const taskManager = new TaskManager(
       "eias-shopping-ts",
@@ -372,6 +373,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       renameSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
       acknowledgeReview: vi.fn(async () => "acknowledged" as const),
+      setModelSelection: vi.fn(async () => undefined),
     } satisfies SessionMutationHost;
     const taskManager = new TaskManager(
       "node-metadata-failure",
@@ -466,6 +468,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       renameSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
       acknowledgeReview: vi.fn(async () => "acknowledged" as const),
+      setModelSelection: vi.fn(async () => undefined),
     } satisfies SessionMutationHost;
     const taskManager = new TaskManager(
       "node-worktree",

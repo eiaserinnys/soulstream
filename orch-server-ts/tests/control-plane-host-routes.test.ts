@@ -283,6 +283,43 @@ describe("control-plane host routes", () => {
     expect(JSON.parse(response.body)).toBe("acknowledged");
   });
 
+  it("dispatches the model-selection operation with normalized fields", async () => {
+    const setModelSelection = vi.fn(async () => ({ ok: true }));
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        sessionMutations: { setModelSelection },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/session-data/host/set_model_selection",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        args: [{
+          session_id: "session-1",
+          model_preset: "codex-balanced",
+          model: "gpt-5-codex",
+          reasoning_effort: "high",
+          idempotency_key: "model-selection-session-1",
+        }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(setModelSelection).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      modelPreset: "codex-balanced",
+      model: "gpt-5-codex",
+      reasoningEffort: "high",
+      idempotencyKey: "model-selection-session-1",
+    });
+  });
+
   it("revives nested background terminal timestamps before the atomic repository call", async () => {
     const terminalize = vi.fn(async (input: unknown) => ({ accepted: false, row: input }));
     const app = Fastify();
