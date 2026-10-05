@@ -8,6 +8,7 @@
 import type { SessionStatus } from "./session-types";
 import type {
   CallerInfoSource,
+  SSEEventGenerationStarted,
   SSEEventTextSnapshot,
   SSEEventType as GeneratedSSEEventType,
 } from "@soulstream/wire-schema";
@@ -154,10 +155,13 @@ export interface DebugEvent {
   kind?: string;
   content?: string;
   capture?: unknown;
+  observation?: unknown;
   timestamp?: number;
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
+
+export type GenerationStartedEvent = SSEEventGenerationStarted;
 
 /** Claude API 에러 이벤트 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorEvent {
@@ -829,6 +833,7 @@ export type SoulSSEEvent =
   | UserMessageEvent
   | SystemMessageEvent
   | DebugEvent
+  | GenerationStartedEvent
   | CompleteEvent
   | ErrorEvent
   | ContextUsageEvent

@@ -21,12 +21,14 @@ export type SessionSlice = Pick<
   DashboardState,
   | "activeSessionKey"
   | "activeSession"
-  | "activeSessionSummary"
+    | "activeSessionSummary"
+    | "persistentSessionDisplaySettings"
 > &
   Pick<
     DashboardActions,
     | "setActiveSession"
     | "setActiveSessionSummary"
+    | "setPersistentSessionDisplaySettings"
     | "clearTree"
     | "expireInputRequest"
     | "clearActiveSession"
@@ -45,11 +47,13 @@ export function getSessionSliceInitialState(): Pick<
   | "activeSessionKey"
   | "activeSession"
   | "activeSessionSummary"
+  | "persistentSessionDisplaySettings"
 > {
   return {
     activeSessionKey: null as string | null,
     activeSession: null as SessionDetail | null,
     activeSessionSummary: null,
+    persistentSessionDisplaySettings: null,
   };
 }
 
@@ -93,6 +97,14 @@ export const createSessionSlice: StateCreator<
   },
 
   setActiveSessionSummary: (summary) => set({ activeSessionSummary: summary }),
+  setPersistentSessionDisplaySettings: (sessionId, settings) => {
+    if (get().activeSessionKey !== sessionId) return;
+    set({ persistentSessionDisplaySettings: settings ? {
+      sessionId,
+      showGenerationSeparator: settings.show_generation_separator,
+      showJevCandidates: settings.show_jev_candidates,
+    } : null });
+  },
 
   // --- 트리 초기화 ---
   // event-processing-slice의 초기 상태를 같은 set() 호출로 되돌린다.

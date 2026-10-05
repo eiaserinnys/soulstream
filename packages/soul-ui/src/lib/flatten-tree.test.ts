@@ -45,6 +45,8 @@ const CHAT_MESSAGE_EVENT_ID_INVENTORY = {
   away_summary: "render",
   turn_summary: "render",
   assigned_card_context: "render",
+  generation_started: "render",
+  persistent_jev_candidates: "render",
 } as const satisfies Record<
   EventTreeNode["type"],
   "render" | "hidden" | "synthetic"

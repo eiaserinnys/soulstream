@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
-  ChatView,
   DashboardIconCap,
   useDashboardStore,
   useGlassSurface,
@@ -27,6 +26,7 @@ import { FolderBoardWorkspace } from "./FolderBoardWorkspace";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
 import { SessionPanelHeader } from "./WorkspacePanelHeaders";
 import type { MobilePlannerTab } from "./mobile-planner-state";
+import { PersistentSessionChatView } from "./PersistentSessionChatView";
 
 export function FolderWorkspace({
   task,
@@ -242,7 +242,7 @@ export function FolderWorkspace({
                 connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} emptyTitle="세션" onClose={onCloseWorkspace}/>
             {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
             <div className="v3-chat-content">
-              {activeSession ? <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
+              {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
             </div>
           </section>
         </div>
@@ -348,7 +348,7 @@ export function FolderWorkspace({
               {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
               <div className="v3-chat-content">
                 {activeSession ? (
-                  <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled} />
+                  <PersistentSessionChatView sessionId={activeSession.agentSessionId} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled} />
                 ) : (
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
                     <span className="v3-emoji" aria-hidden="true">💬</span>

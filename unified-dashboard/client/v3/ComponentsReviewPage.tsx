@@ -29,6 +29,7 @@ import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSamp
 import { CardBoardSamples } from "./CardBoardSamples";
 import { CardCheckItemsSamples } from "./CardCheckItemsSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
+import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -225,35 +226,7 @@ export function ComponentsReviewPage() {
                 <SystemMessage msg={{id:"assigned-card-preview",role:"system",treeNodeId:"assigned-card-preview",treeNodeType:"assigned_card_context",content:assignedCardPreview}}/>
                 <AssistantMessage msg={{id:"caption-sample-answer",role:"assistant",treeNodeId:"caption-sample-answer",treeNodeType:"assistant_message",content:"구현을 맡겼습니다. 다른 작업 결과를 기다립니다."}}/>
                 <SystemMessage msg={{id:"caption-sample-summary",role:"system",treeNodeId:"caption-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
-                <CollapsibleCaption title="Jev 후보 3">
-                  <>
-                    <div className="min-w-0 truncate text-xs text-muted-foreground">T38 · 요약 한 줄 · 3/3</div>
-                    <div className="min-w-0 truncate text-xs text-muted-foreground">#412 · 카드 한 줄 · 2/3</div>
-                    <div className="min-w-0 truncate text-xs text-muted-foreground">세션 제목 · 한 줄 · 2/3</div>
-                  </>
-                </CollapsibleCaption>
-                <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 3">
-                  <div className="min-w-0 truncate text-xs text-muted-foreground">T38 · 요약 한 줄 · 3/3</div>
-                </CollapsibleCaption>
-                <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 0">
-                  <div className="min-w-0 truncate text-xs text-muted-foreground">2점 이상인 후보가 없습니다.</div>
-                </CollapsibleCaption>
-                <CollapsibleCaption initiallyCollapsed={false} title="Jev 후보 제목이 좁은 화면에서 실제로 말줄임되는지 확인하는 긴 제목 샘플">
-                  <div className="min-w-0 truncate text-xs text-muted-foreground">T38 · 제목과 본문이 좁은 화면에서도 한 줄로 말줄임되는 후보 내용 샘플 · 3/3</div>
-                </CollapsibleCaption>
-                <AssistantMessage
-                  msg={{
-                    id: "caption-divider-before", role: "assistant", treeNodeId: "caption-divider-before",
-                    treeNodeType: "assistant_message", content: "이전 세대의 답변입니다.",
-                  }}
-                />
-                <LabeledDivider label="새 세대" />
-                <AssistantMessage
-                  msg={{
-                    id: "caption-divider-after", role: "assistant", treeNodeId: "caption-divider-after",
-                    treeNodeType: "assistant_message", content: "새 세대의 답변입니다.",
-                  }}
-                />
+                <PersistentChatDisplayReviewSample />
                 <LabeledDivider label="다음 대화" />
                 <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
               </div>

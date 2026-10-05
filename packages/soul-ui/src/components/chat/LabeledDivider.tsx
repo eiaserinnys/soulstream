@@ -15,9 +15,9 @@ export function LabeledDivider({ label }: LabeledDividerProps) {
           className="my-10 flex items-center gap-3 text-xs font-medium text-muted-foreground"
           role="separator"
         >
-          <span aria-hidden="true" className="min-w-0 flex-1 border-t border-input" />
+          <span aria-hidden="true" className="min-w-6 flex-1 border-t border-input" />
           <span className="min-w-0 truncate text-center">{label}</span>
-          <span aria-hidden="true" className="min-w-0 flex-1 border-t border-input" />
+          <span aria-hidden="true" className="min-w-6 flex-1 border-t border-input" />
         </div>
       </div>
     </div>

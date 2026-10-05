@@ -36,6 +36,7 @@ import type {
 import { formatRetryingErrorHistory } from "@shared/sse-events";
 import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-content";
+import { isPersistentJevCandidatesDebugEvent } from "../lib/persistent-jev-candidates";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
 import { TRUNCATE_THRESHOLD } from "./event-update";
@@ -136,6 +137,13 @@ export function createNodeFromEvent(
       const e = event as SystemMessageEvent;
       return makeNode(`system-msg-${eventId}`, "system_message", e.text, {
         completed: true,
+      });
+    }
+
+    case "generation_started": {
+      return makeNode(`generation-started-${eventId}`, "generation_started", "새 세대", {
+        completed: true,
+        timestamp: event.timestamp,
       });
     }
 
@@ -396,6 +404,19 @@ export function createNodeFromEvent(
             completed: true,
             preparedInputId: capture.inputId,
             capture,
+            timestamp: event.timestamp,
+          },
+        );
+      }
+      if (isPersistentJevCandidatesDebugEvent(event)) {
+        return makeNode(
+          `persistent-jev-candidates-${eventId}`,
+          "persistent_jev_candidates",
+          "",
+          {
+            completed: true,
+            preparedInputId: event.observation.input_id,
+            candidates: event.observation.selected,
             timestamp: event.timestamp,
           },
         );

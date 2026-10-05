@@ -95,6 +95,7 @@ export function ChatView({
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const persistentSessionDisplaySettings = useDashboardStore((s) => s.persistentSessionDisplaySettings);
   const pendingChatSend = useDashboardStore((s) => (
     s.activeSessionKey ? s.pendingChatSends[s.activeSessionKey] : undefined
   ));
@@ -725,6 +726,13 @@ export function ChatView({
          */
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
         itemContent={(_, item) => {
+          const message = item.type === "single" ? item.msg : null;
+          if (message?.treeNodeType === "generation_started"
+            && (persistentSessionDisplaySettings?.sessionId !== activeSessionKey
+              || !persistentSessionDisplaySettings.showGenerationSeparator)) return null;
+          if (message?.treeNodeType === "persistent_jev_candidates"
+            && (persistentSessionDisplaySettings?.sessionId !== activeSessionKey
+              || !persistentSessionDisplaySettings.showJevCandidates)) return null;
           const toolGroupKey = item.type === "tool-group" && activeSessionKey !== null
             ? toolGroupExpansionKey(activeSessionKey, item)
             : undefined;

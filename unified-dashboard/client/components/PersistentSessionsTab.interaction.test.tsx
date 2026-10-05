@@ -23,7 +23,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
         onChange: (event: any) => onFolderChange(event.target.value || null),
       }, [React.createElement("option", { key: "empty", value: "" }, "폴더를 선택하세요"), ...folders.map((folder: any) => React.createElement("option", { key: folder.id, value: folder.id }, folder.name))]),
     ),
-    useDashboardStore: (selector: any) => selector({ catalog: { folders: [{ id: "folder-a", name: "음악" }] } }),
+    useDashboardStore: (selector: any) => selector({ catalog: { folders: [{ id: "folder-a", name: "음악" }] }, setPersistentSessionDisplaySettings: () => undefined }),
   };
 });
 
@@ -107,6 +107,22 @@ describe("PersistentSessionsTab", () => {
     await waitFor(() => expect(calls.filter((call) => call.method === "GET").length).toBeGreaterThan(1));
     expect(nameInput().value).toBe("리뷰 관제 수정");
     expect((document.body.querySelector('[aria-label="기본 모델"]') as HTMLSelectElement).value).toBe("preset-b");
+  });
+
+  it("saves the two chat display flags as a partial settings update", async () => {
+    const { request, calls } = server();
+    await renderTab(request);
+    await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
+    flushSync(() => buttonContaining("리뷰 관제")?.click());
+    await waitFor(() => expect(document.body.textContent).toContain("세대 구분선 표시"));
+    const row = Array.from(document.querySelectorAll<HTMLElement>("[data-testid=config-field-row]"))
+      .find((element) => element.textContent?.includes("세대 구분선 표시"));
+    const toggle = row?.querySelector<HTMLButtonElement>("[role=switch]");
+    if (!toggle) throw new Error("세대 구분선 토글을 찾지 못했습니다.");
+    flushSync(() => toggle.click());
+    await waitFor(() => expect(calls.some((call) => call.method === "PUT" && call.body?.settings?.show_generation_separator === false)).toBe(true));
+    const saved = calls.find((call) => call.method === "PUT");
+    expect(saved?.body).toEqual({ settings: { show_generation_separator: false, show_jev_candidates: true } });
   });
 
   it("blocks buttons while saving and keeps the input after a failure so it can be saved again", async () => {
@@ -391,6 +407,7 @@ function server(options: ServerOptions = {}) {
       return json({ session: created, creation: "started", warnings: [] }, 201);
     }
     const target = sessions.find((item) => path === `/api/persistent-sessions/${item.session_id}`);
+    if (method === "GET" && target) return json({ session: target });
     if (method === "PUT") {
       const early = await options.onUpdate?.();
       if (early) return early;
@@ -400,6 +417,8 @@ function server(options: ServerOptions = {}) {
       if (body?.enabled === true) saved.persistent = true;
       if (body?.display_name) saved.display_name = body.display_name;
       const requested = body?.settings?.default_model;
+      if (typeof body?.settings?.show_generation_separator === "boolean") saved.settings.show_generation_separator = body.settings.show_generation_separator;
+      if (typeof body?.settings?.show_jev_candidates === "boolean") saved.settings.show_jev_candidates = body.settings.show_jev_candidates;
       let change = "none";
       if (requested) {
         saved.settings.default_model = { model_preset: requested.model_preset, reasoning_effort: requested.reasoning_effort ?? "high" };

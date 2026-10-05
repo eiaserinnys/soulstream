@@ -68,6 +68,7 @@ const sameModel = (a: ModelSelection, b: ModelSelection) =>
 export function PersistentSessionsTab({ request, assignment }: { request?: typeof fetch; assignment?: AssignmentData }) {
   const api = useMemo(() => createPersistentSessionsApi(request), [request]);
   const catalog = useDashboardStore((state) => state.catalog);
+  const setPersistentSessionDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const [sessions, setSessions] = useState<PersistentSession[]>([]);
   const [defaults, setDefaults] = useState<PersistentCreateDefaults | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -135,6 +136,7 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
     setSelected(session);
     setEditor(editorFromSession(session));
     setRegistration(null);
+    setPersistentSessionDisplaySettings(session.session_id, session.settings);
   };
 
   const mutate = async (action: () => Promise<void>) => {
@@ -168,6 +170,18 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
   const save = () => mutate(async () => {
     if (!selected) return;
     const { session } = await api.update(selected.session_id, { display_name: validName(), settings: defaultModelWrite() });
+    applySaved(session);
+  });
+
+  const saveDisplaySetting = (key: "show_generation_separator" | "show_jev_candidates", value: boolean) => mutate(async () => {
+    if (!selected) return;
+    const settings = { ...selected.settings, [key]: value };
+    const { session } = await api.update(selected.session_id, {
+      settings: {
+        show_generation_separator: settings.show_generation_separator,
+        show_jev_candidates: settings.show_jev_candidates,
+      },
+    });
     applySaved(session);
   });
 
@@ -281,6 +295,8 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
             value={pendingText(selected)}
             onChange={() => undefined}
           />
+          <SettingFieldWidget field={boolField("show_generation_separator", "세대 구분선 표시", selected.settings.show_generation_separator)} value={String(selected.settings.show_generation_separator)} onChange={(value) => void saveDisplaySetting("show_generation_separator", value === "true")} />
+          <SettingFieldWidget field={boolField("show_jev_candidates", "Jev 후보 표시", selected.settings.show_jev_candidates)} value={String(selected.settings.show_jev_candidates)} onChange={(value) => void saveDisplaySetting("show_jev_candidates", value === "true")} />
         </div>
         <SettingsGroupBox title="실행 대상"><div className="v3-succession-assignment">{modelSelect}</div></SettingsGroupBox>
         <div className="flex flex-wrap gap-2">
@@ -335,6 +351,10 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
 
 function textField(key: string, label: string, value: string, readOnly: boolean, description = ""): SettingField {
   return { key, field_name: key, label, description, value, value_type: "str", sensitive: false, hot_reloadable: true, read_only: readOnly };
+}
+
+function boolField(key: string, label: string, value: boolean): SettingField {
+  return { key, field_name: key, label, description: "", value, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
 }
 
 function agentLabel(session: PersistentSession): string {
