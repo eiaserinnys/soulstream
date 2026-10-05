@@ -46,22 +46,32 @@ export function beginGenerationRolloverIfPending(
     active = {
       number: pending.number,
       reason: pending.reason,
+      requestedAt: pending.requestedAt,
       fromBackendSessionId,
-      previousModelPreset: isResumedApplication ? undefined : task.modelPreset ?? null,
-      previousBackend: isResumedApplication ? agent.backend : effectiveTaskBackend(task, agent),
-      previousModel: task.model ?? null,
-      previousReasoningEffort: task.reasoningEffort,
+      ...(isResumedApplication
+        ? {
+            ...(pending.previousModelPreset === undefined
+              ? {}
+              : { previousModelPreset: pending.previousModelPreset }),
+            ...(pending.previousBackend === undefined
+              ? {}
+              : { previousBackend: pending.previousBackend }),
+          }
+        : {
+            previousModelPreset: task.modelPreset ?? null,
+            previousBackend: effectiveTaskBackend(task, agent),
+          }),
     };
     task.activeGenerationRollover = active;
   } else {
+    active.requestedAt = pending.requestedAt;
     if (pending.applyingFrom === undefined) {
       active.previousModelPreset ??= task.modelPreset ?? null;
+      active.previousBackend ??= effectiveTaskBackend(task, agent);
+    } else {
+      active.previousModelPreset = pending.previousModelPreset;
+      active.previousBackend = pending.previousBackend;
     }
-    active.previousBackend ??= pending.applyingFrom === undefined
-      ? effectiveTaskBackend(task, agent)
-      : agent.backend;
-    active.previousModel ??= task.model ?? null;
-    active.previousReasoningEffort ??= task.reasoningEffort;
   }
 
   if (!modelCatalog) {
@@ -73,6 +83,12 @@ export function beginGenerationRolloverIfPending(
     targetPreset = modelCatalog.resolve(pending.targetModelPreset);
   } catch (error) {
     if (!(error instanceof UnknownModelPresetError)) throw error;
+    if (pending.applyingFrom !== undefined) {
+      throw new Error(
+        `Persistent generation target preset "${pending.targetModelPreset}" is unavailable while applying. Request another preset or restore it in the model catalog.`,
+        { cause: error },
+      );
+    }
     // A requested preset can disappear after P7 accepted it. Keep this execution
     // on its current model and preserve the failure alongside the cleared request.
     const failure: PersistentGenerationRolloverFailure = {
@@ -161,9 +177,19 @@ export async function commitStart(
   const pending = current?.pending;
   if (!active || !current || !pending) return;
 
+  if (active.previousBackend === undefined) {
+    throw new Error("Persistent generation rollover is missing its stored previous backend");
+  }
+
   const applyingState = {
     ...current,
-    pending: { ...pending, applyingFrom: active.fromBackendSessionId },
+    pending: {
+      ...pending,
+      requestedAt: active.requestedAt,
+      applyingFrom: active.fromBackendSessionId,
+      previousModelPreset: active.previousModelPreset ?? null,
+      previousBackend: active.previousBackend,
+    },
   };
   const applyingEntry = buildPersistentGenerationMetadataEntry(applyingState);
   const metadataEventId = await persistence.enqueueMetadataEffect(
@@ -172,7 +198,8 @@ export async function commitStart(
     {
       replaceExistingType: "persistent_generation",
       waitForAck: true,
-      semanticDedupeKey: `generation_applying:${task.agentSessionId}:${active.number}`,
+      semanticDedupeKey:
+        `generation_applying:${task.agentSessionId}:${active.number}:${active.requestedAt}`,
       ...(task.executionRegistration
         ? { registrationId: task.executionRegistration.registrationId }
         : {}),
@@ -182,24 +209,15 @@ export async function commitStart(
   task.persistentGeneration = applyingState;
   if (metadataEventId !== null) task.lastEventId = metadataEventId;
 
-  const selectionChanged =
-    (active.previousModelPreset !== undefined
-      && active.previousModelPreset !== task.modelPreset)
-    || (active.previousModel !== undefined && active.previousModel !== task.model)
-    || active.previousReasoningEffort !== task.reasoningEffort
-    || pending.targetModelPreset !== task.modelPreset
-    || pending.targetReasoningEffort !== task.reasoningEffort;
-  if (selectionChanged) {
-    await sessionMutations.setModelSelection(
-      task.agentSessionId,
-      {
-        modelPreset: task.modelPreset ?? null,
-        model: task.model ?? null,
-        reasoningEffort: task.reasoningEffort ?? null,
-      },
-      `persistent_generation_model_selection:${task.agentSessionId}:${active.number}`,
-    );
-  }
+  await sessionMutations.setModelSelection(
+    task.agentSessionId,
+    {
+      modelPreset: task.modelPreset ?? null,
+      model: task.model ?? null,
+      reasoningEffort: task.reasoningEffort ?? null,
+    },
+    `persistent_generation_model_selection:${task.agentSessionId}:${active.number}:${active.requestedAt}`,
+  );
 }
 
 export async function publishStarted(
@@ -235,8 +253,9 @@ export async function publishStarted(
       recent_from_event_id: checkpoint.recentFromEventId,
       recent_to_event_id: checkpoint.recentToEventId,
     },
-    timestamp: Date.now(),
-    _dedupe_key: `generation_started:${task.agentSessionId}:${active.number}`,
+    _dedupe_key:
+      `generation_started:${task.agentSessionId}:${active.number}:${active.requestedAt}`,
+    timestamp: Date.now() / 1000,
   } as unknown as import("../engine/protocol.js").SSEEventPayload;
   const { eventId } = await persistence.enqueueEventAndWaitForSessionAck(
     task.agentSessionId,

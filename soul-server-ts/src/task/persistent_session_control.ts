@@ -120,7 +120,15 @@ export class PersistentSessionControl {
         ...(reasoningEffort === undefined ? {} : { targetReasoningEffort: reasoningEffort }),
         ...(generation.pending?.applyingFrom === undefined
           ? {}
-          : { applyingFrom: generation.pending.applyingFrom }),
+          : {
+              applyingFrom: generation.pending.applyingFrom,
+              ...(generation.pending.previousModelPreset === undefined
+                ? {}
+                : { previousModelPreset: generation.pending.previousModelPreset }),
+              ...(generation.pending.previousBackend === undefined
+                ? {}
+                : { previousBackend: generation.pending.previousBackend }),
+            }),
       },
     };
     const entry = buildPersistentGenerationMetadataEntry(nextGeneration);

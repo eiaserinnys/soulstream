@@ -73,6 +73,8 @@ export interface PersistentGenerationPending {
   targetModelPreset: string;
   targetReasoningEffort?: ReasoningEffort;
   applyingFrom?: string;
+  previousModelPreset?: string | null;
+  previousBackend?: string;
 }
 
 export interface PersistentGenerationState {
@@ -86,11 +88,10 @@ export interface PersistentGenerationState {
 export interface ActiveGenerationRollover {
   number: number;
   reason: string;
+  requestedAt: string;
   fromBackendSessionId: string;
   previousModelPreset?: string | null;
-  previousBackend?: BackendId;
-  previousModel?: string | null;
-  previousReasoningEffort?: ReasoningEffort;
+  previousBackend?: string;
   firstCompleteObserved?: boolean;
   firstCall?: {
     inputTokens: number;

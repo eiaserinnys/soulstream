@@ -5932,22 +5932,21 @@ describe("TaskExecutor persistent generation rollover", () => {
       previousModelPreset: "claude-source",
       previousBackend: "claude" as const,
     };
-    const task = makeTask({
-      persistent: true,
-      profileId: claudeAgent.id,
-      codexThreadId: "native-old",
-      modelPreset: "removed-preset",
-      model: "removed-model",
-      modelPresetBackend: undefined,
-      persistentGeneration: { number: 1, pending },
-    });
+    const task = makeTask();
+    task.persistent = true;
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "native-old";
+    task.modelPreset = "removed-preset";
+    task.model = "removed-model";
+    task.modelPresetBackend = undefined;
+    task.persistentGeneration = { number: 1, pending };
 
     expect(() => executor.startNewExecution(task, claudeAgent))
       .toThrow(/removed-preset.*request another preset.*restore.*catalog/i);
 
     expect(task.persistentGeneration?.pending).toEqual(pending);
     expect(task.pendingPersistentGenerationRolloverFailure).toBeUndefined();
-    expect(task.metadata?.some((entry) => entry.type === "persistent_generation")).toBe(false);
+    expect(task.metadata).toBeUndefined();
     expect(engineFactory).not.toHaveBeenCalled();
     expect(sessionMutations.setModelSelection).not.toHaveBeenCalled();
   });

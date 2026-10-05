@@ -184,6 +184,7 @@ describe("TaskEngineEventPublisher", () => {
       activeGenerationRollover: {
         number: 2,
         reason: "context limit",
+        requestedAt: "2026-10-05T00:00:00.000Z",
         fromBackendSessionId: "native-old",
         previousBackend: "claude",
       },
@@ -214,6 +215,7 @@ describe("TaskEngineEventPublisher", () => {
       activeGenerationRollover: {
         number: 2,
         reason: "context limit",
+        requestedAt: "2026-10-05T00:00:00.000Z",
         fromBackendSessionId: "native-old",
         previousBackend: "claude",
       },
@@ -242,6 +244,7 @@ describe("TaskEngineEventPublisher", () => {
       activeGenerationRollover: {
         number: 2,
         reason: "context limit",
+        requestedAt: "2026-10-05T00:00:00.000Z",
         fromBackendSessionId: "native-old",
       },
     });

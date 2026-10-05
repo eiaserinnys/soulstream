@@ -37,7 +37,14 @@ export function resolveGenerationState(
     activeGenerationRollover: {
       number: pending.number,
       reason: pending.reason,
+      requestedAt: pending.requestedAt,
       fromBackendSessionId: pending.applyingFrom,
+      ...(pending.previousModelPreset === undefined
+        ? {}
+        : { previousModelPreset: pending.previousModelPreset }),
+      ...(pending.previousBackend === undefined
+        ? {}
+        : { previousBackend: pending.previousBackend }),
     },
   };
 }

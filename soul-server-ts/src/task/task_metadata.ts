@@ -91,6 +91,14 @@ export function buildPersistentGenerationMetadataEntry(
             target_model_preset: pending.targetModelPreset,
             target_reasoning_effort: pending.targetReasoningEffort ?? null,
             applying_from: pending.applyingFrom ?? null,
+            ...(pending.applyingFrom === undefined
+              ? {}
+              : {
+                  previous_model_preset: pending.previousModelPreset ?? null,
+                  ...(pending.previousBackend === undefined
+                    ? {}
+                    : { previous_backend: pending.previousBackend }),
+                }),
           }
         : null,
     },
@@ -172,6 +180,12 @@ function parsePersistentGenerationPending(value: unknown):
       : {}),
     ...(typeof record.applying_from === "string"
       ? { applyingFrom: record.applying_from }
+      : {}),
+    ...(record.previous_model_preset === null || typeof record.previous_model_preset === "string"
+      ? { previousModelPreset: record.previous_model_preset }
+      : {}),
+    ...(typeof record.previous_backend === "string"
+      ? { previousBackend: record.previous_backend }
       : {}),
   };
 }

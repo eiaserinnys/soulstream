@@ -117,6 +117,7 @@ describe("resolveGenerationState", () => {
       activeGenerationRollover: {
         number: 2,
         reason: "manual",
+        requestedAt: "2026-10-05T09:00:00.000Z",
         fromBackendSessionId: "native-old",
         previousModelPreset: "codex-source",
         previousBackend: "codex",

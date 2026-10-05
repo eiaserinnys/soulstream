@@ -3,7 +3,7 @@
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
-import type { ModelCatalog } from "../model_catalog.js";
+import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
@@ -134,7 +134,11 @@ export class TaskManager {
           if (!this.modelCatalog) {
             throw new Error(`Model catalog is not configured; cannot resolve preset: ${task.modelPreset}`);
           }
-          return this.modelCatalog.resolve(task.modelPreset).backend;
+          try {
+            return this.modelCatalog.resolve(task.modelPreset).backend;
+          } catch (error) {
+            if (!(error instanceof UnknownModelPresetError)) throw error;
+          }
         }
         const profile = task.agentProfileSnapshot
           ?? (task.profileId ? this.agentRegistry?.get(task.profileId) : undefined);
