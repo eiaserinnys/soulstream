@@ -1,7 +1,6 @@
 import {CardTransitionSettings} from './CardTransitionSettings';
-import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardStatus } from '../../api/cardTypes';
 import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
@@ -16,11 +15,7 @@ import { resolveSessionCardAvatar, resolveSessionAgentLabel } from '../sessionCa
 import { useDeviceType, useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { NavigationContext } from '@react-navigation/native';
-import { ChatComposer } from '../chat/ChatComposer';
-import { AttachmentChips } from '../chat/AttachmentChips';
-import { makeStyles as makeChatStyles } from '../chat/ChatBody.styles';
-import { useChatAttachments } from '../../hooks/useChatAttachments';
-import { buildAttachmentUri } from '../events/UserMessage';
+import { CardCommentComposer, type CardCommentComposerHandle } from './CardCommentComposer';
 import { makeFolderWorkspaceStyles } from './FolderWorkspace.styles';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { CompactTouchTarget } from '../CompactTouchTarget';
@@ -53,15 +48,15 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const folderStyles = useMemo(() => makeFolderWorkspaceStyles(t), [t]);
-  const chatStyles = useMemo(() => makeChatStyles(t), [t]);
   const { detail, error } = useCardDetail(api, cardId);
   const { run, pending } = useCardActions(api);
   const statusAction = useCardTransition(api, cardId);
   const comments = useCardComments(api, cardId);
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
-  const draft = usePersistentDraft('card-comment', [cardId], '');
-  const { value: text, setValue: setText } = draft;
+  const composer = useRef<CardCommentComposerHandle>(null);
+  const [composerBusy, setComposerBusy] = useState(true);
+  const chooseAnswer = React.useCallback((answer: string) => composer.current?.chooseAnswer(answer), []);
   const [otherExpanded, setOtherExpanded] = useState(false);
   const [sessionsExpanded, setSessionsExpanded] = useState(false);
   const scroll = useRef<ScrollView>(null);
@@ -82,28 +77,13 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const nodeId = assigned?.nodeId ?? card?.nodeId;
   const identity = { ...agent, agentPortraitUrl: agent.agentPortraitUrl ?? (agent.agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agent.agentId}/portrait` : null) };
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
-  const mapUploadedPath = React.useCallback((path: string, uploadNode: string) => buildAttachmentUri(serverUrl, uploadNode, path)!, [serverUrl]);
-  const attachments = useChatAttachments({ api, sessionId: card?.assigneeSessionId ?? undefined, nodeId: nodeId ?? undefined,
-    disabled: pending || comments.pending, mapUploadedPath });
-  const locked = pending || statusAction.pending || comments.pending || attachments.uploading || !draft.ready;
-  const pickAttachment = () => {
-    if (card?.assigneeSessionId && nodeId) attachments.pickAttachment();
-    else Alert.alert('곧 지원', '담당 세션이 연결되면 첨부를 올릴 수 있습니다.');
-  };
+  const locked = pending || statusAction.pending || comments.pending || composerBusy;
+  const question = [...(detail?.questions ?? [])].reverse().find(item => item.answer === null);
   const status = async (next: CardStatus, reason?: string) => {
     if (!api || !card) return Promise.resolve(false);
     const ok = await statusAction.transition(card, next, reason);
     if (ok && next === 'done' && active.current) onClose();
     return ok;
-  };
-  const send = async () => {
-    if (!api || !card || !text.trim() || locked) return;
-    const body = [text.trim(), ...attachments.attachments.map((item) => `${/\.(png|jpe?g|gif|webp|heic)$/i.test(item.name) ? '!' : ''}[${item.name}](${item.path})`)].join('\n\n');
-    const question = [...(detail?.questions ?? [])].reverse().find((item) => item.answer === null);
-    const ok = question
-      ? await run(() => api.answerCardQuestion(card.id, question.id, body, cardOperationId()))
-      : await comments.send(body);
-    if (ok) { draft.clearIfMatches(text); attachments.clearAttachments(); }
   };
   const openSession = (id: string) => {
     if (!inline) onClose();
@@ -143,19 +123,15 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
         <FolderSessionHistory api={api} small sessionIds={sessionsExpanded ? sessionIds : sessionIds.slice(0, 3)} onOpenSession={openSession} />
         {sessionIds.length > 3 ? <CompactTouchTarget accessibilityRole="button" onPress={() => setSessionsExpanded((old) => !old)}><Text style={styles.link}>{sessionsExpanded ? '접기' : `${sessionIds.length - 3}개 더`}</Text></CompactTouchTarget> : null}
       </View> : null}
-      {detail ? <CardTimeline detail={detail} onChooseAnswer={setText} /> : null}
+      {detail ? <CardTimeline detail={detail} onChooseAnswer={chooseAnswer} /> : null}
       {detail ? <View testID="card-other">
         <PlannerSectionHeader title="그 밖에" expanded={otherExpanded} onToggle={() => setOtherExpanded((old) => !old)} />
         {otherExpanded ? <PlannerMarkdownText markdown={detail.card.brief || '아직 경과가 없습니다.'} variant="card" /> : null}
       </View> : null}
     </ScrollView>
-    <View testID="card-comment-composer">
-      <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={locked}
-        styles={chatStyles} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
-      <ChatComposer input={text} onChangeInput={setText} placeholder="커멘트" inputAccessibilityLabel="커멘트" sendAccessibilityLabel="커멘트 보내기"
-        onPickAttachment={pickAttachment} onSend={() => { void send(); }} uploading={attachments.uploading} sending={comments.pending || pending}
-        disabled={locked || !api} voiceControls={null} />
-    </View>
+    <CardCommentComposer ref={composer} api={api} cardId={cardId} sessionId={card?.assigneeSessionId} nodeId={nodeId}
+      question={question} locked={locked || !card} sending={comments.pending || pending} onBusyChange={setComposerBusy}
+      sendComment={comments.send} runMutation={run} />
     {assignmentOpen && card && !card.assigneeSessionId ? <CardAssignmentSheet api={api} mode="edit" value={{ folderId: card.folderId, nodeId: card.nodeId,
       agentId: card.assigneeAgentId, modelPreset: card.modelPreset }} onClose={() => setAssignmentOpen(false)} onSave={async (next) => {
         if (!api) return;
