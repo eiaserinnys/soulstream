@@ -36,7 +36,6 @@ export const cardHandlers = {
     }
   }),
   run_card: (o, a, c) => run(async () => {
-    if (c.principal === "external") throw new Error("card run requires an agent session");
     matchingHeader(a, c);
     return runCard(o.cards, String(a.card_id), agent(a, c, true), c.signal);
   }),

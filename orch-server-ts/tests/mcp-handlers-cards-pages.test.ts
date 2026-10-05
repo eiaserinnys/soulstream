@@ -144,12 +144,14 @@ describe("card MCP execution", () => {
     expect(h.executor.observe).toHaveBeenCalledWith("card-1", "execution-1", expect.objectContaining({ actorKind: "agent", actorSessionId: "session-1" }));
     expect(result.structuredContent).toMatchObject({ execution: { state: "started", sessionId: "spawned-session" }, card: { id: "card-1" } });
   });
-  it("rejects run_card for an external principal", async () => {
+  it("runs a card for an external principal as a sessionless LLM actor", async () => {
     const h = cardHarness();
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
     const result = await call(h.options, "run_card", { card_id: "card-1" }, { ...context, principal: "external", callerSessionId: null });
-    expect(result.isError).toBe(true);
-    expect(result.content).toContainEqual(expect.objectContaining({ text: "card run requires an agent session" }));
-    expect(h.cardExecutionServiceProvider).not.toHaveBeenCalled();
+    expect(result.isError).not.toBe(true);
+    expect(h.executor.execute).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "llm", actorSessionId: null, cardId: "card-1", expectedVersion: 3 }));
+    expect(h.executor.observe).toHaveBeenCalledWith("card-1", "execution-1", expect.objectContaining({ actorKind: "llm", actorSessionId: null }));
+    expect(result.structuredContent).toMatchObject({ execution: { state: "started", sessionId: "spawned-session" }, card: { id: "card-1" } });
   });
   it("runs a new card from create_card in the same call and excludes run from the mutation body", async () => {
     const h = cardHarness();
@@ -186,13 +188,17 @@ describe("card MCP execution", () => {
     expect(result.content[0]?.text).toContain("카드 card-1는 드래프트로 만들어졌지만 실행하지 못했습니다: 실행 설정이 없습니다.");
     expect(result.content[0]?.text).toContain("run_card로 실행하세요.");
   });
-  it("does not expose or execute create_card.run for an external principal", async () => {
+  it("creates and executes a card for an external principal as a sessionless LLM actor", async () => {
     const h = cardHarness();
+    h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [] });
     const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true },
       { ...context, principal: "external", callerSessionId: null });
     expect(result.isError).not.toBe(true);
-    expect(h.executor.execute).not.toHaveBeenCalled();
+    expect(h.executor.execute).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "llm", actorSessionId: null, cardId: "card-1" }));
+    expect(h.executor.observe).toHaveBeenCalledWith("card-1", "execution-1", expect.objectContaining({ actorKind: "llm", actorSessionId: null }));
     expect(h.service.createCard).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "llm", actorSessionId: null }));
+    expect(h.service.createCard.mock.calls[0]![0]).not.toHaveProperty("run");
+    expect(result.structuredContent).toMatchObject({ card: { id: "card-1" }, execution: { state: "started" } });
   });
   it("exposes spoken/reply and forwards replies without rewriting their text", async () => {
     const h = cardHarness();

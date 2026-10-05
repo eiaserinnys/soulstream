@@ -644,6 +644,10 @@
         "title": {
           "minLength": 1,
           "type": "string"
+        },
+        "run": {
+          "description": "true면 만든 직후 run_card와 같은 방식으로 바로 실행한다. queue와 함께 쓰지 않는다.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -3011,6 +3015,29 @@
       "type": "object"
     },
     "name": "request_card_review"
+  },
+  {
+    "description": "드래프트(todo)나 대기(queued) 카드를 지금 실행한다. 시스템이 카드에 설정된 노드, 에이전트, 모델로 세션을 만들어 담당으로 잇고 진행 중으로 옮긴다. 담당 세션이 이미 있는 카드는 새로 만들지 않고 그 세션을 깨운다. 대기열 순서와 동시 실행 상한을 거치지 않는다. 생긴 세션은 부른 쪽의 자식이 아니며 완료 보고가 돌아오지 않으므로 경과는 카드에서 본다. 담당이 아니어도 실행할 수 있다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id"
+      ],
+      "type": "object"
+    },
+    "name": "run_card"
   },
   {
     "description": "한 폴더 안에서 최근 갱신된 최대 2000개 세션과 마크다운의 표시명·제목·본문을 검색한다. truncated=true면 더 오래된 항목은 검색되지 않았다.",
