@@ -89,7 +89,8 @@ function findProductFilesContaining(pattern: RegExp): string[] {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name !== '__tests__') visit(absolute);
+        // Component-review fixtures are not product mount surfaces.
+        if (entry.name !== '__tests__' && entry.name !== 'component-review') visit(absolute);
         continue;
       }
       if (!entry.name.endsWith('.tsx')) continue;
