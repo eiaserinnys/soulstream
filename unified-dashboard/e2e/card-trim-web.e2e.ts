@@ -44,7 +44,7 @@ for(const width of [1440,1920,2560])test(`trim web ${width}`,async({page})=>{
  const {board,errors,writes}=await prepare(page,width);
  await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
  const detail=page.getByTestId('card-detail'),workspace=page.getByTestId('v3-card-workspace');
- await expect(detail).toBeVisible();await page.waitForTimeout(300);
+ await expect(detail).toBeVisible();await workspace.evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)));
  const frame=await detail.boundingBox();expect(frame!.y+frame!.height).toBeLessThanOrEqual(1064);
  const initial=await geometry(page),expectedTotal=Math.min(initial.work,1666),expectedCard=Math.round((expectedTotal-16)*750/1650);
  expect(initial.card).toBeCloseTo(expectedCard,0);expect(initial.chat).toBeCloseTo(expectedTotal-16-expectedCard,0);expect(initial.right).toBe(width-16);
