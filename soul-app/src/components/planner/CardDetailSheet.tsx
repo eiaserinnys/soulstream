@@ -378,7 +378,8 @@ function CardReadSummary({ card, items, error, assigneeLabel, hasAssignee, human
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm }}>
           <View style={{ width: spacing.xxs, backgroundColor: t.persistentSession.line }} />
           <View style={{ flex: 1, minWidth: 0 }}><CardRequestView request={card.request} attachments={card.attachments}
-            bodyStyle={{ ...t.foundation.typography.body, color: t.colors.textSecondary }} numberOfLines={4} /></View>
+            bodyStyle={{ ...t.foundation.typography.body, color: t.colors.textMuted }} numberOfLines={4}
+            collapseBlankLines attachmentImageVariant="cardCheckItem" /></View>
         </View>
       </View> : null}
       {hasProgress ? <View testID="card-read-summary-progress" style={{ gap: spacing.sm }}>

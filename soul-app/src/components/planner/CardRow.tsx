@@ -47,21 +47,26 @@ export function CardStatusChip({ card, title = false, board = false, detail = fa
   </Text>;
 }
 
-type CardRowProps = {
+type CardRowSharedProps = {
   api: ApiClient | null;
   card: CardDto;
   onOpen(): void;
   today?: boolean;
   queueIndex?: number;
   board?: boolean;
-  variant?: 'default' | 'summary';
 };
 
-export function CardRow({ variant = 'default', ...props }: CardRowProps) {
-  return variant === 'summary' ? <SummaryCardRow {...props} /> : <StandardCardRow {...props} />;
+type CardRowProps = CardRowSharedProps & (
+  | { variant?: 'default'; summaryNumberTemplate?: never }
+  | { variant: 'summary'; summaryNumberTemplate?: string }
+);
+
+export function CardRow(props: CardRowProps) {
+  if (props.variant === 'summary') return <SummaryCardRow {...props} />;
+  return <StandardCardRow {...props} />;
 }
 
-function SummaryCardRow({ card, onOpen }: Omit<CardRowProps, 'variant'>) {
+function SummaryCardRow({ card, onOpen, summaryNumberTemplate }: CardRowSharedProps & { summaryNumberTemplate?: string }) {
   const t = useTokens();
   const pressedColor = createPlannerVisualRoles(t).grouped.pressedColor;
   const assigned = useSessionStore((state) => card.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
@@ -87,9 +92,17 @@ function SummaryCardRow({ card, onOpen }: Omit<CardRowProps, 'variant'>) {
     style={({ pressed }) => ({ minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs,
       backgroundColor: pressed ? pressedColor : 'transparent' })}
   >
-    {card.number == null ? null : <Text testID={`card-${card.id}-number`} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary, flexShrink: 0 }} numberOfLines={1}>
-      #{card.number}
-    </Text>}
+    {card.number == null ? null : <View style={{ position: 'relative', flexShrink: 0 }}>
+      <Text testID={`card-${card.id}-number-reserve`} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary,
+        fontVariant: ['tabular-nums'], flexShrink: 0, opacity: 0 }} numberOfLines={1} accessible={false}
+        accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
+        {summaryNumberTemplate ?? `#${card.number}`}
+      </Text>
+      <Text testID={`card-${card.id}-number`} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary,
+        fontVariant: ['tabular-nums'], position: 'absolute', left: 0, top: 0, flexShrink: 0 }} numberOfLines={1}>
+        #{card.number}
+      </Text>
+    </View>}
     <Text testID={`card-${card.id}-summary-title`} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, flex: 1, minWidth: 0 }} numberOfLines={1}>
       {card.title}
     </Text>
@@ -104,7 +117,7 @@ function SummaryCardRow({ card, onOpen }: Omit<CardRowProps, 'variant'>) {
   </Pressable>;
 }
 
-function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }: Omit<CardRowProps, 'variant'>) {
+function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }: CardRowSharedProps) {
   const t = useTokens();
   const styles = useMemo(() => makeSessionCardStyles(t, true), [t]);
   const { detail } = useCardDetail(api, board ? null : card.id);

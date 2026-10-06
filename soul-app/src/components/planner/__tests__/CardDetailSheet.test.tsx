@@ -555,7 +555,7 @@ test('모두 확인 띠와 머리 완료는 저장 중 함께 잠기고 띠의 �
 });
 
 test('읽기 요약은 기존 요청과 경과 결과만 보여 주고 카드 열기 콜백을 부른다', async () => {
-  const sourceCard = { ...card, number: 412, request: '요청 원문', attachments: [
+  const sourceCard = { ...card, number: 412, request: '요청 첫 단락\n\n요청 둘째 단락', attachments: [
     { nodeId: 'test-node', path: 'cards/test/screen.pdf', name: '화면 설계.pdf', mimeType: 'application/pdf' },
   ], now: {
     text: '현재 경과', turn: 'agent' as const, ask: null, updatedAt: card.updatedAt, sessionId: 's1',
@@ -571,8 +571,10 @@ test('읽기 요약은 기존 요청과 경과 결과만 보여 주고 카드 �
   expect(screen.getByText('#412')).toBeTruthy();
   expect(screen.getByLabelText('화면 설계.pdf')).toBeTruthy();
   expect(screen.getByText('요청')).toBeTruthy();
-  expect(screen.getByText('요청 원문')).toBeTruthy();
-  expect(screen.getByText('요청 원문').props.numberOfLines).toBe(4);
+  expect(screen.getByText('요청 첫 단락\n요청 둘째 단락')).toBeTruthy();
+  expect(screen.getByText('요청 첫 단락\n요청 둘째 단락').props.numberOfLines).toBe(4);
+  expect(StyleSheet.flatten(screen.getByText('요청 첫 단락\n요청 둘째 단락').props.style).color)
+    .toBe(renderHook(() => useTokens()).result.current.colors.textMuted);
   expect(screen.getByText('경과')).toBeTruthy();
   expect(screen.getByText('현재 경과')).toBeTruthy();
   expect(screen.getByText('사용자에게 보이는 결과')).toBeTruthy();
@@ -584,7 +586,7 @@ test('읽기 요약은 기존 요청과 경과 결과만 보여 주고 카드 �
   expect(within(screen.getByTestId('card-read-summary-scroll')).queryByTestId('card-read-summary-open')).toBeNull();
   expect(screen.getByTestId('card-read-summary-footer')).toBeTruthy();
 
-  fireEvent.press(screen.getByTestId('card-read-summary-open'));
+  screen.root.find((node) => node.props.testID === 'card-read-summary-open' && typeof node.props.onPress === 'function').props.onPress();
   expect(onOpenCard).toHaveBeenCalledTimes(1);
 });
 

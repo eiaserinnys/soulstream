@@ -1,6 +1,7 @@
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { Image, StyleSheet } from 'react-native';
 import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { CardRequestView } from '../CardRequestView';
@@ -34,4 +35,20 @@ test('요청 원문은 그대로, 이미지 첨부는 그림으로, 문서는 �
   screen.rerender(<CardRequestView request="첨부: 외부(https://other.test/photo.png)" />);
   expect(screen.getByTestId('card-request-image-0').props.source.headers).toBeUndefined();
   act(() => { useAuthStore.setState({ jwt: null }); });
+});
+
+test('표시 전용 옵션은 빈 문단만 접고 기존 이미지 썸네일과 확대를 쓴다', () => {
+  useSettingsStore.setState({ serverUrl: 'https://app.test' });
+  const image = 'https://app.test/api/attachments/files?nodeId=n&path=%2Ftmp%2Fphoto.png';
+  const request = `첫 문단\n\n\n둘째 문단\n\n![사진](${image})`;
+  const defaults = render(<CardRequestView request={request} />);
+  expect(defaults.getByText(`첫 문단\n\n\n둘째 문단`).props.children).toBe(`첫 문단\n\n\n둘째 문단`);
+  expect(StyleSheet.flatten(defaults.getByTestId('card-request-image-0').props.style)).toMatchObject({ width: 200, height: 200 });
+  defaults.unmount();
+
+  const summary = render(<CardRequestView request={request} collapseBlankLines attachmentImageVariant="cardCheckItem" />);
+  expect(summary.getByText('첫 문단\n둘째 문단').props.children).toBe('첫 문단\n둘째 문단');
+  expect(StyleSheet.flatten(summary.getByTestId('card-request-image-0').props.style)).toMatchObject({ width: 104, height: 60 });
+  fireEvent.press(summary.getByTestId('card-request-image-0'));
+  expect(within(summary.getByTestId('image-viewer-pages')).UNSAFE_getByType(Image).props.source.uri).toBe(image);
 });

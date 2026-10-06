@@ -41,3 +41,16 @@ test('요약 행은 번호의 자연 폭과 본문 제목을 유지한다', () =
   expect(title.fontSize).toBe(tokens.foundation.typography.body.fontSize);
   expect(title.flex).toBe(1);
 });
+
+test('요약 행은 목록에서 전달한 번호 템플릿으로 열 폭을 맞추고 숫자를 고정 폭으로 그린다', () => {
+  const screen = render(<CardRow api={null} card={cardFixture({ id: 'short-number', number: 7 })}
+    variant="summary" summaryNumberTemplate="#1024" onOpen={jest.fn()} />);
+  const number = screen.getByTestId('card-short-number-number');
+  const reserve = screen.UNSAFE_getByProps({ testID: 'card-short-number-number-reserve' });
+
+  expect(reserve.props.children).toBe('#1024');
+  expect(reserve.props.accessible).toBe(false);
+  expect(reserve.props.accessibilityElementsHidden).toBe(true);
+  expect(reserve.props.importantForAccessibility).toBe('no-hide-descendants');
+  expect(StyleSheet.flatten(number.props.style).fontVariant).toContain('tabular-nums');
+});

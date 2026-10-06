@@ -15,6 +15,7 @@ import { CompactTouchTarget } from './CompactTouchTarget';
 import { BlurView, type BlurTint } from 'expo-blur';
 import {
   createPrimitiveRoles,
+  createPlannerVisualRoles,
   createSurfaceRoles,
   getSurfaceRole,
   useTokens,
@@ -340,7 +341,7 @@ export function GlassButton({
           gap: t.spacing.xs,
           opacity: disabled ? 0.55 : 1,
           backgroundColor: paper
-            ? disabled ? primitive.disabledColor : pressed ? primitive.pressedColor : t.persistentSession.paper
+            ? resolvePaperButtonBackground(t, primitive, !!disabled, pressed)
             : resolveGlassButtonBackground(primitive, !!disabled, pressed, nativePressFeedback),
           borderWidth: paper ? 0 : 2,
           borderColor: paper ? 'transparent' : focused && !disabled ? primitive.focusedColor : 'transparent',
@@ -411,6 +412,16 @@ export function resolveGlassButtonBackground(
   if (disabled) return primitive.disabledColor;
   if (pressed && !nativePressFeedback) return primitive.pressedColor;
   return primitive.backgroundColor;
+}
+
+export function resolvePaperButtonBackground(
+  t: DesignTokens,
+  primitive: PrimitiveRoleDefinition,
+  disabled: boolean,
+  pressed: boolean,
+): string {
+  if (disabled) return primitive.disabledColor;
+  return pressed ? createPlannerVisualRoles(t).grouped.pressedColor : t.persistentSession.paper;
 }
 
 const styles = StyleSheet.create({

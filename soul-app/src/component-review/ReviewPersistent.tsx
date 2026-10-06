@@ -31,6 +31,8 @@ const taskCards: CardDto[] = [
   reviewCard('todo', 'public-persistent-418', 418, '다음 실험 메모', '아직 실행하지 않은 드래프트 카드입니다.'),
   reviewCard('todo', 'public-persistent-old', null, '번호 없는 예전 카드', '옛 카드에는 번호가 없을 수 있습니다.'),
 ];
+const mixedNumberCards: CardDto[] = [7, 98, 412, 1024].map((number) => reviewCard('running', `public-persistent-mixed-${number}`,
+  number, '접근성 점검', '번호 열의 시작선을 확인합니다.'));
 
 const summaryCard = { ...taskCards[0], title: '모바일 흐름 확인', now: {
   text: '첫 화면에서 남긴 한 문장이 다음 흐름까지 자연스럽게 이어지는지 살펴보는 일입니다.',
@@ -58,12 +60,25 @@ const realisticCard = { ...summaryCard, id: 'public-persistent-realistic', numbe
     reviewItem(5, '작업 목록과 카드 읽기 요약을 좁은 폭에서 다시 검수하고 있습니다'),
     reviewItem(6, '설정창과 사용량 모니터링 동작의 남은 항목을 구현하고 있습니다'),
     reviewItem(7, '화면 틀을 연결하고 기존 카드 상세로 이어지는 경로를 확인해야 합니다')] };
+const twoImageCard = { ...realisticCard, id: 'public-persistent-two-images', number: 131, title: '이미지 둘이 있는 카드',
+  request: '첨부한 화면 둘을 확인하고 결과를 정리해 주세요.',
+  attachments: [
+    { nodeId: 'eiaserinnys', path: 'cards/public-persistent-realistic/screen-one.png', name: '첫 화면', mimeType: 'image/png' },
+    { nodeId: 'eiaserinnys', path: 'cards/public-persistent-realistic/screen-two.png', name: '둘째 화면', mimeType: 'image/png' },
+  ] };
+const blankParagraphCard = { ...realisticCard, id: 'public-persistent-blank-paragraphs', number: 132, title: '문단이 나뉜 긴 요청',
+  request: `${'첫 문단에서 화면 흐름과 작은 화면의 상태를 확인해 주세요. '.repeat(5)}\n\n${'둘째 문단에서 첨부 복귀와 작성 위치가 보존되는지도 확인해 주세요. '.repeat(5)}` };
 const sessionNullLabelCard = { ...summaryCard, id: 'public-persistent-session-null-label', number: 131,
   assigneeKind: 'session' as const, assigneeSessionId: 'public-session-null-label', assigneeAgentId: null };
 const sessionNullLabel = { agentSessionId: 'public-session-null-label', displayName: null, status: 'idle', createdAt: reviewTime,
   updatedAt: reviewTime, agentName: null, agentId: null, agentPortraitUrl: null };
+const sessionNamedCard = { ...summaryCard, id: 'public-persistent-session-named', number: 133,
+  assigneeKind: 'session' as const, assigneeSessionId: 'public-session-named', assigneeAgentId: null };
+const sessionNamed = { agentSessionId: 'public-session-named', displayName: '로젤린', status: 'idle', createdAt: reviewTime,
+  updatedAt: reviewTime, agentName: '로젤린', agentId: 'roselin', agentPortraitUrl: null };
 
-const detailCards = [summaryCard, longCard, noProgressCard, sparseCard, realisticCard, sessionNullLabelCard];
+const detailCards = [summaryCard, longCard, noProgressCard, sparseCard, realisticCard, twoImageCard, blankParagraphCard,
+  sessionNullLabelCard, sessionNamedCard];
 
 function createPersistentReviewApi(state: string | null): ApiClient {
   const base = createReviewApi();
@@ -73,6 +88,7 @@ function createPersistentReviewApi(state: string | null): ApiClient {
       if (state === 'list-error') throw new Error('Request failed with status 503');
       if (state === 'list-loading') return new Promise<never>(() => {});
       if (state === 'empty') return { cards: [] };
+      if (state === 'mixed-numbers') return { cards: mixedNumberCards };
       return { cards: taskCards };
     },
     getCard: async (id) => {
@@ -80,7 +96,8 @@ function createPersistentReviewApi(state: string | null): ApiClient {
       if (state === 'card-loading') return new Promise<never>(() => {});
       const card = detailCards.find((entry) => entry.id === id) ?? taskCards.find((entry) => entry.id === id) ?? summaryCard;
       const detail: CardDetail = { card, reports: [], comments: [], questions: [],
-        sessions: card.id === sessionNullLabelCard.id ? [sessionNullLabel] : [] };
+        sessions: card.id === sessionNullLabelCard.id ? [sessionNullLabel]
+          : card.id === sessionNamedCard.id ? [sessionNamed] : [] };
       return detail;
     },
   } as ApiClient;
@@ -111,7 +128,9 @@ export function ReviewPersistent() {
   const previewWidth = Number(query.get('width')) || undefined;
   const previewHeight = Number(query.get('height')) || undefined;
   const api = useMemo(() => createPersistentReviewApi(state), [state]);
-  const selectedCard = detailCase === 'realistic' ? realisticCard : detailCase === 'session-null-label' ? sessionNullLabelCard
+  const selectedCard = detailCase === 'realistic' ? realisticCard : detailCase === 'two-images' ? twoImageCard
+    : detailCase === 'blank-paragraphs' ? blankParagraphCard
+      : detailCase === 'session-named' ? sessionNamedCard : detailCase === 'session-null-label' ? sessionNullLabelCard
     : detailCase === 'long' ? longCard : detailCase === 'no-progress' ? noProgressCard
       : detailCase === 'sparse' ? sparseCard : summaryCard;
   const paper = { flex: 1, minHeight: 0, backgroundColor: t.persistentSession.paper } as const;
