@@ -34,4 +34,5 @@ export const DEFAULT_CONFIG: PersistentDecisionConfig = {
   generation_short_floor: 10,
   headroom_gap: 25,
   usage_stale_seconds: 1_200,
+  usage_refresh_seconds: 300,
 };

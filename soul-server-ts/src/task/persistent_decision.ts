@@ -50,6 +50,7 @@ export interface PersistentDecisionConfig {
   generation_short_floor: number;
   headroom_gap: number;
   usage_stale_seconds: number;
+  usage_refresh_seconds: number;
 }
 
 export interface DecisionResult {

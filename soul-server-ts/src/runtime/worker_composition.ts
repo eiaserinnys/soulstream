@@ -1,6 +1,7 @@
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
+import { ProviderUsageService } from "../auth/provider_usage.js";
 import { CatalogService } from "../catalog/catalog_service.js";
 import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
@@ -86,6 +87,7 @@ export async function composeWorkerRuntime(
     { store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH) },
     logger,
   );
+  const providerUsage = new ProviderUsageService({ claudeAuth, modelCatalog, logger });
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
   const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {
     logger.error({ err: error }, "Durable event outbox pump failed");
@@ -299,6 +301,7 @@ export async function composeWorkerRuntime(
     persistence,
     broadcaster,
     scheduleService,
+    providerUsage,
     orchProxyConfig,
     transientEventLogAggregator,
     ...(claudeRuntime.transcriptReceipt

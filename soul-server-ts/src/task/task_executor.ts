@@ -20,9 +20,11 @@ import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
+import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
 import type {
   BackendId,
   EnginePort,
+  ReasoningEffort,
   ScheduleToolUseHandler,
   SSEEventPayload,
   SupportsCompact,
@@ -32,6 +34,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import { readStoredPersistentSettings } from "@soulstream/wire-schema/persistent-session-settings";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import {
   createInProcessTaskRunnerRuntime,
@@ -64,7 +67,9 @@ import {
 import {
   dequeueInterventionsInLane,
   enqueueInterventionOnce,
+  isRuntimeFollowup,
   rejoinUnstartedInterventions,
+  sortInterventionsByPriority,
 } from "./task_intervention_queue.js";
 import {
   isOpenAiAgentsApprovalPending,
@@ -81,8 +86,15 @@ import {
   type ClaudeRuntimeTaskFollowupPort,
 } from "./claude_runtime_task_followup.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
+import type { PersistentSessionControl } from "./persistent_session_control.js";
+import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
+import { decidePersistentGeneration } from "./persistent_decision.js";
+import {
+  buildPersistentDecisionInput,
+  completeEventEndedAt,
+} from "./persistent_decision_input.js";
 import type { ClaudeBackgroundConsumptionProof } from
   "./claude_background_result_consumption.js";
 import {
@@ -164,6 +176,15 @@ export interface WorktreeExecutionResolver {
   resolveExecutionWorkspace(worktreeId: string): Promise<string>;
 }
 
+interface PersistentDecisionRuntime {
+  persistentSessions: Pick<PersistentSessionControl, "requestGenerationRollover">;
+  providerUsage: ProviderUsageCommandHandler;
+  scheduleService: Pick<
+    SoulstreamScheduleService,
+    "deleteCacheKeepaliveSchedules" | "scheduleCacheKeepalive"
+  >;
+}
+
 export class TaskExecutor {
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly engineFailureRecovery: TaskEngineFailureRecovery;
@@ -209,6 +230,7 @@ export class TaskExecutor {
     private readonly queuedTerminalResume?: (task: Task) => void | Promise<void>,
     private readonly worktreeResolver?: WorktreeExecutionResolver,
     private readonly sessionMutations?: Pick<SessionMutationHost, "setModelSelection">,
+    private readonly persistentDecisionRuntime?: PersistentDecisionRuntime,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -417,13 +439,77 @@ export class TaskExecutor {
       })();
       return executionSlotHeld ? promise : this.holdExecutionSlot(task, promise);
     }
-    const { backend, retainedRunner } = prepared;
+
+    if (!this.shouldDecidePersistentArrival(task)) {
+      beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
+      return this.startPreparedExecution(
+        task,
+        agent,
+        prepared,
+        effectiveTaskBackend(task, agent),
+        transferredActivation,
+        executionSlotHeld,
+      );
+    }
+
+    const activation = this.supportsExecutionRegistration()
+      ? transferredActivation ?? createExecutionActivation()
+      : transferredActivation;
+    if (activation) {
+      task.executionActivation = activation;
+      void activation.promise.catch(() => undefined);
+    }
+
+    const execution = (async () => {
+      try {
+        await this.decidePersistentArrival(task);
+        beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
+        await this.startPreparedExecution(
+          task,
+          agent,
+          prepared,
+          effectiveTaskBackend(task, agent),
+          activation,
+          true,
+        );
+      } catch (error) {
+        const compensatesRunningTransition =
+          activation?.hasFailureCompensation?.() === true;
+        try {
+          if (compensatesRunningTransition) {
+            await activation?.reject(error);
+            if (isTerminalTaskStatus(task.status)) return;
+          }
+          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, error);
+          task.completedAt = new Date();
+          await this._finalize(task);
+        } finally {
+          if (activation && task.executionActivation === activation) {
+            task.executionActivation = undefined;
+          }
+          if (activation && !compensatesRunningTransition) {
+            await activation.reject(error);
+          }
+        }
+      }
+    })();
+    return executionSlotHeld ? execution : this.holdExecutionSlot(task, execution);
+  }
+
+  private startPreparedExecution(
+    task: Task,
+    agent: AgentProfile,
+    prepared: ReturnType<TaskExecutor["prepareExecution"]>,
+    backend: BackendId,
+    transferredActivation: ExecutionActivation | undefined,
+    executionSlotHeld: boolean,
+  ): Promise<void> {
     if (!this.supportsExecutionRegistration()) {
       return this.startExecutionWithoutRegistration(
         task,
         agent,
         backend,
-        retainedRunner,
+        prepared.retainedRunner,
         transferredActivation,
         executionSlotHeld,
       );
@@ -439,35 +525,33 @@ export class TaskExecutor {
       task,
       agent,
       backend,
-      retainedRunner,
+      prepared.retainedRunner,
       () => {
         activation.resolve();
         releaseActivation();
       },
-    ).catch(
-      async (err: unknown) => {
-        await activation.reject(err);
-        releaseActivation();
-        if (err instanceof RunnerOrphanedSpawnError) {
-          this.logger.error(
-            { err, sessionId: task.agentSessionId, proof: err.proof },
-            "Spawned runner parent initialization failed; recovery owns the live child",
-          );
-          return;
-        }
-        if (isTerminalTaskStatus(task.status)) return;
-        await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
-        task.completedAt = new Date();
-        await this._finalize(task);
-      },
-    );
+    ).catch(async (err: unknown) => {
+      await activation.reject(err);
+      releaseActivation();
+      if (err instanceof RunnerOrphanedSpawnError) {
+        this.logger.error(
+          { err, sessionId: task.agentSessionId, proof: err.proof },
+          "Spawned runner parent initialization failed; recovery owns the live child",
+        );
+        return;
+      }
+      if (isTerminalTaskStatus(task.status)) return;
+      await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
+      task.completedAt = new Date();
+      await this._finalize(task);
+    });
     return executionSlotHeld ? promise : this.holdExecutionSlot(task, promise);
   }
 
   private prepareExecution(
     task: Task,
     agent: AgentProfile,
-  ): { backend: BackendId; retainedRunner: TaskRunnerRuntime | undefined } {
+  ): { retainedRunner: TaskRunnerRuntime | undefined } {
     const retainedRunner = task.runnerRetainedForDetachedWork === true
       ? task.runner
       : undefined;
@@ -488,9 +572,138 @@ export class TaskExecutor {
         "Persisted model preset is unavailable; using the profile backend",
       );
     }
-    beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
-    const backend = effectiveTaskBackend(task, agent);
-    return { backend, retainedRunner };
+    return { retainedRunner };
+  }
+
+  private shouldDecidePersistentArrival(task: Task): boolean {
+    if (!this.persistentDecisionRuntime || !this.modelCatalog || task.persistent !== true) {
+      return false;
+    }
+    if (
+      task.persistentGeneration?.pending
+      || task.runnerRetainedForDetachedWork === true
+      || !task.codexThreadId
+    ) return false;
+    const firstIntervention = sortInterventionsByPriority(task.interventionQueue)[0];
+    return !!firstIntervention
+      && !isRuntimeFollowup(firstIntervention)
+      && firstIntervention.purpose !== "cache_keepalive";
+  }
+
+  private async decidePersistentArrival(task: Task): Promise<void> {
+    const runtime = this.persistentDecisionRuntime;
+    if (!runtime || !this.modelCatalog || task.persistent !== true) return;
+    if (
+      task.persistentGeneration?.pending
+      || task.runnerRetainedForDetachedWork === true
+      || !task.codexThreadId
+    ) return;
+    const firstIntervention = sortInterventionsByPriority(task.interventionQueue)[0];
+    if (!firstIntervention || isRuntimeFollowup(firstIntervention)) return;
+    if (firstIntervention.purpose === "cache_keepalive") return;
+
+    const now = new Date();
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: this.db,
+        modelCatalog: this.modelCatalog,
+        providerUsage: runtime.providerUsage,
+        logger: this.logger,
+      },
+    );
+    const decision = decidePersistentGeneration(input);
+    await this.recordPersistentDecision(task, "arrival", decision);
+    if (decision.action !== "new_generation" || !decision.target_preset) return;
+
+    const settings = readStoredPersistentSettings(task.metadata);
+    const targetSelection = settings?.default_model?.model_preset === decision.target_preset
+      ? settings.default_model
+      : settings?.fallback_model?.model_preset === decision.target_preset
+        ? settings.fallback_model
+        : undefined;
+    const reasoningEffort = targetSelection?.reasoning_effort;
+    await runtime.persistentSessions.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: decision.target_preset,
+      ...(reasoningEffort ? { reasoningEffort: reasoningEffort as ReasoningEffort } : {}),
+      reason: `auto:${decision.rule}`,
+    });
+  }
+
+  private async decidePersistentTurnEnd(
+    task: Task,
+    completeEvent: SSEEventPayload,
+    interventions: readonly InterventionMessage[],
+  ): Promise<void> {
+    const runtime = this.persistentDecisionRuntime;
+    if (!runtime || !this.modelCatalog || task.persistent !== true) return;
+    await runtime.scheduleService.deleteCacheKeepaliveSchedules(task.agentSessionId);
+
+    const now = new Date();
+    const input = await buildPersistentDecisionInput(
+      {
+        task,
+        trigger: "turn_end",
+        now,
+        ...(completeEventEndedAt(completeEvent)
+          ? { lastCallEndedAt: completeEventEndedAt(completeEvent) }
+          : {}),
+      },
+      {
+        db: this.db,
+        modelCatalog: this.modelCatalog,
+        providerUsage: runtime.providerUsage,
+        logger: this.logger,
+      },
+    );
+    const keepaliveResult = keepaliveResultFor(completeEvent, interventions);
+    const decision = decidePersistentGeneration(input);
+    await this.recordPersistentDecision(task, "turn_end", decision, keepaliveResult);
+    if (decision.action === "schedule_keepalive" && decision.wake_at) {
+      await runtime.scheduleService.scheduleCacheKeepalive(
+        task.agentSessionId,
+        decision.wake_at,
+        now,
+      );
+    }
+  }
+
+  private async recordPersistentDecision(
+    task: Task,
+    trigger: "arrival" | "turn_end",
+    decision: ReturnType<typeof decidePersistentGeneration>,
+    keepaliveResult?: {
+      input_tokens: number;
+      cached_input_tokens: number;
+      cache_hit: boolean;
+    },
+  ): Promise<void> {
+    const event = {
+      type: "debug",
+      kind: "persistent_decision",
+      trigger,
+      action: decision.action,
+      ...(decision.target_preset ? { target_preset: decision.target_preset } : {}),
+      ...(decision.wake_at ? { wake_at: decision.wake_at } : {}),
+      rule: decision.rule,
+      reason: decision.reason,
+      inputs_snapshot: decision.inputs_snapshot,
+      ...(keepaliveResult ? { keepalive_result: keepaliveResult } : {}),
+      timestamp: Date.now() / 1_000,
+    } as unknown as SSEEventPayload;
+    try {
+      await this.persistence.enqueueEvent(
+        task.agentSessionId,
+        event,
+        undefined,
+        task.executionRegistration?.registrationId,
+      );
+    } catch {
+      this.logger.warn(
+        { sessionId: task.agentSessionId, trigger, failureKind: "record" },
+        "persistent decision record skipped",
+      );
+    }
   }
 
   private takeOrCreateRunner(
@@ -1050,6 +1263,7 @@ export class TaskExecutor {
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
       const turnReceipt = this.beginDeliveryTurn(task, currentTurnInterventions);
+      let turnCompletedEvent: SSEEventPayload | undefined;
       try {
         try {
           for await (const event of this.engineTurnRunner.executeTurn({
@@ -1079,6 +1293,7 @@ export class TaskExecutor {
               : {}),
           },
           })) {
+            if (event.type === "complete") turnCompletedEvent = event;
             observeClaudeContextRecoveryEvent(contextRecovery, event);
             await this.observeDeliveryTurn(task, turnReceipt, event);
             await this.engineEventPublisher.publishEngineEvent(task, event, {
@@ -1190,6 +1405,9 @@ export class TaskExecutor {
       }
       if (turnInput.generationRollover) {
         await completeGenerationRollover(task, this.persistence);
+      }
+      if (turnCompletedEvent) {
+        await this.decidePersistentTurnEnd(task, turnCompletedEvent, currentTurnInterventions);
       }
       if (
         contextRecovery.preemptiveCompactNeeded
@@ -1705,6 +1923,28 @@ export class TaskExecutor {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function keepaliveResultFor(
+  completeEvent: SSEEventPayload,
+  interventions: readonly InterventionMessage[],
+): { input_tokens: number; cached_input_tokens: number; cache_hit: boolean } | undefined {
+  if (!interventions.some((intervention) => intervention.purpose === "cache_keepalive")) {
+    return undefined;
+  }
+  const firstCall = (completeEvent as { first_call?: unknown }).first_call;
+  if (typeof firstCall !== "object" || firstCall === null || Array.isArray(firstCall)) {
+    return undefined;
+  }
+  const usage = firstCall as Record<string, unknown>;
+  if (typeof usage.input_tokens !== "number" || typeof usage.cached_input_tokens !== "number") {
+    return undefined;
+  }
+  return {
+    input_tokens: usage.input_tokens,
+    cached_input_tokens: usage.cached_input_tokens,
+    cache_hit: usage.cached_input_tokens > 0,
+  };
 }
 
 /** 외부 검증용 — task가 종료 상태인지. */

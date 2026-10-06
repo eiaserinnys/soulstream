@@ -216,9 +216,11 @@ export interface InterventionMessage {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  /** Durable scheduler marker copied into intervention_sent/user_message payloads. */
+  purpose?: "cache_keepalive";
   /**
    * Internal runtime metadata. It is consumed by TaskExecutor follow-up guards and
-   * intentionally not copied into intervention_sent/user_message wire payloads.
+   * intentionally not copied into intervention_sent/user_message payloads.
    */
   source?: string;
   rateLimitType?: string;

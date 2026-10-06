@@ -19,6 +19,7 @@ export interface UserMessageEventInput {
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
   contextItems?: ContextItem[];
+  purpose?: "cache_keepalive";
 }
 
 export function buildUserMessageEvent(input: UserMessageEventInput): Record<string, unknown> {
@@ -38,6 +39,9 @@ export function buildUserMessageEvent(input: UserMessageEventInput): Record<stri
   }
   if (input.callerInfo) {
     event.caller_info = input.callerInfo;
+  }
+  if (input.purpose) {
+    event.purpose = input.purpose;
   }
   if (input.attachmentPaths && input.attachmentPaths.length > 0) {
     event.attachments = input.attachmentPaths;

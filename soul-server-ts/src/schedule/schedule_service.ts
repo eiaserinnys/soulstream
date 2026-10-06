@@ -24,6 +24,8 @@ const SCHEDULE_TOOL_NAMES = new Set([
   "CronList",
   "CronDelete",
 ]);
+export const CACHE_KEEPALIVE_SOURCE_TOOL = "persistent_cache_keepalive";
+export const CACHE_KEEPALIVE_PROMPT = "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.";
 
 export class SoulstreamScheduleService {
   constructor(
@@ -196,6 +198,42 @@ export class SoulstreamScheduleService {
     }
 
     const schedule = await this.db.createSchedule(input);
+    await this.emitScheduleEvent(schedule, "updated");
+    return schedule;
+  }
+
+  async deleteCacheKeepaliveSchedules(sessionId: string): Promise<void> {
+    const schedules = await this.db.listSchedules(sessionId);
+    for (const schedule of schedules) {
+      if (
+        schedule.status === "active"
+        && schedule.kind === "wakeup"
+        && !schedule.recurring
+        && schedule.sourceTool === CACHE_KEEPALIVE_SOURCE_TOOL
+      ) {
+        await this.deleteSchedule(sessionId, schedule.scheduleId);
+      }
+    }
+  }
+
+  async scheduleCacheKeepalive(
+    sessionId: string,
+    wakeAt: string,
+    now = new Date(),
+  ): Promise<SoulstreamSchedule> {
+    const runOnceAt = parseDate(wakeAt, "wake_at");
+    const schedule = await this.db.createSchedule({
+      scheduleId: randomUUID(),
+      sessionId,
+      kind: "wakeup",
+      prompt: CACHE_KEEPALIVE_PROMPT,
+      sourceTool: CACHE_KEEPALIVE_SOURCE_TOOL,
+      timezone: "UTC",
+      recurring: false,
+      nextRunAt: runOnceAt,
+      runOnceAt,
+      createdAt: now,
+    });
     await this.emitScheduleEvent(schedule, "updated");
     return schedule;
   }
