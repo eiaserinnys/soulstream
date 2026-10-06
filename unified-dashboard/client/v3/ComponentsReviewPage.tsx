@@ -32,6 +32,7 @@ import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
 import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChatReviewSample";
 import { PersistentSessionSettingsReviewSample } from "./PersistentSessionSettingsReviewSample";
+import { PersistentSessionScreenReviewSample } from './PersistentSessionScreenReviewSample';
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 
@@ -298,6 +299,7 @@ export function ComponentsReviewPage() {
             </div>
             <div className="v3-components-samples">
             <Sample name="SwayCharacter" state="원본 WebGL · 정지 이미지 · 표시 끔"><SwayCharacterReviewSample/></Sample>
+            <Sample name="PersistentSessionScreen" state="운영 전화면 · 독립 세션과 전송"><PersistentSessionScreenReviewSample/></Sample>
             <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">
               <FolderDescriptionPanel markdown={description} onSave={async body => { setDescription(body); open("설명 저장"); }}/>
               <Dialog open={panelOpen} onOpenChange={setPanelOpen}><DialogPopup>

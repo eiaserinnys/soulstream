@@ -102,3 +102,9 @@
 | 전달·중복 억제 | `CardDispatcherOptions.deliveryExists` → `SessionDeliveryRepository.get`, 기존 sendMessage → `sendCardChangeOnce` | ID는 `card-reminder:{cardId}:{kind}:{상태 시점의 epoch 마이크로초}:{rootSessionId}`다. 어느 상태든 같은 전달 행이 있으면 재전송하지 않는다. 수신자는 뿌리, actorKind와 caller_info.source는 system이다. pending 행 재전송은 기존 전달 경로가 담당한다. |
 
 뿌리 종료 계기에서는 세션 기본 키 조회로 종료 상태를 먼저 확인하고 실행 중 갱신은 카드 후보·트리 사실 조회를 생략한다. 리마인더 점검 전체의 예외는 warn으로 격리해 기존 한도·종료·자동배정 처리를 이어 간다. 판정과 전송은 기존 디스패처 enqueue 체인에서 카드 mutation과 순서를 맞춘다. 실패는 warn으로 남기고 다음 tick과 기존 전달 처리에 맡긴다. 리마인더는 카드 상태를 바꾸지 않으며 새 타이머·표·재시도 계층을 만들지 않는다. brief 갱신·같은 상태 재기록·디스패처 재시작에도 같은 상태 시점의 리마인더가 반복되지 않는다.
+
+## PAS 전화면의 전역 카드 입구
+
+웹 `/persistent/:sessionId`의 전화면은 폴더 workspace를 열지 않고 PAS 대화를 유지한다. 작업 패널은 `PersistentSessionTaskList`의 `useCardMembership(undefined)`를 사용해 접근 가능한 전역 카드 목록을 읽는다. 폴더나 PAS 소속으로 좁히지 않으며, 기존 카드 무효화 평면이 목록을 다시 읽는다. 선택한 카드의 읽기 요약은 `CardDetailPane`의 summary 변형이다.
+
+「카드 열기」는 같은 화면이 `useCardNavigation`의 overlay 상태를 직접 호스트한다. `CardWorkspace`의 명시적 `detailOnly` 변형은 기존 상세와 오버레이 틀을 쓰고 채팅 열과 연결 세션 탭을 마운트하지 않는다. 커멘트·확인·완료·상태 변경은 기존 `CardDetailPane` 경로이고 담당 세션 대화는 일반 workspace에서 연다. 닫기는 선택한 카드 요약을 유지하며 PAS의 활성 세션·대화·초안·대기 첨부를 바꾸지 않는다. 기본 `CardWorkspace` 경로에는 이 변형을 적용하지 않는다.

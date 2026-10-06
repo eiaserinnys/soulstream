@@ -51,11 +51,12 @@ export function SettingsListSection({ title, isEmpty, emptyText = "없음", chil
   );
 }
 
-export function SettingsListRow({ title, meta, selected, onSelect }: {
+export function SettingsListRow({ title, meta, selected, onSelect, portrait }: {
   title: string;
   meta: string;
   selected: boolean;
   onSelect(): void;
+  portrait?: ReactNode;
 }) {
   return (
     <button
@@ -63,8 +64,7 @@ export function SettingsListRow({ title, meta, selected, onSelect }: {
       className={`w-full rounded px-2 py-2 text-left text-sm ${selected ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`}
       onClick={onSelect}
     >
-      <span className="block truncate font-medium">{title}</span>
-      <span className="block truncate text-xs text-muted-foreground">{meta}</span>
+      {portrait ? <span className="flex items-center gap-2">{portrait}<span className="min-w-0"><span className="block truncate font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{meta}</span></span></span> : <><span className="block truncate font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{meta}</span></>}
     </button>
   );
 }

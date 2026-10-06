@@ -19,9 +19,10 @@ interface ProfileAvatarProps {
   fallbackEmoji: string;
   /** 에이전트별 portrait URL. 있으면 role 기반 URL 대신 사용. */
   portraitUrl?: string | null;
+  shape?: 'rounded' | 'circle';
 }
 
-export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl }: ProfileAvatarProps) {
+export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, shape = 'rounded' }: ProfileAvatarProps) {
   const [imgError, setImgError] = useState(false);
 
   const showPortrait = !!portraitUrl;
@@ -39,7 +40,7 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl }:
     <img
       src={src}
       alt={role}
-      className="w-8 h-8 rounded-lg shrink-0 object-cover"
+      className={`w-8 h-8 ${shape === 'circle' ? 'rounded-full' : 'rounded-lg'} shrink-0 object-cover`}
       onError={() => setImgError(true)}
       onLoad={(e) => {
         // 204 No Content 또는 이미지 디코딩 실패 시 naturalWidth === 0

@@ -3,6 +3,8 @@ import { expect, test } from "@playwright/test";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 test("renders the built v3 dashboard with its deterministic API fixture", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
   await page.addInitScript(() => {
     localStorage.setItem("soul-dashboard-theme", "dark");
     localStorage.setItem("ls.webglGlass", "0");
@@ -35,4 +37,6 @@ test("renders the built v3 dashboard with its deterministic API fixture", async 
   await expect(inbox.getByRole("button", { name: "보드 확대", exact: true })).toBeVisible();
   await inbox.getByRole("button", { name: "기록", exact: true }).click();
   await expect(page.locator(".v3-date-head")).toBeVisible();
+  await expect(page.getByTestId("persistent-session-entry")).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });
