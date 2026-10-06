@@ -6,10 +6,10 @@ import { CardCheckItemRow } from "./CardCheckItemRow";
 import { summarizeCardItems } from "./card-item-summary";
 import "./v3-card-check-items.css";
 
-export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,onTargetItem,onOpenImage}: {
+export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,onTargetItem,onOpenImage,readOnly=false}: {
  items?:readonly CardCheckItem[]|null;pendingConfirmations?:Readonly<Record<number,boolean>>;
  onConfirmChange(itemId:number,confirmed:boolean):void|Promise<void>;onTargetItem(itemId:number):void;
- onOpenImage?(src:string,alt:string):void;
+ onOpenImage?(src:string,alt:string):void;readOnly?:boolean;
 }) {
  const current=items??[];
  const initialized=useRef(current.length>0);
@@ -41,13 +41,13 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
   setExpandedIds(existing=>new Set([...existing,...reopened.filter(isInitiallyExpanded).map(item=>item.id)]));
  },[current,initialConfirmedIds,excludedFromGroup]);
  const groupOnOpen=initialConfirmedIds.size>=3;
- const grouped=current.filter(item=>groupOnOpen&&initialConfirmedIds.has(item.id)&&item.display==="confirmed"
+ const grouped=readOnly?[]:current.filter(item=>groupOnOpen&&initialConfirmedIds.has(item.id)&&item.display==="confirmed"
   &&pendingConfirmations[item.id]!==false&&!excludedFromGroup.has(item.id));
  const groupedIds=new Set(grouped.map(item=>item.id));
  const changeExpanded=(id:number)=>setExpandedIds(existing=>{const next=new Set(existing);if(next.has(id))next.delete(id);else next.add(id);return next;});
  const renderItem=(item:CardCheckItem)=><CardCheckItemRow key={item.id} item={item}
   checked={pendingConfirmations[item.id]??item.display==="confirmed"} pending={Object.prototype.hasOwnProperty.call(pendingConfirmations,item.id)}
-  expanded={expandedIds.has(item.id)} onToggleExpanded={()=>changeExpanded(item.id)}
+  expanded={readOnly||expandedIds.has(item.id)} readOnly={readOnly} onToggleExpanded={()=>changeExpanded(item.id)}
   onConfirmChange={confirmed=>{const wasExpanded=expandedIds.has(item.id);setExcludedFromGroup(existing=>new Set(existing).add(item.id));setExpandedIds(existing=>{
    const next=new Set(existing);if(confirmed)next.delete(item.id);else next.add(item.id);return next;
   });if(!confirmed)onTargetItem(item.id);void Promise.resolve(onConfirmChange(item.id,confirmed)).catch(()=>{

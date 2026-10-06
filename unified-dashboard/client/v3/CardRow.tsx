@@ -12,7 +12,7 @@ import { cardActivityPreview } from "./card-activity-preview";
 import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
-export function CardRow({card,folderLabel,handle}:{card:Card;folders?:readonly CatalogFolder[];placement?:"inline"|"overlay";handle?:ReactNode;showQueueAction?:boolean;folderLabel?:string}) {
+export function CardRow({card,folderLabel,handle,variant="default",onOpenCard}:{card:Card;folders?:readonly CatalogFolder[];placement?:"inline"|"overlay";handle?:ReactNode;showQueueAction?:boolean;folderLabel?:string;variant?:"default"|"summary";onOpenCard?(cardId:string):void}) {
  const open=useCardNavigation(s=>s.open);
  const currentCard=useCardStore(s=>s.byId[card.id]??card);
  const pendingConfirmations=useCardStore(s=>s.pendingItemConfirmations[card.id]??NO_PENDING_CONFIRMATIONS);
@@ -20,17 +20,25 @@ export function CardRow({card,folderLabel,handle}:{card:Card;folders?:readonly C
  const assignee=useDashboardStore(s=>s.catalog?.sessionList?.find(session=>session.agentSessionId===currentCard.assigneeSessionId));
  const detail=useCardStore(s=>s.details[currentCard.id]);
  return <CardRowView card={currentCard} pendingConfirmations={pendingConfirmations} folderLabel={folderLabel} handle={handle} assignee={assignee} detail={detail}
-  onOpen={()=>open(currentCard.id,"overlay")} completion={completion} />;
+  onOpen={()=>onOpenCard?onOpenCard(currentCard.id):open(currentCard.id,"overlay")} completion={completion} variant={variant} />;
 }
 /** Shared row presentation; the operational wrapper owns navigation and completion. */
-export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,completion,pendingConfirmations=NO_PENDING_CONFIRMATIONS}: {
+export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,completion,pendingConfirmations=NO_PENDING_CONFIRMATIONS,variant="default"}: {
  card:Card;folderLabel?:string;handle?:ReactNode;assignee?:SessionSummary;detail?:CardDetail;
  onOpen():void;completion?:{pending:boolean;onComplete():void};
+ variant?:"default"|"summary";
  pendingConfirmations?:Readonly<Record<number,boolean>>;
 }) {
  const nodeId=assignee?.nodeId??card.nodeId,agentId=assignee?.agentId??card.assigneeAgentId;
  const portrait=assignee?.agentPortraitUrl??(nodeId&&agentId?`/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait`:null);
  const name=assignee?.agentName??agentId??card.assigneeUserId??"담당 미지정";
+ if(variant==="summary")return <div className="v3-card-summary-row">
+  <RunRowFrame variant="card" surface="paper" size="small" showStatus={false} cardId={card.id}
+   openLabel={`카드 ${card.title} 열기`} onOpen={onOpen}
+   avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/>}
+   agentLine={null} title={<span className="v3-card-summary-title">{card.number===undefined||card.number===null?null:<span className="v3-card-summary-number">#{card.number}</span>}<strong title={card.title}>{card.title}</strong></span>}
+   status={{label:cardStatusLabel(card),tone:card.status}}/>
+ </div>;
  const latestReport=detail?.reports.reduce((latest,report)=>!latest||report.createdAt>latest.createdAt?report:latest,detail.reports[0]);
  const latestComment=detail?.comments?.reduce((latest,comment)=>!latest||comment.createdAt>latest.createdAt?comment:latest,detail.comments[0]);
  const source=card.latestActivity ? cardActivityPreview(card.latestActivity) : card.latestActivity===null ? card.request??"" : latestReport?.title??latestComment?.body??card.request??"";

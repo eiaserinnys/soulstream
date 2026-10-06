@@ -34,6 +34,7 @@ describe("PR-CL v3 visual system contract", () => {
     expect(css).toMatch(/\.v3-task-list[^{]*\{[^}]*gap:\s*var\(--v3-space-1\)/s);
     expect(css).toMatch(/\.v3-session-list[^{]*\{[^}]*gap:\s*var\(--v3-space-1\)/s);
     expect(componentReview).toContain('name="CardRowView / RunRowFrame"');
+    expect(componentReview).toContain('name="PersistentSessionTaskList / CardDetailPane summary"');
     expect(cardRow).toContain('<RunRowFrame variant="card"');
     expect(runRows).toMatch(/\.v3-run-open\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) fit-content\(30%\)/s);
     expect(runRows).toMatch(/\.v3-run-row\[data-has-actions\]\s+\.v3-run-open\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) fit-content\(30%\) auto/s);

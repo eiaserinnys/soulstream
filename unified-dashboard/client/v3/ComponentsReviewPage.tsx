@@ -32,6 +32,7 @@ import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
 import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChatReviewSample";
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
+import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -141,6 +142,7 @@ export function ComponentsReviewPage() {
                 <div className="v3-run-list">{[reviewCard.title, reviewTitle].map((label, index) => <CardRowView key={label}
                   card={{ ...reviewCard, ...(index===0?{items:reviewCardItems,now:reviewNow}:{}), id: `components-card-${index}`, title: label }} assignee={reviewSession} detail={reviewDetail} onOpen={() => open("카드")}/>)}</div>
               </Sample>
+              <Sample name="PersistentSessionTaskList / CardDetailPane summary" state="fixture · 264 목록 · 318/340/392 상세"><PersistentSessionTaskListReviewSample/></Sample>
               <Sample name="CardRowView / RunRowFrame actions" state="같은 내용 · 막힘 / 검수 · 미리보기 유무 · small 캡">
                 {(["blocked", "review"] as const).map(status => <CardRowView key={status}
                   card={{...reviewCard, status, title: "상태별 같은 카드", request: "같은 미리보기", id: `compare-${status}`}}

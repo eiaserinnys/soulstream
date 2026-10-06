@@ -61,4 +61,40 @@ describe("card final UX",()=>{
  it("preserves attachment markdown conversion",()=>{
   expect(cardRequestMarkdown("첨부: 참고.png(https://example.test/file?path=png)")).toBe("첨부: ![참고.png](https://example.test/file?path=png)");
  });
+ it("renders a read-only summary in the approved order and omits card actions",()=>{
+  seed();
+  const source={...useCardStore.getState().byId.c,number:31,title:"읽기 요약 제목",request:"요청 본문",
+   attachments:[],now:{text:"현재 진행 상황",turn:"agent",ask:null,updatedAt:"2026-10-01T01:00:00Z",sessionId:"owner"},
+   items:[{id:1,title:"확인 항목",state:"done",result:"사용자가 확인할 결과",evidence:[],caveat:null,rev:1,confirmed:{at:"2026-10-01",rev:1},fixOpen:0,reopened:null,from:null,createdAt:"2026-10-01",reportedAt:"2026-10-01",display:"reported"}]};
+  const sample={...useCardStore.getState().details.c,card:source} as never;
+  const html=renderToStaticMarkup(<CardDetailPane variant="summary" cardId="c" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()} onOpenCard={vi.fn()} sampleDetail={sample}/>);
+
+  expect(html.indexOf("#31")).toBeLessThan(html.indexOf("읽기 요약 제목"));
+  expect(html.indexOf("읽기 요약 제목")).toBeLessThan(html.indexOf("요청 본문"));
+  expect(html.indexOf("요청 본문")).toBeLessThan(html.indexOf("현재 진행 상황"));
+  expect(html.indexOf("현재 진행 상황")).toBeLessThan(html.indexOf("사용자가 확인할 결과"));
+  expect(html).toContain('data-card-summary-section="request"');
+  expect(html).toContain('data-card-summary-section="elapsed"');
+  expect(html).not.toContain("어느 쪽?");
+  expect(html).not.toContain("새 보고");
+  expect(html).not.toContain("추가 지시");
+  expect(html).not.toContain('role="tab"');
+  expect(html).not.toContain("<textarea");
+  expect(html).not.toContain("고칠 점 남기기");
+  expect(html).not.toContain("실행 설정");
+  expect(html).not.toContain("aria-label=\"카드 상태 변경\"");
+  expect(html.match(/<button/g)).toHaveLength(1);
+ });
+
+ it("omits request, elapsed, and number when those fields have no data",()=>{
+  seed();
+  const source={...useCardStore.getState().byId.c,title:"번호 없는 오래된 카드",number:null,request:"",attachments:[],now:null,items:[]};
+  const sample={...useCardStore.getState().details.c,card:source} as never;
+  const html=renderToStaticMarkup(<CardDetailPane variant="summary" cardId="c" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()} onOpenCard={vi.fn()} sampleDetail={sample}/>);
+
+  expect(html).toContain("번호 없는 오래된 카드");
+  expect(html).not.toContain('data-card-summary-section="request"');
+  expect(html).not.toContain('data-card-summary-section="elapsed"');
+  expect(html).not.toContain("#null");
+ });
 });

@@ -17,7 +17,7 @@ export interface CardCheckItem {
 export interface CardNow { text: string; turn: "agent" | "user" | "outside"; ask: string | null; updatedAt: string; sessionId: string | null }
 export interface CardNowHistoryEntry { text: string; turn: CardNow["turn"]; ask: string | null; at: string }
 export interface CardRow {
-  id: string; folderId: string; title: string; request: string; brief: string;
+  id: string; number?: number | null; folderId: string; title: string; request: string; brief: string;
   attachments: CardAttachment[];
   status: CardStatus; color?: CardColor; blockedKind: "limit" | "question" | "no_report" | null;
   blockedDetail: string | null; positionKey: string; queuePositionKey: string | null;

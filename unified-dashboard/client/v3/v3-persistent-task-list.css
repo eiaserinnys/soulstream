@@ -1,0 +1,47 @@
+.v3-persistent-task-list {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--v3-space-5);
+}
+
+.v3-persistent-task-list > section { min-width: 0; }
+.v3-persistent-task-list .v3-detail-section-head { margin: 0 0 var(--v3-space-2); }
+.v3-persistent-task-list .v3-run-list { gap: var(--v3-space-1); }
+.v3-persistent-task-list .v3-run-open { grid-template-columns: auto minmax(0, 1fr); }
+.v3-persistent-task-list .v3-run-row--paper-surface {
+  border-color: var(--persistent-session-line);
+  background: var(--persistent-session-panel);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.v3-persistent-task-list .v3-run-row--paper-surface::before,
+.v3-persistent-task-list .v3-run-row--paper-surface::after { content: none; }
+.v3-persistent-task-list .v3-run-row--paper-surface > .liquid-glass-card__layer { display: none; }
+.v3-persistent-task-list .v3-card-summary-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
+.v3-persistent-task-list .v3-card-summary-title strong {
+  min-width: 0;
+  flex: 1;
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+.v3-persistent-task-list .v3-card-summary-number {
+  flex: none;
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+  white-space: nowrap;
+}
+
+.v3-persistent-task-review { display: flex; min-width: 0; flex-direction: column; gap: var(--v3-space-5); }
+.v3-persistent-task-review-list,
+.v3-persistent-task-review-detail { min-width: 0; box-sizing: border-box; border: 1px solid var(--persistent-session-line); padding: var(--v3-space-4); background: var(--persistent-session-paper); }
+.v3-persistent-task-review-list { width: 264px; max-width: 100%; }
+.v3-persistent-task-review-details { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-start; gap: var(--v3-space-4); }
+.v3-persistent-task-review-detail { display: flex; min-height: var(--v3-space-8); }
+.v3-persistent-task-review-detail > .v3-detail-pane { width: 100%; height: auto; min-height: 0; overflow: visible; }
