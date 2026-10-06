@@ -110,10 +110,13 @@ export function createSessionEndpoints({
     // 기본 채팅 UI용 semantic timeline. 서버가 progress/debug/text_delta 같은 비가시 이벤트를 제외한다.
     getTimeline: (
       sessionId: string,
-      params?: { before?: string; limit?: number; signal?: AbortSignal },
+      params?: { before?: string; limit?: number; signal?: AbortSignal; eventTypes?: string[] },
     ): Promise<MessagesResponse> => {
-      const { signal, ...queryParams } = params ?? {};
-      const qs = buildQuery(queryParams);
+      const { signal, eventTypes, ...queryParams } = params ?? {};
+      const query = eventTypes === undefined
+        ? queryParams
+        : { ...queryParams, event_types: eventTypes.join(",") };
+      const qs = buildQuery(query);
       return authFetch(
         `${base}/api/sessions/${sessionId}/timeline${qs ? `?${qs}` : ''}`,
         signal ? { signal } : undefined,

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatContextUsageText,
   formatTurnCompleteStats,
+  formatTurnUsageCaptionTitle,
 } from "./turn-usage-format";
 
 describe("formatTurnCompleteStats", () => {
@@ -109,5 +110,31 @@ describe("formatContextUsageText", () => {
       estimated: true,
     })).toBe("컨텍스트 약 1 / 10");
     expect(formatContextUsageText({ usedTokens: Number.NaN, maxTokens: 10 })).toBeUndefined();
+  });
+});
+
+describe("formatTurnUsageCaptionTitle", () => {
+  it("formats context percentage and turn price", () => {
+    expect(formatTurnUsageCaptionTitle({ percent: 32.6, turnCostUsd: 0.62 }))
+      .toBe("컨텍스트 32.6% · 정가 $0.62");
+  });
+
+  it("formats the turn price without a session total", () => {
+    expect(formatTurnUsageCaptionTitle({ turnCostUsd: 0.07, usage: { input_tokens: 8, output_tokens: 2 } }))
+      .toBe("정가 $0.07");
+  });
+
+  it("formats estimated context percentage", () => {
+    expect(formatTurnUsageCaptionTitle({ percent: 1.4, estimated: true }))
+      .toBe("컨텍스트 약 1.4%");
+  });
+
+  it("falls back to input and output token stats", () => {
+    expect(formatTurnUsageCaptionTitle({ usage: { input_tokens: 12, output_tokens: 3 } }))
+      .toBe("입력 12 · 출력 3");
+  });
+
+  it("returns undefined when no title data is available", () => {
+    expect(formatTurnUsageCaptionTitle({})).toBeUndefined();
   });
 });

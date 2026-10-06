@@ -10,6 +10,8 @@ export type PersistentSettings = {
   show_generation_separator: boolean;
   show_character: boolean;
   show_jev_candidates: boolean;
+  animate_character: boolean;
+  show_turn_usage: boolean;
 };
 
 export type PersistentSession = {
@@ -44,7 +46,14 @@ export type PersistentSessionList = {
 
 /** 현재 화면이 보내는 설정은 기본 모델 하나뿐이다. 숨은 설정은 서버 값을 보존한다. */
 type DefaultModelWrite = { default_model: { model_preset: string; reasoning_effort: string | null } };
-export type PersistentDisplaySettingsWrite = Pick<PersistentSettings, "show_generation_separator" | "show_jev_candidates">;
+export type PersistentDisplaySettingsWrite = Pick<
+  PersistentSettings,
+  | "show_generation_separator"
+  | "show_character"
+  | "animate_character"
+  | "show_jev_candidates"
+  | "show_turn_usage"
+>;
 
 export type PersistentSessionWrite = {
   display_name?: string;
