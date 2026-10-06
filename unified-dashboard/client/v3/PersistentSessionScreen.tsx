@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, DashboardIconCap, LiquidGlassProvider, SwayCharacter, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useSessionProvider, useUserPreferencesSync } from '@seosoyoung/soul-ui';
+import { Button, DashboardIconCap, LiquidGlassProvider, ProfileAvatar, SwayCharacter, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useSessionProvider, useUserPreferencesSync } from '@seosoyoung/soul-ui';
 import { Eye, EyeOff } from 'lucide-react';
 import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
 import { usePersistentSessionGeometry } from './use-persistent-session-geometry';
@@ -17,6 +17,7 @@ import { activateRunSession } from './folder-workspace-run-model';
 import { PersistentSessionChatView } from './PersistentSessionChatView';
 import { PersistentSessionSettingsDialog } from '../components/PersistentSessionSettingsDialog';
 import { V3GlobalToolbar } from './V3GlobalToolbar';
+import { persistentSessionPortrait } from './PersistentSessionEntry';
 import './v3-dashboard-styles';
 import './persistent-session-screen.css';
 
@@ -87,10 +88,10 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   return <div ref={appRef} className="v3-shell persistent-session-screen" data-testid="persistent-session-screen">
     <V3GlobalToolbar headerRef={headerRef} variant="minimal" sessionName={resource?.display_name ?? undefined} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}/>
     <main ref={mainRef} className="persistent-session-main">
-      {loading ? <p role="status">불러오는 중…</p> : error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={lastId === session.session_id} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null}
+      {loading ? <p role="status">불러오는 중…</p> : error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={lastId === session.session_id} portrait={<ProfileAvatar role="assistant" shape="circle" hasPortrait portraitUrl={persistentSessionPortrait(session.node_id, session.agent_id)} fallbackEmoji="🤖"/>} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null}
       {chatReady && !error && <PersistentSessionChatView key={sessionId} sessionId={sessionId!} presentation="manuscript" composerAnchorRef={composerAnchorRef} chatInputDisabled={disabled} fileUploadUrl={!disabled && activeSessionSummary?.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSessionSummary.nodeId)}` : undefined} historyEnabled={stream.synchronizedSessionKey === activeSessionKey}/>}
     </main>
-    {geometry && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.mainWidth + geometry.lineLeftReach }}/ >}
+    {geometry && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.mainWidth + geometry.lineLeftReach }}/>}
     {displaySettings && geometry?.body && <div data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !settingsOpen} assetBaseUrl="/characters/seosoyoung"/></div>}
     {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap label="캐릭터 표시" aria-pressed={displaySettings.showCharacter} disabled={details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <Eye/> : <EyeOff/>}</DashboardIconCap></div>}
     {details.error && <div className="persistent-session-save-error"><SettingsAlert>{details.error}</SettingsAlert></div>}
