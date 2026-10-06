@@ -216,6 +216,7 @@ export function ChatView({
   const prevVisibleItemsRef = useRef(timelineItems);
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
+  const isAtBottomRef = useRef(false);
   const handledFocusRef = useRef<number | null>(null);
   const focusedScrollRequestRef = useRef<number | null>(null);
   const focusRingOwnersRef = useRef(new WeakMap<HTMLElement, number>());
@@ -564,6 +565,15 @@ export function ChatView({
       bottomFocusedSessionRef.current !== activeSessionKey;
     if (isInitialBottomFocusPending) return;
     if (
+      presentation === "manuscript"
+      && !isFollowingRef.current
+      && isAtBottomRef.current
+    ) {
+      isFollowingRef.current = true;
+      setIsFollowing(true);
+      setShowNewMessage(false);
+    }
+    if (
       bottomScrollLocation !== null &&
       shouldScrollToBottomOnTreeChange(isFollowingRef.current, timelineItems.length)
     ) {
@@ -582,6 +592,7 @@ export function ChatView({
     timelineItems,
     bottomScrollLocation,
     activeSessionKey,
+    presentation,
     scrollToBottomWithBehavior,
   ]);
 
@@ -727,6 +738,7 @@ export function ChatView({
         // callback 형태로 명시적 follow 의도를 반환한다.
         followOutput={isFollowing ? resolveVirtuosoFollowOutput : false}
         atBottomStateChange={(atBottom) => {
+          isAtBottomRef.current = atBottom;
           const isInitialBottomFocusPending =
             activeSessionKey !== null &&
             initialBottomFocusPendingSessionRef.current === activeSessionKey &&
@@ -734,6 +746,7 @@ export function ChatView({
           if (isInitialBottomFocusPending && atBottom) {
             initialBottomFocusPendingSessionRef.current = null;
             bottomFocusedSessionRef.current = activeSessionKey;
+            isFollowingRef.current = true;
             setIsFollowing(true);
             setShowNewMessage(false);
             return;
@@ -743,6 +756,10 @@ export function ChatView({
           if (!atBottom) {
             maintainBottomIfFollowing();
             return;
+          }
+          if (presentation === "manuscript") {
+            isFollowingRef.current = true;
+            setIsFollowing(true);
           }
           setShowNewMessage(false);
         }}
