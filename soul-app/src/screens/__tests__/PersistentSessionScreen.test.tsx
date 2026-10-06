@@ -69,6 +69,13 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   const line = StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style);
   expect(before.width).toBe(152);
   expect(before.top + before.height).toBe(line.top + 1);
+  const toggle = StyleSheet.flatten(view.getByTestId('persistent-session-character-toggle-seat').props.style);
+  expect(toggle.top + 48 / 2).toBe(line.top + 48 / 2);
+  expect(view.getByTestId('persistent-session-screen').props.onMoveShouldSetResponder).toBeUndefined();
+  width = 0;
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style)).toEqual(before);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style)).toEqual(line);
   width = 1340;
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const after = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
@@ -92,4 +99,19 @@ test('phone의 원고형 열은 공통 pageInset으로 본문과 입력의 가�
   expect(view.queryByTestId('persistent-session-character-seat')).toBeNull();
   view.unmount();
   measure.mockRestore();
+});
+
+test('phone 카드 목록은 제목과 같은 가장자리·종이 바탕을 쓰고 요약에는 목록으로 버튼이 있다', () => {
+  mockDevice = 'phone';
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  act(() => { store.getState().open({ session_id: 'pas-1' } as any); store.getState().toggleScene(); });
+  const panel = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
+  const paper = StyleSheet.flatten(view.getByTestId('persistent-session-safe-area').props.style);
+  expect(panel.paddingHorizontal).toBe(20);
+  expect(panel.paddingTop).toBeGreaterThan(0);
+  expect(panel.backgroundColor).toBe(paper.backgroundColor);
+  fireEvent.press(view.getByTestId('choose-card'));
+  fireEvent.press(view.getByLabelText('목록으로'));
+  expect(store.getState().selectedCardId).toBeNull();
+  view.unmount();
 });

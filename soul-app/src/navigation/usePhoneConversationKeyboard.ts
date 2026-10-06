@@ -16,20 +16,23 @@ export function usePhoneConversationKeyboard(navigation: { getParent(): { setOpt
       const parent = navigation.getParent();
       const visible = getDefaultTabBarStyle(t.colors);
       const hidden = { ...visible, display: 'none' as const };
+      let hiddenByKeyboard = false;
       // iOS는 keyboardWill* 가 키보드 애니메이션과 동기. Android는 Will* 미지원이라 Did* 사용.
       const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
       const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
       const showSub = Keyboard.addListener(showEvt, () => {
+        hiddenByKeyboard = true;
         parent?.setOptions({ tabBarStyle: hidden });
       });
       const hideSub = Keyboard.addListener(hideEvt, () => {
+        hiddenByKeyboard = false;
         parent?.setOptions({ tabBarStyle: visible });
       });
       return () => {
         showSub.remove();
         hideSub.remove();
         // 탭 전환·블러 시 탭 바를 보이는 상태로 복원 (키보드 떠 있는 상태에서 탭 이동 케이스).
-        parent?.setOptions({ tabBarStyle: visible });
+        if (hiddenByKeyboard) parent?.setOptions({ tabBarStyle: visible });
       };
     }, [navigation, t.colors])
   );

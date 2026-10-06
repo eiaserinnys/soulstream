@@ -370,13 +370,14 @@ function FeedNavigator() {
         component={PhoneSearchScreen}
         options={{ title: '검색', headerLargeTitleEnabled: false }}
       />
-      <FeedStack.Screen name="Chat" component={ChatScreen} options={rootScreenOptions('ChatTab')} />
+      <FeedStack.Screen name="Chat" component={ChatScreen} options={{ ...rootScreenOptions('ChatTab'), gestureEnabled: false }} />
     </FeedStack.Navigator>
   );
 }
 
 function PersistentNavigator() {
-  return <PersistentStack.Navigator screenOptions={{ headerShown: false }}>
+  const t = useTokens();
+  return <PersistentStack.Navigator screenOptions={{ ...stackScreenOptions(t), headerShown: false }}>
     <PersistentStack.Screen name="PersistentSession" component={PhonePersistentSession} />
     <PersistentStack.Screen name="CardDetail" component={PhoneCardDetail} />
   </PersistentStack.Navigator>;

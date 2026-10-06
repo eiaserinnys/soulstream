@@ -1,7 +1,8 @@
 import React, { useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { GLASS_BUTTON_BORDER_WIDTH } from '../components/GlassSurface';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import { usePersistentSessionHost, usePersistentSessionScene, PersistentSessionPortrait } from './PersistentSessionContext';
 import { usePhoneConversationKeyboard } from './usePhoneConversationKeyboard';
@@ -29,9 +30,12 @@ export function PhonePersistentSession({ navigation }: { navigation: any }) {
 export function PersistentPhoneTabIcon({ color, size, active }: { color: string; size: number; active: boolean }) {
   const host = usePersistentSessionHost();
   const scene = usePersistentSessionScene(state => state.scene);
-  return <View testID="persistent-phone-tab-portrait" style={{ width: size, height: size,
-    borderRadius: size / 2, borderWidth: StyleSheet.hairlineWidth, borderColor: color }}>
-    <PersistentSessionPortrait session={host.portrait} size={size} />
+  if (host.loading) return <ActivityIndicator testID="persistent-entry-loading" size="small" color={color} />;
+  if (!host.portrait) return <Ionicons testID="persistent-phone-tab-fallback" name="person-circle-outline" size={size} color={color} />;
+  return <View testID="persistent-phone-tab-portrait" style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <PersistentSessionPortrait session={host.portrait} size={size - GLASS_BUTTON_BORDER_WIDTH * 2} />
+    <View testID="persistent-phone-tab-ring" pointerEvents="none" style={{ position: 'absolute', inset: 0,
+      borderRadius: size / 2, borderWidth: active ? GLASS_BUTTON_BORDER_WIDTH : 0, borderColor: color }} />
     {active && scene === 'cards' ? <View testID="persistent-phone-tab-list" pointerEvents="none"
       style={{ position: 'absolute', inset: 0 }}>
       <Ionicons name="list-outline" color={color} size={size} />

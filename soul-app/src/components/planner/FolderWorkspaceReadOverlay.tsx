@@ -28,6 +28,7 @@ import { FolderWorkspace } from './FolderWorkspace';
 import { retryPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../lib/planner-folder-title-save';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
+import { FOLDER_WORKSPACE_BACKDROP_COLOR, getCardDetailPaneWidth, getFolderWorkspaceOverlayWidth } from '../../lib/folder-workspace-layout';
 
 const ANIMATION_MS = 240;
 
@@ -59,10 +60,10 @@ function FolderWorkspaceOverlayContent() {
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const progress = useRef(new Animated.Value(0)).current;
-  const overlayWidth = Math.min(Math.floor(screenWidth * 0.9), 920);
+  const overlayWidth = getFolderWorkspaceOverlayWidth(screenWidth);
   const sheetWidth = overlayWidth + (cardId ? StyleSheet.hairlineWidth * 2 : 0);
   const folderPaneWidth = cardId
-    ? Math.round(overlayWidth * 0.5)
+    ? getCardDetailPaneWidth(overlayWidth)
     : resolveFolderPaneWidth(overlayWidth, t.tabletShell.folderPane);
   const requestClose = () => coordinateFolderWorkspaceClose(pageId, close);
 
@@ -211,7 +212,7 @@ function makeStyles(t: DesignTokens) {
     },
     backdrop: {
       ...StyleSheet.absoluteFill,
-      backgroundColor: 'rgba(0, 0, 0, 0.38)',
+      backgroundColor: FOLDER_WORKSPACE_BACKDROP_COLOR,
     },
     sheet: {
       position: 'absolute',

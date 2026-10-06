@@ -43,6 +43,7 @@ export function openPhoneChat(
     : route && ROOT_TAB_ORDER.includes(route.name) ? route.name : undefined;
   tabs.navigate('FeedTab', {
     screen: 'Chat',
+    initial: false,
     params: {
       sessionId,
       ...(returnTab === undefined ? {} : { returnTab }),

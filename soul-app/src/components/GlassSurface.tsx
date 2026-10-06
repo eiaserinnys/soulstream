@@ -1,4 +1,5 @@
 import React from 'react';
+export const GLASS_BUTTON_BORDER_WIDTH = 2;
 import {
   AccessibilityInfo,
   Platform,
@@ -343,7 +344,7 @@ export function GlassButton({
           backgroundColor: paper
             ? resolvePaperButtonBackground(t, primitive, !!disabled, pressed)
             : resolveGlassButtonBackground(primitive, !!disabled, pressed, nativePressFeedback),
-          borderWidth: paper ? 0 : 2,
+          borderWidth: paper ? 0 : GLASS_BUTTON_BORDER_WIDTH,
           borderColor: paper ? 'transparent' : focused && !disabled ? primitive.focusedColor : 'transparent',
         },
         !iconOnly && { minHeight: standardMinHeight },

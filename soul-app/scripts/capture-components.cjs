@@ -1004,7 +1004,17 @@ async function runPersistentTaskCaptures(browser, base) {
     assert.equal(await denied.getByTestId('component-review').count(), 0);
     await denied.close();
     result.interactions.push('미인증 직접 URL: gallery mount 차단');
-    if (captureMode === 'persistent-fullscreen') {
+    if (captureMode === 'persistent-fix-regression') {
+      const env = { browser, base, prefix, root, output, result };
+      await require('./persistent-baseline-capture.cjs').runPersistentBaselineCaptures(env);
+      const captures = require('./persistent-fullscreen-capture.cjs');
+      await captures.runSettingsCaptures(env);
+      await captures.runEntryCaptures(env);
+    } else if (captureMode === 'persistent-fix-pressed') {
+      await require('./persistent-fixes-capture.cjs').runPressedCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-fixes') {
+      await require('./persistent-fixes-capture.cjs').runPersistentFixCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-fullscreen') {
       await require('./persistent-fullscreen-capture.cjs').runPersistentFullscreenCaptures({ browser, base, prefix, output, result });
     } else if (captureMode === 'persistent-phone') {
       const captures = require('./persistent-fullscreen-capture.cjs');

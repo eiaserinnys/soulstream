@@ -55,19 +55,28 @@ test('시작 토글 끔은 초상만 읽고, 0개의 수동 입구는 기존 추
   await act(async () => { await host.requestEntry(open); });
   expect(jest.mocked(SettingsScreen).mock.calls.at(-1)![0]).toMatchObject({ category: 'persistent', initialPersistentDestination: { kind: 'editor' } });
 });
-test('시작 조회 중 도착한 세션 intent는 늦은 PAS 응답보다 우선한다', async () => {
+test('시작 조회 중 도착한 세션 intent는 늦은 PAS 응답보다 우선하고 loading sheet는 없다', async () => {
   let finish!: (result: unknown) => void;
   mockList.mockReturnValue(new Promise(resolve => { finish = resolve; }));
   const open = jest.fn();
   const view = render(<PersistentSessionProvider><Probe /></PersistentSessionProvider>);
   let pending!: Promise<void>;
   act(() => { pending = host.initialize(open, true); });
-  expect(view.getByTestId('persistent-entry-loading')).toBeTruthy();
+  expect(view.queryByText('영구 세션')).toBeNull();
   view.rerender(<PersistentSessionProvider sessionIntent><Probe /></PersistentSessionProvider>);
   expect(view.queryByTestId('persistent-entry-loading')).toBeNull();
   await act(async () => { finish({ sessions: [pas('one')], create_defaults: defaults }); await pending; });
   expect(open).not.toHaveBeenCalled();
   expect(store.getState().session).toBeNull();
+});
+
+test('이미 선택 sheet가 열린 뒤 새 session intent가 오면 선택 sheet를 닫는다', async () => {
+  mockList.mockResolvedValue({ sessions: [pas('one'), pas('two')], create_defaults: defaults });
+  const view = render(<PersistentSessionProvider><Probe /></PersistentSessionProvider>);
+  await act(async () => { await host.requestEntry(jest.fn()); });
+  expect(view.getByTestId('persistent-entry-one')).toBeTruthy();
+  view.rerender(<PersistentSessionProvider sessionIntent><Probe /></PersistentSessionProvider>);
+  expect(view.queryByTestId('persistent-entry-one')).toBeNull();
 });
 test('시작 실패는 홈 안내, 수동 실패는 오류와 같은 입구 재시도이며 0개로 처리하지 않는다', async () => {
   mockList.mockRejectedValue(new Error('offline'));

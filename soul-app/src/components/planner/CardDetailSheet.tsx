@@ -53,7 +53,7 @@ type CardDetailContentProps = {
   inline?: boolean;
 } & (
   | { variant?: 'default'; onOpenCard?: never }
-  | { variant: 'readSummary'; onOpenCard(): void }
+  | { variant: 'readSummary'; onOpenCard(): void; fitContent?: boolean }
 );
 
 export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
@@ -205,7 +205,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
     { value: 'notes' as const, label: '노트', count: tabletLandscape ? (detail?.notes?.length ?? 0) : undefined },
   ];
   const selectedItem = targetItem;
-  if (props.variant === 'readSummary') return <CardReadSummary card={card} items={cardItems} error={error}
+  if (props.variant === 'readSummary') return <CardReadSummary card={card} items={cardItems} error={error} fitContent={props.fitContent}
     assigneeLabel={card?.assigneeKind === 'human' ? card.assigneeUserId ?? '사용자'
       : card?.assigneeKind === 'session' ? assigned?.displayName?.trim() || resolveSessionAgentLabel(identity)
         : card?.assigneeKind === 'agent' ? resolveSessionAgentLabel(identity) : null}
@@ -320,7 +320,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
   </>;
 }
 
-function CardReadSummary({ card, items, error, assigneeLabel, hasAssignee, human, avatar, onOpenCard }: {
+function CardReadSummary({ card, items, error, assigneeLabel, hasAssignee, human, avatar, onOpenCard, fitContent = false }: {
   card: CardDto | undefined;
   items: CardCheckItem[];
   error: string | null;
@@ -329,6 +329,7 @@ function CardReadSummary({ card, items, error, assigneeLabel, hasAssignee, human
   human: boolean | undefined;
   avatar: ReturnType<typeof resolveSessionCardAvatar>;
   onOpenCard(): void;
+  fitContent?: boolean;
 }) {
   const t = useTokens();
   const jwt = useAuthStore((state) => state.jwt);
@@ -348,8 +349,8 @@ function CardReadSummary({ card, items, error, assigneeLabel, hasAssignee, human
   const hasProgress = !!card.now?.text.trim() || results.length > 0;
   const spacing = t.uiSpacing;
 
-  return <View testID="card-read-summary" style={{ flex: 1, minHeight: 0 }}>
-    <ScrollView testID="card-read-summary-scroll" style={{ flex: 1, minHeight: 0 }} showsVerticalScrollIndicator={false}
+  return <View testID="card-read-summary" style={fitContent ? { flexShrink: 1, minHeight: 0 } : { flex: 1, minHeight: 0 }}>
+    <ScrollView testID="card-read-summary-scroll" style={fitContent ? { flexGrow: 0, flexShrink: 1, flexBasis: 'auto', minHeight: 0 } : { flex: 1, minHeight: 0 }} showsVerticalScrollIndicator={false}
       contentContainerStyle={{ padding: t.foundation.pageInset, gap: spacing.xl, flexGrow: 1 }}>
       <View style={{ gap: spacing.md }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 0, gap: spacing.sm }}>

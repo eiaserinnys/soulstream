@@ -476,6 +476,7 @@ export function ChatBody({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <SessionStoryPanel
+        presentation={presentation}
         sessionId={sessionId}
         api={api}
         openRequestId={storyOpenRequestId}
@@ -512,9 +513,9 @@ export function ChatBody({
         presentation={presentation}
       />
 
-      <ClaudeRuntimeTasksStrip sessionId={sessionId} api={api} />
-      <ClaudeRuntimeSchedulesStrip sessionId={sessionId} api={api} />
-      <ClaudeRuntimeSignalsStrip sessionId={sessionId} api={api} />
+      <ClaudeRuntimeTasksStrip sessionId={sessionId} api={api} presentation={presentation} />
+      <ClaudeRuntimeSchedulesStrip sessionId={sessionId} api={api} presentation={presentation} />
+      <ClaudeRuntimeSignalsStrip sessionId={sessionId} api={api} presentation={presentation} />
 
       <ChatInputComposer
         key={sessionId}

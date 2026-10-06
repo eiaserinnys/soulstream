@@ -20,6 +20,8 @@ jest.mock('../../screens/PersistentSessionScreen', () => ({ PersistentSessionScr
 import { useSettingsStore } from '../../store/settingsStore';
 import { PersistentSessionScreen } from '../../screens/PersistentSessionScreen';
 import { CardDetailContent } from '../../components/planner/CardDetailSheet';
+import { createSurfaceRoles, useTokens } from '../../theme';
+import { renderHook } from '@testing-library/react-native';
 let host: ReturnType<typeof usePersistentSessionHost>;
 function Probe() { host = usePersistentSessionHost(); return null; }
 test('정확한 가운데 슬롯만 기본 이동을 막고 같은 id로 scene을 전환하며 다른 탭 입구는 대화로 연다', async () => {
@@ -50,9 +52,12 @@ test('Feed 스택에 일반 Chat이 있고 PAS 스택의 기존 카드 상세 go
   render(<PersistentSessionProvider><Probe /><TabNavigator /></PersistentSessionProvider>);
   const tabs = getBottomTabCaptures()[0];
   for (const tab of tabs.screens) render(<PersistentSessionProvider>{React.createElement(tab.component)}</PersistentSessionProvider>);
-  expect(getNativeStackCaptures().find(stack => stack.screens[0]?.name === 'Feed')!.screens.map(s => s.name)).toEqual(['Feed', 'Search', 'Chat']);
+  const feed = getNativeStackCaptures().find(stack => stack.screens[0]?.name === 'Feed')!;
+  expect(feed.screens.map(s => s.name)).toEqual(['Feed', 'Search', 'Chat']);
+  expect(feed.screens[2].options.gestureEnabled).toBe(false);
   const pas = getNativeStackCaptures().find(stack => stack.screens[0]?.name === 'PersistentSession')!;
   expect(pas.screens.map(s => s.name)).toEqual(['PersistentSession', 'CardDetail']);
+  expect((pas.navigatorProps?.screenOptions as any).contentStyle).toEqual(createSurfaceRoles(renderHook(() => useTokens()).result.current).canvas.tokenStyle);
   const navigation = { addListener: jest.fn(() => () => {}), getParent: jest.fn(), goBack: jest.fn(), navigate: jest.fn() };
   render(<PersistentSessionProvider><Probe />{React.createElement(pas.screens[0].component, { navigation })}</PersistentSessionProvider>);
   act(() => { host.store.getState().open({ session_id: 'pas' } as any); host.store.getState().selectCard('card'); });

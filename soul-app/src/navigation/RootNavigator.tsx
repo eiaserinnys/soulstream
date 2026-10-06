@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   View,
@@ -39,7 +39,6 @@ import { useUsageWidgetDeepLink } from '../widgets/usageWidgetDeepLink';
 import { recordUiUsageEvent } from '../lib/ui-usage-events';
 import {
   cancelPlannerSessionWorkspaceOpen,
-  openPlannerSessionWorkspace,
 } from '../lib/planner-folder-workspace';
 import {
   cancelPhoneSearchSessionOpen,
@@ -49,6 +48,7 @@ import {
 } from './phoneSessionNavigation';
 import { parseSessionSearchIntentUrl, type SessionSearchIntent } from './sessionSearchIntent';
 import { useAuthenticatedStartupReady } from './authenticatedStartupReady';
+import { openTabletSessionFromRoot } from './tabletSessionNavigation';
 
 type PendingSessionSearchIntent = {
   readonly id: number;
@@ -77,6 +77,8 @@ export function RootNavigator({
 }) {
   const tokens = useTokens();
   const device = useDeviceType();
+  const leavePersistent = useRef<(() => void) | null>(null);
+  const onPersistentLeaveReady = useCallback((leave: (() => void) | null) => { leavePersistent.current = leave; }, []);
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const wallpaper = useSettingsStore((s) => s.wallpaper);
   const applyUserPreferences = useSettingsStore((s) => s.applyUserPreferences);
@@ -219,6 +221,7 @@ export function RootNavigator({
         ],
       );
     };
+    if (device === 'phone') leavePersistent.current?.();
     const open = device === 'phone'
       ? openPhoneSearchSessionFromRoot(
           navigationRef as unknown as PhoneRootNavigation,
@@ -226,7 +229,8 @@ export function RootNavigator({
           intent.eventId,
           offerPhoneIntentRetry,
         )
-      : openPlannerSessionWorkspace(
+      : openTabletSessionFromRoot(
+          navigationRef, leavePersistent.current,
           intent.sessionId,
           intent.eventId,
           undefined,
@@ -310,11 +314,13 @@ export function RootNavigator({
     if (!pendingNotification || !usageDestinationReady || !startup.navigationReady) return;
     if (device !== 'phone' && !uiStoreHydrated) return;
     const sid = pendingNotification;
+    if (device === 'phone') leavePersistent.current?.();
     recordUiUsageEvent({ type: 'notification_open', target: { kind: 'session', id: sid },
       entry: 'notification', attrs: { surface: 'push', navigated: true } });
-    openNotificationSession(device, sid, sessionId => {
+    if (device === 'phone') openNotificationSession(device, sid, sessionId => {
       openPhoneChat({ getParent: () => navigationRef }, sessionId, undefined, undefined, 'notification');
     });
+    else void openTabletSessionFromRoot(navigationRef, leavePersistent.current, sid, undefined, undefined, 'notification');
     setPendingNotification(null);
     void Notifications.clearLastNotificationResponseAsync().catch(() => {});
   }, [pendingNotification, usageDestinationReady, startup.navigationReady, device, uiStoreHydrated]);
@@ -414,6 +420,7 @@ export function RootNavigator({
         onUiUsageEventsEnabled={onUiUsageEventsEnabled}
         startupReady={startup.hydrated && uiStoreHydrated && startup.navigationReady && initialLinkChecked && initialNotificationChecked}
         sessionIntent={sessionIntentReceived}
+        onPersistentLeaveReady={onPersistentLeaveReady}
         onOpenPersistent={() => (navigationRef as any).navigate(device === 'phone' ? 'PersistentTab' : 'PersistentSession')}
       />
     </AppWallpaperBackground>

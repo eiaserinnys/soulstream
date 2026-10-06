@@ -82,7 +82,7 @@ async function runPersistentFullscreenCaptures({ browser, base, prefix, output, 
   await runEntryCaptures({ browser, base, prefix, output, result });
 }
 
-module.exports = { runPersistentFullscreenCaptures, runPhoneCaptures, runEntryCaptures, runSettingsCaptures, runHistoryCapture };
+module.exports = { runPersistentFullscreenCaptures, runPhoneCaptures, runEntryCaptures, runSettingsCaptures, runHistoryCapture, fixturePage, swipe };
 
 async function runHistoryCapture(env) {
   const { context, page } = await fixturePage(env, 'history', { width: 390, height: 844 }, 'sample=screen&history=long&safeArea=fixture');
@@ -246,7 +246,7 @@ async function runEntryCaptures(env) {
   ]) {
     const { context, page } = await fixturePage(env, scenario.name, scenario.viewport ?? { width: 390, height: 844 }, scenario.query + '&safeArea=' + (scenario.name === 'safe-zero' ? 'zero' : 'fixture'));
     if (scenario.manual) await page.getByTestId('phone-tab-PersistentTab').click();
-    await page.getByTestId(scenario.expected).waitFor();
+    await page.getByTestId(scenario.expected).first().waitFor();
     await page.waitForTimeout(400); // Existing sheet slide/fade presentation.
     if (scenario.name === 'entry-two-dark') {
       await page.screenshot({ path: path.join(output, `${scenario.name}.png`) });

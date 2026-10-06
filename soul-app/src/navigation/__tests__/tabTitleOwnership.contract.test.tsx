@@ -92,7 +92,7 @@ test('5개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
     ['Settings', '설정'],
   ]);
   expect(roots.find(root => root.name === 'PersistentSession')!.options).toBeUndefined();
-  expect(stacks.find(stack => stack.screens[0].name === 'PersistentSession')!.navigatorProps?.screenOptions).toEqual({ headerShown: false });
+  expect(stacks.find(stack => stack.screens[0].name === 'PersistentSession')!.navigatorProps?.screenOptions).toEqual({ ...(stacks.find(stack => stack.screens[0].name === 'Feed')!.navigatorProps?.screenOptions as Record<string, unknown>), headerShown: false });
   for (const root of roots.filter(root => root.name !== 'PersistentSession')) {
     expect(root.options.title).not.toMatch(/[📅⭐📁📰💬⚙️]/u);
     expect(root.options.headerTitle).toEqual(expect.any(Function));
@@ -109,7 +109,10 @@ test('5개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
   const tabScreens = getBottomTabCaptures()[0]!.screens;
   for (const screen of tabScreens) {
     const icon = render(<PersistentSessionProvider>{React.createElement(screen.options.tabBarIcon, { color: 'red', size: 22 })}</PersistentSessionProvider>);
-    if (screen.name === 'PersistentTab') { expect(icon.getByTestId('persistent-phone-tab-portrait')).toBeTruthy(); continue; }
+    if (screen.name === 'PersistentTab') {
+      expect(icon.getByTestId('persistent-phone-tab-fallback').props.name).toBe('person-circle-outline');
+      continue;
+    }
     expect(icon.UNSAFE_getByType('Ionicons' as any).props.name)
       .toBe(ROOT_SECTION_CONFIG[screen.name as keyof typeof ROOT_SECTION_CONFIG].icon);
   }

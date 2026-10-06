@@ -17,7 +17,7 @@ test('본문 검색 결과는 채팅 탭에 event anchor를 보존한다', () =>
 
   expect(openPhoneChat(navigation, 'session-1', 42)).toBe(true);
   expect(navigate).toHaveBeenCalledWith('FeedTab', {
-    screen: 'Chat',
+    screen: 'Chat', initial: false,
     params: { sessionId: 'session-1', focusEventId: 42 },
   });
 });
@@ -28,7 +28,7 @@ test('하이라이트·줄거리 결과는 채팅 탭에 스토리 열기 요청
 
   expect(openPhoneChat(navigation, 'session-1', undefined, 7)).toBe(true);
   expect(navigate).toHaveBeenCalledWith('FeedTab', {
-    screen: 'Chat',
+    screen: 'Chat', initial: false,
     params: { sessionId: 'session-1', storyOpenRequestId: 7 },
   });
 });
@@ -62,7 +62,7 @@ test('linked phone search result preserves task context and exact event in chat'
     },
   });
   expect(navigate).toHaveBeenNthCalledWith(2, 'FeedTab', {
-    screen: 'Chat',
+    screen: 'Chat', initial: false,
     params: { sessionId: 'session-1', focusEventId: 42 },
   });
 });
@@ -77,7 +77,7 @@ test('unlinked phone search result opens the exact session without a task route'
 
   expect(navigate).toHaveBeenCalledTimes(1);
   expect(navigate).toHaveBeenCalledWith('FeedTab', {
-    screen: 'Chat',
+    screen: 'Chat', initial: false,
     params: { sessionId: 'session-2' },
   });
 });
@@ -98,7 +98,7 @@ test('latest phone search selection wins while earlier task hydration is pending
   await expect(first).resolves.toBe(false);
   expect(navigate).toHaveBeenCalledTimes(1);
   expect(navigate).toHaveBeenCalledWith('FeedTab', {
-    screen: 'Chat',
+    screen: 'Chat', initial: false,
     params: { sessionId: 'session-latest' },
   });
 });

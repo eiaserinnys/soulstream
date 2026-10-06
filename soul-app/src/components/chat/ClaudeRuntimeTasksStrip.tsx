@@ -23,8 +23,10 @@ import { DisclosureIcon } from '../DisclosureIcon';
 import { AppModalSurface } from '../AppModalSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { useClaudeRuntimeTasksRefresh } from './useClaudeRuntimeListRefresh';
+import { chatAuxiliarySurface } from './chatAuxiliarySurface';
 
 interface Props {
+  presentation?: 'default' | 'manuscript';
   sessionId: string;
   api: ApiClient | null;
 }
@@ -33,7 +35,7 @@ const TERMINAL_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
   'completed', 'failed', 'stopped', 'killed',
 ]);
 
-export function ClaudeRuntimeTasksStrip({ sessionId, api }: Props) {
+export function ClaudeRuntimeTasksStrip({ sessionId, api, presentation = 'default' }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const runtime = useChatStore((s) => s.claudeRuntimeBySession[sessionId]);
@@ -86,7 +88,7 @@ export function ClaudeRuntimeTasksStrip({ sessionId, api }: Props) {
   if (tasks.length === 0 && !hasModeState && !loading && !recoveryNeeded) return null;
 
   return (
-    <View testID="runtime-tasks-strip" style={styles.container}>
+    <View testID="runtime-tasks-strip" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
       <View style={styles.header}>
         <CompactTouchTarget
           testID="runtime-tasks-header-touch"

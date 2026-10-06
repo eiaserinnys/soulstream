@@ -19,13 +19,15 @@ import { RUNTIME_STRIP_DETAILS_MAX_HEIGHT } from './runtimeStripOverflow';
 import { DisclosureIcon } from '../DisclosureIcon';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { useClaudeRuntimeTasksRefresh } from './useClaudeRuntimeListRefresh';
+import { chatAuxiliarySurface } from './chatAuxiliarySurface';
 
 interface Props {
+  presentation?: 'default' | 'manuscript';
   sessionId: string;
   api: ApiClient | null;
 }
 
-export function ClaudeRuntimeSignalsStrip({ sessionId, api }: Props) {
+export function ClaudeRuntimeSignalsStrip({ sessionId, api, presentation = 'default' }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const runtime = useChatStore((s) => s.claudeRuntimeBySession[sessionId]);
@@ -53,7 +55,7 @@ export function ClaudeRuntimeSignalsStrip({ sessionId, api }: Props) {
   if (notifications.length === 0 && remoteTriggers.length === 0 && !mirror) return null;
 
   return (
-    <View testID="runtime-signals-strip" style={styles.container}>
+    <View testID="runtime-signals-strip" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
       <View style={styles.header}>
         <CompactTouchTarget
           testID="runtime-signals-header-touch"

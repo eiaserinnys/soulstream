@@ -5,7 +5,8 @@ jest.mock('../../screens/PersistentSessionScreen', () => ({ PersistentSessionScr
 jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: jest.fn(() => null) }));
 jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null }));
 import React from 'react';
-import { act, render } from '@testing-library/react-native';
+import { act, render, renderHook } from '@testing-library/react-native';
+import { createSurfaceRoles, useTokens } from '../../theme';
 import { TabletNavigator } from '../TabletNavigator';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
 import { PersistentSessionScreen } from '../../screens/PersistentSessionScreen';
@@ -22,6 +23,8 @@ test('Main은 유지된 채 PAS와 같은 스택의 카드 상세를 push하고 
   const stack = getNativeStackCaptures()[0];
   expect(stack.screens.map(screen => screen.name)).toEqual(['Main', 'PersistentSession', 'CardDetail']);
   expect(stack.navigatorProps?.initialRouteName).toBe('Main');
+  expect((stack.navigatorProps?.screenOptions as any).contentStyle).toEqual(createSurfaceRoles(renderHook(() => useTokens()).result.current).canvas.tokenStyle);
+  expect(stack.screens[2].options.presentation).toBe('transparentModal');
   const navigation = { navigate: jest.fn(), goBack: jest.fn() };
   act(() => { store.getState().open({ session_id: 'pas-1', persistent: true } as any); store.getState().selectCard('card-1'); });
   render(<PersistentSessionProvider><Probe />{React.createElement(stack.screens[1].component, { navigation })}</PersistentSessionProvider>);

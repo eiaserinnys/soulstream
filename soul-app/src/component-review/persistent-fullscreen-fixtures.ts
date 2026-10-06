@@ -1,7 +1,7 @@
 import type { ApiClient } from '../api/client';
 import type { Session } from '../api/types';
 import { nativeSettingsReviewApi } from './native-settings-fixtures';
-import { createPersistentReviewApi } from './persistent-review-fixtures';
+import { createPersistentReviewApi, persistentReviewCards } from './persistent-review-fixtures';
 import { dialogueImageUrl } from './dialogue-fixtures';
 import { dialogueMessages, reviewSessionEventsUrl } from './chat-fixtures';
 
@@ -14,7 +14,11 @@ export function createPersistentFullscreenReviewApi(search: string): ApiClient {
   })) : dialogueMessages;
   return {
     ...base, ...nativeSettingsReviewApi,
-    listCards: base.listCards, getCard: base.getCard,
+    listCards: base.listCards,
+    getCard: async id => {
+      const detail = await base.getCard(query.get('case') === 'long' ? persistentReviewCards.blankParagraphCard.id : id);
+      return query.get('case') === 'long' ? { ...detail, card: { ...detail.card, id } } : detail;
+    },
     listPersistentSessions: async () => {
       if (query.get('state') === 'entry-loading') return new Promise<never>(() => {});
       const result = await nativeSettingsReviewApi.listPersistentSessions();

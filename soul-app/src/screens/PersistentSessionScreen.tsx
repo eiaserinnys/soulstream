@@ -53,8 +53,12 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
   const widths = portrait ? FRAME.portrait : FRAME.landscape;
   const columnWidth = phone ? Math.max(0, (app?.width ?? 0) - t.foundation.pageInset * 2) : widths.conversation;
   const columnLeft = app ? (app.width - columnWidth) / 2 : 0;
-  const measureApp = React.useCallback(() => appRef.current?.measureInWindow((left, top, width, height) => setApp({ left, top, width, height })), []);
-  const measureMain = React.useCallback(() => mainRef.current?.measureInWindow((left, top, width, height) => setMain({ left, top, width, height })), []);
+  const measureApp = React.useCallback(() => appRef.current?.measureInWindow((left, top, width, height) => {
+    if (width > 0 && height > 0) setApp({ left, top, width, height });
+  }), []);
+  const measureMain = React.useCallback(() => mainRef.current?.measureInWindow((left, top, width, height) => {
+    if (width > 0 && height > 0) setMain({ left, top, width, height });
+  }), []);
   // RN 웹은 크기가 같은 열의 x 이동만으로 onLayout을 다시 보내지 않는다.
   // 열 배치를 바꾼 commit 뒤에도 같은 window 좌표계로 실측한다.
   React.useLayoutEffect(measureMain, [measureMain, columnLeft, columnWidth, headerHeight, app?.height]);
@@ -98,9 +102,10 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
     </LiquidGlassButton>;
   return <SafeAreaView testID="persistent-session-safe-area" edges={['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
-    <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...gestures.panHandlers}>
+    <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>
       <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: t.foundation.pageInset, gap: t.uiSpacing.sm }}>
+        paddingLeft: t.foundation.pageInset, paddingRight: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2,
+        gap: t.uiSpacing.sm }}>
         <Text numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }}>{session?.display_name ?? '영구 세션'}</Text>
         {action('home-outline', '홈으로 돌아가기', onHome, 'persistent-session-home')}
         {action(t.mode === 'light' ? 'moon-outline' : 'sunny-outline', '밝기 전환', () => void handleAppearanceChange(t.mode === 'light' ? 'dark' : 'light'), 'persistent-session-appearance')}
@@ -113,7 +118,10 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
           opacity: phone && scene === 'cards' ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript"
           active={active && scene === 'conversation'} minimumBottomPadding={phone ? 0 : insets.bottom}
-          onComposerLayout={event => setComposer(event.nativeEvent.layout)} />
+          onComposerLayout={event => {
+            const layout = event.nativeEvent.layout;
+            if (layout.width > 0 && layout.height > 0) setComposer(layout);
+          }} />
       </View>
       {geometry ? <View testID="persistent-session-baseline" pointerEvents="none" style={{ position: 'absolute',
         left: columnLeft - geometry.lineLeftReach, top: geometry.lineY,
@@ -125,26 +133,37 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
       </View> : null}
       {!phone && geometry?.toggle ? <View testID="persistent-session-character-toggle-seat" style={{ position: 'absolute',
         left: geometry.toggle.left + (geometry.toggle.width - t.hitTarget.min) / 2,
-        top: geometry.toggle.top + (geometry.toggle.height - t.hitTarget.min) / 2 }}>
+        top: geometry.lineY + (inputRowHeight - t.hitTarget.min) / 2 }}>
         <LiquidGlassButton iconOnly size="compact" variant="paper" disabled={savingCharacter} testID="persistent-session-character-toggle"
           accessibilityLabel={display?.show_character ? '캐릭터 숨기기' : '캐릭터 표시'}
           accessibilityState={{ selected: display?.show_character === true }} onPress={() => void toggleCharacter()}>
-          <Ionicons name="person-outline" size={t.iconSize.navigation} color={t.colors.textSecondary} />
+          <Ionicons testID="persistent-session-character-toggle-icon" name={display?.show_character ? 'person' : 'person-outline'}
+            size={t.iconSize.navigation} color={display?.show_character ? t.colors.textPrimary : t.colors.textMuted} />
         </LiquidGlassButton>
       </View> : null}
-      {!phone ? <View style={{ position: 'absolute', top: headerHeight, right: t.foundation.pageInset }}>
+      {!phone ? <View style={{ position: 'absolute', top: headerHeight, right: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2 }}>
         {action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks')}
       </View> : null}
       {scene === 'cards' ? <View testID="persistent-session-card-panel" style={{ position: 'absolute',
         top: headerHeight + (phone ? 0 : t.hitTarget.min),
-        bottom: phone ? 0 : portrait && geometry ? app!.height - geometry.lineY + t.uiSpacing.md : t.uiSpacing.md,
-        right: phone ? 0 : t.foundation.pageInset, width: phone ? '100%' : selectedCardId ? widths.detail : widths.tasks,
-        backgroundColor: selectedCardId || phone ? t.persistentSession.panel : t.persistentSession.paper,
+        ...(phone ? { bottom: 0 } : { maxHeight: Math.max(0, (portrait && geometry ? geometry.lineY : app?.height ?? 0) - headerHeight - t.hitTarget.min - t.uiSpacing.md) }),
+        right: phone ? 0 : portrait ? t.foundation.pageInset : app ? app.width - columnLeft - columnWidth - t.uiSpacing.xl - (selectedCardId ? widths.detail : widths.tasks) : t.foundation.pageInset,
+        width: phone ? '100%' : selectedCardId ? widths.detail : widths.tasks,
+        backgroundColor: selectedCardId && !phone ? t.persistentSession.panel : t.persistentSession.paper,
         borderRadius: phone ? 0 : t.foundation.radius.card,
         borderWidth: selectedCardId && !phone ? StyleSheet.hairlineWidth : 0, borderColor: t.persistentSession.line,
-        paddingHorizontal: selectedCardId ? 0 : t.uiSpacing.sm, paddingBottom: phone ? 0 : insets.bottom }}>
-        {selectedCardId ? <CardDetailContent key={selectedCardId} variant="readSummary" api={api} cardId={selectedCardId}
+        paddingHorizontal: selectedCardId ? 0 : phone ? t.foundation.pageInset : t.uiSpacing.sm,
+        paddingTop: phone && !selectedCardId ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : insets.bottom }}>
+        {selectedCardId ? <>
+          <View style={{ paddingHorizontal: t.foundation.pageInset, alignItems: 'flex-start' }}>
+            <LiquidGlassButton iconOnly size="compact" variant="paper" accessibilityLabel="목록으로" testID="persistent-summary-back"
+              onPress={() => host.store.getState().selectCard(null)}>
+              <Ionicons name="chevron-back" size={t.iconSize.navigation} color={t.colors.textPrimary} />
+            </LiquidGlassButton>
+          </View>
+          <CardDetailContent key={selectedCardId} variant="readSummary" fitContent={!phone} api={api} cardId={selectedCardId}
           onClose={() => host.store.getState().selectCard(null)} onOpenCard={() => onOpenCard(selectedCardId)} onOpenSession={onOpenSession} />
+          </>
           : <PersistentSessionTaskList api={api} onOpenCard={cardId => host.store.getState().selectCard(cardId)} />}
       </View> : null}
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}

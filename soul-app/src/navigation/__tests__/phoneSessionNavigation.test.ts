@@ -44,7 +44,7 @@ describe('phone session navigation', () => {
     expect(openPhoneChat({ getParent }, 'session-1')).toBe(true);
     expect(getParent).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith('FeedTab', {
-      screen: 'Chat',
+      screen: 'Chat', initial: false,
       params: { sessionId: 'session-1' },
     });
   });
@@ -84,7 +84,7 @@ describe('phone session navigation', () => {
     fireEvent.press(screen.getByTestId('mock-session-feed-open'));
 
     expect(navigate).toHaveBeenCalledWith('FeedTab', {
-      screen: 'Chat',
+      screen: 'Chat', initial: false,
       params: { sessionId: 'session-1' },
     });
   });
@@ -111,7 +111,7 @@ test.each(['DailyTab', 'FolderTab', 'PersistentTab', 'FeedTab', 'SettingsTab'])(
   const goBack = jest.fn();
   const navigation = { getParent: () => ({ navigate, getState: () => ({ index: 0, routes: [{ name: origin }] }) }), goBack };
   openPhoneChat(navigation, 'ordinary');
-  expect(navigate).toHaveBeenCalledWith('FeedTab', { screen: 'Chat', params: { sessionId: 'ordinary', returnTab: origin } });
+  expect(navigate).toHaveBeenCalledWith('FeedTab', { screen: 'Chat', initial: false, params: { sessionId: 'ordinary', returnTab: origin } });
   openPreviousPhonePanel(navigation, origin as any);
   expect(goBack).toHaveBeenCalledTimes(1);
   expect(navigate).toHaveBeenLastCalledWith(origin);
@@ -120,5 +120,5 @@ test('Feed/Chat에서 다른 세션을 열어도 원래 Folder 복귀 경로와 
   const navigate = jest.fn();
   const tabs = { navigate, getRootState: () => ({ index: 0, routes: [{ name: 'FeedTab', state: { index: 1, routes: [{ name: 'Feed' }, { name: 'Chat', params: { returnTab: 'FolderTab' } }] } }] }) };
   openPhoneChat({ getParent: () => tabs }, 'new-session', undefined, undefined, 'notification');
-  expect(navigate).toHaveBeenCalledWith('FeedTab', { screen: 'Chat', params: { sessionId: 'new-session', returnTab: 'FolderTab', usageEntry: 'notification' } });
+  expect(navigate).toHaveBeenCalledWith('FeedTab', { screen: 'Chat', initial: false, params: { sessionId: 'new-session', returnTab: 'FolderTab', usageEntry: 'notification' } });
 });

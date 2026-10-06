@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, Text, View } from 'react-native';
+import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useStore } from 'zustand';
 import type { StoreApi } from 'zustand';
 import { createApiClient } from '../api/client';
@@ -21,12 +21,15 @@ import { useAppNoticeStore } from '../store/appNoticeStore';
 interface PersistentSessionHost {
   store: StoreApi<PersistentSessionScene>;
   portrait: Pick<PersistentSessionResource, 'session_id' | 'node_id' | 'agent_id' | 'agent_name'> | null;
+  loading: boolean;
   requestEntry(onOpen: () => void, startup?: boolean): Promise<void>;
   initialize(onOpen: () => void, openOnStart: boolean): Promise<void>;
 }
 const Context = createContext<PersistentSessionHost | null>(null);
 
-export function PersistentSessionProvider({ children, sessionIntent = false }: { children: React.ReactNode; sessionIntent?: boolean }) {
+export function PersistentSessionProvider({ children, sessionIntent = false, onLeaveReady }: {
+  children: React.ReactNode; sessionIntent?: boolean; onLeaveReady?: (leave: (() => void) | null) => void;
+}) {
   const [store] = useState(createPersistentSessionScene);
   const t = useTokens();
   const serverUrl = useSettingsStore(state => state.serverUrl);
@@ -35,13 +38,18 @@ export function PersistentSessionProvider({ children, sessionIntent = false }: {
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl, jwt]);
   const [sessions, setSessions] = useState<PersistentSessionResource[]>([]);
   const [defaults, setDefaults] = useState<PersistentSessionCreateDefaults | null>(null);
-  const [sheet, setSheet] = useState<'loading' | 'choose' | 'error' | 'add' | null>(null);
+  const [sheet, setSheet] = useState<'choose' | 'error' | 'add' | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const destination = useRef<() => void>(() => undefined);
   const pending = useRef<'manual' | 'startup' | null>(null);
   const intent = useRef(sessionIntent);
   intent.current = sessionIntent;
-  React.useEffect(() => { if (sessionIntent && pending.current === 'startup') setSheet(null); }, [sessionIntent]);
+  React.useEffect(() => { if (sessionIntent) setSheet(null); }, [sessionIntent]);
+  React.useLayoutEffect(() => {
+    onLeaveReady?.(() => { store.getState().leave(); setSheet(null); pending.current = null; });
+    return () => onLeaveReady?.(null);
+  }, [store, onLeaveReady]);
   const last = useSettingsStore(state => state.getPersistentSessionDevicePreference(serverUrl, email).lastSessionId);
   const portrait = sessions.find(session => session.session_id === last) ?? sessions[0]
     ?? (defaults ? { session_id: '', node_id: defaults.node_id, agent_id: defaults.preferred_agent_id, agent_name: null } : null);
@@ -58,13 +66,14 @@ export function PersistentSessionProvider({ children, sessionIntent = false }: {
       destination.current = onOpen;
       pending.current = mode;
       setError(null);
-      setSheet('loading');
+      setLoading(true);
     }
     try {
       if (!api) throw new Error('서버에 연결해 주세요.');
       const result = await api.listPersistentSessions();
       setSessions(result.sessions); setDefaults(result.create_defaults);
       if (mode === 'portrait') return;
+      if (pending.current !== mode) return;
       if (mode === 'startup' && intent.current) { setSheet(null); return; }
       const entry = resolvePersistentSessionEntry(result.sessions, last, mode === 'startup');
       if (entry.kind === 'open') open(entry.session);
@@ -74,25 +83,25 @@ export function PersistentSessionProvider({ children, sessionIntent = false }: {
         setSheet(null);
         if (!intent.current) useAppNoticeStore.getState().showNotice({ tone: 'error', title: '영구 세션을 불러오지 못했습니다.', message: '입구에서 다시 시도해 주세요.' });
       } else if (mode === 'manual') { setError('영구 세션을 불러오지 못했습니다.'); setSheet('error'); }
-    } finally { if (mode !== 'portrait') pending.current = null; }
+    } finally { if (mode !== 'portrait') { pending.current = null; setLoading(false); } }
   }
   const requestEntry = (onOpen: () => void, startup = false) => readEntry(onOpen, startup ? 'startup' : 'manual');
   const initialize = (onOpen: () => void, openOnStart: boolean) => readEntry(onOpen, openOnStart ? 'startup' : 'portrait');
   const closeAdd = useRef<() => void>(() => setSheet(null));
-  return <Context.Provider value={{ store, portrait, requestEntry, initialize }}>
+  return <Context.Provider value={{ store, portrait, loading, requestEntry, initialize }}>
     {children}
-    {sheet ? <AppModalSurface visible variant="expanded" presentationStyle="pageSheet" modalId="modal_settings"
+    {sheet ? <AppModalSurface visible variant="expanded" presentationStyle="pageSheet" modalId="modal_settings" surfaceTestID="persistent-entry-sheet"
       onRequestClose={() => sheet === 'add' ? closeAdd.current() : setSheet(null)}>
       {sheet === 'add' ? <SettingsScreen category="persistent" initialPersistentDestination={{ kind: 'editor' }}
         onClose={() => setSheet(null)} registerCloseRequest={close => { closeAdd.current = close; }} />
         : <View style={{ flex: 1, padding: t.foundation.pageInset, gap: t.uiSpacing.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
             <Text style={{ flex: 1, ...t.foundation.typography.section, color: t.colors.textPrimary }}>영구 세션</Text>
-            <LiquidGlassButton accessibilityLabel="영구 세션 선택 닫기" onPress={() => setSheet(null)}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="영구 세션 선택 닫기" onPress={() => setSheet(null)}
+              style={{ minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, justifyContent: 'center', alignItems: 'center' }}>
               <Text style={{ ...t.foundation.typography.body, color: t.colors.accent }}>닫기</Text>
-            </LiquidGlassButton>
+            </TouchableOpacity>
           </View>
-          {sheet === 'loading' ? <ActivityIndicator testID="persistent-entry-loading" color={t.colors.accent} /> : null}
           {sheet === 'error' ? <>
             <Text testID="persistent-entry-error" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{error}</Text>
             <LiquidGlassButton accessibilityLabel="영구 세션 다시 조회" onPress={() => void requestEntry(destination.current)}>
