@@ -348,6 +348,45 @@ describe("TaskExecutor persistent decision wiring", () => {
     expect(arrival).toMatchObject({ action: "continue", rule: "arrival.warm.within_budget" });
   });
 
+  it("skips the arrival decision when the first queued input is a cache keepalive", async () => {
+    const task = makeTask();
+    task.claudeContextUsage = { usedTokens: 130_001, maxTokens: 200_000 };
+    task.interventionQueue.push({
+      text: "cache keepalive",
+      user: "Soulstream Scheduler",
+      callerInfo: { source: "system", display_name: "Soulstream Scheduler" },
+      purpose: "cache_keepalive",
+    });
+    const now = Date.now();
+    const runtime = makeRuntime(task, [{
+      id: 1,
+      session_id: task.agentSessionId,
+      event_type: "complete",
+      payload: {},
+      searchable_text: "",
+      created_at: new Date(now - 60_000),
+    }]);
+    rememberProviderUsageObservation("claude", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage());
+    const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
+    const executor = taskExecutor(task, runtime, () => makeEngine([{
+      type: "complete",
+      usage: {},
+      timestamp: Date.now() / 1_000,
+      first_call: { input_tokens: 1_000, cached_input_tokens: 900 },
+    } as unknown as SSEEventPayload]));
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    expect(requestRollover).not.toHaveBeenCalled();
+    const arrival = runtime.persistenceDouble.enqueueEvent.mock.calls
+      .map((call) => call[1] as Record<string, unknown>)
+      .find((event) => event.kind === "persistent_decision" && event.trigger === "arrival");
+    expect(arrival).toBeUndefined();
+  });
+
   it("holds the execution slot while refreshing stale account observations", async () => {
     const task = makeTask();
     task.interventionQueue.push({ text: "continue", user: "Alice" });
