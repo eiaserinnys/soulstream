@@ -5,6 +5,21 @@ import type { RecurringJob, RecurringJobRun } from "../lib/recurring-jobs";
 import type { AssignmentData } from "./AgentNodeAssignmentFields";
 import { reviewFolder, reviewFolders } from "./components-review-fixtures";
 const now = "2026-10-03T00:00:00Z";
+const persistentSettingsTimeline = [
+  { id: 106, event_type: "complete", payload: { usage: { input_tokens: 14320, output_tokens: 2840 }, turn_cost_usd: 0.62 }, created_at: "2026-10-06T03:40:12.418Z" },
+  { id: 105, event_type: "user_message", payload: { text: "요약해 주세요." }, created_at: "2026-10-06T03:39:00.000Z" },
+  { id: 104, event_type: "context_usage", payload: { used_tokens: 326000, max_tokens: 1000000, percent: 32.6, estimated: false }, created_at: "2026-10-06T03:38:00.000Z" },
+  { id: 103, event_type: "generation_started", payload: { generation: 7, reason: "weekly_headroom", current: { model: "gpt-6.1-sol-preview-2026-09-30-long" } }, created_at: "2026-10-06T03:18:12.418Z" },
+  { id: 102, event_type: "complete", payload: { usage: { input_tokens: 8900, output_tokens: 1200 }, turn_cost_usd: 0.31 }, created_at: "2026-10-06T02:30:00.000Z" },
+  { id: 101, event_type: "context_usage", payload: { used_tokens: 124000, max_tokens: 1000000, percent: 12.4, estimated: false }, created_at: "2026-10-06T02:29:00.000Z" },
+  { id: 100, event_type: "generation_started", payload: { generation: 6, reason: "weekly_headroom", current: { model: "gpt-6.1-sol-preview-2026-09-30-long" } }, created_at: "2026-10-06T02:00:00.000Z" },
+];
+const persistentSettingsModelPresets = [
+  { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: "2026-10-08T00:00:00.000Z", usage_warning: false,
+    weekly_headroom: { status: "ok", headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: "2026-10-08T00:00:00.000Z", observed_at: "2026-10-06T02:00:00.000Z", quota_label: "7일" } },
+  { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+    weekly_headroom: { status: "ok", headroom: -56.6, remaining_percent: 21, window_remaining_percent: 77.6, resets_at: null, observed_at: "2026-10-06T02:01:00.000Z", quota_label: "7일" } },
+];
 export const dialoguesFolders = reviewFolders.map((folder) => ({ ...folder, projectPageId: folder.id }));
 export const dialoguesAssignment: AssignmentData = {
   nodes: [{ nodeId: "sample-node", status: "connected" }],
@@ -191,8 +206,14 @@ export function createDialoguesApi() {
     },
   };
   const ownedAgents = createOwnedAgentsFixture(new URLSearchParams(window.location.search).get('ownedState') ?? 'normal');
+  const sample = new URLSearchParams(window.location.search).get("sample");
+  const persistentState = new URLSearchParams(window.location.search).get("persistentState") ?? (
+    sample === "persistent-settings-window-saving" ? "display-save-delayed"
+      : sample === "persistent-settings-window-failure" ? "display-save-failure"
+        : "normal"
+  );
   const persistentSessions = createPersistentSessionsFixture({
-    scenario: new URLSearchParams(window.location.search).get("persistentState") ?? "normal",
+    scenario: persistentState,
     nodeId: "sample-node",
     folderId: dialoguesFolders[0]!.id,
   });
@@ -207,6 +228,13 @@ export function createDialoguesApi() {
     if (path.startsWith("/api/persistent-sessions")) return persistentSessions(input, init);
     let value: unknown;
     if (path === "/cogito/briefs") value = {status:"ok",node_count:1,nodes:[{node_id:"sample-node",status:"ok",data:{status:"ok"}}]};
+    else if (path.startsWith("/api/nodes/") && path.endsWith("/model-presets")) value = { model_presets: persistentSettingsModelPresets };
+    else if (path.startsWith("/api/sessions/") && path.endsWith("/timeline")) {
+      const messages = sample?.startsWith("persistent-settings-window") ? persistentSettingsTimeline : [];
+      const eventTypes = url.searchParams.get("event_types")?.split(",");
+      const filtered = eventTypes ? messages.filter((message) => eventTypes.includes(message.event_type)) : messages;
+      value = { messages: filtered.slice(0, Number(url.searchParams.get("limit") ?? filtered.length)), next_cursor: null };
+    }
     else if (path === "/api/config/settings") {
       if (method === "PUT") configValue = body.changes?.sample ?? configValue;
       value =

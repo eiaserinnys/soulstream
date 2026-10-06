@@ -31,6 +31,7 @@ import { CardCheckItemsSamples } from "./CardCheckItemsSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
 import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChatReviewSample";
+import { PersistentSessionSettingsReviewSample } from "./PersistentSessionSettingsReviewSample";
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 
@@ -287,6 +288,7 @@ export function ComponentsReviewPage() {
                 })} onSelect={setFolder} onContextMenu={() => open("폴더 메뉴")} onReorder={async () => open("폴더 순서")}/></div>
             </Sample>
             <ComponentsReviewControls/>
+            <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
             <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>
             </div>
           </section>

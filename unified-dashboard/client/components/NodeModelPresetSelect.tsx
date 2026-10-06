@@ -75,7 +75,7 @@ export function NodeModelPresetSelect({
     status: catalogStatus,
   });
 
-  return <CatalogSelectionField className={className} label={label} ariaLabel="모델 선택"
+  return <CatalogSelectionField className={className} label={label} ariaLabel={label}
     value={value} disabled={disabled || !nodeId} selectedLabel={selection.preset?.reason === "quota_exhausted" ? <span className="text-destructive">{triggerLabel}</span> : triggerLabel}
     triggerClassName={triggerClassName} invalid={Boolean(selection.warning)}
     options={[

@@ -1,6 +1,9 @@
 /** Live web dialog variants. Desktop selection menus and tooltips are not independent dialogs. */
 export const dialoguesInventory = [
   ...(["planned", "disconnected", "checking", "recovering", "new-version"] as const).map(phase => ({section: "settings" as const, id: `connection-${phase}` as const, name: `연결 안내 · ${phase}`, component: "ConnectionDialog"})),
+  { section: "settings", id: "persistent-settings-window", name: "영구 세션 설정", component: "PersistentSessionSettingsDialog" },
+  { section: "settings", id: "persistent-settings-window-saving", name: "영구 세션 설정 · 저장 중", component: "PersistentSessionSettingsDialog" },
+  { section: "settings", id: "persistent-settings-window-failure", name: "영구 세션 설정 · 저장 실패", component: "PersistentSessionSettingsDialog" },
   {
     section: "folders",
     id: "project-create",
