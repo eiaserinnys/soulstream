@@ -88,24 +88,35 @@ async function runHistoryCapture(env) {
   const { context, page } = await fixturePage(env, 'history', { width: 390, height: 844 }, 'sample=screen&history=long&safeArea=fixture');
   const pas = page.getByTestId('persistent-session-screen');
   await pas.getByText('공개 대화 40:', { exact: false }).waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(1000); // Finish the existing initial-history bottom-follow before reading older messages.
   const scroller = await pas.evaluateHandle(root => Array.from(root.querySelectorAll('div'))
     .filter(el => ['auto', 'scroll'].includes(getComputedStyle(el).overflowY))
     .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0]);
-  await scroller.evaluate(el => { el.scrollTop = 140; });
-  await page.waitForTimeout(200); // FlatList receives the real scroll event.
+  const box = await scroller.evaluate(el => el.getBoundingClientRect().toJSON());
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -140); // A real wheel gesture against the inverted list.
+  await page.waitForTimeout(500);
   const before = await scroller.evaluate(el => el.scrollTop);
+  const offsets = [];
+  const readOffset = async label => offsets.push({ label, ...(await scroller.evaluate(el => ({ offset: el.scrollTop, height: el.clientHeight, content: el.scrollHeight }))) });
+  await readOffset('before');
   assert.ok(before > 0, '최신 위치에서 벗어난 이력 표본');
   await page.getByTestId('phone-tab-PersistentTab').click();
+  await readOffset('cards');
   await page.getByTestId('card-row-public-persistent-412-summary').click();
+  await readOffset('summary');
   await page.getByTestId('card-read-summary-open').click();
+  await readOffset('full-detail');
   await page.getByTestId('card-detail-frame').getByLabel('뒤로', { exact: true }).click();
   await page.getByTestId('card-read-summary-open').waitFor();
   await page.getByTestId('phone-tab-PersistentTab').click();
+  await readOffset('conversation');
   const after = await scroller.evaluate(el => ({ connected: el.isConnected, offset: el.scrollTop }));
+  env.result.viewports.push({ name: 'history', before, after, offsets });
   assert.ok(after.connected, '상세 왕복에서 같은 목록 DOM 유지');
   assert.ok(Math.abs(after.offset - before) <= 1, '읽던 위치 유지');
   await page.screenshot({ path: path.join(env.output, 'iphone-reading-position.png') });
-  env.result.viewports.push({ name: 'history', before, after });
   env.result.interactions.push('실제 FlatList의 과거 읽기 위치와 DOM을 카드 상세 왕복 뒤 유지');
   await context.close();
 }
