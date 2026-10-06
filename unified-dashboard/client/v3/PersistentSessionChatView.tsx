@@ -1,8 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, type RefObject } from "react";
 import { ChatView, useDashboardStore } from "@seosoyoung/soul-ui";
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
 
-export function PersistentSessionChatView({ sessionId, ...props }: { sessionId: string } & Parameters<typeof ChatView>[0]) {
+type PersistentSessionChatViewProps = {
+  sessionId: string;
+  presentation?: "default" | "manuscript";
+  composerAnchorRef?: RefObject<HTMLDivElement | null>;
+} & Omit<NonNullable<Parameters<typeof ChatView>[0]>, "presentation" | "composerAnchorRef">;
+
+export function PersistentSessionChatView({ sessionId, ...props }: PersistentSessionChatViewProps) {
   const setDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   useEffect(() => {
     let active = true;

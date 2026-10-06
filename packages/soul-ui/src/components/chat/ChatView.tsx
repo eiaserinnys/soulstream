@@ -17,7 +17,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type RefObject } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
@@ -27,6 +27,7 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
+import { ChatManuscriptList, ChatManuscriptFooter } from "./ChatManuscriptList";
 import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
 import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 import {
@@ -56,6 +57,8 @@ interface ChatViewProps {
   chatInputDisabled?: boolean;
   fileUploadUrl?: string;
   historyEnabled?: boolean;
+  presentation?: "default" | "manuscript";
+  composerAnchorRef?: RefObject<HTMLDivElement | null>;
 }
 
 function canNestedScrollerConsumeVerticalInput(
@@ -92,6 +95,8 @@ export function ChatView({
   chatInputDisabled = false,
   fileUploadUrl,
   historyEnabled = true,
+  presentation = "default",
+  composerAnchorRef,
 }: ChatViewProps = {}) {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
@@ -618,16 +623,18 @@ export function ChatView({
   }, [bottomScrollLocation, clearOlderHistoryIntent, scrollToBottomWithBehavior]);
 
   const VirtuosoHeader = useCallback(
-    () => (
-      <ChatHistoryStatus
+    () => {
+      const status = <ChatHistoryStatus
         loading={history.loading}
         reachedTop={history.reachedTop}
         blockedReason={history.blockedReason}
         onRetry={requestOlderManually}
         showReachedTop={timelineItems.length > 0}
-      />
-    ),
+      />;
+      return presentation === "manuscript" ? <div data-slot="chat-manuscript-list-header" className="flow-root pt-6">{status}</div> : status;
+    },
     [
+      presentation,
       history.blockedReason,
       history.canLoadOlder,
       history.loading,
@@ -637,8 +644,8 @@ export function ChatView({
     ],
   );
   const virtuosoComponents = useMemo(
-    () => ({ Header: VirtuosoHeader }),
-    [VirtuosoHeader],
+    () => ({ Header: VirtuosoHeader, ...(presentation === "manuscript" ? { List: ChatManuscriptList, Footer: ChatManuscriptFooter } : {}) }),
+    [VirtuosoHeader, presentation],
   );
 
   if (!activeSessionKey) {
@@ -655,7 +662,8 @@ export function ChatView({
       data-chat-font-size={chatFontSize}
       data-chat-first-item-index={firstItemIndex}
       style={chatTypographyStyle}
-      className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"
+      className={presentation === "manuscript" ? "-mx-1 flex h-full min-h-0 flex-col overflow-hidden px-1 pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
+      data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
     >
       {focusEventId !== null
         && !history.loading
@@ -753,6 +761,7 @@ export function ChatView({
             >
               <VirtualizedItem
                 item={item}
+                presentation={presentation}
                 llmContext={llmContext}
                 sessionId={activeSessionKey ?? undefined}
                 toolGroupKey={toolGroupKey}
@@ -806,7 +815,7 @@ export function ChatView({
             }
           }, 2000);
         }}
-          className="flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"
+          className={presentation === "manuscript" ? "-mx-1 flex-1 min-h-0 overflow-x-hidden overscroll-none [mask-image:linear-gradient(to_bottom,transparent,black_calc(var(--spacing)*6))] [mask-repeat:no-repeat]" : "flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"}
         />
       )}
 
@@ -821,7 +830,7 @@ export function ChatView({
         </div>
       )}
 
-      <div className="flex shrink-0 justify-end pb-2 pr-3">
+      {presentation === "default" && <div className="flex shrink-0 justify-end pb-2 pr-3">
         <button
           onClick={toggleFollow}
           className={cn(
@@ -834,11 +843,13 @@ export function ChatView({
         >
           {"\u2193"} Follow
         </button>
-      </div>
+      </div>}
 
       <ChatRuntimeCompactStrips sessionId={activeSessionKey} />
 
       <ChatInput
+        presentation={presentation}
+        composerAnchorRef={composerAnchorRef}
         additionalDisabled={chatInputDisabled}
         fileUploadUrl={fileUploadUrl}
         registerPendingSendActions={registerPendingSendActions}
