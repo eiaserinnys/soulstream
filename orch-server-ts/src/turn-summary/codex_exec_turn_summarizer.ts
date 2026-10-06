@@ -2,6 +2,7 @@ import type { TurnSummaryConfig } from "./turn_summary_config.js";
 import {
   buildTurnSummaryPrompt,
   type TurnSummarizer,
+  type TurnSummaryOptions,
   type TurnSummaryInput,
   type TurnSummaryResult,
 } from "./turn_summarizer.js";
@@ -22,9 +23,8 @@ export {
 export interface CodexExecTurnSummarizerOptions
   extends CodexEphemeralExecutorOptions {}
 
-export interface CodexExecGenerateOptions {
+export interface CodexExecGenerateOptions extends TurnSummaryOptions {
   readonly maxAttempts?: number;
-  readonly outputSchema?: Readonly<Record<string, unknown>>;
 }
 
 export class TurnSummaryExecutionError extends Error {
@@ -50,8 +50,13 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
   async summarize(
     input: TurnSummaryInput,
     config: TurnSummaryConfig,
+    options: TurnSummaryOptions = {},
   ): Promise<TurnSummaryResult> {
-    return await this.generate(buildTurnSummaryPrompt(input, config), config);
+    return await this.generate(
+      buildTurnSummaryPrompt(input, config, options),
+      config,
+      options,
+    );
   }
 
   async generate(

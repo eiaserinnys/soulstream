@@ -703,6 +703,7 @@ export async function createLiveProductionApplication(
     registry,
     agentProfiles: dbCatalogRepository.agentProfileRepository.snapshot,
     eventHub: runtimeServices.sessionEventHub,
+    commands: providers.runtime.sessionActionCommandRoutes,
     sessionBroadcaster: runtimeServices.sessionBroadcaster,
     logger: app.log,
     warn: context.warn,
