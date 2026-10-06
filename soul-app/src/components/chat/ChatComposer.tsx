@@ -163,8 +163,10 @@ export function ChatComposer({
             } : undefined}
             value={input}
             onChangeText={onChangeInput}
-            placeholder={placeholder}
-            accessibilityLabel={inputAccessibilityLabel}
+            placeholder={presentation === 'manuscript' ? undefined : placeholder}
+            accessibilityLabel={presentation === 'manuscript'
+              ? inputAccessibilityLabel ?? '메시지'
+              : inputAccessibilityLabel}
             placeholderTextColor={t.colors.textPlaceholder}
             multiline
             {...(Platform.OS === 'web' ? { rows: 1 } : {})}
