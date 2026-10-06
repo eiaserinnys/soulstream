@@ -34,12 +34,25 @@ export type JevCandidatesRenderItem = {
   key: string;
 };
 
+export type TurnUsageCaption = {
+  title: string;
+  lines: string[];
+};
+
+export type TurnUsageRenderItem = TurnUsageCaption & {
+  kind: 'turn-usage';
+  event: SessionEvent;
+  key: string;
+  summaries?: TurnSummaryRenderItem[];
+};
+
 export type ChatRenderItem =
   | {
       kind: 'event';
       event: SessionEvent;
       key: string;
       summaries?: TurnSummaryRenderItem[];
+      turnUsageCaption?: TurnUsageCaption;
     }
   | {
       kind: 'tool';
@@ -50,6 +63,7 @@ export type ChatRenderItem =
     }
   | TurnSummaryRenderItem
   | JevCandidatesRenderItem
+  | TurnUsageRenderItem
   | { kind: 'typing'; key: string };
 
 export interface PersistentDisplayProjectionSettings {
