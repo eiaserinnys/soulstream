@@ -83,9 +83,15 @@ describe("PendingMessageBubble", () => {
     const manuscriptHtml = renderToStaticMarkup(createElement(PendingMessageBubble, { ...props, presentation: "manuscript" }));
 
     expect(defaultHtml).toContain("bg-gradient-to-b");
-    expect(manuscriptHtml).toContain("mt-10 mb-5 flex justify-end");
-    expect(manuscriptHtml).not.toContain("ms-12");
+    expect(manuscriptHtml).toContain("mt-10 mb-5 ms-12 flex justify-end");
+    expect(manuscriptHtml).toContain('data-slot="chat-body"');
+    expect(manuscriptHtml).not.toContain("text-white/75");
     expect(manuscriptHtml).toContain("text-right text-muted-foreground");
     expect(manuscriptHtml).not.toContain("bg-gradient-to-b");
+    const failedHtml = renderToStaticMarkup(createElement(PendingMessageBubble, {
+      ...props, presentation: "manuscript", pending: { ...pending, status: "failed" },
+    }));
+    expect(failedHtml).toContain("text-destructive");
+    expect(failedHtml).not.toContain("text-white");
   });
 });

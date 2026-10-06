@@ -1,14 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useState } from "react";
+import { ChatView, useDashboardStore } from "@seosoyoung/soul-ui";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
-import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
-import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
-import { FileAttachmentPreview } from "@seosoyoung/soul-ui/components/FileAttachmentPreview";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
-import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
-import { PaperclipButton } from "@seosoyoung/soul-ui/components/chat/PaperclipButton";
-import { Button } from "@seosoyoung/soul-ui/components/ui/button";
-import { Square } from "lucide-react";
+import { getSessionResetState } from "@seosoyoung/soul-ui/stores/slices/_session-reset";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
+import type { SoulSSEEvent } from "@seosoyoung/soul-ui/shared/types";
+
+const REVIEW_SESSION = "components-review-manuscript";
 
 function makeMessage(role: ChatMessage["role"], id: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -36,7 +34,7 @@ const messages: ChatMessage[] = [
     content: "실행 중인 작업에 보낸 개입 메시지입니다.",
   }),
   makeMessage("user", "attachments", {
-    content: "첨부를 눌러 열 수 있습니다.\n\n![샘플 이미지](/icon-192.png)\n\n[검수 메모.pdf 열기](https://example.com/review-note.pdf)",
+    content: "첨부 이미지와 파일 링크입니다.\n\n![샘플 이미지](/icon-192.png)\n\n[검수 메모.pdf 열기](https://example.com/review-note.pdf)",
   }),
   makeMessage("tool_approval", "approval", {
     content: "파일을 수정하기 전에 승인이 필요합니다.",
@@ -67,93 +65,80 @@ const messages: ChatMessage[] = [
   }),
 ];
 
-function ReviewComposer({ multiline, presentation, running = false, sampleId }: { multiline: boolean; presentation: "default" | "manuscript"; running?: boolean; sampleId: string }) {
-  const [text, setText] = useState(multiline ? "첫 줄 입력\n둘째 줄 입력" : "");
-  const [actionStatus, setActionStatus] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const { chatTypographyStyle } = useChatTypography();
-  const file = useMemo(
-    () => new File(["검수 첨부 내용"], "검수 메모.txt", { type: "text/plain" }),
-    [],
-  );
-  const imageFile = useMemo(
-    () => new File(["<svg xmlns='http://www.w3.org/2000/svg' width='96' height='64'><rect width='96' height='64' fill='#d6d6ce'/></svg>"], "검수 이미지.svg", { type: "image/svg+xml" }),
-    [],
-  );
-  useTextareaAutoHeight(textareaRef, text, 16);
+/** The review route borrows only session state, then restores it on departure.
+ * Maps keep other sessions' changes; preferences are never snapshotted. */
+function ManuscriptColumn() {
+  const [ready, setReady] = useState(false);
+  useLayoutEffect(() => {
+    const store = useDashboardStore.getState();
+    const saved = Object.fromEntries(
+      [...Object.keys(getSessionResetState()), "activeSessionSummary"].map(key => [key, store[key as keyof typeof store]]),
+    );
+    const savedDraft = store.drafts[REVIEW_SESSION];
+    const savedPending = store.pendingChatSends[REVIEW_SESSION];
+    const savedSuggestion = store.lastPromptSuggestions[REVIEW_SESSION];
+    store.setActiveSession(REVIEW_SESSION);
+    store.setActiveSessionSummary({
+      agentSessionId: REVIEW_SESSION, status: "completed", sessionType: "claude",
+      createdAt: "2026-10-06T00:00:00Z", updatedAt: "2026-10-06T00:00:00Z",
+    });
+    store.setPersistentSessionDisplaySettings(REVIEW_SESSION, { show_generation_separator: true, show_jev_candidates: true });
+    const events = [
+      { type: "assistant_message", content: "첫 줄부터 흐리지 않고 읽을 수 있습니다.\n\n대화 글자는 운영의 설정을 따릅니다." },
+      { type: "user_message", user: "User", text: "긴 내 발언은 왼쪽에 여백을 남깁니다. 여러 줄로 이어지는 글도 오른쪽 끝을 유지하고, 목록과 코드와 첨부는 내용 폭으로 정렬합니다.\n첫째 줄\n둘째 줄\n\n첫 문단입니다.\n\n둘째 문단입니다." },
+      { type: "assistant_message", content: "- 문단과 목록의 행간은 같습니다\n- 본문은 1.6배입니다\n\n| 항목 | 값 |\n| --- | --- |\n| 행간 | 1.6 |" },
+      { type: "tool_approval_requested", approval_id: "review-approval", tool_use_id: "review-tool", tool_name: "Edit", tool_input: { file_path: "review.txt" }, timestamp: 0 },
+      { type: "complete", result: "응답 완료", usage: { input_tokens: 1200, output_tokens: 340 }, total_cost_usd: 0.07 },
+      { type: "generation_started", timestamp: 0 },
+      { type: "error", message: "응답 연결이 끊겼습니다." },
+      { type: "intervention_sent", user: "User", text: "실행 중 보낸 발언도 같은 여백을 유지합니다." },
+      { type: "user_message", user: "User", text: "첨부 이미지와 파일 링크입니다.\n\n- 첫째 메모\n- 둘째 메모\n\n```ts\nconst manuscript = true;\n```\n\n| 항목 | 값 |\n| --- | --- |\n| 모양 | 원고형 |\n\n![샘플 이미지](/icon-192.png)\n\n[검수 메모.pdf](https://example.com/review-note.pdf)" },
+      { type: "assistant_message", content: "마지막 문장 아래에도 여유가 있습니다." },
+    ] as SoulSSEEvent[];
+    store.processEvents(events.map((event, index) => ({ event, eventId: index + 1 })));
+    setReady(true);
+    return () => {
+      useDashboardStore.setState(state => {
+        const drafts = { ...state.drafts };
+        const pendingChatSends = { ...state.pendingChatSends };
+        const lastPromptSuggestions = { ...state.lastPromptSuggestions };
+        delete drafts[REVIEW_SESSION];
+        delete pendingChatSends[REVIEW_SESSION];
+        delete lastPromptSuggestions[REVIEW_SESSION];
+        if (savedDraft !== undefined) drafts[REVIEW_SESSION] = savedDraft;
+        if (savedPending !== undefined) pendingChatSends[REVIEW_SESSION] = savedPending;
+        if (savedSuggestion !== undefined) lastPromptSuggestions[REVIEW_SESSION] = savedSuggestion;
+        return { ...saved, drafts, pendingChatSends, lastPromptSuggestions };
+      });
+    };
+  }, []);
 
-  return (
-    <div className="space-y-2" style={chatTypographyStyle} data-testid={`review-composer-${sampleId}`}>
-      <div data-slot="chat-composer-anchor">
-        <FileAttachmentPreview file={imageFile} status="done" onRemove={() => undefined} />
-        <FileAttachmentPreview file={file} status="done" onRemove={() => undefined} />
-        <ChatInputComposer presentation={presentation}>
-          {running && <Button data-slot="chat-interrupt-button" variant="destructive-outline" size="icon" aria-label="Stop running conversation" onClick={() => setActionStatus("interrupted")} className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"><Square className="h-4 w-4 fill-current" aria-hidden="true" /></Button>}
-          <PaperclipButton onClick={() => fileInputRef.current?.click()} />
-          <ChatInputEditor
-            ref={textareaRef}
-            text={text}
-            onChangeText={setText}
-            onSend={() => { setText(""); setActionStatus("sent"); }}
-            placeholder="메시지 입력"
-            buttonLabel="보내기"
-            modeIcon=""
-            modeLabel=""
-            borderColor=""
-            buttonVariant="default"
-            disabled={!text.trim()}
-            textareaDisabled={false}
-          />
-        </ChatInputComposer>
-        <input ref={fileInputRef} data-testid="review-file-picker" type="file" className="sr-only" onChange={(event) => setActionStatus(event.target.files?.[0]?.name ?? "")} />
-      </div>
-      <span data-testid="review-composer-action" aria-live="polite">{actionStatus}</span>
+  const showPending = (status: "sending" | "failed" | null) => {
+    useDashboardStore.getState().setPendingChatSend(REVIEW_SESSION, status ? {
+      id: "review-pending", status, text: "대기 발언 첫째 줄\n둘째 줄",
+      messageText: "대기 발언 첫째 줄\n둘째 줄", attachmentPaths: [], attachments: [],
+      mode: "resume", reason: "전달을 확인하지 못했습니다",
+    } : null);
+  };
+  return <div className="w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden">
+    <div className="flex gap-2 pb-3 text-xs text-muted-foreground">
+      <button onClick={() => showPending(null)}>원고형</button>
+      <button onClick={() => showPending("sending")}>전송 중</button>
+      <button onClick={() => showPending("failed")}>전송 실패</button>
     </div>
-  );
-}
-
-function ChatColumn({ presentation }: { presentation: "default" | "manuscript" }) {
-  const { chatTypographyStyle } = useChatTypography();
-  const column = (
-    <div
-      className={presentation === "manuscript" ? "w-full" : "w-full bg-background"}
-      data-slot="chat-root"
-      data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
-      style={{ ...chatTypographyStyle, width: "100%" }}
-    >
-      <p className={presentation === "manuscript" ? "py-2 text-sm font-medium text-muted-foreground" : "px-3 py-2 text-sm font-medium text-muted-foreground"}>
-        {presentation === "default" ? "기본 모양" : "원고형"}
-      </p>
-      <div className="overflow-y-auto py-2">
-        {messages.map((msg) => (
-          <ChatMessageItem
-            key={msg.id}
-            msg={msg}
-            sessionId="components-review-pas"
-            presentation={presentation}
-          />
-        ))}
-      </div>
-      <div className={presentation === "manuscript" ? "space-y-4 pb-3" : "space-y-4 px-3 pb-3"}>
-        <ReviewComposer multiline={false} presentation={presentation} sampleId={`${presentation}-one-line`} />
-        <ReviewComposer multiline presentation={presentation} sampleId={`${presentation}-multiline`} />
-        <ReviewComposer multiline={false} presentation={presentation} running sampleId={`${presentation}-running`} />
-      </div>
+    <div className="h-screen min-h-0" data-testid="manuscript-review-column">
+      {ready && <ChatView presentation="manuscript" historyEnabled={false} fileUploadUrl="/api/attachments/sessions" />}
     </div>
-  );
-  return (
-    presentation === "manuscript"
-      ? <div className="w-full bg-[var(--persistent-session-paper)] p-5 lg:w-[568px] lg:p-6">{column}</div>
-      : <div className="w-full max-w-[520px]">{column}</div>
-  );
+  </div>;
 }
 
 export function PersistentManuscriptChatReviewSample() {
-  return (
-    <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
-      <ChatColumn presentation="default" />
-      <ChatColumn presentation="manuscript" />
+  const { chatTypographyStyle } = useChatTypography();
+  return <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
+    <div className="w-full max-w-[520px] bg-background" style={chatTypographyStyle}>
+      <p className="px-3 py-2 text-sm font-medium text-muted-foreground">기본 모양</p>
+      {messages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId="components-review-pas" />)}
     </div>
-  );
+    <ManuscriptColumn />
+  </div>;
 }

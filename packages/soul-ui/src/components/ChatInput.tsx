@@ -343,9 +343,10 @@ export function ChatInput({
         text={text}
         onChangeText={handleChangeText}
         onSend={sendMessage}
-        placeholder={mode.placeholder}
+        inputLabel={presentation === "manuscript" ? "메시지" : undefined}
+        placeholder={presentation === "manuscript" ? "" : mode.placeholder}
         buttonLabel={mode.buttonLabel}
-        modeIcon={mode.modeIcon}
+        modeIcon={presentation === "manuscript" ? "" : mode.modeIcon}
         modeLabel={mode.modeLabel}
         borderColor={mode.borderColor}
         buttonVariant={mode.buttonVariant}
@@ -383,7 +384,7 @@ export function ChatInput({
       {presentation === "manuscript" ? (
         <>
           {suggestion}
-          <div ref={composerAnchorRef} data-slot="chat-composer-anchor">
+          <div ref={composerAnchorRef} data-slot="chat-composer-anchor" className="-mx-1 px-1 pt-3">
             {pendingAttachments}
             {composer}
           </div>

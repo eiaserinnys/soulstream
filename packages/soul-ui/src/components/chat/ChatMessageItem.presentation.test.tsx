@@ -37,6 +37,9 @@ describe("ChatMessageItem presentation", () => {
     expect(manuscriptHtml).not.toContain("bg-gradient-to-b");
     expect(manuscriptHtml).not.toContain("w-8 h-8");
     expect(manuscriptHtml).toContain("text-right");
+    expect(manuscriptHtml.match(/ms-12/g)).toHaveLength(2);
+    const userHtml = renderToStaticMarkup(createElement(ChatMessageItem, { msg: messages[0]!, presentation: "manuscript" }));
+    expect(userHtml).not.toContain("whitespace-pre-wrap");
     expect(manuscriptHtml).toContain("animate-caret-blink");
     expect(manuscriptHtml).toContain("text-muted-foreground");
   });

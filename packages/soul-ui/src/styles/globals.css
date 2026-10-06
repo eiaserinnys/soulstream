@@ -237,19 +237,39 @@
   padding-inline: 0;
 }
 
+/* Only outer row insets belong to the manuscript column; user indentation and
+   the inner padding of status bands/cards keep their own contracts. */
 [data-slot="chat-manuscript-message"] > :first-child {
   padding-inline: 0;
-  margin-inline: 0;
   gap: 0;
 }
-[data-slot="chat-pending-message"][data-chat-presentation="manuscript"] {
-  margin-inline: 0;
+[data-slot="chat-root"][data-chat-presentation="manuscript"] :is([data-slot="chat-body"], [data-slot="chat-tool-body"]) {
+  --chat-line-height: calc(var(--chat-font-size) * 1.6);
 }
-[data-slot="chat-input-composer"][data-chat-presentation="manuscript"] > :is([data-slot="dashboard-icon-cap"], [data-slot="chat-interrupt-button"]):first-child {
-  margin-inline-start: calc((var(--spacing) * 4 - var(--chat-composer-control-size)) / 2);
+[data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol, pre, div:has(> table)) {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline-start: auto;
+  text-align: left;
 }
-[data-slot="chat-input-composer"][data-chat-presentation="manuscript"] > [data-testid="send-button"]:last-child {
-  margin-inline-end: calc((var(--spacing) * 4 - var(--chat-composer-control-size)) / 2);
+[data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol) {
+  padding-inline-start: calc(var(--spacing) * 4);
+}
+[data-chat-user="true"] [data-slot="chat-body"] img {
+  margin-inline-start: auto;
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] :is(pre.bg-input, div:has(> table), pre[data-slot="chat-tool-body"]) {
+  background: var(--persistent-session-panel);
+  border: 1px solid var(--persistent-session-line);
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] [data-slot="chat-composer-anchor"] .w-20.h-20 {
+  background: var(--persistent-session-paper);
+  border-color: var(--persistent-session-line);
+}
+@media (max-width: 767px) {
+  [data-slot="chat-root"][data-chat-presentation="manuscript"] .ms-12 {
+    margin-inline-start: calc(var(--spacing) * 8);
+  }
 }
 
 /* The folder combo's existing surface is the canonical control/panel tint.

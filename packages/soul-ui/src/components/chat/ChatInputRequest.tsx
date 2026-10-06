@@ -15,16 +15,18 @@ import { useGlassSurface } from "../LiquidGlassProvider";
 export const ChatInputRequest = memo(function ChatInputRequest({
   msg,
   sessionId,
+  presentation = "default",
 }: {
   msg: ChatMessage;
   sessionId: string;
+  presentation?: "default" | "manuscript";
 }) {
   const { remainingSec, isExpired } = useInputRequestTimer(msg.receivedAt, msg.timeoutSec ?? 300);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
   const [submissionFailed, setSubmissionFailed] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  const webglActive = useGlassSurface(cardRef, { enabled: true });
+  const webglActive = useGlassSurface(cardRef, { enabled: presentation !== "manuscript" });
 
   const question: InputRequestQuestion | undefined = msg.questions?.[0];
   if (!question) return null;
@@ -55,7 +57,9 @@ export const ChatInputRequest = memo(function ChatInputRequest({
     <div className="px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <div
         ref={cardRef}
-        className="flex flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-md px-4 py-3"
+        className={presentation === "manuscript"
+          ? "flex flex-col gap-2 rounded-[18px] border border-[var(--persistent-session-line)] bg-[var(--persistent-session-panel)] px-4 py-3"
+          : "flex flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-md px-4 py-3"}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">

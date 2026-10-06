@@ -31,7 +31,7 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
       <div className={cn(
         presentation === "default"
           ? "flex-1 min-w-0 text-xs px-2 py-1 rounded text-left"
-          : "flex-1 min-w-0 text-xs py-1 rounded text-left",
+          : "flex-1 min-w-0 text-xs px-2 py-1 rounded text-left",
         (isTurnSummary || isAssignedCardContext) && "whitespace-pre-line",
         hasCaptionStats && "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1",
         isRetrying

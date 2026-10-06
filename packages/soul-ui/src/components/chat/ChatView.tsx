@@ -622,16 +622,18 @@ export function ChatView({
   }, [bottomScrollLocation, clearOlderHistoryIntent, scrollToBottomWithBehavior]);
 
   const VirtuosoHeader = useCallback(
-    () => (
-      <ChatHistoryStatus
+    () => {
+      const status = <ChatHistoryStatus
         loading={history.loading}
         reachedTop={history.reachedTop}
         blockedReason={history.blockedReason}
         onRetry={requestOlderManually}
         showReachedTop={timelineItems.length > 0}
-      />
-    ),
+      />;
+      return presentation === "manuscript" ? <div className="flow-root pt-6">{status}</div> : status;
+    },
     [
+      presentation,
       history.blockedReason,
       history.canLoadOlder,
       history.loading,
@@ -641,8 +643,8 @@ export function ChatView({
     ],
   );
   const virtuosoComponents = useMemo(
-    () => ({ Header: VirtuosoHeader }),
-    [VirtuosoHeader],
+    () => ({ Header: VirtuosoHeader, ...(presentation === "manuscript" ? { Footer: ManuscriptFooter } : {}) }),
+    [VirtuosoHeader, presentation],
   );
 
   if (!activeSessionKey) {
@@ -659,7 +661,7 @@ export function ChatView({
       data-chat-font-size={chatFontSize}
       data-chat-first-item-index={firstItemIndex}
       style={chatTypographyStyle}
-      className={presentation === "manuscript" ? "flex h-full min-h-0 flex-col overflow-hidden pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
+      className={presentation === "manuscript" ? "-mx-1 flex h-full min-h-0 flex-col overflow-hidden px-1 pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
       data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
     >
       {focusEventId !== null
@@ -812,7 +814,7 @@ export function ChatView({
             }
           }, 2000);
         }}
-          className={presentation === "manuscript" ? "flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none [mask-image:linear-gradient(to_bottom,transparent,black_calc(var(--spacing)*6))] [mask-repeat:no-repeat]" : "flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"}
+          className={presentation === "manuscript" ? "-mx-1 px-1 flex-1 min-h-0 overflow-x-hidden overscroll-none [mask-image:linear-gradient(to_bottom,transparent,black_calc(var(--spacing)*6))] [mask-repeat:no-repeat]" : "flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"}
         />
       )}
 
@@ -853,4 +855,9 @@ export function ChatView({
       />
     </div>
   );
+}
+
+/** Measured inside Virtuoso, rather than padding on its outer scroller. */
+function ManuscriptFooter() {
+  return <div className="h-7" aria-hidden="true" />;
 }

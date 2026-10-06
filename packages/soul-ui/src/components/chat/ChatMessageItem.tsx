@@ -57,10 +57,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       body = <SystemMessage msg={msg} presentation={presentation} />;
       break;
     case "input_request":
-      body = sessionId ? <ChatInputRequest msg={msg} sessionId={sessionId} /> : null;
+      body = sessionId ? <ChatInputRequest msg={msg} sessionId={sessionId} presentation={presentation} /> : null;
       break;
     case "tool_approval":
-      body = sessionId ? <ChatToolApproval msg={msg} sessionId={sessionId} /> : null;
+      body = sessionId ? <ChatToolApproval msg={msg} sessionId={sessionId} presentation={presentation} /> : null;
       break;
     case "away_summary":
       body = <AwaySummaryMessage msg={msg} />;
