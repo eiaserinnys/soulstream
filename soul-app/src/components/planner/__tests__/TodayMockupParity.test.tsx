@@ -59,6 +59,15 @@ test('count 미지정 폴더 헤더는 기존 제목·동작 구조와 스타일
     .toMatchObject({ alignItems: 'center', gap: 12 });
 });
 
+test('quiet 헤더는 그룹 이름표용 meta 스타일을 쓰고 기본 호출부를 건드리지 않는다', () => {
+  const screen = render(<PlannerSectionHeader testID="quiet-section" variant="quiet" title="실행 중" />);
+  const title = StyleSheet.flatten(screen.getByText('실행 중').props.style);
+  const header = StyleSheet.flatten(screen.getByTestId('quiet-section').props.style);
+
+  expect(title).toMatchObject({ fontSize: 13, color: expect.any(String) });
+  expect(header.minHeight).toBeUndefined();
+});
+
 test('세션 담당 메타는 폴더 이모지 중복 없이 에이전트 표시명과 상대 시각을 표시한다', () => {
   const card = cardFixture({ assigneeKind: 'session', assigneeAgentId: null, assigneeSessionId: 'session-1' });
   const screen = render(<CardRow today api={null} card={card} onOpen={jest.fn()} />);

@@ -40,6 +40,8 @@ export interface CardNowHistoryEntry {
 }
 export interface CardDto {
   id: string;
+  /** Older server responses omit this field. */
+  number?: number | null;
   color?: CardColor;
   folderId: string;
   title: string;

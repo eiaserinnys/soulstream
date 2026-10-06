@@ -24,36 +24,55 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
     && (msg.usage !== undefined || msg.totalCostUsd !== undefined);
   const hasCaptionStats = isComplete && msg.captionStats !== undefined;
   const isResult = msg.treeNodeType === "result" || !!hasCompleteStats;
+  const usageCaption = presentation === "manuscript" ? msg.turnUsageCaption : undefined;
+
+  const renderUsageCaption = () => usageCaption && <CollapsibleCaption
+    title={usageCaption.title}
+    expandedTitle={usageCaption.contextText ?? usageCaption.completeText ?? usageCaption.title}
+    wrapExpandedTitle
+    alignmentInset="content"
+  >
+    {usageCaption.contextText && usageCaption.completeText
+      ? <div className="min-w-0 whitespace-normal break-keep break-words text-xs text-muted-foreground">{usageCaption.completeText}</div>
+      : null}
+  </CollapsibleCaption>;
+
+  if (presentation === "manuscript" && isComplete) {
+    return renderUsageCaption() ?? null;
+  }
 
   return (
-    <div className={presentation === "manuscript" ? "flex gap-2 py-1" : "flex gap-2 px-3 py-1"} data-tree-node-id={msg.treeNodeId}>
-      <span className="w-8 shrink-0" />
-      <div className={cn(
-        presentation === "default"
-          ? "flex-1 min-w-0 text-xs px-2 py-1 rounded text-left"
-          : "flex-1 min-w-0 text-xs px-2 py-1 rounded text-left",
-        (isTurnSummary || isAssignedCardContext) && "whitespace-pre-line",
-        hasCaptionStats && "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1",
-        isRetrying
-          ? "chat-tone-warning"
-          : isError
-            ? "chat-tone-danger"
-            : isResult
-              ? "chat-tone-success"
-              : "text-muted-foreground bg-input",
-      )}>
-        {hasCaptionStats ? (
-          <>
-            <span data-slot="complete-caption-label">{msg.content}</span>
-            <span
-              className="ml-auto max-w-full text-right"
-              data-slot="complete-caption-stats"
-            >
-              {msg.captionStats}
-            </span>
-          </>
-        ) : msg.content}
+    <>
+      <div className={presentation === "manuscript" ? "flex gap-2 py-1" : "flex gap-2 px-3 py-1"} data-tree-node-id={msg.treeNodeId}>
+        <span className="w-8 shrink-0" />
+        <div className={cn(
+          presentation === "default"
+            ? "flex-1 min-w-0 text-xs px-2 py-1 rounded text-left"
+            : "flex-1 min-w-0 text-xs px-2 py-1 rounded text-left",
+          (isTurnSummary || isAssignedCardContext) && "whitespace-pre-line",
+          hasCaptionStats && "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1",
+          isRetrying
+            ? "chat-tone-warning"
+            : isError
+              ? "chat-tone-danger"
+              : isResult
+                ? "chat-tone-success"
+                : "text-muted-foreground bg-input",
+        )}>
+          {hasCaptionStats ? (
+            <>
+              <span data-slot="complete-caption-label">{msg.content}</span>
+              <span
+                className="ml-auto max-w-full text-right"
+                data-slot="complete-caption-stats"
+              >
+                {msg.captionStats}
+              </span>
+            </>
+          ) : msg.content}
+        </div>
       </div>
-    </div>
+      {isError && renderUsageCaption()}
+    </>
   );
 });

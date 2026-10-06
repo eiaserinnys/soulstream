@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import { Button } from "../ui/button";
+import { MANUSCRIPT_USER_ROW_CLASS_NAME } from "./ChatManuscriptList";
 
 export const PendingMessageBubble = memo(function PendingMessageBubble({
   sessionId,
@@ -20,7 +21,8 @@ export const PendingMessageBubble = memo(function PendingMessageBubble({
 
   return (
     <div
-      className={manuscript ? "mt-10 mb-5 ms-12 flex justify-end" : "flex justify-end px-3 py-1.5"}
+      className={manuscript ? MANUSCRIPT_USER_ROW_CLASS_NAME : "flex justify-end px-3 py-1.5"}
+      data-chat-manuscript-user-row={manuscript ? "true" : undefined}
       data-slot="chat-pending-message"
       data-chat-presentation={manuscript ? "manuscript" : undefined}
       data-status={pending.status}
