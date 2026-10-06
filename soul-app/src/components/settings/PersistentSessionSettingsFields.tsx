@@ -1,12 +1,13 @@
 import React from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
-import type { PersistentSessionResource } from '../../api/persistentSessionEndpoints';
+import type { PersistentSessionInstruction, PersistentSessionResource } from '../../api/persistentSessionEndpoints';
 import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
 import {
   SettingsFormGroup as Group,
   SettingsAction as Action,
   SettingsInput as Input,
+  SettingsListRow,
   SettingsNotice as Notice,
   SettingsReadOnlyField as ReadOnlyField,
   SettingsToggleRow,
@@ -25,6 +26,99 @@ export type PersistentSessionDisplayField =
 
 export type PersistentSessionDisplayValues = Record<PersistentSessionDisplayField, boolean>;
 export type PersistentSessionEditorSection = 'all' | 'account-model' | 'display';
+
+export function PersistentSessionInstructionsFields({
+  instructions,
+  loading,
+  loadError,
+  mutationError,
+  editingId,
+  editingText,
+  addingText,
+  busy,
+  onRetry,
+  onEditStart,
+  onEditText,
+  onEditSave,
+  onEditCancel,
+  onDelete,
+  onAddText,
+  onAdd,
+}: {
+  instructions: PersistentSessionInstruction[];
+  loading: boolean;
+  loadError: boolean;
+  mutationError: string | null;
+  editingId: string | null;
+  editingText: string;
+  addingText: string;
+  busy: boolean;
+  onRetry(): void;
+  onEditStart(instruction: PersistentSessionInstruction): void;
+  onEditText(value: string): void;
+  onEditSave(): void;
+  onEditCancel(): void;
+  onDelete(instruction: PersistentSessionInstruction): void;
+  onAddText(value: string): void;
+  onAdd(): void;
+}) {
+  const styles = useSettingsFormStyles();
+  const t = useTokens();
+  const formatDate = (value: string) => new Date(value).toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' });
+  const detail = (instruction: PersistentSessionInstruction) => [
+    instruction.source_turns.length ? instruction.source_turns.join(', ') : null,
+    formatDate(instruction.updated_at),
+  ].filter(Boolean).join(' · ');
+
+  return <Group title="지속 지시">
+    {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
+    {loadError ? <View style={styles.block}>
+      <Text accessibilityRole="alert" style={styles.error}>조회 실패</Text>
+      <Action label="다시 시도" disabled={busy} onPress={onRetry} testID="persistent-instructions-retry" />
+    </View> : null}
+    {!loading && !loadError && instructions.length === 0 ? <Notice text="등록된 지속 지시가 없습니다." /> : null}
+    {!loadError ? instructions.map((instruction) => editingId === instruction.id
+      ? <View key={instruction.id} style={{ gap: t.spacing.sm }} testID={`persistent-instruction-edit-${instruction.id}`}>
+        <Input
+          label="지시"
+          value={editingText}
+          onChangeText={onEditText}
+          onSubmitEditing={onEditSave}
+          returnKeyType="done"
+          blurOnSubmit
+          editable={!busy}
+          testID={`persistent-instruction-input-${instruction.id}`}
+        />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm }}>
+          <Action label="저장" disabled={busy} primary onPress={onEditSave} testID={`persistent-instruction-save-${instruction.id}`} />
+          <Action label="취소" disabled={busy} onPress={onEditCancel} testID={`persistent-instruction-cancel-${instruction.id}`} />
+        </View>
+      </View>
+      : <View key={instruction.id} style={{ gap: t.spacing.xs }} testID={`persistent-instruction-${instruction.id}`}>
+        <SettingsListRow title={instruction.text} detail={detail(instruction)} onPress={() => onEditStart(instruction)} testID={`persistent-instruction-open-${instruction.id}`} />
+        <View style={{ flexDirection: 'row', gap: t.spacing.sm }}>
+          <Action label="삭제" disabled={busy} onPress={() => onDelete(instruction)} testID={`persistent-instruction-delete-${instruction.id}`} />
+        </View>
+      </View>) : null}
+    {!loadError ? <View style={{ gap: t.spacing.sm }}>
+      <Input
+        label="새 지시"
+        value={addingText}
+        placeholder="지속 지시 추가"
+        onChangeText={onAddText}
+        onSubmitEditing={onAdd}
+        returnKeyType="done"
+        blurOnSubmit
+        editable={!busy}
+        testID="persistent-instruction-add-input"
+      />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm }}>
+        <Action label="추가" disabled={busy || !addingText.trim()} primary onPress={onAdd} testID="persistent-instruction-add" />
+      </View>
+      {mutationError ? <Text accessibilityRole="alert" style={styles.error}>{mutationError}</Text> : null}
+    </View> : null}
+  </Group>;
+}
 
 export function persistentSessionDisplayValues(session: PersistentSessionResource): PersistentSessionDisplayValues {
   return {

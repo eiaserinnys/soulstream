@@ -36,6 +36,9 @@ const api = {
   updatePersistentSession: jest.fn(),
   listModelPresets: jest.fn(),
   getTimeline: jest.fn(),
+  getPersistentSessionInstructions: jest.fn(),
+  createPersistentSessionInstruction: jest.fn(),
+  updatePersistentSessionInstruction: jest.fn(),
 };
 
 beforeEach(() => {
@@ -52,6 +55,7 @@ beforeEach(() => {
       weekly_headroom: { status: 'unavailable', headroom: null, remaining_percent: null, window_remaining_percent: null, resets_at: null, observed_at: '2026-10-06T01:00:00Z', quota_label: null } },
   ] });
   api.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
+  api.getPersistentSessionInstructions.mockResolvedValue({ instructions: [] });
   useSettingsStore.setState({ serverUrl: 'https://soul.test' });
   useChatStore.setState({ persistentDisplaySettings: null, persistentDisplaySettingsRequestId: 0 });
 });
@@ -69,6 +73,21 @@ test('shows the same account and model fields as the ordinary editor, including 
   expect(screen.getByText('대기 중인 변경')).toBeTruthy();
   expect(screen.getByText('다음 실행부터 모델 B')).toBeTruthy();
   expect(screen.getByText('기본 모델')).toBeTruthy();
+});
+
+test('loads the persistent instructions group in the history section', async () => {
+  api.getPersistentSessionInstructions.mockResolvedValueOnce({ instructions: [{
+    id: 'instruction-1', text: '요청한 범위부터 확인합니다.', source_turns: ['T195', 'T210'],
+    created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-06T00:00:00Z', origin: 'user',
+  }] });
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  expect(await screen.findByText('지속 지시')).toBeTruthy();
+  expect(await screen.findByText('요청한 범위부터 확인합니다.')).toBeTruthy();
+  expect(screen.getByText(/T195, T210/)).toBeTruthy();
+  expect(api.getPersistentSessionInstructions).toHaveBeenCalledWith('pas-1');
 });
 
 test('saves a PAS display toggle as one immediate field and adopts the server response', async () => {

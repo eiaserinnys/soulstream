@@ -65,3 +65,13 @@ test('a session without a node is listed in its review state and the server refu
   setState(null);
   expect((await api.listPersistentSessions()).sessions.map(item => item.session_id)).not.toContain('review-pas-ownerless');
 });
+
+test('serves persistent instruction review states and the server cap response', async () => {
+  expect((await api.getPersistentSessionInstructions('review-pas-2')).instructions).toHaveLength(2);
+
+  setState('pas-instructions-empty');
+  expect((await api.getPersistentSessionInstructions('review-pas-2')).instructions).toEqual([]);
+
+  setState('pas-instructions-cap');
+  await expect(api.createPersistentSessionInstruction('review-pas-2', '추가 지시')).rejects.toMatchObject({ status: 409, body: JSON.stringify({ error: 'cap_reached' }) });
+});

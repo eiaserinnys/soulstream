@@ -28,6 +28,8 @@ export type {
 export type {
   PersistentSessionCreate,
   PersistentSessionCreateDefaults,
+  PersistentSessionInstruction,
+  PersistentSessionInstructionWrite,
   PersistentSessionModel,
   PersistentSessionModelWrite,
   PersistentSessionResource,

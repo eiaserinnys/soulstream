@@ -72,6 +72,20 @@ export interface PersistentSessionCreate {
   settings: { default_model: PersistentSessionModelWrite };
 }
 
+export interface PersistentSessionInstruction {
+  id: string;
+  text: string;
+  source_turns: string[];
+  created_at: string;
+  updated_at: string;
+  origin: string;
+}
+
+export interface PersistentSessionInstructionWrite {
+  text?: string;
+  status?: 'active' | 'removed';
+}
+
 export function createPersistentSessionEndpoints({ base, authFetch, readJson }: ApiRequestContext) {
   const root = `${base}/api/persistent-sessions`;
   const itemUrl = (sessionId: string) => `${root}/${encodeURIComponent(sessionId)}`;
@@ -96,5 +110,15 @@ export function createPersistentSessionEndpoints({ base, authFetch, readJson }: 
     }> => authFetch(root, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }).then((response) => readJson(response, 'createPersistentSession')),
+    getPersistentSessionInstructions: (sessionId: string): Promise<{ instructions: PersistentSessionInstruction[] }> =>
+      authFetch(`${itemUrl(sessionId)}/instructions`).then((response) => readJson(response, 'getPersistentSessionInstructions')),
+    createPersistentSessionInstruction: (sessionId: string, text: string): Promise<{ instruction: PersistentSessionInstruction }> =>
+      authFetch(`${itemUrl(sessionId)}/instructions`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+      }).then((response) => readJson(response, 'createPersistentSessionInstruction')),
+    updatePersistentSessionInstruction: (sessionId: string, instructionId: string, input: PersistentSessionInstructionWrite): Promise<{ instruction: PersistentSessionInstruction }> =>
+      authFetch(`${itemUrl(sessionId)}/instructions/${encodeURIComponent(instructionId)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+      }).then((response) => readJson(response, 'updatePersistentSessionInstruction')),
   };
 }
