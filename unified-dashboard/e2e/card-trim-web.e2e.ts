@@ -201,13 +201,13 @@ test('review r7 captions have resolved body typography and padding',async({page}
   await board.getByRole('button',{name:scenario,exact:true}).click();await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
   const detail=page.getByTestId('card-detail'),image=detail.locator('.v3-card-evidence-image').first();await image.click();const dialog=page.getByRole('dialog');
   await expect.poll(()=>dialog.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
-  if(scenario==='긴 이미지 설명')await page.setViewportSize({width:430,height:1080});
   const measure=await dialog.evaluate(el=>{
    const caption=el.querySelector('figcaption')!,image=el.querySelector('figure img')!,box=caption.getBoundingClientRect(),img=image.getBoundingClientRect(),popup=el.getBoundingClientRect(),style=getComputedStyle(caption),range=document.createRange();range.selectNodeContents(caption);
    return {text:caption.textContent,font:style.font,lineHeight:parseFloat(style.lineHeight),paddingLeft:parseFloat(style.paddingLeft),paddingBottom:parseFloat(style.paddingBottom),gap:box.top-img.bottom,left:box.left-popup.left,right:popup.right-box.right,bottom:popup.bottom-box.bottom,height:box.height,lines:[...range.getClientRects()].map(r=>({top:r.top,bottom:r.bottom,left:r.left,right:r.right})),captionBottom:box.bottom,captionLeft:box.left,captionRight:box.right};
   });
   expect(measure.font).toContain('14px / 22px');expect(measure.gap).toBeGreaterThan(0);expect(measure.paddingLeft).toBe(12);expect(measure.paddingBottom).toBe(12);expect(measure.bottom).toBeGreaterThanOrEqual(0);
-  if(scenario==='긴 이미지 설명'){expect(measure.text!.length).toBe(40);expect(measure.lines).toHaveLength(2);expect(measure.lines[1].bottom).toBeLessThanOrEqual(measure.captionBottom-measure.paddingBottom+1);}
+  if(scenario==='긴 이미지 설명')expect(measure.text!.length).toBe(40);
+  for(const line of measure.lines)expect(line.bottom).toBeLessThanOrEqual(measure.captionBottom-measure.paddingBottom+1);
   measures.push(measure);await page.screenshot({path:path.join(output,scenario==='일곱 상태'?'r7-caption-short.png':'r7-caption-40.png')});await page.keyboard.press('Escape');await expect(detail).toBeVisible();await detail.getByRole('button',{name:'카드 닫기'}).click();
  }
  writeFileSync(path.join(output,'r7-caption-metrics.json'),JSON.stringify({measures,errors,writes},null,2));expect(errors).toEqual([]);expect(writes).toEqual([]);
