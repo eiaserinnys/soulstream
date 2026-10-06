@@ -84,7 +84,7 @@ const ToolCallItem = memo(function ToolCallItem({
           data-slot="tool-call-item-toggle"
           onClick={toggleExpanded}
           className={cn(
-            "flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs leading-[18px] hover:text-foreground",
+            "flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs hover:text-foreground",
             msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
           )}
         >
@@ -166,7 +166,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
             aria-expanded={expanded}
             data-slot="manuscript-activity-toggle"
             onClick={toggleExpanded}
-            className="flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs leading-[18px] text-muted-foreground hover:text-foreground"
+            className="flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs text-muted-foreground hover:text-foreground"
           >
             {expanded
               ? <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
