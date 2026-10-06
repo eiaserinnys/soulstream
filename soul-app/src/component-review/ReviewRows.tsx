@@ -22,6 +22,12 @@ export function ReviewRows() {
         })}
       </View>
     </ReviewSection>
+    <ReviewSection title="카드 요약 행 · PAS">
+      <View testID="review-card-summary-row" style={{ padding: t.foundation.pageInset }}>
+        <CardRow api={api} card={{ ...initialCards[2], number: 412, title: '모바일 흐름 확인' }} variant="summary"
+          onOpen={() => setSelected('모바일 흐름 확인')} />
+      </View>
+    </ReviewSection>
     <ReviewSection title="세션 행 · 실행·검수·대기·오류·응답 필요">
       <View testID="review-session-rows" style={{ gap: t.spacing.sm }}>
         {sessions.map((session) => <SessionCardView key={session.agentSessionId}

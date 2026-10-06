@@ -1,10 +1,10 @@
 import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ApiClient } from '../../api/client';
-import type { CardCheckItem, CardStatus } from '../../api/cardTypes';
+import type { CardCheckItem, CardDto, CardStatus } from '../../api/cardTypes';
 import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
 import { useCardTransition } from '../../hooks/useCardTransition';
 import { useCardComments } from '../../hooks/useCardComments';
@@ -14,6 +14,7 @@ import { useUIStore } from '../../store/uiStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
+import { decodeAuthJwt } from '../../auth/jwt-payload';
 import { resolveSessionCardAvatar, resolveSessionAgentLabel } from '../sessionCardDisplay';
 import { useDeviceType, useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
@@ -31,6 +32,7 @@ import { cardDetailStyles } from './CardDetail.styles';
 import { CardCheckItems } from './CardCheckItems';
 import { CardNowPanel } from './CardNowPanel';
 import { CardNotes } from './CardNotes';
+import { CardRequestView } from './CardRequestView';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { resolveTabletBottomSafeAreaPadding } from '../split/tabletShellInsets';
 import { summarizeCardItems } from '../../lib/card-check-item-summary';
@@ -42,6 +44,17 @@ type CardDetailVisitState = {
   initiallyConfirmedIds: number[];
   newlyConfirmedIds: number[];
 };
+
+type CardDetailContentProps = {
+  api: ApiClient | null;
+  cardId: string;
+  onClose(): void;
+  onOpenSession?(id: string): void;
+  inline?: boolean;
+} & (
+  | { variant?: 'default'; onOpenCard?: never }
+  | { variant: 'readSummary'; onOpenCard(): void }
+);
 
 export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
   api: ApiClient | null; cardId: string | null; onClose(): void; onOpenSession?(id: string): void;
@@ -57,9 +70,8 @@ export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
   return null;
 }
 
-export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline = false }: {
-  api: ApiClient | null; cardId: string; onClose(): void; onOpenSession?(id: string): void; inline?: boolean;
-}) {
+export function CardDetailContent(props: CardDetailContentProps) {
+  const { api, cardId, onClose, onOpenSession, inline = false } = props;
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const folderStyles = useMemo(() => makeFolderWorkspaceStyles(t), [t]);
@@ -192,6 +204,11 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
     { value: 'notes' as const, label: '노트', count: tabletLandscape ? (detail?.notes?.length ?? 0) : undefined },
   ];
   const selectedItem = targetItem;
+  if (props.variant === 'readSummary') return <CardReadSummary card={card} items={cardItems} error={error}
+    assigneeLabel={card?.assigneeKind === 'human' ? card.assigneeUserId ?? '사용자'
+      : card?.assigneeKind === 'session' ? assigned?.displayName ?? null
+        : card?.assigneeKind === 'agent' ? resolveSessionAgentLabel(identity) : null}
+    human={card?.assigneeKind === 'human'} avatar={avatar} onOpenCard={props.onOpenCard} />;
   return <><AppKeyboardAvoidingView testID="card-detail-container" behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     onOverlapChange={onOverlapChange} style={folderStyles.container}>
     <CardTransitionSettings api={api} action={statusAction}/>
@@ -300,4 +317,77 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   </AppKeyboardAvoidingView>
     {statusMenuOpen && card ? <CardStatusMenu api={api} card={card} onClose={() => setStatusMenuOpen(false)} /> : null}
   </>;
+}
+
+function CardReadSummary({ card, items, error, assigneeLabel, human, avatar, onOpenCard }: {
+  card: CardDto | undefined;
+  items: CardCheckItem[];
+  error: string | null;
+  assigneeLabel: string | null;
+  human: boolean | undefined;
+  avatar: ReturnType<typeof resolveSessionCardAvatar>;
+  onOpenCard(): void;
+}) {
+  const t = useTokens();
+  const jwt = useAuthStore((state) => state.jwt);
+  const serverUrl = useSettingsStore((state) => state.serverUrl);
+  const profile = useMemo(() => decodeAuthJwt(jwt), [jwt]);
+  if (!card) return error
+    ? <Text testID="card-read-summary-error" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{error}</Text>
+    : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={t.colors.accent} /></View>;
+
+  const assigneeUri = human ? profile?.picture : avatar.uri;
+  const assigneeFallback = human ? assigneeLabel?.[0] ?? '사' : avatar.fallbackChar;
+  const results = items.filter((item) => item.display !== 'dropped' && !!item.result?.trim());
+  const hasRequest = !!card.request.trim() || (card.attachments?.length ?? 0) > 0;
+  const hasProgress = !!card.now?.text.trim() || results.length > 0;
+  const spacing = t.uiSpacing;
+
+  return <View testID="card-read-summary" style={{ flex: 1, minHeight: 0 }}>
+    <ScrollView testID="card-read-summary-scroll" showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ padding: t.foundation.pageInset, gap: spacing.xl }}>
+      <View style={{ gap: spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 0, gap: spacing.sm }}>
+          <CardStatusChip card={card} board detail />
+          {card.number == null ? null : <Text testID="card-read-summary-number" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }} numberOfLines={1}>#{card.number}</Text>}
+        </View>
+        <Text testID="card-read-summary-title" numberOfLines={2} ellipsizeMode="tail"
+          style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>
+          {card.title}
+        </Text>
+      </View>
+      {assigneeLabel ? <View testID="card-read-summary-assignee" style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        {assigneeUri
+          ? <Image testID="card-read-summary-avatar" source={{ uri: assigneeUri,
+            ...(jwt && assigneeUri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
+            style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round, flexShrink: 0 }} />
+          : <View testID="card-read-summary-avatar" style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round,
+            flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth,
+            borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted }}>
+            <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{assigneeFallback}</Text>
+          </View>}
+        <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>{assigneeLabel}</Text>
+      </View> : null}
+      {hasRequest ? <View testID="card-read-summary-request" style={{ gap: spacing.sm }}>
+        <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>요청</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm }}>
+          <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: t.persistentSession.line }} />
+          <View style={{ flex: 1, minWidth: 0 }}><CardRequestView request={card.request} attachments={card.attachments} /></View>
+        </View>
+      </View> : null}
+      {hasProgress ? <View testID="card-read-summary-progress" style={{ gap: spacing.sm }}>
+        <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>경과</Text>
+        {card.now?.text.trim() ? <Text testID="card-read-summary-now" style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }} selectable>
+          {card.now.text}
+        </Text> : null}
+        {results.map((item) => <View key={item.id} testID={`card-read-summary-result-${item.id}`} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+          <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>•</Text>
+          <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, flex: 1, minWidth: 0 }} selectable>{item.result}</Text>
+        </View>)}
+      </View> : null}
+      <GlassButton testID="card-read-summary-open" accessibilityLabel="카드 열기" onPress={onOpenCard} style={{ alignSelf: 'stretch' }}>
+        <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>카드 열기</Text>
+      </GlassButton>
+    </ScrollView>
+  </View>;
 }

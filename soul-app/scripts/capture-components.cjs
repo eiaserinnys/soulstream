@@ -550,6 +550,131 @@ async function runManuscriptChatCaptures(browser, base) {
   }
 }
 
+async function runPersistentTaskCaptures(browser, base) {
+  const scenarios = [
+    { name: 'tasks-iphone-light', width: 390, height: 844, theme: 'light', sample: 'list', mobile: true },
+    { name: 'tasks-ipad-landscape-240-light', width: 1024, height: 768, theme: 'light', sample: 'list', sampleWidth: 240 },
+    { name: 'tasks-ipad-portrait-170-dark', width: 768, height: 1024, theme: 'dark', sample: 'list', sampleWidth: 170 },
+    { name: 'row-iphone-light', width: 390, height: 844, theme: 'light', sample: 'row', mobile: true },
+    { name: 'card-318-light-long', width: 1024, height: 768, theme: 'light', sample: 'card', sampleWidth: 318, cardCase: 'long' },
+    { name: 'card-340-dark-summary', width: 768, height: 1024, theme: 'dark', sample: 'card', sampleWidth: 340, cardCase: 'summary' },
+    { name: 'card-340-dark-long', width: 768, height: 1024, theme: 'dark', sample: 'card', sampleWidth: 340, cardCase: 'long' },
+    { name: 'card-iphone-light-long', width: 390, height: 844, theme: 'light', sample: 'card', mobile: true, cardCase: 'long' },
+    { name: 'card-iphone-light-sparse', width: 390, height: 844, theme: 'light', sample: 'card', mobile: true, cardCase: 'sparse' },
+    { name: 'card-iphone-dark-no-progress', width: 390, height: 844, theme: 'dark', sample: 'card', mobile: true, cardCase: 'no-progress' },
+    { name: 'card-row-standard-current', width: 390, height: 844, theme: 'light', sample: 'standard-row', mobile: true },
+  ];
+  const measure = (locator) => locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      x: Math.round(box.x * 10) / 10, y: Math.round(box.y * 10) / 10,
+      width: Math.round(box.width * 10) / 10, height: Math.round(box.height * 10) / 10,
+      right: Math.round(box.right * 10) / 10, bottom: Math.round(box.bottom * 10) / 10,
+      clientHeight: element.clientHeight, scrollHeight: element.scrollHeight,
+      lineHeight: Number.parseFloat(style.lineHeight) || null,
+    };
+  });
+
+  const captureScenarios = captureMode === 'persistent-standard-row'
+    ? scenarios.filter((scenario) => scenario.sample === 'standard-row') : scenarios;
+  for (const scenario of captureScenarios) {
+    const context = await browser.newContext({
+      viewport: { width: scenario.width, height: scenario.height },
+      screen: { width: scenario.width, height: scenario.height },
+      deviceScaleFactor: 1, isMobile: scenario.mobile === true, hasTouch: true,
+    });
+    await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    page.on('pageerror', (error) => result.errors.push({ name: scenario.name, message: error.message }));
+    page.on('console', (msg) => {
+      if (msg.type() === 'warning' || msg.type() === 'error') result.warnings.push({ name: scenario.name, message: msg.text() });
+    });
+    await page.route('**/*', async (route) => {
+      if (new URL(route.request().url()).origin !== base) {
+        result.errors.push({ name: scenario.name, message: 'External request: ' + route.request().url() });
+        await route.abort(); return;
+      }
+      await route.continue();
+    });
+    const url = new URL(base + prefix + 'index.html');
+    url.searchParams.set('section', scenario.sample === 'standard-row' ? 'rows' : 'persistent');
+    url.searchParams.set('theme', scenario.theme);
+    if (scenario.sample !== 'standard-row') url.searchParams.set('sample', scenario.sample);
+    if (scenario.sampleWidth) url.searchParams.set('width', String(scenario.sampleWidth));
+    if (scenario.cardCase) url.searchParams.set('case', scenario.cardCase);
+    await page.goto(url.toString());
+    await page.getByTestId(scenario.sample === 'standard-row' ? 'component-review' : 'persistent-review-paper').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    const name = scenario.name;
+    let geometry;
+    if (scenario.sample === 'list') {
+      await page.getByTestId('persistent-task-group-running').waitFor();
+      const groups = await page.getByTestId(/^persistent-task-group-/).evaluateAll((elements) => elements.map((el) => el.getAttribute('data-testid')));
+      assert.deepEqual(groups, [
+        'persistent-task-group-running', 'persistent-task-group-blocked', 'persistent-task-group-review',
+        'persistent-task-group-queued', 'persistent-task-group-todo',
+      ]);
+      assert.equal(await page.getByTestId('card-row-public-persistent-412-summary').count(), 1);
+      assert.equal(await page.getByTestId('card-public-persistent-old-number').count(), 0);
+      await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+      const title = page.getByTestId('card-public-persistent-415-summary-title');
+      geometry = { component: await measure(page.getByTestId('persistent-task-list')), title: await measure(title) };
+      const overflow = await title.evaluate((element) => element.scrollHeight > element.clientHeight + 1);
+      assert.equal(overflow, false, `${name}: one-line task title overflowed ${JSON.stringify(geometry)}`);
+      await page.getByTestId('card-row-public-persistent-412-summary').click();
+      assert.equal(await page.evaluate(() => window.__persistentReviewOpenedCard), 'public-persistent-412');
+      result.interactions.push(`${name}: 다섯 상태 그룹·번호 없는 카드·행 열기`);
+    } else if (scenario.sample === 'row') {
+      await page.getByTestId('card-public-persistent-412-summary-title').waitFor();
+      await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+      geometry = await measure(page.getByTestId('card-public-persistent-412-summary-title'));
+      await page.getByTestId('card-row-public-persistent-412-summary').click();
+      assert.equal(await page.evaluate(() => window.__persistentReviewOpenedCard), 'public-persistent-412');
+      result.interactions.push(`${name}: 실제 CardRow 요약 행 전체 눌림`);
+    } else if (scenario.sample === 'card') {
+      await page.getByTestId('card-read-summary-title').waitFor();
+      const title = page.getByTestId('card-read-summary-title');
+      geometry = await measure(title);
+      if (scenario.cardCase === 'long') {
+        const clamp = await title.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { lines: style.webkitLineClamp, height: element.clientHeight, lineHeight: Number.parseFloat(style.lineHeight) };
+        });
+        assert.equal(clamp.lines, '2', `${name}: long card title is not clamped to two lines ${JSON.stringify(clamp)}`);
+        assert.ok(clamp.height <= clamp.lineHeight * 2 + 1, `${name}: long card title exceeds two lines ${JSON.stringify(clamp)}`);
+        assert.ok(geometry.scrollHeight > geometry.clientHeight, `${name}: long card title did not reach the ellipsis ${JSON.stringify(geometry)}`);
+      }
+      assert.equal(await page.getByTestId('card-read-summary-open').count(), 1);
+      assert.equal(await page.getByTestId('settings-segment-card-detail-items').count(), 0);
+      assert.equal(await page.getByPlaceholder('커멘트').count(), 0);
+      if (scenario.cardCase === 'sparse') {
+        assert.equal(await page.getByTestId('card-read-summary-number').count(), 0);
+        assert.equal(await page.getByTestId('card-read-summary-request').count(), 0);
+        assert.equal(await page.getByTestId('card-read-summary-progress').count(), 0);
+      }
+      if (scenario.cardCase === 'no-progress') assert.equal(await page.getByTestId('card-read-summary-progress').count(), 0);
+      await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+      await page.getByTestId('card-read-summary-open').click();
+      assert.equal(await page.evaluate(() => window.__persistentReviewOpenedCard), scenario.cardCase === 'long'
+        ? 'public-persistent-long' : scenario.cardCase === 'sparse' ? 'public-persistent-sparse'
+          : scenario.cardCase === 'no-progress' ? 'public-persistent-no-progress' : 'public-persistent-412');
+      result.interactions.push(`${name}: 읽기 요약과 카드 열기 콜백`);
+    } else {
+      const standardRow = page.getByTestId('card-row-public-todo');
+      await standardRow.waitFor();
+      await standardRow.screenshot({ path: path.join(output, `${name}.png`) });
+      geometry = await measure(standardRow);
+      result.interactions.push(`${name}: 기본 CardRow 캡처`);
+    }
+    result.viewports.push({ name, viewport: { width: scenario.width, height: scenario.height }, theme: scenario.theme,
+      sample: scenario.sample, sampleWidth: scenario.sampleWidth ?? null, geometry });
+    await context.close();
+  }
+
+}
+
 (async () => {
   await fs.mkdir(output, { recursive: true });
   server.listen(0, '127.0.0.1');
@@ -568,6 +693,8 @@ async function runManuscriptChatCaptures(browser, base) {
       await runCardChecksCaptures(browser, base);
     } else if (captureMode === 'manuscript-chat') {
       await runManuscriptChatCaptures(browser, base);
+    } else if (captureMode === 'persistent-tasks' || captureMode === 'persistent-standard-row') {
+      await runPersistentTaskCaptures(browser, base);
     } else {
       const phone = devices['iPhone 14 Pro Max'];
       await runViewport(browser, base, { ...phone, defaultBrowserType: undefined }, 'iphone14-pro-max');

@@ -553,3 +553,46 @@ test('모두 확인 띠와 머리 완료는 저장 중 함께 잠기고 띠의 �
   await act(async () => saved.resolve({ card: { ...reviewing.card, status: 'done', version: card.version + 1 }, folderId: card.folderId }));
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+test('읽기 요약은 기존 요청과 경과 결과만 보여 주고 카드 열기 콜백을 부른다', async () => {
+  const sourceCard = { ...card, number: 412, request: '요청 원문', attachments: [
+    { nodeId: 'test-node', path: 'cards/test/screen.pdf', name: '화면 설계.pdf', mimeType: 'application/pdf' },
+  ], now: {
+    text: '현재 경과', turn: 'agent' as const, ask: null, updatedAt: card.updatedAt, sessionId: 's1',
+  }, items: [{ ...checkItem(1, 'reported'), result: '사용자에게 보이는 결과' }] };
+  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, card: sourceCard, reports: [], questions: [] }) };
+  const onOpenCard = jest.fn();
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()}
+    variant="readSummary" onOpenCard={onOpenCard} />);
+  await waitFor(() => expect(screen.getByTestId('card-read-summary-title')).toBeTruthy());
+
+  expect(screen.getByTestId('card-read-summary-title').props.numberOfLines).toBe(2);
+  expect(screen.getByTestId('card-read-summary-title').props.ellipsizeMode).toBe('tail');
+  expect(screen.getByText('#412')).toBeTruthy();
+  expect(screen.getByLabelText('화면 설계.pdf')).toBeTruthy();
+  expect(screen.getByText('요청')).toBeTruthy();
+  expect(screen.getByText('요청 원문')).toBeTruthy();
+  expect(screen.getByText('경과')).toBeTruthy();
+  expect(screen.getByText('현재 경과')).toBeTruthy();
+  expect(screen.getByText('사용자에게 보이는 결과')).toBeTruthy();
+  expect(screen.queryByLabelText('상태 변경')).toBeNull();
+  expect(screen.queryByLabelText('시작하기')).toBeNull();
+  expect(screen.queryByPlaceholderText('커멘트')).toBeNull();
+  expect(screen.queryByTestId('settings-segment-card-detail-items')).toBeNull();
+  expect(screen.queryByTestId('card-detail-dock')).toBeNull();
+
+  fireEvent.press(screen.getByTestId('card-read-summary-open'));
+  expect(onOpenCard).toHaveBeenCalledTimes(1);
+});
+
+test('읽기 요약은 요청·경과가 없는 카드에서 해당 구역과 번호를 생략한다', async () => {
+  const sourceCard = { ...card, number: null, request: '', attachments: [], now: null, items: [] };
+  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue({ ...detail, card: sourceCard }) } as any}
+    cardId={card.id} onClose={jest.fn()} variant="readSummary" onOpenCard={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-read-summary-title')).toBeTruthy());
+
+  expect(screen.queryByTestId('card-read-summary-number')).toBeNull();
+  expect(screen.queryByTestId('card-read-summary-request')).toBeNull();
+  expect(screen.queryByTestId('card-read-summary-progress')).toBeNull();
+  expect(screen.getByTestId('card-read-summary-open')).toBeTruthy();
+});

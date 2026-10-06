@@ -1,6 +1,6 @@
 import {cardExecutionState,subscribeCardWrites} from '../../lib/card-transition';
 import React, { useMemo, useSyncExternalStore } from 'react';
-import { Image, Text, Pressable, View } from 'react-native';
+import { Image, Text, Pressable, View, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
@@ -47,9 +47,62 @@ export function CardStatusChip({ card, title = false, board = false, detail = fa
   </Text>;
 }
 
-export function CardRow({ api, card, onOpen, today, queueIndex, board = false }: {
-  api: ApiClient | null; card: CardDto; onOpen(): void; today?: boolean; queueIndex?: number; board?: boolean;
-}) {
+type CardRowProps = {
+  api: ApiClient | null;
+  card: CardDto;
+  onOpen(): void;
+  today?: boolean;
+  queueIndex?: number;
+  board?: boolean;
+  variant?: 'default' | 'summary';
+};
+
+export function CardRow({ variant = 'default', ...props }: CardRowProps) {
+  return variant === 'summary' ? <SummaryCardRow {...props} /> : <StandardCardRow {...props} />;
+}
+
+function SummaryCardRow({ card, onOpen }: Omit<CardRowProps, 'variant'>) {
+  const t = useTokens();
+  const assigned = useSessionStore((state) => card.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
+  const serverUrl = useSettingsStore((state) => state.serverUrl);
+  const jwt = useAuthStore((state) => state.jwt);
+  const profile = useMemo(() => decodeAuthJwt(jwt), [jwt]);
+  const agentId = assigned?.agentId ?? card.assigneeAgentId;
+  const nodeId = assigned?.nodeId ?? card.nodeId;
+  const identity = { agentSessionId: card.assigneeSessionId ?? card.id, agentId, agentName: assigned?.agentName,
+    agentPortraitUrl: assigned?.agentPortraitUrl ?? (agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agentId}/portrait` : null) };
+  const avatar = resolveSessionCardAvatar(identity, serverUrl);
+  const human = card.assigneeKind === 'human';
+  const uri = human ? profile?.picture : avatar.uri;
+  const assignee = human ? card.assigneeUserId ?? profile?.name ?? '사용자' : agentId ? resolveSessionAgentLabel(identity) : '';
+  const hasAssignee = human || !!agentId || !!card.assigneeSessionId;
+  const fallback = human ? assignee[0] : avatar.fallbackChar;
+
+  return <Pressable
+    testID={`card-row-${card.id}-summary`}
+    accessibilityRole="button"
+    accessibilityLabel={`${card.number == null ? '' : `#${card.number} `}${card.title} 카드 요약`}
+    onPress={onOpen}
+    style={{ minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.md }}
+  >
+    {card.number == null ? null : <Text testID={`card-${card.id}-number`} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary, minWidth: t.hitTarget.min }} numberOfLines={1}>
+      #{card.number}
+    </Text>}
+    <Text testID={`card-${card.id}-summary-title`} style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary, flex: 1, minWidth: 0 }} numberOfLines={1}>
+      {card.title}
+    </Text>
+    {hasAssignee ? uri
+      ? <Image testID={`card-${card.id}-avatar`} source={{ uri, ...(jwt && uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
+        style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round, flexShrink: 0 }} />
+      : <View testID={`card-${card.id}-avatar`} style={{ width: t.avatarSize.compact, height: t.avatarSize.compact,
+        borderRadius: t.foundation.radius.round, flexShrink: 0, alignItems: 'center', justifyContent: 'center',
+        borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted }}>
+        <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{fallback}</Text>
+      </View> : null}
+  </Pressable>;
+}
+
+function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }: Omit<CardRowProps, 'variant'>) {
   const t = useTokens();
   const styles = useMemo(() => makeSessionCardStyles(t, true), [t]);
   const { detail } = useCardDetail(api, board ? null : card.id);
