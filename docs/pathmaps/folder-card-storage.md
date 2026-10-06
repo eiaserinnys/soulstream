@@ -110,3 +110,8 @@
 앱 CardDetailContent는 담당 세션 메타를 읽고 FolderSessionHistory에 목록을 전달한다. 목록의 세션 조회는 sessionStore 메타만 merge하며 담당 세션을 자동 선택하지 않는다. useChatStore 표시 설정·이벤트와 UI 활성 세션을 변경하는 경로가 없다. 세션 행을 직접 누를 때만 openSession 콜백을 실행하여 PAS를 떠나 기존 일반 대화 진입 helper로 연다. 카드 커멘트 초안은 card-comment 키, 첨부는 그 composer의 로컬 훅 상태여서 PAS ChatBody 초안과 분리돼 있다. PAS ChatBody는 상세를 열고 닫는 동안 스택 아래에 같은 session id로 마운트되어 있다.
 
 읽기 요약의 머리 뒤로 버튼은 selectCard(null)로 목록에 복귀한다. tablet 요약은 fitContent로 자연 높이에 맞추고 최대 높이에서 본문만 스크롤한다. iPad는 헤더 작업 버튼과 목록으로 scene을 전환하며 좌우 밀기는 phone에만 있다. RN 웹에서 가려진 화면의 폭·높이 0 측정은 버리고 마지막 정상 틀 크기를 유지한다. 카드 상세를 닫은 직후 입력을 바꾸지 않아도 몸·선·토글의 좌표가 이어진다.
+## PAS 전화면의 전역 카드 입구
+
+웹 `/persistent/:sessionId`의 전화면은 폴더 workspace를 열지 않고 PAS 대화를 유지한다. 작업 패널은 `PersistentSessionTaskList`의 `useCardMembership(undefined)`를 사용해 접근 가능한 전역 카드 목록을 읽는다. 폴더나 PAS 소속으로 좁히지 않으며, 기존 카드 무효화 평면이 목록을 다시 읽는다. 선택한 카드의 읽기 요약은 `CardDetailPane`의 summary 변형이다.
+
+「카드 열기」는 같은 화면이 `useCardNavigation`의 overlay 상태를 직접 호스트한다. `CardWorkspace`의 명시적 `detailOnly` 변형은 기존 상세와 오버레이 틀을 쓰고 채팅 열과 연결 세션 탭을 마운트하지 않는다. 커멘트·확인·완료·상태 변경은 기존 `CardDetailPane` 경로이고 담당 세션 대화는 일반 workspace에서 연다. 닫기는 선택한 카드 요약을 유지하며 PAS의 활성 세션·대화·초안·대기 첨부를 바꾸지 않는다. 기본 `CardWorkspace` 경로에는 이 변형을 적용하지 않는다.

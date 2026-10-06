@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "./App";
+vi.mock('./v3/use-persistent-session-startup',()=>({usePersistentSessionStartup:()=>null}));
 
 vi.mock("./v3/V3DashboardLayout", () => ({
   V3DashboardLayout: () => <div data-testid="dashboard" />,
@@ -59,4 +60,13 @@ it.each(["/dialogues/ios", "/dialogues/ios/"])("opens %s with the RN dialogues s
   flushSync(() => root.render(<App />));
   await vi.waitFor(() => expect(container.querySelector('[data-testid="ios-review"]')?.getAttribute("data-section")).toBe("dialogues"));
   expect(container.querySelector('[data-testid="dashboard"]')).toBeNull();
+});
+
+vi.mock('./v3/PersistentSessionScreen',()=>({PersistentSessionScreen:({sessionId}:{sessionId?:string})=><main data-testid="persistent" data-session={sessionId}/> }));
+it.each(['/persistent','/persistent/pas-1'])('opens %s independently and returns home',async pathname=>{
+ window.history.replaceState(null,'',pathname);flushSync(()=>root.render(<App/>));
+ await vi.waitFor(()=>expect(container.querySelector('[data-testid="persistent"]')).not.toBeNull());
+ expect(container.querySelector('[data-testid="dashboard"]')).toBeNull();
+ window.history.pushState(null,'','/');flushSync(()=>window.dispatchEvent(new PopStateEvent('popstate')));
+ await vi.waitFor(()=>expect(container.querySelector('[data-testid="dashboard"]')).not.toBeNull());
 });

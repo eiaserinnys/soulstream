@@ -37,3 +37,5 @@
 @media (max-width: 760px) {
   .v3-components-panel-pair { grid-template-columns: minmax(0, 1fr); }
 }
+
+.persistent-session-review-frame { width: 100%; height: 100dvh; border: 0; }

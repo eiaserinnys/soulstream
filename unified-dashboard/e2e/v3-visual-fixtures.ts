@@ -1,5 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import type { PersistentSessionList } from "../client/lib/persistent-sessions";
 
 const NOW = "2026-07-14T01:30:00.000Z";
 const YESTERDAY = "2026-07-13T08:20:00.000Z";
@@ -603,6 +604,21 @@ export async function installV3VisualQaRoutes(
     });
     if (path === "/api/auth/config") return fulfillJson(route, { authEnabled: false, devModeEnabled: false });
     if (path === "/api/auth/status") return fulfillJson(route, { authenticated: true, user: null });
+    if (path === "/api/persistent-sessions" && request.method() === "GET") {
+      return fulfillJson(route, {
+        sessions: [], total: 0,
+        create_defaults: {
+          node_id: "eiaserinnys", preferred_agent_id: "seosoyoung",
+          settings: {
+            default_model: { model_preset: null, reasoning_effort: null },
+            fallback_model: null, show_generation_separator: true,
+            show_character: true, animate_character: true,
+            show_jev_candidates: true, show_turn_usage: true,
+          },
+          initial_instruction: "검수용 영구 세션", unavailable_reason: null,
+        },
+      } satisfies PersistentSessionList);
+    }
     if (path === "/api/cards" && request.method() === "GET") {
       const folderId = url.searchParams.get("folderId");
       if (options.postitCards) return fulfillJson(route, {cards:options.postitCards.filter(card=>!folderId||card.folderId===folderId)});

@@ -32,12 +32,14 @@ export function PersistentSessionSettingsDialog({
   sessionId,
   nodeId,
   onClose,
+  onSaved: onSessionSaved,
   request = fetch,
   modelPresetCatalog,
 }: {
   sessionId: string;
   nodeId: string;
   onClose(): void;
+  onSaved?(session: PersistentSession): void;
   request?: typeof fetch;
   modelPresetCatalog?: NodeModelPresetCatalog;
 }) {
@@ -69,7 +71,8 @@ export function PersistentSessionSettingsDialog({
   const onSaved = useCallback((session: PersistentSession) => {
     setResource(session);
     setPersistentSessionDisplaySettings(session.session_id, session.settings);
-  }, [setPersistentSessionDisplaySettings]);
+    onSessionSaved?.(session);
+  }, [onSessionSaved, setPersistentSessionDisplaySettings]);
   const details = usePersistentSessionDetailsController({
     resource,
     api,
