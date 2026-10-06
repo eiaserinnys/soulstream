@@ -19,7 +19,7 @@ describe("SwayCharacter", () => {
     reducedMotion = false;
     mediaListeners.clear();
     vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query === "(prefers-reduced-motion: reduce)" && reducedMotion,
+      get matches() { return query === "(prefers-reduced-motion: reduce)" && reducedMotion; },
       media: query,
       addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => mediaListeners.add(listener),
       removeEventListener: vi.fn(),
@@ -73,8 +73,11 @@ describe("SwayCharacter", () => {
     expect(container?.querySelector("iframe")).toBeNull();
     expect(container?.querySelector("img")?.hidden).toBe(false);
 
+    render({ motionEnabled: true });
     reducedMotion = true;
-    for (const listener of mediaListeners) listener(new Event("change") as MediaQueryListEvent);
+    flushSync(() => {
+      for (const listener of mediaListeners) listener(new Event("change") as MediaQueryListEvent);
+    });
     expect(container?.querySelector("iframe")).toBeNull();
     expect(container?.querySelector("img")?.hidden).toBe(false);
   });

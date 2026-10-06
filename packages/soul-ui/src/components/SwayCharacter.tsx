@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export type SwayCharacterProps = {
   width: number;
@@ -57,7 +57,7 @@ export function SwayCharacter({
     postState();
   }, [postState]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setReady(false);
     setHostFailed(false);
     setStillFailed(false);
@@ -82,6 +82,7 @@ export function SwayCharacter({
   if (!shown || stillFailed) return null;
 
   const frameEnabled = motionAllowed && !hostFailed;
+  const canvasVisible = frameEnabled && ready;
   const frameSrc = assetUrl(assetBaseUrl, "index.html");
   const stillSrc = assetUrl(assetBaseUrl, "still.png");
 
@@ -99,7 +100,7 @@ export function SwayCharacter({
       <img
         alt=""
         draggable={false}
-        hidden={ready}
+        hidden={canvasVisible}
         onError={() => setStillFailed(true)}
         src={stillSrc}
         style={{
@@ -130,7 +131,7 @@ export function SwayCharacter({
             border: 0,
             overflow: "hidden",
             pointerEvents: "none",
-            opacity: ready ? 1 : 0,
+            opacity: canvasVisible ? 1 : 0,
           }}
         />
       )}
