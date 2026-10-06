@@ -17,15 +17,15 @@ export type RunRowFrameProps = {
   avatar: ReactNode; title: ReactNode; agentLine: ReactNode; affiliation?: ReactNode; preview?: string; cardSummary?:ReactNode;cardTurn?:ReactNode;
   status: RowStatus; timestamp?: { display: string; raw?: string }; secondaryStatus?: RowStatus;
   actions?: readonly RunRowAction[]; handle?: ReactNode;
-  openLabel?: string; onOpen(): void; disabled?: boolean; size?: "default" | "small";
-  variant?: "session" | "card" | "folder"; active?: boolean; failed?: boolean; offline?: boolean;
+  openLabel?: string; onOpen(): void; disabled?: boolean; size?: "default" | "small"; showStatus?: boolean;
+  variant?: "session" | "card" | "folder"; surface?: "glass" | "paper"; active?: boolean; failed?: boolean; offline?: boolean;
   sessionId?: string; cardId?: string; blockedKind?: string | null; testId?: string;
   onContextMenu?(event: MouseEvent<HTMLDivElement>): void;
 };
 
 /** Sole owner of row inset, tracks, right information and small actions. */
 export function RunRowFrame({avatar,title,agentLine,affiliation,preview,cardSummary,cardTurn,status,timestamp,secondaryStatus,actions,handle,
-  openLabel,onOpen,disabled,size="default",variant="session",active,failed,offline,sessionId,cardId,blockedKind,testId,onContextMenu}: RunRowFrameProps) {
+  openLabel,onOpen,disabled,size="default",showStatus=true,variant="session",surface="glass",active,failed,offline,sessionId,cardId,blockedKind,testId,onContextMenu}: RunRowFrameProps) {
   const hasPreview=size!=="small"&&Boolean(preview);
   const hasActions=Boolean(actions?.length);
   const lines=1+(agentLine?1:0)+(hasPreview?1:0)+(affiliation?1:0)+(cardSummary?1:0)+(cardTurn?1:0);
@@ -34,20 +34,20 @@ export function RunRowFrame({avatar,title,agentLine,affiliation,preview,cardSumm
     {affiliation}{hasPreview?<small>{preview}</small>:null}
     {cardSummary?<span className="v3-run-card-summary">{cardSummary}</span>:null}
     {cardTurn?<span className="v3-run-card-turn" title={typeof cardTurn==="string"?cardTurn:undefined}>{cardTurn}</span>:null}
-  </span><span className="v3-run-trailing">
-    <StatusChip label={status.label} tone={status.tone}/>
+  </span>{showStatus||timestamp||secondaryStatus?<span className="v3-run-trailing">
+    {showStatus?<StatusChip label={status.label} tone={status.tone}/>:null}
     {timestamp?<time dateTime={timestamp.raw}>{timestamp.display}</time>:null}
     {secondaryStatus?<StatusChip label={secondaryStatus.label} tone={secondaryStatus.tone} className="v3-run-secondary-status"/>:null}
-  </span>{hasActions?<span className="v3-run-row-actions">{actions!.map(action=><DashboardIconCap key={action.kind} size="small"
+  </span>:null}{hasActions?<span className="v3-run-row-actions">{actions!.map(action=><DashboardIconCap key={action.kind} size="small"
       label={action.label} disabled={disabled||action.disabled||action.pending}
       aria-pressed={action.kind==="star"?action.pressed:undefined} aria-expanded={action.kind==="disclosure"?action.expanded:undefined}
       onClick={event=>{event.stopPropagation();action.onAction(event);}}>
       <RowActionIcon action={action}/>
     </DashboardIconCap>)}</span>:null}
   </>;
-  return <LiquidGlassCard webglSurface cornerRadius={14}
+  return <LiquidGlassCard webglSurface={surface==="glass"} cornerRadius={14}
     style={{"--v3-run-text-lines":lines} as CSSProperties}
-    className={`v3-run-row${size==="small"?" v3-run-row--small":""}${variant==="card"?" v3-card-row":variant==="folder"?" v3-task-card":""}${active?" is-active":""}${failed?" v3-run-row--failed":""}${offline?" v3-run-row--offline":""}`}
+    className={`v3-run-row${size==="small"?" v3-run-row--small":""}${variant==="card"?" v3-card-row":variant==="folder"?" v3-task-card":""}${surface==="paper"?" v3-run-row--paper-surface":""}${active?" is-active":""}${failed?" v3-run-row--failed":""}${offline?" v3-run-row--offline":""}`}
     data-has-actions={hasActions || undefined} data-has-agent={Boolean(agentLine) || undefined} data-row-variant={variant} data-row-state={status.tone} data-row-lines={lines} data-load-state={failed?"failed":"ready"}
     data-session-id={sessionId} data-card-id={cardId} data-blocked-kind={blockedKind} data-testid={testId} onContextMenu={onContextMenu}>
     {handle}{hasActions?<div className="v3-run-open outline-none focus-visible:ring-2 focus-visible:ring-ring" role="button"
