@@ -1,3 +1,4 @@
+import type { Logger } from "pino";
 import {
   PERSISTENT_SETTINGS_DEFAULTS,
   buildPersistentSettingsMetadataEntry,
@@ -20,12 +21,17 @@ import {
   UnsupportedReasoningEffortError,
   resolveReasoningEffortForCreate,
 } from "./task_reasoning_effort.js";
+import {
+  PersistentSessionInstructionControl,
+  type ApplyPersistentInstructionsInput,
+} from "./persistent_session_instruction_control.js";
 
 export interface PersistentSessionControlDeps {
   getTask(sessionId: string): Task | undefined;
   loadEvictedTask(sessionId: string): Promise<Task | null>;
   rememberTask(task: Task): void;
   persistence?: EventPersistence;
+  logger?: Pick<Logger, "warn">;
   modelCatalog?: Pick<ModelCatalog, "resolve">;
   resolveCurrentBackend?(task: Task): string | undefined;
 }
@@ -64,7 +70,39 @@ export class PersistentSessionControlError extends Error {
 }
 
 export class PersistentSessionControl {
-  constructor(private readonly deps: PersistentSessionControlDeps) {}
+  private readonly instructionControl: PersistentSessionInstructionControl;
+
+  constructor(private readonly deps: PersistentSessionControlDeps) {
+    this.instructionControl = new PersistentSessionInstructionControl(
+      (sessionId) => this.requirePersistentTask(sessionId),
+      deps.persistence,
+      deps.logger,
+    );
+  }
+
+  listPersistentInstructions(sessionId: string) {
+    return this.instructionControl.listPersistentInstructions(sessionId);
+  }
+
+  applyPersistentInstructions(sessionId: string, input: ApplyPersistentInstructionsInput) {
+    return this.instructionControl.applyPersistentInstructions(sessionId, input);
+  }
+
+  private async requirePersistentTask(sessionId: string): Promise<Task> {
+    let task = this.deps.getTask(sessionId);
+    if (!task) {
+      task = await this.deps.loadEvictedTask(sessionId) ?? undefined;
+      if (!task) throw new PersistentSessionControlError("SESSION_NOT_FOUND", `Session not found: ${sessionId}`);
+      this.deps.rememberTask(task);
+    }
+    if (task.sessionType === "llm") {
+      throw new PersistentSessionControlError("INVALID_REQUEST", `LLM sessions cannot be persistent: ${sessionId}`);
+    }
+    if (!task.persistent) {
+      throw new PersistentSessionControlError("NOT_PERSISTENT", `Session is not persistent: ${sessionId}`);
+    }
+    return task;
+  }
 
   /**
    * One PUT-sized step of the PAS settings flow: `enabled=false` only clears the

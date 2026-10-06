@@ -1230,6 +1230,69 @@ describe("CommandDispatcher.set_persistent_session_settings", () => {
   });
 });
 
+describe("CommandDispatcher.apply_persistent_session_instructions", () => {
+  it("parses the shared payload, applies the batch and ACKs per-op items", async () => {
+    const item = {
+      id: "instruction-1",
+      text: "Keep replies concise.",
+      source_turns: ["T195"],
+      source_event_ids: [42],
+      created_at: "2026-10-06T12:00:00.000Z",
+      updated_at: "2026-10-06T12:00:00.000Z",
+      status: "active",
+      origin: "extracted",
+    };
+    const applyPersistentInstructions = vi.fn(async () => ({
+      sessionId: "sess-pas",
+      results: [{ status: "ok" as const, item }],
+    }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { persistentSessions: { applyPersistentInstructions } } as unknown as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "apply_persistent_session_instructions",
+      session_id: "sess-pas",
+      origin: "extracted",
+      ops: [{ op: "add", text: "  Keep replies concise.  ", source_turns: ["T195"], source_event_ids: [42] }],
+      anchor: "input-195",
+      requestId: "instructions-1",
+    });
+
+    expect(applyPersistentInstructions).toHaveBeenCalledWith("sess-pas", {
+      session_id: "sess-pas",
+      origin: "extracted",
+      ops: [{ op: "add", text: "Keep replies concise.", source_turns: ["T195"], source_event_ids: [42] }],
+      anchor: "input-195",
+    });
+    expect(sent).toEqual([{
+      type: "persistent_session_instructions_applied",
+      requestId: "instructions-1",
+      agentSessionId: "sess-pas",
+      results: [{ status: "ok", item }],
+    }]);
+  });
+
+  it("rejects unknown command keys", async () => {
+    const applyPersistentInstructions = vi.fn();
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { persistentSessions: { applyPersistentInstructions } } as unknown as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "apply_persistent_session_instructions",
+      session_id: "sess-pas",
+      origin: "agent",
+      ops: [{ op: "add", text: "Keep replies concise." }],
+      unrecognized: true,
+      requestId: "instructions-2",
+    });
+
+    expect(applyPersistentInstructions).not.toHaveBeenCalled();
+    expect(sent).toEqual([expect.objectContaining({ type: "error", code: "INVALID_REQUEST" })]);
+  });
+});
+
 describe("CommandDispatcher.respond (P4 AskUserQuestion)", () => {
   it("respond → deliverInputResponse + respond_ack(status ok), command requestId와 inputRequestId를 분리", async () => {
     const deliverInputResponse = vi.fn().mockResolvedValue({

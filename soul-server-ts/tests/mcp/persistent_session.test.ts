@@ -126,6 +126,36 @@ describe("set_session_persistent MCP tool", () => {
         expect((row.metadata as Array<Record<string, unknown>>)
           .filter((entry) => entry.type === "persistent_session")).toHaveLength(1);
 
+        const added = await client.callTool({
+          name: "add_persistent_instruction",
+          arguments: { session_id: sessionId, text: "Keep replies concise." },
+        });
+        expect(added.structuredContent).toMatchObject({
+          session_id: sessionId,
+          status: "ok",
+          instruction: { text: "Keep replies concise.", source_turns: [], origin: "agent" },
+        });
+        expect(added.content[0]).toMatchObject({ text: expect.stringMatching(/^Keep replies concise\./) });
+        const instructionId = (added.structuredContent?.instruction as { id: string }).id;
+
+        const listed = await client.callTool({
+          name: "list_persistent_instructions",
+          arguments: { session_id: sessionId },
+        });
+        expect(listed.structuredContent).toMatchObject({
+          instructions: [{ id: instructionId, text: "Keep replies concise.", source_turns: [] }],
+        });
+
+        const removed = await client.callTool({
+          name: "update_persistent_instruction",
+          arguments: { session_id: sessionId, instruction_id: instructionId, status: "removed" },
+        });
+        expect(removed.structuredContent).toMatchObject({
+          status: "ok",
+          instruction: { id: instructionId, text: "Keep replies concise.", status: "removed" },
+        });
+        expect(removed.content[0]).toMatchObject({ text: expect.stringMatching(/^Keep replies concise\./) });
+
         const hydratedTask = hydrateEvictedTaskFromSessionRow(row, pino({ level: "silent" }));
         expect(hydratedTask?.persistent).toBe(true);
 
