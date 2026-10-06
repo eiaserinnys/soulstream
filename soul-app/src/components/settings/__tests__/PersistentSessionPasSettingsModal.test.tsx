@@ -13,6 +13,7 @@ const session = (overrides: Record<string, unknown> = {}) => ({
   session_id: 'pas-1', display_name: '관제 세션', node_id: 'node-a', folder_id: 'folder-a', agent_id: 'agent-a', agent_name: '에이전트 A', persistent: true,
   settings: {
     default_model: { model_preset: 'model-a', reasoning_effort: null },
+    fallback_model: null,
     show_character: true,
     animate_character: false,
     show_generation_separator: true,
@@ -41,8 +42,10 @@ beforeEach(() => {
     session: session({ settings: { ...session().settings, ...input.settings } }), model_change: 'none',
   }));
   api.listModelPresets.mockResolvedValue({ model_presets: [
-    { id: 'model-a', label: '모델 A', backend: 'claude', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
-    { id: 'model-b', label: '모델 B', backend: 'codex', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, default_effort: 'high' },
+    { id: 'model-a', label: '모델 A', backend: 'claude', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: 'ok', headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: '2026-10-06T14:00:00Z', observed_at: '2026-10-06T01:00:00Z', quota_label: '7일' } },
+    { id: 'model-b', label: '모델 B', backend: 'codex', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, default_effort: 'high',
+      weekly_headroom: { status: 'unavailable', headroom: null, remaining_percent: null, window_remaining_percent: null, resets_at: null, observed_at: '2026-10-06T01:00:00Z', quota_label: null } },
   ] });
   api.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
   useSettingsStore.setState({ serverUrl: 'https://soul.test' });
@@ -148,4 +151,34 @@ test('shows current monitoring values and pairs usage with the terminal event', 
   expect(screen.getByText('모델 A · model-a-live')).toBeTruthy();
   expect(screen.getByText('다음 실행부터 모델 B')).toBeTruthy();
   expect(screen.getByText(/컨텍스트 25\.0% · 정가 \$0\.13/)).toBeTruthy();
+});
+
+test('shows actual quota snapshots for current/default and fallback model providers', async () => {
+  api.getPersistentSession.mockResolvedValueOnce({ session: session({
+    settings: { ...session().settings, fallback_model: { model_preset: 'model-b', reasoning_effort: 'high' } },
+  }) });
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  expect(await screen.findByText('Claude · 현재·기본')).toBeTruthy();
+  expect(screen.getByText(/7일 여유 72\.5% · 초기화 .* · 관측/)).toBeTruthy();
+  expect(screen.getByText('Codex · 대체')).toBeTruthy();
+  expect(screen.getAllByText('기록 없음')).toHaveLength(2);
+  expect(screen.queryByText(/0%/)).toBeNull();
+});
+
+test('distinguishes model preset quota loading from a failed read', async () => {
+  api.listModelPresets.mockImplementation(() => new Promise(() => {}));
+  const loading = open();
+  await loading.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(loading.getByTestId('settings-segment-pas-settings-history'));
+  expect(await loading.findByText('불러오는 중')).toBeTruthy();
+
+  loading.unmount();
+  api.listModelPresets.mockRejectedValueOnce(new Error('offline'));
+  const failed = open();
+  await failed.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(failed.getByTestId('settings-segment-pas-settings-history'));
+  expect(await failed.findByText('조회 실패')).toBeTruthy();
 });

@@ -32,10 +32,12 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
   const [session, setSession] = useState<PersistentSessionResource | null>(null);
   const [sessionState, setSessionState] = useState<ReadState>(serverUrl ? 'loading' : 'error');
   const [presets, setPresets] = useState<ModelPresetAvailability[]>([]);
+  const [presetsState, setPresetsState] = useState<ReadState>(serverUrl ? 'loading' : 'error');
   const [dirty, setDirty] = useState(false);
   const onSessionChange = useCallback((value: PersistentSessionResource | null) => setSession(value), []);
   const onLoadStateChange = useCallback((value: ReadState) => setSessionState(value), []);
   const onPresetsChange = useCallback((value: ModelPresetAvailability[]) => setPresets(value), []);
+  const onPresetsStateChange = useCallback((value: ReadState) => setPresetsState(value), []);
   const onDirtyChange = useCallback((value: boolean) => setDirty(value), []);
   const revealEditorError = useCallback(() => editorScroll.current?.scrollTo({ y: 0, animated: true }), []);
   const requestClose = useCallback(() => {
@@ -91,6 +93,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
               onSessionChange={onSessionChange}
               onLoadStateChange={onLoadStateChange}
               onPresetsChange={onPresetsChange}
+              onPresetsStateChange={onPresetsStateChange}
               onDirtyChange={onDirtyChange}
             />
           </ScrollView>
@@ -103,6 +106,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
               session={session}
               sessionState={sessionState}
               presets={presets}
+              presetsState={presetsState}
             />
           </ScrollView>
         </View>

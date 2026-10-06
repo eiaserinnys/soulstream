@@ -119,6 +119,7 @@ export function PersistentSessionEditor({
   onSessionChange,
   onLoadStateChange,
   onPresetsChange,
+  onPresetsStateChange,
   onDirtyChange,
 }: {
   serverUrl: string;
@@ -133,6 +134,7 @@ export function PersistentSessionEditor({
   onSessionChange?(session: PersistentSessionResource | null): void;
   onLoadStateChange?(state: 'loading' | 'ready' | 'error'): void;
   onPresetsChange?(presets: ModelPresetAvailability[]): void;
+  onPresetsStateChange?(state: 'loading' | 'ready' | 'error'): void;
   onDirtyChange?(dirty: boolean): void;
 }) {
   const t = useTokens();
@@ -198,8 +200,12 @@ export function PersistentSessionEditor({
   }, [serverUrl, sessionId, reload, onLoadStateChange, createApi]);
 
   useEffect(() => {
-    if (!serverUrl || !nodeId) return;
+    if (!serverUrl || !nodeId) {
+      onPresetsStateChange?.('error');
+      return;
+    }
     let active = true;
+    onPresetsStateChange?.('loading');
     setLoadingTargets(true); setTargetsError(null);
     const api = createApi(serverUrl);
     void Promise.all([sessionId ? null : api.listNodeAgents(nodeId), api.listModelPresets(nodeId)])
@@ -207,6 +213,7 @@ export function PersistentSessionEditor({
         if (!active) return;
         setPresets(presetResult.model_presets);
         onPresetsChange?.(presetResult.model_presets);
+        onPresetsStateChange?.('ready');
         if (agentResult) setAgents(agentResult.agents);
         if (!sessionId && defaults) {
           // The server's preferred values are used only when they really exist; nothing is substituted.
@@ -219,10 +226,14 @@ export function PersistentSessionEditor({
         }
         setTargetsLoaded(true);
       })
-      .catch(() => { if (active) setTargetsError('에이전트와 모델을 불러오지 못했습니다.'); })
+      .catch(() => {
+        if (!active) return;
+        setTargetsError('에이전트와 모델을 불러오지 못했습니다.');
+        onPresetsStateChange?.('error');
+      })
       .finally(() => { if (active) setLoadingTargets(false); });
     return () => { active = false; };
-  }, [serverUrl, nodeId, sessionId, defaults, targetsReload, onPresetsChange, createApi]);
+  }, [serverUrl, nodeId, sessionId, defaults, targetsReload, onPresetsChange, onPresetsStateChange, createApi]);
 
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
   const chooseModel = (id: string) => {

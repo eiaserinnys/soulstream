@@ -92,7 +92,30 @@ const persistentSessionFixtures = {
 export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFixtures,
   listModelPresets: async (nodeId: string) => {
     if (state() === 'persistent-targets-error') throw new Error('공개 예시 오류');
-    return dialogueApi.listModelPresets(nodeId);
+    const result = await dialogueApi.listModelPresets(nodeId);
+    return {
+      ...result,
+      model_presets: result.model_presets.map((preset) => ({
+        ...preset,
+        weekly_headroom: preset.id === 'public-unavailable-model' ? {
+          status: 'unavailable' as const,
+          headroom: null,
+          remaining_percent: null,
+          window_remaining_percent: null,
+          resets_at: null,
+          observed_at: '2026-10-06T01:00:00Z',
+          quota_label: null,
+        } : {
+          status: 'ok' as const,
+          headroom: 22.5,
+          remaining_percent: 72.5,
+          window_remaining_percent: 50,
+          resets_at: '2026-10-09T01:00:00Z',
+          observed_at: '2026-10-06T01:00:00Z',
+          quota_label: '7일',
+        },
+      })),
+    };
   },
   getTimeline: async (_sessionId: string, params?: { eventTypes?: string[]; before?: string }) => {
     if (state() === 'pas-monitor-loading') return new Promise<never>(() => {});
