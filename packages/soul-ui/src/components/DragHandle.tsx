@@ -5,7 +5,7 @@
  * deltaPercent = (dx / viewportWidth) * 100 으로 환산하여 콜백에 전달합니다.
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export interface DragHandleProps {
   onDrag: (deltaPercent: number) => void;
@@ -13,48 +13,45 @@ export interface DragHandleProps {
 }
 
 export function DragHandle({ onDrag, widthPx = 4 }: DragHandleProps) {
-  const dragging = useRef(false);
+  const pointer = useRef<number|null>(null);
+  const target = useRef<HTMLDivElement|null>(null);
+  const previous = useRef({cursor:"",userSelect:""});
   const lastX = useRef(0);
   const onDragRef = useRef(onDrag);
   onDragRef.current = onDrag;
 
   const lineRef = useRef<HTMLDivElement>(null);
 
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      dragging.current = true;
-      lastX.current = e.clientX;
-
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!dragging.current) return;
-        const dx = ev.clientX - lastX.current;
-        lastX.current = ev.clientX;
-        const containerWidth = document.documentElement.clientWidth;
-        if (containerWidth > 0) {
-          onDragRef.current((dx / containerWidth) * 100);
-        }
-      };
-
-      const onMouseUp = () => {
-        dragging.current = false;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    },
-    [],
-  );
+  const finishDrag=useCallback(()=>{
+    const id=pointer.current;
+    if(id===null)return;
+    pointer.current=null;
+    window.removeEventListener("blur",finishDrag);
+    document.body.style.cursor=previous.current.cursor;
+    document.body.style.userSelect=previous.current.userSelect;
+    if(target.current?.hasPointerCapture(id))target.current.releasePointerCapture(id);
+    target.current=null;
+  },[]);
+  useEffect(()=>finishDrag,[finishDrag]);
+  const onPointerDown=useCallback((event:React.PointerEvent<HTMLDivElement>)=>{
+    event.preventDefault();finishDrag();
+    pointer.current=event.pointerId;target.current=event.currentTarget;lastX.current=event.clientX;
+    previous.current={cursor:document.body.style.cursor,userSelect:document.body.style.userSelect};
+    event.currentTarget.setPointerCapture(event.pointerId);
+    window.addEventListener("blur",finishDrag);
+    document.body.style.cursor="col-resize";document.body.style.userSelect="none";
+  },[finishDrag]);
+  const onPointerMove=useCallback((event:React.PointerEvent<HTMLDivElement>)=>{
+    if(pointer.current!==event.pointerId)return;
+    const dx=event.clientX-lastX.current;lastX.current=event.clientX;
+    const width=document.documentElement.clientWidth;
+    if(width>0)onDragRef.current(dx/width*100);
+  },[]);
 
   return (
     <div
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+      onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}
       className="cursor-col-resize bg-transparent shrink-0 relative z-10"
       style={{ width: widthPx }}
     >

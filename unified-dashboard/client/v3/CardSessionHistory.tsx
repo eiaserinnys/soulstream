@@ -1,44 +1,32 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useDashboardStore, useSessionListProvider, useSessionMenu, type SessionSummary } from "@seosoyoung/soul-ui";
-import { orchestratorSessionProvider } from "../providers";
-import { OrchestratorSessionProvider } from "../providers/OrchestratorSessionProvider";
-import type { FetchSessionsOptions } from "@seosoyoung/soul-ui";
-
-// Only card history pages ID queries; the shared provider continues to resolve every requested ID.
-export class CardHistorySessionProvider extends OrchestratorSessionProvider {
- async fetchSessions(options:FetchSessionsOptions={}) {
-  const ids=options.sessionIds??[];
-  const offset=options.offset??0;
-  const result=await orchestratorSessionProvider.fetchSessions({...options,sessionIds:ids.slice(offset,options.limit?offset+options.limit:undefined)});
-  return {...result,total:ids.length,hasMore:offset+result.sessions.length<ids.length};
- }
-}
-const cardHistoryProvider=new CardHistorySessionProvider();
+import { useDashboardStore, useSessionMenu, type SessionSummary } from "@seosoyoung/soul-ui";
+import type {CardLinkedSession} from "@seosoyoung/soul-ui/cards/card-types";
+import {useCardSessionPages} from "./useCardSessionPages";
 import { buildRunTree, resolveRunSessions } from "./folder-workspace-run-model";
 import { CardSessionVirtualList } from "@seosoyoung/soul-ui/cards/CardSessionVirtualList";
 import { SessionRunList } from "./SessionRunList";
 
 export interface CardSessionSelection {source:'automatic'|'user'}
 
-export function CardSessionHistory({ sessionIds, onOpenSession, assigneeSessionId, initialSessionId }: {
+export function CardSessionHistory({ sessionIds, linkedSessions=[], onOpenSession, assigneeSessionId, initialSessionId }: {
   sessionIds: readonly string[];
+  linkedSessions?:readonly CardLinkedSession[];
   assigneeSessionId?: string | null;
   initialSessionId?: string | null;
   onOpenSession(session: SessionSummary, selection?:CardSessionSelection): void;
 }) {
   const openMenu = useSessionMenu();
-  const nextPage=useRef(false);
   // CardDetailPane keys this history by cardId: one initial choice per card opening.
   const sessionChosen = useRef(false);
   const catalog = useDashboardStore(state => state.catalog);
   const activeSessionId = useDashboardStore(state => state.activeSessionKey);
-  // Reuse the folder history's ID query and query-cache lifecycle. The dashboard
-  // already owns the catalog stream; opening a card does not need a second one.
-  const targeted = useSessionListProvider({
-    sessionIds, getSessionProvider: () => cardHistoryProvider,
-    enabled: sessionIds.length > 0, streamEnabled: false,
-    initialCatalogLoadEnabled: false, folderCountsEnabled: false,
-  });
+  const orderedIds=useMemo(()=>{
+    const dates=new Map((catalog?.sessionList??[]).map(session=>[session.agentSessionId,session.createdAt]));
+    for(const session of linkedSessions)dates.set(session.sessionId,session.createdAt);
+    const time=(id:string)=>Date.parse(dates.get(id)??"")||0;
+    return [...new Set(sessionIds)].sort((left,right)=>time(right)-time(left)||right.localeCompare(left));
+  },[sessionIds,linkedSessions,catalog?.sessionList]);
+  const targeted=useCardSessionPages(orderedIds);
   const resolved = useMemo(() => resolveRunSessions({
       sessionIds, catalogSessions: catalog?.sessionList ?? [],
       targetedSessions: targeted.sessions, targetedLoading: targeted.loading,
@@ -50,10 +38,12 @@ export function CardSessionHistory({ sessionIds, onOpenSession, assigneeSessionI
     append(tree,0);return result;
   },[tree]);
   const loadMore=()=>{
-    if(!targeted.hasMore||nextPage.current)return;
-    nextPage.current=true;
-    void targeted.loadMore().finally(()=>{nextPage.current=false;});
+    if(targeted.hasMore&&!targeted.loading)void targeted.loadMore({cancelRefetch:false});
   };
+  useEffect(()=>{
+    // Children can arrive before their parent; an empty projection must still page forward.
+    if(rows.length===0&&!targeted.loading&&!targeted.error)loadMore();
+  },[rows.length,targeted.loading,targeted.hasMore,targeted.error,targeted.loadMore]);
   useEffect(() => {
     if (sessionChosen.current) return;
     const preferredSessionId = initialSessionId ?? assigneeSessionId;
@@ -68,13 +58,12 @@ export function CardSessionHistory({ sessionIds, onOpenSession, assigneeSessionI
     onOpenSession(session,{source:'user'});
   };
   return <>
-    <div className="v3-detail-section-head"><h3>세션</h3><span>{sessionIds.length}회</span></div>
     {sessionIds.length === 0 ? <p className="v3-detail-empty">아직 세션이 없습니다.</p> : null}
     {targeted.error?<p role="alert" className="v3-detail-empty">{targeted.error}</p>:null}
-    <div className="v3-card-session-virtual" data-testid="card-session-virtual">
+    <div className="v3-card-session-virtual" data-testid="card-session-virtual" role="region" aria-label="카드 세션 목록">
      <CardSessionVirtualList data={rows} style={{height:"100%"}} className="v3-session-panel-scroll" initialItemCount={1}
       computeItemKey={(_,row)=>row.node.session.agentSessionId} endReached={loadMore}
-      itemContent={(_,row)=><div className={row.depth>0?"v3-run-children":undefined}><SessionRunList size="small" tree={[row.node]} activeSessionId={activeSessionId} onOpenSession={openSession} onContextMenu={(session,event)=>openMenu(session.agentSessionId,event)}/></div>}/>
+      itemContent={(_,row)=>Array.from({length:row.depth}).reduce<import("react").ReactNode>(child=><div className="v3-run-children">{child}</div>,<SessionRunList size="small" tree={[row.node]} activeSessionId={activeSessionId} onOpenSession={openSession} onContextMenu={(session,event)=>openMenu(session.agentSessionId,event)}/>)}/>
     </div>
   </>;
 }

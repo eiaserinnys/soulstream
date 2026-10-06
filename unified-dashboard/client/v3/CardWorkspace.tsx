@@ -45,15 +45,18 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
  const update=(next:CardWorkspaceLayout|null)=>{setLayout(next);writeV3CardWorkspaceLayout(next);};
  const drag=(delta:number,edge:"left"|"middle")=>{
   const width=workspaceWidthRef.current;
-  if(width>0)update(resizeCardWorkspace(width,layout,delta*document.documentElement.clientWidth/100,edge));
+  if(width>0){const next=resizeCardWorkspace(width,layout,delta*document.documentElement.clientWidth/100,edge);if(next!==undefined)update(next);}
  };
  const key=(event:import("react").KeyboardEvent<HTMLDivElement>,edge:"left"|"middle")=>{
+  if(!["Home","ArrowLeft","ArrowRight"].includes(event.key))return;
+  event.preventDefault();
   const next=cardWorkspaceLayoutForKey(workspaceWidthRef.current,layout,event.key,edge);
-  if(next!==undefined){event.preventDefault();update(next);}
+  if(next!==undefined)update(next);
  };
  const panes=<>
   <CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution} onSampleChange={onSampleChange}/>
-  <WorkspaceSessionColumn {...chat} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider" onResize={delta=>drag(delta,"middle")} onResizeKeyDown={event=>key(event,"middle")}/>
+  <WorkspaceSessionColumn {...chat} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider" onResize={delta=>drag(delta,"middle")} onResizeKeyDown={event=>key(event,"middle")}
+   separatorAria={{"aria-valuenow":resolved.cardWidth,"aria-valuemin":resolved.minimum,"aria-valuemax":resolved.totalWidth-resolved.gap-resolved.minimum,"aria-valuetext":`카드 ${Math.round(resolved.cardWidth)}픽셀, 대화 ${Math.round(resolved.chatWidth)}픽셀`}}/>
  </>;
  const content=<div className="v3-workspace-scrim is-chat-open" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}
   onKeyDown={event=>{
@@ -66,10 +69,10 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
    }
   }}>
-  <div ref={workspace} className="v3-workspace is-chat-open" data-testid="v3-card-workspace" data-placement="overlay" data-mobile-view={mobileMode?mobileTab:undefined}
+  <div ref={workspace} className="v3-workspace is-chat-open" data-testid="v3-card-workspace" data-placement="overlay" data-mobile-view={mobileMode?mobileTab:undefined} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}
    data-card-width-px={Math.round(resolved.cardWidth)} data-pair-width-px={Math.round(resolved.totalWidth)}>
-   {mobileMode?panes:<div className="v3-card-workspace-pair" style={workspaceWidth>0?{width:resolved.totalWidth,gridTemplateColumns:`${resolved.cardWidth}px ${V3_PANEL_GAP_PX}px minmax(0,1fr)`}:undefined}>
-    <div className="v3-workspace-divider v3-card-workspace-left-divider" data-testid="v3-card-workspace-left-divider" role="separator" aria-orientation="vertical" aria-label="카드와 대화 전체 폭" tabIndex={0} onKeyDown={event=>key(event,"left")}>
+   {mobileMode?panes:<div className="v3-card-workspace-pair" style={workspaceWidth>0?{width:resolved.totalWidth,gridTemplateColumns:`${resolved.cardWidth}px ${resolved.gap}px minmax(0,1fr)`}:undefined}>
+    <div className="v3-workspace-divider v3-card-workspace-left-divider" data-testid="v3-card-workspace-left-divider" role="separator" aria-orientation="vertical" aria-label="카드와 대화 전체 폭" aria-valuenow={resolved.totalWidth} aria-valuemin={resolved.totalMinimum} aria-valuemax={workspaceWidth} aria-valuetext={`${Math.round(resolved.totalWidth)}픽셀`} tabIndex={0} onKeyDown={event=>key(event,"left")}>
      <DragHandle widthPx={V3_PANEL_GAP_PX} onDrag={delta=>drag(delta,"left")}/>
     </div>
     {panes}

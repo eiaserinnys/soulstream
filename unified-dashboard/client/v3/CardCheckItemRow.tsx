@@ -40,7 +40,7 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
      {images.map((evidence,index)=><figure key={`${evidence.url}:${index}`} title={evidence.label}>
       <MarkdownImage variant="card-evidence" src={evidence.url} alt={evidence.label} onOpen={onOpenImage}/>
      </figure>)}
-     {images.length===0?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
+     {images.length===0&&(display==="reported"||display==="changed")?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
     </div>
     {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=><a key={`${evidence.url}:${index}`} href={evidence.url} target="_blank" rel="noreferrer" title={evidence.label}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>)}</div>:null}
     <div className="v3-card-check-item-foot">

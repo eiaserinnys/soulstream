@@ -45,7 +45,9 @@ export function readV3CardWorkspaceLayout(): import("./card-workspace-layout").C
     const raw=window.localStorage.getItem(V3_CARD_WORKSPACE_STORAGE_KEY);
     if(raw===null)return null;
     const value=JSON.parse(raw);
-    return Number.isFinite(value.totalWidth)&&value.totalWidth>0&&Number.isFinite(value.ratio)&&value.ratio>0&&value.ratio<1
+    return (value.totalWidth===null||Number.isFinite(value.totalWidth)&&value.totalWidth>0)
+      &&(value.ratio===null||Number.isFinite(value.ratio)&&value.ratio>0&&value.ratio<1)
+      &&(value.totalWidth!==null||value.ratio!==null)
       ?{totalWidth:value.totalWidth,ratio:value.ratio}:null;
   } catch {return null;}
 }

@@ -119,9 +119,13 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  // Measure and operate only the visible session tab; its state remains mounted.
  await detail.getByRole('tab',{name:/^세션/}).click();
  await expect(sessionsRegion).toBeVisible();
- await sessionsRegion.getByRole('button',{name:'1개 더',exact:true}).click();
- await expect(sessionsRegion.locator('.v3-run-open')).toHaveCount(4);
- await detail.getByRole('tab',{name:/^노트/}).click();await expect(sessionsRegion.locator('.v3-run-open')).toHaveCount(4);
+ const sessionScroll=sessionsRegion.locator('[data-virtuoso-scroller]');
+ await sessionScroll.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+ const sessionTop=await sessionScroll.evaluate(el=>el.scrollTop);
+ await expect(sessionsRegion.locator('.v3-run-open').last()).toBeVisible();
+ await detail.getByRole('tab',{name:/^노트/}).click();
+ await detail.getByRole('tab',{name:/^세션/}).click();
+ expect(await sessionScroll.evaluate(el=>el.scrollTop)).toBeCloseTo(sessionTop,0);
  writeFileSync(path.join(output,`after-${width}-metrics.json`),JSON.stringify({start,withAttachment,contentBefore,contentAfter,longBefore,longAfter},null,2));
  // Registered samples render the same CardWorkspace / CardDetailPane composition.
  await page.goto('/components');

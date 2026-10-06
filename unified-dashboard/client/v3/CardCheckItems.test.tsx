@@ -7,6 +7,7 @@ import { CardCheckItems } from "./CardCheckItems";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CardImageViewer } from "./CardImageViewer";
 import { CardNotes } from "./CardNotes";
+import { CardCheckItemRow } from "./CardCheckItemRow";
 import { summarizeCardItems } from "./card-item-summary";
 
 const item=(id:number,display:CardCheckItem["display"],extra:Partial<CardCheckItem>={}):CardCheckItem=>({
@@ -14,6 +15,15 @@ const item=(id:number,display:CardCheckItem["display"],extra:Partial<CardCheckIt
  result:null,evidence:[],caveat:null,rev:1,confirmed:display==="confirmed"?{at:"2026-10-05T08:00:00Z",rev:1}:null,
  fixOpen:display==="fix"?2:0,reopened:display==="changed"?"다시 확인할 근거가 있습니다":null,from:null,
  createdAt:"2026-10-05T07:00:00Z",reportedAt:null,display,...extra,
+});
+it.each(["todo","doing","reported","changed","fix","confirmed","dropped"] as const)("shows missing capture only for a reported result (%s)",display=>{
+ const html=renderToStaticMarkup(<CardCheckItemRow item={item(1,display)} checked={false} pending={false} expanded onConfirmChange={()=>{}} onToggleExpanded={()=>{}} onTargetItem={()=>{}} onOpenImage={()=>{}}/>);
+ expect(html.includes("캡처 없음")).toBe(display==="reported"||display==="changed");
+});
+it("keeps the notes heading without repeating its tab count",()=>{
+ const html=renderToStaticMarkup(<CardNotes brief="요약" notes={[{id:"n",cardId:"c",authorKind:"agent",authorId:"roselin",sessionId:null,kind:"note",body:"노트",createdAt:"2026-10-05"}]}/>);
+ const node=document.createElement("div");node.innerHTML=html;
+ expect(node.querySelector(".v3-detail-section-head")?.textContent).toBe("노트");
 });
 let container:HTMLDivElement,root:Root;
 beforeEach(()=>{

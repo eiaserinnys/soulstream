@@ -204,7 +204,7 @@
 
 .v3-card-note-frame { border: thin solid var(--v3-stroke-default); border-radius: var(--v3-space-3); padding: var(--v3-space-3); font: var(--v3-type-body) var(--v3-font-family); }
 .v3-card-image-expanded { margin: 0; display: flex; flex-direction: column; gap: var(--v3-space-3); }
-.v3-card-image-expanded figcaption { color: var(--v3-text-primary); font: var(--v3-type-body) var(--v3-font-family); }
+.v3-card-image-expanded figcaption { padding: 0 var(--v3-space-3) var(--v3-space-3); overflow-wrap: anywhere; color: var(--v3-text-primary); font: var(--v3-type-body) var(--v3-font-family); }
 
 .v3-workspace.is-chat-open[data-testid="v3-card-workspace"] { display: block; }
 .v3-card-workspace-pair { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); width: 100%; height: 100%; min-width: 0; min-height: 0; margin-inline-start: auto; }
@@ -216,5 +216,7 @@
 .v3-card-panel-scroll[data-card-active-tab="sessions"] > .v3-task-detail-content { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .v3-card-session-history { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .v3-card-session-virtual { flex: 1; min-height: 0; }
+.v3-card-session-virtual .v3-session-panel-scroll { padding-inline: 0; }
+.v3-workspace[data-testid="v3-card-workspace"] .v3-workspace-divider:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
 
 .v3-card-notes .v3-card-note-frame p { font: var(--v3-type-body) var(--v3-font-family); }

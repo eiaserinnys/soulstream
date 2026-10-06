@@ -18,7 +18,7 @@ export function CardNotes({brief,notes,sessions=[],portraitUrl,userPortraitUrl,o
    <div className="v3-card-note-frame">{brief?<MarkdownContent content={brief} codeBlockLayout="document" onImageClick={onImageClick}/>:<p className="v3-detail-empty">인계 요약이 없습니다.</p>}</div>
   </section>
   <section className="v3-card-notes-list" aria-label="노트">
-   <div className="v3-detail-section-head"><h3>노트</h3><span>{allNotes.length}건</span></div>
+   <div className="v3-detail-section-head"><h3>노트</h3></div>
    {older.length&&!expanded?<button type="button" className="v3-card-note-more" onClick={()=>setExpanded(true)}>앞선 노트 {older.length}건</button>:null}
    {allNotes.length===0?<p className="v3-detail-empty">아직 노트가 없습니다.</p>:null}
    {visible.map(note=>{

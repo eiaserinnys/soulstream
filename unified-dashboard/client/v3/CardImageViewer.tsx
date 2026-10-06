@@ -18,7 +18,7 @@ export function CardImageViewer({ image, onClose }: { image: CardImageSelection 
   }, [image, onClose]);
 
   return <Dialog open={Boolean(image)} onOpenChange={open => { if (!open) onClose(); }}>
-    <DialogPopup>
+    <DialogPopup className="v3-surface">
       <DialogTitle className="sr-only">{image?.alt || "이미지"}</DialogTitle>
       {image ? <figure className="v3-card-image-expanded"><img src={image.src} alt={image.alt} className="max-w-full object-contain"/>{image.alt?<figcaption>{image.alt}</figcaption>:null}</figure> : null}
     </DialogPopup>

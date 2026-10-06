@@ -7,6 +7,7 @@ import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { CardDetailPane } from "./CardDetailPane";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 
+vi.mock("./useCardSessionPages",()=>({useCardSessionPages:()=>({sessions:[],loading:false})}));
 vi.mock("@seosoyoung/soul-ui/cards/CardSessionVirtualList",()=>({CardSessionVirtualList:({data,itemContent}:any)=><div>{data.map((row:any,i:number)=><div key={i}>{itemContent(i,row)}</div>)}</div>}));
 vi.mock("@seosoyoung/soul-ui", async original => ({
   ...await original<typeof import("@seosoyoung/soul-ui")>(),
