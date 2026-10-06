@@ -27,6 +27,7 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
+import { ChatManuscriptList, ChatManuscriptFooter } from "./ChatManuscriptList";
 import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
 import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 import {
@@ -630,7 +631,7 @@ export function ChatView({
         onRetry={requestOlderManually}
         showReachedTop={timelineItems.length > 0}
       />;
-      return presentation === "manuscript" ? <div className="flow-root pt-6">{status}</div> : status;
+      return presentation === "manuscript" ? <div data-slot="chat-manuscript-list-header" className="flow-root pt-6">{status}</div> : status;
     },
     [
       presentation,
@@ -643,7 +644,7 @@ export function ChatView({
     ],
   );
   const virtuosoComponents = useMemo(
-    () => ({ Header: VirtuosoHeader, ...(presentation === "manuscript" ? { Footer: ManuscriptFooter } : {}) }),
+    () => ({ Header: VirtuosoHeader, ...(presentation === "manuscript" ? { List: ChatManuscriptList, Footer: ChatManuscriptFooter } : {}) }),
     [VirtuosoHeader, presentation],
   );
 
@@ -814,7 +815,7 @@ export function ChatView({
             }
           }, 2000);
         }}
-          className={presentation === "manuscript" ? "-mx-1 px-1 flex-1 min-h-0 overflow-x-hidden overscroll-none [mask-image:linear-gradient(to_bottom,transparent,black_calc(var(--spacing)*6))] [mask-repeat:no-repeat]" : "flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"}
+          className={presentation === "manuscript" ? "-mx-1 flex-1 min-h-0 overflow-x-hidden overscroll-none [mask-image:linear-gradient(to_bottom,transparent,black_calc(var(--spacing)*6))] [mask-repeat:no-repeat]" : "flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"}
         />
       )}
 
@@ -855,9 +856,4 @@ export function ChatView({
       />
     </div>
   );
-}
-
-/** Measured inside Virtuoso, rather than padding on its outer scroller. */
-function ManuscriptFooter() {
-  return <div className="h-7" aria-hidden="true" />;
 }

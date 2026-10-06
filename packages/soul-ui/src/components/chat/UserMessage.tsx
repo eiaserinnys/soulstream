@@ -56,7 +56,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
 
   return (
     <div className={manuscript ? "mt-10 mb-5 ms-12 flex justify-end" : "flex justify-end gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-chat-user={manuscript ? "true" : undefined} data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
-      <div {...bubbleProps} data-slot="chat-message-bubble" className={cn(manuscript ? "w-full max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]", bubbleProps?.className)}>
+      <div {...bubbleProps} data-slot="chat-message-bubble" className={cn(manuscript ? "w-full min-w-0 max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]", bubbleProps?.className)}>
         {!manuscript && (header ?? <div className="mb-1 flex items-baseline justify-end gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-white/75">
             {displayName}

@@ -262,6 +262,10 @@
   background: var(--persistent-session-panel);
   border: 1px solid var(--persistent-session-line);
 }
+[data-slot="chat-root"][data-chat-presentation="manuscript"] pre .hljs {
+  background: transparent;
+  color: var(--foreground);
+}
 [data-slot="chat-root"][data-chat-presentation="manuscript"] [data-slot="chat-composer-anchor"] .w-20.h-20 {
   background: var(--persistent-session-paper);
   border-color: var(--persistent-session-line);

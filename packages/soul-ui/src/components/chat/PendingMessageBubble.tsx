@@ -26,7 +26,7 @@ export const PendingMessageBubble = memo(function PendingMessageBubble({
       data-status={pending.status}
     >
       <div
-        className={manuscript ? `w-full max-w-full text-right text-muted-foreground ${isSending ? "opacity-55" : ""}` : `max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)] ${isSending ? "opacity-55" : ""}`}
+        className={manuscript ? `w-full min-w-0 max-w-full text-right text-muted-foreground ${isSending ? "opacity-55" : ""}` : `max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)] ${isSending ? "opacity-55" : ""}`}
       >
           <div data-slot={manuscript ? "chat-body" : undefined} className={manuscript ? "whitespace-pre-wrap text-base text-muted-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "whitespace-pre-wrap break-words text-base leading-snug"}>
           {pending.messageText}

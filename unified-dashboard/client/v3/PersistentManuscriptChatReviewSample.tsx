@@ -79,7 +79,7 @@ function ManuscriptColumn() {
     const savedSuggestion = store.lastPromptSuggestions[REVIEW_SESSION];
     store.setActiveSession(REVIEW_SESSION);
     store.setActiveSessionSummary({
-      agentSessionId: REVIEW_SESSION, status: "completed", sessionType: "claude",
+      agentSessionId: REVIEW_SESSION, status: "completed", sessionType: "claude", eventCount: 10,
       createdAt: "2026-10-06T00:00:00Z", updatedAt: "2026-10-06T00:00:00Z",
     });
     store.setPersistentSessionDisplaySettings(REVIEW_SESSION, { show_generation_separator: true, show_jev_candidates: true });
