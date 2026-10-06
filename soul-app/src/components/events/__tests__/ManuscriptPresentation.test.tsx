@@ -53,6 +53,8 @@ test('원고형 입력 밑줄과 조작부는 열 가장자리에 맞추고 기�
 
   expect(standardBox.paddingHorizontal).toBeGreaterThan(0);
   expect(manuscriptBox.paddingHorizontal).toBe(0);
+  expect(manuscriptBox.borderBottomWidth).toBe(StyleSheet.hairlineWidth);
+  expect(manuscriptBox.borderBottomColor).toBeTruthy();
   expect(attachmentSlot.marginLeft).toBeLessThan(0);
   expect(sendFrame.marginRight).toBeLessThan(0);
 });

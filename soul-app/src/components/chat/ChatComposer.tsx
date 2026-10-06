@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  StyleSheet,
   TextInput,
   View,
   useWindowDimensions,
@@ -84,6 +85,12 @@ export function ChatComposer({
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
   const [stacked, setStacked] = React.useState(false);
   const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
+  const composerSurfaceStyle = presentation === 'manuscript'
+    ? [styles.manuscriptComposerBox, {
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: t.persistentSession.line,
+      }]
+    : styles.composerBox;
   React.useLayoutEffect(() => {
     if (isEmpty) setStacked(false);
     else if (!stacked && multilineExpanded) setStacked(true);
@@ -104,7 +111,7 @@ export function ChatComposer({
       <ComposerSurface
         presentation={presentation}
         testID="chat-composer-box"
-        style={presentation === 'manuscript' ? styles.manuscriptComposerBox : styles.composerBox}
+        style={composerSurfaceStyle}
       >
         <View
           testID="chat-composer-content-row"
@@ -115,8 +122,11 @@ export function ChatComposer({
             style={[
               styles.composerAttachmentSlot,
               stacked && styles.composerAttachmentSlotStacked,
-              presentation === 'manuscript' && !stacked && { marginLeft: -manuscriptAttachmentOutset },
-              presentation === 'manuscript' && stacked && { left: -manuscriptAttachmentOutset },
+              ...(presentation === 'manuscript'
+                ? [stacked
+                  ? { left: -manuscriptAttachmentOutset }
+                  : { marginLeft: -manuscriptAttachmentOutset }]
+                : []),
             ]}
           >
             <AttachmentPickerButton
@@ -191,10 +201,9 @@ export function ChatComposer({
               accessibilityLabel={sendAccessibilityLabel}
               accessibilityState={{ disabled: !canSend || sending, busy: sending }}
               disabled={!canSend || sending}
-              frameStyle={[
-                styles.composerControlFrame,
-                presentation === 'manuscript' && { marginRight: -manuscriptSendOutset },
-              ]}
+              frameStyle={presentation === 'manuscript'
+                ? [styles.composerControlFrame, { marginRight: -manuscriptSendOutset }]
+                : styles.composerControlFrame}
               surfaceStyle={[styles.sendBtn, !sending && !canSend && styles.sendBtnDisabled]}
               onPress={() => {
                 if (canSend && !sending) onSend();
