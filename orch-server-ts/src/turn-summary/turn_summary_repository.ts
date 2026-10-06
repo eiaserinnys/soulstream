@@ -38,6 +38,8 @@ export interface TurnSummaryTurn {
   readonly folderId: string | null;
   readonly metadata: unknown;
   readonly turnStartEventId: number;
+  readonly inputId?: string;
+  readonly inputPurpose?: string;
   readonly finalResponseEventId: number;
   readonly userText: string;
   readonly assistantText: string;
@@ -60,6 +62,7 @@ export interface TurnSummaryRepositoryPort {
     turnStartEventId: number,
     finalResponseEventId: number,
   ): Promise<boolean>;
+  countTurnSummariesThrough(sessionId: string, eventId: number): Promise<number>;
   loadPreviousSummaries(sessionId: string, limit: number): Promise<string[]>;
   isSessionSummarizable(sessionId: string): Promise<boolean>;
   appendSummary(
@@ -180,6 +183,21 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
       ) AS exists
     `;
     return rows[0]?.exists === true;
+  }
+
+  async countTurnSummariesThrough(
+    sessionId: string,
+    eventId: number,
+  ): Promise<number> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql`
+      SELECT COUNT(*)::integer AS count
+      FROM events
+      WHERE session_id = ${sessionId}
+        AND event_type = 'turn_summary'
+        AND id <= ${eventId}
+    `;
+    return numberValue(rows[0]?.count) ?? 0;
   }
 
   async loadPreviousSummaries(
@@ -329,13 +347,23 @@ export function reconstructTurnFromEvents(
   const assistantText = stringValue(finalResponse?.payload.content)?.trim();
   if (!userText || !assistantText || finalResponse === undefined) return null;
   const speaker = resolveTurnSummarySpeaker(start.eventType, start.payload);
+  const inputId = trimmedString(start.payload.input_id);
+  const inputPurpose = stringValue(start.payload.purpose);
   return {
     turnStartEventId: start.id,
+    ...(inputId === null ? {} : { inputId }),
+    ...(inputPurpose === null ? {} : { inputPurpose }),
     finalResponseEventId: finalResponse.id,
     userText,
     assistantText,
     ...(speaker === undefined ? {} : { speaker }),
   };
+}
+
+function trimmedString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }
 
 export function summaryDedupeKey(

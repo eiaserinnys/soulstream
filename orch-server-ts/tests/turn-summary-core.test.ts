@@ -22,6 +22,8 @@ import { resolveCodexCliPath } from
 import {
   OpenAiApiTurnSummarizer,
 } from "../src/turn-summary/openai_api_turn_summarizer.js";
+import { TurnSummaryProviderRouter } from
+  "../src/turn-summary/turn_summary_provider_router.js";
 import {
   buildTurnSummaryPrompt,
   truncateCodepoints,
@@ -139,6 +141,70 @@ describe("turn summary prompt", () => {
     expect(prompt).toContain("\n5. 6\n");
     expect(prompt).toContain("[사용자 메시지]\n요청");
     expect(prompt).toContain("[에이전트 최종 응답]\n결과");
+  });
+
+  it("adds persistent instruction context and the human-only extraction rule when requested", () => {
+    const prompt = buildTurnSummaryPrompt({
+      userText: "앞으로 간결하게 답해 줘.",
+      assistantText: "알겠습니다.",
+      previousSummaries: [],
+    }, CONFIG, {
+      outputSchema: { type: "object" },
+      extractStandingInstructions: true,
+      persistentInstructions: [{ id: "instruction-1", text: "한국어로 답해 줘." }],
+    });
+
+    expect(prompt).toContain("instruction-1");
+    expect(prompt).toContain("한국어로 답해 줘.");
+    expect(prompt).toContain("앞으로 계속 적용되는 규칙이나 선호");
+    expect(prompt).toContain("에이전트 발언에서는 뽑지 않는다");
+    expect(prompt).toContain("existing_id");
+  });
+
+  it("forwards optional summarizer output options through the provider router", async () => {
+    const result = {
+      content: "요약",
+      model: "gpt-5.6-luna",
+      latencyMs: 1,
+      attempts: 1,
+    };
+    const codex = { summarize: vi.fn().mockResolvedValue(result) };
+    const router = new TurnSummaryProviderRouter({ codex });
+    const input = {
+      userText: "요청",
+      assistantText: "응답",
+      previousSummaries: [],
+    };
+    const options = { outputSchema: { type: "object" } };
+
+    await router.summarize(input, CONFIG, options);
+
+    expect(codex.summarize).toHaveBeenCalledWith(input, CONFIG, options);
+  });
+
+  it("leaves optional output options out of the OpenAI provider path", async () => {
+    const result = {
+      content: "평문 요약",
+      model: "gpt-5.4-mini-test",
+      latencyMs: 1,
+      attempts: 1,
+    };
+    const openaiApi = { summarize: vi.fn().mockResolvedValue(result) };
+    const router = new TurnSummaryProviderRouter({
+      codex: { summarize: vi.fn() },
+      openaiApi,
+    });
+    const input = {
+      userText: "요청",
+      assistantText: "응답",
+      previousSummaries: [],
+    };
+    const config = { ...CONFIG, provider: "openai-api" as const };
+    const options = { outputSchema: { type: "object" } };
+
+    await router.summarize(input, config, options);
+
+    expect(openaiApi.summarize).toHaveBeenCalledWith(input, config);
   });
 
   it.each(SPEAKER_LABEL_CASES)(
@@ -493,8 +559,10 @@ describe("Codex turn summary provider", () => {
     let schema: unknown;
     const execute = vi.fn(async (invocation) => {
       const flagIndex = invocation.args.indexOf("--output-schema");
-      const schemaPath = invocation.args[flagIndex + 1];
-      schema = JSON.parse(readFileSync(schemaPath, "utf8"));
+      if (flagIndex >= 0) {
+        const schemaPath = invocation.args[flagIndex + 1];
+        schema = JSON.parse(readFileSync(schemaPath, "utf8"));
+      }
       return {
         stdout: JSON.stringify({
           type: "item.completed",
@@ -525,6 +593,46 @@ describe("Codex turn summary provider", () => {
       required: ["narrative", "highlight"],
     });
     expect(execute.mock.calls[0]?.[0].args).toContain("--ephemeral");
+  });
+
+  it("forwards a turn summary's optional output schema through the Codex provider", async () => {
+    let schema: unknown;
+    const execute = vi.fn(async (invocation) => {
+      const flagIndex = invocation.args.indexOf("--output-schema");
+      if (flagIndex >= 0) {
+        const schemaPath = invocation.args[flagIndex + 1];
+        schema = JSON.parse(readFileSync(schemaPath, "utf8"));
+      }
+      return {
+        stdout: JSON.stringify({
+          type: "item.completed",
+          item: {
+            type: "agent_message",
+            text: JSON.stringify({ summary: "요약", standing_instructions: [] }),
+          },
+        }),
+        stderr: "",
+      };
+    });
+    const summarizer = new CodexExecTurnSummarizer({
+      codexPath: "codex",
+      processPort: { execute },
+      processEnv: { HOME: "/oauth-home" },
+    });
+    const outputSchema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["summary", "standing_instructions"],
+    };
+
+    await summarizer.summarize({
+      userText: "요청",
+      assistantText: "응답",
+      previousSummaries: [],
+    }, CONFIG, { outputSchema });
+
+    expect(schema).toEqual(outputSchema);
+    expect(execute.mock.calls[0]?.[0].args).toContain("--output-schema");
   });
 
   it("shares one spawn limiter between turn summaries and story folds", async () => {

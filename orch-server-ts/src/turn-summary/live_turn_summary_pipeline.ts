@@ -9,6 +9,11 @@ import { warnForBlockedChildProcessEnvKeys } from
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import type { RuntimeSessionEventHub } from
   "../runtime/session_event_hub.js";
+import type { SessionActionCommandDispatchOptions } from
+  "../session/session_action_command_errors.js";
+import type { NodeCommandResponse } from "../node/pending_commands.js";
+import type { PersistentInstructionsApplyPayload } from
+  "@soulstream/wire-schema/persistent-session-instructions";
 import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
@@ -41,6 +46,23 @@ export type LiveTurnSummaryProductionOverrides = {
   readonly turnSummaryPipeline?: LiveTurnSummaryPipeline;
 };
 
+export function createPersistentInstructionCommandSender(
+  commands: Pick<SessionActionCommandDispatchOptions, "router" | "bridge" | "timeoutMs">,
+): (payload: PersistentInstructionsApplyPayload) => Promise<NodeCommandResponse> {
+  return async ({ session_id, origin, ops, anchor }) => {
+    const routed = await commands.router.routeExistingSessionPendingCommand({
+      type: "apply_persistent_session_instructions",
+      agentSessionId: session_id,
+      origin,
+      ops,
+      ...(anchor === undefined ? {} : { anchor }),
+    }, {
+      timeoutMs: commands.timeoutMs,
+    });
+    return await commands.bridge.sendPendingCommand(routed);
+  };
+}
+
 export function createLiveTurnSummaryPipeline(options: {
   readonly config: OrchServerEnvironmentConfig;
   readonly configPath: string;
@@ -48,6 +70,7 @@ export function createLiveTurnSummaryPipeline(options: {
   readonly registry: InMemoryNodeRegistry;
   readonly agentProfiles?: () => readonly AgentProfileIdentityOverlay[];
   readonly eventHub: Pick<RuntimeSessionEventHub, "publish">;
+  readonly commands: Pick<SessionActionCommandDispatchOptions, "router" | "bridge" | "timeoutMs">;
   readonly sessionBroadcaster: Pick<
     InMemorySseReplayBroadcaster<SessionStreamEvent>,
     "append"
@@ -109,6 +132,7 @@ export function createLiveTurnSummaryPipeline(options: {
     configService,
     summarizer,
     eventHub: options.eventHub,
+    instructionCommandSender: createPersistentInstructionCommandSender(options.commands),
     sessionBroadcaster: options.sessionBroadcaster,
     storyFolder,
     logger: options.logger,

@@ -237,6 +237,29 @@ describe("Session command router primitive", () => {
     );
   });
 
+  it("routes persistent instruction commands by agentSessionId", async () => {
+    const { registry } = createRegistry();
+    registerNode(registry, "fake-node");
+    await createExistingSession(registry, "fake-node");
+    const router = new SessionCommandRouter({ registry });
+
+    const routed = await router.routeExistingSessionPendingCommand({
+      type: "apply_persistent_session_instructions",
+      agentSessionId: "sess-contract",
+      origin: "extracted",
+      ops: [{ op: "add", text: "항상 간결하게 답한다.", source_turns: ["T1"], source_event_ids: [10] }],
+    });
+
+    expect(routed.node.nodeId).toBe("fake-node");
+    expect(routed.command.message).toMatchObject({
+      type: "apply_persistent_session_instructions",
+      agentSessionId: "sess-contract",
+      origin: "extracted",
+      ops: [{ op: "add", text: "항상 간결하게 답한다." }],
+    });
+    expect(routed.command.message).not.toHaveProperty("session_id");
+  });
+
   it("keeps subscribe_events fire-and-forget and leaves no pending entry", async () => {
     const { registry } = createRegistry();
     registerNode(registry, "fake-node");

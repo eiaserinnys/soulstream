@@ -39,6 +39,27 @@ describe("TurnSummaryRepository", () => {
     expect(calls.flatMap((call) => call.values)).not.toContain("node-a");
   });
 
+  it("retains the input event id, input_id, and purpose for PAS processing", async () => {
+    const { repository } = repositoryWithResponses([
+      [{ folder_id: "folder-a", metadata: [] }],
+      [
+        row(10, "user_message", {
+          text: "요청",
+          input_id: "input-10",
+          purpose: "cache_keepalive",
+        }),
+        row(19, "assistant_message", { content: "응답" }),
+        row(20, "complete", {}),
+      ],
+    ]);
+
+    await expect(repository.loadTurn("session-a", 20)).resolves.toMatchObject({
+      turnStartEventId: 10,
+      inputId: "input-10",
+      inputPurpose: "cache_keepalive",
+    });
+  });
+
   it("joins a completion notification child session and resolves its agent name", async () => {
     const { repository, calls } = repositoryWithResponses([
       [{
@@ -236,6 +257,18 @@ describe("TurnSummaryRepository", () => {
         event: { type: "system", text: "later", _event_id: 22 },
       },
     ]);
+  });
+
+  it("counts turn summaries through the persisted event id", async () => {
+    const { repository, calls } = repositoryWithResponses([[{ count: 5 }]]);
+
+    await expect(repository.countTurnSummariesThrough("session-a", 22))
+      .resolves.toBe(5);
+
+    expect(calls[0]?.text).toContain("event_type = 'turn_summary'");
+    expect(calls[0]?.text).toContain("id <= ?");
+    expect(calls[0]?.values).toContain("session-a");
+    expect(calls[0]?.values).toContain(22);
   });
 
   it.each([

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { parsePersistentInstructionsApplyPayload } from
+  "@soulstream/wire-schema/persistent-session-instructions";
 
 import type { NodeRegistryEvent } from "../src/node/registry.js";
 import { RuntimeSessionEventHub } from "../src/runtime/session_event_hub.js";
@@ -80,6 +82,27 @@ describe("turn summary policy", () => {
       folderId: CONFIG.excludedFolderIds[0] ?? null,
       excludedFolderIds: CONFIG.excludedFolderIds,
       startEvidence: { kind: "user_message", evidenceState: "complete" },
+    })).toEqual({ include: false, reason: "agent_origin" });
+  });
+
+  it("allows agent-origin persistent sessions while keeping ordinary sessions excluded", () => {
+    const common = {
+      folderId: "allowed-folder",
+      excludedFolderIds: CONFIG.excludedFolderIds,
+      startEvidence: { kind: "user_message" as const, evidenceState: "complete" as const },
+    };
+    const agentMetadata = [
+      { type: "caller_info", value: { source: "agent" } },
+      { type: "persistent_session", value: { enabled: true } },
+    ];
+
+    expect(resolveTurnSummaryEligibility({
+      ...common,
+      metadata: agentMetadata,
+    })).toEqual({ include: true, reason: "user_input" });
+    expect(resolveTurnSummaryEligibility({
+      ...common,
+      metadata: [{ type: "caller_info", value: { source: "agent" } }],
     })).toEqual({ include: false, reason: "agent_origin" });
   });
 
@@ -341,6 +364,308 @@ describe("TurnSummaryPipeline", () => {
     );
     expect(appendSessionUpdate).not.toHaveBeenCalled();
     expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
+  });
+
+  it("skips cache keepalive inputs before summary generation", async () => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockImplementation(async (sessionId, completeEventId) => ({
+      sessionId,
+      folderId: "allowed-folder",
+      metadata: [{ type: "persistent_session", value: { enabled: true } }],
+      turnStartEventId: completeEventId - 10,
+      finalResponseEventId: completeEventId - 1,
+      userText: "keepalive",
+      assistantText: "응답",
+      inputPurpose: "cache_keepalive",
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
+    }));
+    const summarizer = { summarize: vi.fn() } satisfies TurnSummarizer;
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer,
+      eventHub: new RuntimeSessionEventHub(),
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(summarizer.summarize).not.toHaveBeenCalled();
+    expect(repository.appendSummary).not.toHaveBeenCalled();
+  });
+
+  it("summarizes PAS agent-origin turns but discards their extracted instructions", async () => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "session-a",
+      folderId: "allowed-folder",
+      metadata: [
+        { type: "caller_info", value: { source: "agent" } },
+        { type: "persistent_session", value: { enabled: true } },
+      ],
+      turnStartEventId: 10,
+      finalResponseEventId: 19,
+      userText: "위임 보고",
+      assistantText: "작업 결과",
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
+      speaker: { kind: "agent", agentName: "로젤린" },
+    });
+    const summarize = vi.fn().mockResolvedValue({
+      content: JSON.stringify({
+        summary: "위임 결과 요약",
+        standing_instructions: [{ text: "항상 짧게 답하라", confidence: 0.99 }],
+      }),
+      model: "gpt-5.6-luna",
+      latencyMs: 1,
+      attempts: 1,
+    });
+    const instructionCommandSender = vi.fn();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: { summarize },
+      eventHub: new RuntimeSessionEventHub(),
+      instructionCommandSender,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(summarize).toHaveBeenCalledWith(
+      expect.objectContaining({ userText: "위임 보고" }),
+      CONFIG,
+      expect.objectContaining({
+        outputSchema: expect.objectContaining({ type: "object" }),
+        extractStandingInstructions: false,
+      }),
+    );
+    expect(repository.appendSummary).toHaveBeenCalledWith(
+      "session-a",
+      expect.objectContaining({ content: "위임 결과 요약" }),
+      "turn_summary:10:19",
+    );
+    expect(instructionCommandSender).not.toHaveBeenCalled();
+  });
+
+  it("extracts human PAS instructions using the persisted turn number and H1 command shape", async () => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "session-a",
+      folderId: "allowed-folder",
+      metadata: [
+        { type: "caller_info", value: { source: "browser" } },
+        { type: "persistent_session", value: { enabled: true } },
+        {
+          type: "persistent_instructions",
+          value: [{
+            id: "instruction-existing",
+            text: "앞으로 설명은 간결하게 써 줘.",
+            source_turns: ["T1"],
+            source_event_ids: [3],
+            created_at: "2026-10-01T00:00:00.000Z",
+            updated_at: "2026-10-01T00:00:00.000Z",
+            status: "active",
+            origin: "user",
+          }],
+        },
+      ],
+      turnStartEventId: 10,
+      inputId: "input-10",
+      finalResponseEventId: 19,
+      userText: "앞으로 설명은 간결하게 써 줘.",
+      assistantText: "알겠습니다.",
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
+      speaker: {
+        kind: "user",
+        displayName: "사용자",
+        source: "browser",
+      },
+    });
+    repository.countTurnSummariesThrough.mockResolvedValue(5);
+    const summarize = vi.fn().mockResolvedValue({
+      content: JSON.stringify({
+        summary: "간결한 설명 선호를 확인했다.",
+        standing_instructions: [
+          {
+            text: "앞으로 설명은 간결하게 써 줘.",
+            confidence: 0.92,
+            existing_id: "instruction-existing",
+          },
+          { text: "앞으로 응답은 한국어로 해 줘.", confidence: 0.7 },
+          { text: "낮은 신뢰도 항목", confidence: 0.69 },
+        ],
+      }),
+      model: "gpt-5.6-luna",
+      latencyMs: 1,
+      attempts: 1,
+    });
+    const instructionCommandSender = vi.fn().mockResolvedValue({
+      type: "persistent_session_instructions_applied",
+    });
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: { summarize },
+      eventHub: new RuntimeSessionEventHub(),
+      instructionCommandSender,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(repository.countTurnSummariesThrough).toHaveBeenCalledWith(
+      "session-a",
+      22,
+    );
+    expect(repository.appendSummary).toHaveBeenCalledWith(
+      "session-a",
+      expect.objectContaining({ content: "간결한 설명 선호를 확인했다." }),
+      "turn_summary:10:19",
+    );
+    expect(summarize).toHaveBeenCalledWith(
+      expect.objectContaining({ userText: "앞으로 설명은 간결하게 써 줘." }),
+      CONFIG,
+      expect.objectContaining({
+        persistentInstructions: [{
+          id: "instruction-existing",
+          text: "앞으로 설명은 간결하게 써 줘.",
+        }],
+        extractStandingInstructions: true,
+        outputSchema: expect.objectContaining({ type: "object" }),
+      }),
+    );
+    const command = instructionCommandSender.mock.calls[0]?.[0];
+    expect(parsePersistentInstructionsApplyPayload(command)).toMatchObject({
+      ok: true,
+      value: {
+        session_id: "session-a",
+        origin: "extracted",
+        anchor: "input-10",
+        ops: [
+          {
+            op: "touch",
+            id: "instruction-existing",
+            source_turns: ["T5"],
+            source_event_ids: [10],
+          },
+          {
+            op: "add",
+            text: "앞으로 응답은 한국어로 해 줘.",
+            source_turns: ["T5"],
+            source_event_ids: [10],
+          },
+        ],
+      },
+    });
+  });
+
+  it("uses the raw PAS response as the summary when structured parsing fails", async () => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "session-a",
+      folderId: "allowed-folder",
+      metadata: [
+        { type: "caller_info", value: { source: "browser" } },
+        { type: "persistent_session", value: { enabled: true } },
+      ],
+      turnStartEventId: 10,
+      finalResponseEventId: 19,
+      userText: "앞으로 간결하게 답해 줘.",
+      assistantText: "알겠습니다.",
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
+      speaker: { kind: "user", displayName: "사용자", source: "browser" },
+    });
+    const rawResponse = "모델이 JSON이 아닌 응답을 반환했다.";
+    const instructionCommandSender = vi.fn();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: {
+        summarize: vi.fn().mockResolvedValue({
+          content: rawResponse,
+          model: "gpt-5.6-luna",
+          latencyMs: 1,
+          attempts: 1,
+        }),
+      },
+      eventHub: new RuntimeSessionEventHub(),
+      instructionCommandSender,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(repository.appendSummary).toHaveBeenCalledWith(
+      "session-a",
+      expect.objectContaining({ content: rawResponse }),
+      "turn_summary:10:19",
+    );
+    expect(repository.countTurnSummariesThrough).not.toHaveBeenCalled();
+    expect(instructionCommandSender).not.toHaveBeenCalled();
+  });
+
+  it("omits the H1 anchor when the input event has no input_id", async () => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "session-a",
+      folderId: "allowed-folder",
+      metadata: [
+        { type: "caller_info", value: { source: "soul-app" } },
+        { type: "persistent_session", value: { enabled: true } },
+      ],
+      turnStartEventId: 10,
+      finalResponseEventId: 19,
+      userText: "앞으로 간결하게 답해 줘.",
+      assistantText: "알겠습니다.",
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
+      speaker: { kind: "user", displayName: "사용자", source: "soul-app" },
+    });
+    repository.countTurnSummariesThrough.mockResolvedValue(5);
+    const instructionCommandSender = vi.fn();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: {
+        summarize: vi.fn().mockResolvedValue({
+          content: JSON.stringify({
+            summary: "선호를 기록했다.",
+            standing_instructions: [{ text: "간결하게 답해 줘.", confidence: 0.9 }],
+          }),
+          model: "gpt-5.6-luna",
+          latencyMs: 1,
+          attempts: 1,
+        }),
+      },
+      eventHub: new RuntimeSessionEventHub(),
+      instructionCommandSender,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(instructionCommandSender).toHaveBeenCalledWith(
+      expect.not.objectContaining({ anchor: expect.anything() }),
+    );
   });
 
   it("reduces the measured 15-turn fixture to nine complete store-and-fold paths", async () => {
@@ -743,6 +1068,7 @@ function fakeRepository() {
     ),
     hasSummary: vi.fn().mockResolvedValue(false),
     loadPreviousSummaries: vi.fn().mockResolvedValue(["직전 요약"]),
+    countTurnSummariesThrough: vi.fn().mockResolvedValue(1),
     isSessionSummarizable: vi.fn().mockResolvedValue(true),
     appendSummary: vi.fn().mockResolvedValue({ inserted: true, eventId: 22 }),
     loadGapEvents: vi.fn().mockResolvedValue([{

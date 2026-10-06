@@ -3,6 +3,7 @@ import type { TurnSummaryConfig } from "./turn_summary_config.js";
 import type {
   TurnSummarizer,
   TurnSummaryInput,
+  TurnSummaryOptions,
   TurnSummaryResult,
 } from "./turn_summarizer.js";
 
@@ -22,9 +23,10 @@ export class TurnSummaryProviderRouter implements TurnSummarizer {
   async summarize(
     input: TurnSummaryInput,
     config: TurnSummaryConfig,
+    options?: TurnSummaryOptions,
   ): Promise<TurnSummaryResult> {
     if (config.provider === "codex") {
-      return await this.providers.codex.summarize(input, config);
+      return await this.providers.codex.summarize(input, config, options);
     }
     if (this.providers.openaiApi === undefined) {
       throw new TurnSummaryProviderUnavailableError("openai-api");
