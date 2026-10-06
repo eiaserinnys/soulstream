@@ -76,7 +76,10 @@ describe("ScheduleDispatcher", () => {
       consumeClaimedSchedule: schedule,
       confirmScheduleStillFiring: schedule,
     });
-    const taskManager = { addIntervention: vi.fn(async () => ({ autoResumed: true })) };
+    const taskManager = {
+      getTask: vi.fn(() => ({ status: "completed", interventionQueue: [] })),
+      addIntervention: vi.fn(async () => ({ autoResumed: true })),
+    };
     const dispatcher = new ScheduleDispatcher(
       { nodeId: "owner-node" },
       service as never,
@@ -88,9 +91,75 @@ describe("ScheduleDispatcher", () => {
     await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
 
     expect(taskManager.addIntervention).toHaveBeenCalledWith(
-      expect.objectContaining({ purpose: "cache_keepalive" }),
+      expect.objectContaining({
+        purpose: "cache_keepalive",
+        text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      }),
       expect.any(Function),
     );
+  });
+
+  it.each([
+    ["running", { status: "running", interventionQueue: [] }],
+    ["queued input", { status: "completed", interventionQueue: [{ text: "human input", user: "u" }] }],
+  ])("finishes a cache keepalive without dispatch when the session has %s", async (_label, task) => {
+    const schedule = makeSchedule({
+      sourceTool: "persistent_cache_keepalive",
+      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+    });
+    const now = new Date("2026-01-01T00:00:00Z");
+    const service = makeService({
+      claimDueSchedules: [{ schedule, claimToken: "claim-keepalive" }],
+      consumeClaimedSchedule: schedule,
+      confirmScheduleStillFiring: schedule,
+    });
+    const taskManager = {
+      getTask: vi.fn(() => task),
+      addIntervention: vi.fn(async () => ({ autoResumed: true })),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      { nodeId: "owner-node" },
+      service as never,
+      taskManager as never,
+      vi.fn(),
+      logger,
+    );
+
+    await dispatcher.runOnce(now);
+
+    expect(taskManager.getTask).toHaveBeenCalledWith(schedule.sessionId);
+    expect(taskManager.addIntervention).not.toHaveBeenCalled();
+    expect(service.finishDispatch).toHaveBeenCalledWith(schedule, "claim-keepalive", now);
+    expect(service.deferDispatch).not.toHaveBeenCalled();
+  });
+
+  it("finishes a keepalive if the session starts running after the idle check", async () => {
+    const schedule = makeSchedule({
+      sourceTool: "persistent_cache_keepalive",
+      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+    });
+    const now = new Date("2026-01-01T00:00:00Z");
+    const service = makeService({
+      claimDueSchedules: [{ schedule, claimToken: "claim-keepalive" }],
+      consumeClaimedSchedule: schedule,
+      confirmScheduleStillFiring: schedule,
+    });
+    const taskManager = {
+      getTask: vi.fn(() => ({ status: "completed", interventionQueue: [] })),
+      addIntervention: vi.fn(async () => ({ deferred: true })),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      { nodeId: "owner-node" },
+      service as never,
+      taskManager as never,
+      vi.fn(),
+      logger,
+    );
+
+    await dispatcher.runOnce(now);
+
+    expect(service.finishDispatch).toHaveBeenCalledWith(schedule, "claim-keepalive", now);
+    expect(service.deferDispatch).not.toHaveBeenCalled();
   });
 
   it("rechecks the store after claim so delete/cancel wins the race before speech", async () => {

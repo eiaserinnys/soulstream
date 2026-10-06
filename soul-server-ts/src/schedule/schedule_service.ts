@@ -4,6 +4,10 @@ import type { Logger } from "pino";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ScheduleToolUseHandler } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import {
+  CACHE_KEEPALIVE_SOURCE_TOOL,
+  isCacheKeepaliveSchedule,
+} from "../task/persistent_keepalive_marker.js";
 
 import { nextCronRunAt } from "./cron.js";
 import {
@@ -24,7 +28,6 @@ const SCHEDULE_TOOL_NAMES = new Set([
   "CronList",
   "CronDelete",
 ]);
-export const CACHE_KEEPALIVE_SOURCE_TOOL = "persistent_cache_keepalive";
 export const CACHE_KEEPALIVE_PROMPT = "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.";
 
 export class SoulstreamScheduleService {
@@ -209,7 +212,7 @@ export class SoulstreamScheduleService {
         schedule.status === "active"
         && schedule.kind === "wakeup"
         && !schedule.recurring
-        && schedule.sourceTool === CACHE_KEEPALIVE_SOURCE_TOOL
+        && isCacheKeepaliveSchedule(schedule)
       ) {
         await this.deleteSchedule(sessionId, schedule.scheduleId);
       }
