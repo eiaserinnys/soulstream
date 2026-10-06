@@ -44,3 +44,17 @@ test('compact width opens the index, then returns from a detail without closing'
   fireEvent.press(screen.getByLabelText('모든 설정으로 돌아가기'));
   expect(screen.getByTestId('settings-phone-index')).toBeTruthy(); expect(onClose).not.toHaveBeenCalled();
 });
+
+test('the open-on-start switch writes an account and server local preference immediately', () => {
+  const payload = Buffer.from(JSON.stringify({ email: 'review@example.com', sub: 'review@example.com', exp: 2_000_000_000 })).toString('base64url');
+  useAuthStore.setState({ jwt: `header.${payload}.signature` });
+  useSettingsStore.setState({ serverUrl: 'https://soul.test', persistentSessionDevicePrefs: {} } as never);
+  const screen = render(<SettingsModal visible onClose={jest.fn()}/>);
+  fireEvent.press(screen.getByTestId('settings-category-display'));
+  const toggle = screen.getByTestId('settings-persistent-session-open-on-start');
+  expect(toggle.props.value).toBe(false);
+  fireEvent(toggle, 'valueChange', true);
+
+  expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://soul.test', 'review@example.com'))
+    .toEqual({ openOnStart: true, lastSessionId: null });
+});

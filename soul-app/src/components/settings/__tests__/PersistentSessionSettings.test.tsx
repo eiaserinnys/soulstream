@@ -144,6 +144,29 @@ test('saves only the changed chat display setting alongside other edits', async 
   }));
 });
 
+test('defaults the new display settings on and keeps explicit false values in the saved patch', async () => {
+  const screen = await openList();
+  await openEditor(screen);
+  await waitFor(() => expect(screen.getByTestId('persistent-animate-character')).toBeTruthy());
+  expect(screen.getByTestId('persistent-show-character').props.value).toBe(true);
+  expect(screen.getByTestId('persistent-animate-character').props.value).toBe(true);
+  expect(screen.getByTestId('persistent-show-turn-usage').props.value).toBe(true);
+
+  fireEvent(screen.getByTestId('persistent-show-character'), 'valueChange', false);
+  fireEvent(screen.getByTestId('persistent-animate-character'), 'valueChange', false);
+  fireEvent(screen.getByTestId('persistent-show-turn-usage'), 'valueChange', false);
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
+    display_name: '관제 세션',
+    settings: {
+      default_model: { model_preset: 'model-a', reasoning_effort: null },
+      show_character: false,
+      animate_character: false,
+      show_turn_usage: false,
+    },
+  }));
+});
+
 test('saves both chat display toggles and applies the response to the matching open chat', async () => {
   api.updatePersistentSession.mockImplementation(async (_id: string, input: any) => ({
     session: resource({ settings: { ...resource().settings, ...input.settings } }), model_change: 'none',
@@ -161,7 +184,11 @@ test('saves both chat display toggles and applies the response to the matching o
     settings: expect.objectContaining({ show_generation_separator: true, show_jev_candidates: true }),
   })));
   await waitFor(() => expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
-    show_generation_separator: true, show_jev_candidates: true,
+    show_generation_separator: true,
+    show_jev_candidates: true,
+    show_character: true,
+    animate_character: true,
+    show_turn_usage: true,
   }));
 });
 
@@ -190,6 +217,9 @@ test('locks both display toggles while the first save is pending', async () => {
   expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
     show_generation_separator: true,
     show_jev_candidates: true,
+    show_character: true,
+    animate_character: true,
+    show_turn_usage: true,
   });
 });
 

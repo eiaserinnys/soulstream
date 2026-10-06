@@ -21,7 +21,7 @@ const state = () => new URLSearchParams(window.location.search).get('state');
 // The store keeps every session the way the server does: GET answers for released and plain sessions too, the list shows persistent ones only.
 type PasInit = { id: string; name: string; agentId: string; preset: string; effort?: string | null; current?: string; currentEffort?: string | null; pending?: { preset: string; effort: string | null } | null; folderId?: string; persistent?: boolean };
 const pasAgentNames: Record<string, string> = { 'public-agent': '공개 예시 에이전트', 'public-other-agent': '다른 예시 에이전트' };
-const pasSettings = (preset: string, effort: string | null) => ({ default_model: { model_preset: preset, reasoning_effort: effort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true });
+const pasSettings = (preset: string, effort: string | null) => ({ default_model: { model_preset: preset, reasoning_effort: effort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, show_turn_usage: true });
 const pasSession = (init: PasInit): PersistentSessionResource => ({
   session_id: init.id, display_name: init.name, node_id: 'public-node', folder_id: init.folderId ?? 'public-project', agent_id: init.agentId, agent_name: pasAgentNames[init.agentId] ?? init.agentId,
   persistent: init.persistent ?? true, settings: pasSettings(init.preset, init.effort ?? null),
@@ -29,7 +29,7 @@ const pasSession = (init: PasInit): PersistentSessionResource => ({
     pending: init.pending ? { target_model_preset: init.pending.preset, target_reasoning_effort: init.pending.effort } : null },
 });
 const pasStore = new Map<string, PersistentSessionResource>([
-  pasSession({ id: 'review-pas-1', name: '공개 예시 관제 세션', agentId: 'public-agent', preset: 'public-model' }),
+  pasSession({ id: 'review-pas-1', name: '공개 예시 관제 세션', agentId: 'public-agent', preset: 'public-model', current: 'public-exhausted-model', pending: { preset: 'public-model', effort: null } }),
   pasSession({ id: 'review-pas-2', name: '공개 예시 두 번째 영구 세션', agentId: 'public-other-agent', preset: 'public-model', current: 'public-exhausted-model', pending: { preset: 'public-model', effort: null } }),
   pasSession({ id: 'review-pas-3', name: '공개 예시 세 번째 영구 세션 이름이 길어지면 줄바꿈되거나 말줄임으로 끊깁니다', agentId: 'public-agent', preset: 'public-exhausted-model', current: 'public-model' }),
 ].map(item => [item.session_id, item]));
@@ -53,6 +53,7 @@ const persistentSessionFixtures = {
     return { session: requirePas(id) };
   },
   updatePersistentSession: async (id: string, input: PersistentSessionWrite) => {
+    if (state() === 'pas-save-loading') return new Promise<never>(() => {});
     if (state() === 'persistent-save-error') throw pasFailure(503, 'NODE_COMMAND_TIMEOUT', '노드가 응답하지 않았습니다.');
     const base = requirePas(id);
     const enabled = 'enabled' in input ? input.enabled : undefined;
@@ -89,7 +90,27 @@ const persistentSessionFixtures = {
   },
 };
 export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFixtures,
-  listModelPresets: async (nodeId: string) => { if (state() === 'persistent-targets-error') throw new Error('공개 예시 오류'); return dialogueApi.listModelPresets(nodeId); },
+  listModelPresets: async (nodeId: string) => {
+    if (state() === 'persistent-targets-error') throw new Error('공개 예시 오류');
+    return dialogueApi.listModelPresets(nodeId);
+  },
+  getTimeline: async (_sessionId: string, params?: { eventTypes?: string[]; before?: string }) => {
+    if (state() === 'pas-monitor-loading') return new Promise<never>(() => {});
+    if (state() === 'pas-monitor-error') throw new Error('공개 예시 기록 조회 실패');
+    if (state() === 'pas-monitor-empty') return { messages: [], next_cursor: null };
+    const latestGeneration = { id: 118, parent_event_id: null, event_type: 'generation_started', payload: { generation: 7 }, created_at: '2026-10-06T01:12:00Z' };
+    if (params?.eventTypes?.length === 1 && params.eventTypes[0] === 'generation_started') return { messages: [latestGeneration], next_cursor: null };
+    if (params?.before === 'public-older') return { messages: [
+      { id: 117, parent_event_id: null, event_type: 'complete', payload: { usage: { input_tokens: 842, output_tokens: 126 }, turn_cost_usd: 0.02 }, created_at: '2026-10-05T22:46:00Z' },
+      { id: 116, parent_event_id: null, event_type: 'context_usage', payload: { used_tokens: 842, max_tokens: 100000, percent: 0.8 }, created_at: '2026-10-05T22:45:00Z' },
+      { id: 115, parent_event_id: null, event_type: 'generation_started', payload: { generation: 6 }, created_at: '2026-10-05T22:44:00Z' },
+    ], next_cursor: null };
+    return { messages: [
+      { id: 120, parent_event_id: null, event_type: 'complete', payload: { usage: { input_tokens: 12540, output_tokens: 912 }, turn_cost_usd: 0.18 }, created_at: '2026-10-06T01:18:00Z' },
+      { id: 119, parent_event_id: null, event_type: 'context_usage', payload: { used_tokens: 35200, max_tokens: 200000, percent: 17.6 }, created_at: '2026-10-06T01:17:00Z' },
+      latestGeneration,
+    ], next_cursor: 'public-older' };
+  },
   getAuthStatus: async () => ({ authenticated: true, user: { isAdmin: true } }),
   listNodes: async () => { if (state() === 'nodes-error') throw new Error('공개 예시 오류'); return { nodes: Array.from({ length: 8 }, (_, index) => ({ nodeId: index === 0 ? 'public-node' : `public-node-${index}` })) }; },
   getProviderUsage: async () => { if (state() === 'usage-error') throw new Error('공개 예시 오류'); return usage; },

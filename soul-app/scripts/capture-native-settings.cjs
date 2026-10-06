@@ -52,7 +52,7 @@ async function main() {
       await page.getByTestId('review-card-rows').waitFor();
       await page.evaluate(() => document.fonts.ready);
       await page.getByTestId('review-card-rows').screenshot({ path: path.join(output, `${phase}-unchanged-rows-${viewport.width}.png`) });
-      for (const entry of ['modal', 'tab', 'first']) {
+      for (const entry of ['modal', 'first']) {
         await page.goto(`${base}${prefix}index.html?section=nativeSettings&entry=${entry}`);
         await page.getByTestId('settings-modal-header').waitFor();
         await page.evaluate(() => document.fonts.ready);
@@ -137,7 +137,7 @@ async function main() {
         }
       }
       for (const state of ['photo-fallback', 'nodes-error', 'usage-error', 'empty']) {
-        await page.goto(`${base}${prefix}index.html?section=nativeSettings&entry=tab&state=${state}`);
+        await page.goto(`${base}${prefix}index.html?section=nativeSettings&entry=modal&state=${state}`);
         const category = state === 'photo-fallback' ? 'display' : state === 'empty' ? 'recurring-jobs' : 'backends';
         await page.getByTestId(`settings-category-${category}`).click();
         if (state === 'photo-fallback') {
@@ -153,6 +153,88 @@ async function main() {
         if (state === 'empty') await page.getByText('등록된 반복 작업이 없습니다.', { exact: true }).waitFor();
         await page.screenshot({ path: path.join(output, `${phase}-state-${state}-${viewport.width}.png`) });
         result.interactions.push({ viewport: viewport.width, check: `actual component ${state}` });
+      }
+
+      for (const theme of ['light', 'dark']) {
+        const capture = (name) => page.screenshot({ path: path.join(output, `${phase}-${name}-${theme}-${viewport.width}.png`) });
+        await page.goto(`${base}${prefix}index.html?section=nativeSettings&entry=modal&safeArea=fixture&theme=${theme}`);
+        await page.getByTestId('settings-modal-header').waitFor();
+        await page.getByTestId('settings-category-display').click();
+        await page.getByTestId('settings-persistent-session-open-on-start').waitFor();
+        await capture('settings-open-on-start');
+        result.interactions.push({ theme, viewport: viewport.width, check: 'account-scoped device preference displayed in full settings' });
+
+        await page.goto(`${base}${prefix}index.html?section=nativeSettings&entry=modal&safeArea=fixture&theme=${theme}`);
+        await page.getByTestId('settings-category-persistent').click();
+        await page.getByTestId('persistent-session-review-pas-1').click();
+        await page.getByTestId('persistent-session-editor').waitFor();
+        await page.getByTestId('persistent-animate-character').waitFor();
+        await capture('ordinary-persistent-editor');
+
+        const pasUrl = (stateName = '') => `${base}${prefix}index.html?section=pasSettings&safeArea=fixture&theme=${theme}${stateName ? `&state=${stateName}` : ''}`;
+        await page.goto(pasUrl());
+        await page.getByTestId('persistent-session-pas-settings-modal').waitFor();
+        await page.getByTestId('persistent-pas-settings-save').waitFor();
+        await page.waitForTimeout(400);
+        const safeArea = await page.getByTestId('persistent-session-pas-settings-safe-area').evaluate((el) => {
+          const style = getComputedStyle(el);
+          return { top: Number.parseFloat(style.paddingTop), bottom: Number.parseFloat(style.paddingBottom) };
+        });
+        assert.ok(safeArea.top > 0 && safeArea.bottom > 0, `비영 안전 영역 누락: ${JSON.stringify(safeArea)}`);
+        const geometry = await page.getByTestId('persistent-session-pas-settings-modal').evaluate((root) => {
+          const rect = (element) => {
+            const bounds = element.getBoundingClientRect();
+            return { x: bounds.x, y: bounds.y, right: bounds.right, bottom: bounds.bottom, width: bounds.width, height: bounds.height };
+          };
+          const section = root.querySelector('[data-testid="settings-section-persistent-editor-groups"]');
+          const sectionSurface = section?.lastElementChild;
+          return {
+            header: rect(root.children[0]),
+            selector: rect(root.children[1]),
+            body: rect(root.children[2]),
+            section: section ? rect(section) : null,
+            sectionSurface: sectionSurface ? rect(sectionSurface) : null,
+            selectedTab: rect(root.querySelector('[data-testid="settings-segment-pas-settings-account-model"]')),
+          };
+        });
+        await capture('pas-account-model');
+
+        await page.getByTestId('settings-segment-pas-settings-display').click();
+        await page.getByTestId('persistent-show-character').waitFor();
+        await capture('pas-display');
+        await page.getByTestId('settings-segment-pas-settings-history').click();
+        await page.getByText('세대 7', { exact: true }).first().waitFor();
+        await capture('pas-records-values');
+        await page.getByTestId('persistent-session-pas-close').click();
+        await page.getByTestId('persistent-session-pas-settings-modal').waitFor({ state: 'hidden' });
+        result.interactions.push({ theme, viewport: viewport.width, check: 'PAS settings close returns to review surface' });
+
+        for (const monitorState of ['pas-monitor-empty', 'pas-monitor-loading', 'pas-monitor-error']) {
+          await page.goto(pasUrl(monitorState));
+          await page.getByTestId('settings-segment-pas-settings-history').waitFor();
+          await page.getByTestId('settings-segment-pas-settings-history').click();
+          const stateText = monitorState === 'pas-monitor-empty' ? '세대 기록 없음' : monitorState === 'pas-monitor-loading' ? '불러오는 중' : '조회 실패';
+          await page.getByText(stateText, { exact: true }).first().waitFor();
+          await page.waitForTimeout(400);
+          await capture(`pas-records-${monitorState}`);
+        }
+
+        for (const saveState of ['pas-save-loading', 'persistent-save-error']) {
+          await page.goto(pasUrl(saveState));
+          await page.getByTestId('persistent-session-pas-settings-modal').waitFor();
+          await page.getByTestId('persistent-session-pas-editor').waitFor();
+          await page.getByTestId('settings-segment-pas-settings-account-model').click();
+          await page.getByLabel('세션 이름', { exact: true }).fill('공개 예시 저장 상태');
+          await page.getByTestId('persistent-pas-settings-save').click();
+          const stateText = saveState === 'pas-save-loading' ? '저장 중' : '노드가 제때 응답하지 않았습니다.';
+          if (saveState === 'pas-save-loading') await page.getByLabel(stateText, { exact: true }).waitFor();
+          else await page.getByText(stateText, { exact: false }).first().waitFor();
+          await page.waitForTimeout(400);
+          await page.getByTestId('persistent-session-pas-settings-scroll').evaluate(el => { el.scrollTop = 0; });
+          await capture(`pas-account-${saveState}`);
+        }
+
+        result.viewports.push({ theme, viewport: viewport.width, safeArea, geometry });
       }
       await context.close();
     }
