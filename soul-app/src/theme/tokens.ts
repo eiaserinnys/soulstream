@@ -13,11 +13,14 @@ import { useSettingsStore, type Appearance as UserAppearance } from '../store/se
 import {
   DARK_COLORS,
   LIGHT_COLORS,
+  DARK_PERSISTENT_SESSION_COLORS,
+  LIGHT_PERSISTENT_SESSION_COLORS,
   type ColorScheme,
+  type PersistentSessionColors,
 } from './colors';
 
 export { DARK_COLORS, LIGHT_COLORS } from './colors';
-export type { ColorScheme } from './colors';
+export type { ColorScheme, PersistentSessionColors } from './colors';
 
 /**
  * 단일 역할 스케일 × 두 컬러 모드(dark/light)의 디자인 토큰.
@@ -128,6 +131,7 @@ export interface DesignTokens {
   // 메시지 본문과 좌측 정렬 맞추기 위한 들여쓰기 양으로 사용.
   assistantBubbleIndent: number;
   colors: ColorScheme;
+  persistentSession: PersistentSessionColors;
   // 현재 모드 — 동적 색상 분기에 사용 (예: NavigationContainer.theme).
   mode: 'light' | 'dark';
 }
@@ -404,6 +408,7 @@ export function useTokens(): DesignTokens {
   return {
     ...base,
     colors: mode === 'light' ? LIGHT_COLORS : DARK_COLORS,
+    persistentSession: mode === 'light' ? LIGHT_PERSISTENT_SESSION_COLORS : DARK_PERSISTENT_SESSION_COLORS,
     mode,
   };
 }

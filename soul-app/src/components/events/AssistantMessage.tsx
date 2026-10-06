@@ -30,6 +30,7 @@ interface Props {
   session?: Pick<Session, 'agentName' | 'agentPortraitUrl' | 'displayName'>;
   selectionModel?: MessageSelectionModel | null;
   onSelectionDone?: () => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 let loggedStreamingPlainTextFallback = false;
@@ -59,11 +60,12 @@ export function AssistantMessage({
   children,
   selectionModel,
   onSelectionDone,
+  presentation = 'default',
 }: Props) {
   const t = useTokens();
   const { styles, markdownStyle, markdownInputStyle } = useMemo(
-    () => makeStyles(t),
-    [t],
+    () => makeStyles(t, presentation),
+    [t, presentation],
   );
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
@@ -106,8 +108,10 @@ export function AssistantMessage({
   );
 
   return (
-    <View style={children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
-      {avatarUri ? (
+    <View style={presentation === 'manuscript'
+      ? styles.manuscriptRow
+      : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
+      {presentation === 'manuscript' ? null : avatarUri ? (
         <Image
           source={{
             uri: avatarUri,
@@ -122,7 +126,9 @@ export function AssistantMessage({
           <Text style={styles.avatarFallbackText}>{fallbackChar}</Text>
         </View>
       )}
-      <View testID="assistant-message-bubble" style={bubbleWidth === 'fill' ? [styles.bubble, { flexGrow: 1 }] : styles.bubble}>
+      <View testID="assistant-message-bubble" style={presentation === 'manuscript'
+        ? styles.manuscriptBubble
+        : bubbleWidth === 'fill' ? [styles.bubble, { flexGrow: 1 }] : styles.bubble}>
         {/*
           react-native-enriched-markdown — Software Mansion 제작 Fabric 네이티브 마크다운 렌더러.
           외부 링크는 SFSafariViewController(expo-web-browser.openBrowserAsync)로 통일.
@@ -136,6 +142,7 @@ export function AssistantMessage({
             variant="assistant"
             textStyle={styles.streamingText}
             markdownStyle={markdownInputStyle}
+            {...(presentation === 'manuscript' ? { actionColor: t.colors.textPrimary } : {})}
           />
         ) : renderAsPlainStreamingText ? (
           <Text
@@ -160,11 +167,12 @@ export function AssistantMessage({
   );
 }
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
   const AVATAR = t.avatarSize.message;
   const c = t.colors;
   const roles = createSurfaceRoles(t);
   const sessionRoles = createSessionVisualRoles(t);
+  const baseMarkdownStyle = createAssistantMarkdownStyle(t);
   return {
     styles: StyleSheet.create({
       row: {
@@ -173,6 +181,10 @@ function makeStyles(t: DesignTokens) {
         marginVertical: sessionRoles.chat.messageGap / 2,
         marginHorizontal: t.spacing.md,
         gap: t.spacing.sm,
+      },
+      manuscriptRow: {
+        alignSelf: 'stretch',
+        marginVertical: sessionRoles.chat.messageGap / 2,
       },
       avatar: {
         width: AVATAR,
@@ -206,10 +218,20 @@ function makeStyles(t: DesignTokens) {
       streamingText: {
         color: c.textPrimary,
         fontSize: t.chatFontSize.body,
-        lineHeight: t.chatFontSize.body * t.lineHeightRatio,
+        lineHeight: t.chatFontSize.body * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio),
+      },
+      manuscriptBubble: {
+        flexShrink: 1,
+        alignSelf: 'stretch',
       },
     }),
-    markdownStyle: createAssistantMarkdownStyle(t),
+    markdownStyle: presentation === 'manuscript'
+      ? {
+          ...baseMarkdownStyle,
+          paragraph: { ...baseMarkdownStyle.paragraph, lineHeight: t.chatFontSize.body * 1.6 },
+          list: { ...baseMarkdownStyle.list, lineHeight: t.chatFontSize.body * 1.6 },
+        }
+      : baseMarkdownStyle,
     markdownInputStyle: {
       strong: { color: c.textPrimary },
       em: { color: c.textPrimary },

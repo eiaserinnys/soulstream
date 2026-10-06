@@ -5,9 +5,11 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { useTokens, type DesignTokens } from '../../theme';
 import { ThinkingOrb } from './ThinkingOrb';
+import { getChatRowHorizontalInset } from './ChatBody.styles';
 
 interface Props {
   session?: Pick<Session, 'agentName' | 'agentPortraitUrl' | 'displayName'>;
+  presentation?: 'default' | 'manuscript';
 }
 
 /**
@@ -19,9 +21,9 @@ interface Props {
  * ChatScreen은 session.status === 'running'일 때만 이 컴포넌트를 inverted FlatList의
  * 가장 첫 항목(= 화면 가장 아래)에 끼워 넣는다.
  */
-export function TypingIndicator({ session }: Props) {
+export function TypingIndicator({ session, presentation = 'default' }: Props) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, presentation), [t, presentation]);
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
 
@@ -36,7 +38,7 @@ export function TypingIndicator({ session }: Props) {
 
   return (
     <View style={styles.row}>
-      {avatarUri ? (
+      {presentation === 'manuscript' ? null : avatarUri ? (
         <Image
           source={{
             uri: avatarUri,
@@ -52,7 +54,7 @@ export function TypingIndicator({ session }: Props) {
       <View
         testID="typing-indicator-bubble"
         accessibilityLabel="생각 중입니다…"
-        style={styles.bubble}
+        style={presentation === 'manuscript' ? styles.manuscriptContent : styles.bubble}
       >
         <ThinkingOrb
           inkColor={t.colors.textPrimary}
@@ -64,7 +66,7 @@ export function TypingIndicator({ session }: Props) {
   );
 }
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
   const AVATAR = t.avatarSize.message;
   const c = t.colors;
   return StyleSheet.create({
@@ -72,7 +74,7 @@ function makeStyles(t: DesignTokens) {
       flexDirection: 'row',
       alignItems: 'flex-start',
       marginVertical: t.spacing.xs,
-      marginHorizontal: t.spacing.md,
+      marginHorizontal: getChatRowHorizontalInset(t, presentation),
       gap: t.spacing.sm,
     },
     avatar: {
@@ -104,6 +106,12 @@ function makeStyles(t: DesignTokens) {
       color: c.textMuted,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
+    },
+    manuscriptContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: t.spacing.sm,
+      paddingVertical: t.spacing.sm,
     },
   });
 }

@@ -3,14 +3,16 @@ import { View, Text, StyleSheet } from 'react-native';
 import type { SessionEvent } from '../../api/types';
 import { useTokens, type DesignTokens } from '../../theme';
 import { buildSystemEventText } from './eventActions';
+import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
 
 interface Props {
   event: SessionEvent;
+  presentation?: 'default' | 'manuscript';
 }
 
-export function SystemEvent({ event }: Props) {
+export function SystemEvent({ event, presentation = 'default' }: Props) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, presentation), [t, presentation]);
 
   const text = buildSystemEventText(event);
 
@@ -23,12 +25,12 @@ export function SystemEvent({ event }: Props) {
   );
 }
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
   return StyleSheet.create({
     wrapper: {
       alignItems: 'flex-start',
       paddingVertical: t.spacing.sm,
-      paddingHorizontal: t.spacing.lg,
+      paddingHorizontal: getChatRowHorizontalInset(t, presentation, t.spacing.lg),
     },
     text: {
       color: t.colors.textPlaceholder,

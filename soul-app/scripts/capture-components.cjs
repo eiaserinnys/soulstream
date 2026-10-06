@@ -412,6 +412,144 @@ async function runCardChecksCaptures(browser, base) {
   await runCardChecksViewport(browser, base, { name: 'ipad-landscape-1210x834', width: 1210, height: 834, state: 'normal', theme: 'dark' });
 }
 
+async function runManuscriptChatCaptures(browser, base) {
+  const scenarios = [
+    { name: 'iphone-light', width: 390, height: 844, theme: 'light', mobile: true },
+    { name: 'iphone-dark', width: 390, height: 844, theme: 'dark', mobile: true },
+    { name: 'ipad-light', width: 834, height: 1194, theme: 'light', mobile: false },
+    { name: 'ipad-dark', width: 834, height: 1194, theme: 'dark', mobile: false },
+  ];
+  for (const scenario of scenarios) {
+    const context = await browser.newContext({
+      viewport: { width: scenario.width, height: scenario.height },
+      screen: { width: scenario.width, height: scenario.height },
+      deviceScaleFactor: 1,
+      isMobile: scenario.mobile,
+      hasTouch: true,
+    });
+    await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    page.on('pageerror', (error) => result.errors.push({ name: scenario.name, message: error.message }));
+    await page.addInitScript((theme) => {
+      localStorage.setItem('soul-app-settings', JSON.stringify({ state: { appearance: theme }, version: 0 }));
+    }, scenario.theme);
+    await page.goto(`${base}${prefix}index.html?section=chat&theme=${scenario.theme}`);
+    await page.getByTestId('component-review').waitFor();
+    const sample = page.getByTestId('manuscript-presentation-scroll');
+    await sample.scrollIntoViewIfNeeded();
+    const captureGeometry = async (presentation) => {
+      const column = page.getByTestId(`manuscript-presentation-column-${presentation}`);
+      const rect = (locator) => locator.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return Object.fromEntries(['x', 'y', 'width', 'height', 'right', 'bottom']
+          .map((key) => [key, Math.round(box[key] * 10) / 10]));
+      });
+      const columnRect = await rect(column);
+      const relative = async (locator) => {
+        const box = await rect(locator);
+        return { ...box, leftInset: Math.round((box.x - columnRect.x) * 10) / 10,
+          rightInset: Math.round((columnRect.right - box.right) * 10) / 10 };
+      };
+      const composerBoxes = column.getByTestId('chat-composer-box');
+      const composerUnderlines = await Promise.all(Array.from({ length: await composerBoxes.count() }, (_, index) =>
+        relative(composerBoxes.nth(index))));
+      const attachmentGlyphBounds = async (attachVisual) => attachVisual.evaluate((element) => {
+        const icon = element.querySelector('svg');
+        if (icon) {
+          const box = icon.getBoundingClientRect();
+          return Object.fromEntries(['x', 'y', 'width', 'height', 'right', 'bottom']
+            .map((key) => [key, Math.round(box[key] * 10) / 10]));
+        }
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          if (!node.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const box = range.getBoundingClientRect();
+          if (box.width && box.height) {
+            const fontSize = Number.parseFloat(getComputedStyle(node.parentElement).fontSize);
+            const glyphInset = fontSize * (3 / 16);
+            const ink = {
+              x: box.x + glyphInset,
+              y: box.y,
+              width: box.width - glyphInset * 2,
+              height: box.height,
+            };
+            ink.right = ink.x + ink.width;
+            ink.bottom = ink.y + ink.height;
+            return Object.fromEntries(['x', 'y', 'width', 'height', 'right', 'bottom']
+              .map((key) => [key, Math.round(ink[key] * 10) / 10]));
+          }
+        }
+        const box = element.getBoundingClientRect();
+        return Object.fromEntries(['x', 'y', 'width', 'height', 'right', 'bottom']
+          .map((key) => [key, Math.round(box[key] * 10) / 10]));
+      });
+      const composerCount = await composerBoxes.count();
+      const composerControls = await Promise.all(Array.from({ length: composerCount }, async (_, index) => {
+        const attachmentGlyph = await attachmentGlyphBounds(column.getByTestId('chat-composer-attach-visual').nth(index));
+        const sendVisual = await rect(column.getByTestId('chat-composer-send-visual').nth(index));
+        return {
+          attachmentGlyph: { ...attachmentGlyph,
+            leftInset: Math.round((attachmentGlyph.x - columnRect.x) * 10) / 10,
+            rightInset: Math.round((columnRect.right - attachmentGlyph.right) * 10) / 10 },
+          sendVisual: { ...sendVisual,
+            leftInset: Math.round((sendVisual.x - columnRect.x) * 10) / 10,
+            rightInset: Math.round((columnRect.right - sendVisual.right) * 10) / 10 },
+        };
+      }));
+      const geometry = {
+        column: columnRect,
+        assistantBody: await relative(column.getByTestId('assistant-message-bubble').first()),
+        userMessage: await relative(column.getByTestId('user-message-bubble').first()),
+        jevCaption: await relative(column.getByTestId('collapsible-caption-wrapper')),
+        generationLeftLine: await relative(column.getByTestId('labeled-divider-left-line')),
+        generationRightLine: await relative(column.getByTestId('labeled-divider-right-line')),
+        generationLabel: await relative(column.getByText('새 세대', { exact: true })),
+        composerUnderlines,
+        composerControls,
+        approvalLabel: await relative(column.getByText('도구 승인', { exact: true })),
+        errorText: await relative(column.getByText(/오류: 도구 요청에서 발생한 오류/)),
+      };
+      if (presentation === 'manuscript') {
+        const aligned = [
+          geometry.assistantBody.leftInset,
+          geometry.userMessage.rightInset,
+          geometry.jevCaption.leftInset,
+          geometry.jevCaption.rightInset,
+          geometry.generationLeftLine.leftInset,
+          geometry.generationRightLine.rightInset,
+          geometry.composerUnderlines[0].leftInset,
+          geometry.composerUnderlines[0].rightInset,
+          geometry.composerUnderlines[1].leftInset,
+          geometry.composerUnderlines[1].rightInset,
+          ...geometry.composerControls.flatMap(({ attachmentGlyph, sendVisual }) => [
+            attachmentGlyph.leftInset,
+            sendVisual.rightInset,
+          ]),
+        ];
+        if (aligned.some((inset) => Math.abs(inset) > 1)) {
+          result.errors.push({ name: scenario.name, message: `manuscript edge alignment failed: ${JSON.stringify(geometry)}` });
+        }
+      }
+      return geometry;
+    };
+    await sample.evaluate((element) => { element.scrollLeft = 0; });
+    await page.screenshot({ path: path.join(output, `${scenario.name}-default.png`), fullPage: true });
+    const defaultGeometry = await captureGeometry('default');
+    await sample.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
+    await page.screenshot({ path: path.join(output, `${scenario.name}-manuscript.png`), fullPage: true });
+    const manuscriptGeometry = await captureGeometry('manuscript');
+    await page.getByTestId('chat-composer-text-input').last().scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(output, `${scenario.name}-manuscript-composer.png`) });
+    result.viewports.push({ name: scenario.name, viewport: { width: scenario.width, height: scenario.height },
+      theme: scenario.theme, geometry: { default: defaultGeometry, manuscript: manuscriptGeometry } });
+    await context.close();
+  }
+}
+
 (async () => {
   await fs.mkdir(output, { recursive: true });
   server.listen(0, '127.0.0.1');
@@ -428,6 +566,8 @@ async function runCardChecksCaptures(browser, base) {
     result.interactions.push('미인증 직접 URL: gallery mount 차단');
     if (captureMode === 'card-checks' || captureMode === 'card-trim') {
       await runCardChecksCaptures(browser, base);
+    } else if (captureMode === 'manuscript-chat') {
+      await runManuscriptChatCaptures(browser, base);
     } else {
       const phone = devices['iPhone 14 Pro Max'];
       await runViewport(browser, base, { ...phone, defaultBrowserType: undefined }, 'iphone14-pro-max');

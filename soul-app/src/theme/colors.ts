@@ -42,6 +42,24 @@ export interface ColorScheme {
   statusError: string;
 }
 
+export interface PersistentSessionColors {
+  paper: string;
+  panel: string;
+  line: string;
+}
+
+export const DARK_PERSISTENT_SESSION_COLORS: PersistentSessionColors = {
+  paper: '#20231f',
+  panel: '#292d27',
+  line: '#474b41',
+};
+
+export const LIGHT_PERSISTENT_SESSION_COLORS: PersistentSessionColors = {
+  paper: '#fbfaf7',
+  panel: '#fffefa',
+  line: '#d6d6ce',
+};
+
 export const DARK_COLORS: ColorScheme = {
   background: '#0f0f0f',
   surface: '#1c1c1e',
