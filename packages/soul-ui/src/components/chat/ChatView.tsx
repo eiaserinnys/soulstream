@@ -8,7 +8,7 @@
  * Phase 4 재설계:
  * - react-virtuoso + `alignToBottom + followOutput="auto"` 로 "첫 paint가 이미 최하단" 을 달성.
  *   이동 궤적 없이 하단 고정.
- * - prepend는 virtuoso 공식 패턴 `firstItemIndex -= N` (store.chatPrependedCount 참조 — 정본은 store).
+ * - prepend는 `firstItemIndex -= N`: 기본 행은 store count, 원고형 행은 투영 후 증가량.
  * - 과거 로드는 startReached/viewport geometry/수동 재시도가 하나의 controller를 사용.
  * - focusEventId 하이라이트는 `itemsRendered` 콜백에서 Virtuoso 행 key로 찾는다.
  * - 세션 전환은 Virtuoso `key={activeSessionKey}` 재마운트로 처리.
@@ -28,7 +28,7 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
-import { ChatManuscriptList, ChatManuscriptFooter } from "./ChatManuscriptList";
+import { ChatManuscriptList, ChatManuscriptFooter, manuscriptItemSpacingClass } from "./ChatManuscriptList";
 import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
 import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 import {
@@ -132,7 +132,8 @@ export function ChatView({
   /**
    * 채팅창 좌표 정본 — store에서 직접 select.
    *
-   * processHistoryEvents가 grouped 차분만큼 atomic 갱신한다.
+   * processHistoryEvents가 기본 grouped 차분만큼 atomic 갱신한다.
+   * 원고형은 아래 좌표 훅에서 투영된 행 증가량으로 바꾼다.
    * 같은 set() 안에서 tree와 함께 갱신되므로 1렌더 사이클 정합이 보장된다.
    */
   const chatPrependedCount = useDashboardStore((s) => s.chatPrependedCount);
@@ -142,7 +143,7 @@ export function ChatView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const isManuscript = presentation === "manuscript";
   const showTurnUsage = persistentSessionDisplaySettings?.sessionId === activeSessionKey
-    ? persistentSessionDisplaySettings.showTurnUsage
+    ? persistentSessionDisplaySettings.showTurnUsage ?? true
     : true;
   const messages = useMemo(
     () => isManuscript
@@ -182,6 +183,7 @@ export function ChatView({
       timelineItems,
       activeSessionKey,
       chatPrependedCount,
+      isManuscript,
     );
   const bottomScrollLocation = useMemo(
     () => getBottomScrollLocation(timelineItems.length),
@@ -519,10 +521,10 @@ export function ChatView({
     const scroller = scrollerRef.current;
     if (
       scroller !== null
-      && scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 1
+      && scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= (isManuscript ? 0 : 1)
     ) return;
     scrollToBottomWithBehavior("auto");
-  }, [scrollToBottomWithBehavior, scrollerRef]);
+  }, [isManuscript, scrollToBottomWithBehavior, scrollerRef]);
   const handleTotalListHeightChanged = useCallback(() => {
     notifyHistoryViewportGeometry();
     // 행의 실제 높이는 Markdown/접힌 도구 렌더 뒤에도 바뀔 수 있다. Follow는
@@ -760,7 +762,7 @@ export function ChatView({
          * turn summary가 늦게 결합되어도 가상 행의 key와 data 길이가 바뀌지 않는다.
          */
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
-        itemContent={(_, item) => {
+        itemContent={(index, item) => {
           const message = item.type === "single" ? item.msg : null;
           const toolGroupKey = item.type === "tool-group" && activeSessionKey !== null
             ? toolGroupExpansionKey(activeSessionKey, item)
@@ -771,7 +773,9 @@ export function ChatView({
           return (
             <div
               data-chat-item-key={messageOrGroupKey(item)}
-              className="contents"
+              className={isManuscript
+                ? manuscriptItemSpacingClass(item, timelineItems[index - firstItemIndex - 1])
+                : "contents"}
             >
               <VirtualizedItem
                 item={item}

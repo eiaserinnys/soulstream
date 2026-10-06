@@ -39,7 +39,7 @@ export function CollapsibleCaption({
         <Button
           aria-controls={contentId}
           aria-expanded={expanded}
-          className={`${contentAligned ? (align === "end" ? "-me-px justify-end !pe-0" : "-ms-px justify-start !ps-0") : (align === "end" ? "-me-2 justify-end !pe-2" : "-ms-2 justify-start")} ${wrapTitle ? "w-full !h-auto min-h-6" : "max-w-full h-6 sm:h-6"} gap-2 !text-xs !font-medium text-muted-foreground`}
+          className={`${contentAligned ? (align === "end" ? "-me-px justify-end !pe-0" : "-ms-px justify-start !ps-0") : (align === "end" ? "-me-2 justify-end !pe-2" : "-ms-2 justify-start")} ${wrapTitle ? "max-w-full !h-auto min-h-6" : "max-w-full h-6 sm:h-6"} gap-2 !text-xs !font-medium text-muted-foreground`}
           onClick={() => setExpanded((value) => !value)}
           size="xs"
           variant="ghost"

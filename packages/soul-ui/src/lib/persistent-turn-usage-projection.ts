@@ -1,6 +1,6 @@
 import { pairTurnUsage } from "./persistent-turn-usage";
 import type { ChatMessage } from "./flatten-tree";
-import { formatContextUsageText, formatTurnCompleteStats, formatTurnUsageCaptionTitle } from "./turn-usage-format";
+import { formatContextUsageText, formatTurnCompleteStats, formatTurnUsageCaptionTitle, TURN_COMPLETE_LABEL, TURN_USAGE_SEPARATOR } from "./turn-usage-format";
 
 /** Adds PAS usage captions while leaving default transcript messages untouched. */
 export function projectPersistentTurnUsage(
@@ -32,12 +32,13 @@ export function projectPersistentTurnUsage(
       const context = contextMessage?.contextUsageData;
       const complete = pair.complete;
       const contextText = context ? formatContextUsageText(context) : undefined;
-      const completeText = complete ? formatTurnCompleteStats({
+      const stats = complete ? formatTurnCompleteStats({
         usage: complete.usage,
         turnCostUsd: complete.turnCostUsd,
         sessionCostUsd: complete.sessionCostUsd,
         sessionCostPartial: complete.sessionCostPartial,
       }) : undefined;
+      const completeText = stats ? `${TURN_COMPLETE_LABEL}${TURN_USAGE_SEPARATOR}${stats}` : undefined;
       const title = formatTurnUsageCaptionTitle({
         percent: context?.percent,
         estimated: context?.estimated,

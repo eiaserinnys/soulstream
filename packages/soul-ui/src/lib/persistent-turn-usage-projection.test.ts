@@ -37,7 +37,7 @@ describe("projectPersistentTurnUsage", () => {
     expect(result[1]?.turnUsageCaption).toEqual({
       title: "컨텍스트 약 63.0% · 정가 $1.40",
       contextText: "컨텍스트 약 6,300 / 10,000 (63.0%)",
-      completeText: "입력 1,200 · 출력 340 · 정가 $1.40 (세션 $1.40)",
+      completeText: "턴 완료 · 입력 1,200 · 출력 340 · 정가 $1.40 (세션 $1.40)",
     });
   });
 
@@ -51,11 +51,11 @@ describe("projectPersistentTurnUsage", () => {
 
     expect(result[0]?.turnUsageCaption).toEqual({
       title: "정가 $2.40",
-      completeText: "정가 $2.40",
+      completeText: "턴 완료 · 정가 $2.40",
     });
     expect(result[1]?.turnUsageCaption).toEqual({
       title: "입력 8 · 출력 2",
-      completeText: "입력 8 · 출력 2",
+      completeText: "턴 완료 · 입력 8 · 출력 2",
     });
   });
 
