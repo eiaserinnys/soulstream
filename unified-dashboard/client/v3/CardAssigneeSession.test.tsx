@@ -9,6 +9,8 @@ import { CardDetailPane } from "./CardDetailPane";
 
 // Reuse the detail interaction tests' real root/store with only the ID provider mocked.
 const lookup = vi.hoisted(() => ({sessions: [] as SessionSummary[], loading: false}));
+vi.mock("./useCardSessionPages",()=>({useCardSessionPages:()=>lookup}));
+vi.mock("@seosoyoung/soul-ui/cards/CardSessionVirtualList",()=>({CardSessionVirtualList:({data,itemContent}:any)=><>{data.map((row:any,index:number)=><div key={row.node.session.agentSessionId}>{itemContent(index,row)}</div>)}</>}));
 vi.mock("@seosoyoung/soul-ui", async original => ({
   ...await original<typeof import("@seosoyoung/soul-ui")>(),
   useAuth: () => ({user:null}), useSessionListProvider: () => lookup,
