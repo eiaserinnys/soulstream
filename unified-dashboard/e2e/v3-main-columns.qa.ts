@@ -9,6 +9,7 @@ const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const outputRoot = path.resolve(
   process.env.PR_BF_QA_OUTPUT ?? "/home/eias/workspace/.local/artifacts/main-pane-width-261006/web",
 );
+const captureOnly = new Set((process.env.V3_QA_CAPTURE_ONLY ?? "").split(",").filter(Boolean));
 
 const result = await runPlaywrightLifecycle({
   lockName: "v3-main-columns-free-resize",
@@ -96,9 +97,9 @@ async function verifyColumns(browser: Browser) {
     await dragBy(minimumColumns.page, "v3-navigation-resize-handle", -200);
     await dragBy(minimumColumns.page, "v3-session-panel-resize-handle", 300);
     const layout = await measureLayout(minimumColumns.page);
-    assertLayout(layout, { navigationWidth: 220, sessionPanelWidth: 240, contentWidth: 904 });
+    assertLayout(layout, { navigationWidth: 220, sessionPanelWidth: 300, contentWidth: 844 });
     await capture(minimumColumns.page, "05-both-min-1440x900");
-    await assertPersisted(minimumColumns.page, 220, 240);
+    await assertPersisted(minimumColumns.page, 220, 300);
   } finally {
     await minimumColumns.context.close();
   }
@@ -150,6 +151,15 @@ async function verifyColumns(browser: Browser) {
     await savedNarrow.context.close();
   }
 
+  const reviewerNarrow = await openDashboard(browser, 1200, 900, { navigationWidth: 480, sessionPanelWidth: 500 });
+  try {
+    const layout = await measureLayout(reviewerNarrow.page);
+    assertLayout(layout, { navigationWidth: 440, sessionPanelWidth: 300, contentWidth: 384 });
+    await capture(reviewerNarrow.page, "09-1200-saved-480-500-feed-min-1200x900");
+  } finally {
+    await reviewerNarrow.context.close();
+  }
+
   const savedWidths = await openDashboard(browser, 1440, 900, { navigationWidth: 400, sessionPanelWidth: 900 });
   try {
     assertLayout(await measureLayout(savedWidths.page), {
@@ -172,10 +182,11 @@ async function verifyColumns(browser: Browser) {
     folderTitleAtMaximum,
     folderTitleAtDefault,
     feedMaximum: { sessionPanelWidth: 644, contentWidth: 384 },
-    minimumColumns: { navigationWidth: 220, sessionPanelWidth: 240, contentWidth: 904 },
+    minimumColumns: { navigationWidth: 220, sessionPanelWidth: 300, contentWidth: 844 },
     wideFeed: { sessionPanelWidth: 800 },
     overlapNavigationMaximum: { navigationWidth: 480, contentWidth: 384 },
     narrowSavedWidths: { navigationWidth: 400, sessionPanelWidth: 340, contentWidth: 384 },
+    reviewerNarrow: { navigationWidth: 440, sessionPanelWidth: 300, contentWidth: 384 },
     oppositeColumnFrozen: { navigationWidth: 300, sessionPanelWidth: 580, contentWidth: 484 },
     screenshots: outputRoot,
   };
@@ -245,7 +256,7 @@ async function dragBy(page: Page, testId: string, deltaPx: number): Promise<void
   const budget = current.viewportWidth - 44 - 32 - 384;
   const expectedWidth = testId === "v3-navigation-resize-handle"
     ? Math.max(220, Math.min(current.navigationWidth + deltaPx, Math.max(220, budget - current.sessionPanelWidth)))
-    : Math.max(240, Math.min(current.sessionPanelWidth - deltaPx, Math.max(240, budget - current.navigationWidth)));
+    : Math.max(300, Math.min(current.sessionPanelWidth - deltaPx, Math.max(300, budget - current.navigationWidth)));
   const startX = box.x + box.width / 2;
   const centerY = box.y + box.height / 2;
   await page.mouse.move(startX, centerY);
@@ -310,6 +321,7 @@ function assertNoPageErrors(errors: string[]): void {
 }
 
 async function capture(page: Page, name: string): Promise<void> {
+  if (captureOnly.size > 0 && !captureOnly.has(name)) return;
   mkdirSync(outputRoot, { recursive: true });
   await page.screenshot({
     path: path.join(outputRoot, `${name}.png`),

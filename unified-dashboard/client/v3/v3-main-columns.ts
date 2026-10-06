@@ -5,7 +5,8 @@ import {
 } from "./v3-layout-metrics";
 
 export const V3_MAIN_NAVIGATION_MIN_WIDTH_PX = 220;
-export const V3_MAIN_SESSION_PANEL_MIN_WIDTH_PX = 240;
+// Leaves four title characters visible in the review-wait row without touching status badges.
+export const V3_MAIN_SESSION_PANEL_MIN_WIDTH_PX = 300;
 // At 1440px, the previous maximum widths (420px + 560px) leave 384px here.
 export const V3_MAIN_CONTENT_MIN_WIDTH_PX = 384;
 // This is the 22px outer margin in .v3-shell's grid in v3-planner.css.

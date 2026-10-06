@@ -29,7 +29,7 @@ describe("v3 main column widths", () => {
     expect(resolveV3MainColumns(1440, {
       navigationWidth: 700,
       sessionPanelWidth: 700,
-    })).toEqual({ navigationWidth: 700, sessionPanelWidth: 280 });
+    })).toEqual({ navigationWidth: 680, sessionPanelWidth: 300 });
   });
 
   it("resizes either column against the fixed width of the other column", () => {
@@ -49,7 +49,7 @@ describe("v3 main column widths", () => {
     expect(dragV3Navigation({ navigationWidth: 336, sessionPanelWidth: 500 }, 1440, -1000))
       .toEqual({ navigationWidth: 220, sessionPanelWidth: 500 });
     expect(dragV3SessionPanel({ navigationWidth: 336, sessionPanelWidth: 500 }, 1440, 1000))
-      .toEqual({ navigationWidth: 336, sessionPanelWidth: 240 });
+      .toEqual({ navigationWidth: 336, sessionPanelWidth: 300 });
   });
 
   it("keeps a viewport-clamped column fixed when dragging the other column", () => {
@@ -61,5 +61,16 @@ describe("v3 main column widths", () => {
     const afterDrag = dragV3Navigation(widths, 1440, -100);
     expect(afterDrag).toEqual({ navigationWidth: 300, sessionPanelWidth: 580 });
     expect(resolveV3MainColumns(1440, afterDrag)).toEqual(afterDrag);
+  });
+
+  it("keeps the feed at 300px and reduces navigation when a saved layout no longer fits", () => {
+    expect(resolveV3MainColumns(1440, {
+      navigationWidth: 336,
+      sessionPanelWidth: 250,
+    })).toEqual({ navigationWidth: 336, sessionPanelWidth: 300 });
+    expect(resolveV3MainColumns(1200, {
+      navigationWidth: 480,
+      sessionPanelWidth: 500,
+    })).toEqual({ navigationWidth: 440, sessionPanelWidth: 300 });
   });
 });
