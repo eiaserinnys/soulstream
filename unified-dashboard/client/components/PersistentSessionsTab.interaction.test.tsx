@@ -152,8 +152,9 @@ describe("PersistentSessionsTab", () => {
       },
     });
     await waitFor(() => expect(nameInput().value).toBe("토글 중에도 남는 이름"));
-    expect(document.body.textContent).toContain("세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.");
-    expect(document.body.textContent).toContain("내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.");
+    expect(document.body.textContent).not.toContain("구분선을 보여 줍니다");
+    expect(document.body.textContent).not.toContain("Jev가 찾은 후보를");
+    expect(document.body.textContent).not.toContain("화면에서만 숨기고 기록은 남습니다");
   });
 
   it("keeps the new display flags on by default and persists explicit false values", async () => {

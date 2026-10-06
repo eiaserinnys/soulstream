@@ -1,4 +1,4 @@
-import { useRef, type ComponentPropsWithoutRef } from "react";
+import { forwardRef, useCallback, useRef, type ComponentPropsWithoutRef } from "react";
 
 import { cn } from "../lib/cn";
 import { useLiquidLens } from "../lib/liquid-lens";
@@ -12,7 +12,7 @@ export interface DashboardIconCapProps
 }
 
 /** v1 글로벌 툴바의 설정·테마 버튼과 동일한 아이콘 액션 정본. */
-export function DashboardIconCap({
+export const DashboardIconCap = forwardRef<HTMLButtonElement, DashboardIconCapProps>(function DashboardIconCap({
   label,
   tooltip,
   size = "default",
@@ -20,15 +20,20 @@ export function DashboardIconCap({
   children,
   type = "button",
   ...props
-}: DashboardIconCapProps) {
-  const ref = useRef<HTMLButtonElement>(null);
+}, forwardedRef) {
+  const ref = useRef<HTMLButtonElement | null>(null);
+  const setRef = useCallback((button: HTMLButtonElement | null) => {
+    ref.current = button;
+    if (typeof forwardedRef === "function") forwardedRef(button);
+    else if (forwardedRef) forwardedRef.current = button;
+  }, [forwardedRef]);
   const webglActive = useGlassSurface(ref, { enabled: true });
   useLiquidLens(ref, { scale: 22, enabled: !webglActive });
 
   return (
     <button
       {...props}
-      ref={ref}
+      ref={setRef}
       type={type}
       className={cn(
         "dashboard-icon-cap border border-glass-border glass-strong glass-chrome lg-rim",
@@ -43,4 +48,4 @@ export function DashboardIconCap({
       {children}
     </button>
   );
-}
+});
