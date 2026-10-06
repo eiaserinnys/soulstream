@@ -626,11 +626,17 @@ async function runManuscriptChatCaptures(browser, base) {
 
     await costOnlyCaption.scrollIntoViewIfNeeded();
     await costOnlyCaption.click();
-    await manuscriptColumn.getByText('턴 완료 · 정가 $0.80', { exact: true }).waitFor();
+    const costOnlyExpanded = '턴 완료 · 정가 $0.80';
+    await manuscriptColumn.getByText(costOnlyExpanded, { exact: true }).waitFor();
+    assert.equal(await costOnlyCaption.getByText('정가 $0.80', { exact: true }).count(), 0);
+    assert.equal(await manuscriptColumn.getByText(costOnlyExpanded, { exact: true }).count(), 1);
     await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-cost-only.png`) });
     await tokenOnlyCaption.scrollIntoViewIfNeeded();
     await tokenOnlyCaption.click();
-    await manuscriptColumn.getByText('턴 완료 · 입력 150 · 출력 35', { exact: true }).waitFor();
+    const tokenOnlyExpanded = '턴 완료 · 입력 150 · 출력 35';
+    await manuscriptColumn.getByText(tokenOnlyExpanded, { exact: true }).waitFor();
+    assert.equal(await tokenOnlyCaption.getByText('입력 150 · 출력 35', { exact: true }).count(), 0);
+    assert.equal(await manuscriptColumn.getByText(tokenOnlyExpanded, { exact: true }).count(), 1);
     await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-token-only.png`) });
     await errorUsageCaption.scrollIntoViewIfNeeded();
     await errorUsageCaption.click();

@@ -101,11 +101,16 @@ function makeTurnUsageCaption(
     usage: complete?.usage,
     turnCostUsd: complete?.turn_cost_usd,
   });
+  const completeText = stats
+    ? `${TURN_COMPLETE_LABEL}${TURN_USAGE_SEPARATOR}${stats}`
+    : undefined;
   if (!contextText && !title && !stats) return null;
 
   return {
     title: title ?? TURN_COMPLETE_LABEL,
-    ...(contextText ? { expandedTitle: contextText } : {}),
-    lines: stats ? [`${TURN_COMPLETE_LABEL}${TURN_USAGE_SEPARATOR}${stats}`] : [],
+    ...(contextText || completeText
+      ? { expandedTitle: contextText ?? completeText }
+      : {}),
+    lines: contextText && completeText ? [completeText] : [],
   };
 }
