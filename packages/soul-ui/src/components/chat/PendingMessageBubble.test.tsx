@@ -51,6 +51,8 @@ describe("PendingMessageBubble", () => {
     ));
 
     expect(container.textContent).toContain("실패 문장");
+    expect(container.textContent).not.toContain("첨부 파일 로컬 경로");
+    expect(container.textContent).not.toContain("/tmp/a.png");
     expect(container.textContent).toContain("전달을 확인하지 못했습니다");
     const buttons = Array.from(container.querySelectorAll("button"));
     expect(buttons.map((button) => button.textContent)).toEqual(["다시 보내기", "입력창으로"]);
@@ -65,6 +67,24 @@ describe("PendingMessageBubble", () => {
   it("restores the failed sentence before any text typed during the wait", () => {
     expect(mergePendingTextIntoComposer("실패 문장", "새 입력")).toBe("실패 문장\n\n새 입력");
     expect(mergePendingTextIntoComposer("실패 문장", "")).toBe("실패 문장");
+  });
+
+  it.each(["default", "manuscript"] as const)("shows file names for an attachment-only send in %s", (presentation) => {
+    const pending: PendingChatSend = {
+      id: "attachments-only", status: "sending", text: "",
+      messageText: "[첨부 파일 로컬 경로: /private/a.png, /private/b.txt]",
+      attachmentPaths: ["/private/a.png", "/private/b.txt"],
+      attachments: [
+        { id: "a", path: "/private/a.png", file: new File(["a"], "그림.png") },
+        { id: "b", path: "/private/b.txt", file: new File(["b"], "메모.txt") },
+      ], mode: "intervention",
+    };
+    const html = renderToStaticMarkup(<PendingMessageBubble sessionId="one" pending={pending}
+      presentation={presentation} onRetry={vi.fn()} onRestore={vi.fn()}/>);
+    expect(html).toContain("그림.png");
+    expect(html).toContain("메모.txt");
+    expect(html).not.toContain("첨부 파일 로컬 경로");
+    expect(html).not.toContain("/private/");
   });
 
   it("keeps the optimistic row right-aligned and bubbleless in manuscript mode", () => {

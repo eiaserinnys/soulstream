@@ -14,6 +14,7 @@
 }
 .v3-persistent-task-list .v3-run-list { gap: var(--v3-space-1); }
 .v3-card-summary-row {
+  --ring: var(--muted-foreground);
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
@@ -26,6 +27,7 @@
   font: var(--v3-type-body) var(--v3-font-family);
   text-align: left;
   cursor: pointer;
+  border-radius: var(--v3-space-2);
 }
 .v3-card-summary-row[data-has-number][data-has-assignee] { grid-template-columns: max-content minmax(0, 1fr) max-content; }
 .v3-card-summary-row[data-has-number]:not([data-has-assignee]) { grid-template-columns: max-content minmax(0, 1fr); }
@@ -33,7 +35,6 @@
 .v3-card-summary-row:hover { background: color-mix(in srgb, var(--muted) 72%, var(--persistent-session-paper)); }
 .v3-card-summary-row:active,
 .v3-card-summary-row[data-pressed] { background: color-mix(in srgb, var(--muted) 82%, var(--persistent-session-paper)); }
-.v3-card-summary-row:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 36%, transparent); }
 .v3-card-summary-number-slot { display: grid; min-width: 0; color: var(--v3-text-tertiary); font: var(--v3-type-meta) var(--v3-font-family); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .v3-card-summary-number-slot > * { grid-area: 1 / 1; }
 .v3-card-summary-number-reserve { visibility: hidden; }
