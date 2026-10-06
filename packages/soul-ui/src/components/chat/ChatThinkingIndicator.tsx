@@ -4,9 +4,9 @@ import { useDashboardStore } from "../../stores/dashboard-store";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { useGlassSurface } from "../LiquidGlassProvider";
 
-export const ChatThinkingIndicator = memo(function ChatThinkingIndicator() {
+export const ChatThinkingIndicator = memo(function ChatThinkingIndicator({ presentation = "default" }: { presentation?: "default" | "manuscript" }) {
   const bubbleRef = useRef<HTMLDivElement>(null);
-  const webglActive = useGlassSurface(bubbleRef, { enabled: true });
+  const webglActive = useGlassSurface(bubbleRef, { enabled: presentation !== "manuscript" });
   const activeSession = useDashboardStore((state) => state.activeSessionSummary);
 
   return (
@@ -23,7 +23,9 @@ export const ChatThinkingIndicator = memo(function ChatThinkingIndicator() {
       <div
         ref={bubbleRef}
         data-slot="chat-message-bubble"
-        className="flex max-w-[86%] items-center gap-2 rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"
+        className={presentation === "manuscript"
+          ? "flex max-w-[86%] items-center gap-2 rounded-[17px] rounded-bl-[7px] border border-[var(--persistent-session-line)] bg-[var(--persistent-session-panel)] px-3.5 py-2.5"
+          : "flex max-w-[86%] items-center gap-2 rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <ThinkingOrb

@@ -42,7 +42,7 @@ function VirtualizedItemImpl({
   onRestorePending,
 }: VirtualizedItemProps) {
   if (item.type === "thinking-indicator") {
-    return <ChatThinkingIndicator />;
+    return <ChatThinkingIndicator presentation={presentation} />;
   }
   if (item.type === "pending-message") {
     if (!sessionId) return null;
