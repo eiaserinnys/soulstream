@@ -70,9 +70,10 @@ export function projectPersistentTurnUsage(
   return messages.flatMap((message) => {
     if (message.treeNodeType === "context_usage") return [];
     if (message.treeNodeType === "complete") {
-      if (!showTurnUsage) return [];
+      if (!showTurnUsage) return message.turnSummaryCaption ? [message] : [];
       const caption = captions.get(String(message.eventId ?? message.id));
-      return caption ? [{ ...message, turnUsageCaption: caption }] : [];
+      if (caption) return [{ ...message, turnUsageCaption: caption }];
+      return message.turnSummaryCaption ? [message] : [];
     }
     if (message.treeNodeType === "error") {
       const caption = captions.get(String(message.eventId ?? message.id));

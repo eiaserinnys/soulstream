@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
+import {
+  placeTurnSummariesAtCompleteCaptions,
+  placeTurnSummariesAtResponseAnchors,
+} from "./turn-summary-projection";
 
 interface Item {
   treeNodeId: string;
@@ -8,6 +11,8 @@ interface Item {
   eventId?: number;
   summaryFinalResponseEventId?: number;
   summaryParentEventId?: number;
+  turnSummaryCaption?: { treeNodeId: string; content: string };
+  content?: string;
 }
 
 const row = (eventId: number): Item => ({
@@ -20,12 +25,20 @@ const summary = (
   eventId: number,
   finalId?: number,
   parentId?: number,
+  content = `요약 ${eventId}`,
 ): Item => ({
   treeNodeId: `turn-summary-${eventId}`,
   treeNodeType: "turn_summary",
   eventId,
   summaryFinalResponseEventId: finalId,
   summaryParentEventId: parentId,
+  content,
+});
+
+const complete = (eventId: number): Item => ({
+  treeNodeId: `complete-${eventId}`,
+  treeNodeType: "complete",
+  eventId,
 });
 
 const keys = (items: Item[]) => items.map((item) => item.treeNodeId);
@@ -72,5 +85,58 @@ describe("placeTurnSummariesAtResponseAnchors", () => {
       "turn-summary-110",
       "row-130",
     ]);
+  });
+});
+
+describe("placeTurnSummariesAtCompleteCaptions", () => {
+  it("pairs an anchored summary with the first complete before the next turn", () => {
+    const result = placeTurnSummariesAtCompleteCaptions([
+      row(100),
+      summary(140, 100),
+      complete(110),
+      { treeNodeId: "next-user", treeNodeType: "user_message", eventId: 120 },
+      complete(130),
+    ]);
+
+    expect(keys(result)).toEqual(["row-100", "complete-110", "next-user", "complete-130"]);
+    expect(result[1]?.turnSummaryCaption).toEqual({
+      treeNodeId: "turn-summary-140",
+      content: "요약 140",
+    });
+  });
+
+  it.each(["user_message", "intervention", "generation_started"])(
+    "leaves a summary at its anchor when %s comes before complete",
+    (boundary) => {
+      const result = placeTurnSummariesAtCompleteCaptions([
+        row(100),
+        summary(140, 100),
+        { treeNodeId: `boundary-${boundary}`, treeNodeType: boundary },
+        complete(150),
+      ]);
+
+      expect(keys(result)).toEqual([
+        "row-100", "turn-summary-140", `boundary-${boundary}`, "complete-150",
+      ]);
+      expect(result.at(-1)?.turnSummaryCaption).toBeUndefined();
+    },
+  );
+
+  it("keeps a summary in its current position when its complete is outside the loaded range", () => {
+    const summaryRow = summary(140, 100);
+    const result = placeTurnSummariesAtCompleteCaptions([row(100), summaryRow]);
+
+    expect(result).toEqual([row(100), summaryRow]);
+  });
+
+  it("pairs a late summary after response-anchor placement", () => {
+    const result = placeTurnSummariesAtCompleteCaptions(placeTurnSummariesAtResponseAnchors([
+      row(100),
+      complete(110),
+      summary(140, 100),
+    ]));
+
+    expect(keys(result)).toEqual(["row-100", "complete-110"]);
+    expect(result[1]?.turnSummaryCaption?.content).toBe("요약 140");
   });
 });

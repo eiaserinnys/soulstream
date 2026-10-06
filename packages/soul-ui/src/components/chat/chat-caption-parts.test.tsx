@@ -6,7 +6,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { CollapsibleCaption } from "./CollapsibleCaption";
+import { SystemMessage } from "./SystemMessage";
+import { TurnEndCaptions } from "./TurnEndCaptions";
 import { LabeledDivider } from "./LabeledDivider";
+import type { ChatMessage } from "../../lib/flatten-tree";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -165,5 +168,78 @@ describe("chat caption parts", () => {
     expect(container.querySelector('[data-slot="labeled-divider-row"]')).not.toBeNull();
     expect(container.querySelectorAll(".w-8")).toHaveLength(1);
     expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("keeps usage and summary collapsed independently in one right-aligned header row", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <TurnEndCaptions
+        usageCaption={{
+          title: "컨텍스트 약 63% · 정가 $1.40",
+          contextText: "컨텍스트 6,300 / 10,000 (63.0%)",
+          completeText: "턴 완료 · 입력 1,200 · 출력 340 · 정가 $1.40",
+        }}
+        summaryCaption={{ treeNodeId: "summary-1", content: "이번 턴에서 화면을 정리했습니다." }}
+      />,
+    ));
+
+    const row = container.querySelector('[data-slot="turn-end-captions"]');
+    const buttons = Array.from(container.querySelectorAll("button"));
+    expect(row?.className).toContain("justify-end");
+    expect(buttons.map(button => button.textContent)).toEqual([
+      "컨텍스트 약 63% · 정가 $1.40", "요약",
+    ]);
+    expect(buttons.map(button => button.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
+    const usageBodyId = buttons[0]?.getAttribute("aria-controls");
+    const summaryBodyId = buttons[1]?.getAttribute("aria-controls");
+    expect(document.getElementById(usageBodyId!)?.hasAttribute("hidden")).toBe(true);
+    expect(document.getElementById(summaryBodyId!)?.hasAttribute("hidden")).toBe(true);
+
+    act(() => buttons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(buttons.map(button => button.getAttribute("aria-expanded"))).toEqual(["true", "false"]);
+    expect(document.getElementById(usageBodyId!)?.textContent).toContain("컨텍스트 6,300 / 10,000");
+    expect(document.getElementById(usageBodyId!)?.textContent).toContain("턴 완료 · 입력 1,200");
+    expect(document.getElementById(summaryBodyId!)?.hasAttribute("hidden")).toBe(true);
+
+    act(() => buttons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(buttons.map(button => button.getAttribute("aria-expanded"))).toEqual(["true", "true"]);
+    expect(document.getElementById(summaryBodyId!)?.textContent).toBe("이번 턴에서 화면을 정리했습니다.");
+
+    act(() => buttons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(buttons.map(button => button.getAttribute("aria-expanded"))).toEqual(["false", "true"]);
+    expect(document.getElementById(usageBodyId!)?.hasAttribute("hidden")).toBe(true);
+    expect(document.getElementById(summaryBodyId!)?.hasAttribute("hidden")).toBe(false);
+    expect(Array.from(row?.querySelectorAll("[id]") ?? []).map(body => body.textContent)).toEqual([
+      "컨텍스트 6,300 / 10,000 (63.0%)턴 완료 · 입력 1,200 · 출력 340 · 정가 $1.40",
+      "이번 턴에서 화면을 정리했습니다.",
+    ]);
+  });
+
+  it("uses turn-end captions only in the manuscript while keeping the default summary row", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const summary: ChatMessage = {
+      id: "summary-1",
+      role: "system",
+      content: "요약 본문",
+      treeNodeId: "summary-1",
+      treeNodeType: "turn_summary",
+    };
+
+    act(() => root?.render(
+      <>
+        <SystemMessage msg={summary} presentation="manuscript" />
+        <SystemMessage msg={summary} />
+      </>,
+    ));
+
+    expect(Array.from(container.querySelectorAll("button")).map(button => button.textContent)).toEqual(["요약"]);
+    expect(container.textContent).toContain("요약 본문");
+    expect(container.querySelectorAll('[data-slot="turn-end-captions"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-tree-node-id="summary-1"]')).toHaveLength(2);
   });
 });

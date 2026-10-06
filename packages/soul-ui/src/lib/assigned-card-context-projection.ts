@@ -4,6 +4,7 @@ export interface AssignedCardContextProjectionItem {
   eventId?: number;
   inputId?: string;
   preparedInputId?: string;
+  assignedCardCount?: number;
 }
 
 function validIdentity(value: unknown): value is string {
@@ -55,4 +56,13 @@ export function placeAssignedCardContextsAtInputAnchors<
     ordered.push(item, ...(after.get(index) ?? []));
   });
   return ordered;
+}
+
+/** Empty captures add no information to the manuscript transcript. */
+export function projectManuscriptAssignedCardContexts<
+  T extends AssignedCardContextProjectionItem,
+>(items: T[]): T[] {
+  return items.filter((item) => (
+    item.treeNodeType !== "assigned_card_context" || item.assignedCardCount !== 0
+  ));
 }

@@ -6,6 +6,16 @@ export interface TurnSummaryProjectionItem {
   summaryParentEventId?: number;
 }
 
+export interface TurnSummaryCaption {
+  treeNodeId: string;
+  content: string;
+}
+
+export interface TurnSummaryCompleteProjectionItem extends TurnSummaryProjectionItem {
+  content?: string;
+  turnSummaryCaption?: TurnSummaryCaption;
+}
+
 function isPositiveSafeInteger(value: number | undefined): value is number {
   return Number.isSafeInteger(value) && (value ?? 0) > 0;
 }
@@ -79,4 +89,39 @@ export function placeTurnSummariesAtResponseAnchors<
     ordered.push(...(after.get(index) ?? []));
   }
   return ordered;
+}
+
+/** Combines a response-anchored summary with the first complete in the same turn. */
+export function placeTurnSummariesAtCompleteCaptions<
+  T extends TurnSummaryCompleteProjectionItem,
+>(items: T[]): T[] {
+  const removed = new Set<number>();
+  const captions = new Map<number, TurnSummaryCaption>();
+
+  items.forEach((item, index) => {
+    if (item.treeNodeType !== "turn_summary") return;
+
+    for (let nextIndex = index + 1; nextIndex < items.length; nextIndex += 1) {
+      const next = items[nextIndex];
+      if (
+        next.treeNodeType === "user_message"
+        || next.treeNodeType === "intervention"
+        || next.treeNodeType === "generation_started"
+      ) break;
+      if (next.treeNodeType !== "complete" || captions.has(nextIndex)) continue;
+
+      captions.set(nextIndex, {
+        treeNodeId: item.treeNodeId,
+        content: item.content ?? "",
+      });
+      removed.add(index);
+      break;
+    }
+  });
+
+  return items.flatMap((item, index) => {
+    if (removed.has(index)) return [];
+    const caption = captions.get(index);
+    return caption ? [{ ...item, turnSummaryCaption: caption }] : [item];
+  });
 }

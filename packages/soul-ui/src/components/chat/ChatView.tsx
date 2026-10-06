@@ -22,6 +22,9 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
+import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
+import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
+import { projectManuscriptAgentMessages } from "../../lib/manuscript-agent-message-projection";
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
@@ -152,20 +155,28 @@ export function ChatView({
     [isManuscript, tree, treeVersion],
   );
   const transcriptMessages = useMemo(
-    () => isManuscript ? projectPersistentTurnUsage(messages, showTurnUsage) : messages,
+    () => isManuscript
+      ? projectPersistentTurnUsage(
+        projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages)),
+        showTurnUsage,
+      )
+      : messages,
     [isManuscript, messages, showTurnUsage],
   );
   const visibleMessages = useMemo(
-    () => projectPersistentChatDisplayMessages(
-      transcriptMessages,
-      persistentSessionDisplaySettings?.sessionId === activeSessionKey
-        ? {
-          show_generation_separator: persistentSessionDisplaySettings.showGenerationSeparator,
-          show_jev_candidates: persistentSessionDisplaySettings.showJevCandidates,
-        }
-        : null,
-    ),
-    [transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
+    () => {
+      const visible = projectPersistentChatDisplayMessages(
+        transcriptMessages,
+        persistentSessionDisplaySettings?.sessionId === activeSessionKey
+          ? {
+            show_generation_separator: persistentSessionDisplaySettings.showGenerationSeparator,
+            show_jev_candidates: persistentSessionDisplaySettings.showJevCandidates,
+          }
+          : null,
+      );
+      return isManuscript ? projectManuscriptAgentMessages(visible) : visible;
+    },
+    [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );
   const grouped = useMemo(() => groupMessages(visibleMessages), [visibleMessages]);
   const chatStatus = activeSessionSummary?.status ?? "unknown";

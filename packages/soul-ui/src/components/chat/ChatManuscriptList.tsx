@@ -4,6 +4,7 @@ import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 /** Keep user spacing inside Virtuoso's measured box, including optimistic sends. */
 export const MANUSCRIPT_USER_ROW_CLASS_NAME = "pt-10 pb-5 ms-12 flex justify-end";
+export const MANUSCRIPT_ADJACENT_USER_ROW_CLASS_NAME = "contents [&_[data-chat-manuscript-user-row]]:pt-5";
 
 function isUserRow(item: ChatTimelineItem | undefined): boolean {
   return item?.type === "pending-message"
@@ -14,7 +15,7 @@ export function manuscriptItemSpacingClass(item: ChatTimelineItem, previous: Cha
   // Former adjacent margins collapsed to mt-10. Preserve that gap using pb-5 + pt-5.
   // Read the previous data row, so virtual unmounting cannot change the spacing.
   return isUserRow(item) && isUserRow(previous)
-    ? "contents [&_[data-chat-manuscript-user-row]]:pt-5"
+    ? MANUSCRIPT_ADJACENT_USER_ROW_CLASS_NAME
     : "contents";
 }
 

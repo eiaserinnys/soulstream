@@ -2,10 +2,15 @@ import { memo } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { cn } from "../../lib/cn";
 import { CollapsibleCaption } from "./CollapsibleCaption";
+import { TurnEndCaptions } from "./TurnEndCaptions";
 import { LabeledDivider } from "./LabeledDivider";
 import { formatPersistentJevCandidates } from "../../lib/persistent-jev-candidates";
+import { ManuscriptAgentMessageGroup } from "./ManuscriptAgentMessageGroup";
 
 export const SystemMessage = memo(function SystemMessage({ msg, presentation = "default" }: { msg: ChatMessage; presentation?: "default" | "manuscript" }) {
+  if (msg.manuscriptAgentMessages) {
+    return <ManuscriptAgentMessageGroup messages={msg.manuscriptAgentMessages} />;
+  }
   const alignmentInset = presentation === "manuscript" ? "content" : "avatar";
   if (msg.treeNodeType === "generation_started") return <LabeledDivider label="새 세대" alignmentInset={alignmentInset} />;
   if (msg.treeNodeType === "persistent_jev_candidates") {
@@ -38,7 +43,18 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
   </CollapsibleCaption>;
 
   if (presentation === "manuscript" && isComplete) {
-    return renderUsageCaption() ?? null;
+    return <TurnEndCaptions
+      treeNodeId={msg.treeNodeId}
+      usageCaption={usageCaption}
+      summaryCaption={msg.turnSummaryCaption}
+    />;
+  }
+
+  if (presentation === "manuscript" && isTurnSummary) {
+    return <TurnEndCaptions
+      treeNodeId={msg.treeNodeId}
+      summaryCaption={{ treeNodeId: msg.treeNodeId, content: msg.content }}
+    />;
   }
 
   return (

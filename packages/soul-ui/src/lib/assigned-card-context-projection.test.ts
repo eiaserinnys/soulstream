@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { placeAssignedCardContextsAtInputAnchors } from "./assigned-card-context-projection";
+import {
+  placeAssignedCardContextsAtInputAnchors,
+  projectManuscriptAssignedCardContexts,
+} from "./assigned-card-context-projection";
 import { formatAssignedCardContextSnapshot } from "./assigned-card-context-content";
 import { formatBoardWorkspaceTime } from "../board-workspace/board-workspace-items";
 import { createNodeFromEvent } from "../stores/node-factory";
+import { flattenTree } from "./flatten-tree";
 import { buildLlmHistory } from "../components/chat/buildLlmHistory";
 import type { EventTreeNode, SoulSSEEvent } from "../shared/types";
 
@@ -13,6 +17,7 @@ interface Item {
   eventId?: number;
   inputId?: string;
   preparedInputId?: string;
+  assignedCardCount?: number;
 }
 
 const input = (id: number, inputId: string, type = "intervention"): Item => ({
@@ -53,6 +58,27 @@ describe("placeAssignedCardContextsAtInputAnchors", () => {
     expect(ids(placeAssignedCardContextsAtInputAnchors(events))).toEqual(["input-10", "snapshot-21"]);
     expect(ids(placeAssignedCardContextsAtInputAnchors([input(5, "missing"), ...events]))).toEqual([
       "input-5", "snapshot-23", "input-10", "snapshot-21",
+    ]);
+  });
+});
+
+describe("projectManuscriptAssignedCardContexts", () => {
+  it("omits only assigned-card snapshots captured with no cards", () => {
+    const empty = { ...snapshot(20, "empty"), assignedCardCount: 0 };
+    const populated = { ...snapshot(21, "populated"), assignedCardCount: 2 };
+    const unknown = snapshot(22, "unknown");
+
+    expect(projectManuscriptAssignedCardContexts([
+      input(10, "empty", "user_message"),
+      empty,
+      input(11, "populated", "user_message"),
+      populated,
+      unknown,
+    ])).toEqual([
+      input(10, "empty", "user_message"),
+      input(11, "populated", "user_message"),
+      populated,
+      unknown,
     ]);
   });
 });
@@ -111,4 +137,6 @@ it("maps prepared-card snapshots without adding them to model history", () => {
     completed: false,
   } as EventTreeNode;
   expect(buildLlmHistory(root)).toEqual([{ role: "user", content: "외부 카드 알림" }]);
+  expect(flattenTree(root).find(message => message.treeNodeType === "assigned_card_context"))
+    .toMatchObject({ assignedCardCount: 1 });
 });
