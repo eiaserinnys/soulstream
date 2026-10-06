@@ -88,6 +88,7 @@ for(const width of [1440,1920,2560])test(`trim web ${width}`,async({page})=>{
  await expect(image.locator('..')).toHaveAttribute('title',await image.getAttribute('alt')??'');await expect(detail.locator('figure figcaption')).toHaveCount(0);
  await page.screenshot({path:path.join(output,`${width}-image-hover.png`)});await image.click();
  await expect(page.getByRole('dialog').locator('figcaption')).toHaveText(await image.getAttribute('alt')??'');
+ await expect.poll(()=>page.getByRole('dialog').evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
  await page.screenshot({path:path.join(output,`${width}-image-caption.png`)});await page.keyboard.press('Escape');await expect(detail).toBeVisible();
  await detail.getByRole('tab',{name:/노트/}).click();
  const fonts=await detail.evaluate(el=>[...el.querySelectorAll('.v3-card-note-frame p')].map(e=>getComputedStyle(e).font));expect(fonts.length).toBeGreaterThan(0);expect(new Set(fonts).size).toBe(1);expect(fonts[0]).toContain("14px / 22px");
@@ -155,5 +156,17 @@ test('trim WebGL titles caveats and reduced motion',async({page})=>{
  const motion=await detail.locator('[data-item-display="doing"]').first().evaluate(el=>({row:getComputedStyle(el).animationName,before:getComputedStyle(el,'::before').animationName,shell:getComputedStyle(el.parentElement!,'::before').animationName}));
  expect(motion).toEqual({row:'none',before:'none',shell:'none'});
  writeFileSync(path.join(output,'1920-webgl-surface.json'),JSON.stringify(await detail.evaluate(el=>({webgl:el.getAttribute('data-liquid-glass-webgl'),tint:getComputedStyle(el).getPropertyValue('--glass-chrome-surface-strong'),opacity:getComputedStyle(el,'::before').opacity})),null,2));
+ expect(errors).toEqual([]);expect(writes).toEqual([]);
+});
+
+test('trim expanded caption evidence',async({page})=>{
+ const {board,errors,writes}=await prepare(page,1920);
+ await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
+ const detail=page.getByTestId('card-detail'),image=detail.locator('.v3-card-evidence-image').first();
+ await image.click();const dialog=page.getByRole('dialog');
+ await expect(dialog.locator('figcaption')).toHaveText(await image.getAttribute('alt')??'');
+ await expect.poll(()=>dialog.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
+ await page.screenshot({path:path.join(output,'1920-image-caption.png')});
+ await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(detail).toBeVisible();
  expect(errors).toEqual([]);expect(writes).toEqual([]);
 });
