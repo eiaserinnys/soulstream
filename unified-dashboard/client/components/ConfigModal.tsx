@@ -201,6 +201,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                 <WallpaperPicker local={Boolean(api)} />
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined}/>
                 {userEmail ? <SettingFieldWidget
+                  className="config-pas-open-on-start"
                   field={{ key: "pas_open_on_start", field_name: "pas_open_on_start", label: "시작할 때 영구 세션으로 열기", description: "", value: pasDevicePreferences.openOnStart, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false }}
                   value={String(pasDevicePreferences.openOnStart)}
                   onChange={(value) => {

@@ -109,6 +109,19 @@ describe("PersistentSessionsTab", () => {
     expect((document.body.querySelector('[aria-label="기본 모델"]') as HTMLSelectElement).value).toBe("preset-b");
   });
 
+  it("resets the draft when the already selected session row is selected again", async () => {
+    const { request } = server();
+    await renderTab(request);
+    await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
+    flushSync(() => buttonContaining("리뷰 관제")?.click());
+    await waitFor(() => expect(nameInput().value).toBe("리뷰 관제"));
+
+    setInput(nameInput(), "버릴 이름 초안");
+    flushSync(() => buttonContaining("리뷰 관제")?.click());
+
+    expect(nameInput().value).toBe("리뷰 관제");
+  });
+
   it("saves both chat display flags with the existing editor and preserves a draft name", async () => {
     const { request, calls } = server();
     await renderTab(request);

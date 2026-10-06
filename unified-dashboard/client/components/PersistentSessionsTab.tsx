@@ -109,12 +109,6 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
     setError(null);
   };
 
-  const choose = (session: PersistentSession) => {
-    setSelected(session);
-    setRegistration(null);
-    setError(null);
-  };
-
   /** 서버가 돌려준 저장값으로 목록과 입력을 갱신한다. */
   const applySaved = useCallback((session: PersistentSession) => {
     setSessions((current) => current.some((item) => item.session_id === session.session_id)
@@ -157,6 +151,13 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
     onSaved: applySaved,
     onNotPersistent: () => { void refresh({ select: selected?.session_id ?? null, keepEditor: true }); },
   });
+
+  const choose = (session: PersistentSession) => {
+    if (selected?.session_id === session.session_id) details.resetDraft();
+    setSelected(session);
+    setRegistration(null);
+    setError(null);
+  };
 
   const create = () => mutate(async () => {
     if (!editor.agentId) throw new FormError("에이전트를 선택하세요.");
@@ -254,7 +255,8 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
         resource={selected}
         draft={details.draft}
         pending={busy || details.pending}
-        error={error?.message ?? details.error}
+        error={details.error ?? error?.message ?? null}
+        errorScope={details.errorScope}
         modelPresetCatalog={modelPresetCatalog}
         onFieldChange={details.onFieldChange}
         onSave={() => { void details.save(); }}

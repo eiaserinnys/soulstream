@@ -1,7 +1,7 @@
 import { cn } from "@seosoyoung/soul-ui";
 import { ChevronRight, Monitor, Server, Workflow, Users, ShieldCheck, HardDrive, CalendarClock, Activity, Bot, Infinity as InfinityIcon, SlidersHorizontal } from "lucide-react";
 export interface ConfigCategoryNavItem { name: string; label: string }
-const icons: Record<string, typeof Monitor> = { appearance: Monitor, nodes: Server, card_dispatch: Workflow, users: Users, session_review: ShieldCheck, file_storage: HardDrive, recurring_jobs: CalendarClock, persistent: InfinityIcon, usage_log: Activity, agents: Bot };
+const icons: Record<string, typeof Monitor> = { appearance: Monitor, account: Users, display: Monitor, record: Activity, nodes: Server, card_dispatch: Workflow, users: Users, session_review: ShieldCheck, file_storage: HardDrive, recurring_jobs: CalendarClock, persistent: InfinityIcon, usage_log: Activity, agents: Bot };
 const execution = new Set(["nodes", "agents", "card_dispatch", "recurring_jobs", "persistent"]);
 export function ConfigCategoryNav({ categories, extraTabs = [], activeCategory, onSelect, showGroupLabels = true }: {
   categories: ConfigCategoryNavItem[]; extraTabs?: ConfigCategoryNavItem[];

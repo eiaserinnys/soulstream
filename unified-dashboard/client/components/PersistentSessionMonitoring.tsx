@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { Button, type ModelPresetAvailability } from "@seosoyoung/soul-ui";
 import { pairTurnUsage } from "@seosoyoung/soul-ui/lib/persistent-turn-usage";
-import {
-  formatContextUsageText,
-  formatTurnCompleteStats,
-  formatTurnUsageCaptionTitle,
-} from "@seosoyoung/soul-ui/lib/turn-usage-format";
+import { formatTurnUsageCaptionTitle } from "@seosoyoung/soul-ui/lib/turn-usage-format";
 import { HISTORY_PAGE_SIZE } from "@seosoyoung/soul-ui/components/chat/useMessageHistoryBuffer";
 
 import type { PersistentSession } from "../lib/persistent-sessions";
+import { fetchNodeModelPresets } from "../lib/model-presets";
 import { SettingFieldWidget, type SettingField } from "./config/SettingFieldWidget";
+import { SettingsAlert, SettingsGroupBox } from "./config/SettingsListDetail";
 
 type TimelineEvent = {
   id: number | string;
@@ -29,7 +27,9 @@ type MonitoringState = {
   loadingMore: boolean;
 };
 
-const HISTORY_EVENT_TYPES = "generation_started,complete,context_usage";
+const HISTORY_EVENT_TYPES = "generation_started,complete,context_usage,error,user_message,intervention_sent";
+const DISPLAY_EVENT_TYPES = new Set(["generation_started", "complete", "context_usage"]);
+const PERCENT_FORMAT = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
 
 export function usePersistentSessionMonitoring({
   sessionId,
@@ -50,6 +50,8 @@ export function usePersistentSessionMonitoring({
     error: null,
     loadingMore: false,
   });
+  const [modelPresets, setModelPresets] = useState<ModelPresetAvailability[]>([]);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -76,15 +78,28 @@ export function usePersistentSessionMonitoring({
       limit: String(HISTORY_PAGE_SIZE),
     }).then((page) => {
       if (!active) return;
-      setHistory({ state: "ready", events: page.messages, nextCursor: page.next_cursor, error: null, loadingMore: false });
+      setHistory({ state: "ready", events: normalizeTimelineEvents(page.messages), nextCursor: page.next_cursor, error: null, loadingMore: false });
     }).catch((caught: unknown) => {
       if (!active) return;
       setHistory({ state: "error", events: [], nextCursor: null, error: errorMessage(caught), loadingMore: false });
     });
 
     return () => { active = false; };
-  }, [nodeId, request, sessionId]);
+  }, [nodeId, reload, request, sessionId]);
 
+  useEffect(() => {
+    let active = true;
+    if (!nodeId) {
+      setModelPresets([]);
+      return () => { active = false; };
+    }
+    void fetchNodeModelPresets(nodeId, request)
+      .then((presets) => { if (active) setModelPresets(presets); })
+      .catch(() => { if (active) setModelPresets([]); });
+    return () => { active = false; };
+  }, [nodeId, request]);
+
+  const retry = useCallback(() => setReload((value) => value + 1), []);
   const loadMore = useCallback(async () => {
     if (!history.nextCursor || history.loadingMore) return;
     setHistory((current) => ({ ...current, loadingMore: true, error: null }));
@@ -97,7 +112,7 @@ export function usePersistentSessionMonitoring({
       setHistory((current) => ({
         ...current,
         state: "ready",
-        events: [...current.events, ...page.messages],
+        events: normalizeTimelineEvents([...current.events, ...page.messages]),
         nextCursor: page.next_cursor,
         loadingMore: false,
         error: null,
@@ -107,72 +122,136 @@ export function usePersistentSessionMonitoring({
     }
   }, [history.loadingMore, history.nextCursor, request, sessionId]);
 
-  return { generationState, generation, generationError, history, loadMore };
+  return { generationState, generation, generationError, history, loadMore, retry, modelPresets };
 }
 
 export function PersistentSessionMonitoring({
   sessionId,
   nodeId,
-  resource,
   request,
 }: {
   sessionId: string;
   nodeId: string;
-  resource: PersistentSession;
   request?: typeof fetch;
 }) {
-  const { generationState, generation, generationError, history, loadMore } = usePersistentSessionMonitoring({ sessionId, nodeId, request });
-  return <PersistentSessionMonitoringView
-    resource={resource}
-    state={{ generationState, generation, generationError, history, loadMore }}
-  />;
+  const state = usePersistentSessionMonitoring({ sessionId, nodeId, request });
+  return <PersistentSessionMonitoringView state={state} />;
 }
 
 export function PersistentSessionMonitoringView({
-  resource,
   state,
 }: {
-  resource: PersistentSession;
   state: ReturnType<typeof usePersistentSessionMonitoring>;
 }) {
-  const { generationState, generation, generationError, history, loadMore } = state;
-  const latestUsage = useMemo(() => latestTurnUsage(history.events), [history.events]);
-  const currentModel = currentModelText(resource);
-  const pendingModel = pendingText(resource);
-  const generationText = generationState === "loading"
-    ? "불러오는 중…"
-    : generationState === "error"
-      ? `조회 실패: ${generationError ?? "요청 오류"}`
-      : generation?.created_at ?? "세대 기록 없음";
-  const usageText = history.state === "loading"
-    ? "불러오는 중…"
-    : history.state === "error"
-      ? `조회 실패: ${history.error ?? "요청 오류"}`
-      : latestUsage ?? "기록 없음";
-  const historyText = history.state === "loading"
-    ? "불러오는 중…"
-    : history.state === "error"
-      ? `조회 실패: ${history.error ?? "요청 오류"}`
-      : history.events.length === 0
-        ? "기록 없음"
-        : `${history.events.length}개`;
+  const { generationState, generation, generationError, history, loadMore, retry } = state;
+  const usageByTerminalId = useMemo(() => turnUsageByTerminalId(history.events), [history.events]);
+  const isLoading = generationState === "loading" || history.state === "loading";
+  const error = generationError ?? history.error;
+  const hasError = generationState === "error" || history.state === "error";
+  const visibleEvents = useMemo(
+    () => displayHistoryEvents(history.events, generation, usageByTerminalId),
+    [generation, history.events, usageByTerminalId],
+  );
+  const generationText = generation
+    ? typeof generation.payload.generation === "number"
+      ? `세대 ${generation.payload.generation}`
+      : displayTime(generation.created_at)
+    : "세대 기록 없음";
+  const hasAnyDisplayedRecord = Boolean(generation) || visibleEvents.length > 0;
 
-  return <div data-testid="persistent-session-monitoring">
-    <SettingFieldWidget field={readField("current_model", "현재 실행 모델", currentModel)} value={currentModel} onChange={() => undefined} />
-    <SettingFieldWidget field={readField("pending", "대기 중인 변경", pendingModel)} value={pendingModel} onChange={() => undefined} />
-    <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} />
-    <SettingFieldWidget field={readField("latest_usage", "최근 턴 사용량", usageText)} value={usageText} onChange={() => undefined} />
-    <SettingFieldWidget field={readField("history", "최근 기록", historyText)} value={historyText} onChange={() => undefined} />
-    {history.state === "ready" && history.events.length > 0 ? <ol className="space-y-1" aria-label="최근 세션 기록">
-      {history.events.map((event) => <li key={`${event.id}-${event.event_type}`} className="text-sm text-muted-foreground">
-        <span>{timelineLabel(event.event_type)}</span><span> · </span><time dateTime={event.created_at}>{event.created_at}</time>
-      </li>)}
-    </ol> : null}
-    {history.state === "ready" && history.nextCursor ? <Button type="button" size="sm" variant="outline" disabled={history.loadingMore} onClick={() => void loadMore()}>
-      {history.loadingMore ? "불러오는 중…" : "더 읽기"}
-    </Button> : null}
-    {history.error && history.state === "ready" ? <p role="alert" className="text-sm text-destructive">조회 실패: {history.error}</p> : null}
+  return <div data-testid="persistent-session-monitoring" className="space-y-4">
+    {isLoading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
+    {!isLoading && hasError ? <div className="space-y-2">
+      <SettingsAlert>조회 실패: {error ?? "기록을 불러오지 못했습니다."}</SettingsAlert>
+      <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
+    </div> : null}
+    {!isLoading && !hasError ? <>
+      {hasAnyDisplayedRecord ? <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} /> : <p className="text-sm text-muted-foreground">세대 기록 없음</p>}
+      <section className="space-y-2" aria-label="최근 기록">
+        <h3 className="text-sm font-medium">최근 기록</h3>
+        {visibleEvents.length > 0 ? <ol className="space-y-2" aria-label="최근 세션 기록">
+          {visibleEvents.map(({ event, detail }) => <li key={String(event.id)} data-testid="persistent-session-history-row" data-event-id={String(event.id)} className="min-w-0">
+            <time dateTime={event.created_at} className="block text-xs text-muted-foreground">{displayTime(event.created_at)}</time>
+            <p className="break-words text-sm text-foreground">{detail}</p>
+          </li>)}
+        </ol> : generation ? <p className="text-sm text-muted-foreground">기록 없음</p> : null}
+        {history.nextCursor ? <Button type="button" size="sm" variant="outline" disabled={history.loadingMore} onClick={() => void loadMore()}>
+          {history.loadingMore ? "불러오는 중…" : "더 읽기"}
+        </Button> : null}
+        {history.error ? <div className="space-y-2">
+          <SettingsAlert>조회 실패: {history.error}</SettingsAlert>
+          <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
+        </div> : null}
+      </section>
+    </> : null}
   </div>;
+}
+
+export function PersistentSessionAvailability({
+  resource,
+  presets,
+}: {
+  resource: PersistentSession;
+  presets: readonly ModelPresetAvailability[];
+}) {
+  const rows = useMemo(() => persistentSessionQuotaRows(resource, presets), [presets, resource]);
+  if (rows.length === 0) return null;
+  return <SettingsGroupBox title="계정 여유">
+    <div className="space-y-1">
+      {rows.map((row) => <SettingFieldWidget
+        key={row.key}
+        field={readField(row.key, row.label, row.value, row.description)}
+        value={row.value}
+        onChange={() => undefined}
+      />)}
+    </div>
+  </SettingsGroupBox>;
+}
+
+export function persistentSessionQuotaRows(resource: PersistentSession, presets: readonly ModelPresetAvailability[]) {
+  const groups = new Map<string, {
+    backend: string;
+    roles: string[];
+    headroom: number;
+    resetsAt: string | null;
+    observedAt: string | null;
+    quotaLabel: string | null;
+  }>();
+  const references = [
+    { role: "현재", presetId: resource.runtime.current_model.model_preset },
+    { role: "기본", presetId: resource.settings.default_model.model_preset },
+    { role: "대체", presetId: resource.settings.fallback_model?.model_preset ?? null },
+  ];
+  for (const reference of references) {
+    if (!reference.presetId) continue;
+    const preset = presets.find((item) => item.id === reference.presetId);
+    const weekly = preset?.weekly_headroom;
+    if (!preset || !weekly || weekly.status === "unavailable" || typeof weekly.headroom !== "number") continue;
+    const key = JSON.stringify([preset.backend, weekly.headroom, weekly.resets_at, weekly.observed_at, weekly.quota_label]);
+    const group = groups.get(key) ?? {
+      backend: preset.backend,
+      roles: [],
+      headroom: weekly.headroom,
+      resetsAt: weekly.resets_at,
+      observedAt: weekly.observed_at,
+      quotaLabel: weekly.quota_label,
+    };
+    group.roles.push(reference.role);
+    groups.set(key, group);
+  }
+  return [...groups].map(([key, group]) => {
+    const provider = group.backend === "claude" ? "Claude" : group.backend === "codex" ? "Codex" : group.backend;
+    const metadata = [
+      group.resetsAt ? `초기화 ${displayTime(group.resetsAt)}` : null,
+      group.observedAt ? `관측 ${displayTime(group.observedAt)}` : null,
+    ].filter(Boolean).join(" · ");
+    return {
+      key,
+      label: `${provider} · ${group.roles.join("·")}`,
+      value: `${group.quotaLabel ?? "7일"} 여유 ${PERCENT_FORMAT.format(group.headroom)}%`,
+      description: metadata,
+    };
+  });
 }
 
 async function readTimeline(request: typeof fetch, sessionId: string, parameters: Record<string, string>): Promise<TimelinePage> {
@@ -185,57 +264,84 @@ async function readTimeline(request: typeof fetch, sessionId: string, parameters
   return await response.json() as TimelinePage;
 }
 
-function latestTurnUsage(events: readonly TimelineEvent[]): string | undefined {
-  const pairs = pairTurnUsage([...events].reverse().map((event) => ({
+function normalizeTimelineEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
+  const byId = new Map<string, TimelineEvent>();
+  for (const event of events) {
+    const key = String(event.id);
+    if (!byId.has(key)) byId.set(key, event);
+  }
+  return [...byId.values()].sort((a, b) => compareEventIds(b.id, a.id));
+}
+
+function compareEventIds(a: string | number, b: string | number): number {
+  const numberA = Number(a);
+  const numberB = Number(b);
+  if (Number.isFinite(numberA) && Number.isFinite(numberB)) return numberA - numberB;
+  return String(a).localeCompare(String(b));
+}
+
+function turnUsageByTerminalId(events: readonly TimelineEvent[]): Map<string, string> {
+  const chronological = [...events].sort((a, b) => compareEventIds(a.id, b.id)).map((event) => ({
     id: event.id,
     type: event.event_type,
     data: event.payload,
-  })));
-  const latest = pairs[pairs.length - 1];
-  if (!latest) return undefined;
-  const context = latest.contextUsage;
-  const complete = latest.complete;
-  const caption = formatTurnUsageCaptionTitle({
-    percent: context?.percent,
-    estimated: context?.estimated,
-    usage: complete?.usage,
-    turnCostUsd: complete?.turn_cost_usd,
-  });
-  const stats = formatTurnCompleteStats({
-    usage: complete?.usage,
-    turnCostUsd: complete?.turn_cost_usd,
-    sessionCostUsd: complete?.session_cost_usd,
-    sessionCostPartial: complete?.session_cost_partial,
-  });
-  const contextText = formatContextUsageText({
-    usedTokens: context?.used_tokens,
-    maxTokens: context?.max_tokens,
-    percent: context?.percent,
-    estimated: context?.estimated,
-  });
-  return [caption, contextText, stats].filter((value, index, values) => value && values.indexOf(value) === index).join(" · ") || undefined;
+  }));
+  return new Map(pairTurnUsage(chronological).flatMap((pair) => {
+    if (pair.terminalType !== "complete" || !pair.complete) return [];
+    const context = pair.contextUsage;
+    const terminal = pair.complete;
+    const detail = formatTurnUsageCaptionTitle({
+      percent: context?.percent,
+      estimated: context?.estimated,
+      usage: terminal.usage,
+      turnCostUsd: terminal.turn_cost_usd,
+    });
+    return [[String(pair.terminalId), detail ?? "턴 완료"]];
+  }));
 }
 
-function readField(key: string, label: string, value: string): SettingField {
-  return { key, field_name: key, label, description: "", value, value_type: "str", sensitive: false, hot_reloadable: true, read_only: true };
+function displayHistoryEvents(events: readonly TimelineEvent[], latestGeneration: TimelineEvent | null, usageByTerminalId: ReadonlyMap<string, string>) {
+  return [...events]
+    .filter((event) => DISPLAY_EVENT_TYPES.has(event.event_type))
+    .filter((event) => event.event_type !== "context_usage")
+    .filter((event) => event.event_type !== "generation_started" || String(event.id) !== String(latestGeneration?.id))
+    .map((event) => ({
+      event,
+      detail: event.event_type === "complete"
+        ? usageByTerminalId.get(String(event.id)) ?? "턴 완료"
+        : generationSummary(event),
+    }));
 }
 
-function currentModelText(session: PersistentSession): string {
-  const { model_preset, model, reasoning_effort } = session.runtime.current_model;
-  return [model ?? model_preset, reasoning_effort].filter(Boolean).join(" · ") || "모델 정보 없음";
+function generationSummary(event: TimelineEvent): string {
+  const current = asRecord(event.payload.current);
+  const model = asString(current?.model) ?? asString(current?.model_preset);
+  const reason = asString(event.payload.reason);
+  const reasonLabel = reason ? generationReasonLabel(reason) : "모델 변경";
+  return [reasonLabel, model].filter(Boolean).join(" · ") || "세대 교체";
 }
 
-function pendingText(session: PersistentSession): string {
-  const pending = session.runtime.pending;
-  if (!pending) return "대기 변경 없음";
-  return `다음 실행부터 ${pending.target_model_preset}${pending.target_reasoning_effort ? ` · ${pending.target_reasoning_effort}` : ""}`;
+function generationReasonLabel(reason: string): string {
+  if (reason === "weekly_headroom") return "주간 사용 여유";
+  return reason.replaceAll("_", " ");
 }
 
-function timelineLabel(type: string): string {
-  if (type === "generation_started") return "새 세대";
-  if (type === "complete") return "턴 완료";
-  if (type === "context_usage") return "컨텍스트 사용량";
-  return type;
+function readField(key: string, label: string, value: string, description = ""): SettingField {
+  return { key, field_name: key, label, description, value, value_type: "str", sensitive: false, hot_reloadable: true, read_only: true, read_only_display: true };
+}
+
+function displayTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  return date.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function errorMessage(value: unknown) { return value instanceof Error ? value.message : String(value); }

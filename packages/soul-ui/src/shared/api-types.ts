@@ -35,6 +35,16 @@ export function reasoningEffortLabel(value: string): string {
   return REASONING_EFFORT_LABELS[value] ?? value;
 }
 
+export interface WeeklyHeadroom {
+  status: "ok" | "stale" | "unavailable";
+  headroom: number | null;
+  remaining_percent: number | null;
+  window_remaining_percent: number | null;
+  resets_at: string | null;
+  observed_at: string | null;
+  quota_label: string | null;
+}
+
 export interface ModelPresetAvailability {
   id: string;
   label: string;
@@ -48,6 +58,8 @@ export interface ModelPresetAvailability {
   supported_efforts?: readonly string[];
   /** Effort applied when the request omits one. Absent = backend default. */
   default_effort?: string;
+  /** Server-computed remaining weekly allowance for this provider. */
+  weekly_headroom?: WeeklyHeadroom | null;
 }
 
 // === JSONL Record ===

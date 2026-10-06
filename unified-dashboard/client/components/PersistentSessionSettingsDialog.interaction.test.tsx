@@ -1,12 +1,15 @@
 /** @vitest-environment jsdom */
 
-import { act } from "react";
+import { act, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useDashboardStore } from "@seosoyoung/soul-ui";
 
 import { PersistentSessionSettingsDialog } from "./PersistentSessionSettingsDialog";
 import type { PersistentSession } from "../lib/persistent-sessions";
+import { createPersistentSessionsApi } from "../lib/persistent-sessions";
+import { PersistentSessionDetails, usePersistentSessionDetailsController } from "./PersistentSessionDetails";
+import { persistentSessionQuotaRows } from "./PersistentSessionMonitoring";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -48,9 +51,14 @@ it("saves one display field immediately and publishes only the returned settings
   await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
   await settle();
   click("표시와 모션");
+  expect([...document.body.querySelectorAll<HTMLButtonElement>("[role=switch]")].map((control) => control.getAttribute("aria-label"))).toEqual([
+    "캐릭터 표시", "캐릭터 움직임", "세대 구분선 표시", "Jev 후보 표시", "턴 끝 사용량 표시",
+  ]);
   const switchControl = switchFor("캐릭터 표시");
   expect(switchControl?.getAttribute("aria-checked")).toBe("true");
+  expect(switchControl?.getAttribute("aria-label")).toBe("캐릭터 표시");
 
+  switchControl?.focus();
   await act(async () => switchControl?.click());
   expect(calls.filter((call) => call.method === "PUT")).toEqual([{
     path: "/api/persistent-sessions/sample-pas",
@@ -58,7 +66,9 @@ it("saves one display field immediately and publishes only the returned settings
     body: { settings: { show_character: false } },
   }]);
   expect(switchControl?.getAttribute("aria-checked")).toBe("true");
-  expect(switchFor("캐릭터 표시")?.disabled).toBe(true);
+  expect(switchControl?.disabled).toBe(false);
+  expect(switchControl?.getAttribute("aria-disabled")).toBe("true");
+  expect(document.activeElement).toBe(switchControl);
 
   await act(async () => release());
   await settle();
@@ -83,8 +93,82 @@ it("keeps the persisted switch value when an immediate update fails", async () =
   await settle();
 
   expect(switchFor("캐릭터 표시")?.getAttribute("aria-checked")).toBe("true");
-  expect(document.body.textContent).toContain("예시 저장 실패");
+  expect(document.body.textContent).toContain("저장하지 못했습니다. 다시 눌러 주세요.");
   expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showCharacter).toBe(true);
+  click("계정과 모델");
+  expect(document.body.textContent).not.toContain("저장하지 못했습니다. 다시 눌러 주세요.");
+  click("표시와 모션");
+  expect(document.body.textContent).toContain("저장하지 못했습니다. 다시 눌러 주세요.");
+});
+
+it("keeps unsaved name and model drafts when an immediate display save succeeds", async () => {
+  const resource = makeSession();
+  const calls: Array<{ path: string; method: string; body: unknown }> = [];
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+    calls.push({ path: url.pathname, method, body });
+    if (method === "PUT") {
+      resource.settings.show_character = false;
+      return Response.json({ session: resource, model_change: "none" });
+    }
+    throw new Error(`Unexpected request: ${method} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<DraftPreservationHarness resource={resource} request={request} />));
+  await settle();
+  const nameInput = [...document.body.querySelectorAll<HTMLInputElement>("input")].find((input) => input.closest("[data-testid=config-field-row]")?.textContent?.includes("세션 이름"));
+  expect(nameInput).toBeDefined();
+  expect(nameInput?.getAttribute("aria-label")).toBe("세션 이름");
+  expect(document.body.querySelector('[aria-label="기본 모델"]')).not.toBeNull();
+  expect(document.body.querySelector('[aria-label="모델 선택"]')).toBeNull();
+  await setInput(nameInput!, "보존할 이름 초안");
+  click("모델 초안 선택");
+  click("표시와 모션");
+  await act(async () => switchFor("캐릭터 표시")?.click());
+  await settle();
+  expect(calls.filter((call) => call.method === "PUT").map((call) => call.body)).toEqual([{ settings: { show_character: false } }]);
+
+  click("계정과 모델");
+  await settle();
+  const persistedNameInput = [...document.body.querySelectorAll<HTMLInputElement>("input")].find((input) => input.closest("[data-testid=config-field-row]")?.textContent?.includes("세션 이름"));
+  expect(persistedNameInput?.value).toBe("보존할 이름 초안");
+  expect(document.body.querySelector('[aria-label="기본 모델"]')?.textContent).toContain("Sol");
+});
+
+it("shows server-calculated weekly headroom for session providers and omits remaining percent", async () => {
+  const resource = makeSession();
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (url.pathname === "/api/nodes/sample-node/model-presets") return Response.json({ model_presets: [
+      { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: "2026-10-08T00:00:00.000Z", usage_warning: false,
+        weekly_headroom: { status: "ok", headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: "2026-10-08T00:00:00.000Z", observed_at: "2026-10-06T02:00:00.000Z", quota_label: "7일" } },
+      { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+        weekly_headroom: { status: "ok", headroom: -56.6, remaining_percent: 21, window_remaining_percent: 77.6, resets_at: null, observed_at: "2026-10-06T02:01:00.000Z", quota_label: "7일" } },
+    ] });
+    throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await settle();
+
+  expect(document.body.textContent).toContain("12.5%");
+  expect(document.body.textContent).toContain("-56.6%");
+  expect(document.body.textContent).not.toContain("72.5%");
+  expect(document.body.textContent).not.toContain("77.6%");
+});
+
+it("omits weekly headroom when the server has no usable value", () => {
+  const resource = makeSession();
+  const rows = persistentSessionQuotaRows(resource, [
+    { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, weekly_headroom: null },
+    { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: "unavailable", headroom: null, remaining_percent: 0, window_remaining_percent: 0, resets_at: null, observed_at: null, quota_label: "7일" } },
+  ]);
+  expect(rows).toEqual([]);
 });
 
 it("uses the shared account detail draft and save action", async () => {
@@ -126,6 +210,38 @@ it("uses the shared account detail draft and save action", async () => {
 
 async function settle() {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+}
+
+async function setInput(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function DraftPreservationHarness({ resource: initialResource, request }: { resource: PersistentSession; request: typeof fetch }) {
+  const [resource, setResource] = useState(initialResource);
+  const [section, setSection] = useState<"account" | "display">("account");
+  const api = useMemo(() => createPersistentSessionsApi(request), [request]);
+  const details = usePersistentSessionDetailsController({ resource, api, onSaved: setResource });
+  return <>
+    <button type="button" onClick={() => details.onFieldChange("modelPreset", "sample-sol")}>모델 초안 선택</button>
+    <button type="button" onClick={() => setSection("account")}>계정과 모델</button>
+    <button type="button" onClick={() => setSection("display")}>표시와 모션</button>
+    <PersistentSessionDetails
+      resource={resource}
+      draft={details.draft}
+      pending={details.pending}
+      error={details.error}
+      errorScope={details.errorScope}
+      section={section}
+      immediateDisplaySave
+      modelPresetCatalog={modelPresetCatalog}
+      onFieldChange={details.onFieldChange}
+      onSave={() => { void details.save(); }}
+    />
+  </>;
 }
 
 function click(label: string) {

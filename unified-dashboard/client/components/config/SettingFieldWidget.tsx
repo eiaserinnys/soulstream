@@ -20,24 +20,31 @@ export interface SettingField {
   sensitive: boolean;
   hot_reloadable: boolean;
   read_only: boolean;
+  read_only_display?: boolean;
 }
 
 function BoolToggle({
   value,
+  label,
   onChange,
   disabled,
+  interactionBlocked,
 }: {
   value: boolean;
+  label: string;
   onChange: (v: boolean) => void;
   disabled: boolean;
+  interactionBlocked: boolean;
 }) {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={label}
       aria-checked={value}
+      aria-disabled={disabled || interactionBlocked || undefined}
       disabled={disabled}
-      onClick={() => onChange(!value)}
+      onClick={() => { if (!disabled && !interactionBlocked) onChange(!value); }}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
         value ? "bg-primary" : "bg-input",
@@ -57,10 +64,12 @@ function BoolToggle({
 
 function SensitiveInput({
   value,
+  label,
   onChange,
   disabled,
 }: {
   value: string;
+  label: string;
   onChange: (v: string) => void;
   disabled: boolean;
 }) {
@@ -70,6 +79,7 @@ function SensitiveInput({
     <div className="flex items-center gap-1">
       <Input
         type={visible ? "text" : "password"}
+        aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
@@ -91,27 +101,35 @@ function FieldInput({
   field,
   value,
   onChange,
+  interactionBlocked,
 }: {
   field: SettingField;
   value: string;
   onChange: (v: string) => void;
+  interactionBlocked: boolean;
 }) {
   const disabled = field.read_only;
+
+  if (field.read_only && field.read_only_display && !field.sensitive && field.value_type !== "bool") {
+    return <div data-testid="config-field-value" className="persistent-settings-read-only-value">{value}</div>;
+  }
 
   if (field.value_type === "bool") {
     const boolVal = value === "true" || value === "True" || value === "1";
     return (
       <BoolToggle
         value={boolVal}
+        label={field.label}
         onChange={(v) => onChange(v ? "true" : "false")}
         disabled={disabled}
+        interactionBlocked={interactionBlocked}
       />
     );
   }
 
   if (field.sensitive) {
     return (
-      <SensitiveInput value={value} onChange={onChange} disabled={disabled} />
+      <SensitiveInput value={value} label={field.label} onChange={onChange} disabled={disabled} />
     );
   }
 
@@ -123,6 +141,7 @@ function FieldInput({
   return (
     <Input
       type={inputType}
+      aria-label={field.label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
@@ -136,16 +155,23 @@ export function SettingFieldWidget({
   field,
   value,
   onChange,
+  className,
+  interactionBlocked = false,
+  saving = false,
 }: {
   field: SettingField;
   value: string;
   onChange: (v: string) => void;
+  className?: string;
+  interactionBlocked?: boolean;
+  saving?: boolean;
 }) {
   return (
     <div
       data-testid="config-field-row"
       className={cn(
         "grid grid-cols-1 gap-2 items-start px-1 py-1.5 rounded sm:grid-cols-[minmax(0,1fr)_minmax(16rem,1.2fr)]",
+        className,
       )}
     >
       <div className={cn("min-w-0", field.read_only && "opacity-60")}>
@@ -166,7 +192,10 @@ export function SettingFieldWidget({
           {field.description}
         </p>
       </div>
-      <FieldInput field={field} value={value} onChange={onChange} />
+      <div className="relative min-w-0">
+        <FieldInput field={field} value={value} onChange={onChange} interactionBlocked={interactionBlocked} />
+        {saving ? <span role="status" className="pointer-events-none absolute inset-y-0 right-0 flex items-center text-xs text-muted-foreground">저장 중…</span> : null}
+      </div>
     </div>
   );
 }

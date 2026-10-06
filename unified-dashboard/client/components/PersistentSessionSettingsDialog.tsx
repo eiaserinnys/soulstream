@@ -79,10 +79,10 @@ export function PersistentSessionSettingsDialog({
   const activeLabel = categories.find((category) => category.name === selectedSection)?.label ?? categories[0]!.label;
 
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogPopup className="approved-dialog config-dialog max-w-5xl" closeProps={{ "aria-label": "영구 세션 설정 닫기" }} data-testid="persistent-session-settings-dialog">
+    <DialogPopup className="approved-dialog config-dialog persistent-session-settings-popup max-w-5xl" closeProps={{ "aria-label": "영구 세션 설정 닫기" }} data-testid="persistent-session-settings-dialog">
       <DialogHeader>
         <DialogTitle>영구 세션 설정</DialogTitle>
-        <DialogDescription>{resource?.display_name ?? "세션"}</DialogDescription>
+        <DialogDescription>{resource?.display_name ?? null}</DialogDescription>
       </DialogHeader>
       <DialogPanel className="config-dialog-panel">
         {resource ? <div className="config-layout" data-mobile-index={mobileIndex}>
@@ -100,15 +100,17 @@ export function PersistentSessionSettingsDialog({
               draft={details.draft}
               pending={details.pending}
               error={details.error}
+              errorScope={details.errorScope}
               section={selectedSection}
               immediateDisplaySave
               modelPresetCatalog={modelPresetCatalog}
-              monitoring={<PersistentSessionMonitoringView resource={resource} state={monitoring} />}
+              weeklyAvailability={monitoring.modelPresets}
+              monitoring={<PersistentSessionMonitoringView state={monitoring} />}
               onFieldChange={details.onFieldChange}
               onSave={() => { void details.save(); }}
               onModelError={setModelError}
             />
-            {modelError ? <SettingsAlert>{modelError}</SettingsAlert> : null}
+            {modelError && selectedSection === "account" ? <SettingsAlert>{modelError}</SettingsAlert> : null}
           </section>
         </div> : <div className="config-detail">
           {loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
