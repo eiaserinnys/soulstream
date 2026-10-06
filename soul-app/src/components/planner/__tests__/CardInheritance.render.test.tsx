@@ -81,7 +81,7 @@ test('카드 배경은 폴더 컨테이너이고 small은 폴더 히스토리의
   expect(flat(screen.getByTestId('task-run-avatar-root').props.style).height).toBe(44);
   expect(screen.queryByTestId('session-card-context-row')).toBeNull();
   expect(screen.getAllByTestId('session-card-identity')[0].props.children).toContain('node-1 · sol');
-  expect(flat(screen.getByTestId('task-run-history-list').props.style).gap).toBe(result.current.cardLayout.gap);
+  expect(flat(screen.UNSAFE_getByType(require('react-native').FlatList).props.contentContainerStyle).gap).toBe(result.current.cardLayout.gap);
   expect(flat(screen.getByTestId('task-run-depth-child').props.style).marginLeft).toBe(result.current.spacing.md);
 });
 test('카드 셋째 줄은 최신 보고 제목 → 최신 커멘트 → 요청 순서이다', () => {
@@ -171,4 +171,14 @@ test('커멘트의 마크다운 첨부는 공용 썸네일과 파일 링크로 �
   const browser = jest.spyOn(require('expo-web-browser'), 'openBrowserAsync').mockResolvedValue({});
   fireEvent.press(screen.getByLabelText('자료'));
   expect(browser).toHaveBeenCalledWith('https://test/file.pdf');
+});
+
+test.each([false, true])('볼 것 0은 목록·보드 행의 요청과 접근 이름에서 빠진다 (board=%s)', board => {
+  const now = { text: '답변 대기', turn: 'user' as const, ask: '색을 골라 주세요', updatedAt: '', sessionId: 's1' };
+  const source = { ...card, now, items: [] };
+  const screen = render(<CardRow api={null} card={source} board={board} onOpen={jest.fn()} />);
+  expect(screen.getByLabelText('색을 골라 주세요')).toBeTruthy();
+  expect(screen.queryByText(/볼 것 0/)).toBeNull();
+  screen.rerender(<CardRow api={null} card={{ ...source, now: { ...now, ask: null } }} board={board} onOpen={jest.fn()} />);
+  expect(screen.queryByTestId(`card-${source.id}-${board ? 'board-' : ''}ask-preview`)).toBeNull();
 });

@@ -12,7 +12,6 @@ import { AttachmentImage } from '../AttachmentImage';
 import { CardItemCheckbox } from '../CardItemCheckbox';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { StatusPulseDecorationLayer, withAlphaColor } from '../StatusPulseDecoration';
-import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 const DISPLAY_LABELS: Record<CardItemDisplay, string> = {
   todo: '아직',
@@ -40,7 +39,6 @@ export function CardCheckItemRow({
   checked,
   pending,
   expanded,
-  paneWidth,
   onToggle,
   onConfirm,
   onSetTarget,
@@ -63,6 +61,7 @@ export function CardCheckItemRow({
   const links = item.evidence.filter((evidence) => evidence.type === 'link');
   const imageSources = images.map((evidence) => cardImageSource(evidence.url, serverUrl, jwt));
   const running = item.display === 'doing';
+  const statusLabel = item.display === 'fix' ? `${DISPLAY_LABELS.fix} ${item.fixOpen}` : DISPLAY_LABELS[item.display];
   const color = statusColor(item, t);
   const rowColor = item.display === 'confirmed' ? null : item.display === 'changed' ? t.colors.warning : color;
   const metadata = [item.reportedAt ? formatCardTime(item.reportedAt) : '',
@@ -105,7 +104,7 @@ export function CardCheckItemRow({
           testID={`card-check-item-${item.id}-expand`}
           surfaceTestID={`card-check-item-${item.id}-title-visual`}
           accessibilityRole="button"
-          accessibilityLabel={`${item.id} ${item.title} ${rowExpanded ? '접기' : '펼치기'}`}
+          accessibilityLabel={`${item.id} ${item.title}, ${statusLabel}, ${rowExpanded ? '접기' : '펼치기'}`}
           accessibilityState={{ expanded: rowExpanded }}
           disabled={item.display === 'dropped'}
           frameStyle={styles.titleHitFrame}
@@ -114,7 +113,7 @@ export function CardCheckItemRow({
             onToggle();
           }}
         >
-          <View testID={`card-check-item-${item.id}-title-row`} style={[styles.titleRow, paneWidth < 400 ? styles.titleStacked : null]}>
+          <View testID={`card-check-item-${item.id}-title-row`} style={styles.titleRow}>
             <Text style={[styles.number, checked && styles.confirmedNumber]}>{item.id}</Text>
             <Text
               testID={`card-check-item-${item.id}-title`}
@@ -127,12 +126,7 @@ export function CardCheckItemRow({
             >
               {item.title}
             </Text>
-            <View testID={`card-check-item-${item.id}-status`} style={[styles.status, paneWidth < 400 ? styles.statusBelow : null]}>
-              {running ? <View style={styles.runningDot} /> : null}
-              <Text style={[styles.statusText, color ? { color } : null]}>
-                {item.display === 'fix' ? `${DISPLAY_LABELS.fix} ${item.fixOpen}` : DISPLAY_LABELS[item.display]}
-              </Text>
-            </View>
+
           </View>
         </CompactTouchTarget>
       </View>
@@ -143,6 +137,12 @@ export function CardCheckItemRow({
             <View style={styles.changedReason}><Text style={styles.reopened}>확인한 뒤 바뀜</Text><Text style={styles.result} testID={`card-check-item-${item.id}-reopened`}>{item.reopened}</Text></View>
           ) : null}
           {item.result ? <Text style={[styles.result, item.display === 'dropped' && styles.droppedResult]}>{item.result}</Text> : null}
+          {item.caveat ? <View testID={`card-check-item-${item.id}-caveat-row`} style={styles.caveatRow}>
+            <View testID={`card-check-item-${item.id}-caveat-icon-frame`} style={styles.caveatIconFrame}>
+              <Ionicons testID={`card-check-item-${item.id}-caveat-icon`} name="warning-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.warningText} />
+            </View>
+            <Text style={styles.caveat} testID={`card-check-item-${item.id}-caveat`}>{item.caveat}</Text>
+          </View> : null}
           {item.evidence.length ? (
             <View style={styles.evidence}>
               {images.length ? <View testID={`card-check-item-${item.id}-evidence-images`} style={styles.evidenceImages}>
@@ -153,10 +153,10 @@ export function CardCheckItemRow({
                       accessibilityLabel={evidence.label || `항목 ${item.id} 증거 ${index + 1}`}
                       source={imageSources[index]}
                       sources={imageSources}
+                      captions={images.map((image) => image.label || '')}
                       index={index}
                       variant="cardCheckItem"
                     />
-                    {evidence.label ? <Text style={styles.evidenceLabel}>{evidence.label}</Text> : null}
                   </View>
                 ))}
               </View> : null}
@@ -181,10 +181,7 @@ export function CardCheckItemRow({
             </View>
           ) : null}
           <View style={styles.footer}>
-            {item.caveat ? <View style={styles.caveatRow}>
-              <Ionicons testID={`card-check-item-${item.id}-caveat-icon`} name="warning-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.warningText} />
-              <Text style={styles.caveat} testID={`card-check-item-${item.id}-caveat`}>{item.caveat}</Text>
-            </View> : metadata ? <Text style={styles.source}>{metadata}</Text> : null}
+            {metadata ? <Text testID={`card-check-item-${item.id}-metadata`} style={styles.source}>{metadata}</Text> : null}
             {item.display !== 'dropped' ? <CompactTouchTarget
               testID={`card-check-item-${item.id}-fix`}
               accessibilityLabel={`${item.id} ${item.title} 고칠 점 남기기`}
@@ -218,17 +215,12 @@ function makeStyles(t: DesignTokens) {
     titleHitFrame: { flex: 1, alignSelf: 'stretch', alignItems: 'stretch', justifyContent: 'center' },
     titleHitSurface: { flex: 1, alignSelf: 'stretch', alignItems: 'stretch', justifyContent: 'center' },
     titleRow: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: t.uiSpacing.sm, paddingVertical: t.uiSpacing.sm },
-    titleStacked: { alignItems: 'flex-start', flexWrap: 'wrap' },
     number: { ...planner.typography.cardTitle, color: t.colors.textSecondary, width: t.uiSpacing.lg },
     confirmedNumber: { color: t.colors.textMuted },
     title: { flex: 1, minWidth: 0, ...planner.typography.cardTitle, color: t.colors.textPrimary },
     dimTitle: { color: t.colors.textSecondary },
     droppedResult: { color: t.colors.textMuted },
     droppedTitle: { textDecorationLine: 'line-through', color: t.colors.textMuted },
-    status: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: t.uiSpacing.xxs, flexShrink: 0, width: planner.typography.meta.fontSize * 6.6 },
-    statusBelow: { flexBasis: '100%', justifyContent: 'flex-start', paddingLeft: t.uiSpacing.lg + t.uiSpacing.sm },
-    statusText: { ...planner.typography.meta, color: t.colors.textSecondary, fontWeight: '700' },
-    runningDot: { width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.statusRunning },
     details: { paddingLeft: t.hitTarget.min, paddingRight: 0, paddingTop: t.uiSpacing.xs, gap: t.uiSpacing.xs },
     changedReason: { gap: t.uiSpacing.xxs },
     reopened: { ...planner.typography.meta, color: t.colors.warningText, fontWeight: '700' },
@@ -238,12 +230,12 @@ function makeStyles(t: DesignTokens) {
     evidenceLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: t.uiSpacing.xs },
     linkContent: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, maxWidth: '100%' },
     imageEvidence: { width: 104, gap: t.uiSpacing.xxs },
-    evidenceLabel: { ...planner.typography.meta, color: t.colors.textSecondary, flexWrap: 'wrap' },
     linkFrame: { alignSelf: 'flex-start' },
     linkSurface: { minHeight: t.controlHeight.chip, backgroundColor: t.colors.surfaceCode, maxWidth: '100%', borderRadius: t.foundation.radius.round, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, paddingHorizontal: t.uiSpacing.sm },
     linkText: { ...planner.typography.meta, color: t.colors.link, fontWeight: '600', flexShrink: 1 },
     footer: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.xs },
-    caveatRow: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, flexShrink: 1 },
+    caveatRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.uiSpacing.xxs, flexShrink: 1 },
+    caveatIconFrame: { height: planner.typography.meta.lineHeight, justifyContent: 'center' },
     caveat: { ...planner.typography.meta, color: t.colors.warningText, flexShrink: 1 },
     source: { ...planner.typography.meta, color: t.colors.textMuted, flexShrink: 1 },
     fixFrame: { marginLeft: 'auto', flexShrink: 0 },

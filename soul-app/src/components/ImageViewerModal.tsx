@@ -5,7 +5,8 @@ import { useTokens } from '../theme';
 import { MODAL_BACKDROP_COLOR } from '../theme/surfaceRoles';
 import { GlassButton } from './GlassSurface';
 
-export function ImageViewerModal({ sources, initialIndex, onClose }: {
+export function ImageViewerModal({ sources, initialIndex, onClose, captions }: {
+  captions?: readonly string[];
   sources: ImageSourcePropType[]; initialIndex: number; onClose(): void;
 }) {
   const t = useTokens();
@@ -22,7 +23,7 @@ export function ImageViewerModal({ sources, initialIndex, onClose }: {
         <View style={{ flex: 1 }} onLayout={({ nativeEvent: { layout } }) => setViewport({ width: layout.width, height: layout.height })}>
           <ScrollView testID="image-viewer-pages" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
             contentOffset={{ x: initialIndex * viewport.width, y: 0 }}>
-            {sources.map((source, index) => <ScrollView key={index} testID="image-viewer-zoom"
+            {sources.map((source, index) => captions?.[index] ? <CaptionedImagePage key={index} source={source} caption={captions[index]} index={index} viewport={viewport} /> : <ScrollView key={index} testID="image-viewer-zoom"
               style={{ width: viewport.width, height: viewport.height }}
               contentContainerStyle={{ width: viewport.width, height: viewport.height }}
               minimumZoomScale={1} maximumZoomScale={3} centerContent bouncesZoom
@@ -34,4 +35,22 @@ export function ImageViewerModal({ sources, initialIndex, onClose }: {
       </SafeAreaView>
     </SafeAreaProvider>
   </Modal>;
+}
+
+function CaptionedImagePage({ source, caption, index, viewport }: {
+  source: ImageSourcePropType; caption: string; index: number; viewport: { width: number; height: number };
+}) {
+  const t = useTokens();
+  const [imageArea, setImageArea] = useState(viewport);
+  return <View style={viewport}>
+    <View style={{ flex: 1 }} onLayout={({ nativeEvent: { layout } }) => setImageArea({ width: layout.width, height: layout.height })}>
+      <ScrollView testID="image-viewer-zoom" style={{ flex: 1 }} contentContainerStyle={imageArea}
+        minimumZoomScale={1} maximumZoomScale={3} centerContent bouncesZoom
+        showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
+        <Image source={source} style={imageArea} resizeMode="contain" accessibilityLabel={`이미지 ${index + 1}`} />
+      </ScrollView>
+    </View>
+    <Text testID={`image-viewer-caption-${index}`} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary,
+      backgroundColor: t.colors.surface, textAlign: 'center', padding: t.spacing.md }}>{caption}</Text>
+  </View>;
 }

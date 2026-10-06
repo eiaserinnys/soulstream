@@ -26,14 +26,16 @@ export function isPersistentJevCandidatesDebugEvent(
 }
 
 function isObservation(value: unknown): value is PersistentJevObservation {
-  if (!hasExactKeys(value, ["input_id", "selected", "candidate_counts", "model", "latency_ms", "top_raw_score"])) {
+  if (!hasRequiredKeys(value, ["input_id", "selected", "candidate_counts", "model", "latency_ms", "top_raw_score"])) {
     return false;
   }
   if (typeof value.input_id !== "string" || value.input_id.length === 0
     || value.model !== "jev-latest" || !isNonNegativeInteger(value.latency_ms)
     || !isRawScore(value.top_raw_score)
     || !isRecord(value.candidate_counts)
-    || !hasExactKeys(value.candidate_counts, Object.keys(COUNT_LIMITS))) {
+    || !hasRequiredKeys(value.candidate_counts, Object.keys(COUNT_LIMITS))
+    || (Object.hasOwn(value, "unselected_top") && !isUnselectedTop(value.unselected_top))
+    || (Object.hasOwn(value, "top_raw_scores") && !isTopRawScores(value.top_raw_scores))) {
     return false;
   }
   for (const [key, limit] of Object.entries(COUNT_LIMITS)) {
@@ -46,26 +48,44 @@ function isObservation(value: unknown): value is PersistentJevObservation {
       && isSelectedScore((candidate as Record<string, unknown>).score));
 }
 
+function isUnselectedTop(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length <= 5
+    && value.every((candidate) => {
+      if (!isRecord(candidate)
+        || !hasRequiredKeys(candidate, ["kind", "label", "raw_score"])
+        || !isNonEmptyText(candidate.label)
+        || !isRawScore(candidate.raw_score)) return false;
+      if (candidate.kind === "session") return isValidSources(candidate.sources);
+      return candidate.kind === "turn_summary" || candidate.kind === "card";
+    });
+}
+
+function isTopRawScores(value: unknown): boolean {
+  if (!isRecord(value) || !hasRequiredKeys(value, Object.keys(COUNT_LIMITS))) return false;
+  return Object.keys(COUNT_LIMITS).every((key) => value[key] === null || isRawScore(value[key]));
+}
+
 function isSelectedCandidate(value: unknown): boolean {
   if (!isRecord(value) || !isScore(value.score) || !isRawScore(value.raw_score) || value.raw_score < 2
     || !isBoundedText(value.label, 120) || !isBoundedText(value.line, 240)) {
     return false;
   }
   if (value.kind === "turn_summary") {
-    return hasExactKeys(value, ["kind", "session_id", "summary_event_id", "turn_number", "label", "line", "score", "raw_score"])
+    return hasRequiredKeys(value, ["kind", "session_id", "summary_event_id", "turn_number", "label", "line", "score", "raw_score"])
       && isNonEmptyText(value.session_id)
       && isPositiveInteger(value.summary_event_id)
       && isPositiveInteger(value.turn_number)
       && isBoundedText(value.label, 32);
   }
   if (value.kind === "card") {
-    return hasExactKeys(value, ["kind", "card_id", "label", "line", "score", "raw_score"], ["card_number"])
+    return hasRequiredKeys(value, ["kind", "card_id", "label", "line", "score", "raw_score"])
       && isNonEmptyText(value.card_id)
       && (value.card_number === undefined || isPositiveInteger(value.card_number))
       && isBoundedText(value.label, 80);
   }
   if (value.kind === "session") {
-    return hasExactKeys(value, ["kind", "session_id", "label", "line", "score", "raw_score"], ["sources"])
+    return hasRequiredKeys(value, ["kind", "session_id", "label", "line", "score", "raw_score"])
       && isNonEmptyText(value.session_id)
       && (value.sources === undefined || isValidSources(value.sources));
   }
@@ -112,13 +132,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function hasExactKeys(
+function hasRequiredKeys(
   value: unknown,
   required: readonly string[],
-  optional: readonly string[] = [],
 ): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
-  const keys = Object.keys(value);
-  return required.every((key) => Object.hasOwn(value, key))
-    && keys.every((key) => required.includes(key) || optional.includes(key));
+  return required.every((key) => Object.hasOwn(value, key));
 }

@@ -5,6 +5,9 @@ import type {
   PersistentJevObservation,
   PersistentJevSessionCandidate,
   PersistentJevTurnSummaryCandidate,
+  PersistentJevUnselectedTopCard,
+  PersistentJevUnselectedTopSession,
+  PersistentJevUnselectedTopTurnSummary,
 } from "@soulstream/wire-schema";
 import type { PersistentContextCandidateRepositories } from "./persistent_context_candidates.js";
 import type { PersistentContextEvaluationInput, PersistentContextEvaluationResult } from "./persistent_context_types.js";
@@ -26,13 +29,15 @@ export type PersistentContextNullReason =
   | "score_count_mismatch"
   | "unexpected_error";
 type CandidateSelection =
-  | Omit<PersistentJevTurnSummaryCandidate, "score" | "raw_score" | "label" | "line">
-  | Omit<PersistentJevCardCandidate, "score" | "raw_score" | "label" | "line">
-  | Omit<PersistentJevSessionCandidate, "score" | "raw_score" | "label" | "line">;
+  | Pick<PersistentJevTurnSummaryCandidate, "kind" | "session_id" | "summary_event_id" | "turn_number">
+  | Pick<PersistentJevCardCandidate, "kind" | "card_id" | "card_number">
+  | Pick<PersistentJevSessionCandidate, "kind" | "session_id" | "sources">;
 type Candidate = {
   readonly key: string;
   readonly text: string;
   readonly selected: CandidateSelection;
+  readonly label: string;
+  readonly line: string;
   readonly order: number;
 };
 
@@ -185,17 +190,39 @@ export function createPersistentContextService(options: {
 
         const scoreByKey = new Map(scores.map(({ key, score }) => [key, score]));
         const topRawScore = Math.max(...scores.map(({ score }) => score));
-        const selected = candidates
+        const scoredCandidates = candidates
           .map((candidate) => ({ candidate, score: scoreByKey.get(candidate.key) }))
-          .filter((entry): entry is { candidate: Candidate; score: number } =>
-            entry.score !== undefined && entry.score >= 2)
+          .filter((entry): entry is { candidate: Candidate; score: number } => entry.score !== undefined);
+        const selectedCandidates = scoredCandidates
+          .filter(({ score }) => score >= 2)
+          .sort((left, right) => right.score - left.score || left.candidate.order - right.candidate.order)
+          .slice(0, 5);
+        const selected = selectedCandidates.map(({ candidate, score }) => ({
+          ...candidate.selected,
+          label: candidate.label,
+          line: candidate.line,
+          score: Math.round(score),
+          raw_score: score,
+        }) as Selected);
+        const selectedKeys = new Set(selectedCandidates.map(({ candidate }) => candidate.key));
+        const unselectedTop = scoredCandidates
+          .filter(({ candidate }) => !selectedKeys.has(candidate.key))
           .sort((left, right) => right.score - left.score || left.candidate.order - right.candidate.order)
           .slice(0, 5)
-          .map(({ candidate, score }) => ({
-            ...candidate.selected,
-            score: Math.round(score),
-            raw_score: score,
-          }) as Selected);
+          .map(({ candidate, score }) => {
+            const entry = { kind: candidate.selected.kind, label: candidate.label, raw_score: score };
+            return candidate.selected.kind === "session"
+              ? { ...entry, sources: candidate.selected.sources! }
+              : entry;
+          }) as unknown as Array<
+            PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession
+          >;
+        const highestScore = (matches: (candidate: Candidate) => boolean): number | null => {
+          const matchingScores = scoredCandidates
+            .filter(({ candidate }) => matches(candidate))
+            .map(({ score }) => score);
+          return matchingScores.length === 0 ? null : Math.max(...matchingScores);
+        };
         const observation: PersistentJevObservation = {
           input_id: input.inputId,
           selected: selected as unknown as PersistentJevObservation["selected"],
@@ -210,6 +237,15 @@ export function createPersistentContextService(options: {
           model: "jev-latest",
           latency_ms: Math.max(0, Date.now() - startedAt),
           top_raw_score: topRawScore,
+          unselected_top: unselectedTop as unknown as PersistentJevObservation["unselected_top"],
+          top_raw_scores: {
+            turn_summaries: highestScore(({ selected: candidate }) => candidate.kind === "turn_summary"),
+            cards: highestScore(({ selected: candidate }) => candidate.kind === "card"),
+            search_sessions: highestScore(({ selected: candidate }) => candidate.kind === "session"
+              && candidate.sources?.includes("search") === true),
+            recent_completed_sessions: highestScore(({ selected: candidate }) => candidate.kind === "session"
+              && candidate.sources?.includes("recent_completed") === true),
+          },
         };
         if (!mayContinue(input)) {
           logNull("cancelled_or_deadline");
@@ -240,7 +276,7 @@ function buildCandidates(input: {
     if (!cleanLine) return;
     const boundedLine = clipUtf8(cleanLine, MAX_CANDIDATE_TEXT_BYTES);
     const text = clipUtf8(`${label} — ${boundedLine}`, MAX_CANDIDATE_TEXT_BYTES);
-    candidates.push({ key, text, selected: { ...selected, label, line: boundedLine } as unknown as CandidateSelection, order: candidates.length });
+    candidates.push({ key, text, selected, label, line: boundedLine, order: candidates.length });
   };
 
   input.turnSummaries.slice(-40).forEach((summary, index) => {

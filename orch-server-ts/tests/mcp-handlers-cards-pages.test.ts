@@ -89,6 +89,7 @@ function cardHarness() {
     projectCards: vi.fn(async rows => rows), createCard: vi.fn().mockResolvedValue(createdMutation),
     patchCard: vi.fn().mockResolvedValue(mutation), addReport: vi.fn().mockResolvedValue(mutation),
     addComment: vi.fn().mockResolvedValue({ body: "그대로 보존" }), setCardStatus: vi.fn().mockResolvedValue(mutation),
+    startCardWork: vi.fn().mockResolvedValue(mutation),
     requestCardReview:vi.fn().mockResolvedValue(mutation),setCardItems:vi.fn().mockResolvedValue(mutation),
     addCardItem:vi.fn().mockResolvedValue(mutation),reportCardItem:vi.fn().mockResolvedValue(mutation),
     updateCardNow:vi.fn().mockResolvedValue(mutation),addCardNote:vi.fn().mockResolvedValue({id:"note-1",kind:"note"}),
@@ -143,6 +144,186 @@ describe("card MCP execution", () => {
       }
       if (name === "ask_card_question") expect(JSON.stringify(result)).toContain("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     }
+  });
+  it("returns compact card mutation and item results without echoing saved content", async () => {
+    const h = cardHarness();
+    const richCard = {
+      id: "card-1", number: 12, folder_id: "folder-1", title: "카드", attachments, request: "요청 본문".repeat(40),
+      brief: "인계 요약".repeat(1000), status: "running", version: 4,
+      items: [
+        { id: 1, title: "첫 번째", state: "done", result: "상세 결과".repeat(20),
+          evidence: [{ type: "link", url: "https://example.test/first", label: "첫 증거" }],
+          caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null },
+        { id: 7, title: "일곱 번째", state: "doing", result: "긴 진행 내용".repeat(20),
+          evidence: [{ type: "image", url: "https://example.test/seventh", label: "둘째 증거" }],
+          caveat: null, rev: 2, confirmed: null, fixOpen: 0, reopened: null },
+        { id: 3, title: "세 번째", state: "todo", result: null, evidence: [],
+          caveat: null, rev: 0, confirmed: null, fixOpen: 0, reopened: null },
+      ],
+    };
+    const richMutation = {
+      snapshot: { folder: { id: "folder-1" }, cards: [richCard] },
+      operation: { id: "op-1", target_kind: "card", target_id: "card-1", payload_json: { brief: richCard.brief } },
+      idempotent: false,
+    } as typeof h.createdMutation;
+    expect(richCard.brief.length).toBe(5000);
+    const addedMutation = {
+      ...richMutation,
+      snapshot: { folder: { id: "folder-1" }, cards: [{ ...richCard, items: [...richCard.items,
+        { id: 8, title: "여덟 번째", state: "todo", result: null, evidence: [], caveat: null, rev: 0,
+          confirmed: null, fixOpen: 0, reopened: null }] }] },
+    } as unknown as typeof h.createdMutation;
+    const reportedMutation = {
+      ...richMutation,
+      snapshot: { folder: { id: "folder-1" }, cards: [{ ...richCard, items: richCard.items.map(item =>
+        item.id === 3 ? { ...item, state: "done", result: "완료" } : item) }] },
+    } as unknown as typeof h.createdMutation;
+    h.service.patchCard.mockResolvedValue(richMutation);
+    h.service.addReport.mockResolvedValue(richMutation);
+    h.service.setCardStatus.mockResolvedValue(richMutation);
+    h.service.startCardWork.mockResolvedValue(richMutation);
+    h.service.requestCardReview.mockResolvedValue(richMutation);
+    h.service.setCardItems.mockResolvedValue(richMutation);
+    h.service.addCardItem.mockResolvedValue(addedMutation);
+    h.service.reportCardItem.mockResolvedValue(reportedMutation);
+    h.service.updateCardNow.mockResolvedValue(richMutation);
+    h.service.askQuestion.mockResolvedValue(richMutation);
+    h.service.moveCard.mockResolvedValue({
+      ...richMutation, snapshot: { folder: { id: "folder-2" }, cards: [{ ...richCard, folder_id: "folder-2" }] },
+    } as typeof h.createdMutation);
+    h.service.createCard.mockResolvedValue(richMutation);
+    h.service.addCardNote.mockResolvedValue({
+      id: "note-1", kind: "note", created_at: "2026-10-05T23:00:00.000Z", text: "노트 본문",
+    });
+    h.service.addComment.mockResolvedValue({
+      id: "comment-1", kind: "comment", author_kind: "user", created_at: "2026-10-05T23:01:00.000Z",
+      item_id: 3, body: "커멘트 본문",
+    });
+
+    const card = { id: "card-1", number: 12, version: 4, status: "running" };
+    const cases = [
+      ["update_card_brief", { card_id: "card-1", brief: "짧은 변경" }, { card }],
+      ["add_card_report", { card_id: "card-1", title: "보고", format: "markdown", body: "본문" }, { card }],
+      ["set_card_status", { card_id: "card-1", status: "done", expected_version: 3, idempotency_key: "status" }, { card }],
+      ["transfer_card_assignee", { card_id: "card-1", target_session_id: "session-2", expected_version: 3, idempotency_key: "transfer" }, { card }],
+      ["start_card_work", { card_id: "card-1", expected_version: 3, idempotency_key: "start" }, { card }],
+      ["request_card_review", { card_id: "card-1", ask: "확인해 주세요" }, { card }],
+      ["update_card_now", { card_id: "card-1", now: "진행 중", turn: "agent" }, { card }],
+      ["ask_card_question", { card_id: "card-1", text: "질문" }, { card, guidance: "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." }],
+      ["move_card", { card_id: "card-1", folder_id: "folder-2" }, { card, folderId: "folder-2" }],
+      ["set_card_items", { card_id: "card-1", items: [{ title: "새 항목" }] },
+        { card, items: [{ id: 1, title: "첫 번째", state: "done" }, { id: 7, title: "일곱 번째", state: "doing" }, { id: 3, title: "세 번째", state: "todo" }] }],
+      ["add_card_item", { card_id: "card-1", title: "새 항목", from_comment_id: "comment-1" },
+        { card, item: { id: 8, title: "여덟 번째", state: "todo" } }],
+      ["report_card_item", { card_id: "card-1", item_id: 3, state: "done", result: "완료" },
+        { card, item: { id: 3, title: "세 번째", state: "done" } }],
+    ] as const;
+
+    for (const [name, input, expected] of cases) {
+      const result = await call(h.options, name, { caller_session_id: "session-1", ...input },
+        name === "start_card_work" ? { ...context, execution: { registrationId: "registration-1", executionCommandId: "command-1" } } : context);
+      expect(result.isError, name).not.toBe(true);
+      expect(result.structuredContent, name).toEqual(expected);
+    }
+
+    const report = await call(h.options, "report_card_item", {
+      caller_session_id: "session-1", card_id: "card-1", item_id: 3, state: "done", result: "완료",
+    });
+    const text = report.content[0]?.text ?? "";
+    expect(text.length).toBeLessThan(400);
+    expect(JSON.stringify(report)).not.toMatch(/brief|request|operation|payloadJson|folderId|상세 결과|인계 요약/);
+
+    const created = await call(h.options, "create_card", {
+      caller_session_id: "session-1", folder_id: "folder-1", title: "새 카드", request: "새 요청",
+    });
+    expect(created.structuredContent).toEqual({ card });
+
+    const note = await call(h.options, "add_card_note", { caller_session_id: "session-1", card_id: "card-1", text: "노트 본문" });
+    expect(note.structuredContent).toEqual({ id: "note-1", createdAt: "2026-10-05T23:00:00.000Z" });
+    const comment = await call(h.options, "add_card_comment", {
+      caller_session_id: "session-1", card_id: "card-1", text: "커멘트 본문", item_id: 3,
+    });
+    expect(comment.structuredContent).toEqual({
+      id: "comment-1", kind: "comment", authorKind: "user", createdAt: "2026-10-05T23:01:00.000Z", itemId: 3,
+    });
+    h.service.addComment.mockResolvedValueOnce({
+      id: "comment-2", kind: "comment", author_kind: "user", created_at: "2026-10-05T23:02:00.000Z",
+      item_id: null, body: "다른 커멘트 본문",
+    });
+    const commentWithoutItem = await call(h.options, "add_card_comment", {
+      caller_session_id: "session-1", card_id: "card-1", text: "다른 커멘트",
+    });
+    expect(commentWithoutItem.structuredContent).toEqual({
+      id: "comment-2", kind: "comment", authorKind: "user", createdAt: "2026-10-05T23:02:00.000Z",
+    });
+  });
+  it("keeps create and execution outputs compact, including replays", async () => {
+    const h = cardHarness();
+    const cardRow = { id: "card-1", number: 12, folder_id: "folder-1", title: "카드", attachments,
+      request: "원문", brief: "인계 요약".repeat(500), status: "running", version: 4 };
+    const mutation = {
+      snapshot: { folder: { id: "folder-1" }, cards: [cardRow] },
+      operation: { id: "op-1", target_kind: "card", target_id: "card-1", payload_json: { request: cardRow.request } },
+      idempotent: false,
+    } as typeof h.createdMutation;
+    h.service.createCard.mockResolvedValue(mutation);
+    h.service.getCard.mockResolvedValue({ card: { ...cardRow, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
+    const executionCard = { ...cardRow, status: "running" };
+    h.executor.execute.mockResolvedValueOnce({
+      card: executionCard,
+      execution: { requestId: "execution-1", sessionId: "spawned-session", state: "started" },
+    });
+
+    const createdAndRun = await call(h.options, "create_card", {
+      caller_session_id: "session-1", folder_id: "folder-1", title: "새 카드", request: "새 요청", run: true,
+    });
+    expect(createdAndRun.structuredContent).toEqual({
+      card: { id: "card-1", number: 12, version: 4, status: "running" },
+      execution: { requestId: "execution-1", sessionId: "spawned-session", state: "started" },
+    });
+
+    h.executor.execute.mockResolvedValueOnce({
+      card: executionCard,
+      execution: { requestId: "execution-1", sessionId: "spawned-session", state: "started" },
+    });
+    const run = await call(h.options, "run_card", { caller_session_id: "session-1", card_id: "card-1" });
+    expect(run.structuredContent).toEqual({
+      card: { id: "card-1", number: 12, version: 4, status: "running" },
+      execution: { requestId: "execution-1", sessionId: "spawned-session", state: "started" },
+    });
+
+    h.options.cards.runConfirm = { intervalMs: 1, timeoutMs: 0 };
+    h.executor.execute.mockResolvedValueOnce({
+      card: executionCard,
+      execution: { requestId: "execution-1", sessionId: "spawned-session", state: "pending" },
+    });
+    const pendingRun = await call(h.options, "run_card", { caller_session_id: "session-1", card_id: "card-1" });
+    expect(pendingRun.structuredContent).toEqual({
+      card: { id: "card-1", number: 12, version: 4, status: "running" },
+      execution: { requestId: "execution-1", sessionId: "spawned-session", state: "pending" },
+      guidance: "실행 시작 확인이 아직이다. 잠시 뒤 같은 카드로 run_card를 다시 부르면 결과를 확인한다.",
+    });
+
+    const replay = {
+      ...mutation, snapshot: { folder: { id: "folder-1" }, cards: [{ ...cardRow, status: "review" }] }, idempotent: true,
+    } as typeof h.createdMutation;
+    h.service.createCard.mockResolvedValueOnce(replay);
+    const replayed = await call(h.options, "create_card", {
+      caller_session_id: "session-1", folder_id: "folder-1", title: "새 카드", request: "새 요청",
+      run: true, idempotency_key: "create-replay",
+    });
+    expect(replayed.structuredContent).toEqual({
+      card: { id: "card-1", number: 12, version: 4, status: "review" }, idempotent: true,
+    });
+
+    h.service.createCard.mockResolvedValueOnce({
+      ...mutation, snapshot: { folder: { id: "folder-1" }, cards: [] }, idempotent: true,
+    } as typeof h.createdMutation);
+    const replayWithoutCard = await call(h.options, "create_card", {
+      caller_session_id: "session-1", folder_id: "folder-1", title: "새 카드", request: "새 요청",
+      idempotency_key: "create-replay-without-card",
+    });
+    expect(replayWithoutCard.structuredContent).toEqual({ card: { id: "card-1" }, idempotent: true });
   });
   it("runs a card through the execution service and waits for registration evidence", async () => {
     const h = cardHarness();

@@ -100,6 +100,18 @@ describe("external MCP card writes", () => {
     expect((await h.sql`SELECT actor_kind,actor_session_id FROM folder_operations`)[0])
       .toMatchObject({ actor_kind: "llm", actor_session_id: null });
   });
+  it("returns a version that the next real card mutation can use", async () => {
+    const brief = await call("update_card_brief", { card_id: "card", brief: "닷 경과" });
+    expect(brief.isError).not.toBe(true);
+    const returnedVersion = (brief.structuredContent as { card: { version: number } }).card.version;
+    expect(returnedVersion).toEqual(expect.any(Number));
+
+    const status = await call("set_card_status", {
+      card_id: "card", status: "running", expected_version: returnedVersion, idempotency_key: "brief-then-status",
+    });
+    expect(status.isError).not.toBe(true);
+    expect(await h.sql`SELECT status FROM cards WHERE id='card'`).toEqual([{ status: "running" }]);
+  });
   it("stores a user comment and delivers once with llm audit attribution", async () => {
     const result = await call("add_card_comment", { card_id: "card", text: "닷 사용자 지시" });
     expect(result.isError).not.toBe(true);

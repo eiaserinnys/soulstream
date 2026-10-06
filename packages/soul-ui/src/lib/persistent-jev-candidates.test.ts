@@ -38,6 +38,32 @@ describe("persistent Jev candidate projection", () => {
     expect(isPersistentJevCandidatesDebugEvent(event("input-a", 16, [{ ...card, unexpected: true }]))).toBe(false);
   });
 
+  it("keeps displayed title and lines unchanged for extended and legacy observations", () => {
+    const raw = event("input-a", 20, [
+      { kind: "card", card_id: "card-a", label: "#9", line: "Prior work", score: 3, raw_score: 2.7 },
+    ]);
+    const baseObservation = raw.observation;
+    const observations = [
+      {
+        ...baseObservation,
+        unselected_top: [{ kind: "session", label: "Other session", raw_score: 1.9, sources: ["search"] }],
+        top_raw_scores: { turn_summaries: null, cards: 2.7, search_sessions: 1.9, recent_completed_sessions: null },
+        future_observation_key: "ignored",
+      },
+      { ...baseObservation, future_observation_key: "ignored" },
+      baseObservation,
+    ];
+
+    for (const observation of observations) {
+      const candidateEvent = { ...raw, observation };
+      expect(isPersistentJevCandidatesDebugEvent(candidateEvent)).toBe(true);
+      if (isPersistentJevCandidatesDebugEvent(candidateEvent)) {
+        expect(formatPersistentJevCandidates(candidateEvent.observation)).toEqual(["#9 · Prior work · 3/3"]);
+        expect(candidateEvent.observation.selected).toHaveLength(1);
+      }
+    }
+  });
+
   it("anchors late records below their exact loaded input and preserves distinct records", () => {
     const input = { treeNodeId: "input-1", treeNodeType: "user_message", inputId: "same" };
     const answer = { treeNodeId: "answer", treeNodeType: "assistant_message" };

@@ -22,7 +22,7 @@ import type { PlannerContextMenuAction } from '../../lib/planner-context-menu-mo
 import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCardDisplay';
 import { CardStatusChip } from './CardRow';
 import { CardStatusMenu } from './CardStatusMenu';
-import { cardProgressText, cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
+import { cardAskPreview, cardProgressText, cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
 import { useCardStore } from '../../store/cardStore';
 
 export function postItRotation(id: string) {
@@ -97,6 +97,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
   const activity = card.latestActivity;
   const body = activity ? postItActivityText(activity) : card.request || '아직 지시나 보고가 없습니다.';
   const itemSummary = summarizeCardItems(card.items, pendingItemConfirmations);
+  const askPreview = cardAskPreview(itemSummary.needsReview, card.now?.ask);
   const canInteract = () => canPress() && !suppressDirectPress.current;
   const open = () => {
     if (!canInteract()) return;
@@ -171,7 +172,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                 {itemSummary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
                   style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
                     backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
-                <Text style={roles.label}>{cardProgressText(itemSummary)}</Text>
+                {cardProgressText(itemSummary) ? <Text style={roles.label} accessibilityLabel={cardProgressText(itemSummary)}>{cardProgressText(itemSummary)}</Text> : null}
               </View> : null}
               <Text testID={`postit-body-${card.id}`} style={roles.body} numberOfLines={card.now ? 1 : Math.max(1, bodyLines - (itemSummary.total ? 1 : 0))} ellipsizeMode="tail">
                 {card.now?.text ? card.now.text : <>
@@ -180,9 +181,9 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                   </Text>{' '}{body}
                 </>}
               </Text>
-              {card.now?.turn === 'user' ? <Text testID={`postit-${card.id}-ask-preview`} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
+              {card.now?.turn === 'user' && askPreview ? <Text testID={`postit-${card.id}-ask-preview`} accessibilityLabel={askPreview} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
                 style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.foundation.radius.chip, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
-                <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text>{card.now.ask ? ` ${card.now.ask}` : ''}
+                {itemSummary.needsReview ? <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text> : null}{card.now.ask ? `${itemSummary.needsReview ? ' ' : ''}${card.now.ask}` : ''}
               </Text> : null}
             </View>
           </Pressable>

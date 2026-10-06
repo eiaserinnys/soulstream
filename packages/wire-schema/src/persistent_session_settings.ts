@@ -20,6 +20,8 @@ export type PersistentSessionSettings = {
   show_character: boolean;
   /** 채팅 창의 Jev 후보 줄을 보일지 여부. */
   show_jev_candidates: boolean;
+  show_turn_usage: boolean;
+  animate_character: boolean;
 };
 
 /** 부분 입력. 생략한 키는 저장된 값을 보존한다. */
@@ -36,6 +38,8 @@ export const PERSISTENT_SETTINGS_DEFAULTS = {
   show_generation_separator: true,
   show_character: true,
   show_jev_candidates: true,
+  show_turn_usage: true,
+  animate_character: true,
 } as const satisfies Omit<PersistentSessionSettings, "default_model">;
 
 export type PersistentPendingTarget = {
@@ -51,6 +55,8 @@ const SETTINGS_KEYS = [
   "show_generation_separator",
   "show_character",
   "show_jev_candidates",
+  "show_turn_usage",
+  "animate_character",
 ] as const;
 
 export function parsePersistentSettingsPatch(input: unknown): ParseResult<PersistentSettingsPatch> {
@@ -74,7 +80,13 @@ export function parsePersistentSettingsPatch(input: unknown): ParseResult<Persis
       patch.fallback_model = parsed.value;
     }
   }
-  for (const key of ["show_generation_separator", "show_character", "show_jev_candidates"] as const) {
+  for (const key of [
+    "show_generation_separator",
+    "show_character",
+    "show_jev_candidates",
+    "show_turn_usage",
+    "animate_character",
+  ] as const) {
     const value = input[key];
     if (value === undefined) continue;
     if (typeof value !== "boolean") return { ok: false, message: `settings.${key} must be a boolean` };
@@ -103,6 +115,12 @@ export function readStoredPersistentSettings(metadata: unknown): StoredPersisten
     show_jev_candidates: typeof record.show_jev_candidates === "boolean"
       ? record.show_jev_candidates
       : PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
+    show_turn_usage: typeof record.show_turn_usage === "boolean"
+      ? record.show_turn_usage
+      : PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
+    animate_character: typeof record.animate_character === "boolean"
+      ? record.animate_character
+      : PERSISTENT_SETTINGS_DEFAULTS.animate_character,
   };
 }
 

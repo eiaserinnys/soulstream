@@ -40,11 +40,13 @@ import { dialogueFolders, dialogueSessions, reviewSessionPortraits } from './dia
 import { useUIStore } from '../store/uiStore';
 import { FolderWorkspaceReadOverlay } from '../components/planner/FolderWorkspaceReadOverlay';
 import { ReviewCardChecks } from './ReviewCardChecks';
+import { ReviewPersistent } from './ReviewPersistent';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
   { value: 'project', label: '프로젝트' }, { value: 'settings', label: '선택·설정' },
   { value: 'nativeSettings', label: '앱 설정' },
+  { value: 'persistent', label: '영구 세션' },
   { value: 'surfaces', label: '표면' },
   { value: 'board', label: '보드' },
   { value: 'boardActions', label: '보드 액션' },
@@ -119,6 +121,7 @@ function Gallery() {
     backgroundColor: t.colors.background,
   }), [t]);
   if (section === 'nativeSettings') return <ReviewNativeSettings/>;
+  if (section === 'persistent') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewPersistent /></View>;
   if (section === 'cardChecks') return <View testID="card-checks-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewCardChecks /></View>;
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
   if (section === 'cardColors') return <ReviewCardColors />;

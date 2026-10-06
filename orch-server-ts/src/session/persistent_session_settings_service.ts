@@ -326,6 +326,8 @@ export class PersistentSessionSettingsService {
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
         show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
+        show_turn_usage: PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
+        animate_character: PERSISTENT_SETTINGS_DEFAULTS.animate_character,
       },
       initial_instruction: PERSISTENT_INITIAL_INSTRUCTION,
       unavailable_reason: reasons.length === 0 ? null : reasons.join(" "),
