@@ -29,7 +29,7 @@ const pasSession = (init: PasInit): PersistentSessionResource => ({
     pending: init.pending ? { target_model_preset: init.pending.preset, target_reasoning_effort: init.pending.effort } : null },
 });
 const pasStore = new Map<string, PersistentSessionResource>([
-  pasSession({ id: 'review-pas-1', name: '공개 예시 관제 세션', agentId: 'public-agent', preset: 'public-model', current: 'public-exhausted-model', pending: { preset: 'public-model', effort: null } }),
+  pasSession({ id: 'review-pas-1', name: '공개 예시 관제 세션', agentId: 'public-agent', preset: 'public-model' }),
   pasSession({ id: 'review-pas-2', name: '공개 예시 두 번째 영구 세션', agentId: 'public-other-agent', preset: 'public-model', current: 'public-exhausted-model', pending: { preset: 'public-model', effort: null } }),
   pasSession({ id: 'review-pas-3', name: '공개 예시 세 번째 영구 세션 이름이 길어지면 줄바꿈되거나 말줄임으로 끊깁니다', agentId: 'public-agent', preset: 'public-exhausted-model', current: 'public-model' }),
 ].map(item => [item.session_id, item]));
