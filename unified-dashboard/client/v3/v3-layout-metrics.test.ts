@@ -8,6 +8,7 @@ import {
   V3_PANEL_GAP_PX,
   V3_SESSION_PANEL_DEFAULT_WIDTH_PX,
   readV3NavigationWidth,
+  writeV3NavigationWidth,
 } from "./v3-layout-metrics";
 
 describe("v3 layout metrics", () => {
@@ -20,14 +21,21 @@ describe("v3 layout metrics", () => {
     expect(V3_CARD_GAP_PX).toBe(4);
   });
 
-  it("uses the v3 default only when the user has not persisted a width", () => {
+  it("leaves default selection to the layout resolver and reads raw saved widths", () => {
     const values = new Map<string, string>();
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
     } as Storage;
 
-    expect(readV3NavigationWidth(storage)).toBe(336);
+    expect(readV3NavigationWidth(storage)).toBeNull();
     values.set("soul-ui.dashboard.leftSidebarWidth", "288");
     expect(readV3NavigationWidth(storage)).toBe(288);
+    values.set("soul-ui.dashboard.leftSidebarWidth", "700");
+    expect(readV3NavigationWidth(storage)).toBe(700);
+    values.set("soul-ui.dashboard.leftSidebarWidth", "not a number");
+    expect(readV3NavigationWidth(storage)).toBeNull();
+    writeV3NavigationWidth(544.4, storage);
+    expect(values.get("soul-ui.dashboard.leftSidebarWidth")).toBe("544");
   });
 });

@@ -226,6 +226,56 @@
 }
 [data-slot="chat-input-mode"] { height: var(--chat-composer-control-size); }
 
+[data-slot="chat-root"][data-chat-presentation="manuscript"] .w-8.shrink-0 {
+  display: none;
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] [data-slot="chat-tool-row"] {
+  padding-inline: 0;
+  gap: 0;
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] [data-slot="chat-thinking-indicator"] {
+  padding-inline: 0;
+}
+
+/* Only outer row insets belong to the manuscript column; user indentation and
+   the inner padding of status bands/cards keep their own contracts. */
+[data-slot="chat-manuscript-message"] > :first-child {
+  padding-inline: 0;
+  gap: 0;
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] :is([data-slot="chat-body"], [data-slot="chat-tool-body"]) {
+  --chat-line-height: calc(var(--chat-font-size) * 1.6);
+}
+[data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol, pre, div:has(> table)) {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline-start: auto;
+  text-align: left;
+}
+[data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol) {
+  padding-inline-start: calc(var(--spacing) * 4);
+}
+[data-chat-user="true"] [data-slot="chat-body"] img {
+  margin-inline-start: auto;
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] :is(pre.bg-input, div:has(> table), pre[data-slot="chat-tool-body"]) {
+  background: var(--persistent-session-panel);
+  border: 1px solid var(--persistent-session-line);
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] pre .hljs {
+  background: transparent;
+  color: var(--foreground);
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] [data-slot="chat-composer-anchor"] .w-20.h-20 {
+  background: var(--persistent-session-paper);
+  border-color: var(--persistent-session-line);
+}
+@media (max-width: 767px) {
+  [data-slot="chat-root"][data-chat-presentation="manuscript"] .ms-12 {
+    margin-inline-start: calc(var(--spacing) * 8);
+  }
+}
+
 /* The folder combo's existing surface is the canonical control/panel tint.
    Render it once in either glass mode; disabled content never fades the tint. */
 :root { --control-surface: color-mix(in srgb, var(--background) 48%, transparent); }
@@ -1001,6 +1051,9 @@ pre[data-markdown-code-layout="document"] {
  * Node colors: original Tailwind -500 — vibrant on white bg.
  * ============================================================ */
 :root {
+  --persistent-session-paper: #fbfaf7;
+  --persistent-session-panel: #fffefa;
+  --persistent-session-line: #d6d6ce;
   /* Panel edge inset — shared by ReactFlow Panel, ChatInput, scroll-to-bottom */
   --panel-inset: 15px;
 
@@ -1109,6 +1162,9 @@ pre[data-markdown-code-layout="document"] {
 }
 
 .dark {
+  --persistent-session-paper: #20231f;
+  --persistent-session-panel: #292d27;
+  --persistent-session-line: #474b41;
   /* Node accent palette (dark — muted) */
   --node-user:         hsl(217, 70%, 68%);   /* #7ba3e6 — muted blue    */
   --node-response:     hsl(160, 60%, 52%);   /* #4db894 — muted emerald */

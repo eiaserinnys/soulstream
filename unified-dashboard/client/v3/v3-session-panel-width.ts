@@ -1,36 +1,23 @@
-import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
-
 export const V3_SESSION_PANEL_STORAGE_KEY = "soulstream-v3-session-panel-width";
-export const V3_SESSION_PANEL_DEFAULT_WIDTH = V3_SESSION_PANEL_DEFAULT_WIDTH_PX;
-export const V3_SESSION_PANEL_MAX_WIDTH = 560;
 
-const V3_SESSION_PANEL_MIN_WIDTH = 240;
-
-export function clampV3SessionPanelWidth(width: number): number {
-  return Math.min(
-    V3_SESSION_PANEL_MAX_WIDTH,
-    Math.max(V3_SESSION_PANEL_MIN_WIDTH, Math.round(width)),
-  );
-}
-
-export function readV3SessionPanelWidth(): number {
+export function readV3SessionPanelWidth(storage?: Storage): number | null {
   try {
-    const raw = window.localStorage.getItem(V3_SESSION_PANEL_STORAGE_KEY);
-    if (raw === null) return V3_SESSION_PANEL_DEFAULT_WIDTH;
+    const target = storage ?? globalThis.localStorage;
+    const raw = target.getItem(V3_SESSION_PANEL_STORAGE_KEY);
+    if (raw === null || raw.trim() === "") return null;
     const parsed = Number(raw);
-    return Number.isFinite(parsed)
-      ? clampV3SessionPanelWidth(parsed)
-      : V3_SESSION_PANEL_DEFAULT_WIDTH;
+    return Number.isFinite(parsed) ? parsed : null;
   } catch {
-    return V3_SESSION_PANEL_DEFAULT_WIDTH;
+    return null;
   }
 }
 
-export function writeV3SessionPanelWidth(width: number): void {
+export function writeV3SessionPanelWidth(width: number, storage?: Storage): void {
   try {
-    window.localStorage.setItem(
+    const target = storage ?? globalThis.localStorage;
+    target.setItem(
       V3_SESSION_PANEL_STORAGE_KEY,
-      String(clampV3SessionPanelWidth(width)),
+      String(Math.round(width)),
     );
   } catch {
     // Storage can be unavailable in sandboxed/private contexts.
