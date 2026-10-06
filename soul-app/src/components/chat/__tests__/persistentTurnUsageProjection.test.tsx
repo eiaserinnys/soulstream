@@ -19,7 +19,8 @@ describe('projectPersistentTurnUsage', () => {
         used_tokens: 630_000, max_tokens: 1_000_000, percent: 63, estimated: true,
       }),
       event('11', 'complete', {
-        usage: { input_tokens: 100, output_tokens: 20 }, turn_cost_usd: 1.4,
+        usage: { input_tokens: 6, cache_read_input_tokens: 645_361, output_tokens: 6_139 },
+        turn_cost_usd: 0.621749, session_cost_usd: 17.91,
       }),
       event('12', 'user_message', { text: '다음 턴' }),
       event('13', 'context_usage', {
@@ -35,17 +36,30 @@ describe('projectPersistentTurnUsage', () => {
 
     expect(usageItems.map((item) => item.key)).toEqual(['evt-11', 'evt-14']);
     expect(usageItems.map((item) => item.title)).toEqual([
-      '컨텍스트 약 63.0% · 정가 $1.40',
+      '컨텍스트 약 63.0% · 정가 $0.62',
       '컨텍스트 22.0% · 정가 $0.05',
     ]);
     expect(usageItems[0]).toMatchObject({
+      expandedTitle: '컨텍스트 약 630,000 / 1,000,000 (63.0%)',
       lines: [
-        '컨텍스트 약 630,000 / 1,000,000 (63.0%)',
-        '턴 완료 · 입력 100 · 출력 20 · 정가 $1.40',
+        '턴 완료 · 입력 645,367 (캐시 645,361) · 출력 6,139 · 정가 $0.62 (세션 $17.91)',
       ],
     });
     expect(items.filter((item) => item.kind === 'event' && item.event.type === 'context_usage'))
       .toHaveLength(0);
+  });
+
+  test('hides a completion when its usage, cost, and context produce no displayable value', () => {
+    const events = [
+      event('30', 'complete', { result: '답변 완료' }),
+      event('31', 'user_message', { text: '다음 요청' }),
+    ];
+
+    const items = project(events);
+
+    expect(items.some((item) => item.kind === 'turn-usage')).toBe(false);
+    expect(items.some((item) => item.kind === 'event' && item.event.id === '30')).toBe(false);
+    expect(items.map((item) => item.key)).toEqual(['evt-31']);
   });
 
   test('keeps an error event, adds its received context below it, and omits context without a terminal', () => {
@@ -66,7 +80,8 @@ describe('projectPersistentTurnUsage', () => {
     expect(items[errorIndex]).toMatchObject({
       turnUsageCaption: {
         title: '컨텍스트 약 41.5%',
-        lines: ['컨텍스트 약 415,000 / 1,000,000 (41.5%)'],
+        expandedTitle: '컨텍스트 약 415,000 / 1,000,000 (41.5%)',
+        lines: [],
       },
     });
     expect(items.some((item) => item.kind === 'turn-usage')).toBe(false);

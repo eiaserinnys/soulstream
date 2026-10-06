@@ -35,7 +35,8 @@ export function projectPersistentTurnUsage(
     if (item.event.type === 'complete') {
       if (!showTurnUsage) continue;
       const pair = pairsByTerminalId.get(item.event.id);
-      projected.push(makeTurnUsageItem(item, pair?.contextUsage, item.event.data));
+      const usageItem = makeTurnUsageItem(item, pair?.contextUsage, item.event.data);
+      if (usageItem) projected.push(usageItem);
       continue;
     }
 
@@ -58,13 +59,15 @@ function makeTurnUsageItem(
   item: Extract<ChatRenderItem, { kind: 'event' }>,
   contextUsage: UsageData | null | undefined,
   completeData: UsageData,
-): TurnUsageRenderItem {
+): TurnUsageRenderItem | null {
   const caption = makeTurnUsageCaption(contextUsage, completeData);
+  if (!caption) return null;
   return {
     kind: 'turn-usage',
     event: item.event,
     key: item.key,
     title: caption.title,
+    ...(caption.expandedTitle !== undefined ? { expandedTitle: caption.expandedTitle } : {}),
     lines: caption.lines,
     summaries: item.summaries,
   };
@@ -72,27 +75,10 @@ function makeTurnUsageItem(
 
 function makeTurnUsageCaption(
   contextUsage: UsageData | null | undefined,
-  completeData: UsageData,
-): TurnUsageCaption;
-function makeTurnUsageCaption(
-  contextUsage: UsageData | null | undefined,
-  completeData: UsageData | null,
-): TurnUsageCaption | null;
-function makeTurnUsageCaption(
-  contextUsage: UsageData | null | undefined,
   completeData: UsageData | null,
 ): TurnUsageCaption | null {
   const context = contextUsage ?? undefined;
   const complete = completeData ?? undefined;
-  const title = formatTurnUsageCaptionTitle({
-    percent: context?.percent,
-    estimated: context?.estimated,
-    usage: complete?.usage,
-    turnCostUsd: complete?.turn_cost_usd,
-  });
-  if (!complete && !title) return null;
-
-  const lines: string[] = [];
   const contextText = context
     ? formatContextUsageText({
       usedTokens: context.used_tokens,
@@ -101,22 +87,25 @@ function makeTurnUsageCaption(
       estimated: context.estimated,
     })
     : undefined;
-  if (contextText) lines.push(contextText);
-
-  if (complete) {
-    const stats = formatTurnCompleteStats({
+  const stats = complete
+    ? formatTurnCompleteStats({
       usage: complete.usage,
       turnCostUsd: complete.turn_cost_usd,
       sessionCostUsd: complete.session_cost_usd,
       sessionCostPartial: complete.session_cost_partial,
-    });
-    lines.push(stats
-      ? `${TURN_COMPLETE_LABEL}${TURN_USAGE_SEPARATOR}${stats}`
-      : TURN_COMPLETE_LABEL);
-  }
+    })
+    : undefined;
+  const title = formatTurnUsageCaptionTitle({
+    percent: context?.percent,
+    estimated: context?.estimated,
+    usage: complete?.usage,
+    turnCostUsd: complete?.turn_cost_usd,
+  });
+  if (!contextText && !title && !stats) return null;
 
   return {
     title: title ?? TURN_COMPLETE_LABEL,
-    lines,
+    ...(contextText ? { expandedTitle: contextText } : {}),
+    lines: stats ? [`${TURN_COMPLETE_LABEL}${TURN_USAGE_SEPARATOR}${stats}`] : [],
   };
 }

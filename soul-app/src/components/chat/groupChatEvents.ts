@@ -36,6 +36,7 @@ export type JevCandidatesRenderItem = {
 
 export type TurnUsageCaption = {
   title: string;
+  expandedTitle?: string;
   lines: string[];
 };
 

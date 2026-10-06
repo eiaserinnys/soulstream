@@ -185,7 +185,12 @@ const ChatEventRow = memo(function ChatEventRow({
       <SearchFocusHighlight active={highlighted}>
         <>
           <EventContextMenu sessionId={sessionId} event={item.event}>
-            <TurnUsageCaptionRow title={item.title} lines={item.lines} presentation={presentation} />
+            <TurnUsageCaptionRow
+              title={item.title}
+              expandedTitle={item.expandedTitle}
+              lines={item.lines}
+              presentation={presentation}
+            />
           </EventContextMenu>
           {item.summaries?.map((summary) => (
             <TurnSummaryCaption
@@ -271,6 +276,7 @@ const ChatEventRow = memo(function ChatEventRow({
         {item.turnUsageCaption
           ? <TurnUsageCaptionRow
             title={item.turnUsageCaption.title}
+            expandedTitle={item.turnUsageCaption.expandedTitle}
             lines={item.turnUsageCaption.lines}
             presentation={presentation}
           />
@@ -290,21 +296,24 @@ const ChatEventRow = memo(function ChatEventRow({
 
 function TurnUsageCaptionRow({
   title,
+  expandedTitle,
   lines,
   presentation,
 }: {
   title: string;
+  expandedTitle?: string;
   lines: string[];
   presentation: 'default' | 'manuscript';
 }) {
   return (
     <CollapsibleCaption
       title={title}
+      {...(expandedTitle !== undefined ? { expandedTitle } : {})}
       initiallyCollapsed
       alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
     >
       {lines.map((line, index) => (
-        <CollapsibleCaptionLine key={`${title}-${index}`}>{line}</CollapsibleCaptionLine>
+        <CollapsibleCaptionLine key={`${title}-${index}`} wrap>{line}</CollapsibleCaptionLine>
       ))}
     </CollapsibleCaption>
   );
