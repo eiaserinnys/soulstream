@@ -105,6 +105,41 @@ describe("SoulstreamScheduleService", () => {
     expect(schedule.sourceTool).toBe("persistent_cache_keepalive");
   });
 
+  it("creates a stable ResumeAfterLimit schedule once for a terminal event", async () => {
+    const db = makeDb();
+    const { service, persistence } = makeService(db);
+    const runAt = new Date("2026-01-01T00:05:00.000Z");
+    const now = new Date("2026-01-01T00:00:00.000Z");
+
+    const created = await service.scheduleResumeAfterLimit("sess-1", 32, runAt, now);
+    db.createScheduleIfAbsent.mockResolvedValueOnce(null);
+    const duplicate = await service.scheduleResumeAfterLimit("sess-1", 32, runAt, now);
+
+    expect(db.createScheduleIfAbsent).toHaveBeenCalledTimes(2);
+    expect(db.createScheduleIfAbsent).toHaveBeenNthCalledWith(1, {
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sessionId: "sess-1",
+      kind: "wakeup",
+      prompt: "리밋 해제 시각이 지났습니다. 이전 지시와 미완료 작업을 이어서 진행해주세요.",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+      timezone: "UTC",
+      recurring: false,
+      runOnceAt: runAt,
+      nextRunAt: runAt,
+      createdAt: now,
+    });
+    expect(created).toMatchObject({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+      runOnceAt: runAt.toISOString(),
+      nextRunAt: runAt.toISOString(),
+    });
+    expect(duplicate).toBeNull();
+    expect(persistence.enqueueEvent).toHaveBeenCalledOnce();
+  });
+
   it("stores CronCreate in the same durable model and advances recurring schedules from now", async () => {
     const db = makeDb();
     const { service } = makeService(db);
@@ -305,6 +340,22 @@ function makeService(db = makeDb()) {
 function makeDb() {
   return {
     createSchedule: vi.fn(async (input: ScheduleCreateInput) =>
+      makeSchedule({
+        scheduleId: input.scheduleId,
+        sessionId: input.sessionId,
+        kind: input.kind,
+        prompt: input.prompt,
+        sourceTool: input.sourceTool,
+        toolUseId: input.toolUseId ?? null,
+        cronExpression: input.cronExpression ?? null,
+        runOnceAt: input.runOnceAt?.toISOString() ?? null,
+        timezone: input.timezone ?? "UTC",
+        recurring: input.recurring,
+        nextRunAt: input.nextRunAt.toISOString(),
+        createdAt: input.createdAt?.toISOString() ?? "2026-01-01T00:00:00.000Z",
+        updatedAt: input.createdAt?.toISOString() ?? "2026-01-01T00:00:00.000Z",
+      })),
+    createScheduleIfAbsent: vi.fn(async (input: ScheduleCreateInput): Promise<SoulstreamSchedule | null> =>
       makeSchedule({
         scheduleId: input.scheduleId,
         sessionId: input.sessionId,

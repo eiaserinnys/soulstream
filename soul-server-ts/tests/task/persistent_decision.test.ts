@@ -35,12 +35,14 @@ function makeInput(overrides: Partial<DecisionInput> = {}): DecisionInput {
     accounts: {
       claude: {
         weekly_headroom: 0,
+        weekly_remaining_percent: 50,
         short_remaining_percent: 60,
         short_reset_at: "2026-10-06T13:00:00.000Z",
         observed_at: NOW,
       },
       codex: {
         weekly_headroom: 0,
+        weekly_remaining_percent: 50,
         short_remaining_percent: 60,
         short_reset_at: "2026-10-06T13:00:00.000Z",
         observed_at: NOW,
@@ -119,7 +121,7 @@ const decisionCases: DecisionCase[] = [
     input: {
       trigger: "turn_end",
       context_tokens: 100_000,
-      accounts: { claude: { weekly_headroom: 0, short_remaining_percent: 19, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
+      accounts: { claude: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 19, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
     expected: { action: "let_cool", rule: "turn_end.short_floor" },
   },
@@ -127,7 +129,7 @@ const decisionCases: DecisionCase[] = [
     name: "turn_end.short_floor for stale observation",
     input: {
       trigger: "turn_end",
-      accounts: { claude: { weekly_headroom: 0, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: "2026-10-06T11:39:59.000Z" } },
+      accounts: { claude: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: "2026-10-06T11:39:59.000Z" } },
     },
     expected: { action: "let_cool", rule: "turn_end.short_floor" },
   },
@@ -135,7 +137,7 @@ const decisionCases: DecisionCase[] = [
     name: "turn_end.weekly_floor",
     input: {
       trigger: "turn_end",
-      accounts: { claude: { weekly_headroom: -41, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
+      accounts: { claude: { weekly_headroom: -41, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
     expected: { action: "let_cool", rule: "turn_end.weekly_floor" },
   },
@@ -143,7 +145,7 @@ const decisionCases: DecisionCase[] = [
     name: "turn_end.weekly_floor when its value is missing",
     input: {
       trigger: "turn_end",
-      accounts: { claude: { weekly_headroom: null, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
+      accounts: { claude: { weekly_headroom: null, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
     expected: { action: "let_cool", rule: "turn_end.weekly_floor" },
   },
@@ -186,7 +188,7 @@ const decisionCases: DecisionCase[] = [
       current_preset: "claude-opus",
       default_model: "claude-opus",
       fallback_model: "codex-6.1-sol",
-      accounts: { codex: { weekly_headroom: 0, short_remaining_percent: 10, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
+      accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 20, short_remaining_percent: 10, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
     expected: {
       action: "new_generation",
@@ -194,6 +196,54 @@ const decisionCases: DecisionCase[] = [
       target_preset: "codex-6.1-sol",
     },
     expectedSnapshot: { preset_rule: "preset.single" },
+  },
+  {
+    name: "limit_hit.switch requires a fresh observation",
+    input: {
+      trigger: "limit_hit",
+      current_preset: "claude-opus",
+      default_model: "claude-opus",
+      fallback_model: "codex-6.1-sol",
+      limit_reset_at: "2026-10-06T13:00:00.000Z",
+      accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 20, short_remaining_percent: 50, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: "2026-10-06T11:39:59.000Z" } },
+    },
+    expected: { action: "wait_until", rule: "limit_hit.wait", wake_at: "2026-10-06T13:00:00.000Z" },
+  },
+  {
+    name: "limit_hit.switch requires the short-window floor",
+    input: {
+      trigger: "limit_hit",
+      current_preset: "claude-opus",
+      default_model: "claude-opus",
+      fallback_model: "codex-6.1-sol",
+      limit_reset_at: "2026-10-06T13:00:00.000Z",
+      accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 20, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
+    },
+    expected: { action: "wait_until", rule: "limit_hit.wait", wake_at: "2026-10-06T13:00:00.000Z" },
+  },
+  {
+    name: "limit_hit.switch requires positive weekly remaining",
+    input: {
+      trigger: "limit_hit",
+      current_preset: "claude-opus",
+      default_model: "claude-opus",
+      fallback_model: "codex-6.1-sol",
+      limit_reset_at: "2026-10-06T13:00:00.000Z",
+      accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 0, short_remaining_percent: 50, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
+    },
+    expected: { action: "wait_until", rule: "limit_hit.wait", wake_at: "2026-10-06T13:00:00.000Z" },
+  },
+  {
+    name: "limit_hit.switch treats a missing weekly value as stale",
+    input: {
+      trigger: "limit_hit",
+      current_preset: "claude-opus",
+      default_model: "claude-opus",
+      fallback_model: "codex-6.1-sol",
+      limit_reset_at: "2026-10-06T13:00:00.000Z",
+      accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: null, short_remaining_percent: 50, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
+    },
+    expected: { action: "wait_until", rule: "limit_hit.wait", wake_at: "2026-10-06T13:00:00.000Z" },
   },
   {
     name: "limit_hit.wait",
@@ -217,8 +267,8 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       context_tokens: 120_001,
       accounts: {
-        claude: { weekly_headroom: 0, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
-        codex: { weekly_headroom: 0, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        claude: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        codex: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
       },
     },
     expected: { action: "new_generation", rule: "arrival.warm.over_budget", target_preset: "claude-opus" },
@@ -230,7 +280,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "claude-sonnet",
       context_tokens: 120_001,
-      accounts: { codex: { weekly_headroom: 0, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: "2026-10-06T11:39:59.000Z" } },
+      accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: "2026-10-06T11:39:59.000Z" } },
     },
     expected: { action: "new_generation", rule: "arrival.warm.over_budget", target_preset: "claude-sonnet" },
     expectedSnapshot: { preset_rule: "preset.stale_keep_current" },
@@ -252,8 +302,8 @@ const decisionCases: DecisionCase[] = [
       current_preset: "claude-sonnet",
       context_tokens: 120_001,
       accounts: {
-        claude: { weekly_headroom: 0, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
-        codex: { weekly_headroom: 25, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        claude: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        codex: { weekly_headroom: 25, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
       },
     },
     expected: { action: "new_generation", rule: "arrival.warm.over_budget", target_preset: "codex-6.1-sol" },
@@ -266,8 +316,8 @@ const decisionCases: DecisionCase[] = [
       current_preset: "claude-sonnet",
       context_tokens: 120_001,
       accounts: {
-        claude: { weekly_headroom: 0, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
-        codex: { weekly_headroom: 24, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        claude: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        codex: { weekly_headroom: 24, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
       },
     },
     expected: { action: "new_generation", rule: "arrival.warm.over_budget", target_preset: "claude-opus" },

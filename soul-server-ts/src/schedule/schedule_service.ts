@@ -8,6 +8,12 @@ import {
   CACHE_KEEPALIVE_SOURCE_TOOL,
   isCacheKeepaliveSchedule,
 } from "../task/persistent_keepalive_marker.js";
+import {
+  SCHEDULE_PROMPT as RESUME_AFTER_LIMIT_PROMPT,
+  SOURCE_TOOL as RESUME_AFTER_LIMIT_SOURCE_TOOL,
+  resumeAfterLimitToolUseId,
+  stableScheduleId,
+} from "@soulstream/wire-schema/resume-after-limit";
 
 import { nextCronRunAt } from "./cron.js";
 import {
@@ -35,6 +41,7 @@ export class SoulstreamScheduleService {
     private readonly db: Pick<
       ScheduleHostClient,
       | "createSchedule"
+      | "createScheduleIfAbsent"
       | "listSchedules"
       | "cancelSchedule"
       | "touchNodeHeartbeat"
@@ -238,6 +245,29 @@ export class SoulstreamScheduleService {
       createdAt: now,
     });
     await this.emitScheduleEvent(schedule, "updated");
+    return schedule;
+  }
+
+  async scheduleResumeAfterLimit(
+    sessionId: string,
+    terminalEventId: number,
+    runOnceAt: Date,
+    now = new Date(),
+  ): Promise<SoulstreamSchedule | null> {
+    const schedule = await this.db.createScheduleIfAbsent({
+      scheduleId: stableScheduleId(sessionId, terminalEventId, 0),
+      sessionId,
+      kind: "wakeup",
+      prompt: RESUME_AFTER_LIMIT_PROMPT,
+      sourceTool: RESUME_AFTER_LIMIT_SOURCE_TOOL,
+      toolUseId: resumeAfterLimitToolUseId(terminalEventId),
+      timezone: "UTC",
+      recurring: false,
+      runOnceAt,
+      nextRunAt: runOnceAt,
+      createdAt: now,
+    });
+    if (schedule) await this.emitScheduleEvent(schedule, "updated");
     return schedule;
   }
 

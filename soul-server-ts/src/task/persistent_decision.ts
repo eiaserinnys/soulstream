@@ -11,6 +11,7 @@ export type DecisionAction =
 
 export interface AccountObservation {
   weekly_headroom: number | null;
+  weekly_remaining_percent: number | null;
   short_remaining_percent: number | null;
   short_reset_at: string | null;
   observed_at: string | null;
@@ -194,6 +195,8 @@ export function decidePersistentGeneration(
   }
 
   const currentProvider = input.preset_providers[input.current_preset];
+  // limit_hit.switch requires a fresh other-provider observation with at least
+  // generation_short_floor remaining in the short window and positive 7-day quota.
   const eligibleCandidates = uniquePresets(input.default_model, input.fallback_model)
     .filter((preset) =>
       preset !== input.current_preset
@@ -202,7 +205,9 @@ export function decidePersistentGeneration(
     .filter((preset) => {
       const account = accountForPreset(input, preset);
       return !isStaleForValue(input, account, account?.short_remaining_percent, config)
-        && account!.short_remaining_percent! >= config.generation_short_floor;
+        && account!.short_remaining_percent! >= config.generation_short_floor
+        && !isStaleForValue(input, account, account?.weekly_remaining_percent, config)
+        && account!.weekly_remaining_percent! > 0;
     });
 
   if (eligibleCandidates.length > 0) {

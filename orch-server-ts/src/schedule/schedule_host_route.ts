@@ -11,6 +11,7 @@ export interface ScheduleHostRouteOptions {
 
 const operations = {
   create_schedule: "createSchedule",
+  create_schedule_if_absent: "createScheduleIfAbsent",
   list_schedules: "listSchedules",
   cancel_schedule: "cancelSchedule",
   touch_node_heartbeat: "touchNodeHeartbeat",
@@ -75,6 +76,7 @@ async function dispatch(
 ): Promise<unknown> {
   switch (method) {
     case "createSchedule": return await repository.createSchedule(input as never);
+    case "createScheduleIfAbsent": return await repository.createScheduleIfAbsent(input as never);
     case "listSchedules": return await repository.listSchedules(requiredString(input, "sessionId"));
     case "cancelSchedule": return await repository.cancelSchedule(
       requiredString(input, "sessionId"), requiredString(input, "scheduleId"),

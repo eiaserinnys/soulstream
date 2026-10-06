@@ -90,7 +90,10 @@ import type { PersistentSessionControl } from "./persistent_session_control.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
-import { decidePersistentGeneration } from "./persistent_decision.js";
+import {
+  decidePersistentGeneration,
+  type DecisionTrigger,
+} from "./persistent_decision.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
 import {
   buildPersistentDecisionInput,
@@ -182,7 +185,7 @@ interface PersistentDecisionRuntime {
   providerUsage: ProviderUsageCommandHandler;
   scheduleService: Pick<
     SoulstreamScheduleService,
-    "deleteCacheKeepaliveSchedules" | "scheduleCacheKeepalive"
+    "deleteCacheKeepaliveSchedules" | "scheduleCacheKeepalive" | "scheduleResumeAfterLimit"
   >;
 }
 
@@ -669,9 +672,67 @@ export class TaskExecutor {
     }
   }
 
+  private async decidePersistentLimitHit(task: Task): Promise<void> {
+    const runtime = this.persistentDecisionRuntime;
+    if (
+      !runtime
+      || !this.modelCatalog
+      || task.persistent !== true
+      || task.terminationReason !== "limit_hit"
+    ) return;
+
+    const now = new Date();
+    const limitResetAt = task.rateLimitStopInfo?.resetsAt;
+    const input = await buildPersistentDecisionInput(
+      {
+        task,
+        trigger: "limit_hit",
+        now,
+        ...(limitResetAt !== undefined ? { limitResetAt } : {}),
+      },
+      {
+        db: this.db,
+        modelCatalog: this.modelCatalog,
+        providerUsage: runtime.providerUsage,
+        logger: this.logger,
+      },
+    );
+    const decision = decidePersistentGeneration(input);
+    await this.recordPersistentDecision(task, "limit_hit", decision);
+
+    if (decision.action === "new_generation" && decision.target_preset) {
+      const settings = readStoredPersistentSettings(task.metadata);
+      const targetSelection = settings?.default_model?.model_preset === decision.target_preset
+        ? settings.default_model
+        : settings?.fallback_model?.model_preset === decision.target_preset
+          ? settings.fallback_model
+          : undefined;
+      const reasoningEffort = targetSelection?.reasoning_effort;
+      await runtime.persistentSessions.requestGenerationRollover(task.agentSessionId, {
+        modelPreset: decision.target_preset,
+        ...(reasoningEffort ? { reasoningEffort: reasoningEffort as ReasoningEffort } : {}),
+        reason: `auto:${decision.rule}`,
+      });
+    }
+
+    const scheduleAt = decision.action === "new_generation"
+      ? now
+      : decision.action === "wait_until" && decision.wake_at
+        ? new Date(decision.wake_at)
+        : undefined;
+    if (scheduleAt && task.terminalEventId !== undefined) {
+      await runtime.scheduleService.scheduleResumeAfterLimit(
+        task.agentSessionId,
+        task.terminalEventId,
+        scheduleAt,
+        now,
+      );
+    }
+  }
+
   private async recordPersistentDecision(
     task: Task,
-    trigger: "arrival" | "turn_end",
+    trigger: DecisionTrigger,
     decision: ReturnType<typeof decidePersistentGeneration>,
     keepaliveResult?: {
       input_tokens: number;
@@ -1912,6 +1973,7 @@ export class TaskExecutor {
     consumeTerminalDeliveries?: () => Promise<void>,
   ): Promise<void> {
     await this.executorFinalizer.finalize(task, consumeTerminalDeliveries);
+    await this.decidePersistentLimitHit(task);
   }
 
   private async consumeTerminalTurnReceipts(

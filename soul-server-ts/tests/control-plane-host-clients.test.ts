@@ -175,6 +175,34 @@ describe("worker control-plane host clients", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/schedules/host/claim_due_schedules");
   });
 
+  it("uses the create-if-absent schedule host operation for stable terminal resumes", async () => {
+    const fetchMock = vi.fn(async () => new Response("null", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ScheduleHostClient({ orch, logger });
+
+    await client.createScheduleIfAbsent({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sessionId: "sess-1",
+      kind: "wakeup",
+      prompt: "continue",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+      recurring: false,
+      runOnceAt: new Date("2026-08-05T10:00:00.000Z"),
+      nextRunAt: new Date("2026-08-05T10:00:00.000Z"),
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/schedules/host/create_schedule_if_absent",
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      schedule_id: "resume-after-limit:sess-1:32:0",
+      source_tool: "ResumeAfterLimit",
+      tool_use_id: "ResumeAfterLimit:32",
+      run_once_at: "2026-08-05T10:00:00.000Z",
+    });
+  });
+
   it("sends only immutable schedule identity and the worker-observed current revision", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       new Response("true", { status: 200 }));
