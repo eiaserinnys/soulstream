@@ -29,7 +29,9 @@ async function prepare(page:Page,width:number) {
  return {board:page.getByTestId('card-board-sample'),errors,writes,batches};
 }
 async function drag(page:Page,id:string,delta:number) {
- const box=(await page.getByTestId(id).locator('.cursor-col-resize').boundingBox())!;
+ const handle=page.getByTestId(id).locator('.cursor-col-resize');
+ await handle.evaluate(el=>Promise.all(el.closest('.v3-workspace')!.getAnimations().map(a=>a.finished)));
+ const box=(await handle.boundingBox())!;
  await page.mouse.move(box.x+box.width/2,box.y+80);await page.mouse.down();await page.mouse.move(box.x+box.width/2+delta,box.y+80,{steps:5});await page.mouse.up();
 }
 async function geometry(page:Page) {
@@ -46,7 +48,7 @@ for(const width of [1440,1920,2560])test(`trim web ${width}`,async({page})=>{
  const initial=await geometry(page),expectedTotal=Math.min(initial.work,1666),expectedCard=Math.round((expectedTotal-16)*750/1650);
  expect(initial.card).toBeCloseTo(expectedCard,0);expect(initial.chat).toBeCloseTo(expectedTotal-16-expectedCard,0);expect(initial.right).toBe(width-16);
  await page.screenshot({path:path.join(output,`${width}-initial.png`)});
- const turn=detail.locator('.v3-card-now-turn--user');await expect(turn).toHaveAttribute('aria-label','내 차례');await expect(turn).not.toContainText('내 차례');
+ const turn=detail.getByTestId('card-now-panel').locator('.v3-card-now-turn--user');await expect(turn).toHaveAttribute('aria-label','내 차례');await expect(turn).not.toContainText('내 차례');
  await expect(detail.locator('.v3-card-check-item-state')).toHaveCount(0);
  await expect(detail.locator('[data-item-id="3"] [role="checkbox"]')).toHaveAttribute('aria-label',/됐다고 보고/);
  await drag(page,'v3-card-workspace-left-divider',120);
@@ -54,6 +56,13 @@ for(const width of [1440,1920,2560])test(`trim web ${width}`,async({page})=>{
  await page.screenshot({path:path.join(output,`${width}-left-narrow.png`)});
  await detail.getByRole('button',{name:'카드 닫기'}).click();await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').last().click();
  expect((await geometry(page)).total).toBeCloseTo(narrow.total,0);
+ if(width===2560){
+  await page.reload();await expect(page.getByTestId('components-review')).toBeVisible();
+  await page.locator('.v3-shell.v3-components-page').evaluate(el=>(el as HTMLElement).style.setProperty('--v3-navigation-width','336px'));
+  await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
+  expect((await geometry(page)).total).toBeCloseTo(narrow.total,0);
+ }
+
  await drag(page,'v3-card-workspace-left-divider',-2000);
  const wide=await geometry(page);expect(wide.total).toBeCloseTo(initial.work,0);
  await page.screenshot({path:path.join(output,`${width}-left-wide.png`)});
@@ -80,7 +89,7 @@ for(const width of [1440,1920,2560])test(`trim web ${width}`,async({page})=>{
  await expect(page.getByRole('dialog').locator('figcaption')).toHaveText(await image.getAttribute('alt')??'');
  await page.screenshot({path:path.join(output,`${width}-image-caption.png`)});await page.keyboard.press('Escape');await expect(detail).toBeVisible();
  await detail.getByRole('tab',{name:/노트/}).click();
- const fonts=await detail.evaluate(el=>[...el.querySelectorAll('.v3-card-note-frame .markdown-body')].map(e=>getComputedStyle(e).font));expect(new Set(fonts).size).toBe(1);
+ const fonts=await detail.evaluate(el=>[...el.querySelectorAll('.v3-card-note-frame p')].map(e=>getComputedStyle(e).font));expect(fonts.length).toBeGreaterThan(0);expect(new Set(fonts).size).toBe(1);expect(fonts[0]).toContain("14px / 22px");
  await expect(detail.locator('.v3-card-note-frame')).toHaveCount(6);await page.screenshot({path:path.join(output,`${width}-notes.png`)});
  writeFileSync(path.join(output,`${width}-metrics.json`),JSON.stringify({initial,narrow,wide,fonts,errors,writes},null,2));expect(errors).toEqual([]);expect(writes).toEqual([]);
 });
@@ -88,13 +97,15 @@ test('trim session pagination and question-only strip',async({page})=>{
  const {board,errors,writes,batches}=await prepare(page,1920);
  await board.getByRole('button',{name:'많은 세션',exact:true}).click();await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
  const detail=page.getByTestId('card-detail');await detail.getByRole('tab',{name:/세션/}).click();
- const scroll=detail.locator('.v3-card-panel-scroll');
+ const scroll=detail.locator('[data-testid=card-session-virtual] [data-virtuoso-scroller]');
  await expect(detail.locator('[data-session-id^="trim-session-"]').first()).toBeVisible();
  expect(await detail.locator('[data-session-id^="trim-session-"]').count()).toBeLessThan(75);
  await page.screenshot({path:path.join(output,'1920-sessions-first.png')});
  for(let i=0;i<5&&!batches.some(batch=>batch.length===25);i++){await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight;});await page.waitForTimeout(400);}
  expect(batches.map(ids=>ids.length)).toEqual([50,25]);
- await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight;});await page.waitForTimeout(400);
+ for(let i=0;i<3;i++){await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight;});await page.waitForTimeout(250);}
+ const end=await scroll.evaluate(el=>({top:el.scrollTop,height:el.scrollHeight,viewport:el.clientHeight}));
+ expect(Math.abs(end.height-end.viewport-end.top)).toBeLessThanOrEqual(1);
  const last=detail.locator('[data-session-id^="trim-session-"]').last();await expect(last).toBeVisible();const id=await last.getAttribute('data-session-id');await last.click();
  await expect(page.getByTestId('v3-card-session-chat')).toContainText(/검수 세션/);
  const before=await scroll.evaluate(el=>el.scrollTop);await detail.getByRole('tab',{name:/노트/}).click();await detail.getByRole('tab',{name:/세션/}).click();
@@ -103,5 +114,39 @@ test('trim session pagination and question-only strip',async({page})=>{
  await detail.getByRole('button',{name:'카드 닫기'}).click();await board.getByRole('button',{name:'질문만 있는 카드',exact:true}).click();
  const post=board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first();await expect(post).not.toContainText('볼 것 0');await expect(post).toContainText('질문에 답해 주세요');
  await page.screenshot({path:path.join(output,'1920-question-only.png')});
- writeFileSync(path.join(output,'sessions-metrics.json'),JSON.stringify({batches:batches.map(x=>x.length),lastSession:id,scrollTop:before,errors,writes},null,2));expect(errors).toEqual([]);expect(writes).toEqual([]);
+ writeFileSync(path.join(output,'sessions-metrics.json'),JSON.stringify({batches:batches.map(x=>x.length),lastSession:id,scrollTop:before,end,errors,writes},null,2));expect(errors).toEqual([]);expect(writes).toEqual([]);
+});
+
+test('trim WebGL titles caveats and reduced motion',async({page})=>{
+ test.setTimeout(120000);
+ const {board,errors,writes}=await prepare(page,1920);
+ await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
+ const detail=page.getByTestId('card-detail');
+ await page.evaluate(()=>{localStorage.setItem('ls.webglGlass','1');window.dispatchEvent(new Event('ls.webglGlass:change'));});
+ await expect(detail).toHaveAttribute('data-liquid-glass-webgl','true');
+ await detail.getByRole('button',{name:/확인함 3개 펼치기/}).click();
+ const selectors=['.v3-card-check-item-title','.v3-card-check-item-caveat span'];
+ const scroll=detail.locator('.v3-card-panel-scroll');
+ for(const [name,y] of [['top',0],['mid',330],['bottom',-1]] as const){
+  await scroll.evaluate((el,value)=>{el.scrollTop=value<0?el.scrollHeight:value;},y);await page.waitForTimeout(250);
+  const text=await detail.evaluate((el,sels)=>{
+   const viewport=el.querySelector('.v3-card-panel-scroll')!.getBoundingClientRect(),dock=el.querySelector('.v3-card-composer-slot')!.getBoundingClientRect();
+   const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const ctx=canvas.getContext('2d')!;
+   return sels.flatMap(selector=>[...el.querySelectorAll<HTMLElement>(selector)].flatMap(node=>{
+    const range=document.createRange();range.selectNodeContents(node);const style=getComputedStyle(node);ctx.clearRect(0,0,1,1);ctx.fillStyle=style.color;ctx.fillRect(0,0,1,1);
+    return [...range.getClientRects()].filter(r=>r.width>0&&r.height>0&&r.top>=viewport.top&&r.bottom<dock.top-26).map(r=>({selector,text:node.textContent,item:node.closest('[data-item-id]')?.getAttribute('data-item-id'),display:node.closest('[data-item-display]')?.getAttribute('data-item-display'),rgba:[...ctx.getImageData(0,0,1,1).data],box:[r.left,r.top,r.right,r.bottom],font:style.font,color:style.color}));
+   }));
+  },selectors);
+  expect(text.length).toBeGreaterThan(0);
+  await page.screenshot({path:path.join(output,`1920-webgl-${name}.png`),timeout:20000});
+  const hide=await page.addStyleTag({content:selectors.join(',')+' {color:transparent!important;text-shadow:none!important}'});
+  await page.screenshot({path:path.join(output,`1920-webgl-${name}-background.png`),timeout:20000});await hide.evaluate(el=>el.remove());
+  writeFileSync(path.join(output,`1920-webgl-${name}.json`),JSON.stringify(text,null,2));
+ }
+ await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});
+ await detail.getByRole('tab',{name:/확인 항목/}).click();
+ const motion=await detail.locator('[data-item-display="doing"]').first().evaluate(el=>({row:getComputedStyle(el).animationName,before:getComputedStyle(el,'::before').animationName,shell:getComputedStyle(el.parentElement!,'::before').animationName}));
+ expect(motion).toEqual({row:'none',before:'none',shell:'none'});
+ writeFileSync(path.join(output,'1920-webgl-surface.json'),JSON.stringify(await detail.evaluate(el=>({webgl:el.getAttribute('data-liquid-glass-webgl'),tint:getComputedStyle(el).getPropertyValue('--glass-chrome-surface-strong'),opacity:getComputedStyle(el,'::before').opacity})),null,2));
+ expect(errors).toEqual([]);expect(writes).toEqual([]);
 });

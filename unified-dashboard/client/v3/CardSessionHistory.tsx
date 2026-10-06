@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useDashboardStore, useSessionListProvider, useSessionMenu, type SessionSummary } from "@seosoyoung/soul-ui";
 import { orchestratorSessionProvider } from "../providers";
 import { OrchestratorSessionProvider } from "../providers/OrchestratorSessionProvider";
@@ -27,10 +27,7 @@ export function CardSessionHistory({ sessionIds, onOpenSession, assigneeSessionI
   onOpenSession(session: SessionSummary, selection?:CardSessionSelection): void;
 }) {
   const openMenu = useSessionMenu();
-  const list=useRef<HTMLDivElement>(null);
-  const [scrollParent,setScrollParent]=useState<HTMLElement>();
   const nextPage=useRef(false);
-  useEffect(()=>{setScrollParent(list.current?.closest<HTMLElement>(".v3-card-panel-scroll")??undefined);},[]);
   // CardDetailPane keys this history by cardId: one initial choice per card opening.
   const sessionChosen = useRef(false);
   const catalog = useDashboardStore(state => state.catalog);
@@ -74,8 +71,8 @@ export function CardSessionHistory({ sessionIds, onOpenSession, assigneeSessionI
     <div className="v3-detail-section-head"><h3>세션</h3><span>{sessionIds.length}회</span></div>
     {sessionIds.length === 0 ? <p className="v3-detail-empty">아직 세션이 없습니다.</p> : null}
     {targeted.error?<p role="alert" className="v3-detail-empty">{targeted.error}</p>:null}
-    <div ref={list} className="v3-card-session-virtual" data-testid="card-session-virtual">
-     <CardSessionVirtualList data={rows} customScrollParent={scrollParent} initialItemCount={1}
+    <div className="v3-card-session-virtual" data-testid="card-session-virtual">
+     <CardSessionVirtualList data={rows} style={{height:"100%"}} className="v3-session-panel-scroll" initialItemCount={1}
       computeItemKey={(_,row)=>row.node.session.agentSessionId} endReached={loadMore}
       itemContent={(_,row)=><div className={row.depth>0?"v3-run-children":undefined}><SessionRunList size="small" tree={[row.node]} activeSessionId={activeSessionId} onOpenSession={openSession} onContextMenu={(session,event)=>openMenu(session.agentSessionId,event)}/></div>}/>
     </div>

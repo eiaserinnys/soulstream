@@ -155,7 +155,7 @@ export function CardDetailPane({cardId,folders,onClose,onOpenSession,initialSess
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} variant="card" tabs={tabs} value={tab} onChange={changeTab}/></div>
   {execution && execution.phase!=="pending"?<p role={execution.phase==="error"?"alert":"status"} className="v3-card-error">{execution.message}</p>:null}
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
-  <div className="v3-detail-scroll v3-card-panel-scroll v3-detail-gutter" ref={scroll} style={dockStyle} role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`}>
+  <div className="v3-detail-scroll v3-card-panel-scroll v3-detail-gutter" data-card-active-tab={tab} ref={scroll} style={dockStyle} role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`}>
    <div className="v3-task-detail-content">
     <section className="v3-detail-section" data-card-tab-panel="items" hidden={tab!=="items"}>
      <CardCheckItems key={cardId} items={card.items} pendingConfirmations={pendingConfirmations} onConfirmChange={confirmItem} onTargetItem={chooseTargetItem}/>

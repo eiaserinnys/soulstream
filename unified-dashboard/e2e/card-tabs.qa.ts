@@ -54,7 +54,7 @@ for(const width of [1440,390])test(`card tabs ${width} ${phase}`,async({page})=>
  const sessionsRegion=detail.locator('[data-card-section=sessions]');
  const body=detail.getByRole('tabpanel');
  const fixed=async()=>{
-  await detail.evaluate(pane=>Promise.all(pane.parentElement!.getAnimations().map(animation=>animation.finished)));
+  await detail.evaluate(pane=>Promise.all(pane.closest('.v3-workspace')!.getAnimations().map(animation=>animation.finished)));
   return detail.evaluate(pane=>{
   const box=(selector:string)=>{const r=pane.querySelector(selector)!.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
   return {tabs:box('[role=tablist]'),dock:box('.v3-card-comment-dock'),composer:box('[data-slot=chat-input-composer]'),body:box('[role=tabpanel]')};

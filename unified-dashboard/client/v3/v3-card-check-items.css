@@ -180,7 +180,7 @@
 @media (prefers-reduced-motion: reduce) {
   .v3-card-check-item-row.card-running,
   .v3-card-check-item-row.card-running::before,
-  .v3-card-check-item-shell.card-running-base::before,
+  .v3-card-check-item-shell.card-running-base::before { animation: none; }
   .v3-card-check-item-row[data-item-display="doing"] { background: color-mix(in srgb,var(--v3-live) 6%,transparent); }
 }
 
@@ -191,7 +191,6 @@
 .v3-card-now-turn--complete { display: flow-root; }
 .v3-card-note-row { display: flex; align-items: flex-start; gap: var(--v3-space-2); }
 .v3-card-note-content { min-width: 0; flex: 1; }
-.v3-card-note-content .markdown-body { font: var(--v3-type-body) var(--v3-font-family); }
 .v3-card-note-header { margin-bottom: var(--v3-space-1); }
 .v3-card-check-item-links a:focus-visible,
 .v3-card-check-item-heading [data-slot="checkbox"]:focus-visible,
@@ -203,8 +202,7 @@
 .v3-shell .v3-postit-card[data-card-enhanced] .v3-postit-turn { padding: var(--postit-gap-2); border-radius: var(--v3-space-2); background: color-mix(in srgb,var(--v3-favorite) 12%,transparent); color: var(--postit-ink); }
 .v3-postit-card[data-card-enhanced] .v3-postit-turn strong { margin-right: var(--v3-space-1); font-weight: 700; }
 
-.v3-card-note-frame { border: thin solid var(--v3-stroke-default); border-radius: var(--v3-space-3); padding: var(--v3-space-3); }
-.v3-card-note-frame .markdown-body { font: var(--v3-type-body) var(--v3-font-family); }
+.v3-card-note-frame { border: thin solid var(--v3-stroke-default); border-radius: var(--v3-space-3); padding: var(--v3-space-3); font: var(--v3-type-body) var(--v3-font-family); }
 .v3-card-image-expanded { margin: 0; display: flex; flex-direction: column; gap: var(--v3-space-3); }
 .v3-card-image-expanded figcaption { color: var(--v3-text-primary); font: var(--v3-type-body) var(--v3-font-family); }
 
@@ -213,3 +211,10 @@
 .v3-card-workspace-pair > .v3-card-workspace-left-divider { position: absolute; inset-block: 0; inset-inline-start: calc(-1 * var(--v3-space-4)); }
 
 .v3-card-workspace-left-divider > .cursor-col-resize { height: 100%; }
+
+.v3-card-panel-scroll[data-card-active-tab="sessions"] { overflow: hidden; }
+.v3-card-panel-scroll[data-card-active-tab="sessions"] > .v3-task-detail-content { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.v3-card-session-history { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.v3-card-session-virtual { flex: 1; min-height: 0; }
+
+.v3-card-notes .v3-card-note-frame p { font: var(--v3-type-body) var(--v3-font-family); }

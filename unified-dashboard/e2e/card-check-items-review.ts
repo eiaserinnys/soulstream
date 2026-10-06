@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 const textSelectors = [".v3-card-now-meta time", ".v3-card-check-item-no-image", ".v3-card-check-item-meta",
-  ".v3-card-check-item-target", ".v3-card-check-item-state", ".v3-card-check-item-title",
+  ".v3-card-check-item-target", ".v3-card-check-item-title",
   ".v3-card-check-item-number", ".v3-card-confirmed-group > button > span", ".v3-card-now-turn span",
   ".v3-card-now-turn strong", ".v3-card-comment-target", ".v3-card-note-more"];
 
@@ -54,7 +54,6 @@ export async function reviewCorrections(page: Page, width: number, output: strin
   expect(fonts.find(value => value.selector === ".v3-card-check-item-title")?.font).toBe("600 16px/23px");
   expect(fonts.find(value => value.selector === ".v3-card-check-item-number")?.font).toBe("600 16px/23px");
   expect(fonts.find(value => value.selector === ".v3-card-check-item-target")?.font).toBe("500 12px/18px");
-  expect(fonts.find(value => value.selector === ".v3-card-check-item-state")?.font).toBe("700 12px/18px");
   for (const [label, offset] of [["bottom", -1], ["mid", 330]] as const) {
     await scroll.evaluate((el, y) => { el.scrollTop = y < 0 ? el.scrollHeight : y; }, offset);
     await textEvidence(page, detail, output, `${width}-contrast-${label}`);
@@ -91,8 +90,7 @@ export async function reviewCorrections(page: Page, width: number, output: strin
   const row = detail.locator('[data-item-id="4"]');
   await row.scrollIntoViewIfNeeded();
   const title = (await row.locator(".v3-card-check-item-title").boundingBox())!;
-  const state = (await row.locator(".v3-card-check-item-state").boundingBox())!;
-  expect(Math.abs(title.x - state.x)).toBeLessThanOrEqual(1);
+  await expect(row.locator(".v3-card-check-item-state")).toHaveCount(0);
   await page.screenshot({ path: path.join(output, `${width}-split-399.png`), animations: "disabled" });
   await drag(-1000);await page.waitForTimeout(1000);
   const minimum = await panel.evaluate(el => {
@@ -113,7 +111,10 @@ export async function reviewCorrections(page: Page, width: number, output: strin
     await el.evaluate(node => Promise.all(node.getAnimations().filter(animation => animation instanceof CSSTransition).map(animation => animation.finished)));
     const style = await el.evaluate(node => ({ shadow: getComputedStyle(node).boxShadow, outline: getComputedStyle(node).outlineWidth, outlineStyle: getComputedStyle(node).outlineStyle, html: node.outerHTML.slice(0, 600), matchesCardRule: node.matches(".v3-card-check-item-heading [data-slot=checkbox]:focus-visible"), visible: node.matches(":focus-visible") }));
     writeFileSync(path.join(output, `${width}-focus-${label}.json`), JSON.stringify(style, null, 2));
-    expect(style.visible).toBe(true);expect(style.shadow).not.toBe("none");expect(style.outlineStyle).toBe("none");
+    expect(style.visible).toBe(true);
+    if(label==="title") expect(await el.locator("..").evaluate(node=>getComputedStyle(node).outlineWidth)).toBe("2px");
+    else expect(style.shadow).not.toBe("none");
+    expect(style.outlineStyle).toBe("none");
     focus.push({ label, ...style });
     await page.screenshot({ path: path.join(output, `${width}-focus-${label}.png`), animations: "disabled" });
   }
