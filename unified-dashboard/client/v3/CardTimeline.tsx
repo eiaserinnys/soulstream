@@ -43,9 +43,9 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  entries.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
  const toggle=(id:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next;});
  if(requestOnly) {
-  const msg:ChatMessage={id:"card-request-summary",treeNodeId:card.id,treeNodeType:"card",role:"user",content:""};
-  return <><div className="v3-card-request-summary v3-chat-surface" style={chatTypographyStyle}>
-   <UserMessage msg={msg} portraitUrl={userPortraitUrl}><RequestPreview request={card.request} attachments={card.attachments??[]} expanded onImageClick={openImage} showCollapseHint={false}/></UserMessage>
+  return <><div className="v3-card-request-summary">
+   <span className="v3-card-request-summary-quote" aria-hidden="true"/>
+   <div className="v3-card-request-summary-body"><RequestPreview request={card.request} attachments={card.attachments??[]} expanded={false} lineClamp={4} collapseBlankLines imageVariant="card-evidence" onImageClick={openImage} showCollapseHint={false}/></div>
   </div><CardImageViewer image={image} onClose={closeImage}/></>;
  }
  return <><div className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.map(entry=>{
@@ -61,10 +61,12 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
   </div>;
  })}</div><CardImageViewer image={image} onClose={closeImage}/></>;
 }
-function RequestPreview({request,attachments,expanded,onImageClick,showCollapseHint=true}:{request:string;attachments:CardRow["attachments"];expanded:boolean;onImageClick(src:string,alt:string):void;showCollapseHint?:boolean}) {
- return <><div className={expanded?undefined:"v3-card-three-lines"}><MarkdownContent content={cardRequestMarkdown(request)} onImageClick={onImageClick}/></div>{attachments.length?<div className="v3-card-report-thumbnails">{attachments.map(attachment=>{
+function RequestPreview({request,attachments,expanded,onImageClick,showCollapseHint=true,lineClamp=3,collapseBlankLines=false,imageVariant="default"}:{request:string;attachments:CardRow["attachments"];expanded:boolean;onImageClick(src:string,alt:string):void;showCollapseHint?:boolean;lineClamp?:3|4;collapseBlankLines?:boolean;imageVariant?:"default"|"card-evidence"}) {
+ const displayRequest=collapseBlankLines?request.replace(/\r?\n(?:[ \t]*\r?\n){2,}/g,"\n\n"):request;
+ const clampClass=lineClamp===4?"v3-card-four-lines":"v3-card-three-lines";
+ return <><div className={expanded?undefined:clampClass}><MarkdownContent content={cardRequestMarkdown(displayRequest)} onImageClick={onImageClick}/></div>{attachments.length?<div className="v3-card-report-thumbnails">{attachments.map(attachment=>{
   const src=`/api/attachments/files?${new URLSearchParams({nodeId:attachment.nodeId,path:attachment.path})}`;
-  return attachment.mimeType.startsWith("image/")?<MarkdownImage key={src} src={src} alt={attachment.name} onOpen={onImageClick}/>:<a key={src} href={src} target="_blank" rel="noreferrer">{attachment.name}</a>;
+  return attachment.mimeType.startsWith("image/")?<MarkdownImage key={src} src={src} alt={attachment.name} variant={imageVariant} onOpen={onImageClick}/>:<a key={src} href={src} target="_blank" rel="noreferrer">{attachment.name}</a>;
  })}</div>:null}{showCollapseHint?<span className="v3-card-collapse-hint">{expanded?"접기":"더 보기"}</span>:null}</>;
 }
 function ReportPreview({report,expanded,onImageClick}:{report:CardReport;expanded:boolean;onImageClick(src:string,alt:string):void}) {

@@ -78,24 +78,66 @@ describe("persistent session task list", () => {
     const open = vi.fn();
     const card = { ...baseCard("summary", "running"), number: 42, title: "긴 카드 제목" };
     await act(() => root.render(<CardRowView variant="summary" card={card} onOpen={open}
-      assignee={reviewSession}/>));
+      assignee={reviewSession} summaryNumberTemplate="#1024"/>));
 
-    const row = container.querySelector<HTMLButtonElement>("button.v3-run-open")!;
+    const row = container.querySelector<HTMLButtonElement>("button.v3-card-summary-row")!;
     expect(row).not.toBeNull();
     expect(row.getAttribute("aria-label")).toContain("긴 카드 제목");
     expect(row.querySelector("img")?.getAttribute("src")).toBe(reviewSession.agentPortraitUrl);
     expect(row.textContent).toContain("#42");
     expect(row.textContent).toContain("긴 카드 제목");
     expect(row.textContent).not.toContain("실행 중");
-    expect(row.querySelector(".v3-card-summary-title")).not.toBeNull();
+    expect(row.querySelector(".v3-card-summary-number-slot")?.textContent).toContain("#1024");
+    expect(row.querySelector(".v3-card-summary-number-reserve")?.getAttribute("aria-hidden")).toBe("true");
+    expect(row.querySelector(".v3-card-summary-number")?.textContent).toBe("#42");
+    expect(row.querySelector(".v3-card-summary-title")?.textContent).toBe("긴 카드 제목");
+    expect(row.querySelector(".v3-card-summary-avatar")).not.toBeNull();
+    expect(container.querySelector(".v3-run-row")).toBeNull();
     await act(() => row.click());
     expect(open).toHaveBeenCalledTimes(1);
   });
 
   it("omits the number for legacy cards without one", async () => {
-    await act(() => root.render(<CardRowView variant="summary" card={baseCard("old", "todo")} onOpen={() => {}}/>));
-    const row = container.querySelector("button.v3-run-open")!;
+    await act(() => root.render(<CardRowView variant="summary" card={{...baseCard("old", "todo"), assigneeAgentId:null,
+      assigneeSessionId:null, assigneeKind:null}} onOpen={() => {}}/>));
+    const row = container.querySelector("button.v3-card-summary-row")!;
     expect(row.textContent).toContain("카드 old");
     expect(row.textContent).not.toContain("#");
+    expect(row.querySelector(".v3-card-summary-number-slot")).toBeNull();
+    expect(row.querySelector(".v3-card-summary-avatar")).toBeNull();
+  });
+
+  it("reserves the widest numbered card column for every row in the list", () => {
+    const cards = [
+      {...baseCard("one", "running"), number:7},
+      {...baseCard("two", "running"), number:98},
+      {...baseCard("three", "running"), number:412},
+      {...baseCard("four", "running"), number:1024},
+    ];
+    act(() => root.render(<PersistentSessionTaskList cards={cards} onOpenCard={() => {}}/>));
+
+    const slots = [...container.querySelectorAll(".v3-card-summary-number-reserve")];
+    expect(slots).toHaveLength(4);
+    expect(slots.map(slot => slot.textContent)).toEqual(["#1024", "#1024", "#1024", "#1024"]);
+    expect(slots.every(slot => slot.getAttribute("aria-hidden") === "true")).toBe(true);
+  });
+
+  it("offers a retry for membership errors and replaces the error with the refreshed list", async () => {
+    const retry = vi.fn();
+    membershipMock.mockReturnValue({cards:[],loading:true,error:"request failed",retry});
+    await act(() => root.render(<PersistentSessionTaskList onOpenCard={() => {}}/>));
+
+    const list = container.querySelector<HTMLElement>("[data-testid='persistent-session-task-list']")!;
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(item => item.textContent === "다시 시도");
+    expect(list.getAttribute("aria-busy")).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("작업 목록을 불러오지 못했습니다.");
+    expect(button).not.toBeNull();
+    await act(() => button!.click());
+    expect(retry).toHaveBeenCalledTimes(1);
+
+    membershipMock.mockReturnValue({cards:[baseCard("ready", "running")],loading:false,error:null,retry});
+    await act(() => root.render(<PersistentSessionTaskList onOpenCard={() => {}}/>));
+    expect(container.textContent).toContain("카드 ready");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 });

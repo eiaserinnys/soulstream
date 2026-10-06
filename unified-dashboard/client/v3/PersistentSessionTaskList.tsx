@@ -1,4 +1,5 @@
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import { Button } from "@seosoyoung/soul-ui";
 import { cardStatusLabel } from "./CardActions";
 import { CardRow as CardRowComponent } from "./CardRow";
 import { useCardMembership } from "./use-card-membership";
@@ -30,20 +31,23 @@ export function PersistentSessionTaskList({cards,onOpenCard}: {
 
 function ConnectedTaskList({onOpenCard}:{onOpenCard(cardId:string):void}) {
   const membership = useCardMembership(undefined);
-  return <TaskListContent cards={membership.cards} loading={membership.loading} error={membership.error} onOpenCard={onOpenCard}/>;
+  return <TaskListContent cards={membership.cards} loading={membership.loading} error={membership.error} retry={membership.retry} onOpenCard={onOpenCard}/>;
 }
 
-function TaskListContent({cards,loading,error,onOpenCard}: {
-  cards: readonly CardRow[]; loading?: boolean; error?: string | null; onOpenCard(cardId:string):void;
+function TaskListContent({cards,loading,error,retry,onOpenCard}: {
+  cards: readonly CardRow[]; loading?: boolean; error?: string | null; retry?:()=>void; onOpenCard(cardId:string):void;
 }) {
   const groups = groupPersistentSessionTasks(cards);
-  return <div className="v3-persistent-task-list" data-testid="persistent-session-task-list" aria-busy={loading||undefined}>
-    {error?<p className="v3-card-error" role="alert">작업 목록을 불러오지 못했습니다.</p>:null}
+  const numberedCards=groups.flatMap(group=>group.cards).filter(card=>card.number!==undefined&&card.number!==null);
+  const widestNumber=numberedCards.reduce<number|null>((widest,card)=>widest===null||String(card.number).length>String(widest).length?card.number!:widest,null);
+  const summaryNumberTemplate=widestNumber===null?undefined:`#${widestNumber}`;
+  return <div className="v3-persistent-task-list" data-testid="persistent-session-task-list" aria-busy={loading&&!error||undefined}>
+    {error?<div className="v3-persistent-task-list-error" role="alert"><span className="v3-card-error">작업 목록을 불러오지 못했습니다.</span>{retry?<Button size="sm" variant="outline" className="v3-persistent-task-paper-button" onClick={retry}>다시 시도</Button>:null}</div>:null}
     {!error&&loading?<p className="v3-card-board-empty" role="status">불러오는 중…</p>:null}
-    {!error&&!loading&&groups.length===0?<p className="v3-card-board-empty">작업이 없습니다.</p>:null}
+    {!error&&!loading&&groups.length===0?<p className="v3-card-board-empty">카드가 없습니다.</p>:null}
     {!error?groups.map(group=><section key={group.status} data-task-status-group={group.status} aria-label={group.label}>
-      <div className="v3-detail-section-head"><h3>{group.label}</h3></div>
-      <div className="v3-run-list">{group.cards.map(card=><CardRowComponent key={card.id} card={card} variant="summary" onOpenCard={onOpenCard}/>)}</div>
+      <div className="v3-detail-section-head v3-persistent-task-group-label"><h3>{group.label}</h3></div>
+      <div className="v3-run-list">{group.cards.map(card=><CardRowComponent key={card.id} card={card} variant="summary" summaryNumberTemplate={summaryNumberTemplate} onOpenCard={onOpenCard}/>)}</div>
     </section>):null}
   </div>;
 }

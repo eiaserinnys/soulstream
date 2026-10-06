@@ -12,6 +12,7 @@ import { FolderTitleEditor } from "./FolderTitleEditor";
 import { CardSessionHistory, type CardSessionSelection } from "./CardSessionHistory";
 import { DetailTabs } from "./DetailTabs";
 import { CardTimeline } from "./CardTimeline";
+import { resolveCardAssigneeName } from "./CardRow";
 import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
 import type { CardColor, CardComment, CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
@@ -133,10 +134,14 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});onClose();}
   catch {} finally {setPending(false);}
  };
+ if(props.variant==="summary") {
+  if(error)return <CardReadSummaryState message={error} error onOpenCard={props.onOpenCard}/>;
+  if(!card)return <CardReadSummaryState message="카드를 불러오는 중…" onOpenCard={props.onOpenCard}/>;
+  const summaryAssigneeName=resolveCardAssigneeName(card,assignee);
+  return <CardReadSummary card={card} detail={detail} assigneeName={summaryAssigneeName} portrait={portrait}
+   onOpenCard={props.onOpenCard}/>;
+ }
  if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;
- const summaryAssigneeName=assignee?(("displayName" in assignee?assignee.displayName:assignee.agentName)??assignee.agentId):undefined;
- if(props.variant==="summary")return <CardReadSummary card={card} detail={detail} assigneeName={summaryAssigneeName??card.assigneeUserId??"담당 미지정"} portrait={portrait}
-  userPortraitUrl={user?.picture??""} pendingConfirmations={pendingConfirmations} onOpenCard={props.onOpenCard}/>;
  const dockStyle={"--v3-card-dock-height":`${dockHeight}px`} as CSSProperties;
  const tabs=[
   ["items",<span className="v3-card-tab-label">확인 항목{itemSummary.toReviewCount>0?<span className="v3-card-tab-count">{itemSummary.toReviewCount}</span>:null}</span>],
@@ -187,35 +192,45 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  </article>;
 }
 
-function CardReadSummary({card,detail,assigneeName,portrait,userPortraitUrl,pendingConfirmations,onOpenCard}: {
- card:CardDetail["card"];detail?:CardDetail;assigneeName:string;portrait:string;userPortraitUrl:string|null;
- pendingConfirmations:Readonly<Record<number,boolean>>;onOpenCard():void;
+function CardReadSummary({card,detail,assigneeName,portrait,onOpenCard}: {
+ card:CardDetail["card"];detail?:CardDetail;assigneeName?:string;portrait:string;
+ onOpenCard():void;
 }) {
  const hasRequest=Boolean(card.request.trim()||card.attachments?.length);
- const hasElapsed=Boolean(card.now||card.items?.length);
+ const nowText=card.now?.text.trim();
+ const results=(card.items??[]).filter(item=>item.display!=="dropped"&&Boolean(item.result?.trim()));
+ const hasElapsed=Boolean(nowText||results.length);
+ const hasAssignee=Boolean(assigneeName&&(card.assigneeKind||card.assigneeAgentId||card.assigneeUserId));
  return <article className="v3-detail-pane v3-card-detail v3-card-read-summary" data-testid="card-read-summary">
   <header className="v3-card-read-summary-header">
-   <div className="v3-card-read-summary-title-line">
-    {card.number===undefined||card.number===null?null:<span className="v3-card-summary-number">#{card.number}</span>}
-    <h2 title={card.title}>{card.title}</h2>
+   <div className="v3-card-read-summary-status-line">
+    <StatusChip label={cardStatusLabel(card)} tone={card.status}/>
+    {card.number===undefined||card.number===null?null:<span className="v3-card-read-summary-number">#{card.number}</span>}
    </div>
-   <StatusChip label={cardStatusLabel(card)} tone={card.status}/>
-   <div className="v3-card-read-summary-assignee">
+   <h2 className="v3-card-read-summary-title" title={card.title}>{card.title}</h2>
+   {hasAssignee?<div className="v3-card-read-summary-assignee" data-testid="card-read-summary-assignee">
     <ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/>
     <span title={assigneeName}>{assigneeName}</span>
-   </div>
+   </div>:null}
   </header>
-  <div className="v3-card-read-summary-content">
+  <div className="v3-card-read-summary-content" data-testid="card-read-summary-scroll" tabIndex={0}>
    {hasRequest?<section className="v3-detail-section" data-card-summary-section="request">
-    <div className="v3-detail-section-head"><h3>요청</h3></div>
-    <CardTimeline card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={userPortraitUrl} pending={false} onAnswer={()=>{}} requestOnly/>
+    <div className="v3-detail-section-head v3-card-read-summary-section-label"><h3>요청</h3></div>
+    <CardTimeline card={card} detail={detail} portraitUrl={portrait} pending={false} onAnswer={()=>{}} requestOnly/>
    </section>:null}
    {hasElapsed?<section className="v3-detail-section" data-card-summary-section="elapsed">
-    <div className="v3-detail-section-head"><h3>경과</h3></div>
-    {card.now?<CardNowPanel now={card.now} nowHistory={detail?.nowHistory} itemsCount={0} activeCount={0}/>:null}
-    {card.items?.length?<CardCheckItems items={card.items} pendingConfirmations={pendingConfirmations} readOnly onConfirmChange={()=>{}} onTargetItem={()=>{}}/>:null}
+    <div className="v3-detail-section-head v3-card-read-summary-section-label"><h3>경과</h3></div>
+    {nowText?<p className="v3-card-read-summary-now">{nowText}</p>:null}
+    {results.length?<ul className="v3-card-read-summary-results">{results.map(item=><li key={item.id}>{item.result}</li>)}</ul>:null}
    </section>:null}
   </div>
-  <Button variant="outline" onClick={onOpenCard}>카드 열기</Button>
+  <div className="v3-card-read-summary-footer" data-testid="card-read-summary-footer"><Button variant="outline" className="v3-persistent-task-paper-button" onClick={onOpenCard}>카드 열기</Button></div>
+ </article>;
+}
+
+function CardReadSummaryState({message,error=false,onOpenCard}:{message:string;error?:boolean;onOpenCard():void}) {
+ return <article className="v3-detail-pane v3-card-detail v3-card-read-summary" data-testid="card-read-summary">
+  <div className="v3-card-read-summary-state-content"><p role={error?"alert":"status"} className={error?"v3-card-error":"v3-card-read-summary-loading"}>{message}</p></div>
+  <div className="v3-card-read-summary-footer" data-testid="card-read-summary-footer"><Button variant="outline" className="v3-persistent-task-paper-button" onClick={onOpenCard}>카드 열기</Button></div>
  </article>;
 }
