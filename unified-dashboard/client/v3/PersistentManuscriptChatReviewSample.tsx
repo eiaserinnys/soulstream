@@ -82,7 +82,13 @@ function ManuscriptColumn() {
       agentSessionId: REVIEW_SESSION, status: "completed", sessionType: "claude", eventCount: 10,
       createdAt: "2026-10-06T00:00:00Z", updatedAt: "2026-10-06T00:00:00Z",
     });
-    store.setPersistentSessionDisplaySettings(REVIEW_SESSION, { show_generation_separator: true, show_jev_candidates: true });
+    store.setPersistentSessionDisplaySettings(REVIEW_SESSION, {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: true,
+      animate_character: true,
+      show_turn_usage: true,
+    });
     const events = [
       { type: "assistant_message", content: "첫 줄부터 흐리지 않고 읽을 수 있습니다.\n\n대화 글자는 운영의 설정을 따릅니다." },
       { type: "user_message", user: "User", text: "긴 내 발언은 왼쪽에 여백을 남깁니다. 여러 줄로 이어지는 글도 오른쪽 끝을 유지하고, 목록과 코드와 첨부는 내용 폭으로 정렬합니다.\n첫째 줄\n둘째 줄\n\n첫 문단입니다.\n\n둘째 문단입니다." },
