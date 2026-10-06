@@ -89,6 +89,35 @@ describe('CollapsibleCaption', () => {
     });
   });
 
+  test('expandedTitle은 접힌 제목을 유지하고 펼친 동안 전체 제목으로 바꾼다', () => {
+    const screen = render(
+      <CollapsibleCaption title="컨텍스트 약 63.0% · 정가 $0.62" expandedTitle="컨텍스트 약 630,000 / 1,000,000 (63.0%)">
+        <CollapsibleCaptionLine wrap>턴 완료 · 긴 통계 줄</CollapsibleCaptionLine>
+      </CollapsibleCaption>,
+    );
+
+    expect(screen.getByText('컨텍스트 약 63.0% · 정가 $0.62').props.numberOfLines).toBe(1);
+    fireEvent.press(screen.getByRole('button', { name: '컨텍스트 약 63.0% · 정가 $0.62' }));
+
+    const expandedTitle = screen.getByText('컨텍스트 약 630,000 / 1,000,000 (63.0%)');
+    expect(expandedTitle.props.numberOfLines).toBeUndefined();
+    const wrappedLine = screen.getByText('턴 완료 · 긴 통계 줄');
+    expect(wrappedLine.props.numberOfLines).toBeUndefined();
+    expect(wrappedLine.props.ellipsizeMode).toBeUndefined();
+  });
+
+  test('wrap을 주지 않은 캡션 줄은 한 줄 말줄임을 유지한다', () => {
+    const screen = render(
+      <CollapsibleCaption title="기본 캡션" initiallyCollapsed={false}>
+        <CollapsibleCaptionLine>기본 상세 줄</CollapsibleCaptionLine>
+      </CollapsibleCaption>,
+    );
+    const line = screen.getByText('기본 상세 줄');
+
+    expect(line.props.numberOfLines).toBe(1);
+    expect(line.props.ellipsizeMode).toBe('tail');
+  });
+
   test('end 정렬은 말풍선 최대 폭과 오른쪽 눌림 보정을 쓴다', () => {
     const screen = render(
       <CollapsibleCaption title="Jev 후보 1" align="end" initiallyCollapsed={false}>
