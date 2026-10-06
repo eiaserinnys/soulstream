@@ -400,7 +400,7 @@ describe("AgentNodeAssignmentFields", () => {
   });
 
   function modelTrigger(): HTMLButtonElement {
-    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="모델 선택"]');
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="모델"]');
     if (!trigger) throw new Error("모델 선택 트리거가 없습니다.");
     return trigger;
   }

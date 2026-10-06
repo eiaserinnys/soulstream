@@ -109,6 +109,19 @@ describe("PersistentSessionsTab", () => {
     expect((document.body.querySelector('[aria-label="기본 모델"]') as HTMLSelectElement).value).toBe("preset-b");
   });
 
+  it("resets the draft when the already selected session row is selected again", async () => {
+    const { request } = server();
+    await renderTab(request);
+    await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
+    flushSync(() => buttonContaining("리뷰 관제")?.click());
+    await waitFor(() => expect(nameInput().value).toBe("리뷰 관제"));
+
+    setInput(nameInput(), "버릴 이름 초안");
+    flushSync(() => buttonContaining("리뷰 관제")?.click());
+
+    expect(nameInput().value).toBe("리뷰 관제");
+  });
+
   it("saves both chat display flags with the existing editor and preserves a draft name", async () => {
     const { request, calls } = server();
     await renderTab(request);
@@ -141,6 +154,43 @@ describe("PersistentSessionsTab", () => {
     await waitFor(() => expect(nameInput().value).toBe("토글 중에도 남는 이름"));
     expect(document.body.textContent).toContain("세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.");
     expect(document.body.textContent).toContain("내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.");
+  });
+
+  it("keeps the new display flags on by default and persists explicit false values", async () => {
+    const { request, calls } = server();
+    await renderTab(request);
+    await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
+    flushSync(() => buttonContaining("리뷰 관제")?.click());
+    await waitFor(() => expect(document.body.textContent).toContain("턴 끝 사용량 표시"));
+
+    const toggleFor = (label: string) => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>("[data-testid=config-field-row]"))
+        .find((element) => element.textContent?.includes(label));
+      return row?.querySelector<HTMLButtonElement>("[role=switch]");
+    };
+    const character = toggleFor("캐릭터 표시");
+    const motion = toggleFor("캐릭터 움직임");
+    const usage = toggleFor("턴 끝 사용량 표시");
+    expect(character?.getAttribute("aria-checked")).toBe("true");
+    expect(motion?.getAttribute("aria-checked")).toBe("true");
+    expect(usage?.getAttribute("aria-checked")).toBe("true");
+
+    setInput(nameInput(), "토글 중에도 남는 이름");
+    flushSync(() => character?.click());
+    flushSync(() => motion?.click());
+    flushSync(() => usage?.click());
+    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(0);
+    clickButton("변경 저장");
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1));
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      display_name: "토글 중에도 남는 이름",
+      settings: {
+        default_model: { model_preset: "preset-a", reasoning_effort: "high" },
+        show_character: false,
+        animate_character: false,
+        show_turn_usage: false,
+      },
+    });
   });
 
   it("blocks buttons while saving and keeps the input after a failure so it can be saved again", async () => {
@@ -381,7 +431,7 @@ function session({ session_id, display_name, defaultModel = "preset-a", currentM
 }) {
   return {
     session_id, display_name, node_id, folder_id: "folder-a", agent_id, agent_name, persistent: true,
-    settings: { default_model: { model_preset: defaultModel, reasoning_effort: defaultEffort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true },
+    settings: { default_model: { model_preset: defaultModel, reasoning_effort: defaultEffort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, show_turn_usage: true },
     runtime: { current_model: { model_preset: currentModel, reasoning_effort: currentEffort, model: `${currentModel}-model` }, pending },
   };
 }
@@ -410,7 +460,7 @@ function server(options: ServerOptions = {}) {
           preferred_agent_id: options.defaults?.preferred_agent_id ?? null,
           settings: {
             default_model: { model_preset: options.defaults && "model_preset" in options.defaults ? options.defaults.model_preset : "preset-a", reasoning_effort: null },
-            fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true,
+            fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, show_turn_usage: true,
           },
           initial_instruction: BLANK_MESSAGE,
           unavailable_reason: null,
@@ -436,7 +486,10 @@ function server(options: ServerOptions = {}) {
       if (body?.display_name) saved.display_name = body.display_name;
       const requested = body?.settings?.default_model;
       if (typeof body?.settings?.show_generation_separator === "boolean") saved.settings.show_generation_separator = body.settings.show_generation_separator;
+      if (typeof body?.settings?.show_character === "boolean") saved.settings.show_character = body.settings.show_character;
+      if (typeof body?.settings?.animate_character === "boolean") saved.settings.animate_character = body.settings.animate_character;
       if (typeof body?.settings?.show_jev_candidates === "boolean") saved.settings.show_jev_candidates = body.settings.show_jev_candidates;
+      if (typeof body?.settings?.show_turn_usage === "boolean") saved.settings.show_turn_usage = body.settings.show_turn_usage;
       let change = "none";
       if (requested) {
         saved.settings.default_model = { model_preset: requested.model_preset, reasoning_effort: requested.reasoning_effort ?? "high" };

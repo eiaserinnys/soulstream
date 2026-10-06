@@ -9,7 +9,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const expectedV3DialogConsumers = [
   "CardMenu.tsx",
   "CardCreateDialog.tsx",
-  "CardTimeline.tsx",
+  "CardImageViewer.tsx",
   "ComponentsReviewPage.tsx",
   "FolderArchiveDialog.tsx",
   "FolderDetailArchiveDialog.tsx",
@@ -23,6 +23,8 @@ const expectedV3DialogConsumers = [
 
 const sharedV3DialogConsumers = [
   "../components/ConfigModal.tsx",
+  "../components/OwnedAgentsTab.tsx",
+  "../components/PersistentSessionSettingsDialog.tsx",
   "../components/SearchModal.tsx",
   "../components/UserManagementTab.tsx",
 ] as const;

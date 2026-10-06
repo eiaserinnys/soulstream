@@ -10,6 +10,7 @@ const modelName: Record<string, string> = { "sample-sol": "sample-sol-model", "s
  * 프리셋이 바뀌면 그 프리셋의 기본 수준을 쓴다. 현재 실행 모델이나 같은 대상의 대기와 (프리셋, 수준)이 같으면 변경이 없다.
  * scenario: normal | load-error(첫 목록 조회 실패) | registration-failure(첫 추가의 등록 단계 실패)
  *   | node-unknown(소유 노드를 모르는 기존 세션이 하나 더 있음) | create-lost(첫 추가의 응답을 잃음: 세션은 일반 세션으로 만들어졌다)
+ *   | display-save-failure(표시 설정 저장 실패) | display-save-delayed(표시 설정 저장 지연)
  */
 const sameModel = (a: ModelSelection, b: ModelSelection) =>
   a.model_preset === b.model_preset && (a.reasoning_effort ?? null) === (b.reasoning_effort ?? null);
@@ -56,6 +57,7 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
   let firstListFailureAt = 0;
   let registrationFailed = false;
   let createLost = false;
+  let displaySaveFailed = false;
   let created = 0;
   const reply = (value: unknown, status = 200) => Response.json(value, { status });
   const fail = (status: number, code: string, text: string, extra: Record<string, unknown> = {}) =>
@@ -104,11 +106,19 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
     if (!session) return fail(404, "SESSION_NOT_FOUND", "예시 세션을 찾을 수 없습니다.");
     if (method === "GET") return reply({ session: structuredClone(session) });
     if (method === "PUT") {
+      const displaySettings = body.settings as Record<string, unknown> | undefined;
+      if (displaySettings && Object.keys(displaySettings).some((key) => ["show_character", "animate_character", "show_generation_separator", "show_jev_candidates", "show_turn_usage"].includes(key))) {
+        if (scenario === "display-save-failure" && !displaySaveFailed) {
+          displaySaveFailed = true;
+          return fail(503, "NODE_UNAVAILABLE", "예시: 표시 설정을 저장하지 못했습니다.");
+        }
+        if (scenario === "display-save-delayed") await new Promise((resolve) => setTimeout(resolve, 1800));
+      }
       if (body.enabled === false) { session.persistent = false; return reply({ session: structuredClone(session), model_change: "none" }); }
       if (body.enabled === true) session.persistent = true;
       else if (!session.persistent) return fail(409, "NOT_PERSISTENT", "이미 영구 세션이 아닙니다. 목록을 다시 읽습니다.");
       if (typeof body.display_name === "string") session.display_name = body.display_name;
-      for (const key of ["show_generation_separator", "show_jev_candidates"] as const) {
+      for (const key of ["show_character", "animate_character", "show_generation_separator", "show_jev_candidates", "show_turn_usage"] as const) {
         const value = body.settings?.[key];
         if (typeof value === "boolean") session.settings[key] = value;
       }
