@@ -106,6 +106,23 @@ describe("stable viewport key helpers", () => {
     );
   });
 
+  it("활동 행은 마지막 항목으로 키를 잡고 첫 도구로 펼침 상태를 유지한다", () => {
+    const activity: MessageOrGroup = {
+      type: "activity-group",
+      messages: [
+        makeMsg({ role: "assistant", treeNodeType: "thinking", treeNodeId: "thinking-10" }),
+        makeMsg({ role: "tool", treeNodeType: "tool", treeNodeId: "tool-11" }),
+        makeMsg({ role: "tool", treeNodeType: "tool", treeNodeId: "tool-12" }),
+      ],
+    };
+
+    expect(messageOrGroupKey(activity)).toBe("tg-tool-12");
+    expect(toolGroupExpansionKey("session-a", activity)).toBe("session-a:tool-11");
+    expect(findFocusIndex([activity], 11)).toBe(0);
+    expect(areMessageGroupsRenderEqual([activity], [{ ...activity, messages: [...activity.messages] }]))
+      .toBe(true);
+  });
+
   it("생각 중 행은 같은 안정 행으로 비교한다", () => {
     expect(
       areMessageGroupsRenderEqual(

@@ -9,6 +9,19 @@ export const ChatThinkingIndicator = memo(function ChatThinkingIndicator({ prese
   const webglActive = useGlassSurface(bubbleRef, { enabled: presentation !== "manuscript" });
   const activeSession = useDashboardStore((state) => state.activeSessionSummary);
 
+  if (presentation === "manuscript") {
+    return (
+      <div className="flex items-center gap-2 py-1.5 text-muted-foreground" data-slot="chat-thinking-indicator">
+        <span className="flex items-center gap-1" data-slot="chat-thinking-dots" aria-hidden="true">
+          <span className="size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
+          <span className="size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
+          <span className="size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
+        </span>
+        <span className="text-xs leading-none">생각 중입니다…</span>
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex gap-2 px-3 py-1.5"
@@ -23,9 +36,7 @@ export const ChatThinkingIndicator = memo(function ChatThinkingIndicator({ prese
       <div
         ref={bubbleRef}
         data-slot="chat-message-bubble"
-        className={presentation === "manuscript"
-          ? "flex max-w-[86%] items-center gap-2 rounded-[17px] rounded-bl-[7px] border border-[var(--persistent-session-line)] bg-[var(--persistent-session-panel)] px-3.5 py-2.5"
-          : "flex max-w-[86%] items-center gap-2 rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"}
+        className="flex max-w-[86%] items-center gap-2 rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <ThinkingOrb

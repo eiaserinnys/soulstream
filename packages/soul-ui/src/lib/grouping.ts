@@ -8,7 +8,8 @@ import type { ChatMessage } from "./flatten-tree";
 
 export type BaseMessageOrGroup =
   | { type: "single"; msg: ChatMessage }
-  | { type: "tool-group"; messages: ChatMessage[] };
+  | { type: "tool-group"; messages: ChatMessage[] }
+  | { type: "activity-group"; messages: ChatMessage[] };
 
 export type MessageOrGroup =
   | BaseMessageOrGroup
@@ -18,29 +19,7 @@ export type MessageOrGroup =
       summaries: ChatMessage[];
     };
 
-export function groupMessages(messages: ChatMessage[]): MessageOrGroup[] {
-  const base: BaseMessageOrGroup[] = [];
-  let toolBuffer: ChatMessage[] = [];
-
-  const flushTools = () => {
-    if (toolBuffer.length === 0) return;
-    if (toolBuffer.length === 1) {
-      base.push({ type: "single", msg: toolBuffer[0] });
-    } else {
-      base.push({ type: "tool-group", messages: [...toolBuffer] });
-    }
-    toolBuffer = [];
-  };
-
-  for (const msg of messages) {
-    if (msg.role === "tool") {
-      toolBuffer.push(msg);
-    } else {
-      flushTools();
-      base.push({ type: "single", msg });
-    }
-  }
-  flushTools();
+function attachTurnSummaries(base: BaseMessageOrGroup[]): MessageOrGroup[] {
   const result: MessageOrGroup[] = [];
   for (const item of base) {
     const summary = item.type === "single" && item.msg.treeNodeType === "turn_summary"
@@ -66,4 +45,57 @@ export function groupMessages(messages: ChatMessage[]): MessageOrGroup[] {
     }
   }
   return result;
+}
+
+export function groupMessages(messages: ChatMessage[]): MessageOrGroup[] {
+  const base: BaseMessageOrGroup[] = [];
+  let toolBuffer: ChatMessage[] = [];
+
+  const flushTools = () => {
+    if (toolBuffer.length === 0) return;
+    if (toolBuffer.length === 1) {
+      base.push({ type: "single", msg: toolBuffer[0] });
+    } else {
+      base.push({ type: "tool-group", messages: [...toolBuffer] });
+    }
+    toolBuffer = [];
+  };
+
+  for (const msg of messages) {
+    if (msg.role === "tool") {
+      toolBuffer.push(msg);
+    } else {
+      flushTools();
+      base.push({ type: "single", msg });
+    }
+  }
+  flushTools();
+  return attachTurnSummaries(base);
+}
+
+/** Manuscript projection: fold each uninterrupted tool/thinking run if it contains a tool. */
+export function groupManuscriptMessages(messages: ChatMessage[]): MessageOrGroup[] {
+  const base: BaseMessageOrGroup[] = [];
+  let activityBuffer: ChatMessage[] = [];
+
+  const flushActivity = () => {
+    if (activityBuffer.length === 0) return;
+    if (activityBuffer.some((message) => message.role === "tool")) {
+      base.push({ type: "activity-group", messages: [...activityBuffer] });
+    } else {
+      base.push(...activityBuffer.map((msg) => ({ type: "single" as const, msg })));
+    }
+    activityBuffer = [];
+  };
+
+  for (const msg of messages) {
+    if (msg.role === "tool" || (msg.role === "assistant" && msg.treeNodeType === "thinking")) {
+      activityBuffer.push(msg);
+    } else {
+      flushActivity();
+      base.push({ type: "single", msg });
+    }
+  }
+  flushActivity();
+  return attachTurnSummaries(base);
 }

@@ -33,6 +33,7 @@ import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReview
 import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChatReviewSample";
 import { PersistentTurnEndCaptionsReviewSample } from "./PersistentTurnEndCaptionsReviewSample";
 import { PersistentAgentMessageGroupReviewSample } from "./PersistentAgentMessageGroupReviewSample";
+import { ManuscriptActivityReviewSample } from "./ManuscriptActivityReviewSample";
 import { PersistentSessionSettingsReviewSample } from "./PersistentSessionSettingsReviewSample";
 import { PersistentSessionScreenReviewSample } from './PersistentSessionScreenReviewSample';
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
@@ -238,6 +239,7 @@ export function ComponentsReviewPage() {
                 <PersistentManuscriptChatReviewSample />
                 <PersistentTurnEndCaptionsReviewSample />
                 <PersistentAgentMessageGroupReviewSample />
+                <Sample name="Manuscript activity" state="도구·생각 구간 · 접힘/펼침 · 상태 · 생각 중"><ManuscriptActivityReviewSample /></Sample>
                 <LabeledDivider label="다음 대화" />
                 <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
               </div>

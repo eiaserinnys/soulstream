@@ -95,6 +95,59 @@ describe("ToolCallGroup compact header", () => {
     expect(view.querySelector('[data-slot="chat-tool-body"]')?.textContent).toBe("ok");
   });
 
+  it("renders manuscript activity with a compact count, mixed rows, short names, and durations", () => {
+    const activity = [
+      {
+        ...message(1, "done"),
+        toolName: "mcp__soulstream__Read",
+        toolDurationMs: 1250,
+      },
+      {
+        id: "thinking-1",
+        role: "assistant" as const,
+        content: "생각을 이어 갑니다.",
+        treeNodeId: "root-thinking-1",
+        treeNodeType: "thinking",
+      },
+      {
+        ...message(2, "error"),
+        toolName: "mcp__soulstream__Search",
+        toolDurationMs: 2500,
+      },
+      {
+        ...message(3, "running"),
+        toolName: "mcp__soulstream__Fetch",
+      },
+    ] as ChatMessage[];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(createElement(ToolCallGroup, {
+      messages: activity,
+      presentation: "manuscript",
+      expanded: true,
+    })));
+
+    const toggle = container.querySelector<HTMLButtonElement>("[data-slot='manuscript-activity-toggle']")!;
+    const rows = container.querySelectorAll("[data-slot='manuscript-tool-call-item']");
+    const labels = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-slot='tool-call-item-toggle']"))
+      .map((button) => button.textContent);
+
+    expect(toggle.textContent).toContain("도구 3회");
+    expect(toggle.textContent).toContain("실행 중");
+    expect(toggle.textContent).toContain("실패 1");
+    expect(container.querySelector("[data-slot='chat-tool-row']")).toBeNull();
+    expect(rows).toHaveLength(3);
+    expect(labels[0]).toContain("완료");
+    expect(labels[0]).toContain("Read");
+    expect(labels[0]).toContain("(1.3s)");
+    expect(labels[0]).not.toContain("mcp__soulstream__");
+    expect(labels[1]).toContain("실패");
+    expect(labels[2]).toContain("실행 중");
+    expect(container.textContent).toContain("생각을 이어 갑니다.");
+    expect(container.querySelector("[data-slot='chat-body']")?.className).toContain("text-base");
+  });
+
   it("keeps the expanded group open when an appended tool changes its virtual row key", () => {
     const view = document.createElement("div");
     document.body.appendChild(view);

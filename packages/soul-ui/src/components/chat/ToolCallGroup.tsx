@@ -4,9 +4,16 @@ import type { ChatMessage } from "../../lib/flatten-tree";
 import { cn } from "../../lib/cn";
 import { useLazyLoadContent, useLazyLoadToolTrace } from "./hooks";
 import { ShowFullContentButton } from "./ShowFullContentButton";
+import { ThinkingMessage } from "./ThinkingMessage";
 
 /** 그룹 내 개별 tool call 항목 (truncation lazy load 포함) */
-const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
+const ToolCallItem = memo(function ToolCallItem({
+  msg,
+  presentation = "default",
+}: {
+  msg: ChatMessage;
+  presentation?: "default" | "manuscript";
+}) {
   const [expanded, setExpanded] = useState(false);
   const legacyContent = useLazyLoadContent(msg);
   const traceContent = useLazyLoadToolTrace(msg);
@@ -15,6 +22,10 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
   const hasTrace = !!msg.toolTraceId;
   const inputContent = traceContent.inputContent;
   const resultContent = hasTrace ? traceContent.resultContent : legacyContent.displayContent;
+  const shortName = (msg.toolName ?? msg.content).replace(/^mcp__.*?__/, "");
+  const duration = msg.toolDurationMs
+    ? `(${(msg.toolDurationMs / 1000).toFixed(1)}s)`
+    : "";
 
   const toggleExpanded = () => {
     const next = !expanded;
@@ -22,23 +33,8 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
     if (next) traceContent.loadTrace();
   };
 
-  return (
-    <div>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        data-slot="tool-call-item-toggle"
-        onClick={toggleExpanded}
-        className={cn(
-          "text-xs font-mono flex items-center gap-1",
-          msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
-          "hover:text-foreground",
-        )}
-      >
-        <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
-        <span>{statusIcon}</span>
-        <span className="truncate">{msg.content}</span>
-      </button>
+  const details = (
+    <>
       {expanded && inputContent && (
         <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
           {inputContent}
@@ -75,6 +71,53 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
           />
         </div>
       )}
+    </>
+  );
+
+  if (presentation === "manuscript") {
+    const rowStatus = msg.isError ? "실패" : isDone ? "완료" : "실행 중";
+    return (
+      <div data-slot="manuscript-tool-call-item" data-tree-node-id={msg.treeNodeId}>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          data-slot="tool-call-item-toggle"
+          onClick={toggleExpanded}
+          className={cn(
+            "flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs leading-[18px] hover:text-foreground",
+            msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
+          )}
+        >
+          {expanded
+            ? <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
+            : <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />}
+          <span className="shrink-0">{rowStatus}</span>
+          <span className="min-w-0 truncate text-left">{shortName}</span>
+          {duration && <span className="shrink-0">{duration}</span>}
+        </button>
+        {details}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        data-slot="tool-call-item-toggle"
+        onClick={toggleExpanded}
+        className={cn(
+          "text-xs font-mono flex items-center gap-1",
+          msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
+          "hover:text-foreground",
+        )}
+      >
+        <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span>{statusIcon}</span>
+        <span className="truncate">{msg.content}</span>
+      </button>
+      {details}
     </div>
   );
 });
@@ -82,10 +125,12 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
 /** 연속된 tool 메시지를 하나로 묶어 표시하는 그룹 컴포넌트 */
 export const ToolCallGroup = memo(function ToolCallGroup({
   messages,
+  presentation = "default",
   expanded: controlledExpanded,
   onExpandedChange,
 }: {
   messages: ChatMessage[];
+  presentation?: "default" | "manuscript";
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
@@ -97,6 +142,8 @@ export const ToolCallGroup = memo(function ToolCallGroup({
     else setInternalExpanded(next);
   };
   const hasError = messages.some((m) => m.isError);
+  const failureCount = messages.filter((m) => m.role === "tool" && m.isError).length;
+  const toolMessages = messages.filter((message) => message.role === "tool");
   const allDone = messages.length > 0 && messages.every(
     (m) => m.toolResult !== undefined || m.toolDurationMs !== undefined,
   );
@@ -106,6 +153,40 @@ export const ToolCallGroup = memo(function ToolCallGroup({
     : allDone
       ? "chat-tone-success-text"
       : undefined;
+  const hasRunningTool = toolMessages.some(
+    (message) => !message.isError && message.toolResult === undefined && message.toolDurationMs === undefined,
+  );
+
+  if (presentation === "manuscript") {
+    return (
+      <div className="flex py-1" data-slot="chat-activity-row" data-tree-node-id={toolMessages[0]?.treeNodeId}>
+        <div className="w-full min-w-0">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            data-slot="manuscript-activity-toggle"
+            onClick={toggleExpanded}
+            className="flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs leading-[18px] text-muted-foreground hover:text-foreground"
+          >
+            {expanded
+              ? <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
+              : <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />}
+            <Wrench className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate font-medium">도구 {toolMessages.length}회</span>
+            {hasRunningTool && <span className="shrink-0">실행 중</span>}
+            {failureCount > 0 && <span className="shrink-0 chat-tone-danger-text">실패 {failureCount}</span>}
+          </button>
+          {expanded && (
+            <div data-slot="manuscript-activity-items" className="ml-5 mt-1 space-y-0.5">
+              {messages.map((msg) => msg.role === "tool"
+                ? <ToolCallItem key={msg.id} msg={msg} presentation="manuscript" />
+                : <ThinkingMessage key={msg.id} msg={msg} presentation="manuscript" />)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex gap-2 px-3 py-1" data-slot="chat-tool-row" data-tree-node-id={messages[0]?.treeNodeId}>

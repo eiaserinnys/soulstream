@@ -41,7 +41,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
     case "assistant":
       // thinking 노드와 text 노드를 독립 컴포넌트로 분리
       body = msg.treeNodeType === "thinking"
-        ? <ThinkingMessage msg={msg} />
+        ? <ThinkingMessage msg={msg} presentation={presentation} />
         : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} />;
       break;
     case "tool":
