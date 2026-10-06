@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ToolTraceResponse } from '../../api/client';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { DisclosureIcon } from '../DisclosureIcon';
 import { EventContextMenu } from '../events/EventContextMenu';
 import { ThinkingEvent } from '../events/ThinkingEvent';
 import { ToolEvent } from '../events/ToolEvent';
@@ -49,12 +50,7 @@ export function ManuscriptActivitySegment({ item, sessionId, api }: Props) {
         <Text style={styles.title} numberOfLines={1}>도구 {tools.length}회</Text>
         {hasRunningTool ? <Text style={styles.status}>실행 중</Text> : null}
         {failedCount > 0 ? <Text style={styles.failure}>실패 {failedCount}</Text> : null}
-        <Ionicons
-          testID="manuscript-activity-chevron"
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={t.iconSize.compact}
-          color={t.colors.textSecondary}
-        />
+        <DisclosureIcon expanded={expanded} tone="secondary" />
       </TouchableOpacity>
       {expanded ? (
         <View testID="manuscript-activity-items">

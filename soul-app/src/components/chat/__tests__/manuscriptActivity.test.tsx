@@ -84,12 +84,11 @@ describe('ManuscriptActivitySegment', () => {
     const header = screen.getByTestId('manuscript-activity-toggle');
     const style = StyleSheet.flatten(header.props.style);
     const toolIcon = screen.getByTestId('manuscript-activity-icon');
-    const icon = screen.getByTestId('manuscript-activity-chevron');
 
     expect(style.borderWidth).toBeUndefined();
     expect(style.backgroundColor).toBeUndefined();
     expect(toolIcon.props.name).toBe('construct-outline');
     expect(toolIcon.props.color).toBe(LIGHT_COLORS.textSecondary);
-    expect(icon.props.name).toBe('chevron-down');
+    expect(screen.getByText('∨', { includeHiddenElements: true })).toBeTruthy();
   });
 });

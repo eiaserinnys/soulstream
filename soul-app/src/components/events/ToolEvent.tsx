@@ -110,7 +110,7 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
       <View
         testID="tool-event-wrapper"
         style={[
-          styles.wrapper,
+          presentation === 'manuscript' ? styles.manuscriptWrapper : styles.wrapper,
           !expanded && styles.wrapperCollapsed,
           isError && presentation !== 'manuscript' && styles.wrapperError,
           headerPressed && styles.wrapperPressed,
@@ -261,16 +261,13 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       position: 'relative',
     },
     wrapper: {
+      borderRadius: t.radius.sm,
+      borderWidth: 1,
+      borderColor: c.border,
       overflow: 'hidden',
-      ...(presentation === 'manuscript'
-        ? {}
-        : {
-            borderRadius: t.radius.sm,
-            borderWidth: 1,
-            borderColor: c.border,
-            backgroundColor: c.surfaceMuted,
-          }),
+      backgroundColor: c.surfaceMuted,
     },
+    manuscriptWrapper: { overflow: 'hidden' },
     wrapperCollapsed: { height: toolVisualHeight },
     wrapperError: { backgroundColor: c.errorBg },
     wrapperPressed: { opacity: 0.7 },
