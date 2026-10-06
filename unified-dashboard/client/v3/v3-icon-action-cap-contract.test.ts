@@ -10,32 +10,34 @@ describe("v3 icon action cap contract", () => {
     const config = read("../components/ConfigButton.tsx");
     const css = read("../../../packages/soul-ui/src/styles/globals.css");
 
-    expect(component).toContain("dashboard-icon-cap border border-glass-border glass-strong glass-chrome lg-rim");
+    expect(component).toContain('appearance = "default"');
+    expect(component).toContain('"dashboard-icon-cap"');
+    expect(component).toContain('"dashboard-icon-cap--bare"');
+    expect(component).toContain('"border border-glass-border glass-strong glass-chrome lg-rim"');
     expect(component).toContain('aria-label={label}');
     expect(component).toContain('title={tooltip ?? label}');
     expect(theme).toContain("<DashboardIconCap");
     expect(config).toContain("<DashboardIconCap");
     expect(css).toMatch(/\.dashboard-icon-cap \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*border-radius: 22px;/);
+    expect(css).toMatch(/\.dashboard-icon-cap--bare\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s);
   });
 
-  it("uses the same text icon contract for all minimal PAS header actions", () => {
+  it("uses bare lucide icons for PAS header actions and preserves the default glyphs", () => {
     const toolbar = read("./V3GlobalToolbar.tsx");
     const theme = read("../../../packages/soul-ui/src/components/ThemeToggle.tsx");
     const config = read("../components/ConfigButton.tsx");
     const minimal = toolbar.match(/if \(variant === 'minimal'\)[\s\S]*?<div className="dashboard-toolbar-actions">([\s\S]*?)<\/div>/)?.[1] ?? "";
-    const homeIcon = minimal.match(/<DashboardIconCap label="홈" onClick=\{onOpenHome\}>([\s\S]*?)<\/DashboardIconCap>/)?.[1] ?? "";
-    const themeIcon = theme.match(/function ChromeThemeToggle[\s\S]*?<DashboardIconCap[\s\S]*?>([\s\S]*?)<\/DashboardIconCap>/)?.[1] ?? "";
-    const configIcon = config.match(/function ChromeConfigButton[\s\S]*?<DashboardIconCap[\s\S]*?>([\s\S]*?)<\/DashboardIconCap>/)?.[1] ?? "";
-    const icons = [homeIcon, themeIcon, configIcon];
-
-    expect(minimal.indexOf('label="홈"')).toBeLessThan(minimal.indexOf('<ThemeToggle variant="chrome"/>'));
-    expect(minimal.indexOf('<ThemeToggle variant="chrome"/>')).toBeLessThan(minimal.indexOf('<ConfigButton variant="chrome"'));
-    expect(icons).toHaveLength(3);
-    for (const icon of icons) {
-      expect(icon).toMatch(/^\s*<span aria-hidden="true" className="text-base leading-none">[^<]+<\/span>\s*$/);
-      expect(icon).not.toMatch(/<svg\b/i);
-    }
-    expect(homeIcon).toContain("⌂");
+    expect(minimal).toContain('<DashboardIconCap label="홈" appearance={appearance}');
+    expect(minimal).toContain('<House className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
+    expect(theme).toContain('<Moon className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
+    expect(theme).toContain('<Sun className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
+    expect(minimal).toContain('<ConfigButton variant="chrome" appearance={appearance}');
+    expect(config).toContain('<SlidersHorizontal className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
+    expect(toolbar).toContain('<span aria-hidden="true" className="text-base leading-none">⌂</span>');
+    expect(theme).toContain('<span aria-hidden="true" className="text-base leading-none">◐</span>');
+    expect(config).toContain('<span aria-hidden="true" className="text-base leading-none">⚙</span>');
+    expect(minimal.indexOf('<ThemeToggle variant="chrome" appearance={appearance}/>'))
+      .toBeLessThan(minimal.indexOf('<ConfigButton variant="chrome" appearance={appearance}'));
   });
 
   it.each([

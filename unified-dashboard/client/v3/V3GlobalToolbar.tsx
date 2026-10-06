@@ -5,7 +5,7 @@ import {
   useGlassSurface,
   useLiquidLens,
 } from "@seosoyoung/soul-ui";
-import { Search } from "lucide-react";
+import { House, Search } from "lucide-react";
 
 import { ConfigButton } from "../components/ConfigButton";
 import { PersistentSessionEntry } from './PersistentSessionEntry';
@@ -14,6 +14,7 @@ export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
   variant = 'default', sessionName, onOpenHome, headerRef,
+  appearance = 'default',
 }: {
   onOpenConfig(): void;
   onOpenSearch?(): void;
@@ -21,6 +22,7 @@ export function V3GlobalToolbar({
   sessionName?: string;
   onOpenHome?(): void;
   headerRef?: RefObject<HTMLElement | null>;
+  appearance?: "default" | "bare";
 }) {
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
@@ -42,9 +44,13 @@ export function V3GlobalToolbar({
   if (variant === 'minimal') return <header ref={headerRef} className="persistent-session-header" data-testid="v3-global-toolbar">
     <div className="persistent-session-brand"><span>소울스트림</span><strong>{sessionName}</strong></div>
     <div className="dashboard-toolbar-actions">
-      <DashboardIconCap label="홈" onClick={onOpenHome}><span aria-hidden="true" className="text-base leading-none">⌂</span></DashboardIconCap>
-      <ThemeToggle variant="chrome"/>
-      <ConfigButton variant="chrome" onClick={onOpenConfig}/>
+      <DashboardIconCap label="홈" appearance={appearance} onClick={onOpenHome}>
+        {appearance === "bare"
+          ? <House className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+          : <span aria-hidden="true" className="text-base leading-none">⌂</span>}
+      </DashboardIconCap>
+      <ThemeToggle variant="chrome" appearance={appearance}/>
+      <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig}/>
     </div>
   </header>;
 
@@ -72,8 +78,8 @@ export function V3GlobalToolbar({
       </button>
       <div className="dashboard-toolbar-actions">
         <PersistentSessionEntry/>
-        <ConfigButton variant="chrome" onClick={onOpenConfig} />
-        <ThemeToggle variant="chrome" />
+        <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig} />
+        <ThemeToggle variant="chrome" appearance={appearance} />
       </div>
     </header>
   );

@@ -497,6 +497,31 @@ describe("ChatView long-session initial bottom focus", () => {
     },
   );
 
+  it("shows manuscript new messages as a textless accessible bare cap", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void) | undefined)?.(true);
+    });
+    await flushPassiveEffects();
+
+    flushSync(() => markOlderExploration(container));
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeAssistantMessage(1001).event, 1001);
+    });
+    await flushPassiveEffects();
+
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="새 메시지로 이동"]');
+    expect(button?.getAttribute("data-slot")).toBe("dashboard-icon-cap");
+    expect(button?.className).toContain("dashboard-icon-cap--bare");
+    expect(button?.textContent).toBe("");
+    expect(button?.querySelector("svg")?.getAttribute("stroke-width")).toBeDefined();
+
+    button?.click();
+    await flushPassiveEffects();
+    expect(container.querySelector('button[aria-label="새 메시지로 이동"]')).toBeNull();
+  });
+
   it.each([
     ["manuscript", false, true, 1],
     ["manuscript", true, false, 1],

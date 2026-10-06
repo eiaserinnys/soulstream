@@ -6,16 +6,19 @@
  */
 
 import { cn, DashboardIconCap } from "@seosoyoung/soul-ui";
+import { SlidersHorizontal } from "lucide-react";
 
 export function ConfigButton({
   onClick,
   variant = "default",
+  appearance = "default",
 }: {
   onClick: () => void;
   variant?: "default" | "chrome";
+  appearance?: "default" | "bare";
 }) {
   if (variant === "chrome") {
-    return <ChromeConfigButton onClick={onClick} />;
+    return <ChromeConfigButton onClick={onClick} appearance={appearance} />;
   }
 
   return (
@@ -36,14 +39,20 @@ export function ConfigButton({
   );
 }
 
-function ChromeConfigButton({ onClick }: { onClick: () => void }) {
+function ChromeConfigButton({
+  onClick,
+  appearance,
+}: { onClick: () => void; appearance: "default" | "bare" }) {
   return (
     <DashboardIconCap
       label="서버 설정"
       data-testid="config-button"
+      appearance={appearance}
       onClick={onClick}
     >
-      <span aria-hidden="true" className="text-base leading-none">⚙</span>
+      {appearance === "bare"
+        ? <SlidersHorizontal className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+        : <span aria-hidden="true" className="text-base leading-none">⚙</span>}
     </DashboardIconCap>
   );
 }
