@@ -159,14 +159,14 @@ test('trim WebGL titles caveats and reduced motion',async({page})=>{
  expect(errors).toEqual([]);expect(writes).toEqual([]);
 });
 
-test('trim expanded caption evidence',async({page})=>{
- const {board,errors,writes}=await prepare(page,1920);
+for(const width of [1440,1920,2560])test(`trim expanded caption evidence ${width}`,async({page})=>{
+ const {board,errors,writes}=await prepare(page,width);
  await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
  const detail=page.getByTestId('card-detail'),image=detail.locator('.v3-card-evidence-image').first();
  await image.click();const dialog=page.getByRole('dialog');
  await expect(dialog.locator('figcaption')).toHaveText(await image.getAttribute('alt')??'');
  await expect.poll(()=>dialog.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
- await page.screenshot({path:path.join(output,'1920-image-caption.png')});
+ await page.screenshot({path:path.join(output,`${width}-image-caption.png`)});
  await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(detail).toBeVisible();
  expect(errors).toEqual([]);expect(writes).toEqual([]);
 });
