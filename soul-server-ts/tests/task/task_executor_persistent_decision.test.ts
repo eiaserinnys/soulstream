@@ -10,6 +10,9 @@ import {
 } from "../../src/auth/provider_usage_observation.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
+import { ScheduleDispatcher } from "../../src/schedule/schedule_dispatcher.js";
+import { SoulstreamScheduleService } from "../../src/schedule/schedule_service.js";
+import type { ScheduleCreateInput, SoulstreamSchedule } from "../../src/schedule/schedule_models.js";
 import { PersistentSessionControl } from "../../src/task/persistent_session_control.js";
 import { buildInterventionSentEvent } from "../../src/task/task_intervention_events.js";
 import { buildUserMessageEvent } from "../../src/task/task_user_message_events.js";
@@ -82,6 +85,7 @@ function makeModelCatalog(): Pick<ModelCatalog, "resolve"> {
 }
 
 function makeUsage(): ProviderLimits {
+  const weeklyResetAt = Date.now() / 1_000 + 7 * 24 * 60 * 60;
   return {
     status: "auto",
     source: "test",
@@ -90,12 +94,25 @@ function makeUsage(): ProviderLimits {
     monthlyTokens: null,
     sessionTokens: null,
     weeklyUsedPercent: 20,
-    weeklyResetAt: Date.now() / 1_000 + 7 * 24 * 60 * 60,
+    weeklyResetAt,
     shortUsedPercent: 10,
     shortWindowMinutes: 300,
     shortResetAt: Date.now() / 1_000 + 5 * 60 * 60,
     planType: null,
-    quotas: [],
+    quotas: [{
+      id: "weekly",
+      label: "7일",
+      window: "7d",
+      unit: null,
+      used: null,
+      remaining: null,
+      limit: null,
+      usedPercent: 20,
+      remainingPercent: 80,
+      resetAt: weeklyResetAt,
+      model: null,
+      source: "test",
+    }],
   };
 }
 
@@ -163,6 +180,12 @@ function makeRuntime(task: Task, events: Array<{
   const scheduleService = {
     deleteCacheKeepaliveSchedules: vi.fn(async () => undefined),
     scheduleCacheKeepalive: vi.fn(async () => undefined),
+    scheduleResumeAfterLimit: vi.fn(async (
+      _sessionId: string,
+      _terminalEventId: number,
+      _runOnceAt: Date,
+      _now: Date,
+    ): Promise<SoulstreamSchedule | null> => null),
   };
   return {
     persistenceDouble,
@@ -568,4 +591,219 @@ describe("TaskExecutor persistent decision wiring", () => {
       (call) => (call[1] as Record<string, unknown>).kind === "persistent_decision",
     )).toBe(false);
   });
+
+  it("switches persistent limit_hit to the other provider and schedules the same terminal immediately", async () => {
+    const task = makeTask();
+    const resetAt = "2026-10-06T13:00:00.000Z";
+    const runtime = makeRuntime(task, []);
+    const resumeScheduleRuntime = makeResumeScheduleRuntime(runtime.persistenceDouble.persistence);
+    runtime.scheduleService.scheduleResumeAfterLimit.mockImplementation((...args) =>
+      resumeScheduleRuntime.service.scheduleResumeAfterLimit(...args),
+    );
+    rememberProviderUsageObservation("claude", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage());
+    const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
+    const executor = taskExecutor(task, runtime, () => limitHitEngine(resetAt));
+    const startedAt = Date.now();
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    const decision = runtime.persistenceDouble.enqueueEvent.mock.calls
+      .map((call) => call[1] as Record<string, unknown>)
+      .find((event) => event.kind === "persistent_decision" && event.trigger === "limit_hit");
+    expect(task.terminationReason).toBe("limit_hit");
+    expect(requestRollover).toHaveBeenCalledWith(task.agentSessionId, {
+      modelPreset: "codex-6.1-sol",
+      reasoningEffort: "high",
+      reason: "auto:limit_hit.switch",
+    });
+    expect(task.persistentGeneration?.pending?.targetModelPreset).toBe("codex-6.1-sol");
+    expect(runtime.scheduleService.scheduleResumeAfterLimit).toHaveBeenCalledWith(
+      task.agentSessionId,
+      task.terminalEventId,
+      new Date((decision?.inputs_snapshot as Record<string, unknown>).now as string),
+      expect.any(Date),
+    );
+    expect((runtime.scheduleService.scheduleResumeAfterLimit.mock.calls[0]?.[2] as Date).getTime())
+      .toBeGreaterThanOrEqual(startedAt);
+    expect(decision).toMatchObject({
+      type: "debug",
+      trigger: "limit_hit",
+      action: "new_generation",
+      target_preset: "codex-6.1-sol",
+      rule: "limit_hit.switch",
+      inputs_snapshot: expect.objectContaining({ limit_reset_at: resetAt }),
+    });
+    expect(runtime.providerUsage.fetchUsage).toHaveBeenCalledOnce();
+
+    const decisionNow = new Date((decision?.inputs_snapshot as Record<string, unknown>).now as string);
+    const schedule = resumeScheduleRuntime.getSchedule();
+    expect(schedule).toMatchObject({
+      scheduleId: `resume-after-limit:${task.agentSessionId}:${task.terminalEventId}:0`,
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: `ResumeAfterLimit:${task.terminalEventId}`,
+      runOnceAt: decisionNow.toISOString(),
+      nextRunAt: decisionNow.toISOString(),
+    });
+
+    const addIntervention = vi.fn(async () => ({ autoResumed: true }));
+    const scheduleDispatcher = new ScheduleDispatcher(
+      { nodeId: "owner-node", startedAt: new Date(0) },
+      resumeScheduleRuntime.service,
+      {
+        getScheduleResumeState: vi.fn(async () => ({
+          status: "error" as const,
+          terminationReason: "limit_hit" as const,
+          terminalEventId: task.terminalEventId!,
+        })),
+        addIntervention,
+      } as never,
+      vi.fn(),
+      logger,
+    );
+    await scheduleDispatcher.runOnce(new Date(decisionNow.getTime() + 1_000));
+
+    expect(resumeScheduleRuntime.db.hasContinuousLimitWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduleId: `resume-after-limit:${task.agentSessionId}:${task.terminalEventId}:0`,
+        toolUseId: `ResumeAfterLimit:${task.terminalEventId}`,
+      }),
+      task.terminalEventId,
+    );
+    expect(addIntervention).toHaveBeenCalledWith(expect.objectContaining({
+      agentSessionId: task.agentSessionId,
+      text: "[Scheduled wakeup]\n\n리밋 해제 시각이 지났습니다. 이전 지시와 미완료 작업을 이어서 진행해주세요.",
+    }), expect.any(Function));
+  });
+
+  it("waits until the event reset and preserves nonpersistent limit behavior", async () => {
+    const task = makeTask();
+    const resetAt = "2026-10-06T13:00:00.000Z";
+    const depleted = makeUsage();
+    depleted.shortUsedPercent = 95;
+    const runtime = makeRuntime(task, []);
+    rememberProviderUsageObservation("claude", makeUsage());
+    rememberProviderUsageObservation("codex", depleted);
+    const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
+    const executor = taskExecutor(task, runtime, () => limitHitEngine(resetAt));
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    expect(requestRollover).not.toHaveBeenCalled();
+    expect(runtime.scheduleService.scheduleResumeAfterLimit).toHaveBeenCalledWith(
+      task.agentSessionId,
+      task.terminalEventId,
+      new Date(resetAt),
+      expect.any(Date),
+    );
+    expect(runtime.persistenceDouble.enqueueEvent.mock.calls
+      .map((call) => call[1] as Record<string, unknown>)).toContainEqual(
+        expect.objectContaining({ trigger: "limit_hit", action: "wait_until", rule: "limit_hit.wait" }),
+      );
+
+    const nonpersistent = makeTask();
+    nonpersistent.persistent = false;
+    const nonpersistentRuntime = makeRuntime(nonpersistent, []);
+    const nonpersistentExecutor = taskExecutor(
+      nonpersistent,
+      nonpersistentRuntime,
+      () => limitHitEngine(resetAt),
+    );
+    const nonpersistentExecution = nonpersistentExecutor.startNewExecution(nonpersistent, agent);
+    await nonpersistentExecution;
+    await nonpersistent.executionPromise;
+
+    expect(nonpersistentRuntime.providerUsage.fetchUsage).not.toHaveBeenCalled();
+    expect(nonpersistentRuntime.scheduleService.scheduleResumeAfterLimit).not.toHaveBeenCalled();
+    expect(nonpersistentRuntime.persistenceDouble.enqueueEvent.mock.calls
+      .some((call) => (call[1] as Record<string, unknown>).kind === "persistent_decision"))
+      .toBe(false);
+  });
 });
+
+function limitHitEngine(resetAt: string): EnginePort {
+  return {
+    backendId: "codex",
+    workspaceDir: "/tmp/codex-default",
+    async *execute(): AsyncIterable<SSEEventPayload> {
+      yield { type: "credential_alert", status: "rejected", timestamp: Date.now() / 1_000 } as SSEEventPayload;
+      yield {
+        type: "error",
+        message: "quota exhausted",
+        error_code: "codex_usage_limit_exceeded",
+        rate_limit_type: "five_hour",
+        resets_at: resetAt,
+        fatal: true,
+        timestamp: Date.now() / 1_000,
+      } as SSEEventPayload;
+      throw new Error("quota exhausted");
+    },
+    async interrupt() { return true; },
+    async close() {},
+  };
+}
+
+function makeResumeScheduleRuntime(persistence: ReturnType<typeof makeEventPersistenceTestDouble>["persistence"]) {
+  let schedule: SoulstreamSchedule | null = null;
+  const db = {
+    createScheduleIfAbsent: vi.fn(async (input: ScheduleCreateInput) => {
+      if (schedule) return null;
+      schedule = {
+        scheduleId: input.scheduleId,
+        sessionId: input.sessionId,
+        kind: input.kind,
+        status: "active",
+        prompt: input.prompt,
+        sourceTool: input.sourceTool,
+        toolUseId: input.toolUseId ?? null,
+        cronExpression: input.cronExpression ?? null,
+        runOnceAt: input.runOnceAt?.toISOString() ?? null,
+        timezone: input.timezone ?? "UTC",
+        recurring: input.recurring,
+        nextRunAt: input.nextRunAt.toISOString(),
+        lastFiredAt: null,
+        firedCount: 0,
+        lastError: null,
+        claimToken: null,
+        claimedUntil: null,
+        createdAt: input.createdAt?.toISOString() ?? new Date().toISOString(),
+        updatedAt: input.createdAt?.toISOString() ?? new Date().toISOString(),
+      };
+      return schedule;
+    }),
+    touchNodeHeartbeat: vi.fn(async () => undefined),
+    repairExpiredClaims: vi.fn(async () => []),
+    restoreOrphanSchedulesForLiveNodes: vi.fn(async () => []),
+    markOrphanDueSchedules: vi.fn(async () => []),
+    claimDueSchedules: vi.fn(async ({ now }: { now: Date }) =>
+      schedule && Date.parse(schedule.nextRunAt ?? "") <= now.getTime()
+        ? [{ schedule, claimToken: "resume-claim" }]
+        : []),
+    consumeClaimedSchedule: vi.fn(async () => {
+      if (!schedule) return null;
+      schedule = { ...schedule, status: "firing" };
+      return schedule;
+    }),
+    confirmScheduleStillFiring: vi.fn(async () => schedule),
+    hasContinuousLimitWindow: vi.fn(async (
+      candidate: SoulstreamSchedule,
+      currentTerminalEventId: number,
+    ) => candidate.toolUseId === `ResumeAfterLimit:${currentTerminalEventId}`),
+    finishScheduleDispatch: vi.fn(async ({ firedAt }: { firedAt: Date }) => {
+      if (!schedule) return null;
+      schedule = { ...schedule, status: "completed", nextRunAt: null, lastFiredAt: firedAt.toISOString() };
+      return schedule;
+    }),
+  };
+  const service = new SoulstreamScheduleService(
+    db as never,
+    { emitEventEnvelope: vi.fn(async () => undefined) } as never,
+    persistence,
+    logger,
+  );
+  return { db, service, getSchedule: () => schedule };
+}

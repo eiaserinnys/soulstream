@@ -17,6 +17,9 @@ export class ScheduleHostClient {
   createSchedule(input: ScheduleCreateInput): Promise<SoulstreamSchedule> {
     return this.request("create_schedule", input);
   }
+  createScheduleIfAbsent(input: ScheduleCreateInput): Promise<SoulstreamSchedule | null> {
+    return this.request("create_schedule_if_absent", input);
+  }
   listSchedules(sessionId: string): Promise<SoulstreamSchedule[]> {
     return this.request("list_schedules", { sessionId });
   }

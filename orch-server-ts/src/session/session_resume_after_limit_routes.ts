@@ -1,4 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  SCHEDULE_PROMPT,
+  SOURCE_TOOL,
+  resumeAfterLimitToolUseId,
+  stableScheduleId,
+} from "@soulstream/wire-schema/resume-after-limit";
 
 import type { PersistenceHostRepositories } from "../control_plane/persistence_host_runtime.js";
 import type { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
@@ -14,8 +20,6 @@ import {
   type SessionResourceAccessProvider,
 } from "./session_resource_access.js";
 
-const SOURCE_TOOL = "ResumeAfterLimit";
-const SCHEDULE_PROMPT = "리밋 해제 시각이 지났습니다. 이전 지시와 미완료 작업을 이어서 진행해주세요.";
 const RESET_EVENT_TYPES = ["credential_alert", "error"];
 
 const REUSABLE_SCHEDULE_STATUSES = new Set<SoulstreamScheduleStatus>([
@@ -177,7 +181,7 @@ async function resolveEligibility(
     return ineligible("제한 해제 시각을 확인할 수 없습니다.");
   }
 
-  const toolUseId = `${SOURCE_TOOL}:${terminalEventId}`;
+  const toolUseId = resumeAfterLimitToolUseId(terminalEventId);
   const scheduleRepository = await dependencies.scheduleRepositoryProvider();
   const schedules = await scheduleRepository.listSchedulesBySourceToolUseId(
     sessionId,
@@ -208,10 +212,6 @@ async function resolveEligibility(
 
 function latestReusableSchedule(schedules: SoulstreamSchedule[]): SoulstreamSchedule | null {
   return [...schedules].reverse().find((schedule) => REUSABLE_SCHEDULE_STATUSES.has(schedule.status)) ?? null;
-}
-
-function stableScheduleId(sessionId: string, terminalEventId: number, generation: number): string {
-  return `resume-after-limit:${sessionId}:${terminalEventId}:${generation}`;
 }
 
 function scheduleView(schedule: SoulstreamSchedule): ResumeAfterLimitScheduleView {

@@ -257,6 +257,41 @@ describe("control-plane host routes", () => {
     }, 3259);
   });
 
+  it("creates a schedule only when the stable schedule id is absent", async () => {
+    const createScheduleIfAbsent = vi.fn(async (input: { scheduleId: string; runOnceAt: Date }) => input);
+    const app = Fastify();
+    apps.push(app);
+    registerScheduleHostRoute(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({ createScheduleIfAbsent }) as unknown as SoulstreamScheduleRepository,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/schedules/host/create_schedule_if_absent",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        schedule_id: "resume-after-limit:sess-1:32:0",
+        session_id: "sess-1",
+        kind: "wakeup",
+        prompt: "continue",
+        source_tool: "ResumeAfterLimit",
+        tool_use_id: "ResumeAfterLimit:32",
+        recurring: false,
+        run_once_at: "2026-08-05T10:00:00.000Z",
+        next_run_at: "2026-08-05T10:00:00.000Z",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ scheduleId: "resume-after-limit:sess-1:32:0" });
+    expect(createScheduleIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      runOnceAt: new Date("2026-08-05T10:00:00.000Z"),
+      nextRunAt: new Date("2026-08-05T10:00:00.000Z"),
+    }));
+  });
+
   it("returns explicit JSON null for a void schedule operation", async () => {
     const touchNodeHeartbeat = vi.fn(async () => undefined);
     const app = Fastify();

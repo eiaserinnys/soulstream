@@ -35,6 +35,7 @@ function makeTask(): Task {
 }
 
 function makeUsage(weeklyUsedPercent: number, shortUsedPercent: number) {
+  const weeklyResetAt = now.getTime() / 1_000 + 86_400;
   return {
     status: "auto" as const,
     source: "test",
@@ -43,12 +44,25 @@ function makeUsage(weeklyUsedPercent: number, shortUsedPercent: number) {
     monthlyTokens: null,
     sessionTokens: null,
     weeklyUsedPercent,
-    weeklyResetAt: now.getTime() / 1_000 + 86_400,
+    weeklyResetAt,
     shortUsedPercent,
     shortWindowMinutes: 300,
     shortResetAt: now.getTime() / 1_000 + 3_600,
     planType: null,
-    quotas: [],
+    quotas: [{
+      id: "weekly",
+      label: "7일",
+      window: "7d",
+      unit: null,
+      used: null,
+      remaining: null,
+      limit: null,
+      usedPercent: weeklyUsedPercent,
+      remainingPercent: 100 - weeklyUsedPercent,
+      resetAt: weeklyResetAt,
+      model: null,
+      source: "test",
+    }],
   };
 }
 
@@ -171,7 +185,63 @@ describe("buildPersistentDecisionInput", () => {
     });
     expect(input.accounts.claude?.weekly_headroom).toBeCloseTo(50.7142857);
     expect(input.accounts.codex?.weekly_headroom).toBeCloseTo(40.7142857);
+    expect(input.accounts.claude?.weekly_remaining_percent).toBe(65);
+    expect(input.accounts.codex?.weekly_remaining_percent).toBe(55);
     expect(providerUsage.fetchUsage).not.toHaveBeenCalled();
+  });
+
+  it("forces one usage refresh for limit_hit even when observations are fresh", async () => {
+    const task = makeTask();
+    const usage = makeUsage(35, 20);
+    rememberProviderUsageObservation("claude", usage, now.toISOString());
+    rememberProviderUsageObservation("codex", usage, now.toISOString());
+    const fetchUsage = vi.fn(async () => ({ success: true }));
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "limit_hit", now, limitResetAt: "2026-10-06T01:00:00.000Z" },
+      {
+        db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+
+    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(input.limit_reset_at).toBe("2026-10-06T01:00:00.000Z");
+    expect(input.accounts.codex?.weekly_remaining_percent).toBe(65);
+  });
+
+  it("keeps the last provider observations when forced limit_hit refresh fails", async () => {
+    const task = makeTask();
+    const oldObservation = {
+      ...makeUsage(35, 20),
+      observedAt: "2026-10-05T00:00:00.000Z",
+    };
+    rememberProviderUsageObservation("claude", oldObservation, "2026-10-05T00:00:00.000Z");
+    rememberProviderUsageObservation("codex", oldObservation, "2026-10-05T00:00:00.000Z");
+    const fetchUsage = vi.fn(async () => ({ success: false }));
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "limit_hit", now },
+      {
+        db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+
+    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(input.accounts.codex).toMatchObject({
+      short_remaining_percent: 80,
+      weekly_remaining_percent: 65,
+      observed_at: oldObservation.observedAt,
+    });
   });
 
   it("keeps a prior preset checkpoint from persistent-generation metadata beyond the recent event window", async () => {

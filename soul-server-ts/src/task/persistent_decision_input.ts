@@ -10,6 +10,7 @@ import {
   type DecisionProvider,
 } from "../auth/provider_usage_observation.js";
 import type {
+  ProviderLimits,
   ProviderUsageCommandHandler,
 } from "../auth/provider_usage.js";
 import { DEFAULT_CONFIG } from "./persistent_decision_config.js";
@@ -40,6 +41,7 @@ export interface BuildPersistentDecisionInputOptions {
   trigger: DecisionTrigger;
   now: Date;
   lastCallEndedAt?: string;
+  limitResetAt?: string;
 }
 
 export async function buildPersistentDecisionInput(
@@ -77,6 +79,7 @@ export async function buildPersistentDecisionInput(
   const accounts = await collectAccounts(
     task.agentSessionId,
     now,
+    trigger === "limit_hit",
     deps.providerUsage,
     deps.logger,
   );
@@ -94,6 +97,7 @@ export async function buildPersistentDecisionInput(
     preset_providers: presetProviders as Record<string, DecisionProvider>,
     checkpoint_tokens_by_preset: checkpointTokens,
     accounts,
+    ...(options.limitResetAt ? { limit_reset_at: options.limitResetAt } : {}),
   };
 }
 
@@ -158,6 +162,7 @@ function collectCheckpointTokensByPreset(
 async function collectAccounts(
   sessionId: string,
   now: Date,
+  forceRefresh: boolean,
   providerUsage: ProviderUsageCommandHandler,
   logger: Pick<Logger, "warn">,
 ): Promise<DecisionInput["accounts"]> {
@@ -166,7 +171,7 @@ async function collectAccounts(
     readProviderUsageObservation(provider)?.observed_at ?? null,
     now,
   ));
-  if (stale) {
+  if (forceRefresh || stale) {
     try {
       const response = await providerUsage.fetchUsage(
         `persistent-decision:${sessionId}`,
@@ -199,8 +204,8 @@ function isFreshObservation(observedAt: string | null, now: Date): boolean {
 }
 
 function toAccountObservation(
-  result: { weeklyUsedPercent: number | null; weeklyResetAt: number | null;
-    shortUsedPercent: number | null; shortResetAt: number | null },
+  result: Pick<ProviderLimits,
+    "weeklyUsedPercent" | "weeklyResetAt" | "shortUsedPercent" | "shortResetAt" | "quotas">,
   observedAt: string | null,
   now: Date,
 ): AccountObservation {
@@ -208,8 +213,14 @@ function toAccountObservation(
     ? null
     : 100 - result.weeklyUsedPercent
       - ((result.weeklyResetAt - now.getTime() / 1_000) / (7 * 24 * 60 * 60)) * 100;
+  const weeklyQuota = result.quotas.find((quota) =>
+    quota.window === "7d"
+    && quota.resetAt === result.weeklyResetAt
+    && quota.usedPercent === result.weeklyUsedPercent,
+  );
   return {
     weekly_headroom: weeklyHeadroom,
+    weekly_remaining_percent: weeklyQuota?.remainingPercent ?? null,
     short_remaining_percent: result.shortUsedPercent === null
       ? null
       : 100 - result.shortUsedPercent,
