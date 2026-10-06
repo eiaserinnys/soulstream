@@ -1,19 +1,24 @@
 import { useEffect, useRef } from "react";
 import {
   ThemeToggle,
+  DashboardIconCap,
   useGlassSurface,
   useLiquidLens,
 } from "@seosoyoung/soul-ui";
-import { Search } from "lucide-react";
+import { Home, Search } from "lucide-react";
 
 import { ConfigButton } from "../components/ConfigButton";
 
 export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
+  variant = 'default', sessionName, onOpenHome,
 }: {
   onOpenConfig(): void;
-  onOpenSearch(): void;
+  onOpenSearch?(): void;
+  variant?: 'default' | 'minimal';
+  sessionName?: string;
+  onOpenHome?(): void;
 }) {
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
@@ -26,11 +31,20 @@ export function V3GlobalToolbar({
     const openSearch = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
       event.preventDefault();
-      onOpenSearch();
+      if (variant === 'default') onOpenSearch?.();
     };
     window.addEventListener("keydown", openSearch);
     return () => window.removeEventListener("keydown", openSearch);
-  }, [onOpenSearch]);
+  }, [onOpenSearch, variant]);
+
+  if (variant === 'minimal') return <header className="persistent-session-header" data-testid="v3-global-toolbar">
+    <div className="persistent-session-brand"><span>소울스트림</span><strong>{sessionName}</strong></div>
+    <div className="dashboard-toolbar-actions">
+      <DashboardIconCap label="홈" onClick={onOpenHome}><Home/></DashboardIconCap>
+      <ThemeToggle variant="chrome"/>
+      <ConfigButton variant="chrome" onClick={onOpenConfig}/>
+    </div>
+  </header>;
 
   return (
     <header className="dashboard-floating-toolbar v3-global-toolbar" data-testid="v3-global-toolbar">

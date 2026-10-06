@@ -1,0 +1,27 @@
+/* Approved prototype geometry; spacing and typography inherit the v3 roles. */
+.persistent-session-screen {
+  --pas-main-width: 520px;
+  --pas-list-width: 264px;
+  --pas-detail-width: 392px;
+  --pas-header-height: 76px;
+  --pas-compact-header-height: 56px;
+  display: block;
+  background: var(--persistent-session-paper);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.persistent-session-screen .persistent-session-header {
+  position: relative; inset: auto; height: var(--pas-header-height);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--v3-space-8); gap: var(--v3-space-4);
+}
+.persistent-session-brand { display: flex; align-items: center; gap: var(--v3-space-5); min-width: 0; }
+.persistent-session-brand > span { white-space: nowrap; }
+.persistent-session-brand > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--v3-type-body); font-weight: normal; color: var(--muted-foreground); }
+.persistent-session-main { display: flex; flex-direction: column; position: relative; width: var(--pas-main-width); max-width: calc(100% - var(--v3-space-8)); height: calc(100% - var(--pas-header-height) - var(--v3-space-8)); margin: 0 auto; min-height: 0; }
+.persistent-session-main > [data-testid="chat-view"] { flex: 1; min-height: 0; }
+.persistent-session-choices { margin: auto 0; }
+@media (max-width: 767px), (max-height: 520px) {
+  .persistent-session-screen { --pas-header-height: var(--pas-compact-header-height); }
+  .persistent-session-screen .persistent-session-header { padding-inline: var(--v3-space-5); }
+}

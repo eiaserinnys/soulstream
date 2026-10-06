@@ -24,6 +24,7 @@ const IosComponentsReviewPage = lazy(() =>
 );
 
 const DialoguesReviewPage = lazy(() => import("./v3/DialoguesReviewPage").then(mod => ({default:mod.DialoguesReviewPage})));
+const PersistentSessionScreen = lazy(() => import('./v3/PersistentSessionScreen').then(mod => ({ default: mod.PersistentSessionScreen })));
 
 export function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -49,7 +50,9 @@ export function App() {
 
   return (
     <Suspense fallback={null}>
-      {pathname === "/dialogues/ios" || pathname === "/dialogues/ios/"
+      {/^\/persistent(?:\/[^/]+)?\/?$/.test(pathname)
+        ? <PersistentSessionScreen sessionId={pathname.split('/')[2] ? decodeURIComponent(pathname.split('/')[2]!) : undefined}/>
+        : pathname === "/dialogues/ios" || pathname === "/dialogues/ios/"
         ? <IosComponentsReviewPage section="dialogues" />
         : pathname === "/components/ios" || pathname === "/components/ios/"
         ? <IosComponentsReviewPage />

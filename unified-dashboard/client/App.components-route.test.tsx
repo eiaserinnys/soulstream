@@ -60,3 +60,12 @@ it.each(["/dialogues/ios", "/dialogues/ios/"])("opens %s with the RN dialogues s
   await vi.waitFor(() => expect(container.querySelector('[data-testid="ios-review"]')?.getAttribute("data-section")).toBe("dialogues"));
   expect(container.querySelector('[data-testid="dashboard"]')).toBeNull();
 });
+
+vi.mock('./v3/PersistentSessionScreen',()=>({PersistentSessionScreen:({sessionId}:{sessionId?:string})=><main data-testid="persistent" data-session={sessionId}/> }));
+it.each(['/persistent','/persistent/pas-1'])('opens %s independently and returns home',async pathname=>{
+ window.history.replaceState(null,'',pathname);flushSync(()=>root.render(<App/>));
+ await vi.waitFor(()=>expect(container.querySelector('[data-testid="persistent"]')).not.toBeNull());
+ expect(container.querySelector('[data-testid="dashboard"]')).toBeNull();
+ window.history.pushState(null,'','/');flushSync(()=>window.dispatchEvent(new PopStateEvent('popstate')));
+ await vi.waitFor(()=>expect(container.querySelector('[data-testid="dashboard"]')).not.toBeNull());
+});
