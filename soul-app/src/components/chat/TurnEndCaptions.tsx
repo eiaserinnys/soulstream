@@ -38,29 +38,32 @@ export function TurnEndCaptions({ usage, summaries }: Props) {
           {summaries?.length ? (
             <CaptionHeadButton
               title="요약"
-              contentWidth={t.chatFontSize.meta * 2 + t.iconSize.compact + t.uiSpacing.sm * 3}
               expanded={summaryExpanded}
               onToggle={() => setSummaryExpanded((value) => !value)}
             />
           ) : null}
         </View>
-        {usageExpanded && usage ? (
-          <CollapsibleCaptionBody align="end" alignmentInset="content">
-            {usage.lines.map((line, index) => (
-              <CollapsibleCaptionLine key={`${usage.title}-${index}`} wrap>
-                {line}
-              </CollapsibleCaptionLine>
-            ))}
-          </CollapsibleCaptionBody>
-        ) : null}
-        {summaryExpanded && summaries?.length ? (
-          <CollapsibleCaptionBody align="end" alignmentInset="content">
-            {summaries.map((summary) => (
-              <CollapsibleCaptionLine key={summary.key} wrap>
-                {summary.content}
-              </CollapsibleCaptionLine>
-            ))}
-          </CollapsibleCaptionBody>
+        {((usageExpanded && usage) || (summaryExpanded && summaries?.length)) ? (
+          <View testID="turn-end-captions-bodies" style={styles.bodies}>
+            {usageExpanded && usage ? (
+              <CollapsibleCaptionBody align="end" alignmentInset="content">
+                {usage.lines.map((line, index) => (
+                  <CollapsibleCaptionLine key={`${usage.title}-${index}`} wrap>
+                    {line}
+                  </CollapsibleCaptionLine>
+                ))}
+              </CollapsibleCaptionBody>
+            ) : null}
+            {summaryExpanded && summaries?.length ? (
+              <CollapsibleCaptionBody align="end" alignmentInset="content">
+                {summaries.map((summary) => (
+                  <CollapsibleCaptionLine key={summary.key} wrap>
+                    {summary.content}
+                  </CollapsibleCaptionLine>
+                ))}
+              </CollapsibleCaptionBody>
+            ) : null}
+          </View>
         ) : null}
       </View>
     </View>
@@ -70,20 +73,17 @@ export function TurnEndCaptions({ usage, summaries }: Props) {
 function CaptionHeadButton({
   title,
   expandedTitle,
-  contentWidth,
   expanded,
   titleCanShrink,
   onToggle,
 }: {
   title: string;
   expandedTitle?: string;
-  contentWidth?: number;
   expanded: boolean;
   titleCanShrink?: boolean;
   onToggle(): void;
 }) {
   const [pressed, setPressed] = useState(false);
-  const contentWidthStyle = contentWidth ? { width: contentWidth } : undefined;
   return (
     <CompactTouchTarget
       accessibilityRole="button"
@@ -93,13 +93,14 @@ function CaptionHeadButton({
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       activeOpacity={1}
-      frameStyle={[{ maxWidth: '100%', flexShrink: 0 }, contentWidthStyle]}
-      surfaceStyle={[{ alignSelf: 'flex-end', maxWidth: '100%' }, contentWidth ? { width: '100%' } : undefined]}
+      frameStyle={{ maxWidth: '100%', flexShrink: 0 }}
+      surfaceStyle={{ alignSelf: 'flex-end', maxWidth: '100%' }}
     >
       <CollapsibleCaptionHeader
         title={title}
         expandedTitle={expandedTitle}
         expanded={expanded}
+        alignTrailingEdge
         titleCanShrink={titleCanShrink}
         pressed={pressed}
         align="end"
@@ -119,6 +120,11 @@ function makeStyles(t: DesignTokens) {
       width: '100%',
       alignItems: 'flex-end',
       gap: t.uiSpacing.xxs,
+    },
+    bodies: {
+      width: '100%',
+      alignItems: 'flex-end',
+      gap: t.uiSpacing.sm,
     },
     heads: {
       width: '100%',

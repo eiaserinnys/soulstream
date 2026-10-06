@@ -19,6 +19,7 @@ interface CollapsibleCaptionHeaderProps {
   expanded: boolean;
   pressed?: boolean;
   titleCanShrink?: boolean;
+  alignTrailingEdge?: boolean;
   align?: 'start' | 'end';
   alignmentInset?: 'avatar' | 'content';
 }
@@ -94,11 +95,15 @@ export function CollapsibleCaptionHeader({
   expanded,
   pressed = false,
   titleCanShrink = true,
+  alignTrailingEdge = false,
   align = 'start',
   alignmentInset = 'avatar',
 }: CollapsibleCaptionHeaderProps) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t, align, alignmentInset), [t, align, alignmentInset]);
+  const styles = useMemo(
+    () => makeStyles(t, align, alignmentInset, alignTrailingEdge),
+    [t, align, alignmentInset, alignTrailingEdge],
+  );
   return (
     <View style={[styles.titleRow, pressed && styles.titlePressed]}>
       <Text
@@ -191,7 +196,12 @@ export function CollapsibleCaptionLine({
   );
 }
 
-function makeStyles(t: DesignTokens, align: 'start' | 'end', alignmentInset: 'avatar' | 'content') {
+function makeStyles(
+  t: DesignTokens,
+  align: 'start' | 'end',
+  alignmentInset: 'avatar' | 'content',
+  alignTrailingEdge = false,
+) {
   const endAligned = align === 'end';
   const bubbleMaxWidth = createSessionVisualRoles(t).chat.bubbleMaxWidth;
   const contentAligned = alignmentInset === 'content';
@@ -224,8 +234,9 @@ function makeStyles(t: DesignTokens, align: 'start' | 'end', alignmentInset: 'av
       maxWidth: '100%',
       minHeight: t.uiSpacing.xl,
       paddingHorizontal: t.uiSpacing.sm,
+      paddingRight: alignTrailingEdge ? 0 : t.uiSpacing.sm,
       marginLeft: endAligned ? 0 : -t.uiSpacing.sm,
-      marginRight: endAligned ? -t.uiSpacing.sm : 0,
+      marginRight: endAligned && !alignTrailingEdge ? -t.uiSpacing.sm : 0,
       borderRadius: t.foundation.radius.chip,
     },
     titlePressed: {

@@ -1,8 +1,9 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { TurnEndCaptions } from '../TurnEndCaptions';
 import type { TurnSummaryRenderItem } from '../groupChatEvents';
+import { DESIGN_SPACING } from '../../../theme';
 
 const usage = {
   title: '컨텍스트 약 63.0% · 정가 $0.62',
@@ -50,4 +51,21 @@ test('starts collapsed, each head toggles only its own body, and expanded bodies
   expect(view.getByText(usage.lines[0])).toBeTruthy();
   const text = textOrder(view);
   expect(text.indexOf(usage.lines[0])).toBeLessThan(text.indexOf('요약 본문'));
+});
+
+test('turn-end heads align to their surface edge and expanded bodies use the small UI gap', () => {
+  const view = render(<TurnEndCaptions usage={usage} summaries={summaries} />);
+  const titleRow = view.getByRole('button', { name: usage.title })
+    .findAllByType(View)
+    .find((node) => StyleSheet.flatten(node.props.style).flexDirection === 'row');
+  expect(titleRow).toBeDefined();
+  expect(StyleSheet.flatten(titleRow?.props.style)).toMatchObject({
+    marginRight: 0,
+    paddingRight: 0,
+  });
+
+  fireEvent.press(view.getByRole('button', { name: usage.title }));
+  fireEvent.press(view.getByRole('button', { name: '요약' }));
+  expect(StyleSheet.flatten(view.getByTestId('turn-end-captions-bodies').props.style).gap)
+    .toBe(DESIGN_SPACING.sm);
 });
